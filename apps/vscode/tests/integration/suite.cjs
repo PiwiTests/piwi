@@ -287,6 +287,75 @@ const tests = {
     }
   },
 
+  async 'a test paused in a run records from there, its steps written above the paused line'() {
+    const net = require('node:net');
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const channel = api.lastRun().env.PIWI_RECORD_CHANNEL;
+    assert.ok(channel, 'the run names the record channel');
+    const hash = channel.lastIndexOf('#');
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'admin.spec.ts'));
+    // The test's half of the hand-off, as the capture fixtures play it: paused before line 4.
+    const socket = net.connect(channel.slice(0, hash));
+    socket.setEncoding('utf8');
+    const heard = [];
+    let buffered = '';
+    socket.on('data', (chunk) => {
+      buffered += chunk;
+      for (let end = buffered.indexOf('\n'); end >= 0; end = buffered.indexOf('\n')) {
+        heard.push(JSON.parse(buffered.slice(0, end)));
+        buffered = buffered.slice(end + 1);
+      }
+    });
+    const send = (message) => socket.write(`${JSON.stringify(message)}\n`);
+    send({
+      type: 'attach',
+      token: channel.slice(hash + 1),
+      file: spec.fsPath,
+      line: 4,
+      reason: 'breakpoint',
+      testIdAttribute: null,
+      baseURL: 'http://localhost:3000',
+    });
+    try {
+      const load = await waitFor(() => heard.find((m) => m.type === 'load'), 'the editor taking the recording');
+      assert.match(load.bundle, /record-ide\.js$/);
+      send({ type: 'loaded' });
+      const event = (call, value) =>
+        send({
+          type: 'binding',
+          call,
+          outside: false,
+          payload: { kind: 'message', message: { type: 'piwi-append-recording-event', event: value } },
+        });
+      const at = 'http://localhost:3000/admin/orders';
+      event(1, { kind: 'navigate', target: null, value: at, pageUrl: at, timestamp: 1 });
+      const approve = {
+        tagName: 'button',
+        role: 'button',
+        accessibleName: 'Approve',
+        testId: null,
+        text: 'Approve',
+        alternatives: [{ locator: "getByRole('button', { name: 'Approve' })", method: 'getByRole', score: 90 }],
+      };
+      event(2, { kind: 'click', target: approve, value: null, pageUrl: at, timestamp: 2 });
+      const document = await vscode.workspace.openTextDocument(spec);
+      await waitFor(
+        () => document.getText().includes("getByRole('button', { name: 'Approve' }).click();"),
+        'the recorded step in admin.spec.ts',
+      );
+      const lines = document.getText().split('\n');
+      assert.match(lines[3], /^  await \w+\.getByRole\('button', \{ name: 'Approve' \}\)\.click\(\);$/);
+      assert.equal(lines[4], "  await adminPage.goto('/admin/orders');");
+      assert.ok(!document.getText().includes(`goto('${at}')`), 'no navigation to where the recording began');
+      await vscode.commands.executeCommand('piwi.stopRecording');
+      await waitFor(() => heard.some((m) => m.type === 'stop'), 'the stop sent to the test');
+    } finally {
+      socket.destroy();
+      await vscode.window.showTextDocument(spec);
+      await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+    }
+  },
+
   async 'a C# file shows the lines its tests ran, its functions’ tests, and the marks hide and show again'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const basket = vscode.Uri.file(path.join(workspace, 'src', 'Web', 'Services', 'BasketService.cs'));

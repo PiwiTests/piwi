@@ -169,6 +169,38 @@ describe('renderSpec — raw mode (no catalog)', () => {
   });
 });
 
+describe('renderSpec — steps that continue a test’s page', () => {
+  test('leave out where the recording began: the first goto, the size then and the opening navigation', () => {
+    const begun = step({ action: 'goto', target: null, value: 'https://x.test/cart', pageUrl: 'https://x.test/cart' });
+    const viewports = [{ step: 0, width: 800, height: 600 }];
+    const session = { ...buildSession([begun, step({ pageUrl: 'https://x.test/cart' })], 0), viewports };
+    const continued = renderSpec(session, { format: 'body', continuePage: true }).code;
+    expect(continued).not.toContain('goto(');
+    expect(continued).not.toContain('setViewportSize');
+    expect(continued).toContain(`await page.getByRole('button', { name: 'Log in' }).click();`);
+    // Without the option, the recording opens where it began.
+    expect(renderSpec(session, { format: 'body' }).code).toContain(`await page.goto('https://x.test/cart');`);
+    // A page the steps reach later is still waited for, and a later goto still written.
+    const later = buildSession(
+      [
+        begun,
+        step({ pageUrl: 'https://x.test/cart' }),
+        step({ action: 'goto', target: null, value: 'https://x.test/help', pageUrl: 'https://x.test/help' }),
+      ],
+      0,
+    );
+    expect(renderSpec(later, { format: 'body', continuePage: true }).code).toContain(
+      `await page.goto('https://x.test/help');`,
+    );
+  });
+
+  test('without a goto open on nothing either', () => {
+    const session = buildSession([step({ pageUrl: 'https://x.test/cart' })], 0);
+    expect(session.startUrl).toBe('https://x.test/cart');
+    expect(renderSpec(session, { format: 'body', continuePage: true }).code).not.toContain('goto(');
+  });
+});
+
 describe('renderSpec — value escaping', () => {
   test('a multi-line fill value stays on one line as an escaped literal', () => {
     const textarea = target({ role: 'textbox', tagName: 'textarea', accessibleName: 'Notes' });

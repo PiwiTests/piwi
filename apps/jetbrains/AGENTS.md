@@ -185,6 +185,9 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
   and `Ctrl+Alt+Shift+R` (`$default` keymap, the command key on macOS) records, and stops a recording, as
   `Ctrl+Alt+Shift+F` re-runs the failing tests and `Ctrl+Alt+Shift+K` runs the test at the caret: the VS Code
   extension's chords, which no bundled keymap uses.
+  A test paused in a run started here that asks to record from there (`piwi/recordRequested`,
+  `PiwiLsp4jClient.recordRequested`) has its file opened at the paused line and its recording started with no dialog
+  (`PiwiRecordFlow.recordFromTest`: `piwi/record` with the `handoff`), as Record Here's.
   **Record a New Test File…** (also under **New**) creates the spec first, in a config folder; its name dialog says
   why a name is refused (`InputValidatorEx`). A tab closed while `piwi/record` is pending cancels the recording, in a
   balloon. A dialog asks for the start page and the

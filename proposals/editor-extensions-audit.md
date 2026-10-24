@@ -5,7 +5,10 @@ every defect of appendix A are built. Of the larger items, L1 is built (2026-10-
 catalog's specs as they stand with their latest results (`piwi/testItems`), follows a run in progress, and runs tests
 through two run profiles; Piwi's gutter icon gives way to the view's. L2 is built (2026-10-24): the lines of a page or
 a server route no test reaches that changed since the default branch are marked as uncovered changes, by the pull
-request's rule, in both clients, with the coverage marks (`CoverageResult.uncovered`). L3 to L5 remain.
+request's rule, in both clients, with the coverage marks (`CoverageResult.uncovered`). L3 is built (2026-10-24), in
+the part a run's pause carries: **Record here** in Piwi's pause bar, at a breakpoint or at `page.pause()`, records in
+the test's page from there, in both clients ([record-from-the-ide.md](record-from-the-ide.md), part 5, whose status
+lists what of it remains). L4 and L5 remain.
 It covers the IDE plug-in as this repository names it: the **editor extensions**, that is the VS Code extension (`apps/vscode`, published as `piwitests.piwi`),
 the JetBrains plugin (`apps/jetbrains`, `dev.piwitests.piwi`) and the **editor service** they both run
 (`packages/editor`, the language server). The plan in [section 10](#10-a-prioritized-plan) ranks what to build; the

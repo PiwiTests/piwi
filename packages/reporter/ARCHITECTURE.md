@@ -43,7 +43,9 @@ Two **external contracts** beyond the npm API:
   (`internal/capture/api-requests.ts`).
   A headed local run with `PIWI_PAUSE_AT` (the editor's breakpoints) pauses with the
   `__piwiPauseState` page global and posts a locator picked meanwhile to the editor's
-  `PIWI_EDITOR_SEND` address (`internal/capture/pause-at.ts`).
+  `PIWI_EDITOR_SEND` address (`internal/capture/pause-at.ts`). With `PIWI_RECORD_CHANNEL`,
+  **Record here** and `page.pause()` connect to the editor service's local socket and relay
+  the recorder's binding calls over it (`internal/capture/record-handoff.ts`).
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
   unref'd timer (`internal/collect/process-sampler.ts`).
   With server coverage on (`coverage.server`), the capture fixtures keep the
@@ -178,7 +180,8 @@ src/
                 and CDP reads of pages that outlive their test)
                 inspect-on-failure, pick-on-failure (the failure-time overlay),
                 pause-at (the editor's breakpoints: PIWI_PAUSE_AT, the pause bar,
-                a pick posted to PIWI_EDITOR_SEND)
+                a pick posted to PIWI_EDITOR_SEND), record-handoff (Record here:
+                the paused page relayed to the editor's recorder, PIWI_RECORD_CHANNEL)
     config/     env (PIWI_* ↔ options, and the probe and flake-lab variables)
     probe/      probe mode: plan matching, faults, the shared route interception
                 (a matcher over route keys + an action), server-probe signing

@@ -1028,7 +1028,30 @@ export interface RecordParams {
   page?: string | null;
   /** The editor's display language, a BCP 47 tag such as `fr` or `pt-BR`, for the recorder's panel in the browser. */
   language?: string | null;
+  /**
+   * A test paused in a run the editor started that asked to record from there, as `piwi/recordRequested` named it:
+   * the steps are recorded in that test's page, as it stands, and written on a new line above the statement it is
+   * paused before, in `uri` (the hand-off's file). `into` is then `steps`; `line`, `project`, `startUrl` and `page`
+   * are not read. A hand-off the test no longer waits for is refused.
+   */
+  handoff?: string | null;
 }
+
+/**
+ * `piwi/recordRequested` (notification, server to client): a test paused in a run the editor started asks to record
+ * from there (**Record here** in Piwi's pause bar, at a breakpoint or at `page.pause()`). The client starts the
+ * recording as it starts one at the caret, with `piwi/record` naming `handoff`, without asking anything; a hand-off it
+ * does not start within 30 seconds is refused, and the test goes on.
+ */
+export interface RecordRequested {
+  handoff: string;
+  uri: string;
+  /** 0-based line of the statement the test is paused before. */
+  line: number;
+  reason: 'breakpoint' | 'pause';
+}
+
+export const RECORD_REQUESTED_NOTIFICATION = 'piwi/recordRequested';
 
 /**
  * Where the recorded block goes, decided from the file's text when the recording starts. The client writes the block

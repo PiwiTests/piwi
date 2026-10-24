@@ -160,7 +160,9 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   place of the written one, found on the line exactly once, as one workspace edit; none while it records, since the
   next update writes the block again. The
   block is followed through the edits around it; typing inside it pauses the recording (Resume writes it again, Keep my
-  edits stops). Closing the file or the window stops its recording. The notification after Stop says what was
+  edits stops). A test paused in a run started here that asks to record from there (`piwi/recordRequested`) has its
+  file shown at the paused line and its recording started at once (`recordFromTest`: `piwi/record` with the
+  `handoff`, nothing asked), as one at the caret, and the answer's sentence shown. Closing the file or the window stops its recording. The notification after Stop says what was
   written (`recordingSummary`: `Piwi: recorded 6 steps into checkout.spec.ts.`) and, when `piwi/testAt` finds a test
   holding the block's last line, offers **Run** and **Verify ×3** (`RECORDED_ACTIONS`), which run
   `piwi.runTestAtCursor` and `piwi.verifyTestAtCursor` at that line as the block stands when clicked. No CodeLens

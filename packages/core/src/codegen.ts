@@ -71,6 +71,12 @@ export interface CodegenOptions {
    */
   format?: 'file' | 'test' | 'body';
   /**
+   * The steps go on from where a running test left its page (a recording handed over at a paused test): the first
+   * step's `goto`, which only says where the recording began, the size the page had then and the opening navigation
+   * are left out.
+   */
+  continuePage?: boolean;
+  /**
    * In the `test` and `body` formats, the imports a catalog call needs: `comments` (default) writes them first as
    * `// Needs: import …` lines, `none` leaves them out of `code` (they stay in `CodegenResult.imports`).
    */
@@ -858,7 +864,7 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     if (viewport) bodyLines.push(viewportLine(viewport, page));
     stepStarts[pos] = bodyLines.length;
     if (step.action === 'goto') {
-      bodyLines.push(...renderRawStep(step, pos, ctx));
+      if (!(options.continuePage && pos === 0)) bodyLines.push(...renderRawStep(step, pos, ctx));
       sawGoto = true;
       pos++;
       continue;
@@ -881,10 +887,12 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
   }
 
   // The size the steps were recorded at comes first, before the first page opens.
-  const start = viewportAt.get(0);
+  const start = options.continuePage ? undefined : viewportAt.get(0);
   const opening = [
     ...(start ? [viewportLine(start, page)] : []),
-    ...(!sawGoto && session.startUrl ? [`  await ${page}.goto(${quote(urlForCode(session.startUrl, ctx))});`] : []),
+    ...(!sawGoto && !options.continuePage && session.startUrl
+      ? [`  await ${page}.goto(${quote(urlForCode(session.startUrl, ctx))});`]
+      : []),
   ];
   bodyLines.unshift(...opening);
   const bodyOffset = opening.length;

@@ -43,6 +43,7 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
+import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
@@ -146,6 +147,7 @@ import {
   type LauncherFactory,
 } from './recorder/sessions.js';
 import { importInsertion } from './recorder/imports.js';
+import { RecordChannel, type Handoff } from './recorder/handoff.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
@@ -172,6 +174,7 @@ import {
   RECORD_REQUEST,
   RECORDING_COMMAND_REQUEST,
   RECORDING_NOTIFICATION,
+  RECORD_REQUESTED_NOTIFICATION,
   REFRESH_REQUEST,
   REFRESH_RUN_REQUEST,
   RENDER_STEPS_REQUEST,
@@ -217,6 +220,7 @@ import {
   type PageCandidatesParams,
   type PageCandidatesResult,
   type RecordParams,
+  type RecordRequested,
   type RecordResult,
   type RecordingCommandParams,
   type RenderStepsParams,
@@ -287,6 +291,8 @@ const LOOKUP_WAIT_MS = 1_500;
 /** The latest commands that run each test several times whose end the service says, at most. */
 const MAX_REPEATED_COMMANDS = 50;
 const SPEC_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
+/** A `page.pause()` call, on any page expression (`adminPage.pause()`, `this.page.pause()`). */
+const PAGE_PAUSE = /(?<![\w$])(?:this\.)?[\w$]*[pP]age\.pause\(\s*\)/;
 
 export interface ServerOptions {
   /** The environment the connection is read from; the process's by default. */
@@ -1597,6 +1603,25 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const projectOptions =
     options.readProjectOptions ??
     ((configFile: string) => readProjectOptions(configFile, path.join(distDir, 'piwi-use-reporter.cjs')));
+  /**
+   * The record channel every test run the service builds names (`PIWI_RECORD_CHANNEL`): a test paused there asks to
+   * record from where it is, which the client is asked to start (`piwi/recordRequested`). Null until it listens, and
+   * on a machine that refuses the socket.
+   */
+  let recordChannel: RecordChannel | null = null;
+  const recordRequested = (handoff: Handoff) => {
+    if (!contextFor(handoff.file)) {
+      recordChannel?.refuse(handoff.id, `no Playwright config of this editor's workspace holds ${handoff.file}.`);
+      return;
+    }
+    void connection.sendNotification(RECORD_REQUESTED_NOTIFICATION, {
+      handoff: handoff.id,
+      uri: pathToFileURL(handoff.file).href,
+      line: handoff.line - 1,
+      reason: handoff.reason,
+    } satisfies RecordRequested);
+  };
+
   const recordings = new RecordingSessions({
     distDir,
     notify: (update) => void connection.sendNotification(RECORDING_NOTIFICATION, update),
@@ -1970,6 +1995,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     );
     // A checkout or a commit is read within seconds: the latest run and the diagnostics follow the new `HEAD`.
     void watchRepositories();
+    void RecordChannel.open({ onAttach: recordRequested }).then((channel) => {
+      if (stopped) channel?.close();
+      else recordChannel = channel;
+    });
   });
 
   documents.onDidOpen((e) => schedule(e.document, 0));
@@ -2825,6 +2854,27 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     };
   };
 
+  /**
+   * A test run's command with the record channel in its environment, from which a test paused in it records, and
+   * `--headed` when a spec it runs (`uri`, or a location's) holds a `page.pause()` call, where it pauses.
+   */
+  const withRecording = (context: PiwiContext, command: RunCommand, params?: RunTestsArgs): RunCommand => {
+    if (!recordChannel) return command;
+    const specs = new Set<string>();
+    const file = params ? uriToPath(params.uri) : null;
+    const relative = file ? relativeTo(context.root, file) : null;
+    if (file && relative && SPEC_FILE.test(relative)) specs.add(file);
+    for (const location of params?.locations ?? []) {
+      if (isTestLocation(location)) specs.add(path.join(context.root, location.slice(0, location.lastIndexOf(':'))));
+    }
+    const pauses = [...specs].some((spec) => PAGE_PAUSE.test(readText(spec) ?? ''));
+    return {
+      ...command,
+      ...(pauses ? headedCommand(command.command, command.args) : {}),
+      env: { ...command.env, [RECORD_CHANNEL_ENV]: recordChannel.value },
+    };
+  };
+
   /** Whether a location names a spec under the context's folder, as `piwi/testAt` gives it. */
   const specLocation = (context: PiwiContext, location: unknown): location is string => {
     if (!isTestLocation(location)) return false;
@@ -2863,7 +2913,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       env: { ...editorRunEnv(ref), ...coverageRunEnv(params.coverage) },
       ref,
     };
-    if (repeat === null) return withBreakpoints(context, run, params.breakpoints);
+    if (repeat === null) return withRecording(context, withBreakpoints(context, run, params.breakpoints), params);
     repeatedCommands.set(ref, { root: context.root, repeat, target: tests!.join(' ') });
     for (const oldest of repeatedCommands.keys()) {
       if (repeatedCommands.size <= MAX_REPEATED_COMMANDS) break;
@@ -2930,7 +2980,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       env: editorRunEnv(ref),
       ref,
     };
-    return withBreakpoints(context, run, params.breakpoints);
+    return withRecording(context, withBreakpoints(context, run, params.breakpoints));
   });
 
   connection.onRequest(APPLY_PICK_REQUEST, (params: ApplyPickParams): ApplyPickResult => {
@@ -3084,13 +3134,23 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         message: 'No Playwright config holds this file: open the folder of its playwright.config.ts.',
       };
     }
-    return recordings.start(params, {
-      file,
-      text: readText(file) ?? '',
-      configFile,
-      catalog: context.functionCatalog(),
-      preferLocators: suiteLocators(context),
-    });
+    // A recording a test asked for is that test's, in its file.
+    const handoff = params.handoff ? (recordChannel?.take(params.handoff) ?? null) : null;
+    if (handoff && !samePath(handoff.file, file)) {
+      handoff.socket.end(`${JSON.stringify({ type: 'refused', message: 'the editor opened another file.' })}\n`);
+      return { ok: false, message: 'This recording belongs to another file.' };
+    }
+    return recordings.start(
+      params,
+      {
+        file,
+        text: readText(file) ?? '',
+        configFile,
+        catalog: context.functionCatalog(),
+        preferLocators: suiteLocators(context),
+      },
+      handoff,
+    );
   });
 
   connection.onRequest(STOP_RECORDING_REQUEST, async (params: StopRecordingParams) => {
@@ -3189,6 +3249,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     stopped = true;
     runWatch.dispose();
     recordings.dispose();
+    recordChannel?.close();
     desktopJobs.dispose();
     if (refreshTimer) clearInterval(refreshTimer);
     if (retryTimer) clearTimeout(retryTimer);

@@ -1,6 +1,6 @@
 ---
 title: Breakpoints in the browser
-description: "Set a breakpoint in VS Code or a JetBrains IDE and the next test run Piwi starts pauses there in a headed browser, with a bar to resume, step, or pick a locator that replaces the one on that line."
+description: "Set a breakpoint in VS Code or a JetBrains IDE and the next test run Piwi starts pauses there in a headed browser, with a bar to resume, step, pick a locator that replaces the one on that line, or record the steps that come next."
 lang: en-US
 ---
 
@@ -27,6 +27,7 @@ It is not Playwright's inspector, and no debugger attaches: the test waits in th
 | **Resume** (<kbd>Esc</kbd>) | Runs on to the next breakpoint |
 | **Step** | Pauses again before the next locator action or assertion, breakpoint or not |
 | **Pick a locator** | Opens Piwi's [element picker](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs): pick the element, choose stable parents, confirm a ranked locator; the bar comes back after |
+| **Record here** | Records what you do in the page into the editor, above the paused line: [Record from a pause](#record-from-a-pause) |
 | **Finish** | Runs on without pausing again in this test |
 
 The page under the bar stays live: scroll it, open the browser's developer tools, or click through it before you
@@ -47,6 +48,25 @@ pick** once the run uploads.
 The run reaches the editor through the address [Piwi Picker sends to](./editor-recording#send-from-piwi-picker): VS
 Code starts its listener when a run with breakpoints starts, and the JetBrains plugin answers on the IDE's built-in
 server. Nothing is copied to the clipboard.
+
+## Record from a pause
+
+**Record here** hands the paused page to the editor's [recorder](./editor-recording): the steps you take from there
+are written into the file on a new line above the paused statement (the first line of a statement broken over lines),
+on the page expression in scope there, as **Record here** in the editor writes them, but with no `page.goto`: the page
+is where the test left it, signed in and filled in as the test made it. The editor opens the file at that line and
+starts recording without asking anything. Pause and Stop are in the recorder's bar in the page and in the editor; once
+you stop, the pause bar comes back, and **Resume** runs the rest of the test from the page as you left it, which checks
+at once that the new steps fit what follows.
+
+`await page.pause()` in a test does the same without a breakpoint: in a run Piwi starts, it shows Piwi's pause bar there
+in place of Playwright's Inspector, with **Record here** among its buttons, and Piwi adds `--headed` to a run whose
+spec holds a `page.pause()` call. The `page.pause()` line stays, so the next run can record from there again; remove
+it when the test is done. In a run Piwi did not start, and in a headless one, `page.pause()` is Playwright's own.
+
+The test reaches the editor through a socket on your machine that the editor service opens, readable by you only,
+named in the run's environment as `PIWI_RECORD_CHANNEL`. A recording the editor does not start within 30 seconds is
+refused, and the test goes on.
 
 ## The setting
 
@@ -76,7 +96,9 @@ With the setting off, a run started from Piwi ignores the editor's breakpoints.
 - **Every attempt pauses.** With retries, a test pauses again on its retry, and the bar says `attempt 2`.
 - **Each worker pauses its own browser.** When several tests reach a breakpoint, run them with `--workers=1` to pause
   one at a time.
-- Stepping through the test's JavaScript stays with the editor's own debugger and Playwright's.
+- Stepping through the test's JavaScript stays with the editor's own debugger and Playwright's; **Record here** is not
+  offered from a debugger paused in your code, only from Piwi's pause bar.
+- **Record here** records the paused page alone: a tab or a popup it opens is not recorded, as in any recording.
 
 ## Related
 

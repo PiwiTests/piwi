@@ -4,7 +4,9 @@
  * the import lines it needs in the same edit. While it records, the block is tinted, its controls are a CodeLens
  * above it and the recording is in the status bar; its warnings are diagnostics on their lines, which offer, once it
  * stopped, the other locators the recorder verified for their step as quick fixes. The block is followed
- * through the edits around it (`followBlock` in `glue.ts`), and typing inside it pauses the recording.
+ * through the edits around it (`followBlock` in `glue.ts`), and typing inside it pauses the recording. A test paused in
+ * a run started here can ask to record from there (`piwi/recordRequested`): the recording then starts in its file, in
+ * the test's own page, without a question.
  */
 import * as path from 'node:path';
 import * as vscode from 'vscode';
@@ -12,6 +14,7 @@ import { State, type LanguageClient } from 'vscode-languageclient/node';
 import {
   PAGE_CANDIDATES_REQUEST,
   RECORD_REQUEST,
+  RECORD_REQUESTED_NOTIFICATION,
   RECORDING_COMMAND_REQUEST,
   RECORDING_NOTIFICATION,
   STOP_RECORDING_REQUEST,
@@ -22,6 +25,7 @@ import {
   type PiwiCommand,
   type RecordInto,
   type RecordParams,
+  type RecordRequested,
   type RecordResult,
   type RecordingCommandParams,
   type RecordingPlacement,
@@ -669,6 +673,49 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
     begin(document, result.sessionId, result.placement, since);
   };
 
+  /**
+   * A test paused in a run started here asks to record from there: its file is shown at the paused line, and the
+   * recording starts as one at the caret does, in the test's page, with nothing asked. One that cannot start says
+   * why; the test goes on.
+   */
+  const recordFromTest = async (asked: RecordRequested) => {
+    let document: vscode.TextDocument;
+    try {
+      document = await vscode.workspace.openTextDocument(vscode.Uri.parse(asked.uri));
+    } catch (e) {
+      void vscode.window.showWarningMessage(`Piwi: could not open the file to record into: ${(e as Error).message}`);
+      return;
+    }
+    const at = new vscode.Position(asked.line, 0);
+    await vscode.window.showTextDocument(document, { preview: false, selection: new vscode.Range(at, at) });
+    const uri = document.uri.toString();
+    if (opening.has(uri) || runningIn(uri)) {
+      void vscode.window.showInformationMessage('Piwi: this file is being recorded into already.');
+      return;
+    }
+    opening.add(uri);
+    try {
+      const answer = await requestRecord({
+        uri,
+        line: asked.line,
+        character: 0,
+        into: 'steps',
+        handoff: asked.handoff,
+        language: vscode.env.language,
+      });
+      if (!answer) return;
+      const { result, since } = answer;
+      if (!result.ok || !result.sessionId || !result.placement) {
+        void vscode.window.showWarningMessage(`Piwi: ${result.message}`);
+        return;
+      }
+      void vscode.window.showInformationMessage(`Piwi: ${result.message}`);
+      begin(document, result.sessionId, result.placement, since);
+    } finally {
+      opening.delete(uri);
+    }
+  };
+
   const recordHere = async () => {
     const editor = vscode.window.activeTextEditor;
     if (!editor || editor.document.uri.scheme !== 'file') {
@@ -783,6 +830,7 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
       { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
     ),
     lc.onNotification(RECORDING_NOTIFICATION, (update: RecordingUpdate) => receive(update)),
+    lc.onNotification(RECORD_REQUESTED_NOTIFICATION, (asked: RecordRequested) => void recordFromTest(asked)),
     lc.onDidChangeState((e) => {
       if (e.newState !== State.Stopped) return;
       for (const s of running()) {

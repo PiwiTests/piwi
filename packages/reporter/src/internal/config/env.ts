@@ -105,6 +105,9 @@ export const PIWI_ENV_KEYS = {
  *  - `editorSend` is the editor's Send to editor pairing address
  *    (`<url>#<token>`), which a locator picked while paused is posted to with
  *    the line it was picked at.
+ * Beside them, `PIWI_RECORD_CHANNEL` (`@piwitests/core/ide-recorder`) names the
+ * local socket of the editor service that built the command, over which the
+ * pause bar's Record here hands the page to the editor's recorder.
  */
 export const PIWI_LOCAL_DEBUG_ENV = {
   pauseAt: 'PIWI_PAUSE_AT',

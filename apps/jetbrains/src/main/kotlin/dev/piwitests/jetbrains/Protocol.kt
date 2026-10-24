@@ -461,7 +461,9 @@ data class RenderStepsResult(val code: String? = null, val warnings: List<String
  * file at `uri`, from the caret (0-based). `into` is `steps` (lines of the test the caret is in), `test` (a new test at
  * the caret) or `file` (a whole new spec). `project` names the Playwright project whose `use` options the browser
  * gets, `startUrl` the page it opens (a path on the `baseURL`, or a URL), `title` the test's, `page` the expression
- * the steps run on, and `language` the editor's display language (a BCP 47 tag) for the recorder's panel.
+ * the steps run on, and `language` the editor's display language (a BCP 47 tag) for the recorder's panel. `handoff`
+ * names a test paused in a run the editor started that asked to record from there (`piwi/recordRequested`): the steps
+ * are then recorded in that test's page, and written above the statement it is paused before.
  */
 data class RecordParams(
     val uri: String,
@@ -473,7 +475,15 @@ data class RecordParams(
     val title: String? = null,
     val page: String? = null,
     val language: String? = null,
+    val handoff: String? = null,
 )
+
+/**
+ * `piwi/recordRequested`: a test paused in a run the editor started (Piwi's pause bar at a breakpoint or at
+ * `page.pause()`) asks to record from there, in the file at `uri`, before its 0-based `line`; `reason` is
+ * `breakpoint` or `pause`. The plugin starts it with `piwi/record` naming `handoff`, asking nothing.
+ */
+data class RecordRequested(val handoff: String? = null, val uri: String? = null, val line: Int = 0, val reason: String? = null)
 
 /**
  * Where the recorded block goes: its first line (0-based), whether that line is a new one inserted first (otherwise

@@ -225,7 +225,13 @@ describe('pauseHere', () => {
     expect(target.highlight).toHaveBeenCalledOnce();
     expect(hide).toHaveBeenCalledOnce();
     expect(shown).toEqual([
-      { place: 'login.spec.ts:42', attempt: 2, action: 'click', locator: "getByRole('button', { name: 'Pay' })" },
+      {
+        place: 'login.spec.ts:42',
+        attempt: 2,
+        action: 'click',
+        locator: "getByRole('button', { name: 'Pay' })",
+        record: false,
+      },
     ]);
     expect(info.setTimeout.mock.calls[0]).toEqual([0]);
     const rearmed = info.setTimeout.mock.calls[1]![0] as number;
@@ -243,6 +249,15 @@ describe('pauseHere', () => {
     expect(page.waitForFunction.mock.calls.filter((c) => c[0] === pauseAnswered)).toHaveLength(3);
     // The fake page has no picker to answer: the pick yields nothing, and the pause goes on.
     expect(picks).toEqual([]);
+  });
+
+  it('offers Record here when the editor can record, and shows the bar again once the recording ended', async () => {
+    const { page, shown } = fakePausePage(['record', 'resume']);
+    const recorded = vi.fn(async () => {});
+    const choice = await pauseHere(page as never, fakeTestInfo() as never, POINT, PROBE, () => {}, recorded);
+    expect(choice).toBe('resume');
+    expect(recorded).toHaveBeenCalledOnce();
+    expect(shown).toEqual([expect.objectContaining({ record: true }), expect.objectContaining({ record: true })]);
   });
 
   it('resumes when the page breaks, and leaves no timeout when the test had none', async () => {
@@ -308,6 +323,7 @@ describe('breakpoints in the capture fixtures', () => {
       getByTitle: factory,
       locator: factory,
       on: () => {},
+      pause: vi.fn(async () => void clicks.push('playwright pause')),
       evaluate: pausePage.evaluate,
       evaluateHandle: pausePage.evaluateHandle,
       waitForFunction: pausePage.waitForFunction,
@@ -445,6 +461,48 @@ describe('breakpoints in the capture fixtures', () => {
     } finally {
       await editor.close();
     }
+  });
+
+  it('pauses at page.pause() with Piwi’s bar in a run the editor started, with Record here', async () => {
+    process.env.PIWI_RECORD_CHANNEL = `/tmp/piwi-no-such.sock#${'t'.repeat(20)}`;
+    const start = thisLine();
+    const { shown, clicks } = await runWithBreakpoints(
+      () => '',
+      ['step', 'resume'],
+      async (page) => {
+        await page.pause!();
+        await page.getByText!('Pay').click();
+      },
+    );
+    expect(shown).toEqual([
+      expect.objectContaining({ place: `pause-at.spec.ts:${start + 5}`, action: 'page.pause()', record: true }),
+      // Step pauses at the next action.
+      expect.objectContaining({ place: `pause-at.spec.ts:${start + 6}`, action: 'click', record: true }),
+    ]);
+    expect(clicks).toEqual(['click']);
+  });
+
+  it('leaves page.pause() to Playwright in a run no editor started, or a headless one', async () => {
+    delete process.env.PIWI_RECORD_CHANNEL;
+    const unpaired = await runWithBreakpoints(
+      () => '',
+      [],
+      async (page) => {
+        await page.pause!();
+      },
+    );
+    expect(unpaired.shown).toEqual([]);
+    expect(unpaired.clicks).toEqual(['playwright pause']);
+    process.env.PIWI_RECORD_CHANNEL = `/tmp/piwi-no-such.sock#${'t'.repeat(20)}`;
+    const headless = await runWithBreakpoints(
+      () => '',
+      [],
+      async (page) => {
+        await page.pause!();
+      },
+      true,
+    );
+    expect(headless.clicks).toEqual(['playwright pause']);
   });
 
   it('never pauses a headless run, and says why once', async () => {

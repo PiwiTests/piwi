@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { declaredNamesAt, pageCandidates, recordingPlacement } from '../src/recorder/page-candidates';
+import { declaredNamesAt, pageCandidates, placementBefore, recordingPlacement } from '../src/recorder/page-candidates';
 
 const file = (...lines: string[]) => lines.join('\n');
 /** The 0-based line holding `marker` (a comment such as `// here`), for a caret placed on it. */
@@ -659,5 +659,32 @@ describe('recordingPlacement', () => {
       refusal:
         'The cursor is inside a [ opened on line 2 and not closed: close it, or put the cursor after the statement.',
     });
+  });
+});
+
+describe('placementBefore', () => {
+  const text = [
+    "test('pays', async ({ page }) => {",
+    "  await page.goto('/cart');",
+    '  await page',
+    "    .getByRole('button', { name: 'Pay' })",
+    '    .click();',
+    '  await expect(',
+    "    page.getByText('Paid'),",
+    '  ).toBeVisible();',
+    '  await page.pause();',
+    '});',
+  ].join('\n');
+
+  test('goes above the statement a test is paused before, as indented', () => {
+    expect(placementBefore(text, 1)).toEqual({ line: 1, newLine: true, indent: '  ' });
+    expect(placementBefore(text, 8)).toEqual({ line: 8, newLine: true, indent: '  ' });
+  });
+
+  test('goes above the first line of a statement broken over lines', () => {
+    // The click of a chain broken over lines, paused at its call.
+    expect(placementBefore(text, 4)).toEqual({ line: 2, newLine: true, indent: '  ' });
+    // A line inside the brackets of a multi-line `expect(`.
+    expect(placementBefore(text, 6)).toEqual({ line: 5, newLine: true, indent: '  ' });
   });
 });

@@ -15,7 +15,8 @@ clients stay thin and both editors give the same answers.
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
   `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted` and `piwi/commandEnded` notifications, and the
   `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/runEnded`, `piwi/statusChanged`, `piwi/notice`,
-  `piwi/desktopJobChanged`, `piwi/recordingChanged` and `piwi/coverageChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
+  `piwi/desktopJobChanged`, `piwi/recordingChanged`, `piwi/recordRequested` and `piwi/coverageChanged` notifications it
+  sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` as a tree in both editors (the JetBrains IDEs'
   LSP client highlights open files only): each item carries its spec relative to the config, its test, cluster,
   owner, project, duration and whether it is new, and, when one context alone has a run, runs laid over none or
@@ -247,6 +248,21 @@ clients stay thin and both editors give the same answers.
   (`importEdit`): after its last import statement, as `require` declarations after the last one in a file that has
   those and no import statement (`requireForm`), else at its top, placed in the text the service holds, which the
   client makes with the block's write. `piwi/renderSteps` indents the code for the caret's line (`indentBlock`).
+  A test can hand its page to a recording (`recorder/handoff.ts`): the service listens on a local socket (a Unix socket
+  in a new owner-only folder of the temporary directory, a named pipe on Windows), opened once initialized
+  (`RecordChannel.open`), which every test run it builds names in its environment as `PIWI_RECORD_CHANNEL`
+  (`withRecording` in `src/server.ts`, which also adds `--headed` when a spec the run names holds a `page.pause()` call,
+  `PAGE_PAUSE`). A test paused there with Piwi's bar (a breakpoint, or `page.pause()` in a headed run) that asks to
+  record attaches with the channel's token, its file, line and project's `testIdAttribute` and `baseURL`
+  (`@piwitests/core/ide-recorder`, one line of JSON a message); the client hears it as `piwi/recordRequested`, and
+  starts it with `piwi/record` naming the `handoff` (`RecordParams.handoff`), which takes it out of the waiting ones;
+  one not taken in 30 s (`HANDOFF_WAIT_MS`), or whose `piwi/record` is refused, hears why. The session (`attach` in
+  `sessions.ts`) writes the block on a new line above the paused statement (`placementBefore` in
+  `page-candidates.ts`: the line it starts on, a chain broken over lines included), renders it with `continuePage`
+  (no opening `goto`, viewport size, nor first navigation, which only says where the recording began) on the page
+  expression in scope there, with the config's Piwi options when read within 10 s, and drives the test's page through
+  `handoffLauncher`: the test loads the bundle the service names into its page, relays every call of the recorder's
+  binding, which the service's `RecorderHost` answers, and hears the pause and the stop as messages for the recorder.
 
 `npm run editor:build` writes five files to `dist/`, which both clients ship side by side (VS Code in its `dist/`, the
 JetBrains plugin in its `server/`); the service finds the others next to its own bundle, or in `PIWI_EDITOR_DIST`
