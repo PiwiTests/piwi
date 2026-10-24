@@ -471,8 +471,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     { dispose: () => gutterEdits.forEach((t) => clearTimeout(t)) },
   );
   // The coverage the project's tests recorded of the visible files, as whole-line marks at their left edge: the lines
-  // tests ran, the executable lines none runs, and the lines changed since the coverage run. The service's hover says
-  // which tests ran a line. Drawn from the answer each file's `piwi/coverage` gave, then from what
+  // tests ran, the executable lines none runs, and the lines changed since the coverage run; in a file no test reaches,
+  // the lines changed since the default branch. The service's hover says which tests ran a line. Drawn from the answer each file's `piwi/coverage` gave, then from what
   // `piwi/coverageChanged` pushes: an edit moves them there, the service placing the lines.
   const leftMark = (color: string, style: 'solid' | 'dashed', ruler: boolean) =>
     vscode.window.createTextEditorDecorationType({
@@ -487,7 +487,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const coverageRun = leftMark('piwi.coverageRunBorder', 'solid', false);
   const coverageNotRun = leftMark('piwi.coverageNotRunBorder', 'solid', true);
   const coverageChanged = leftMark('piwi.coverageChangedBorder', 'dashed', true);
-  context.subscriptions.push(coverageRun, coverageNotRun, coverageChanged);
+  const uncoveredChange = leftMark('piwi.uncoveredChangeBorder', 'solid', true);
+  context.subscriptions.push(coverageRun, coverageNotRun, coverageChanged, uncoveredChange);
   /** Each file's `piwi/coverage` answer, by URI: the one the service pushes changes against. */
   const coverage = new Map<string, CoverageResult>();
   let coverageShown = context.workspaceState.get<boolean>(COVERAGE_SHOWN, true);
@@ -501,6 +502,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       editor.setDecorations(coverageRun, ranges(marks.run));
       editor.setDecorations(coverageNotRun, ranges(marks.notRun));
       editor.setDecorations(coverageChanged, ranges(marks.changed));
+      editor.setDecorations(uncoveredChange, ranges(marks.uncovered));
     }
   };
   /** Keep a file's coverage answer and draw it; the first one with marks offers the command that hides them. */

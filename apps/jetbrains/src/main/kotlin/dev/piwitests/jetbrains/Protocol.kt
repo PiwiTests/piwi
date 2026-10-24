@@ -106,7 +106,8 @@ data class LineSpan(val start: Int = 0, val end: Int = 0, val tests: Int? = null
  * (recorded on the file as it stands), `mapped` (on a version the repository holds, placed through the diff),
  * `other-version` (on versions the repository lacks: no mark) or `none`. `executed` are the lines tests ran, `notRun`
  * the executable lines none runs, `changed` the lines changed since the coverage run; `label` says so in a few words,
- * null with `none`.
+ * null with `none` unless `uncovered` holds lines: with `none`, the lines changed since the default branch of a file Piwi
+ * can observe and no test reaches, uncovered changes, absent when there are none.
  */
 data class CoverageResult(
     val uri: String? = null,
@@ -119,6 +120,7 @@ data class CoverageResult(
     val executableLines: Int? = null,
     val blob: String? = null,
     val label: String? = null,
+    val uncovered: List<LineSpan>? = null,
 )
 
 /** A line breakpoint of the IDE: the file's URI and its 0-based line. */

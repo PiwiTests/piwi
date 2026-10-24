@@ -26,6 +26,7 @@ class PiwiColorSettingsPage : ColorSettingsPage {
             AttributesDescriptor("Coverage//Lines the tests ran", PiwiCoverageMarks.RUN),
             AttributesDescriptor("Coverage//Lines no test runs", PiwiCoverageMarks.NOT_RUN),
             AttributesDescriptor("Coverage//Lines changed since the coverage run", PiwiCoverageMarks.CHANGED),
+            AttributesDescriptor("Coverage//Uncovered changes, in a file no test reaches", PiwiCoverageMarks.UNCOVERED),
         )
 
     override fun getColorDescriptors(): Array<ColorDescriptor> = ColorDescriptor.EMPTY_ARRAY
@@ -49,7 +50,8 @@ class PiwiColorSettingsPage : ColorSettingsPage {
             "<run>    if (quantity <= 0)</run>\n" +
             "<notrun>        throw new ArgumentException(nameof(quantity));</notrun>\n" +
             "<changed>    return basketId + quantity * 2;</changed>\n" +
-            "}\n"
+            "}\n\n" +
+            "<uncovered>export default defineEventHandler(() => ({ refunded: true }));</uncovered>\n"
 
     override fun getAdditionalHighlightingTagToDescriptorMap(): Map<String, TextAttributesKey> =
         mapOf(
@@ -59,5 +61,6 @@ class PiwiColorSettingsPage : ColorSettingsPage {
             "run" to PiwiCoverageMarks.RUN,
             "notrun" to PiwiCoverageMarks.NOT_RUN,
             "changed" to PiwiCoverageMarks.CHANGED,
+            "uncovered" to PiwiCoverageMarks.UNCOVERED,
         )
 }

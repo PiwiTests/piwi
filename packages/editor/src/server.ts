@@ -90,6 +90,9 @@ import {
 import {
   BlobTexts,
   COVERAGE_MARKS_EXPLAINED,
+  UNCOVERED_EXPLAINED,
+  changedSince,
+  uncoveredFile,
   chooseVersion,
   coverageIndexFor,
   coverageMarks,
@@ -198,6 +201,7 @@ import {
   type CommandStartedParams,
   type CoverageParams,
   type CoverageResult,
+  type LineSpan,
   type DesktopResult,
   type EditorBreakpoint,
   type EditorCredentials,
@@ -1218,9 +1222,34 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return { coverage, marks: await marks };
   };
 
-  /** A document's `piwi/coverage` answer as it stands, computed in full. */
-  const coverageNow = async (uri: string): Promise<CoverageResult> =>
-    coverageResult(uri, (await coverageMarksOf(uri).catch(() => null))?.marks ?? null);
+  /**
+   * The uncovered changes of an application file as it stands, open or saved (`uncoveredFile`): its lines changed
+   * since the change's base (`PiwiContext.atChangeBase`), and what they are in a few words; null when its changes are
+   * not uncovered, or it has none.
+   */
+  const uncoveredOf = async (uri: string): Promise<{ uncovered: LineSpan[]; label: string } | null> => {
+    const target = coverageTarget(uri);
+    if (!target) return null;
+    const { context, file, repoRelative } = target;
+    const coverage = await coverageOfTarget(target).catch(() => null);
+    if (!uncoveredFile(context.codeIndex, context.index, repoRelative, coverage)) return null;
+    const text = readText(file);
+    const base = text === null ? null : await context.atChangeBase(repoRelative);
+    if (text === null || !base) return null;
+    const uncovered = changedSince(base.text, text, repoRelative);
+    const lines = uncovered.reduce((n, span) => n + span.end - span.start + 1, 0);
+    if (!lines) return null;
+    return { uncovered, label: `${plural(lines, 'line')} changed since ${base.branch}, and no test reaches this file` };
+  };
+
+  /** A document's `piwi/coverage` answer as it stands, computed in full: its coverage marks, else its uncovered changes. */
+  const coverageNow = async (uri: string): Promise<CoverageResult> => {
+    const marks = (await coverageMarksOf(uri).catch(() => null))?.marks ?? null;
+    const result = coverageResult(uri, marks);
+    if (result.state !== 'none') return result;
+    const uncovered = await uncoveredOf(uri).catch(() => null);
+    return uncovered ? { ...result, ...uncovered } : result;
+  };
 
   const nextCoverageTurn = (uri: string): number => {
     const turn = (coverageTurns.get(uri) ?? 0) + 1;
@@ -1297,7 +1326,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   /**
    * What the coverage says of a line (0-based): the tests that ran it, that none does, or that it changed since, then
-   * what the marks mean.
+   * what the marks mean; in a file without coverage, that the line is an uncovered change.
    */
   const coverageHover = async (uri: string, line: number): Promise<string | null> => {
     const target = coverageTarget(uri);
@@ -1308,6 +1337,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         )
       : null;
     const marks = found?.marks;
+    if (target && !marks) {
+      const uncovered = await within(
+        uncoveredOf(uri).catch(() => null),
+        null,
+      );
+      const marked = uncovered?.uncovered.some((span) => span.start <= line && line <= span.end);
+      return marked
+        ? `**Piwi** · uncovered change: ${uncovered!.label}. The pull request's change coverage will list it.\n\n${UNCOVERED_EXPLAINED}`
+        : null;
+    }
     if (!target || !found || !marks || (marks.state !== 'exact' && marks.state !== 'mapped')) return null;
     const at = line + 1;
     if (marks.changed.has(at)) {
@@ -1848,6 +1887,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       pollRuns();
     }
     for (const document of documents.all()) schedule(document, 0);
+    // The uncovered changes of a file the client holds marks of are counted from the new base.
+    coverageAgain([...coverageHeld.keys()].filter((uri) => !documents.get(uri)));
   }
 
   /**
@@ -2611,7 +2652,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         },
       ];
     });
-    if (!page) return reachLine || functionLines.length ? { file: reachLine, lines: functionLines } : empty;
+    if (!page) {
+      if (reachLine || functionLines.length) return { file: reachLine, lines: functionLines };
+      // A file no test reaches whose changes the pull request will count as uncovered says so at its top.
+      const uncovered = await within(
+        uncoveredOf(params.uri).catch(() => null),
+        null,
+      );
+      return uncovered ? { file: { line: 0, title: `Uncovered changes: ${uncovered.label}` }, lines: [] } : empty;
+    }
     const pageLine: SummaryLine = {
       line: 0,
       title: [

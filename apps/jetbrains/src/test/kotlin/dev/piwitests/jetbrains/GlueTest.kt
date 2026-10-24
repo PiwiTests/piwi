@@ -1442,6 +1442,32 @@ class GlueTest {
     }
 
     @Test
+    fun `the uncovered changes of a file no test reaches are marks of their own, with what they mean`() {
+        val uncovered = CoverageResult(
+            uri = "file:///w/server/api/refunds.post.ts",
+            state = "none",
+            label = "3 lines changed since main, and no test reaches this file",
+            uncovered = listOf(LineSpan(0, 0), LineSpan(2, 30)),
+        )
+        assertEquals(true, Glue.hasCoverageMarks(uncovered))
+        val tooltip = "Piwi: uncovered change: 3 lines changed since main, and no test reaches this file"
+        val marks = Glue.coverageMarks(uncovered, 10, shown = true)
+        assertEquals(
+            listOf(
+                Glue.CoverageMark(Glue.CoverageKind.UNCOVERED, 0, 0, tooltip),
+                Glue.CoverageMark(Glue.CoverageKind.UNCOVERED, 2, 9, tooltip),
+            ),
+            marks,
+        )
+        assertEquals(
+            "<html>$tooltip<br>The orange bar at the left of a line: it changed since the default branch, and no test " +
+                "reaches this file.</html>",
+            Glue.coverageMarkTooltip(marks[0]),
+        )
+        assertEquals(emptyList<Glue.CoverageMark>(), Glue.coverageMarks(uncovered, 10, shown = false))
+    }
+
+    @Test
     fun `a new coverage answer takes off and draws only the marks that changed`() {
         val drawn = Glue.coverageMarks(mappedCoverage, 20, shown = true).toSet()
         val next = mappedCoverage.copy(executed = listOf(LineSpan(8, 9, 2), LineSpan(17, 30, 3)), notRun = listOf(LineSpan(12, 12)))

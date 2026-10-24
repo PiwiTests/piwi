@@ -55,7 +55,8 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   ran in `piwi.coverageRunBorder`, the executable lines none runs in `piwi.coverageNotRunBorder`, both defaulting to
   the dashboard's colors (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`, checked by
   `apps/application/tests/unit/coverage-mark-colors.test.ts`), and the lines changed since the coverage run dashed in
-  `piwi.coverageChangedBorder`; the last two also in the overview ruler. `piwi/coverageChanged` replaces a file's
+  `piwi.coverageChangedBorder`; in a file no test reaches, its uncovered changes (`CoverageResult.uncovered`) in
+  `piwi.uncoveredChangeBorder`; all but the lines run also in the overview ruler. `piwi/coverageChanged` replaces a file's
   answer and draws it again with its lenses; an edit asks nothing, the service pushes the marks it placed. The
   service's hover names the tests behind a line and ends on what the marks mean (VS Code has no hover on a
   decoration's border). **Piwi: Toggle the coverage marks** (`piwi.toggleCoverage`, kept in `workspaceState` as

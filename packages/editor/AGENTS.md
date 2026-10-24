@@ -178,6 +178,16 @@ clients stay thin and both editors give the same answers.
   `PIWI_COVERAGE_SERVER=lines`, so the run records the lines again; on a browser file, `coverage: 'browser'`, turned
   into `PIWI_COVERAGE_BROWSER=functions`. The hover of a line names the tests that ran it, or
   says that none runs it or that it changed since the coverage run.
+  A file without coverage marks may have uncovered changes (`CoverageResult.uncovered`, `uncoveredOf` in
+  `src/server.ts`), by the rule the pull request's change coverage reads (`uncoveredFile` in `src/coverage.ts`): Piwi
+  can observe it (a page by the file-routing convention while the locator index knows the pages tests visit, a server
+  route while the code index maps routes to tests, or executable lines a run's coverage recorded) and no test reaches
+  it (code reach and routes, the coverage's tests, a test acting on its page); never without a code index or with one
+  cut short. Its lines changed since the default branch are marked (`changedSince`: the lines the diff from the file at
+  the merge base of `HEAD` with `origin/<default>`, else `<default>`, adds, blank ones left out:
+  `PiwiContext.atChangeBase`, `mergeBase` in `src/workspace.ts`, read once per `HEAD`, each file once per base), with
+  `label` saying so, the file's top line in `piwi/fileSummary` (`Uncovered changes: …`, no command) and the hover of a
+  marked line (`UNCOVERED_EXPLAINED`). A move of `HEAD` computes them again.
 - `src/analysis.ts` is the pure half: locators per line, stability findings, replacements, breaks of an unsaved
   change and their call-site edits, and where completion offers the suite's locator chains (`locatorCompletionSite`):
   after `page.`, `this.page.` or another page expression `pageCandidates` offers on the cursor's line (`adminPage.`,

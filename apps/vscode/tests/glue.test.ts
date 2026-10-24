@@ -532,13 +532,14 @@ describe('the coverage marks of a file', () => {
       ],
       notRun: [{ start: 11, end: 11 }],
       changed: [{ start: 13, end: 13 }],
+      uncovered: [],
     });
     // Lines past the end of the file as it stands now are not drawn.
     expect(coverageDecorations(mapped, 10, true).run).toEqual([{ start: 8, end: 9 }]);
   });
 
   test('are none while hidden, and none for a file whose coverage marks no line', () => {
-    const none = { run: [], notRun: [], changed: [] };
+    const none = { run: [], notRun: [], changed: [], uncovered: [] };
     expect(coverageDecorations(mapped, 20, false)).toEqual(none);
     expect(coverageDecorations(null, 20, true)).toEqual(none);
     const other = { ...mapped, state: 'other-version' as const, executed: [], notRun: [], changed: [], blob: null };
@@ -546,6 +547,36 @@ describe('the coverage marks of a file', () => {
     expect(hasCoverageMarks(mapped)).toBe(true);
     expect(hasCoverageMarks(other)).toBe(false);
     expect(hasCoverageMarks({ ...other, state: 'none' })).toBe(false);
+  });
+
+  test('are the uncovered changes of a file no test reaches', () => {
+    const uncovered: CoverageResult = {
+      ...mapped,
+      state: 'none',
+      executed: [],
+      notRun: [],
+      changed: [],
+      tests: 0,
+      executedLines: 0,
+      executableLines: null,
+      blob: null,
+      label: '3 lines changed since main, and no test reaches this file',
+      uncovered: [
+        { start: 0, end: 0 },
+        { start: 2, end: 30 },
+      ],
+    };
+    expect(hasCoverageMarks(uncovered)).toBe(true);
+    expect(coverageDecorations(uncovered, 10, true)).toEqual({
+      run: [],
+      notRun: [],
+      changed: [],
+      uncovered: [
+        { start: 0, end: 0 },
+        { start: 2, end: 9 },
+      ],
+    });
+    expect(coverageDecorations(uncovered, 10, false).uncovered).toEqual([]);
   });
 
   test('are read in C# files too', () => {

@@ -241,9 +241,17 @@ export interface CoverageResult {
   blob: string | null;
   /**
    * The marks in a few words, for a tooltip: `41 of 63 lines run by 6 tests · 3 lines changed since the coverage run`,
-   * `6 tests ran another version of this file`; null with `none`.
+   * `6 tests ran another version of this file`, or with `uncovered`, `12 lines changed since main, and no test reaches
+   * this file`; null with `none` otherwise.
    */
   label: string | null;
+  /**
+   * Uncovered changes, with `none`: the lines changed since the project's default branch (since the merge base of
+   * `HEAD` with it, as a pull request into it counts them) of a file Piwi can observe (a page or a server route by the
+   * file-routing convention, or executable lines a run's coverage recorded) and no test reaches, which the pull
+   * request's change coverage will list; blank lines left out. Absent when there are none, and from an older service.
+   */
+  uncovered?: LineSpan[];
 }
 
 export const COVERAGE_REQUEST = 'piwi/coverage';

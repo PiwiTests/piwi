@@ -760,6 +760,16 @@
         }
       },
       {
+        "id": "piwi.uncoveredChangeBorder",
+        "description": "The mark at the left of a line changed since the default branch, in a file no test reaches: an uncovered change, which the pull request's change coverage lists.",
+        "defaults": {
+          "dark": "#f0883e",
+          "light": "#bc4c00",
+          "highContrast": "#ffa657",
+          "highContrastLight": "#953800"
+        }
+      },
+      {
         "id": "piwi.recordingBlockBackground",
         "description": "The background of the block a recording writes, while it records.",
         "defaults": {

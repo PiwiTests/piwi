@@ -56,9 +56,10 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
 - `PiwiCoverageMarks.kt` draws `piwi/coverage` on each open file the service reads (C# among them, for Rider), asked
   when the file opens and again after each `piwi/statusChanged`: range highlighters on the document's markup model
   (`DocumentMarkupModel`), one per span of `Glue.coverageMarks`, with a `LineMarkerRendererEx` painting a bar at the
-  left of the gutter in the error stripe color of `PIWI_COVERAGE_RUN`, `PIWI_COVERAGE_NOT_RUN` or, dashed,
-  `PIWI_COVERAGE_CHANGED` (**Coverage** in `PiwiColorSettingsPage.kt`, no background by default), which marks the
-  scroll bar too. The run and not-run defaults are the dashboard's (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`,
+  left of the gutter in the error stripe color of `PIWI_COVERAGE_RUN`, `PIWI_COVERAGE_NOT_RUN`, dashed
+  `PIWI_COVERAGE_CHANGED`, or, for the uncovered changes of a file no test reaches (`CoverageResult.uncovered`,
+  `Glue.CoverageKind.UNCOVERED`, its tooltip ending on `Glue.UNCOVERED_EXPLAINED`), `PIWI_UNCOVERED_CHANGE`
+  (**Coverage** in `PiwiColorSettingsPage.kt`, no background by default), which marks the scroll bar too. The run and not-run defaults are the dashboard's (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`,
   checked by `apps/application/tests/unit/coverage-mark-colors.test.ts`). The bar is also an `ActiveGutterRenderer`:
   hovered, it and the scroll bar mark show `Glue.coverageMarkTooltip`, what the lines are and what the marks mean;
   clicked, the same as a hint. The highlighters follow the edits; `piwi/coverageChanged`

@@ -18,6 +18,7 @@ import type { LocatorIndex } from '@piwitests/core/locator-index';
 import { PiwiContext } from '../src/context';
 import {
   BlobTexts,
+  changedSince,
   chooseVersion,
   coverageIndexFor,
   coverageMarks,
@@ -26,6 +27,8 @@ import {
   gitBlobId,
   mayHaveCoverage,
   textBlobIds,
+  uncoveredFile,
+  UNCOVERED_EXPLAINED,
 } from '../src/coverage';
 import type { CodeIndex, FileCoverage } from '../src/piwi-client';
 import { startServer } from '../src/server';
@@ -490,6 +493,70 @@ describe('the version the marks come from', () => {
   });
 });
 
+describe('uncovered changes', () => {
+  const route = 'server/api/refunds.post.ts';
+  const page = 'app/pages/refunds.vue';
+  const routes: CodeIndex = {
+    ...CODE_INDEX,
+    files: ['server/api/orders.get.ts'],
+    reach: [{ file: 0, tests: [0], origin: 'server', via: 'route' }],
+  };
+  const withPages: LocatorIndex = { ...INDEX, pages: ['/checkout'] };
+
+  test('are those of a page or a server route Piwi can observe that no test reaches', () => {
+    expect(uncoveredFile(routes, INDEX, route, null)).toBe(true);
+    expect(uncoveredFile(CODE_INDEX, withPages, page, null)).toBe(true);
+    // Without the data to observe it: no route mapped to a test, no page tests visit.
+    expect(
+      uncoveredFile({ ...CODE_INDEX, reach: CODE_INDEX.reach.filter((r) => r.via !== 'route') }, INDEX, route, null),
+    ).toBe(false);
+    expect(uncoveredFile(CODE_INDEX, INDEX, page, null)).toBe(false);
+    // A file no convention maps, unless a run's coverage recorded its executable lines.
+    expect(uncoveredFile(CODE_INDEX, INDEX, 'src/util.ts', null)).toBe(false);
+    const executable: FileCoverage = {
+      file: 'src/util.ts',
+      branch: 'main',
+      fragments: [],
+      tests: [],
+      executable: [{ path: 'src/util.ts', runtime: 'server', blob: 'a'.repeat(40), lines: [[1, 2]] }],
+    };
+    expect(uncoveredFile(CODE_INDEX, INDEX, 'src/util.ts', executable)).toBe(true);
+  });
+
+  test('are none for a file a test reaches, or when the code index cannot say', () => {
+    expect(uncoveredFile(CODE_INDEX, INDEX, BASKET_FILE, null)).toBe(false);
+    expect(uncoveredFile(null, INDEX, route, null)).toBe(false);
+    expect(uncoveredFile({ ...routes, truncated: true }, INDEX, route, null)).toBe(false);
+    const visited: LocatorIndex = {
+      ...withPages,
+      pages: ['/refunds'],
+      locators: [
+        {
+          locator: "getByRole('button')",
+          lastSeenAt: '',
+          uses: [
+            { test: 0, actions: ['click'], callSites: ['tests/a.spec.ts:3:1'], projects: [], branches: [], pages: [0] },
+          ],
+        },
+      ],
+    };
+    expect(uncoveredFile(CODE_INDEX, visited, page, null)).toBe(false);
+  });
+
+  test('count the lines a change adds, blank ones left out, and every line of a file the base lacks', () => {
+    const before = 'a\nb\nc\n';
+    expect(changedSince(before, 'a\nb2\n\nc\nd\n', 'x.ts')).toEqual([
+      { start: 1, end: 1 },
+      { start: 4, end: 4 },
+    ]);
+    expect(changedSince(before, before, 'x.ts')).toEqual([]);
+    expect(changedSince(null, 'a\n\nb\nc\n', 'x.ts')).toEqual([
+      { start: 0, end: 0 },
+      { start: 2, end: 3 },
+    ]);
+  });
+});
+
 describe('the marks of a version', () => {
   test('recorded by function count the lines of the functions that ran', () => {
     const text = Array.from({ length: 12 }, (_, i) => `line ${i + 1}`).join('\n');
@@ -672,6 +739,43 @@ describe('coverage in the editor', () => {
     expect(coverageAsks.filter((a) => a.file === UNREACHED_FILE)).toEqual([]);
     // A test file has no coverage marks.
     expect(await coverageOf(client, 'tests/basket.spec.ts')).toMatchObject({ state: 'none' });
+  });
+
+  test('a server route no test reaches marks its lines changed since the default branch as uncovered changes', async () => {
+    const refunds = 'server/api/refunds.post.ts';
+    const text = 'export default defineEventHandler(() => {\n\n  return { ok: true };\n});\n';
+    fs.mkdirSync(path.join(dir, 'server/api'), { recursive: true });
+    fs.writeFileSync(path.join(dir, refunds), text);
+    await open(client, refunds, text);
+    const label = '3 lines changed since main, and no test reaches this file';
+    expect(await coverageOf(client, refunds)).toMatchObject({
+      state: 'none',
+      executed: [],
+      uncovered: [
+        { start: 0, end: 0 },
+        { start: 2, end: 3 },
+      ],
+      label,
+    });
+    expect(await hover(refunds, 2)).toBe(
+      `**Piwi** · uncovered change: ${label}. The pull request's change coverage will list it.\n\n${UNCOVERED_EXPLAINED}`,
+    );
+    expect(await hover(refunds, 1)).toBe('');
+    expect(await client.sendRequest('piwi/fileSummary', { uri: uri(refunds) })).toEqual({
+      file: { line: 0, title: `Uncovered changes: ${label}` },
+      lines: [],
+    });
+    expect(coverageAsks.filter((a) => a.file === refunds)).toEqual([]);
+
+    // Committed on the default branch, nothing of it changed since: the marks go.
+    pushed.length = 0;
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], { cwd: dir });
+    git('add', refunds);
+    git('commit', '-q', '-m', 'refunds');
+    const cleared = await waitFor(() => pushed.find((p) => p.uri === uri(refunds)), 10_000);
+    expect(cleared.uncovered).toBeUndefined();
+    expect(cleared.label).toBeNull();
   });
 
   test('is asked again with its ETag on a refresh: an unchanged answer pushes nothing, a new one its marks', async () => {

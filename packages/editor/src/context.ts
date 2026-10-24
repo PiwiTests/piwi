@@ -43,6 +43,7 @@ import {
   committedTextAt,
   currentBranch,
   headCommit,
+  mergeBase,
   reporterVersion,
   repositoryRoot,
   translationValues,
@@ -483,6 +484,13 @@ export class PiwiContext {
     head: null,
   };
   private head: string | null = null;
+  /** Where the checked-out branch's changes start, read once per `HEAD` and default branch, and the files there. */
+  private base: {
+    head: string | null;
+    branch: string;
+    commit: Promise<string | null>;
+    texts: Map<string, Promise<string | null>>;
+  } | null = null;
 
   constructor(
     /** The Playwright config's directory: call sites resolve against it. */
@@ -1019,6 +1027,26 @@ export class PiwiContext {
     this.head = await headCommit(this.repoRoot);
     this.committedFiles = new Map();
     this.translations = { head: this.head };
+  }
+
+  /**
+   * A file (repository-relative) where the checked-out branch's changes start, as a pull request into the project's
+   * default branch counts them: at the merge base of `HEAD` with that branch (`mergeBase`), its text there, null for a
+   * file the base lacks. Null without a default branch or a merge base. The base is read once per `HEAD`, each file
+   * once per base.
+   */
+  async atChangeBase(repoRelative: string): Promise<{ branch: string; text: string | null } | null> {
+    const branch = this.index?.defaultBranch;
+    if (!branch) return null;
+    if (!this.base || this.base.head !== this.head || this.base.branch !== branch) {
+      this.base = { head: this.head, branch, commit: mergeBase(this.repoRoot, branch), texts: new Map() };
+    }
+    const base = this.base;
+    const commit = await base.commit;
+    if (!commit) return null;
+    if (!base.texts.has(repoRelative))
+      base.texts.set(repoRelative, committedTextAt(this.repoRoot, commit, repoRelative));
+    return { branch, text: await base.texts.get(repoRelative)! };
   }
 
   /** A file as `HEAD` holds it (repository-relative), cached until `HEAD` moves. */

@@ -583,11 +583,13 @@ export interface CoverageDecorations {
   run: LineSpan[];
   notRun: LineSpan[];
   changed: LineSpan[];
+  /** The lines changed since the default branch of a file no test reaches: uncovered changes. */
+  uncovered: LineSpan[];
 }
 
 /**
  * The marks to draw for a file's `piwi/coverage` answer, within its `lineCount` lines: none while they are hidden, and
- * none for a file without line coverage.
+ * none for a file with neither line coverage nor uncovered changes.
  */
 export function coverageDecorations(
   result: CoverageResult | null | undefined,
@@ -598,13 +600,21 @@ export function coverageDecorations(
     (spans ?? [])
       .filter((s) => s.start >= 0 && s.start < lineCount && s.end >= s.start)
       .map((s) => ({ start: s.start, end: Math.min(s.end, lineCount - 1) }));
-  if (!shown || !result || !hasCoverageMarks(result)) return { run: [], notRun: [], changed: [] };
-  return { run: within(result.executed), notRun: within(result.notRun), changed: within(result.changed) };
+  if (!shown || !result || !hasCoverageMarks(result)) return { run: [], notRun: [], changed: [], uncovered: [] };
+  return {
+    run: within(result.executed),
+    notRun: within(result.notRun),
+    changed: within(result.changed),
+    uncovered: within(result.uncovered),
+  };
 }
 
-/** Whether a `piwi/coverage` answer marks lines: coverage was recorded on the file as it stands, or placed on it. */
+/**
+ * Whether a `piwi/coverage` answer marks lines: coverage was recorded on the file as it stands, or placed on it, or the
+ * file has uncovered changes.
+ */
 export function hasCoverageMarks(result: CoverageResult | null | undefined): boolean {
-  return result?.state === 'exact' || result?.state === 'mapped';
+  return result?.state === 'exact' || result?.state === 'mapped' || !!result?.uncovered?.length;
 }
 
 /** When a run the editor started says what it changed: `piwi.runNotifications`. */
