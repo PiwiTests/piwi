@@ -222,6 +222,7 @@ try {
     extensionTestsEnv: {
       PIWI_DASHBOARD_URL: url,
       PIWI_PROJECT_NAME: 'Acme Mugs',
+      PIWI_API_KEY: 'pd_integration',
       PIWI_DESKTOP_CONFIG: path.join(workspace, 'no-desktop.json'),
       PIWI_TEST_WORKSPACE: workspace,
     },

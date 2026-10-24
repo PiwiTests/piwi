@@ -685,6 +685,20 @@
           "default": "error",
           "markdownDescription": "How a failure of the latest run shows at its line in the editor and the Problems panel. A failure of a run on another branch, such as the default branch's while yours has no run, is a warning at most; one whose line you changed since the run, an information."
         },
+        "piwi.mcpAuthorization": {
+          "type": "string",
+          "scope": "application",
+          "enum": [
+            "key",
+            "sign-in"
+          ],
+          "enumDescriptions": [
+            "The agent uses the editor's API key, with your role and project access.",
+            "The agent signs in through the instance's OAuth, the first time it connects, for a token of its own that you can revoke in Settings → Account → API keys."
+          ],
+          "default": "key",
+          "markdownDescription": "How the editor's agent signs in to Piwi's MCP server, as the extension provides it and as **Piwi: Copy the MCP server configuration** writes it. The desktop app's server takes its own token either way."
+        },
         "piwi.testExplorer": {
           "type": "boolean",
           "default": true,

@@ -361,7 +361,9 @@ needs the extension's sources, and a change to the recorder there changes what t
   translation values; the files at a run's commit stay), reads their latest run again, published when it changed, and
   analyzes the open documents again, against the new `HEAD`; the refresh timer and the poll are not moved. A context that
   changes instance forgets everything read from the other one. The reporter keeps its own order. The API key never leaves the process except in `X-API-Key`, and in the MCP server definition `piwi/mcp` hands the
-  client for its agent.
+  client for its agent while the credentials' `mcpAuthorization` is `key` (the default); with `sign-in` an instance's
+  definition carries no header and the agent signs in through the instance's OAuth (`authorization` says which), while
+  the desktop app's keeps its token.
 - Nothing from the workspace is sent to the instance but file paths it already stores.
 
 ## Workflow

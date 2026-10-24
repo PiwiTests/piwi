@@ -50,6 +50,9 @@ action is under **Tools → Piwi**:
 - **The severity of a failure**: **Settings → Tools → Piwi → Runs** chooses it
   ([CI failures in the Problems panel](./editor-failures#ci-failures-in-the-problems-panel)); an information shows as a
   weak warning.
+- **Piwi's MCP server for the agent**: **Settings → Tools → Piwi → AI Assistant** chooses whether the copied
+  configuration holds the IDE's key or has the agent sign in through the browser
+  ([Piwi's MCP server for the agent](./editors#piwi-s-mcp-server-for-the-agent)).
 - **[Open in IDE](./ide-integration#jetbrains-ides-the-piwi-plugin)**: a path clicked in the dashboard or the desktop
   app opens at its line, with nothing to set up.
 

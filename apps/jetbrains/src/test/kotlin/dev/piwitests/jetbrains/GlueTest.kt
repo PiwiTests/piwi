@@ -394,8 +394,8 @@ class GlueTest {
         val json = JsonParser.parseString(
             Glue.mcpConfiguration(
                 listOf(
-                    McpServerDefinition("Piwi (a)", "https://a/mcp", mapOf("Authorization" to "Bearer pd_x")),
-                    McpServerDefinition("Piwi (b)", "http://b/mcp", emptyMap()),
+                    McpServerDefinition("Piwi (a)", "https://a/mcp", mapOf("Authorization" to "Bearer pd_x"), "key"),
+                    McpServerDefinition("Piwi (b)", "http://b/mcp", emptyMap(), "sign-in"),
                 ),
             ),
         ).asJsonObject.getAsJsonObject("mcpServers")
@@ -407,6 +407,18 @@ class GlueTest {
         )
         assertEquals("Bearer pd_x", first.getAsJsonObject("env").get("PIWI_AUTH").asString)
         assertEquals(listOf("-y", "mcp-remote", "http://b/mcp"), json.getAsJsonObject("piwi-2").getAsJsonArray("args").map { it.asString })
+    }
+
+    @Test
+    fun `the copied MCP configuration says whether it holds a key, or that the agent signs in`() {
+        val keyed = McpServerDefinition("Piwi (a)", "https://a/mcp", mapOf("Authorization" to "Bearer pd_x"), "key")
+        val signIn = McpServerDefinition("Piwi (b)", "http://b/mcp", emptyMap(), "sign-in")
+        assertEquals("It holds your API key: keep it out of the repository.", Glue.mcpAuthorizationNote(listOf(keyed, signIn)))
+        assertEquals(
+            "It holds no key: the first time the agent connects, it opens the instance in your browser to sign in.",
+            Glue.mcpAuthorizationNote(listOf(signIn)),
+        )
+        assertEquals("", Glue.mcpAuthorizationNote(listOf(signIn.copy(authorization = "none"))))
     }
 
     @Test

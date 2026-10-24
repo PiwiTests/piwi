@@ -712,6 +712,20 @@ object Glue {
      */
     val FAILURE_SEVERITIES = listOf("error", "warning", "information", "off")
 
+    /**
+     * How the agent signs in to Piwi's MCP server (`EditorCredentials.mcpAuthorization`): `key`, with the IDE's key, or
+     * `sign-in`, through the instance's OAuth, for a token of its own.
+     */
+    val MCP_AUTHORIZATIONS = listOf("key", "sign-in")
+
+    /** What the copied MCP configuration holds, for the person pasting it: the key, or no key and the sign-in. */
+    fun mcpAuthorizationNote(servers: List<McpServerDefinition>): String = when {
+        servers.any { it.authorization == "key" } -> "It holds your API key: keep it out of the repository."
+        servers.any { it.authorization == "sign-in" } ->
+            "It holds no key: the first time the agent connects, it opens the instance in your browser to sign in."
+        else -> ""
+    }
+
     const val OPEN_FAILURES = "Open the Failures"
     const val OPEN_IN_DASHBOARD = "Open in Dashboard"
     const val RERUN_FAILING = "Re-run Failing"

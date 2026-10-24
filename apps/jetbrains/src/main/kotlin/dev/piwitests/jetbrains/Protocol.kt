@@ -435,7 +435,16 @@ data class RunIdResult(val runId: Int? = null)
 /** `piwi/agentContext`: one block about a failure for a coding agent: the failure, its healing and its fix plan. */
 data class AgentContextResult(val text: String? = null)
 
-data class McpServerDefinition(val label: String? = null, val url: String? = null, val headers: Map<String, String>? = null)
+/**
+ * Piwi's MCP server for the agent. `authorization` is how the agent is let in: `key`, by the key in `headers`;
+ * `sign-in`, by the instance's OAuth the first time it connects (no `headers`); `none`, no key and none asked.
+ */
+data class McpServerDefinition(
+    val label: String? = null,
+    val url: String? = null,
+    val headers: Map<String, String>? = null,
+    val authorization: String? = null,
+)
 
 data class McpServersResult(val servers: List<McpServerDefinition>? = null)
 
@@ -593,6 +602,8 @@ data class DesktopResult(val url: String? = null, val projects: List<ProjectRef>
  * per context root, kept on this machine; when sent, a context they leave out reads the ladder. `failureSeverity` is the
  * severity of a failure's diagnostic (`error`, `warning`, `information` or `off`; `error` when null): a run on another
  * branch is a warning at most, and `off` publishes none while the tool window and the gutter still show the failures.
+ * `mcpAuthorization` is how the agent signs in to Piwi's MCP server (`piwi/mcp`): `key`, with the connection's key, or
+ * `sign-in`, through the instance's OAuth; `key` when null.
  */
 data class EditorCredentials(
     val serverUrl: String? = null,
@@ -602,6 +613,7 @@ data class EditorCredentials(
     val desktopProject: String? = null,
     val baselines: Map<String, BaselineChoice>? = null,
     val failureSeverity: String? = null,
+    val mcpAuthorization: String? = null,
 )
 
 /**

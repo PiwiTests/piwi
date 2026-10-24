@@ -34,6 +34,7 @@ import {
   importChange,
   locatorChoices,
   recordInto,
+  mcpAuthorizationNote,
   mcpConfiguration,
   newTestFileName,
   openLink,
@@ -414,20 +415,31 @@ describe('relativeTime', () => {
 });
 
 describe('mcpConfiguration', () => {
-  test('is a VS Code mcp.json with the key in a header', () => {
-    expect(
-      JSON.parse(
-        mcpConfiguration([
-          { label: 'Piwi (a)', url: 'https://a/mcp', headers: { Authorization: 'Bearer pd_x' } },
-          { label: 'Piwi (b)', url: 'http://b/mcp', headers: {} },
-        ]),
-      ),
-    ).toEqual({
+  const keyed = {
+    label: 'Piwi (a)',
+    url: 'https://a/mcp',
+    headers: { Authorization: 'Bearer pd_x' },
+    authorization: 'key' as const,
+  };
+  const signIn = { label: 'Piwi (b)', url: 'http://b/mcp', headers: {}, authorization: 'sign-in' as const };
+
+  test('is a VS Code mcp.json with the key in a header, and none for an agent that signs in', () => {
+    expect(JSON.parse(mcpConfiguration([keyed, signIn]))).toEqual({
       servers: {
         piwi: { type: 'http', url: 'https://a/mcp', headers: { Authorization: 'Bearer pd_x' } },
         'piwi-2': { type: 'http', url: 'http://b/mcp' },
       },
     });
+  });
+
+  test('says whether it holds a key, or that the agent signs in', () => {
+    expect(mcpAuthorizationNote([keyed, signIn])).toBe(
+      'It holds your API key: paste it in your user settings, not in the repository.',
+    );
+    expect(mcpAuthorizationNote([signIn])).toBe(
+      'It holds no key. The first time the agent connects, it opens the instance in your browser to sign in.',
+    );
+    expect(mcpAuthorizationNote([{ ...signIn, authorization: 'none' }])).toBe('');
   });
 });
 

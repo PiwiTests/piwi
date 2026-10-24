@@ -28,9 +28,11 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   API key in `SecretStorage`, hands the connection to the service with `piwi/setCredentials` and as the initialization
   options of each of its starts (`handed`: the client starts the service again after it stops unexpectedly): a change
   of `piwi.serverUrl`, `piwi.project`, `piwi.failureSeverity` (`error`, `warning`, `information`, `off`: the severity
-  of a failure's diagnostic, sent as `failureSeverity`) or a key is handed 250 ms after the last of a burst, and only when the
-  connection differs from the one handed (`handChangedCredentials`), since each one reads everything again; and
-  provides Piwi's MCP server through
+  of a failure's diagnostic, sent as `failureSeverity`), `piwi.mcpAuthorization` (`key`, `sign-in`: how the agent signs
+  in to Piwi's MCP server, an application setting a workspace cannot override, sent as `mcpAuthorization`) or a key is
+  handed 250 ms after the last of a burst, and only when the connection differs from the one handed
+  (`handChangedCredentials`), since each one reads everything again, then the MCP servers are asked again
+  (`mcpServersChanged`); and provides Piwi's MCP server through
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at
   the oldest version `vscode-languageclient` supports, for Cursor and VSCodium).
 - The service's environment follows the editor's proxy settings (`serviceEnvironment` in `src/glue.ts`: `http.proxy`,

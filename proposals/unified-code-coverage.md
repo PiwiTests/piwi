@@ -14,7 +14,8 @@ ids, and the run-level coverage with executable lines). Suspect lines (part 6) a
 context, the fix plan and the failure pages, checked on eShopOnWeb with a planted bug. The editors (part 5, delivery
 PR 8) are built on 2026-10-14: line marks, a lens per function, the tests behind a line on hover, `.cs` files and
 local runs that record server coverage, in VS Code and the JetBrains IDEs, reading `GET /api/projects/:id/coverage`
-(which gained the executable lines and an ETag). So are, from part 4, the MCP tool `get_coverage`, and from part 6 a
+(which gained the executable lines and an ETag); their uncovered changed lines mark followed on 2026-10-24, with
+[`editor-extensions-audit.md`](../adr/editor-extensions-audit.md) (L2). So are, from part 4, the MCP tool `get_coverage`, and from part 6 a
 failure's path against its last pass, a test's path varying with the tests before it (the `order` flaky root cause),
 what quarantining tests leaves uncovered and whether a new test reached its target lines, with the missing-test skill
 checking them (see [`test-coverage-view.md`](../adr/test-coverage-view.md), "Built beyond the plan"). API tests through the

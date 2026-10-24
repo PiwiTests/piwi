@@ -78,6 +78,7 @@ import {
   type RunIdResult,
   type EditorCredentials,
   type FailureSeverity,
+  type McpAuthorization,
   type SetBaselineParams,
   type FileSummary,
   type McpServersResult,
@@ -124,6 +125,8 @@ import {
   type TestDecoration,
   disconnectQuestion,
   filesRedraw,
+  MCP_SIGN_IN,
+  mcpAuthorizationNote,
   mcpConfiguration,
   ownLiveRun,
   refreshingText,
@@ -231,7 +234,8 @@ function failureOf(target: unknown): FailureNode['failure'] | null {
 
 /**
  * The connection saved in the editor: the workspace's instance and project, that instance's key,
- * whether this machine reads the desktop app first, and the severity of a failure's diagnostic.
+ * whether this machine reads the desktop app first, the severity of a failure's diagnostic, and how
+ * the editor's agent signs in to Piwi's MCP server.
  */
 async function credentials(context: vscode.ExtensionContext): Promise<EditorCredentials> {
   const settings = vscode.workspace.getConfiguration('piwi');
@@ -244,6 +248,7 @@ async function credentials(context: vscode.ExtensionContext): Promise<EditorCred
     desktopProject: context.workspaceState.get<string>(DESKTOP_PROJECT) ?? null,
     baselines: context.workspaceState.get<Record<string, BaselineChoice>>(BASELINES) ?? {},
     failureSeverity: settings.get<FailureSeverity>('failureSeverity') ?? 'error',
+    mcpAuthorization: settings.get<McpAuthorization>('mcpAuthorization') ?? 'key',
   };
 }
 
@@ -318,7 +323,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     if (credentialsTimer) clearTimeout(credentialsTimer);
     credentialsTimer = setTimeout(() => {
       credentialsTimer = null;
-      void handChangedCredentials(context, lc);
+      void handChangedCredentials(context, lc).then(() => mcpServersChanged());
     }, CREDENTIALS_WAIT_MS);
   };
   context.subscriptions.push({ dispose: () => credentialsTimer && clearTimeout(credentialsTimer) });
@@ -623,13 +628,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     askCoverage(true);
     void vscode.commands.executeCommand('setContext', 'piwi.active', !!status?.contexts.some((c) => c.connected));
     if (status) void offerDesktop(context, lc, status);
+    await mcpServersChanged();
+  };
+
+  /** Piwi's MCP servers asked again: the editor's agent hears of a change, and the first is offered once. */
+  const mcpServersChanged = async () => {
     const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST).catch(() => null);
     const serialized = JSON.stringify(servers?.servers ?? []);
-    if (serialized !== lastServers) {
-      lastServers = serialized;
-      mcpChanged.fire();
-      if (servers?.servers.length) void offerMcp(context, servers);
-    }
+    if (serialized === lastServers) return;
+    lastServers = serialized;
+    mcpChanged.fire();
+    if (servers?.servers.length) void offerMcp(context, servers);
   };
 
   const failuresView = new FailuresView(
@@ -1128,7 +1137,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       }
       await vscode.env.clipboard.writeText(mcpConfiguration(servers.servers));
       void vscode.window.showInformationMessage(
-        'Piwi: the MCP configuration is on the clipboard. It holds your API key: paste it in your user settings, not in the repository.',
+        `Piwi: the MCP configuration is on the clipboard. ${mcpAuthorizationNote(servers.servers)}`.trimEnd(),
       );
     }),
     vscode.languages.registerCodeLensProvider(
@@ -1156,7 +1165,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (
         e.affectsConfiguration('piwi.serverUrl') ||
         e.affectsConfiguration('piwi.project') ||
-        e.affectsConfiguration('piwi.failureSeverity')
+        e.affectsConfiguration('piwi.failureSeverity') ||
+        e.affectsConfiguration('piwi.mcpAuthorization')
       )
         credentialsChanged();
       if (PROXY_SETTINGS.some((setting) => e.affectsConfiguration(setting))) proxyChanged();
@@ -1363,7 +1373,9 @@ async function offerMcp(context: vscode.ExtensionContext, servers: McpServersRes
   const hasApi = !!(vscode as unknown as { lm?: Partial<McpApi> }).lm?.registerMcpServerDefinitionProvider;
   if (hasApi) {
     void vscode.window.showInformationMessage(
-      "Piwi's MCP server is listed for the editor's agent: it can read your suite's failures, flaky tests and healings.",
+      `Piwi's MCP server is listed for the editor's agent: it can read your suite's failures, flaky tests and healings. ${
+        servers.servers.some((s) => s.authorization === 'sign-in') ? MCP_SIGN_IN : ''
+      }`.trimEnd(),
     );
     return;
   }

@@ -98,6 +98,11 @@ connection it already has. Elsewhere, **Piwi: Copy the MCP server configuration*
 `mcp.json` in VS Code, for the AI Assistant's MCP settings in a JetBrains IDE (an `mcpServers` entry running
 `mcp-remote`). It holds your API key, so paste it into your user settings, not into the repository.
 
+The key carries your whole role, write tools included. For a token of the agent's own, set `piwi.mcpAuthorization`
+to `sign-in` (**Settings → Tools → Piwi → AI Assistant** in a JetBrains IDE): the server comes without a key, and the
+agent [signs in](/features/mcp#authentication) in your browser when it first connects. You revoke that token with
+your API keys. The desktop app keeps its own token.
+
 ## Commands
 
 | Command | What it does |

@@ -1054,7 +1054,9 @@ describe('the Piwi language server', () => {
 
   test('offers Piwi’s MCP server with the connection it has', async () => {
     const mcp = (await client.sendRequest('piwi/mcp')) as McpServersResult;
-    expect(mcp.servers).toEqual([{ label: `Piwi (${new URL(url).host})`, url: `${url}/mcp`, headers: {} }]);
+    expect(mcp.servers).toEqual([
+      { label: `Piwi (${new URL(url).host})`, url: `${url}/mcp`, headers: {}, authorization: 'none' },
+    ]);
   });
 
   test('completes page. with the chains the suite uses on the pages this file’s tests visit', async () => {
@@ -2667,10 +2669,66 @@ describe('the desktop app', () => {
         projects: [{ id: 7, name: 'Acme Mugs' }],
         linked: { id: 7, name: 'Acme Mugs' },
       });
+      // The desktop app's MCP server takes its token, whichever way the agent is set to sign in.
+      await desktopClient.sendNotification('piwi/setCredentials', { mcpAuthorization: 'sign-in' });
+      expect(((await desktopClient.sendRequest('piwi/mcp')) as McpServersResult).servers).toEqual([
+        expect.objectContaining({ headers: { Authorization: 'Bearer pd_desktop' }, authorization: 'key' }),
+      ]);
     } finally {
       fs.rmSync(desktopFile, { force: true });
       stopDesktop();
       desktopClient.dispose();
+    }
+  });
+});
+
+describe('Piwi’s MCP server for the agent', () => {
+  test('carries the connection’s key, or none for the agent to sign in through the instance', async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopAgent = startServer(createConnection(toServer, toClient), {
+      env: {
+        PIWI_DASHBOARD_URL: url,
+        PIWI_PROJECT_NAME: 'Acme Mugs',
+        PIWI_API_KEY: 'pd_agent',
+        PIWI_DESKTOP_CONFIG: '/nonexistent',
+      },
+      debounceMs: 10,
+    });
+    const agentClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    agentClient.listen();
+    try {
+      await agentClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await agentClient.sendNotification('initialized', {});
+      const servers = () => agentClient.sendRequest('piwi/mcp') as Promise<McpServersResult>;
+      const keyed = await waitFor(async () => {
+        const mcp = await servers();
+        return mcp.servers.length ? mcp : undefined;
+      });
+      expect(keyed.servers).toEqual([
+        {
+          label: `Piwi (${new URL(url).host})`,
+          url: `${url}/mcp`,
+          headers: { Authorization: 'Bearer pd_agent' },
+          authorization: 'key',
+        },
+      ]);
+
+      await agentClient.sendNotification('piwi/setCredentials', { mcpAuthorization: 'sign-in' });
+      expect((await servers()).servers).toEqual([
+        { label: `Piwi (${new URL(url).host})`, url: `${url}/mcp`, headers: {}, authorization: 'sign-in' },
+      ]);
+
+      await agentClient.sendNotification('piwi/setCredentials', {});
+      expect((await servers()).servers[0]).toMatchObject({ authorization: 'key' });
+    } finally {
+      stopAgent();
+      agentClient.dispose();
     }
   });
 });

@@ -759,6 +759,18 @@ export function mcpConfiguration(servers: McpServerDefinition[]): string {
   return JSON.stringify({ servers: Object.fromEntries(entries) }, null, 2);
 }
 
+/** How the agent signs in to an instance's MCP server that is handed no key (`piwi.mcpAuthorization`: `sign-in`). */
+export const MCP_SIGN_IN = 'The first time the agent connects, it opens the instance in your browser to sign in.';
+
+/** What the copied MCP configuration holds, for the person pasting it: the key, or no key and the sign-in. */
+export function mcpAuthorizationNote(servers: McpServerDefinition[]): string {
+  if (servers.some((s) => s.authorization === 'key')) {
+    return 'It holds your API key: paste it in your user settings, not in the repository.';
+  }
+  if (servers.some((s) => s.authorization === 'sign-in')) return `It holds no key. ${MCP_SIGN_IN}`;
+  return '';
+}
+
 /**
  * How a desktop job's update shows: a job that ended without a verdict (declined, expired, the app gone, or an
  * error) as a warning, anything else as information, with the share button when the verdict can be shared.

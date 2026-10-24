@@ -259,8 +259,13 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
   (`Glue.apiKeyEntry`): a project's settings, which a repository may commit, never select another instance's key. The
   choice of the desktop app and its project, and a recording's choices, live in `.idea/workspace.xml`
   (`PiwiLocalSettings`, with the failures' grouping, the breakpoints setting, the run notifications, the
-  failure severity and the baselines), on this machine only;
+  failure severity, how the agent signs in to Piwi's MCP server and the baselines), on this machine only;
   choosing the app never touches the instance, its project or its key.
+- **Copy the MCP Server Configuration** (`CopyMcpConfigurationAction`) writes `piwi/mcp`'s servers as `mcpServers`
+  entries running `mcp-remote` (`Glue.mcpConfiguration`), the key in `env`; with `PiwiLocalSettings.mcpAuthorization`
+  at `sign-in` (`Glue.MCP_AUTHORIZATIONS`, the settings page's AI Assistant group, sent in `credentials()`) the service
+  hands an instance's server without a key and `mcp-remote` signs in through the instance's OAuth. The notification
+  says which (`Glue.mcpAuthorizationNote`).
 
 ## Rules
 

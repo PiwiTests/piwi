@@ -390,6 +390,27 @@ const tests = {
     assert.equal(api.coverage(basket.toString()).shown, true);
   },
 
+  async 'the MCP configuration carries the key, or none once the agent is set to sign in'() {
+    const copied = async () => {
+      await vscode.commands.executeCommand('piwi.copyMcpConfiguration');
+      return JSON.parse(await vscode.env.clipboard.readText()).servers.piwi;
+    };
+    assert.deepEqual((await copied()).headers, { Authorization: 'Bearer pd_integration' });
+    const settings = vscode.workspace.getConfiguration('piwi');
+    await settings.update('mcpAuthorization', 'sign-in', vscode.ConfigurationTarget.Global);
+    try {
+      const signIn = await waitFor(async () => {
+        const server = await copied();
+        return server.headers ? null : server;
+      }, 'the configuration without the key');
+      assert.equal(signIn.type, 'http');
+      assert.match(signIn.url, /\/mcp$/);
+    } finally {
+      await settings.update('mcpAuthorization', undefined, vscode.ConfigurationTarget.Global);
+    }
+    await waitFor(async () => (await copied()).headers, 'the key again');
+  },
+
   async 'the commands are registered'() {
     const commands = await vscode.commands.getCommands(true);
     for (const id of [

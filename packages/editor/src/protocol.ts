@@ -441,10 +441,19 @@ export interface EditorCredentials {
    * while `piwi/failures` and `piwi/fileSummary` still give the failures. `error` when absent.
    */
   failureSeverity?: FailureSeverity | null;
+  /**
+   * How the editor's agent signs in to Piwi's MCP server (`piwi/mcp`): `key`, with the connection's key; `sign-in`,
+   * through the instance's own OAuth, for a token of the agent's own that the person consents to in the browser and
+   * can revoke. The desktop app's connection keeps its token either way. `key` when absent.
+   */
+  mcpAuthorization?: McpAuthorization | null;
 }
 
 /** The severity of a failure's diagnostic, as the editor's setting chooses it. */
 export type FailureSeverity = 'error' | 'warning' | 'information' | 'off';
+
+/** How the editor's agent signs in to Piwi's MCP server, as the editor's setting chooses it. */
+export type McpAuthorization = 'key' | 'sign-in';
 
 export const SET_CREDENTIALS_NOTIFICATION = 'piwi/setCredentials';
 
@@ -686,6 +695,11 @@ export interface McpServerDefinition {
   /** The streamable HTTP endpoint. */
   url: string;
   headers: Record<string, string>;
+  /**
+   * How the agent is let in: `key`, by the key in `headers`; `sign-in`, by the instance's OAuth, the first time it
+   * connects (no `headers`); `none`, the connection has no key and the instance asks for none.
+   */
+  authorization: 'key' | 'sign-in' | 'none';
 }
 
 /** `piwi/mcp`: one definition per Piwi instance the workspace is connected to. */

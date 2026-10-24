@@ -3050,6 +3050,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
 
   connection.onRequest(MCP_REQUEST, (): McpServersResult => {
+    const signIn = credentials.mcpAuthorization === 'sign-in';
     const seen = new Set<string>();
     const servers: McpServersResult['servers'] = [];
     for (const c of contexts) {
@@ -3062,10 +3063,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       } catch {
         // keep the URL as given
       }
+      // The desktop app has no sign-in: its MCP server takes the app's token alone.
+      const authorization = !conn.apiKey ? 'none' : signIn && c.source !== 'desktop' ? 'sign-in' : 'key';
       servers.push({
         label: `Piwi (${host})`,
         url: `${conn.serverUrl}/mcp`,
-        headers: conn.apiKey ? { Authorization: `Bearer ${conn.apiKey}` } : {},
+        headers: authorization === 'key' ? { Authorization: `Bearer ${conn.apiKey}` } : {},
+        authorization,
       });
     }
     return { servers };
