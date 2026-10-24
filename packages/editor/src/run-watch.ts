@@ -242,6 +242,8 @@ interface RefWatch {
    * and a run an instance answered without the ref.
    */
   known: Set<number>;
+  /** The runs found carrying the ref: the command's, and its reruns'. */
+  carried: Set<number>;
   /** The command's run found last; null until the first is found, and once the command ended. */
   found: number | null;
   /** Until when the instance is asked for the command's run: two minutes after the command was built. */
@@ -347,6 +349,7 @@ export class RunWatch {
       serverUrl: context.client.connection.serverUrl,
       projectId: context.project.id,
       known: new Set(),
+      carried: new Set(),
       found: null,
       until: Date.now() + OWN_RUN_WATCH_MS,
       timer: null,
@@ -692,9 +695,11 @@ export class RunWatch {
     }
     const tally = this.tallies.get(key);
     this.tallies.delete(key);
+    const ref = this.refOf(context, runId);
     runEnded({
       root: context.root,
       runId,
+      ...(ref ? { ref } : {}),
       url: client.runUrl(runId),
       passed: run.passedTests,
       failed: run.failedTests,
@@ -703,6 +708,15 @@ export class RunWatch {
       ...runVerdict(before, context.failures, runId),
       ...(tally ? { repeat: repeatVerdict(tally.repeat, tally, run) } : {}),
     });
+  }
+
+  /** The ref of the command whose run `runId` is on the context's instance; null when the service keeps none. */
+  private refOf(context: PiwiContext, runId: number): string | null {
+    const serverUrl = context.client?.connection.serverUrl;
+    for (const w of this.watches.values()) {
+      if (w.serverUrl === serverUrl && w.carried.has(runId)) return w.ref;
+    }
+    return null;
   }
 
   /** Ask the instance for the watch's run after a poll's wait: longer while its stream, which announces runs, is up. */
@@ -772,6 +786,7 @@ export class RunWatch {
     if (w.found === run.id || w.known.has(run.id)) return;
     if (w.found !== null) w.known.add(w.found);
     w.found = run.id;
+    w.carried.add(run.id);
     if (w.timer) clearTimeout(w.timer);
     w.timer = null;
     w.context.ownRuns.add(run.id);

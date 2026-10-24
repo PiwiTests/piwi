@@ -685,6 +685,11 @@
           "default": "error",
           "markdownDescription": "How a failure of the latest run shows at its line in the editor and the Problems panel. A failure of a run on another branch, such as the default branch's while yours has no run, is a warning at most; one whose line you changed since the run, an information."
         },
+        "piwi.testExplorer": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "List Piwi's tests in the Testing view: the specs your instance knows, as they stand, each test with its latest result, where and why it failed, and the run in progress as it goes. The Testing view's gutter then shows each test's result in place of Piwi's own icon, and **Run with Piwi** and **Verify ×3 with Piwi** run tests as every other run Piwi starts. Results only: it neither discovers tests nor debugs them."
+        },
         "piwi.trace.server": {
           "type": "string",
           "scope": "window",

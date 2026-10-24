@@ -10,8 +10,10 @@ import type {
   LiveRun,
   RunEnded,
   RunStatusResult,
+  SpecTest,
   StatusResult,
   TestAtResult,
+  TestItemsResult,
 } from '@piwitests/editor/protocol';
 import {
   DOCUMENT_PATTERN,
@@ -60,6 +62,17 @@ import {
   TEST_HOVER_COMMANDS,
   withBaseline,
   writeBlock,
+  SPEC_FILE,
+  failureMessage,
+  liveRunName,
+  resultsKey,
+  resultsRunName,
+  testOutcome,
+  testRunsOf,
+  testTree,
+  treeTests,
+  unfollowedOutcome,
+  withSpec,
   type RecordedBlock,
   type TextChange,
   type TextSpan,
@@ -1646,5 +1659,209 @@ describe('an open link from the dashboard', () => {
 
   test('says which window to open it from when this one holds no such file', () => {
     expect(openLinkMissing('tests/a.spec.ts')).toContain('tests/a.spec.ts');
+  });
+});
+
+describe('the Testing view', () => {
+  const test1 = (over: Partial<SpecTest> = {}): SpecTest => ({
+    title: 'pays',
+    suite: [],
+    line: 2,
+    endLine: 4,
+    location: 'tests/checkout.spec.ts:3',
+    testCaseId: 1,
+    status: 'passed',
+    failure: null,
+    url: 'http://piwi/test-cases/1',
+    ...over,
+  });
+  const answer: TestItemsResult = {
+    contexts: [
+      {
+        root: '/w',
+        label: 'shop',
+        specs: [
+          {
+            uri: 'file:///w/tests/cart/checkout.spec.ts',
+            file: 'tests/cart/checkout.spec.ts',
+            tests: [
+              test1({ title: 'pays', suite: ['cart'], line: 3, location: 'tests/cart/checkout.spec.ts:4' }),
+              test1({
+                title: 'pays',
+                suite: ['cart'],
+                line: 7,
+                endLine: 9,
+                testCaseId: 2,
+                location: 'tests/cart/checkout.spec.ts:8',
+              }),
+              test1({
+                title: 'is new',
+                line: 12,
+                testCaseId: null,
+                status: null,
+                location: 'tests/cart/checkout.spec.ts:13',
+              }),
+            ],
+          },
+          { uri: 'file:///w/tests/rows.spec.ts', file: 'tests/rows.spec.ts', tests: [] },
+        ],
+      },
+    ],
+  };
+
+  test('nests each spec under its folders, and its tests under their describe blocks, told apart by their order', () => {
+    const tree = testTree(answer);
+    expect(tree.map((n) => [n.kind, n.label])).toEqual([['folder', 'tests']]);
+    const tests = tree[0]!;
+    expect(tests.children.map((n) => [n.kind, n.label, n.sortText])).toEqual([
+      ['folder', 'cart', '0cart'],
+      ['spec', 'rows.spec.ts', '1rows.spec.ts'],
+    ]);
+    const spec = tests.children[0]!.children[0]!;
+    expect(spec).toMatchObject({ kind: 'spec', id: 'file:///w/tests/cart/checkout.spec.ts', uri: spec.id });
+    expect(spec.children.map((n) => [n.kind, n.label])).toEqual([
+      ['suite', 'cart'],
+      ['test', 'is new'],
+    ]);
+    const suite = spec.children[0]!;
+    expect(suite.children.map((n) => [n.id, n.range])).toEqual([
+      [`${spec.id}\x1fcart\x1fpays`, { start: 3, end: 4 }],
+      [`${spec.id}\x1fcart\x1fpays\x1f2`, { start: 7, end: 9 }],
+    ]);
+    expect(suite.children[0]!.test).toMatchObject({ root: '/w', uri: spec.id, testCaseId: 1 });
+    expect(treeTests(tree).map((t) => t.location)).toEqual([
+      'tests/cart/checkout.spec.ts:4',
+      'tests/cart/checkout.spec.ts:8',
+      'tests/cart/checkout.spec.ts:13',
+    ]);
+  });
+
+  test('puts each Playwright config at the top when there are several', () => {
+    const two: TestItemsResult = {
+      contexts: [answer.contexts[0]!, { root: '/w/e2e', label: 'e2e', specs: [] }],
+    };
+    expect(testTree(two).map((n) => [n.kind, n.label, n.id])).toEqual([
+      ['config', 'shop', 'config\x1f/w'],
+      ['config', 'e2e', 'config\x1f/w/e2e'],
+    ]);
+  });
+
+  test('shows a flaky test as passed, a failure with why and where, and nothing without a result', () => {
+    expect(testOutcome('flaky', null)).toEqual({ state: 'passed' });
+    expect(testOutcome('skipped', null)).toEqual({ state: 'skipped' });
+    expect(testOutcome('running', null)).toEqual({ state: 'started' });
+    expect(testOutcome('unknown', null)).toBeNull();
+    expect(testOutcome(null, null)).toBeNull();
+    const failure = {
+      line: 6,
+      headline: 'Timed out',
+      message: 'Error: locator.click: Timeout 5000ms exceeded.',
+      executionId: 900,
+      url: 'http://piwi/test-run-cases/900',
+      state: 'failing' as const,
+    };
+    expect(testOutcome('failed', failure)).toEqual({
+      state: 'failed',
+      message: 'Timed out\n\nError: locator.click: Timeout 5000ms exceeded.',
+      line: 6,
+    });
+    expect(failureMessage({ ...failure, message: 'Timed out', state: 'edited' })).toBe(
+      'Timed out\n\nThe line it failed at changed since the run.',
+    );
+    expect(testOutcome('failed', null)).toEqual({ state: 'failed', message: 'Failed', line: null });
+  });
+
+  test('runs the tests by id when Piwi knows them all, else by location, one run per config', () => {
+    const tests = treeTests(testTree(answer));
+    expect(testRunsOf(tests.slice(0, 2))).toEqual([
+      { uri: 'file:///w/tests/cart/checkout.spec.ts', root: '/w', testIds: [1, 2] },
+    ]);
+    expect(testRunsOf(tests)).toEqual([
+      {
+        uri: 'file:///w/tests/cart/checkout.spec.ts',
+        root: '/w',
+        testIds: [],
+        locations: ['tests/cart/checkout.spec.ts:4', 'tests/cart/checkout.spec.ts:8', 'tests/cart/checkout.spec.ts:13'],
+      },
+    ]);
+    expect(testRunsOf(tests.slice(0, 1), 3)).toEqual([
+      {
+        uri: 'file:///w/tests/cart/checkout.spec.ts',
+        root: '/w',
+        testIds: [],
+        locations: ['tests/cart/checkout.spec.ts:4'],
+        repeat: 3,
+      },
+    ]);
+    const other = { ...tests[0]!, root: '/w/e2e', uri: 'file:///w/e2e/a.spec.ts' };
+    expect(testRunsOf([tests[0]!, other]).map((r) => r.root)).toEqual(['/w', '/w/e2e']);
+  });
+
+  test('takes one spec’s own answer in place, and lets a spec the service no longer answers leave', () => {
+    const edited = test1({ title: 'pays', line: 9, location: 'tests/rows.spec.ts:10' });
+    const one: TestItemsResult = {
+      contexts: [
+        {
+          ...answer.contexts[0]!,
+          specs: [{ uri: 'file:///w/tests/rows.spec.ts', file: 'tests/rows.spec.ts', tests: [edited] }],
+        },
+      ],
+    };
+    const merged = withSpec(answer, 'file:///w/tests/rows.spec.ts', one);
+    expect(merged.contexts[0]!.specs.map((s) => [s.file, s.tests.length])).toEqual([
+      ['tests/cart/checkout.spec.ts', 3],
+      ['tests/rows.spec.ts', 1],
+    ]);
+    const gone = withSpec(answer, 'file:///w/tests/rows.spec.ts', { contexts: [] });
+    expect(gone.contexts[0]!.specs.map((s) => s.file)).toEqual(['tests/cart/checkout.spec.ts']);
+    expect(withSpec({ contexts: [] }, 'file:///w/tests/rows.spec.ts', one).contexts[0]!.specs).toHaveLength(1);
+  });
+
+  test('publishes the results again when the run, its baseline or the runs laid over it change, and names them', () => {
+    const runs = (over: Partial<RunStatusResult['contexts'][number]> = {}): RunStatusResult => ({
+      contexts: [
+        {
+          root: '/w',
+          branch: 'main',
+          run: {
+            id: 120,
+            status: 'failed',
+            startTime: '2026-10-01T10:00:00Z',
+            totalTests: 3,
+            passedTests: 2,
+            failedTests: 1,
+            flakyTests: 0,
+            skippedTests: 0,
+            url: 'http://piwi/test-runs/120',
+          },
+          failures: 1,
+          overlays: 0,
+          ...over,
+        },
+      ],
+    });
+    expect(resultsKey(runs())).toBe(resultsKey(runs({ updatedAt: '2026-10-01T11:00:00Z' })));
+    expect(resultsKey(runs())).not.toBe(resultsKey(runs({ overlays: 1 })));
+    expect(resultsKey(runs())).not.toBe(resultsKey(runs({ failures: 0, resolved: 1 })));
+    expect(resultsRunName(runs())).toBe('Piwi: run #120 on main');
+    expect(resultsRunName(null)).toBe('Piwi: the latest runs');
+    expect(liveRunName({ runId: 124, own: true } as LiveRun)).toBe('Piwi: your run #124');
+    expect(liveRunName({ runId: 125, own: false } as LiveRun)).toBe('Piwi: run #125');
+  });
+
+  test('passes a test no run followed when every command exited with 0, and is an error otherwise', () => {
+    expect(unfollowedOutcome([0, 0])).toEqual({ state: 'passed' });
+    expect(unfollowedOutcome([0, 1])).toEqual({
+      state: 'errored',
+      message:
+        'Piwi has no result for this test: the run exited with code 1, and its results did not reach the instance.',
+    });
+    expect(unfollowedOutcome([null])).toMatchObject({ message: expect.stringContaining('the run was stopped') });
+  });
+
+  test('takes a spec by its name, as the service does', () => {
+    expect(
+      ['/w/a.spec.ts', '/w/b.test.mjs', '/w/c.spec.tsx', '/w/d.ts', '/w/.spec.ts'].map((f) => SPEC_FILE.test(f)),
+    ).toEqual([true, true, true, false, false]);
   });
 });

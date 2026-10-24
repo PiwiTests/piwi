@@ -10,7 +10,7 @@ ships and starts over stdio: the VS Code extension and the JetBrains plugin. All
 clients stay thin and both editors give the same answers.
 
 - `src/server.ts` wires the protocol: diagnostics, quick fixes, hover and completion, plus the custom requests of
-  `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
+  `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
   `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/coverage`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
   `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted` and `piwi/commandEnded` notifications, and the
@@ -84,6 +84,13 @@ clients stay thin and both editors give the same answers.
   tests (`casesOf`), which **Run the test at the cursor**, **Verify the test at the cursor ×3** and **Run this spec**
   run; a file that is not a spec under a context's folder answers nulls, and a test Piwi does not know a location
   alone.
+  `piwi/testItems` answers the tests of the workspace's specs for a client's own test tree (VS Code's Testing view):
+  the catalog's specs the workspace holds (`PiwiContext.allCases`, the whole catalog a thousand cases a request, read
+  once per refresh; each stored path found as a run's is, `resolveReportedFile`, under the context whose folder holds
+  it), unless `catalog` is false, and the specs `uris` names (`casesOf`), each test as the spec stands (`testCalls` in
+  `src/analysis.ts`: each `test(…)` call with the titled `test.describe(…)` blocks around it) with the catalog's case of
+  its title in those blocks (`caseOfCall`), its location, its latest result and its failure as `piwi/fileSummary` gives
+  them: both read them from `specTests` in `src/server.ts`.
   A failing test's line also carries `failure`: the line of the test its error's stack goes through (the instance sends
   the frames and the message in `branch-failures`), above which the reason, **Run this test** (`piwi.runTests` with the
   test's id), **Screenshot** and **Trace** are ordinary summary lines; the hover on any line of that stack shows the message and the call chain.
@@ -108,7 +115,8 @@ clients stay thin and both editors give the same answers.
   failed attempt is flaky; a test on several projects shows the first of running, failed, flaky, passed, skipped),
   which `piwi/fileSummary` gives their line as `status` and `piwi/runStatus` as `liveTests`, so the clients draw the
   files again. Once a run of the editor's own ended and its context read the latest run, `piwi/runEnded` says once what
-  it changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after): its counts, the tests
+  it changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after), with the ref of the command
+  that started it while the service keeps it (`RefWatch.carried`): its counts, the tests
   failing before that it passed (`fixed`), failed again (`stillFailing`: failing before in another run, or not new on
   the instance's word) or failed new (`newFailures`). `piwi/refreshRun` reads the runs alone, not the indexes
   `piwi/refresh` reads.

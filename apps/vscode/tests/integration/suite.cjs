@@ -96,6 +96,28 @@ const tests = {
     }
   },
 
+  async 'the Testing view lists the tests Piwi knows, with their latest result'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts')).toString();
+    const shown = await waitFor(() => {
+      const tests = (api.testExplorer() ?? []).filter((t) => t.uri === spec);
+      return tests.some((t) => t.result) ? tests : null;
+    }, 'the Testing view’s tests of checkout.spec.ts');
+    assert.deepEqual(
+      shown.map((t) => [t.label, t.line, t.result?.state]),
+      [['pays', 2, 'passed']],
+    );
+  },
+
+  async 'the Testing view runs a test with the command Piwi builds, as the editor’s own run'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    await vscode.commands.executeCommand('testing.runAll');
+    const run = await waitFor(() => api.lastRun(), 'the run the Testing view started');
+    assert.equal(run.command, 'npx playwright test tests/checkout.spec.ts:3');
+    assert.match(run.ref, /^ed-[0-9a-f]{8}$/);
+    assert.equal(run.env.PIWI_ORIGIN_REF, run.ref);
+  },
+
   async 'hover shows the failure'() {
     const hovers = await vscode.commands.executeCommand(
       'vscode.executeHoverProvider',

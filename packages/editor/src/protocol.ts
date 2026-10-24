@@ -144,6 +144,59 @@ export interface TestAtResult {
 
 export const TEST_AT_REQUEST = 'piwi/testAt';
 
+/**
+ * `piwi/testItems`: the tests of the workspace's specs as they stand, each with its latest result, for a client's own
+ * test tree (VS Code's Testing view): the specs of each connected context's catalog that the workspace holds, each
+ * under the context whose folder holds it, and the specs `uris` names under a context's folder, known to the catalog
+ * or not.
+ */
+export interface TestItemsParams {
+  uris?: string[];
+  /** Whether the catalog's specs are answered; true when absent. False answers the specs `uris` names alone. */
+  catalog?: boolean;
+}
+
+/** A test of a spec as it stands. */
+export interface SpecTest {
+  title: string;
+  /** The titles of the `test.describe(…)` blocks around it, outermost first. */
+  suite: string[];
+  /** 0-based lines its `test(…)` call starts and ends on, in the text as it stands. */
+  line: number;
+  endLine: number;
+  /** Where its call starts, as Playwright's location filter takes it (`TestAtResult.location`, `RunTestsArgs.locations`). */
+  location: string;
+  /** The catalog's test of that title in those describe blocks; null for a test Piwi does not know. */
+  testCaseId: number | null;
+  /** Its latest result, as the summary's line of the test gives it (`SummaryLine.status`); null for a test Piwi does not know. */
+  status: TestLineStatus | null;
+  /** Where and why it failed in the latest run the service reads (`SummaryLine.failure`); null otherwise. */
+  failure: TestFailure | null;
+  /** Its page in the dashboard; null for a test Piwi does not know. */
+  url: string | null;
+}
+
+/** The tests of one spec. */
+export interface SpecTests {
+  uri: string;
+  /** The spec relative to its Playwright config's folder. */
+  file: string;
+  tests: SpecTest[];
+}
+
+export interface TestItemsResult {
+  /** One per context holding one of the specs, in the contexts' order. */
+  contexts: Array<{
+    /** The Playwright config's folder, as `RunTestsArgs.root` names it. */
+    root: string;
+    /** The config as `piwi/status` names it (`StatusResult.contexts[].label`). */
+    label: string;
+    specs: SpecTests[];
+  }>;
+}
+
+export const TEST_ITEMS_REQUEST = 'piwi/testItems';
+
 /** `piwi/coverage`: the lines of an application file the project's tests ran, placed on the file as it stands. */
 export interface CoverageParams {
   uri: string;
@@ -580,6 +633,8 @@ export const COMMAND_ENDED_NOTIFICATION = 'piwi/commandEnded';
 export interface RunEnded {
   root: string;
   runId: number;
+  /** The ref of the command that started it (`RunCommand.ref`); absent when the service no longer keeps the command. */
+  ref?: string;
   /** The run's page in the dashboard. */
   url: string;
   passed: number;

@@ -153,6 +153,7 @@ import { isUnder, runBreakpoints } from './breakpoints';
 import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
 import { startSendListener, type SendListener, type SendResult } from './send-listener';
+import { TestExplorer, type ShownTest } from './test-explorer';
 
 /** How often the status bar item's tooltip is written again, for the time since the latest run was read. */
 const STATUS_TICK_MS = 30_000;
@@ -219,6 +220,8 @@ export interface PiwiApi {
   gutter(uri: string): TestDecoration[];
   /** The `piwi/coverage` answer last held for a file, by its URI, and whether its marks are shown; null before one. */
   coverage(uri: string): { result: CoverageResult; shown: boolean } | null;
+  /** The tests the Testing view lists with the result last shown for each; null while `piwi.testExplorer` is off. */
+  testExplorer(): ShownTest[] | null;
 }
 
 /** A failures view node, or what a command names it by. */
@@ -363,30 +366,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     overviewRulerColor: new vscode.ThemeColor('piwi.failingTestBackground'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
+  // While the Testing view lists Piwi's tests, its gutter shows their results: the test's line keeps the hover alone.
+  const testHover = vscode.window.createTextEditorDecorationType({});
   const failingLine = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: new vscode.ThemeColor('piwi.failingLineBackground'),
     overviewRulerColor: new vscode.ThemeColor('piwi.failingLineBackground'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
-  context.subscriptions.push(failingBackground, failingLine, ...gutterIcons.values());
+  context.subscriptions.push(failingBackground, failingLine, testHover, ...gutterIcons.values());
   const gutter = new Map<string, TestDecoration[]>();
+  let explorer: TestExplorer | null = null;
   const decorateTests = (document: vscode.TextDocument, lines: SummaryLine[]) => {
     const tests = testDecorations(lines);
     gutter.set(document.uri.toString(), tests);
+    const hovered = (shown: TestDecoration[]) =>
+      shown
+        .filter((t) => t.line < document.lineCount)
+        .map((t) => {
+          const hover = new vscode.MarkdownString(testHoverMarkdown(t, document.uri.toString()));
+          hover.isTrusted = { enabledCommands: TEST_HOVER_COMMANDS };
+          return { range: document.lineAt(t.line).range, hoverMessage: hover };
+        });
     for (const editor of vscode.window.visibleTextEditors.filter((e) => e.document === document)) {
       for (const [status, type] of gutterIcons) {
-        editor.setDecorations(
-          type,
-          tests
-            .filter((t) => t.status === status && t.line < document.lineCount)
-            .map((t) => {
-              const hover = new vscode.MarkdownString(testHoverMarkdown(t, document.uri.toString()));
-              hover.isTrusted = { enabledCommands: TEST_HOVER_COMMANDS };
-              return { range: document.lineAt(t.line).range, hoverMessage: hover };
-            }),
-        );
+        editor.setDecorations(type, explorer ? [] : hovered(tests.filter((t) => t.status === status)));
       }
+      editor.setDecorations(testHover, explorer ? hovered(tests) : []);
       editor.setDecorations(
         failingBackground,
         tests
@@ -601,6 +607,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const before = runs;
     runs = next ?? (await lc.sendRequest<RunStatusResult>(RUN_STATUS_REQUEST).catch(() => null));
     render();
+    explorer?.runsChanged(runs, full);
     if (full) {
       failuresView.refresh();
       runsShown = runs;
@@ -692,6 +699,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.tasks.onDidEndTaskProcess((e) => {
       const ref = taskRef(e.execution);
       if (!ref) return;
+      explorer?.taskEnded(ref, e.exitCode ?? null);
       void lc.sendNotification(COMMAND_ENDED_NOTIFICATION, {
         ref,
         exitCode: e.exitCode ?? null,
@@ -797,7 +805,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     else runInTerminal(command.cwd, command.command, env);
   };
 
-  const runTests = async (args: RunTestsArgs) => {
+  /** Run tests as the service's command for them says; the command started, or null when there is none. */
+  const runTests = async (args: RunTestsArgs): Promise<RunCommand | null> => {
     const breakpoints = breakpointsForRun();
     const command = await lc.sendRequest<RunCommand | null>(
       RUN_ARGS_REQUEST,
@@ -805,10 +814,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     );
     if (!command) {
       void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
-      return;
+      return null;
     }
     await startRun(command);
+    return command;
   };
+
+  /** The Testing view's Piwi tests, as `piwi.testExplorer` allows (default on); the gutter draws again for it. */
+  const showTestExplorer = () => {
+    const wanted = vscode.workspace.getConfiguration('piwi').get<boolean>('testExplorer', true);
+    if (wanted === !!explorer) return;
+    explorer?.dispose();
+    explorer = wanted ? new TestExplorer(lc, runTests) : null;
+    explorer?.runsChanged(runs, true);
+    decorateVisible();
+  };
+  context.subscriptions.push({ dispose: () => explorer?.dispose() });
 
   const activeUri = () => vscode.window.activeTextEditor?.document.uri.toString() ?? null;
 
@@ -901,7 +922,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       refreshing = false;
       await updateStatus(answer ?? undefined);
     }),
-    vscode.commands.registerCommand('piwi.runTests', (args: RunTestsArgs) => runTests(args)),
+    vscode.commands.registerCommand('piwi.runTests', async (args: RunTestsArgs) => {
+      await runTests(args);
+    }),
     // From the failures view, a failure; from elsewhere, the tests to run.
     vscode.commands.registerCommand('piwi.runTest', async (target: FailureNode | RunTestsArgs) => {
       const failure = failureOf(target);
@@ -1135,6 +1158,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       )
         credentialsChanged();
       if (PROXY_SETTINGS.some((setting) => e.affectsConfiguration(setting))) proxyChanged();
+      if (e.affectsConfiguration('piwi.testExplorer')) showTestExplorer();
     }),
     context.secrets.onDidChange((e) => {
       if (e.key.startsWith(API_KEY_SECRET_PREFIX)) credentialsChanged();
@@ -1204,6 +1228,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   recording = registerRecording(context, lc);
   context.subscriptions.push(recording);
   await lc.start();
+  showTestExplorer();
   await updateStatus();
   const tick = setInterval(render, STATUS_TICK_MS);
   context.subscriptions.push({ dispose: () => clearInterval(tick) });
@@ -1219,6 +1244,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       const result = coverage.get(uri);
       return result ? { result, shown: coverageShown } : null;
     },
+    testExplorer: () => explorer?.shown() ?? null,
   };
 }
 

@@ -68,6 +68,36 @@ data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null)
  */
 data class TestAtResult(val test: EditorTest? = null, val spec: SpecTests? = null, val location: String? = null)
 
+/**
+ * `piwi/testItems`: the catalog's specs the workspace holds, unless `catalog` is false, and the specs `uris` names, each
+ * test as it stands with its latest result, for a client's own test tree (VS Code's Testing view).
+ */
+data class TestItemsParams(val uris: List<String>? = null, val catalog: Boolean? = null)
+
+/**
+ * A test of a spec as it stands: its title and describe blocks, the 0-based lines of its `test(…)` call, its location
+ * for Playwright's filter, the catalog's id when Piwi knows it, its latest result and where it failed.
+ */
+data class SpecTest(
+    val title: String? = null,
+    val suite: List<String>? = null,
+    val line: Int = 0,
+    val endLine: Int = 0,
+    val location: String? = null,
+    val testCaseId: Int? = null,
+    val status: String? = null,
+    val failure: TestFailure? = null,
+    val url: String? = null,
+)
+
+/** The tests of one spec, `file` relative to its Playwright config's folder. */
+data class SpecTestItems(val uri: String? = null, val file: String? = null, val tests: List<SpecTest>? = null)
+
+/** The specs of each Playwright config holding one, in the configs' order. */
+data class TestItemsContext(val root: String? = null, val label: String? = null, val specs: List<SpecTestItems>? = null)
+
+data class TestItemsResult(val contexts: List<TestItemsContext>? = null)
+
 /** Lines `start` to `end`, 0-based and inclusive; for lines the tests ran, `tests` is how many ran each. */
 data class LineSpan(val start: Int = 0, val end: Int = 0, val tests: Int? = null)
 
@@ -253,11 +283,13 @@ data class RunStatusResult(val contexts: List<RunStatus>? = null)
  * `piwi/runEnded`: a run the editor started ended and the latest run was read again with it: its counts, `fixed` the
  * tests failing before it that it passed, `stillFailing` and `newFailures` the titles (`login.spec.ts › logs in`, at
  * most five) of the tests it failed again and of those that were not failing before, with their counts. `repeat`, for
- * a run of each test several times (`RunTestsArgs.repeat`), says how many of those runs passed.
+ * a run of each test several times (`RunTestsArgs.repeat`), says how many of those runs passed. `ref` is the ref of the
+ * command that started it (`RunCommand.ref`), when the service still keeps it.
  */
 data class RunEnded(
     val root: String? = null,
     val runId: Int = 0,
+    val ref: String? = null,
     val url: String? = null,
     val passed: Int = 0,
     val failed: Int = 0,
@@ -602,6 +634,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/testAt")
     fun testAt(params: TestAtParams): CompletableFuture<TestAtResult?>
+
+    @JsonRequest("piwi/testItems")
+    fun testItems(params: TestItemsParams): CompletableFuture<TestItemsResult?>
 
     @JsonRequest("piwi/coverage")
     fun coverage(params: UriParams): CompletableFuture<CoverageResult?>

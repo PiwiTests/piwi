@@ -20,6 +20,9 @@ import { instanceFetch } from './http.js';
 const TIMEOUT_MS = 15_000;
 /** How long a stored file may take to download: a trace can weigh tens of megabytes. */
 const DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
+/** The catalog's cases one request reads (the route's most), and the requests a read of the whole catalog makes. */
+const CATALOG_PAGE = 1_000;
+const MAX_CATALOG_PAGES = 10;
 
 export class PiwiHttpError extends Error {
   constructor(
@@ -535,6 +538,20 @@ export class PiwiClient {
       `/api/projects/${projectId}/test-cases?limit=1000&file=${encodeURIComponent(file)}`,
     );
     return body.items ?? [];
+  }
+
+  /** The whole catalog, `CATALOG_PAGE` cases a request, `MAX_CATALOG_PAGES` requests at most. */
+  async allTestCases(projectId: number): Promise<CatalogCase[]> {
+    const items: CatalogCase[] = [];
+    for (let page = 0; page < MAX_CATALOG_PAGES; page++) {
+      const body = await this.get<{ items?: CatalogCase[]; total?: number }>(
+        `/api/projects/${projectId}/test-cases?limit=${CATALOG_PAGE}&offset=${page * CATALOG_PAGE}`,
+      );
+      const got = body.items ?? [];
+      items.push(...got);
+      if (got.length < CATALOG_PAGE || (typeof body.total === 'number' && items.length >= body.total)) break;
+    }
+    return items;
   }
 
   async locatorAlternatives(projectId: number, file: string): Promise<CallSiteAlternatives[]> {

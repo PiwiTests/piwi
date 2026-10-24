@@ -164,10 +164,27 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   holding the block's last line, offers **Run** and **Verify ×3** (`RECORDED_ACTIONS`), which run
   `piwi.runTestAtCursor` and `piwi.verifyTestAtCursor` at that line as the block stands when clicked. No CodeLens
   offers them: the recording's lens goes with Stop.
+- `src/test-explorer.ts` lists Piwi's tests in VS Code's Testing view while `piwi.testExplorer` is on (the default; a
+  change creates or disposes it, `showTestExplorer`): a `TestController` whose items are `piwi/testItems` (the
+  catalog's specs and the open ones, read again in full when the connection or the runs change, a spec alone 300 ms
+  after its last edit or when it opens: `withSpec`), drawn by `testTree` in `src/glue.ts` (a node per Playwright
+  config when there are several, the spec's folders, the spec, its describe blocks, its tests; ids joined by `\x1f`,
+  which VS Code takes where it refuses `\0`), each item kept while its id stays so its result does. The latest
+  results are published as one test run (`resultsRunName`, `testOutcome`: a failure's message and line from
+  `TestFailure`) when `resultsKey` changes; a run in progress (`RunStatus.live`) is a test run of its own
+  (`liveRunName`) showing `liveTests` as they come, ended once the run was read, after which nothing is published
+  again for it. **Run with Piwi** and **Verify ×3 with Piwi** (run profiles) run the picked tests through `runTests`
+  (`testRunsOf`: one run per config, by id when every test has one, else by location), queued in their test run, which
+  takes the editor's own run in progress of that config as it starts and ends once each command's task ended
+  (`taskEnded`, from `tasks.onDidEndTaskProcess`) and its run was read, or 15 s after that with none followed: a test
+  no run gave a result for passes when every command exited with 0, else is an error (`unfollowedOutcome`). Cancel
+  terminates the commands' tasks. While it lists the tests, the gutter's own icons give way to the Testing view's and
+  a test's line keeps the hover (`testHover`). The API `activate` returns gives what it shows (`testExplorer`).
 - `src/glue.ts` is the pure half (the status bar item, the failures view's nodes, the MCP configuration to paste, the
   file an open link names, the recorded block's text and writes with the service's import edit, and following them through a change: `writeBlock`,
   `followBlock`, `followEdit`, and the quick fixes of a recorded line's warning: `locatorChoices`; what runs the test at
-  a line: `testAtRun`), tested without an editor.
+  a line: `testAtRun`; the Testing view's tree and results: `testTree`, `testOutcome`, `testRunsOf`), tested without
+  an editor.
 
 ## Rules
 
@@ -227,5 +244,6 @@ suite over the same launcher would assert, is recorded in
 The integration suite (`tests/integration/`) starts a stub instance, writes a fixture repository, and drives VS Code
 through its public commands (`vscode.executeCodeActionProvider`, `vscode.executeCodeLensProvider`, …), and through the
 API `activate` returns (`pageCandidates`, the service's answer for a position, `failureChildren`, the failures view's
-nodes, `lastRun`, the command a breakpoint's run was given, `gutter`, the tests last drawn in a file's gutter, and
-`coverage`, a file's coverage answer and whether its marks are shown).
+nodes, `lastRun`, the command a breakpoint's run was given, `gutter`, the tests last drawn in a file's gutter,
+`coverage`, a file's coverage answer and whether its marks are shown, and `testExplorer`, the Testing view's tests
+with the result last shown for each).

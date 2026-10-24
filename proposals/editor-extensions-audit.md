@@ -1,7 +1,9 @@
 # The editor extensions: a UX and feature audit
 
 **Status.** Audit, proposed 2026-10-21. Being built: every quick win (Q1 to Q14), every medium item (M1 to M12) and
-every defect of appendix A are built. The larger items (L1 to L5) are kept for later.
+every defect of appendix A are built. Of the larger items, L1 is built (2026-10-24): VS Code's Testing view lists the
+catalog's specs as they stand with their latest results (`piwi/testItems`), follows a run in progress, and runs tests
+through two run profiles; Piwi's gutter icon gives way to the view's. L2 to L5 remain.
 It covers the IDE plug-in as this repository names it: the **editor extensions**, that is the VS Code extension (`apps/vscode`, published as `piwitests.piwi`),
 the JetBrains plugin (`apps/jetbrains`, `dev.piwitests.piwi`) and the **editor service** they both run
 (`packages/editor`, the language server). The plan in [section 10](#10-a-prioritized-plan) ranks what to build; the

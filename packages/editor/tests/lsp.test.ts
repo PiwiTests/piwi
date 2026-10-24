@@ -37,6 +37,7 @@ import type {
   ScreenshotResult,
   StatusResult,
   TestAtResult,
+  TestItemsResult,
   TestsForFile,
   TraceResult,
 } from '../src/protocol';
@@ -322,6 +323,19 @@ beforeAll(async () => {
     }
     if (u === '/api/projects/7/test-cases?limit=1000' && slowKey) {
       return res.end(JSON.stringify({ items: [{ tags: ['smoke', 'checkout'], feature: 'Payments' }] }));
+    }
+    if (u === '/api/projects/7/test-cases?limit=1000&offset=0') {
+      // The whole catalog: a path from a working directory above the config's folder, and a spec no longer there.
+      return res.end(
+        JSON.stringify({
+          items: [
+            { id: 1, title: 'pays', filePath: 'tests/checkout.spec.ts', status: 'passed' },
+            { id: 3, title: 'removes a row', filePath: 'shop/tests/rows.spec.ts', status: 'failed' },
+            { id: 9, title: 'was deleted', filePath: 'tests/gone.spec.ts', status: 'passed' },
+          ],
+          total: 3,
+        }),
+      );
     }
     if (u === '/api/projects/7/test-cases?limit=1000&file=tests%2Frows.spec.ts') {
       return res.end(
@@ -1370,6 +1384,106 @@ describe('the Piwi language server', () => {
   });
 });
 
+describe('the test tree', () => {
+  test('lists the catalog’s specs as they stand, each test with its latest result and where it failed', async () => {
+    const items = (await client.sendRequest('piwi/testItems', {})) as TestItemsResult;
+    expect(items).toEqual({
+      contexts: [
+        {
+          root: dir,
+          label: path.basename(dir),
+          specs: [
+            {
+              uri: uri('tests/checkout.spec.ts'),
+              file: 'tests/checkout.spec.ts',
+              tests: [
+                {
+                  title: 'pays',
+                  suite: [],
+                  line: 2,
+                  // As its open document stands: an earlier test opened it with a body.
+                  endLine: expect.any(Number),
+                  location: 'tests/checkout.spec.ts:3',
+                  testCaseId: 1,
+                  status: 'passed',
+                  failure: null,
+                  url: `${url}/test-cases/1`,
+                },
+              ],
+            },
+            {
+              uri: uri('tests/rows.spec.ts'),
+              file: 'tests/rows.spec.ts',
+              tests: [
+                expect.objectContaining({
+                  title: 'removes a row',
+                  line: 3,
+                  endLine: 7,
+                  location: 'tests/rows.spec.ts:4',
+                  testCaseId: 3,
+                  status: 'failed',
+                  failure: expect.objectContaining({ line: 6, executionId: 900, state: 'failing' }),
+                }),
+              ],
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  test('answers the specs it is asked for, a test Piwi does not know and its describe blocks included', async () => {
+    write(
+      'tests/grouped.spec.ts',
+      [
+        "import { test } from '@playwright/test';",
+        "test.describe('cart', () => {",
+        "  test.describe.serial('as a guest', () => {",
+        "    test('pays', async () => {});",
+        '  });',
+        "  test('is new', async () => {});",
+        '});',
+        '',
+      ].join('\n'),
+    );
+    const items = (await client.sendRequest('piwi/testItems', {
+      uris: [uri('tests/grouped.spec.ts'), uri('tests/pages/checkout.page.ts')],
+      catalog: false,
+    })) as TestItemsResult;
+    expect(items.contexts).toHaveLength(1);
+    expect(items.contexts[0]!.specs).toEqual([
+      {
+        uri: uri('tests/grouped.spec.ts'),
+        file: 'tests/grouped.spec.ts',
+        tests: [
+          expect.objectContaining({ title: 'pays', suite: ['cart', 'as a guest'], line: 3, testCaseId: 1 }),
+          {
+            title: 'is new',
+            suite: ['cart'],
+            line: 5,
+            endLine: 5,
+            location: 'tests/grouped.spec.ts:6',
+            testCaseId: null,
+            status: null,
+            failure: null,
+            url: null,
+          },
+        ],
+      },
+    ]);
+    // With the catalog's specs, each once.
+    const all = (await client.sendRequest('piwi/testItems', {
+      uris: [uri('tests/grouped.spec.ts'), uri('tests/rows.spec.ts')],
+    })) as TestItemsResult;
+    expect(all.contexts[0]!.specs.map((s) => s.file)).toEqual([
+      'tests/checkout.spec.ts',
+      'tests/grouped.spec.ts',
+      'tests/rows.spec.ts',
+    ]);
+    fs.rmSync(path.join(dir, 'tests/grouped.spec.ts'));
+  });
+});
+
 describe('breakpoints', () => {
   const breakpoints = () => [
     { uri: uri('tests/checkout.spec.ts'), line: 2 },
@@ -2239,6 +2353,7 @@ describe('runs as they happen', () => {
     expect(verdict).toEqual({
       root: dir,
       runId: 61,
+      ref: command.ref,
       url: `${url}/test-runs/61`,
       passed: 1,
       failed: 2,

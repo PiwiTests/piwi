@@ -77,11 +77,15 @@ import {
   rewriteEdits,
   stabilityFindings,
   stableReplacement,
+  TEST_CALL,
+  testCalls,
+  caseOfCall,
   testsReaching,
   timeoutEdit,
   timeoutMessage,
   type LineLocator,
   type LineState,
+  type TestCall,
 } from './analysis.js';
 import {
   BlobTexts,
@@ -185,6 +189,7 @@ import {
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
   TEST_AT_REQUEST,
+  TEST_ITEMS_REQUEST,
   type AgentContextParams,
   type AgentContextResult,
   type ApplyPickParams,
@@ -233,6 +238,9 @@ import {
   type TestLineStatus,
   type TestsForFile,
   type TestsForFileParams,
+  type TestItemsParams,
+  type TestItemsResult,
+  type SpecTests,
   type RunCommandArgs,
   type TraceParams,
   type TraceResult,
@@ -275,8 +283,6 @@ const LOOKUP_WAIT_MS = 1_500;
 /** The latest commands that run each test several times whose end the service says, at most. */
 const MAX_REPEATED_COMMANDS = 50;
 const SPEC_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
-const TEST_CALL =
-  /(?<![\w$.])test(?:\.(?:only|skip|fixme|fail|slow))?\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/;
 
 export interface ServerOptions {
   /** The environment the connection is read from; the process's by default. */
@@ -2378,6 +2384,53 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       .concat(stability);
   };
 
+  /**
+   * The tests of a spec as it stands (`lines`): each `test(…)` call, the catalog's case of its title in its describe
+   * blocks, the latest run's failure of that test placed on the files as they stand, a later run's pass of it, and its
+   * latest result: the run in progress the service follows while it runs the test and once it ended it, else the
+   * failure, the pass, or the catalog's status. Null for a test the catalog does not know.
+   */
+  const specTests = (
+    context: PiwiContext,
+    file: string,
+    lines: string[],
+    cases: CatalogCase[],
+    pass: Placer,
+  ): Array<{
+    call: TestCall;
+    found?: CatalogCase;
+    failed?: BranchFailure;
+    fixed?: BranchResolved;
+    failure?: TestFailure;
+    status: TestLineStatus | null;
+  }> => {
+    const failingNow = new Map<number, BranchFailure>();
+    for (const f of context.failures?.failures ?? [])
+      if (!failingNow.has(f.testCaseId)) failingNow.set(f.testCaseId, f);
+    /** The tests that failed in the latest complete run and passed since, on every project they failed on. */
+    const fixedNow = new Map<number, BranchResolved>();
+    for (const r of context.failures?.resolved ?? [])
+      if (!failingNow.has(r.testCaseId) && !fixedNow.has(r.testCaseId)) fixedNow.set(r.testCaseId, r);
+    return testCalls(lines).map((call) => {
+      const found = caseOfCall(cases, call);
+      if (!found) return { call, status: null };
+      const failed = failingNow.get(found.id);
+      const fixed = failed ? undefined : fixedNow.get(found.id);
+      const at = failed ? pass.place(context, failed) : null;
+      const failure: TestFailure | undefined = failed && {
+        line: failureLine(at?.frames ?? [], file, call.line, call.endLine),
+        headline: failed.headline,
+        message: failed.message ?? null,
+        executionId: failed.executionId,
+        url: context.client!.executionUrl(failed.executionId),
+        state: at?.state === 'edited' ? 'edited' : 'failing',
+      };
+      const status =
+        context.liveTests.get(found.id) ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status));
+      return { call, found, failed, fixed, failure, status };
+    });
+  };
+
   connection.onRequest(FILE_SUMMARY_REQUEST, async (params: FileSummaryParams): Promise<FileSummary> => {
     const empty: FileSummary = { file: null, lines: [] };
     const file = uriToPath(params.uri);
@@ -2405,23 +2458,19 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         });
       }
       const cases = SPEC_FILE.test(relative!) ? await context.casesOf(relative!) : [];
-      const casesByTitle = new Map(cases.map((c) => [c.title, c]));
-      const failingNow = new Map<number, BranchFailure>();
-      for (const f of context.failures?.failures ?? [])
-        if (!failingNow.has(f.testCaseId)) failingNow.set(f.testCaseId, f);
-      /** The tests that failed in the latest complete run and passed since, on every project they failed on. */
-      const fixedNow = new Map<number, BranchResolved>();
-      for (const r of context.failures?.resolved ?? [])
-        if (!failingNow.has(r.testCaseId) && !fixedNow.has(r.testCaseId)) fixedNow.set(r.testCaseId, r);
       /** The reason and the evidence of each failure, above its failing line: first on that line. */
       const reasons: SummaryLine[] = [];
-      lines.forEach((text, i) => {
-        const m = TEST_CALL.exec(text);
-        const found = m ? casesByTitle.get(m[2]!) : undefined;
-        if (!found) return;
+      for (const { call, found, failed, fixed, failure, status: testStatus } of specTests(
+        context,
+        file,
+        lines,
+        cases,
+        pass,
+      )) {
+        if (!found) continue;
+        const i = call.line;
         const runs = found.totalRuns ?? 0;
         const passed = found.passedRuns ?? 0;
-        const fixed = failingNow.has(found.id) ? undefined : fixedNow.get(found.id);
         const status = fixed
           ? ` · ${fixedLabel(context, fixed)}`
           : found.status && found.status !== 'passed'
@@ -2447,18 +2496,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
               flaky.rootCause ? ` · ${flaky.rootCause}` : '',
             ].join('')
           : '';
-        const open = text.indexOf('(', m!.index);
-        const endLine = (open >= 0 ? callEndLine(lines, i, open) : null) ?? i;
-        const failed = failingNow.get(found.id);
-        const at = failed ? pass.place(context, failed) : null;
-        const failure: TestFailure | undefined = failed && {
-          line: failureLine(at?.frames ?? [], file, i, endLine),
-          headline: failed.headline,
-          message: failed.message ?? null,
-          executionId: failed.executionId,
-          url: context.client!.executionUrl(failed.executionId),
-          state: at?.state === 'edited' ? 'edited' : 'failing',
-        };
+        const endLine = call.endLine;
         out.push({
           line: i,
           title: `passed ${passed}/${runs}${status}${quarantine}${flakiness}${selectionsText}`,
@@ -2467,15 +2505,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             command: 'piwi.openInDashboard',
             arguments: [context.client!.testUrl(found.id)],
           },
-          // The run in progress the service follows, while it runs the test and once it ended it.
-          status:
-            context.liveTests.get(found.id) ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status)),
+          status: testStatus!,
           endLine,
           ...(failure ? { failure } : {}),
           testCaseId: found.id,
         });
         out.push(...flakeLabLines(context, found.id, i, env, desktopJobs.available(context)));
-        if (!failed || !failure) return;
+        if (!failed || !failure) continue;
         const evidence = { uri: params.uri, executionId: failed.executionId } satisfies TraceParams;
         const why = clip(failed.headline ?? 'Failed', 120);
         reasons.push({
@@ -2510,7 +2546,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             command: { title: 'Open the trace', command: 'piwi.openTrace', arguments: [evidence] },
           });
         }
-      });
+      }
       const fileLine: SummaryLine | null = cases.length
         ? {
             line: 0,
@@ -2631,6 +2667,74 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       test: found ? caseToEditorTest(context, found) : null,
       spec: cases.length ? { uri: params.uri, testIds: cases.map((c) => c.id) } : null,
       location: call ? `${relative}:${call.line + 1}` : null,
+    };
+  });
+
+  connection.onRequest(TEST_ITEMS_REQUEST, async (params: TestItemsParams | null): Promise<TestItemsResult> => {
+    const pass = placer();
+    const specs = new Map<PiwiContext, SpecTests[]>();
+    /** A spec of the context's folder as it stands, with the catalog's cases of its tests. */
+    const add = (context: PiwiContext, file: string, relative: string, cases: CatalogCase[]) => {
+      const text = readText(file);
+      if (text === null) return;
+      const uri = pathToFileURL(file).href;
+      const tests = specTests(context, file, text.split(/\r?\n/), cases, pass).map(
+        ({ call, found, failure, status }) => ({
+          title: call.title,
+          suite: call.suite,
+          line: call.line,
+          endLine: call.endLine,
+          location: `${relative}:${call.line + 1}`,
+          testCaseId: found?.id ?? null,
+          status,
+          failure: failure ?? null,
+          url: found ? (context.client?.testUrl(found.id) ?? null) : null,
+        }),
+      );
+      specs.set(context, [...(specs.get(context) ?? []), { uri, file: relative, tests }]);
+    };
+    /** The specs answered, by path. */
+    const answered = new Set<string>();
+    if (params?.catalog !== false) {
+      for (const context of contexts) {
+        // The catalog's specs the workspace holds, each from the config whose folder holds it.
+        const byFile = new Map<string, CatalogCase[]>();
+        const found = new Map<string, string | null>();
+        for (const c of await context.allCases()) {
+          if (!found.has(c.filePath)) {
+            found.set(c.filePath, resolveReportedFile([context.root, context.repoRoot], c.filePath));
+          }
+          const file = found.get(c.filePath);
+          if (file) byFile.set(file, [...(byFile.get(file) ?? []), c]);
+        }
+        for (const [file, cases] of byFile) {
+          const relative = relativeTo(context.root, file);
+          if (!relative || !SPEC_FILE.test(relative) || contextFor(file) !== context) continue;
+          answered.add(file);
+          add(context, file, relative, cases);
+        }
+      }
+    }
+    for (const uri of Array.isArray(params?.uris) ? params.uris : []) {
+      const file = typeof uri === 'string' ? uriToPath(uri) : null;
+      const context = file ? contextFor(file) : null;
+      const relative = file && context ? relativeTo(context.root, file) : null;
+      if (!file || !context || !relative || !SPEC_FILE.test(relative) || answered.has(file)) continue;
+      answered.add(file);
+      add(context, file, relative, await context.casesOf(relative));
+    }
+    return {
+      contexts: contexts.flatMap((context) => {
+        const held = specs.get(context);
+        if (!held) return [];
+        return [
+          {
+            root: context.root,
+            label: contextLabel(context.root, folders),
+            specs: held.sort((a, b) => a.file.localeCompare(b.file)),
+          },
+        ];
+      }),
     };
   });
 

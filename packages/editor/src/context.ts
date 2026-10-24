@@ -468,6 +468,9 @@ export class PiwiContext {
   /** Where stored files are downloaded: {@link EVIDENCE_ROOT}. */
   evidenceFolder = EVIDENCE_ROOT;
   private readonly catalog = new Map<string, { at: number; items: CatalogCase[] }>();
+  /** The whole catalog, read once per refresh, and its read on the way. */
+  private allCatalog: { at: number; items: CatalogCase[] } | null = null;
+  private allCatalogRead: Promise<CatalogCase[]> | null = null;
   private readonly alternatives = new Map<string, { at: number; items: CallSiteAlternatives[] }>();
   private committedFiles = new Map<string, string | null>();
   private readonly commitTexts = new Map<string, CommitText>();
@@ -561,6 +564,7 @@ export class PiwiContext {
       const client = this.client;
       const projectId = this.project.id;
       this.catalog.clear();
+      this.allCatalog = null;
       this.alternatives.clear();
       this.functions = null;
       this.words = null;
@@ -652,6 +656,7 @@ export class PiwiContext {
     this.branches = [];
     this.functions = null;
     this.words = null;
+    this.allCatalog = null;
     this.coverages.clear();
     for (const cache of [
       this.issues,
@@ -947,6 +952,30 @@ export class PiwiContext {
     } catch {
       return cached?.items ?? [];
     }
+  }
+
+  /**
+   * Every case of the catalog, read once per refresh and kept five minutes at most; what was read before stands in when
+   * a read fails.
+   */
+  async allCases(): Promise<CatalogCase[]> {
+    const client = this.client;
+    const project = this.project;
+    if (!client || !project) return [];
+    const kept = this.allCatalog;
+    if (kept && Date.now() - kept.at < FILE_CACHE_MS) return kept.items;
+    this.allCatalogRead ??= client
+      .allTestCases(project.id)
+      .then(
+        (items) => {
+          // A read the next refresh or another instance overtook keeps nothing.
+          if (this.client === client) this.allCatalog = { at: Date.now(), items };
+          return items;
+        },
+        () => kept?.items ?? [],
+      )
+      .finally(() => (this.allCatalogRead = null));
+    return this.allCatalogRead;
   }
 
   /** The stored alternatives of a file's call sites. */
