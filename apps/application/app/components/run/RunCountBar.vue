@@ -1,12 +1,15 @@
 <script setup lang="ts">
 /**
- * The run's one count bar: a proportional stacked bar with the counts on
- * clickable segments. Each segment is a filter — clicking it toggles that
- * status in the Tests tab's filter set and switches to the Tests tab. Zero-count
- * segments are hidden. Flaky (passed on retry) is a subset of passed, so it is
- * subtracted from the passed segment to avoid double-counting; fixme is a
- * subset of skipped the same way, drawn in the second grey.
+ * The run's one count bar: a proportional stacked bar with each count written
+ * on its segment, followed by its label, or a short label, when it fits. Each
+ * segment is a filter — clicking it toggles that status in the Tests tab's
+ * filter set and switches to the Tests tab. Zero-count segments are hidden.
+ * Flaky (passed on retry) is a subset of passed, so it is subtracted from the
+ * passed segment to avoid double-counting; fixme is a subset of skipped the
+ * same way, drawn in the second grey.
  */
+import { useResizeObserver } from '@vueuse/core';
+
 const props = defineProps<{
   passed: number;
   failed: number;
@@ -26,6 +29,8 @@ interface Segment {
   key: string;
   status: string;
   label: string;
+  /** Written in place of the label on a segment too narrow for it. */
+  short?: string;
   count: number;
   palette: StatusPaletteEntry;
 }
@@ -37,7 +42,14 @@ const segments = computed<Segment[]>(() => {
     [
       { key: 'passed', status: 'passed', label: 'passed', count: passedOnly, palette: STATUS_PALETTE.passed },
       { key: 'failed', status: 'failed', label: 'failed', count: props.failed, palette: STATUS_PALETTE.failed },
-      { key: 'flaky', status: 'flaky', label: 'passed on retry', count: props.flaky, palette: STATUS_PALETTE.flaky },
+      {
+        key: 'flaky',
+        status: 'flaky',
+        label: 'passed on retry',
+        short: 'flaky',
+        count: props.flaky,
+        palette: STATUS_PALETTE.flaky,
+      },
       {
         key: 'skipped',
         status: 'skipped',
@@ -50,6 +62,7 @@ const segments = computed<Segment[]>(() => {
         key: 'didnotrun',
         status: 'didnotrun',
         label: "didn't run",
+        short: 'dnr',
         count: props.didNotRun,
         palette: STATUS_PALETTE.didnotrun,
       },
@@ -61,63 +74,114 @@ function isActive(status: string): boolean {
   return props.activeStatuses.includes(status);
 }
 
-// The segments reach the track's right end once every test has an outcome;
-// while a run is live the not-yet-run remainder is bare track.
-const fillsTrack = computed(() => segments.value.reduce((sum, s) => sum + s.count, 0) >= props.total);
+// While a run is live the tests without an outcome yet are bare track after the segments.
+const remaining = computed(() => Math.max(0, props.total - segments.value.reduce((sum, s) => sum + s.count, 0)));
+
+// ── Fitting the text ─────────────────────────────────────────────────────────
+// A segment's horizontal padding (`px-1.5`) and the gap between its count and label (`gap-x-1`).
+const SEGMENT_PADDING_PX = 12;
+const LABEL_GAP_PX = 4;
+
+const track = useTemplateRef<HTMLElement>('track');
+const segmentEls = useTemplateRef<HTMLElement[]>('segment');
+
+// Each segment's width, and the text measured in the segments' font: both read
+// in the browser only, so the server render leaves every choice to the CSS.
+const segmentWidths = ref<Record<string, number>>({});
+let context: CanvasRenderingContext2D | null = null;
+const fontReady = ref(0);
+
+function readFont() {
+  if (!track.value) return;
+  context ??= document.createElement('canvas').getContext('2d');
+  if (!context) return;
+  context.font = getComputedStyle(track.value).font;
+  fontReady.value++;
+}
+
+onMounted(() => {
+  readFont();
+  // The web font may land after mount; measure again with it.
+  document.fonts?.ready.then(readFont);
+});
+
+useResizeObserver(
+  () => segmentEls.value ?? [],
+  (entries) => {
+    const widths = { ...segmentWidths.value };
+    for (const entry of entries) {
+      const key = (entry.target as HTMLElement).dataset.segment;
+      if (key) widths[key] = entry.borderBoxSize[0]?.inlineSize ?? (entry.target as HTMLElement).offsetWidth;
+    }
+    segmentWidths.value = widths;
+  },
+);
+
+/** The width the count and a label take on a segment, or null before the font is read. */
+function textWidth(count: number, label: string | undefined): number | null {
+  if (!fontReady.value || !context) return null;
+  const countWidth = context.measureText(String(count)).width;
+  return label ? countWidth + LABEL_GAP_PX + context.measureText(label).width : countWidth;
+}
 
 /**
- * The track does not clip its segments (an active one grows taller than it),
- * so the segments at its ends round its corners themselves, with a minimum
- * width so a tiny end segment still holds the whole curve. An active segment
- * grows vertically only, centred on the track, its inner corners softened.
+ * The label a segment writes after its count: the label when it fits, else the
+ * short one, else none. Before anything is measured it offers the label, and
+ * the segment's one clipped line wraps a label that does not fit out of sight.
  */
-function segmentClass(seg: Segment, index: number): string[] {
-  const active = isActive(seg.status);
-  const first = index === 0;
-  const last = index === segments.value.length - 1 && fillsTrack.value;
-  return [
-    seg.palette.bg,
-    active ? 'h-4' : 'h-2.5',
-    first ? 'rounded-l-full min-w-1.5' : active ? 'rounded-l-sm' : '',
-    last ? 'rounded-r-full min-w-1.5' : active ? 'rounded-r-sm' : '',
-  ];
+function shownLabel(seg: Segment): string | undefined {
+  const width = segmentWidths.value[seg.key];
+  const full = textWidth(seg.count, seg.label);
+  if (width == null || full == null) return seg.label;
+  const room = width - SEGMENT_PADDING_PX + 0.5;
+  if (full <= room) return seg.label;
+  const short = textWidth(seg.count, seg.short);
+  return seg.short && short != null && short <= room ? seg.short : undefined;
+}
+
+/**
+ * Each segment grows in proportion to its count, but never narrower than its
+ * count needs; a selected one is wide enough for its whole label. While any
+ * status filter is on, the segments it leaves out fade.
+ */
+function segmentStyle(seg: Segment): Record<string, string> {
+  const needed = textWidth(seg.count, isActive(seg.status) ? seg.label : undefined);
+  const minWidth =
+    needed == null ? `${String(seg.count).length * 0.55 + 0.75}rem` : `${Math.ceil(needed) + SEGMENT_PADDING_PX + 1}px`;
+  return { flex: `${seg.count} 1 0%`, minWidth };
+}
+
+function segmentClass(seg: Segment): string[] {
+  const faded = props.activeStatuses.length > 0 && !isActive(seg.status);
+  return [seg.palette.bg, seg.palette.onBg, faded ? 'opacity-50 hover:opacity-75' : 'hover:opacity-90'];
 }
 </script>
 
 <template>
-  <div v-if="total > 0" class="space-y-1.5">
-    <div class="flex items-center gap-0.5 h-2.5 w-full rounded-full bg-zinc-200 dark:bg-zinc-700">
+  <div v-if="total > 0" class="flex items-center gap-3">
+    <span class="shrink-0 text-xs text-muted tabular-nums">{{ total }} tests</span>
+    <div
+      ref="track"
+      class="flex flex-1 min-w-0 h-6 gap-0.5 overflow-hidden rounded-md bg-zinc-200 dark:bg-zinc-700 text-xs font-semibold"
+    >
       <button
-        v-for="(seg, index) in segments"
+        v-for="seg in segments"
+        ref="segment"
         :key="seg.key"
         type="button"
-        class="transition-all cursor-pointer"
-        :class="segmentClass(seg, index)"
-        :style="{ width: (seg.count / total) * 100 + '%' }"
+        :data-segment="seg.key"
+        class="flex flex-wrap justify-center gap-x-1 h-6 overflow-hidden px-1.5 leading-6 whitespace-nowrap text-shadow-xs cursor-pointer transition-[flex-grow,min-width,opacity] duration-200 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-current"
+        :class="segmentClass(seg)"
+        :style="segmentStyle(seg)"
         :aria-label="`${seg.count} ${seg.label}`"
         :aria-pressed="isActive(seg.status)"
         :title="`${seg.count} ${seg.label}`"
         @click="emit('toggle-status', seg.status)"
-      />
-    </div>
-    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <span class="inline-flex items-center gap-1.5 text-xs font-medium px-1 py-0.5">
-        <span class="tabular-nums">{{ total }}</span>
-        <span class="text-muted">tests</span>
-      </span>
-      <button
-        v-for="seg in segments"
-        :key="seg.key"
-        type="button"
-        class="inline-flex items-center gap-1.5 text-xs font-medium transition-colors rounded px-1 py-0.5 cursor-pointer hover:bg-elevated"
-        :class="isActive(seg.status) ? 'bg-elevated ring-1 ring-default' : ''"
-        :aria-pressed="isActive(seg.status)"
-        @click="emit('toggle-status', seg.status)"
       >
-        <span class="size-2 rounded-full shrink-0" :class="seg.palette.bg" />
-        <span class="tabular-nums" :class="seg.palette.text">{{ seg.count }}</span>
-        <span class="text-muted">{{ seg.label }}</span>
+        <span>{{ seg.count }}</span>
+        <span v-if="shownLabel(seg)" class="font-medium">{{ shownLabel(seg) }}</span>
       </button>
+      <div v-if="remaining > 0" :style="{ flex: `${remaining} 1 0%` }" aria-hidden="true" />
     </div>
   </div>
 </template>

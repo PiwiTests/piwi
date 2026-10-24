@@ -403,6 +403,11 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
 
 ### Other UI rules
 
+- **One page gutter, set once.** The `UDashboardPanel` body (`dashboardPanel.slots.body` in `app/app.config.ts`) is
+  every page's gutter: 16 px around the content and between the panel's direct children from `sm` up, and no side
+  gutter below `sm`, where cards and blocks go full-bleed (`max-sm:rounded-none max-sm:border-x-0`). A page never pads
+  its body content again (no `p-4` or `p-6` wrapper), spaces its top-level blocks `gap-4` / `space-y-4`, and narrows a
+  reading page with `max-w-*` + `mx-auto`, never with padding.
 - Sentence case headings and labels ("Test runs"), relative dates via date-fns (full timestamp on hover), human-readable
   durations (exact ms on hover), `DurationValue` where a tight `210ms` reads better than "0.21 seconds".
 - **A duration in an execution's evidence** (a step or a request, on the Timeline, the Network tab or the trace's

@@ -62,7 +62,7 @@ const activeTabHelp = computed(() => props.tabItems.find((t) => t.value === acti
 
 <template>
   <!-- Mobile: the whole panel scrolls as one document. Desktop: fixed summary + independently scrolling tab body. -->
-  <div class="flex flex-col h-full gap-4 sm:p-1 max-lg:overflow-y-auto lg:overflow-hidden">
+  <div class="flex flex-col h-full gap-4 max-lg:overflow-y-auto lg:overflow-hidden">
     <div v-if="$slots.summary" class="lg:shrink-0">
       <div :class="summaryCollapsed ? 'max-lg:hidden' : ''">
         <slot name="summary" />
@@ -79,9 +79,7 @@ const activeTabHelp = computed(() => props.tabItems.find((t) => t.value === acti
 
     <!-- Tab switcher: a full-width select on phones, the same UTabs strip the
          project page uses from sm up. Sticky on mobile. -->
-    <div
-      class="lg:shrink-0 max-lg:sticky max-lg:top-0 max-lg:z-10 sm:max-lg:-mx-1 max-lg:bg-(--ui-bg-canvas) sm:max-lg:px-1 max-lg:py-1.5"
-    >
+    <div class="lg:shrink-0 max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:bg-(--ui-bg-canvas) max-lg:py-1.5">
       <USelect
         v-model="activeTab"
         :items="tabItems"

@@ -7,8 +7,7 @@
  *
  * `inline` puts the controls on the heading's row from `sm` up, for a block
  * with one row of controls; without it they sit in a body under a divider.
- * Below `sm` the block is full-bleed like every card in a gutterless panel;
- * `inset` keeps its side borders, for a page that keeps a gutter there.
+ * Below `sm` the block is full-bleed like every card in the gutterless panel.
  * The `notes` slot is a line under the controls: what the filters hide, or
  * where the scope came from. It folds with the controls, so the summary
  * should mention what it says.
@@ -24,12 +23,11 @@ const props = withDefaults(
     /** The heading: *Default filters* while a dashboard is edited. */
     title?: string;
     inline?: boolean;
-    inset?: boolean;
     help?: HelpTopicKey;
     /** The block's test id; its toggle and summary take `<testId>-toggle` and `<testId>-summary`. */
     testId?: string;
   }>(),
-  { resettable: false, title: 'Filters', inline: false, inset: false, help: undefined, testId: undefined },
+  { resettable: false, title: 'Filters', inline: false, help: undefined, testId: undefined },
 );
 
 const emit = defineEmits<{ reset: [] }>();
@@ -57,8 +55,7 @@ const testIdOf = (part: string) => (props.testId ? `${props.testId}-${part}` : u
 
 <template>
   <section
-    class="rounded-lg border border-default bg-default"
-    :class="inset ? '' : 'max-sm:rounded-none max-sm:border-x-0'"
+    class="rounded-lg border border-default bg-default max-sm:rounded-none max-sm:border-x-0"
     :data-testid="testId"
   >
     <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 sm:px-4 min-h-11">

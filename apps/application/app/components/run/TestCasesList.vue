@@ -740,15 +740,17 @@ defineExpose({ scrollToCase });
 
 <template>
   <div class="flex flex-col min-h-0">
-    <!-- Filters, in two rows: the search (words and file:, describe:, tag:,
-         browser:… qualifiers), then outcomes. How the rows are grouped and
-         sorted sits on the list's own header. -->
-    <div class="mb-3 shrink-0 space-y-2">
+    <!-- Filters: the search (words and file:, describe:, tag:, browser:…
+         qualifiers) and the outcomes, on one row when they fit and the outcomes
+         under the search otherwise. How the rows are grouped and sorted, and
+         Clear filters, sit on the list's own header. -->
+    <div class="mb-3 shrink-0 flex flex-wrap items-center gap-x-3 gap-y-2">
       <TestSearchInput
         v-model="testCaseSearch"
         :fields="RUN_SEARCH_FIELDS"
         :values="searchValues"
         placeholder="Search tests, or filter with file:, describe:, tag:…"
+        class="flex-[1_1_15rem]"
       />
 
       <div class="flex flex-wrap items-center gap-1">
@@ -778,16 +780,6 @@ defineExpose({ scrollToCase });
             @click="showNewFlakyOnly = !showNewFlakyOnly"
           />
         </template>
-        <UButton
-          v-if="hasFilter"
-          size="xs"
-          variant="ghost"
-          color="neutral"
-          icon="i-lucide-x"
-          label="Clear filters"
-          class="ml-auto"
-          @click="clearFilters"
-        />
       </div>
     </div>
 
@@ -863,6 +855,15 @@ defineExpose({ scrollToCase });
           {{ visibleTestCount }}{{ visibleTestCount !== testCases.length ? ` / ${testCases.length}` : '' }} executions
           <HelpHint topic="run.test-cases" />
         </span>
+        <UButton
+          v-if="hasFilter"
+          size="xs"
+          variant="ghost"
+          color="neutral"
+          icon="i-lucide-x"
+          label="Clear filters"
+          @click="clearFilters"
+        />
         <div class="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:flex sm:w-auto sm:items-center sm:gap-3">
           <div class="flex items-center gap-1.5 min-w-0" data-tour="run-tests-group-by">
             <span class="text-xs text-muted whitespace-nowrap">Group by</span>

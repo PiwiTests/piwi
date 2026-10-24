@@ -695,7 +695,7 @@ const breadcrumbItems = computed(() => [
     </template>
 
     <template #body>
-      <div v-if="cluster" class="flex flex-col gap-4 p-4 max-sm:px-0 max-w-6xl mx-auto w-full">
+      <div v-if="cluster" class="flex flex-col gap-4 max-w-6xl mx-auto w-full">
         <!-- ── One block: identity, name, most likely, state, next, issue, occurrences, what changed ── -->
         <SituationBlock help="cluster.state" :edge="stateEdge">
           <!-- Line 1: identity kicker — cluster #, error type, project, owner -->

@@ -277,7 +277,7 @@ useViewScroll(() => dashboardPanelBody('home'));
     </template>
 
     <template #body>
-      <div v-if="loadError" class="p-6">
+      <div v-if="loadError">
         <ErrorState :text="`Couldn't load the dashboard: ${errorMessage(loadError)}`">
           <template #action>
             <UButton size="sm" color="neutral" variant="outline" icon="i-lucide-refresh-cw" @click="retryLoad">
@@ -288,10 +288,10 @@ useViewScroll(() => dashboardPanelBody('home'));
       </div>
 
       <!-- Skeleton while the first load resolves (client-side navigation to Home) -->
-      <div v-else-if="isInitialLoad" class="p-6 space-y-8" aria-busy="true">
+      <div v-else-if="isInitialLoad" class="space-y-4" aria-busy="true">
         <span class="sr-only" role="status">Loading dashboard…</span>
         <USkeleton class="h-14 w-full rounded-xl" />
-        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
           <div class="xl:col-span-2 space-y-3">
             <USkeleton class="h-7 w-40" />
             <USkeleton class="h-72 w-full rounded-lg" />
@@ -303,13 +303,12 @@ useViewScroll(() => dashboardPanelBody('home'));
         </div>
       </div>
 
-      <div v-else class="p-6 space-y-8">
+      <div v-else class="space-y-4">
         <!-- The note names the partial runs "Full runs only" hides — without it, a
              project's first (partial) run reads as if nothing arrived. -->
         <FiltersBlock
           v-if="hasProjects"
           inline
-          inset
           :summary="filtersSummary"
           :resettable="filtersActive"
           data-shot="home-filters"
@@ -329,7 +328,7 @@ useViewScroll(() => dashboardPanelBody('home'));
         <!-- Compact stat strip (full-run-aware) — every number is a link -->
         <div
           v-if="hasProjects"
-          class="flex flex-wrap items-center gap-x-8 gap-y-3 text-sm border border-gray-200 dark:border-gray-700 rounded-xl px-6 py-4 bg-gray-50 dark:bg-gray-900/50"
+          class="flex flex-wrap items-center gap-x-8 gap-y-3 text-sm border border-gray-200 dark:border-gray-700 rounded-xl px-6 py-4 bg-gray-50 dark:bg-gray-900/50 max-sm:rounded-none max-sm:border-x-0 max-sm:px-3"
         >
           <NuxtLink to="/projects" class="flex items-center gap-1.5 hover:underline">
             <UIcon name="i-lucide-folder" class="size-4 text-primary shrink-0" />
@@ -393,7 +392,7 @@ useViewScroll(() => dashboardPanelBody('home'));
         </div>
 
         <!-- Per-project trend table + Recent activity side by side on wide screens -->
-        <div v-if="hasProjects || hasActivity" class="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+        <div v-if="hasProjects || hasActivity" class="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
           <div id="project-health" class="xl:col-span-2 space-y-2 scroll-mt-4">
             <div
               v-if="healthFilter === 'failing'"

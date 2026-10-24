@@ -221,7 +221,7 @@ const windsurfSnippet = computed(() =>
 
     <template #body>
       <CapabilityDeclinedGuard capability="mcp" label="MCP server">
-        <div class="w-full max-w-4xl mx-auto p-6 space-y-6">
+        <div class="w-full max-w-4xl mx-auto space-y-6">
           <UAlert
             v-if="isDemo"
             color="info"

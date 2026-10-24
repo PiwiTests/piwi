@@ -394,21 +394,20 @@ defineExpose({ refresh });
       />
     </template>
 
-    <!-- Filters, in two rows: the search (words and file:, describe:, tag:…
-         qualifiers) with the age window, then outcomes. How the rows are
-         grouped and sorted sits on the list's own header. -->
-    <div class="mb-3 space-y-2">
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <TestSearchInput
-          v-model="searchInput"
-          :fields="CATALOG_SEARCH_FIELDS"
-          :values="searchValues"
-          placeholder="Search tests, or filter with file:, describe:, tag:…"
-          class="w-full sm:flex-1"
-          @focus="loadFacets"
-        />
-        <USelect v-model="age" :items="AGE_OPTIONS" size="sm" class="w-full sm:w-36" aria-label="Last run age filter" />
-      </div>
+    <!-- Filters: the search (words and file:, describe:, tag:… qualifiers),
+         the age window and the outcomes, on one row when they fit and the
+         outcomes under the search otherwise. How the rows are grouped and
+         sorted, and Clear filters, sit on the list's own header. -->
+    <div class="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+      <TestSearchInput
+        v-model="searchInput"
+        :fields="CATALOG_SEARCH_FIELDS"
+        :values="searchValues"
+        placeholder="Search tests, or filter with file:, describe:, tag:…"
+        class="flex-[1_1_15rem]"
+        @focus="loadFacets"
+      />
+      <USelect v-model="age" :items="AGE_OPTIONS" size="sm" class="w-full sm:w-36" aria-label="Last run age filter" />
 
       <div class="flex flex-wrap items-center gap-1">
         <StatusFilterChip
@@ -418,16 +417,6 @@ defineExpose({ refresh });
           :label="opt.label"
           :pressed="statuses.includes(opt.value)"
           @click="toggleStatus(opt.value)"
-        />
-        <UButton
-          v-if="hasSearchOrStatusFilter"
-          size="xs"
-          variant="ghost"
-          color="neutral"
-          icon="i-lucide-x"
-          label="Clear filters"
-          class="ml-auto"
-          @click="clearFilters"
         />
       </div>
     </div>
@@ -467,6 +456,15 @@ defineExpose({ refresh });
                sorted on the right. -->
           <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-default bg-elevated/40 px-3 py-1.5">
             <span class="text-xs text-muted tabular-nums">{{ total }} {{ total === 1 ? 'test' : 'tests' }}</span>
+            <UButton
+              v-if="hasSearchOrStatusFilter"
+              size="xs"
+              variant="ghost"
+              color="neutral"
+              icon="i-lucide-x"
+              label="Clear filters"
+              @click="clearFilters"
+            />
             <div class="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:flex sm:w-auto sm:items-center sm:gap-3">
               <div class="flex items-center gap-1.5 min-w-0">
                 <span class="text-xs text-muted whitespace-nowrap">Group by</span>

@@ -323,7 +323,7 @@ function saveSmoke(testCaseIds: number[]) {
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4">
+      <div class="space-y-4">
         <SectionCard
           title="Test selections"
           icon="i-lucide-list-filter"

@@ -408,7 +408,7 @@ function describeSteps(entry: TestFunctionInfo): string {
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4">
+      <div class="space-y-4">
         <SectionCard title="Test function catalog" icon="i-lucide-function-square" :count="entries.length || null">
           <template #subtitle>
             Page-object methods and helpers a recording is matched against, in the

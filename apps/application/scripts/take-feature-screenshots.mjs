@@ -3688,6 +3688,21 @@ const SCENES = [
 
   // ── Feature states (report artifacts) ─────────────────────────────────────
   {
+    name: 'run-count-bar',
+    description:
+      'Run header count bar: each count on its segment with its label or short label, then a selected segment widened to its whole label',
+    // Seeded run #2 has one test passed on retry: its segment is too narrow for the
+    // whole label until it is selected.
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 520 },
+    async run({ page, shoot, settle }) {
+      await shoot('idle', { of: '[data-shot="run-header"]', pad: 8 });
+      await page.getByRole('button', { name: '1 passed on retry' }).first().click();
+      await settle();
+      await shoot('selected', { of: '[data-shot="run-header"]', pad: 8 });
+    },
+  },
+  {
     name: 'run-kept',
     description: 'Run page of a kept run: the Kept mark in the header and who kept it, in Details',
     // Seeded run #1 is the v2.4.0 release run, kept by its release marker.

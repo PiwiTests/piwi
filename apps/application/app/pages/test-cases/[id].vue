@@ -135,7 +135,7 @@ useViewScroll(
     </template>
 
     <template #body>
-      <div class="flex flex-col gap-4 p-4" data-shot="test-case-detail">
+      <div class="flex flex-col gap-4" data-shot="test-case-detail">
         <!-- Header: title, a single facts line, and the two actions. The title
              wraps and the actions drop below it on phones. -->
         <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4" data-tour="test-case-header">

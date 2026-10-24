@@ -804,7 +804,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
 
     <template #body>
       <!-- No side gutter below `sm`: the cards go full-bleed to the screen edge. -->
-      <div class="flex flex-col gap-4 p-4 max-sm:px-0 max-w-6xl mx-auto w-full">
+      <div class="flex flex-col gap-4 max-w-6xl mx-auto w-full">
         <!-- ── One block: what broke, what is going on, what to do next ── -->
         <SituationBlock help="case.situation" :edge="statusEdge">
           <!-- Line 1: identity kicker — status, the test's title path (file › describe › title), marks, quarantine -->
