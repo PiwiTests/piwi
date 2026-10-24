@@ -880,7 +880,7 @@ const moreMenuItems = computed(() => {
         </template>
 
         <template #tab-workers>
-          <div class="space-y-6 p-1" data-tour="run-workers">
+          <div class="space-y-6" data-tour="run-workers">
             <WorkersTimeline
               :test-cases="isLive ? throttledTestCases : displayTestCases"
               :setup-steps="testRun?.setupSteps ?? null"

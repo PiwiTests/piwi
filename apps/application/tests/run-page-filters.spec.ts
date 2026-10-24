@@ -406,7 +406,8 @@ test.describe.serial('Run page status segments and tag filter', () => {
     await expect(visibleTitles(page).first()).toHaveText('home loads');
 
     await page.getByRole('button', { name: '1 passed', exact: true }).first().click();
-    await page.getByRole('button', { name: '1 passed on retry' }).first().click();
+    // A narrow segment shows a short label first in its name: "1 flaky, passed on retry".
+    await page.getByRole('button', { name: /^1 (flaky, )?passed on retry$/ }).click();
     await expect(visibleTitles(page)).toHaveCount(1);
     await expect(visibleTitles(page).first()).toHaveText('orders list');
   });

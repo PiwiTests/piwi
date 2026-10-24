@@ -3688,21 +3688,6 @@ const SCENES = [
 
   // ── Feature states (report artifacts) ─────────────────────────────────────
   {
-    name: 'run-count-bar',
-    description:
-      'Run header count bar: each count on its segment with its label or short label, then a selected segment widened to its whole label',
-    // Seeded run #2 has one test passed on retry: its segment is too narrow for the
-    // whole label until it is selected.
-    route: '/test-runs/2',
-    viewport: { width: 1280, height: 520 },
-    async run({ page, shoot, settle }) {
-      await shoot('idle', { of: '[data-shot="run-header"]', pad: 8 });
-      await page.getByRole('button', { name: '1 passed on retry' }).first().click();
-      await settle();
-      await shoot('selected', { of: '[data-shot="run-header"]', pad: 8 });
-    },
-  },
-  {
     name: 'run-kept',
     description: 'Run page of a kept run: the Kept mark in the header and who kept it, in Details',
     // Seeded run #1 is the v2.4.0 release run, kept by its release marker.
@@ -3982,19 +3967,22 @@ const SCENES = [
   },
   {
     name: 'run-skip-kinds-mobile',
-    description: 'Run page at phone width: the two skipped greys and the search box above the wrapped status chips',
+    description:
+      'Run page at phone width: the two skipped greys on the count bar, and the search box with the New regressions and Newly flaky toggles',
     route: '/test-runs/2',
     viewport: { width: 390, height: 1400 },
   },
   {
     name: 'run-count-bar-active',
-    description: 'Run page count bar: an active segment grows taller than the track, in the middle and at both ends',
+    description:
+      'Run page count bar: a selected segment carries a ring and the others fade, in the middle and at both ends, and a narrow one widens to its whole label',
+    // Seeded run #2 has one test passed on retry: its segment is too narrow for the
+    // whole label until it is selected.
     route: '/test-runs/2',
     viewport: { width: 1280, height: 900 },
     async run({ page, shoot, settle }) {
       const header = page.locator('[data-shot="run-header"]');
-      // The bar segment comes before the legend chip of the same name.
-      const segment = (name) => header.getByRole('button', { name, exact: true }).first();
+      const segment = (name) => header.getByRole('button', { name });
       await segment('3 failed').click();
       await settle();
       await shoot('middle', { of: '[data-shot="run-header"]', pad: 12 });
@@ -4003,6 +3991,11 @@ const SCENES = [
       await segment('1 fixme').click();
       await settle();
       await shoot('ends', { of: '[data-shot="run-header"]', pad: 12 });
+      await segment('6 passed').click();
+      await segment('1 fixme').click();
+      await segment(/^1 (flaky, )?passed on retry$/).click();
+      await settle();
+      await shoot('narrow', { of: '[data-shot="run-header"]', pad: 12 });
     },
   },
   {
@@ -4049,7 +4042,7 @@ const SCENES = [
   },
   {
     name: 'test-search-mobile',
-    description: 'Run Tests tab at phone width: the search box completing a describe: value above the status chips',
+    description: 'Run Tests tab at phone width: the search box completing a describe: value',
     route: '/test-runs/2',
     viewport: { width: 390, height: 1100 },
     async run({ page, shoot }) {

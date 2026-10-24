@@ -216,7 +216,7 @@ function rowMenu(d: DashboardSummary) {
     </template>
 
     <template #body>
-      <div class="space-y-6 max-w-4xl" data-shot="dashboards-list">
+      <div class="space-y-4 max-w-4xl" data-shot="dashboards-list">
         <SectionCard
           v-if="list?.canSetDefault"
           icon="i-lucide-home"

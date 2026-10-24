@@ -108,7 +108,7 @@ const finishedCount = computed(() => entries.value.filter((e) => ['imported', 'd
     </template>
 
     <template #body>
-      <div class="space-y-4">
+      <div class="space-y-4 max-sm:px-4">
         <SectionCard
           title="Import past runs"
           icon="i-lucide-import"

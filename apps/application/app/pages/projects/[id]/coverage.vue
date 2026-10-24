@@ -378,7 +378,7 @@ const nearestSentence = computed(() => {
     </template>
 
     <template #body>
-      <div v-if="!file" class="space-y-4">
+      <div v-if="!file" class="space-y-4 max-sm:px-4">
         <LoadingState v-if="summaryFirstLoading" text="Combining the suites’ coverage…" />
         <EmptyState
           v-else-if="noCombined"
@@ -387,7 +387,7 @@ const nearestSentence = computed(() => {
         <ErrorState v-else-if="summaryError || !summary" text="The combined coverage could not be read." />
         <ProjectCoverageOverview v-else :project-id="projectId" :summary="summary" :aria-busy="summaryLoading" />
       </div>
-      <div v-else class="space-y-4" data-shot="coverage-file">
+      <div v-else class="space-y-4 max-sm:px-4" data-shot="coverage-file">
         <LoadingState v-if="loading" text="Reading the file’s coverage…" />
         <EmptyState v-else-if="!coverageActive && !combinedFile" text="This project records no coverage." />
         <ErrorState v-else-if="error && !combinedFile" text="The coverage of this file could not be read." />

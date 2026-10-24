@@ -59,7 +59,7 @@ useHead(
 
     <template #body>
       <CapabilityDeclinedGuard capability="bug-reports" label="Bug reports">
-        <div class="space-y-4">
+        <div class="space-y-4 max-sm:px-4">
           <SectionCard
             title="Bug reports"
             icon="i-lucide-bug"

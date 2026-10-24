@@ -396,7 +396,7 @@ useViewScroll(() => dashboardPanelBody('home'));
           <div id="project-health" class="xl:col-span-2 space-y-2 scroll-mt-4">
             <div
               v-if="healthFilter === 'failing'"
-              class="flex items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400"
+              class="flex items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400 max-sm:px-3"
             >
               <span>Showing failing projects only</span>
               <UButton size="xs" variant="ghost" icon="i-lucide-x" @click="healthFilter = 'all'">Clear</UButton>

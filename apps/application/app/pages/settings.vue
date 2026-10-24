@@ -52,7 +52,7 @@ const menuItems = computed(() =>
 </script>
 
 <template>
-  <UDashboardPanel id="settings" :ui="{ body: 'lg:py-8' }">
+  <UDashboardPanel id="settings">
     <template #header>
       <UDashboardNavbar>
         <template #leading>

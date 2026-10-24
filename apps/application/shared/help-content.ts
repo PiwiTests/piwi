@@ -581,7 +581,7 @@ export const HELP_TOPICS = {
   },
   'run.test-cases': {
     title: 'Tests',
-    text: 'Every execution in this run, in the order the tests ran (file order when grouped by file). Words search the title, describe blocks, path and error; qualifiers such as file:, describe:, tag: or browser: search one field, and a leading - excludes. Ctrl+F jumps to the search. Group by cluster, file, file and describe block, lock, or none. The count bar in the header filters by status (test.skip() and test.fixme() skips apart); New regressions and Newly flaky narrow the list further.',
+    text: 'Every execution in this run, in the order the tests ran (file order when grouped by file). Words search the title, describe blocks, path and error; qualifiers such as `file:`, `describe:`, `tag:` or `browser:` search one field, and a leading `-` excludes. Ctrl+F jumps to the search. Group by cluster, file, file and describe block, lock, or none. The count bar in the header filters by status (`test.skip()` and `test.fixme()` skips apart); New regressions and Newly flaky narrow the list further.',
     doc: 'reference/test-search',
   },
   'run.changes': {

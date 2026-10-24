@@ -48,7 +48,7 @@ const {
     <template #body>
       <LoadingState v-if="status === 'pending' || (!spec && !error)" text="Loading API reference…" />
 
-      <div v-else-if="error || !spec" class="p-6">
+      <div v-else-if="error || !spec">
         <ErrorState text="Couldn't load the API reference UI.">
           <template #action>
             <p class="text-sm text-muted max-w-sm">The raw OpenAPI spec is still available directly.</p>

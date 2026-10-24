@@ -350,7 +350,9 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
   brings the rows back (`HiddenRunsNote`: _Include partial runs_, _Show all branches_); no full-width `UAlert`, no solid
   button.
 - **A list's own controls stay with the list**: a search box, status chips, a sort or a window that only one list
-  reads go in that list's card or toolbar (`FilterToolbar`), not in the Filters block.
+  reads go in that list's card or toolbar (`FilterToolbar`), not in the Filters block. One exception: the run page's
+  outcome filter is the count bar in its header, so the run's Tests list has no status chips
+  ([`adr/run-page-room.md`](../../adr/run-page-room.md)).
 - **A page shows its lists as the user left them** when they come back to it (Back, a breadcrumb, a link): the search,
   the filters, the sort, the open or collapsed groups, the page of a paged list, a _Show all_ and the scroll position.
   Hold that state with `useViewState(key, init)` (`app/composables/useViewState.ts`), never a plain `ref`: it is kept
@@ -406,8 +408,10 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
 - **One page gutter, set once.** The `UDashboardPanel` body (`dashboardPanel.slots.body` in `app/app.config.ts`) is
   every page's gutter: 16 px around the content and between the panel's direct children from `sm` up, and no side
   gutter below `sm`, where cards and blocks go full-bleed (`max-sm:rounded-none max-sm:border-x-0`). A page never pads
-  its body content again (no `p-4` or `p-6` wrapper), spaces its top-level blocks `gap-4` / `space-y-4`, and narrows a
-  reading page with `max-w-*` + `mx-auto`, never with padding.
+  its body content again (no `p-4` or `p-6` wrapper, no `:ui` body override), spaces its top-level blocks `gap-4` /
+  `space-y-4`, and narrows with `max-w-*`, never with padding. The one exception is below `sm`: a page whose content
+  is not only full-bleed cards (a loose heading, sentence or select at the top level) wraps it in `max-sm:px-4`, so
+  nothing touches the screen edge.
 - Sentence case headings and labels ("Test runs"), relative dates via date-fns (full timestamp on hover), human-readable
   durations (exact ms on hover), `DurationValue` where a tight `210ms` reads better than "0.21 seconds".
 - **A duration in an execution's evidence** (a step or a request, on the Timeline, the Network tab or the trace's
