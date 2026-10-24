@@ -678,6 +678,16 @@ const runTabValues = computed(() => tabItems.value.filter((t) => !t.disabled).ma
 if (typeof route.query.tab === 'string' && runTabValues.value.includes(route.query.tab)) {
   activeTab.value = route.query.tab;
 }
+// A link to this run from the page itself (an assistant answer, the command
+// palette) changes only the query, so the tab follows it: the tab it names,
+// the one a legacy value lands on, else the Tests tab.
+watch(
+  () => route.query.tab,
+  (raw) => {
+    const value = typeof raw === 'string' ? (LEGACY_TAB_REDIRECTS[raw] ?? raw) : '';
+    activeTab.value = runTabValues.value.includes(value) ? value : 'test-cases';
+  },
+);
 watch(runTabValues, (vals) => {
   if (!vals.includes(activeTab.value)) activeTab.value = 'test-cases';
 });
