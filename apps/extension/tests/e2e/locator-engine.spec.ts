@@ -382,6 +382,32 @@ test.describe('locator engine matches Playwright', () => {
     }
   });
 
+  test('a candidate that also finds the parent of a repeated container is checked, not thrown on', async ({ page }) => {
+    // As the dashboard's tab bar: a class on the list and on each tab, each tab in a list item.
+    await servePages(page, ORIGIN, {
+      'tab-bar.html': `<!doctype html><html><body><ul class="flex">
+        <li class="item"><button type="button" class="flex" id="runs">Runs (16)</button></li>
+        <li class="item"><button type="button" class="flex" id="failures">Failures (6)</button></li>
+      </ul></body></html>`,
+    });
+    await page.goto(`${ORIGIN}/tab-bar.html`);
+    await tagElements(page);
+    await page.addScriptTag({ path: await engineBundle() });
+    const checked = await page.evaluate(
+      (candidates) =>
+        (
+          globalThis as unknown as {
+            __piwiCheckLocators: (s: string, l: string[]) => Array<{ locator: string; verdict: string }>;
+          }
+        ).__piwiCheckLocators('#failures', candidates),
+      ["locator('.flex')"],
+    );
+    expect(checked).toHaveLength(1);
+    expect(await playwrightOutcome(page, checked[0]!.locator)).toEqual({
+      ids: [await page.locator('#failures').getAttribute('data-eid')],
+    });
+  });
+
   test('one engine answers the same expression identically, cached or not', async ({ page }) => {
     await openFixture(page);
     const expressions = Object.values(LOCATOR_CASES).flat();

@@ -481,6 +481,9 @@ recorder takes:
 - **An element with a role and no name** (an unlabelled checkbox) gets its bare role as a last candidate
   (`rankElement`, score 12, below everything `generateAlternatives` builds), which `checkLocators` narrows or keeps
   with `.first()`/`.nth()`: never no locator at all, which the replay could not play.
+- **A step is never lost to its locators**: a recorded target whose candidates cannot be checked against the page
+  (`checkLocators` throwing on a tree it does not expect) keeps its ranked candidates as they are
+  (`recordedAlternatives`, `record-panel.ts`), and a click whose hover search throws is recorded without hovers.
 - **A name longer than 80 characters** (a link around a whole card: its title, summary and tags) is written by the
   words it starts with, 60 characters at most (`shortName`): Playwright matches a name as a substring, so it finds the
   same element, which `checkLocators` checks.

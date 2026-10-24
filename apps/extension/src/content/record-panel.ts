@@ -240,9 +240,29 @@ function deriveRecordedTarget(el: Element): RecordedTarget {
     accessibleName,
     testId: attrs.attributes[testIdAttribute ?? 'data-testid'] ?? null,
     text: el.textContent ? normalizeText(el.textContent).slice(0, 200) : null,
-    alternatives: verifiedLocators(el, ranked, { testIdAttribute }),
+    alternatives: recordedAlternatives(el, ranked),
     elementKey: elementKeyFor(el),
   };
+}
+
+/** How many locators a step keeps when they could not be checked against the page. */
+const UNCHECKED_KEPT = 5;
+
+/**
+ * The locators a step keeps for `el`: those that find it alone on the page
+ * (`verifiedLocators`), or the ranked candidates as they are when checking
+ * them throws on a page shaped as it does not expect. A step is never lost to
+ * its locators.
+ */
+function recordedAlternatives(
+  el: Element,
+  ranked: ReturnType<typeof rankElement>['ranked'],
+): RecordedTarget['alternatives'] {
+  try {
+    return verifiedLocators(el, ranked, { testIdAttribute });
+  } catch {
+    return ranked.slice(0, UNCHECKED_KEPT).map(({ locator, method, score }) => ({ locator, method, score }));
+  }
 }
 
 /**
@@ -317,9 +337,19 @@ let hoverTracker: HoverTracker | null = null;
  * stands now: the elements whose CSS `:hover` or script reveal showed `el` or
  * one of its ancestors. An element named by text the hover shows is named by
  * the element inside it the pointer entered it through instead. Plain pointer
- * movement gives none.
+ * movement gives none, and so does a page whose styles or tree the search
+ * throws on: the click is recorded without them.
  */
 function hoverTargets(el: Element): RecordedTarget[] {
+  try {
+    return revealingHovers(el);
+  } catch {
+    return [];
+  }
+}
+
+/** `hoverTargets`, which may throw. */
+function revealingHovers(el: Element): RecordedTarget[] {
   const css = cssHoverSubjects(el, documentStyleRules());
   const scripted = hoverTracker?.scriptSubject(el, pointedAt);
   const subjects = css.map((s) => s.subject);
