@@ -13,10 +13,10 @@ clients stay thin and both editors give the same answers.
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
   `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/coverage`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
-  `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`, `piwi/commandEnded` and `piwi/declineRecord` notifications, and the
+  `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, `piwi/runControl`, `piwi/pausedPage`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`, `piwi/commandEnded`, `piwi/declineRecord` and `piwi/setRunBreakpoints` notifications, and the
   `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/runEnded`, `piwi/statusChanged`, `piwi/notice`,
-  `piwi/desktopJobChanged`, `piwi/recordingChanged`, `piwi/recordRequested` and `piwi/coverageChanged` notifications it
-  sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
+  `piwi/desktopJobChanged`, `piwi/recordingChanged`, `piwi/recordRequested`, `piwi/coverageChanged` and
+  `piwi/runSessionChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` as a tree in both editors (the JetBrains IDEs'
   LSP client highlights open files only): each item carries its spec relative to the config, its test, cluster,
   owner, project, duration and whether it is new, and, when one context alone has a run, runs laid over none or
@@ -250,9 +250,10 @@ clients stay thin and both editors give the same answers.
   client makes with the block's write. `piwi/renderSteps` indents the code for the caret's line (`indentBlock`).
   A test can hand its page to a recording (`recorder/handoff.ts`): the service listens on a local socket (a Unix socket
   in a new owner-only folder of the temporary directory, a named pipe on Windows), opened once initialized
-  (`RecordChannel.open`), which every test run it builds names in its environment as `PIWI_RECORD_CHANNEL`
-  (`withRecording` in `src/server.ts`, which also adds `--headed` when a spec the run names holds a `page.pause()` call,
-  `PAGE_PAUSE`). A test paused there with Piwi's bar (a breakpoint, or `page.pause()` in a headed run) that asks to
+  (`RecordChannel.open`), which every test run it builds names in its environment twice, as `PIWI_RUN_CHANNEL` and
+  `PIWI_RECORD_CHANNEL` (`withRecording` in `src/server.ts`, which also adds `--headed` when a spec the run names holds
+  a `page.pause()` call, `PAGE_PAUSE`). A connection's first line tells a hand-off (`attach`) from a worker's run
+  connection (`run-attach`, below), which `onRun` hands to the run sessions. A test paused there with Piwi's bar (a breakpoint, or `page.pause()` in a headed run) that asks to
   record attaches with the channel's token, its file (as the run's folder spells it, `commandFolder`: the service
   names it to the editor as its workspace does, a folder opened through a link), line and project's `testIdAttribute`
   and `baseURL`
@@ -269,6 +270,28 @@ clients stay thin and both editors give the same answers.
   expression in scope there, with the config's Piwi options when read within 10 s, and drives the test's page through
   `handoffLauncher`: the test loads the bundle the service names into its page, relays every call of the recorder's
   binding, which the service's `RecorderHost` answers, and hears the pause and the stop as messages for the recorder.
+- The runs the service builds are steered from the editor (`src/run-sessions.ts`, `RunSessions`): each worker of a run
+  keeps a connection to the record channel's socket for its whole life (`run-attach`, `@piwitests/core/run-channel`,
+  with the channel's token, compared in constant time), filed by the ref of the command (`PIWI_ORIGIN_REF`) under a
+  session: its workers by Playwright's worker index, the test each one runs, where it stands stopped (`running`,
+  `stopped`, `between`) and whether a Pause reached it (`pausing`). `piwi/runSessionChanged` carries a session when a
+  worker connects, starts or ends a test, stops, goes on or leaves, or a Pause reaches it, at once but for the
+  connection and the tests' start and end, which go at most every 300 ms (`SESSION_PACE_MS`), and only when it
+  differs from the last one sent; the run ends with its command (`piwi/commandEnded`) or 5 s after its last worker
+  left with none connecting (`SESSION_LINGER_MS`), in a last notification with `ended`, and a later worker of the ref
+  starts a new session. `piwi/runControl` answers every control with what was asked or why not (`The test is
+  running.`, `2 workers are stopped: choose one.`, a test's `cannotPause`): `pause` goes to the workers that run or are
+  between tests (each stops at its next call, or the next test's first), `step`, `resume`, `finish` and `run-to` to the
+  one stopped, naming its stop, which a worker past it ignores. `piwi/setRunBreakpoints` replaces the run's breakpoints
+  in each worker and in each one that connects later (the 50 latest runs' are kept), and `piwi/pausedPage` asks a
+  stopped worker for a JPEG of its page, null after 10 s (`PAUSED_PAGE_WAIT_MS`), when it leaves or is not stopped. A
+  worker names a place relative to the run's working directory (`run-attach`'s `cwd`, the config's folder as the file
+  system spells it); the session gives the client the file's URI under the folder as the workspace spells it, and takes
+  the client's lines (URIs, 0-based) relative to either, refusing a file outside the run's folder, as `PIWI_PAUSE_AT`
+  leaves it out. A client that shows and answers stops says so in its initialization options
+  (`InitializationOptions.runControl`); without it, a stop no pause bar shows (a headless run's) is resumed as soon as
+  it is heard, with a `piwi/notice` once per run. A worker's `notice` (a control its reporter does not take) is a
+  `piwi/notice` too. The service stopping closes every worker's connection, whose stop then goes on.
 
 `npm run editor:build` writes five files to `dist/`, which both clients ship side by side (VS Code in its `dist/`, the
 JetBrains plugin in its `server/`); the service finds the others next to its own bundle, or in `PIWI_EDITOR_DIST`

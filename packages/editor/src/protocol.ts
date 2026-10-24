@@ -464,6 +464,18 @@ export type McpAuthorization = 'key' | 'sign-in';
 
 export const SET_CREDENTIALS_NOTIFICATION = 'piwi/setCredentials';
 
+/** What a client passes as the `initialize` request's `initializationOptions`. */
+export interface InitializationOptions {
+  /** The connection the editor's own settings hold, as `piwi/setCredentials` sends it later. */
+  credentials?: EditorCredentials;
+  /**
+   * The client shows where the runs the editor started stop (`piwi/runSessionChanged`) and answers those stops
+   * (`piwi/runControl`). Without it, the service resumes a stop that shows no pause bar in the test's page (a
+   * headless run) as soon as it hears it, and says so once per run in a `piwi/notice`.
+   */
+  runControl?: boolean;
+}
+
 /**
  * The run the workspace is compared with: `ladder`, the latest complete run of the checked-out branch, a CI run first,
  * else the default branch's, else the newest of any branch; `branch`, that branch's latest complete run; `run`, that
@@ -1297,3 +1309,165 @@ export interface ApplyPickResult {
 }
 
 export const APPLY_PICK_REQUEST = 'piwi/applyPick';
+
+/**
+ * A line of a file as the run control requests name it: the file's URI and the 0-based line, as `EditorBreakpoint`.
+ * The service names a place of the run's to the worker relative to the run's working directory (the Playwright
+ * config's folder, `RunCommand.cwd`), and refuses a file outside it.
+ */
+export type RunPlace = EditorBreakpoint;
+
+/**
+ * Why a test stopped: at a breakpoint's line, at the first call after Step, for a Pause, on the line it was run to
+ * (`run-to`), at `page.pause()` (`page-pause`); `other` for a reason of a newer reporter, a plain stop.
+ */
+export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'other';
+
+/** Where a worker stands stopped: before a call, which runs as soon as the stop is answered. */
+export interface RunStop {
+  reason: RunStopReason;
+  /** The call about to run, as Playwright titles it: `Click getByRole('button', { name: 'Pay' })`. */
+  title: string;
+  /** The file of the call's line in the user's code, a spec or a page object, as the workspace names it. */
+  uri: string;
+  /** 0-based line and character of the call. `character` is null when unknown. */
+  line: number;
+  character: number | null;
+  /** The locator the call acts on, as source; null for a call on none (a navigation, a key press). */
+  locator: string | null;
+  /** Whether Piwi's pause bar shows in the test's page, which answers the stop too; false in a headless run. */
+  bar: boolean;
+  /** When the worker stopped, ISO 8601. */
+  since: string;
+}
+
+/** A test a worker runs. */
+export interface RunTest {
+  /** Playwright's id of the test. */
+  id: string;
+  /** Its `test.describe` blocks' titles, then its own. */
+  title: string[];
+  /** Its spec and the 0-based line of its `test(…)` call. */
+  uri: string;
+  line: number;
+  /** Its Playwright project's name; empty for a config without projects. */
+  project: string;
+  /** 0 on its first attempt, 1 on its first retry. */
+  retry: number;
+  /**
+   * Why it never stops, in a few words (`running under CI — …`, Playwright's own debugger); null when it can. A
+   * `piwi/runControl` it cannot take is answered with it.
+   */
+  cannotPause: string | null;
+}
+
+/** A worker of a run, connected to the service. */
+export interface RunWorker {
+  /** Playwright's worker index, which `piwi/runControl` and `piwi/pausedPage` name. */
+  worker: number;
+  /** Playwright's parallel index: the slot it runs in, 0 to the number of workers less one. */
+  parallelIndex: number;
+  /** `running` a test, `stopped` before one of its calls, or `between` tests (before its first one too). */
+  state: 'running' | 'stopped' | 'between';
+  /** The test it runs, stopped or not; null between tests. */
+  test: RunTest | null;
+  /** Where it stands stopped; null unless `state` is `stopped`. */
+  stop: RunStop | null;
+  /**
+   * A Pause reached it and it has not stopped yet: it stops before its test's next call that Playwright's debugger
+   * stops at (a long call, a `waitForTimeout`, finishes first), or the next test's first one. A client shows
+   * **Pausing…**.
+   */
+  pausing: boolean;
+}
+
+/**
+ * `piwi/runSessionChanged` (notification, server to client): a run the editor started, as the service hears it from
+ * its workers (`PIWI_RUN_CHANNEL` in `RunCommand.env`): sent when a worker connects, starts or ends a test, stops or
+ * goes on, or leaves, and when a Pause reaches it, at once but for a connection and a test's start and end, which are
+ * sent at most every 300 ms; and when the run ends, last, with `ended`. A client keeps the latest of each `ref`.
+ */
+export interface RunSession {
+  /** The ref of the command that started it (`RunCommand.ref`), or of the terminal it ran in (`terminalRef`). */
+  ref: string;
+  /** The folder of the Playwright config it runs in, as `piwi/status` names it; null when no context holds it. */
+  root: string | null;
+  /** Its workers connected now, by `worker`; none for a moment while Playwright starts a new one. */
+  workers: RunWorker[];
+  /**
+   * The run ended: the client said its command ended (`piwi/commandEnded`), or no worker was connected for a few
+   * seconds after the last one left. Its last notification; a later worker of the same ref (a rerun) starts a new
+   * session.
+   */
+  ended: boolean;
+}
+
+export const RUN_SESSION_NOTIFICATION = 'piwi/runSessionChanged';
+
+/**
+ * What `piwi/runControl` asks: `pause` stops before the next call (of every running worker without `worker`); the
+ * others answer a stop: `step` goes on and stops before the next call, `resume` goes on to the next breakpoint,
+ * `finish` goes on with no breakpoint more in this attempt, `run-to` goes on and stops at the first call on `place`'s
+ * line (or at a breakpoint before it).
+ */
+export type RunControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'run-to';
+
+/**
+ * `piwi/runControl`: steer a run the editor started. Without `worker`, `pause` goes to every worker that runs or is
+ * between tests, and the other actions to the one stopped (refused when several are). `place` is required for
+ * `run-to`.
+ */
+export interface RunControlParams {
+  ref: string;
+  worker?: number | null;
+  action: RunControlAction;
+  place?: RunPlace | null;
+}
+
+/**
+ * What happened, in one sentence for the client to show when `ok` is false: a control that does not fit the state
+ * (`The test is running.`, `2 workers are stopped: choose one.`) is answered so, never dropped. `ok` once the worker
+ * was asked: the state it reaches comes in `piwi/runSessionChanged`.
+ */
+export interface RunControlResult {
+  ok: boolean;
+  message: string;
+}
+
+export const RUN_CONTROL_REQUEST = 'piwi/runControl';
+
+/**
+ * `piwi/setRunBreakpoints` (notification, client to server): the editor's line breakpoints changed while the run of
+ * `ref` runs: its workers stop at `places` from now on, in place of the ones the command started with
+ * (`PIWI_PAUSE_AT`) and of those sent before, a worker that starts later included. A place outside the run's folder
+ * is left out, as `piwi/runArgs` leaves it out.
+ */
+export interface SetRunBreakpointsParams {
+  ref: string;
+  places: RunPlace[];
+}
+
+export const SET_RUN_BREAKPOINTS_NOTIFICATION = 'piwi/setRunBreakpoints';
+
+/** `piwi/pausedPage`: what the page of a stopped worker shows: an image of it (`what: 'image'`). */
+export interface PausedPageParams {
+  ref: string;
+  worker: number;
+  what: 'image';
+}
+
+/** An image of a stopped page, without the pause bar: a JPEG, base64. */
+export interface PausedImage {
+  mime: 'image/jpeg';
+  data: string;
+}
+
+/**
+ * The image; null when the worker is not stopped, its stop has no page, it did not answer within 10 seconds, or its
+ * reporter takes no such request.
+ */
+export interface PausedPageResult {
+  image: PausedImage | null;
+}
+
+export const PAUSED_PAGE_REQUEST = 'piwi/pausedPage';

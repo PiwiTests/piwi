@@ -44,6 +44,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
+import { RUN_CHANNEL_ENV } from '@piwitests/core/run-channel';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
@@ -150,6 +151,7 @@ import {
 } from './recorder/sessions.js';
 import { importInsertion } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
+import { RunSessions } from './run-sessions.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
@@ -199,6 +201,10 @@ import {
   TESTS_FOR_FILE_REQUEST,
   TEST_AT_REQUEST,
   TEST_ITEMS_REQUEST,
+  PAUSED_PAGE_REQUEST,
+  RUN_CONTROL_REQUEST,
+  RUN_SESSION_NOTIFICATION,
+  SET_RUN_BREAKPOINTS_NOTIFICATION,
   type AgentContextParams,
   type AgentContextResult,
   type ApplyPickParams,
@@ -218,8 +224,14 @@ import {
   type FailuresResult,
   type FileSummary,
   type FileSummaryParams,
+  type InitializationOptions,
   type McpServersResult,
   type Notice,
+  type PausedPageParams,
+  type PausedPageResult,
+  type RunControlParams,
+  type RunControlResult,
+  type SetRunBreakpointsParams,
   type PageCandidatesParams,
   type PageCandidatesResult,
   type RecordParams,
@@ -1608,13 +1620,25 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     options.readProjectOptions ??
     ((configFile: string) => readProjectOptions(configFile, path.join(distDir, 'piwi-use-reporter.cjs')));
   /**
-   * The record channel every test run the service builds names (`PIWI_RECORD_CHANNEL`): a test paused there asks to
-   * record from where it is, which the client is asked to start (`piwi/recordRequested`). Null until it listens, and
-   * on a machine that refuses the socket.
+   * The record channel every test run the service builds names (`PIWI_RECORD_CHANNEL`, and `PIWI_RUN_CHANNEL`): a test
+   * paused there asks to record from where it is, which the client is asked to start (`piwi/recordRequested`), and
+   * each worker of the run keeps its run connection there (`runSessions`). Null until it listens, and on a machine
+   * that refuses the socket.
    */
   let recordChannel: RecordChannel | null = null;
   /** The client asked the service to shut down: a channel that opens after it is closed at once. */
   let shutDown = false;
+  /** Whether the client shows where a run stops and answers it (`InitializationOptions.runControl`). */
+  let answersStops = false;
+  /** The runs the service built, as their workers tell them on the run channel. */
+  const runSessions = new RunSessions({
+    notify: (session) => void connection.sendNotification(RUN_SESSION_NOTIFICATION, session),
+    answersStops: () => answersStops,
+    notice: (root, severity, message) =>
+      void connection.sendNotification(NOTICE_NOTIFICATION, { root, severity, message } satisfies Notice),
+    // A run runs in its config's folder as the file system spells it (`commandFolder`).
+    rootOf: (cwd) => contexts.find((c) => samePath(commandFolder(c), cwd) || samePath(c.root, cwd))?.root ?? null,
+  });
   const recordRequested = (handoff: Handoff) => {
     // The run ran in its config's folder as the file system spells it (`commandFolder`): the test names its file so,
     // and the editor as its workspace does (a folder opened through a link).
@@ -1978,8 +2002,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }
     const workspaceEdit = params.capabilities.workspace?.workspaceEdit;
     previewsEdits = !!workspaceEdit?.documentChanges && !!workspaceEdit.changeAnnotationSupport;
-    const init = params.initializationOptions as { credentials?: EditorCredentials } | undefined;
+    const init = params.initializationOptions as InitializationOptions | undefined;
     credentials = init?.credentials ?? {};
+    answersStops = init?.runControl === true;
     return {
       capabilities: {
         textDocumentSync: TextDocumentSyncKind.Incremental,
@@ -2012,7 +2037,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     );
     // A checkout or a commit is read within seconds: the latest run and the diagnostics follow the new `HEAD`.
     void watchRepositories();
-    void RecordChannel.open({ onAttach: recordRequested }).then((channel) => {
+    void RecordChannel.open({
+      onAttach: recordRequested,
+      onRun: (socket, attach) => runSessions.attach(socket, attach),
+    }).then((channel) => {
       if (stopped || shutDown) channel?.close();
       else recordChannel = channel;
     });
@@ -2887,8 +2915,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   };
 
   /**
-   * A test run's command with the record channel in its environment, from which a test paused in it records, and
-   * `--headed` when a spec it runs (`uri`, or a location's) holds a `page.pause()` call, where it pauses.
+   * A test run's command with the record channel in its environment, twice: as the run channel, which each of its
+   * workers keeps a connection to (`run-sessions.ts`), and as the record channel, from which a test paused in it
+   * records with a reporter that predates the run channel. With `--headed` when a spec it runs (`uri`, or a
+   * location's) holds a `page.pause()` call, where it pauses.
    */
   const withRecording = (context: PiwiContext, command: RunCommand, params?: RunTestsArgs): RunCommand => {
     if (!recordChannel) return command;
@@ -2903,7 +2933,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return {
       ...command,
       ...(pauses ? { ...headedCommand(command.command, command.args), pauses: true } : {}),
-      env: { ...command.env, [RECORD_CHANNEL_ENV]: recordChannel.value },
+      env: { ...command.env, [RUN_CHANNEL_ENV]: recordChannel.value, [RECORD_CHANNEL_ENV]: recordChannel.value },
     };
   };
 
@@ -3225,6 +3255,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   connection.onNotification(COMMAND_ENDED_NOTIFICATION, (params: CommandEndedParams) => {
     if (typeof params?.ref !== 'string') return;
     const { ref } = params;
+    runSessions.commandEnded(ref);
     const exitCode = typeof params.exitCode === 'number' ? params.exitCode : null;
     void runWatch.commandEnded(ref, exitCode).then((reached) => {
       const repeated = repeatedCommands.get(ref);
@@ -3233,6 +3264,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       void connection.sendNotification(NOTICE_NOTIFICATION, { root: repeated.root, ...verdict } satisfies Notice);
     });
   });
+
+  connection.onRequest(RUN_CONTROL_REQUEST, (params: RunControlParams): RunControlResult =>
+    runSessions.control(params),
+  );
+
+  connection.onNotification(SET_RUN_BREAKPOINTS_NOTIFICATION, (params: SetRunBreakpointsParams) =>
+    runSessions.setBreakpoints(params),
+  );
+
+  connection.onRequest(PAUSED_PAGE_REQUEST, (params: PausedPageParams): Promise<PausedPageResult> =>
+    runSessions.pausedPage(params),
+  );
 
   connection.onRequest(DESKTOP_JOB_REQUEST, async (params: DesktopJobParams): Promise<DesktopJobResult> => {
     const found = params.executionId ? failureOf({ root: params.root, executionId: params.executionId }) : null;
@@ -3276,11 +3319,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     void refreshAll();
   });
 
-  /** The record channel goes with the service: its socket's folder is removed, and a waiting test hears why. */
+  /**
+   * The record channel goes with the service: its socket's folder is removed, a waiting test hears why, and each
+   * worker's run connection closes, so its stop goes on.
+   */
   const closeRecordChannel = () => {
     shutDown = true;
     recordChannel?.close();
     recordChannel = null;
+    runSessions.dispose();
   };
   connection.onShutdown(() => {
     recordings.dispose();

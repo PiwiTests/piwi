@@ -1,11 +1,13 @@
 /**
  * The record channel: the local socket the service listens on (a Unix socket in a folder only this user reads, a named
- * pipe on Windows), which every test run the service builds names in its environment (`PIWI_RECORD_CHANNEL`,
- * `@piwitests/core/ide-recorder`). A test paused in such a run (Piwi's pause bar at a breakpoint or at `page.pause()`)
- * asks it to record from there; the service asks the editor to take the recording (`onAttach`), whose `piwi/record`
- * names the hand-off, and the session then drives the test's page as it drives a launcher's browser: `handoffLauncher`
- * answers the recorder's calls the test relays as the launcher does (`RecorderHost`), and hands the test what the
- * session says. A hand-off the editor does not take in time is refused, with why.
+ * pipe on Windows), which every test run the service builds names in its environment twice, as `PIWI_RECORD_CHANNEL`
+ * (`@piwitests/core/ide-recorder`) and as `PIWI_RUN_CHANNEL` (`@piwitests/core/run-channel`). A connection's first
+ * line tells the two kinds apart. A test paused in such a run (Piwi's pause bar at a breakpoint or at `page.pause()`)
+ * asks it to record from there (`attach`); the service asks the editor to take the recording (`onAttach`), whose
+ * `piwi/record` names the hand-off, and the session then drives the test's page as it drives a launcher's browser:
+ * `handoffLauncher` answers the recorder's calls the test relays as the launcher does (`RecorderHost`), and hands the
+ * test what the session says. A hand-off the editor does not take in time is refused, with why. A worker of the run
+ * keeps its run connection (`run-attach`) for its whole life, which `onRun` takes (`run-sessions.ts`).
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -21,6 +23,7 @@ import {
   type HandoffToTest,
   type IdeRecorderPaused,
 } from '@piwitests/core/ide-recorder';
+import { parseRunToHub, type RunToHub } from '@piwitests/core/run-channel';
 import { RecorderHost } from './host-state.js';
 import type { LauncherEvents, LauncherFactory } from './sessions.js';
 
@@ -47,6 +50,8 @@ export interface Handoff {
 export interface RecordChannelOptions {
   /** A test asked to record: the editor is asked to take it, with `take`. */
   onAttach(handoff: Handoff): void;
+  /** A worker opened its run connection: returns where its next lines go. Without it, the connection is closed. */
+  onRun?(socket: net.Socket, attach: Extract<RunToHub, { type: 'run-attach' }>): (line: string) => void;
   /** How long a hand-off waits for the editor; {@link HANDOFF_WAIT_MS} by default. */
   waitMs?: number;
 }
@@ -133,18 +138,30 @@ export class RecordChannel {
     if (this.folder) fs.rmSync(this.folder, { recursive: true, force: true });
   }
 
-  /** A test connected: its first line must be an attach with the token; anything else closes it. */
+  /**
+   * A test connected: its first line must be an attach or a worker's run-attach, with the token; anything else closes
+   * it.
+   */
   private accept(socket: net.Socket): void {
     socket.setEncoding('utf8');
     let handoff: Handoff | null = null;
+    let run: ((line: string) => void) | null = null;
     const read = lineReader(
       (line) => {
+        if (run) return run(line);
         if (handoff) {
           handoff.deliver(line);
           return;
         }
         const message = parseHandoffToEditor(line);
-        if (message?.type !== 'attach' || !sameToken(message.token, this.token)) {
+        if (message?.type !== 'attach') {
+          const attach = parseRunToHub(line);
+          if (attach?.type === 'run-attach' && sameToken(attach.token, this.token) && this.options.onRun) {
+            run = this.options.onRun(socket, attach);
+          } else socket.destroy();
+          return;
+        }
+        if (!sameToken(message.token, this.token)) {
           socket.destroy();
           return;
         }
