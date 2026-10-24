@@ -3973,6 +3973,78 @@
       }
     }
   },
+  "replay_reasonSecret": {
+    "message": "This field held a password or another secret, which a recording never keeps: type it on the page, then continue.",
+    "description": "Why a replay step was handed to the person: the step types into a password field (or another field whose value is never recorded), so the person types it."
+  },
+  "replay_hoverNoLocator": {
+    "message": "Skipped: the recording has no locator for the element hovered; the next step points at its own element.",
+    "description": "Replay panel, under a hover step it skipped: the step was recorded without any locator for its element."
+  },
+  "replay_foundWithNoMatch": {
+    "message": "Found with $locator$: $spec$, the locator the test is written with, finds nothing here.",
+    "description": "Replay panel, under a step it played: its element was found with another locator recorded for it, as the locator the generated test uses finds nothing on the page. $locator$ and $spec$ are Playwright locators, as code.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$2",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithOther": {
+    "message": "Found with $locator$, which the other recorded locators agree on: $spec$, the locator the test is written with, finds another element.",
+    "description": "Replay panel, under a step it played: its element was found with another locator recorded for it, which more of the recorded locators agree on than on the element the generated test's locator finds. $locator$ and $spec$ are Playwright locators, as code.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$2",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithMany_one": {
+    "message": "Found with $locator$: $spec$, the locator the test is written with, finds $count$ element here.",
+    "description": "Replay panel, under a step it played: its element was found with another locator recorded for it, as the locator the generated test uses finds several elements. $locator$ and $spec$ are Playwright locators, as code.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$3",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithMany_other": {
+    "message": "Found with $locator$: $spec$, the locator the test is written with, finds $count$ elements here.",
+    "description": "Replay panel, under a step it played: its element was found with another locator recorded for it, as the locator the generated test uses finds several elements. $locator$ and $spec$ are Playwright locators, as code.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$3",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
   "replay_reasonOtherPage": {
     "message": "This step happened on $expected$, and the tab is on $actual$.",
     "description": "Why a replay step could not be done: the tab is on another page. $expected$ and $actual$ are page paths.",

@@ -16,7 +16,7 @@ import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { STEP_CSS, stepView } from '../shared/step-view.js';
 import { relayEvidence } from '../shared/bug-relay.js';
-import { classifyInputKind } from './record-capture.js';
+import { classifyInputKind, ownNavigation } from './record-capture.js';
 import { isSensitiveField, rememberChangedFields } from './sensitive-fields.js';
 import { rankElement, verifiedLocators } from './verified-locators.js';
 import { parentElementOrShadowHost } from './engine-aria.js';
@@ -264,12 +264,41 @@ function fieldTarget(el: Element): RecordedTarget {
   return derived;
 }
 
-/** The control `el` is part of: itself or its nearest actionable ancestor, out through the hosts of the shadow roots it is in. */
+/** Controls that hold controls of their own a person aims at apart: a tree item's expand arrow, its label. */
+const COMPOSITE_CONTROLS = '[role="treeitem"]';
+
+/**
+ * Where the page made the pointer a hand on the way up from `el` to `stop`
+ * (left out): the outermost element showing a pointer cursor its parent does
+ * not show. Null when there is none, or when `stop` shows one too, which its
+ * content then only inherits.
+ */
+function pointerRegion(el: Element, stop: Element | null): Element | null {
+  const pointer = (node: Element) => getComputedStyle(node).cursor === 'pointer';
+  if (stop && pointer(stop)) return null;
+  let region: Element | null = null;
+  for (let node: Element | undefined = el; node && node !== stop; node = parentElementOrShadowHost(node)) {
+    if (node === node.ownerDocument.body || node === node.ownerDocument.documentElement) return null;
+    if (pointer(node)) region = node;
+    else if (region) break;
+  }
+  return region;
+}
+
+/**
+ * The control `el` is part of: itself or its nearest actionable ancestor, out
+ * through the hosts of the shadow roots it is in. Inside a tree item, the
+ * part the page made clickable on its own (its expand arrow); for an icon's
+ * drawing in no control at all, the element the page made clickable around
+ * it, else the icon.
+ */
 function nearestActionable(el: Element): Element {
   const selector = actionableSelector();
   for (let node: Element | undefined = el; node; node = parentElementOrShadowHost(node)) {
-    if (node.matches(selector)) return node;
+    if (!node.matches(selector)) continue;
+    return node !== el && node.matches(COMPOSITE_CONTROLS) ? (pointerRegion(el, node) ?? node) : node;
   }
+  if (el instanceof SVGElement) return pointerRegion(el, null) ?? el.closest('svg') ?? el;
   return el;
 }
 
@@ -1107,7 +1136,28 @@ function scheduleHudRefresh(): void {
  */
 let captureError: string | null = null;
 
+/** The capture events that are the person's own actions, any of which can lead to another page. */
+const ACTION_KINDS: ReadonlySet<RawCaptureEvent['kind']> = new Set([
+  'click',
+  'dblclick',
+  'input',
+  'change',
+  'files',
+  'drop',
+  'keydown',
+]);
+
+/** When the person's last action was recorded, on this page or the pages before it; null before the first. */
+let lastActionAt: number | null = null;
+
+/** The time of the last action among `events`, the recording's so far. */
+function lastActionOf(events: readonly RawCaptureEvent[]): number | null {
+  for (let i = events.length - 1; i >= 0; i--) if (ACTION_KINDS.has(events[i]!.kind)) return events[i]!.timestamp;
+  return null;
+}
+
 function captureEvent(event: RawCaptureEvent): void {
+  if (ACTION_KINDS.has(event.kind)) lastActionAt = event.timestamp;
   void appendRecordingEvent(event)
     .then(() => {
       captureError = null;
@@ -1349,6 +1399,17 @@ function attachListeners(): void {
       const hovers = hoverTargets(el);
       hoverTracker?.press();
       lastPress = { el, target: deriveRecordedTarget(el), hovers, at: e.timeStamp };
+    },
+    opts,
+  );
+
+  // Back or Forward within a page that routes itself: the address changes, and no page loads.
+  window.addEventListener(
+    'popstate',
+    (e) => {
+      if (!e.isTrusted || capturePaused()) return;
+      const navigation = ownNavigation('back_forward', Date.now(), lastActionAt);
+      if (navigation) captureEvent(buildEvent('navigate', null, { value: location.href, navigation }));
     },
     opts,
   );
@@ -1746,8 +1807,16 @@ async function initRecordPanel(restored: boolean): Promise<void> {
   const viewport = recordingMode(state) === 'bug' ? await recordPageViewport(state) : null;
   // Seed this page's own URL so a mid-recording navigation's `RecordedStep`s
   // carry the right `pageUrl`; only the very first one across the whole
-  // recording survives into a `page.goto()` — see `normalizeSteps`.
-  await appendRecordingEvent(buildEvent('navigate', null, { value: location.href }));
+  // recording survives into a `page.goto()`, and a page the person reached
+  // through the history or by reloading — see `normalizeSteps`.
+  lastActionAt = lastActionOf(state.events);
+  const entry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+  const navigation = restored
+    ? ownNavigation('back_forward', Date.now(), lastActionAt)
+    : ownNavigation(entry?.type, performance.timeOrigin, lastActionAt);
+  await appendRecordingEvent(
+    buildEvent('navigate', null, { value: location.href, ...(navigation ? { navigation } : {}) }),
+  );
   attachListeners();
   installStopListener();
   const capture = recorderGlobals().__piwiRecordCapture;

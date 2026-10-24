@@ -3322,6 +3322,72 @@
       }
     }
   },
+  "replay_reasonSecret": {
+    "message": "Este campo contenía una contraseña u otro secreto, que una grabación nunca guarda: escríbalo en la página y luego continúe."
+  },
+  "replay_hoverNoLocator": {
+    "message": "Omitido: la grabación no tiene ningún locator para el elemento sobrevolado; el paso siguiente apunta a su propio elemento."
+  },
+  "replay_foundWithNoMatch": {
+    "message": "Encontrado con $locator$: $spec$, el locator con el que está escrita la prueba, no encuentra nada aquí.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$2",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithOther": {
+    "message": "Encontrado con $locator$, en el que coinciden los demás locators grabados: $spec$, el locator con el que está escrita la prueba, encuentra otro elemento.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$2",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithMany_one": {
+    "message": "Encontrado con $locator$: $spec$, el locator con el que está escrita la prueba, encuentra aquí $count$ elemento.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$3",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithMany_other": {
+    "message": "Encontrado con $locator$: $spec$, el locator con el que está escrita la prueba, encuentra aquí $count$ elementos.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$3",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
   "replay_reasonOtherPage": {
     "message": "Este paso ocurrió en $expected$, y la pestaña está en $actual$.",
     "placeholders": {

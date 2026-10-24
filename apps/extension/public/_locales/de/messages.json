@@ -3322,6 +3322,72 @@
       }
     }
   },
+  "replay_reasonSecret": {
+    "message": "Dieses Feld enthielt ein Passwort oder ein anderes Geheimnis, das eine Aufzeichnung nie behält: Geben Sie es auf der Seite ein und fahren Sie dann fort."
+  },
+  "replay_hoverNoLocator": {
+    "message": "Übersprungen: Die Aufzeichnung hat keinen Locator für das überfahrene Element; der nächste Schritt zeigt auf sein eigenes Element."
+  },
+  "replay_foundWithNoMatch": {
+    "message": "Gefunden mit $locator$: $spec$, der Locator, mit dem der Test geschrieben ist, findet hier nichts.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$2",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithOther": {
+    "message": "Gefunden mit $locator$, worin sich die anderen aufgezeichneten Locators einig sind: $spec$, der Locator, mit dem der Test geschrieben ist, findet ein anderes Element.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$2",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithMany_one": {
+    "message": "Gefunden mit $locator$: $spec$, der Locator, mit dem der Test geschrieben ist, findet hier $count$ Element.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$3",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithMany_other": {
+    "message": "Gefunden mit $locator$: $spec$, der Locator, mit dem der Test geschrieben ist, findet hier $count$ Elemente.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$3",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
   "replay_reasonOtherPage": {
     "message": "Dieser Schritt fand auf $expected$ statt, und der Tab ist auf $actual$.",
     "placeholders": {

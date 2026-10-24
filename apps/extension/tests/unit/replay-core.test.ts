@@ -4,10 +4,14 @@ import { toStepsDocument } from '@piwitests/core/steps';
 import {
   evidenceLines,
   absoluteUrl,
+  chooseElement,
   createWaker,
   evaluateAssertion,
   replayVerdict,
+  STEP_WAIT_MAX_MS,
+  stepTimeout,
   verdictText,
+  type LocatorLook,
   type Observation,
 } from '../../src/content/replay-core.js';
 import { readReportFile, readStepsFile } from '../../src/content/steps-file.js';
@@ -554,5 +558,75 @@ describe('evidenceLines', () => {
 
   it('shows nothing when the page showed nothing', () => {
     expect(evidenceLines(null)).toEqual({ lines: [], more: 0 });
+  });
+});
+
+describe('chooseElement', () => {
+  const look = (locator: string, ...found: string[]): LocatorLook<string> => ({ locator, found });
+  const any = () => true;
+
+  it('takes what the spec’s own locator finds alone, as the spec would', () => {
+    const choice = chooseElement([look('spec', 'save'), look('alt', 'save')], any);
+    expect(choice).toEqual({ element: 'save', locator: 'spec', votes: 2.5 });
+  });
+
+  it('falls back on another recorded locator when the spec’s finds nothing', () => {
+    expect(chooseElement([look('spec'), look('css', 'button'), look('text')], any)).toEqual({
+      element: 'button',
+      locator: 'css',
+      votes: 1,
+    });
+  });
+
+  it('falls back on one that finds the element alone when the spec’s finds several', () => {
+    expect(chooseElement([look('spec', 'a', 'b'), look('row', 'b')], any)?.element).toBe('b');
+  });
+
+  it('keeps the spec’s element unless two other locators agree on another', () => {
+    expect(chooseElement([look('spec', 'a'), look('one', 'b')], any)?.element).toBe('a');
+    expect(chooseElement([look('spec', 'a'), look('one', 'b'), look('two', 'b')], any)).toEqual({
+      element: 'b',
+      locator: 'one',
+      votes: 2,
+    });
+  });
+
+  it('breaks a tie for the better-ranked locator', () => {
+    expect(chooseElement([look('spec'), look('first', 'x'), look('second', 'y')], any)?.locator).toBe('first');
+  });
+
+  it('lets another locator vote only for an element of the kind recorded', () => {
+    const fits = (element: string) => element !== 'heading';
+    expect(chooseElement([look('spec'), look('text', 'heading')], fits)).toBeNull();
+    expect(chooseElement([look('spec'), look('text', 'heading'), look('css', 'button')], fits)?.element).toBe('button');
+    // The spec's own locator is taken as the spec takes it.
+    expect(chooseElement([look('spec', 'heading')], fits)?.element).toBe('heading');
+  });
+
+  it('chooses nothing when no locator finds one element alone', () => {
+    expect(chooseElement([look('spec', 'a', 'b'), look('alt')], any)).toBeNull();
+    expect(chooseElement([], any)).toBeNull();
+  });
+});
+
+describe('stepTimeout', () => {
+  const at = (...timestamps: number[]) => timestamps.map((timestamp) => ({ timestamp }));
+
+  it('waits as Playwright does when the person did not wait longer', () => {
+    expect(stepTimeout(at(1_000, 3_000), 1, 10_000)).toBe(10_000);
+  });
+
+  it('waits as long as the person waited when recording, and some', () => {
+    expect(stepTimeout(at(1_000, 17_000), 1, 10_000)).toBe(21_000);
+  });
+
+  it('waits at most a minute however long the person took', () => {
+    expect(stepTimeout(at(1_000, 600_000), 1, 10_000)).toBe(STEP_WAIT_MAX_MS);
+  });
+
+  it('waits the base time for a first step, or for steps with no time recorded', () => {
+    expect(stepTimeout(at(5_000), 0, 10_000)).toBe(10_000);
+    expect(stepTimeout(at(0, 0), 1, 10_000)).toBe(10_000);
+    expect(stepTimeout(at(9_000, 2_000), 1, 10_000)).toBe(10_000);
   });
 });

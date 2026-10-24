@@ -10,7 +10,7 @@ import { dispatchRuntimeMessage, readStoredEvents, setRecordingActive, stubChrom
 import { stubChromeI18n } from './i18n-stub.js';
 import { playwrightLocator } from './playwright-locator.js';
 import { normalizeSteps, type RawCaptureEvent } from '@piwitests/core/recording';
-import { renderSpec } from '@piwitests/core/codegen';
+import { renderSpec, stepLocator } from '@piwitests/core/codegen';
 import { parseSteps, sessionFromSteps, type PiwiSteps } from '@piwitests/core/steps';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import { clippedInShadows, openShadowRoots } from './shadow.js';
@@ -122,8 +122,29 @@ const EDITABLE_PAGE = `<!doctype html><html><body>
   <div contenteditable aria-label="Comment"><p>Looks <b>good</b> to me</p></div>
 </body></html>`;
 
+/**
+ * Icons a page made clickable: a row's edit icon drawn in SVG inside a span that handles the click, and a tree
+ * item whose expand arrow and label act apart.
+ */
+const ICONS_PAGE = `<!doctype html><html><head><style>
+  .action, .switcher, .title { cursor: pointer; }
+  .switcher { display: inline-block; width: 16px; height: 16px; background: #ccc; }
+</style></head><body>
+  <table><tbody>
+    <tr><td>Cierra</td><td><span class="action" id="edit-record-1" title="Edit" onclick="document.body.dataset.edit = '1'">
+      <svg viewBox="0 0 16 16" width="16" height="16"><path d="M0 0h16v16H0z"></path></svg></span></td></tr>
+    <tr><td>Alden</td><td><span class="action" id="edit-record-2" title="Edit" onclick="document.body.dataset.edit = '2'">
+      <svg viewBox="0 0 16 16" width="16" height="16"><path d="M0 0h16v16H0z"></path></svg></span></td></tr>
+  </tbody></table>
+  <div role="tree"><div role="treeitem" aria-expanded="false">
+    <span class="switcher" onclick="this.parentElement.setAttribute('aria-expanded', 'true')"></span>
+    <span class="title" title="Home">Home</span>
+  </div></div>
+</body></html>`;
+
 /** The pages by path; any other path is the login page. */
 const PAGES: Record<string, string> = {
+  '/icons': ICONS_PAGE,
   '/editable': EDITABLE_PAGE,
   '/reveal': REVEAL_PAGE,
   '/dashboard': DASHBOARD_PAGE,
@@ -184,6 +205,61 @@ test.describe('record-panel.js', () => {
     expect(steps[3]!.target?.testId).toBe('add-to-cart');
     // Both pages' events are present under one session — proof the recording survived the navigation.
     expect(new Set(events.map((e) => e.pageUrl)).size).toBeGreaterThanOrEqual(2);
+  });
+
+  test('a Back and a reload the person makes are steps of their own, a Back an action made is not', async ({
+    context,
+  }) => {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+    const page = await context.newPage();
+    const attach = async () => {
+      await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+      await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    };
+    await page.goto(`${ORIGIN}/login`);
+    await attach();
+    await page.click('#submit');
+    await page.waitForURL('**/dashboard');
+    await attach();
+    // The person looks at the page, then goes back with the browser and reloads.
+    await page.waitForTimeout(1_600);
+    await page.goBack();
+    await page.waitForURL('**/login');
+    await attach();
+    await page.waitForTimeout(1_600);
+    await page.reload();
+    await attach();
+    // A link that goes back as it is clicked: the click is the step.
+    await page.evaluate(() => {
+      const back = document.createElement('a');
+      back.href = '#';
+      back.textContent = 'Previous page';
+      back.onclick = (event) => {
+        event.preventDefault();
+        history.forward();
+      };
+      document.body.append(back);
+    });
+    await page.getByText('Previous page').click();
+    await page.waitForURL('**/dashboard');
+    await attach();
+    await page.click('#add');
+
+    await expect.poll(async () => normalizeSteps(await readStoredEvents(page)).length).toBe(6);
+    const steps = normalizeSteps(await readStoredEvents(page));
+    expect(steps.map((s) => [s.action, s.action === 'goto' ? s.value : (s.target?.accessibleName ?? null)])).toEqual([
+      ['goto', `${ORIGIN}/login`],
+      ['click', 'Log in'],
+      ['goto', `${ORIGIN}/login`],
+      ['goto', `${ORIGIN}/login`],
+      ['click', 'Previous page'],
+      ['click', 'Add to cart'],
+    ]);
   });
 
   test('records the name Playwright computes and ranks a repeated link as the other tools do', async ({ context }) => {
@@ -343,6 +419,27 @@ test.describe('record-panel.js', () => {
     await expect.poll(() => readStoredEvents(page).then((e) => e.length)).toBeGreaterThanOrEqual(2);
     await page.waitForTimeout(200);
     expect(normalizeSteps(await readStoredEvents(page)).map((s) => s.action)).toEqual(['goto', 'click']);
+  });
+
+  test('a click on an icon is a click on what the page made clickable around it, a tree’s arrow apart from its item', async ({
+    context,
+  }) => {
+    const page = await recordingOn(context, '/icons');
+    await page.locator('#edit-record-2 path').click();
+    await expect(page.locator('body')).toHaveAttribute('data-edit', '2');
+    await page.locator('.switcher').click();
+    await expect(page.getByRole('treeitem')).toHaveAttribute('aria-expanded', 'true');
+    await expect.poll(async () => normalizeSteps(await readStoredEvents(page)).length).toBe(3);
+    const steps = normalizeSteps(await readStoredEvents(page));
+    const [edit, arrow] = steps.slice(1).map((s) => stepLocator(s.target, { locators: 'stable' }));
+    expect(edit).toBe("locator('#edit-record-2')");
+    expect(arrow).toBe("locator('.switcher')");
+    // Each plays where it was recorded: the edit of the second row, the arrow rather than the item's middle.
+    await page.reload();
+    await playwrightLocator(page, edit!).click();
+    await expect(page.locator('body')).toHaveAttribute('data-edit', '2');
+    await playwrightLocator(page, arrow!).click();
+    await expect(page.getByRole('treeitem')).toHaveAttribute('aria-expanded', 'true');
   });
 
   test('a click inside an editable element is a click on the element', async ({ context }) => {

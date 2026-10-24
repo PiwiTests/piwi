@@ -237,6 +237,25 @@ describe('normalizeSteps', () => {
     expect(steps[0]).toMatchObject({ value: 'https://x.test/' });
   });
 
+  test('a page the person reached through the history or by reloading is a goto of its own', () => {
+    const link = target({ tagName: 'a', role: 'link' });
+    const steps = normalizeSteps([
+      ev({ kind: 'navigate', value: 'https://x.test/codes', timestamp: 1 }),
+      ev({ kind: 'click', target: link, timestamp: 2 }),
+      ev({ kind: 'navigate', value: 'https://x.test/codes/404', timestamp: 3 }),
+      ev({ kind: 'navigate', value: 'https://x.test/codes', navigation: 'history', timestamp: 4 }),
+      ev({ kind: 'navigate', value: 'https://x.test/codes', navigation: 'reload', timestamp: 5 }),
+      ev({ kind: 'click', target: link, timestamp: 6 }),
+    ]);
+    expect(steps.map((s) => [s.action, s.value, s.pageUrl])).toEqual([
+      ['goto', 'https://x.test/codes', 'https://x.test/codes'],
+      ['click', null, 'https://x.test/'],
+      ['goto', 'https://x.test/codes', 'https://x.test/codes'],
+      ['goto', 'https://x.test/codes', 'https://x.test/codes'],
+      ['click', null, 'https://x.test/'],
+    ]);
+  });
+
   test('long text is normalized and truncated on the target', () => {
     const long = 'x'.repeat(200);
     const steps = normalizeSteps([ev({ kind: 'click', target: target({ text: `  ${long}  ` }), timestamp: 1 })]);
@@ -365,6 +384,15 @@ describe('parseCaptureEvent', () => {
     expect(parseCaptureEvent(viewport)).toEqual(viewport);
     const input = ev({ kind: 'change', target: target(), value: 'FR', checked: false, inputType: 'select' });
     expect(parseCaptureEvent(input)).toEqual(input);
+    const back = ev({ kind: 'navigate', value: 'https://x.test/cart', navigation: 'history' });
+    expect(parseCaptureEvent(back)).toEqual(back);
+  });
+
+  test('a navigation’s cause is one it knows, on a navigate event only', () => {
+    expect(parseCaptureEvent(ev({ kind: 'navigate', value: 'https://x.test/', navigation: 'typed' as never }))).toEqual(
+      ev({ kind: 'navigate', value: 'https://x.test/' }),
+    );
+    expect(parseCaptureEvent(ev({ kind: 'click', navigation: 'reload' }))).toEqual(ev({ kind: 'click' }));
   });
 
   test('every kind the recorder sends is known, and nothing else', () => {

@@ -286,6 +286,41 @@ test.describe('locator engine matches Playwright', () => {
     });
   });
 
+  test('an element its role alone names still gets a locator, kept by position', async ({ page }) => {
+    await servePages(page, ORIGIN, {
+      'unnamed.html': `<!doctype html><html><body>
+        <form id="checkboxes"><input type="checkbox"> checkbox 1<br><input type="checkbox" checked> checkbox 2</form>
+      </body></html>`,
+    });
+    await page.goto(`${ORIGIN}/unnamed.html`);
+    await tagElements(page);
+    await page.addScriptTag({ path: await engineBundle() });
+    const cases = [
+      { selector: 'input:first-of-type', role: 'checkbox', top: "getByRole('checkbox').first()" },
+      { selector: 'input:last-of-type', role: 'checkbox', top: "getByRole('checkbox').nth(1)" },
+    ];
+    for (const { selector, role, top } of cases) {
+      for (const withEngine of [true, false]) {
+        const ranked = await page.evaluate(
+          ([s, w]) =>
+            (
+              globalThis as unknown as {
+                __piwiRankTop: (s: string, w: boolean) => { role: string | null; locator: string | null };
+              }
+            ).__piwiRankTop(s, w),
+          [selector, withEngine] as const,
+        );
+        expect(ranked, `${selector}, counted by ${withEngine ? 'an engine' : 'the probe'}`).toEqual({
+          role,
+          locator: top,
+        });
+      }
+      expect(await playwrightOutcome(page, top)).toEqual({
+        ids: [await page.locator(selector).getAttribute('data-eid')],
+      });
+    }
+  });
+
   test('a candidate is narrowed inside an ancestor carrying the configured test id attribute', async ({ page }) => {
     await servePages(page, ORIGIN, {
       'test-id-scopes.html': `<!doctype html><html><body><ul>

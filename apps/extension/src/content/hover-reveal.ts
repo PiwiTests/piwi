@@ -172,11 +172,22 @@ export class HoverTracker {
     this.lastPressAt = this.now();
   }
 
-  /** What a `MutationObserver` saw: inserted elements, and elements shown by a `style` or `hidden` change. */
+  /**
+   * What a `MutationObserver` saw: inserted elements, and elements shown by a
+   * `style` or `hidden` change. An insertion in the same batch as the removal
+   * of an element the pointer is over is that element swapped for another (a
+   * link re-rendered as the pointer enters it), which no hover reveals.
+   */
   mutations(records: MutationRecord[]): void {
     const info: Added = { at: this.now(), pressAt: this.lastPressAt };
+    const swapped = records.some(
+      (record) =>
+        record.type === 'childList' &&
+        Array.from(record.removedNodes).some((node) => node.nodeType === 1 && this.entered.has(node as Element)),
+    );
     for (const record of records) {
       if (record.type === 'childList') {
+        if (swapped) continue;
         for (const node of Array.from(record.addedNodes)) if (node.nodeType === 1) this.added.set(node, info);
       } else if (record.type === 'attributes' && record.target.nodeType === 1 && shownBy(record)) {
         this.added.set(record.target, info);

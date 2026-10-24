@@ -227,13 +227,18 @@ export function rankElement(el: Element, options: RankOptions = {}): RankedEleme
   // As Playwright's own generator: no role candidate for a presentational element.
   const modelRole = model.role(el);
   const role = modelRole === 'none' || modelRole === 'presentation' ? null : modelRole;
-  const structure = engine
-    ? engineStructure(el, attrs, role, headingLevel({ ...attrs, accessibleName }, role), engine)
-    : probedStructure(attrs, role);
+  const level = headingLevel({ ...attrs, accessibleName }, role);
+  const structure = engine ? engineStructure(el, attrs, role, level, engine) : probedStructure(attrs, role);
   const ranked = generateAlternatives(
     { ...attrs, ...structure, selectorCounts: undefined, accessibleName },
     { role, testIdAttribute },
   );
+  // An element with a role and no name (an unlabelled checkbox) still gets a candidate, which `checkLocators`
+  // narrows or keeps by position.
+  const bare = role && !accessibleName ? renderLocatorChain({ calls: [byRole(role, level)] }) : null;
+  if (bare && !ranked.some((r) => r.locator === bare)) {
+    ranked.push({ locator: bare, method: 'getByRole', args: level != null ? { role, level } : { role }, score: 12 });
+  }
   return { attrs, accessibleName, role, ranked };
 }
 

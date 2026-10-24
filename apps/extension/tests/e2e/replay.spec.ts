@@ -483,6 +483,115 @@ test.describe('replay-panel.js', () => {
     await expect(hud.getByRole('status')).toContainText('1 step played by hand: 4.');
   });
 
+  test('finds an element with another of its recorded locators when the test’s finds nothing, and says so', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'fixed');
+    // Recorded as "Apply discount", the button reads "Apply coupon" here: its test id still finds it.
+    const renamed = {
+      ...target('add-to-cart', 'button', 'Apply discount'),
+      alternatives: [
+        { locator: "getByRole('button', { name: 'Apply discount' })", method: 'getByRole', score: 90 },
+        { locator: "getByTestId('add-to-cart')", method: 'getByTestId', score: 80 },
+      ],
+    };
+    const steps: PiwiSteps = {
+      ...REPORT,
+      steps: REPORT.steps.map((step, i) => (i === 3 ? { ...step, target: renamed } : step)),
+    };
+    await stubChrome(context, running(false, null, steps));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    expect(await verdict(page)).toEqual({ kind: 'not-reproduced' });
+    const state = await replayState(page);
+    expect(state.results.map((r) => r.status)).toEqual(['done', 'done', 'done', 'done', 'passed']);
+    expect(state.results[3]!.detail).toBe(
+      "Found with getByTestId('add-to-cart'): getByRole('button', { name: 'Apply discount' }), the locator the test is written with, finds nothing here.",
+    );
+    await expect(page.locator('#piwi-replay-hud-host .note').filter({ hasText: 'Found with' })).toHaveCount(1);
+  });
+
+  test('takes the element most of its recorded locators agree on over the one the test’s finds', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    await context.route(`${ORIGIN}/**`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        // The page swapped the buttons' texts since the recording, as one that makes them up on each load does.
+        body: `<!doctype html><html><body>
+          <a id="save" class="button success" href="#saved" onclick="document.getElementById('out').textContent = 'saved'">bar</a>
+          <a id="drop" class="button alert" href="#dropped" onclick="document.getElementById('out').textContent = 'dropped'">foo</a>
+          <output id="out"></output>
+        </body></html>`,
+      }),
+    );
+    const steps: PiwiSteps = {
+      ...REPORT,
+      steps: [
+        { action: 'goto', target: null, value: '/', redacted: false, pageUrl: '/', timestamp: 0 },
+        {
+          action: 'click',
+          target: {
+            tagName: 'a',
+            role: 'link',
+            accessibleName: 'foo',
+            testId: null,
+            text: 'foo',
+            alternatives: [
+              { locator: "getByRole('link', { name: 'foo' })", method: 'getByRole', score: 90 },
+              { locator: "locator('#save')", method: 'locator', score: 65 },
+              { locator: "locator('.success')", method: 'locator', score: 40 },
+            ],
+          },
+          value: null,
+          redacted: false,
+          pageUrl: '/',
+          timestamp: 1,
+        },
+      ],
+    };
+    await stubChrome(context, running(false, null, steps));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/`);
+    await expect.poll(() => replayState(page).then((s) => s.status), { timeout: 30_000 }).toBe('done');
+    await expect(page.locator('#out')).toHaveText('saved');
+    expect((await replayState(page)).results[1]!.detail).toBe(
+      "Found with locator('#save'), which the other recorded locators agree on: getByRole('link', { name: 'foo' }), the locator the test is written with, finds another element.",
+    );
+  });
+
+  test('hands a password to the person, which a recording never keeps', async ({ context }) => {
+    await openShadowRoots(context);
+    await routePages(context, 'fixed');
+    const steps: PiwiSteps = {
+      ...REPORT,
+      steps: REPORT.steps.map((step, i) => (i === 1 ? { ...step, value: null, redacted: true } : step)),
+    };
+    await stubChrome(context, running(false, null, steps));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/login`);
+    const hud = page.locator('#piwi-replay-hud-host');
+    await expect(hud).toContainText(
+      'Step 2 could not be played here. This field held a password or another secret, which a recording never keeps: type it on the page, then continue.',
+      { timeout: 20_000 },
+    );
+    await page.getByLabel('Username').fill('alice');
+    await hud.getByRole('button', { name: 'I did it, continue' }).click();
+    expect(await verdict(page)).toEqual({ kind: 'not-reproduced' });
+    expect((await replayState(page)).results.map((r) => r.status)).toEqual([
+      'done',
+      'manual',
+      'done',
+      'done',
+      'passed',
+    ]);
+  });
+
   test('waits on the page the person’s own action loads, then goes on from the next step', async ({ context }) => {
     await openShadowRoots(context);
     // The login page has no Log in button: the person gets to the dashboard their own way.

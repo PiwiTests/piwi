@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { classifyInputKind, isPasswordInput } from '../../src/content/record-capture.js';
+import {
+  ACTION_LED_NAVIGATION_MS,
+  classifyInputKind,
+  ownNavigation,
+  isPasswordInput,
+} from '../../src/content/record-capture.js';
 
 describe('classifyInputKind', () => {
   it('classifies a <select> regardless of type', () => {
@@ -39,5 +44,19 @@ describe('isPasswordInput', () => {
     expect(isPasswordInput('input', 'text')).toBe(false);
     expect(isPasswordInput('input', null)).toBe(false);
     expect(isPasswordInput('textarea', 'password')).toBe(false);
+  });
+});
+
+describe('ownNavigation', () => {
+  it('names a Back, a Forward or a reload the person made', () => {
+    expect(ownNavigation('back_forward', 10_000, 1_000)).toBe('history');
+    expect(ownNavigation('reload', 10_000, 1_000)).toBe('reload');
+    expect(ownNavigation('back_forward', 10_000, null)).toBe('history');
+  });
+
+  it('leaves out a navigation an action led to, and an ordinary one', () => {
+    expect(ownNavigation('back_forward', 10_000, 10_000 - ACTION_LED_NAVIGATION_MS + 1)).toBeNull();
+    expect(ownNavigation('navigate', 10_000, null)).toBeNull();
+    expect(ownNavigation(undefined, 10_000, null)).toBeNull();
   });
 });

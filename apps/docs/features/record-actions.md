@@ -9,8 +9,10 @@ lang: en-US
 <Needs extension />
 
 **Record actions** asks for access to the site you are on, then captures clicks, fills, checks, choices, drags, the
-names of chosen files (never their content), the keys that submit, close or move through a list, and a click on what a
-hover shows, across pages. **Check an element** and **Check the address** add an `expect(…)` of what the page shows
+names of chosen files (never their content), the keys that submit, close or move through a list, a click on what a
+hover shows, and the browser's **Back**, **Forward** and reload as a step to the page they reach, across pages. Each
+element is recorded with up to five locators that find it alone, ranked, so a replay has others to try when one no
+longer holds. **Check an element** and **Check the address** add an `expect(…)` of what the page shows
 now. **Pause** stops capturing without ending the recording, on every page and tab of it, so signing in or closing a
 banner stays out of the spec, until **Resume**. **Stop** opens the review: the **Test title**, filled with the first
 page's own title (or, left empty, the first step in words), names the spec's test and the steps file; **Copy as

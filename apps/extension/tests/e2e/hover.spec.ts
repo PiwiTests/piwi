@@ -82,6 +82,16 @@ const CASES: HoverCase[] = [
     result: 'Following bob',
     hovers: 1,
   },
+  {
+    name: 'an element swapped for another as the pointer enters it',
+    page: 'hover-swap.html',
+    act: async (page) => {
+      await page.getByText('Click me').hover();
+      await page.getByText('Click me').click();
+    },
+    result: 'Clicked 1 time',
+    hovers: 0,
+  },
 ];
 
 async function routePages(context: BrowserContext): Promise<void> {
