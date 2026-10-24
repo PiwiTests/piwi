@@ -144,6 +144,59 @@ export interface TestAtResult {
 
 export const TEST_AT_REQUEST = 'piwi/testAt';
 
+/**
+ * `piwi/testItems`: the tests of the workspace's specs as they stand, each with its latest result, for a client's own
+ * test tree (VS Code's Testing view): the specs of each connected context's catalog that the workspace holds, each
+ * under the context whose folder holds it, and the specs `uris` names under a context's folder, known to the catalog
+ * or not.
+ */
+export interface TestItemsParams {
+  uris?: string[];
+  /** Whether the catalog's specs are answered; true when absent. False answers the specs `uris` names alone. */
+  catalog?: boolean;
+}
+
+/** A test of a spec as it stands. */
+export interface SpecTest {
+  title: string;
+  /** The titles of the `test.describe(…)` blocks around it, outermost first. */
+  suite: string[];
+  /** 0-based lines its `test(…)` call starts and ends on, in the text as it stands. */
+  line: number;
+  endLine: number;
+  /** Where its call starts, as Playwright's location filter takes it (`TestAtResult.location`, `RunTestsArgs.locations`). */
+  location: string;
+  /** The catalog's test of that title in those describe blocks; null for a test Piwi does not know. */
+  testCaseId: number | null;
+  /** Its latest result, as the summary's line of the test gives it (`SummaryLine.status`); null for a test Piwi does not know. */
+  status: TestLineStatus | null;
+  /** Where and why it failed in the latest run the service reads (`SummaryLine.failure`); null otherwise. */
+  failure: TestFailure | null;
+  /** Its page in the dashboard; null for a test Piwi does not know. */
+  url: string | null;
+}
+
+/** The tests of one spec. */
+export interface SpecTests {
+  uri: string;
+  /** The spec relative to its Playwright config's folder. */
+  file: string;
+  tests: SpecTest[];
+}
+
+export interface TestItemsResult {
+  /** One per context holding one of the specs, in the contexts' order. */
+  contexts: Array<{
+    /** The Playwright config's folder, as `RunTestsArgs.root` names it. */
+    root: string;
+    /** The config as `piwi/status` names it (`StatusResult.contexts[].label`). */
+    label: string;
+    specs: SpecTests[];
+  }>;
+}
+
+export const TEST_ITEMS_REQUEST = 'piwi/testItems';
+
 /** `piwi/coverage`: the lines of an application file the project's tests ran, placed on the file as it stands. */
 export interface CoverageParams {
   uri: string;
@@ -188,9 +241,17 @@ export interface CoverageResult {
   blob: string | null;
   /**
    * The marks in a few words, for a tooltip: `41 of 63 lines run by 6 tests · 3 lines changed since the coverage run`,
-   * `6 tests ran another version of this file`; null with `none`.
+   * `6 tests ran another version of this file`, or with `uncovered`, `12 lines changed since main, and no test reaches
+   * this file`; null with `none` otherwise.
    */
   label: string | null;
+  /**
+   * Uncovered changes, with `none`: the lines changed since the project's default branch (since the merge base of
+   * `HEAD` with it, as a pull request into it counts them) of a file Piwi can observe (a page or a server route by the
+   * file-routing convention, or executable lines a run's coverage recorded) and no test reaches, which the pull
+   * request's change coverage will list; blank lines left out. Absent when there are none, and from an older service.
+   */
+  uncovered?: LineSpan[];
 }
 
 export const COVERAGE_REQUEST = 'piwi/coverage';
@@ -260,6 +321,12 @@ export interface RunCommand {
    * project whose `@piwitests/reporter` does not pause at them. Absent otherwise.
    */
   notice?: string;
+  /**
+   * The run pauses in the browser at a `page.pause()` of a spec it runs, where Piwi's pause bar offers **Pick a
+   * locator**: the client names its Send to editor pairing (`PIWI_EDITOR_SEND`), as for a run with breakpoints
+   * (`PIWI_PAUSE_AT`). Absent otherwise.
+   */
+  pauses?: boolean;
 }
 
 export const RUN_ARGS_REQUEST = 'piwi/runArgs';
@@ -380,10 +447,19 @@ export interface EditorCredentials {
    * while `piwi/failures` and `piwi/fileSummary` still give the failures. `error` when absent.
    */
   failureSeverity?: FailureSeverity | null;
+  /**
+   * How the editor's agent signs in to Piwi's MCP server (`piwi/mcp`): `key`, with the connection's key; `sign-in`,
+   * through the instance's own OAuth, for a token of the agent's own that the person consents to in the browser and
+   * can revoke. The desktop app's connection keeps its token either way. `key` when absent.
+   */
+  mcpAuthorization?: McpAuthorization | null;
 }
 
 /** The severity of a failure's diagnostic, as the editor's setting chooses it. */
 export type FailureSeverity = 'error' | 'warning' | 'information' | 'off';
+
+/** How the editor's agent signs in to Piwi's MCP server, as the editor's setting chooses it. */
+export type McpAuthorization = 'key' | 'sign-in';
 
 export const SET_CREDENTIALS_NOTIFICATION = 'piwi/setCredentials';
 
@@ -534,6 +610,8 @@ export interface LiveRun {
   startedAt: string;
   /** Whether the editor started it: a command of `piwi/runArgs` or `piwi/runSelection`. */
   own: boolean;
+  /** The ref of the command that started it (`RunCommand.ref`), on an own run the service keeps the command of. */
+  ref?: string;
 }
 
 /** `piwi/runStatus`: the latest run of each context, for the status bar. */
@@ -580,6 +658,8 @@ export const COMMAND_ENDED_NOTIFICATION = 'piwi/commandEnded';
 export interface RunEnded {
   root: string;
   runId: number;
+  /** The ref of the command that started it (`RunCommand.ref`); absent when the service no longer keeps the command. */
+  ref?: string;
   /** The run's page in the dashboard. */
   url: string;
   passed: number;
@@ -623,6 +703,11 @@ export interface McpServerDefinition {
   /** The streamable HTTP endpoint. */
   url: string;
   headers: Record<string, string>;
+  /**
+   * How the agent is let in: `key`, by the key in `headers`; `sign-in`, by the instance's OAuth, the first time it
+   * connects (no `headers`); `none`, the connection has no key and the instance asks for none.
+   */
+  authorization: 'key' | 'sign-in' | 'none';
 }
 
 /** `piwi/mcp`: one definition per Piwi instance the workspace is connected to. */
@@ -965,7 +1050,41 @@ export interface RecordParams {
   page?: string | null;
   /** The editor's display language, a BCP 47 tag such as `fr` or `pt-BR`, for the recorder's panel in the browser. */
   language?: string | null;
+  /**
+   * A test paused in a run the editor started that asked to record from there, as `piwi/recordRequested` named it:
+   * the steps are recorded in that test's page, as it stands, and written on a new line above the statement it is
+   * paused before, in `uri` (the hand-off's file). `into` is then `steps`; `line`, `project`, `startUrl` and `page`
+   * are not read. A hand-off the test no longer waits for is refused.
+   */
+  handoff?: string | null;
 }
+
+/**
+ * `piwi/recordRequested` (notification, server to client): a test paused in a run the editor started asks to record
+ * from there (**Record here** in Piwi's pause bar, at a breakpoint or at `page.pause()`). The client starts the
+ * recording as it starts one at the caret, with `piwi/record` naming `handoff`, without asking anything; a hand-off it
+ * does not start within 30 seconds is refused, and the test goes on.
+ */
+export interface RecordRequested {
+  handoff: string;
+  uri: string;
+  /** 0-based line of the statement the test is paused before. */
+  line: number;
+  reason: 'breakpoint' | 'pause';
+}
+
+export const RECORD_REQUESTED_NOTIFICATION = 'piwi/recordRequested';
+
+/**
+ * `piwi/declineRecord` (notification, client to server): the client does not start a recording a test asked for
+ * (`RecordRequested`), with why; the test hears it at once and goes on.
+ */
+export interface DeclineRecordParams {
+  handoff: string;
+  message: string;
+}
+
+export const DECLINE_RECORD_NOTIFICATION = 'piwi/declineRecord';
 
 /**
  * Where the recorded block goes, decided from the file's text when the recording starts. The client writes the block

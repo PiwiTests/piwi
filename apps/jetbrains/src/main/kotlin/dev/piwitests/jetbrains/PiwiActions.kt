@@ -312,8 +312,8 @@ class CopyMcpConfigurationAction : AnAction(), DumbAware {
                 CopyPasteManager.getInstance().setContents(StringSelection(Glue.mcpConfiguration(servers)))
                 PiwiCommands.notify(
                     project,
-                    "The MCP configuration is on the clipboard: paste it in Settings → Tools → AI Assistant → Model " +
-                        "Context Protocol (or your agent's MCP settings). It holds your API key: keep it out of the repository.",
+                    ("The MCP configuration is on the clipboard: paste it in Settings → Tools → AI Assistant → Model " +
+                        "Context Protocol (or your agent's MCP settings). ${Glue.mcpAuthorizationNote(servers)}").trimEnd(),
                 )
             }
         }

@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { PassThrough } from 'node:stream';
+import * as net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
@@ -17,6 +18,7 @@ import { createConnection } from 'vscode-languageserver/node';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import { buildSession, type RecordedStep } from '@piwitests/core/recording';
 import { toStepsDocument } from '@piwitests/core/steps';
+import { parseRecordChannel } from '@piwitests/core/ide-recorder';
 import { startServer } from '../src/server';
 import { committedTextAt } from '../src/workspace';
 import type {
@@ -27,6 +29,7 @@ import type {
   McpServersResult,
   Notice,
   PageCandidatesResult,
+  RecordRequested,
   RecordResult,
   RecordingUpdate,
   RenderStepsResult,
@@ -37,11 +40,15 @@ import type {
   ScreenshotResult,
   StatusResult,
   TestAtResult,
+  TestItemsResult,
   TestsForFile,
   TraceResult,
 } from '../src/protocol';
 import type { LaunchRequest, ServiceToLauncher } from '../src/recorder/ipc';
 import type { LauncherEvents } from '../src/recorder/sessions';
+
+/** The record channel every test run the service builds names: a socket path and its token. */
+const RECORD_CHANNEL = expect.stringMatching(/#[\w-]{16,}$/);
 
 const use = (test: number, site: string, actions = ['click']) => ({
   test,
@@ -322,6 +329,19 @@ beforeAll(async () => {
     }
     if (u === '/api/projects/7/test-cases?limit=1000' && slowKey) {
       return res.end(JSON.stringify({ items: [{ tags: ['smoke', 'checkout'], feature: 'Payments' }] }));
+    }
+    if (u === '/api/projects/7/test-cases?sort=title&dir=asc&limit=1000&offset=0') {
+      // The whole catalog: a path from a working directory above the config's folder, and a spec no longer there.
+      return res.end(
+        JSON.stringify({
+          items: [
+            { id: 1, title: 'pays', filePath: 'tests/checkout.spec.ts', status: 'passed' },
+            { id: 3, title: 'removes a row', filePath: 'shop/tests/rows.spec.ts', status: 'failed' },
+            { id: 9, title: 'was deleted', filePath: 'tests/gone.spec.ts', status: 'passed' },
+          ],
+          total: 3,
+        }),
+      );
     }
     if (u === '/api/projects/7/test-cases?limit=1000&file=tests%2Frows.spec.ts') {
       return res.end(
@@ -1034,7 +1054,9 @@ describe('the Piwi language server', () => {
 
   test('offers Piwi’s MCP server with the connection it has', async () => {
     const mcp = (await client.sendRequest('piwi/mcp')) as McpServersResult;
-    expect(mcp.servers).toEqual([{ label: `Piwi (${new URL(url).host})`, url: `${url}/mcp`, headers: {} }]);
+    expect(mcp.servers).toEqual([
+      { label: `Piwi (${new URL(url).host})`, url: `${url}/mcp`, headers: {}, authorization: 'none' },
+    ]);
   });
 
   test('completes page. with the chains the suite uses on the pages this file’s tests visit', async () => {
@@ -1178,7 +1200,7 @@ describe('the Piwi language server', () => {
       cwd: dir,
       command: 'npx playwright test tests/checkout.spec.ts:3',
       args: ['tests/checkout.spec.ts:3'],
-      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: selection.ref },
+      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: selection.ref, PIWI_RECORD_CHANNEL: RECORD_CHANNEL },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
   });
@@ -1334,7 +1356,7 @@ describe('the Piwi language server', () => {
       cwd: dir,
       args: ['tests/checkout.spec.ts:3'],
       command: 'npx playwright test tests/checkout.spec.ts:3',
-      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command.ref },
+      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command.ref, PIWI_RECORD_CHANNEL: RECORD_CHANNEL },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
   });
@@ -1370,6 +1392,229 @@ describe('the Piwi language server', () => {
   });
 });
 
+describe('the test tree', () => {
+  test('lists the catalog’s specs as they stand, each test with its latest result and where it failed', async () => {
+    const items = (await client.sendRequest('piwi/testItems', {})) as TestItemsResult;
+    expect(items).toEqual({
+      contexts: [
+        {
+          root: dir,
+          label: path.basename(dir),
+          specs: [
+            {
+              uri: uri('tests/checkout.spec.ts'),
+              file: 'tests/checkout.spec.ts',
+              tests: [
+                {
+                  title: 'pays',
+                  suite: [],
+                  line: 2,
+                  // As its open document stands: an earlier test opened it with a body.
+                  endLine: expect.any(Number),
+                  location: 'tests/checkout.spec.ts:3',
+                  testCaseId: 1,
+                  status: 'passed',
+                  failure: null,
+                  url: `${url}/test-cases/1`,
+                },
+              ],
+            },
+            {
+              uri: uri('tests/rows.spec.ts'),
+              file: 'tests/rows.spec.ts',
+              tests: [
+                expect.objectContaining({
+                  title: 'removes a row',
+                  line: 3,
+                  endLine: 7,
+                  location: 'tests/rows.spec.ts:4',
+                  testCaseId: 3,
+                  status: 'failed',
+                  failure: expect.objectContaining({ line: 6, executionId: 900, state: 'failing' }),
+                }),
+              ],
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  test('answers the specs it is asked for, a test Piwi does not know and its describe blocks included', async () => {
+    write(
+      'tests/grouped.spec.ts',
+      [
+        "import { test } from '@playwright/test';",
+        "test.describe('cart', () => {",
+        "  test.describe.serial('as a guest', () => {",
+        "    test('pays', async () => {});",
+        '  });',
+        "  test('is new', async () => {});",
+        '});',
+        '',
+      ].join('\n'),
+    );
+    const items = (await client.sendRequest('piwi/testItems', {
+      uris: [uri('tests/grouped.spec.ts'), uri('tests/pages/checkout.page.ts')],
+      catalog: false,
+    })) as TestItemsResult;
+    expect(items.contexts).toHaveLength(1);
+    expect(items.contexts[0]!.specs).toEqual([
+      {
+        uri: uri('tests/grouped.spec.ts'),
+        file: 'tests/grouped.spec.ts',
+        tests: [
+          expect.objectContaining({ title: 'pays', suite: ['cart', 'as a guest'], line: 3, testCaseId: 1 }),
+          {
+            title: 'is new',
+            suite: ['cart'],
+            line: 5,
+            endLine: 5,
+            location: 'tests/grouped.spec.ts:6',
+            testCaseId: null,
+            status: null,
+            failure: null,
+            url: null,
+          },
+        ],
+      },
+    ]);
+    // With the catalog's specs, each once.
+    const all = (await client.sendRequest('piwi/testItems', {
+      uris: [uri('tests/grouped.spec.ts'), uri('tests/rows.spec.ts')],
+    })) as TestItemsResult;
+    expect(all.contexts[0]!.specs.map((s) => s.file)).toEqual([
+      'tests/checkout.spec.ts',
+      'tests/grouped.spec.ts',
+      'tests/rows.spec.ts',
+    ]);
+    fs.rmSync(path.join(dir, 'tests/grouped.spec.ts'));
+  });
+});
+
+describe('recording from a paused test', () => {
+  test('a spec that holds page.pause() runs headed, and its run names the record channel', async () => {
+    const paused = SPEC.replace('async ({ page }) => {});', 'async ({ page }) => {\n  await page.pause();\n});');
+    write('tests/paused.spec.ts', paused);
+    try {
+      const command = (await client.sendRequest('piwi/runArgs', {
+        uri: uri('tests/paused.spec.ts'),
+        testIds: [],
+        locations: ['tests/paused.spec.ts:3'],
+      })) as RunCommand;
+      expect(command.command).toBe('npx playwright test tests/paused.spec.ts:3 --headed');
+      expect(command.pauses).toBe(true);
+      expect(parseRecordChannel(command.env?.PIWI_RECORD_CHANNEL)).not.toBeNull();
+      // A page.pause() left in a comment pauses nothing.
+      write('tests/paused.spec.ts', paused.replace('  await page.pause();', '  // await page.pause();'));
+      const commented = (await client.sendRequest('piwi/runArgs', {
+        uri: uri('tests/paused.spec.ts'),
+        testIds: [],
+        locations: ['tests/paused.spec.ts:3'],
+      })) as RunCommand;
+      expect(commented.command).toBe('npx playwright test tests/paused.spec.ts:3');
+      expect(commented.pauses).toBeUndefined();
+    } finally {
+      fs.rmSync(path.join(dir, 'tests/paused.spec.ts'));
+    }
+  });
+
+  test('a hand-off the editor declines is refused at once, with why', async () => {
+    const command = (await client.sendRequest('piwi/runArgs', {
+      uri: uri('tests/checkout.spec.ts'),
+      testIds: [1],
+    })) as RunCommand;
+    const channel = parseRecordChannel(command.env?.PIWI_RECORD_CHANNEL)!;
+    const requested = new Promise<RecordRequested>((resolve) => {
+      const listener = client.onNotification('piwi/recordRequested', (params: RecordRequested) => {
+        listener.dispose();
+        resolve(params);
+      });
+    });
+    const socket = net.connect(channel.path);
+    socket.setEncoding('utf8');
+    let heard = '';
+    socket.on('data', (chunk: string) => (heard += chunk));
+    const closed = new Promise<void>((resolve) => socket.on('close', () => resolve()));
+    socket.write(
+      `${JSON.stringify({
+        type: 'attach',
+        token: channel.token,
+        file: path.join(dir, 'tests/checkout.spec.ts'),
+        line: 3,
+        reason: 'breakpoint',
+        testIdAttribute: null,
+        baseURL: null,
+      })}\n`,
+    );
+    const { handoff } = await requested;
+    await client.sendNotification('piwi/declineRecord', {
+      handoff,
+      message: 'checkout.spec.ts is being recorded into already.',
+    });
+    await closed;
+    expect(JSON.parse(heard)).toEqual({ type: 'refused', message: 'checkout.spec.ts is being recorded into already.' });
+  });
+
+  test('a test asking to record is put to the editor, which starts it naming the hand-off', async () => {
+    const command = (await client.sendRequest('piwi/runArgs', {
+      uri: uri('tests/checkout.spec.ts'),
+      testIds: [1],
+    })) as RunCommand;
+    const channel = parseRecordChannel(command.env?.PIWI_RECORD_CHANNEL)!;
+    const requested = new Promise<RecordRequested>((resolve) => {
+      const listener = client.onNotification('piwi/recordRequested', (params: RecordRequested) => {
+        listener.dispose();
+        resolve(params);
+      });
+    });
+    const socket = net.connect(channel.path);
+    socket.setEncoding('utf8');
+    let heard = '';
+    socket.on('data', (chunk: string) => (heard += chunk));
+    const closed = new Promise<void>((resolve) => socket.on('close', () => resolve()));
+    socket.write(
+      `${JSON.stringify({
+        type: 'attach',
+        token: channel.token,
+        file: path.join(dir, 'tests/checkout.spec.ts'),
+        line: 3,
+        reason: 'pause',
+        testIdAttribute: null,
+        baseURL: null,
+      })}\n`,
+    );
+    expect(await requested).toEqual({
+      handoff: expect.stringMatching(/^[0-9a-f]{24}$/),
+      uri: uri('tests/checkout.spec.ts'),
+      line: 2,
+      reason: 'pause',
+    });
+    const { handoff } = await requested;
+    // This service ships no recorder bundle: the editor's start is refused, and the test hears why.
+    const result = (await client.sendRequest('piwi/record', {
+      uri: uri('tests/checkout.spec.ts'),
+      line: 0,
+      character: 0,
+      into: 'steps',
+      handoff,
+    })) as RecordResult;
+    expect(result).toMatchObject({ ok: false, message: expect.stringMatching(/^The recorder is missing/) });
+    await closed;
+    expect(JSON.parse(heard)).toMatchObject({ type: 'refused', message: result.message });
+    // Asked again, the hand-off is gone.
+    expect(
+      await client.sendRequest('piwi/record', {
+        uri: uri('tests/checkout.spec.ts'),
+        line: 0,
+        character: 0,
+        into: 'steps',
+        handoff,
+      }),
+    ).toEqual({ ok: false, message: 'The test no longer waits for this recording: it went on.' });
+  });
+});
+
 describe('breakpoints', () => {
   const breakpoints = () => [
     { uri: uri('tests/checkout.spec.ts'), line: 2 },
@@ -1399,6 +1644,7 @@ describe('breakpoints', () => {
         PIWI_ORIGIN: 'editor',
         PIWI_ORIGIN_REF: command.ref,
         PIWI_PAUSE_AT: 'tests/checkout.spec.ts:3;tests/pages/checkout.page.ts:4',
+        PIWI_RECORD_CHANNEL: RECORD_CHANNEL,
       },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
       notice: 'Breakpoints need @piwitests/reporter 0.48.0 or later; this project has 0.46.0.',
@@ -1432,7 +1678,11 @@ describe('breakpoints', () => {
       breakpoints: breakpoints().slice(2),
     })) as RunCommand;
     expect(outside.command).toBe('npx playwright test tests/checkout.spec.ts:3');
-    expect(outside.env).toEqual({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: outside.ref });
+    expect(outside.env).toEqual({
+      PIWI_ORIGIN: 'editor',
+      PIWI_ORIGIN_REF: outside.ref,
+      PIWI_RECORD_CHANNEL: RECORD_CHANNEL,
+    });
   });
 
   test('run from the Playwright config a failure names, whatever file it shows in', async () => {
@@ -2010,7 +2260,11 @@ describe('runs as they happen', () => {
   test('the run of a test started here is followed live as its own, and its failures read your run', async () => {
     const command = await runTests();
     expect(command.ref).toMatch(/^ed-[0-9a-f]{8}$/);
-    expect(command.env).toEqual({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command.ref });
+    expect(command.env).toEqual({
+      PIWI_ORIGIN: 'editor',
+      PIWI_ORIGIN_REF: command.ref,
+      PIWI_RECORD_CHANNEL: RECORD_CHANNEL,
+    });
 
     // It runs on another branch than the one read: the editor's own run is followed wherever it runs.
     const startTime = '2026-09-27T11:00:00.000Z';
@@ -2025,6 +2279,7 @@ describe('runs as they happen', () => {
       failed: 0,
       startedAt: startTime,
       own: true,
+      ref: command.ref,
     });
 
     // A test's end, then the counts of its batch.
@@ -2090,9 +2345,12 @@ describe('runs as they happen', () => {
     const live = await waitFor(
       () => statuses.slice(seen).find((s) => s.contexts[0]?.live?.runId === 48)?.contexts[0]?.live ?? undefined,
     );
-    expect(live).toMatchObject({ runId: 48, status: 'running', own: true });
+    // It is the second command's run: the client knows it by the ref that command was built with.
+    expect(live).toMatchObject({ runId: 48, status: 'running', own: true, ref: second.ref });
     const { message } = await endRun(48, startTime);
     expect(message).toBe("getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #48)");
+    await waitFor(() => (verdicts.some((v) => v.runId === 48) ? true : undefined));
+    expect(verdicts.find((v) => v.runId === 48)?.ref).toBe(second.ref);
     // The instance was never asked for the ref the second command was built with.
     expect(refLookups.get(second.ref!)).toBeUndefined();
   });
@@ -2239,6 +2497,7 @@ describe('runs as they happen', () => {
     expect(verdict).toEqual({
       root: dir,
       runId: 61,
+      ref: command.ref,
       url: `${url}/test-runs/61`,
       passed: 1,
       failed: 2,
@@ -2461,10 +2720,66 @@ describe('the desktop app', () => {
         projects: [{ id: 7, name: 'Acme Mugs' }],
         linked: { id: 7, name: 'Acme Mugs' },
       });
+      // The desktop app's MCP server takes its token, whichever way the agent is set to sign in.
+      await desktopClient.sendNotification('piwi/setCredentials', { mcpAuthorization: 'sign-in' });
+      expect(((await desktopClient.sendRequest('piwi/mcp')) as McpServersResult).servers).toEqual([
+        expect.objectContaining({ headers: { Authorization: 'Bearer pd_desktop' }, authorization: 'key' }),
+      ]);
     } finally {
       fs.rmSync(desktopFile, { force: true });
       stopDesktop();
       desktopClient.dispose();
+    }
+  });
+});
+
+describe('Piwi’s MCP server for the agent', () => {
+  test('carries the connection’s key, or none for the agent to sign in through the instance', async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopAgent = startServer(createConnection(toServer, toClient), {
+      env: {
+        PIWI_DASHBOARD_URL: url,
+        PIWI_PROJECT_NAME: 'Acme Mugs',
+        PIWI_API_KEY: 'pd_agent',
+        PIWI_DESKTOP_CONFIG: '/nonexistent',
+      },
+      debounceMs: 10,
+    });
+    const agentClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    agentClient.listen();
+    try {
+      await agentClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await agentClient.sendNotification('initialized', {});
+      const servers = () => agentClient.sendRequest('piwi/mcp') as Promise<McpServersResult>;
+      const keyed = await waitFor(async () => {
+        const mcp = await servers();
+        return mcp.servers.length ? mcp : undefined;
+      });
+      expect(keyed.servers).toEqual([
+        {
+          label: `Piwi (${new URL(url).host})`,
+          url: `${url}/mcp`,
+          headers: { Authorization: 'Bearer pd_agent' },
+          authorization: 'key',
+        },
+      ]);
+
+      await agentClient.sendNotification('piwi/setCredentials', { mcpAuthorization: 'sign-in' });
+      expect((await servers()).servers).toEqual([
+        { label: `Piwi (${new URL(url).host})`, url: `${url}/mcp`, headers: {}, authorization: 'sign-in' },
+      ]);
+
+      await agentClient.sendNotification('piwi/setCredentials', {});
+      expect((await servers()).servers[0]).toMatchObject({ authorization: 'key' });
+    } finally {
+      stopAgent();
+      agentClient.dispose();
     }
   });
 });
@@ -2503,6 +2818,29 @@ describe('the folder a command runs in', () => {
       })) as RunCommand;
       expect(command.cwd).toBe(fs.realpathSync.native(dir));
       expect(command.env).toMatchObject({ PIWI_PAUSE_AT: 'tests/checkout.spec.ts:3' });
+
+      // A test of that run, paused, names its file as the run's folder spells it: the editor hears its own spelling.
+      const channel = parseRecordChannel(command.env?.PIWI_RECORD_CHANNEL)!;
+      const requested = new Promise<RecordRequested>((resolve) => {
+        const listener = linkedClient.onNotification('piwi/recordRequested', (params: RecordRequested) => {
+          listener.dispose();
+          resolve(params);
+        });
+      });
+      const socket = net.connect(channel.path);
+      socket.write(
+        `${JSON.stringify({
+          type: 'attach',
+          token: channel.token,
+          file: path.join(fs.realpathSync.native(dir), 'tests/checkout.spec.ts'),
+          line: 3,
+          reason: 'breakpoint',
+          testIdAttribute: null,
+          baseURL: null,
+        })}\n`,
+      );
+      expect((await requested).uri).toBe(spec);
+      socket.destroy();
     } finally {
       stopLinked();
       linkedClient.dispose();
@@ -3803,7 +4141,7 @@ describe('a test the instance does not know yet', () => {
       cwd: repo,
       args: ['tests/checkout.spec.ts:5'],
       command: 'npx playwright test tests/checkout.spec.ts:5',
-      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: run?.ref },
+      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: run?.ref, PIWI_RECORD_CHANNEL: RECORD_CHANNEL },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
     // Without a location, a test is run by its id, which needs an instance.

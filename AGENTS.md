@@ -298,6 +298,11 @@ Voice rules for all of them, and for `apps/docs/`: see [`apps/docs/AGENTS.md`](a
 - **Capture global change requests**: when asked to apply a change across many files ("update all X to Y"), add the
   resulting convention as a rule to the relevant `AGENTS.md` so future edits follow it. Put it in the narrowest file
   that covers it — area guide first, this root file only if it truly applies everywhere.
+- **Review before a pull request**: before you propose or open one, unless the branch was reviewed since its last
+  change, propose a code review first. Run it in fresh subagents, not a fork of your own context: give them the diff
+  range and the area guides, never your reasoning or what you expect them to find, and ask for an adversarial
+  reading that reports defects with the input that triggers them. Verify each finding against the code, fix the real
+  ones, and open the pull request after.
 - **Log what you find**: bugs, inconsistencies and tech debt discovered while exploring go to
   `plans/exploration-findings.md` (local, never committed) as:
 

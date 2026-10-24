@@ -1,7 +1,23 @@
 # The editor extensions: a UX and feature audit
 
-**Status.** Audit, proposed 2026-10-21. Being built: every quick win (Q1 to Q14), every medium item (M1 to M12) and
-every defect of appendix A are built. The larger items (L1 to L5) are kept for later.
+- Status: accepted
+- Date: 2026-10-24
+
+**Status.** Audit, proposed 2026-10-21; its plan is built (2026-10-24). Every quick win (Q1 to Q14), every medium
+item (M1 to M12) and every defect of appendix A are built. Of the larger items, L1 is built (2026-10-24): VS Code's Testing view lists the
+catalog's specs as they stand with their latest results (`piwi/testItems`), follows a run in progress, and runs tests
+through two run profiles; Piwi's gutter icon gives way to the view's. L2 is built (2026-10-24): the lines of a page or
+a server route no test reaches that changed since the default branch are marked as uncovered changes, by the pull
+request's rule, in both clients, with the coverage marks (`CoverageResult.uncovered`). L3 is built (2026-10-24), in
+the part a run's pause carries: **Record here** in Piwi's pause bar, at a breakpoint or at `page.pause()`, records in
+the test's page from there, in both clients ([record-from-the-ide.md](../proposals/record-from-the-ide.md), part 5, whose status
+lists what of it remains). L4 is built (2026-10-24): a Playwright suite asserts what the extension draws in the real
+VS Code, at a pinned release, every night ([real-editor-checks.md](../proposals/real-editor-checks.md), D3); the JetBrains check
+stays deferred there, for want of a license in CI. L5 is built (2026-10-24): a setting in both clients
+(`piwi.mcpAuthorization`, **Settings → Tools → Piwi → AI Assistant**: `key` by default, or `sign-in`) has `piwi/mcp`
+hand an instance's MCP server without the key, so the agent signs in through the instance's OAuth for a token of its
+own (`McpServerDefinition.authorization`); the desktop app's server keeps its token. Left to the other proposals:
+record-from-the-ide.md's remaining parts and the JetBrains real-editor check.
 It covers the IDE plug-in as this repository names it: the **editor extensions**, that is the VS Code extension (`apps/vscode`, published as `piwitests.piwi`),
 the JetBrains plugin (`apps/jetbrains`, `dev.piwitests.piwi`) and the **editor service** they both run
 (`packages/editor`, the language server). The plan in [section 10](#10-a-prioritized-plan) ranks what to build; the
@@ -109,9 +125,9 @@ from reading and running the code, not from user reports.
   `PiwiLspServerSupportProvider.kt`, `PiwiFailuresToolWindow.kt`, `PiwiStatusBar.kt`, `PiwiCommands.kt`,
   `PiwiActions.kt`, `PiwiConnect.kt`, `PiwiConfigurable.kt`, `PiwiCodeVisionProvider.kt`, `PiwiTestAnnotator.kt`,
   `PiwiPlaywrightRunner.kt`, `plugin.xml`, `build.gradle.kts`), the seven docs pages under `features/editor*` and
-  `ide-integration.md`, the two ADRs ([`suite-in-the-editor.md`](../adr/suite-in-the-editor.md),
-  [`editor-local-runs.md`](../adr/editor-local-runs.md)) and the two proposals
-  ([`record-from-the-ide.md`](record-from-the-ide.md), [`real-editor-checks.md`](real-editor-checks.md)), the
+  `ide-integration.md`, the two ADRs ([`suite-in-the-editor.md`](suite-in-the-editor.md),
+  [`editor-local-runs.md`](editor-local-runs.md)) and the two proposals
+  ([`record-from-the-ide.md`](../proposals/record-from-the-ide.md), [`real-editor-checks.md`](../proposals/real-editor-checks.md)), the
   dashboard's Open in IDE (`useOpenInIde.ts`, `ide-links.ts`) and the instance routes the service reads.
 - **Reviewed by a second reading**: the JetBrains recording, coverage, Open in IDE and Send to editor handlers, and
   the recorder's internals (`page-candidates.ts`, `imports.ts`, `host-state.ts`, `project-options.ts`,
@@ -138,9 +154,9 @@ The inventory, so that the rest reads against it. Both clients render the same a
 | Agents and the browser | Piwi's MCP server registered with VS Code 1.101 and later, a configuration to paste elsewhere; Piwi Picker paired through a loopback endpoint; desktop jobs (reproduce, bisect, Flake Lab) from a failure |
 
 The ADRs list what was planned beyond this and left for later: the priority 3 and 4 items of
-[`suite-in-the-editor.md`](../adr/suite-in-the-editor.md#what-the-editors-can-grow-into) (gaps where they are,
+[`suite-in-the-editor.md`](suite-in-the-editor.md#what-the-editors-can-grow-into) (gaps where they are,
 handler summary, AI steps, register a function, uncovered changes, bug reports, API shapes), and parts 4 to 7 of
-[`record-from-the-ide.md`](record-from-the-ide.md) (the step list, assertions in two clicks, the locator at the
+[`record-from-the-ide.md`](../proposals/record-from-the-ide.md) (the step list, assertions in two clicks, the locator at the
 caret highlighted in the browser, a signed-in start, run and verify after Stop, keyboard first, record at a
 breakpoint, other ways in). This audit does not restate them; [section 10](#10-a-prioritized-plan) ranks the ones a
 developer would feel first against the new findings.
@@ -214,7 +230,7 @@ developer would feel first against the new findings.
   Playwright project when there are several), with the last answers remembered (`apps/vscode/src/recording.ts`;
   `PiwiRecordingActions.kt`, one dialog for the first two). Reasonable; a developer recording ten times a day would
   want one shortcut that reuses the last answers without asking ("Record here again").
-- **After Stop, the recorded test is not run.** [`record-from-the-ide.md`](record-from-the-ide.md#part-4-what-makes-it-worth-switching-to)
+- **After Stop, the recorded test is not run.** [`record-from-the-ide.md`](../proposals/record-from-the-ide.md#part-4-what-makes-it-worth-switching-to)
   item 5 (**Run** and **Verify ×3** after Stop) is the single most useful unbuilt item of that plan: it closes the
   loop a developer runs by hand today, and the run is recognized as the editor's own.
 - **Warnings on the recorded lines stay until the line is edited**, which is right; they are plain diagnostics with
@@ -359,7 +375,7 @@ See finding 5. Two steps, the first small:
    connected instance or the desktop app) and a JSON answer, so the dashboard confirms **Opened in VS Code** and
    picks the window that holds the file, as it does with JetBrains IDEs. The dashboard needs the listener's port:
    a fixed range as for the JetBrains IDEs, or a discovery file of the extension's own (`~/.piwi/editor.json`, the
-   file part 5 of [record-from-the-ide.md](record-from-the-ide.md) names for another purpose).
+   file part 5 of [record-from-the-ide.md](../proposals/record-from-the-ide.md) names for another purpose).
 
 ### 6.2 Agents
 
@@ -449,7 +465,7 @@ developer are the end of a run and the status bar's reach, both in [section 10](
 The service carries the behavior (303 tests, a stub instance, the launcher with a real Chromium), the VS Code
 client has unit tests of its pure half and an integration suite in a real VS Code on pull requests, the JetBrains
 client platform tests on 2024.1 and the Plugin Verifier on the latest IDEs. What no suite checks is what the editors
-draw ([`real-editor-checks.md`](real-editor-checks.md), D1 to D3): a nightly Playwright suite over the VS Code
+draw ([`real-editor-checks.md`](../proposals/real-editor-checks.md), D1 to D3): a nightly Playwright suite over the VS Code
 screenshot launcher is within reach and would have caught a copy error such as the welcome text of
 [3.1](#31-first-run-and-onboarding).
 
@@ -508,7 +524,7 @@ the files it touches.
 | M6 | One root node per context in the Failures view; the status bar follows the active file's context | usefulness | `packages/editor/src/failure-tree.ts`, `server.ts`, both clients |
 | M7 | A JetBrains status bar with an icon, a failing color and a popup of the actions | usefulness | `PiwiStatusBar.kt` |
 | M8 | A walkthrough in VS Code; a first-run notification in a JetBrains IDE | usefulness | `apps/vscode/package.json`, `PiwiStartupActivity` |
-| M9 | After Stop: **Run it** and **Verify ×3**, the run recognized as the editor's own ([record-from-the-ide.md](record-from-the-ide.md), part 4, item 5) | usefulness | `recording.ts`, `PiwiRecording.kt`, `server.ts` |
+| M9 | After Stop: **Run it** and **Verify ×3**, the run recognized as the editor's own ([record-from-the-ide.md](../proposals/record-from-the-ide.md), part 4, item 5) | usefulness | `recording.ts`, `PiwiRecording.kt`, `server.ts` |
 | M10 | A quick fix on a recorded line's warning that offers the other verified locators | usefulness | `server.ts`, `recorder/sessions.ts` |
 | M11 | Completion after any page expression `piwi/pageCandidates` knows, and inside `expect(` | usefulness | `server.ts` |
 | M12 | The project options cached by the `.env*` files and the config's imports too, expiring after a few minutes, and read with the project's Node; one tokenization per update (appendix A, 27 to 29) | usefulness | `recorder/project-options.ts`, `sessions.ts`, `imports.ts` |
@@ -519,8 +535,8 @@ the files it touches.
 |---|---|---|---|
 | L1 | A results-only Test Explorer integration in VS Code ([6.3](#63-the-playwright-extension-and-the-test-explorer)) | integration | `apps/vscode/src` |
 | L2 | The uncovered changes gutter mark (ADR priority 4) | usefulness | `server.ts`, `coverage.ts`, both clients |
-| L3 | Record at a breakpoint or at `page.pause()` ([record-from-the-ide.md](record-from-the-ide.md), part 5) | usefulness | the reporter's capture fixtures, the service, both clients |
-| L4 | A nightly check in the real VS Code ([real-editor-checks.md](real-editor-checks.md), D3) | quality | `apps/vscode/tests` |
+| L3 | Record at a breakpoint or at `page.pause()` ([record-from-the-ide.md](../proposals/record-from-the-ide.md), part 5) | usefulness | the reporter's capture fixtures, the service, both clients |
+| L4 | A nightly check in the real VS Code ([real-editor-checks.md](../proposals/real-editor-checks.md), D3) | quality | `apps/vscode/tests` |
 | L5 | A scoped token for the agent: the MCP definition without the key, signed in through the instance's OAuth | connectivity | `server.ts`, `extension.ts`, docs |
 
 The order inside each tier is the order to build. Q1 to Q6 remove the reasons a developer would uninstall in the

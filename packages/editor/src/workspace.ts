@@ -117,6 +117,22 @@ export async function committedTextAt(repoRoot: string, commit: string, relative
   return git(repoRoot, ['show', `${commit}:${relativePath.split(path.sep).join('/')}`]);
 }
 
+/** A branch name git takes as a ref, never as an option. */
+const BRANCH = /^[\w.][\w./-]*$/;
+
+/**
+ * Where `HEAD` left `branch`, as a pull request into it counts the changes: the merge base of `HEAD` with
+ * `origin/<branch>`, else with the local `branch`; null when neither is known, or outside a repository.
+ */
+export async function mergeBase(repoRoot: string, branch: string): Promise<string | null> {
+  if (!BRANCH.test(branch)) return null;
+  for (const ref of [`origin/${branch}`, branch]) {
+    const commit = (await git(repoRoot, ['merge-base', 'HEAD', ref]))?.trim();
+    if (commit && COMMIT.test(commit)) return commit;
+  }
+  return null;
+}
+
 /** A git blob id: 40 hexadecimal characters, or 64 in a SHA-256 repository. */
 const BLOB = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { declaredNamesAt, pageCandidates, recordingPlacement } from '../src/recorder/page-candidates';
+import { declaredNamesAt, pageCandidates, placementBefore, recordingPlacement } from '../src/recorder/page-candidates';
 
 const file = (...lines: string[]) => lines.join('\n');
 /** The 0-based line holding `marker` (a comment such as `// here`), for a caret placed on it. */
@@ -659,5 +659,52 @@ describe('recordingPlacement', () => {
       refusal:
         'The cursor is inside a [ opened on line 2 and not closed: close it, or put the cursor after the statement.',
     });
+  });
+});
+
+describe('placementBefore', () => {
+  const text = [
+    "test('pays', async ({ page }) => {",
+    "  await page.goto('/cart');",
+    '  await page',
+    "    .getByRole('button', { name: 'Pay' })",
+    '    .click();',
+    '  await expect(',
+    "    page.getByText('Paid'),",
+    '  ).toBeVisible();',
+    '  await page.pause();',
+    '});',
+  ].join('\n');
+
+  test('goes above the statement a test is paused before, as indented', () => {
+    expect(placementBefore(text, 1)).toEqual({ line: 1, newLine: true, indent: '  ' });
+    expect(placementBefore(text, 8)).toEqual({ line: 8, newLine: true, indent: '  ' });
+  });
+
+  test('goes above the first line of a statement broken over lines', () => {
+    // The click of a chain broken over lines, paused at its call.
+    expect(placementBefore(text, 4)).toEqual({ line: 2, newLine: true, indent: '  ' });
+    // A line inside the brackets of a multi-line `expect(`.
+    expect(placementBefore(text, 6)).toEqual({ line: 5, newLine: true, indent: '  ' });
+  });
+
+  test('goes above an assignment or an expression broken after an operator, not above the statement before', () => {
+    const broken = [
+      "test('reads', async ({ page }) => {",
+      "  await page.goto('/cart');",
+      '  const total =',
+      "    await page.getByTestId('total').textContent();",
+      '  const paid = ready &&',
+      "    (await page.getByRole('button', { name: 'Pay' }).isEnabled());",
+      '  count--',
+      "  await page.getByRole('button', { name: 'Pay' }).click();",
+      '  // note: paid by card',
+      "  await page.getByText('Paid').waitFor();",
+      '});',
+    ].join('\n');
+    expect(placementBefore(broken, 3)).toEqual({ line: 2, newLine: true, indent: '  ' });
+    expect(placementBefore(broken, 5)).toEqual({ line: 4, newLine: true, indent: '  ' });
+    expect(placementBefore(broken, 7)).toEqual({ line: 7, newLine: true, indent: '  ' });
+    expect(placementBefore(broken, 9)).toEqual({ line: 9, newLine: true, indent: '  ' });
   });
 });

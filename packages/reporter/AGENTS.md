@@ -22,7 +22,11 @@ per-directory responsibilities.
    (`internal/capture/api-requests.ts`: the `request` fixture's, any `playwright.request.newContext()`'s and
    `page.request`), and the editor's breakpoints (`internal/capture/pause-at.ts`): a headed local run with
    `PIWI_PAUSE_AT` pauses before an action on those lines, and posts a locator picked meanwhile to the editor's
-   `PIWI_EDITOR_SEND` address with the line, as `@piwitests/core/editor-send` reads it.
+   `PIWI_EDITOR_SEND` address with the line, as `@piwitests/core/editor-send` reads it; with `PIWI_RECORD_CHANNEL`, the
+   pause bar's **Record here** (and `page.pause()` in a headed run, patched by the capture fixtures) hands the page to
+   the editor's recorder (`internal/capture/record-handoff.ts`): it relays each call of the recorder's binding over that
+   local socket, as `@piwitests/core/ide-recorder` frames it, and loads the bundle the editor names. The recorder's host
+   stays in the editor service: this package carries the relay alone.
 4. **The desktop discovery file** — `~/.piwi/desktop.json` and its `{ url, token }` shape
    (`internal/config/desktop.ts`). The desktop shell writes it (`apps/desktop/src-tauri/src/lib.rs`) and this package reads
    it, on independent release cycles, so path and shape changes must land in both.

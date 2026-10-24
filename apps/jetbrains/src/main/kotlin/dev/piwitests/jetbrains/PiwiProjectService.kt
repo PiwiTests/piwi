@@ -104,6 +104,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var baselines: MutableMap<String, String> = mutableMapOf(),
         var coverageMarks: Boolean = true,
         var failureSeverity: String = "error",
+        var mcpAuthorization: String = "key",
     )
 
     private var state = State()
@@ -440,6 +441,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             desktopProject = local.desktopProject.ifBlank { null },
             baselines = local.baselines.mapNotNull { (root, text) -> Glue.decodeBaseline(text)?.let { root to it } }.toMap(),
             failureSeverity = local.failureSeverity.takeIf { it in Glue.FAILURE_SEVERITIES },
+            mcpAuthorization = local.mcpAuthorization.takeIf { it in Glue.MCP_AUTHORIZATIONS },
         )
     }
 

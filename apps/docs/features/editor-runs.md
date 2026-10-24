@@ -18,7 +18,7 @@ second of its end.
 - **Piwi: Run the test at the cursor** (`Ctrl+Shift+Alt+K`, `Cmd+Shift+Alt+K` on macOS) runs the test whose
   `test(…)` call holds the cursor, and **Piwi: Run this spec** the spec's tests Piwi knows; both in the editor's
   context menu of a spec (**Run the Test at the Caret** and **Run This Spec** in a JetBrains IDE). In VS Code, **Run**
-  in the hover of a test's gutter icon runs that test. A test the instance does not know yet, such as one you just
+  in the hover of a test's line runs that test, and so does [the Testing view](#the-testing-view-vs-code). A test the instance does not know yet, such as one you just
   [recorded](./editor-recording#run-it-or-verify-it-three-times), runs by the line of its `test(…)` call
   (`npx playwright test tests/checkout.spec.ts:42`), with or without an instance. Both save the spec first.
 - **Piwi: Verify the test at the cursor ×3** (**Verify the Test at the Caret ×3**) runs that test three times, without
@@ -34,6 +34,25 @@ window in a JetBrains IDE (**Rerun** starts it again), or in the IDE's Playwrigh
 Failed Tests**), a choice of **Settings → Tools → Piwi**. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF`
 ([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run. Breakpoints pause it in the
 browser, with Piwi's picker one click away: [Breakpoints in the browser](./editor-breakpoints).
+
+## The Testing view (VS Code)
+
+VS Code's Testing view lists Piwi's tests: the specs your instance knows, as they stand in the editor, under their
+folders and `test.describe` blocks, each test with its latest result, and for a failure why and where it failed
+(**Peek Error**). The results are published as a test run (`Piwi: run #120 on main`) when the latest run, its baseline
+or the runs laid over it change, and a run in progress is a test run of its own, each test shown as it begins and
+ends. The view's gutter shows each test's result in place of Piwi's icon; the line keeps Piwi's hover.
+
+<figure>
+  <img src="/screenshots/vscode-testing.png" alt="VS Code: the Testing view lists the spec's tests with their latest results, and a failing test's error is peeked at its line in the spec">
+  <figcaption>The Testing view with the latest run's results, and why <strong>pays by card</strong> failed, at its line.</figcaption>
+</figure>
+
+**Run with Piwi**, the view's run profile, runs the tests you pick as the commands above do, one command per
+Playwright config with your breakpoints, and **Verify ×3 with Piwi** runs them three times. A test the run gave Piwi no
+result for, such as one the instance does not know yet, passes when the command exited with 0 and is an error
+otherwise. The view shows results; it does not discover tests nor debug them: a spec the instance has not seen joins
+the tree once you open it. The `piwi.testExplorer` setting turns the view's Piwi tests off.
 
 ## Re-run the failing tests
 

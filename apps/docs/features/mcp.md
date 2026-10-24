@@ -147,7 +147,8 @@ Add to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` in your project root:
 ### VS Code (GitHub Copilot, agent mode)
 
 With the [Piwi extension](/features/editors) installed and connected, VS Code 1.101 and later list Piwi's server
-without any configuration. Otherwise:
+without any configuration, with the extension's key, or signed in through OAuth when `piwi.mcpAuthorization` is
+`sign-in`. Otherwise:
 
 Add to `.vscode/mcp.json` in your workspace (VS Code 1.99+):
 

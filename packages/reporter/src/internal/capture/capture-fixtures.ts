@@ -103,8 +103,9 @@ import {
   pauseSkipReason,
   pickPayload,
   postPickToEditor,
-  type PauseSet,
+  PauseSet,
 } from './pause-at.js';
+import { canRecordFromHere, recordFromHere } from './record-handoff.js';
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 import {
   browserCoverageInWorker,
@@ -1314,8 +1315,63 @@ async function pauseBefore(
         { location: callerLocation, action, locator, target },
         { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG },
         onPick,
+        recorderAt(page, testInfo, callerLocation, 'breakpoint'),
       ),
     );
+    if (choice === 'step') pause.next = true;
+    else if (choice === 'finish') pause.finished = true;
+  } catch {
+    // A pause never fails the test: it runs on.
+  }
+}
+
+/**
+ * What **Record here** runs at a pause, when the editor that started the run can record (`PIWI_RECORD_CHANNEL`): the
+ * page handed to its recorder until the recording ends, and why not when it did not start. Undefined otherwise.
+ */
+function recorderAt(
+  page: Page,
+  testInfo: TestInfo,
+  location: string,
+  reason: 'breakpoint' | 'pause',
+): (() => Promise<void>) | undefined {
+  if (!canRecordFromHere()) return undefined;
+  return async () => {
+    console.log(`[piwi] Recording from ${location.slice(0, location.lastIndexOf(':'))}: the editor writes the steps.`);
+    const why = await recordFromHere({ page, testInfo, location, reason });
+    console.log(why ? `[piwi] Nothing was recorded: ${why}` : '[piwi] The recording ended: the test is paused again.');
+  };
+}
+
+/**
+ * `page.pause()` in a headed local run the editor started (`PIWI_RECORD_CHANNEL`): Piwi's pause bar at its line, in
+ * place of Playwright's Inspector, with **Record here**. Step pauses at the next action, Finish at no breakpoint
+ * more. Anywhere else, Playwright's own pause. Never throws but what Playwright's own pause throws.
+ */
+async function pauseInPlace(page: Page, playwrightPause: () => Promise<void>, location: string | null): Promise<void> {
+  const sink = currentSink;
+  const testInfo = sink?.testInfo;
+  if (!sink || !testInfo || !location || !canRecordFromHere() || pauseSkipReason(pauseGateFromTestInfo(testInfo))) {
+    return playwrightPause();
+  }
+  try {
+    const choice = await internalCall(page, () =>
+      pauseHere(
+        page,
+        testInfo,
+        { location, action: 'page.pause()', locator: null, target: null },
+        { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG },
+        async (picked) => {
+          console.log(`[piwi] Locator picked: ${picked.picked.locator}`);
+          await postPickToEditor(
+            process.env[PIWI_LOCAL_DEBUG_ENV.editorSend],
+            pickPayload(picked.picked.locator, location),
+          );
+        },
+        recorderAt(page, testInfo, location, 'pause'),
+      ),
+    );
+    const pause = (sink.pause ??= { set: new PauseSet(new Set()), next: false, finished: false });
     if (choice === 'step') pause.next = true;
     else if (choice === 'finish') pause.finished = true;
   } catch {
@@ -1539,6 +1595,13 @@ function instrumentPage(page: Page): void {
   // the browser patch never saw — instrument it so its close is wrapped too.
   const ctx = pageContext(page);
   if (ctx) instrumentContext(ctx);
+
+  // `page.pause()` in a headed run the editor started pauses with Piwi's bar, which can record from there.
+  if (typeof page.pause === 'function') {
+    const originalPause = page.pause.bind(page);
+    // The call site is read here, the frame right above the test's own.
+    page.pause = (): Promise<void> => pauseInPlace(page, originalPause, captureCallerLocation());
+  }
 
   // Drain in-flight probes before a user-initiated close (the guard tolerates
   // page-like test fakes without a close method), and preserve the

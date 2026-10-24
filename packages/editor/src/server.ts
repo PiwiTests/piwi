@@ -43,6 +43,7 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
+import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
@@ -77,15 +78,23 @@ import {
   rewriteEdits,
   stabilityFindings,
   stableReplacement,
+  TEST_CALL,
+  testCalls,
+  caseOfCall,
+  withoutComments,
   testsReaching,
   timeoutEdit,
   timeoutMessage,
   type LineLocator,
   type LineState,
+  type TestCall,
 } from './analysis.js';
 import {
   BlobTexts,
   COVERAGE_MARKS_EXPLAINED,
+  UNCOVERED_EXPLAINED,
+  changedSince,
+  uncoveredFile,
   chooseVersion,
   coverageIndexFor,
   coverageMarks,
@@ -112,6 +121,7 @@ import {
   forgetShared,
   type ResponseCache,
   type BranchFailure,
+  type BranchFailures,
   type BranchResolved,
   type CatalogCase,
   type FileCoverage,
@@ -139,6 +149,7 @@ import {
   type LauncherFactory,
 } from './recorder/sessions.js';
 import { importInsertion } from './recorder/imports.js';
+import { RecordChannel, type Handoff } from './recorder/handoff.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
@@ -165,6 +176,8 @@ import {
   RECORD_REQUEST,
   RECORDING_COMMAND_REQUEST,
   RECORDING_NOTIFICATION,
+  RECORD_REQUESTED_NOTIFICATION,
+  DECLINE_RECORD_NOTIFICATION,
   REFRESH_REQUEST,
   REFRESH_RUN_REQUEST,
   RENDER_STEPS_REQUEST,
@@ -185,6 +198,7 @@ import {
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
   TEST_AT_REQUEST,
+  TEST_ITEMS_REQUEST,
   type AgentContextParams,
   type AgentContextResult,
   type ApplyPickParams,
@@ -193,6 +207,7 @@ import {
   type CommandStartedParams,
   type CoverageParams,
   type CoverageResult,
+  type LineSpan,
   type DesktopResult,
   type EditorBreakpoint,
   type EditorCredentials,
@@ -208,6 +223,8 @@ import {
   type PageCandidatesParams,
   type PageCandidatesResult,
   type RecordParams,
+  type RecordRequested,
+  type DeclineRecordParams,
   type RecordResult,
   type RecordingCommandParams,
   type RenderStepsParams,
@@ -233,6 +250,9 @@ import {
   type TestLineStatus,
   type TestsForFile,
   type TestsForFileParams,
+  type TestItemsParams,
+  type TestItemsResult,
+  type SpecTests,
   type RunCommandArgs,
   type TraceParams,
   type TraceResult,
@@ -275,8 +295,8 @@ const LOOKUP_WAIT_MS = 1_500;
 /** The latest commands that run each test several times whose end the service says, at most. */
 const MAX_REPEATED_COMMANDS = 50;
 const SPEC_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
-const TEST_CALL =
-  /(?<![\w$.])test(?:\.(?:only|skip|fixme|fail|slow))?\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/;
+/** A `page.pause()` call, on any page expression (`adminPage.pause()`, `this.page.pause()`). */
+const PAGE_PAUSE = /(?<![\w$])(?:this\.)?[\w$]*[pP]age\.pause\(\s*\)/;
 
 export interface ServerOptions {
   /** The environment the connection is read from; the process's by default. */
@@ -1212,9 +1232,34 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return { coverage, marks: await marks };
   };
 
-  /** A document's `piwi/coverage` answer as it stands, computed in full. */
-  const coverageNow = async (uri: string): Promise<CoverageResult> =>
-    coverageResult(uri, (await coverageMarksOf(uri).catch(() => null))?.marks ?? null);
+  /**
+   * The uncovered changes of an application file as it stands, open or saved (`uncoveredFile`): its lines changed
+   * since the change's base (`PiwiContext.atChangeBase`), and what they are in a few words; null when its changes are
+   * not uncovered, or it has none.
+   */
+  const uncoveredOf = async (uri: string): Promise<{ uncovered: LineSpan[]; label: string } | null> => {
+    const target = coverageTarget(uri);
+    if (!target) return null;
+    const { context, file, repoRelative } = target;
+    const coverage = await coverageOfTarget(target).catch(() => null);
+    if (!uncoveredFile(context.codeIndex, context.index, repoRelative, coverage)) return null;
+    const text = readText(file);
+    const base = text === null ? null : await context.atChangeBase(repoRelative);
+    if (text === null || !base) return null;
+    const uncovered = changedSince(base.text, text, repoRelative);
+    const lines = uncovered.reduce((n, span) => n + span.end - span.start + 1, 0);
+    if (!lines) return null;
+    return { uncovered, label: `${plural(lines, 'line')} changed since ${base.branch}, and no test reaches this file` };
+  };
+
+  /** A document's `piwi/coverage` answer as it stands, computed in full: its coverage marks, else its uncovered changes. */
+  const coverageNow = async (uri: string): Promise<CoverageResult> => {
+    const marks = (await coverageMarksOf(uri).catch(() => null))?.marks ?? null;
+    const result = coverageResult(uri, marks);
+    if (result.state !== 'none') return result;
+    const uncovered = await uncoveredOf(uri).catch(() => null);
+    return uncovered ? { ...result, ...uncovered } : result;
+  };
 
   const nextCoverageTurn = (uri: string): number => {
     const turn = (coverageTurns.get(uri) ?? 0) + 1;
@@ -1291,7 +1336,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   /**
    * What the coverage says of a line (0-based): the tests that ran it, that none does, or that it changed since, then
-   * what the marks mean.
+   * what the marks mean; in a file without coverage, that the line is an uncovered change.
    */
   const coverageHover = async (uri: string, line: number): Promise<string | null> => {
     const target = coverageTarget(uri);
@@ -1302,6 +1347,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         )
       : null;
     const marks = found?.marks;
+    if (target && !marks) {
+      const uncovered = await within(
+        uncoveredOf(uri).catch(() => null),
+        null,
+      );
+      const marked = uncovered?.uncovered.some((span) => span.start <= line && line <= span.end);
+      return marked
+        ? `**Piwi** · uncovered change: ${uncovered!.label}. The pull request's change coverage will list it.\n\n${UNCOVERED_EXPLAINED}`
+        : null;
+    }
     if (!target || !found || !marks || (marks.state !== 'exact' && marks.state !== 'mapped')) return null;
     const at = line + 1;
     if (marks.changed.has(at)) {
@@ -1552,6 +1607,38 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const projectOptions =
     options.readProjectOptions ??
     ((configFile: string) => readProjectOptions(configFile, path.join(distDir, 'piwi-use-reporter.cjs')));
+  /**
+   * The record channel every test run the service builds names (`PIWI_RECORD_CHANNEL`): a test paused there asks to
+   * record from where it is, which the client is asked to start (`piwi/recordRequested`). Null until it listens, and
+   * on a machine that refuses the socket.
+   */
+  let recordChannel: RecordChannel | null = null;
+  /** The client asked the service to shut down: a channel that opens after it is closed at once. */
+  let shutDown = false;
+  const recordRequested = (handoff: Handoff) => {
+    // The run ran in its config's folder as the file system spells it (`commandFolder`): the test names its file so,
+    // and the editor as its workspace does (a folder opened through a link).
+    const spelled = (c: PiwiContext): string | null => {
+      if (relativeTo(c.root, handoff.file) !== null) return handoff.file;
+      const relative = relativeTo(commandFolder(c), handoff.file);
+      return relative === null ? null : path.join(c.root, relative);
+    };
+    const file =
+      contexts.map(spelled).find((f): f is string => f !== null && !!contextFor(f)) ??
+      (contextFor(handoff.file) ? handoff.file : null);
+    if (!file) {
+      recordChannel?.refuse(handoff.id, `no Playwright config of this editor's workspace holds ${handoff.file}.`);
+      return;
+    }
+    handoff.file = file;
+    void connection.sendNotification(RECORD_REQUESTED_NOTIFICATION, {
+      handoff: handoff.id,
+      uri: pathToFileURL(handoff.file).href,
+      line: handoff.line - 1,
+      reason: handoff.reason,
+    } satisfies RecordRequested);
+  };
+
   const recordings = new RecordingSessions({
     distDir,
     notify: (update) => void connection.sendNotification(RECORDING_NOTIFICATION, update),
@@ -1842,6 +1929,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       pollRuns();
     }
     for (const document of documents.all()) schedule(document, 0);
+    // The uncovered changes of a file the client holds marks of are counted from the new base.
+    coverageAgain([...coverageHeld.keys()].filter((uri) => !documents.get(uri)));
   }
 
   /**
@@ -1923,6 +2012,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     );
     // A checkout or a commit is read within seconds: the latest run and the diagnostics follow the new `HEAD`.
     void watchRepositories();
+    void RecordChannel.open({ onAttach: recordRequested }).then((channel) => {
+      if (stopped || shutDown) channel?.close();
+      else recordChannel = channel;
+    });
   });
 
   documents.onDidOpen((e) => schedule(e.document, 0));
@@ -2378,6 +2471,68 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       .concat(stability);
   };
 
+  /**
+   * The tests of a spec as it stands (`lines`): each `test(…)` call, the catalog's case of its title in its describe
+   * blocks, the latest run's failure of that test placed on the files as they stand, a later run's pass of it, and its
+   * latest result: the run in progress the service follows while it runs the test and once it ended it, else the
+   * failure, the pass, or the catalog's status. Null for a test the catalog does not know.
+   */
+  /** The tests failing in a read of the failures, and those that failed in the latest complete run and passed since. */
+  const failuresByCase = new WeakMap<
+    BranchFailures,
+    { failingNow: Map<number, BranchFailure>; fixedNow: Map<number, BranchResolved> }
+  >();
+  const byCase = (failures: BranchFailures | null) => {
+    if (!failures) return { failingNow: new Map<number, BranchFailure>(), fixedNow: new Map<number, BranchResolved>() };
+    let held = failuresByCase.get(failures);
+    if (!held) {
+      const failingNow = new Map<number, BranchFailure>();
+      for (const f of failures.failures) if (!failingNow.has(f.testCaseId)) failingNow.set(f.testCaseId, f);
+      // On every project they failed on.
+      const fixedNow = new Map<number, BranchResolved>();
+      for (const r of failures.resolved ?? [])
+        if (!failingNow.has(r.testCaseId) && !fixedNow.has(r.testCaseId)) fixedNow.set(r.testCaseId, r);
+      held = { failingNow, fixedNow };
+      failuresByCase.set(failures, held);
+    }
+    return held;
+  };
+
+  const specTests = (
+    context: PiwiContext,
+    file: string,
+    lines: string[],
+    cases: CatalogCase[],
+    pass: Placer,
+  ): Array<{
+    call: TestCall;
+    found?: CatalogCase;
+    failed?: BranchFailure;
+    fixed?: BranchResolved;
+    failure?: TestFailure;
+    status: TestLineStatus | null;
+  }> => {
+    const { failingNow, fixedNow } = byCase(context.failures);
+    return testCalls(lines).map((call) => {
+      const found = caseOfCall(cases, call);
+      if (!found) return { call, status: null };
+      const failed = failingNow.get(found.id);
+      const fixed = failed ? undefined : fixedNow.get(found.id);
+      const at = failed ? pass.place(context, failed) : null;
+      const failure: TestFailure | undefined = failed && {
+        line: failureLine(at?.frames ?? [], file, call.line, call.endLine),
+        headline: failed.headline,
+        message: failed.message ?? null,
+        executionId: failed.executionId,
+        url: context.client!.executionUrl(failed.executionId),
+        state: at?.state === 'edited' ? 'edited' : 'failing',
+      };
+      const status =
+        context.liveTests.get(found.id) ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status));
+      return { call, found, failed, fixed, failure, status };
+    });
+  };
+
   connection.onRequest(FILE_SUMMARY_REQUEST, async (params: FileSummaryParams): Promise<FileSummary> => {
     const empty: FileSummary = { file: null, lines: [] };
     const file = uriToPath(params.uri);
@@ -2405,23 +2560,19 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         });
       }
       const cases = SPEC_FILE.test(relative!) ? await context.casesOf(relative!) : [];
-      const casesByTitle = new Map(cases.map((c) => [c.title, c]));
-      const failingNow = new Map<number, BranchFailure>();
-      for (const f of context.failures?.failures ?? [])
-        if (!failingNow.has(f.testCaseId)) failingNow.set(f.testCaseId, f);
-      /** The tests that failed in the latest complete run and passed since, on every project they failed on. */
-      const fixedNow = new Map<number, BranchResolved>();
-      for (const r of context.failures?.resolved ?? [])
-        if (!failingNow.has(r.testCaseId) && !fixedNow.has(r.testCaseId)) fixedNow.set(r.testCaseId, r);
       /** The reason and the evidence of each failure, above its failing line: first on that line. */
       const reasons: SummaryLine[] = [];
-      lines.forEach((text, i) => {
-        const m = TEST_CALL.exec(text);
-        const found = m ? casesByTitle.get(m[2]!) : undefined;
-        if (!found) return;
+      for (const { call, found, failed, fixed, failure, status: testStatus } of specTests(
+        context,
+        file,
+        lines,
+        cases,
+        pass,
+      )) {
+        if (!found) continue;
+        const i = call.line;
         const runs = found.totalRuns ?? 0;
         const passed = found.passedRuns ?? 0;
-        const fixed = failingNow.has(found.id) ? undefined : fixedNow.get(found.id);
         const status = fixed
           ? ` · ${fixedLabel(context, fixed)}`
           : found.status && found.status !== 'passed'
@@ -2447,18 +2598,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
               flaky.rootCause ? ` · ${flaky.rootCause}` : '',
             ].join('')
           : '';
-        const open = text.indexOf('(', m!.index);
-        const endLine = (open >= 0 ? callEndLine(lines, i, open) : null) ?? i;
-        const failed = failingNow.get(found.id);
-        const at = failed ? pass.place(context, failed) : null;
-        const failure: TestFailure | undefined = failed && {
-          line: failureLine(at?.frames ?? [], file, i, endLine),
-          headline: failed.headline,
-          message: failed.message ?? null,
-          executionId: failed.executionId,
-          url: context.client!.executionUrl(failed.executionId),
-          state: at?.state === 'edited' ? 'edited' : 'failing',
-        };
+        const endLine = call.endLine;
         out.push({
           line: i,
           title: `passed ${passed}/${runs}${status}${quarantine}${flakiness}${selectionsText}`,
@@ -2467,15 +2607,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             command: 'piwi.openInDashboard',
             arguments: [context.client!.testUrl(found.id)],
           },
-          // The run in progress the service follows, while it runs the test and once it ended it.
-          status:
-            context.liveTests.get(found.id) ?? (failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status)),
+          status: testStatus!,
           endLine,
           ...(failure ? { failure } : {}),
           testCaseId: found.id,
         });
         out.push(...flakeLabLines(context, found.id, i, env, desktopJobs.available(context)));
-        if (!failed || !failure) return;
+        if (!failed || !failure) continue;
         const evidence = { uri: params.uri, executionId: failed.executionId } satisfies TraceParams;
         const why = clip(failed.headline ?? 'Failed', 120);
         reasons.push({
@@ -2510,7 +2648,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             command: { title: 'Open the trace', command: 'piwi.openTrace', arguments: [evidence] },
           });
         }
-      });
+      }
       const fileLine: SummaryLine | null = cases.length
         ? {
             line: 0,
@@ -2575,7 +2713,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         },
       ];
     });
-    if (!page) return reachLine || functionLines.length ? { file: reachLine, lines: functionLines } : empty;
+    if (!page) {
+      if (reachLine || functionLines.length) return { file: reachLine, lines: functionLines };
+      // A file no test reaches whose changes the pull request will count as uncovered says so at its top.
+      const uncovered = await within(
+        uncoveredOf(params.uri).catch(() => null),
+        null,
+      );
+      return uncovered ? { file: { line: 0, title: `Uncovered changes: ${uncovered.label}` }, lines: [] } : empty;
+    }
     const pageLine: SummaryLine = {
       line: 0,
       title: [
@@ -2634,6 +2780,74 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     };
   });
 
+  connection.onRequest(TEST_ITEMS_REQUEST, async (params: TestItemsParams | null): Promise<TestItemsResult> => {
+    const pass = placer();
+    const specs = new Map<PiwiContext, SpecTests[]>();
+    /** A spec of the context's folder as it stands, with the catalog's cases of its tests. */
+    const add = (context: PiwiContext, file: string, relative: string, cases: CatalogCase[]) => {
+      const text = readText(file);
+      if (text === null) return;
+      const uri = pathToFileURL(file).href;
+      const tests = specTests(context, file, text.split(/\r?\n/), cases, pass).map(
+        ({ call, found, failure, status }) => ({
+          title: call.title,
+          suite: call.suite,
+          line: call.line,
+          endLine: call.endLine,
+          location: `${relative}:${call.line + 1}`,
+          testCaseId: found?.id ?? null,
+          status,
+          failure: failure ?? null,
+          url: found ? (context.client?.testUrl(found.id) ?? null) : null,
+        }),
+      );
+      specs.set(context, [...(specs.get(context) ?? []), { uri, file: relative, tests }]);
+    };
+    /** The specs answered, by path. */
+    const answered = new Set<string>();
+    if (params?.catalog !== false) {
+      for (const context of contexts) {
+        // The catalog's specs the workspace holds, each from the config whose folder holds it.
+        const byFile = new Map<string, CatalogCase[]>();
+        const found = new Map<string, string | null>();
+        for (const c of await context.allCases()) {
+          if (!found.has(c.filePath)) {
+            found.set(c.filePath, resolveReportedFile([context.root, context.repoRoot], c.filePath));
+          }
+          const file = found.get(c.filePath);
+          if (file) byFile.set(file, [...(byFile.get(file) ?? []), c]);
+        }
+        for (const [file, cases] of byFile) {
+          const relative = relativeTo(context.root, file);
+          if (!relative || !SPEC_FILE.test(relative) || contextFor(file) !== context) continue;
+          answered.add(file);
+          add(context, file, relative, cases);
+        }
+      }
+    }
+    for (const uri of Array.isArray(params?.uris) ? params.uris : []) {
+      const file = typeof uri === 'string' ? uriToPath(uri) : null;
+      const context = file ? contextFor(file) : null;
+      const relative = file && context ? relativeTo(context.root, file) : null;
+      if (!file || !context || !relative || !SPEC_FILE.test(relative) || answered.has(file)) continue;
+      answered.add(file);
+      add(context, file, relative, await context.casesOf(relative));
+    }
+    return {
+      contexts: contexts.flatMap((context) => {
+        const held = specs.get(context);
+        if (!held) return [];
+        return [
+          {
+            root: context.root,
+            label: contextLabel(context.root, folders),
+            specs: held.sort((a, b) => a.file.localeCompare(b.file)),
+          },
+        ];
+      }),
+    };
+  });
+
   connection.onRequest(COVERAGE_REQUEST, async (params: CoverageParams): Promise<CoverageResult> => {
     const uri = params.uri;
     const turn = nextCoverageTurn(uri);
@@ -2669,6 +2883,27 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ...headedCommand(command.command, command.args),
       env: { ...command.env, PIWI_PAUSE_AT: pauseAt },
       ...(notice ? { notice } : {}),
+    };
+  };
+
+  /**
+   * A test run's command with the record channel in its environment, from which a test paused in it records, and
+   * `--headed` when a spec it runs (`uri`, or a location's) holds a `page.pause()` call, where it pauses.
+   */
+  const withRecording = (context: PiwiContext, command: RunCommand, params?: RunTestsArgs): RunCommand => {
+    if (!recordChannel) return command;
+    const specs = new Set<string>();
+    const file = params ? uriToPath(params.uri) : null;
+    const relative = file ? relativeTo(context.root, file) : null;
+    if (file && relative && SPEC_FILE.test(relative)) specs.add(file);
+    for (const location of params?.locations ?? []) {
+      if (isTestLocation(location)) specs.add(path.join(context.root, location.slice(0, location.lastIndexOf(':'))));
+    }
+    const pauses = [...specs].some((spec) => PAGE_PAUSE.test(withoutComments(readText(spec) ?? '')));
+    return {
+      ...command,
+      ...(pauses ? { ...headedCommand(command.command, command.args), pauses: true } : {}),
+      env: { ...command.env, [RECORD_CHANNEL_ENV]: recordChannel.value },
     };
   };
 
@@ -2710,7 +2945,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       env: { ...editorRunEnv(ref), ...coverageRunEnv(params.coverage) },
       ref,
     };
-    if (repeat === null) return withBreakpoints(context, run, params.breakpoints);
+    if (repeat === null) return withRecording(context, withBreakpoints(context, run, params.breakpoints), params);
     repeatedCommands.set(ref, { root: context.root, repeat, target: tests!.join(' ') });
     for (const oldest of repeatedCommands.keys()) {
       if (repeatedCommands.size <= MAX_REPEATED_COMMANDS) break;
@@ -2777,7 +3012,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       env: editorRunEnv(ref),
       ref,
     };
-    return withBreakpoints(context, run, params.breakpoints);
+    return withRecording(context, withBreakpoints(context, run, params.breakpoints));
   });
 
   connection.onRequest(APPLY_PICK_REQUEST, (params: ApplyPickParams): ApplyPickResult => {
@@ -2847,6 +3082,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
 
   connection.onRequest(MCP_REQUEST, (): McpServersResult => {
+    const signIn = credentials.mcpAuthorization === 'sign-in';
     const seen = new Set<string>();
     const servers: McpServersResult['servers'] = [];
     for (const c of contexts) {
@@ -2859,10 +3095,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       } catch {
         // keep the URL as given
       }
+      // The desktop app has no sign-in: its MCP server takes the app's token alone.
+      const authorization = !conn.apiKey ? 'none' : signIn && c.source !== 'desktop' ? 'sign-in' : 'key';
       servers.push({
         label: `Piwi (${host})`,
         url: `${conn.serverUrl}/mcp`,
-        headers: conn.apiKey ? { Authorization: `Bearer ${conn.apiKey}` } : {},
+        headers: authorization === 'key' ? { Authorization: `Bearer ${conn.apiKey}` } : {},
+        authorization,
       });
     }
     return { servers };
@@ -2926,18 +3165,31 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const context = file ? contextFor(file) : null;
     const configFile = context ? playwrightConfigFile(context.root) : null;
     if (!file || !context || !configFile) {
-      return {
-        ok: false,
-        message: 'No Playwright config holds this file: open the folder of its playwright.config.ts.',
-      };
+      const message = 'No Playwright config holds this file: open the folder of its playwright.config.ts.';
+      if (params.handoff) recordChannel?.refuse(params.handoff, message);
+      return { ok: false, message };
     }
-    return recordings.start(params, {
-      file,
-      text: readText(file) ?? '',
-      configFile,
-      catalog: context.functionCatalog(),
-      preferLocators: suiteLocators(context),
-    });
+    // A recording a test asked for is that test's, in its file.
+    const handoff = params.handoff ? (recordChannel?.take(params.handoff) ?? null) : null;
+    if (handoff && !samePath(handoff.file, file)) {
+      handoff.socket.end(`${JSON.stringify({ type: 'refused', message: 'the editor opened another file.' })}\n`);
+      return { ok: false, message: 'This recording belongs to another file.' };
+    }
+    return recordings.start(
+      params,
+      {
+        file,
+        text: readText(file) ?? '',
+        configFile,
+        catalog: context.functionCatalog(),
+        preferLocators: suiteLocators(context),
+      },
+      handoff,
+    );
+  });
+
+  connection.onNotification(DECLINE_RECORD_NOTIFICATION, (params: DeclineRecordParams) => {
+    if (typeof params?.handoff === 'string') recordChannel?.refuse(params.handoff, String(params.message ?? ''));
   });
 
   connection.onRequest(STOP_RECORDING_REQUEST, async (params: StopRecordingParams) => {
@@ -3028,7 +3280,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     void refreshAll();
   });
 
-  connection.onShutdown(() => recordings.dispose());
+  /** The record channel goes with the service: its socket's folder is removed, and a waiting test hears why. */
+  const closeRecordChannel = () => {
+    shutDown = true;
+    recordChannel?.close();
+    recordChannel = null;
+  };
+  connection.onShutdown(() => {
+    recordings.dispose();
+    closeRecordChannel();
+  });
+  connection.onExit(closeRecordChannel);
 
   documents.listen(connection);
   connection.listen();
@@ -3036,6 +3298,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     stopped = true;
     runWatch.dispose();
     recordings.dispose();
+    closeRecordChannel();
     desktopJobs.dispose();
     if (refreshTimer) clearInterval(refreshTimer);
     if (retryTimer) clearTimeout(retryTimer);

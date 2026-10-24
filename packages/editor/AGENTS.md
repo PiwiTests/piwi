@@ -10,12 +10,13 @@ ships and starts over stdio: the VS Code extension and the JetBrains plugin. All
 clients stay thin and both editors give the same answers.
 
 - `src/server.ts` wires the protocol: diagnostics, quick fixes, hover and completion, plus the custom requests of
-  `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
+  `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
   `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/coverage`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
-  `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted` and `piwi/commandEnded` notifications, and the
+  `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`, `piwi/commandEnded` and `piwi/declineRecord` notifications, and the
   `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/runEnded`, `piwi/statusChanged`, `piwi/notice`,
-  `piwi/desktopJobChanged`, `piwi/recordingChanged` and `piwi/coverageChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
+  `piwi/desktopJobChanged`, `piwi/recordingChanged`, `piwi/recordRequested` and `piwi/coverageChanged` notifications it
+  sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` as a tree in both editors (the JetBrains IDEs'
   LSP client highlights open files only): each item carries its spec relative to the config, its test, cluster,
   owner, project, duration and whether it is new, and, when one context alone has a run, runs laid over none or
@@ -84,6 +85,13 @@ clients stay thin and both editors give the same answers.
   tests (`casesOf`), which **Run the test at the cursor**, **Verify the test at the cursor ×3** and **Run this spec**
   run; a file that is not a spec under a context's folder answers nulls, and a test Piwi does not know a location
   alone.
+  `piwi/testItems` answers the tests of the workspace's specs for a client's own test tree (VS Code's Testing view):
+  the catalog's specs the workspace holds (`PiwiContext.allCases`, the whole catalog a thousand cases a request, read
+  once per refresh; each stored path found as a run's is, `resolveReportedFile`, under the context whose folder holds
+  it), unless `catalog` is false, and the specs `uris` names (`casesOf`), each test as the spec stands (`testCalls` in
+  `src/analysis.ts`: each `test(…)` call with the titled `test.describe(…)` blocks around it) with the catalog's case of
+  its title in those blocks (`caseOfCall`), its location, its latest result and its failure as `piwi/fileSummary` gives
+  them: both read them from `specTests` in `src/server.ts`.
   A failing test's line also carries `failure`: the line of the test its error's stack goes through (the instance sends
   the frames and the message in `branch-failures`), above which the reason, **Run this test** (`piwi.runTests` with the
   test's id), **Screenshot** and **Trace** are ordinary summary lines; the hover on any line of that stack shows the message and the call chain.
@@ -108,7 +116,8 @@ clients stay thin and both editors give the same answers.
   failed attempt is flaky; a test on several projects shows the first of running, failed, flaky, passed, skipped),
   which `piwi/fileSummary` gives their line as `status` and `piwi/runStatus` as `liveTests`, so the clients draw the
   files again. Once a run of the editor's own ended and its context read the latest run, `piwi/runEnded` says once what
-  it changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after): its counts, the tests
+  it changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after), with the ref of the command
+  that started it while the service keeps it (`RefWatch.carried`): its counts, the tests
   failing before that it passed (`fixed`), failed again (`stillFailing`: failing before in another run, or not new on
   the instance's word) or failed new (`newFailures`). `piwi/refreshRun` reads the runs alone, not the indexes
   `piwi/refresh` reads.
@@ -170,6 +179,16 @@ clients stay thin and both editors give the same answers.
   `PIWI_COVERAGE_SERVER=lines`, so the run records the lines again; on a browser file, `coverage: 'browser'`, turned
   into `PIWI_COVERAGE_BROWSER=functions`. The hover of a line names the tests that ran it, or
   says that none runs it or that it changed since the coverage run.
+  A file without coverage marks may have uncovered changes (`CoverageResult.uncovered`, `uncoveredOf` in
+  `src/server.ts`), by the rule the pull request's change coverage reads (`uncoveredFile` in `src/coverage.ts`): Piwi
+  can observe it (a page by the file-routing convention while the locator index knows the pages tests visit, a server
+  route while the code index maps routes to tests, or executable lines a run's coverage recorded) and no test reaches
+  it (code reach and routes, the coverage's tests, a test acting on its page); never without a code index or with one
+  cut short. Its lines changed since the default branch are marked (`changedSince`: the lines the diff from the file at
+  the merge base of `HEAD` with `origin/<default>`, else `<default>`, adds, blank ones left out:
+  `PiwiContext.atChangeBase`, `mergeBase` in `src/workspace.ts`, read once per `HEAD`, each file once per base), with
+  `label` saying so, the file's top line in `piwi/fileSummary` (`Uncovered changes: …`, no command) and the hover of a
+  marked line (`UNCOVERED_EXPLAINED`). A move of `HEAD` computes them again.
 - `src/analysis.ts` is the pure half: locators per line, stability findings, replacements, breaks of an unsaved
   change and their call-site edits, and where completion offers the suite's locator chains (`locatorCompletionSite`):
   after `page.`, `this.page.` or another page expression `pageCandidates` offers on the cursor's line (`adminPage.`,
@@ -229,6 +248,27 @@ clients stay thin and both editors give the same answers.
   (`importEdit`): after its last import statement, as `require` declarations after the last one in a file that has
   those and no import statement (`requireForm`), else at its top, placed in the text the service holds, which the
   client makes with the block's write. `piwi/renderSteps` indents the code for the caret's line (`indentBlock`).
+  A test can hand its page to a recording (`recorder/handoff.ts`): the service listens on a local socket (a Unix socket
+  in a new owner-only folder of the temporary directory, a named pipe on Windows), opened once initialized
+  (`RecordChannel.open`), which every test run it builds names in its environment as `PIWI_RECORD_CHANNEL`
+  (`withRecording` in `src/server.ts`, which also adds `--headed` when a spec the run names holds a `page.pause()` call,
+  `PAGE_PAUSE`). A test paused there with Piwi's bar (a breakpoint, or `page.pause()` in a headed run) that asks to
+  record attaches with the channel's token, its file (as the run's folder spells it, `commandFolder`: the service
+  names it to the editor as its workspace does, a folder opened through a link), line and project's `testIdAttribute`
+  and `baseURL`
+  (`@piwitests/core/ide-recorder`, one line of JSON a message); the client hears it as `piwi/recordRequested`, and
+  starts it with `piwi/record` naming the `handoff` (`RecordParams.handoff`), which takes it out of the waiting ones;
+  one not taken in 30 s (`HANDOFF_WAIT_MS`), one the client declines (`piwi/declineRecord`: the file is being
+  recorded into, or cannot be opened), or whose `piwi/record` is refused, hears why at once. A run whose spec holds a
+  `page.pause()` outside a comment (`withoutComments`) runs headed with `RunCommand.pauses`, for which the client
+  names its Send to editor pairing as for breakpoints. The session (`attach` in
+  `sessions.ts`) writes the block on a new line above the paused statement (`placementBefore` in
+  `page-candidates.ts`: the line it starts on, a chain broken over lines or a statement broken after an operator, as
+  an assignment after its `=`, included), renders it with `continuePage`
+  (no opening `goto`, viewport size, nor first navigation, which only says where the recording began) on the page
+  expression in scope there, with the config's Piwi options when read within 10 s, and drives the test's page through
+  `handoffLauncher`: the test loads the bundle the service names into its page, relays every call of the recorder's
+  binding, which the service's `RecorderHost` answers, and hears the pause and the stop as messages for the recorder.
 
 `npm run editor:build` writes five files to `dist/`, which both clients ship side by side (VS Code in its `dist/`, the
 JetBrains plugin in its `server/`); the service finds the others next to its own bundle, or in `PIWI_EDITOR_DIST`
@@ -327,7 +367,9 @@ needs the extension's sources, and a change to the recorder there changes what t
   translation values; the files at a run's commit stay), reads their latest run again, published when it changed, and
   analyzes the open documents again, against the new `HEAD`; the refresh timer and the poll are not moved. A context that
   changes instance forgets everything read from the other one. The reporter keeps its own order. The API key never leaves the process except in `X-API-Key`, and in the MCP server definition `piwi/mcp` hands the
-  client for its agent.
+  client for its agent while the credentials' `mcpAuthorization` is `key` (the default); with `sign-in` an instance's
+  definition carries no header and the agent signs in through the instance's OAuth (`authorization` says which), while
+  the desktop app's keeps its token.
 - Nothing from the workspace is sent to the instance but file paths it already stores.
 
 ## Workflow

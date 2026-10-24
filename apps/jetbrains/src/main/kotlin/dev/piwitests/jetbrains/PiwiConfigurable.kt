@@ -21,7 +21,8 @@ import javax.swing.JList
  * **Settings → Tools → Piwi**: the desktop app and whether this machine reads it first, the
  * instance and project saved for this project, whether a key is saved for that instance, when
  * a run started from the IDE says what it changed, whether the runs it starts pause at the IDE's
- * breakpoints, the severity of a failure in the editor, and the connection the service actually uses.
+ * breakpoints, the severity of a failure in the editor, how the agent signs in to Piwi's MCP server, and the
+ * connection the service actually uses.
  */
 class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi") {
     private val service get() = project.service<PiwiProjectService>()
@@ -119,6 +120,17 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         )
                 }
             }
+            group("AI Assistant") {
+                row("Piwi's MCP server signs the agent in with:") {
+                    comboBox(Glue.MCP_AUTHORIZATIONS, McpAuthorizationRenderer())
+                        .bindItem({ local.mcpAuthorization }, { local.mcpAuthorization = it ?: "key" })
+                        .comment(
+                            "As Copy the MCP Server Configuration writes it. The browser gives the agent a token of its own, " +
+                                "which Settings → Account → API keys on the instance lists and revokes; the desktop app takes " +
+                                "its own token either way. Kept for you only, in .idea/workspace.xml",
+                        )
+                }
+            }
             group("In use") {
                 row {
                     inUse = text("", maxLineLength = 90).align(AlignX.FILL).component
@@ -146,7 +158,14 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
     private fun connection(): List<Any> {
         val settings = service.settings()
         val local = service.local()
-        return listOf(settings.serverUrl, settings.project, local.desktop, local.desktopProject, local.failureSeverity)
+        return listOf(
+            settings.serverUrl,
+            settings.project,
+            local.desktop,
+            local.desktopProject,
+            local.failureSeverity,
+            local.mcpAuthorization,
+        )
     }
 
     private fun show() {
@@ -189,6 +208,13 @@ private class RunNotificationRenderer : SimpleListCellRenderer<String>() {
             "never" -> "Say nothing"
             else -> "Say what it changed"
         }
+    }
+}
+
+/** A choice of `PiwiLocalSettings.mcpAuthorization`, in words. */
+private class McpAuthorizationRenderer : SimpleListCellRenderer<String>() {
+    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
+        text = if (value == "sign-in") "A sign-in in the browser" else "The IDE's API key"
     }
 }
 

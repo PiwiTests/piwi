@@ -14,6 +14,8 @@ apps/extension/tests/lab/out
 .vscode-test
 # The VS Code extension's changelog, which reusable-publish-vscode.yml writes into the package (scripts/ide-changelog.mjs)
 apps/vscode/CHANGELOG.md
+apps/vscode/tests/e2e/results/
+apps/vscode/tests/e2e/report/
 # The JetBrains plugin's Gradle outputs and the IDEs its tests and verifier download
 apps/jetbrains/.gradle
 apps/jetbrains/.intellijPlatform

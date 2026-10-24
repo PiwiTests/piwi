@@ -68,6 +68,36 @@ data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null)
  */
 data class TestAtResult(val test: EditorTest? = null, val spec: SpecTests? = null, val location: String? = null)
 
+/**
+ * `piwi/testItems`: the catalog's specs the workspace holds, unless `catalog` is false, and the specs `uris` names, each
+ * test as it stands with its latest result, for a client's own test tree (VS Code's Testing view).
+ */
+data class TestItemsParams(val uris: List<String>? = null, val catalog: Boolean? = null)
+
+/**
+ * A test of a spec as it stands: its title and describe blocks, the 0-based lines of its `test(…)` call, its location
+ * for Playwright's filter, the catalog's id when Piwi knows it, its latest result and where it failed.
+ */
+data class SpecTest(
+    val title: String? = null,
+    val suite: List<String>? = null,
+    val line: Int = 0,
+    val endLine: Int = 0,
+    val location: String? = null,
+    val testCaseId: Int? = null,
+    val status: String? = null,
+    val failure: TestFailure? = null,
+    val url: String? = null,
+)
+
+/** The tests of one spec, `file` relative to its Playwright config's folder. */
+data class SpecTestItems(val uri: String? = null, val file: String? = null, val tests: List<SpecTest>? = null)
+
+/** The specs of each Playwright config holding one, in the configs' order. */
+data class TestItemsContext(val root: String? = null, val label: String? = null, val specs: List<SpecTestItems>? = null)
+
+data class TestItemsResult(val contexts: List<TestItemsContext>? = null)
+
 /** Lines `start` to `end`, 0-based and inclusive; for lines the tests ran, `tests` is how many ran each. */
 data class LineSpan(val start: Int = 0, val end: Int = 0, val tests: Int? = null)
 
@@ -76,7 +106,8 @@ data class LineSpan(val start: Int = 0, val end: Int = 0, val tests: Int? = null
  * (recorded on the file as it stands), `mapped` (on a version the repository holds, placed through the diff),
  * `other-version` (on versions the repository lacks: no mark) or `none`. `executed` are the lines tests ran, `notRun`
  * the executable lines none runs, `changed` the lines changed since the coverage run; `label` says so in a few words,
- * null with `none`.
+ * null with `none` unless `uncovered` holds lines: with `none`, the lines changed since the default branch of a file Piwi
+ * can observe and no test reaches, uncovered changes, absent when there are none.
  */
 data class CoverageResult(
     val uri: String? = null,
@@ -89,6 +120,7 @@ data class CoverageResult(
     val executableLines: Int? = null,
     val blob: String? = null,
     val label: String? = null,
+    val uncovered: List<LineSpan>? = null,
 )
 
 /** A line breakpoint of the IDE: the file's URI and its 0-based line. */
@@ -119,7 +151,9 @@ data class RunCommandArgs(val cwd: String, val command: String, val env: Map<Str
 /**
  * A command line that runs tests. `ref` is the ref its run carries (`PIWI_ORIGIN_REF` in `env`), which
  * `piwi/commandEnded` names once the command ends; null from an older service. `notice` is a sentence to show once
- * as a warning while it runs anyway: breakpoints passed to a project whose reporter does not pause at them.
+ * as a warning while it runs anyway: breakpoints passed to a project whose reporter does not pause at them. `pauses`
+ * says the run pauses at a `page.pause()` of a spec it runs, where a locator can be picked: the plugin names its
+ * Send to editor pairing (`PIWI_EDITOR_SEND`), as for a run with breakpoints (`PIWI_PAUSE_AT`).
  */
 data class RunCommand(
     val cwd: String? = null,
@@ -128,6 +162,7 @@ data class RunCommand(
     val env: Map<String, String>? = null,
     val ref: String? = null,
     val notice: String? = null,
+    val pauses: Boolean? = null,
 )
 
 /**
@@ -190,7 +225,7 @@ data class RunInfo(
 
 /**
  * A run in progress: `status` is `running`, `initializing` or `finalizing`, `done` the tests that ended out of
- * `total`, `startedAt` ISO 8601, and `own` whether the editor started it.
+ * `total`, `startedAt` ISO 8601, `own` whether the editor started it, and `ref` the ref of its command on an own run.
  */
 data class LiveRun(
     val runId: Int = 0,
@@ -200,6 +235,7 @@ data class LiveRun(
     val failed: Int = 0,
     val startedAt: String? = null,
     val own: Boolean = false,
+    val ref: String? = null,
 )
 
 /** A test of the run in progress: `running` once it began, then `passed`, `failed`, `flaky` or `skipped`. */
@@ -253,11 +289,13 @@ data class RunStatusResult(val contexts: List<RunStatus>? = null)
  * `piwi/runEnded`: a run the editor started ended and the latest run was read again with it: its counts, `fixed` the
  * tests failing before it that it passed, `stillFailing` and `newFailures` the titles (`login.spec.ts › logs in`, at
  * most five) of the tests it failed again and of those that were not failing before, with their counts. `repeat`, for
- * a run of each test several times (`RunTestsArgs.repeat`), says how many of those runs passed.
+ * a run of each test several times (`RunTestsArgs.repeat`), says how many of those runs passed. `ref` is the ref of the
+ * command that started it (`RunCommand.ref`), when the service still keeps it.
  */
 data class RunEnded(
     val root: String? = null,
     val runId: Int = 0,
+    val ref: String? = null,
     val url: String? = null,
     val passed: Int = 0,
     val failed: Int = 0,
@@ -401,7 +439,16 @@ data class RunIdResult(val runId: Int? = null)
 /** `piwi/agentContext`: one block about a failure for a coding agent: the failure, its healing and its fix plan. */
 data class AgentContextResult(val text: String? = null)
 
-data class McpServerDefinition(val label: String? = null, val url: String? = null, val headers: Map<String, String>? = null)
+/**
+ * Piwi's MCP server for the agent. `authorization` is how the agent is let in: `key`, by the key in `headers`;
+ * `sign-in`, by the instance's OAuth the first time it connects (no `headers`); `none`, no key and none asked.
+ */
+data class McpServerDefinition(
+    val label: String? = null,
+    val url: String? = null,
+    val headers: Map<String, String>? = null,
+    val authorization: String? = null,
+)
 
 data class McpServersResult(val servers: List<McpServerDefinition>? = null)
 
@@ -427,7 +474,9 @@ data class RenderStepsResult(val code: String? = null, val warnings: List<String
  * file at `uri`, from the caret (0-based). `into` is `steps` (lines of the test the caret is in), `test` (a new test at
  * the caret) or `file` (a whole new spec). `project` names the Playwright project whose `use` options the browser
  * gets, `startUrl` the page it opens (a path on the `baseURL`, or a URL), `title` the test's, `page` the expression
- * the steps run on, and `language` the editor's display language (a BCP 47 tag) for the recorder's panel.
+ * the steps run on, and `language` the editor's display language (a BCP 47 tag) for the recorder's panel. `handoff`
+ * names a test paused in a run the editor started that asked to record from there (`piwi/recordRequested`): the steps
+ * are then recorded in that test's page, and written above the statement it is paused before.
  */
 data class RecordParams(
     val uri: String,
@@ -439,7 +488,18 @@ data class RecordParams(
     val title: String? = null,
     val page: String? = null,
     val language: String? = null,
+    val handoff: String? = null,
 )
+
+/**
+ * `piwi/recordRequested`: a test paused in a run the editor started (Piwi's pause bar at a breakpoint or at
+ * `page.pause()`) asks to record from there, in the file at `uri`, before its 0-based `line`; `reason` is
+ * `breakpoint` or `pause`. The plugin starts it with `piwi/record` naming `handoff`, asking nothing.
+ */
+data class RecordRequested(val handoff: String? = null, val uri: String? = null, val line: Int = 0, val reason: String? = null)
+
+/** `piwi/declineRecord`: the plugin does not start the recording a test asked for, with why; the test goes on. */
+data class DeclineRecordParams(val handoff: String, val message: String)
 
 /**
  * Where the recorded block goes: its first line (0-based), whether that line is a new one inserted first (otherwise
@@ -549,6 +609,8 @@ data class DesktopResult(val url: String? = null, val projects: List<ProjectRef>
  * per context root, kept on this machine; when sent, a context they leave out reads the ladder. `failureSeverity` is the
  * severity of a failure's diagnostic (`error`, `warning`, `information` or `off`; `error` when null): a run on another
  * branch is a warning at most, and `off` publishes none while the tool window and the gutter still show the failures.
+ * `mcpAuthorization` is how the agent signs in to Piwi's MCP server (`piwi/mcp`): `key`, with the connection's key, or
+ * `sign-in`, through the instance's OAuth; `key` when null.
  */
 data class EditorCredentials(
     val serverUrl: String? = null,
@@ -558,6 +620,7 @@ data class EditorCredentials(
     val desktopProject: String? = null,
     val baselines: Map<String, BaselineChoice>? = null,
     val failureSeverity: String? = null,
+    val mcpAuthorization: String? = null,
 )
 
 /**
@@ -602,6 +665,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/testAt")
     fun testAt(params: TestAtParams): CompletableFuture<TestAtResult?>
+
+    @JsonRequest("piwi/testItems")
+    fun testItems(params: TestItemsParams): CompletableFuture<TestItemsResult?>
 
     @JsonRequest("piwi/coverage")
     fun coverage(params: UriParams): CompletableFuture<CoverageResult?>
@@ -683,4 +749,7 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonNotification("piwi/setBaseline")
     fun setBaseline(params: SetBaselineParams)
+
+    @JsonNotification("piwi/declineRecord")
+    fun declineRecord(params: DeclineRecordParams)
 }

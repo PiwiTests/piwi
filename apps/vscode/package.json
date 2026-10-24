@@ -685,6 +685,25 @@
           "default": "error",
           "markdownDescription": "How a failure of the latest run shows at its line in the editor and the Problems panel. A failure of a run on another branch, such as the default branch's while yours has no run, is a warning at most; one whose line you changed since the run, an information."
         },
+        "piwi.mcpAuthorization": {
+          "type": "string",
+          "scope": "application",
+          "enum": [
+            "key",
+            "sign-in"
+          ],
+          "enumDescriptions": [
+            "The agent uses the editor's API key, with your role and project access.",
+            "The agent signs in through the instance's OAuth, the first time it connects, for a token of its own that you can revoke in Settings → Account → API keys."
+          ],
+          "default": "key",
+          "markdownDescription": "How the editor's agent signs in to Piwi's MCP server, as the extension provides it and as **Piwi: Copy the MCP server configuration** writes it. The desktop app's server takes its own token either way."
+        },
+        "piwi.testExplorer": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "List Piwi's tests in the Testing view: the specs your instance knows, as they stand, each test with its latest result, where and why it failed, and the run in progress as it goes. The Testing view's gutter then shows each test's result in place of Piwi's own icon, and **Run with Piwi** and **Verify ×3 with Piwi** run tests as every other run Piwi starts. Results only: it neither discovers tests nor debugs them."
+        },
         "piwi.trace.server": {
           "type": "string",
           "scope": "window",
@@ -755,6 +774,16 @@
         }
       },
       {
+        "id": "piwi.uncoveredChangeBorder",
+        "description": "The mark at the left of a line changed since the default branch, in a file no test reaches: an uncovered change, which the pull request's change coverage lists.",
+        "defaults": {
+          "dark": "#f0883e",
+          "light": "#bc4c00",
+          "highContrast": "#ffa657",
+          "highContrastLight": "#953800"
+        }
+      },
+      {
         "id": "piwi.recordingBlockBackground",
         "description": "The background of the block a recording writes, while it records.",
         "defaults": {
@@ -795,12 +824,14 @@
     "vscode:format:check": "oxfmt --config oxfmt.config.mts --check \"src/\" \"tests/\" \"scripts/\" build.mjs",
     "vscode:test": "vitest run",
     "vscode:test:integration": "npm run vscode:build && node tests/integration/run.mjs",
+    "vscode:test:e2e": "playwright test --config tests/e2e/playwright.config.mjs",
     "vscode:package": "npm run vscode:build && vsce package --no-dependencies --out dist/piwi.vsix",
     "test": "npm run vscode:test"
   },
   "devDependencies": {
     "@piwitests/core": "*",
     "@piwitests/editor": "*",
+    "@playwright/test": "^1.63.0",
     "@types/vscode": "~1.91.0",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.0.0",
