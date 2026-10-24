@@ -564,6 +564,46 @@ test.describe('replay-panel.js', () => {
     );
   });
 
+  test('a key it sends with the page’s own events carries the key code older pages read', async ({ context }) => {
+    await openShadowRoots(context);
+    await context.route(`${ORIGIN}/**`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        // As TodoMVC adds a todo: on a keydown whose keyCode is Enter's.
+        body: `<!doctype html><html><body>
+          <input aria-label="What needs to be done?" onkeydown="if (event.keyCode === 13 && event.which === 13) { document.getElementById('todos').textContent += this.value + ';'; this.value = ''; }" />
+          <input aria-label="Search" onkeypress="document.getElementById('typed').textContent = event.charCode + '/' + event.which" />
+          <output id="todos"></output><output id="typed"></output>
+        </body></html>`,
+      }),
+    );
+    const field = (name: string) => ({
+      tagName: 'input',
+      role: 'textbox',
+      accessibleName: name,
+      testId: null,
+      text: null,
+      alternatives: [{ locator: `getByRole('textbox', { name: '${name}' })`, method: 'getByRole', score: 90 }],
+    });
+    const at = (i: number) => ({ redacted: false, pageUrl: '/', timestamp: i });
+    const steps: PiwiSteps = {
+      ...REPORT,
+      steps: [
+        { action: 'goto', target: null, value: '/', ...at(0) },
+        { action: 'fill', target: field('What needs to be done?'), value: 'buy milk', ...at(1) },
+        { action: 'press', target: field('What needs to be done?'), value: 'Enter', ...at(2) },
+        { action: 'press', target: field('Search'), value: 'q', ...at(3) },
+      ],
+    };
+    await stubChrome(context, running(false, null, steps));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/`);
+    await expect.poll(() => replayState(page).then((s) => s.status), { timeout: 30_000 }).toBe('done');
+    await expect(page.locator('#todos')).toHaveText('buy milk;');
+    await expect(page.locator('#typed')).toHaveText('113/113');
+  });
+
   test('hands a password to the person, which a recording never keeps', async ({ context }) => {
     await openShadowRoots(context);
     await routePages(context, 'fixed');

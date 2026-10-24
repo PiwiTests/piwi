@@ -2,6 +2,7 @@ import { safeLocator, stepLocator } from '@piwitests/core/codegen';
 import { parseLocatorChain } from '@piwitests/core/locator-chain';
 import { assessLocatorChain } from '@piwitests/core/locator-stability';
 import type { RecordedStep, RecordedTarget } from '@piwitests/core/recording';
+import { keyDefinition } from '../shared/cdp-input.js';
 import { t, tn } from '../shared/i18n.js';
 import { createLocatorEngine, type LocatorEngine } from './locator-engine.js';
 import { LocatorEngineError } from './engine-selector.js';
@@ -515,23 +516,20 @@ const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 
 /**
  * The events for a key as Playwright writes it: `Enter`, `?`, or a shortcut
- * such as `ControlOrMeta+K` (Ctrl, or ⌘ on a Mac) or `Shift+Tab`.
+ * such as `ControlOrMeta+K` (Ctrl, or ⌘ on a Mac) or `Shift+Tab`, with the
+ * legacy `keyCode` and `which` a browser gives the key (13 for Enter): pages
+ * still read them, and an event a script makes has 0 otherwise.
  */
 function keyboardInit(combo: string): KeyboardEventInit {
   const parts = combo.length > 1 ? combo.split(/\+(?=.)/) : [combo];
   const name = parts.pop()!;
   const held = new Set(parts);
-  const key = name === 'Space' ? ' ' : name;
-  const code = /^[a-z]$/i.test(key)
-    ? `Key${key.toUpperCase()}`
-    : /^\d$/.test(key)
-      ? `Digit${key}`
-      : key === ' '
-        ? 'Space'
-        : key;
+  const { key, code, keyCode } = keyDefinition(name);
   return {
     key,
     code,
+    keyCode,
+    which: keyCode,
     ctrlKey: held.has('Control') || (held.has('ControlOrMeta') && !IS_MAC),
     metaKey: held.has('Meta') || (held.has('ControlOrMeta') && IS_MAC),
     altKey: held.has('Alt'),
@@ -540,6 +538,12 @@ function keyboardInit(combo: string): KeyboardEventInit {
     cancelable: true,
     composed: true,
   };
+}
+
+/** A `keypress` carries the character the key types, as its `charCode`, `keyCode` and `which`. */
+function keypressInit(init: KeyboardEventInit): KeyboardEventInit {
+  const charCode = init.key === 'Enter' ? 13 : ((init.key ?? '').codePointAt(0) ?? 0);
+  return { ...init, charCode, keyCode: charCode, which: charCode };
 }
 
 /**
@@ -563,7 +567,7 @@ export async function performPress(
   target.dispatchEvent(down);
   // Enter, and a character typed without Ctrl or ⌘, also send the older `keypress` some pages still listen to.
   if (key === 'Enter' || ([...init.key!].length === 1 && !init.ctrlKey && !init.metaKey)) {
-    target.dispatchEvent(new KeyboardEvent('keypress', init));
+    target.dispatchEvent(new KeyboardEvent('keypress', keypressInit(init)));
   }
   target.dispatchEvent(new KeyboardEvent('keyup', init));
   if (key === 'Enter' && !down.defaultPrevented && target instanceof HTMLInputElement && target.form) {

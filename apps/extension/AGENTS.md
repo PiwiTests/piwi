@@ -230,6 +230,10 @@ the panels show it. A file step asks the developer for the file in the replay's 
 carries them, and `DOM.setFileInputFiles` needs a path on disk), or lets them skip it (`skipped`); the file chooser a
 click opens is intercepted while a replay holds the tab (`Page.setInterceptFileChooserDialog`).
 
+With the page's own events (`replay-actions.ts`), a key carries the legacy `keyCode` and `which` the browser gives it,
+and a `keypress` its `charCode`, from the same `keyDefinition` the trusted path sends (`cdp-input.ts`): older pages
+(the classic TodoMVC adds a todo on `keyCode === 13`) read them, and an event a script makes has 0 otherwise.
+
 ## Connected mode (recording → your own functions)
 
 The recorder (`record-panel.ts`, `record-capture.ts`, `packages/core/src/recording.ts`,
