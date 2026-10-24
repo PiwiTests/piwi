@@ -56,8 +56,8 @@ async function seedCluster(values: {
 }
 
 beforeEach(async () => {
-  // File-backed rather than :memory: — @libsql/client gives an interactive
-  // transaction a connection of its own, and a :memory: db has only one.
+  // A file database: libSQL runs a transaction on its own connection, which an
+  // in-memory database does not share.
   tmpDir = mkdtempSync(join(tmpdir(), 'piwi-recluster-'));
   client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
   db = drizzle(client, { schema });

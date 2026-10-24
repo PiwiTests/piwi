@@ -82,7 +82,9 @@ export async function configureSqliteConnections(client: Client): Promise<void> 
 
   // The pool reuses the connection it has until a transaction holds it, so
   // the pragmas run on that one, then on the second one, opened beside the
-  // transaction. The pool keeps both and reuses them from then on.
+  // transaction. The pool keeps both and reuses them from then on; one it
+  // opens to replace a broken connection has libSQL's defaults, which enforce
+  // foreign keys and keep synchronous=FULL.
   await client.executeMultiple(CONNECTION_PRAGMAS);
   const holding = await transaction('deferred');
   try {
