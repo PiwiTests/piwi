@@ -810,12 +810,14 @@
     "vscode:format:check": "oxfmt --config oxfmt.config.mts --check \"src/\" \"tests/\" \"scripts/\" build.mjs",
     "vscode:test": "vitest run",
     "vscode:test:integration": "npm run vscode:build && node tests/integration/run.mjs",
+    "vscode:test:e2e": "playwright test --config tests/e2e/playwright.config.mjs",
     "vscode:package": "npm run vscode:build && vsce package --no-dependencies --out dist/piwi.vsix",
     "test": "npm run vscode:test"
   },
   "devDependencies": {
     "@piwitests/core": "*",
     "@piwitests/editor": "*",
+    "@playwright/test": "^1.63.0",
     "@types/vscode": "~1.91.0",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.0.0",

@@ -225,6 +225,7 @@ npm run vscode:lint               # :fix to fix
 npm run vscode:format             # :check to verify only
 npm run vscode:test               # unit tests of src/glue.ts
 xvfb-run -a npm run vscode:test:integration   # VS Code (downloaded to .vscode-test/) on a fixture repository
+xvfb-run -a -s "-screen 0 1920x1200x24" npm run vscode:test:e2e   # what the workbench draws, after vscode:build
 npm run vscode:package            # dist/piwi.vsix
 ```
 
@@ -236,13 +237,21 @@ with the `ide` scope is what puts a line in it. The file is gitignored, and `.vs
 **Screenshots.** `scripts/take-screenshots.mjs` writes the extension's illustrations (`apps/docs/public/screenshots/vscode-*.png`,
 shown by the docs, the README and the Marketplace README): it opens the fixture project of
 `scripts/lib/editor-fixture.mjs`, a small shop's suite with one brittle locator, two CI failures and a local run since,
-against the stub instance the same module serves, in the downloaded VS Code, and drives the window with Playwright's
-Electron support. On Linux, run it under Xvfb at twice the window size for 2× images:
+against the stub instance the same module serves, in the VS Code `scripts/lib/vscode-window.mjs` downloads (the
+release `VSCODE_VERSION` pins, moved on purpose: the workbench's DOM changes between releases), and drives the window
+with Playwright's Electron support. On Linux, run it under Xvfb at twice the window size for 2× images:
 `xvfb-run -a -s "-screen 0 2880x1800x24" node scripts/take-screenshots.mjs`. A scene is a function of `SCENES`; one
 that fails leaves `vscode-<scene>-failed.png` with the window as it stood. The JetBrains plugin's script reuses the
-fixture, so a change to it recaptures both sets. What was found about driving VS Code this way, and what a test
-suite over the same launcher would assert, is recorded in
+fixture, so a change to it recaptures both sets. What was found about driving VS Code this way is recorded in
 [`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md).
+
+**The nightly suite** (`tests/e2e/`, `npm run vscode:test:e2e`) opens the same fixture in the same window and asserts
+on the workbench's DOM what the in-process suites check as answers: the status bar's counts, the Problems panel's rows,
+the quick fixes, the hover, CodeLens, the failures view and the Testing view. `.github/workflows/nightly-vscode.yml`
+runs it every night and on demand, not on pull requests; a failure leaves the HTML report with a screenshot of the
+window. Find elements by ARIA role and name where the workbench gives one (`getByRole('tree', { name: 'Test Explorer' })`),
+a class name only where it does not; a step that opens a menu or a hover clears the notification toasts first
+(`clearNotifications`).
 
 The integration suite (`tests/integration/`) starts a stub instance, writes a fixture repository, and drives VS Code
 through its public commands (`vscode.executeCodeActionProvider`, `vscode.executeCodeLensProvider`, …), and through the

@@ -27,6 +27,7 @@ record these follow, with its measurements, is [`adr/ci-workflows.md`](../adr/ci
 | `workflows/edge.yml`                       | pushes to `main`                | the `edge` container image                                                               |
 | `workflows/release-notes.yml`              | releases, on demand             | tidies the release notes                                                                 |
 | `workflows/live-jira.yml`                  | on demand                       | the live Jira E2E                                                                        |
+| `workflows/nightly-vscode.yml`             | every night, on demand          | the VS Code extension in the real VS Code (`apps/vscode/tests/e2e`), at the pinned release |
 | `actions/setup-workspace/action.yml`       | used by the workflows above     | Node, the npm cache, `npm ci`, and Playwright's Chromium when asked                      |
 | `actions/container-health/action.yml`      | `ci.yml`, the container publish | starts a server image on an empty data folder and waits for `/api/health`                |
 

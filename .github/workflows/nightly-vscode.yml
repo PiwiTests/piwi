@@ -1,0 +1,49 @@
+name: VS Code nightly
+
+# The extension in the real VS Code, every night and on demand: the suite of apps/vscode/tests/e2e opens the fixture
+# project against its stub instance in the VS Code release scripts/lib/vscode-window.mjs pins, and asserts what the
+# workbench draws (the Problems panel, the quick fixes, the hover, CodeLens, the failures view, the Testing view, the
+# status bar). It is no pull request check: the workbench's DOM moves with VS Code, which a change to this repository
+# does not. A failure leaves the report, with the window as it stood, for two weeks.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+
+      # Keyed by the file that pins the version: moving it downloads the new one.
+      - name: Cache VS Code
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/vscode/.vscode-test
+          key: vscode-${{ runner.os }}-${{ hashFiles('apps/vscode/scripts/lib/vscode-window.mjs') }}
+
+      - name: Build the extension
+        working-directory: apps/vscode
+        run: npm run vscode:build
+
+      - name: Run the suite in the real VS Code
+        working-directory: apps/vscode
+        run: xvfb-run -a -s "-screen 0 1920x1200x24" npm run vscode:test:e2e
+
+      - name: Upload the report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vscode-nightly-report
+          path: apps/vscode/tests/e2e/report
+          retention-days: 14

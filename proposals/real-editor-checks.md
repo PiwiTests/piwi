@@ -8,8 +8,12 @@ quiet, and what it costs. This document is their durable home, and the record of
 pipelines are not turned into continuous checks of the plugins yet. The second half says what such checks would be
 and what they would need, so the decision can be revisited with the facts at hand.
 
-**Status.** Proposed 2026-10-21. Nothing of the second half is built. The three pipelines exist and are run by hand
-to recapture the illustrations; where this text and a script differ, the script's header is right.
+**Status.** Proposed 2026-10-21. Being built: the VS Code check of section 6 is built (2026-10-24), as D3 has it: a
+Playwright suite, `apps/vscode/tests/e2e/`, over the launcher the screenshot script now shares
+(`apps/vscode/scripts/lib/vscode-window.mjs`, which pins the VS Code release both open), run every night and on demand
+by `.github/workflows/nightly-vscode.yml`, not on pull requests. The JetBrains check remains deferred until a license
+for CI exists. The three pipelines are still run by hand to recapture the illustrations; where this text and a script
+differ, the script's header is right.
 
 **Summary.** Three scripts capture the illustrations, all against the same fixture project and stub instance where an
 instance is involved: `apps/extension/tests/e2e/docs-screenshots.spec.ts` (a Playwright test, skipped unless asked),
@@ -18,8 +22,8 @@ instance is involved: `apps/extension/tests/e2e/docs-screenshots.spec.ts` (a Pla
 VS Code and JetBrains scripts prove, on every run, that the built plugin loads in the real editor, starts the editor
 service, connects to an instance, and draws its failures, its quick fixes and its summaries. They assert none of it:
 they wait for the moment to capture and write an image. The plugins' automated checks remain the in-process ones
-(section 5). A check in the real editor is within reach for VS Code and costly for the JetBrains IDEs, mostly because
-of the license; both are deferred (section 6).
+(section 5), and for VS Code a nightly suite in the real editor (section 6). A check in the real JetBrains IDEs is
+costly, mostly because of the license, and is deferred.
 
 ## 1. What exists
 
@@ -207,7 +211,12 @@ Verified on VS Code 1.143.0, the stable build `@vscode/test-electron` downloaded
 
 ## 6. What a check in the real editors would be
 
-### VS Code: within reach
+### VS Code: built, nightly
+
+`apps/vscode/tests/e2e/editor.spec.mjs` asserts what this section lists, plus the Testing view's tree and its results,
+in one window for the whole suite; `npm run vscode:test:e2e` from `apps/vscode/`, after `npm run vscode:build`, under
+`xvfb-run -a -s "-screen 0 1920x1200x24"` on Linux. A local run takes about 15 seconds once VS Code is downloaded. The
+integration suite keeps its own stub instance. What follows is the reasoning it was built from.
 
 The screenshot script already waits on real UI states to capture: the quick-fix row that starts with `Heal: use`,
 the hover's content, the Problems panel. A Playwright test suite over the same launcher turns those waits into

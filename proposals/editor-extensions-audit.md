@@ -8,7 +8,8 @@ a server route no test reaches that changed since the default branch are marked 
 request's rule, in both clients, with the coverage marks (`CoverageResult.uncovered`). L3 is built (2026-10-24), in
 the part a run's pause carries: **Record here** in Piwi's pause bar, at a breakpoint or at `page.pause()`, records in
 the test's page from there, in both clients ([record-from-the-ide.md](record-from-the-ide.md), part 5, whose status
-lists what of it remains). L4 and L5 remain.
+lists what of it remains). L4 is built (2026-10-24): a Playwright suite asserts what the extension draws in the real
+VS Code, at a pinned release, every night ([real-editor-checks.md](real-editor-checks.md), D3). L5 remains.
 It covers the IDE plug-in as this repository names it: the **editor extensions**, that is the VS Code extension (`apps/vscode`, published as `piwitests.piwi`),
 the JetBrains plugin (`apps/jetbrains`, `dev.piwitests.piwi`) and the **editor service** they both run
 (`packages/editor`, the language server). The plan in [section 10](#10-a-prioritized-plan) ranks what to build; the
