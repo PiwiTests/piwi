@@ -137,7 +137,7 @@ function agentPrompt(choices: SetupChoices): string {
   if (choices.needsApiKey) {
     lines.push(
       '',
-      'The dashboard needs an API key: never create one or write one into a file. I set PIWI_API_KEY myself, in my environment and in the CI secrets.',
+      'The dashboard needs an API key: never create one or write one into a file. I set PIWI_API_KEY myself, in the .env beside the Playwright config and in the CI secrets.',
     );
   }
   return lines.join('\n');

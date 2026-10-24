@@ -1,5 +1,7 @@
+import * as path from 'node:path';
 import type { PiwiDashboardOptions } from '../../public/options.js';
 import { defaultDesktopConfigPath, readDesktopConfig } from './desktop.js';
+import { readDotEnv } from './dotenv.js';
 import { detectCi } from '../support/ci.js';
 
 /**
@@ -275,6 +277,21 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'outputFile', env: PIWI_ENV_KEYS.outputFile, kind: 'string' },
 ];
 
+/**
+ * The options `resolveOptions` also reads from the `.env` file in the
+ * Playwright config's folder, the file `piwi init` writes: the connection,
+ * under the variable names the CLI commands and the editors read from the same
+ * file. Other variables in the file are not read: the workers take the rest of
+ * the `PIWI_*` variables from the environment, which the file does not reach.
+ */
+const DOTENV_OPTIONS = ['serverUrl', 'apiKey', 'projectName'] as const;
+
+/** The `.env` file a `resolveOptions` call took options from, and their variables. */
+export interface DotEnvUse {
+  file: string;
+  keys: string[];
+}
+
 type DesktopAppMode = NonNullable<PiwiDashboardOptions['desktopApp']>;
 
 const DESKTOP_APP_MODES: ReadonlyArray<DesktopAppMode> = ['prefer', 'fallback', 'off'];
@@ -292,6 +309,7 @@ function desktopAppMode(option: unknown, envValue: string | undefined): DesktopA
 
 let desktopDiscovered = false;
 let desktopReplacedServerUrl: string | null = null;
+let dotEnvUse: DotEnvUse | null = null;
 
 /**
  * Whether the last `resolveOptions` call took its server URL and API key from
@@ -311,19 +329,32 @@ export function desktopReplacedServer(): string | null {
 }
 
 /**
+ * The `.env` file the last `resolveOptions` call took options from, and the
+ * variables it took; null when it took none. The reporter logs it in verbose mode.
+ */
+export function usedDotEnv(): DotEnvUse | null {
+  return dotEnvUse;
+}
+
+/**
  * Merge raw user options with defaults, reading from `PIWI_*` env vars when
- * options are not provided, and falling back to the running desktop app when
- * nothing points at a server at all.
+ * options are not provided, then from the `.env` file in `configDir` for the
+ * connection, and turning to the running desktop app as `desktopApp` says:
+ * by default only when nothing points at a server at all.
  *
  * Env semantics: env vars fill in values the caller didn't provide (fallback).
  * They're applied to `raw` *before* the `DEFAULTS` merge so a built-in default
  * never masks an env var (`PIWI_PROJECT_NAME` would otherwise be masked by the
  * `default-project` default).
  *
+ * `configDir` is the Playwright config's folder. The reporter and the global
+ * setup both pass it, so the two processes read the same file and resolve the
+ * same connection; without it, no `.env` file is read.
+ *
  * `PIWI_VERBOSE` and `PIWI_DESKTOP_APP` win over both the default *and* an
  * explicit user option.
  */
-export function resolveOptions(raw: Record<string, any>): PiwiDashboardOptions {
+export function resolveOptions(raw: Record<string, any>, configDir?: string): PiwiDashboardOptions {
   const env = process.env;
   const mergedRaw: Record<string, any> = { ...raw };
 
@@ -337,12 +368,30 @@ export function resolveOptions(raw: Record<string, any>): PiwiDashboardOptions {
     }
   }
 
-  // The desktop app running on this machine. URL and token always move
-  // together, so a hosted `serverUrl` is never paired with the desktop's local
-  // token, nor the desktop with a hosted credential. `'fallback'` adopts it only
-  // when *neither* is configured anywhere else, so an explicit config or a CI
-  // secret is never redirected; `'prefer'` also sets a configured server aside
-  // for it outside CI.
+  // Below the options and the environment: the connection the config folder's
+  // `.env` records, one variable at a time, as if the file were loaded into the
+  // environment without overriding it. An empty value is ignored, as in the
+  // environment.
+  dotEnvUse = null;
+  if (configDir) {
+    const file = path.join(configDir, '.env');
+    const dotEnv = readDotEnv(file);
+    const keys: string[] = [];
+    for (const option of DOTENV_OPTIONS) {
+      const value = dotEnv[PIWI_ENV_KEYS[option]];
+      if (mergedRaw[option] !== undefined || !value) continue;
+      mergedRaw[option] = value;
+      keys.push(PIWI_ENV_KEYS[option]);
+    }
+    if (keys.length > 0) dotEnvUse = { file, keys };
+  }
+
+  // Below everything else: the desktop app running on this machine. URL and
+  // token always move together, so a hosted `serverUrl` is never paired with
+  // the desktop's local token, nor the desktop with a hosted credential.
+  // `'fallback'` adopts it only when *neither* is configured anywhere else, so
+  // an explicit config, a `.env` value or a CI secret is never redirected;
+  // `'prefer'` also sets a configured server aside for it outside CI.
   desktopDiscovered = false;
   desktopReplacedServerUrl = null;
   const mode = desktopAppMode(mergedRaw.desktopApp, env[PIWI_ENV_KEYS.desktopApp]);
@@ -394,8 +443,10 @@ export function resolveOptions(raw: Record<string, any>): PiwiDashboardOptions {
 /**
  * Write the options that the isolated `global-setup-module` process needs into
  * `PIWI_*` env vars. `wrapConfig` calls this so the global setup (which runs
- * `resolveOptions({})` in a separate module) picks up the same server/auth
- * config the reporter instance uses. Only writes values that are actually set.
+ * `resolveOptions` in a separate module) picks up the same server/auth
+ * config the reporter instance uses. Only writes values that are actually set:
+ * one the config leaves unset, both processes take from the environment or the
+ * config folder's `.env` on their own, at the same precedence.
  */
 export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   const env = process.env;

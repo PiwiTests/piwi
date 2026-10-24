@@ -6,7 +6,8 @@ const colorMode = useColorMode();
 // blends with the page background.
 const color = computed(() => (colorMode.value === 'dark' ? '#09090b' : '#f4f4f5'));
 // Prepend the app base URL so the favicon resolves correctly in demo mode
-// (where baseURL is /demo/) and in normal mode (where it is /).
+// (where baseURL is /demo/) and in normal mode (where it is /). Its `favicon`
+// key lets a page watching a run swap in a progress badge (useTabRunIndicator).
 const iconHref = (config.app?.baseURL ?? '/').replace(/\/$/, '') + '/logo.svg';
 
 useHead({
@@ -15,7 +16,7 @@ useHead({
     { name: 'viewport', content: 'width=device-width, initial-scale=1' },
     { key: 'theme-color', name: 'theme-color', content: color },
   ],
-  link: [{ rel: 'icon', type: 'image/svg+xml', href: iconHref }],
+  link: [{ key: 'favicon', rel: 'icon', type: 'image/svg+xml', href: iconHref }],
   htmlAttrs: {
     lang: 'en',
   },

@@ -101,26 +101,27 @@ capture, failure-time ARIA snapshots and the locator snapshots behind [locator h
 
 Options go in the reporter's entry in `playwright.config.ts`, or in `wrapConfig`'s second argument. Most options can
 also be set with a `PIWI_*` environment variable, which fills in an option you left unset: an option in the config
-wins, except `PIWI_VERBOSE`, which overrides even an explicit `verbose` outside `wrapConfig`. [Reporter options](/reference/reporter-options)
+wins, except `PIWI_VERBOSE`, which overrides even an explicit `verbose` outside `wrapConfig`. `PIWI_DASHBOARD_URL`,
+`PIWI_API_KEY` and `PIWI_PROJECT_NAME` also come from the config folder's
+[`.env`](/reference/reporter-options#values-from-env), below the environment. [Reporter options](/reference/reporter-options)
 lists every option with its default and its variable, and [Test metadata](/reference/test-metadata) what the reporter
 records on its own.
 
 ### Finding the desktop app automatically
 
-If nothing sets a server (no `serverUrl` or `apiKey`, no `PIWI_DASHBOARD_URL` or `PIWI_API_KEY`), the reporter
+If nothing sets a server (no URL or API key in the config, the environment or that `.env`), the reporter
 uploads to the [desktop app](/features/desktop) running on the same machine, which publishes its loopback URL and
 access token to `~/.piwi/desktop.json` (`%USERPROFILE%\.piwi\desktop.json` on Windows) while it runs.
-`PIWI_DESKTOP_CONFIG` overrides the path. A CI job or a project pointed at another dashboard is never redirected,
-unless it opts in below.
+`PIWI_DESKTOP_CONFIG` overrides the path. A CI job or a project pointed elsewhere is never redirected, unless it opts
+in below.
 
 ### Local runs to the desktop app, CI to a team server
 
-With `desktopApp: 'prefer'`, a run that is not on CI lands in the desktop app whenever it is running, even with
-`serverUrl` set, so developers' local runs stay out of a shared dashboard; CI runs, and local runs with the app closed,
-go to `serverUrl` with its credentials. The URL and the token always move together. A run is on CI when a CI
+With `desktopApp: 'prefer'`, a run not on CI lands in the desktop app whenever it is running, even with `serverUrl`
+set, so developers' local runs stay out of a shared dashboard; CI runs, and local runs with the app closed, go to
+`serverUrl` with its credentials. URL and token always move together. A run is on CI when a CI
 provider's variable is set, or `CI` is anything but `false` or `0`. `'off'` never uses the app. `PIWI_DESKTOP_APP`
-overrides the option: `off` sends one local run to `serverUrl`. `init --desktop-app prefer` writes it, as does
-**Local runs go to the desktop app** on **Setup**.
+overrides the option: `off` sends one local run to `serverUrl`. `init --desktop-app prefer` writes it.
 
 ## Sharding
 
@@ -165,7 +166,7 @@ Registration is best-effort: if the server is unreachable, the run is created wh
 
 ## Multiple reports
 
-Each report type listed in `reports` appears as its own button on the run.
+Each report attached to a run gets its own dashboard button.
 
 ```typescript
 export default defineConfig({
@@ -193,7 +194,7 @@ as an archive. Any other type is accepted too, read from `dir` or else `<type>-r
 ## With authentication enabled
 
 When the dashboard has authentication enabled, pass an **API key**: create one ([API keys](/operate/api-keys);
-**Setup** creates one in place), keep it in a CI secret, and pass it as `PIWI_API_KEY` or the `apiKey` option.
+**Setup** creates one in place), keep it in a CI secret (locally, in `.env`), and pass it as `PIWI_API_KEY` or the `apiKey` option.
 
 The key is sent as an `Authorization: Bearer` header. `username` and `password` (`PIWI_USERNAME`, `PIWI_PASSWORD`)
 work too (the reporter logs in once and reuses the session); prefer an API key in CI.

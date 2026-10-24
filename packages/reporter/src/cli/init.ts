@@ -65,8 +65,9 @@ Options:
   --project <name>     Project name to report under (default: your package/folder name)
   --desktop-app <mode> Write desktopApp into the config: "prefer" sends local runs to the
                        Piwi desktop app while it runs, and CI runs to --server-url
-  --api-key <key>      API key to write into .env (env PIWI_API_KEY). Omit to keep it a
-                       .env.example placeholder you fill in yourself.
+  --api-key <key>      API key to write into .env (env PIWI_API_KEY), where the reporter
+                       reads it. Omit to keep it a .env.example placeholder you fill in
+                       yourself.
   --cwd <path>         Project root to operate on (default: current directory)
   --skills <list>      Comma-separated skills to install, or "all" / "none"
                        (default: ${WORKFLOW_SKILLS.join(', ')})
@@ -285,8 +286,9 @@ function nextSteps(opts: InitOptions, steps: StepResult[]): string[] {
   const out: string[] = [];
   if (!opts.apiKey && opts.serverUrl) {
     out.push(
-      'If your dashboard has authentication on, create an API key (Settings → Account → API keys), ' +
-        'put it in .env as PIWI_API_KEY, and keep .env out of git.',
+      'If your dashboard has authentication on, create an API key (Settings → Account → API keys) and ' +
+        'put it in .env as PIWI_API_KEY: the reporter reads it from the .env next to your Playwright config. ' +
+        'Keep .env out of git; in CI, set PIWI_API_KEY as a secret.',
     );
   }
   if (steps.some((s) => s.status === 'manual')) {

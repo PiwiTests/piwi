@@ -47,8 +47,8 @@ async function create() {
     <p class="text-sm font-semibold text-highlighted">API key</p>
     <template v-if="!createdKey">
       <p class="text-sm text-highlighted leading-relaxed">
-        Authentication is on, so the reporter needs a key. It reads it from <code>PIWI_API_KEY</code>: a CI secret, or
-        your shell for a local run.
+        Authentication is on, so the reporter needs a key. It reads it from <code>PIWI_API_KEY</code>: a CI secret, and
+        for a local run the <code>.env</code> beside your Playwright config.
       </p>
       <UButton
         v-if="userId && canCreateProjects"
@@ -74,7 +74,8 @@ async function create() {
     </template>
     <template v-else>
       <p class="text-sm text-highlighted leading-relaxed">
-        Copy it now: it is not shown again. Add it to your CI secrets as <code>PIWI_API_KEY</code>, and never commit it.
+        Copy it now: it is not shown again. Add it to your CI secrets as <code>PIWI_API_KEY</code>, and to your
+        <code>.env</code> for local runs; never commit it.
       </p>
       <CodeBlock :code="`PIWI_API_KEY=${createdKey}`" lang="text" filename="CI secret" />
       <p class="text-xs text-muted">

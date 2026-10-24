@@ -65,7 +65,10 @@ export function createGlobalSetup(
       }
     }
 
-    const opts = resolveOptions({ ...inlineReporterOptions, ...options } as Record<string, any>);
+    const opts = resolveOptions(
+      { ...inlineReporterOptions, ...options } as Record<string, any>,
+      configDirFromConfig(config),
+    );
     const logger = new Logger(opts.verbose ?? false);
 
     // In Playwright's UI mode the reporter never runs to finish a registered

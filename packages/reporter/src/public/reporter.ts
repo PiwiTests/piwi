@@ -6,9 +6,11 @@ import {
   resolveOptions,
   usedDesktopDiscovery,
   desktopReplacedServer,
+  usedDotEnv,
   PIWI_DEFAULTED_CAPTURE_ENV,
   PIWI_ENV_KEYS,
   PIWI_RESOURCES_RESULTS_ENV,
+  type DotEnvUse,
 } from '../internal/config/env.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient } from '../internal/transport/http-client.js';
@@ -150,7 +152,9 @@ export class PiwiDashboardReporter {
   /** True when the server URL and API key came from the desktop app, not from config. */
   private viaDesktopApp: boolean;
   /** The configured server `desktopApp: 'prefer'` set aside for the desktop app, if any. */
-  private desktopReplaced: string | null;
+  private readonly desktopReplaced: string | null;
+  /** The config folder's `.env` file and the connection variables taken from it, if any. */
+  private readonly viaDotEnv: DotEnvUse | null;
   private isFullRun = true;
   private filterDetails: FilterDetails | null = null;
   /** Configured `maxFailures` (0 = unlimited) — disambiguates an interrupted run's unrun reason. */
@@ -194,11 +198,14 @@ export class PiwiDashboardReporter {
   static createGlobalSetup = createGlobalSetup;
 
   constructor(rawOptions: Record<string, any> = {}) {
-    this.options = resolveOptions(rawOptions);
+    // Playwright passes the config's folder to every reporter it constructs.
+    const configDir = typeof rawOptions.configDir === 'string' ? rawOptions.configDir : undefined;
+    this.options = resolveOptions(rawOptions, configDir);
     this.enabled = this.options.enabled !== false && !!this.options.serverUrl;
     this.listMode = isListMode();
     this.viaDesktopApp = usedDesktopDiscovery();
     this.desktopReplaced = desktopReplacedServer();
+    this.viaDotEnv = usedDotEnv();
     this.coverageSettings = coverageSettings(this.options);
 
     const logger = new Logger(this.options.verbose ?? false);
@@ -264,6 +271,7 @@ export class PiwiDashboardReporter {
           : `Using the desktop app running at ${this.options.serverUrl} (no serverUrl configured).`,
       );
     }
+    if (this.viaDotEnv) this.logger.debug(`Read ${this.viaDotEnv.keys.join(', ')} from ${this.viaDotEnv.file}.`);
     this.startTime = new Date().toISOString();
     this.testPathBase = configDirFromConfig(config);
     this.playwrightVersion = config.version;

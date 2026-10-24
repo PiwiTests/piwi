@@ -49,8 +49,8 @@ tray tooltip.
 
 While the app runs, the reporter finds it by itself: a config with only a `projectName` reports here. It reads the
 address and token the app writes to `~/.piwi/desktop.json` only when nothing else sets a server, so a CI job is never
-redirected ([details](/guide/reporter#finding-the-desktop-app-automatically)). A suite that reports to a shared
-dashboard sends its local runs here with
+redirected ([details](/guide/reporter#finding-the-desktop-app-automatically)). A suite that reports to a shared dashboard sends
+its local runs here with
 [`desktopApp: 'prefer'`](/guide/reporter#local-runs-to-the-desktop-app-ci-to-a-team-server), which the snippets on
 **Setup** carry once you turn on **CI reports to a team server**.
 
