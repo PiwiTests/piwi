@@ -24,11 +24,6 @@ updates:
       # the dashboard's typecheck on code 3.3.11 accepts.
       - dependency-name: "vue-tsc"
         versions: ["3.3.12", "3.3.13"]
-      # @libsql/client 0.18 runs a local database on a pool of connections and rolls back a connection's open
-      # transaction when it goes back to the pool: the per-connection pragmas (sqlite-connections.ts) and the
-      # migration repair's transaction (migration-targets.ts) are written for 0.17's single connection.
-      - dependency-name: "@libsql/client"
-        versions: [">= 0.18.0"]
     groups:
       # @vueuse/nuxt pins the @vueuse/core it auto-imports: the two move together, majors included.
       vueuse:
