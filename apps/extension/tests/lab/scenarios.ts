@@ -14,9 +14,18 @@ import type { Page } from '@playwright/test';
 
 export interface Scenario {
   name: string;
-  /** The route the recording starts on. */
+  /** The route the recording starts on, or the full URL of a site of its own (`wild.ts`). */
   start: string;
   run: (page: Page) => Promise<void>;
+  /** `bug` records it as Report a bug does; `actions` (the default) as Record actions does. */
+  mode?: 'actions' | 'bug';
+  /** How long a person looks at the first page before acting, when it differs from `LAB_SETTLE_MS`. */
+  settleMs?: number;
+  /**
+   * What the person types, in order, where the replay hands over a field whose
+   * value the recording never keeps (a password).
+   */
+  secrets?: string[];
   /**
    * What the extension cannot replay yet, for a scenario kept to show it. The
    * lab reports the result without failing on it.
@@ -26,7 +35,7 @@ export interface Scenario {
   hovers?: number;
 }
 
-const pause = (page: Page, ms = 900) => page.waitForTimeout(ms);
+export const pause = (page: Page, ms = 900) => page.waitForTimeout(ms);
 
 /** A file of that name in the lab's `out/files/`, for a scenario that chooses one. */
 export function labFile(name: string): string {
@@ -37,19 +46,19 @@ export function labFile(name: string): string {
   return file;
 }
 
-async function type(page: Page, text: string): Promise<void> {
+export async function type(page: Page, text: string): Promise<void> {
   await page.keyboard.type(text, { delay: 70 });
 }
 
 /** Clicks a field, selects what it holds and types over it, as a person does. */
-async function retype(page: Page, field: ReturnType<Page['getByRole']>, text: string): Promise<void> {
+export async function retype(page: Page, field: ReturnType<Page['getByRole']>, text: string): Promise<void> {
   await field.click();
   await page.keyboard.press('ControlOrMeta+A');
   await type(page, text);
 }
 
 /** Clicks the n-th entry of whatever list a popup just opened: options, menu items or checkboxes. */
-async function pickInPopup(page: Page, n = 0): Promise<void> {
+export async function pickInPopup(page: Page, n = 0): Promise<void> {
   const popup = page.locator('[role="listbox"]:visible, [role="menu"]:visible, [role="dialog"]:visible').last();
   await popup.waitFor({ state: 'visible', timeout: 5_000 });
   const entry = popup
