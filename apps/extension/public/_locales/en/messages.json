@@ -3978,8 +3978,8 @@
     }
   },
   "replay_reasonSecret": {
-    "message": "This field held a password or another secret, which a recording never keeps: type it on the page, then continue.",
-    "description": "Why a replay step was handed to the person: the step types into a password field (or another field whose value is never recorded), so the person types it."
+    "message": "The report does not hold what was typed here: a recording never keeps a password or another secret, and whoever sent the report may have left the typed values out. Type it on the page, then continue.",
+    "description": "Why a replay step was handed to the person: the step types into a field whose value the report does not hold (a password or another secret, or every typed value when the sender left them out), so the person types it."
   },
   "replay_hoverNoLocator": {
     "message": "Skipped: the recording has no locator for the element hovered; the next step points at its own element.",

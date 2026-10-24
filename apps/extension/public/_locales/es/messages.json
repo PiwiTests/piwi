@@ -3326,7 +3326,7 @@
     }
   },
   "replay_reasonSecret": {
-    "message": "Este campo contenía una contraseña u otro secreto, que una grabación nunca guarda: escríbalo en la página y luego continúe."
+    "message": "El informe no contiene lo que se escribió aquí: una grabación nunca guarda una contraseña ni otro secreto, y quien envió el informe puede haber omitido los valores escritos. Escríbalo en la página y luego continúe."
   },
   "replay_hoverNoLocator": {
     "message": "Omitido: la grabación no tiene ningún locator para el elemento sobrevolado; el paso siguiente apunta a su propio elemento."

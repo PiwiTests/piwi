@@ -174,11 +174,10 @@ function sendAside(ops: InputOp[]): Promise<void> {
 const INPUT_REACH_MS = 1_000;
 
 /**
- * Sends `ops` aside of the extension's surfaces, and checks the page heard
- * them: one of `types` reaches the window of `element`'s document. While a
- * browser dialog is in front of the tab (Chrome's warning about a password
- * found in a data breach, after a login), the tab takes no input, and the
- * step would pass without anything done.
+ * Sends `ops` aside of the extension's surfaces, and throws `NotActionable`
+ * when none of `types` reaches the window of `element`'s document within
+ * {@link INPUT_REACH_MS}: the tab takes no input while a browser dialog is in
+ * front of it.
  */
 async function sendHeard(element: Element, ops: InputOp[], types: readonly string[]): Promise<void> {
   const view = element.ownerDocument.defaultView ?? window;

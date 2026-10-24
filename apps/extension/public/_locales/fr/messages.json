@@ -3326,7 +3326,7 @@
     }
   },
   "replay_reasonSecret": {
-    "message": "Ce champ contenait un mot de passe ou un autre secret, qu’un enregistrement ne garde jamais : saisissez-le sur la page, puis continuez."
+    "message": "Le rapport ne contient pas ce qui a été saisi ici : un enregistrement ne garde jamais un mot de passe ni un autre secret, et la personne qui a envoyé le rapport a pu en retirer les valeurs saisies. Saisissez-le sur la page, puis continuez."
   },
   "replay_hoverNoLocator": {
     "message": "Passée : l’enregistrement n’a aucun locator pour l’élément survolé ; l’étape suivante pointe sur son propre élément."

@@ -1039,6 +1039,8 @@ export function renderBugHud(
   // Last in the bar, so its actions come first from the keyboard; drawn in its top right corner.
   const move = moveHudButton(host);
   move.classList.add('move');
+  // Named as the actions are, so a redraw keeps the focus on it.
+  move.dataset.action = 'move';
   bar.appendChild(move);
   root.append(style, bar);
   if (focusedAction) (root.querySelector<HTMLElement>(`[data-action="${focusedAction}"]`) ?? host).focus();

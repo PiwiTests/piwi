@@ -196,14 +196,18 @@ never overwritten by a step that was waiting.
 recorded rank), all on one engine per poll. `chooseElement` (`replay-core.ts`, pure, unit-tested) decides: each
 locator that finds one element alone votes for it, the spec's own with 1.5 votes, another with 1, or 0.5 when the
 stability rules call it brittle (`voteWeight`: a position, a CSS class), so only two steady ones agreeing outvote the
-spec's; another locator votes only for an element of the recorded tag or role (`fitsTarget`); the most votes win, the
+spec's; another locator votes only for an element of the recorded tag or role that carries no other test id
+(`fitsTarget`); the most votes win, the
 better-ranked locator on a tie. A label that changed, an id made up on each load, or a second element sharing a name
 leaves the others to find it, and the step's result says which locator did (`foundWith` in `replay-panel.ts`,
 `replay_foundWith*`); a step none finds keeps the reason in the spec's own locator's words. The element is then waited
 for as Playwright waits (visible, enabled, still), for `stepTimeout`: `ACTION_TIMEOUT_MS`, or the time the person
 waited before the step when recording plus five seconds, up to a minute, so a reply the server sends after fifteen
-seconds is waited for. A `fill` whose value the recording never kept (`redacted`: a password, a card number, a
-one-time code) is handed to the person (`replay_reasonSecret`) rather than typed empty, and a hover recorded without
+seconds is waited for, for its page as for its element. Another locator's element is taken only once the spec's own
+has had `FALLBACK_AFTER_MS` to find one, since the page a step plays on may still be on its way, and never an element
+carrying another test id than the recorded one. A `fill` whose value the report does not hold (`redacted`: a password,
+a card number, a one-time code, or every typed value when the sender left them out) is handed to the person
+(`replay_reasonSecret`) rather than typed empty, and a hover recorded without
 any locator is skipped (`replay_hoverNoLocator`): the next step's pointer goes over its own element. Assertions look
 for their element with the spec's own locator only, as the spec does.
 

@@ -118,11 +118,23 @@ function voteWeight(locator: string): number {
   return assessLocatorChain(parseLocatorChain(locator)).level === 'brittle' ? 0.5 : 1;
 }
 
-/** Whether an element another locator finds is the kind recorded: the same tag, or the same role. */
+/**
+ * Whether an element another locator finds may be the one recorded: no test
+ * id other than the recorded one, and the same tag or the same role.
+ */
 function fitsTarget(engine: LocatorEngine, element: Element, target: RecordedTarget): boolean {
+  const testId = engine.testIdAttributes.map((name) => element.getAttribute(name)).find((id) => id != null);
+  if (target.testId && testId != null && testId !== target.testId) return false;
   if (element.tagName.toLowerCase() === target.tagName.toLowerCase()) return true;
   return target.role != null && engine.model.role(element) === target.role;
 }
+
+/**
+ * How long the spec's own locator has to find a step's element before another
+ * recorded locator may: the page the step plays on may still be on its way,
+ * showing the last step's elements, which another locator could find.
+ */
+const FALLBACK_AFTER_MS = 2_000;
 
 /**
  * An engine over the page as it is now, blind to the extension's own surfaces.
@@ -171,7 +183,8 @@ export async function resolveForAction(
   const primary = locators[0];
   if (!primary || !target) return { ok: false, reason: t('replay_reasonNoLocator') };
   const weights = locators.map(voteWeight);
-  const deadline = Date.now() + timeout;
+  const began = Date.now();
+  const deadline = began + timeout;
   let reason = '';
   for (;;) {
     const engine = pageEngine({ strict: true });
@@ -185,7 +198,8 @@ export async function resolveForAction(
         return { locator, weight, found: [] };
       }
     });
-    const choice = chooseElement(looks, (element) => fitsTarget(engine, element, target));
+    const chosen = chooseElement(looks, (element) => fitsTarget(engine, element, target));
+    const choice = chosen && (chosen.locator === primary || Date.now() - began >= FALLBACK_AFTER_MS) ? chosen : null;
     const model = engine.model;
     const spec = looks[0]!.found.length;
     if (!choice) {

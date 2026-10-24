@@ -52,7 +52,8 @@ const SPEC_LOCATOR_VOTE = 1.5;
  * now, the spec's own first and the others in their recorded rank. Every
  * locator that finds one element alone votes for it, the spec's own with more
  * weight, a brittle one with less (`weight`); one of the others votes only for
- * an element that `fits` what was recorded (its tag or its role). The element
+ * an element that `fits` what was recorded (its tag or its role, no other test
+ * id). The element
  * with the most votes wins, the one the better-ranked locator found on a tie.
  * A text that changed, an id made up on each load or a second element sharing
  * a name leaves the others to find it. Null when no locator finds one element

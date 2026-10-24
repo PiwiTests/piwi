@@ -604,6 +604,57 @@ test.describe('replay-panel.js', () => {
     await expect(page.locator('#typed')).toHaveText('113/113');
   });
 
+  test('waits for the next view rather than taking the last one’s element another locator finds', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    await context.route(`${ORIGIN}/**`, (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        // A wizard: Continue shows the next view a second later, with a Continue of its own.
+        body: `<!doctype html><html><body><div id="view"><button id="to-shipping">Continue</button></div>
+          <output id="out"></output>
+          <script>
+            const out = document.getElementById('out');
+            document.getElementById('to-shipping').onclick = () => {
+              out.textContent += 'shipping;';
+              setTimeout(() => {
+                document.getElementById('view').innerHTML = '<button id="confirm">Continue</button>';
+                document.getElementById('confirm').onclick = () => (out.textContent += 'confirmed;');
+              }, 1000);
+            };
+          </script></body></html>`,
+      }),
+    );
+    const button = (id: string) => ({
+      tagName: 'button',
+      role: 'button',
+      accessibleName: 'Continue',
+      testId: null,
+      text: 'Continue',
+      alternatives: [
+        { locator: `locator('#${id}')`, method: 'locator', score: 65 },
+        { locator: "getByRole('button', { name: 'Continue' })", method: 'getByRole', score: 60 },
+      ],
+    });
+    const at = (i: number) => ({ value: null, redacted: false, pageUrl: '/', timestamp: i });
+    const steps: PiwiSteps = {
+      ...REPORT,
+      steps: [
+        { action: 'goto', target: null, ...at(0), value: '/' },
+        { action: 'click', target: button('to-shipping'), ...at(1) },
+        { action: 'click', target: button('confirm'), ...at(2) },
+      ],
+    };
+    await stubChrome(context, running(false, null, steps));
+    const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`${ORIGIN}/`);
+    await expect.poll(() => replayState(page).then((s) => s.status), { timeout: 30_000 }).toBe('done');
+    await expect(page.locator('#out')).toHaveText('shipping;confirmed;');
+    expect((await replayState(page)).results[2]!.detail).toBeNull();
+  });
+
   test('hands a password to the person, which a recording never keeps', async ({ context }) => {
     await openShadowRoots(context);
     await routePages(context, 'fixed');
@@ -617,7 +668,7 @@ test.describe('replay-panel.js', () => {
     await page.goto(`${ORIGIN}/login`);
     const hud = page.locator('#piwi-replay-hud-host');
     await expect(hud).toContainText(
-      'Step 2 could not be played here. This field held a password or another secret, which a recording never keeps: type it on the page, then continue.',
+      'Step 2 could not be played here. The report does not hold what was typed here: a recording never keeps a password or another secret, and whoever sent the report may have left the typed values out. Type it on the page, then continue.',
       { timeout: 20_000 },
     );
     await page.getByLabel('Username').fill('alice');

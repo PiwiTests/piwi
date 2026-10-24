@@ -1460,7 +1460,9 @@ async function runReplay(): Promise<void> {
         continue;
       }
 
-      if (!(await waitForPage(step.pageUrl, ACTION_TIMEOUT_MS, state.startPage, replayId))) {
+      // As long as the person waited before the step when recording, and at least as long as Playwright waits.
+      const timeout = stepTimeout(steps, index, ACTION_TIMEOUT_MS);
+      if (!(await waitForPage(step.pageUrl, timeout, state.startPage, replayId))) {
         if (movedAway === replayId) continue;
         const reason = t('replay_reasonOtherPage', { expected: pathOf(step.pageUrl), actual: pathOf(location.href) });
         if (!(await playByHand(state, index, reason))) return;
@@ -1507,8 +1509,6 @@ async function runReplay(): Promise<void> {
         continue;
       }
 
-      // As long as the person waited for the element when recording, and at least as long as Playwright waits.
-      const timeout = stepTimeout(steps, index, ACTION_TIMEOUT_MS);
       const resolved: Found =
         step.action === 'press' && !step.target
           ? { ok: true, element: null, locator: null, specCount: 0 }

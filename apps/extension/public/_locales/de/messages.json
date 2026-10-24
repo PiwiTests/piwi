@@ -3326,7 +3326,7 @@
     }
   },
   "replay_reasonSecret": {
-    "message": "Dieses Feld enthielt ein Passwort oder ein anderes Geheimnis, das eine Aufzeichnung nie behält: Geben Sie es auf der Seite ein und fahren Sie dann fort."
+    "message": "Der Bericht enthält nicht, was hier eingegeben wurde: Eine Aufzeichnung behält nie ein Passwort oder ein anderes Geheimnis, und wer den Bericht gesendet hat, kann die eingegebenen Werte weggelassen haben. Geben Sie es auf der Seite ein und fahren Sie dann fort."
   },
   "replay_hoverNoLocator": {
     "message": "Übersprungen: Die Aufzeichnung hat keinen Locator für das überfahrene Element; der nächste Schritt zeigt auf sein eigenes Element."
