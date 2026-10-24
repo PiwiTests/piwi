@@ -78,8 +78,8 @@ function isActive(status: string): boolean {
 const remaining = computed(() => Math.max(0, props.total - segments.value.reduce((sum, s) => sum + s.count, 0)));
 
 // ── Fitting the text ─────────────────────────────────────────────────────────
-// A segment's horizontal padding (`px-1.5`) and the gap between its count and label (`gap-x-1`).
-const SEGMENT_PADDING_PX = 12;
+// A segment's horizontal padding (`px-2`) and the gap between its count and label (`gap-x-1`).
+const SEGMENT_PADDING_PX = 16;
 const LABEL_GAP_PX = 4;
 
 const track = useTemplateRef<HTMLElement>('track');
@@ -142,12 +142,14 @@ function shownLabel(seg: Segment): string | undefined {
 /**
  * Each segment grows in proportion to its count, but never narrower than its
  * count needs; a selected one is wide enough for its whole label. While any
- * status filter is on, the segments it leaves out fade.
+ * status filter is on, the segments it leaves out fade. The track is a pill
+ * that clips its segments, and the segments at its ends round their outer
+ * corners too, so a selected or focused end segment keeps the pill's curve.
  */
 function segmentStyle(seg: Segment): Record<string, string> {
   const needed = textWidth(seg.count, isActive(seg.status) ? seg.label : undefined);
   const minWidth =
-    needed == null ? `${String(seg.count).length * 0.55 + 0.75}rem` : `${Math.ceil(needed) + SEGMENT_PADDING_PX + 1}px`;
+    needed == null ? `${String(seg.count).length * 0.55 + 1}rem` : `${Math.ceil(needed) + SEGMENT_PADDING_PX + 1}px`;
   return { flex: `${seg.count} 1 0%`, minWidth };
 }
 
@@ -162,7 +164,7 @@ function segmentClass(seg: Segment): string[] {
     <span class="shrink-0 text-xs text-muted tabular-nums">{{ total }} tests</span>
     <div
       ref="track"
-      class="flex flex-1 min-w-0 h-6 gap-0.5 overflow-hidden rounded-md bg-zinc-200 dark:bg-zinc-700 text-xs font-semibold"
+      class="flex flex-1 min-w-0 h-6 gap-0.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700 text-xs font-semibold"
     >
       <button
         v-for="seg in segments"
@@ -170,7 +172,7 @@ function segmentClass(seg: Segment): string[] {
         :key="seg.key"
         type="button"
         :data-segment="seg.key"
-        class="flex flex-wrap justify-center gap-x-1 h-6 overflow-hidden px-1.5 leading-6 whitespace-nowrap text-shadow-xs cursor-pointer transition-[flex-grow,min-width,opacity] duration-200 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-current"
+        class="flex flex-wrap justify-center gap-x-1 h-6 overflow-hidden px-2 first:rounded-l-full last:rounded-r-full leading-6 whitespace-nowrap text-shadow-xs cursor-pointer transition-[flex-grow,min-width,opacity] duration-200 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-current"
         :class="segmentClass(seg)"
         :style="segmentStyle(seg)"
         :aria-label="`${seg.count} ${seg.label}`"
