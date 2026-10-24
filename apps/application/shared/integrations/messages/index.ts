@@ -7,7 +7,7 @@
 import { en, type MessageKey, type MessageValue } from './en';
 import { fr } from './fr';
 
-export type { MessageKey, MessageValue } from './en';
+export type { MessageKey } from './en';
 
 export const SUPPORTED_LOCALES = ['en', 'fr'] as const;
 export type IssueLocale = (typeof SUPPORTED_LOCALES)[number];

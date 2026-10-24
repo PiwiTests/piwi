@@ -61,6 +61,9 @@ jobs:
           requireScope: false
           subjectPattern: ^(?![A-Z]).+$
           subjectPatternError: "Subject must start lowercase (Conventional Commits)."
+          # Dependabot labels its pull requests `dependencies` and titles them itself, a capitalised "Bump" included.
+          ignoreLabels: |
+            dependencies
 
   actionlint:
     name: actionlint

@@ -537,14 +537,16 @@ export default defineNuxtConfig({
         console.log('[Build] PostgreSQL migrations copied successfully');
       }
 
-      // Ensure the sql.js WASM file is present in public/demo for the browser demo build
+      // The sql.js WASM in public/demo is the installed sql.js's own: a binary built for another version fails to
+      // instantiate, and every demo API call with it.
       if (isDemo) {
-        const wasmSrc = resolve(__dirname, 'node_modules/sql.js/dist/sql-wasm-browser.wasm');
-        const wasmDst = resolve(__dirname, 'public/demo/sql-wasm-browser.wasm');
-        if (existsSync(wasmSrc) && !existsSync(wasmDst)) {
-          console.log('[Build] Copying sql-wasm-browser.wasm to public/demo...');
-          cpSync(wasmSrc, wasmDst);
-          console.log('[Build] sql-wasm-browser.wasm copied successfully');
+        for (const file of ['sql-wasm-browser.wasm', 'sql-wasm.wasm']) {
+          const wasmSrc = nodeRequire.resolve(`sql.js/dist/${file}`);
+          const wasmDst = resolve(__dirname, 'public/demo', file);
+          if (!existsSync(wasmDst) || !readFileSync(wasmSrc).equals(readFileSync(wasmDst))) {
+            console.log(`[Build] Copying ${file} to public/demo...`);
+            cpSync(wasmSrc, wasmDst);
+          }
         }
         const seedSrc = resolve(__dirname, 'public/demo/seed.sql');
         if (!existsSync(seedSrc)) {

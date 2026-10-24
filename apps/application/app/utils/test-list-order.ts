@@ -123,25 +123,21 @@ export function fileGroupRows<T>(tests: readonly T[], options: FileGroupingOptio
     let children: LevelChild<T>[];
     if (positional) {
       // A block sits where its first test (in the list's order) does.
-      const groups = [...nested].map(
-        ([name, members]): LevelChild<T> => ({
-          kind: 'group',
-          name,
-          tests: members,
-          lead: first(members, compare),
-        }),
-      );
+      const groups = [...nested].map(([name, members]): LevelChild<T> => ({
+        kind: 'group',
+        name,
+        tests: members,
+        lead: first(members, compare),
+      }));
       children = [...testChildren, ...groups].sort((a, b) => compare(a.lead, b.lead));
     } else {
       // Blocks keep their place in the file, ahead of the tests declared outside any block.
-      const groups = [...nested].map(
-        ([name, members]): LevelChild<T> => ({
-          kind: 'group',
-          name,
-          tests: members,
-          lead: first(members, byPosition),
-        }),
-      );
+      const groups = [...nested].map(([name, members]): LevelChild<T> => ({
+        kind: 'group',
+        name,
+        tests: members,
+        lead: first(members, byPosition),
+      }));
       groups.sort((a, b) => byPosition(a.lead, b.lead));
       children = [...groups, ...testChildren.sort((a, b) => compare(a.lead, b.lead))];
     }

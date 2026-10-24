@@ -1,5 +1,5 @@
 <script setup lang="ts">
- /**
+/**
  * Wrap-friendly toolbar for list filters. The `start` group (counts, view
  * toggles) and the default group (search, filter pills, selects) sit side by
  * side on wide screens and stack + wrap on phones instead of overflowing

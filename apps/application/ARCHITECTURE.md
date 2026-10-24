@@ -225,7 +225,8 @@ and `useEvidenceHint` hands the evidence card what Most likely cites, whose tabs
 (`SuspectLinesSentence`, worded by `app/utils/suspect-lines.ts`), from the suspect-lines endpoints, fetched in the
 browser after the page mounted.
 `/bug-reports/[id]` opens on the same block with Situation, State, Next and The suite. `npm run app:measure` holds the
-two failure pages to their budgets (text styles, controls above the fold, the Next step beside what it copies).
+two failure pages to their budgets (text styles, the controls of the navbar and the situation block, the Next step
+beside what it copies).
 
 ### Components (`app/components/`)
 

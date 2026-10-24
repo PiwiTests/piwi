@@ -71,6 +71,7 @@ Authentication is off on a plain dev server, so no key is needed.
 ```bash
 npm run app:measure -- --url http://localhost:3000        # against a running server
 npm run app:measure -- --check                            # seeds .data/measure/, boots a server, exits 1 on a breach
+npm run app:measure -- --build .output --check            # the same on a production build, as CI runs it
 npm run app:measure -- --json                             # one object per route, with its budgets
 ```
 
@@ -78,19 +79,23 @@ npm run app:measure -- --json                             # one object per route
 cluster page (`/failure-clusters/:id`) after hydration, a bounded settle and the page's last API
 answer, and reports — inside the detail panel — the scroll offset of each block (header, most
 likely, situation, issue, next step, evidence, the fix sections, what changed, affected tests,
-occurrences trend, activity, history), the panel's total scroll height, the interactive controls
-above the fold split into navbar, situation block and below, the solid primary buttons and help
-hints above the fold, the open code blocks and their height, the word count, the active evidence
-tab, the Most likely grade, the Next step's action and how far below its button the content it
-copies sits, and the text styles of the situation block.
+occurrences trend, activity, history), the panel's total scroll height, the controls of the navbar
+and the situation block, the interactive controls above the fold split into navbar, situation block
+and below, the solid primary buttons and help hints above the fold, the open code blocks and their
+height, the word count, the active evidence tab, the Most likely grade, the Next step's action and
+how far below its button the content it copies sits, and the text styles of the situation block. A
+control counts when the reader sees it: one shown on hover or focus only (the chooser beside an
+Open in IDE link) does not.
 
 Each route then gets a verdict against the budgets of `scripts/lib/detail-page-budgets.mjs`, set
 at 1280×800 (any other viewport reports without verdicts): at most 15 text styles on the execution
-page's block and 12 on the cluster page's, at most 25 controls above the fold with the navbar
-included, at most one solid primary button above the fold, and a Next step that copies a code
-change (`copy-git-apply`, `copy-patch`) shows that change in the block. The script finds the action
-by `data-next-action` and the content by `data-copies`, never by a label. The report ends with every
-breach; `--check` exits 1 when there is one, and a route that answers an error fails it too.
+page's block and 13 on the cluster page's, at most 25 controls in the navbar and the situation
+block, at most one solid primary button above the fold, and a Next step that copies a code change
+(`copy-git-apply`, `copy-locator`) shows that change in the block. The controls below the block
+that reach the fold (the evidence card's tabs, the affected tests, the history) are reported, not
+budgeted. The script finds the action by `data-next-action` and the content by `data-copies`, never
+by a label. The report ends with every breach; `--check` exits 1 when there is one, and a route that
+answers an error fails it too. CI runs `--build .output --check` on the shared build.
 
 Default routes: executions #37, #13, #87, #768, #748 and clusters #10, #2, #5, #1. `--routes`
 overrides them, `--width`/`--height` the viewport, `--port` the port of the server it boots (3060, off
@@ -98,11 +103,12 @@ the 3050 of `app:screens`, so both can run side by side). It refuses a port some
 
 Without `--url` it seeds a throwaway database in `.data/measure/` from the demo seed (regenerating
 `public/demo/seed.sql` first when it no longer matches `seed.version.json`) and boots its own server
-on it with no AI provider, no issue tracker, no authentication and the default storage and locale,
-whatever your shell or `.env` sets, so two runs give the same numbers whatever your machine holds;
-this is the run to quote in a PR. With `--url` the report says it measured that server's own data: a
-dev database with a connected issue tracker, an AI provider or extra links counts differently, and
-the budgets do not cover that state.
+(a dev server, or with `--build <dir>` the production build in that directory) on it with no AI
+provider, no issue tracker, no authentication and the default storage and locale, whatever your
+shell or `.env` sets, so two runs give the same numbers whatever your machine holds; this is the run
+to quote in a PR. With `--url` the report says it measured that server's own data: a dev database
+with a connected issue tracker, an AI provider or extra links counts differently, and the budgets do
+not cover that state.
 
 ## Seeded entry points
 

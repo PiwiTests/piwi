@@ -579,9 +579,10 @@ test.describe('replay-panel.js', () => {
     ],
   };
 
+  /** A goto to /export leaves the tab on its page: the navigation is cancelled, as the browser cancels one answered 204. */
   async function routeExport(context: BrowserContext): Promise<void> {
     await context.route(`${ORIGIN}/**`, async (route) => {
-      if (new URL(route.request().url()).pathname === '/export') await route.fulfill({ status: 204 });
+      if (new URL(route.request().url()).pathname === '/export') await route.abort('aborted');
       else await route.fulfill({ contentType: 'text/html', body: LOGIN });
     });
   }

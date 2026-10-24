@@ -1,5 +1,5 @@
 <script setup lang="ts">
- /**
+/**
  * Performance — the two detectors that judge test timing live on one tab:
  * wasted-time patterns (which waits count as wasted) and timeout hygiene
  * (oversized per-test timeouts and stale `test.slow()` marks). Both feed the

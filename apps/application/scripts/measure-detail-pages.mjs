@@ -5,18 +5,19 @@
  * pages can be diffed on, and checks them against their budgets.
  *
  * For each route it reads, inside the detail panel: the scroll offset of every
- * named block from the top of the panel, the panel's total scroll height, how
- * many interactive controls sit above the fold (split into the navbar, the
- * situation block and what is below it), the help hints above the fold, the
- * open code blocks and their summed height, the word count, the active evidence
- * tab, the grade of the Most likely line, the Next step's action and how far
- * below its button the content it copies sits, and the text styles the
- * situation block mixes. It changes nothing on the page — it reads the DOM
- * after hydration and a bounded settle.
+ * named block from the top of the panel, the panel's total scroll height, the
+ * controls of the navbar and the situation block, how many interactive controls
+ * sit above the fold (split into the navbar, the situation block and what is
+ * below it), the help hints above the fold, the open code blocks and their
+ * summed height, the word count, the active evidence tab, the grade of the Most
+ * likely line, the Next step's action and how far below its button the content
+ * it copies sits, and the text styles the situation block mixes. A control
+ * counts when the reader can see it. It changes nothing on the page — it reads
+ * the DOM after hydration and a bounded settle.
  *
  * The budgets (`scripts/lib/detail-page-budgets.mjs`) hold at 1280×800: at most
  * 15 text styles in the execution page's situation block and 13 in the cluster
- * page's, at most 25 controls above the fold with the navbar included, at most
+ * page's, at most 25 controls in the navbar and the situation block, at most
  * one solid primary button above the fold, and a Next step that copies a code
  * change shows that change in the block (distance 0). The script finds the Next
  * action by `data-next-action` and what it copies by `data-copies`, never by a
@@ -24,6 +25,7 @@
  *
  * Usage (from application/):
  *   node scripts/measure-detail-pages.mjs                       # seed .data/measure/, boot a server on --port (3060)
+ *   node scripts/measure-detail-pages.mjs --build .output       # the same, on a production build (CI)
  *   node scripts/measure-detail-pages.mjs --url http://localhost:3000
  *   node scripts/measure-detail-pages.mjs --routes /test-run-cases/37,/failure-clusters/10
  *   node scripts/measure-detail-pages.mjs --width 1280 --height 800
@@ -31,18 +33,20 @@
  *   node scripts/measure-detail-pages.mjs --check               # exit 1 when a budget breaks
  *
  * Without --url the script seeds a throwaway database in `.data/measure/` from
- * the demo seed and boots its own dev server on it, with no AI provider and no
- * issue tracker connected whatever the shell or `.env` sets, so two runs read
- * the same data on any machine. It refuses a port something already listens
- * on. With --url it drives the server you point it at and measures that
- * server's own data, which the report says.
+ * the demo seed and boots its own server on it, a dev server or with --build
+ * the production build in that directory, with no AI provider and no issue
+ * tracker connected whatever the shell or `.env` sets, so two runs read the
+ * same data on any machine. It refuses a port something already listens on.
+ * With --url it drives the server you point it at and measures that server's
+ * own data, which the report says.
  */
 import { createRequire } from 'node:module';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import {
   APP_DIR,
   portInUse,
+  startBuiltServer,
   startServer,
   resolveChromium,
   seedThrowawayDb,
@@ -130,14 +134,24 @@ function measurePage({ viewportHeight, copyActions }) {
   const body = [...panel.children].find((child) => child.getAttribute('data-slot') === 'body') ?? null;
 
   const aboveFold = (el) => el.getBoundingClientRect().top < viewportHeight;
+  // A control or a hint counts when the reader can see it: laid out, and
+  // neither transparent nor hidden. One that shows on hover or focus only (the
+  // chooser beside an Open in IDE link) is not seen.
+  const seen = (el) =>
+    el.getBoundingClientRect().width > 0 && el.checkVisibility({ opacityProperty: true, visibilityProperty: true });
   const controlSelector = 'button, a[href], [role="tab"], select, input, textarea, [role="button"], [role="combobox"]';
-  const controls = [...panel.querySelectorAll(controlSelector)].filter((el) => el.getBoundingClientRect().width > 0);
+  const controls = [...panel.querySelectorAll(controlSelector)].filter(seen);
+  const inNavbar = (el) => !!body && !body.contains(el);
+  // The controls the page opens on, wherever the fold falls: the navbar's and
+  // the situation block's.
+  const navbarControls = controls.filter(inNavbar).length;
+  const blockControls = block ? controls.filter((el) => block.contains(el)).length : null;
   const above = controls.filter(aboveFold);
   const controlsAboveFold = above.length;
   const controlsAboveFoldByRegion = { navbar: 0, block: 0, below: 0 };
   for (const el of above) {
     if (block?.contains(el)) controlsAboveFoldByRegion.block++;
-    else if (body && !body.contains(el)) controlsAboveFoldByRegion.navbar++;
+    else if (inNavbar(el)) controlsAboveFoldByRegion.navbar++;
     else controlsAboveFoldByRegion.below++;
   }
   // The solid primary buttons — the page's one saturated action — above the fold.
@@ -145,9 +159,7 @@ function measurePage({ viewportHeight, copyActions }) {
 
   // Only visible hints count — a zero-size hint in a hidden tab panel is not
   // "above the fold" in any real sense, the same filter the controls use.
-  const helpHints = [...panel.querySelectorAll('button[aria-label^="Help:"]')].filter(
-    (el) => el.getBoundingClientRect().width > 0,
-  );
+  const helpHints = [...panel.querySelectorAll('button[aria-label^="Help:"]')].filter(seen);
   const helpAboveFold = helpHints.filter(aboveFold).length;
 
   const pres = [...panel.querySelectorAll('pre')];
@@ -241,6 +253,8 @@ function measurePage({ viewportHeight, copyActions }) {
     positions,
     totalScrollHeight,
     controls: controls.length,
+    navbarControls,
+    blockControls,
     controlsAboveFold,
     controlsAboveFoldByRegion,
     solidPrimaryAboveFold,
@@ -402,9 +416,13 @@ async function main() {
   if (!flags.url && (await portInUse(flags.port))) {
     throw new Error(`port ${flags.port} is already in use; stop that server or pass --port`);
   }
+  const outputDir = flags.build ? resolve(flags.build) : null;
+  const seeded = () => seedThrowawayDb(join(APP_DIR, '.data', 'measure'));
   const server = flags.url
     ? { base: flags.url, stop: () => {} }
-    : await startServer({ mode: 'web', port: flags.port, env: seedThrowawayDb(join(APP_DIR, '.data', 'measure')) });
+    : outputDir
+      ? await startBuiltServer({ outputDir, port: flags.port, env: seeded() })
+      : await startServer({ mode: 'web', port: flags.port, env: seeded() });
   const browser = await chromium.launch({
     executablePath: resolveChromium(),
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
@@ -430,7 +448,8 @@ async function main() {
   const source = flags.url
     ? `Measured against the server's own data at ${flags.url}. The budgets assume the seeded data, ` +
       'with no AI provider and no issue tracker connected: what either adds is not covered.'
-    : 'Measured against a freshly seeded database (.data/measure/), with no AI provider and no issue tracker connected.';
+    : `Measured ${outputDir ? `the build in ${outputDir}` : 'the sources'} against a freshly seeded database ` +
+      '(.data/measure/), with no AI provider and no issue tracker connected.';
   if (flags.json) {
     console.error(source);
     for (const result of results) console.log(JSON.stringify(result));
