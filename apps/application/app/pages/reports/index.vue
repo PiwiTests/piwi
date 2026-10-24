@@ -96,7 +96,7 @@ useViewScroll(() => dashboardPanelBody('reports'));
         icon="i-lucide-circle-slash"
         text="Quality reports are turned off on this instance. An administrator can turn them back on in Settings."
       />
-      <div v-else class="space-y-6 max-w-4xl" data-shot="reports-page">
+      <div v-else class="space-y-4 max-w-4xl" data-shot="reports-page">
         <SectionCard
           icon="i-lucide-files"
           title="Report snapshots"

@@ -131,21 +131,6 @@ function positionOf(tc: TestCaseResult): TestPosition {
 /** Every value the search qualifiers can take in this run, for completion. */
 const searchValues = computed(() => collectTestSearchValues(props.testCases.map(searchSubject), RUN_SEARCH_FIELDS));
 
-const STATUS_OPTIONS = [
-  { label: 'Passed', value: 'passed' },
-  { label: 'Failed', value: 'failed' },
-  { label: 'Passed on retry', value: 'flaky' },
-  { label: 'Skipped', value: 'skipped' },
-  { label: 'Fixme', value: 'fixme' },
-  { label: "Didn't run", value: 'didnotrun' },
-] as const;
-
-function toggleStatus(value: string) {
-  activeStatuses.value = activeStatuses.value.includes(value)
-    ? activeStatuses.value.filter((s) => s !== value)
-    : [...activeStatuses.value, value];
-}
-
 function matchesStatus(tc: TestCaseResult, filter: string): boolean {
   if (filter === 'failed') return isFailedStatus(tc.status);
   // Passed and passed on retry are disjoint here, like skipped and fixme, so
@@ -740,53 +725,33 @@ defineExpose({ scrollToCase });
 
 <template>
   <div class="flex flex-col min-h-0">
-    <!-- Filters, in two rows: the search (words and file:, describe:, tag:,
-         browser:… qualifiers), then outcomes. How the rows are grouped and
-         sorted sits on the list's own header. -->
-    <div class="mb-3 shrink-0 space-y-2">
+    <!-- Filters: the search (words and file:, describe:, tag:, browser:…
+         qualifiers) and the two signals, New regressions and Newly flaky, as
+         toggles. The run header's count bar filters by outcome. How the rows
+         are grouped and sorted, and Clear filters, sit on the list's own header. -->
+    <div class="mb-3 shrink-0 flex flex-wrap items-center gap-x-3 gap-y-2">
       <TestSearchInput
         v-model="testCaseSearch"
         :fields="RUN_SEARCH_FIELDS"
         :values="searchValues"
         placeholder="Search tests, or filter with file:, describe:, tag:…"
+        class="flex-[1_1_15rem]"
       />
 
-      <div class="flex flex-wrap items-center gap-1">
+      <div v-if="!isLive" class="flex flex-wrap items-center gap-1">
         <StatusFilterChip
-          v-for="opt in STATUS_OPTIONS"
-          :key="opt.value"
-          :status="opt.value"
-          :label="opt.label"
-          :pressed="activeStatuses.includes(opt.value)"
-          @click="toggleStatus(opt.value)"
+          status="failed"
+          label="New regressions"
+          icon="i-lucide-flame"
+          :pressed="showNewRegressionsOnly"
+          @click="showNewRegressionsOnly = !showNewRegressionsOnly"
         />
-        <!-- The two signals join the status chips as toggles, not checkboxes. -->
-        <template v-if="!isLive">
-          <span class="mx-1 h-4 w-px bg-accented" aria-hidden="true" />
-          <StatusFilterChip
-            status="failed"
-            label="New regressions"
-            icon="i-lucide-flame"
-            :pressed="showNewRegressionsOnly"
-            @click="showNewRegressionsOnly = !showNewRegressionsOnly"
-          />
-          <StatusFilterChip
-            status="flaky"
-            label="Newly flaky"
-            icon="i-lucide-shuffle"
-            :pressed="showNewFlakyOnly"
-            @click="showNewFlakyOnly = !showNewFlakyOnly"
-          />
-        </template>
-        <UButton
-          v-if="hasFilter"
-          size="xs"
-          variant="ghost"
-          color="neutral"
-          icon="i-lucide-x"
-          label="Clear filters"
-          class="ml-auto"
-          @click="clearFilters"
+        <StatusFilterChip
+          status="flaky"
+          label="Newly flaky"
+          icon="i-lucide-shuffle"
+          :pressed="showNewFlakyOnly"
+          @click="showNewFlakyOnly = !showNewFlakyOnly"
         />
       </div>
     </div>
@@ -863,6 +828,15 @@ defineExpose({ scrollToCase });
           {{ visibleTestCount }}{{ visibleTestCount !== testCases.length ? ` / ${testCases.length}` : '' }} executions
           <HelpHint topic="run.test-cases" />
         </span>
+        <UButton
+          v-if="hasFilter"
+          size="xs"
+          variant="ghost"
+          color="neutral"
+          icon="i-lucide-x"
+          label="Clear filters"
+          @click="clearFilters"
+        />
         <div class="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:flex sm:w-auto sm:items-center sm:gap-3">
           <div class="flex items-center gap-1.5 min-w-0" data-tour="run-tests-group-by">
             <span class="text-xs text-muted whitespace-nowrap">Group by</span>

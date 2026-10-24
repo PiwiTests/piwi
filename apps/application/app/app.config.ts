@@ -35,10 +35,10 @@ export default defineAppConfig({
         // At least as tall as the space under the demo's banner (`--demo-banner-height`,
         // unset outside the demo), where the dashboard sits.
         root: 'min-h-[calc(100svh-var(--demo-banner-height,0px))]',
-        // Below `sm` the page has no side gutter: cards are full-bleed and their own
-        // 12 px padding is the only inset. Vertical padding and the `sm`-and-up
-        // default (`p-6`) are the Nuxt UI defaults.
-        body: 'max-sm:px-0',
+        // The page gutter of every page: 16 px around the content and between its
+        // blocks. Pages add no padding of their own. Below `sm` the page has no side
+        // gutter: cards are full-bleed and their own 12 px padding is the only inset.
+        body: 'sm:p-4 sm:gap-4 max-sm:px-0',
       },
     },
     table: {

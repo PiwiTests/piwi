@@ -119,7 +119,7 @@ async function decide(id: SetupCapabilityId, decision: 'declined' | null) {
     </template>
 
     <template #body>
-      <div class="flex flex-col gap-6 w-full lg:max-w-4xl mx-auto">
+      <div class="flex flex-col gap-4 w-full lg:max-w-4xl mx-auto">
         <!-- Desktop build: connecting to this local instance comes before the
              generic reporter steps, since the token/URL are specific to it. -->
         <template v-if="isDesktop">

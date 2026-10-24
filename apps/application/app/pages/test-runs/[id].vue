@@ -526,7 +526,7 @@ function buildRunSummary(): string {
 const testCaseSearch = useViewState('run-tests:search', () => '');
 const testCaseActiveStatuses = useViewState<string[]>('run-tests:statuses', () => []);
 
-// The count-bar segments toggle into the same set the Tests list chips use, and
+// The count-bar segments toggle the status filters the Tests list applies, and
 // switch to the Tests tab so the filtered rows are on screen.
 function handleFilterStatus(status: string) {
   if (!status || status === 'all') {
@@ -880,7 +880,7 @@ const moreMenuItems = computed(() => {
         </template>
 
         <template #tab-workers>
-          <div class="space-y-6 p-1" data-tour="run-workers">
+          <div class="space-y-6" data-tour="run-workers">
             <WorkersTimeline
               :test-cases="isLive ? throttledTestCases : displayTestCases"
               :setup-steps="testRun?.setupSteps ?? null"

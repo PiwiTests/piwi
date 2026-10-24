@@ -257,7 +257,7 @@ const columns: TableColumn<ProjectWithStats>[] = [
 
     <template #body>
       <!-- Search and filter toolbar -->
-      <div class="flex flex-wrap items-center gap-3 mb-4">
+      <div class="flex flex-wrap items-center gap-3">
         <UInput
           v-model="searchQuery"
           icon="i-lucide-search"

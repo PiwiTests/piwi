@@ -722,7 +722,7 @@ useViewScroll(() => dashboardPanelBody('analytics'));
     </template>
 
     <template #body>
-      <div class="space-y-6" data-shot="dashboard" :data-dashboard="view.id">
+      <div class="space-y-4" data-shot="dashboard" :data-dashboard="view.id">
         <p
           v-if="hiddenProjects > 0 || (isSaved && (view.description || view.ownerName))"
           class="text-xs text-muted"

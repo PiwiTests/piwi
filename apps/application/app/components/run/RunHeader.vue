@@ -30,7 +30,7 @@ const props = defineProps<{
   } | null;
   allReports: ReportInfo[];
   totalWastedTime?: number;
-  /** The active status filters, shared with the Tests tab chips and the count bar. */
+  /** The active status filters: the count bar sets them and the Tests list applies them. */
   activeStatuses: string[];
   finalizing?: boolean;
 }>();
