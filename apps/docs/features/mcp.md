@@ -16,7 +16,8 @@ guide for this instance.
 ## What it provides
 
 The server exposes tools, mostly read-only, from listing projects to one failure's full evidence and a cluster's
-fix plan; [MCP tools](/reference/mcp-tools) lists every one. Two answer questions about Piwi itself:
+fix plan; [MCP tools](/reference/mcp-tools) lists every one, and the dashboard's **MCP server** page opens each
+tool on its whole description and its parameters. Two answer questions about Piwi itself:
 `describe_piwi` reads the documentation bundled with the server, and `get_release_notes` the changelog up to the
 running version. Three read the [coverage](/features/coverage-insights) tests record: `get_coverage` (a file's lines
 and the tests behind them, or which target lines a test ran), `compare_coverage` (a failure against its last pass, or a

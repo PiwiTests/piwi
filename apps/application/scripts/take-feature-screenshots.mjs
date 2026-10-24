@@ -4966,6 +4966,20 @@ const SCENES = [
     pad: 12,
   },
   {
+    name: 'mcp-tool-details',
+    description: 'MCP page: one tool opened, its Markdown description and parameters',
+    route: '/mcp',
+    viewport: { width: 1280, height: 2400 },
+    pad: 12,
+    run: async ({ page, shoot }) => {
+      const toggle = page.locator('[data-shot="mcp-tool-modules"] button', { hasText: 'get_fix_plan' });
+      await toggle.click();
+      const opened = '[data-shot="mcp-tool-modules"] div:has(> button[aria-expanded="true"])';
+      await page.locator(opened).waitFor();
+      await shoot(undefined, { of: opened });
+    },
+  },
+  {
     name: 'mcp-agent-skills',
     description: 'MCP page: the agent-skills section with the install command',
     route: '/mcp',
@@ -4987,7 +5001,7 @@ const SCENES = [
     name: 'mcp-tool-modules',
     description: 'MCP page: the tool catalog grouped by module with the Core tools only switch',
     route: '/mcp',
-    viewport: { width: 1280, height: 5300 },
+    viewport: { width: 1280, height: 6200 },
     of: '[data-shot="mcp-tool-modules"]',
     pad: 12,
   },

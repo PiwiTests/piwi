@@ -20,10 +20,8 @@ import { aiExtractedFunctionSchema } from './test-function-schemas';
 /** A page-object method/helper is small; reject pasting a whole file — keeps cost/latency bounded and the model focused. */
 export const MAX_EXTRACT_CODE_CHARS = 20_000;
 
-export const EXTRACT_SYSTEM_PROMPT = `You analyze a single Playwright page-object method or helper function's TypeScript/JavaScript source code and extract a structured, reusable pattern describing what it does. You never execute the code — this is text analysis only. Reply strictly as JSON matching the given schema, nothing else.
-
-Rules:
-- "kind" is "page-object-method" when the code is a class method acting on "this.page" (or a "page" property) — set "receiver" to a sensible instance variable name (camelCase of the class name) and "importName" to the class name. "kind" is "helper" for a standalone exported function taking a Playwright "page" as its first parameter — "receiver" and "importName" must be null in that case. Use "fixture" only if the function is clearly Playwright fixture setup, not a page action.
+/** The extraction rules alone, as a Markdown list: the part an agent filling `create_test_function` follows. */
+export const EXTRACT_RULES = `- "kind" is "page-object-method" when the code is a class method acting on "this.page" (or a "page" property) — set "receiver" to a sensible instance variable name (camelCase of the class name) and "importName" to the class name. "kind" is "helper" for a standalone exported function taking a Playwright "page" as its first parameter — "receiver" and "importName" must be null in that case. Use "fixture" only if the function is clearly Playwright fixture setup, not a page action.
 - "params" lists the function's own parameters, excluding the leading Playwright handle — that first parameter is often named "page", but may be named anything and typed "Page", "Locator", or a union like "Page | Locator"; if the first parameter is a Playwright handle of any kind, skip it. Infer "type" from the TypeScript annotation, or absent one, from how the value is used.
 - A parameter whose type is an object/interface (an options bag like "{ label?: string; testId?: string }", very common in helpers) MUST be typed "object", never "string". Set its "fields" to the object's own property names — from the interface declaration if you can see it, otherwise from the properties the function body actually reads off it. If the parameter is declared as an object OR an array of that object, still type it "object" and list the single object's fields. Never flatten an object parameter into a scalar.
 - "steps" is the ordered sequence of page interactions the function performs, one entry per Playwright locator-then-action call (".click()", ".fill(value)", ".check()", ".uncheck()", ".selectOption(value)", ".press(key)"; a "page.goto(...)" call becomes a "goto" step). For each step's "target": "getByTestId('x')" sets "testId" only; "getByRole('role', { name: 'X' })" sets both "role" and "name"; a bare "getByRole('role')" sets only "role"; "getByText"/"getByLabel"/"getByPlaceholder" set "name" to that text and leave "role" null. Skip a step whose locator can't be classified this way rather than guessing.
@@ -34,6 +32,11 @@ Rules:
 - "confidence": your own 0-1 confidence that "steps" faithfully represents what the code does — lower it for loops, conditionals, or calls to other helper functions you can't see the inside of.
 - "notes": one short sentence, only when something material could not be represented — unseen helper calls, branches you collapsed, or locators you had to skip. Null when the extraction is clean. This is shown to the user next to the confidence, so be specific about what is missing rather than generic.
 - Never invent a step that isn't evidenced by an actual Playwright call in the code. A pattern of one or two well-grounded steps plus an honest "notes" is far more useful than a longer guessed one.`;
+
+export const EXTRACT_SYSTEM_PROMPT = `You analyze a single Playwright page-object method or helper function's TypeScript/JavaScript source code and extract a structured, reusable pattern describing what it does. You never execute the code — this is text analysis only. Reply strictly as JSON matching the given schema, nothing else.
+
+Rules:
+${EXTRACT_RULES}`;
 
 export const EXTRACT_JSON_SCHEMA = {
   type: 'object',
