@@ -10,7 +10,7 @@
     <Version>0.59.0</Version> <!-- x-release-please-version -->
     <Description>Per-test server code coverage for Piwi Dashboard: records which code each HTTP request executed in a build compiled with -p:PiwiCoverage=true, no ASP.NET Core dependency</Description>
     <Authors>piwitests</Authors>
-    <RepositoryUrl>https://github.com/PiwiTests/platform</RepositoryUrl>
+    <RepositoryUrl>https://github.com/PiwiTests/piwi</RepositoryUrl>
     <PackageProjectUrl>https://piwitests.dev</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>playwright;testing;instrumentation;coverage</PackageTags>

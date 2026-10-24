@@ -205,6 +205,12 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.service<PiwiRecordings>().changed(update)
     }
 
+    /** A test paused in a run started here asks to record from there: the recording starts in its file. */
+    @JsonNotification("piwi/recordRequested")
+    fun recordRequested(asked: RecordRequested) {
+        PiwiRecordFlow.recordFromTest(project, asked)
+    }
+
     /** A run the editor started ended: what it changed, as a balloon. */
     @JsonNotification("piwi/runEnded")
     fun runEnded(ended: RunEnded) {

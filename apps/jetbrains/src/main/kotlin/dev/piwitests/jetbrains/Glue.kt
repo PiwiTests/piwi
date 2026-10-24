@@ -612,25 +612,39 @@ object Glue {
         return " ($checkedOut has no run yet)"
     }
 
-    /** What a coverage mark says of its lines: the tests ran them, no test runs them, or they changed since the run. */
-    enum class CoverageKind { RUN, NOT_RUN, CHANGED }
+    /**
+     * What a coverage mark says of its lines: the tests ran them, no test runs them, they changed since the run, or, in
+     * a file no test reaches, they changed since the default branch.
+     */
+    enum class CoverageKind { RUN, NOT_RUN, CHANGED, UNCOVERED }
 
     /** A coverage mark over lines `start` to `end` (0-based, inclusive) and its tooltip in the scroll bar. */
     data class CoverageMark(val kind: CoverageKind, val start: Int, val end: Int, val tooltip: String)
 
-    /** Whether a `piwi/coverage` answer marks lines: coverage was recorded on the file as it stands, or placed on it. */
-    fun hasCoverageMarks(result: CoverageResult?): Boolean = result?.state == "exact" || result?.state == "mapped"
+    /**
+     * Whether a `piwi/coverage` answer marks lines: coverage was recorded on the file as it stands, or placed on it, or
+     * the file has uncovered changes.
+     */
+    fun hasCoverageMarks(result: CoverageResult?): Boolean =
+        result?.state == "exact" || result?.state == "mapped" || !result?.uncovered.isNullOrEmpty()
 
     /** What the coverage marks mean, in the colors the dashboard marks them in by default; the service's hover says it too. */
     const val COVERAGE_MARKS_EXPLAINED = "The bar at the left of a line: teal, a test ran it; slate, it is executable " +
         "and no test runs it; dashed amber, it changed since the coverage run."
 
+    /** What the mark of an uncovered change means; the service's hover says it too. */
+    const val UNCOVERED_EXPLAINED =
+        "The orange bar at the left of a line: it changed since the default branch, and no test reaches this file."
+
     /** A coverage mark's tooltip, in the gutter and the scroll bar: what it says of its lines, then what the marks mean. */
-    fun coverageMarkTooltip(mark: CoverageMark): String = "<html>${mark.tooltip}<br>$COVERAGE_MARKS_EXPLAINED</html>"
+    fun coverageMarkTooltip(mark: CoverageMark): String {
+        val explained = if (mark.kind == CoverageKind.UNCOVERED) UNCOVERED_EXPLAINED else COVERAGE_MARKS_EXPLAINED
+        return "<html>${mark.tooltip}<br>$explained</html>"
+    }
 
     /**
      * The marks to draw for a file's `piwi/coverage` answer within its `lineCount` lines: none while they are hidden,
-     * and none for a file without line coverage.
+     * and none for a file with neither line coverage nor uncovered changes.
      */
     fun coverageMarks(result: CoverageResult?, lineCount: Int, shown: Boolean): List<CoverageMark> {
         if (!shown || result == null || !hasCoverageMarks(result)) return emptyList()
@@ -641,7 +655,10 @@ object Glue {
             marks(result.notRun, CoverageKind.NOT_RUN) {
                 if (it.start == it.end) "Piwi: no test runs this line" else "Piwi: no test runs these lines"
             } +
-            marks(result.changed, CoverageKind.CHANGED) { "Piwi: changed since the coverage run" }
+            marks(result.changed, CoverageKind.CHANGED) { "Piwi: changed since the coverage run" } +
+            marks(result.uncovered, CoverageKind.UNCOVERED) {
+                "Piwi: uncovered change: ${escapeHtml(result.label ?: "no test reaches this file")}"
+            }
     }
 
     /** The coverage marks to take off a file, and those to draw on it, each once. */
@@ -694,6 +711,20 @@ object Glue {
      * or `off`, which leaves the failures to the tool window and the gutter.
      */
     val FAILURE_SEVERITIES = listOf("error", "warning", "information", "off")
+
+    /**
+     * How the agent signs in to Piwi's MCP server (`EditorCredentials.mcpAuthorization`): `key`, with the IDE's key, or
+     * `sign-in`, through the instance's OAuth, for a token of its own.
+     */
+    val MCP_AUTHORIZATIONS = listOf("key", "sign-in")
+
+    /** What the copied MCP configuration holds, for the person pasting it: the key, or no key and the sign-in. */
+    fun mcpAuthorizationNote(servers: List<McpServerDefinition>): String = when {
+        servers.any { it.authorization == "key" } -> "It holds your API key: keep it out of the repository."
+        servers.any { it.authorization == "sign-in" } ->
+            "It holds no key: the first time the agent connects, it opens the instance in your browser to sign in."
+        else -> ""
+    }
 
     const val OPEN_FAILURES = "Open the Failures"
     const val OPEN_IN_DASHBOARD = "Open in Dashboard"

@@ -12,7 +12,14 @@ captured action.
 recording sessions in the editor service, both clients, and Part 3, items 1 to 4, with Part 8, items 1 to 3. Built
 since, in part: from PR 6, the checks of the browser's recording bar (**Check an element**, **Check the address**,
 2026-10-03), in Piwi Picker too, with no Assert control in the IDE yet; from PR 4, three of item 11's matchers
-(`toContainText`, `toHaveCount`, `toBeChecked`, 2026-10-20), `toHaveAttribute` still missing. Where the
+(`toContainText`, `toHaveCount`, `toBeChecked`, 2026-10-20), `toHaveAttribute` still missing; from PR 9 (Part 5),
+recording from a pause (2026-10-24): Piwi's pause bar at a breakpoint, and `page.pause()` in a headed run the editor
+started, offer **Record here**, which hands the test's page to the editor's recorder over a local socket the editor
+service opens for each of its runs (`PIWI_RECORD_CHANNEL`, in place of a discovery file) and writes the steps above
+the paused statement, without the opening navigation; Stop brings the pause bar back, and Resume continues the test.
+Not built from Part 5: **Record from here** at the caret (a run started for it), the debug session's evaluated
+assignment, `~/.piwi/editor.json` for runs Piwi did not start, **End the test**, a run that records kept from the
+instance (`PIWI_ORIGIN=record`: the run reports as any run from the editor), and Part 8, item 4. Where the
 build differs from this text, the [docs](../apps/docs/features/editor-recording.md) and the code are right. The three
 spikes in the [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the
 repository.

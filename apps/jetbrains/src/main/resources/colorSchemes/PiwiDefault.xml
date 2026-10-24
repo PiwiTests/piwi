@@ -32,4 +32,9 @@
       <option name="ERROR_STRIPE_COLOR" value="c7922a"/>
     </value>
   </option>
+  <option name="PIWI_UNCOVERED_CHANGE">
+    <value>
+      <option name="ERROR_STRIPE_COLOR" value="bc4c00"/>
+    </value>
+  </option>
 </list>

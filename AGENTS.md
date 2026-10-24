@@ -204,7 +204,7 @@ The `commitlint` CI check lints **every commit in the PR range**, so one bad mes
 release-please generates `CHANGELOG.md` and creates each GitHub release with one raw entry per commit — so squash and
 cherry-pick leave duplicate lines. The `Tidy release notes` workflow (`.github/workflows/release-notes.yml`) keeps
 every release body non-empty and duplicate-free deterministically, and never overwrites hand-authored notes. For the
-polished, human-facing format (the [v0.26.0](https://github.com/PiwiTests/platform/releases/tag/v0.26.0) style — a
+polished, human-facing format (the [v0.26.0](https://github.com/PiwiTests/piwi/releases/tag/v0.26.0) style — a
 narrative intro, `## ✨ Highlights`, thematic features), run the `release-notes` skill
 (`.claude/skills/release-notes/SKILL.md`); both it and the workflow share `scripts/release-notes.mjs` for
 de-duplication and publishing by tag.
@@ -230,6 +230,10 @@ other `curl` examples may stay bash-only. `.env` file contents are not shell com
   one that builds part of it updates its Status paragraph. When a proposal counts as shipped, and the steps of the
   move: [`adr/AGENTS.md`](adr/AGENTS.md#when-a-proposal-has-shipped).
 - User-facing docs live in `apps/docs/` (VitePress → GitHub Pages); `README.md` is the landing page.
+- **Repository links point at `https://github.com/PiwiTests/piwi`**: docs, package metadata (`repository`,
+  `RepositoryUrl`), app links, the desktop updater endpoints. Two names stay as they are: the container image
+  `ghcr.io/piwitests/platform`, which users pull by name, and the links release-please already wrote into
+  `CHANGELOG.md`.
 - The live demo's **guided tour** is maintained like the docs and the demo: a change to a screen a tour stop shows
   updates the stop, and its copy in every tour language, **in the same commit**. Rules: the Guided tour section of
   [`apps/application/AGENTS.md`](apps/application/AGENTS.md#guided-tour).
@@ -298,6 +302,11 @@ Voice rules for all of them, and for `apps/docs/`: see [`apps/docs/AGENTS.md`](a
 - **Capture global change requests**: when asked to apply a change across many files ("update all X to Y"), add the
   resulting convention as a rule to the relevant `AGENTS.md` so future edits follow it. Put it in the narrowest file
   that covers it — area guide first, this root file only if it truly applies everywhere.
+- **Review before a pull request**: before you propose or open one, unless the branch was reviewed since its last
+  change, propose a code review first. Run it in fresh subagents, not a fork of your own context: give them the diff
+  range and the area guides, never your reasoning or what you expect them to find, and ask for an adversarial
+  reading that reports defects with the input that triggers them. Verify each finding against the code, fix the real
+  ones, and open the pull request after.
 - **Log what you find**: bugs, inconsistencies and tech debt discovered while exploring go to
   `plans/exploration-findings.md` (local, never committed) as:
 
@@ -317,6 +326,9 @@ Voice rules for all of them, and for `apps/docs/`: see [`apps/docs/AGENTS.md`](a
 ## Troubleshooting
 
 - **DB locked?** Stop other processes touching `.data/piwi.db` (the dev server holds it — `app:seed:dev` needs it down).
+- **Typecheck out of memory?** `npm run app:typecheck` gives the checker a 4 GB heap: it needs about 3 GB, since the
+  app's program also type-checks the server code the demo and the typed API responses import. Running `nuxt typecheck`
+  or `vue-tsc` yourself needs the same `NODE_OPTIONS=--max-old-space-size=4096`.
 - **Port 3000 in use?** `PORT=3001 npm run app:dev` (Linux/macOS) or `$env:PORT=3001; npm run app:dev` (PowerShell).
 - **Tests failing?** Make sure no dev server is on port 3000 — the Playwright config starts its own.
 - **Reporter not found?** `npm link` in `packages/reporter/`, then in the target project.

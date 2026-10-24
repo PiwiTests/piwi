@@ -83,7 +83,7 @@ Or, without touching code, set `PIWI_TEST_LOGS_ENVIRONMENTS=Development,Podman,I
 
 **Requirements:** .NET 8, 9, or 10.
 
-[`examples/sample-app`](https://github.com/PiwiTests/platform/tree/main/examples/sample-app) runs an ASP.NET Core app with this package wired in, and a Playwright suite that checks what it sends.
+[`examples/sample-app`](https://github.com/PiwiTests/piwi/tree/main/examples/sample-app) runs an ASP.NET Core app with this package wired in, and a Playwright suite that checks what it sends.
 
 ### Nitro / Nuxt (npm)
 
@@ -103,7 +103,7 @@ Nitro loads the plugin itself. It captures `consola` Warning/Error entries (not 
 
 **Requirements:** Nuxt 3+ / Nitro 2+ (peer deps `nitropack ≥2`, `h3 ≥1`, `consola ≥3` — all included in any Nuxt project).
 
-[`examples/sample-app`](https://github.com/PiwiTests/platform/tree/main/examples/sample-app) runs a standalone Nitro app with this package and the same Playwright suite.
+[`examples/sample-app`](https://github.com/PiwiTests/piwi/tree/main/examples/sample-app) runs a standalone Nitro app with this package and the same Playwright suite.
 
 ### Reporter setup
 
@@ -154,7 +154,7 @@ uploads it with the run, so a route or page nothing reaches becomes a
   hubs as routes, Razor Pages and routable Blazor components as pages. Each one is declared at the URL link
   generation produces (`/` for `Home/Index`), optional parameters marked optional (`/archive/{page?}`), with the source
   file of its handler when the build has a PDB. Static files, fallbacks and endpoints marked `ExcludeFromDescription()` are left out. See
-  the [package README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore#route-manifest) for
+  the [package README](https://github.com/PiwiTests/piwi/tree/main/integrations/aspnetcore#route-manifest) for
   every rule.
 - **Nitro** reads its route table at build time through the package's module
   (`modules: ['@piwitests/instrumentation-nitro/module']`, under `nitro` in Nuxt); without it, only matched routes.

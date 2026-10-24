@@ -315,6 +315,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/test-selection',
       },
       {
+        title: 'Impact from a diff',
+        summary:
+          'The tests a change affects, from what each test was seen to run: down to the tests that ran the changed lines when tests record coverage.',
+        needs: [],
+        where: 'CLI (`piwi run impact`); MCP get_impacted_tests',
+        doc: 'features/change-impact',
+      },
+      {
         title: 'AI steps',
         summary: 'Author and replay natural-language test steps an LLM turns into Playwright actions.',
         needs: ['llm'],

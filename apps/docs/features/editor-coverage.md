@@ -1,6 +1,6 @@
 ---
 title: Coverage in the editor
-description: "The lines your tests ran, marked in VS Code and the JetBrains IDEs, Rider included: the lines run and not run, the tests behind each function and line, and the lines changed since the coverage run."
+description: "The lines your tests ran, marked in VS Code and the JetBrains IDEs, Rider included: the lines run and not run, the tests behind each function and line, the lines changed since the coverage run, and the changes no test reaches."
 lang: en-US
 ---
 
@@ -39,13 +39,14 @@ locally.
 | Solid, teal | A test ran the line. The hover names the tests. |
 | Solid, slate | The line is executable and no test runs it. Shown when the run recorded the file's executable lines, which `lines` does. |
 | Dashed, amber | The line changed since the coverage run: what runs it is not known until a run records it again. |
+| Solid, orange | In a file no test reaches, the line changed since the default branch: an [uncovered change](#uncovered-changes). |
 
 Teal and slate are the colors the dashboard marks a file's source in. The hover on a marked line ends by saying what
 the marks mean.
 
-In VS Code the marks are a bar at the left edge of each line, in `piwi.coverageRunBorder`, `piwi.coverageNotRunBorder`
-and `piwi.coverageChangedBorder`, which a theme or `workbench.colorCustomizations` can restyle; the lines no test runs
-and the changed lines also show in the overview ruler. In a JetBrains IDE they are at the left of the gutter and in the
+In VS Code the marks are a bar at the left edge of each line, in `piwi.coverageRunBorder`, `piwi.coverageNotRunBorder`,
+`piwi.coverageChangedBorder` and `piwi.uncoveredChangeBorder`, which a theme or `workbench.colorCustomizations` can
+restyle; all but the lines run also show in the overview ruler. In a JetBrains IDE they are at the left of the gutter and in the
 scroll bar, and hovering either shows what the lines are and what the marks mean. Restyle them under **Settings →
 Editor → Color Scheme → Piwi → Coverage**, where the error stripe color is the mark's, and a background, none by
 default, tints the lines too.
@@ -68,6 +69,23 @@ removes loses its mark. Blank lines are never marked changed.
 
 When your repository holds none of the versions, such as a commit you have not fetched, no line is marked and the
 file's lens says `coverage recorded on another version`. Fetching it brings the marks back on the next refresh.
+
+## Uncovered changes
+
+A file the editor can observe and no test reaches has its changes marked before the pull request's
+[uncovered changes](./uncovered-changes) list them, by the same rule: a page (Nuxt `pages/**`) while Piwi knows the
+pages your tests visit, or a server route (`server/api/**`, `server/routes/**`) while code reach maps routes to tests,
+that no test visits, requests or runs. Its lines changed since the default branch are marked orange: those added since
+the commit your branch left it at (the merge base with `origin/main`, else `main`), uncommitted changes included,
+blank lines left out. The file's top lens says `Uncovered changes: 12 lines changed since main, and no test reaches
+this file`, and so does the hover on a marked line. A test that reaches the file, or the change reaching the default
+branch, takes the marks away. A file nothing can observe, and a project whose code reach is missing or cut short, show
+nothing.
+
+<figure>
+  <img src="/screenshots/vscode-uncovered.png" alt="VS Code: a server route no test reaches, its lines changed since main marked orange, the top lens and the hover saying why">
+  <figcaption>A server route no test requests: the lines changed since <code>main</code> are marked, and the hover says why.</figcaption>
+</figure>
 
 ## Lenses and hover
 

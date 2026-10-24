@@ -208,14 +208,20 @@ export interface PausePoint {
   target: { highlight?: () => Promise<unknown> } | null;
 }
 
+/** What Playwright says when a navigation took away the document a call ran in. */
+const NAVIGATED = /Execution context was destroyed|Cannot find context with specified id/;
+/** How many navigations in a row the pause bar is shown again after. */
+const MAX_NAVIGATED = 10;
+
 /** How long the highlight may take before the bar shows without it. */
 const HIGHLIGHT_MS = 2000;
 
 /**
  * Pause before an action: highlight its element, lift the test timeout, show the pause bar and wait for its answer.
- * **Pick a locator** runs the picker and shows the bar again; `onPick` receives each confirmed pick. Returns the
- * choice that ends the pause: `resume`, `step` or `finish`; `resume` when the page breaks, never throwing. The test
- * timeout is given back the time it had left once the pause ends.
+ * **Pick a locator** runs the picker and shows the bar again; `onPick` receives each confirmed pick. With `onRecord`
+ * (the editor that started the run can record), **Record here** hands the page to it and shows the bar again once the
+ * recording ended. Returns the choice that ends the pause: `resume`, `step` or `finish`; `resume` when the page
+ * breaks, never throwing. The test timeout is given back the time it had left once the pause ends.
  */
 export async function pauseHere(
   page: Page,
@@ -223,7 +229,8 @@ export async function pauseHere(
   point: PausePoint,
   probe: PickerProbe,
   onPick: (pick: PickedLocator) => void | Promise<void>,
-): Promise<Exclude<PauseChoice, 'pick'>> {
+  onRecord?: () => Promise<void>,
+): Promise<Exclude<PauseChoice, 'pick' | 'record'>> {
   const before = testInfo.timeout;
   const started = Date.now();
   let shown: unknown = null;
@@ -247,19 +254,33 @@ export async function pauseHere(
       attempt: testInfo.retry > 0 ? testInfo.retry + 1 : null,
       action: point.action,
       locator: point.locator,
+      record: !!onRecord,
     };
     console.log(
       `[piwi] Paused at ${point.location} before ${point.locator ? `${point.action} · ${point.locator}` : point.action}` +
-        ': Resume, Step, Pick a locator or Finish in the browser (Esc resumes).',
+        `: Resume, Step, Pick a locator${onRecord ? ', Record here' : ''} or Finish in the browser (Esc resumes).`,
     );
+    // A navigation that lands while the bar is drawn or read takes its document away: the bar comes back in the next
+    // one, a few times in a row at most. A closed page, or anything else, resumes.
+    let navigated = 0;
     for (;;) {
-      await page.evaluate(showPauseBar, arg);
-      await page.waitForFunction(pauseAnswered, undefined, { timeout: 0, polling: 250 });
-      const choice = (await page.evaluate(takePauseState)) as PauseChoice | null;
-      if (choice === 'resume' || choice === 'step' || choice === 'finish') return choice;
-      if (choice !== 'pick') continue;
-      const picked = await pickLocator(page, probe, null).catch(() => null);
-      if (picked) await onPick(picked);
+      try {
+        await page.evaluate(showPauseBar, arg);
+        await page.waitForFunction(pauseAnswered, undefined, { timeout: 0, polling: 250 });
+        const choice = (await page.evaluate(takePauseState)) as PauseChoice | null;
+        navigated = 0;
+        if (choice === 'resume' || choice === 'step' || choice === 'finish') return choice;
+        if (choice === 'record' && onRecord) {
+          await onRecord().catch(() => undefined);
+          continue;
+        }
+        if (choice !== 'pick') continue;
+        const picked = await pickLocator(page, probe, null).catch(() => null);
+        if (picked) await onPick(picked);
+      } catch (error) {
+        if (page.isClosed() || !NAVIGATED.test(String(error)) || ++navigated > MAX_NAVIGATED) throw error;
+        await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+      }
     }
   } catch {
     return 'resume';

@@ -188,7 +188,7 @@ function the tool knows. No source code, no test names, no hit counts.
 - **coverlet can skip an assembly** whose dependencies it cannot resolve, saying so only in its diagnostic log.
 - **Exclusions.** A .NET file counts the span table's lines, so code only a unit tool excludes still counts: the
   coverage build reads coverlet's exclusions from the project or its `RunSettingsFilePath`
-  ([details](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#what-it-leaves-out)),
+  ([details](https://github.com/PiwiTests/piwi/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#what-it-leaves-out)),
   never Microsoft code coverage's. Exclude a whole file in the scope too.
 - **EF Core migrations count**, in both tools: add `**/Migrations/` to the scope. `Program.cs` counts too, its inline
   minimal API handlers at run level only.

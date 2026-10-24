@@ -5,7 +5,8 @@
  * and the Playwright configs it opens in, the MCP
  * configuration editors without the MCP provider API are given to paste, the
  * file a dashboard's open link names, and the recorded block a recording
- * writes and follows through the edits around it.
+ * writes and follows through the edits around it, and the Testing view's tree
+ * of Piwi's tests with the results it publishes.
  */
 import type {
   BaselineChoice,
@@ -28,9 +29,12 @@ import type {
   RunEnded,
   RunStatusResult,
   RunTestsArgs,
+  SpecTest,
   StatusResult,
   SummaryLine,
   TestAtResult,
+  TestFailure,
+  TestItemsResult,
   TestLineStatus,
   WorkspaceFailure,
 } from '@piwitests/editor/protocol';
@@ -579,11 +583,13 @@ export interface CoverageDecorations {
   run: LineSpan[];
   notRun: LineSpan[];
   changed: LineSpan[];
+  /** The lines changed since the default branch of a file no test reaches: uncovered changes. */
+  uncovered: LineSpan[];
 }
 
 /**
  * The marks to draw for a file's `piwi/coverage` answer, within its `lineCount` lines: none while they are hidden, and
- * none for a file without line coverage.
+ * none for a file with neither line coverage nor uncovered changes.
  */
 export function coverageDecorations(
   result: CoverageResult | null | undefined,
@@ -594,13 +600,21 @@ export function coverageDecorations(
     (spans ?? [])
       .filter((s) => s.start >= 0 && s.start < lineCount && s.end >= s.start)
       .map((s) => ({ start: s.start, end: Math.min(s.end, lineCount - 1) }));
-  if (!shown || !result || !hasCoverageMarks(result)) return { run: [], notRun: [], changed: [] };
-  return { run: within(result.executed), notRun: within(result.notRun), changed: within(result.changed) };
+  if (!shown || !result || !hasCoverageMarks(result)) return { run: [], notRun: [], changed: [], uncovered: [] };
+  return {
+    run: within(result.executed),
+    notRun: within(result.notRun),
+    changed: within(result.changed),
+    uncovered: within(result.uncovered),
+  };
 }
 
-/** Whether a `piwi/coverage` answer marks lines: coverage was recorded on the file as it stands, or placed on it. */
+/**
+ * Whether a `piwi/coverage` answer marks lines: coverage was recorded on the file as it stands, or placed on it, or the
+ * file has uncovered changes.
+ */
 export function hasCoverageMarks(result: CoverageResult | null | undefined): boolean {
-  return result?.state === 'exact' || result?.state === 'mapped';
+  return result?.state === 'exact' || result?.state === 'mapped' || !!result?.uncovered?.length;
 }
 
 /** When a run the editor started says what it changed: `piwi.runNotifications`. */
@@ -743,6 +757,18 @@ export function mcpConfiguration(servers: McpServerDefinition[]): string {
     { type: 'http', url: s.url, ...(Object.keys(s.headers).length ? { headers: s.headers } : {}) },
   ]);
   return JSON.stringify({ servers: Object.fromEntries(entries) }, null, 2);
+}
+
+/** How the agent signs in to an instance's MCP server that is handed no key (`piwi.mcpAuthorization`: `sign-in`). */
+export const MCP_SIGN_IN = 'The first time the agent connects, it opens the instance in your browser to sign in.';
+
+/** What the copied MCP configuration holds, for the person pasting it: the key, or no key and the sign-in. */
+export function mcpAuthorizationNote(servers: McpServerDefinition[]): string {
+  if (servers.some((s) => s.authorization === 'key')) {
+    return 'It holds your API key: paste it in your user settings, not in the repository.';
+  }
+  if (servers.some((s) => s.authorization === 'sign-in')) return `It holds no key. ${MCP_SIGN_IN}`;
+  return '';
 }
 
 /**
@@ -1252,4 +1278,259 @@ export function serviceEnvironment(settings: ProxySettings, env: NodeJS.ProcessE
   }
   if (settings.proxyStrictSSL === false) result.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   return result;
+}
+
+/** A spec, as the editor service reads specs (`*.spec.ts`, `*.test.mjs`…): it answers those under a config's folder. */
+export const SPEC_FILE = /[^/]\.(?:spec|test)\.[cm]?[jt]sx?$/;
+
+/**
+ * The tests last answered, with one spec's own answer (`piwi/testItems` with `catalog: false`) in place of it: a spec
+ * the answer holds joins its Playwright config, in the order of the files; one it does not hold leaves the tree.
+ */
+export function withSpec(answer: TestItemsResult, uri: string, spec: TestItemsResult): TestItemsResult {
+  const fresh = spec.contexts
+    .flatMap((context) => context.specs.map((s) => ({ context, s })))
+    .find((x) => x.s.uri === uri);
+  const contexts = answer.contexts.map((c) => ({ ...c, specs: c.specs.filter((s) => s.uri !== uri) }));
+  if (fresh) {
+    const into = contexts.find((c) => c.root === fresh.context.root);
+    if (into) into.specs = [...into.specs, fresh.s].sort((a, b) => a.file.localeCompare(b.file));
+    else contexts.push({ ...fresh.context, specs: [fresh.s] });
+  }
+  return { contexts: contexts.filter((c) => c.specs.length) };
+}
+
+/** A test of the Testing view's tree, with the Playwright config it runs from. */
+export type TreeTest = SpecTest & { root: string; uri: string };
+
+/** A node of the Testing view's Piwi tree: a Playwright config, a folder, a spec, a describe block or a test. */
+export interface TestNode {
+  /**
+   * Unique in the tree, and stable through the edits that move a test: its spec, its describe blocks and its title,
+   * joined by `\x1f` (VS Code refuses `\0` in an id).
+   */
+  id: string;
+  label: string;
+  kind: 'config' | 'folder' | 'spec' | 'suite' | 'test';
+  /** The spec's URI, on a spec, a describe block and a test. */
+  uri: string | null;
+  /** A test's 0-based lines, from the start of its `test(…)` call to its end. */
+  range: { start: number; end: number } | null;
+  /** On a test, what the service says of it. */
+  test: TreeTest | null;
+  /** How the view orders it among its siblings: folders before specs, by name; a spec's content as in the file. */
+  sortText: string;
+  children: TestNode[];
+}
+
+/**
+ * The Testing view's tree of the tests the service lists (`piwi/testItems`): a node per Playwright config when there
+ * are several, then each spec's folders, the spec, its describe blocks and its tests. Two tests of one title in the
+ * same describe blocks of a spec are told apart by their order.
+ */
+export function testTree(result: TestItemsResult): TestNode[] {
+  const several = result.contexts.length > 1;
+  const configs = result.contexts.map((context): TestNode => {
+    const config: TestNode = {
+      id: `config\x1f${context.root}`,
+      label: context.label,
+      kind: 'config',
+      uri: null,
+      range: null,
+      test: null,
+      sortText: context.label,
+      children: [],
+    };
+    const folders = new Map<string, TestNode>();
+    /** The node a spec's folder is, created with the folders above it. */
+    const folderOf = (parts: string[]): TestNode => {
+      let parent = config;
+      for (let i = 0; i < parts.length; i++) {
+        const key = parts.slice(0, i + 1).join('/');
+        let folder = folders.get(key);
+        if (!folder) {
+          folder = {
+            id: `folder\x1f${context.root}\x1f${key}`,
+            label: parts[i]!,
+            kind: 'folder',
+            uri: null,
+            range: null,
+            test: null,
+            sortText: `0${parts[i]}`,
+            children: [],
+          };
+          folders.set(key, folder);
+          parent.children.push(folder);
+        }
+        parent = folder;
+      }
+      return parent;
+    };
+    for (const spec of context.specs) {
+      const parts = spec.file.split('/');
+      const name = parts.pop()!;
+      const specNode: TestNode = {
+        id: spec.uri,
+        label: name,
+        kind: 'spec',
+        uri: spec.uri,
+        range: null,
+        test: null,
+        sortText: `1${name}`,
+        children: [],
+      };
+      folderOf(parts).children.push(specNode);
+      const suites = new Map<string, TestNode>();
+      const seen = new Map<string, number>();
+      for (const test of spec.tests) {
+        let parent = specNode;
+        for (let i = 0; i < test.suite.length; i++) {
+          const key = test.suite.slice(0, i + 1).join('\x1f');
+          let suite = suites.get(key);
+          if (!suite) {
+            // `\x1e`, not `\x1f`: a describe block and a test of the same title side by side are two items.
+            suite = {
+              id: `${spec.uri}\x1e${key}`,
+              label: test.suite[i]!,
+              kind: 'suite',
+              uri: spec.uri,
+              range: null,
+              test: null,
+              sortText: sortLine(test.line),
+              children: [],
+            };
+            suites.set(key, suite);
+            parent.children.push(suite);
+          }
+          parent = suite;
+        }
+        const key = [...test.suite, test.title].join('\x1f');
+        const count = (seen.get(key) ?? 0) + 1;
+        seen.set(key, count);
+        parent.children.push({
+          id: `${spec.uri}\x1f${key}${count > 1 ? `\x1f${count}` : ''}`,
+          label: test.title,
+          kind: 'test',
+          uri: spec.uri,
+          range: { start: test.line, end: test.endLine },
+          test: { ...test, root: context.root, uri: spec.uri },
+          sortText: sortLine(test.line),
+          children: [],
+        });
+      }
+    }
+    return config;
+  });
+  return several ? configs : (configs[0]?.children ?? []);
+}
+
+/** A line as text that sorts in its order. */
+function sortLine(line: number): string {
+  return String(line).padStart(6, '0');
+}
+
+/** The tests of a tree, leaves first-to-last. */
+export function treeTests(nodes: readonly TestNode[]): TreeTest[] {
+  return nodes.flatMap((n) => (n.test ? [n.test] : treeTests(n.children)));
+}
+
+/** What the Testing view shows of a test's latest result: a state, and for a failure its message and line. */
+export type TestOutcome =
+  | { state: 'passed' | 'skipped' | 'started' }
+  | { state: 'failed'; message: string; line: number | null };
+
+/**
+ * A test's latest result as the Testing view shows it: a pass for a flaky test too, a failure with why and where it
+ * failed; null for a test with no result Piwi knows.
+ */
+export function testOutcome(status: TestLineStatus | null, failure: TestFailure | null): TestOutcome | null {
+  switch (status) {
+    case 'passed':
+    case 'flaky':
+      return { state: 'passed' };
+    case 'skipped':
+      return { state: 'skipped' };
+    case 'running':
+      return { state: 'started' };
+    case 'failed':
+      return { state: 'failed', message: failureMessage(failure), line: failure?.line ?? null };
+    default:
+      return null;
+  }
+}
+
+/** The message of a test's failure: its headline, then the error, and a word when the line it failed at changed since. */
+export function failureMessage(failure: TestFailure | null): string {
+  const headline = failure?.headline?.trim() ?? '';
+  const message = failure?.message?.trim() ?? '';
+  const why = [headline, message && message !== headline ? message : ''].filter(Boolean).join('\n\n') || 'Failed';
+  return failure?.state === 'edited' ? `${why}\n\nThe line it failed at changed since the run.` : why;
+}
+
+/**
+ * The runs of a Testing view's request: one per Playwright config, its tests by id when Piwi knows them all, else
+ * every one by its location; with `repeat`, by their locations, that many times.
+ */
+export function testRunsOf(tests: readonly TreeTest[], repeat?: number): RunTestsArgs[] {
+  const byRoot = new Map<string, TreeTest[]>();
+  for (const t of tests) byRoot.set(t.root, [...(byRoot.get(t.root) ?? []), t]);
+  return [...byRoot].map(([root, held]) => {
+    const ids = held.map((t) => t.testCaseId);
+    const byId = !repeat && ids.every((id) => id !== null);
+    return {
+      uri: held[0]!.uri,
+      root,
+      testIds: byId ? [...new Set(ids as number[])] : [],
+      ...(byId ? {} : { locations: [...new Set(held.map((t) => t.location))] }),
+      ...(repeat ? { repeat } : {}),
+    };
+  });
+}
+
+/**
+ * What the Testing view's published results stand for, per Playwright config: the latest run and the baseline it is
+ * read against, with the runs laid over it. A change publishes them again, unless a run the view followed live
+ * brought it.
+ */
+export function resultsKey(runs: RunStatusResult | null): string {
+  return JSON.stringify(
+    (runs?.contexts ?? []).map((c) => [
+      c.root,
+      c.run?.id ?? null,
+      c.baseline?.label ?? null,
+      c.overlays ?? 0,
+      c.resolved ?? 0,
+      c.failures,
+    ]),
+  );
+}
+
+/** The name of the test run that publishes the latest results: the run of the one Playwright config, else none. */
+export function resultsRunName(runs: RunStatusResult | null): string {
+  const shown = (runs?.contexts ?? []).filter((c) => c.run);
+  if (shown.length !== 1) return 'Piwi: the latest runs';
+  const run = shown[0]!;
+  return `Piwi: run #${run.run!.id}${run.branch ? ` on ${run.branch}` : ''}`;
+}
+
+/**
+ * What a run of the Testing view shows for a test no run Piwi followed gave a result for (a test the catalog does not
+ * know, a run that did not reach the instance), once each of its commands ended with these exit codes: a pass when
+ * every one exited with 0, else an error, since Piwi cannot tell which failed.
+ */
+export function unfollowedOutcome(
+  exitCodes: ReadonlyArray<number | null>,
+): { state: 'passed' } | { state: 'errored'; message: string } {
+  if (exitCodes.every((c) => c === 0)) return { state: 'passed' };
+  const code = exitCodes.find((c) => c !== 0);
+  const how = code === null || code === undefined ? 'was stopped' : `exited with code ${code}`;
+  return {
+    state: 'errored',
+    message: `Piwi has no result for this test: the run ${how}, and its results did not reach the instance.`,
+  };
+}
+
+/** The name of the test run that follows a run in progress. */
+export function liveRunName(live: LiveRun): string {
+  return `Piwi: ${live.own ? 'your ' : ''}run #${live.runId}`;
 }

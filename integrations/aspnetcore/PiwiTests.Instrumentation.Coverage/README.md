@@ -55,7 +55,7 @@ A build made apart from `dotnet test`, such as the end-to-end environment's, see
    </Project>
    ```
 
-2. **Serve it** with `app.UsePiwiTestLogs()` from `PiwiTests.Instrumentation.AspNetCore` (see its [usage](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore#usage)). The middleware serves coverage only in the environments it is active in, Development and Test by default.
+2. **Serve it** with `app.UsePiwiTestLogs()` from `PiwiTests.Instrumentation.AspNetCore` (see its [usage](https://github.com/PiwiTests/piwi/tree/main/integrations/aspnetcore#usage)). The middleware serves coverage only in the environments it is active in, Development and Test by default.
 
 3. **Build the test environment with `-p:PiwiCoverage=true`**, which the package's `build/` and `buildTransitive/` props turn into `<Instrument>TestCoverage</Instrument>`:
 

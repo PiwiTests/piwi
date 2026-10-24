@@ -593,26 +593,26 @@ export async function getExecutableLines(
     .map(({ path, runtime, blob, lines }) => ({ path, runtime, blob, lines }));
 }
 
+/** One distinct coverage of a file the tests recorded, with each test that recorded it and the run its rows came from. */
+export interface RecordedFragment {
+  file: CoverageFile;
+  /** Test case id → the run of the test's coverage rows (null once that run is deleted). */
+  tests: Map<number, number | null>;
+}
+
 /**
- * The coverage of one file on a branch: per runtime, a test with rows on the
- * branch reads them, the others the default branch's. `file` matches a stored
- * path, else a path it is a suffix of or that is a suffix of it (`itemsOfFile`).
+ * The coverage of one file the tests recorded on a branch (its stored tag, ''
+ * for the default branch): per runtime, a test with rows on the branch reads
+ * them, the others the default branch's. `file` matches a stored path, else a
+ * path it is a suffix of or that is a suffix of it (`itemsOfFile`). Only the
+ * fragments some test recorded, in path, runtime and fragment order.
  */
-export async function getFileCoverage(
+export async function getRecordedFragments(
   db: DrizzleDB,
   projectId: number,
   file: string,
-  branch?: string | null,
-): Promise<FileCoverage> {
-  const view = await resolveBranchView(db, projectId, branch);
-  const answer: FileCoverage = {
-    file,
-    branch: view.name ?? view.defaultBranch,
-    fragments: [],
-    tests: [],
-    executable: [],
-  };
-  const tag = view.tag ?? '';
+  tag: string,
+): Promise<RecordedFragment[]> {
   const candidates = await db
     .select({
       id: coverageFragments.id,
@@ -625,10 +625,16 @@ export async function getFileCoverage(
     .from(coverageFragments)
     .where(and(eq(coverageFragments.projectId, projectId), sameBaseName(coverageFragments.path, file)));
   const fragments = itemsOfFile(candidates, file);
-  if (fragments.length === 0) return answer;
+  if (fragments.length === 0) return [];
 
   const branches = tag === '' ? [''] : ['', tag];
-  const rows: Array<{ testCaseId: number; fragmentId: number; branch: string; runtime: string }> = [];
+  const rows: Array<{
+    testCaseId: number;
+    fragmentId: number;
+    branch: string;
+    runtime: string;
+    runId: number | null;
+  }> = [];
   const fragmentIds = fragments.map((f) => f.id);
   for (let i = 0; i < fragmentIds.length; i += ID_CHUNK) {
     rows.push(
@@ -638,6 +644,7 @@ export async function getFileCoverage(
           fragmentId: testCoverage.fragmentId,
           branch: testCoverage.branch,
           runtime: testCoverage.runtime,
+          runId: testCoverage.lastSeenRunId,
         })
         .from(testCoverage)
         .where(
@@ -657,30 +664,96 @@ export async function getFileCoverage(
       .where(and(eq(testCoverage.projectId, projectId), eq(testCoverage.branch, tag)));
     for (const r of own) onBranch.add(`${r.testCaseId}\x00${r.runtime}`);
   }
-  const testsOf = new Map<number, Set<number>>();
+  const testsOf = new Map<number, Map<number, number | null>>();
   for (const r of rows) {
     if (r.branch !== tag && onBranch.has(`${r.testCaseId}\x00${r.runtime}`)) continue;
-    testsOf.set(r.fragmentId, (testsOf.get(r.fragmentId) ?? new Set()).add(r.testCaseId));
+    testsOf.set(r.fragmentId, (testsOf.get(r.fragmentId) ?? new Map()).set(r.testCaseId, r.runId));
   }
-  if (testsOf.size === 0) return answer;
+  return fragments
+    .filter((f) => testsOf.has(f.id))
+    .map((f) => ({ id: f.id, file: fragmentFile(f), tests: testsOf.get(f.id)! }))
+    .sort((a, b) => compareFiles(a.file, b.file) || a.id - b.id)
+    .map(({ file: covered, tests }) => ({ file: covered, tests }));
+}
 
-  const tests = (await indexTests(db, [...new Set([...testsOf.values()].flatMap((ids) => [...ids]))], view)).sort(
+/**
+ * The tests whose coverage in a run came from an incomplete capture: an
+ * execution of the test in that run whose payload says so. A capture that is
+ * incomplete never says a line did not run.
+ */
+export async function incompleteCoverageTests(
+  db: DrizzleDB,
+  pairs: Array<{ testCaseId: number; runId: number }>,
+): Promise<Set<number>> {
+  const wanted = new Set(pairs.map((p) => `${p.testCaseId}\x00${p.runId}`));
+  const testIds = [...new Set(pairs.map((p) => p.testCaseId))];
+  const runIds = [...new Set(pairs.map((p) => p.runId))];
+  const rows: Array<{ testCaseId: number; runId: number; payloadId: number | null }> = [];
+  for (let i = 0; i < testIds.length; i += ID_CHUNK) {
+    for (let j = 0; j < runIds.length; j += ID_CHUNK) {
+      rows.push(
+        ...(await db
+          .select({
+            testCaseId: testRunsCases.testCaseId,
+            runId: testRunsCases.testRunId,
+            payloadId: testRunsCases.coveragePayloadId,
+          })
+          .from(testRunsCases)
+          .where(
+            and(
+              inArray(testRunsCases.testCaseId, testIds.slice(i, i + ID_CHUNK)),
+              inArray(testRunsCases.testRunId, runIds.slice(j, j + ID_CHUNK)),
+            ),
+          )),
+      );
+    }
+  }
+  const executions = rows.filter((r) => r.payloadId != null && wanted.has(`${r.testCaseId}\x00${r.runId}`));
+  const contents = await resolveCasePayloadContents(
+    db,
+    executions.map((r) => r.payloadId),
+  );
+  const incomplete = new Set<number>();
+  for (const r of executions) {
+    if (parseCoveragePayload(contents.get(r.payloadId!))?.incomplete) incomplete.add(r.testCaseId);
+  }
+  return incomplete;
+}
+
+/**
+ * The coverage of one file on a branch: per runtime, a test with rows on the
+ * branch reads them, the others the default branch's. `file` matches a stored
+ * path, else a path it is a suffix of or that is a suffix of it (`itemsOfFile`).
+ */
+export async function getFileCoverage(
+  db: DrizzleDB,
+  projectId: number,
+  file: string,
+  branch?: string | null,
+): Promise<FileCoverage> {
+  const view = await resolveBranchView(db, projectId, branch);
+  const answer: FileCoverage = {
+    file,
+    branch: view.name ?? view.defaultBranch,
+    fragments: [],
+    tests: [],
+    executable: [],
+  };
+  const recorded = await getRecordedFragments(db, projectId, file, view.tag ?? '');
+  if (recorded.length === 0) return answer;
+
+  const tests = (await indexTests(db, [...new Set(recorded.flatMap((r) => [...r.tests.keys()]))], view)).sort(
     (a, b) => a.file.localeCompare(b.file) || a.title.localeCompare(b.title) || a.id - b.id,
   );
   const position = new Map(tests.map((t, i) => [t.id, i]));
   answer.tests = tests;
-  answer.fragments = fragments
-    .filter((f) => testsOf.has(f.id))
-    .map((f) => ({
-      fragment: f,
-      file: fragmentFile(f),
-      tests: [...testsOf.get(f.id)!]
-        .filter((id) => position.has(id))
-        .map((id) => position.get(id)!)
-        .sort((a, b) => a - b),
-    }))
-    .sort((a, b) => compareFiles(a.file, b.file) || a.fragment.id - b.fragment.id)
-    .map(({ file: covered, tests: positions }) => ({ ...covered, tests: positions }));
+  answer.fragments = recorded.map(({ file: covered, tests: recordedBy }) => ({
+    ...covered,
+    tests: [...recordedBy.keys()]
+      .filter((id) => position.has(id))
+      .map((id) => position.get(id)!)
+      .sort((a, b) => a - b),
+  }));
   answer.executable = await getExecutableLines(
     db,
     projectId,

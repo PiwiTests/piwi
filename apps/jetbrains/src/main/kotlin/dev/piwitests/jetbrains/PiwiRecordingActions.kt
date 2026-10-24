@@ -215,6 +215,57 @@ object PiwiRecordFlow {
         start(project, editor, file, "file")
     }
 
+    /**
+     * A test paused in a run started here asks to record from there (`piwi/recordRequested`): its file opens at the
+     * paused line and the recording starts as Record Here's does, in the test's own page, with no dialog. One that
+     * cannot start says why in a balloon; the test goes on.
+     */
+    fun recordFromTest(project: Project, asked: RecordRequested) {
+        val uri = asked.uri ?: return
+        val handoff = asked.handoff ?: return
+        /** The test hears at once why no recording starts, and goes on. */
+        fun decline(message: String) {
+            ApplicationManager.getApplication().executeOnPooledThread {
+                if (!project.isDisposed) {
+                    project.getServiceIfCreated(PiwiProjectService::class.java)?.server()?.declineRecord(DeclineRecordParams(handoff, message))
+                }
+            }
+        }
+        ApplicationManager.getApplication().invokeLater({
+            val path = runCatching { Path.of(java.net.URI(uri)) }.getOrNull()
+            val file = path?.let { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(it) }
+            if (file == null) {
+                PiwiCommands.notify(project, "Piwi could not open the file to record into: $uri.", NotificationType.WARNING)
+                decline("the IDE could not find the file.")
+                return@invokeLater
+            }
+            val editor = FileEditorManager.getInstance(project)
+                .openTextEditor(OpenFileDescriptor(project, file, asked.line.coerceAtLeast(0), 0), true)
+            if (editor == null) {
+                decline("the IDE could not open ${file.name} in an editor.")
+                return@invokeLater
+            }
+            if (!FileDocumentManager.getInstance().requestWriting(editor.document, project)) {
+                decline("${file.name} cannot be written to.")
+                return@invokeLater
+            }
+            if (project.getServiceIfCreated(PiwiRecordings::class.java)?.sessionFor(file) != null) {
+                PiwiCommands.notify(project, "Piwi is already recording into ${file.name}.")
+                decline("${file.name} is being recorded into already.")
+                return@invokeLater
+            }
+            val params = RecordParams(
+                uri = uri,
+                line = asked.line,
+                character = 0,
+                into = "steps",
+                language = DynamicBundle.getLocale().toLanguageTag(),
+                handoff = handoff,
+            )
+            record(project, editor, file, params)
+        }, project.disposed)
+    }
+
     /** `recorded.spec.ts`, else `recorded-2.spec.ts`, and so on: the first name the folder does not hold. */
     private fun freeName(directory: VirtualFile): String =
         generateSequence(1) { it + 1 }.map { if (it == 1) "recorded.spec.ts" else "recorded-$it.spec.ts" }.first { directory.findChild(it) == null }

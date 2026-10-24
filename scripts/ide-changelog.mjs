@@ -101,7 +101,7 @@ export function extractIdeEntries(changelog) {
 const MARKDOWN_HEADER = `# Changelog
 
 What each Piwi release changed in the editor extensions: the \`ide\` entries of the
-[Piwi changelog](https://github.com/PiwiTests/platform/blob/main/CHANGELOG.md).`;
+[Piwi changelog](https://github.com/PiwiTests/piwi/blob/main/CHANGELOG.md).`;
 
 /** @param {IdeEntry} entry */
 const entryMarkdown = (entry) => (entry.links.length ? `${entry.text} (${entry.links.join(', ')})` : entry.text);

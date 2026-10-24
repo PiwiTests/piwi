@@ -732,6 +732,68 @@ export function callEndLine(lines: string[], line: number, column: number, maxLi
   return null;
 }
 
+/** A `test(…)` call on a line (`test.only(…)`, `test.skip(…)` and the other modifiers too), its title in group 2. */
+export const TEST_CALL =
+  /(?<![\w$.])test(?:\.(?:only|skip|fixme|fail|slow))?\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/;
+/** A `test.describe(…)` call with a title (`test.describe.serial(…)` and the other modifiers too), its title in group 2. */
+const DESCRIBE_CALL =
+  /(?<![\w$.])test\.describe(?:\.(?:only|skip|fixme|serial|parallel))*\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/;
+
+/** A test of a spec's text: where its `test(…)` call starts and ends, its title and its describe blocks. */
+export interface TestCall {
+  /** 0-based lines the call starts and ends on. */
+  line: number;
+  endLine: number;
+  title: string;
+  /** The titles of the `test.describe(…)` blocks around it, outermost first. */
+  suite: string[];
+}
+
+/**
+ * The `test(…)` calls of a spec's lines, as the summary lines read them (each line holding one is a test), with the
+ * titled `test.describe(…)` blocks each sits in.
+ */
+export function testCalls(lines: string[]): TestCall[] {
+  const blocks: Array<{ title: string; endLine: number }> = [];
+  const calls: TestCall[] = [];
+  lines.forEach((text, i) => {
+    while (blocks.length && blocks[blocks.length - 1]!.endLine < i) blocks.pop();
+    const describe = DESCRIBE_CALL.exec(text);
+    if (describe) {
+      const open = text.indexOf('(', describe.index);
+      blocks.push({ title: describe[2]!, endLine: callEndLine(lines, i, open) ?? lines.length - 1 });
+      return;
+    }
+    const test = TEST_CALL.exec(text);
+    if (!test) return;
+    const open = text.indexOf('(', test.index);
+    const endLine = (open >= 0 ? callEndLine(lines, i, open) : null) ?? i;
+    calls.push({ line: i, endLine, title: test[2]!, suite: blocks.map((b) => b.title) });
+  });
+  return calls;
+}
+
+/**
+ * The catalog's case of a test call: the one of its title in the same describe blocks (`suitePath`, joined by `\x1f`),
+ * else the first of its title whose describe blocks the catalog does not say (an older instance). A case of its title
+ * in other describe blocks is another test.
+ */
+export function caseOfCall<T extends { title: string; suitePath?: string | null }>(
+  cases: readonly T[],
+  call: Pick<TestCall, 'title' | 'suite'>,
+): T | undefined {
+  const suite = call.suite.join('\x1f');
+  const titled = cases.filter((c) => c.title === call.title);
+  return titled.find((c) => (c.suitePath ?? '') === suite) ?? titled.find((c) => typeof c.suitePath !== 'string');
+}
+
+/** A source text with its comments blanked out, line breaks kept; strings are left as they are. */
+export function withoutComments(text: string): string {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:\\])\/\/.*$/gm, '$1');
+}
+
 /**
  * Where a line of a failure stands in its file as edited since the run: `same` and `moved` hold its text (on its own
  * line or on another), `edited` changed it, `gone` took its test out of the file.

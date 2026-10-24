@@ -208,7 +208,7 @@ In a coverage build, the middleware also records which code each request execute
 
 `PIWI_COVERAGE_MODE=run` records run-level coverage only, at a lower cost, and names no request. File paths follow the handler rule of the route manifest, `PIWI_SOURCE_ROOT` included; a source file outside every repository it can find is left out, with a warning in the log. Without a coverage build nothing changes: no header, and the coverage paths reach the application. Never ship a coverage build to production; in one, `UsePiwiTestLogs()` logs a warning when the environment is one the middleware is not active in.
 
-Lambdas created at startup, such as inline minimal API handlers, and work outside a request count at run level only. The [coverage package's README](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#readme) has the JSON shapes, how statements map to lines, the limits and the measured cost.
+Lambdas created at startup, such as inline minimal API handlers, and work outside a request count at run level only. The [coverage package's README](https://github.com/PiwiTests/piwi/tree/main/integrations/aspnetcore/PiwiTests.Instrumentation.Coverage#readme) has the JSON shapes, how statements map to lines, the limits and the measured cost.
 
 ## License
 

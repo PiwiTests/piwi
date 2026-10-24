@@ -56,9 +56,10 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
 - `PiwiCoverageMarks.kt` draws `piwi/coverage` on each open file the service reads (C# among them, for Rider), asked
   when the file opens and again after each `piwi/statusChanged`: range highlighters on the document's markup model
   (`DocumentMarkupModel`), one per span of `Glue.coverageMarks`, with a `LineMarkerRendererEx` painting a bar at the
-  left of the gutter in the error stripe color of `PIWI_COVERAGE_RUN`, `PIWI_COVERAGE_NOT_RUN` or, dashed,
-  `PIWI_COVERAGE_CHANGED` (**Coverage** in `PiwiColorSettingsPage.kt`, no background by default), which marks the
-  scroll bar too. The run and not-run defaults are the dashboard's (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`,
+  left of the gutter in the error stripe color of `PIWI_COVERAGE_RUN`, `PIWI_COVERAGE_NOT_RUN`, dashed
+  `PIWI_COVERAGE_CHANGED`, or, for the uncovered changes of a file no test reaches (`CoverageResult.uncovered`,
+  `Glue.CoverageKind.UNCOVERED`, its tooltip ending on `Glue.UNCOVERED_EXPLAINED`), `PIWI_UNCOVERED_CHANGE`
+  (**Coverage** in `PiwiColorSettingsPage.kt`, no background by default), which marks the scroll bar too. The run and not-run defaults are the dashboard's (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`,
   checked by `apps/application/tests/unit/coverage-mark-colors.test.ts`). The bar is also an `ActiveGutterRenderer`:
   hovered, it and the scroll bar mark show `Glue.coverageMarkTooltip`, what the lines are and what the marks mean;
   clicked, the same as a hint. The highlighters follow the edits; `piwi/coverageChanged`
@@ -184,6 +185,10 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
   and `Ctrl+Alt+Shift+R` (`$default` keymap, the command key on macOS) records, and stops a recording, as
   `Ctrl+Alt+Shift+F` re-runs the failing tests and `Ctrl+Alt+Shift+K` runs the test at the caret: the VS Code
   extension's chords, which no bundled keymap uses.
+  A test paused in a run started here that asks to record from there (`piwi/recordRequested`,
+  `PiwiLsp4jClient.recordRequested`) has its file opened at the paused line and its recording started with no dialog
+  (`PiwiRecordFlow.recordFromTest`: `piwi/record` with the `handoff`), as Record Here's; one it cannot start (the file
+  is being recorded into, cannot be found, opened or written) is declined at once with why (`piwi/declineRecord`).
   **Record a New Test File…** (also under **New**) creates the spec first, in a config folder; its name dialog says
   why a name is refused (`InputValidatorEx`). A tab closed while `piwi/record` is pending cancels the recording, in a
   balloon. A dialog asks for the start page and the
@@ -255,8 +260,13 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
   (`Glue.apiKeyEntry`): a project's settings, which a repository may commit, never select another instance's key. The
   choice of the desktop app and its project, and a recording's choices, live in `.idea/workspace.xml`
   (`PiwiLocalSettings`, with the failures' grouping, the breakpoints setting, the run notifications, the
-  failure severity and the baselines), on this machine only;
+  failure severity, how the agent signs in to Piwi's MCP server and the baselines), on this machine only;
   choosing the app never touches the instance, its project or its key.
+- **Copy the MCP Server Configuration** (`CopyMcpConfigurationAction`) writes `piwi/mcp`'s servers as `mcpServers`
+  entries running `mcp-remote` (`Glue.mcpConfiguration`), the key in `env`; with `PiwiLocalSettings.mcpAuthorization`
+  at `sign-in` (`Glue.MCP_AUTHORIZATIONS`, the settings page's AI Assistant group, sent in `credentials()`) the service
+  hands an instance's server without a key and `mcp-remote` signs in through the instance's OAuth. The notification
+  says which (`Glue.mcpAuthorizationNote`).
 
 ## Rules
 

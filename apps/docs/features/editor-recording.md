@@ -111,6 +111,8 @@ reaches it from your machine.
 - It records the top-level page: clicks inside an iframe, and steps in a popup or a new tab, are not recorded yet. The
   editor says so when the application opens a tab or a popup.
 - A file takes one recording at a time.
+- A recording starts on a fresh page. To record where a test already is (signed in, halfway through a flow), pause the
+  test there and [record from the pause](./editor-breakpoints#record-from-a-pause).
 
 ## Related
 

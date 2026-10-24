@@ -78,7 +78,7 @@ Modest; see [resource requirements](/operate/deployment#resource-requirements). 
 
 ### Where do I ask questions or propose features?
 
-[GitHub Discussions](https://github.com/PiwiTests/platform/discussions) for questions and ideas, [issues](https://github.com/PiwiTests/platform/issues) for bugs, and [ROADMAP.md](https://github.com/PiwiTests/platform/blob/main/ROADMAP.md) for direction.
+[GitHub Discussions](https://github.com/PiwiTests/piwi/discussions) for questions and ideas, [issues](https://github.com/PiwiTests/piwi/issues) for bugs, and [ROADMAP.md](https://github.com/PiwiTests/piwi/blob/main/ROADMAP.md) for direction.
 
 ---
 

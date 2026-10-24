@@ -27,6 +27,7 @@ record these follow, with its measurements, is [`adr/ci-workflows.md`](../adr/ci
 | `workflows/edge.yml`                       | pushes to `main`                | the `edge` container image                                                               |
 | `workflows/release-notes.yml`              | releases, on demand             | tidies the release notes                                                                 |
 | `workflows/live-jira.yml`                  | on demand                       | the live Jira E2E                                                                        |
+| `workflows/nightly-vscode.yml`             | every night, on demand          | the VS Code extension in the real VS Code (`apps/vscode/tests/e2e`), at the pinned release |
 | `actions/setup-workspace/action.yml`       | used by the workflows above     | Node, the npm cache, `npm ci`, and Playwright's Chromium when asked                      |
 | `actions/container-health/action.yml`      | `ci.yml`, the container publish | starts a server image on an empty data folder and waits for `/api/health`                |
 
@@ -61,6 +62,9 @@ every comparison is made on one machine; a `report` job joins their results into
   that calls a reusable workflow grants the permissions its jobs ask for: a called job asking for more fails the run.
 - **Publishing only from a release tag.** A publishing step runs when `github.ref` is a `v*` tag (`TAG_BUILD`), or
   `main` for the `edge` image; anywhere else the workflow builds and packs, so a pull request can run it.
+- **The GHCR image name is fixed.** It is `ghcr.io/piwitests/platform` (`IMAGE_NAME` in
+  `reusable-publish-container.yml`), never derived from `github.repository`: users pull it by that name, and a
+  registry does not redirect when the repository is renamed.
 - **Publishing secrets reach a release tag only.** A `reusable-publish-*.yml` declares the secrets it uses
   (`on.workflow_call.secrets`), and `release.yml` passes each one only when `github.ref` is a `v*` tag, never
   `secrets: inherit`: a pull request's dry run gets none. A step that runs project code with a signing key (the

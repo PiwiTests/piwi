@@ -62,7 +62,7 @@ content.
 The ZIP carries reconstructed `trace.zip` archives, but reading one still needs a Playwright trace
 viewer — `npx playwright show-trace trace.zip`, or the [bundled viewer](./evidence#trace-viewer) on any
 Piwi instance. Bundling the viewer's assets into the export itself is on the
-[roadmap](https://github.com/PiwiTests/platform/blob/main/ROADMAP.md).
+[roadmap](https://github.com/PiwiTests/piwi/blob/main/ROADMAP.md).
 
 ## Perfetto trace
 

@@ -150,16 +150,10 @@ get the same data from `analyze_selections`.
 
 ## Impact-from-diff
 
-`piwi run impact --base <ref>` runs only the tests your change affects. The reporter diffs the working tree against
-`<ref>` (`git diff --name-only`), and the dashboard maps the files to tests through observed edges:
-
-- **Direct**: a changed file that _is_ a test file maps to the tests defined in it.
-- **Reach**: a changed support file maps to the tests that failed inside it, per their source frames.
-- **Code reach**: a changed application file maps to the tests that executed it
-  ([code reach](/features/code-reach)).
-
-It fails safe, widening to the full suite with a warning, when a changed file maps to no test (stylesheets too) or
-only through source frames, which miss passing tests. A docs-only change runs nothing.
+`piwi run impact --base <ref>` runs only the tests your change affects: the tests a changed file defines, the ones
+that failed inside it, and the ones that executed it, down to those that ran the changed lines when tests record
+coverage. A changed file that maps to no test widens the run to the full suite. How each file is mapped:
+[Impact from a diff](/features/change-impact).
 
 ## Suggestions
 
@@ -176,13 +170,14 @@ Coverage here means the routes a test was _seen_ to hit on recent runs, not inst
 
 ## What selections are not
 
-- **Not instrumented test-impact analysis.** Predicates read _observed_ history (durations, pass rates, statuses), not
-  a build-time dependency graph.
+- **Not static analysis.** Predicates read _observed_ history (durations, pass rates, statuses), and impact reads
+  what tests were seen to run (frames, code reach, recorded coverage), never a build-time dependency graph.
 - **Not a way to hide failures.** [Quarantine](/features/flaky-tests) decides a test's verdict; a selection only decides whether
   it runs. The full suite stays your reference; selections are for the fast loops in between.
 
 ## Related
 
+- [Impact from a diff](/features/change-impact): the tests a change affects, down to the changed lines
 - [Piwi CLI](/reference/cli#select-run): every flag of `select` and `run`
 - [CI & sharding](/guide/ci): the gate in a CI job
 - [Analytics](/features/analytics#test-filter): filter every number by a selection

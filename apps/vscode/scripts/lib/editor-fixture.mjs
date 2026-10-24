@@ -146,6 +146,35 @@ export function subtotal(cart: Cart): number {
 }
 `;
 
+/** A server route of the shop's application, which the checkout tests reach. */
+const ORDERS_ROUTE = `export default defineEventHandler(async (event) => {
+  const { cartId, payment } = await readBody<{ cartId: string; payment: string }>(event);
+  if (!cartId) throw createError({ statusCode: 400, statusMessage: 'No cart to order' });
+  return { orderId: \`ord_\${cartId}\`, payment, status: 'placed' };
+});
+`;
+
+/** A server route no test reaches, as the default branch holds it. */
+const GIFT_CARDS_ROUTE = `export default defineEventHandler(async (event) => {
+  const { code } = await readBody<{ code: string }>(event);
+  if (!/^GC-\\d{8}$/.test(code)) throw createError({ statusCode: 400, statusMessage: 'Not a gift card code' });
+  return { code, balance: 0 };
+});
+`;
+
+/** The route no test reaches, with a change since the default branch: its uncovered change. */
+export const UNCOVERED_ROUTE_FILE = 'server/api/gift-cards.post.ts';
+export const UNCOVERED_ROUTE_EDIT = `export default defineEventHandler(async (event) => {
+  const { code, cartId } = await readBody<{ code: string; cartId: string }>(event);
+  if (!/^GC-\\d{8}$/.test(code)) throw createError({ statusCode: 400, statusMessage: 'Not a gift card code' });
+  const card = await useStorage('gift-cards').getItem<{ balance: number; expiresAt: number }>(code);
+  if (!card || card.expiresAt < Date.now()) {
+    throw createError({ statusCode: 410, statusMessage: 'This gift card has expired' });
+  }
+  return { code, cartId, balance: card.balance };
+});
+`;
+
 const PLAYWRIGHT_CONFIG = `import { defineConfig } from '@playwright/test';
 import { wrapConfig } from '@piwitests/reporter';
 
@@ -159,7 +188,7 @@ export default wrapConfig(
 );
 `;
 
-/** Enough of the two packages' types for the editor's TypeScript to report nothing of its own. */
+/** Enough of the two packages' types, and of Nitro's auto-imports, for the editor's TypeScript to report nothing of its own. */
 const TYPE_STUBS = {
   'node_modules/@playwright/test/package.json': JSON.stringify({
     name: '@playwright/test',
@@ -180,14 +209,31 @@ export declare function defineConfig(config: any): any;
   'node_modules/@piwitests/reporter/index.d.ts': `export declare const piwiFixtures: any;
 export declare function wrapConfig(config: any, options: any): any;
 `,
+  'node_modules/@types/nitro-auto-imports/package.json': JSON.stringify({
+    name: '@types/nitro-auto-imports',
+    version: '0.0.0',
+    types: 'index.d.ts',
+  }),
+  'node_modules/@types/nitro-auto-imports/index.d.ts': `declare function defineEventHandler<T>(handler: (event: any) => T): T;
+declare function readBody<T = any>(event: any): Promise<T>;
+declare function createError(input: { statusCode: number; statusMessage: string }): Error;
+declare function useStorage(base?: string): { getItem<T = any>(key: string): Promise<T | null> };
+`,
 };
 
 export const FILES = {
   'playwright.config.ts': PLAYWRIGHT_CONFIG,
   'tsconfig.json': JSON.stringify(
     {
-      compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', strict: false, noEmit: true },
-      include: ['tests', 'src', 'playwright.config.ts'],
+      compilerOptions: {
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        strict: false,
+        noEmit: true,
+        types: ['nitro-auto-imports'],
+      },
+      include: ['tests', 'src', 'server', 'playwright.config.ts'],
     },
     null,
     2,
@@ -209,6 +255,8 @@ export const FILES = {
   'tests/search.spec.ts': SEARCH_SPEC,
   'tests/privacy.spec.ts': PRIVACY_SPEC,
   'src/cart/cart-service.ts': SERVICE,
+  'server/api/orders.post.ts': ORDERS_ROUTE,
+  [UNCOVERED_ROUTE_FILE]: GIFT_CARDS_ROUTE,
   ...TYPE_STUBS,
 };
 
@@ -465,9 +513,12 @@ export function startStub(commit) {
     if (p === `/api/projects/${PROJECT.id}/locator-index`) return json(INDEX);
     if (p === `/api/projects/${PROJECT.id}/code-index`)
       return json({
-        files: ['src/cart/cart-service.ts'],
+        files: ['src/cart/cart-service.ts', 'server/api/orders.post.ts'],
         tests: TESTS,
-        reach: [{ file: 0, tests: [1, 2, 3, 4, 5], origin: 'server', runtime: 'server', via: 'coverage' }],
+        reach: [
+          { file: 0, tests: [1, 2, 3, 4, 5], origin: 'server', runtime: 'server', via: 'coverage' },
+          { file: 1, tests: [3, 4], origin: 'server', runtime: 'server', via: 'route' },
+        ],
         builtAt: ago(130),
         truncated: false,
       });

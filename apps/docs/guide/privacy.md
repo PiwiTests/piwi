@@ -134,7 +134,7 @@ by anything else. See [Storage → Data retention](/operate/storage#data-retenti
 ## Verifying any of this
 
 The source is public and the outbound surface is small enough to audit: watch the container's egress, or read
-[`server/utils/`](https://github.com/PiwiTests/platform/tree/main/apps/application/server/utils) — the AI
+[`server/utils/`](https://github.com/PiwiTests/piwi/tree/main/apps/application/server/utils) — the AI
 provider, SCM, SMTP, notification, OAuth, Jira and link-unfurl clients are the only things there that open
 a socket; the S3 client is in `server/storage/`.
 

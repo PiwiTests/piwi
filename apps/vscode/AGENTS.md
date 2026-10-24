@@ -28,9 +28,11 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   API key in `SecretStorage`, hands the connection to the service with `piwi/setCredentials` and as the initialization
   options of each of its starts (`handed`: the client starts the service again after it stops unexpectedly): a change
   of `piwi.serverUrl`, `piwi.project`, `piwi.failureSeverity` (`error`, `warning`, `information`, `off`: the severity
-  of a failure's diagnostic, sent as `failureSeverity`) or a key is handed 250 ms after the last of a burst, and only when the
-  connection differs from the one handed (`handChangedCredentials`), since each one reads everything again; and
-  provides Piwi's MCP server through
+  of a failure's diagnostic, sent as `failureSeverity`), `piwi.mcpAuthorization` (`key`, `sign-in`: how the agent signs
+  in to Piwi's MCP server, an application setting a workspace cannot override, sent as `mcpAuthorization`) or a key is
+  handed 250 ms after the last of a burst, and only when the connection differs from the one handed
+  (`handChangedCredentials`), since each one reads everything again, then the MCP servers are asked again
+  (`mcpServersChanged`); and provides Piwi's MCP server through
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at
   the oldest version `vscode-languageclient` supports, for Cursor and VSCodium).
 - The service's environment follows the editor's proxy settings (`serviceEnvironment` in `src/glue.ts`: `http.proxy`,
@@ -55,7 +57,8 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   ran in `piwi.coverageRunBorder`, the executable lines none runs in `piwi.coverageNotRunBorder`, both defaulting to
   the dashboard's colors (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`, checked by
   `apps/application/tests/unit/coverage-mark-colors.test.ts`), and the lines changed since the coverage run dashed in
-  `piwi.coverageChangedBorder`; the last two also in the overview ruler. `piwi/coverageChanged` replaces a file's
+  `piwi.coverageChangedBorder`; in a file no test reaches, its uncovered changes (`CoverageResult.uncovered`) in
+  `piwi.uncoveredChangeBorder`; all but the lines run also in the overview ruler. `piwi/coverageChanged` replaces a file's
   answer and draws it again with its lenses; an edit asks nothing, the service pushes the marks it placed. The
   service's hover names the tests behind a line and ends on what the marks mean (VS Code has no hover on a
   decoration's border). **Piwi: Toggle the coverage marks** (`piwi.toggleCoverage`, kept in `workspaceState` as
@@ -159,15 +162,39 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   place of the written one, found on the line exactly once, as one workspace edit; none while it records, since the
   next update writes the block again. The
   block is followed through the edits around it; typing inside it pauses the recording (Resume writes it again, Keep my
-  edits stops). Closing the file or the window stops its recording. The notification after Stop says what was
+  edits stops). A test paused in a run started here that asks to record from there (`piwi/recordRequested`) has its
+  file shown at the paused line and its recording started at once (`recordFromTest`: `piwi/record` with the
+  `handoff`, nothing asked), as one at the caret, and the answer's sentence shown; one it cannot start (the file is
+  being recorded into, cannot be opened, or the service failed) is declined at once with why (`piwi/declineRecord`). Closing the file or the window stops its recording. The notification after Stop says what was
   written (`recordingSummary`: `Piwi: recorded 6 steps into checkout.spec.ts.`) and, when `piwi/testAt` finds a test
   holding the block's last line, offers **Run** and **Verify ×3** (`RECORDED_ACTIONS`), which run
   `piwi.runTestAtCursor` and `piwi.verifyTestAtCursor` at that line as the block stands when clicked. No CodeLens
   offers them: the recording's lens goes with Stop.
+- `src/test-explorer.ts` lists Piwi's tests in VS Code's Testing view while `piwi.testExplorer` is on (the default; a
+  change creates or disposes it, `showTestExplorer`): a `TestController` whose items are `piwi/testItems` (the
+  catalog's specs and the open ones, read again in full when the connection or the runs change, a spec alone 300 ms
+  after its last edit or when it opens: `withSpec`), drawn by `testTree` in `src/glue.ts` (a node per Playwright
+  config when there are several, the spec's folders, the spec, its describe blocks, its tests; ids joined by `\x1f`,
+  which VS Code takes where it refuses `\0`), each item kept while its id stays so its result does. The latest
+  results are published as one test run (`resultsRunName`, `testOutcome`: a failure's message and line from
+  `TestFailure`) when `resultsKey` changes; a run in progress (`RunStatus.live`) is a test run of its own
+  (`liveRunName`) showing `liveTests` as they come, ended once the run was read, after which nothing is published
+  again for it. **Run with Piwi** and **Verify ×3 with Piwi** (run profiles) run the picked tests through `runTests`
+  (`testRunsOf`: one run per config, by id when every test has one, else by location), queued in their test run, which
+  is followed from its first command on (a command that ends while the next starts is kept in `endedEarly`), takes
+  each command's run in progress by its ref (`LiveRun.ref`; by its config when the service no longer keeps the
+  command), and ends once each command's task ended (`taskEnded`, from `tasks.onDidEndTaskProcess`, or at once for a
+  task VS Code could not start) and its run was read; a run that ended before it was followed is read from
+  `piwi/runEnded` by its ref, and 15 s after a task's end with neither, a test no run gave a result for passes when
+  every command exited with 0, else is an error (`unfollowedOutcome`). Cancel terminates the commands' tasks and ends
+  the test run, the tests it showed no result for skipped. The spec URIs the service answers are spelled as VS Code
+  spells a document's (`asEditorUris`), and a read that made items anew publishes the results again. While it lists the tests, the gutter's own icons give way to the Testing view's and
+  a test's line keeps the hover (`testHover`). The API `activate` returns gives what it shows (`testExplorer`).
 - `src/glue.ts` is the pure half (the status bar item, the failures view's nodes, the MCP configuration to paste, the
   file an open link names, the recorded block's text and writes with the service's import edit, and following them through a change: `writeBlock`,
   `followBlock`, `followEdit`, and the quick fixes of a recorded line's warning: `locatorChoices`; what runs the test at
-  a line: `testAtRun`), tested without an editor.
+  a line: `testAtRun`; the Testing view's tree and results: `testTree`, `testOutcome`, `testRunsOf`), tested without
+  an editor.
 
 ## Rules
 
@@ -205,6 +232,7 @@ npm run vscode:lint               # :fix to fix
 npm run vscode:format             # :check to verify only
 npm run vscode:test               # unit tests of src/glue.ts
 xvfb-run -a npm run vscode:test:integration   # VS Code (downloaded to .vscode-test/) on a fixture repository
+xvfb-run -a -s "-screen 0 1920x1200x24" npm run vscode:test:e2e   # what the workbench draws, after vscode:build
 npm run vscode:package            # dist/piwi.vsix
 ```
 
@@ -216,16 +244,25 @@ with the `ide` scope is what puts a line in it. The file is gitignored, and `.vs
 **Screenshots.** `scripts/take-screenshots.mjs` writes the extension's illustrations (`apps/docs/public/screenshots/vscode-*.png`,
 shown by the docs, the README and the Marketplace README): it opens the fixture project of
 `scripts/lib/editor-fixture.mjs`, a small shop's suite with one brittle locator, two CI failures and a local run since,
-against the stub instance the same module serves, in the downloaded VS Code, and drives the window with Playwright's
-Electron support. On Linux, run it under Xvfb at twice the window size for 2× images:
+against the stub instance the same module serves, in the VS Code `scripts/lib/vscode-window.mjs` downloads (the
+release `VSCODE_VERSION` pins, moved on purpose: the workbench's DOM changes between releases), and drives the window
+with Playwright's Electron support. On Linux, run it under Xvfb at twice the window size for 2× images:
 `xvfb-run -a -s "-screen 0 2880x1800x24" node scripts/take-screenshots.mjs`. A scene is a function of `SCENES`; one
 that fails leaves `vscode-<scene>-failed.png` with the window as it stood. The JetBrains plugin's script reuses the
-fixture, so a change to it recaptures both sets. What was found about driving VS Code this way, and what a test
-suite over the same launcher would assert, is recorded in
+fixture, so a change to it recaptures both sets. What was found about driving VS Code this way is recorded in
 [`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md).
+
+**The nightly suite** (`tests/e2e/`, `npm run vscode:test:e2e`) opens the same fixture in the same window and asserts
+on the workbench's DOM what the in-process suites check as answers: the status bar's counts, the Problems panel's rows,
+the quick fixes, the hover, CodeLens, the failures view and the Testing view. `.github/workflows/nightly-vscode.yml`
+runs it every night and on demand, not on pull requests; a failure leaves the HTML report with a screenshot of the
+window. Find elements by ARIA role and name where the workbench gives one (`getByRole('tree', { name: 'Test Explorer' })`),
+a class name only where it does not; a step that opens a menu or a hover clears the notification toasts first
+(`clearNotifications`).
 
 The integration suite (`tests/integration/`) starts a stub instance, writes a fixture repository, and drives VS Code
 through its public commands (`vscode.executeCodeActionProvider`, `vscode.executeCodeLensProvider`, …), and through the
 API `activate` returns (`pageCandidates`, the service's answer for a position, `failureChildren`, the failures view's
-nodes, `lastRun`, the command a breakpoint's run was given, `gutter`, the tests last drawn in a file's gutter, and
-`coverage`, a file's coverage answer and whether its marks are shown).
+nodes, `lastRun`, the command a breakpoint's run was given, `gutter`, the tests last drawn in a file's gutter,
+`coverage`, a file's coverage answer and whether its marks are shown, and `testExplorer`, the Testing view's tests
+with the result last shown for each).
