@@ -9,6 +9,7 @@ import {
 } from '@piwitests/picker-dom';
 import {
   atStop,
+  BarIntents,
   callSitePlace,
   currentPauseSet,
   goOn,
@@ -369,6 +370,7 @@ function fakePausePage(
       opts.holdBar ? new Promise<void>((resolve) => (takeDown = resolve)) : Promise.resolve(),
     ),
     waitForLoadState: vi.fn(async () => {}),
+    bringToFront: vi.fn(async () => {}),
     isClosed: () => opts.breakAt !== undefined && takes >= opts.breakAt,
   };
   return { page, shown };
@@ -434,6 +436,39 @@ describe('pauseHere', () => {
     expect(choice).toBe('resume');
     expect(recorded).toHaveBeenCalledOnce();
     expect(shown).toEqual([expect.objectContaining({ record: true }), expect.objectContaining({ record: true })]);
+  });
+
+  it('takes an intent from outside the page as its own button, the window brought to the front, none while it runs', async () => {
+    const { page, shown } = fakePausePage([], { holdBar: true });
+    const intents = new BarIntents();
+    const ended = new AbortController();
+    let offeredMeanwhile: boolean | null = null;
+    const recorded = vi.fn(async () => {
+      offeredMeanwhile = intents.offer('pick');
+    });
+    const done = pauseHere(page as never, POINT, PROBE, () => {}, recorded, ended.signal, intents);
+    await vi.waitFor(() => expect(shown).toHaveLength(1));
+    expect(intents.offer('record')).toBe(true);
+    await vi.waitFor(() => expect(shown).toHaveLength(2));
+    expect(recorded).toHaveBeenCalledOnce();
+    expect(offeredMeanwhile).toBe(false);
+    expect(page.bringToFront).toHaveBeenCalledOnce();
+    ended.abort();
+    expect(await done).toBe('resume');
+  });
+});
+
+describe('BarIntents', () => {
+  it('keeps one intent handed before the bar waits, refuses a second, and none once the bar got its answer', async () => {
+    const intents = new BarIntents();
+    expect(intents.offer('pick')).toBe(true);
+    expect(intents.offer('record')).toBe(false);
+    expect(await intents.wait()).toBe('pick');
+    intents.answered();
+    expect(intents.offer('record')).toBe(false);
+    const next = intents.wait();
+    expect(intents.offer('record')).toBe(true);
+    expect(await next).toBe('record');
   });
 });
 

@@ -129,6 +129,7 @@ describe('the worker’s run connection', () => {
         pid: process.pid,
         playwright: '1.64.1',
         reporter: expect.any(String),
+        takes: ['pick', 'record'],
       });
       const answers: string[] = [];
       const held = holdStop(STOP, (answer) => void answers.push(answer));
@@ -159,6 +160,44 @@ describe('the worker’s run connection', () => {
       hub.send({ type: 'breakpoints', places: [{ file: 'tests/a.spec.ts', line: 3 }] });
       await until(() => (asked.length === 3 ? true : undefined));
       expect(asked.slice(1)).toEqual(['pause', 'breakpoints 3']);
+    } finally {
+      await hub.close();
+    }
+  });
+
+  it('starts an intent at the stop it names, through the bar, and refuses one at another stop or without a bar', async () => {
+    const hub = await startHub();
+    try {
+      expect(await openRunChannel(WORKER, handlers().control, hub.env)).toBe(true);
+      const intents: string[] = [];
+      const held = holdStop({ ...STOP, bar: true, intent: (what) => (intents.push(what), { ok: true, message: `${what} started` }) }, () => {});
+      const { stop } = (await until(() => hub.heard.find((m) => m.type === 'stopped'))) as { stop: number };
+      const answers = () => hub.heard.filter((m) => m.type === 'answer');
+      hub.send({ type: 'request', request: 1, what: 'pick', stop });
+      hub.send({ type: 'request', request: 2, what: 'record', stop: stop + 1 });
+      await until(() => (answers().length === 2 ? true : undefined));
+      expect(answers()).toEqual([
+        { type: 'answer', request: 1, what: 'pick', value: { ok: true, message: 'pick started' } },
+        { type: 'answer', request: 2, what: 'record', value: { ok: false, message: 'The test went on.' } },
+      ]);
+      expect(intents).toEqual(['pick']);
+      held.release();
+      hub.send({ type: 'request', request: 3, what: 'pick', stop });
+      expect(await until(() => answers()[2])).toMatchObject({ value: { ok: false, message: 'The test went on.' } });
+
+      // A stop no bar shows has no window to pick in.
+      holdStop(STOP, () => {});
+      const headless = (await until(() => hub.heard.filter((m) => m.type === 'stopped')[1])) as { stop: number };
+      hub.send({ type: 'request', request: 4, what: 'record', stop: headless.stop });
+      expect(await until(() => answers()[3])).toEqual({
+        type: 'answer',
+        request: 4,
+        what: 'record',
+        value: {
+          ok: false,
+          message: "Record here needs the pause bar in the test's window, and this stop shows none: run the test headed.",
+        },
+      });
     } finally {
       await hub.close();
     }

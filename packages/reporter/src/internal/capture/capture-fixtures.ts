@@ -96,6 +96,7 @@ import {
 } from './pick-on-failure.js';
 import {
   atStop,
+  BarIntents,
   callSiteLine,
   callSitePlace,
   contextDebugger,
@@ -133,7 +134,7 @@ import {
   tellHub,
   type RunControl,
 } from './run-channel.js';
-import type { RunToHub } from '@piwitests/core/run-channel';
+import { RUN_INTENT_NAMES, type IntentAnswer, type RunIntent, type RunToHub } from '@piwitests/core/run-channel';
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 import {
   browserCoverageInWorker,
@@ -1454,8 +1455,9 @@ function stopPage(sink: CaptureSink, context: BrowserContext, call: LocatorCall 
  * element is highlighted, and a locator picked meanwhile is folded into the call site's snapshot (which the call's own
  * capture then leaves as it is); a pick is printed and posted to the editor. The stop is kept for `piwi-pauses` from
  * the moment it shows. A stop the test ended under is ended unanswered (`endShownStops`): its call is held until
- * teardown has read the page, and the answer is Finish. Returns the answer; none when neither a bar nor the editor can
- * show the stop.
+ * teardown has read the page, and the answer is Finish. The editor can start the bar's Pick a locator and Record here
+ * from outside the page (`intentAt`): the same pick and recording, their results going where the bar's go. Returns the
+ * answer; none when neither a bar nor the editor can show the stop.
  */
 async function showStop(
   sink: CaptureSink,
@@ -1485,6 +1487,9 @@ async function showStop(
     console.log(`[piwi] Locator picked at ${callSiteLine(location)}: ${picked.picked.locator}`);
     await postPickToEditor(process.env[PIWI_LOCAL_DEBUG_ENV.editorSend], pickPayload(picked.picked.locator, location));
   };
+  const onRecord =
+    bar && page ? recorderAt(page, testInfo, location, reason === 'page-pause' ? 'pause' : 'breakpoint') : undefined;
+  const intents = bar && page ? new BarIntents() : null;
   const record: PauseRecord = { title, location, reason, startedAt: Date.now(), duration: 0 };
   sink.stops.push(record);
   // `end`: the test ended under the stop. `over`: that, or the editor answered; the bar comes down then.
@@ -1501,6 +1506,7 @@ async function showStop(
           locator: call ? locatorSource(call.target, call.origin.method, call.origin.args) : null,
           bar,
           page,
+          intent: intents ? (what) => intentAt(intents, what, !!onRecord) : undefined,
         },
         (answer) => {
           fromEditor = answer;
@@ -1525,8 +1531,9 @@ async function showStop(
         },
         { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG },
         onPick,
-        recorderAt(page, testInfo, location, reason === 'page-pause' ? 'pause' : 'breakpoint'),
+        onRecord,
         over.signal,
+        intents ?? undefined,
       ),
     );
   }).finally(() => {
@@ -1542,6 +1549,29 @@ async function showStop(
     return 'finish';
   }
   return fromEditor ?? answer;
+}
+
+/**
+ * Start the pause bar's Pick a locator or Record here from outside the page, at a stop the bar shows: answered at
+ * once, the pick or the recording then running in the test's window as from the bar.
+ */
+function intentAt(intents: BarIntents, what: RunIntent, canRecord: boolean): IntentAnswer {
+  if (what === 'record' && !canRecord) {
+    return {
+      ok: false,
+      message: 'Record here needs the editor that started the run: this run names no record channel.',
+    };
+  }
+  if (!intents.offer(what)) {
+    return { ok: false, message: `${RUN_INTENT_NAMES[what]} waits: a pick or a recording runs in the test's window.` };
+  }
+  return {
+    ok: true,
+    message:
+      what === 'pick'
+        ? "Pick an element in the test's window: the locator goes to the editor."
+        : "Recording in the test's window: the editor writes the steps above the stopped line.",
+  };
 }
 
 /** Settles once `signal` aborts. */

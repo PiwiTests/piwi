@@ -59,7 +59,9 @@ Two **external contracts** beyond the npm API:
   each test's begin and end and each stop it shows, and the editor's controls (Pause, Step,
   Resume, Finish, Run to a line, the run's breakpoints) go through the same stop policy as
   `PIWI_PAUSE_AT`. While it is open a headless run stops too, with no bar, until the editor
-  answers or the connection closes; the editor's answer takes a headed stop's bar down.
+  answers or the connection closes; the editor's answer takes a headed stop's bar down. At a
+  stop the bar shows, the editor can also start the bar's Pick a locator and Record here
+  (an intent, `request` with `what: 'pick' | 'record'`), which the bar takes as its own click.
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
   unref'd timer (`internal/collect/process-sampler.ts`).
   With server coverage on (`coverage.server`), the capture fixtures keep the

@@ -3,10 +3,14 @@ import type { Page, WorkerInfo } from '@playwright/test';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import {
   RUN_CHANNEL_ENV,
+  RUN_INTENTS,
+  RUN_INTENT_NAMES,
   parseHubToRun,
   type HubToRun,
+  type IntentAnswer,
   type PausedImage,
   type Place,
+  type RunIntent,
   type RunToHub,
   type StopReason,
   type UnknownMessage,
@@ -20,9 +24,10 @@ import { internalCall } from './quiet-capture.js';
  * The worker's run connection to the editor that started the run: the socket the run's environment names
  * (`PIWI_RUN_CHANNEL`, `@piwitests/core/run-channel`), opened once per worker before its first test and kept until
  * the worker ends. The worker says which test it runs and where it stops; the editor pauses it, answers its stops
- * (Step, Resume, Finish, Run to a line), changes the run's breakpoints and asks for an image of the stopped page. A
- * test never waits on it but while stopped, and a connection that does not open, or closes, leaves the run as
- * without it: a stop no pause bar can answer then goes on at once.
+ * (Step, Resume, Finish, Run to a line), changes the run's breakpoints, asks for an image of the stopped page, and
+ * starts the pause bar's Pick a locator or Record here from outside the page (`takes` in its attach). A test never
+ * waits on it but while stopped, and a connection that does not open, or closes, leaves the run as without it: a stop
+ * no pause bar can answer then goes on at once.
  */
 
 /** How long a worker waits for its run connection to open before its first test runs without it. */
@@ -41,12 +46,16 @@ export interface RunControl {
   runTo(place: Place): void;
 }
 
-/** The stop the editor can answer, while it holds: its page (none for a context without one), and its answer. */
+/**
+ * The stop the editor can answer, while it holds: its page (none for a context without one), its answer, and what
+ * starts an intent in the pause bar.
+ */
 interface HeldStop {
   stop: number;
   page: Page | null;
   bar: boolean;
   answer(choice: PauseAnswer): void;
+  intent(what: RunIntent): IntentAnswer;
 }
 
 /** A stop as the editor hears it. */
@@ -58,6 +67,8 @@ export interface StopToHold {
   /** Whether the pause bar shows in `page`. */
   bar: boolean;
   page: Page | null;
+  /** Start the bar's Pick a locator or Record here from outside the page; refused without it. */
+  intent?(what: RunIntent): IntentAnswer;
 }
 
 let socket: net.Socket | null = null;
@@ -122,6 +133,7 @@ export async function openRunChannel(
     pid: process.pid,
     playwright: worker.config.version,
     reporter: getReporterVersion(),
+    takes: [...RUN_INTENTS],
   });
   return true;
 }
@@ -174,6 +186,13 @@ export function holdStop(stop: StopToHold, onAnswer: (answer: PauseAnswer) => vo
       answered = true;
       onAnswer(choice);
     },
+    intent: (what) =>
+      answered
+        ? { ok: false, message: 'The test went on.' }
+        : (stop.intent?.(what) ?? {
+            ok: false,
+            message: `${RUN_INTENT_NAMES[what]} needs the pause bar in the test's window, and this stop shows none: run the test headed.`,
+          }),
   };
   held = holding;
   tellHub({
@@ -213,6 +232,12 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
       held.answer('resume');
       return;
     case 'request': {
+      if (message.what !== 'image') {
+        const value =
+          held?.stop === message.stop ? held.intent(message.what) : { ok: false, message: 'The test went on.' };
+        tellHub({ type: 'answer', request: message.request, what: message.what, value });
+        return;
+      }
       const page = held?.page ?? null;
       void imageOf(page).then((value) => tellHub({ type: 'answer', request: message.request, what: 'image', value }));
       return;

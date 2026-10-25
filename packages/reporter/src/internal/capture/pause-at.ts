@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import type { BrowserContext, Page, TestInfo } from '@playwright/test';
 import { isInsidePath, parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
-import type { Place, StopReason } from '@piwitests/core/run-channel';
+import type { Place, RunIntent, StopReason } from '@piwitests/core/run-channel';
 import { pauseAnswered, showPauseBar, takePauseState, type PauseBarArg, type PauseChoice } from '@piwitests/picker-dom';
 import { isCi } from './inspect-on-failure.js';
 import { pickLocator, type PickedLocator, type PickerProbe } from './pick-on-failure.js';
@@ -488,6 +488,44 @@ const MAX_NAVIGATED = 10;
 /** How long the highlight may take before the bar shows without it. */
 const HIGHLIGHT_MS = 2000;
 
+/**
+ * The pause bar's Pick a locator and Record here, started from outside the page (the editor's hub, for Piwi Picker):
+ * the bar takes an intent while it waits for its answer, and one handed to it while it is about to (its highlight
+ * still drawing) waits for it; while a pick or a recording runs, none is taken.
+ */
+export class BarIntents {
+  private take: ((intent: RunIntent) => void) | null = null;
+  private queued: RunIntent | null = null;
+  private busy = false;
+
+  /** Hand the bar an intent; false while it runs one, or holds one already. */
+  offer(intent: RunIntent): boolean {
+    if (this.busy || this.queued) return false;
+    const take = this.take;
+    this.take = null;
+    if (take) take(intent);
+    else this.queued = intent;
+    return true;
+  }
+
+  /** The bar waits for its answer: settles with the next intent handed to it. */
+  wait(): Promise<RunIntent> {
+    this.busy = false;
+    const queued = this.queued;
+    this.queued = null;
+    if (queued) return Promise.resolve(queued);
+    return new Promise((resolve) => {
+      this.take = resolve;
+    });
+  }
+
+  /** The bar got its answer: it takes no intent until it waits again. */
+  answered(): void {
+    this.take = null;
+    this.busy = true;
+  }
+}
+
 /** `run`, or undefined as soon as `ended` aborts. */
 function unlessEnded<T>(run: Promise<T>, ended: AbortSignal | undefined): Promise<T | undefined> {
   if (!ended) return run;
@@ -503,10 +541,11 @@ function unlessEnded<T>(run: Promise<T>, ended: AbortSignal | undefined): Promis
 /**
  * Show the pause bar at a stop: highlight the element, show the bar and wait for its answer. **Pick a locator** runs
  * the picker and shows the bar again; `onPick` receives each confirmed pick. With `onRecord` (the editor that started
- * the run can record), **Record here** hands the page to it and shows the bar again once the recording ended. Returns
- * the answer that ends the stop: `resume`, `step` or `finish`; `resume` when the page breaks or `ended` aborts (the
- * test ended under the bar), never throwing. The bar and the highlight are gone once it returns. Every page call it
- * makes must run inside an internal call.
+ * the run can record), **Record here** hands the page to it and shows the bar again once the recording ended. An
+ * intent handed to `intents` while the bar waits is taken as its own button's click, the bar's own answer first, with
+ * the test's window brought to the front. Returns the answer that ends the stop: `resume`, `step` or `finish`; `resume`
+ * when the page breaks or `ended` aborts (the test ended under the bar), never throwing. The bar and the highlight are
+ * gone once it returns. Every page call it makes must run inside an internal call.
  */
 export async function pauseHere(
   page: Page,
@@ -515,6 +554,7 @@ export async function pauseHere(
   onPick: (pick: PickedLocator) => void | Promise<void>,
   onRecord?: () => Promise<void>,
   ended?: AbortSignal,
+  intents?: BarIntents,
 ): Promise<PauseAnswer> {
   let shown: unknown = null;
   try {
@@ -549,9 +589,12 @@ export async function pauseHere(
       try {
         if (ended?.aborted) return 'resume';
         await page.evaluate(showPauseBar, arg);
-        await unlessEnded(page.waitForFunction(pauseAnswered, undefined, { timeout: 0, polling: 250 }), ended);
+        const answered = page.waitForFunction(pauseAnswered, undefined, { timeout: 0, polling: 250 }).then(() => null);
+        const intent = await unlessEnded(intents ? Promise.race([answered, intents.wait()]) : answered, ended);
+        intents?.answered();
         if (ended?.aborted) return 'resume';
-        const choice = (await page.evaluate(takePauseState)) as PauseChoice | null;
+        const choice = ((await page.evaluate(takePauseState)) as PauseChoice | null) ?? intent ?? null;
+        if (choice === intent && intent) await page.bringToFront().catch(() => undefined);
         navigated = 0;
         if (choice === 'resume' || choice === 'step' || choice === 'finish') return choice;
         if (choice === 'record' && onRecord) {
