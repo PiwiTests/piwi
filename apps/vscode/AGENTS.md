@@ -138,6 +138,27 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   without copying anything, and adds the pairing address as `PIWI_EDITOR_SEND`; `RunCommand.notice` (a reporter too
   old for breakpoints) is a warning, once per notice. The API `activate` returns gives the latest run's command
   (`lastRun`).
+- `src/run-view.ts` shows and steers the runs started here (`registerRunControl`), with Piwi's own commands, no debug
+  session: the initialization options say so (`runControl: true`), and the latest `piwi/runSessionChanged` of each ref
+  is kept until one says `ended` (or the service stops: `onDidChangeState`). **Pause** (`piwi.pauseRun`, every run's
+  running workers) and **Stop** (`piwi.stopRun`, which terminates the ref's task) while a run is live, **Resume**,
+  **Step**, **Run to the cursor** (`run-to` the caret's line) and **Finish** (`piwi.resumeRun`, `piwi.stepRun`,
+  `piwi.runToCursor`, `piwi.finishRun`) while a worker is stopped, each `piwi/runControl`, an answer with `ok: false`
+  shown as an information message: in the status bar beside the run's progress (`controlItems`), in the palette
+  and on keys while they apply (the `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped` context keys). A stop
+  opens its file at its line once (`stopKey`), drawn as the execution point (`media/execution-point.svg` in the
+  gutter, `piwi.executionPointBackground`, the debugger's stack frame color by default) with a hover holding the
+  controls, and a CodeLens above it (`pausedText`: `⏸ Paused · <title> · attempt N`, then Resume, Step, Run to cursor,
+  Finish, each naming its worker); a key or a palette command acts on the stop at the caret's line, else the only one,
+  else asks (`stopsFor`). A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the
+  **Piwi: paused page** webview beside the editor (no script, `img-src data:`, its style by nonce: `pausedPageHtml`),
+  again at each such stop and on **Piwi: Show the paused page** (`piwi.showPausedPage`). The breakpoints
+  `breakpointsForRun` gives go to each live run as they change (`vscode.debug.onDidChangeBreakpoints`, the
+  `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, only to a run whose breakpoints differ from those its
+  command started with or was last sent (`breakpointUpdates`), and once to a run as its first worker connects.
+  `src/run-control.ts` is its pure half, tested without an editor; the API `activate` returns gives the sessions
+  (`runSessions`), the lines drawn as the execution point (`executionPoints`) and what the paused page shows
+  (`pausedPage`).
 - `src/send-listener.ts` is the Send to editor endpoint: `POST /piwi/send` on `127.0.0.1`, on the port kept in
   global state, with the token from `SecretStorage` (`piwi.sendToken`); **Piwi: Pair with Piwi Picker** starts it and
   copies the pairing address as the browser's machine reaches it (`pickerPairing`: `vscode.env.asExternalUri`, which
@@ -213,7 +234,9 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
 - The default keybindings (`contributes.keybindings`: `ctrl+shift+alt+r`, `cmd` on macOS, records at the caret and
   stops the recording; `ctrl+shift+alt+f` re-runs the failing tests; `ctrl+shift+alt+k`, in a focused editor, runs the
   test at the cursor: the JetBrains plugin's chords for the same actions) stay free in VS Code's default keymap on
-  Windows, Linux and macOS, and in the JetBrains IDEs' bundled keymaps. VS Code binds `ctrl+shift+alt` (`cmd` on
+  Windows, Linux and macOS, and in the JetBrains IDEs' bundled keymaps. A run's controls take the debugger's keys
+  instead, only while they apply and no debug session runs (`!inDebugMode`): `f6` pauses, `shift+f5` stops, `f5`
+  resumes, `f10` steps, `shift+f11` finishes and `ctrl+f10` (`cmd+f10`) runs to the cursor. VS Code binds `ctrl+shift+alt` (`cmd` on
   macOS) with `a`, `c`, `g`, `i`, `l`, `n` and `o`, the JetBrains keymaps with `c`, `d`, `e`, `h`, `i`, `j`, `l`, `m`,
   `n`, `p`, `s`, `t`, `u`, `v`, `w`, `x` and `y`; `ctrl+alt+<key>` and the `ctrl+k` chords are taken too. The extension declares no support for untrusted and virtual workspaces
   (`capabilities` in `package.json`): the service reads the files from disk and runs Playwright.
@@ -264,5 +287,6 @@ The integration suite (`tests/integration/`) starts a stub instance, writes a fi
 through its public commands (`vscode.executeCodeActionProvider`, `vscode.executeCodeLensProvider`, …), and through the
 API `activate` returns (`pageCandidates`, the service's answer for a position, `failureChildren`, the failures view's
 nodes, `lastRun`, the command a breakpoint's run was given, `gutter`, the tests last drawn in a file's gutter,
-`coverage`, a file's coverage answer and whether its marks are shown, and `testExplorer`, the Testing view's tests
-with the result last shown for each).
+`coverage`, a file's coverage answer and whether its marks are shown, `testExplorer`, the Testing view's tests
+with the result last shown for each, and `runSessions`, `executionPoints` and `pausedPage`, a run's stops as a fake
+worker on the run channel plays them).

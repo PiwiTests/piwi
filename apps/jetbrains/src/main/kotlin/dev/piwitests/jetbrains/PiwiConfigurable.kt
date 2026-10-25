@@ -149,8 +149,11 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
 
     override fun apply() {
         val before = connection()
+        val breakpoints = service.local().breakpoints
         super.apply()
         if (connection() != before) service.sendCredentials()
+        // The runs going on stop at the breakpoints, or at none, from now on.
+        if (service.local().breakpoints != breakpoints) project.getServiceIfCreated(PiwiRunSessions::class.java)?.breakpointsChanged()
         show()
     }
 

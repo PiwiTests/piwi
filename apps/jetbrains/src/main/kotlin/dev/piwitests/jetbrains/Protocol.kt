@@ -655,6 +655,81 @@ data class ShareDesktopJobParams(val jobId: String)
 
 data class ShareDesktopJobResult(val ok: Boolean = false, val message: String? = null, val url: String? = null)
 
+/**
+ * Where a worker of a run the IDE started stands stopped (`piwi/runSessionChanged`): why (`breakpoint`, `step`,
+ * `pause`, `run-to`, `page-pause`, `other`), the call about to run as Playwright titles it, its file's URI and 0-based
+ * line and character, the locator it acts on, whether Piwi's pause bar shows in the page (`bar`, false in a headless
+ * run), and when it stopped.
+ */
+data class RunStop(
+    val reason: String? = null,
+    val title: String? = null,
+    val uri: String? = null,
+    val line: Int = 0,
+    val character: Int? = null,
+    val locator: String? = null,
+    val bar: Boolean = false,
+    val since: String? = null,
+)
+
+/**
+ * A test a worker runs: Playwright's id, its describe blocks' titles then its own, its spec and 0-based line, its
+ * project, the retry (0 on the first attempt), and why it never stops (`cannotPause`), null when it can.
+ */
+data class RunTest(
+    val id: String? = null,
+    val title: List<String>? = null,
+    val uri: String? = null,
+    val line: Int = 0,
+    val project: String? = null,
+    val retry: Int = 0,
+    val cannotPause: String? = null,
+)
+
+/**
+ * A worker of a run, by Playwright's worker index: `running` a test, `stopped` before one of its calls, or `between`
+ * tests; `pausing` once a Pause reached it until it stops.
+ */
+data class RunWorker(
+    val worker: Int = 0,
+    val parallelIndex: Int = 0,
+    val state: String? = null,
+    val test: RunTest? = null,
+    val stop: RunStop? = null,
+    val pausing: Boolean = false,
+)
+
+/**
+ * `piwi/runSessionChanged`: a run the IDE started, by the ref of its command, with the folder of its Playwright config
+ * and its workers connected now; the last one has `ended`, and a later worker of the ref starts a new session.
+ */
+data class RunSession(
+    val ref: String? = null,
+    val root: String? = null,
+    val workers: List<RunWorker>? = null,
+    val ended: Boolean = false,
+)
+
+/**
+ * `piwi/runControl`: `pause` (every running worker without `worker`), `step`, `resume`, `finish`, or `run-to` with
+ * `place` (the stopped worker, which `worker` names when several are). Answered with what was asked or why not.
+ */
+data class RunControlParams(val ref: String, val worker: Int? = null, val action: String, val place: EditorBreakpoint? = null)
+
+data class RunControlResult(val ok: Boolean = false, val message: String? = null)
+
+/** `piwi/setRunBreakpoints`: the IDE's line breakpoints for the run of `ref`, in place of those it had. */
+data class SetRunBreakpointsParams(val ref: String, val places: List<EditorBreakpoint>)
+
+/** `piwi/pausedPage`: an image of the page of a stopped worker (`what` is `image`). */
+data class PausedPageParams(val ref: String, val worker: Int, val what: String = "image")
+
+/** A JPEG of a stopped page, in base64, without the pause bar. */
+data class PausedImage(val mime: String? = null, val data: String? = null)
+
+/** The image; null when the worker is not stopped, has no page, or did not answer within 10 seconds. */
+data class PausedPageResult(val image: PausedImage? = null)
+
 /** The service's custom requests beside the language server protocol. */
 interface PiwiLanguageServer : LanguageServer {
     @JsonRequest("piwi/fileSummary")
@@ -738,6 +813,12 @@ interface PiwiLanguageServer : LanguageServer {
     @JsonRequest("piwi/applyPick")
     fun applyPick(params: ApplyPickParams): CompletableFuture<ApplyPickResult?>
 
+    @JsonRequest("piwi/runControl")
+    fun runControl(params: RunControlParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/pausedPage")
+    fun pausedPage(params: PausedPageParams): CompletableFuture<PausedPageResult?>
+
     @JsonNotification("piwi/setCredentials")
     fun setCredentials(params: EditorCredentials)
 
@@ -752,4 +833,7 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonNotification("piwi/declineRecord")
     fun declineRecord(params: DeclineRecordParams)
+
+    @JsonNotification("piwi/setRunBreakpoints")
+    fun setRunBreakpoints(params: SetRunBreakpointsParams)
 }

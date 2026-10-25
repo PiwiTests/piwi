@@ -48,6 +48,18 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(listOf(record), strokes("Piwi.RecordHere"))
         assertEquals("the same chord stops the recording", listOf(record), strokes("Piwi.StopRecording"))
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift F")), strokes("Piwi.RerunFailing"))
+        // A run's controls use the debugger's shortcuts, in this keymap as in every other.
+        for ((control, debugger) in listOf(
+            "Piwi.PauseRun" to "Resume", "Piwi.ResumeRun" to "Resume", "Piwi.StepRun" to "StepOver",
+            "Piwi.RunToCaret" to "RunToCursor", "Piwi.FinishRun" to "StepOut",
+        )) {
+            assertEquals(control, strokes(debugger), strokes(control))
+        }
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("F9")), strokes("Piwi.ResumeRun"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("F8")), strokes("Piwi.StepRun"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("alt F9")), strokes("Piwi.RunToCaret"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("shift F8")), strokes("Piwi.FinishRun"))
+        for (id in PiwiStatusBarWidget.RUN_ACTIONS) assertNotNull(id, ActionManager.getInstance().getAction(id))
     }
 
     /** The service's process gets the IDE's HTTP proxy, as the variables the service reads; nothing when the IDE reaches the instance directly. */
@@ -773,6 +785,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     InitializeParams().apply {
                         capabilities = ClientCapabilities()
                         workspaceFolders = listOf(WorkspaceFolder(dir.toURI().toString(), "shop"))
+                        initializationOptions = PiwiLspServerDescriptor(project).createInitializationOptions()
                     },
                 ).get(20, TimeUnit.SECONDS)
                 server.initialized(InitializedParams())
@@ -855,11 +868,90 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 val run = server.runArgs(args).get(10, TimeUnit.SECONDS)
                 assertEquals("lines", run?.env?.get("PIWI_COVERAGE_SERVER"))
                 assertTrue(client.runStatusChanges > 0)
+
+                runChannel(server, client, run!!, spec, pageObject)
             } finally {
                 process.destroy()
             }
         } finally {
             stub.stop()
+        }
+    }
+
+    /**
+     * A worker of the run on the channel its command names, as the capture fixtures play it: the session the client
+     * hears, and the controls, breakpoints and image request it sends, read with the Kotlin protocol classes.
+     */
+    private fun runChannel(server: PiwiLanguageServer, client: TestClient, run: RunCommand, spec: String, pageObject: String) {
+        val channel = run.env?.get("PIWI_RUN_CHANNEL")
+        assertNotNull("the run names the run channel", channel)
+        val (path, token) = channel!!.substringBeforeLast('#') to channel.substringAfterLast('#')
+        val ref = run.ref!!
+        val socket = java.nio.channels.SocketChannel.open(java.net.UnixDomainSocketAddress.of(path))
+        val heard = java.util.concurrent.CopyOnWriteArrayList<com.google.gson.JsonObject>()
+        // One line of JSON a message, read and written on the channel itself: a reader thread and the test's writes.
+        val reader = Thread {
+            val buffer = java.nio.ByteBuffer.allocate(1 shl 16)
+            val line = java.io.ByteArrayOutputStream()
+            runCatching {
+                while (socket.read(buffer.clear()) >= 0) {
+                    buffer.flip()
+                    while (buffer.hasRemaining()) {
+                        val byte = buffer.get()
+                        if (byte != '\n'.code.toByte()) {
+                            line.write(byte.toInt())
+                            continue
+                        }
+                        heard += com.google.gson.JsonParser.parseString(line.toString(Charsets.UTF_8)).asJsonObject
+                        line.reset()
+                    }
+                }
+            }
+        }.apply { isDaemon = true; start() }
+        fun send(json: String) {
+            val bytes = java.nio.ByteBuffer.wrap("$json\n".toByteArray())
+            while (bytes.hasRemaining()) socket.write(bytes)
+        }
+        fun <T> waitFor(what: String, read: () -> T?): T {
+            val deadline = System.currentTimeMillis() + 10_000
+            while (System.currentTimeMillis() < deadline) {
+                read()?.let { return it }
+                Thread.sleep(20)
+            }
+            throw AssertionError("timed out waiting for $what")
+        }
+        try {
+            val cwd = com.google.gson.Gson().toJson(run.cwd)
+            send("""{"type":"run-attach","token":"$token","ref":"$ref","cwd":$cwd,"workerIndex":0,"parallelIndex":0,"pid":1,"playwright":"1.64.1","reporter":"0.60.0"}""")
+            send("""{"type":"test-begin","testId":"t1","title":["removes a row"],"file":"tests/checkout.spec.ts","line":4,"project":"chromium","retry":1,"cannotPause":null}""")
+            send("""{"type":"stopped","stop":1,"reason":"breakpoint","title":"Click locator('.cart-row').nth(2)","place":{"file":"tests/pages/checkout.page.ts","line":5,"column":21},"locator":"locator('.cart-row').nth(2)","bar":false}""")
+            val session = waitFor("the stopped session") { client.sessions.lastOrNull { it.ref == ref && it.workers?.firstOrNull()?.stop != null } }
+            val worker = session.workers!!.single()
+            assertEquals("stopped", worker.state)
+            assertEquals(RunTest("t1", listOf("removes a row"), spec, 3, "chromium", 1, null), worker.test)
+            val stop = worker.stop!!
+            assertEquals(listOf("breakpoint", "Click locator('.cart-row').nth(2)", pageObject, "4", "20", "false"), listOf(stop.reason, stop.title, stop.uri, "${stop.line}", "${stop.character}", "${stop.bar}"))
+            assertEquals("⏸ Paused · Click locator('.cart-row').nth(2) · attempt 2", Glue.pausedText(stop, worker.test))
+
+            assertEquals(RunControlResult(true, "Stepping to the next call."), server.runControl(RunControlParams(ref, action = "step")).get(5, TimeUnit.SECONDS))
+            waitFor("the step") { heard.firstOrNull { it["type"].asString == "control" && it["action"].asString == "step" && it["stop"].asInt == 1 } }
+            val refused = server.runControl(RunControlParams(ref, 7, "resume")).get(5, TimeUnit.SECONDS)
+            assertEquals(RunControlResult(false, "Worker 7 of this run is not connected to the editor."), refused)
+
+            server.setRunBreakpoints(SetRunBreakpointsParams(ref, listOf(EditorBreakpoint(spec, 4))))
+            val places = waitFor("the breakpoints") { heard.firstOrNull { it["type"].asString == "breakpoints" } }["places"].asJsonArray
+            assertEquals("tests/checkout.spec.ts" to 5, places.single().asJsonObject.let { it["file"].asString to it["line"].asInt })
+
+            val page = server.pausedPage(PausedPageParams(ref, 0))
+            val request = waitFor("the image asked") { heard.firstOrNull { it["type"].asString == "request" } }
+            send("""{"type":"answer","request":${request["request"].asInt},"what":"image","value":{"mime":"image/jpeg","data":"/9j/"}}""")
+            assertEquals(PausedImage("image/jpeg", "/9j/"), page.get(5, TimeUnit.SECONDS)?.image)
+
+            server.commandEnded(CommandEndedParams(ref, 0))
+            waitFor("the end of the run") { client.sessions.lastOrNull { it.ref == ref }?.takeIf { it.ended } }
+        } finally {
+            socket.close()
+            reader.join(1_000)
         }
     }
 
@@ -920,6 +1012,13 @@ class PiwiPluginTest : BasePlatformTestCase() {
 
     class TestClient : LanguageClient {
         @Volatile var runStatusChanges = 0
+
+        val sessions = java.util.concurrent.CopyOnWriteArrayList<RunSession>()
+
+        @JsonNotification("piwi/runSessionChanged")
+        fun runSessionChanged(session: RunSession) {
+            sessions += session
+        }
 
         @JsonNotification("piwi/runStatusChanged")
         fun runStatusChanged(@Suppress("UNUSED_PARAMETER") status: RunStatusResult) {

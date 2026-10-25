@@ -30,8 +30,7 @@ In VS Code, the extension also opens a path clicked in the dashboard, with no wo
 
 In VS Code, the first workspace with a Playwright config opens the **Get started with Piwi** walkthrough, once per
 machine, unless `workbench.welcomePage.walkthroughs.openOnInstall` is off; **Piwi: Get started** opens it again. Its
-steps connect, open the latest CI run's failures, run the failing tests, record a test, give your agent the MCP server
-and open the settings. A JetBrains IDE shows one notification instead: [JetBrains plugin](./jetbrains#install-and-start).
+steps cover the connection, the failures, a run, a recording, the MCP server and the settings. A JetBrains IDE shows one notification instead: [JetBrains plugin](./jetbrains#install-and-start).
 
 Nothing from your workspace is sent to the instance: the project's
 [locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are compared with
@@ -122,21 +121,21 @@ your API keys. The desktop app keeps its own token.
 | Piwi: Pair with Piwi Picker | Copy the address [Piwi Picker sends to](./editor-recording#send-from-piwi-picker) |
 | Piwi: Record here, Record a new test file | Record at the cursor, or into a new spec: [Record tests from the editor](./editor-recording) |
 | Piwi: Stop recording, Pause recording, Resume recording | Control the recording in progress |
+| Piwi: Pause the run, Resume the run, Step to the next call, Run to the cursor | [Pause and step from the editor](./editor-run-control) |
 | Piwi: Toggle the coverage marks | Show or hide the [coverage marks](./editor-coverage) |
 | Piwi: Open the log | Show the editor service's log; the `piwi.trace.server` setting adds its traffic |
 | Piwi: Get started | Open the walkthrough |
 
-Three commands have a shortcut, the same in VS Code and the JetBrains IDEs and free in their default keymaps on
-Windows, Linux and macOS: `Ctrl+Shift+Alt+K` runs the test at the cursor, `Ctrl+Shift+Alt+F` re-runs the failing
+Three commands have the same shortcut in VS Code and the JetBrains IDEs, free in their default keymaps on Windows,
+Linux and macOS: `Ctrl+Shift+Alt+K` runs the test at the cursor, `Ctrl+Shift+Alt+F` re-runs the failing
 tests, and `Ctrl+Shift+Alt+R` records at the cursor, then stops the recording; on macOS, `Cmd` takes the place of
 `Ctrl`. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`), **Settings → Keymap** in a
 JetBrains IDE (search `Piwi`).
 
 ## JetBrains IDEs
 
-The plugin runs in WebStorm, IntelliJ IDEA Ultimate, Rider and the other JetBrains IDEs with the LSP API, with the
-project's Node.js interpreter, 20 or later. It shows the failures in the Piwi tool window, the lines above the code
-with Code Vision, and its actions under **Tools → Piwi**: [JetBrains plugin](./jetbrains).
+The plugin runs with the project's Node.js interpreter, 20 or later, and shows the failures in the Piwi tool window,
+the lines above the code with Code Vision, and its actions under **Tools → Piwi**: [JetBrains plugin](./jetbrains).
 
 ## Related
 

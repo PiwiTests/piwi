@@ -358,6 +358,46 @@
         "command": "piwi.resumeRecording",
         "title": "Resume recording",
         "category": "Piwi"
+      },
+      {
+        "command": "piwi.pauseRun",
+        "title": "Pause the run",
+        "category": "Piwi",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "piwi.stopRun",
+        "title": "Stop the run",
+        "category": "Piwi",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "piwi.resumeRun",
+        "title": "Resume the run",
+        "category": "Piwi",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "piwi.stepRun",
+        "title": "Step to the next call",
+        "category": "Piwi",
+        "icon": "$(debug-step-over)"
+      },
+      {
+        "command": "piwi.runToCursor",
+        "title": "Run to the cursor",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.finishRun",
+        "title": "Finish the test without stopping again",
+        "category": "Piwi",
+        "icon": "$(debug-step-out)"
+      },
+      {
+        "command": "piwi.showPausedPage",
+        "title": "Show the paused page",
+        "category": "Piwi"
       }
     ],
     "menus": {
@@ -441,6 +481,34 @@
         {
           "command": "piwi.resumeRecording",
           "when": "piwi.recordingPaused"
+        },
+        {
+          "command": "piwi.pauseRun",
+          "when": "piwi.runPausable"
+        },
+        {
+          "command": "piwi.stopRun",
+          "when": "piwi.runActive"
+        },
+        {
+          "command": "piwi.resumeRun",
+          "when": "piwi.runStopped"
+        },
+        {
+          "command": "piwi.stepRun",
+          "when": "piwi.runStopped"
+        },
+        {
+          "command": "piwi.runToCursor",
+          "when": "piwi.runStopped"
+        },
+        {
+          "command": "piwi.finishRun",
+          "when": "piwi.runStopped"
+        },
+        {
+          "command": "piwi.showPausedPage",
+          "when": "piwi.runStopped"
         }
       ],
       "editor/context": [
@@ -633,6 +701,37 @@
         "key": "ctrl+shift+alt+k",
         "mac": "cmd+shift+alt+k",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "piwi.pauseRun",
+        "key": "f6",
+        "when": "piwi.runPausable && !inDebugMode"
+      },
+      {
+        "command": "piwi.stopRun",
+        "key": "shift+f5",
+        "when": "piwi.runActive && !inDebugMode"
+      },
+      {
+        "command": "piwi.resumeRun",
+        "key": "f5",
+        "when": "piwi.runStopped && !inDebugMode"
+      },
+      {
+        "command": "piwi.stepRun",
+        "key": "f10",
+        "when": "piwi.runStopped && !inDebugMode"
+      },
+      {
+        "command": "piwi.runToCursor",
+        "key": "ctrl+f10",
+        "mac": "cmd+f10",
+        "when": "editorTextFocus && piwi.runStopped && !inDebugMode"
+      },
+      {
+        "command": "piwi.finishRun",
+        "key": "shift+f11",
+        "when": "piwi.runStopped && !inDebugMode"
       }
     ],
     "configuration": {
@@ -791,6 +890,16 @@
           "light": "#0969da1a",
           "highContrast": "#2f81f740",
           "highContrastLight": "#0969da26"
+        }
+      },
+      {
+        "id": "piwi.executionPointBackground",
+        "description": "The background of the line a test Piwi started is stopped at, as the debugger's current stack frame by default.",
+        "defaults": {
+          "dark": "editor.stackFrameHighlightBackground",
+          "light": "editor.stackFrameHighlightBackground",
+          "highContrast": "editor.stackFrameHighlightBackground",
+          "highContrastLight": "editor.stackFrameHighlightBackground"
         }
       }
     ],

@@ -12,7 +12,7 @@ stepped it and let it pass. The same session reaches the dashboard, as a live vi
 tools that follow the run, read the stopped page as its accessibility tree and act on it.
 
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
-(Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PR 2 is half built (below), and PRs 3 to 9
+(Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PR 2 is built too (below), and PRs 3 to 9
 are not. PR 1 differs from the text in four ways. A headed browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs, and a run under Playwright's own debugger (`--debug`, `--debug=cli`, `PWDEBUG`) ignores the
@@ -22,10 +22,10 @@ through the runner's own counter (`_setIgnoreTimeouts`, feature-checked). The re
 out of the steps' durations and start times, from the `piwi-pauses` attachment, before they are sent, so the server is
 unchanged and the run is not marked interactive yet; D10's rule on notifications waits for the runs that can pause
 outside the editor. `page.pause()` is a stop of the debugger at its line (`page-pause`), taken over
-in any headed run with breakpoints as well as in one the editor started. PR 2's service half is built: the run
+in any headed run with breakpoints as well as in one the editor started. PR 2's service half is the run
 channel (Part 2: `@piwitests/core/run-channel`, the worker's run connection, the socket that takes both kinds of
-connection) and the session in the editor service with its protocol (Part 3.1); the two IDE clients, which complete
-PR 2, are not. That half differs from the text in eight ways. `run-attach` names the run's `ref` and working directory
+connection) and the session in the editor service with its protocol (Part 3.1); its IDE half is both clients
+(Part 3.2). The service half differs from the text in eight ways. `run-attach` names the run's `ref` and working directory
 (`cwd`, which every place is relative to); a stop is named by the worker's own number for it (`stop`) rather than its
 context, in `stopped`, `running` and every answer to it, so an answer that comes after the stop ended (the bar
 answered first) is dropped; `stopped` says whether Piwi's bar shows in the page (`bar`); `test-begin` says why a test
@@ -40,7 +40,20 @@ soon as it hears it, with a `piwi/notice`, so a headless run with today's client
 `--headed` to a run with breakpoints. A session ends with its command (`piwi/commandEnded`) or 5 s after its last
 worker left, since Playwright starts a new worker after a failure, and `piwi/setRunBreakpoints` is a notification
 whose breakpoints the hub also sends each worker that connects later. The worker sends no event per call, so the 300
-ms pace applies to its tests' start and end. The spikes in the
+ms pace applies to its tests' start and end. The IDE half differs from the text in three ways. The controls'
+keys are each IDE's own debugger keys, which are Piwi's only while a control applies and no debug session runs (VS
+Code: `F6` Pause, `F5` Resume, `F10` Step, `Ctrl+F10` Run to the cursor, `Shift+F11` Finish, `Shift+F5` Stop;
+JetBrains: the shortcuts of Resume Program for Pause and Resume, of Step Over, Run to Cursor and Step Out, in every
+keymap, `F9`, `F8`, `Alt+F9` and `Shift+F8` in the default one). In a JetBrains IDE the
+controls are not in the Run tool window's toolbar, which the platform's console for a command fixes to Rerun, Stop
+and Close (`RunContentExecutor`), but in the status bar item's menu, which also says where a test is stopped, under
+**Tools → Piwi**, in the inlay above the paused line and in its gutter arrow's popup; Stop there is the Run tool
+window's own or Piwi's action, with no key of its own. A breakpoint on a line whose calls never stop is not marked:
+the service does not say which lines hold a call Playwright's debugger stops at. Both clients say they answer stops,
+so the service resumes a headless stop at once only for an older client. A headless stop's image is shown beside the
+editor in VS Code (a webview with no script) and in a **Paused Page** tab of the Piwi tool window in a JetBrains IDE,
+taken again at each stop; with several workers stopped, a key or a command acts on the one stopped at the caret's
+line, else asks, and the controls above a line act on its worker. The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of
 [`1.0-stabilization.md`](1.0-stabilization.md).

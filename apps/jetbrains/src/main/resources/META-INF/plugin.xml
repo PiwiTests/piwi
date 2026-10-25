@@ -31,7 +31,9 @@
           Playwright and writes what you do there into the test, calling your page objects when connected. No
           instance needed.</li>
       <li><b>The status bar.</b> The latest run of the Playwright config you are editing in, the run you started as it
-          runs, and what it changed once it ended, in red while tests fail; a click lists Piwi's actions.</li>
+          runs, and what it changed once it ended, in red while tests fail; a click lists Piwi's actions. That run
+          pauses at your breakpoints, its paused line marked in the editor, and steps, runs to the caret or resumes
+          with the debugger's keys.</li>
     </ul>
 
     <p><b>Connect</b></p>
@@ -76,7 +78,8 @@
 
     <!--
       The shortcuts go in the default keymap, which every bundled keymap descends from: the macOS keymaps turn their
-      ctrl into the command key. Each is a chord no bundled keymap uses, in the ctrl alt shift family.
+      ctrl into the command key. Each typing action's is a chord no bundled keymap uses, in the ctrl alt shift family; a
+      run's controls use the debugger's shortcuts while they apply (below).
     -->
     <actions>
         <group id="Piwi.Actions" text="Piwi" popup="true">
@@ -168,6 +171,34 @@
                 <add-to-group group-id="EditorPopupMenu" anchor="last"/>
                 <override-text place="EditorPopup" text="Piwi: Resume Recording"/>
             </action>
+            <separator/>
+            <!--
+              A run's controls use the debugger's own shortcuts, in every keymap (Resume Program's pauses a running test
+              and resumes a stopped one, Step Over's steps, Run to Cursor's runs to the caret, Step Out's finishes):
+              each is enabled only while a run Piwi started is live, and from the keyboard only while no debug session
+              runs, so the debugger keeps its keys otherwise.
+            -->
+            <action id="Piwi.PauseRun" class="dev.piwitests.jetbrains.PauseRunAction" text="Pause the Run"
+                    icon="AllIcons.Actions.Pause" use-shortcut-of="Resume"
+                    description="Stop the tests of the run started from Piwi before their next call"/>
+            <action id="Piwi.ResumeRun" class="dev.piwitests.jetbrains.ResumeRunAction" text="Resume the Run"
+                    icon="AllIcons.Actions.Resume" use-shortcut-of="Resume"
+                    description="Run the stopped test on to the next breakpoint"/>
+            <action id="Piwi.StepRun" class="dev.piwitests.jetbrains.StepRunAction" text="Step to the Next Call"
+                    icon="AllIcons.Actions.TraceOver" use-shortcut-of="StepOver"
+                    description="Run the stopped test's call and stop again before the next one"/>
+            <action id="Piwi.RunToCaret" class="dev.piwitests.jetbrains.RunToCaretAction" text="Run to Caret"
+                    icon="AllIcons.Actions.RunToCursor" use-shortcut-of="RunToCursor"
+                    description="Run the stopped test on to the first call on the caret's line"/>
+            <action id="Piwi.FinishRun" class="dev.piwitests.jetbrains.FinishRunAction" text="Finish the Test"
+                    icon="AllIcons.Actions.StepOut" use-shortcut-of="StepOut"
+                    description="Run the stopped test on without stopping at a breakpoint again in this attempt"/>
+            <action id="Piwi.ShowPausedPage" class="dev.piwitests.jetbrains.ShowPausedPageAction" text="Show the Paused Page"
+                    icon="AllIcons.Actions.Preview"
+                    description="An image of the stopped test's page, in the Piwi tool window"/>
+            <action id="Piwi.StopRun" class="dev.piwitests.jetbrains.StopRunAction" text="Stop the Run"
+                    icon="AllIcons.Actions.Suspend"
+                    description="End the process of the run started from Piwi"/>
             <separator/>
             <action id="Piwi.OpenSettings" class="dev.piwitests.jetbrains.OpenSettingsAction" text="Settings…"
                     icon="AllIcons.General.Settings"

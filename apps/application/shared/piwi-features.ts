@@ -614,6 +614,15 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/editor-breakpoints',
       },
       {
+        title: 'Pause and step from the editor',
+        summary:
+          'Pause a run Piwi started from VS Code or a JetBrains IDE, step it call by call, run it to the cursor, resume or finish it, with the paused line marked in the editor and your breakpoints applied as you change them.',
+        needs: ['fixtures'],
+        where:
+          'Piwi: Pause the run, Resume the run, Step to the next call, Run to the cursor; Tools → Piwi in a JetBrains IDE',
+        doc: 'features/editor-run-control',
+      },
+      {
         title: 'Record tests from the editor',
         summary:
           "A browser your project's own Playwright opens from VS Code or a JetBrains IDE, and each step you take there written at the cursor as you go, with verified locators and calls to your page objects.",

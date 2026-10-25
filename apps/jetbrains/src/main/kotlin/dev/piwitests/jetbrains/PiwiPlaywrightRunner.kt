@@ -9,6 +9,7 @@ import com.intellij.execution.configuration.EnvironmentVariablesData
 import com.intellij.execution.configurations.ConfigurationTypeUtil
 import com.intellij.execution.executors.DefaultRunExecutor
 import com.intellij.execution.process.ProcessEvent
+import com.intellij.execution.process.ProcessHandler
 import com.intellij.execution.process.ProcessListener
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder
 import com.intellij.execution.runners.ProgramRunner
@@ -48,8 +49,18 @@ internal object PlaywrightRunnerLauncher {
         return settings
     }
 
-    /** Start the run, [onEnd] getting its exit code; false when the runner does not take it. On the event thread. */
-    fun start(project: Project, cwd: String, args: List<String>, env: Map<String, String>, onEnd: (Int) -> Unit): Boolean {
+    /**
+     * Start the run, [onStart] getting its process and [onEnd] its exit code; false when the runner does not take it. On
+     * the event thread.
+     */
+    fun start(
+        project: Project,
+        cwd: String,
+        args: List<String>,
+        env: Map<String, String>,
+        onStart: (ProcessHandler) -> Unit = {},
+        onEnd: (Int) -> Unit,
+    ): Boolean {
         val settings = configure(project, cwd, args, env) ?: return false
         val environment = ExecutionEnvironmentBuilder.createOrNull(DefaultRunExecutor.getRunExecutorInstance(), settings)
             ?.build() ?: return false
@@ -59,11 +70,13 @@ internal object PlaywrightRunnerLauncher {
             true,
             object : ProgramRunner.Callback {
                 override fun processStarted(descriptor: RunContentDescriptor?) {
-                    descriptor?.processHandler?.addProcessListener(
+                    val process = descriptor?.processHandler ?: return
+                    process.addProcessListener(
                         object : ProcessListener {
                             override fun processTerminated(event: ProcessEvent) = onEnd(event.exitCode)
                         },
                     )
+                    onStart(process)
                 }
             },
         )

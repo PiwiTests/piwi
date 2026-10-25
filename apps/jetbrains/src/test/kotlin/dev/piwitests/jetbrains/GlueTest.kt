@@ -536,6 +536,96 @@ class GlueTest {
         assertEquals(emptyList<EditorBreakpoint>(), Glue.runBreakpoints(listOf(Glue.BreakpointAt(spec.toString(), 1)), emptyList()))
     }
 
+    private val specUri = "file:///work/shop/tests/checkout.spec.ts"
+    private val pageUri = "file:///work/shop/tests/pages/checkout.page.ts"
+
+    private fun runTest(retry: Int = 0, cannotPause: String? = null) =
+        RunTest("t1", listOf("checkout", "pays"), specUri, 2, "chromium", retry, cannotPause)
+
+    private fun stopAt(uri: String, line: Int, bar: Boolean = true) = RunStop(
+        "breakpoint", "Fill \"WELCOME10\" getByLabel('Coupon')", uri, line, 4, "getByLabel('Coupon')", bar, "2026-10-25T10:00:0$line.000Z",
+    )
+
+    private fun session(ref: String, vararg workers: RunWorker, ended: Boolean = false) = RunSession(ref, "/work/shop", workers.toList(), ended)
+
+    @Test
+    fun `a run's session is kept until it ends`() {
+        val running = session("ed-1", RunWorker(0, 0, "running", runTest()))
+        val stopped = session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5)))
+        var kept = Glue.withSession(Glue.withSession(Glue.withSession(emptyMap(), running), session("ed-2")), stopped)
+        assertEquals(listOf("ed-1", "ed-2"), kept.keys.toList())
+        assertSame(stopped, kept["ed-1"])
+        kept = Glue.withSession(kept, session("ed-1", ended = true))
+        assertEquals(listOf("ed-2"), kept.keys.toList())
+        assertEquals(kept, Glue.withSession(kept, RunSession(ref = null)))
+    }
+
+    @Test
+    fun `the controls offer Pause and Stop while a test runs, Resume and the others while one is stopped`() {
+        assertEquals(Glue.RunControls(active = false, pausable = false, pausing = false, stopped = false), Glue.runControls(emptyMap()))
+        val running = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest()), RunWorker(1, 1, "between")))
+        assertEquals(Glue.RunControls(active = true, pausable = true, pausing = false, stopped = false), Glue.runControls(running))
+        val pausing = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), pausing = true)))
+        assertEquals(Glue.RunControls(active = true, pausable = false, pausing = true, stopped = false), Glue.runControls(pausing))
+        assertEquals("Piwi: pausing…", Glue.runControlStatus(Glue.runControls(pausing), emptyList()))
+        val ci = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(cannotPause = "running under CI"))))
+        assertEquals(false, Glue.runControls(ci).pausable)
+        val stopped = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4))))
+        assertEquals(Glue.RunControls(active = true, pausable = false, pausing = false, stopped = true), Glue.runControls(stopped))
+        assertEquals("Piwi: paused · checkout.page.ts:5", Glue.runControlStatus(Glue.runControls(stopped), Glue.stopsOf(stopped)))
+        assertEquals(null, Glue.runControlStatus(Glue.runControls(running), emptyList()))
+    }
+
+    @Test
+    fun `a stop says what is about to run, with the attempt after the first`() {
+        assertEquals("⏸ Paused · Fill \"WELCOME10\" getByLabel('Coupon')", Glue.pausedText(stopAt(specUri, 5), runTest()))
+        assertEquals("⏸ Paused · Fill \"WELCOME10\" getByLabel('Coupon') · attempt 2", Glue.pausedText(stopAt(specUri, 5), runTest(retry = 1)))
+        val sessions = mapOf(
+            "ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5)), RunWorker(1, 1, "running", runTest())),
+            "ed-2" to session("ed-2", RunWorker(3, 3, "stopped", runTest(), stopAt(pageUri, 8))),
+        )
+        val stops = Glue.stopsOf(sessions)
+        assertEquals(listOf("ed-1" to 0, "ed-2" to 3), stops.map { it.ref to it.worker })
+        assertEquals(2, stops.map(Glue::stopKey).toSet().size)
+        assertEquals("⏸ Paused · Fill \"WELCOME10\" getByLabel('Coupon') · checkout › pays · checkout.page.ts:9 · worker 3", Glue.stopLabel(stops[1]))
+        assertEquals("Piwi: 2 tests paused", Glue.runControlStatus(Glue.runControls(sessions), stops))
+    }
+
+    @Test
+    fun `a control at the caret acts on the stop at its line, else on the only one, else asks`() {
+        val one = Glue.ShownStop("ed-1", 0, stopAt(specUri, 5), runTest())
+        val two = Glue.ShownStop("ed-1", 1, stopAt(pageUri, 8), runTest())
+        assertEquals(listOf(one), Glue.stopsFor(listOf(one), pageUri, 1))
+        assertEquals(listOf(two), Glue.stopsFor(listOf(one, two), "file:/work/shop/tests/pages/checkout.page.ts", 8))
+        assertEquals(listOf(one, two), Glue.stopsFor(listOf(one, two), pageUri, 7))
+        assertEquals(listOf(one, two), Glue.stopsFor(listOf(one, two), null, null))
+    }
+
+    @Test
+    fun `the breakpoints go to each live run whose breakpoints differ, once`() {
+        val places = listOf(EditorBreakpoint(specUri, 4))
+        val sent = LinkedHashMap<String, String>()
+        val live = mapOf("ed-1" to session("ed-1"), "ed-2" to session("ed-2"))
+        Glue.rememberBreakpoints(sent, "ed-2", places)
+        assertEquals(listOf(SetRunBreakpointsParams("ed-1", places)), Glue.breakpointUpdates(live, places, sent))
+        assertEquals(emptyList<SetRunBreakpointsParams>(), Glue.breakpointUpdates(live, places, sent))
+        assertEquals(
+            listOf(SetRunBreakpointsParams("ed-1", emptyList()), SetRunBreakpointsParams("ed-2", emptyList())),
+            Glue.breakpointUpdates(live, emptyList(), sent),
+        )
+        repeat(60) { Glue.rememberBreakpoints(sent, "ed-x$it", emptyList()) }
+        assertEquals(50, sent.size)
+        assertEquals(false, "ed-x9" in sent)
+    }
+
+    @Test
+    fun `a paused page is a JPEG in base64, nothing else`() {
+        assertEquals(listOf<Byte>(-1, -40, -1), Glue.pausedImageBytes(PausedImage("image/jpeg", "/9j/"))?.toList())
+        assertEquals(null, Glue.pausedImageBytes(PausedImage("image/png", "/9j/")))
+        assertEquals(null, Glue.pausedImageBytes(PausedImage("image/jpeg", "not base64!")))
+        assertEquals(null, Glue.pausedImageBytes(null))
+    }
+
     @Test
     fun `the tooltip names the reporter the project installs`() {
         val withReporter = RunStatusResult(listOf(RunStatus(root = "/w", branch = "feature/pay", run = passed, reporterVersion = "0.47.0")))

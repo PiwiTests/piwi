@@ -289,7 +289,7 @@ clients stay thin and both editors give the same answers.
   system spells it); the session gives the client the file's URI under the folder as the workspace spells it, and takes
   the client's lines (URIs, 0-based) relative to either, refusing a file outside the run's folder, as `PIWI_PAUSE_AT`
   leaves it out. A client that shows and answers stops says so in its initialization options
-  (`InitializationOptions.runControl`); without it, a stop no pause bar shows (a headless run's) is resumed as soon as
+  (`InitializationOptions.runControl`, as both clients do); without it, a stop no pause bar shows (a headless run's) is resumed as soon as
   it is heard, with a `piwi/notice` once per run. A worker's `notice` (a control its reporter does not take) is a
   `piwi/notice` too. The service stopping closes every worker's connection, whose stop then goes on.
 

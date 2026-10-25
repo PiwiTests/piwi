@@ -171,7 +171,7 @@ object PiwiCommands {
             if (command?.command.isNullOrBlank() || command?.cwd == null) {
                 notify(project, "No command to run these tests (not connected?).", NotificationType.WARNING)
             } else {
-                startRun(project, command)
+                startRun(project, command, breakpoints)
             }
         }
     }
@@ -215,15 +215,16 @@ object PiwiCommands {
     }
 
     /**
-     * Run a test command of the service: its notice shown once, and, when it can pause in the browser (breakpoints,
-     * `PIWI_PAUSE_AT`, or a `page.pause()`, `RunCommand.pauses`), the Send to editor pairing a locator picked while
-     * paused is posted to (`PIWI_EDITOR_SEND`). Call it off the event thread.
+     * Run a test command of the service, built with the IDE's `breakpoints`: its notice shown once, and, when it can
+     * pause in the browser (breakpoints, `PIWI_PAUSE_AT`, or a `page.pause()`, `RunCommand.pauses`), the Send to editor
+     * pairing a locator picked while paused is posted to (`PIWI_EDITOR_SEND`). Call it off the event thread.
      */
-    fun startRun(project: Project, command: RunCommand) {
+    fun startRun(project: Project, command: RunCommand, breakpoints: List<EditorBreakpoint>) {
         val cwd = command.cwd ?: return
         val line = command.command?.takeIf { it.isNotBlank() } ?: return
         if (!project.service<PiwiProjectService>().trusted()) return notify(project, Glue.UNTRUSTED, NotificationType.WARNING)
         command.notice?.let { if (noticesShown.add(it)) notify(project, it, NotificationType.WARNING) }
+        command.ref?.let { project.service<PiwiRunSessions>().started(it, breakpoints) }
         val base = command.env
         val address = if (base != null && (base.containsKey("PIWI_PAUSE_AT") || command.pauses == true)) {
             runCatching {
@@ -240,7 +241,13 @@ object PiwiCommands {
             ApplicationManager.getApplication().invokeLater({
                 // The console runs what the IDE's runner does not take.
                 val started = runCatching {
-                    PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty()) { exitCode ->
+                    PlaywrightRunnerLauncher.start(
+                        project,
+                        cwd,
+                        args,
+                        env.orEmpty(),
+                        onStart = { process -> if (ref != null) project.service<PiwiRunSessions>().track(ref, process) },
+                    ) { exitCode ->
                         if (ref != null) commandEnded(project, CommandEndedParams(ref, exitCode))
                     }
                 }.getOrDefault(false)
@@ -315,6 +322,8 @@ object PiwiCommands {
                 handler.addProcessListener(object : ProcessListener {
                     override fun processTerminated(event: ProcessEvent) = commandEnded(project, CommandEndedParams(ref, event.exitCode))
                 })
+                // Stop, among the run's controls, ends it.
+                if (!project.isDisposed) project.service<PiwiRunSessions>().track(ref, handler)
             }
             ApplicationManager.getApplication().invokeLater {
                 if (project.isDisposed) {

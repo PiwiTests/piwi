@@ -282,7 +282,7 @@ class RunSelectionAction : AnAction(), DumbAware {
                         ApplicationManager.getApplication().executeOnPooledThread {
                             val breakpoints = project.service<PiwiProjectService>().breakpoints().ifEmpty { null }
                             val command = server?.runSelection(RunSelectionParams(uri, picked.key, breakpoints))?.orNull()
-                            if (command != null) PiwiCommands.startRun(project, command)
+                            if (command != null) PiwiCommands.startRun(project, command, breakpoints.orEmpty())
                         }
                     }
                     .createPopup()

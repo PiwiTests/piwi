@@ -9,9 +9,10 @@ import com.intellij.openapi.options.colors.ColorSettingsPage
 import javax.swing.Icon
 
 /**
- * **Settings → Editor → Color Scheme → Piwi**: the background of a failing test, of the line it failed at, and of the
- * lines a recording writes; and the coverage marks, whose error stripe color is the mark in the gutter and the scroll
- * bar, with no background by default.
+ * **Settings → Editor → Color Scheme → Piwi**: the background of a failing test, of the line it failed at, of the
+ * lines a recording writes and of the line a run started here is stopped at (the debugger's execution point by
+ * default); and the coverage marks, whose error stripe color is the mark in the gutter and the scroll bar, with no
+ * background by default.
  */
 class PiwiColorSettingsPage : ColorSettingsPage {
     override fun getDisplayName(): String = "Piwi"
@@ -23,6 +24,7 @@ class PiwiColorSettingsPage : ColorSettingsPage {
             AttributesDescriptor("Failing test", PiwiTestAnnotator.FAILING_TEST),
             AttributesDescriptor("Line it failed at", PiwiTestAnnotator.FAILING_LINE),
             AttributesDescriptor("Lines being recorded", PiwiRecordings.BLOCK),
+            AttributesDescriptor("Line a run is stopped at", PiwiRunSessions.EXECUTION_POINT),
             AttributesDescriptor("Coverage//Lines the tests ran", PiwiCoverageMarks.RUN),
             AttributesDescriptor("Coverage//Lines no test runs", PiwiCoverageMarks.NOT_RUN),
             AttributesDescriptor("Coverage//Lines changed since the coverage run", PiwiCoverageMarks.CHANGED),
@@ -44,6 +46,7 @@ class PiwiColorSettingsPage : ColorSettingsPage {
             "test('adds a coupon', async ({ page }) => {\n" +
             "<recording>  await page.goto('/cart');\n" +
             "  await page.getByRole('textbox', { name: 'Coupon' }).fill('WELCOME10');</recording>\n" +
+            "<stopped>  await page.getByRole('button', { name: 'Apply' }).click();</stopped>\n" +
             "});\n\n" +
             "public int AddItem(int basketId, int quantity)\n" +
             "{\n" +
@@ -58,6 +61,7 @@ class PiwiColorSettingsPage : ColorSettingsPage {
             "failing" to PiwiTestAnnotator.FAILING_TEST,
             "line" to PiwiTestAnnotator.FAILING_LINE,
             "recording" to PiwiRecordings.BLOCK,
+            "stopped" to PiwiRunSessions.EXECUTION_POINT,
             "run" to PiwiCoverageMarks.RUN,
             "notrun" to PiwiCoverageMarks.NOT_RUN,
             "changed" to PiwiCoverageMarks.CHANGED,

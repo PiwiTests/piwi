@@ -162,6 +162,30 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
   on this machine only) turns them off. `PiwiCommands.startRun` adds `PIWI_EDITOR_SEND`, the pairing address
   `PiwiSendHandler` serves with its token from `PasswordSafe` (created if missing), when the command carries
   `PIWI_PAUSE_AT`, and shows `RunCommand.notice` (a reporter too old for breakpoints) once as a warning balloon.
+- `PiwiRunControl.kt` shows and steers the runs started here (`PiwiRunSessions`), with Piwi's own actions, no debug
+  session: the initialization options say so (`runControl`), and the latest `piwi/runSessionChanged` of each ref
+  (`PiwiLsp4jClient.runSessionChanged`, `Glue.withSession`) is kept until one says `ended` or the service's process
+  ends (`watch`, from `PiwiLspServerDescriptor.startServerProcess`). A stop opens its file at its line once
+  (`Glue.stopKey`), drawn as the execution point: a range highlighter on the document's markup model in
+  `PIWI_EXECUTION_POINT` (**Line a run is stopped at** in `PiwiColorSettingsPage.kt`, falling back on
+  `DebuggerColors.EXECUTIONPOINT_ATTRIBUTES`) with `AllIcons.Debugger.NextStatement` in the gutter, whose click and
+  right-click list the stop's controls (`stopActions`), and a block inlay above the line in each editor of the file
+  (`StopInlay`, added again in an editor opened later: `EditorFactoryListener`), `Glue.pausedText`
+  (`⏸ Paused · <title> · attempt N`) then **Resume**, **Step**, **Run to Caret** and **Finish** as links, which an
+  `EditorMouseListener` on the multicaster clicks (`StopInlay.controlAt`, the hand cursor over one). The actions
+  (`RunControlAction`: `Piwi.PauseRun`, `Piwi.ResumeRun`, `Piwi.StepRun`, `Piwi.RunToCaret`, `Piwi.FinishRun`,
+  `Piwi.ShowPausedPage`, `Piwi.StopRun`, under **Tools → Piwi** and first in the status bar item's menu while a run is
+  live, the item reading `Piwi: paused · checkout.page.ts:12` while one is stopped: `Glue.runControlStatus`) are
+  enabled only while they apply (`Glue.runControls`), act on the stop at the caret's line, else the only one, else one
+  chosen in a popup (`Glue.stopsFor`), and send `piwi/runControl` on a pooled thread, an answer with `ok: false` a
+  balloon; **Stop the Run** ends the process of the ref (`track`, from `PiwiCommands.run` and the IDE's Playwright
+  runner). The Run tool window's own toolbar (`RunContentExecutor`'s Rerun, Stop and Close) takes no other action. A
+  stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`) in the **Paused Page**
+  tab of the Piwi tool window, again at each such stop. An `XBreakpointListener` sends the breakpoints
+  `PiwiProjectService.breakpoints` gives to each live run 100 ms after a burst of changes, and the settings page does
+  when the breakpoints checkbox changes, only to a run whose breakpoints differ from those its command started with or
+  was last sent (`Glue.breakpointUpdates`, `PiwiCommands.startRun` recording the first). Its calls of the service go
+  through `RunRemote`, which `PiwiRunControlTest` replaces.
 - Once the project is open, `PiwiProjectService.findPlaywright` looks for Playwright configs on a pooled thread
   (`Glue.findPlaywright`, with the editor service's depth and skipped folders): in the project folder (in Rider, the
   solution's folder, above `.idea/.idea.<name>`), the folder the IDE guesses and the base directories, then, when those
@@ -184,7 +208,10 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
   They are offered only in a script file under one of the project's Playwright config folders (`Glue.inConfigDirs`),
   and `Ctrl+Alt+Shift+R` (`$default` keymap, the command key on macOS) records, and stops a recording, as
   `Ctrl+Alt+Shift+F` re-runs the failing tests and `Ctrl+Alt+Shift+K` runs the test at the caret: the VS Code
-  extension's chords, which no bundled keymap uses.
+  extension's chords, which no bundled keymap uses. A run's controls use the debugger actions' shortcuts instead, in
+  every keymap (`use-shortcut-of`: Pause and Resume `Resume`'s, `F9` in the default keymap, Step `StepOver`'s,
+  Run to Caret `RunToCursor`'s, Finish `StepOut`'s), enabled only while they apply, and from the keyboard only while
+  no debug session runs (`ActionPlaces.KEYBOARD_SHORTCUT`), so the debugger keeps its keys.
   A test paused in a run started here that asks to record from there (`piwi/recordRequested`,
   `PiwiLsp4jClient.recordRequested`) has its file opened at the paused line and its recording started with no dialog
   (`PiwiRecordFlow.recordFromTest`: `piwi/record` with the `handoff`), as Record Here's; one it cannot start (the file
@@ -344,4 +371,7 @@ another JDK changes both: `./gradlew updateDaemonJvm --jvm-version=<n>` regenera
 in `build.gradle.kts`. CI (`reusable-jetbrains.yml`) installs JDK 21, so it downloads nothing.
 
 The platform test `testTheBundledServiceAnswersThroughTheDescriptor` starts the bundled service with the descriptor's
-command line against a stub instance, and reads its answers with the Kotlin protocol classes.
+command line against a stub instance, and reads its answers with the Kotlin protocol classes, a run's session and
+controls with a fake worker on the run channel among them. `PiwiRunControlTest` drives the run controls with the
+sessions the service would send: the execution point, the inlay, the actions, the paused page and the breakpoint
+listener.
