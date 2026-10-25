@@ -23,6 +23,7 @@ import {
   diagnosisFacts,
   fmtBytes,
   fmtDuration,
+  fmtStepDuration,
   hasDiagnosis,
   OMISSION_REASONS,
   projectLabel,
@@ -376,14 +377,14 @@ function renderAssets(exportCase: ExportCase, assetUrl: RenderOptions['assetUrl'
   return joinHtml(out, '\n');
 }
 
-function renderSteps(steps: unknown): RawHtml {
+function renderSteps(steps: unknown, pauses: unknown): RawHtml {
   if (!Array.isArray(steps) || !steps.length) return raw('');
   const rows = (steps as Record<string, any>[]).map(
     (step) =>
       html`<tr>
         <td>${String(step.title ?? '')}</td>
         <td>${String(step.category ?? '')}</td>
-        <td class="num">${fmtDuration(step.duration)}</td>
+        <td class="num">${fmtStepDuration(step, pauses)}</td>
       </tr>`,
   );
   return html`<div class="scroll">
@@ -477,7 +478,7 @@ function renderCase(exportCase: ExportCase, opts: RenderOptions, index: number, 
   const assetsHtml = renderAssets(exportCase, opts.assetUrl);
   if (toHtmlString(assetsHtml).trim()) parts.push(details('Evidence', assetsHtml, 'evidence', true));
 
-  parts.push(details('Steps', renderSteps(d.steps)));
+  parts.push(details('Steps', renderSteps(d.steps, d.pauses)));
   parts.push(details('Console', renderConsole(d.consoleLogs)));
   parts.push(details('Network', renderNetwork(d.networkRequests)));
   if (d.testSource) parts.push(details('Test source', code(String(d.testSource), 'typescript')));

@@ -2,6 +2,8 @@ import zlib from 'node:zlib';
 import { describe, it, expect } from 'vitest';
 import { buildExport } from '../../shared/export/build';
 import { renderExportHtml } from '../../shared/export/render-html';
+import { renderExportMarkdown } from '../../shared/export/render-markdown';
+import { fmtStepDuration } from '../../shared/export/fields';
 import { BRAND_SITE_URL } from '../../shared/brand';
 import { parseZipSync } from '../utils/zip';
 import type { ExportAsset, ExportBundle, ExportCase } from '../../shared/export/types';
@@ -54,6 +56,32 @@ function bundle(overrides: Partial<ExportBundle> = {}): ExportBundle {
 }
 
 const noAssets = { assetUrl: () => null };
+
+describe('a step the test stood paused in', () => {
+  const T = 1_700_000_000_000;
+  const detail = {
+    steps: [
+      { title: 'Navigate', category: 'navigation', duration: 106, startTime: T },
+      { title: 'Expect "toBeVisible"', category: 'assertion', duration: 7_300, startTime: T + 200 },
+    ],
+    pauses: [{ startedAt: T + 300, duration: 6_300 }],
+  };
+
+  it('says how much of its time was paused, in the HTML and the Markdown exports alike', () => {
+    const b = bundle({ cases: [exportCase({ detail })] });
+    for (const text of [renderExportHtml(b, noAssets), renderExportMarkdown(b)]) {
+      expect(text).toContain('7.3s, 6.3s of it paused');
+      expect(text).toContain('106ms');
+      expect(text).not.toContain('106ms, ');
+    }
+  });
+
+  it('writes a step that ran outside the stops as measured', () => {
+    expect(fmtStepDuration(detail.steps[1]!, null)).toBe('7.3s');
+    expect(fmtStepDuration(detail.steps[1]!, detail.pauses)).toBe('7.3s, 6.3s of it paused');
+    expect(fmtStepDuration({ duration: 7_300 }, detail.pauses)).toBe('7.3s');
+  });
+});
 
 describe('renderExportHtml', () => {
   it('escapes hostile text from a test run', () => {

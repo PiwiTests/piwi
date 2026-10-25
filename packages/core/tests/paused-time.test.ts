@@ -69,4 +69,10 @@ describe('collectStepMetrics with stops', () => {
     expect(metrics.slowestStep).toEqual({ title: 'Wait for timeout', duration: 4500 });
     expect(metrics.waitTotalDuration).toBe(4500);
   });
+
+  test('keeps Playwright’s -1 for a step that never finished, with stops or without', () => {
+    const unfinished = [{ title: 'Click', category: 'pw:api', startTime: new Date(T), duration: -1, steps: [] }];
+    expect(collectStepMetrics(unfinished).slowestStep).toEqual({ title: 'Click', duration: -1 });
+    expect(collectStepMetrics(unfinished, null, pauses).slowestStep).toEqual({ title: 'Click', duration: -1 });
+  });
 });

@@ -14,7 +14,7 @@ import {
 } from '../database/schema';
 import type { FailureCluster } from '../database/schema';
 import type { DiagnosisContextCoverage } from '~~/types/api';
-import { stepLabel, orderedStepParams } from '@piwitests/core/step-analysis';
+import { stepLabel, orderedStepParams, pausedOverlap, pauseSpans } from '@piwitests/core/step-analysis';
 import { stepFailureRoles, type StepFailureRole } from '#shared/step-tree';
 import { condenseErrorText, maskVolatile, stripAnsi } from '#shared/error-fingerprint';
 import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
@@ -395,6 +395,7 @@ async function loadExecutionRow(db: DbClient, where: SQL) {
       line: testRunsCases.line,
       column: testRunsCases.column,
       steps: testRunsCases.steps,
+      stepEvents: testRunsCases.stepEvents,
       consoleLogs: testRunsCases.consoleLogs,
       ariaSnapshot: testRunsCases.ariaSnapshot,
       testSource: testRunsCases.testSource,
@@ -1806,10 +1807,12 @@ export function representativeExecutionSections(
 
   // Steps — failed steps are annotated inline so the narrative flow
   // ("it did A, B, C, then D failed") is readable in one pass; an error the
-  // test caught is marked as such, never as the failure.
+  // test caught is marked as such, never as the failure. A step that ran while
+  // the test stood paused at Piwi's pause bar says how much of its time that was.
   const steps = (rep.steps as TestStepInfo[] | null) ?? [];
   if (steps.length > 0) {
     const roles = stepFailureRoles(steps, rep.error);
+    const pauses = pauseSpans(rep.stepEvents);
     const first = Math.max(0, steps.length - limits.steps);
     const shown = steps.slice(first);
     out.push({
@@ -1820,7 +1823,8 @@ export function representativeExecutionSections(
           const failed = s.failed && role !== 'recovered';
           const prefix = failed ? '✗ ' : '- ';
           const suffix = role === 'recovered' ? ' (error caught, the test continued)' : failed ? ' ← FAILED' : '';
-          const dur = s.duration != null ? ` (${s.duration}ms)` : '';
+          const paused = pauses.length ? pausedOverlap(s.startTime, s.duration, pauses) : 0;
+          const dur = s.duration != null ? ` (${s.duration}ms${paused > 0 ? `, ${paused}ms of it paused` : ''})` : '';
           const params = stepParamsLine(s);
           const paramLine = params ? `\n    ${params}` : '';
           return `${prefix}[${s.category ?? 'step'}] ${stepLabel(s)}${dur}${suffix}${paramLine}`;

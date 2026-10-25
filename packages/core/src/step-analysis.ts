@@ -403,7 +403,7 @@ export interface StepMetrics {
  * caught are marked `recovered`. With the test's `pauses` (its stops at Piwi's
  * pause bar), every figure reads each step's duration less the time the test
  * stood stopped while it ran (`unpausedDuration`); the flat steps keep their
- * measured durations.
+ * measured durations, and a step that never finished keeps Playwright's `-1`.
  */
 export function collectStepMetrics(
   steps: any[],
@@ -413,7 +413,7 @@ export function collectStepMetrics(
   const flatSteps = flattenSteps(steps);
   if (errors) markRecoveredSteps(flatSteps, errors);
   const own = (s: { startTime?: unknown; duration: number }) =>
-    pauses.length > 0 ? unpausedDuration(s, pauses) : s.duration;
+    pauses.length > 0 && s.duration > 0 ? unpausedDuration(s, pauses) : s.duration;
   const totalStepDuration = steps.reduce((sum: number, s: any) => sum + (own(s) || 0), 0);
 
   let slowestStep: { title: string; duration: number } | null = null;

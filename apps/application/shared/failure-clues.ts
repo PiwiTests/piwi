@@ -19,7 +19,8 @@
  */
 import type { ParsedPlaywrightError, CallLogState } from '#shared/error-parse';
 import type { FailureTimeline } from '#shared/failure-timeline';
-import { TIMELINE_WINDOW_LEAD_MS } from '#shared/failure-timeline';
+import { leadStart, TIMELINE_WINDOW_LEAD_MS, timelinePauseSpans } from '#shared/failure-timeline';
+import { pausedOverlap, type PauseSpan } from '@piwitests/core/step-analysis';
 import type { LocatorHealingResult } from '#shared/locator-healing.types';
 import type { PageStateLike } from '#shared/page-state';
 import { ariaTextPreferJson } from '#shared/aria-json';
@@ -347,16 +348,31 @@ function apiCallOf(label: string): { method: string; path: string } | null {
   return path ? { method: match[1]!.toUpperCase(), path } : null;
 }
 
+/** Seconds with one decimal, as the clues write them: `1.1`. */
+function seconds(ms: number): string {
+  return (ms / 1000).toFixed(1);
+}
+
 /**
- * How long before the failure the anchor happened (`1.1 s before the failure`);
- * under 100 ms, and up to the request slack after it, `just before the
- * failure`; empty when the anchor is later than that.
+ * `, 4.0 s of it paused`: how much of the stretch from `at` to `failureAt` the
+ * test stood stopped at Piwi's pause bar; empty under 100 ms.
  */
-function formatLead(at: number, failureAt: number): string {
+function pausedPart(at: number, failureAt: number, pauses: readonly PauseSpan[]): string {
+  const paused = pausedOverlap(at, failureAt - at, pauses);
+  return paused >= 100 ? `, ${seconds(paused)} s of it paused` : '';
+}
+
+/**
+ * How long before the failure the anchor happened (`1.1 s before the failure`,
+ * with how much of it the test stood paused); under 100 ms, and up to the
+ * request slack after it, `just before the failure`; empty when the anchor is
+ * later than that.
+ */
+function formatLead(at: number, failureAt: number, pauses: readonly PauseSpan[]): string {
   const lead = failureAt - at;
   if (!Number.isFinite(lead) || lead < -REQUEST_END_SLACK_MS) return '';
   if (lead < 100) return 'just before the failure';
-  return `${(lead / 1000).toFixed(1)} s before the failure`;
+  return `${seconds(lead)} s before the failure${pausedPart(at, failureAt, pauses)}`;
 }
 
 /** A short, single-line form of the failing locator's identity. */
@@ -445,6 +461,8 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
     slowRequest?: { method: string; path: string; durSec: string };
     failedRequest?: { method: string; path: string; statusText: string };
     consoleLeadSec?: string | null;
+    /** `, 4.0 s of it paused` when the test stood stopped at Piwi's pause bar between the console entry and the failure. */
+    consoleLeadPaused?: string;
     reachableLocator?: string | null;
     renamed?: { role: string; oldName: string | null; newName: string | null };
     removed?: { role: string; name: string | null };
@@ -457,6 +475,9 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
   const timeline = input.timeline;
   const origin = timeline?.origin ?? null;
   const failureAt = timeline ? timeline.failureAt : null;
+  // The stops at Piwi's pause bar, on the timeline's clock. A step's time and a lead before the failure are the test's
+  // own: the time stopped is left out of them.
+  const pauses = timelinePauseSpans(timeline);
   const slowMs =
     isFiniteNumber(input.slowRequestMs) && input.slowRequestMs > 0 ? input.slowRequestMs : DEFAULT_SLOW_REQUEST_MS;
   const parsed = input.parsedError;
@@ -480,12 +501,12 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
   // ── failed-request-before-failure (strong) ─────────────────────────────────
   // A 5xx/aborted request that ended within the lead window before the failure.
   if (failureAt != null) {
-    const leadStart = failureAt - TIMELINE_WINDOW_LEAD_MS;
+    const leadFrom = leadStart(failureAt, TIMELINE_WINDOW_LEAD_MS, pauses);
     const failedRequests = positionedRequests
       .filter((p) => {
         const status = isFiniteNumber(p.req.status) ? p.req.status : 0;
         const bad = status >= 500 || status <= 0;
-        return bad && p.endAt != null && p.endAt <= failureAt + REQUEST_END_SLACK_MS && p.endAt >= leadStart;
+        return bad && p.endAt != null && p.endAt <= failureAt + REQUEST_END_SLACK_MS && p.endAt >= leadFrom;
       })
       .sort((a, b) => (b.endAt ?? 0) - (a.endAt ?? 0));
     failedRequests.slice(0, 2).forEach((p, i) => {
@@ -494,7 +515,7 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
       const status = isFiniteNumber(p.req.status) ? p.req.status : 0;
       const failure = str(p.req.failure);
       const statusText = failure ? `failed with ${failure}` : status <= 0 ? 'was aborted' : `returned ${status}`;
-      const lead = p.endAt != null && failureAt != null ? formatLead(p.endAt, failureAt) : '';
+      const lead = p.endAt != null && failureAt != null ? formatLead(p.endAt, failureAt, pauses) : '';
       if (i === 0) facts.failedRequest = { method, path, statusText };
       add({
         id: i === 0 ? 'failed-request-before-failure' : `failed-request-before-failure-${i}`,
@@ -509,15 +530,17 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
   }
 
   // ── slow-request-overlapping-failure (medium) ──────────────────────────────
-  // A request slower than the threshold that was in flight during the failed step.
+  // A request slower than the threshold that was in flight during the failed step
+  // while the test ran it, not only while it stood stopped at Piwi's pause bar.
   // When the failed step is the test's own HTTP call (an APIRequestContext
   // request), the step waited on that call: page requests in flight meanwhile
-  // are unrelated, so the slow request is the step itself.
+  // are unrelated, so the slow request is the step itself, timed without its stops.
   const failedStep = timeline?.failedStep ?? null;
+  const failedStepOwnMs = failedStep ? Math.max(0, failedStep.duration - (failedStep.paused ?? 0)) : null;
   const ownCall = failedStep ? apiCallOf(failedStep.label) : null;
   if (failedStep && ownCall) {
-    if (failedStep.duration >= slowMs) {
-      const durSec = (failedStep.duration / 1000).toFixed(1);
+    if (failedStepOwnMs! >= slowMs) {
+      const durSec = seconds(failedStepOwnMs!);
       facts.slowRequest = { method: ownCall.method, path: ownCall.path, durSec };
       add({
         id: 'slow-request-overlapping-failure',
@@ -532,9 +555,21 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
   } else if (failedStep && positionedRequests.length > 0) {
     const stepStart = failedStep.at;
     const stepEnd = failedStep.at + failedStep.duration;
+    /** Whether the request was in flight while the step ran, outside the stops. */
+    const whileRunning = (startAt: number, endAt: number): boolean => {
+      const from = Math.max(startAt, stepStart);
+      const overlap = Math.min(endAt, stepEnd) - from;
+      return overlap <= 0 || pausedOverlap(from, overlap, pauses) < overlap;
+    };
     const slow = positionedRequests
       .filter(
-        (p) => p.startAt != null && p.endAt != null && p.dur >= slowMs && p.startAt <= stepEnd && p.endAt >= stepStart,
+        (p) =>
+          p.startAt != null &&
+          p.endAt != null &&
+          p.dur >= slowMs &&
+          p.startAt <= stepEnd &&
+          p.endAt >= stepStart &&
+          whileRunning(p.startAt, p.endAt),
       )
       .sort((a, b) => b.dur - a.dur);
     const p = slow[0];
@@ -572,10 +607,9 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
       const isError = type === 'error';
       const isWarning = type === 'warning' || type === 'warn';
       if (isError || isWarning) {
-        facts.consoleLeadSec =
-          match.at != null && failureAt != null && failureAt - match.at > 0
-            ? ((failureAt - match.at) / 1000).toFixed(1)
-            : null;
+        const ledBy = match.at != null && failureAt != null && failureAt - match.at > 0;
+        facts.consoleLeadSec = ledBy ? seconds(failureAt! - match.at!) : null;
+        facts.consoleLeadPaused = ledBy ? pausedPart(match.at!, failureAt!, pauses) : '';
         add({
           id: 'console-mentions-target',
           rule: 'console-mentions-target',
@@ -852,9 +886,12 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
 
   // ── timeout-budget (medium) ────────────────────────────────────────────────
   // The failed step, or the whole execution, spent most of the timeout budget.
+  // The runner holds the test timeout while the test stands stopped at Piwi's
+  // pause bar, so the step's time is its own, its stops left out; the
+  // execution's duration already leaves them out.
   const timeout = isFiniteNumber(input.timeout) && input.timeout > 0 ? input.timeout : null;
   if (timeout) {
-    const stepDur = failedStep?.duration ?? null;
+    const stepDur = failedStepOwnMs;
     const execDur = isFiniteNumber(input.execution.duration) ? input.execution.duration : null;
     const stepRatio = stepDur != null ? stepDur / timeout : 0;
     const execRatio = execDur != null ? execDur / timeout : 0;
@@ -969,6 +1006,7 @@ type StoryFacts = {
   slowRequest?: { method: string; path: string; durSec: string };
   failedRequest?: { method: string; path: string; statusText: string };
   consoleLeadSec?: string | null;
+  consoleLeadPaused?: string;
   reachableLocator?: string | null;
   renamed?: { role: string; oldName: string | null; newName: string | null };
   removed?: { role: string; name: string | null };
@@ -1037,7 +1075,7 @@ function buildStory(
     if (has('console-mentions-target')) {
       rules.push('console-mentions-target');
       sentence += facts.consoleLeadSec
-        ? `; the console said so ${facts.consoleLeadSec} s before the ${action} gave up`
+        ? `; the console said so ${facts.consoleLeadSec} s before the ${action} gave up${facts.consoleLeadPaused ?? ''}`
         : `; the console said so before the ${action} gave up`;
     }
     return make('blocked-by-pending-request', rules, `${sentence}.`);
