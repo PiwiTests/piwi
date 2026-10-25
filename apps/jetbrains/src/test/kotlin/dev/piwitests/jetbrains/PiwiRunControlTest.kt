@@ -1,7 +1,18 @@
 package dev.piwitests.jetbrains
 
+import com.intellij.execution.ExecutionManager
+import com.intellij.execution.configurations.RunProfile
+import com.intellij.execution.executors.DefaultRunExecutor
+import com.intellij.execution.process.NopProcessHandler
+import com.intellij.execution.runners.ExecutionEnvironmentBuilder
 import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.ActionPromoter
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.Inlay
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -32,6 +43,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private val controls = CopyOnWriteArrayList<RunControlParams>()
     private val breakpoints = CopyOnWriteArrayList<SetRunBreakpointsParams>()
     private val pages = CopyOnWriteArrayList<PausedPageParams>()
+    private val ended = CopyOnWriteArrayList<CommandEndedParams>()
     private var image: PausedImage? = null
     private lateinit var base: File
 
@@ -53,12 +65,19 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             override fun setBreakpoints(params: SetRunBreakpointsParams) {
                 breakpoints += params
             }
+
+            override fun commandEnded(params: CommandEndedParams) {
+                ended += params
+            }
         }
         base = File(project.basePath!!).apply { mkdirs() }
     }
 
     override fun tearDown() {
         try {
+            // The documents edited here are left as they are on disk, for the tests after.
+            val documents = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
+            documents.unsavedDocuments.forEach { documents.reloadFromDisk(it) }
             sessions.sessions.keys.forEach { sessions.heard(RunSession(it, ended = true)) }
             PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
             sessions.remote = remote
@@ -153,11 +172,13 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         assertFalse("Pause waits for a running test", myFixture.testAction(actions.getAction("Piwi.PauseRun")).isEnabled)
         assertTrue(myFixture.testAction(actions.getAction("Piwi.StepRun")).isEnabled)
         waitFor("the step") { controls.firstOrNull() }
-        assertEquals(RunControlParams("ed-1", 0, "step"), controls.single())
+        // A control names the stop it answers.
+        val since = "2026-10-25T10:00:00.000Z"
+        assertEquals(RunControlParams("ed-1", 0, "step", since = since), controls.single())
         myFixture.editor.caretModel.moveToOffset(myFixture.editor.document.getLineStartOffset(4))
         assertTrue(myFixture.testAction(actions.getAction("Piwi.RunToCaret")).isEnabled)
         waitFor("the run to the caret") { controls.getOrNull(1) }
-        assertEquals(RunControlParams("ed-1", 0, "run-to", EditorBreakpoint(uri(file), 4)), controls[1])
+        assertEquals(RunControlParams("ed-1", 0, "run-to", EditorBreakpoint(uri(file), 4), since), controls[1])
 
         val statusBar = PiwiStatusBarWidget(project)
         com.intellij.openapi.util.Disposer.register(testRootDisposable, statusBar)
@@ -175,17 +196,106 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         assertFalse(myFixture.testAction(actions.getAction("Piwi.ResumeRun")).isEnabled)
     }
 
+    /**
+     * Two lines written above a stop: its mark follows the line, an editor opened later draws it there too, a control at
+     * the caret finds it there, and Run to Caret runs to the caret's line as the run's code has it.
+     */
+    fun testAStopFollowsTheEditsAboveItAndRunToCaretMapsTheCaretBack() {
+        val file = file("tests/pages/checkout.page.ts", page)
+        hear(stopped("ed-4", file, 3, bar = true, since = "2026-10-25T10:00:04.000Z"))
+        val document = FileEditorManager.getInstance(project).selectedTextEditor!!.document
+        WriteCommandAction.runWriteCommandAction(project) { document.insertString(0, "// one\n// two\n") }
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(5, sessions.stops().single().stop.line)
+        assertEquals(5, document.getLineNumber(sessions.shown().highlighters.single().startOffset))
+        // An editor opened now, and the stop heard again as the service sends it, still at the run's line.
+        val later = EditorFactory.getInstance().createEditor(document, project)
+        try {
+            hear(stopped("ed-4", file, 3, bar = true, since = "2026-10-25T10:00:04.000Z"))
+            val inlays = sessions.shown().inlays
+            assertEquals(2, inlays.size)
+            assertEquals(listOf(5, 5), inlays.map { document.getLineNumber(it.offset) })
+        } finally {
+            EditorFactory.getInstance().releaseEditor(later)
+        }
+        myFixture.openFileInEditor(file)
+        myFixture.editor.caretModel.moveToOffset(document.getLineStartOffset(6))
+        assertTrue(myFixture.testAction(ActionManager.getInstance().getAction("Piwi.RunToCaret")).isEnabled)
+        waitFor("the run to the caret") { controls.firstOrNull() }
+        assertEquals(RunControlParams("ed-4", 0, "run-to", EditorBreakpoint(uri(file), 4), "2026-10-25T10:00:04.000Z"), controls.single())
+        // A line written since: the running test has none, and nothing is asked.
+        myFixture.editor.caretModel.moveToOffset(document.getLineStartOffset(1))
+        myFixture.testAction(ActionManager.getInstance().getAction("Piwi.RunToCaret"))
+        Thread.sleep(200)
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(1, controls.size)
+    }
+
+    /** While a run is live, its controls go first among the actions a keymap gives their key; without one, none do. */
+    fun testTheRunControlsGoFirstAmongTheActionsOfTheirKeyWhileARunIsLive() {
+        val promoter = ActionPromoter.EP_NAME.extensionList.filterIsInstance<PiwiRunActionPromoter>().single()
+        val other = object : AnAction("Debug") {
+            override fun actionPerformed(e: AnActionEvent) {}
+        }
+        val resume = ActionManager.getInstance().getAction("Piwi.ResumeRun")
+        val context = SimpleDataContext.getProjectContext(project)
+        assertEquals(emptyList<AnAction>(), promoter.promote(listOf(other, resume), context))
+        hear(running("ed-5"))
+        assertEquals(listOf(resume), promoter.promote(listOf(other, resume), context))
+        assertEquals(emptyList<AnAction>(), promoter.promote(listOf(other, resume), com.intellij.openapi.actionSystem.DataContext.EMPTY_CONTEXT))
+    }
+
+    /**
+     * A run in the IDE's Playwright runner is followed by its configuration: its first run, a Rerun and a Rerun Failed
+     * Tests of it end with Stop and tell the service they ended.
+     */
+    fun testTheRunnersRunsOfAConfigurationPiwiMadeAreFollowed() {
+        assertTrue(PlaywrightRunnerGate.available())
+        val settings = PlaywrightRunnerLauncher.configure(project, base.path, listOf("tests/a.spec.ts:3"), mapOf("PIWI_ORIGIN_REF" to "ed-6"))!!
+        sessions.followRunner(settings.configuration, "ed-6")
+        val executor = DefaultRunExecutor.getRunExecutorInstance()
+        val first = ExecutionEnvironmentBuilder.createOrNull(executor, settings)!!.build()
+        val failedOnly = object : RunProfile {
+            override fun getState(executor: com.intellij.execution.Executor, environment: com.intellij.execution.runners.ExecutionEnvironment) = null
+
+            override fun getName() = "Rerun failed tests"
+
+            override fun getIcon() = null
+        }
+        val rerunFailed = ExecutionEnvironmentBuilder(first).runProfile(failedOnly).build()
+        val events = project.messageBus.syncPublisher(ExecutionManager.EXECUTION_TOPIC)
+        for ((env, exit) in listOf(first to 1, rerunFailed to 0)) {
+            val process = NopProcessHandler().apply { startNotify() }
+            events.processStarted(executor.id, env, process)
+            assertTrue(sessions.stopRun("ed-6"))
+            assertTrue(process.isProcessTerminating || process.isProcessTerminated)
+            events.processTerminated(executor.id, env, process, exit)
+            waitFor("the end told") { ended.find { it.exitCode == exit } }
+        }
+        assertEquals(listOf(CommandEndedParams("ed-6", 1), CommandEndedParams("ed-6", 0)), ended.toList())
+        // Another configuration's run is none of Piwi's.
+        val other = PlaywrightRunnerLauncher.configure(project, base.path, listOf("tests/b.spec.ts"), emptyMap())!!
+        events.processStarted(executor.id, ExecutionEnvironmentBuilder.createOrNull(executor, other)!!.build(), NopProcessHandler())
+        assertFalse(sessions.stopRun("ed-6"))
+    }
+
     /** A stop no pause bar shows has its page in the Piwi tool window's Paused Page tab, until the run ends. */
     fun testAHeadlessStopShowsItsPage() {
         val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
         try {
             val jpeg = ByteArrayOutputStream().also { ImageIO.write(BufferedImage(4, 3, BufferedImage.TYPE_INT_RGB), "jpg", it) }
             image = PausedImage("image/jpeg", Base64.getEncoder().encodeToString(jpeg.toByteArray()))
-            val file = file("tests/pages/checkout.page.ts", page)
-            hear(stopped("ed-2", file, 3, bar = false, since = "2026-10-25T10:00:01.000Z"))
+            // A file the IDE has not read yet: the page shows at once, and the mark once the file is found on disk.
+            val io = File(base, "tests/pages/unread.page.ts").apply {
+                parentFile.mkdirs()
+                writeText(page)
+            }
+            val unread = RunStop("pause", "Click getByRole('button', { name: 'Pay now' })", io.toPath().toUri().toString(), 3, 4, null, false, "2026-10-25T10:00:01.000Z")
+            hear(RunSession("ed-2", base.path, listOf(RunWorker(0, 0, "stopped", test(retry = 1), unread))))
             val shown = waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
+            waitFor("the mark in the file found on disk") { sessions.shown().highlighters.singleOrNull() }
             assertEquals(PausedPageParams("ed-2", 0), pages.single())
-            assertEquals("⏸ Paused · Click getByRole('button', { name: 'Pay now' }) · attempt 2 · checkout.page.ts:4", shown.pageCaption)
+            assertEquals("⏸ Paused · Click getByRole('button', { name: 'Pay now' }) · attempt 2 · unread.page.ts:4", shown.pageCaption)
             assertEquals(4, shown.pageImage!!.width)
             assertEquals(PiwiRunSessions.PAUSED_PAGE, window.contentManager.selectedContent?.displayName)
             hear(RunSession("ed-2", ended = true))
@@ -214,13 +324,32 @@ class PiwiRunControlTest : BasePlatformTestCase() {
                 SetRunBreakpointsParams("ed-3", listOf(EditorBreakpoint(uri(spec), 1))),
                 waitFor("the breakpoint added") { breakpoints.getOrNull(1) },
             )
+            // Two lines written above it: the IDE moves the breakpoint with its line (as its highlighter does outside
+            // tests, `updatePosition`), the run keeps its line, and nothing is sent.
+            val document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(spec)!!
+            myFixture.openFileInEditor(spec)
+            WriteCommandAction.runWriteCommandAction(project) { document.insertString(0, "// one\n// two\n") }
+            WriteAction.runAndWait<Throwable> { (breakpoint as com.intellij.xdebugger.impl.breakpoints.XLineBreakpointImpl<*>).setLine(3) }
+            Thread.sleep(300)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(2, breakpoints.size)
             WriteAction.runAndWait<Throwable> { manager.removeBreakpoint(breakpoint) }
             assertEquals(SetRunBreakpointsParams("ed-3", emptyList()), waitFor("the breakpoint removed") { breakpoints.getOrNull(2) })
+            // One set on a line of the edited file is sent as the run's line.
+            val added = WriteAction.computeAndWait<com.intellij.xdebugger.breakpoints.XLineBreakpoint<XBreakpointProperties<*>>, Throwable> {
+                manager.addLineBreakpoint(type, spec.url, 3, null)
+            }
+            assertEquals(
+                SetRunBreakpointsParams("ed-3", listOf(EditorBreakpoint(uri(spec), 1))),
+                waitFor("the breakpoint added in the edited file") { breakpoints.getOrNull(3) },
+            )
+            WriteAction.runAndWait<Throwable> { manager.removeBreakpoint(added) }
+            waitFor("the second breakpoint removed") { breakpoints.getOrNull(4) }
             // A run that ended hears nothing more.
             hear(RunSession("ed-3", ended = true))
             WriteAction.runAndWait<Throwable> { manager.addLineBreakpoint(type, spec.url, 1, null) }
             Thread.sleep(300)
-            assertEquals(3, breakpoints.size)
+            assertEquals(5, breakpoints.size)
         } finally {
             WriteAction.runAndWait<Throwable> { manager.allBreakpoints.filter { it.type === type }.forEach { manager.removeBreakpoint(it) } }
             // No service runs here: a read leaves nothing of the pushed status to the next tests.

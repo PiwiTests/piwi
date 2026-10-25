@@ -74,6 +74,8 @@
         <notificationGroup id="Piwi" displayType="BALLOON"/>
         <httpRequestHandler implementation="dev.piwitests.jetbrains.PiwiSendHandler"/>
         <httpRequestHandler implementation="dev.piwitests.jetbrains.PiwiOpenHandler"/>
+        <!-- A run's controls go first among the actions their shortcut runs, while a run is live (below). -->
+        <actionPromoter implementation="dev.piwitests.jetbrains.PiwiRunActionPromoter"/>
     </extensions>
 
     <!--
@@ -175,8 +177,9 @@
             <!--
               A run's controls use the debugger's own shortcuts, in every keymap (Resume Program's pauses a running test
               and resumes a stopped one, Step Over's steps, Run to Cursor's runs to the caret, Step Out's finishes):
-              each is enabled only while a run Piwi started is live, and from the keyboard only while no debug session
-              runs, so the debugger keeps its keys otherwise.
+              each is enabled only while it applies to a run Piwi started, and from the keyboard only while no debug
+              session runs, so the debugger keeps its keys otherwise. While a run is live they go first among the actions
+              a keymap gives the same key (PiwiRunActionPromoter), and give way when they do not apply.
             -->
             <action id="Piwi.PauseRun" class="dev.piwitests.jetbrains.PauseRunAction" text="Pause the Run"
                     icon="AllIcons.Actions.Pause" use-shortcut-of="Resume"

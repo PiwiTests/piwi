@@ -7,6 +7,7 @@ import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type Place, type RunToHub } from '@piwitests/core/run-channel';
 import {
   closeRunChannel,
+  hideRunChannel,
   holdStop,
   openRunChannel,
   runChannelOpen,
@@ -100,6 +101,17 @@ describe('the worker’s run connection', () => {
       }),
     ).toBe(false);
     expect(runChannelOpen()).toBe(false);
+  });
+
+  it('takes the channel out of the environment while a test runs, puts it back after, and leaves the record channel', () => {
+    const env: NodeJS.ProcessEnv = { PIWI_RUN_CHANNEL: 'a#b', PIWI_RECORD_CHANNEL: 'a#b' };
+    const show = hideRunChannel(env);
+    expect(env).toEqual({ PIWI_RECORD_CHANNEL: 'a#b' });
+    show();
+    expect(env).toEqual({ PIWI_RUN_CHANNEL: 'a#b', PIWI_RECORD_CHANNEL: 'a#b' });
+    const none: NodeJS.ProcessEnv = {};
+    hideRunChannel(none)();
+    expect(none).toEqual({});
   });
 
   it('attaches first, holds a stop until the editor answers it, once, and says when it ended', async () => {

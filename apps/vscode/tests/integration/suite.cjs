@@ -441,6 +441,27 @@ const tests = {
       await vscode.commands.executeCommand('piwi.stepRun');
       await heardOne('the step', (m) => m.type === 'control' && m.action === 'step' && m.stop === 1);
 
+      // Two lines written above the stop: the mark and its lenses follow the line, the run's code did not move.
+      const pageEditor = await vscode.window.showTextDocument(pageObject);
+      await pageEditor.edit((b) => b.insert(new vscode.Position(0, 0), '// one\n// two\n'));
+      await waitFor(() => api.executionPoints(pageObject.toString()).includes(5), 'the execution point after the edit');
+      await waitFor(async () => {
+        const lenses = (await vscode.commands.executeCommand('vscode.executeCodeLensProvider', pageObject)) ?? [];
+        return lenses.find((l) => l.command?.title.startsWith('⏸'))?.range.start.line === 5 ? true : null;
+      }, 'the paused line’s lens after the edit');
+      // Run to cursor in the edited file: the cursor's line as the run's code has it.
+      pageEditor.selection = new vscode.Selection(6, 0, 6, 0);
+      await vscode.commands.executeCommand('piwi.runToCursor');
+      await heardOne(
+        'the run to a line of the edited file',
+        (m) => m.type === 'run-to' && m.place.file === 'tests/pages/checkout.page.ts' && m.place.line === 5,
+      );
+      await vscode.commands.executeCommand('workbench.action.files.revert');
+      await waitFor(
+        () => api.executionPoints(pageObject.toString()).includes(3),
+        'the execution point after the revert',
+      );
+
       // A breakpoint set while the run goes on reaches its worker, and so does its removal.
       const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(spec, new vscode.Position(2, 0)));
       vscode.debug.addBreakpoints([breakpoint]);
@@ -458,9 +479,35 @@ const tests = {
         );
       }
 
-      // Run to cursor: the caret's line of the spec.
+      // A breakpoint that only moves with an edit keeps the line the run has: the editor sends nothing.
       const specEditor = await vscode.window.showTextDocument(spec);
-      specEditor.selection = new vscode.Selection(2, 0, 2, 0);
+      const kept = new vscode.SourceBreakpoint(new vscode.Location(spec, new vscode.Position(2, 0)));
+      let before = heard.length;
+      vscode.debug.addBreakpoints([kept]);
+      await waitFor(
+        () => heard.slice(before).some((m) => m.type === 'breakpoints' && m.places.some((p) => p.line === 3)),
+        'the breakpoint to keep',
+      );
+      before = heard.length;
+      await specEditor.edit((b) => b.insert(new vscode.Position(0, 0), '// one\n// two\n'));
+      await waitFor(
+        () => vscode.debug.breakpoints.find((b) => b.id === kept.id)?.location.range.start.line === 4,
+        'the breakpoint moved with the edit',
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      assert.deepEqual(
+        heard.slice(before).filter((m) => m.type === 'breakpoints'),
+        [],
+        'a breakpoint that only moved is not sent again',
+      );
+      vscode.debug.removeBreakpoints([kept]);
+      await waitFor(
+        () => heard.slice(before).some((m) => m.type === 'breakpoints' && !m.places.length),
+        'the kept breakpoint removed',
+      );
+
+      // Run to cursor: the caret's line of the edited spec, the line the run's code has.
+      specEditor.selection = new vscode.Selection(4, 0, 4, 0);
       await vscode.commands.executeCommand('piwi.runToCursor');
       await heardOne(
         'the run to the cursor',
@@ -489,12 +536,19 @@ const tests = {
       });
       const shown = await waitFor(() => (api.pausedPage()?.image ? api.pausedPage() : null), 'the paused page');
       assert.equal(shown.image.data, '/9j/4AAQ');
-      assert.equal(shown.caption, '⏸ Paused · Fill "one" locator(\'input\') · attempt 2 · checkout.spec.ts:3');
-      assert.deepEqual(api.executionPoints(spec.toString()), [2]);
+      // The stop's line in the spec as it stands, two lines below the run's.
+      assert.equal(shown.caption, '⏸ Paused · Fill "one" locator(\'input\') · attempt 2 · checkout.spec.ts:5');
+      assert.deepEqual(api.executionPoints(spec.toString()), [4]);
       await vscode.commands.executeCommand('piwi.resumeRun');
       await heardOne('the resume', (m) => m.type === 'control' && m.action === 'resume' && m.stop === 2);
+      // A second Resume for the stop that went on reaches nothing.
+      await vscode.commands.executeCommand('piwi.resumeRun', { ref, worker: 0, since: 'gone' });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      assert.equal(heard.filter((m) => m.type === 'control' && m.action === 'resume').length, 1);
     } finally {
       socket.destroy();
+      await vscode.window.showTextDocument(spec);
+      await vscode.commands.executeCommand('workbench.action.files.revert');
     }
     // The worker left: the run ends a few seconds later, and its execution point and page go with it.
     await waitFor(() => !sessionOf(), 'the end of the run');

@@ -44,7 +44,6 @@ import {
   type DesktopJobParams,
   type DesktopJobResult,
   type DesktopJobUpdate,
-  type EditorBreakpoint,
   type FailuresResult,
   type FileEdit,
   type InitializationOptions,
@@ -157,10 +156,10 @@ import {
   type FailureNode,
   type ProxySettings,
 } from './glue';
-import { isUnder, runBreakpoints } from './breakpoints';
+import { isUnder, placesOf, runBreakpoints } from './breakpoints';
 import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
-import type { PausedPageView } from './run-control';
+import type { PausedPageView, RunBreakpoint } from './run-control';
 import { registerRunControl } from './run-view';
 import { startSendListener, type SendListener, type SendResult } from './send-listener';
 import { TestExplorer, type ShownTest } from './test-explorer';
@@ -829,7 +828,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    * (breakpoints, `PIWI_PAUSE_AT`, or a `page.pause()`, `RunCommand.pauses`), the Send to editor pairing the picker
    * posts a pick to (`PIWI_EDITOR_SEND`).
    */
-  const startRun = async (command: RunCommand, breakpoints: readonly EditorBreakpoint[]) => {
+  const startRun = async (command: RunCommand, breakpoints: readonly RunBreakpoint[]) => {
     if (command.notice && !noticesShown.has(command.notice)) {
       noticesShown.add(command.notice);
       void vscode.window.showWarningMessage(`Piwi: ${command.notice}`);
@@ -853,7 +852,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const breakpoints = breakpointsForRun();
     const command = await lc.sendRequest<RunCommand | null>(
       RUN_ARGS_REQUEST,
-      breakpoints.length ? { ...args, breakpoints } : args,
+      breakpoints.length ? { ...args, breakpoints: placesOf(breakpoints) } : args,
     );
     if (!command) {
       void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
@@ -1127,7 +1126,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       const command = await lc.sendRequest<RunCommand | null>(RUN_SELECTION_REQUEST, {
         uri,
         key: picked.key,
-        ...(breakpoints.length ? { breakpoints } : {}),
+        ...(breakpoints.length ? { breakpoints: placesOf(breakpoints) } : {}),
       });
       if (command) await startRun(command, breakpoints);
     }),

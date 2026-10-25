@@ -1,17 +1,24 @@
 package dev.piwitests.jetbrains
 
+import com.intellij.execution.ExecutionListener
+import com.intellij.execution.ExecutionManager
+import com.intellij.execution.configurations.RunProfile
+import com.intellij.execution.configurations.WrappingRunConfiguration
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessHandler
 import com.intellij.execution.process.ProcessListener
+import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.icons.AllIcons
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.actionSystem.ActionPlaces
+import com.intellij.openapi.actionSystem.ActionPromoter
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -24,6 +31,8 @@ import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.Inlay
 import com.intellij.openapi.editor.colors.EditorFontType
 import com.intellij.openapi.editor.colors.TextAttributesKey
+import com.intellij.openapi.editor.event.DocumentEvent
+import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.editor.event.EditorFactoryEvent
 import com.intellij.openapi.editor.event.EditorFactoryListener
 import com.intellij.openapi.editor.event.EditorMouseEvent
@@ -43,6 +52,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Condition
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindowManager
@@ -67,12 +77,14 @@ import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.net.URI
 import java.nio.file.Path
+import java.util.Collections
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.imageio.ImageIO
+import javax.imageio.ImageReader
 import javax.swing.ImageIcon
 import javax.swing.JList
 import javax.swing.JPanel
@@ -85,8 +97,11 @@ import javax.swing.SwingConstants
  * arrow in the gutter whose click offers the controls), with a block inlay above it saying what is about to run and
  * offering **Resume**, **Step**, **Run to Caret** and **Finish**; a stop no pause bar shows (a headless run's) shows an
  * image of its page in the Piwi tool window's **Paused Page** tab. The IDE's breakpoints go to each live run as they
- * change (`XBreakpointListener`, `piwi/setRunBreakpoints`), filtered as a run's start filters them. **Stop** ends the
- * process of the run, which Piwi started. The pure half is `Glue.withSession`, `Glue.runControls` and their kin.
+ * change (`XBreakpointListener`, `piwi/setRunBreakpoints`), filtered as a run's start filters them. A run's lines are
+ * those of the documents as they stood when it started: the edits since (`Glue.EditLog`) bring a stop to the line it
+ * stands on now, and a breakpoint or the caret's line back to the run's. **Stop** ends the process of the run, which
+ * Piwi started, in the console or the IDE's Playwright runner, whose reruns and debug runs it follows too. The pure
+ * half is `Glue.withSession`, `Glue.runControls` and their kin.
  */
 @Service(Service.Level.PROJECT)
 class PiwiRunSessions(private val project: Project) : Disposable {
@@ -96,17 +111,34 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     @Volatile var sessions: Map<String, RunSession> = emptyMap()
         private set
 
-    /** The breakpoints each run has, by ref (`Glue.breakpointUpdates`); under [lock]. */
-    private val sent = LinkedHashMap<String, String>()
+    /**
+     * What each run was given of the breakpoints, and where its lines are mapped from, by ref
+     * (`Glue.breakpointUpdates`); under [lock].
+     */
+    private val runs = LinkedHashMap<String, Glue.RunBreakpoints>()
+
+    /** When each run started here that no worker connected for yet, by ref; under [lock]. */
+    private val starting = HashMap<String, Long>()
+
+    /** The documents' edits while a run is live or starting; under [lock]. */
+    private val edits = Glue.EditLog()
 
     /** The process of each run started here, by ref, which Stop ends. */
     private val processes = ConcurrentHashMap<String, ProcessHandler>()
 
+    /** The IDE's Playwright run configurations Piwi made, by the ref their environment carries. */
+    private val runnerRefs: MutableMap<RunProfile, String> = Collections.synchronizedMap(WeakHashMap())
+
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
-    /** The stops whose file was opened at their line, and what is drawn of each, by `Glue.stopKey`; on the event thread. */
+    /**
+     * The stops whose file was opened at their line, whose page was shown, and what is drawn of each, by
+     * `Glue.stopKey`; the files of stops refreshed from disk once, by URI. On the event thread.
+     */
     private val revealed = HashSet<String>()
+    private val paged = HashSet<String>()
     private val drawn = HashMap<String, DrawnStop>()
+    private val refreshed = HashSet<String>()
 
     /** The Paused Page tab, and the stop it shows; on the event thread. */
     private var page: Content? = null
@@ -128,6 +160,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
         override fun setBreakpoints(params: SetRunBreakpointsParams) {
             server()?.setRunBreakpoints(params)
+        }
+
+        override fun commandEnded(params: CommandEndedParams) {
+            // The run may end after the plugin was unloaded: its service is then gone.
+            if (!project.isDisposed) project.getServiceIfCreated(PiwiProjectService::class.java)?.server()?.commandEnded(params)
         }
     }
 
@@ -159,9 +196,80 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             },
             this,
         )
-        val mouse = StopInlayMouse()
+        val mouse = StopInlayMouse(project)
         editors.eventMulticaster.addEditorMouseListener(mouse, this)
         editors.eventMulticaster.addEditorMouseMotionListener(mouse, this)
+        editors.eventMulticaster.addDocumentListener(EditsListener(), this)
+        // The IDE's Playwright runner starts a configuration Piwi made again on Rerun, Rerun Failed Tests and Debug.
+        project.messageBus.connect(this).subscribe(
+            ExecutionManager.EXECUTION_TOPIC,
+            object : ExecutionListener {
+                override fun processStarted(executorId: String, env: ExecutionEnvironment, handler: ProcessHandler) {
+                    runnerRef(env)?.let { track(it, handler) }
+                }
+
+                override fun processTerminated(executorId: String, env: ExecutionEnvironment, handler: ProcessHandler, exitCode: Int) {
+                    val ref = runnerRef(env) ?: return
+                    ApplicationManager.getApplication().executeOnPooledThread { remote.commandEnded(CommandEndedParams(ref, exitCode)) }
+                }
+            },
+        )
+    }
+
+    /** The ref of a run of a configuration Piwi made, its Rerun Failed Tests' wrapping it; null for any other run. */
+    private fun runnerRef(env: ExecutionEnvironment): String? {
+        val profile = env.runProfile
+        return runnerRefs[profile]
+            ?: (profile as? WrappingRunConfiguration<*>)?.peer?.let { runnerRefs[it] }
+            ?: env.runnerAndConfigurationSettings?.configuration?.let { runnerRefs[it] }
+    }
+
+    /** A configuration of the IDE's Playwright runner made for the run of `ref`: each of its runs is followed. */
+    fun followRunner(configuration: RunProfile, ref: String) {
+        runnerRefs[configuration] = ref
+    }
+
+    /**
+     * Each document edit that moves lines, while a run is live or starting: the text around the change is read before
+     * it (where it starts and ends) and after it (what stayed on its first and last lines).
+     */
+    private inner class EditsListener : DocumentListener {
+        private var before: Triple<Int, Int, Int>? = null
+
+        override fun beforeDocumentChange(event: DocumentEvent) {
+            before = if (!tracking()) null else event.document.let { d ->
+                val line = d.getLineNumber(event.offset)
+                Triple(line, event.offset - d.getLineStartOffset(line), d.getLineNumber(event.offset + event.oldLength))
+            }
+        }
+
+        override fun documentChanged(event: DocumentEvent) {
+            val (line, column, endLine) = before ?: return
+            before = null
+            val document = event.document
+            val file = FileDocumentManager.getInstance().getFile(document)?.let { fileUri(it) } ?: return
+            val edit = Glue.lineEdit(line, column, endLine, event.newFragment) { at ->
+                if (at < document.lineCount) document.getText(TextRange(document.getLineStartOffset(at), document.getLineEndOffset(at))) else null
+            } ?: return
+            synchronized(lock) { edits.add(Glue.fileKey(file) ?: return, edit) }
+        }
+    }
+
+    /** Whether a run is live, or was started here moments ago: its lines map through the edits from then on. */
+    private fun tracking(): Boolean {
+        if (sessions.isNotEmpty()) return true
+        val now = System.currentTimeMillis()
+        return synchronized(lock) { starting.values.any { now - it < STARTING_MILLIS } }
+    }
+
+    /** Where the edits are mapped from for a run: its start, else when it was first heard. Under [lock]. */
+    private fun sinceOf(ref: String): Int = runs[ref]?.since ?: edits.now()
+
+    /** The edits no live or starting run maps through go. Under [lock]. */
+    private fun forgetEdits() {
+        val now = System.currentTimeMillis()
+        starting.values.removeAll { now - it >= STARTING_MILLIS }
+        edits.forget(runs.filterKeys { it in sessions || it in starting }.values.minOfOrNull { it.since } ?: Int.MAX_VALUE)
     }
 
     /** Called on the event thread after each change of the sessions. */
@@ -172,15 +280,26 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     fun controls(): Glue.RunControls = Glue.runControls(sessions)
 
-    fun stops(): List<Glue.ShownStop> = Glue.stopsOf(sessions)
+    /** Every stop, at the line it stands on in its document now. */
+    fun stops(): List<Glue.ShownStop> = synchronized(lock) {
+        Glue.stopsOf(sessions).map { s ->
+            s.copy(stop = s.stop.copy(line = edits.forward(Glue.fileKey(s.stop.uri), s.stop.line, sinceOf(s.ref))))
+        }
+    }
 
     /** A session heard from the service, on any thread: kept, and drawn on the event thread. */
     fun heard(session: RunSession) {
         val ref = session.ref ?: return
         val fresh = synchronized(lock) {
             val fresh = !session.ended && ref !in sessions
+            starting.remove(ref)
+            // A run not started here maps its lines from when it is first heard.
+            if (fresh && ref !in runs) Glue.remember(runs, ref, Glue.runStarted(edits.now(), null))
             sessions = Glue.withSession(sessions, session)
-            if (session.ended) sent.remove(ref)
+            if (session.ended) {
+                runs.remove(ref)
+                forgetEdits()
+            }
             fresh
         }
         // The breakpoints changed between the run's start and its first worker.
@@ -188,9 +307,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         changed()
     }
 
-    /** A run started with `breakpoints`: they are not sent to it again. */
-    fun started(ref: String, breakpoints: List<EditorBreakpoint>) {
-        synchronized(lock) { Glue.rememberBreakpoints(sent, ref, breakpoints) }
+    /** A run started with `breakpoints`: they are not sent to it again, and its lines are the documents' now. */
+    fun started(ref: String, breakpoints: List<Glue.RunBreakpoint>) {
+        synchronized(lock) {
+            Glue.remember(runs, ref, Glue.runStarted(edits.now(), breakpoints))
+            starting[ref] = System.currentTimeMillis()
+        }
     }
 
     /** The process of the run of `ref`, which Stop ends while it runs. */
@@ -211,7 +333,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         service.addProcessListener(
             object : ProcessListener {
                 override fun processTerminated(event: ProcessEvent) {
-                    synchronized(lock) { sessions = emptyMap() }
+                    synchronized(lock) {
+                        sessions = emptyMap()
+                        forgetEdits()
+                    }
                     changed()
                 }
             },
@@ -233,8 +358,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             {
                 breakpointsQueued.set(false)
                 if (gone.value(null)) return@schedule
-                val places = project.service<PiwiProjectService>().breakpoints()
-                val updates = synchronized(lock) { Glue.breakpointUpdates(sessions, places, sent) }
+                val breakpoints = project.service<PiwiProjectService>().breakpoints()
+                val updates = synchronized(lock) { Glue.breakpointUpdates(sessions, breakpoints, runs, edits) }
                 updates.forEach { remote.setBreakpoints(it) }
             },
             BREAKPOINTS_WAIT_MILLIS,
@@ -243,22 +368,27 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     }
 
     /**
-     * Draw each stop: its file opened at its line the first time, its execution point and an inlay in each editor of
-     * its file; a stop no pause bar shows, its page in the Paused Page tab. What a stop that went on drew goes. On the
-     * event thread.
+     * Draw each stop at the line it stands on now: its file opened at its line the first time, its execution point and
+     * an inlay in each editor of its file; a stop no pause bar shows, its page in the Paused Page tab, whether its file
+     * is found or not. A file the IDE has not read yet is looked for on disk off the event thread, then drawn. What a
+     * stop that went on drew goes. On the event thread.
      */
     private fun draw() {
         val stops = stops()
         val keys = stops.map(Glue::stopKey).toSet()
         for (key in drawn.keys - keys) drawn.remove(key)?.dispose()
         revealed.retainAll(keys)
+        paged.retainAll(keys)
+        refreshed.retainAll(stops.mapNotNull { it.stop.uri }.toSet())
         for (stop in stops) {
             val key = Glue.stopKey(stop)
-            val file = fileOf(stop.stop.uri) ?: continue
-            if (revealed.add(key)) {
+            val file = fileOf(stop.stop.uri)
+            if (file == null) refresh(stop.stop.uri)
+            if (file != null && revealed.add(key)) {
                 OpenFileDescriptor(project, file, stop.stop.line, stop.stop.character ?: 0).navigate(true)
-                if (!stop.stop.bar) showPage(stop)
             }
+            if (!stop.stop.bar && paged.add(key)) showPage(stop)
+            if (file == null) continue
             val document = FileDocumentManager.getInstance().getDocument(file) ?: continue
             if (stop.stop.line < 0 || stop.stop.line >= document.lineCount) continue
             val shown = drawn.getOrPut(key) { DrawnStop(highlight(document, stop)) }
@@ -283,6 +413,15 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     private fun fileOf(uri: String?): VirtualFile? =
         runCatching { LocalFileSystem.getInstance().findFileByNioFile(Path.of(URI(uri ?: ""))) }.getOrNull()
+
+    /** Look a stop's file up on disk off the event thread, once, and draw again. On the event thread. */
+    private fun refresh(uri: String?) {
+        if (uri == null || !refreshed.add(uri)) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            runCatching { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Path.of(URI(uri))) }
+            ApplicationManager.getApplication().invokeLater({ draw() }, gone)
+        }
+    }
 
     /** A stop's execution point: the line in the debugger's execution point colors, with the arrow in the gutter. */
     private fun highlight(document: Document, stop: Glue.ShownStop): RangeHighlighter =
@@ -331,19 +470,22 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         panel.show("$caption · asking the test for its page…", null)
         ApplicationManager.getApplication().executeOnPooledThread {
             val image = remote.pausedPage(PausedPageParams(stop.ref, stop.worker))?.image
-            val picture = Glue.pausedImageBytes(image)?.let { runCatching { ImageIO.read(ByteArrayInputStream(it)) }.getOrNull() }
+            val picture = Glue.pausedImageBytes(image)?.let(::decode)
             ApplicationManager.getApplication().invokeLater({
                 if (pageStop == key) panel.show(if (picture != null) caption else "$caption · the test sent no image of its page", picture)
             }, gone)
         }
     }
 
-    /** Answer a stop (`resume`, `step`, `finish`, or `run-to` the `place`), off the event thread, saying why not. */
+    /**
+     * Answer a stop (`resume`, `step`, `finish`, or `run-to` the `place`, a line of the run's code), naming it, off the
+     * event thread, saying why not.
+     */
     fun answer(stop: Glue.ShownStop, action: String, place: EditorBreakpoint? = null) {
-        control(RunControlParams(stop.ref, stop.worker, action, place))
+        control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since))
     }
 
-    /** Pause every run: each of its workers stops before its next call. */
+    /** Pause every run started here: each of its workers stops before its next call. */
     fun pause() {
         sessions.keys.forEach { control(RunControlParams(it, action = "pause")) }
     }
@@ -384,10 +526,13 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             .showCenteredInCurrentWindow(project)
     }
 
-    /** Run to the caret's line of `editor` from `stop`. */
+    /** Run to the caret's line of `editor` from `stop`: the line as the run's code has it, which edits since may move. */
     fun runTo(stop: Glue.ShownStop, editor: Editor?) {
         val uri = editor?.virtualFile?.let { fileUri(it) } ?: return PiwiCommands.notify(project, "Place the caret on the line to run to.")
-        answer(stop, "run-to", EditorBreakpoint(uri, editor.caretModel.logicalPosition.line))
+        val caret = editor.caretModel.logicalPosition.line
+        val line = synchronized(lock) { edits.back(Glue.fileKey(uri), caret, sinceOf(stop.ref)) }
+            ?: return PiwiCommands.notify(project, "The caret's line changed since the run started, so the running test has no line to stop at there.")
+        answer(stop, "run-to", EditorBreakpoint(uri, line))
     }
 
     /** The actions offered at a stop, which act on it. */
@@ -435,6 +580,22 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         /** The pause after a breakpoint changes before the runs are sent them: a burst of changes is sent once. */
         private const val BREAKPOINTS_WAIT_MILLIS = 100L
 
+        /** How long a run started here is waited for, its edits kept, before its first worker connects. */
+        private const val STARTING_MILLIS = 120_000L
+
+        /** An image of a stopped page, decoded unless it is too large to hold; null for none. */
+        private fun decode(bytes: ByteArray): BufferedImage? = runCatching {
+            ImageIO.createImageInputStream(ByteArrayInputStream(bytes)).use { input ->
+                val reader: ImageReader = ImageIO.getImageReaders(input).asSequence().firstOrNull() ?: return null
+                try {
+                    reader.input = input
+                    if (!Glue.decodableImage(reader.getWidth(0), reader.getHeight(0))) null else reader.read(0)
+                } finally {
+                    reader.dispose()
+                }
+            }
+        }.getOrNull()
+
         val CONTROL_ICONS = mapOf(
             Glue.StopControl.RESUME to AllIcons.Actions.Resume,
             Glue.StopControl.STEP to AllIcons.Actions.TraceOver,
@@ -454,6 +615,8 @@ internal interface RunRemote {
     fun pausedPage(params: PausedPageParams): PausedPageResult?
 
     fun setBreakpoints(params: SetRunBreakpointsParams)
+
+    fun commandEnded(params: CommandEndedParams)
 }
 
 /** The page of a stopped test, under what it is about to run: the Paused Page tab of the Piwi tool window. */
@@ -570,12 +733,16 @@ internal class StopInlay(val stop: Glue.ShownStop) : EditorCustomElementRenderer
         inlay.editor.project?.getServiceIfCreated(PiwiRunSessions::class.java)?.stopActions(stop)
 }
 
-/** A click on a control of a stop's inlay runs it; the pointer is a hand over one. */
-private class StopInlayMouse : EditorMouseListener, EditorMouseMotionListener {
+/**
+ * A click on a control of a stop's inlay runs it; the pointer is a hand over one. Each project's runs listen on every
+ * editor: the editors of another project are its own runs'.
+ */
+private class StopInlayMouse(private val project: Project) : EditorMouseListener, EditorMouseMotionListener {
     /** The editors whose pointer is over a control now. */
     private val hovering = WeakHashMap<Editor, Boolean>()
 
     private fun controlAt(event: EditorMouseEvent): Pair<StopInlay, Glue.StopControl>? {
+        if (event.editor.project != project) return null
         val inlay = event.inlay ?: return null
         val renderer = inlay.renderer as? StopInlay ?: return null
         return renderer.controlAt(inlay, event.mouseEvent.x)?.let { renderer to it }
@@ -583,12 +750,13 @@ private class StopInlayMouse : EditorMouseListener, EditorMouseMotionListener {
 
     override fun mouseClicked(event: EditorMouseEvent) {
         val (renderer, control) = controlAt(event) ?: return
-        val sessions = event.editor.project?.getServiceIfCreated(PiwiRunSessions::class.java) ?: return
+        val sessions = project.getServiceIfCreated(PiwiRunSessions::class.java) ?: return
         event.consume()
         sessions.perform(renderer.stop, control, event.editor)
     }
 
     override fun mouseMoved(event: EditorMouseEvent) {
+        if (event.editor.project != project) return
         val editor = event.editor as? EditorEx ?: return
         val over = controlAt(event) != null
         if ((hovering[editor] ?: false) == over) return
@@ -610,11 +778,24 @@ abstract class RunControlAction : AnAction(), DumbAware {
         val project = e.project
         val controls = project?.getServiceIfCreated(PiwiRunSessions::class.java)?.controls()
         val debugging = e.place == ActionPlaces.KEYBOARD_SHORTCUT && project != null &&
-            XDebuggerManager.getInstance(project).currentSession != null
+            XDebuggerManager.getInstance(project).debugSessions.isNotEmpty()
         e.presentation.isEnabled = controls != null && !debugging && applies(controls, e)
     }
 
     protected fun sessions(e: AnActionEvent): PiwiRunSessions? = e.project?.getServiceIfCreated(PiwiRunSessions::class.java)
+}
+
+/**
+ * Puts the run controls first among the actions a shortcut runs, so a keymap that gives their key to another action too
+ * (the VS Code keymaps' F5, `Debug`; NetBeans' F4, `EditSource`) runs Piwi's while a run is live; a control that does
+ * not apply is disabled, and the next action runs.
+ */
+class PiwiRunActionPromoter : ActionPromoter {
+    override fun promote(actions: List<AnAction>, context: DataContext): List<AnAction> {
+        val sessions = CommonDataKeys.PROJECT.getData(context)?.getServiceIfCreated(PiwiRunSessions::class.java)
+        if (sessions == null || !sessions.controls().active) return emptyList()
+        return actions.filter { it is RunControlAction }
+    }
 }
 
 /** **Pause the Run**: every worker of the runs started here stops before its next call. F9 resumes while one is stopped. */

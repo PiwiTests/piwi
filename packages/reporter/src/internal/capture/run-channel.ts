@@ -126,6 +126,21 @@ export async function openRunChannel(
   return true;
 }
 
+/**
+ * Take the run's channel out of the worker's environment while a test runs, so a process the test starts (Playwright
+ * run from a test) opens no connection on this run; returns what puts it back once the test ended. Playwright compares
+ * a worker's environment as it stops with the one it started with, and hands what changed to the projects that depend
+ * on its own: between tests, the channel is there. `PIWI_RECORD_CHANNEL` stays, for **Record here**.
+ */
+export function hideRunChannel(env: NodeJS.ProcessEnv = process.env): () => void {
+  const value = env[RUN_CHANNEL_ENV];
+  if (value === undefined) return () => {};
+  delete env[RUN_CHANNEL_ENV];
+  return () => {
+    env[RUN_CHANNEL_ENV] = value;
+  };
+}
+
 /** Close the worker's run connection, as the worker ends. */
 export function closeRunChannel(): void {
   socket?.end();

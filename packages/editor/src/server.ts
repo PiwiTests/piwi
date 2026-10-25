@@ -3321,7 +3321,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   /**
    * The record channel goes with the service: its socket's folder is removed, a waiting test hears why, and each
-   * worker's run connection closes, so its stop goes on.
+   * worker's run connection closes, which lets a stop no pause bar shows go on; a stop the bar shows waits there.
    */
   const closeRecordChannel = () => {
     shutDown = true;

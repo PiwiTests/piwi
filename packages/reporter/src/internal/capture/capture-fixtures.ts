@@ -124,7 +124,15 @@ import {
   type StopReason,
 } from './pause-at.js';
 import { canRecordFromHere, recordFromHere } from './record-handoff.js';
-import { closeRunChannel, holdStop, openRunChannel, runChannelOpen, tellHub, type RunControl } from './run-channel.js';
+import {
+  closeRunChannel,
+  hideRunChannel,
+  holdStop,
+  openRunChannel,
+  runChannelOpen,
+  tellHub,
+  type RunControl,
+} from './run-channel.js';
 import type { RunToHub } from '@piwitests/core/run-channel';
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 import {
@@ -2815,12 +2823,14 @@ export const piwiFixtures: Fixtures<
         });
       activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
+      const showRunChannel = hideRunChannel();
       try {
         // The contexts a hook or an earlier test opened stop at this test's breakpoints too.
         await armStops(OPEN_CONTEXTS);
         await startCodeReachOnOpenPages();
         await use();
       } finally {
+        showRunChannel();
         currentSink = null;
         // A pause the editor asked that no call of this test took stops the next test's first call.
         if (sink.pause?.pause) pauseNextTest = true;

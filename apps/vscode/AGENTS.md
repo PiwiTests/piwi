@@ -140,22 +140,32 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   (`lastRun`).
 - `src/run-view.ts` shows and steers the runs started here (`registerRunControl`), with Piwi's own commands, no debug
   session: the initialization options say so (`runControl: true`), and the latest `piwi/runSessionChanged` of each ref
-  is kept until one says `ended` (or the service stops: `onDidChangeState`). **Pause** (`piwi.pauseRun`, every run's
-  running workers) and **Stop** (`piwi.stopRun`, which terminates the ref's task) while a run is live, **Resume**,
+  is kept until one says `ended` (or the service stops: `onDidChangeState`). **Pause** (`piwi.pauseRun`, the running
+  workers of every run of the window) and **Stop** (`piwi.stopRun`, which terminates the ref's task) while a run is
+  live, **Resume**,
   **Step**, **Run to the cursor** (`run-to` the caret's line) and **Finish** (`piwi.resumeRun`, `piwi.stepRun`,
-  `piwi.runToCursor`, `piwi.finishRun`) while a worker is stopped, each `piwi/runControl`, an answer with `ok: false`
+  `piwi.runToCursor`, `piwi.finishRun`) while a worker is stopped, each `piwi/runControl` naming the stop it answers
+  (`since`), an answer with `ok: false`
   shown as an information message: in the status bar beside the run's progress (`controlItems`), in the palette
-  and on keys while they apply (the `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped` context keys). A stop
+  and on keys while they apply (the `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped` context keys, and
+  `piwi.runResumed` for two seconds after an answer, `RESUMED_KEY_MS`). A stop
   opens its file at its line once (`stopKey`), drawn as the execution point (`media/execution-point.svg` in the
   gutter, `piwi.executionPointBackground`, the debugger's stack frame color by default) with a hover holding the
   controls, and a CodeLens above it (`pausedText`: `⏸ Paused · <title> · attempt N`, then Resume, Step, Run to cursor,
-  Finish, each naming its worker); a key or a palette command acts on the stop at the caret's line, else the only one,
-  else asks (`stopsFor`). A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the
+  Finish, each naming its worker and its stop: one that went on says `the test went on.`, `targetStop`); a key or a
+  palette command acts on the stop at the caret's line, else the only one,
+  else asks (`stopsFor`). A run's lines are the documents as they stood when it started (`started`, else when it is
+  first heard): `EditLog` keeps the edits that move lines while a run is live or starting
+  (`workspace.onDidChangeTextDocument`, `lineEditOf`), which bring a stop to the line it stands on now (the mark, the
+  lens, the caret's match) and the caret's line back to the run's for Run to the cursor, refused on a line written
+  since. A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the
   **Piwi: paused page** webview beside the editor (no script, `img-src data:`, its style by nonce: `pausedPageHtml`),
   again at each such stop and on **Piwi: Show the paused page** (`piwi.showPausedPage`). The breakpoints
   `breakpointsForRun` gives go to each live run as they change (`vscode.debug.onDidChangeBreakpoints`, the
-  `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, only to a run whose breakpoints differ from those its
-  command started with or was last sent (`breakpointUpdates`), and once to a run as its first worker connects.
+  `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the run's code (`runPlaces`: a breakpoint
+  the run was given, by `vscode.Breakpoint.id`, keeps its line while it only moved with the edits; another is mapped
+  back through them), only to a run whose places differ from those its command started with or was last sent
+  (`breakpointUpdates`), and once to a run as its first worker connects.
   `src/run-control.ts` is its pure half, tested without an editor; the API `activate` returns gives the sessions
   (`runSessions`), the lines drawn as the execution point (`executionPoints`) and what the paused page shows
   (`pausedPage`).
@@ -235,8 +245,11 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   stops the recording; `ctrl+shift+alt+f` re-runs the failing tests; `ctrl+shift+alt+k`, in a focused editor, runs the
   test at the cursor: the JetBrains plugin's chords for the same actions) stay free in VS Code's default keymap on
   Windows, Linux and macOS, and in the JetBrains IDEs' bundled keymaps. A run's controls take the debugger's keys
-  instead, only while they apply and no debug session runs (`!inDebugMode`): `f6` pauses, `shift+f5` stops, `f5`
-  resumes, `f10` steps, `shift+f11` finishes and `ctrl+f10` (`cmd+f10`) runs to the cursor. VS Code binds `ctrl+shift+alt` (`cmd` on
+  instead, only while they apply and no debug session runs (`!inDebugMode`): `shift+f5` stops, `f5` resumes (and does
+  nothing for two seconds after an answer, `piwi.runResumed`, rather than start a debug session), `f10` steps,
+  `shift+f11` finishes and `ctrl+f10` (`cmd+f10`) runs to the cursor. **Pause** has no default key: it applies for as
+  long as a test runs, and a key bound that long takes one from the workbench (`f6` moves the focus between parts).
+  VS Code binds `ctrl+shift+alt` (`cmd` on
   macOS) with `a`, `c`, `g`, `i`, `l`, `n` and `o`, the JetBrains keymaps with `c`, `d`, `e`, `h`, `i`, `j`, `l`, `m`,
   `n`, `p`, `s`, `t`, `u`, `v`, `w`, `x` and `y`; `ctrl+alt+<key>` and the `ctrl+k` chords are taken too. The extension declares no support for untrusted and virtual workspaces
   (`capabilities` in `package.json`): the service reads the files from disk and runs Playwright.

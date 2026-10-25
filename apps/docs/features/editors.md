@@ -21,11 +21,11 @@ and draws differently.
 Install **Piwi** from the
 **[Visual Studio Marketplace ↗](https://marketplace.visualstudio.com/items?itemName=PiwiTests.piwi)** (`piwitests.piwi`
 in the extensions view) or the **[JetBrains Marketplace ↗](https://plugins.jetbrains.com/plugin/34674-piwi)**
-(**Settings → Plugins**). It starts on a trusted workspace that holds a Playwright config, and reads the connection
+(**Settings → Plugins**). It starts on a trusted workspace holding a Playwright config, and reads the connection
 the reporter already uses: the `PIWI_*` variables in the environment or the workspace `.env`, or the
 [desktop app](/features/desktop). Otherwise, run **Piwi: Connect** (**Settings → Tools → Piwi** in a JetBrains IDE)
 and sign in with the browser: [Editor connection](./editor-connection) has the steps.
-In VS Code, the extension also opens a path clicked in the dashboard, with no workspace root to set:
+In VS Code, the extension also opens a path clicked in the dashboard, with no root to set:
 [Open in IDE](./ide-integration#vs-code-the-piwi-extension).
 
 In VS Code, the first workspace with a Playwright config opens the **Get started with Piwi** walkthrough, once per
@@ -60,9 +60,8 @@ Above a flaky test: its flaky rate and [top suspect](./flake-lab#from-the-editor
 
 ## Timeouts
 
-A test whose `test.slow()` is no longer needed, or whose timeout is far above its p95, gets a note on its line and a
-quick fix: remove the `test.slow()`, or set `test.setTimeout` to the
-suggested value.
+A test whose `test.slow()` is no longer needed, or whose timeout is far above its p95, gets a note and a quick fix:
+remove `test.slow()`, or set `test.setTimeout` to the suggested value.
 
 ## Completion
 
@@ -86,7 +85,7 @@ quick fix replaces the chain with it.
 
 ## The locators a change breaks
 
-In an application file, the unsaved buffer is compared with `HEAD` as you type, the same way
+In an application file, the unsaved buffer is compared with `HEAD` as you type, as
 [`piwi preflight`](/features/preflight) compares a diff. A changed line whose string a locator finds its element by is
 a warning, with the chains it breaks on hover, and one quick fix that rewrites every call site.
 
@@ -108,7 +107,7 @@ your API keys. The desktop app keeps its own token.
 |---|---|
 | Piwi: Connect, Disconnect | See [Editor connection](./editor-connection) |
 | Piwi: Refresh | Fetch the indexes and the latest run again |
-| Piwi: Refresh the latest run | Read the latest run again, as a click on the status bar does |
+| Piwi: Refresh the latest run | Read the latest run again, as a status bar click does |
 | Piwi: Run the test at the cursor | Run the test whose `test(…)` call holds the cursor: [Run tests](./editor-runs#run-tests) |
 | Piwi: Verify the test at the cursor ×3 | Run it three times without retries and say how many runs passed |
 | Piwi: Run this spec | Run the tests of the spec Piwi knows |
@@ -121,15 +120,15 @@ your API keys. The desktop app keeps its own token.
 | Piwi: Pair with Piwi Picker | Copy the address [Piwi Picker sends to](./editor-recording#send-from-piwi-picker) |
 | Piwi: Record here, Record a new test file | Record at the cursor, or into a new spec: [Record tests from the editor](./editor-recording) |
 | Piwi: Stop recording, Pause recording, Resume recording | Control the recording in progress |
-| Piwi: Pause the run, Resume the run, Step to the next call, Run to the cursor | [Pause and step from the editor](./editor-run-control) |
+| Piwi: Pause the run, Resume the run, Step to the next call, Run to the cursor, Finish the test without stopping again, Stop the run, Show the paused page | [Pause and step from the editor](./editor-run-control) |
 | Piwi: Toggle the coverage marks | Show or hide the [coverage marks](./editor-coverage) |
 | Piwi: Open the log | Show the editor service's log; the `piwi.trace.server` setting adds its traffic |
 | Piwi: Get started | Open the walkthrough |
 
 Three commands have the same shortcut in VS Code and the JetBrains IDEs, free in their default keymaps on Windows,
 Linux and macOS: `Ctrl+Shift+Alt+K` runs the test at the cursor, `Ctrl+Shift+Alt+F` re-runs the failing
-tests, and `Ctrl+Shift+Alt+R` records at the cursor, then stops the recording; on macOS, `Cmd` takes the place of
-`Ctrl`. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`), **Settings → Keymap** in a
+tests, and `Ctrl+Shift+Alt+R` records at the cursor, then stops the recording; `Cmd` for `Ctrl` on macOS.
+**Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`), **Settings → Keymap** in a
 JetBrains IDE (search `Piwi`).
 
 ## JetBrains IDEs

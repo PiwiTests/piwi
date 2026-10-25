@@ -712,13 +712,24 @@ data class RunSession(
 
 /**
  * `piwi/runControl`: `pause` (every running worker without `worker`), `step`, `resume`, `finish`, or `run-to` with
- * `place` (the stopped worker, which `worker` names when several are). Answered with what was asked or why not.
+ * `place`, a line of the run's code (the stopped worker, which `worker` names when several are). `since` names the
+ * stop it answers (`RunStop.since`): a worker past it is not asked, `The test went on.` Answered with what was asked
+ * or why not.
  */
-data class RunControlParams(val ref: String, val worker: Int? = null, val action: String, val place: EditorBreakpoint? = null)
+data class RunControlParams(
+    val ref: String,
+    val worker: Int? = null,
+    val action: String,
+    val place: EditorBreakpoint? = null,
+    val since: String? = null,
+)
 
 data class RunControlResult(val ok: Boolean = false, val message: String? = null)
 
-/** `piwi/setRunBreakpoints`: the IDE's line breakpoints for the run of `ref`, in place of those it had. */
+/**
+ * `piwi/setRunBreakpoints`: the IDE's line breakpoints for the run of `ref`, in place of those it had, as lines of the
+ * run's code.
+ */
 data class SetRunBreakpointsParams(val ref: String, val places: List<EditorBreakpoint>)
 
 /** `piwi/pausedPage`: an image of the page of a stopped worker (`what` is `image`). */

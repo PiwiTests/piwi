@@ -6,8 +6,9 @@
  * keys). A stop opens its file at its line, marked as the execution point (an arrow in the gutter and the line's
  * background), with a CodeLens above it saying what is about to run and offering the controls, which its hover offers
  * too; a stop no pause bar shows (a headless run's) shows an image of its page in a webview beside the editor. The
- * editor's breakpoints go to each live run as they change (`piwi/setRunBreakpoints`). The pure half is
- * `run-control.ts`.
+ * editor's breakpoints go to each live run as they change (`piwi/setRunBreakpoints`). A run's lines are those of the
+ * documents as they stood when it started: the edits since (`EditLog`) bring a stop to the line it stands on now, and
+ * a breakpoint or the cursor's line back to the run's. The pure half is `run-control.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
@@ -16,7 +17,6 @@ import {
   PAUSED_PAGE_REQUEST,
   RUN_CONTROL_REQUEST,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
-  type EditorBreakpoint,
   type PausedPageParams,
   type PausedPageResult,
   type RunControlAction,
@@ -26,21 +26,27 @@ import {
   type RunSession,
 } from '@piwitests/editor/protocol';
 import {
+  EditLog,
   RUN_COMMANDS,
   breakpointUpdates,
   controlItems,
   controlState,
+  lineEditOf,
   pausedPageHtml,
   pausedText,
   remember,
+  runStarted,
   runTargetArg,
   spelledSession,
   stopKey,
   stopPick,
   stopsFor,
   stopsOf,
+  targetStop,
   withSession,
   type PausedPageView,
+  type RunBreakpoint,
+  type RunBreakpoints,
   type RunTarget,
   type ShownStop,
 } from './run-control';
@@ -48,16 +54,25 @@ import {
 /** What the run controls need of the rest of the extension. */
 export interface RunControlOptions {
   /** The editor's breakpoints a run pauses at, as a run's start reads them. */
-  breakpoints(): EditorBreakpoint[];
+  breakpoints(): RunBreakpoint[];
   /** Ends the process of the run of `ref`; false when no task of this window runs it. */
   terminate(ref: string): boolean;
 }
 
+/** How long a run started here is waited for, its edits kept, before its first worker connects. */
+const STARTING_MS = 120_000;
+
+/**
+ * How long `F5` stays Piwi's after a stop is answered: it does nothing until the next stop, rather than start a debug
+ * session.
+ */
+const RESUMED_KEY_MS = 2_000;
+
 export interface RunControl extends vscode.Disposable {
   /** A session heard from the service. */
   heard(session: RunSession): void;
-  /** A run started with these breakpoints: they are not sent to it again. */
-  started(ref: string, breakpoints: readonly EditorBreakpoint[]): void;
+  /** A run started with these breakpoints: they are not sent to it again, and its lines are the documents' now. */
+  started(ref: string, breakpoints: readonly RunBreakpoint[]): void;
   /** The service stopped: its runs' sessions with it. */
   clear(): void;
   /** The sessions kept, which the integration suite reads. */
@@ -105,8 +120,14 @@ export function registerRunControl(
   options: RunControlOptions,
 ): RunControl {
   let sessions = new Map<string, RunSession>();
-  /** The breakpoints each run has, by ref, as `breakpointUpdates` reads and records them. */
-  const sent = new Map<string, string>();
+  /** What each run was given of the breakpoints, and where the edits are mapped from for it, by ref. */
+  const runs = new Map<string, RunBreakpoints>();
+  /** The runs started here that no worker connected for yet, until they do or a while passes. */
+  const starting = new Map<string, ReturnType<typeof setTimeout>>();
+  /** The edits of the documents while a run is live or starting. */
+  const edits = new EditLog();
+  /** A stop was answered moments ago: `F5` waits for the next one (`piwi.runResumed`). */
+  let resumed: ReturnType<typeof setTimeout> | null = null;
   /** The stops whose file was opened at their line: each is revealed once. */
   const revealed = new Set<string>();
   /** The lines drawn as an execution point, by file. */
@@ -126,8 +147,35 @@ export function registerRunControl(
   /** The stop the paused page view shows. */
   let pageStop: string | null = null;
 
-  const stops = () => stopsOf(sessions);
+  /** Where the edits are mapped from for a run: its start, else when it was first heard. */
+  const sinceOf = (ref: string) => runs.get(ref)?.since ?? edits.now();
+  /** Every stop, at the line it stands on in its document now. */
+  const stops = (): ShownStop[] =>
+    stopsOf(sessions).map((s) => ({
+      ...s,
+      stop: { ...s.stop, line: edits.forward(s.stop.uri, s.stop.line, sinceOf(s.ref)) },
+    }));
   const say = (message: string) => void vscode.window.showInformationMessage(`Piwi: ${message}`);
+
+  /** The edits no live or starting run maps through go. */
+  const forgetEdits = () => {
+    let oldest = Infinity;
+    for (const [ref, run] of runs) if (sessions.has(ref) || starting.has(ref)) oldest = Math.min(oldest, run.since);
+    edits.forget(oldest);
+  };
+
+  /** A document's edit, kept while a run may map its lines through it; a stop in it is drawn where it stands now. */
+  const edited = (e: vscode.TextDocumentChangeEvent) => {
+    if (!sessions.size && !starting.size) return;
+    const uri = e.document.uri.toString();
+    const alone = e.contentChanges.length === 1;
+    const lineAfter = (line: number) => (line < e.document.lineCount ? e.document.lineAt(line).text : undefined);
+    for (const change of e.contentChanges) {
+      const edit = lineEditOf(change, alone ? lineAfter : undefined);
+      if (edit) edits.add(uri, edit);
+    }
+    if (stopsOf(sessions).some((s) => s.stop.uri === uri)) drawStops();
+  };
 
   const item = (key: string) => {
     let found = items.get(key);
@@ -162,9 +210,12 @@ export function registerRunControl(
     for (const [key, i] of items) if (!shown.has(key)) i.hide();
   };
 
+  /** What a stop's lens and hover name: its run, its worker and the stop itself. */
+  const targetOf = (stop: ShownStop): RunTarget => ({ ref: stop.ref, worker: stop.worker, since: stop.stop.since });
+
   /** A stop's controls as links, for its hover. */
   const hoverOf = (stop: ShownStop) => {
-    const target = encodeURIComponent(JSON.stringify([{ ref: stop.ref, worker: stop.worker } satisfies RunTarget]));
+    const target = encodeURIComponent(JSON.stringify([targetOf(stop)]));
     const links = [
       ...STOP_CONTROLS,
       ...(stop.stop.bar ? [] : [{ title: 'Show the page', command: RUN_COMMANDS.showPage }]),
@@ -243,9 +294,9 @@ export function registerRunControl(
     );
   };
 
-  /** The editor's breakpoints to each live run whose breakpoints differ. */
+  /** The editor's breakpoints to each live run whose breakpoints differ, as lines of its code. */
   const sendBreakpoints = () => {
-    for (const update of breakpointUpdates(sessions, options.breakpoints(), sent)) {
+    for (const update of breakpointUpdates(sessions, options.breakpoints(), runs, edits)) {
       void lc.sendNotification(SET_RUN_BREAKPOINTS_NOTIFICATION, update);
     }
   };
@@ -270,15 +321,14 @@ export function registerRunControl(
     if (panel && !pageStop && !sessions.size) showPage({ image: null, caption: 'The run ended.' });
   };
 
-  /** The stop a control acts on: the command's own, else the one at the caret's line, else the one chosen. */
-  const chooseStop = async (arg: unknown): Promise<ShownStop | null> => {
+  /**
+   * The stop a control acts on: the command's own (`went-on` when that stop ended), else the one at the caret's line,
+   * else the one chosen.
+   */
+  const chooseStop = async (arg: unknown): Promise<ShownStop | 'went-on' | null> => {
     const all = stops();
     const target = runTargetArg(arg);
-    if (target) {
-      return (
-        all.find((s) => s.ref === target.ref && (target.worker === undefined || s.worker === target.worker)) ?? null
-      );
-    }
+    if (target) return targetStop(all, target) ?? 'went-on';
     const editor = vscode.window.activeTextEditor;
     const caret = editor ? { uri: editor.document.uri.toString(), line: editor.selection.active.line } : null;
     const candidates = stopsFor(all, caret);
@@ -294,16 +344,39 @@ export function registerRunControl(
     const answer = await lc.sendRequest<RunControlResult>(RUN_CONTROL_REQUEST, params).catch(() => null);
     if (!answer) say('the editor service did not answer.');
     else if (!answer.ok) say(answer.message);
+    return answer?.ok === true;
   };
 
-  /** Answer a stop: the command's, the caret's or the one chosen. */
-  const answerStop = async (action: Exclude<RunControlAction, 'pause'>, arg: unknown, place?: RunPlace) => {
+  /** `F5` stays Piwi's for a moment after a stop was answered (`piwi.runResumed`). */
+  const answered = () => {
+    if (resumed) clearTimeout(resumed);
+    void vscode.commands.executeCommand('setContext', 'piwi.runResumed', true);
+    resumed = setTimeout(() => {
+      resumed = null;
+      void vscode.commands.executeCommand('setContext', 'piwi.runResumed', false);
+    }, RESUMED_KEY_MS);
+  };
+
+  /**
+   * Answer a stop: the command's, the caret's or the one chosen, naming the stop it answers. `placeOf` gives `run-to`
+   * its line of the run's code, or why there is none.
+   */
+  const answerStop = async (
+    action: Exclude<RunControlAction, 'pause'>,
+    arg: unknown,
+    placeOf?: (stop: ShownStop) => RunPlace | string,
+  ) => {
     const stop = await chooseStop(arg);
+    if (stop === 'went-on') return say('the test went on.');
     if (!stop) {
-      if (!stops().length) say('no test is stopped.');
+      // A key pressed again after an answer, before the next stop: nothing to do.
+      if (!stops().length && !resumed) say('no test is stopped.');
       return;
     }
-    await control({ ref: stop.ref, worker: stop.worker, action, ...(place ? { place } : {}) });
+    const place = placeOf?.(stop);
+    if (typeof place === 'string') return say(place);
+    const params: RunControlParams = { ref: stop.ref, worker: stop.worker, action, since: stop.stop.since };
+    if (await control(place ? { ...params, place } : params)) answered();
   };
 
   /** The run a Stop names, else the only one live, else the one chosen. */
@@ -331,6 +404,7 @@ export function registerRunControl(
     executionPoint,
     lensesChanged,
     vscode.window.onDidChangeVisibleTextEditors(() => drawStops()),
+    vscode.workspace.onDidChangeTextDocument(edited),
     vscode.debug.onDidChangeBreakpoints(() => sendBreakpoints()),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('piwi.breakpoints')) sendBreakpoints();
@@ -345,7 +419,7 @@ export function registerRunControl(
             .filter((s) => s.stop.uri === uri && s.stop.line < document.lineCount)
             .flatMap((s) => {
               const range = new vscode.Range(s.stop.line, 0, s.stop.line, 0);
-              const target = [{ ref: s.ref, worker: s.worker } satisfies RunTarget];
+              const target = [targetOf(s)];
               return [
                 new vscode.CodeLens(range, {
                   title: pausedText(s.stop, s.test),
@@ -378,17 +452,28 @@ export function registerRunControl(
     vscode.commands.registerCommand(RUN_COMMANDS.runTo, async (arg?: unknown) => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return say('place the cursor on the line to run to.');
-      await answerStop('run-to', arg, { uri: editor.document.uri.toString(), line: editor.selection.active.line });
+      const uri = editor.document.uri.toString();
+      const caret = editor.selection.active.line;
+      // The cursor's line in the run's code, which the edits since its start may have moved.
+      await answerStop('run-to', arg, (stop) => {
+        const line = edits.back(uri, caret, sinceOf(stop.ref));
+        return line === null
+          ? 'the cursor’s line changed since the run started, so the running test has no line to stop at there.'
+          : { uri, line };
+      });
     }),
     vscode.commands.registerCommand(RUN_COMMANDS.showPage, async (arg?: unknown) => {
       const stop = await chooseStop(arg);
-      if (stop) await openPage(stop);
+      if (stop === 'went-on') say('the test went on.');
+      else if (stop) await openPage(stop);
       else say('no test is stopped.');
     }),
     {
       dispose: () => {
         items.forEach((i) => i.dispose());
         panel?.dispose();
+        if (resumed) clearTimeout(resumed);
+        starting.forEach((timer) => clearTimeout(timer));
       },
     },
   ];
@@ -397,20 +482,34 @@ export function registerRunControl(
   return {
     heard(session) {
       const fresh = !session.ended && !sessions.has(session.ref);
+      clearTimeout(starting.get(session.ref));
+      starting.delete(session.ref);
+      // A run not started here maps its lines from when it is first heard.
+      if (fresh && !runs.has(session.ref)) remember(runs, session.ref, runStarted(edits.now(), null));
       sessions = withSession(
         sessions,
         spelledSession(session, (uri) => vscode.Uri.parse(uri).toString()),
       );
-      if (session.ended) sent.delete(session.ref);
+      if (session.ended) {
+        runs.delete(session.ref);
+        forgetEdits();
+      }
       changed();
       // Breakpoints changed between the run's start and its first worker.
       if (fresh) sendBreakpoints();
     },
     started(ref, breakpoints) {
-      remember(sent, ref, JSON.stringify(breakpoints));
+      remember(runs, ref, runStarted(edits.now(), breakpoints));
+      clearTimeout(starting.get(ref));
+      const timer = setTimeout(() => {
+        starting.delete(ref);
+        forgetEdits();
+      }, STARTING_MS);
+      starting.set(ref, timer);
     },
     clear() {
       sessions = new Map();
+      forgetEdits();
       changed();
     },
     sessions: () => [...sessions.values()],

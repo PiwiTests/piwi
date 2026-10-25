@@ -148,6 +148,8 @@ export class RecordChannel {
     let run: ((line: string) => void) | null = null;
     const read = lineReader(
       (line) => {
+        // A connection closed (a refused first line, a run connection let go) reads nothing more, its chunk included.
+        if (socket.destroyed) return;
         if (run) return run(line);
         if (handoff) {
           handoff.deliver(line);

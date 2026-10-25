@@ -92,6 +92,11 @@ test('connection closes', async ({ page }) => {
   await page.locator('input').fill('z'); // bp
   await page.getByRole('button').click();
 });
+test('a process it starts', async () => {
+  const { execFileSync } = require('node:child_process');
+  const seen = execFileSync(process.execPath, ['-e', 'process.stdout.write(process.env.PIWI_RUN_CHANNEL ?? "none")']);
+  expect(seen.toString()).toBe('none');
+});
 `;
 
 /** Each test's result, as the run's own reporter writes it: its steps with their places and times, and the output. */
@@ -288,7 +293,8 @@ module.exports = defineConfig({
       testMatch: 'headed.spec.cjs',
       use: { headless: false, launchOptions: { args: ${WINDOWS ? '[]' : "['--headless=new']"} } },
     },
-    { name: 'headless', testMatch: 'headless.spec.cjs', use: { headless: true } },
+    // After the headed project: the environment its worker leaves is the one Playwright hands this one.
+    { name: 'headless', testMatch: 'headless.spec.cjs', use: { headless: true }, dependencies: ['headed'] },
   ],
 });
 `,
@@ -369,10 +375,11 @@ describe('a run steered over the run channel', () => {
       ['moved breakpoints', 'headed', 'passed'],
       ['headless', 'headless', 'passed'],
       ['connection closes', 'headless', 'passed'],
+      ['a process it starts', 'headless', 'passed'],
     ]);
   });
 
-  it('opens one run connection per worker, which names the run, its folder and the worker', () => {
+  it('opens one run connection per worker, a project after another’s included, and none for a process a test starts', () => {
     expect(connections).toHaveLength(2);
     expect(connections.map((c) => c.heard[0])).toEqual([
       expect.objectContaining({

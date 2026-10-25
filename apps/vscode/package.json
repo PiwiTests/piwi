@@ -703,11 +703,6 @@
         "when": "editorTextFocus"
       },
       {
-        "command": "piwi.pauseRun",
-        "key": "f6",
-        "when": "piwi.runPausable && !inDebugMode"
-      },
-      {
         "command": "piwi.stopRun",
         "key": "shift+f5",
         "when": "piwi.runActive && !inDebugMode"
@@ -715,7 +710,7 @@
       {
         "command": "piwi.resumeRun",
         "key": "f5",
-        "when": "piwi.runStopped && !inDebugMode"
+        "when": "(piwi.runStopped || piwi.runResumed) && !inDebugMode"
       },
       {
         "command": "piwi.stepRun",

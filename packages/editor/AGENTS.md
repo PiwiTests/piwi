@@ -274,15 +274,21 @@ clients stay thin and both editors give the same answers.
   keeps a connection to the record channel's socket for its whole life (`run-attach`, `@piwitests/core/run-channel`,
   with the channel's token, compared in constant time), filed by the ref of the command (`PIWI_ORIGIN_REF`) under a
   session: its workers by Playwright's worker index, the test each one runs, where it stands stopped (`running`,
-  `stopped`, `between`) and whether a Pause reached it (`pausing`). `piwi/runSessionChanged` carries a session when a
-  worker connects, starts or ends a test, stops, goes on or leaves, or a Pause reaches it, at once but for the
-  connection and the tests' start and end, which go at most every 300 ms (`SESSION_PACE_MS`), and only when it
-  differs from the last one sent; the run ends with its command (`piwi/commandEnded`) or 5 s after its last worker
+  `stopped`, `between`) and whether a Pause reached it (`pausing`). A connection naming the index of a worker connected
+  now is closed: another process the run's environment reached (a test running Playwright itself) takes no worker's
+  place. `piwi/runSessionChanged` carries a session when a
+  worker connects, starts or ends a test, stops, goes on or leaves, or a Pause reaches it, at once (a burst at most
+  every 50 ms, `SESSION_BURST_MS`) but for the connection and the tests' start and end, which go at most every 300 ms
+  (`SESSION_PACE_MS`), and only when it differs from the last one sent; the run ends with its command
+  (`piwi/commandEnded`, which closes the connections of its workers still closing) or 5 s after its last worker
   left with none connecting (`SESSION_LINGER_MS`), in a last notification with `ended`, and a later worker of the ref
-  starts a new session. `piwi/runControl` answers every control with what was asked or why not (`The test is
+  starts a new session. Each stop's `since` is later than the run's stop before it (`stamp`), so it names that stop.
+  `piwi/runControl` answers every control with what was asked or why not (`The test is
   running.`, `2 workers are stopped: choose one.`, a test's `cannotPause`): `pause` goes to the workers that run or are
   between tests (each stops at its next call, or the next test's first), `step`, `resume`, `finish` and `run-to` to the
-  one stopped, naming its stop, which a worker past it ignores. `piwi/setRunBreakpoints` replaces the run's breakpoints
+  one stopped, naming its stop, which a worker past it ignores; with `since` (the stop the client showed), only to the
+  worker stopped there, else `The test went on.` A place a client sends (`run-to`, the breakpoints) is a line of the
+  run's code, which the client maps back from a document edited since the run started. `piwi/setRunBreakpoints` replaces the run's breakpoints
   in each worker and in each one that connects later (the 50 latest runs' are kept), and `piwi/pausedPage` asks a
   stopped worker for a JPEG of its page, null after 10 s (`PAUSED_PAGE_WAIT_MS`), when it leaves or is not stopped. A
   worker names a place relative to the run's working directory (`run-attach`'s `cwd`, the config's folder as the file
@@ -291,7 +297,8 @@ clients stay thin and both editors give the same answers.
   leaves it out. A client that shows and answers stops says so in its initialization options
   (`InitializationOptions.runControl`, as both clients do); without it, a stop no pause bar shows (a headless run's) is resumed as soon as
   it is heard, with a `piwi/notice` once per run. A worker's `notice` (a control its reporter does not take) is a
-  `piwi/notice` too. The service stopping closes every worker's connection, whose stop then goes on.
+  `piwi/notice` too. The service stopping closes every worker's connection: a stop no pause bar shows then goes on, a
+  stop the bar shows waits there for its answer.
 
 `npm run editor:build` writes five files to `dist/`, which both clients ship side by side (VS Code in its `dist/`, the
 JetBrains plugin in its `server/`); the service finds the others next to its own bundle, or in `PIWI_EDITOR_DIST`

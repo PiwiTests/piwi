@@ -5,7 +5,8 @@
  * The client hears each session (`piwi/runSessionChanged`) and steers it (`piwi/runControl`, `piwi/setRunBreakpoints`,
  * `piwi/pausedPage`). A worker names places relative to the run's working directory; the client, by their file's URI
  * as the workspace names it: the session converts both ways. A stop that shows no pause bar while the client cannot
- * answer stops is resumed at once.
+ * answer stops is resumed at once. A worker's connection that closes lets a stop no pause bar shows go on; a stop the
+ * bar shows waits there for its answer.
  */
 import * as path from 'node:path';
 import type * as net from 'node:net';
@@ -26,6 +27,8 @@ import { relativeTo } from './workspace.js';
 
 /** How often a session's changes are sent at most, but a stop and its end, which are sent at once. */
 export const SESSION_PACE_MS = 300;
+/** The least time between two notifications of a session: a burst of stops and their ends is sent once in it. */
+export const SESSION_BURST_MS = 50;
 /** How long a session waits for a worker after its last one left before it ends: Playwright starts a new one. */
 export const SESSION_LINGER_MS = 5_000;
 /** How long `piwi/pausedPage` waits for the worker's answer. */
@@ -45,6 +48,7 @@ export interface RunSessionsOptions {
   /** The folder of the Playwright config a run's working directory is, as the workspace names it; null for none. */
   rootOf(cwd: string): string | null;
   paceMs?: number;
+  burstMs?: number;
   lingerMs?: number;
   requestMs?: number;
 }
@@ -68,10 +72,15 @@ interface Session {
   root: string | null;
   workers: Map<number, Worker>;
   ended: boolean;
-  /** What the client last heard of it. */
+  /** What the client last heard of it, and when. */
   sent: string;
+  sentAt: number;
+  /** The notification on its way, and when it goes. */
   paced: ReturnType<typeof setTimeout> | null;
+  pacedAt: number;
   linger: ReturnType<typeof setTimeout> | null;
+  /** The time of its latest stop, in milliseconds: each stop's is later. */
+  stoppedAt: number;
   /** The client heard that a stop of this run was resumed for it. */
   resumedSaid: boolean;
 }
@@ -94,10 +103,18 @@ export class RunSessions {
 
   /**
    * A worker connected with `attach`: it joins its run's session, a new one when none runs, and hears the breakpoints
-   * sent for the run since it started. Returns where its next lines go.
+   * sent for the run since it started. Returns where its next lines go. A connection naming the index of a worker
+   * connected now is closed: another process the run's environment reached (a test running Playwright itself) takes
+   * no worker's place. The workers of a command that ended are let go with its session (`commandEnded`), so those of
+   * a rerun start a new one.
    */
   attach(socket: net.Socket, attach: RunAttach): (line: string) => void {
     let session = this.sessions.get(attach.ref);
+    const holder = session?.workers.get(attach.workerIndex);
+    if (holder && !holder.socket.destroyed) {
+      socket.destroy();
+      return () => {};
+    }
     if (!session) {
       session = {
         ref: attach.ref,
@@ -105,8 +122,11 @@ export class RunSessions {
         workers: new Map(),
         ended: false,
         sent: '',
+        sentAt: 0,
         paced: null,
+        pacedAt: 0,
         linger: null,
+        stoppedAt: 0,
         resumedSaid: false,
       };
       this.sessions.set(attach.ref, session);
@@ -123,10 +143,9 @@ export class RunSessions {
       pausing: false,
       requests: new Map(),
     };
-    // A worker of the same index is one of an earlier run of the command: this one replaces it.
-    const replaced = session.workers.get(worker.index);
     session.workers.set(worker.index, worker);
-    if (replaced) this.closeWorker(replaced);
+    // A worker of that index whose connection closed, before its close was heard.
+    if (holder) this.closeWorker(holder);
     const own = session;
     socket.on('close', () => this.detach(own, worker));
     const breakpoints = this.breakpoints.get(attach.ref);
@@ -168,7 +187,10 @@ export class RunSessions {
       case 'resume':
       case 'finish':
       case 'run-to': {
-        const stopped = workers.filter((w) => w.stop);
+        // A control naming the stop it answers reaches no worker past it.
+        const since = typeof params.since === 'string' ? params.since : null;
+        const stopped = workers.filter((w) => w.stop && (since === null || w.stop.view.since === since));
+        if (since !== null && !stopped.length) return refuse('The test went on.');
         if (!stopped.length) {
           if (named) return refuse(named.test ? 'The test is running.' : 'The worker runs no test now.');
           return refuse(workers.some((w) => w.test) ? 'The test is running.' : 'No test runs now.');
@@ -239,13 +261,16 @@ export class RunSessions {
     });
   }
 
-  /** The client said the command of `ref` ended: its run ended with it. */
+  /**
+   * The client said the command of `ref` ended: its run ended with it. The connections of its workers, whose process
+   * is ending, are closed, which lets a stop no pause bar shows go on at once.
+   */
   commandEnded(ref: string): void {
     const session = this.sessions.get(ref);
     if (session) this.end(session);
   }
 
-  /** The service stops: every worker's connection closes, and its stop goes on. */
+  /** The service stops: every worker's connection closes, which lets a stop no pause bar shows go on. */
   dispose(): void {
     for (const session of this.sessions.values()) {
       if (session.paced) clearTimeout(session.paced);
@@ -284,7 +309,7 @@ export class RunSessions {
             character: message.place.column ? message.place.column - 1 : null,
             locator: message.locator,
             bar: message.bar,
-            since: new Date().toISOString(),
+            since: this.stamp(session),
           },
         };
         worker.pausing = false;
@@ -322,7 +347,16 @@ export class RunSessions {
     );
   }
 
-  /** A worker's connection closes: its stop goes on, and its requests are answered with nothing. */
+  /** The time of a stop, ISO 8601, later than the run's stop before it, so it names this stop alone. */
+  private stamp(session: Session): string {
+    session.stoppedAt = Math.max(Date.now(), session.stoppedAt + 1);
+    return new Date(session.stoppedAt).toISOString();
+  }
+
+  /**
+   * A worker's connection closes, which lets a stop no pause bar shows go on, and its requests are answered with
+   * nothing.
+   */
   private closeWorker(worker: Worker): void {
     worker.socket.destroy();
     for (const answer of worker.requests.values()) answer(null);
@@ -353,11 +387,19 @@ export class RunSessions {
     this.flush(session);
   }
 
-  /** The client hears the session: at once for `now`, else within the pace. */
+  /**
+   * The client hears the session: for `now`, at once, or with the next burst when it heard it moments ago; else within
+   * the pace.
+   */
   private changed(session: Session, now = false): void {
-    if (now) return this.flush(session);
-    if (session.paced) return;
-    session.paced = setTimeout(() => this.flush(session), this.options.paceMs ?? SESSION_PACE_MS);
+    const at = now
+      ? session.sentAt + (this.options.burstMs ?? SESSION_BURST_MS)
+      : Date.now() + (this.options.paceMs ?? SESSION_PACE_MS);
+    if (now && at <= Date.now()) return this.flush(session);
+    if (session.paced && session.pacedAt <= at) return;
+    if (session.paced) clearTimeout(session.paced);
+    session.pacedAt = at;
+    session.paced = setTimeout(() => this.flush(session), Math.max(0, at - Date.now()));
     session.paced.unref?.();
   }
 
@@ -382,6 +424,7 @@ export class RunSessions {
     const text = JSON.stringify(view);
     if (text === session.sent) return;
     session.sent = text;
+    session.sentAt = Date.now();
     this.options.notify(view);
   }
 

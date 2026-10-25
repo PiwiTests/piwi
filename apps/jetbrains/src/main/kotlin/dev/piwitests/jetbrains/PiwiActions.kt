@@ -280,9 +280,10 @@ class RunSelectionAction : AnAction(), DumbAware {
                     .setTitle("Run which selection?")
                     .setItemChosenCallback { picked ->
                         ApplicationManager.getApplication().executeOnPooledThread {
-                            val breakpoints = project.service<PiwiProjectService>().breakpoints().ifEmpty { null }
-                            val command = server?.runSelection(RunSelectionParams(uri, picked.key, breakpoints))?.orNull()
-                            if (command != null) PiwiCommands.startRun(project, command, breakpoints.orEmpty())
+                            val breakpoints = project.service<PiwiProjectService>().breakpoints()
+                            val places = breakpoints.map { it.place }.ifEmpty { null }
+                            val command = server?.runSelection(RunSelectionParams(uri, picked.key, places))?.orNull()
+                            if (command != null) PiwiCommands.startRun(project, command, breakpoints)
                         }
                     }
                     .createPopup()

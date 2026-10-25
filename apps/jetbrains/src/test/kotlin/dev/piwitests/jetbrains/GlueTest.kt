@@ -524,7 +524,7 @@ class GlueTest {
         val page = root.resolve("tests/pages/checkout.page.mjs")
         val found = Glue.runBreakpoints(
             listOf(
-                Glue.BreakpointAt(spec.toString(), 41),
+                Glue.BreakpointAt(spec.toString(), 41, "b1"),
                 Glue.BreakpointAt(page.toString(), 8),
                 Glue.BreakpointAt(root.resolve("README.md").toString(), 3),
                 Glue.BreakpointAt(root.resolveSibling("other").resolve("a.spec.ts").toString(), 1),
@@ -532,8 +532,9 @@ class GlueTest {
             ),
             listOf(root.toString()),
         )
-        assertEquals(listOf(EditorBreakpoint(spec.toUri().toString(), 41), EditorBreakpoint(page.toUri().toString(), 8)), found)
-        assertEquals(emptyList<EditorBreakpoint>(), Glue.runBreakpoints(listOf(Glue.BreakpointAt(spec.toString(), 1)), emptyList()))
+        assertEquals(listOf(EditorBreakpoint(spec.toUri().toString(), 41), EditorBreakpoint(page.toUri().toString(), 8)), found.map { it.place })
+        assertEquals(listOf("b1", null), found.map { it.key })
+        assertEquals(emptyList<Glue.RunBreakpoint>(), Glue.runBreakpoints(listOf(Glue.BreakpointAt(spec.toString(), 1)), emptyList()))
     }
 
     private val specUri = "file:///work/shop/tests/checkout.spec.ts"
@@ -601,29 +602,92 @@ class GlueTest {
         assertEquals(listOf(one, two), Glue.stopsFor(listOf(one, two), null, null))
     }
 
+    private fun at(key: String, line: Int, uri: String = specUri) = Glue.RunBreakpoint(EditorBreakpoint(uri, line), key)
+
     @Test
     fun `the breakpoints go to each live run whose breakpoints differ, once`() {
         val places = listOf(EditorBreakpoint(specUri, 4))
-        val sent = LinkedHashMap<String, String>()
+        val edits = Glue.EditLog()
+        val runs = LinkedHashMap<String, Glue.RunBreakpoints>()
         val live = mapOf("ed-1" to session("ed-1"), "ed-2" to session("ed-2"))
-        Glue.rememberBreakpoints(sent, "ed-2", places)
-        assertEquals(listOf(SetRunBreakpointsParams("ed-1", places)), Glue.breakpointUpdates(live, places, sent))
-        assertEquals(emptyList<SetRunBreakpointsParams>(), Glue.breakpointUpdates(live, places, sent))
+        Glue.remember(runs, "ed-2", Glue.runStarted(edits.now(), listOf(at("b1", 4))))
+        assertEquals(listOf(SetRunBreakpointsParams("ed-1", places)), Glue.breakpointUpdates(live, listOf(at("b1", 4)), runs, edits))
+        assertEquals(emptyList<SetRunBreakpointsParams>(), Glue.breakpointUpdates(live, listOf(at("b1", 4)), runs, edits))
         assertEquals(
             listOf(SetRunBreakpointsParams("ed-1", emptyList()), SetRunBreakpointsParams("ed-2", emptyList())),
-            Glue.breakpointUpdates(live, emptyList(), sent),
+            Glue.breakpointUpdates(live, emptyList(), runs, edits),
         )
-        repeat(60) { Glue.rememberBreakpoints(sent, "ed-x$it", emptyList()) }
-        assertEquals(50, sent.size)
-        assertEquals(false, "ed-x9" in sent)
+        repeat(60) { Glue.remember(runs, "ed-x$it", Glue.runStarted(0, emptyList())) }
+        assertEquals(50, runs.size)
+        assertEquals(false, "ed-x9" in runs)
     }
 
     @Test
-    fun `a paused page is a JPEG in base64, nothing else`() {
+    fun `a breakpoint that moved with an edit keeps the run's line, and one set since is mapped back`() {
+        val edits = Glue.EditLog()
+        val runs = LinkedHashMap<String, Glue.RunBreakpoints>()
+        val live = mapOf("ed-1" to session("ed-1"))
+        Glue.remember(runs, "ed-1", Glue.runStarted(edits.now(), listOf(at("b1", 4), at("b2", 9, pageUri))))
+        // Two lines inserted above: the IDE moves the breakpoint to line 6, the run's code did not move.
+        edits.add(Glue.fileKey(specUri)!!, Glue.LineEdit(1, 1, 3, first = false, last = true))
+        assertEquals(emptyList<SetRunBreakpointsParams>(), Glue.breakpointUpdates(live, listOf(at("b1", 6), at("b2", 9, pageUri)), runs, edits))
+        assertEquals(
+            listOf(SetRunBreakpointsParams("ed-1", listOf(EditorBreakpoint(specUri, 4), EditorBreakpoint(specUri, 6)))),
+            Glue.breakpointUpdates(live, listOf(at("b1", 6), at("b3", 8), at("b4", 1)), runs, edits),
+        )
+        // Dragged to line 10 of the spec as it stands: mapped back from there.
+        assertEquals(
+            listOf(SetRunBreakpointsParams("ed-1", listOf(EditorBreakpoint(specUri, 8)))),
+            Glue.breakpointUpdates(live, listOf(at("b3", 10)), runs, edits),
+        )
+    }
+
+    /** A document's lines changed as `text` takes the place of the range from `from` to `to`, and the lines it moved logged. */
+    private fun change(lines: List<String>, log: Glue.EditLog, from: Pair<Int, Int>, to: Pair<Int, Int>, text: String): List<String> {
+        val joined = lines.joinToString("\n")
+        fun offset(at: Pair<Int, Int>) = lines.take(at.first).sumOf { it.length + 1 } + at.second
+        val after = (joined.substring(0, offset(from)) + text + joined.substring(offset(to))).split("\n")
+        Glue.lineEdit(from.first, from.second, to.first, text) { after.getOrNull(it) }?.let { log.add(Glue.fileKey(specUri)!!, it) }
+        return after
+    }
+
+    @Test
+    fun `the edits since a run started bring its lines to where they stand, and the caret's line back`() {
+        val code = listOf("test('pays', async ({ page }) => {", "  await page.goto('/');", "  await pay(page);", "});")
+        assertEquals(null, Glue.lineEdit(1, 2, 1, "await ") { "" })
+        val log = Glue.EditLog()
+        val since = log.now()
+        val file = Glue.fileKey(specUri)
+        var lines = change(code, log, 1 to 0, 1 to 0, "  // one\n  // two\n")
+        lines = change(lines, log, 4 to 18, 4 to 18, "\n  ")
+        assertEquals("  await pay(page);", lines[4])
+        assertEquals(listOf(0, 3, 4), listOf(0, 1, 2).map { log.forward(file, it, since) })
+        assertEquals(listOf(2, 1, null, null, 3), listOf(4, 3, 1, 5, 6).map { log.back(file, it, since) })
+        // The same file spelled another way; another file; a run started after the edits.
+        assertEquals(4, log.forward(Glue.fileKey("file:/work/shop/tests/checkout.spec.ts"), 2, since))
+        assertEquals(2, log.forward(Glue.fileKey(pageUri), 2, since))
+        assertEquals(4, log.back(file, 4, log.now()))
+        // The edits undone: the lines are the run's again.
+        lines = change(lines, log, 4 to 18, 5 to 2, "")
+        lines = change(lines, log, 1 to 0, 3 to 0, "")
+        assertEquals(code, lines)
+        assertEquals(2, log.forward(file, 2, since))
+        assertEquals(2, log.back(file, 2, since))
+        log.forget(log.now())
+        assertEquals(5, log.back(file, 5, since))
+    }
+
+    @Test
+    fun `a paused page is a JPEG in base64, nothing else, and not too large`() {
         assertEquals(listOf<Byte>(-1, -40, -1), Glue.pausedImageBytes(PausedImage("image/jpeg", "/9j/"))?.toList())
         assertEquals(null, Glue.pausedImageBytes(PausedImage("image/png", "/9j/")))
         assertEquals(null, Glue.pausedImageBytes(PausedImage("image/jpeg", "not base64!")))
         assertEquals(null, Glue.pausedImageBytes(null))
+        assertEquals(null, Glue.pausedImageBytes(PausedImage("image/jpeg", "A".repeat(Glue.MAX_IMAGE_DATA + 4))))
+        assertEquals(true, Glue.decodableImage(1280, 720))
+        assertEquals(false, Glue.decodableImage(1280, 100_000))
+        assertEquals(false, Glue.decodableImage(10_000, 10_000))
+        assertEquals(false, Glue.decodableImage(0, 720))
     }
 
     @Test

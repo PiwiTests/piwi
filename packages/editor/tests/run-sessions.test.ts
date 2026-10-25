@@ -296,6 +296,7 @@ describe('a run’s session, with a client that answers stops', () => {
       expect(await control({ ref, action: 'resume' })).toEqual({ ok: false, message: 'The test is running.' });
       expect(await control({ ref, action: 'pause' })).toEqual({ ok: true, message: 'Pausing at the next call.' });
       expect(await first.next('control')).toEqual({ type: 'control', action: 'pause' });
+      await waitFor(() => (svc.latest(ref)!.workers[0]!.pausing ? true : undefined));
       expect(svc.latest(ref)!.workers.map((w) => w.pausing)).toEqual([true, false]);
       expect(await control({ ref, worker: 1, action: 'pause' })).toEqual({
         ok: false,
@@ -342,6 +343,17 @@ describe('a run’s session, with a client that answers stops', () => {
       });
       expect(await control({ ref, worker: 1, action: 'resume' })).toEqual({ ok: true, message: 'Resuming.' });
       expect(await second.next('control')).toEqual({ type: 'control', action: 'resume', stop: 2 });
+      // A control naming the stop it answers picks that worker among several, and reaches none past it.
+      const since = svc.latest(ref)!.workers[0]!.stop!.since;
+      expect(await control({ ref, action: 'finish', since })).toEqual({
+        ok: true,
+        message: 'Finishing the test without stopping at a breakpoint.',
+      });
+      expect(await first.next('control', 3)).toEqual({ type: 'control', action: 'finish', stop: 4 });
+      expect(await control({ ref, worker: 0, action: 'resume', since: '2026-01-01T00:00:00.000Z' })).toEqual({
+        ok: false,
+        message: 'The test went on.',
+      });
       expect(await control({ ref, action: 'jump' })).toEqual({
         ok: false,
         message: 'Piwi does not know the action "jump".',
@@ -436,6 +448,80 @@ describe('a run’s session, with a client that answers stops', () => {
     } finally {
       worker.socket.destroy();
       other.socket.destroy();
+    }
+  });
+
+  test('names each stop apart, so a second Resume for a stop the worker went past reaches nothing', async () => {
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path).attach(channel.token, ref, 0);
+    try {
+      worker.begin();
+      worker.stopAt(1, 30);
+      const first = await waitFor(() => svc.latest(ref)?.workers[0]?.stop ?? undefined);
+      expect(await control({ ref, action: 'resume', since: first.since })).toEqual({ ok: true, message: 'Resuming.' });
+      // The worker goes on and stops again at once: the client still shows the first stop when its key repeats.
+      worker.send({ type: 'running', stop: 1 });
+      worker.stopAt(2, 31);
+      const second = await waitFor(() =>
+        svc.latest(ref)?.workers[0]?.stop?.line === 30 ? svc.latest(ref)!.workers[0]!.stop! : undefined,
+      );
+      expect(second.since > first.since).toBe(true);
+      expect(await control({ ref, action: 'resume', since: first.since })).toEqual({
+        ok: false,
+        message: 'The test went on.',
+      });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(worker.heard.filter((m) => m.type === 'control')).toEqual([
+        { type: 'control', action: 'resume', stop: 1 },
+      ]);
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+
+  test('sends a burst of stops and goings-on as a few notifications, the last one as it stands', async () => {
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path).attach(channel.token, ref, 0);
+    try {
+      worker.begin();
+      await waitFor(() => svc.latest(ref)?.workers[0]?.test ?? undefined);
+      const before = svc.sessions.length;
+      for (let stop = 1; stop <= 500; stop++) {
+        worker.stopAt(stop, 30);
+        worker.send({ type: 'running', stop });
+      }
+      worker.stopAt(501, 33);
+      expect(await waitFor(() => svc.latest(ref)?.workers[0]?.stop?.line)).toBe(32);
+      await new Promise((r) => setTimeout(r, 150));
+      expect(svc.sessions.length - before).toBeLessThan(20);
+      expect(svc.latest(ref)!.workers[0]!.state).toBe('stopped');
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+
+  test('reads nothing more of a connection it refused, the lines of the same chunk included', async () => {
+    const { ref, channel } = await svc.command();
+    const socket = net.connect(channel.path);
+    socket.on('error', () => {});
+    try {
+      const attach = (token: string): RunToHub => ({
+        type: 'run-attach',
+        token,
+        ref,
+        cwd: dir,
+        workerIndex: 0,
+        parallelIndex: 0,
+        pid: process.pid,
+        playwright: '',
+        reporter: '',
+      });
+      socket.write(`${JSON.stringify(attach('x'.repeat(32)))}\n${JSON.stringify(attach(channel.token))}\n`);
+      await new Promise((resolve) => socket.on('close', resolve));
+      await new Promise((r) => setTimeout(r, 400));
+      expect(svc.latest(ref)).toBeUndefined();
+    } finally {
+      socket.destroy();
     }
   });
 
@@ -541,7 +627,7 @@ describe('RunSessions', () => {
       notice: () => {},
       rootOf: () => '/work/shop',
       paceMs: 50,
-      lingerMs: 100,
+      lingerMs: 300,
     });
     const attach = (workerIndex: number) => {
       const socket = fakeSocket();
@@ -593,5 +679,55 @@ describe('RunSessions', () => {
     await waitFor(() => (last(sent)?.ended === false ? true : undefined));
     sessions.dispose();
     expect(rerun.socket.destroyed).toBe(true);
+  });
+
+  /** The sessions with a fake socket per worker of `ed-1`, and what the client heard. */
+  function harness(options: Partial<ConstructorParameters<typeof RunSessions>[0]> = {}) {
+    const sent: RunSession[] = [];
+    const sessions = new RunSessions({
+      notify: (session) => void sent.push(session),
+      answersStops: () => true,
+      notice: () => {},
+      rootOf: () => '/work/shop',
+      paceMs: 10,
+      lingerMs: 5_000,
+      ...options,
+    });
+    const attach = (workerIndex: number) => {
+      const socket = fakeSocket();
+      sessions.attach(socket as unknown as net.Socket, {
+        type: 'run-attach',
+        token: 't',
+        ref: 'ed-1',
+        cwd: '/work/shop',
+        workerIndex,
+        parallelIndex: workerIndex,
+        pid: 1,
+        playwright: '',
+        reporter: '',
+      });
+      return socket;
+    };
+    return { sent, sessions, attach };
+  }
+
+  test('refuses a second process naming a worker connected now, and lets a rerun’s worker start a session', async () => {
+    const { sent, sessions, attach } = harness();
+    const live = attach(0);
+    await waitFor(() => sent[0]);
+    // A test running Playwright itself, in the run's environment.
+    const nested = attach(0);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(nested.destroyed).toBe(true);
+    expect(live.destroyed).toBe(false);
+    expect(last(sent)?.workers.map((w) => w.worker)).toEqual([0]);
+    // The command ended: its worker's connection closes with the run, and a rerun's worker of that index is taken.
+    sessions.commandEnded('ed-1');
+    expect(live.destroyed).toBe(true);
+    expect(last(sent)?.ended).toBe(true);
+    const rerun = attach(0);
+    await waitFor(() => (last(sent)?.ended === false ? true : undefined));
+    expect(rerun.destroyed).toBe(false);
+    sessions.dispose();
   });
 });

@@ -1337,7 +1337,10 @@ export interface RunStop {
   locator: string | null;
   /** Whether Piwi's pause bar shows in the test's page, which answers the stop too; false in a headless run. */
   bar: boolean;
-  /** When the worker stopped, ISO 8601. */
+  /**
+   * When the worker stopped, ISO 8601: later than the run's stop before it, so it names this stop, which a control
+   * answering it passes back (`RunControlParams.since`).
+   */
   since: string;
 }
 
@@ -1384,8 +1387,9 @@ export interface RunWorker {
 /**
  * `piwi/runSessionChanged` (notification, server to client): a run the editor started, as the service hears it from
  * its workers (`PIWI_RUN_CHANNEL` in `RunCommand.env`): sent when a worker connects, starts or ends a test, stops or
- * goes on, or leaves, and when a Pause reaches it, at once but for a connection and a test's start and end, which are
- * sent at most every 300 ms; and when the run ends, last, with `ended`. A client keeps the latest of each `ref`.
+ * goes on, or leaves, and when a Pause reaches it, at once (a burst at most every 50 ms) but for a connection and a
+ * test's start and end, which are sent at most every 300 ms; and when the run ends, last, with `ended`. A client
+ * keeps the latest of each `ref`.
  */
 export interface RunSession {
   /** The ref of the command that started it (`RunCommand.ref`), or of the terminal it ran in (`terminalRef`). */
@@ -1415,13 +1419,20 @@ export type RunControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'run-to'
 /**
  * `piwi/runControl`: steer a run the editor started. Without `worker`, `pause` goes to every worker that runs or is
  * between tests, and the other actions to the one stopped (refused when several are). `place` is required for
- * `run-to`.
+ * `run-to`, as the line of the run's code: a client maps a line of a document edited since the run started back to
+ * it.
  */
 export interface RunControlParams {
   ref: string;
   worker?: number | null;
   action: RunControlAction;
   place?: RunPlace | null;
+  /**
+   * The stop the control answers, as the client showed it (`RunStop.since`): when no worker stands at that stop any
+   * more, nothing is asked and the answer is `The test went on.` Without it, the control answers the stop that holds
+   * now.
+   */
+  since?: string | null;
 }
 
 /**
@@ -1440,7 +1451,8 @@ export const RUN_CONTROL_REQUEST = 'piwi/runControl';
  * `piwi/setRunBreakpoints` (notification, client to server): the editor's line breakpoints changed while the run of
  * `ref` runs: its workers stop at `places` from now on, in place of the ones the command started with
  * (`PIWI_PAUSE_AT`) and of those sent before, a worker that starts later included. A place outside the run's folder
- * is left out, as `piwi/runArgs` leaves it out.
+ * is left out, as `piwi/runArgs` leaves it out. A place is a line of the run's code: a breakpoint that only moved with
+ * an edit keeps the line the run was given, and one added since in an edited document is mapped back.
  */
 export interface SetRunBreakpointsParams {
   ref: string;

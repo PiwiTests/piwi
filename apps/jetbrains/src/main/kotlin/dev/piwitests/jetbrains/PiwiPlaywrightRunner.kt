@@ -8,12 +8,8 @@ import com.intellij.execution.RunnerAndConfigurationSettings
 import com.intellij.execution.configuration.EnvironmentVariablesData
 import com.intellij.execution.configurations.ConfigurationTypeUtil
 import com.intellij.execution.executors.DefaultRunExecutor
-import com.intellij.execution.process.ProcessEvent
-import com.intellij.execution.process.ProcessHandler
-import com.intellij.execution.process.ProcessListener
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder
-import com.intellij.execution.runners.ProgramRunner
-import com.intellij.execution.ui.RunContentDescriptor
+import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.util.execution.ParametersListUtil
 
@@ -50,36 +46,16 @@ internal object PlaywrightRunnerLauncher {
     }
 
     /**
-     * Start the run, [onStart] getting its process and [onEnd] its exit code; false when the runner does not take it. On
-     * the event thread.
+     * Start the run; false when the runner does not take it. With `ref`, the run's controls follow each run of the
+     * configuration ([PiwiRunSessions.followRunner]): Stop ends its process, and the service hears it end. On the event
+     * thread.
      */
-    fun start(
-        project: Project,
-        cwd: String,
-        args: List<String>,
-        env: Map<String, String>,
-        onStart: (ProcessHandler) -> Unit = {},
-        onEnd: (Int) -> Unit,
-    ): Boolean {
+    fun start(project: Project, cwd: String, args: List<String>, env: Map<String, String>, ref: String?): Boolean {
         val settings = configure(project, cwd, args, env) ?: return false
         val environment = ExecutionEnvironmentBuilder.createOrNull(DefaultRunExecutor.getRunExecutorInstance(), settings)
             ?.build() ?: return false
-        ProgramRunnerUtil.executeConfigurationAsync(
-            environment,
-            true,
-            true,
-            object : ProgramRunner.Callback {
-                override fun processStarted(descriptor: RunContentDescriptor?) {
-                    val process = descriptor?.processHandler ?: return
-                    process.addProcessListener(
-                        object : ProcessListener {
-                            override fun processTerminated(event: ProcessEvent) = onEnd(event.exitCode)
-                        },
-                    )
-                    onStart(process)
-                }
-            },
-        )
+        if (ref != null) project.service<PiwiRunSessions>().followRunner(settings.configuration, ref)
+        ProgramRunnerUtil.executeConfiguration(environment, true, true)
         return true
     }
 }

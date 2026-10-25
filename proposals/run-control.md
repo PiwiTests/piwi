@@ -25,7 +25,7 @@ outside the editor. `page.pause()` is a stop of the debugger at its line (`page-
 in any headed run with breakpoints as well as in one the editor started. PR 2's service half is the run
 channel (Part 2: `@piwitests/core/run-channel`, the worker's run connection, the socket that takes both kinds of
 connection) and the session in the editor service with its protocol (Part 3.1); its IDE half is both clients
-(Part 3.2). The service half differs from the text in eight ways. `run-attach` names the run's `ref` and working directory
+(Part 3.2). The service half differs from the text in ten ways. `run-attach` names the run's `ref` and working directory
 (`cwd`, which every place is relative to); a stop is named by the worker's own number for it (`stop`) rather than its
 context, in `stopped`, `running` and every answer to it, so an answer that comes after the stop ended (the bar
 answered first) is dropped; `stopped` says whether Piwi's bar shows in the page (`bar`); `test-begin` says why a test
@@ -40,11 +40,21 @@ soon as it hears it, with a `piwi/notice`, so a headless run with today's client
 `--headed` to a run with breakpoints. A session ends with its command (`piwi/commandEnded`) or 5 s after its last
 worker left, since Playwright starts a new worker after a failure, and `piwi/setRunBreakpoints` is a notification
 whose breakpoints the hub also sends each worker that connects later. The worker sends no event per call, so the 300
-ms pace applies to its tests' start and end. The IDE half differs from the text in three ways. The controls'
+ms pace applies to its tests' start and end, and a burst of stops goes out at most every 50 ms. A control names the
+stop it answers (`since`, the `RunStop.since` the client showed, unique within a run): one past it is answered `The
+test went on.` and reaches no worker, so a key pressed twice does not skip the next stop. A connection naming the
+index of a worker connected now is closed, and the worker takes `PIWI_RUN_CHANNEL` out of its environment once read,
+so a process a test starts (Playwright run from a test) takes no worker's place. The IDE half differs from the text
+in four ways. The controls'
 keys are each IDE's own debugger keys, which are Piwi's only while a control applies and no debug session runs (VS
-Code: `F6` Pause, `F5` Resume, `F10` Step, `Ctrl+F10` Run to the cursor, `Shift+F11` Finish, `Shift+F5` Stop;
-JetBrains: the shortcuts of Resume Program for Pause and Resume, of Step Over, Run to Cursor and Step Out, in every
-keymap, `F9`, `F8`, `Alt+F9` and `Shift+F8` in the default one). In a JetBrains IDE the
+Code: `F5` Resume, `F10` Step, `Ctrl+F10` Run to the cursor, `Shift+F11` Finish, `Shift+F5` Stop, and no key for
+Pause, which applies for as long as the test runs; `F5` does nothing for two seconds after an answer rather than
+start a debug session; JetBrains: the shortcuts of Resume Program for Pause and Resume, of Step Over, Run to Cursor
+and Step Out, in every keymap, `F9`, `F8`, `Alt+F9` and `Shift+F8` in the default one, first among the actions a
+keymap gives the same key while a run is live, through an `ActionPromoter`). A run's lines are the files as they stood
+when it started: both clients follow the edits since, so a stop's mark moves with the lines above it, a breakpoint
+that only moved with an edit keeps the line the run has (a pure move is never sent), one set in an edited file is
+sent as the run's line, and Run to the cursor maps the cursor back, refusing a line written since. In a JetBrains IDE the
 controls are not in the Run tool window's toolbar, which the platform's console for a command fixes to Rerun, Stop
 and Close (`RunContentExecutor`), but in the status bar item's menu, which also says where a test is stopped, under
 **Tools → Piwi**, in the inlay above the paused line and in its gutter arrow's popup; Stop there is the Run tool
