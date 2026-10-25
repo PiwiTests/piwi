@@ -35,7 +35,8 @@
  * is a Paused band on the axis, a row of its own above the lanes and a hatched
  * shade across them, the bars read on the test's whole clock span, and a step
  * that ran across a stop says how long it stood paused, which its share and
- * its rule leave out.
+ * its rule leave out. A request that ran during a stop keeps its clock time,
+ * and its share reads against the test's clock span.
  *
  * The axis data comes pre-built from `/timeline` (the pure `buildFailureTimeline`);
  * step detail (error, params, duration) comes from the `steps` prop. Times
@@ -64,7 +65,7 @@ import StepParams from './StepParams.vue';
 import TimelineDuration from './TimelineDuration.vue';
 import TimelineTypeFilter from './TimelineTypeFilter.vue';
 import { findLocationRoot, stepLocations, stripLocationRoot } from '#shared/locator-chain';
-import type { TimelinePause } from '#shared/failure-timeline';
+import { timelinePauseSpans, type TimelinePause } from '#shared/failure-timeline';
 import type { StepFailureRole, StepPhase } from '#shared/step-tree';
 import {
   barPlace,
@@ -681,6 +682,18 @@ function stepBar(row: StepRow): BarPlace {
   return row.item ? itemBar(row.item) : stepBarStyle(row.step);
 }
 
+const timelinePauses = computed(() => timelinePauseSpans(data.value));
+
+/**
+ * The test time a request's share reads: the test's duration, or for a request that ran while the test stood paused
+ * at Piwi's pause bar, the test's span on the clock, which holds the stops as the request's own time does.
+ */
+function requestTestMs(item: TimelineItem): number | null {
+  const pauses = timelinePauses.value;
+  if (pauses.length > 0 && pausedOverlap(item.at, item.duration, pauses) > 0) return track.value.length;
+  return props.durationMs;
+}
+
 // Without an axis, a true waterfall needs a startTime on every step (only a
 // recent reporter records them); otherwise the bars fall back to left-aligned
 // magnitude.
@@ -793,7 +806,7 @@ function revealItem(item: TimelineItem) {
                 :width="barRect(span.start, span.end - span.start).w"
                 :height="CALL_BAND_H - 4"
                 rx="2"
-                class="fill-indigo-400/70 dark:fill-indigo-500/60"
+                class="fill-indigo-600 dark:fill-indigo-500/60"
               >
                 <title>{{ bandTitle(span) }}</title>
               </rect>
@@ -853,7 +866,7 @@ function revealItem(item: TimelineItem) {
                 :width="barRect(pause.at, pause.duration).w"
                 :height="PAUSE_BAND_H - 4"
                 rx="2"
-                class="fill-gray-500/70 dark:fill-gray-400/60"
+                class="fill-gray-600 dark:fill-gray-400/60"
               >
                 <title>{{ pauseTitle(pause) }}</title>
               </rect>
@@ -1199,7 +1212,7 @@ function revealItem(item: TimelineItem) {
               <TimelineDuration
                 v-if="entry.item.duration != null"
                 :ms="entry.item.duration"
-                :test-ms="durationMs"
+                :test-ms="requestTestMs(entry.item)"
                 :usual-ms="entry.item.usual ?? null"
                 :bar="itemBar(entry.item)"
                 :failed="entry.item.failed"
@@ -1402,7 +1415,7 @@ function revealItem(item: TimelineItem) {
                     <TimelineDuration
                       v-if="entry.item.duration != null"
                       :ms="entry.item.duration"
-                      :test-ms="durationMs"
+                      :test-ms="requestTestMs(entry.item)"
                       :usual-ms="entry.item.usual ?? null"
                       :bar="itemBar(entry.item)"
                       :failed="entry.item.failed"

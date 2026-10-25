@@ -580,8 +580,13 @@ describe('stops at the pause bar', () => {
     expect(testTimeNotes({ duration: 500, reportedDuration: null })).toEqual([]);
   });
 
+  test('ends the bar of a test that stood paused with its last section, whatever duration it reports', () => {
+    const bar = model([{ ...paused(), duration: 7_500 }]).timelineData.value.find((d) => d.kind === 'test')!;
+    expect([bar.start, bar.duration, bar.reportedDuration ?? null, bar.pausedMs]).toEqual([0, 4400, null, 4000]);
+  });
+
   test('keeps the notes true for a test that ended under the bar, whose reported duration counts the stop', () => {
-    // Playwright counts the stop the test ended under: the bar is no longer than its reported duration...
+    // A reported duration that counts the stop the test ended under: the bar is no longer than it...
     expect(testTimeNotes({ duration: 5000, reportedDuration: null, pausedMs: 4000 })).toEqual([
       "Paused 4.0s at Piwi's pause bar.",
     ]);

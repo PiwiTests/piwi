@@ -235,17 +235,19 @@ interface WorkerLane {
  * A case's wall-clock span in epoch ms: its reported duration, stretched over
  * any hook section or stop at the pause bar that ran past it (Playwright leaves
  * `beforeAll` / `afterAll`, worker fixtures and the time paused out of the
- * duration). Null when the case has no start.
+ * duration). A case that stood paused ends with its last section: its duration
+ * is no measure of its clock. Null when the case has no start.
  */
 function caseSpan(tc: TestCaseResult): { start: number; end: number } | null {
   const start = toMs(tc.startedAt);
   if (start == null) return null;
-  let end = start + (tc.duration ?? 1000);
-  for (const event of (tc.stepEvents ?? []) as TestStepEvent[]) {
+  const events = (tc.stepEvents ?? []) as TestStepEvent[];
+  let end = events.some((event) => event.category === 'pause') ? start : start + (tc.duration ?? 1000);
+  for (const event of events) {
     const eventStart = toMs(event.startedAt);
     if (eventStart != null) end = Math.max(end, eventStart + (event.duration || 0));
   }
-  return { start, end };
+  return { start, end: end > start ? end : start + (tc.duration ?? 1000) };
 }
 
 /**
@@ -367,7 +369,8 @@ const UNCOUNTED_HOOKS = 'hooks it does not count (beforeAll, afterAll, worker fi
  * What a test bar's tooltip says about its time: the duration Playwright reported when the bar is longer, and what
  * the rest was (the hooks Playwright does not count, the time the test stood paused at Piwi's pause bar, or both), by
  * how much longer the bar is than the reported duration; and the time paused, when that sentence does not say it. A
- * test that ended under the pause bar has the stop counted in its reported duration: the rest is then its hooks.
+ * reported duration that counts a stop (a test that ended under the pause bar where the reporter could not correct the
+ * runner's count) leaves the hooks as the rest.
  */
 export function testTimeNotes(item: Pick<TimelineItem, 'duration' | 'reportedDuration' | 'pausedMs'>): string[] {
   const paused = item.pausedMs ?? 0;

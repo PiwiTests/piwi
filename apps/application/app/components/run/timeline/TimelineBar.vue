@@ -126,18 +126,27 @@ const testRect = computed(() => {
   };
 });
 
+/** Where a test bar's label starts: past the expand chevron when the bar has one. */
+const testLabelX = computed(() => (props.expandable ? props.x + 16 : props.x + 4));
+
 /**
  * A test bar's label: its duration, led by the attempt number when the test
- * ran more than once and the bar has room for both.
+ * ran more than once and the bar has room for both. None where a stop's band
+ * would cover it: the band carries its own label there.
  */
 const testLabel = computed<string | null>(() => {
   const time = formatTimelineTime(props.item.duration);
+  let text: string | null = props.width > 40 ? time : null;
   if (props.item.attemptKeys) {
     const room = props.width - (props.expandable ? 16 : 4) - 4;
-    const text = `Attempt ${(props.item.retries ?? 0) + 1} · ${time}`;
-    if (text.length * LABEL_CHAR_PX <= room) return text;
+    const attempt = `Attempt ${(props.item.retries ?? 0) + 1} · ${time}`;
+    if (attempt.length * LABEL_CHAR_PX <= room) text = attempt;
   }
-  return props.width > 40 ? time : null;
+  if (!text) return null;
+  const from = testLabelX.value;
+  const to = from + text.length * LABEL_CHAR_PX;
+  const covered = hookRects.value.some((rect) => rect.paused && rect.x < to && rect.x + rect.width > from);
+  return covered ? null : text;
 });
 
 /** Label text on a solid bar is white; on a retried attempt's pale wash it is the page's text color. */
@@ -371,7 +380,7 @@ function onTestClick(): void {
       </text>
       <text
         v-if="testLabel"
-        :x="expandable ? x + 16 : x + 4"
+        :x="testLabelX"
         :y="y + barHeight / 2 + 4"
         class="text-[10px] font-medium pointer-events-none"
         :class="testLabelClass"
