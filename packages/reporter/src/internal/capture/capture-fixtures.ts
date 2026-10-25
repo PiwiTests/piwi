@@ -100,7 +100,9 @@ import {
   contextDebugger,
   currentPauseSet,
   goOn,
+  inFlightCallSite,
   logPauseSkipOnce,
+  markPausesWrapped,
   NO_BREAKPOINTS,
   pauseGateFromTestInfo,
   pauseHere,
@@ -110,6 +112,7 @@ import {
   steerDebugger,
   stopCallSite,
   watchStops,
+  withInspector,
   withTestTimeoutHeld,
   type GoOn,
   type PauseAnswer,
@@ -348,10 +351,11 @@ interface CaptureSink {
   stops: PauseRecord[];
   // The stops the pause bar shows now, by the handle that takes each down when the test ends under it.
   shownStops: Map<AbortController, ShownStop>;
-  // Settles once teardown has read the test's pages and attached its data (`markFlushed`): a call held under a bar the
-  // test ended under goes on then.
-  flushed: Promise<void>;
-  markFlushed: () => void;
+  // The locator calls a stop let go when the test ended under its bar, each settling once its call does, and the
+  // requests the test's pages started since, until each ends (`releasedRequestsEnded`).
+  released: Promise<void>[];
+  releasedRequests: Set<Request>;
+  onReleasedRequestsEnded: (() => void) | null;
   // The page each locator call ran on, keyed by call site and chain.
   locatorPages: LocatorPageLog;
   // JavaScript coverage of each page the test has, when code reach is on, and
@@ -371,8 +375,6 @@ interface CaptureSink {
 }
 
 function createSink(): CaptureSink {
-  let markFlushed = (): void => {};
-  const flushed = new Promise<void>((resolve) => (markFlushed = resolve));
   return {
     networkRequests: [],
     openResponses: new Map(),
@@ -403,8 +405,9 @@ function createSink(): CaptureSink {
     locatorCalls: new Map(),
     stops: [],
     shownStops: new Map(),
-    flushed,
-    markFlushed,
+    released: [],
+    releasedRequests: new Set(),
+    onReleasedRequestsEnded: null,
     locatorPages: new LocatorPageLog(),
     codeReach: { sessions: new Map(), files: new Map(), known: new Map() },
     serverCoverage: new Map(),
@@ -1302,6 +1305,9 @@ interface LocatorCall {
   origin: { method: string; args: unknown[] };
   /** A locator was picked at a stop on it: its snapshot is the pick, not the call's own capture. */
   picked: boolean;
+  /** Settles once the call did, whatever its outcome (`forgetLocatorCall`). */
+  settled: Promise<void>;
+  settle: () => void;
 }
 
 /** Know a locator call by its line while it runs, when the pause is on. */
@@ -1313,7 +1319,9 @@ function knowLocatorCall(
   origin: { method: string; args: unknown[] },
 ): LocatorCall | null {
   if (!sink?.pause || !location) return null;
-  const call: LocatorCall = { page, target, location, origin, picked: false };
+  let settle = (): void => {};
+  const settled = new Promise<void>((resolve) => (settle = resolve));
+  const call: LocatorCall = { page, target, location, origin, picked: false, settled, settle };
   sink.locatorCalls.set(callSiteLine(location), call);
   return call;
 }
@@ -1321,6 +1329,7 @@ function knowLocatorCall(
 /** Forget a locator call once it settled. */
 function forgetLocatorCall(sink: CaptureSink | null, call: LocatorCall | null): void {
   if (!sink || !call) return;
+  call.settle();
   const key = callSiteLine(call.location);
   if (sink.locatorCalls.get(key) === call) sink.locatorCalls.delete(key);
 }
@@ -1339,12 +1348,16 @@ function locatorSource(target: Locator, method: string, args: unknown[]): string
 /** Each context whose next call is a `page.pause()` Piwi took over, with that call's site. */
 const PAGE_PAUSES = new WeakMap<BrowserContext, string>();
 
-/** Each context running a `page.pause()` Piwi left to Playwright: its stop is Playwright's to end. */
-const PLAYWRIGHT_PAUSES = new WeakSet<BrowserContext>();
+/** Each context running a `page.pause()` Piwi left to Playwright, with how many: its stops are Playwright's to end. */
+const PLAYWRIGHT_PAUSES = new WeakMap<BrowserContext, number>();
 
-/** A stop the pause bar shows: the bar's page, and a promise that settles once the bar is gone. */
+/** Why a stop the bar shows ends unanswered: the test function ended, or its page or context closed. */
+type StopEnd = 'ended' | 'closed';
+
+/** A stop the pause bar shows: the bar's page, its `piwi-pauses` record, and a promise that settles once it is gone. */
 interface ShownStop {
   page: Page;
+  record: PauseRecord;
   done: Promise<unknown>;
 }
 
@@ -1396,12 +1409,11 @@ function onDebuggerStop(context: BrowserContext): void {
 /**
  * A stop's call site, the test's line. Playwright places a locator call the proxy makes at the test's line through the
  * boxed stack prefixes (`quiet-capture.ts`); where they did not take, it places the call in this package's own files,
- * and the locator call in flight names the line.
+ * and the locator calls in flight name the line, when they are all on one.
  */
 function stopSite(sink: CaptureSink, location: { file: string; line?: number; column?: number }): string | null {
   if (path.dirname(path.resolve(location.file)) !== __dirname) return stopCallSite(location);
-  const calls = [...sink.locatorCalls.values()];
-  return calls[calls.length - 1]?.location ?? null;
+  return inFlightCallSite([...sink.locatorCalls.values()].map((call) => call.location));
 }
 
 /** The page a stop shows the bar in: its locator call's, else the test's last active one, else the context's last. */
@@ -1417,9 +1429,10 @@ function stopPage(sink: CaptureSink, context: BrowserContext, call: LocatorCall 
  * Show the pause bar at a stop, through `pauseHere`, as an internal call so nothing it does is a step of the test,
  * with the test timeout held. At a locator call the proxy delegated, its element is highlighted, and a locator picked
  * meanwhile is folded into the call site's snapshot (which the call's own capture then leaves as it is); a pick is
- * printed and posted to the editor. The stop is kept for `piwi-pauses` from the moment the bar shows. A bar the test
- * ended under is taken down unanswered (`endShownStops`): its call is held until teardown has read the page, and the
- * answer is Finish. Returns the bar's answer; none when the stop's context has no page open.
+ * printed and posted to the editor. The stop is kept for `piwi-pauses` from the moment the bar shows. A bar that must
+ * end unanswered (`endShownStops`) comes down at once, and its call goes on at once: as on Resume when its page or
+ * context closed, as on Finish when the test ended under it, its locator call then kept in `released`. Returns the
+ * bar's answer; none when the stop's context has no page open.
  */
 async function showStop(
   sink: CaptureSink,
@@ -1466,52 +1479,107 @@ async function showStop(
       ),
     ),
   ).finally(() => {
-    record.duration = Date.now() - record.startedAt;
+    // A stop ended unanswered took its duration as it ended; a call the test ended under is waited for a while.
+    if (!end.signal.aborted) record.duration = Date.now() - record.startedAt;
+    else if (call && end.signal.reason === 'ended') sink.released.push(call.settled);
     sink.shownStops.delete(end);
   });
-  sink.shownStops.set(end, { page, done: shown.catch(() => undefined) });
+  sink.shownStops.set(end, { page, record, done: shown.catch(() => undefined) });
   const answer = await shown;
   if (!end.signal.aborted) return answer;
-  // The test ended under the bar: its call goes on once teardown has read the page, and nothing stops after it.
-  await sink.flushed;
-  return 'finish';
+  // Its page or context closed: as on Resume. The test ended under it: as on Finish, nothing stops after it.
+  return end.signal.reason === 'closed' ? 'resume' : 'finish';
 }
 
-/** How long teardown waits for a bar it takes down. */
+/** How long taking a bar down may take before the test goes on without waiting for it. */
 const END_STOP_MS = 2000;
 
+/** How long teardown waits for the locator calls a stop let go as the test ended under its bar, and their requests. */
+const RELEASED_CALL_MS = 2000;
+
 /**
- * Take the pause bar down where the test ended under it (a wait it started before the stop ran out), before teardown
- * reads the page; its record keeps the time it held. With `closing`, only a bar on that page or in that context.
+ * End the stops the bar shows unanswered (`why`), each with the time it held: the bar, the picker and a recording come
+ * down, and each call goes on at once. With `closing`, only a stop on that page or in that context. Waits for the bars
+ * to come down, for `END_STOP_MS` at most. Never throws.
  */
-async function endShownStops(sink: CaptureSink, closing?: { page?: Page; context?: BrowserContext }): Promise<void> {
+async function endShownStops(
+  sink: CaptureSink,
+  why: StopEnd,
+  closing?: { page?: Page; context?: BrowserContext },
+): Promise<void> {
   const ending: Promise<unknown>[] = [];
-  for (const [end, { page, done }] of sink.shownStops) {
+  for (const [end, { page, record, done }] of sink.shownStops) {
     if (closing && closing.page !== page && (!closing.context || pageContext(page) !== closing.context)) continue;
-    end.abort();
+    if (!end.signal.aborted) {
+      record.duration = Date.now() - record.startedAt;
+      end.abort(why);
+    }
     ending.push(done);
   }
-  if (ending.length === 0) return;
+  await settledWithin(ending, END_STOP_MS);
+}
+
+/** Settles once the requests started since a stop let its call go have all ended. */
+function releasedRequestsEnded(sink: CaptureSink): Promise<void> {
+  if (sink.releasedRequests.size === 0) return Promise.resolve();
+  return new Promise((resolve) => (sink.onReleasedRequestsEnded = resolve));
+}
+
+/**
+ * Wait, `RELEASED_CALL_MS` at most, for the locator calls a stop let go as the test ended under its bar, and for the
+ * requests started since: their effects are this test's. At once when no stop let a call go.
+ */
+async function awaitReleasedCalls(sink: CaptureSink): Promise<void> {
+  if (sink.released.length === 0) return;
+  const deadline = Date.now() + RELEASED_CALL_MS;
+  await settledWithin(sink.released, RELEASED_CALL_MS);
+  await settledWithin([releasedRequestsEnded(sink)], Math.max(0, deadline - Date.now()));
+}
+
+/** Wait for `pending` to settle, for `ms` at most. */
+async function settledWithin(pending: readonly Promise<unknown>[], ms: number): Promise<void> {
+  if (pending.length === 0) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  await Promise.race([Promise.all(ending), new Promise((resolve) => (timer = setTimeout(resolve, END_STOP_MS)))]);
+  await Promise.race([Promise.allSettled(pending), new Promise((resolve) => (timer = setTimeout(resolve, ms)))]);
   clearTimeout(timer);
 }
 
 /**
+ * Take the pause bar down as the test function ends, before Playwright's own failure screenshot and the `afterEach`
+ * hooks, through the test runner's callbacks for that moment (`_onDidFinishTestFunctionCallbacks`, a Playwright
+ * internal, feature-checked), Piwi's put first. On a runner without them, the bar comes down when the test's page or
+ * context closes, or at the capture fixture's teardown.
+ */
+function endStopsWithTestFunction(testInfo: TestInfo, sink: CaptureSink): void {
+  const callbacks = (testInfo as unknown as { _onDidFinishTestFunctionCallbacks?: unknown })
+    ._onDidFinishTestFunctionCallbacks;
+  if (!(callbacks instanceof Set)) return;
+  const theirs = [...(callbacks as Set<unknown>)];
+  callbacks.clear();
+  callbacks.add(() => endShownStops(sink, 'ended'));
+  for (const callback of theirs) callbacks.add(callback);
+}
+
+/**
  * What **Record here** runs at a pause, when the editor that started the run can record (`PIWI_RECORD_CHANNEL`): the
- * page handed to its recorder until the recording ends, and why not when it did not start. Undefined otherwise.
+ * page handed to its recorder until the recording ends, or the stop does (`ended`), and why not when it did not start.
+ * Undefined otherwise.
  */
 function recorderAt(
   page: Page,
   testInfo: TestInfo,
   location: string,
   reason: 'breakpoint' | 'pause',
-): (() => Promise<void>) | undefined {
+): ((ended?: AbortSignal) => Promise<void>) | undefined {
   if (!canRecordFromHere()) return undefined;
-  return async () => {
+  return async (ended) => {
     console.log(`[piwi] Recording from ${callSiteLine(location)}: the editor writes the steps.`);
-    const why = await recordFromHere({ page, testInfo, location, reason });
-    console.log(why ? `[piwi] Nothing was recorded: ${why}` : '[piwi] The recording ended: the test is paused again.');
+    const why = await recordFromHere({ page, testInfo, location, reason, ended });
+    if (ended?.aborted) console.log('[piwi] The recording ended with the test.');
+    else
+      console.log(
+        why ? `[piwi] Nothing was recorded: ${why}` : '[piwi] The recording ended: the test is paused again.',
+      );
   };
 }
 
@@ -1547,15 +1615,50 @@ async function pauseInPlace(page: Page, playwrightPause: PlaywrightPause, locati
   }
 }
 
-/** Playwright's own `page.pause()`: a stop of the page's context Piwi does not answer while it runs. */
+/**
+ * Playwright's own `page.pause()`: a stop of the page's context Piwi does not answer while it runs, with Playwright's
+ * Inspector free to open (`withInspector`).
+ */
 async function leaveToPlaywright(context: BrowserContext | null, playwrightPause: PlaywrightPause): Promise<void> {
-  if (!context) return playwrightPause();
-  PLAYWRIGHT_PAUSES.add(context);
+  if (context) PLAYWRIGHT_PAUSES.set(context, (PLAYWRIGHT_PAUSES.get(context) ?? 0) + 1);
   try {
-    await playwrightPause();
+    await withInspector(() => playwrightPause());
   } finally {
-    PLAYWRIGHT_PAUSES.delete(context);
+    if (context) {
+      const left = (PLAYWRIGHT_PAUSES.get(context) ?? 1) - 1;
+      if (left > 0) PLAYWRIGHT_PAUSES.set(context, left);
+      else PLAYWRIGHT_PAUSES.delete(context);
+    }
   }
+}
+
+/** Where a wrapped `pause` keeps Playwright's own, shared by every copy of this package in the worker. */
+const PLAYWRIGHT_PAUSE = Symbol.for('@piwitests/reporter:playwright-pause');
+
+type PauseHolder = { pause?: PlaywrightPause & { [PLAYWRIGHT_PAUSE]?: PlaywrightPause } };
+
+/**
+ * Playwright's own `page.pause()` for `page`, once `Page.prototype.pause` is wrapped so a `page.pause()` on a page the
+ * capture fixtures never instrument (one of a browser the test launched itself) is left to Playwright with its
+ * Inspector free to open. Null for a page without `pause`.
+ */
+function playwrightPauseOf(page: Page): PlaywrightPause | null {
+  const current = (page as unknown as PauseHolder).pause;
+  if (typeof current !== 'function') return null;
+  const own = current[PLAYWRIGHT_PAUSE] ?? current;
+  const proto = Object.getPrototypeOf(page) as PauseHolder | null;
+  const theirs = proto?.pause;
+  if (proto && typeof theirs === 'function') {
+    if (!theirs[PLAYWRIGHT_PAUSE]) {
+      const wrapped = function (this: Page, options?: { __testHookKeepTestTimeout?: boolean }): Promise<void> {
+        return leaveToPlaywright(pageContext(this), () => theirs.call(this, options));
+      } as PlaywrightPause & { [PLAYWRIGHT_PAUSE]?: PlaywrightPause };
+      wrapped[PLAYWRIGHT_PAUSE] = theirs;
+      proto.pause = wrapped;
+    }
+    markPausesWrapped();
+  }
+  return (options) => own.call(page, options);
 }
 
 function wrapLocator(page: Page, locator: Locator, originMethod: string, originArgs: unknown[]): Locator {
@@ -1776,10 +1879,10 @@ function instrumentPage(page: Page): void {
 
   // `page.pause()` in a headed run with breakpoints, or one the editor started, pauses with Piwi's bar, which can
   // record from there.
-  if (typeof page.pause === 'function') {
-    const originalPause = page.pause.bind(page) as PlaywrightPause;
+  const playwrightPause = playwrightPauseOf(page);
+  if (playwrightPause) {
     // The call site is read here, the frame right above the test's own.
-    page.pause = (): Promise<void> => pauseInPlace(page, originalPause, captureCallerLocation());
+    page.pause = (): Promise<void> => pauseInPlace(page, playwrightPause, captureCallerLocation());
   }
 
   // Drain in-flight probes before a user-initiated close (the guard tolerates
@@ -1791,7 +1894,7 @@ function instrumentPage(page: Page): void {
       await drainPendingProbes(1000);
       const sink = currentSink;
       if (sink) {
-        await endShownStops(sink, { page });
+        await endShownStops(sink, 'closed', { page });
         await stashPageState(sink, { page });
         await maybeOpenPicker(sink, { page });
         await stopSinkCodeReach(sink, { page });
@@ -1927,8 +2030,14 @@ function instrumentPage(page: Page): void {
       /* a page event handler must never throw */
     }
   });
+  // A request started after a stop let its call go as the test ended under the bar: teardown waits for it.
+  page.on('request', (request: Request) => {
+    const sink = currentSink;
+    if (sink && sink.released.length > 0) sink.releasedRequests.add(request);
+  });
   const onRequestEnd = (request: Request, failed: boolean) => {
     const sink = currentSink;
+    if (sink?.releasedRequests.delete(request) && sink.releasedRequests.size === 0) sink.onReleasedRequestsEnded?.();
     if (!sink || RECORDED_OPEN.has(request)) return;
     sink.lastActivePage = page;
     const response = sink.openResponses.get(request) ?? null;
@@ -2150,7 +2259,7 @@ function instrumentContext(context: BrowserContext): void {
       await drainPendingProbes(1000);
       const sink = currentSink;
       if (sink) {
-        await endShownStops(sink, { context });
+        await endShownStops(sink, 'closed', { context });
         await stashPageState(sink, { context });
         await maybeOpenPicker(sink, { context });
         await stopSinkCodeReach(sink, { context });
@@ -2267,8 +2376,6 @@ function requestDuration(
  * were made.
  */
 async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
-  // The test is over: a pause bar still up comes down before the page is read.
-  await endShownStops(sink);
   // Record the requests still open, then wait for all in-flight request
   // handlers before snapshotting networkRequests: the last request (often the
   // one that failed the test) races with teardown and its serverLogs would
@@ -2297,7 +2404,7 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
   // snapshots are attached (a confirmed pick is folded into them).
   if (pageReadable) await maybeOpenPicker(sink);
 
-  // The stops the pause bar showed: the reporter takes the time they held out of the steps' timings.
+  // The stops the pause bar showed.
   if (sink.stops.length > 0) {
     await testInfo.attach(ATTACHMENT_NAMES.pauses, {
       contentType: 'application/json',
@@ -2651,6 +2758,7 @@ export const piwiFixtures: Fixtures<
         if (reason) logPauseSkipOnce(reason);
         else sink.pause = { set: pauseSet, step: false, finished: false };
       }
+      if (sink.pause || canRecordFromHere()) endStopsWithTestFunction(testInfo, sink);
       if (isFlakeMode()) {
         const plan = loadFlakePlan();
         const role = flakeRoleForTest(plan, {
@@ -2680,6 +2788,10 @@ export const piwiFixtures: Fixtures<
         await startCodeReachOnOpenPages();
         await use();
       } finally {
+        // A bar still up comes down, and the calls it let go settle, a while at most, while their effects are this
+        // test's.
+        await endShownStops(sink, 'ended');
+        await awaitReleasedCalls(sink);
         currentSink = null;
         // Record the probe outcome (this test noticed the fault iff it failed)
         // before flushing the rest of the capture.
@@ -2713,11 +2825,7 @@ export const piwiFixtures: Fixtures<
           });
         }
         if (sink.flake) await recordFlakeAttempt(sink.flake, testInfo);
-        try {
-          await flushSink(sink, testInfo);
-        } finally {
-          sink.markFlushed();
-        }
+        await flushSink(sink, testInfo);
         // Last: the test-scoped fixtures have torn down, so what is still open
         // now outlived the test. Throws under `PIWI_LEAK_CHECK=fail`.
         await recordResourceCensus(testInfo);

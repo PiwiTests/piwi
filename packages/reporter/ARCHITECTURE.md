@@ -45,9 +45,12 @@ Two **external contracts** beyond the npm API:
   (`internal/capture/api-requests.ts`).
   A headed local run with `PIWI_PAUSE_AT` (the editor's breakpoints) stops each context
   through `context.debugger` before every call it can stop at, with `PW_CODEGEN_NO_INSPECTOR`
-  set in the worker except while a `page.pause()` it leaves to Playwright runs (a listener on the
-  connection's client instrumentation sees those), shows the pause bar at the calls on those
-  lines and reads its answer from the `__piwiPauseState` page global, attaches the stops as
+  set in the worker except while a `page.pause()` it leaves to Playwright runs (it wraps
+  `Page.prototype.pause`, so every `page.pause()` in the worker goes through it), shows the pause
+  bar at the calls on those lines and reads its answer from the `__piwiPauseState` page global,
+  takes the bar down as the test function ends, before Playwright's own failure screenshot (the
+  runner's `_onDidFinishTestFunctionCallbacks`, feature-checked; without them, as the test's page
+  or context closes, or at teardown), attaches the stops as
   `piwi-pauses` (`internal/collect/paused-steps.ts` takes their time out of the steps'
   durations and start times), and posts a locator picked meanwhile to the editor's
   `PIWI_EDITOR_SEND` address (`internal/capture/pause-at.ts`). With `PIWI_RECORD_CHANNEL`,

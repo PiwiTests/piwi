@@ -42,8 +42,8 @@ function inspectorOpen(): boolean {
   return false;
 }
 
-/** A page of the app: it answers Piwi's pause bar with what the server says, once per bar. */
-const PAGE = (title: string) => `<!doctype html><title>${title}</title><input><button>Go</button>
+/** A page of the app: it answers Piwi's pause bar with what the server says, once per bar; its button calls `/clicked`. */
+const PAGE = (title: string) => `<!doctype html><title>${title}</title><input><button onclick="fetch('/clicked')">Go</button>
 <script>
 new MutationObserver(() => {
   const bar = document.getElementById('__piwi-pause-bar');
@@ -107,9 +107,46 @@ test.describe.serial('a page a hook opened', () => {
     await page.goto('${base}/b'); // bp
   });
 });
-test('poll', async ({ page }) => {
+test.describe('a wait that runs out under the bar', () => {
+  test.afterEach(async ({ page }, testInfo) => {
+    const left = await page.locator('#__piwi-pause-bar, #__piwi_picker_banner').count();
+    await fetch('${base}/after-each', { method: 'POST', body: JSON.stringify({ title: testInfo.title, left }) });
+  });
+  test('poll', async ({ page }) => {
+    await page.goto('${base}/a');
+    await expect.poll(() => page.locator('input').inputValue(), { timeout: 1000 }).toBe(''); // bp
+  });
+  test('poll while picking', async ({ page }) => {
+    await page.goto('${base}/a');
+    await expect.poll(() => page.locator('input').inputValue(), { timeout: 1000 }).toBe(''); // bp
+  });
+});
+test('closes a page under the bar', async ({ page, context }) => {
   await page.goto('${base}/a');
-  await expect.poll(() => page.locator('input').inputValue(), { timeout: 1000 }).toBe(''); // bp
+  const other = await context.newPage();
+  await other.goto('${base}/b');
+  const click = other.getByRole('button').click(); // bp
+  await page.waitForTimeout(1000);
+  await other.close();
+  await click.catch(() => {});
+  await page.getByRole('button').click(); // bp
+});
+test.describe.serial('a click the test does not wait for', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await page.goto('${base}/a');
+  });
+  test.afterAll(async () => {
+    await page.close();
+  });
+  test('forgets an await', async () => {
+    void page.getByRole('button').click(); // bp
+    await page.waitForTimeout(300);
+  });
+  test('after it', async () => {
+    await page.waitForTimeout(500);
+  });
 });
 test.describe.serial('a pause in an afterAll', () => {
   let page;
@@ -151,7 +188,7 @@ module.exports = class {
       const found = result.attachments.find((a) => a.name === name);
       return found?.body?.toString('utf8') ?? (found?.path ? fs.readFileSync(found.path, 'utf8') : null);
     };
-    this.tests.push({ title: test.title, status: result.status, startTime: result.startTime.getTime(), duration: result.duration, errors: result.errors.map((e) => e.message), steps: result.steps.map(step), pauses: body('piwi-pauses'), aria: body('piwi-aria-snapshot'), errorContext: body('error-context') });
+    this.tests.push({ title: test.title, status: result.status, startTime: result.startTime.getTime(), duration: result.duration, errors: result.errors.map((e) => e.message), steps: result.steps.map(step), pauses: body('piwi-pauses'), aria: body('piwi-aria-snapshot'), errorContext: body('error-context'), network: body('piwi-network') });
   }
   onEnd() { fs.writeFileSync(this.file, JSON.stringify(this.tests)); }
 };
@@ -176,6 +213,7 @@ interface DumpedTest {
   pauses: string | null;
   aria: string | null;
   errorContext: string | null;
+  network: string | null;
 }
 
 /** The answers the page gives, in the order the bar shows. */
@@ -188,6 +226,10 @@ const ANSWERS: Array<{ answer: string; hold?: number }> = [
   { answer: 'Resume', hold: HOLD_MS }, // page.pause()
   { answer: 'Resume', hold: HOLD_MS }, // a page a hook opened: page.goto(/b)
   { answer: 'Resume', hold: HOLD_MS }, // poll: inputValue(), past the poll's own deadline
+  { answer: 'Pick a locator' }, // poll while picking: the poll's deadline passes with the picker open
+  { answer: 'Resume', hold: HOLD_MS }, // closes a page under the bar: the click on the page it closes
+  { answer: 'Resume' }, // closes a page under the bar: the click after it
+  { answer: 'Resume', hold: HOLD_MS }, // forgets an await: the click
   { answer: 'Resume' }, // arms its context: page.goto(/b)
 ];
 
@@ -196,6 +238,8 @@ let server: FakeServer;
 const stops: Array<{ where: string; what: string; inspector?: boolean }> = [];
 /** Each `page.pause()` left to Playwright: whether its Inspector opened (with windows), and how long it held. */
 const ownPauses: Record<string, { inspector?: boolean; held?: number }> = {};
+/** What each `afterEach` found left of the bar and the picker in the page, by test. */
+const afterEach: Record<string, number> = {};
 let tests: DumpedTest[] = [];
 let bp: number[] = [];
 let exitCode: number | null = null;
@@ -224,6 +268,12 @@ beforeAll(async () => {
         ownPauses[req.body] = { ...ownPauses[req.body], ...(WINDOWS ? { inspector: inspectorOpen() } : {}) };
         res.end();
       }, OWN_PAUSE_MS);
+      return;
+    }
+    if (req.url === '/after-each') {
+      const { title, left } = JSON.parse(req.body) as { title: string; left: number };
+      afterEach[title] = left;
+      res.end();
       return;
     }
     if (req.url === '/own-pause-end') {
@@ -311,13 +361,17 @@ describe('a run with breakpoints', () => {
       ['first', 'passed'],
       ['second', 'passed'],
       ['poll', 'failed'],
+      ['poll while picking', 'failed'],
+      ['closes a page under the bar', 'passed'],
+      ['forgets an await', 'passed'],
+      ['after it', 'passed'],
       ['arms its context', 'passed'],
       ['runs after it', 'passed'],
     ]);
   });
 
   it('stops at a navigation and a key press on a breakpoint, at the next call after Step, and at none after Finish', () => {
-    const [goto, press, click, , ownContext, second, poll, arms] = bp;
+    const [goto, press, click, , ownContext, second, poll, picking, closing, closed, forgets, arms] = bp;
     expect(stops.map(({ where, what }) => ({ where, what }))).toEqual([
       { where: `Paused at pause.spec.cjs:${goto}`, what: expect.stringMatching(/^Navigate .*\/b$/) },
       { where: `Paused at pause.spec.cjs:${press}`, what: 'Press "Tab"' },
@@ -327,6 +381,11 @@ describe('a run with breakpoints', () => {
       { where: expect.stringMatching(/^Paused at pause\.spec\.cjs:\d+$/), what: 'Pause' },
       { where: `Paused at pause.spec.cjs:${second}`, what: expect.stringMatching(/^Navigate .*\/b$/) },
       { where: `Paused at pause.spec.cjs:${poll}`, what: `Get input value locator('input')` },
+      { where: `Paused at pause.spec.cjs:${picking}`, what: `Get input value locator('input')` },
+      { where: `Paused at pause.spec.cjs:${closing}`, what: `Click getByRole('button')` },
+      // The page closing ended the stop before it: the breakpoints still stop.
+      { where: `Paused at pause.spec.cjs:${closed}`, what: `Click getByRole('button')` },
+      { where: `Paused at pause.spec.cjs:${forgets}`, what: `Click getByRole('button')` },
       { where: `Paused at pause.spec.cjs:${arms}`, what: expect.stringMatching(/^Navigate .*\/b$/) },
     ]);
   });
@@ -355,6 +414,20 @@ describe('a run with breakpoints', () => {
     expect(result.aria).toContain('button "Go"');
     expect(result.aria).not.toContain('Piwi: test paused');
     expect(result.errorContext ?? '').not.toContain('Piwi: test paused');
+  });
+
+  it('takes the bar and the picker down as the test function ends, before the afterEach hooks', () => {
+    expect(afterEach).toEqual({ poll: 0, 'poll while picking': 0 });
+    const [stop] = readPauses(Buffer.from(test('poll while picking').pauses ?? ''));
+    // It ended with the test, at the poll's deadline, without a wait for the picker.
+    expect(stop?.duration).toBeGreaterThan(0);
+    expect(stop?.duration).toBeLessThan(TIMEOUT_MS);
+  });
+
+  it('lets a held call go at once when its page closes, and keeps the call of a test that ended under the bar in it', () => {
+    expect(test('closes a page under the bar').duration).toBeLessThan(TIMEOUT_MS);
+    const clicked = (title: string) => (test(title).network ?? '').includes('/clicked');
+    expect([clicked('forgets an await'), clicked('after it')]).toEqual([true, false]);
   });
 
   it('lists each stop it showed in piwi-pauses, with its place, reason and duration', () => {

@@ -236,6 +236,32 @@ describe('recording from a paused test', () => {
     }
   });
 
+  it('ends with the test: the recorder in the page stops, the editor hears it closed, and none starts after', async () => {
+    const { page, evaluated } = fakePage();
+    const ended = new AbortController();
+    const editor = await startEditor((message, send) => {
+      if (message.type === 'attach') send({ type: 'load', bundle });
+      if (message.type === 'loaded') ended.abort('ended');
+    });
+    const options = {
+      page: page as never,
+      testInfo: testInfo as never,
+      location: 'tests/cart.spec.ts:12:5',
+      reason: 'breakpoint' as const,
+      channel: editor.channel,
+      ended: ended.signal,
+    };
+    try {
+      expect(await recordFromHere(options)).toBeNull();
+      expect(evaluated).toContainEqual(['__piwiIdeDispatch', { type: 'piwi-recording-stopped' }]);
+      await vi.waitFor(() => expect(editor.heard.map((m) => m.type)).toEqual(['attach', 'loaded', 'closed']));
+      expect(await recordFromHere(options)).toBe('the test ended.');
+      expect(editor.heard).toHaveLength(3);
+    } finally {
+      await editor.close();
+    }
+  });
+
   it('says why when the editor does not take the recording, or cannot be reached', async () => {
     const { page } = fakePage();
     const editor = await startEditor((message, send) => {
