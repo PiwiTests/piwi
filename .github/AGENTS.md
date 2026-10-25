@@ -55,9 +55,10 @@ every comparison is made on one machine; a `report` job joins their results into
 - **Node through `setup-workspace`.** The version comes from the root `.node-version`; a job names another only to test
   a floor (`engines`, Node 22) or a bundled runtime (the desktop's `24.22.1`). `npm ci` runs with
   `--prefer-offline --no-audit --fund=false`.
-- **Playwright's headless shell is cached by Playwright version** (`playwright: shell`). The full Chromium build
-  (`playwright: full`) is installed on every run: its workflows run on pull requests only, where a cache serves its own
-  pull request alone. The checks job installs it too, beside the shell, for the reporter's breakpoint run, which opens
+- **Playwright's headless shell is cached by Playwright version** (`playwright: shell`), saved as soon as it is
+  installed, so the cache holds the shell alone. The full Chromium build (`playwright: full`) is installed on every
+  run: its workflows run on pull requests only, where a cache serves its own pull request alone. The checks job
+  installs it too, beside the shell and after the cache is saved, for the reporter's breakpoint run, which opens
   Chromium's windows under `xvfb-run`.
 - **Least privilege.** `permissions: contents: read` on every workflow; anything more on the job that needs it. A job
   that calls a reusable workflow grants the permissions its jobs ask for: a called job asking for more fails the run.
