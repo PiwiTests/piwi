@@ -165,7 +165,8 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
   Playwright config's folder), unless the checkbox under **Settings → Tools → Piwi** (`PiwiLocalSettings.breakpoints`,
   on this machine only) turns them off. `PiwiCommands.startRun` adds `PIWI_EDITOR_SEND`, the pairing address
   `PiwiSendHandler` serves with its token from `PasswordSafe` (created if missing), when the command carries
-  `PIWI_PAUSE_AT`, and shows `RunCommand.notice` (a reporter too old for breakpoints) once as a warning balloon.
+  `PIWI_PAUSE_AT` or `PIWI_RUN_CHANNEL` (a run the IDE or Piwi Picker can pause), or `RunCommand.pauses`, and shows
+  `RunCommand.notice` (a reporter too old for breakpoints) once as a warning balloon.
 - `PiwiRunControl.kt` shows and steers the runs started here (`PiwiRunSessions`), with Piwi's own actions, no debug
   session: the initialization options say so (`runControl`), and the latest `piwi/runSessionChanged` of each ref
   (`PiwiLsp4jClient.runSessionChanged`, `Glue.withSession`) is kept until one says `ended` or the service's process
@@ -280,7 +281,13 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
   says why (`Glue.pickNotice`). Without an editor open, a scratch file (`piwi-picker.ts`) takes the insertion, and the
   answer's `file` is null, as the VS Code extension's untitled editor. A recorded flow goes through
   `piwi/renderSteps` with the caret, for its page expression and its line's indentation, and its import edit apart,
-  made with the insertion (`Glue.importWrite`).
+  made with the insertion (`Glue.importWrite`). With the same token and CORS rules (an extension's origin alone is
+  named), `GET /api/piwi/live` answers `{ hubs }` on a pooled thread: the hub of every editor service running on the
+  machine, every IDE's and project's, read at each request from their discovery files (`Glue.liveHubs`:
+  `PIWI_EDITORS_DIR` or `~/.piwi/editors`, `Glue.editorsDir`; a file whose process `ProcessHandle` finds gone is
+  deleted, one it cannot read skipped; `Glue.parseLiveHub` mirrors `@piwitests/core/editor-discovery` and keeps the
+  WebSocket's address and token, the pid, version, client, workspace folders and start, never the run channel's token);
+  a request without the token is a 401.
 - `PiwiOpenHandler.kt` is the dashboard's Open in IDE: `GET /api/piwi/open?file=…&line=…&column=…[&root=…][&check]` on
   the built-in server, a `RestService`. It answers only a page whose `Origin` is the Piwi instance an open project is
   connected to (its settings, `PIWI_DASHBOARD_URL` in the environment or in a Playwright config folder's `.env`, the

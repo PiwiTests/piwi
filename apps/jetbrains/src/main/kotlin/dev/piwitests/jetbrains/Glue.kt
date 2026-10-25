@@ -865,6 +865,78 @@ object Glue {
         env["PIWI_DESKTOP_CONFIG"]?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
             ?: home?.let { Path.of(it, ".piwi", "desktop.json") }
 
+    /**
+     * A live editor service's hub for Piwi Picker, as `GET /api/piwi/live` lists it: the WebSocket's address and token,
+     * and the service (`LiveHub` in `@piwitests/core/run-hub`). The run channel its file also names is never listed.
+     */
+    data class LiveHub(
+        val url: String,
+        val token: String,
+        val pid: Long,
+        val version: String,
+        val client: String?,
+        val roots: List<String>,
+        val startedAt: String,
+    )
+
+    /** Where the editor services publish their discovery files: `PIWI_EDITORS_DIR`, else `~/.piwi/editors`. */
+    fun editorsDir(env: Map<String, String>, home: String?): Path? =
+        env["PIWI_EDITORS_DIR"]?.takeIf { it.isNotBlank() }?.let { runCatching { Path.of(it) }.getOrNull() }
+            ?: home?.let { Path.of(it, ".piwi", "editors") }
+
+    private val DISCOVERY_NAME = Regex("^([1-9]\\d{0,9})\\.json$")
+    private val HUB_URL = Regex("^ws://127\\.0\\.0\\.1:\\d{1,5}/[\\w/-]{0,64}$")
+    private val HUB_TOKEN = Regex("^[A-Za-z0-9_-]{16,256}$")
+
+    /**
+     * The hub of an editor service's discovery file (`<pid>.json`), as `parseEditorDiscovery` in
+     * `@piwitests/core/editor-discovery` reads it; null when the file names no hub, or another process than `pid`.
+     */
+    fun parseLiveHub(text: String?, pid: Long): LiveHub? {
+        val json = runCatching { JsonParser.parseString(text ?: return null) as? JsonObject }.getOrNull() ?: return null
+        fun string(o: JsonObject?, key: String, max: Int) = o?.get(key)
+            ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+            ?.takeIf { it.isNotEmpty() && it.length <= max && !it.contains('\u0000') }
+        val named = json.get("pid")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asDouble
+        if (named != pid.toDouble()) return null
+        val hub = json.get("hub") as? JsonObject
+        val url = string(hub, "url", 200)?.takeIf { HUB_URL.matches(it) } ?: return null
+        val token = string(hub, "token", 256)?.takeIf { HUB_TOKEN.matches(it) } ?: return null
+        val roots = (json.get("roots") as? JsonArray)?.take(64)?.mapNotNull { root ->
+            root.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+                ?.takeIf { it.isNotEmpty() && it.length <= 4096 && !it.contains('\u0000') }
+        }.orEmpty()
+        return LiveHub(
+            url = url,
+            token = token,
+            pid = pid,
+            version = string(json, "version", 64) ?: "",
+            client = string(json, "client", 200),
+            roots = roots,
+            startedAt = string(json, "startedAt", 64) ?: "",
+        )
+    }
+
+    /**
+     * The hubs of the editor services whose discovery files `dir` holds and whose process runs, oldest first, as
+     * `readLiveEditors` in `@piwitests/core/editor-discovery` lists them: the file of a process that is gone is
+     * deleted, one that cannot be read skipped.
+     */
+    fun liveHubs(dir: Path?, alive: (Long) -> Boolean): List<LiveHub> {
+        val names = dir?.let { folder ->
+            runCatching { Files.list(folder).use { entries -> entries.map { it.fileName.toString() }.toList() } }.getOrNull()
+        }.orEmpty()
+        return names.mapNotNull { name ->
+            val pid = DISCOVERY_NAME.find(name)?.groupValues?.get(1)?.toLongOrNull() ?: return@mapNotNull null
+            val file = dir!!.resolve(name)
+            if (!alive(pid)) {
+                runCatching { Files.deleteIfExists(file) }
+                return@mapNotNull null
+            }
+            parseLiveHub(runCatching { Files.readString(file) }.getOrNull(), pid)
+        }.sortedWith(compareBy<LiveHub>({ it.startedAt }, { it.pid }))
+    }
+
     /** The running desktop app, from its discovery file's text; null when it is not one. */
     fun parseDesktopDiscovery(text: String?): DesktopDiscovery? {
         val json = runCatching { JsonParser.parseString(text ?: return null) as? JsonObject }.getOrNull() ?: return null

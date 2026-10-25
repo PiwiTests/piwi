@@ -21,6 +21,7 @@ describe('the run channel', () => {
       pid: 4242,
       playwright: '1.64.1',
       reporter: '0.60.0',
+      takes: ['pick', 'record'],
     } satisfies RunToHub;
 
     test('reads its attach, and refuses one without a ref, a folder or a worker', () => {
@@ -30,6 +31,10 @@ describe('the run channel', () => {
         playwright: '',
         reporter: '',
       });
+      // A reporter that predates the intents lists none; one names only those this side knows.
+      expect(parseRunToHub(line({ ...attach, takes: undefined }))).toEqual({ ...attach, takes: [] });
+      expect(parseRunToHub(line({ ...attach, takes: ['assert', 'record'] }))).toMatchObject({ takes: ['record'] });
+      expect(parseRunToHub(line({ ...attach, takes: 'pick' }))).toMatchObject({ takes: [] });
       for (const broken of [
         { ...attach, ref: '' },
         { ...attach, ref: 'ed 1' },
@@ -125,6 +130,17 @@ describe('the run channel', () => {
       expect(parseRunToHub(line({ type: 'answer', request: 0, what: 'image', value: null }))).toBeNull();
     });
 
+    test('reads whether an intent started in the test’s window, and refuses an answer without both fields', () => {
+      const started = { type: 'answer', request: 3, what: 'pick', value: { ok: true, message: 'Pick an element.' } };
+      expect(parseRunToHub(line(started))).toEqual(started);
+      expect(
+        parseRunToHub(line({ ...started, what: 'record', value: { ok: false, message: 'x'.repeat(600) } })),
+      ).toEqual({ ...started, what: 'record', value: { ok: false, message: 'x'.repeat(500) } });
+      for (const value of [null, { ok: true }, { ok: 'yes', message: '' }, { message: 'x' }]) {
+        expect(parseRunToHub(line({ ...started, value })), JSON.stringify(value)).toBeNull();
+      }
+    });
+
     test('reads a notice, cut short, and ignores what it does not know', () => {
       expect(parseRunToHub(line({ type: 'notice', message: 'x'.repeat(600) }))).toEqual({
         type: 'notice',
@@ -177,6 +193,19 @@ describe('the run channel', () => {
         what: 'image',
       });
       expect(parseHubToRun(line({ type: 'request', request: 0, what: 'image' }))).toBeNull();
+    });
+
+    test('reads a request to pick or record at a stop, which names that stop', () => {
+      for (const what of ['pick', 'record'] as const) {
+        expect(parseHubToRun(line({ type: 'request', request: 6, what, stop: 2 }))).toEqual({
+          type: 'request',
+          request: 6,
+          what,
+          stop: 2,
+        });
+        expect(parseHubToRun(line({ type: 'request', request: 6, what }))).toBeNull();
+        expect(parseHubToRun(line({ type: 'request', request: 6, what, stop: 0 }))).toBeNull();
+      }
     });
 
     test('names what a newer service sends that this version does not know, and refuses what is malformed', () => {

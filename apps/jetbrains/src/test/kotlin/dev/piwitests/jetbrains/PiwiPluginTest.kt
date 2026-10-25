@@ -657,6 +657,64 @@ class PiwiPluginTest : BasePlatformTestCase() {
         )
     }
 
+    /** Asks the live endpoint as Piwi Picker does, with `bearer` (none without), and waits, pumping the event queue meanwhile. */
+    private fun liveFromPicker(bearer: String?): java.net.http.HttpResponse<String> {
+        val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        val request = java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiSendHandler.LIVE_PATH}"))
+            .header("Origin", "chrome-extension://abc")
+            .GET()
+        if (bearer != null) request.header("Authorization", "Bearer $bearer")
+        val future = java.net.http.HttpClient.newHttpClient().sendAsync(request.build(), java.net.http.HttpResponse.BodyHandlers.ofString())
+        val deadline = System.currentTimeMillis() + 20_000
+        while (!future.isDone && System.currentTimeMillis() < deadline) {
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            Thread.sleep(20)
+        }
+        return future.get(1, TimeUnit.SECONDS)
+    }
+
+    /** Piwi Picker reads, through the pairing, the hubs of the running editor services' discovery files, every IDE window's. */
+    fun testPiwiPickerListsTheLiveHubsThroughThePairing() {
+        // PIWI_EDITORS_DIR names another folder than the home folder's.
+        if (!System.getenv("PIWI_EDITORS_DIR").isNullOrBlank()) return
+        val token = PiwiSendToken.ensure()
+        val home = FileUtil.createTempDirectory("piwi-home", null)
+        val editors = File(home, ".piwi/editors").apply { mkdirs() }
+        fun file(pid: Long) = File(editors, "$pid.json").apply {
+            writeText(
+                """{"pid":$pid,"version":"0.60.0","client":"WebStorm","startedAt":"2026-10-25T10:00:00.000Z","roots":["/work/shop"],""" +
+                    """"hub":{"url":"ws://127.0.0.1:43123/piwi/hub","token":"hub-token-0123456789"},""" +
+                    """"runChannel":{"path":"/tmp/s.sock","token":"channel-token-0123456789"}}""",
+            )
+        }
+        val pid = ProcessHandle.current().pid()
+        file(pid)
+        val ended = ProcessBuilder(ProcessHandle.current().info().command().orElse("java"), "-version").redirectErrorStream(true).start()
+        ended.inputStream.readAllBytes()
+        ended.waitFor()
+        val dead = file(ended.pid())
+        val saved = System.getProperty("user.home")
+        System.setProperty("user.home", home.path)
+        try {
+            assertEquals(401, liveFromPicker(null).statusCode())
+            assertEquals(401, liveFromPicker("wrong-token-wrong-token").statusCode())
+            val ok = liveFromPicker(token)
+            assertEquals(ok.body(), 200, ok.statusCode())
+            assertEquals("chrome-extension://abc", ok.headers().firstValue("Access-Control-Allow-Origin").orElse(null))
+            val hubs = com.google.gson.JsonParser.parseString(ok.body()).asJsonObject.getAsJsonArray("hubs")
+            assertEquals(1, hubs.size())
+            val hub = hubs[0].asJsonObject
+            assertEquals(pid, hub.get("pid").asLong)
+            assertEquals("ws://127.0.0.1:43123/piwi/hub", hub.get("url").asString)
+            assertEquals("hub-token-0123456789", hub.get("token").asString)
+            assertEquals("/work/shop", hub.getAsJsonArray("roots")[0].asString)
+            assertFalse("the run channel's token is never listed", ok.body().contains("channel-token"))
+            assertFalse("a killed service's file is deleted", dead.exists())
+        } finally {
+            System.setProperty("user.home", saved)
+        }
+    }
+
     /** Without an editor open, Piwi Picker's text goes into a new scratch file, and the answer names no file. */
     fun testPiwiPickerOpensAScratchFileWhileNoEditorIsOpen() {
         val token = PiwiSendToken.ensure()

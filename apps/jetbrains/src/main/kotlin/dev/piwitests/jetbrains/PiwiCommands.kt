@@ -217,8 +217,9 @@ object PiwiCommands {
 
     /**
      * Run a test command of the service, built with the IDE's `breakpoints`: its notice shown once, and, when it can
-     * pause in the browser (breakpoints, `PIWI_PAUSE_AT`, or a `page.pause()`, `RunCommand.pauses`), the Send to editor
-     * pairing a locator picked while paused is posted to (`PIWI_EDITOR_SEND`). Call it off the event thread.
+     * pause in the browser (breakpoints, `PIWI_PAUSE_AT`, a `page.pause()`, `RunCommand.pauses`, or a Pause on its run
+     * channel, `PIWI_RUN_CHANNEL`), the Send to editor pairing a locator picked while paused is posted to
+     * (`PIWI_EDITOR_SEND`). Call it off the event thread.
      */
     fun startRun(project: Project, command: RunCommand, breakpoints: List<Glue.RunBreakpoint>) {
         val cwd = command.cwd ?: return
@@ -227,7 +228,8 @@ object PiwiCommands {
         command.notice?.let { if (noticesShown.add(it)) notify(project, it, NotificationType.WARNING) }
         command.ref?.let { project.service<PiwiRunSessions>().started(it, breakpoints) }
         val base = command.env
-        val address = if (base != null && (base.containsKey("PIWI_PAUSE_AT") || command.pauses == true)) {
+        val pauses = base != null && (base.containsKey("PIWI_PAUSE_AT") || base.containsKey("PIWI_RUN_CHANNEL") || command.pauses == true)
+        val address = if (pauses) {
             runCatching {
                 val port = BuiltInServerManager.getInstance().waitForStart().port
                 "http://127.0.0.1:$port${PiwiSendHandler.PATH}#${PiwiSendToken.ensure()}"

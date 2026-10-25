@@ -176,7 +176,7 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
     send(connection, { type: 'request', request: asked, what: 'image' });
     for (;;) {
       const answer = connection.heard.find((m) => m.type === 'answer' && m.request === asked);
-      if (answer?.type === 'answer') return answer.value;
+      if (answer?.type === 'answer' && answer.what === 'image') return answer.value;
       await sleep(20);
     }
   };

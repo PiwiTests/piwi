@@ -211,6 +211,47 @@ const tests = {
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
   },
 
+  async 'Piwi Picker finds the hub of the window’s editor service through the pairing'() {
+    const [url, token] = (await vscode.env.clipboard.readText()).split('#');
+    const live = url.replace(/\/send$/, '/live');
+    assert.equal((await fetch(live)).status, 401);
+    const hubs = await waitFor(async () => {
+      const res = await fetch(live, { headers: { Authorization: `Bearer ${token}` } });
+      const body = await res.json();
+      return body.hubs.find((h) => h.roots.includes(workspace)) && body.hubs;
+    }, 'the window’s hub');
+    const hub = hubs.find((h) => h.roots.includes(workspace));
+    assert.match(hub.url, /^ws:\/\/127\.0\.0\.1:\d+\/piwi\/hub$/);
+    // Its own discovery file, in the folder the run names, readable by this user alone.
+    const file = path.join(process.env.PIWI_EDITORS_DIR, `${hub.pid}.json`);
+    if (process.platform !== 'win32') assert.equal(require('node:fs').statSync(file).mode & 0o777, 0o600);
+    // The hub takes an extension's handshake at that address, and refuses a page's.
+    const handshake = (origin) =>
+      new Promise((resolve, reject) => {
+        const request = require('node:http').request(hub.url.replace(/^ws:/, 'http:'), {
+          headers: {
+            Connection: 'Upgrade',
+            Upgrade: 'websocket',
+            'Sec-WebSocket-Version': '13',
+            'Sec-WebSocket-Key': require('node:crypto').randomBytes(16).toString('base64'),
+            Origin: origin,
+          },
+        });
+        request.on('upgrade', (res, socket) => {
+          socket.destroy();
+          resolve(res.statusCode);
+        });
+        request.on('response', (res) => {
+          res.resume();
+          resolve(res.statusCode);
+        });
+        request.on('error', reject);
+        request.end();
+      });
+    assert.equal(await handshake(`chrome-extension://${'a'.repeat(32)}`), 101);
+    assert.equal(await handshake(new URL(url).origin), 403);
+  },
+
   async 'the page recorded steps run on is offered from the code around the cursor'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const spec = vscode.Uri.file(path.join(workspace, 'tests', 'admin.spec.ts'));

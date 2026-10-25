@@ -4,7 +4,8 @@
  * (`@piwitests/core/ide-recorder`). The run's environment names it as `PIWI_RUN_CHANNEL`, `<socket path>#<token>`
  * as `PIWI_RECORD_CHANNEL` is (`formatRecordChannel`, `parseRecordChannel`). Its first line, `run-attach`, tells it
  * from a hand-off's `attach`. Over it the worker says which test it runs and where it stopped, and the editor service
- * steers it: pause, step, resume, finish, run to a line, the breakpoints, an image of the stopped page. Each message
+ * steers it: pause, step, resume, finish, run to a line, the breakpoints, an image of the stopped page, and, at a stop
+ * the pause bar shows, the bar's own **Pick a locator** and **Record here** started from outside the page. Each message
  * is one line of JSON, at most `MAX_HANDOFF_LINE` long (`lineReader`), checked field by field on both sides. A side
  * ignores a message it cannot read.
  */
@@ -32,12 +33,31 @@ export interface PausedImage {
   data: string;
 }
 
+/**
+ * What a stop the pause bar shows starts from outside the page, as the bar's buttons do: **Pick a locator** (`pick`)
+ * and **Record here** (`record`), in the test's window, their results going where the bar's go.
+ */
+export type RunIntent = 'pick' | 'record';
+
+/** The intents a worker takes, as its `run-attach` lists them: a worker of an older reporter lists none. */
+export const RUN_INTENTS: readonly RunIntent[] = ['pick', 'record'];
+
+/** The pause bar's button each intent starts, as a sentence names it. */
+export const RUN_INTENT_NAMES: Record<RunIntent, string> = { pick: 'Pick a locator', record: 'Record here' };
+
+/** Whether an intent started, or why not, in one sentence. */
+export interface IntentAnswer {
+  ok: boolean;
+  message: string;
+}
+
 /** What a worker sends the editor service on its run connection. */
 export type RunToHub =
   /**
    * The first line: the channel's token, the ref of the command that started the run (`PIWI_ORIGIN_REF`), the run's
    * working directory, which every `Place` is relative to, the worker (Playwright's `workerIndex` and
-   * `parallelIndex`, its process), and the versions of Playwright and of the reporter.
+   * `parallelIndex`, its process), the versions of Playwright and of the reporter, and the intents it takes
+   * (`takes`), none for a worker of a reporter that predates them.
    */
   | {
       type: 'run-attach';
@@ -49,6 +69,7 @@ export type RunToHub =
       pid: number;
       playwright: string;
       reporter: string;
+      takes?: RunIntent[];
     }
   /**
    * A test starts: Playwright's id, its describe blocks' titles and its own, its file and 1-based line, its project,
@@ -85,6 +106,8 @@ export type RunToHub =
   | { type: 'test-end'; testId: string; status: string; pausedMs: number }
   /** The answer to a `request`: an image of the stopped page, null when there is none. */
   | { type: 'answer'; request: number; what: 'image'; value: PausedImage | null }
+  /** The answer to an intent's `request`: whether it started in the test's window, or why not. */
+  | { type: 'answer'; request: number; what: RunIntent; value: IntentAnswer }
   /** Something the person should know: a message of the editor's this worker did not apply, and why. */
   | { type: 'notice'; message: string };
 
@@ -102,7 +125,12 @@ export type HubToRun =
   /** Answer the stop `stop`: go on, and stop at the first call on that line, or at a breakpoint before it. */
   | { type: 'run-to'; stop: number; place: Place }
   /** An image of the stopped page; answered with `answer`, null when the worker is not stopped. */
-  | { type: 'request'; request: number; what: 'image' };
+  | { type: 'request'; request: number; what: 'image' }
+  /**
+   * At the stop `stop`, start what the pause bar's **Pick a locator** or **Record here** starts, in the test's window;
+   * answered with `answer` at once, saying whether it started. Sent only to a worker whose `run-attach` takes it.
+   */
+  | { type: 'request'; request: number; what: RunIntent; stop: number };
 
 /** A message of a type, or a control action or request, of a newer side: answered with a `notice`, never applied. */
 export interface UnknownMessage {
@@ -146,6 +174,16 @@ function readPlace(value: unknown): Place | null {
 
 const STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause'];
 
+function isIntent(value: unknown): value is RunIntent {
+  return value === 'pick' || value === 'record';
+}
+
+/** The intents a `run-attach` lists, those this side knows; none for anything but a list. */
+function readIntents(value: unknown): RunIntent[] {
+  if (!Array.isArray(value) || value.length > 16) return [];
+  return RUN_INTENTS.filter((intent) => value.includes(intent));
+}
+
 /** The most breakpoints one message carries. */
 const MAX_PLACES = 10_000;
 
@@ -171,6 +209,7 @@ export function parseRunToHub(line: string): RunToHub | null {
         pid,
         playwright: text(value.playwright, 64) ?? '',
         reporter: text(value.reporter, 64) ?? '',
+        takes: readIntents(value.takes),
       };
     }
     case 'test-begin': {
@@ -218,7 +257,13 @@ export function parseRunToHub(line: string): RunToHub | null {
     }
     case 'answer': {
       const { request, what, value: answered } = value;
-      if (!isInt(request, 1) || what !== 'image') return null;
+      if (!isInt(request, 1)) return null;
+      if (isIntent(what)) {
+        if (!isObject(answered) || typeof answered.ok !== 'boolean' || typeof answered.message !== 'string')
+          return null;
+        return { type: 'answer', request, what, value: { ok: answered.ok, message: answered.message.slice(0, 500) } };
+      }
+      if (what !== 'image') return null;
       if (answered === null) return { type: 'answer', request, what, value: null };
       if (!isObject(answered) || answered.mime !== 'image/jpeg') return null;
       if (typeof answered.data !== 'string' || !answered.data || !BASE64.test(answered.data)) return null;
@@ -260,6 +305,11 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
     case 'request': {
       if (!isInt(value.request, 1)) return null;
       if (value.what === 'image') return { type: 'request', request: value.request, what: 'image' };
+      if (isIntent(value.what)) {
+        return isInt(value.stop, 1)
+          ? { type: 'request', request: value.request, what: value.what, stop: value.stop }
+          : null;
+      }
       return typeof value.what === 'string' ? unknown(`request ${value.what}`) : null;
     }
     default:

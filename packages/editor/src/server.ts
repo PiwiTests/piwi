@@ -45,6 +45,7 @@ import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
 import { RUN_CHANNEL_ENV } from '@piwitests/core/run-channel';
+import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
@@ -152,6 +153,7 @@ import {
 import { importInsertion } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
 import { RunSessions } from './run-sessions.js';
+import { RunHub } from './run-hub.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
@@ -309,6 +311,12 @@ const MAX_REPEATED_COMMANDS = 50;
 const SPEC_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
 /** A `page.pause()` call, on any page expression (`adminPage.pause()`, `this.page.pause()`). */
 const PAGE_PAUSE = /(?<![\w$])(?:this\.)?[\w$]*[pP]age\.pause\(\s*\)/;
+/** The commands whose runs the hub names to Piwi Picker, at most. */
+const MAX_RUN_COMMANDS = 50;
+
+/** The service's version, which the build writes in; `0.0.0-dev` unbundled. */
+declare const __PIWI_EDITOR_VERSION__: string | undefined;
+export const SERVICE_VERSION = typeof __PIWI_EDITOR_VERSION__ === 'string' ? __PIWI_EDITOR_VERSION__ : '0.0.0-dev';
 
 export interface ServerOptions {
   /** The environment the connection is read from; the process's by default. */
@@ -342,6 +350,14 @@ export interface ServerOptions {
   launchRecorder?: LauncherFactory;
   /** Reads the resolved options of a config's projects; with the config's own Playwright by default. */
   readProjectOptions?: (configFile: string) => Promise<ProjectOptions>;
+  /**
+   * What the service's discovery file says (`~/.piwi/editors/<pid>.json`): called once the run channel and the hub
+   * listen, and with null as the service stops. The process's entry writes and removes the file (`main.ts`).
+   */
+  publish?: (discovery: EditorDiscovery | null) => void;
+  /** How often the hub sends its keepalive, and how long it waits for `hello`. */
+  hubKeepaliveMs?: number;
+  hubHelloMs?: number;
 }
 
 /** What the last analysis of an application file found, for its quick fixes and hover. */
@@ -1630,10 +1646,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let shutDown = false;
   /** Whether the client shows where a run stops and answers it (`InitializationOptions.runControl`). */
   let answersStops = false;
+  /** The editor running the service, as `initialize` names it. */
+  let clientName: string | null = null;
+  /** The hub's WebSocket, for Piwi Picker: null until it listens, and on a machine that refuses a port. */
+  let runHub: RunHub | null = null;
+  /** The command lines of the runs the service built, by ref, which the hub names to Piwi Picker. */
+  const runCommands = new Map<string, string>();
   /** The runs the service built, as their workers tell them on the run channel. */
   const runSessions = new RunSessions({
-    notify: (session) => void connection.sendNotification(RUN_SESSION_NOTIFICATION, session),
-    answersStops: () => answersStops,
+    notify: (session) => {
+      void connection.sendNotification(RUN_SESSION_NOTIFICATION, session);
+      runHub?.push(session);
+    },
+    // The client, or a Piwi Picker following the runs.
+    answersStops: () => answersStops || !!runHub?.answersStops(),
     notice: (root, severity, message) =>
       void connection.sendNotification(NOTICE_NOTIFICATION, { root, severity, message } satisfies Notice),
     // A run runs in its config's folder as the file system spells it (`commandFolder`).
@@ -2005,6 +2031,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const init = params.initializationOptions as InitializationOptions | undefined;
     credentials = init?.credentials ?? {};
     answersStops = init?.runControl === true;
+    const name = params.clientInfo?.name;
+    clientName = typeof name === 'string' && name ? name.slice(0, 200) : null;
     return {
       capabilities: {
         textDocumentSync: TextDocumentSyncKind.Incremental,
@@ -2037,12 +2065,46 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     );
     // A checkout or a commit is read within seconds: the latest run and the diagnostics follow the new `HEAD`.
     void watchRepositories();
-    void RecordChannel.open({
-      onAttach: recordRequested,
-      onRun: (socket, attach) => runSessions.attach(socket, attach),
-    }).then((channel) => {
-      if (stopped || shutDown) channel?.close();
-      else recordChannel = channel;
+    void Promise.all([
+      RecordChannel.open({
+        onAttach: recordRequested,
+        onRun: (socket, attach) => runSessions.attach(socket, attach),
+      }),
+      RunHub.open({
+        sessions: runSessions,
+        runInfo: (ref, root) => {
+          const context = root ? contextOfRoot(root) : null;
+          return {
+            command: runCommands.get(ref) ?? null,
+            label: root ? contextLabel(root, folders) : null,
+            project: context?.project?.name ?? null,
+          };
+        },
+        welcome: () => ({ pid: process.pid, version: SERVICE_VERSION, client: clientName, roots: folders }),
+        surfacesChanged: () => runSessions.surfacesChanged(),
+        keepaliveMs: options.hubKeepaliveMs,
+        helloMs: options.hubHelloMs,
+      }),
+    ]).then(([channel, hub]) => {
+      if (stopped || shutDown) {
+        channel?.close();
+        hub?.close();
+        return;
+      }
+      recordChannel = channel;
+      runHub = hub;
+      if (!channel && !hub) return;
+      const bundle = path.join(distDir, 'record-ide.js');
+      options.publish?.({
+        pid: process.pid,
+        version: SERVICE_VERSION,
+        client: clientName,
+        startedAt: new Date().toISOString(),
+        roots: folders,
+        hub: hub && { url: hub.url, token: hub.token },
+        runChannel: channel && { path: channel.path, token: channel.token },
+        recorderBundle: fs.existsSync(bundle) ? bundle : null,
+      });
     });
   });
 
@@ -2930,11 +2992,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       if (isTestLocation(location)) specs.add(path.join(context.root, location.slice(0, location.lastIndexOf(':'))));
     }
     const pauses = [...specs].some((spec) => PAGE_PAUSE.test(withoutComments(readText(spec) ?? '')));
-    return {
+    const run: RunCommand = {
       ...command,
       ...(pauses ? { ...headedCommand(command.command, command.args), pauses: true } : {}),
       env: { ...command.env, [RUN_CHANNEL_ENV]: recordChannel.value, [RECORD_CHANNEL_ENV]: recordChannel.value },
     };
+    if (run.ref) {
+      runCommands.delete(run.ref);
+      runCommands.set(run.ref, run.command);
+      for (const oldest of runCommands.keys()) {
+        if (runCommands.size <= MAX_RUN_COMMANDS) break;
+        runCommands.delete(oldest);
+      }
+    }
+    return run;
   };
 
   /** Whether a location names a spec under the context's folder, as `piwi/testAt` gives it. */
@@ -3321,13 +3392,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   /**
    * The record channel goes with the service: its socket's folder is removed, a waiting test hears why, and each
-   * worker's run connection closes, which lets a stop no pause bar shows go on; a stop the bar shows waits there.
+   * worker's run connection closes, which lets a stop no pause bar shows go on; a stop the bar shows waits there. The
+   * hub closes its connections, and the discovery file goes.
    */
   const closeRecordChannel = () => {
+    const open = !!recordChannel || !!runHub;
     shutDown = true;
     recordChannel?.close();
     recordChannel = null;
+    runHub?.close();
+    runHub = null;
     runSessions.dispose();
+    if (open) options.publish?.(null);
   };
   connection.onShutdown(() => {
     recordings.dispose();

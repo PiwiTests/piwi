@@ -857,6 +857,56 @@ class GlueTest {
         assertEquals(Path.of("/home/me", ".piwi", "desktop.json"), Glue.desktopConfigPath(emptyMap(), "/home/me"))
     }
 
+    /** An editor service's discovery file, as `writeDiscovery` in the service writes it. */
+    private fun discoveryFile(pid: Long, port: Int, startedAt: String, hubToken: String = "hub-token-$port-0123456789") = """
+        {
+          "pid": $pid,
+          "version": "0.60.0",
+          "client": "WebStorm",
+          "startedAt": "$startedAt",
+          "roots": ["/work/shop-$port", 7],
+          "hub": { "url": "ws://127.0.0.1:$port/piwi/hub", "token": "$hubToken" },
+          "runChannel": { "path": "/tmp/piwi-record/channel.sock", "token": "channel-token-0123456789" },
+          "recorderBundle": null,
+          "later": true
+        }
+    """.trimIndent()
+
+    @Test
+    fun `reads the hub of an editor service's discovery file, for Piwi Picker, and none of the run channel`() {
+        assertEquals(
+            Glue.LiveHub(
+                url = "ws://127.0.0.1:43123/piwi/hub", token = "hub-token-43123-0123456789", pid = 42, version = "0.60.0",
+                client = "WebStorm", roots = listOf("/work/shop-43123"), startedAt = "2026-10-25T10:00:00.000Z",
+            ),
+            Glue.parseLiveHub(discoveryFile(42, 43123, "2026-10-25T10:00:00.000Z"), 42),
+        )
+        assertEquals("a file naming another process", null, Glue.parseLiveHub(discoveryFile(42, 43123, "x"), 7))
+        assertEquals("a hub elsewhere than this machine", null, Glue.parseLiveHub(discoveryFile(42, 43123, "x").replace("127.0.0.1", "evil.test"), 42))
+        assertEquals("a token too short", null, Glue.parseLiveHub(discoveryFile(42, 43123, "x", hubToken = "short"), 42))
+        assertEquals(null, Glue.parseLiveHub("""{"pid":42,"hub":null}""", 42))
+        assertEquals(null, Glue.parseLiveHub("{ half", 42))
+        assertEquals(Path.of("/tmp/e"), Glue.editorsDir(mapOf("PIWI_EDITORS_DIR" to "/tmp/e"), "/home/me"))
+        assertEquals(Path.of("/home/me", ".piwi", "editors"), Glue.editorsDir(emptyMap(), "/home/me"))
+    }
+
+    @Test
+    fun `lists the hubs of the running editor services oldest first, and deletes the files of those gone`() {
+        val dir = Files.createTempDirectory("piwi-editors")
+        Files.writeString(dir.resolve("12.json"), discoveryFile(12, 43002, "2026-10-25T10:00:02.000Z"))
+        Files.writeString(dir.resolve("11.json"), discoveryFile(11, 43001, "2026-10-25T10:00:01.000Z"))
+        Files.writeString(dir.resolve("13.json"), discoveryFile(13, 43003, "2026-10-25T10:00:03.000Z"))
+        Files.writeString(dir.resolve(".14.json.1a2b.tmp"), discoveryFile(14, 43004, "x"))
+        Files.writeString(dir.resolve("15.json"), "{ half")
+        val hubs = Glue.liveHubs(dir) { it != 13L }
+        assertEquals(listOf(11L, 12L), hubs.map { it.pid })
+        assertEquals(false, Files.exists(dir.resolve("13.json")))
+        assertEquals("an unreadable file of a running process stays", true, Files.exists(dir.resolve("15.json")))
+        assertEquals("the run channel's token is never listed", false, Gson().toJson(hubs).contains("channel-token"))
+        assertEquals(emptyList<Glue.LiveHub>(), Glue.liveHubs(dir.resolve("missing")) { true })
+        assertEquals(emptyList<Glue.LiveHub>(), Glue.liveHubs(null) { true })
+    }
+
     private fun tree(vararg files: String): Path {
         val dir = Files.createTempDirectory("piwi-glue").toRealPath()
         for (file in files) {

@@ -61,8 +61,8 @@ function write(socket: net.Socket, message: HandoffToTest): void {
   if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
 }
 
-/** Whether a token is the channel's, compared in constant time. */
-function sameToken(given: string, token: string): boolean {
+/** Whether a token is the one expected, compared in constant time. */
+export function sameToken(given: string, token: string): boolean {
   const a = Buffer.from(given);
   const b = Buffer.from(token);
   return a.length === b.length && timingSafeEqual(a, b);

@@ -1,13 +1,18 @@
 /**
  * The endpoint Piwi Picker sends to: an HTTP listener on the loopback
  * interface that accepts `POST /piwi/send` with the pairing token as a bearer
- * credential, and hands the payload to the extension to insert.
+ * credential, and hands the payload to the extension to insert. With the same
+ * token, `GET /piwi/live` lists the hubs of every editor service running on the
+ * machine (`@piwitests/core/run-hub`'s `LiveAnswer`, from the services'
+ * discovery files), so the one pairing reaches the runs of every editor window.
  */
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { MAX_SEND_BYTES, parseSendPayload, sendAuthorized, type EditorSendPayload } from '@piwitests/core/editor-send';
+import type { LiveAnswer, LiveHub } from '@piwitests/core/run-hub';
 
 export const SEND_PATH = '/piwi/send';
+export const LIVE_PATH = '/piwi/live';
 
 export interface SendResult {
   inserted: boolean;
@@ -26,7 +31,7 @@ function cors(req: http.IncomingMessage, res: http.ServerResponse): void {
   // Only the browser extensions' own origins; a web page never reaches the endpoint with the token anyway.
   if (origin && /^(chrome|moz)-extension:\/\//.test(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
     res.setHeader('Vary', 'Origin');
   }
@@ -46,6 +51,8 @@ export function startSendListener(options: {
   port: number;
   token: () => string;
   onPayload: (payload: EditorSendPayload) => Promise<SendResult>;
+  /** The live hubs, read from the discovery files at each request. */
+  live: () => LiveHub[];
 }): Promise<SendListener> {
   const server = http.createServer((req, res) => {
     cors(req, res);
@@ -53,6 +60,16 @@ export function startSendListener(options: {
       res.statusCode = 204;
       res.end();
       return;
+    }
+    if (req.url === LIVE_PATH && req.method === 'GET') {
+      if (!sendAuthorized(req.headers.authorization, options.token())) return answer(res, 401, { error: 'not paired' });
+      let hubs: LiveHub[] = [];
+      try {
+        hubs = options.live();
+      } catch {
+        // No folder to read: no hub.
+      }
+      return answer(res, 200, { hubs } satisfies LiveAnswer);
     }
     if (req.url !== SEND_PATH || req.method !== 'POST') return answer(res, 404, { error: 'not found' });
     if (!sendAuthorized(req.headers.authorization, options.token())) return answer(res, 401, { error: 'not paired' });

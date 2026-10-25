@@ -133,7 +133,8 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   cursor**, **Run this spec**, **Run the tests that reach this file**, **Re-run the failing tests**; and **Run
   selection…**) passes the editor's breakpoints to the service (`breakpoints`), as the
   `piwi.breakpoints` setting allows (default on): the enabled `vscode.SourceBreakpoint`s in script files under a
-  Playwright config's folder (`runBreakpoints` in `src/breakpoints.ts`). When the answer carries `PIWI_PAUSE_AT`,
+  Playwright config's folder (`runBreakpoints` in `src/breakpoints.ts`). When the answer carries `PIWI_PAUSE_AT` or
+  `PIWI_RUN_CHANNEL` (a run the editor or Piwi Picker can pause), or `RunCommand.pauses`,
   `startRun` starts the send listener if it is not running, minting its token as **Pair with Piwi Picker** does,
   without copying anything, and adds the pairing address as `PIWI_EDITOR_SEND`; `RunCommand.notice` (a reporter too
   old for breakpoints) is a warning, once per notice. The API `activate` returns gives the latest run's command
@@ -174,7 +175,13 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   copies the pairing address as the browser's machine reaches it (`pickerPairing`: `vscode.env.asExternalUri`, which
   a remote window forwards), while a run's `PIWI_EDITOR_SEND` keeps the loopback address (`runPairing`), the reporter
   running where the extension does. A recorded flow is rendered by the service (`piwi/renderSteps`, indented for the
-  caret's line) before it is inserted, with the service's import edit in the same edit.
+  caret's line) before it is inserted, with the service's import edit in the same edit. With the same token and the
+  same CORS rules (an extension's origin alone is named), `GET /piwi/live` answers `{ hubs }`: the hub of every editor
+  service running on the machine, read at each request from their discovery files (`readLiveHubs` of
+  `@piwitests/editor/discovery`, `PIWI_EDITORS_DIR` or `~/.piwi/editors`: the WebSocket's address and token, the pid,
+  version, client, workspace folders and start; never a run channel's token), so the one pairing reaches the runs of
+  every window, the other windows' included; a request without the token is a 401. The addresses are loopback ones: a
+  remote window does not forward them yet.
   A locator with `at`, picked while a run was paused at a breakpoint, asks `piwi/applyPick` and applies its edit as a
   workspace edit on that line; when the line holds no locator, it is inserted at the cursor, and the notification
   says why (`pickNotice` in `src/glue.ts`).

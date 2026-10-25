@@ -24,6 +24,8 @@
     "./recording": "./src/recording.ts",
     "./ide-recorder": "./src/ide-recorder.ts",
     "./run-channel": "./src/run-channel.ts",
+    "./run-hub": "./src/run-hub.ts",
+    "./editor-discovery": "./src/editor-discovery.ts",
     "./function-match": "./src/function-match.ts",
     "./codegen": "./src/codegen.ts",
     "./piwi-config": "./src/piwi-config.ts",

@@ -101,6 +101,7 @@ import {
   type TraceParams,
   type TraceResult,
 } from '@piwitests/editor/protocol';
+import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
 import type { EditorSendPayload } from '@piwitests/core/editor-send';
 import { formatPairing } from '@piwitests/core/editor-send';
 import {
@@ -774,6 +775,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       port,
       token: () => sendToken,
       onPayload: (payload) => insertFromPicker(lc, payload),
+      live: () => readLiveHubs(editorsDir()),
     });
     return sendListener;
   };
@@ -825,8 +827,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
 
   /**
    * Run a test command started with `breakpoints`: its notice shown once, and, when it can pause in the browser
-   * (breakpoints, `PIWI_PAUSE_AT`, or a `page.pause()`, `RunCommand.pauses`), the Send to editor pairing the picker
-   * posts a pick to (`PIWI_EDITOR_SEND`).
+   * (breakpoints, `PIWI_PAUSE_AT`, a `page.pause()`, `RunCommand.pauses`, or a Pause on its run channel,
+   * `PIWI_RUN_CHANNEL`), the Send to editor pairing the picker posts a pick to (`PIWI_EDITOR_SEND`).
    */
   const startRun = async (command: RunCommand, breakpoints: readonly RunBreakpoint[]) => {
     if (command.notice && !noticesShown.has(command.notice)) {
@@ -834,7 +836,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       void vscode.window.showWarningMessage(`Piwi: ${command.notice}`);
     }
     let env = command.env;
-    if (env?.PIWI_PAUSE_AT || command.pauses) {
+    if (env?.PIWI_PAUSE_AT || command.pauses || env?.PIWI_RUN_CHANNEL) {
       const address = await runPairing().catch(() => null);
       if (address) env = { ...env, PIWI_EDITOR_SEND: address };
     }

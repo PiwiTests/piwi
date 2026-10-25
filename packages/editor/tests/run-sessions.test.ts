@@ -8,186 +8,20 @@ import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { PassThrough } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import {
-  createMessageConnection,
-  StreamMessageReader,
-  StreamMessageWriter,
-  type MessageConnection,
-} from 'vscode-jsonrpc/node';
-import { createConnection } from 'vscode-languageserver/node';
-import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
-import { parseHubToRun, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
-import { startServer } from '../src/server';
+import type { RunToHub } from '@piwitests/core/run-channel';
 import { RunSessions } from '../src/run-sessions';
-import type {
-  Notice,
-  PausedPageResult,
-  RecordRequested,
-  RunCommand,
-  RunControlResult,
-  RunSession,
-} from '../src/protocol';
+import type { PausedPageResult, RecordRequested, RunControlResult, RunSession } from '../src/protocol';
+import { FakeWorker, last, service as startService, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
 let dir = '';
 const uri = (file: string) => pathToFileURL(path.join(dir, file)).href;
-
-function last<T>(items: T[]): T | undefined {
-  return items[items.length - 1];
-}
-
-async function waitFor<T>(read: () => T | undefined, ms = 5000): Promise<T> {
-  const start = Date.now();
-  for (;;) {
-    const value = read();
-    if (value !== undefined) return value;
-    if (Date.now() - start > ms) throw new Error('timed out');
-    await new Promise((r) => setTimeout(r, 10));
-  }
-}
-
-/** A service on the workspace, and what its client heard. */
-interface Service {
-  client: MessageConnection;
-  stop: () => void;
-  sessions: RunSession[];
-  notices: Notice[];
-  /** The latest session of a ref the client heard. */
-  latest(ref: string): RunSession | undefined;
-  /** A command that runs the spec's test, with its ref and the run channel it names. */
-  command(): Promise<{ ref: string; channel: { path: string; token: string }; command: RunCommand }>;
-}
-
-async function service(runControl: boolean): Promise<Service> {
-  const toServer = new PassThrough();
-  const toClient = new PassThrough();
-  const stop = startServer(createConnection(toServer, toClient), { env: { PIWI_DESKTOP_CONFIG: '/nonexistent' } });
-  const client = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
-  const sessions: RunSession[] = [];
-  const notices: Notice[] = [];
-  client.onNotification('piwi/runSessionChanged', (session: RunSession) => void sessions.push(session));
-  client.onNotification('piwi/notice', (notice: Notice) => void notices.push(notice));
-  client.listen();
-  await client.sendRequest('initialize', {
-    processId: null,
-    rootUri: null,
-    capabilities: {},
-    workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
-    initializationOptions: runControl ? { runControl: true } : {},
-  });
-  await client.sendNotification('initialized', {});
-  const command = async () => {
-    // The channel opens once the service is initialized: a command built before names none.
-    for (;;) {
-      const run = (await client.sendRequest('piwi/runArgs', {
-        uri: uri('tests/cart.spec.ts'),
-        testIds: [],
-        locations: ['tests/cart.spec.ts:3'],
-      })) as RunCommand;
-      const channel = parseRecordChannel(run.env?.PIWI_RUN_CHANNEL);
-      if (channel) return { ref: run.ref!, channel, command: run };
-      await new Promise((r) => setTimeout(r, 20));
-    }
-  };
-  return {
-    client,
-    stop: () => {
-      stop();
-      client.dispose();
-    },
-    sessions,
-    notices,
-    latest: (ref) => last(sessions.filter((s) => s.ref === ref)),
-    command,
-  };
-}
-
-/** A worker of a run on its run connection: what it heard, and what it sends. */
-class FakeWorker {
-  readonly heard: HubToRun[] = [];
-  readonly socket: net.Socket;
-  readonly closed: Promise<void>;
-
-  constructor(channelPath: string) {
-    this.socket = net.connect(channelPath);
-    this.socket.setEncoding('utf8');
-    this.socket.on(
-      'data',
-      lineReader(
-        (line) => {
-          const message = parseHubToRun(line);
-          if (message && message.type !== 'unknown') this.heard.push(message);
-        },
-        () => this.socket.destroy(),
-      ),
-    );
-    this.closed = new Promise((resolve) => this.socket.on('close', () => resolve()));
-  }
-
-  send(message: RunToHub): void {
-    this.socket.write(`${JSON.stringify(message)}\n`);
-  }
-
-  attach(token: string, ref: string, workerIndex = 0): this {
-    this.send({
-      type: 'run-attach',
-      token,
-      ref,
-      cwd: dir,
-      workerIndex,
-      parallelIndex: workerIndex,
-      pid: process.pid,
-      playwright: '1.64.1',
-      reporter: '0.60.0',
-    });
-    return this;
-  }
-
-  begin(title = 'adds a mug', cannotPause: string | null = null): void {
-    this.send({
-      type: 'test-begin',
-      testId: `id-${title}`,
-      title: ['cart', title],
-      file: 'tests/cart.spec.ts',
-      line: 3,
-      project: 'chromium',
-      retry: 0,
-      cannotPause,
-    });
-  }
-
-  stopAt(stop: number, line: number, bar = false): void {
-    this.send({
-      type: 'stopped',
-      stop,
-      reason: 'breakpoint',
-      title: "Click getByRole('button', { name: 'Add' })",
-      place: { file: 'tests/pages/cart.page.ts', line, column: 5 },
-      locator: "getByRole('button', { name: 'Add' })",
-      bar,
-    });
-  }
-
-  /** The next message heard of a type, after `after` of them. */
-  next<T extends HubToRun['type']>(type: T, after = 0): Promise<Extract<HubToRun, { type: T }>> {
-    return waitFor(() => this.heard.filter((m) => m.type === type)[after] as Extract<HubToRun, { type: T }>);
-  }
-}
+const service = (runControl: boolean) => startService(dir, runControl);
 
 beforeAll(() => {
   dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-run-sessions-')));
-  const write = (file: string, text: string) => {
-    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
-    fs.writeFileSync(path.join(dir, file), text);
-  };
-  write('playwright.config.ts', 'export default {};\n');
-  write(
-    'tests/cart.spec.ts',
-    "import { test } from '@playwright/test';\n\ntest('adds a mug', async ({ page }) => {});\n",
-  );
-  write('tests/pages/cart.page.ts', 'export class CartPage {}\n');
+  writeRunWorkspace(dir);
 });
 
 afterAll(() => {
@@ -211,7 +45,7 @@ describe('a run’s session, with a client that answers stops', () => {
 
   test('files a worker under its run, and tells the client as it starts a test, stops, goes on and ends it', async () => {
     const { ref, channel } = await svc.command();
-    const worker = new FakeWorker(channel.path).attach(channel.token, ref, 3);
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 3);
     try {
       expect(await waitFor(() => svc.latest(ref))).toEqual({
         ref,
@@ -272,8 +106,8 @@ describe('a run’s session, with a client that answers stops', () => {
 
   test('answers each control: a pause to the running workers, the others to the one stopped, and why not', async () => {
     const { ref, channel } = await svc.command();
-    const first = new FakeWorker(channel.path).attach(channel.token, ref, 0);
-    const second = new FakeWorker(channel.path).attach(channel.token, ref, 1);
+    const first = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
+    const second = new FakeWorker(channel.path, dir).attach(channel.token, ref, 1);
     try {
       await waitFor(() => (svc.latest(ref)?.workers.length === 2 ? true : undefined));
       expect(await control({ ref: 'ed-00000000', action: 'pause' })).toEqual({
@@ -366,7 +200,7 @@ describe('a run’s session, with a client that answers stops', () => {
 
   test('sends the breakpoints the client changes to the run’s workers, and to a worker that connects later', async () => {
     const { ref, channel } = await svc.command();
-    const first = new FakeWorker(channel.path).attach(channel.token, ref, 0);
+    const first = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
     let later: FakeWorker | null = null;
     try {
       await waitFor(() => svc.latest(ref));
@@ -386,7 +220,7 @@ describe('a run’s session, with a client that answers stops', () => {
         { file: 'tests/pages/cart.page.ts', line: 30 },
       ];
       expect(await first.next('breakpoints')).toEqual({ type: 'breakpoints', places });
-      later = new FakeWorker(channel.path).attach(channel.token, ref, 1);
+      later = new FakeWorker(channel.path, dir).attach(channel.token, ref, 1);
       expect(await later.next('breakpoints')).toEqual({ type: 'breakpoints', places });
 
       await svc.client.sendNotification('piwi/setRunBreakpoints', { ref, places: [] });
@@ -399,7 +233,7 @@ describe('a run’s session, with a client that answers stops', () => {
 
   test('asks a stopped worker for an image of its page, and answers none when it is not stopped', async () => {
     const { ref, channel } = await svc.command();
-    const worker = new FakeWorker(channel.path).attach(channel.token, ref, 0);
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
     try {
       worker.begin();
       await waitFor(() => svc.latest(ref)?.workers[0]?.test ?? undefined);
@@ -426,8 +260,8 @@ describe('a run’s session, with a client that answers stops', () => {
 
   test('lets a worker that disconnects while stopped go, the request it did not answer answered with none', async () => {
     const { ref, channel } = await svc.command();
-    const worker = new FakeWorker(channel.path).attach(channel.token, ref, 0);
-    const other = new FakeWorker(channel.path).attach(channel.token, ref, 1);
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
+    const other = new FakeWorker(channel.path, dir).attach(channel.token, ref, 1);
     try {
       worker.begin();
       worker.stopAt(1, 30);
@@ -453,7 +287,7 @@ describe('a run’s session, with a client that answers stops', () => {
 
   test('names each stop apart, so a second Resume for a stop the worker went past reaches nothing', async () => {
     const { ref, channel } = await svc.command();
-    const worker = new FakeWorker(channel.path).attach(channel.token, ref, 0);
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
     try {
       worker.begin();
       worker.stopAt(1, 30);
@@ -481,7 +315,7 @@ describe('a run’s session, with a client that answers stops', () => {
 
   test('sends a burst of stops and goings-on as a few notifications, the last one as it stands', async () => {
     const { ref, channel } = await svc.command();
-    const worker = new FakeWorker(channel.path).attach(channel.token, ref, 0);
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
     try {
       worker.begin();
       await waitFor(() => svc.latest(ref)?.workers[0]?.test ?? undefined);
@@ -515,6 +349,7 @@ describe('a run’s session, with a client that answers stops', () => {
         pid: process.pid,
         playwright: '',
         reporter: '',
+        takes: [],
       });
       socket.write(`${JSON.stringify(attach('x'.repeat(32)))}\n${JSON.stringify(attach(channel.token))}\n`);
       await new Promise((resolve) => socket.on('close', resolve));
@@ -527,8 +362,8 @@ describe('a run’s session, with a client that answers stops', () => {
 
   test('takes a hand-off to the recorder beside a run connection on the same socket, and refuses a wrong token', async () => {
     const { ref, channel } = await svc.command();
-    const worker = new FakeWorker(channel.path).attach(channel.token, ref, 0);
-    const intruder = new FakeWorker(channel.path).attach('x'.repeat(32), ref, 5);
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
+    const intruder = new FakeWorker(channel.path, dir).attach('x'.repeat(32), ref, 5);
     const handoff = net.connect(channel.path);
     try {
       await waitFor(() => svc.latest(ref));
@@ -572,7 +407,7 @@ describe('a run’s session, with a client that does not answer stops', () => {
 
   test('resumes a stop no pause bar shows at once, and says so once a run', async () => {
     const { ref, channel } = await svc.command();
-    const worker = new FakeWorker(channel.path).attach(channel.token, ref, 0);
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
     try {
       worker.begin();
       worker.stopAt(1, 30);
@@ -581,8 +416,8 @@ describe('a run’s session, with a client that does not answer stops', () => {
         root: dir,
         severity: 'information',
         message:
-          'Piwi resumed the test stopped at cart.page.ts:30: no pause bar shows in a headless browser, and this ' +
-          'editor does not show where a run stops. Run it headed to pause there.',
+          'Piwi resumed the test stopped at cart.page.ts:30: no pause bar shows in a headless browser, and neither ' +
+          'this editor nor Piwi Picker shows where a run stops. Run it headed to pause there.',
       });
       worker.send({ type: 'running', stop: 1 });
       worker.stopAt(2, 31);
@@ -641,6 +476,7 @@ describe('RunSessions', () => {
         pid: 1,
         playwright: '',
         reporter: '',
+        takes: [],
       });
       return { socket, read };
     };
@@ -705,6 +541,7 @@ describe('RunSessions', () => {
         pid: 1,
         playwright: '',
         reporter: '',
+        takes: [],
       });
       return socket;
     };

@@ -69,14 +69,20 @@ object PiwiSendToken {
  * (`piwi/applyPick`), and goes to the caret when the line holds none. Each request is served on
  * a pooled thread, where the token, the file and its document are read; the server's I/O thread
  * reads nothing from the password safe or the disk, and only the write runs on the event thread.
+ * With the same token, `GET /api/piwi/live` lists the hubs of every editor service running on
+ * the machine, read from their discovery files (`Glue.liveHubs`), so the one pairing reaches the
+ * runs of every IDE window and project.
  */
 class PiwiSendHandler : HttpRequestHandler() {
-    override fun isSupported(request: FullHttpRequest): Boolean =
-        QueryStringDecoder(request.uri()).path() == PATH &&
-            (request.method() == HttpMethod.POST || request.method() == HttpMethod.OPTIONS)
+    override fun isSupported(request: FullHttpRequest): Boolean {
+        val path = QueryStringDecoder(request.uri()).path()
+        val method = request.method()
+        return (path == PATH && (method == HttpMethod.POST || method == HttpMethod.OPTIONS)) ||
+            (path == LIVE_PATH && (method == HttpMethod.GET || method == HttpMethod.OPTIONS))
+    }
 
     // The token authenticates each request; the extension's origin is not a local one.
-    override fun isAccessible(request: HttpRequest): Boolean = QueryStringDecoder(request.uri()).path() == PATH
+    override fun isAccessible(request: HttpRequest): Boolean = QueryStringDecoder(request.uri()).path() in setOf(PATH, LIVE_PATH)
 
     override fun process(urlDecoder: QueryStringDecoder, request: FullHttpRequest, context: ChannelHandlerContext): Boolean {
         val origin = request.headers().get(HttpHeaderNames.ORIGIN)
@@ -85,6 +91,13 @@ class PiwiSendHandler : HttpRequestHandler() {
             return true
         }
         val authorization = request.headers().get(HttpHeaderNames.AUTHORIZATION)
+        if (urlDecoder.path() == LIVE_PATH) {
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val (status, answer) = live(authorization)
+                respond(context, origin, status, answer)
+            }
+            return true
+        }
         // The request is released once this returns: its body is taken here, and checked on the pooled thread.
         val body = if (request.content().readableBytes() > Glue.MAX_SEND_BYTES) null else request.content().toString(Charsets.UTF_8)
         ApplicationManager.getApplication().executeOnPooledThread {
@@ -96,6 +109,16 @@ class PiwiSendHandler : HttpRequestHandler() {
             respond(context, origin, status, answer)
         }
         return true
+    }
+
+    /** The live hubs, with the pairing's token: those of the services whose discovery file names a running process. */
+    private fun live(authorization: String?): Pair<HttpResponseStatus, Map<String, Any?>> {
+        if (!Glue.sendAuthorized(authorization, PiwiSendToken.current())) {
+            return HttpResponseStatus.UNAUTHORIZED to mapOf("error" to "not paired")
+        }
+        val dir = Glue.editorsDir(System.getenv(), System.getProperty("user.home"))
+        val hubs = Glue.liveHubs(dir) { pid -> ProcessHandle.of(pid).map { it.isAlive }.orElse(false) }
+        return HttpResponseStatus.OK to mapOf("hubs" to hubs)
     }
 
     /** The answer to a request: the token first, then the body's size and shape, then the insertion. */
@@ -294,7 +317,7 @@ class PiwiSendHandler : HttpRequestHandler() {
         headers.set(HttpHeaderNames.CONTENT_LENGTH, bytes.size)
         if (origin != null && EXTENSION_ORIGIN.matches(origin)) {
             headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, origin)
-            headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "POST, OPTIONS")
+            headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, OPTIONS")
             headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "Authorization, Content-Type")
             headers.set(HttpHeaderNames.VARY, "Origin")
         }
@@ -303,6 +326,7 @@ class PiwiSendHandler : HttpRequestHandler() {
 
     companion object {
         const val PATH = "/api/piwi/send"
+        const val LIVE_PATH = "/api/piwi/live"
         private val EXTENSION_ORIGIN = Regex("^(chrome|moz)-extension://.+")
 
         /** The answers carry `file: null` for a scratch file, as the VS Code extension's do. */

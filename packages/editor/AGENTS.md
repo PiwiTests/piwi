@@ -299,6 +299,45 @@ clients stay thin and both editors give the same answers.
   it is heard, with a `piwi/notice` once per run. A worker's `notice` (a control its reporter does not take) is a
   `piwi/notice` too. The service stopping closes every worker's connection: a stop no pause bar shows then goes on, a
   stop the bar shows waits there for its answer.
+- Piwi Picker follows and steers the same runs through the hub's WebSocket (`src/run-hub.ts`, `RunHub`, framed by
+  `@piwitests/core/run-hub`), which the service opens beside the record channel once initialized: on `127.0.0.1`
+  alone, a free port, `ws://127.0.0.1:<port>/piwi/hub` (`HUB_PATH`; any other path is a 404, a plain HTTP request a
+  426). A handshake whose `Host` is not `127.0.0.1:<port>` or `localhost:<port>` (`isHubHost`: a page reached under
+  another name, DNS rebinding) or whose `Origin` is not a browser extension's (`isExtensionOrigin`:
+  `chrome-extension://` and 32 letters `a` to `p`, `moz-extension://` and a UUID; never `http(s)`, `null`, `file` or
+  none) is refused with a 403 before any WebSocket opens; past 16 connections, or 8 that did not say hello, with a 503;
+  a handshake's headers must arrive within 5 s and fit in 8 KiB. The first message must be `{ type: 'hello', token }` with the hub's token
+  (random per start, compared in constant time: `sameToken` in `recorder/handoff.ts`) within 5 s (`HUB_HELLO_MS`),
+  else the connection closes (4001, 4002); the hub answers `welcome` (its pid, version, client, the workspace's folders,
+  `keepaliveMs`). Every later message is a command with an `id` (`parseHubCommand`, field by field): `subscribe`,
+  `runControl` (`pause`, `step`, `resume`, `finish` with `since`, as `piwi/runControl`; Run to a line stays in the
+  editor), `pausedPage` and the intents `pick` and `record` (`RunSessions.intent`), each answered once
+  (`{ type: 'answer', id, ok, message }`, `image` too for `pausedPage`); one of another type, or with a field it cannot
+  take, is answered `ok: false` with why, at most 16 waiting per connection; a message that is no command (not JSON,
+  no `id`) closes the connection (4003), a binary frame too (1003), a frame over 64 KiB (`MAX_HUB_FRAME`, 1009).
+  `subscribe` answers, then sends each live run (`RunSessions.current`) and from then on every `piwi/runSessionChanged`
+  the client hears, as a `session` with the run's command line (kept by ref for the 50 latest commands the service
+  built), its folder's label, its Piwi project and each worker's `intents` (`RunSessions.intentsOf`). Every 20 s
+  (`HUB_KEEPALIVE_MS`, within the 30 s Chrome keeps an MV3 worker alive after a WebSocket message) each connection
+  that said hello hears `keepalive` and a WebSocket ping; one that did not answer the last ping is dropped, as is one
+  with 32 MB unread. A subscribed connection is a surface that answers stops (`answersStops` in `src/server.ts`): while
+  one follows the runs, a stop no pause bar shows waits even when the client lacks `runControl`, and when the last one
+  goes, such a stop goes on (`RunSessions.surfacesChanged`). An intent is asked of the one stopped worker (or the one
+  named, at the stop `since` names): refused at a stop no pause bar shows (`bar: false`) and for a reporter whose
+  `run-attach` does not list it in `takes`, else sent as a `request` naming the stop, the worker's answer passed on
+  (10 s at most). Nothing a command asks evaluates code, reads a file or reaches an instance.
+- The discovery file (`src/discovery.ts`, `@piwitests/core/editor-discovery`): once the run channel and the hub listen,
+  `startServer` hands `publish` what `~/.piwi/editors/<pid>.json` says (`PIWI_EDITORS_DIR` names another folder): the
+  service's pid, version (written in by `build.mjs`, `0.0.0-dev` unbundled), its client (`initialize`'s `clientInfo`),
+  `startedAt`, the workspace's folders (`roots`), the hub's address and token, the run channel's socket and token (for a
+  run started in a terminal) and the recorder bundle's path; and null as it stops (`shutdown`, `exit`, the function
+  `startServer` returns). `src/main.ts` writes it (`writeDiscovery`: a folder this user owns, 0700, not a link; the
+  file 0600 through a temporary file renamed over it; on Windows the profile folder's ACLs keep other users out, as for
+  `~/.piwi/desktop.json`) and removes it then, on the process's `exit` (the client gone: the connection's end or
+  `--clientProcessId`) and on `SIGINT`, `SIGTERM` and `SIGHUP`. A killed service leaves its file: readers skip, and
+  delete, the file of a process that is gone (`readLiveEditorsIn`, `readLiveHubs`, which the VS Code extension's
+  `GET /piwi/live` reads through the `./discovery` export; the JetBrains plugin reads the files in `Glue.liveHubs`), as
+  writing one does first.
 
 `npm run editor:build` writes five files to `dist/`, which both clients ship side by side (VS Code in its `dist/`, the
 JetBrains plugin in its `server/`); the service finds the others next to its own bundle, or in `PIWI_EDITOR_DIST`
