@@ -372,6 +372,67 @@ describe('buildFailureTimeline', () => {
   });
 });
 
+describe('stops at the pause bar', () => {
+  /** A test held 4 s at a breakpoint before its click, which failed after the stop. */
+  function pausedInput(): FailureTimelineInput {
+    return {
+      startedAt: T0,
+      duration: 1_600,
+      status: 'failed',
+      steps: [
+        { title: 'navigate', category: 'navigation', duration: 500, startTime: T0 },
+        { title: 'click Pay', category: 'action', duration: 4_100, startTime: T0 + 500, error: 'not enabled' },
+      ],
+      stepEvents: [
+        { title: 'Before Hooks', category: 'hook', startedAt: T0, duration: 0, status: 'passed' },
+        {
+          title: "Click getByRole('button')",
+          category: 'pause',
+          startedAt: T0 + 520,
+          duration: 4_000,
+          status: 'breakpoint',
+          location: 'tests/pay.spec.ts:12:5',
+        },
+      ],
+      networkRequests: [{ method: 'GET', url: '/api/quote', status: 200, duration: 100, startTime: T0 + 4_550 }],
+    };
+  }
+
+  test('keeps every timestamp on its clock, and places each stop as a band', () => {
+    const tl = buildFailureTimeline(pausedInput());
+    expect(tl.pauses).toEqual([
+      {
+        id: 'pause-1',
+        at: 520,
+        duration: 4_000,
+        label: "Click getByRole('button')",
+        reason: 'breakpoint',
+        location: 'tests/pay.spec.ts:12:5',
+      },
+    ]);
+    expect(tl.lanes.steps.map((step) => [step.at, step.duration])).toEqual([
+      [0, 500],
+      [500, 4_100],
+    ]);
+    expect(tl.lanes.network[0]!.at).toBe(4_550);
+    expect(tl.failureAt).toBe(4_600);
+  });
+
+  test('says how long each step stood paused, and nothing for the steps that ran outside a stop', () => {
+    const [navigate, click] = buildFailureTimeline(pausedInput()).lanes.steps;
+    expect(navigate!.paused).toBeUndefined();
+    expect(click!.paused).toBe(4_000);
+  });
+
+  test('has no band for a test that never stood paused, nor for an old reporter’s run', () => {
+    expect(buildFailureTimeline(realTimestampInput()).pauses).toEqual([]);
+    const input = pausedInput();
+    input.stepEvents = [{ title: 'broken', category: 'pause', startedAt: 'soon', duration: 1 }];
+    expect(buildFailureTimeline(input).pauses).toEqual([]);
+    expect(buildFailureTimeline({}).pauses).toEqual([]);
+  });
+});
+
 describe('dialogs lane', () => {
   test('places a dialog by its close time and refs the dialogs section', () => {
     const tl = buildFailureTimeline({

@@ -51,8 +51,9 @@ Two **external contracts** beyond the npm API:
   takes the bar down as the test function ends, before Playwright's own failure screenshot (the
   runner's `_onDidFinishTestFunctionCallbacks`, feature-checked; without them, as the test's page
   or context closes, or at teardown), attaches the stops as
-  `piwi-pauses` (`internal/collect/paused-steps.ts` takes their time out of the steps'
-  durations and start times), and posts a locator picked meanwhile to the editor's
+  `piwi-pauses` (`internal/collect/pause-events.ts` sends them with the test's step events, as
+  `pause` events: the steps keep their clock, and the step statistics leave the stopped time
+  out), and posts a locator picked meanwhile to the editor's
   `PIWI_EDITOR_SEND` address (`internal/capture/pause-at.ts`). With `PIWI_RECORD_CHANNEL`,
   **Record here** and `page.pause()` connect to the editor service's local socket and relay
   the recorder's binding calls over it (`internal/capture/record-handoff.ts`).
@@ -175,8 +176,9 @@ src/
                 run endpoints, batched per origin), test-coverage (each test's
                 coverage field, the wait before its result streams, the run's
                 coverage), blob-ids (the git blob of each covered file),
-                paused-steps (the time a test stood stopped at the pause bar,
-                out of its steps' durations and start times)
+                pause-events (the stops a test made at the pause bar, as the
+                `pause` step events the dashboard draws and the step
+                statistics leave out)
     manifest/   collect (the committed manifest, `/__piwi/manifest` per base URL or origin),
                 run-manifests (the instrumented origins the run reached beyond its base URLs,
                 fetched as each is first seen, uploaded once the run is submitted)

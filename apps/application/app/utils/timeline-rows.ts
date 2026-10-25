@@ -163,14 +163,46 @@ export const MIN_BAR_PERCENT = 1.5;
 /**
  * The test's track on a built timeline: from the test's start, as long as the
  * test (`durationMs`), else up to the timeline's end. Evidence stamped before
- * the test started moves the timeline's origin, never the test's bars.
+ * the test started moves the timeline's origin, never the test's bars. A test
+ * that stood paused ran longer on the clock than the duration Playwright
+ * reports for it, which leaves the stops out: its track runs to the end of its
+ * last step or stop.
  */
 export function testTrack(
-  timeline: Pick<FailureTimeline, 'origin' | 'end' | 'testStart'>,
+  timeline: Pick<FailureTimeline, 'origin' | 'end' | 'testStart'> & Partial<Pick<FailureTimeline, 'lanes' | 'pauses'>>,
   durationMs: number | null | undefined,
 ): BarTrack {
   const start = timeline.testStart;
-  const length = durationMs != null && durationMs > 0 ? durationMs : timeline.end - timeline.origin - start;
+  let length = durationMs != null && durationMs > 0 ? durationMs : timeline.end - timeline.origin - start;
+  if (timeline.pauses?.length) {
+    let end = start;
+    for (const span of [...(timeline.lanes?.steps ?? []), ...timeline.pauses]) {
+      end = Math.max(end, span.at + (span.duration ?? 0));
+    }
+    length = end - start;
+  }
+  return { start, length: Math.max(1, length) };
+}
+
+/**
+ * The test's track from its own steps, when every step carries its start: from
+ * the first step, as long as the test (`durationMs`), else up to the last
+ * step's end; with stops, up to the end of its last step or stop, as
+ * `testTrack`. Null without step start times.
+ */
+export function stepsTrack(
+  steps: ReadonlyArray<{ startTime?: number; duration?: number }>,
+  durationMs: number | null | undefined,
+  pauses: ReadonlyArray<{ startedAt: number; duration: number }> = [],
+): BarTrack | null {
+  if (steps.length === 0 || !steps.every((step) => typeof step.startTime === 'number')) return null;
+  const start = Math.min(...steps.map((step) => step.startTime as number));
+  let end = Math.max(...steps.map((step) => (step.startTime as number) + (step.duration || 0)));
+  let length = durationMs != null && durationMs > 0 ? durationMs : end - start;
+  if (pauses.length > 0) {
+    for (const pause of pauses) end = Math.max(end, pause.startedAt + pause.duration);
+    length = end - start;
+  }
   return { start, length: Math.max(1, length) };
 }
 

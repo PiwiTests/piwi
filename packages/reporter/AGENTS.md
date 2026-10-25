@@ -27,12 +27,13 @@ per-directory responsibilities.
    at those stops, and clears it while a `page.pause()` it leaves to Playwright runs (it wraps `Page.prototype.pause`,
    so a page of a browser the test launched itself goes through it too), takes the bar down as the test function
    ends, ahead of the runner's other callbacks there (`_onDidFinishTestFunctionCallbacks`), attaches a test's stops as
-   `piwi-pauses` (the reporter takes their time out of the steps' durations and start times), and posts a locator
-   picked meanwhile to the editor's `PIWI_EDITOR_SEND` address with the line, as `@piwitests/core/editor-send` reads
-   it; with `PIWI_RECORD_CHANNEL`, the pause bar's **Record here** (and `page.pause()` in a headed run, patched by the
-   capture fixtures) hands the page to the editor's recorder (`internal/capture/record-handoff.ts`): it relays each
-   call of the recorder's binding over that local socket, as `@piwitests/core/ide-recorder` frames it, and loads the
-   bundle the editor names. The recorder's host stays in the editor service: this package carries the relay alone.
+   `piwi-pauses` (the reporter sends them as `pause` step events, and leaves their time out of the step statistics,
+   the steps keeping their measured times), and posts a locator picked meanwhile to the editor's `PIWI_EDITOR_SEND`
+   address with the line, as `@piwitests/core/editor-send` reads it; with `PIWI_RECORD_CHANNEL`, the pause bar's
+   **Record here** (and `page.pause()` in a headed run, patched by the capture fixtures) hands the page to the
+   editor's recorder (`internal/capture/record-handoff.ts`): it relays each call of the recorder's binding over that
+   local socket, as `@piwitests/core/ide-recorder` frames it, and loads the bundle the editor names. The recorder's host
+   stays in the editor service: this package carries the relay alone.
 4. **The desktop discovery file** — `~/.piwi/desktop.json` and its `{ url, token }` shape
    (`internal/config/desktop.ts`). The desktop shell writes it (`apps/desktop/src-tauri/src/lib.rs`) and this package reads
    it, on independent release cycles, so path and shape changes must land in both.

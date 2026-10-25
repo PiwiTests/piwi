@@ -42,9 +42,8 @@ resume. The test timeout stops while the test is paused, and so does the paused 
 `expect.timeout` for an assertion on that line). A wait the test started before the stop keeps its own deadline:
 `expect.poll`, `toPass`, or a `waitForRequest`, `waitForResponse` or `waitForEvent` around the paused call can run out
 while you look and fail the test: the bar then goes away, before Playwright's failure screenshot and the `afterEach`
-hooks. The time paused counts neither in the test's duration
-nor in its steps' on the dashboard, durations and start times alike: the run's results count as any other's, and its
-slow steps are the test's own.
+hooks. The test's duration leaves the time paused out, and every step keeps its clock time: the dashboard's timelines
+draw each stop as a **Paused** band, and its step statistics (slowest step, wasted time) leave it out.
 
 ## Where the pick lands
 
@@ -113,8 +112,8 @@ With the setting off, a run started from Piwi ignores the editor's breakpoints.
   does nothing. A breakpoint on the line of a page object method pauses every test that calls the method.
 - **A run with breakpoints stops before every call** and lets those off your lines go on at once, which costs about a
   millisecond a call.
-- **The trace keeps the pause.** In Playwright's trace and its HTML report, the paused call lasts as long as you
-  looked at the page; the dashboard's step durations leave it out.
+- **The paused call lasts as long as you looked** at the page, in Playwright's trace, its HTML report and the
+  dashboard's steps; only the statistics leave it out.
 - **A call the test ended under runs** as the bar goes away, during teardown, when the test fails under the bar or does
   not await the call; a locator call is waited for, up to two seconds, so its requests stay the test's.
 - **One Inspector switch per worker.** While Playwright's own `page.pause()` runs, a stop in another context opens its

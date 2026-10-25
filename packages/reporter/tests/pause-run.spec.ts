@@ -4,8 +4,8 @@ import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer, type FakeServer } from './_helpers.js';
-import { readPauses, withoutPausedTime } from '../src/internal/collect/paused-steps.js';
-import type { PauseRecord } from '../src/internal/capture/pause-at.js';
+import { collectStepMetrics } from '@piwitests/core/step-analysis';
+import { readPauses } from '../src/internal/collect/pause-events.js';
 
 /**
  * A real Playwright run with breakpoints, through the built package: the stops come from Playwright's debugger, the
@@ -445,28 +445,27 @@ describe('a run with breakpoints', () => {
     expect(test('first').pauses).toBeNull();
   });
 
-  it('keeps every stop out of the test duration, and out of the steps once the reporter reads piwi-pauses', () => {
+  it('keeps every stop out of the test duration, and out of the step statistics once the reporter reads piwi-pauses', () => {
     for (const title of ['stops', 'page pause', 'second']) {
       const result = test(title);
       expect(result.duration, title).toBeLessThan(TIMEOUT_MS);
-      const pauses: PauseRecord[] = readPauses(Buffer.from(result.pauses ?? ''));
-      const held = (steps: DumpedStep[]) => allSteps(steps).filter((s) => s.duration >= HOLD_MS);
-      expect(held(result.steps).length, title).toBeGreaterThan(0);
-      expect(held(withoutPausedTime(result.steps, pauses)), title).toEqual([]);
+      const pauses = readPauses(Buffer.from(result.pauses ?? ''));
+      const held = allSteps(result.steps).filter((s) => s.duration >= HOLD_MS);
+      expect(held.length, title).toBeGreaterThan(0);
+      const { slowestStep } = collectStepMetrics(result.steps, [], pauses);
+      expect(slowestStep?.duration, title).toBeLessThan(HOLD_MS);
     }
   });
 
-  it('moves the steps after a stop back by the time stopped, so the test’s body fits its duration', () => {
+  it('keeps the steps on the clock: the stops sit inside the held calls, and the steps after them start later', () => {
     const result = test('stops');
-    const pauses = readPauses(Buffer.from(result.pauses ?? ''));
-    const stopped = pauses.reduce((sum, p) => sum + p.duration, 0);
-    const hooks = (steps: DumpedStep[], title: string) => steps.find((s) => s.title === title)!;
-    const before = hooks(result.steps, 'Before Hooks');
-    const bodyStart = before.startTime + before.duration;
-    const moved = hooks(withoutPausedTime(result.steps, pauses), 'After Hooks');
-    expect(hooks(result.steps, 'After Hooks').startTime - moved.startTime).toBe(stopped);
-    expect(hooks(result.steps, 'After Hooks').startTime - bodyStart).toBeGreaterThan(result.duration);
-    expect(moved.startTime - bodyStart).toBeLessThan(result.duration);
+    const [first] = readPauses(Buffer.from(result.pauses ?? ''));
+    const goto = allSteps(result.steps).find((s) => s.duration >= HOLD_MS)!;
+    expect(first!.startedAt).toBeGreaterThanOrEqual(goto.startTime);
+    expect(first!.startedAt + first!.duration).toBeLessThanOrEqual(goto.startTime + goto.duration);
+    const before = result.steps.find((s) => s.title === 'Before Hooks')!;
+    const after = result.steps.find((s) => s.title === 'After Hooks')!;
+    expect(after.startTime - (before.startTime + before.duration)).toBeGreaterThan(result.duration);
   });
 
   it('shows none of its own calls among the test’s steps', () => {

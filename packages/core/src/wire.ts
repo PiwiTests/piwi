@@ -90,14 +90,18 @@ export interface TestSourceFrame {
   snippet: string;
 }
 
-/** A hook/fixture/step event with absolute timings (for the workers timeline). */
+/**
+ * A hook/fixture/step event with absolute timings (for the timelines). A `pause` event is a stop at Piwi's pause bar
+ * (an editor breakpoint): the call it held as its title, its call site as its location.
+ */
 export interface TestStepEvent {
   title: string;
   /** The step's target (rendered locator or URL), carried separately by newer Playwright. */
   subtitle?: string | null;
-  category: 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait';
+  category: 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait' | 'pause';
   startedAt: number;
   duration: number;
+  /** `passed` or `failed`; `wasted` for a wait; for a stop, why it stopped: `breakpoint`, `step` or `page-pause`. */
   status: string;
   location?: string | null;
   /** The first line of the step's error, when it failed — hook and fixture events only. */

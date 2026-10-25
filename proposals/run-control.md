@@ -17,10 +17,11 @@ text in four ways. A headed browser opens Playwright's Inspector at every stop o
 `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to Playwright runs, and a run under Playwright's own
 debugger (`--debug`, `--debug=cli`, `PWDEBUG`) ignores the breakpoints. The runner suspends the test timeout only for
 a context the running test made: at a stop in one made before it (a `beforeAll` page), the worker holds the timeout
-through the runner's own counter (`_setIgnoreTimeouts`, feature-checked). The reporter takes the time each stop held
-out of the steps' durations and start times, from the `piwi-pauses` attachment, before they are sent, so the server is
-unchanged and the run is not marked interactive yet; D10's rule on notifications waits for the runs that can pause
-outside the editor. `page.pause()` is a stop of the debugger at its line (`page-pause`), taken over
+through the runner's own counter (`_setIgnoreTimeouts`, feature-checked). Every timestamp stays as measured: the
+reporter sends the stops of the `piwi-pauses` attachment with the test's step events (`pause` events), the
+dashboard's timelines draw each as a **Paused** band, and the step statistics leave the time paused out (1.4). The
+run is not marked interactive yet; D10's rule on notifications waits for the runs that can pause outside the
+editor. `page.pause()` is a stop of the debugger at its line (`page-pause`), taken over
 in any headed run with breakpoints as well as in one the editor started. The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of
@@ -249,7 +250,8 @@ by Piwi (Part 5).
 - **The test timeout and the per-call budgets** are the runner's business: a 5 s pause did not fail a test with a 4 s
   timeout, and 3 s pauses did not spend 1 s `actionTimeout` and `expect.timeout` budgets. `rearmedTimeout` and the
   timeout lift in `pauseHere` go. A wait started before the stop (`expect.poll`, `toPass`, `waitForRequest`) keeps its
-  own deadline and can fail the test during the stop; the bar then comes down before the failure is read.
+  own deadline and can fail the test during the stop; the bar then comes down as the test function ends, before
+  Playwright's failure screenshot, and the paused call goes on at once, as it does when its page closes.
 - **`page.pause()`**, in a run with a channel, stays Piwi's, as a stop at its line with the reason `page-pause`.
 
 ### 1.3 Internal calls, and what they cost if missing
@@ -263,9 +265,12 @@ Without it, the worker makes no call on a page between a step and the next stop.
 ### 1.4 Interactive runs and their timings
 
 The worker adds a `piwi-pauses` attachment to each test that stopped: for each stop, the call's title and place, the
-reason and how long it lasted. The reporter marks the run interactive (D10). The server keeps the run's results and
-leaves the paused calls out of the step timings, the slow-step lists and the duration trends. A run with breakpoints
-that never stopped is not interactive.
+reason, when it began and how long it lasted. The reporter sends each stop with the test's step events, as a `pause`
+event, and every timestamp stays as measured, so the steps, the requests, the console, the backend logs and the
+trace stay aligned. The timelines draw each stop as a **Paused** band; only the step statistics (the slowest step,
+the time in waits, a step's usual duration, the attempts' comparison) read a step's duration less its overlap with
+the test's stops. The test's duration stays the one Playwright reports, which leaves the stops out. The reporter
+marks the run interactive (D10); a run with breakpoints that never stopped is not interactive.
 
 ### 1.5 End the test
 
