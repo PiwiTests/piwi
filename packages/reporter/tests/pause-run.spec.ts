@@ -148,6 +148,23 @@ test.describe.serial('a click the test does not wait for', () => {
     await page.waitForTimeout(500);
   });
 });
+test.describe.serial('a navigation the test does not wait for', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await page.goto('${base}/a');
+  });
+  test.afterAll(async () => {
+    await page.close();
+  });
+  test('forgets to await a navigation', async () => {
+    void page.goto('${base}/c'); // bp
+    await page.waitForTimeout(300);
+  });
+  test('after the navigation', async () => {
+    await page.waitForTimeout(500);
+  });
+});
 test.describe.serial('a pause in an afterAll', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
@@ -230,6 +247,7 @@ const ANSWERS: Array<{ answer: string; hold?: number }> = [
   { answer: 'Resume', hold: HOLD_MS }, // closes a page under the bar: the click on the page it closes
   { answer: 'Resume' }, // closes a page under the bar: the click after it
   { answer: 'Resume', hold: HOLD_MS }, // forgets an await: the click
+  { answer: 'Resume', hold: HOLD_MS }, // forgets to await a navigation: page.goto(/c)
   { answer: 'Resume' }, // arms its context: page.goto(/b)
 ];
 
@@ -340,6 +358,16 @@ afterAll(async () => {
   await server?.close();
 });
 
+/** How far a test's duration may pass its clock span less its stops: the runner and the stops read two clocks. */
+const CLOCK_SLACK_MS = 100;
+
+/** A test's span on the clock: from the start of its Before Hooks to the end of its After Hooks. */
+function clockSpan(result: DumpedTest): number {
+  const before = result.steps.find((s) => s.title === 'Before Hooks')!;
+  const after = result.steps.find((s) => s.title === 'After Hooks')!;
+  return after.startTime + after.duration - before.startTime;
+}
+
 /** Every step of a test, depth first. */
 function allSteps(steps: DumpedStep[]): DumpedStep[] {
   return steps.flatMap((s) => [s, ...allSteps(s.steps)]);
@@ -365,13 +393,15 @@ describe('a run with breakpoints', () => {
       ['closes a page under the bar', 'passed'],
       ['forgets an await', 'passed'],
       ['after it', 'passed'],
+      ['forgets to await a navigation', 'passed'],
+      ['after the navigation', 'passed'],
       ['arms its context', 'passed'],
       ['runs after it', 'passed'],
     ]);
   });
 
   it('stops at a navigation and a key press on a breakpoint, at the next call after Step, and at none after Finish', () => {
-    const [goto, press, click, , ownContext, second, poll, picking, closing, closed, forgets, arms] = bp;
+    const [goto, press, click, , ownContext, second, poll, picking, closing, closed, forgets, navigates, arms] = bp;
     expect(stops.map(({ where, what }) => ({ where, what }))).toEqual([
       { where: `Paused at pause.spec.cjs:${goto}`, what: expect.stringMatching(/^Navigate .*\/b$/) },
       { where: `Paused at pause.spec.cjs:${press}`, what: 'Press "Tab"' },
@@ -386,6 +416,7 @@ describe('a run with breakpoints', () => {
       // The page closing ended the stop before it: the breakpoints still stop.
       { where: `Paused at pause.spec.cjs:${closed}`, what: `Click getByRole('button')` },
       { where: `Paused at pause.spec.cjs:${forgets}`, what: `Click getByRole('button')` },
+      { where: `Paused at pause.spec.cjs:${navigates}`, what: expect.stringMatching(/^Navigate .*\/c$/) },
       { where: `Paused at pause.spec.cjs:${arms}`, what: expect.stringMatching(/^Navigate .*\/b$/) },
     ]);
   });
@@ -428,6 +459,20 @@ describe('a run with breakpoints', () => {
     expect(test('closes a page under the bar').duration).toBeLessThan(TIMEOUT_MS);
     const clicked = (title: string) => (test(title).network ?? '').includes('/clicked');
     expect([clicked('forgets an await'), clicked('after it')]).toEqual([true, false]);
+  });
+
+  it('keeps a navigation the test ended under in it, with its requests', () => {
+    const navigated = (title: string) => (test(title).network ?? '').includes(`"${server.url}/c"`);
+    expect([navigated('forgets to await a navigation'), navigated('after the navigation')]).toEqual([true, false]);
+  });
+
+  it('leaves the stop out of the duration of a test that ended under the bar', () => {
+    for (const title of ['poll', 'poll while picking', 'forgets an await', 'forgets to await a navigation']) {
+      const result = test(title);
+      const paused = readPauses(Buffer.from(result.pauses ?? '')).reduce((sum, stop) => sum + stop.duration, 0);
+      expect(paused, title).toBeGreaterThan(0);
+      expect(result.duration, title).toBeLessThanOrEqual(clockSpan(result) - paused + CLOCK_SLACK_MS);
+    }
   });
 
   it('lists each stop it showed in piwi-pauses, with its place, reason and duration', () => {

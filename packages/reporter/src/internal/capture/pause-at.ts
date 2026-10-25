@@ -246,15 +246,17 @@ const inspectorSwitch = {
   set: false,
   /** Piwi answers the stops of a context in this worker. */
   watching: false,
-  /** Every `page.pause()` in this worker reaches Playwright through Piwi (`markPausesWrapped`). */
+  /** Every `page.pause()` of the worker's Playwright reaches it through Piwi (`markPausesWrapped`). */
   wrapped: false,
   /** The `page.pause()` calls left to Playwright that are running (`withInspector`). */
   open: 0,
 };
 
 /**
- * Set `PW_CODEGEN_NO_INSPECTOR` while Piwi answers stops in this worker, every `page.pause()` goes through Piwi and none
- * left to Playwright runs; clear it otherwise. A value set outside Piwi is left as it is.
+ * Set `PW_CODEGEN_NO_INSPECTOR` while Piwi answers stops in this worker, every `page.pause()` of the worker's Playwright
+ * goes through Piwi and none left to Playwright runs; clear it otherwise. A value set outside Piwi is left as it is.
+ * The switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi does not see,
+ * stops with no Inspector while it is set.
  */
 function syncInspectorSwitch(): void {
   const closed = inspectorSwitch.watching && inspectorSwitch.wrapped && inspectorSwitch.open === 0;
@@ -268,9 +270,9 @@ function syncInspectorSwitch(): void {
 }
 
 /**
- * Every `page.pause()` in this worker now reaches Playwright through Piwi, which runs the ones it leaves to Playwright
- * in `withInspector`: the switch may close the Inspector at Piwi's own stops. Until then it stays off, and the
- * Inspector opens beside the bar.
+ * Every `page.pause()` of the worker's Playwright now reaches it through Piwi, which runs the ones it leaves to
+ * Playwright in `withInspector`: the switch may close the Inspector at Piwi's own stops. Until then it stays off, and
+ * the Inspector opens beside the bar.
  */
 export function markPausesWrapped(): void {
   inspectorSwitch.wrapped = true;
@@ -331,6 +333,33 @@ export async function withTestTimeoutHeld<T>(testInfo: TestInfo, run: () => Prom
   } finally {
     set.call(testInfo, false);
   }
+}
+
+type TestTimeSlot = { elapsed: number };
+type TimeoutManagerHolder = { _timeoutManager?: { defaultSlot?: () => unknown } };
+
+/**
+ * The test time the runner has counted so far, which `testInfo.duration` is read from: its default timeout slot
+ * (`_timeoutManager.defaultSlot()`, a Playwright internal, feature-checked). Null where it cannot be read.
+ */
+export function testTimeSlot(testInfo: TestInfo): TestTimeSlot | null {
+  try {
+    const slot = (testInfo as unknown as TimeoutManagerHolder)._timeoutManager?.defaultSlot?.();
+    return slot && typeof (slot as TestTimeSlot).elapsed === 'number' ? (slot as TestTimeSlot) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Bring the runner's count of a test function that ended under the bar back to `heldAt`, what it counted as the
+ * stop's hold began. The runner counts a runnable's time again when it ends while the test timeout is held, from where
+ * it last started counting, so that count holds the time before the stop twice and the stop on top. Never raises the
+ * count; a runner whose slot cannot be read is left as it is.
+ */
+export function restoreTestTime(testInfo: TestInfo, heldAt: number): void {
+  const slot = testTimeSlot(testInfo);
+  if (slot && Number.isFinite(heldAt) && heldAt >= 0 && heldAt < slot.elapsed) slot.elapsed = heldAt;
 }
 
 /** Where the bar says a test is paused: the file's name and the line, `login.spec.ts:42`. */

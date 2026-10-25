@@ -21,7 +21,9 @@ import {
   postPickToEditor,
   resetInspectorSwitch,
   resetPauseLogs,
+  restoreTestTime,
   stopCallSite,
+  testTimeSlot,
   watchStops,
   withInspector,
   withTestTimeoutHeld,
@@ -196,6 +198,43 @@ describe('withTestTimeoutHeld', () => {
 
   it('runs without it on a runner that has none', async () => {
     expect(await withTestTimeoutHeld({} as never, async () => 'answer')).toBe('answer');
+  });
+});
+
+describe('the test time the runner counted', () => {
+  function runner(elapsed: number) {
+    const slot = { timeout: 3000, elapsed };
+    return { slot, testInfo: { _timeoutManager: { defaultSlot: () => slot } } as never };
+  }
+
+  it('reads the runner’s default slot, and nothing on a runner without one', () => {
+    expect(testTimeSlot(runner(420).testInfo)?.elapsed).toBe(420);
+    expect(testTimeSlot({} as never)).toBeNull();
+    expect(testTimeSlot({ _timeoutManager: { defaultSlot: () => ({}) } } as never)).toBeNull();
+    expect(
+      testTimeSlot({
+        _timeoutManager: {
+          defaultSlot: () => {
+            throw new Error('gone');
+          },
+        },
+      } as never),
+    ).toBeNull();
+  });
+
+  it('brings the count of a test function that ended under the bar back to what it held as the stop began', () => {
+    const { slot, testInfo } = runner(7517);
+    restoreTestTime(testInfo, 2610);
+    expect(slot.elapsed).toBe(2610);
+  });
+
+  it('never raises the count, and leaves a runner it cannot read alone', () => {
+    const { slot, testInfo } = runner(900);
+    restoreTestTime(testInfo, 1200);
+    restoreTestTime(testInfo, Number.NaN);
+    restoreTestTime(testInfo, -5);
+    expect(slot.elapsed).toBe(900);
+    expect(() => restoreTestTime({} as never, 10)).not.toThrow();
   });
 });
 

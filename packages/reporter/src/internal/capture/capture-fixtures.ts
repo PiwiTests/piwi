@@ -109,8 +109,10 @@ import {
   pauseSkipReason,
   pickPayload,
   postPickToEditor,
+  restoreTestTime,
   steerDebugger,
   stopCallSite,
+  testTimeSlot,
   watchStops,
   withInspector,
   withTestTimeoutHeld,
@@ -351,11 +353,13 @@ interface CaptureSink {
   stops: PauseRecord[];
   // The stops the pause bar shows now, by the handle that takes each down when the test ends under it.
   shownStops: Map<AbortController, ShownStop>;
-  // The locator calls a stop let go when the test ended under its bar, each settling once its call does, and the
-  // requests the test's pages started since, until each ends (`releasedRequestsEnded`).
+  // The calls a stop let go when the test ended under its bar, each settling once its call does (at once for a call
+  // other than a locator's), the requests the test's pages started since, until each ends (`releasedRequestsEnded`),
+  // and since when none of them has started, ended or settled (`awaitReleasedCalls`).
   released: Promise<void>[];
   releasedRequests: Set<Request>;
   onReleasedRequestsEnded: (() => void) | null;
+  releasedQuietSince: number;
   // The page each locator call ran on, keyed by call site and chain.
   locatorPages: LocatorPageLog;
   // JavaScript coverage of each page the test has, when code reach is on, and
@@ -408,6 +412,7 @@ function createSink(): CaptureSink {
     released: [],
     releasedRequests: new Set(),
     onReleasedRequestsEnded: null,
+    releasedQuietSince: 0,
     locatorPages: new LocatorPageLog(),
     codeReach: { sessions: new Map(), files: new Map(), known: new Map() },
     serverCoverage: new Map(),
@@ -1354,11 +1359,15 @@ const PLAYWRIGHT_PAUSES = new WeakMap<BrowserContext, number>();
 /** Why a stop the bar shows ends unanswered: the test function ended, or its page or context closed. */
 type StopEnd = 'ended' | 'closed';
 
-/** A stop the pause bar shows: the bar's page, its `piwi-pauses` record, and a promise that settles once it is gone. */
+/**
+ * A stop the pause bar shows: the bar's page, its `piwi-pauses` record, a promise that settles once it is gone, and the
+ * test time the runner had counted as its hold began (`testTimeSlot`), null where it cannot be read.
+ */
 interface ShownStop {
   page: Page;
   record: PauseRecord;
   done: Promise<unknown>;
+  heldAt: number | null;
 }
 
 /**
@@ -1431,8 +1440,8 @@ function stopPage(sink: CaptureSink, context: BrowserContext, call: LocatorCall 
  * meanwhile is folded into the call site's snapshot (which the call's own capture then leaves as it is); a pick is
  * printed and posted to the editor. The stop is kept for `piwi-pauses` from the moment the bar shows. A bar that must
  * end unanswered (`endShownStops`) comes down at once, and its call goes on at once: as on Resume when its page or
- * context closed, as on Finish when the test ended under it, its locator call then kept in `released`. Returns the
- * bar's answer; none when the stop's context has no page open.
+ * context closed, as on Finish when the test ended under it, its call then kept in `released` (`releaseCall`). Returns
+ * the bar's answer; none when the stop's context has no page open.
  */
 async function showStop(
   sink: CaptureSink,
@@ -1481,10 +1490,11 @@ async function showStop(
   ).finally(() => {
     // A stop ended unanswered took its duration as it ended; a call the test ended under is waited for a while.
     if (!end.signal.aborted) record.duration = Date.now() - record.startedAt;
-    else if (call && end.signal.reason === 'ended') sink.released.push(call.settled);
+    else if (end.signal.reason === 'ended') releaseCall(sink, call?.settled ?? Promise.resolve());
     sink.shownStops.delete(end);
   });
-  sink.shownStops.set(end, { page, record, done: shown.catch(() => undefined) });
+  const heldAt = testTimeSlot(testInfo)?.elapsed ?? null;
+  sink.shownStops.set(end, { page, record, done: shown.catch(() => undefined), heldAt });
   const answer = await shown;
   if (!end.signal.aborted) return answer;
   // Its page or context closed: as on Resume. The test ended under it: as on Finish, nothing stops after it.
@@ -1494,13 +1504,18 @@ async function showStop(
 /** How long taking a bar down may take before the test goes on without waiting for it. */
 const END_STOP_MS = 2000;
 
-/** How long teardown waits for the locator calls a stop let go as the test ended under its bar, and their requests. */
+/** How long teardown waits for the calls a stop let go as the test ended under its bar, and their requests. */
 const RELEASED_CALL_MS = 2000;
+
+/** How long no request of the calls let go may start or end, once they settled, for teardown to go on. */
+const RELEASED_QUIET_MS = 200;
 
 /**
  * End the stops the bar shows unanswered (`why`), each with the time it held: the bar, the picker and a recording come
- * down, and each call goes on at once. With `closing`, only a stop on that page or in that context. Waits for the bars
- * to come down, for `END_STOP_MS` at most. Never throws.
+ * down, and each call goes on at once. With `closing`, only a stop on that page or in that context. When the test
+ * function ended under a stop, the runner's count of its time goes back to what it was as the first such stop's hold
+ * began (`restoreTestTime`), so the test's duration leaves the stop out. Waits for the bars to come down, for
+ * `END_STOP_MS` at most. Never throws.
  */
 async function endShownStops(
   sink: CaptureSink,
@@ -1508,15 +1523,24 @@ async function endShownStops(
   closing?: { page?: Page; context?: BrowserContext },
 ): Promise<void> {
   const ending: Promise<unknown>[] = [];
-  for (const [end, { page, record, done }] of sink.shownStops) {
+  let heldAt = Infinity;
+  for (const [end, { page, record, done, heldAt: stopHeldAt }] of sink.shownStops) {
     if (closing && closing.page !== page && (!closing.context || pageContext(page) !== closing.context)) continue;
     if (!end.signal.aborted) {
       record.duration = Date.now() - record.startedAt;
       end.abort(why);
+      if (why === 'ended' && stopHeldAt !== null) heldAt = Math.min(heldAt, stopHeldAt);
     }
     ending.push(done);
   }
+  if (sink.testInfo && heldAt !== Infinity) restoreTestTime(sink.testInfo, heldAt);
   await settledWithin(ending, END_STOP_MS);
+}
+
+/** Keep a call a stop let go as the test ended under its bar: teardown waits for it, and for the requests after it. */
+function releaseCall(sink: CaptureSink, settled: Promise<void>): void {
+  sink.releasedQuietSince = Date.now();
+  sink.released.push(settled.then(() => void (sink.releasedQuietSince = Date.now())));
 }
 
 /** Settles once the requests started since a stop let its call go have all ended. */
@@ -1526,14 +1550,23 @@ function releasedRequestsEnded(sink: CaptureSink): Promise<void> {
 }
 
 /**
- * Wait, `RELEASED_CALL_MS` at most, for the locator calls a stop let go as the test ended under its bar, and for the
- * requests started since: their effects are this test's. At once when no stop let a call go.
+ * Wait, `RELEASED_CALL_MS` at most, for the calls a stop let go as the test ended under its bar, then for the requests
+ * started since, until none has started or ended for `RELEASED_QUIET_MS`: their effects are this test's, a navigation
+ * the test did not await included. At once when no stop let a call go.
  */
 async function awaitReleasedCalls(sink: CaptureSink): Promise<void> {
   if (sink.released.length === 0) return;
   const deadline = Date.now() + RELEASED_CALL_MS;
   await settledWithin(sink.released, RELEASED_CALL_MS);
-  await settledWithin([releasedRequestsEnded(sink)], Math.max(0, deadline - Date.now()));
+  for (let now = Date.now(); now < deadline; now = Date.now()) {
+    if (sink.releasedRequests.size > 0) {
+      await settledWithin([releasedRequestsEnded(sink)], deadline - now);
+      continue;
+    }
+    const quiet = now - sink.releasedQuietSince;
+    if (quiet >= RELEASED_QUIET_MS) return;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(RELEASED_QUIET_MS - quiet, deadline - now)));
+  }
 }
 
 /** Wait for `pending` to settle, for `ms` at most. */
@@ -1639,8 +1672,8 @@ type PauseHolder = { pause?: PlaywrightPause & { [PLAYWRIGHT_PAUSE]?: Playwright
 
 /**
  * Playwright's own `page.pause()` for `page`, once `Page.prototype.pause` is wrapped so a `page.pause()` on a page the
- * capture fixtures never instrument (one of a browser the test launched itself) is left to Playwright with its
- * Inspector free to open. Null for a page without `pause`.
+ * capture fixtures never instrument (one of a browser the test launched itself through the same Playwright) is left to
+ * Playwright with its Inspector free to open. Null for a page without `pause`.
  */
 function playwrightPauseOf(page: Page): PlaywrightPause | null {
   const current = (page as unknown as PauseHolder).pause;
@@ -2033,11 +2066,16 @@ function instrumentPage(page: Page): void {
   // A request started after a stop let its call go as the test ended under the bar: teardown waits for it.
   page.on('request', (request: Request) => {
     const sink = currentSink;
-    if (sink && sink.released.length > 0) sink.releasedRequests.add(request);
+    if (!sink || sink.released.length === 0) return;
+    sink.releasedRequests.add(request);
+    sink.releasedQuietSince = Date.now();
   });
   const onRequestEnd = (request: Request, failed: boolean) => {
     const sink = currentSink;
-    if (sink?.releasedRequests.delete(request) && sink.releasedRequests.size === 0) sink.onReleasedRequestsEnded?.();
+    if (sink?.releasedRequests.delete(request)) {
+      sink.releasedQuietSince = Date.now();
+      if (sink.releasedRequests.size === 0) sink.onReleasedRequestsEnded?.();
+    }
     if (!sink || RECORDED_OPEN.has(request)) return;
     sink.lastActivePage = page;
     const response = sink.openResponses.get(request) ?? null;

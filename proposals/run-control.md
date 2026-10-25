@@ -14,7 +14,9 @@ tools that follow the run, read the stopped page as its accessibility tree and a
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
 (Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2 to 9 are not. The build differs from the
 text in four ways. A headed browser opens Playwright's Inspector at every stop of `context.debugger`, so the worker sets
-`PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to Playwright runs, and a run under Playwright's own
+`PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to Playwright runs (the switch is process-wide: a
+`page.pause()` of a second copy of Playwright in the worker, which Piwi does not see, then stops with neither bar nor
+Inspector until the test's timeout), and a run under Playwright's own
 debugger (`--debug`, `--debug=cli`, `PWDEBUG`) ignores the breakpoints. The runner suspends the test timeout only for
 a context the running test made: at a stop in one made before it (a `beforeAll` page), the worker holds the timeout
 through the runner's own counter (`_setIgnoreTimeouts`, feature-checked). Every timestamp stays as measured: the
@@ -269,8 +271,12 @@ reason, when it began and how long it lasted. The reporter sends each stop with 
 event, and every timestamp stays as measured, so the steps, the requests, the console, the backend logs and the
 trace stay aligned. The timelines draw each stop as a **Paused** band; only the step statistics (the slowest step,
 the time in waits, a step's usual duration, the attempts' comparison) read a step's duration less its overlap with
-the test's stops. The test's duration stays the one Playwright reports, which leaves the stops out. The reporter
-marks the run interactive (D10); a run with breakpoints that never stopped is not interactive.
+the test's stops. The test's duration stays the one Playwright reports, which leaves the stops out, but for a test
+function that ended under the bar: the runner counts it again as it ends, the stop and the time before it, so the
+worker sets the runner's count back to what it held as the stop's hold began (`_timeoutManager.defaultSlot()`,
+feature-checked). Where it cannot, that duration counts the stop, and the workers timeline ends a paused test's bar
+at its last section rather than at its start plus its duration. The reporter marks the run interactive (D10); a run
+with breakpoints that never stopped is not interactive.
 
 ### 1.5 End the test
 

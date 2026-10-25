@@ -25,8 +25,11 @@ per-directory responsibilities.
    `PIWI_PAUSE_AT` steers each context's `context.debugger` to stop before every call it can stop at, shows the pause
    bar at a call on those lines, sets `PW_CODEGEN_NO_INSPECTOR` in the worker so Playwright's Inspector stays closed
    at those stops, and clears it while a `page.pause()` it leaves to Playwright runs (it wraps `Page.prototype.pause`,
-   so a page of a browser the test launched itself goes through it too), takes the bar down as the test function
-   ends, ahead of the runner's other callbacks there (`_onDidFinishTestFunctionCallbacks`), attaches a test's stops as
+   so a page of a browser the test launched itself goes through it too, unless it came from a second copy of
+   Playwright, whose `page.pause()` then stops with neither bar nor Inspector), takes the bar down as the test function
+   ends, ahead of the runner's other callbacks there (`_onDidFinishTestFunctionCallbacks`), setting the runner's count
+   of a test function that ended under it back to what it held as the stop began (`_timeoutManager.defaultSlot()`,
+   feature-checked) and waiting a while for the call it let go and its requests, attaches a test's stops as
    `piwi-pauses` (the reporter sends them as `pause` step events, and leaves their time out of the step statistics,
    the steps keeping their measured times), and posts a locator picked meanwhile to the editor's `PIWI_EDITOR_SEND`
    address with the line, as `@piwitests/core/editor-send` reads it; with `PIWI_RECORD_CHANNEL`, the pause bar's
