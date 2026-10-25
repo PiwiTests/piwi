@@ -4,7 +4,7 @@ import type { TestCaseResult, SetupStepEvent, PerformanceStep } from '~~/types/a
 import type { RunExecutionCost, RunResourceTimeline, RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { useTimelineModel, isHookKind, type TimelineItem } from '~/composables/useTimelineModel';
 import { useTimelineViewport } from '~/composables/useTimelineViewport';
-import { lockColorHex, TIMELINE_HOOK_COLORS, TIMELINE_LAYOUT } from '~/utils/timeline';
+import { lockColorHex, TIMELINE_HOOK_COLORS, TIMELINE_LAYOUT, TIMELINE_PAUSE_COLORS } from '~/utils/timeline';
 import {
   ALL_RESOURCE_TRACKS,
   RESOURCE_TRACK_KINDS,
@@ -317,6 +317,7 @@ const hookFailureCount = computed(
   () => timelineData.value.filter((d) => isHookKind(d.kind) && d.status === 'failed').length,
 );
 const waitCount = computed(() => timelineData.value.filter((d) => d.kind === 'wait').length);
+const pauseCount = computed(() => timelineData.value.filter((d) => d.kind === 'pause').length);
 const restartCount = computed(() => timelineData.value.filter((d) => d.kind === 'restart').length);
 
 // Tests and expanded step spans are always drawn (expanding a row is itself the
@@ -335,13 +336,14 @@ const visibleItems = computed(() =>
 /** A test with no hook section drawn: one shared array, so its bar keeps equal props. */
 const NO_HOOKS: TimelineItem[] = [];
 
-/** Whether an item is a test's hook section, which the test's own bar draws. */
+/** Whether an item is a test's hook section or one of its stops, which the test's own bar draws. */
 function isTestHook(item: TimelineItem): boolean {
-  return (item.kind === 'hook' || item.kind === 'fixture') && item.testCaseId != null;
+  return (item.kind === 'hook' || item.kind === 'fixture' || item.kind === 'pause') && item.testCaseId != null;
 }
 
-// Each test's visible hook sections, drawn by the test's bar rather than as
-// bars of their own, so a section costs no component when the view zooms.
+// Each test's visible hook sections and stops, drawn by the test's bar rather
+// than as bars of their own, so a section costs no component when the view
+// zooms. A stop is drawn whatever the hooks toggle says.
 const hooksByTest = computed(() => {
   const map = new Map<number, TimelineItem[]>();
   for (const item of visibleItems.value) {
@@ -464,6 +466,7 @@ function onResourceLeave(): void {
       :retry-count="retryCount"
       :hook-failure-count="hookFailureCount"
       :wait-count="waitCount"
+      :pause-count="pauseCount"
       :restart-count="restartCount"
       :has-hooks="hasHooks"
       :show-hooks="showHooks"
@@ -527,6 +530,16 @@ function onResourceLeave(): void {
           >
             <rect width="6" height="6" :fill="colors.fill" :fill-opacity="colors.opacity" />
             <rect width="2" height="6" fill="white" fill-opacity="0.35" />
+          </pattern>
+          <!-- A stop at the pause bar over its test's bar: a pale wash under upright stripes. -->
+          <pattern id="timeline-paused" patternUnits="userSpaceOnUse" width="5" height="5">
+            <rect
+              width="5"
+              height="5"
+              :fill="TIMELINE_PAUSE_COLORS.fill"
+              :fill-opacity="TIMELINE_PAUSE_COLORS.opacity"
+            />
+            <rect width="1.5" height="5" :fill="TIMELINE_PAUSE_COLORS.stripe" fill-opacity="0.35" />
           </pattern>
           <!-- Arrowhead of the arrows joining the attempts of a retried test. -->
           <marker

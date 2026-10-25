@@ -14,6 +14,7 @@ import {
   diagnosisFacts,
   fmtBytes,
   fmtDuration,
+  fmtStepDuration,
   hasDiagnosis,
   OMISSION_REASONS,
   projectLabel,
@@ -88,7 +89,7 @@ function caseMarkdown(exportCase: ExportCase, headingLevel: '##' | '###'): strin
         (d.steps as Record<string, any>[]).map((s) => [
           String(s.title ?? ''),
           String(s.category ?? ''),
-          fmtDuration(s.duration),
+          fmtStepDuration(s, d.pauses),
         ]),
       ),
     );

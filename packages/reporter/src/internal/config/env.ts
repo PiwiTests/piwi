@@ -103,8 +103,10 @@ export const PIWI_ENV_KEYS = {
  * (`inspectOnFailure`, `pickLocatorOnFailure`) the workers read. Not options:
  * the breakpoints change with every run, so the editor writes them and the
  * capture fixtures read them directly. Headed local runs only, never under CI:
- *  - `pauseAt` lists the lines to pause at before a locator action or
- *    assertion, semicolon-separated `file:line` relative to the working directory
+ *  - `pauseAt` lists the lines to pause at before a call that acts on, reads or
+ *    checks the page (a navigation, an action, a key press, an assertion, a
+ *    read such as `textContent`),
+ *    semicolon-separated `file:line` relative to the working directory
  *    (forward slashes) or absolute: `tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`;
  *  - `editorSend` is the editor's Send to editor pairing address
  *    (`<url>#<token>`), which a locator picked while paused is posted to with

@@ -11,8 +11,13 @@
  * ms relative to `origin`. It never throws: partial, missing or malformed input
  * yields a valid (possibly empty) timeline, and anything without a usable
  * timestamp is listed in `unplaced` with a reason rather than guessed at.
+ *
+ * A test that stood stopped at Piwi's pause bar (an editor breakpoint) keeps
+ * every timestamp on the clock it was measured on: its stops, read from its
+ * `pause` step events, are drawn as Paused bands over the lanes, and a step
+ * that ran across one says how long it stood paused.
  */
-import { stepLabel } from '@piwitests/core/step-analysis';
+import { pausedOverlap, stepLabel, type PauseSpan } from '@piwitests/core/step-analysis';
 import {
   failingStepIndex,
   isCaptureStep,
@@ -92,6 +97,21 @@ export interface TimelineItem {
    * when fewer than two of them ran the same step or called the same route.
    */
   usual?: number;
+  /** Steps only: how much of `duration` the test stood stopped at Piwi's pause bar, in ms; absent when none. */
+  paused?: number;
+}
+
+/** A stop at Piwi's pause bar, positioned at `at` ms relative to the timeline `origin`. */
+export interface TimelinePause {
+  id: string;
+  at: number;
+  duration: number;
+  /** The call the stop held, as Playwright titles it: `Click getByRole('button')`. */
+  label: string;
+  /** Why it stopped: `breakpoint`, `step` or `page-pause`. */
+  reason: string;
+  /** Its call site, `file:line:col`, or null. */
+  location: string | null;
 }
 
 /** Something that exists but carries no usable timestamp, so it cannot be placed. */
@@ -129,9 +149,14 @@ export interface FailureTimeline {
   testStart: number;
   /** The moment of failure, in ms relative to `origin`. */
   failureAt: number;
-  /** The failed step, when one was identified. */
-  failedStep: { index: number; label: string; at: number; duration: number } | null;
+  /**
+   * The failed step, when one was identified, with how much of its `duration` the test stood stopped at Piwi's pause
+   * bar (`paused`, 0 when none).
+   */
+  failedStep: { index: number; label: string; at: number; duration: number; paused: number } | null;
   lanes: TimelineLanes;
+  /** The stops at Piwi's pause bar, in time order; empty for a test that never stood paused. */
+  pauses: TimelinePause[];
   unplaced: TimelineUnplaced[];
   /** True when step positions were derived from durations because start times were missing. */
   estimated: boolean;
@@ -177,6 +202,39 @@ export const TIMELINE_WINDOW_LEAD_MS = 10_000;
 /** …and this far after it, both clamped to the execution. */
 export const TIMELINE_WINDOW_TRAIL_MS = 2_000;
 
+/**
+ * Where a stretch of `lead` ms of the test's own time ending at `end` begins: `end - lead`, moved back by the time the
+ * test stood stopped at Piwi's pause bar in between. `end` and the stops are on one clock, the result on the same.
+ */
+export function leadStart(end: number, lead: number, pauses: readonly PauseSpan[]): number {
+  // The stops before `end`, latest first, overlapping ones merged.
+  const stops: Array<[number, number]> = [];
+  for (const pause of [...pauses].sort((a, b) => b.startedAt - a.startedAt)) {
+    const from = pause.startedAt;
+    const to = Math.min(end, pause.startedAt + Math.max(0, pause.duration));
+    if (to <= from) continue;
+    const last = stops[stops.length - 1];
+    if (last && to >= last[0]) {
+      last[0] = Math.min(last[0], from);
+      last[1] = Math.max(last[1], to);
+    } else stops.push([from, to]);
+  }
+  let cursor = end;
+  let left = lead;
+  for (const [from, to] of stops) {
+    const run = cursor - to;
+    if (run >= left) break;
+    left -= run;
+    cursor = from;
+  }
+  return cursor - left;
+}
+
+/** The stops of a timeline as spans on its own clock (ms relative to `origin`). */
+export function timelinePauseSpans(timeline: { pauses: readonly TimelinePause[] } | null | undefined): PauseSpan[] {
+  return (timeline?.pauses ?? []).map((pause) => ({ startedAt: pause.at, duration: pause.duration }));
+}
+
 /** Longest label the merged list shows before the card truncates it. */
 const MAX_LABEL_CHARS = 200;
 
@@ -207,7 +265,14 @@ type NetworkRow = {
   serverLogs?: unknown;
 };
 
-type StepEventRow = { startedAt?: unknown; duration?: unknown };
+type StepEventRow = {
+  title?: unknown;
+  category?: unknown;
+  startedAt?: unknown;
+  duration?: unknown;
+  status?: unknown;
+  location?: unknown;
+};
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
@@ -338,6 +403,25 @@ export function buildFailureTimeline(input: FailureTimelineInput): FailureTimeli
     if (at + dur > latestEnd) latestEnd = at + dur;
   };
 
+  // ── Stops at the pause bar ─────────────────────────────────────────────────
+  const pauses: TimelinePause[] = [];
+  stepEvents.forEach((event, index) => {
+    if (event.category !== 'pause' || !isFiniteNumber(event.startedAt) || !isFiniteNumber(event.duration)) return;
+    const at = event.startedAt - origin;
+    const duration = Math.max(0, event.duration);
+    pauses.push({
+      id: `pause-${index}`,
+      at,
+      duration,
+      label: clampLabel(str(event.title)),
+      reason: str(event.status, 'breakpoint'),
+      location: typeof event.location === 'string' ? event.location : null,
+    });
+    noteEnd(at, duration);
+  });
+  pauses.sort((a, b) => a.at - b.at);
+  const pauseSpans = timelinePauseSpans({ pauses });
+
   // ── Steps lane ─────────────────────────────────────────────────────────────
   // Real start times when present; otherwise cumulative from `startedAt` and the
   // step durations, which is an estimate the UI is told about.
@@ -416,6 +500,7 @@ export function buildFailureTimeline(input: FailureTimelineInput): FailureTimeli
     const group = groupTitleFor(at, dur) ?? stepOrigin?.function ?? null;
     const subtitle = typeof step.subtitle === 'string' && step.subtitle.trim().length > 0 ? step.subtitle.trim() : null;
     const params = stepParams(step.params);
+    const paused = estimated ? 0 : pausedOverlap(at, dur, pauseSpans);
     lanes.steps.push({
       id: `step-${index}`,
       lane: 'steps',
@@ -431,9 +516,10 @@ export function buildFailureTimeline(input: FailureTimelineInput): FailureTimeli
       ...(params ? { params } : {}),
       ...(str(step.category) ? { category: str(step.category) } : {}),
       ...(failed ? { failed: true } : {}),
+      ...(paused > 0 ? { paused } : {}),
     });
     noteEnd(at, dur);
-    if (failed) failedStep = { index, label, at, duration: dur };
+    if (failed) failedStep = { index, label, at, duration: dur, paused };
   });
 
   // ── Console lane ───────────────────────────────────────────────────────────
@@ -553,6 +639,7 @@ export function buildFailureTimeline(input: FailureTimelineInput): FailureTimeli
   noteEnd(failureAt);
 
   // ── Axis bounds and default window ─────────────────────────────────────────
+  // The lead before the failed step is the test's own time: a stop in it widens it.
   if (startedAt != null && duration != null) noteEnd(startedAt + duration - origin);
   const span = Math.max(latestEnd, failureAt, 0);
   const end = origin + span;
@@ -560,7 +647,9 @@ export function buildFailureTimeline(input: FailureTimelineInput): FailureTimeli
   const clamp = (value: number) => Math.max(0, Math.min(span, value));
   const window: TimelineWindow = failedStep
     ? {
-        start: clamp((failedStep as { at: number }).at - TIMELINE_WINDOW_LEAD_MS),
+        start: clamp(
+          leadStart((failedStep as { at: number }).at, TIMELINE_WINDOW_LEAD_MS, estimated ? [] : pauseSpans),
+        ),
         end: clamp(
           (failedStep as { at: number; duration: number }).at +
             (failedStep as { duration: number }).duration +
@@ -571,5 +660,5 @@ export function buildFailureTimeline(input: FailureTimelineInput): FailureTimeli
 
   const testStart = startedAt != null ? Math.max(0, startedAt - origin) : 0;
 
-  return { origin, end, testStart, failureAt, failedStep, lanes, unplaced, estimated, window };
+  return { origin, end, testStart, failureAt, failedStep, lanes, pauses, unplaced, estimated, window };
 }

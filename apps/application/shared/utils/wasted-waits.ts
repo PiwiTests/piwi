@@ -1,3 +1,4 @@
+import { pauseSpans, unpausedDuration } from '@piwitests/core/step-analysis';
 import type { TestStepEvent } from '../types';
 
 /**
@@ -88,14 +89,20 @@ export function isWastedWait(
 
 /**
  * Sum the duration (ms) of every wait-category step event that counts as
- * wasted under the given allowlist. Non-wait events are ignored.
+ * wasted under the given allowlist, less the time the test stood stopped at
+ * Piwi's pause bar while it ran (the `pause` events of the same list). Other
+ * events are ignored.
  */
 export function computeWastedMs(stepEvents: TestStepEvent[] | null | undefined, patterns: readonly string[]): number {
   if (!stepEvents || stepEvents.length === 0) return 0;
+  const pauses = pauseSpans(stepEvents);
   let total = 0;
   for (const ev of stepEvents) {
     if (ev.category !== 'wait') continue;
-    if (isWastedWait(ev, patterns)) total += ev.duration || 0;
+    if (isWastedWait(ev, patterns))
+      total += pauses.length
+        ? unpausedDuration({ startTime: ev.startedAt, duration: ev.duration }, pauses)
+        : ev.duration || 0;
   }
   return total;
 }

@@ -278,7 +278,8 @@ export interface RunTestsArgs {
   testIds: number[];
   /**
    * The editor's enabled line breakpoints. Those in files under the Playwright config's folder pause the run before a
-   * locator action or assertion on their line, headed, with Piwi's pause bar (`PIWI_PAUSE_AT` in `RunCommand.env`).
+   * call on their line that Playwright's debugger stops at (a navigation, an action, a read, an assertion), headed, with
+   * Piwi's pause bar (`PIWI_PAUSE_AT` in `RunCommand.env`).
    */
   breakpoints?: EditorBreakpoint[];
   /**

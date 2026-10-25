@@ -1098,3 +1098,121 @@ describe('known-flake-suspect', () => {
     expect(rules(baseInput({ flakeSuspects: [] }))).not.toContain('known-flake-suspect');
   });
 });
+
+describe('a test that stood paused at a breakpoint', () => {
+  /**
+   * Run 76's shape: a navigation held 4 s at a breakpoint, then the failing assertion held 6 s at another before it
+   * ran its own 1 s, of an 8 s timeout. The page answered each stop with a request that lasted the stop.
+   */
+  const stops = [
+    { title: 'Navigate /b', category: 'pause', startedAt: T0 + 150, duration: 4_000, status: 'breakpoint' },
+    {
+      title: 'Expect "toBeVisible"',
+      category: 'pause',
+      startedAt: T0 + 4_300,
+      duration: 6_000,
+      status: 'breakpoint',
+    },
+  ];
+  const duringStops = [
+    { method: 'POST', url: '/stop', status: 200, duration: 3_950, startTime: T0 + 160 },
+    { method: 'POST', url: '/stop', status: 200, duration: 5_950, startTime: T0 + 4_310 },
+  ];
+
+  function pausedTimeline(overrides: Partial<FailureTimelineInput> = {}) {
+    return buildFailureTimeline({
+      startedAt: T0,
+      duration: 1_500,
+      timeout: 8_000,
+      status: 'failed',
+      steps: [
+        { title: 'Navigate', subtitle: '/a', category: 'navigation', duration: 100, startTime: T0 },
+        { title: 'Navigate', subtitle: '/b', category: 'navigation', duration: 4_150, startTime: T0 + 100 },
+        {
+          title: 'Expect "toBeVisible"',
+          subtitle: "locator('#receipt')",
+          category: 'assertion',
+          duration: 7_000,
+          startTime: T0 + 4_280,
+          error: 'element(s) not found',
+        },
+      ],
+      stepEvents: stops,
+      networkRequests: duringStops,
+      ...overrides,
+    });
+  }
+
+  function pausedInput(overrides: Partial<FailureClueInput> = {}): FailureClueInput {
+    return baseInput({
+      execution: { id: 10, testCaseId: 1, status: 'failed', duration: 1_500, browser: 'chromium', startedAt: T0 },
+      timeline: pausedTimeline(),
+      timeout: 8_000,
+      networkRequests: duringStops,
+      parsedError: null,
+      ...overrides,
+    });
+  }
+
+  test('reads the failed step’s own time against the timeout, its stop left out', () => {
+    const timeline = pausedTimeline();
+    expect(timeline.failedStep).toMatchObject({ duration: 7_000, paused: 6_000 });
+    expect(rules(pausedInput())).not.toContain('timeout-budget');
+    expect(buildFailureClues(pausedInput()).story).toBeNull();
+  });
+
+  test('cites no request that was in flight only while the failed step stood stopped', () => {
+    expect(rules(pausedInput())).not.toContain('slow-request-overlapping-failure');
+    // One in flight once the step ran on is still cited.
+    const slow = { method: 'GET', url: '/api/receipt', status: 200, duration: 2_500, startTime: T0 + 9_000 };
+    const input = pausedInput({
+      timeline: pausedTimeline({ networkRequests: [...duringStops, slow] }),
+      networkRequests: [...duringStops, slow],
+    });
+    const clue = runClues(input).find((c) => c.rule === 'slow-request-overlapping-failure');
+    expect(clue?.citations).toEqual([{ section: 'networkRequests', index: 2 }]);
+  });
+
+  test('times the test’s own HTTP call without its stop', () => {
+    const steps = [{ title: 'POST', subtitle: 'https://app.test/api/seed', category: 'pw:api', duration: 6_400 }];
+    const call = (paused: boolean) =>
+      buildFailureTimeline({
+        startedAt: T0,
+        duration: 2_000,
+        status: 'failed',
+        steps: [{ ...steps[0], startTime: T0, error: 'server error' }],
+        stepEvents: paused ? [{ ...stops[1], startedAt: T0 + 10, duration: 4_500 }] : [],
+      });
+    const clue = (paused: boolean) =>
+      runClues(baseInput({ timeline: call(paused), timeout: 8_000, parsedError: null })).find(
+        (c) => c.rule === 'slow-request-overlapping-failure',
+      );
+    expect(clue(false)?.title).toBe('POST /api/seed took 6.4 s');
+    expect(clue(true)?.title).toBe('POST /api/seed took 1.9 s');
+  });
+
+  test('reaches back past a stop for a request that failed in the test’s last seconds, and says it stood paused', () => {
+    // A 500 just before the navigation's 4 s stop: 9.9 s before the failure on the clock, 3.9 s of the test's time.
+    const failed = { method: 'GET', url: '/api/cart', status: 500, duration: 50, startTime: T0 + 50 };
+    const timeline = pausedTimeline({
+      steps: [
+        { title: 'Navigate', subtitle: '/b', category: 'navigation', duration: 4_150, startTime: T0 },
+        {
+          title: 'Click',
+          subtitle: "getByRole('button')",
+          category: 'action',
+          duration: 15_000,
+          startTime: T0 + 4_200,
+          error: 'element is not enabled',
+        },
+      ],
+      stepEvents: [stops[0], { ...stops[1], startedAt: T0 + 4_250, duration: 10_000 }],
+      networkRequests: [failed],
+    });
+    expect(timeline.window.start).toBe(0);
+    const clue = runClues(baseInput({ timeline, networkRequests: [failed], parsedError: null })).find(
+      (c) => c.rule === 'failed-request-before-failure',
+    );
+    expect(clue?.detail).toBe('GET /api/cart returned 500, 19.1 s before the failure, 14.0 s of it paused.');
+  });
+});

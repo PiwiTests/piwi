@@ -149,6 +149,20 @@ export function timelineHookColors(status: string): (typeof TIMELINE_HOOK_COLORS
   return status === 'failed' ? TIMELINE_HOOK_COLORS.failed : TIMELINE_HOOK_COLORS.passed;
 }
 
+/** What a stop at Piwi's pause bar was, by its reason: `Paused at a breakpoint`. */
+export function pauseReasonText(reason: string | null | undefined): string {
+  if (reason === 'step') return 'Paused after Step';
+  if (reason === 'page-pause') return 'Paused at page.pause()';
+  return 'Paused at a breakpoint';
+}
+
+/**
+ * A stop's band over its test's bar on the workers timeline: a pale wash under
+ * upright stripes and a dashed edge, so it reads as time the test stood still,
+ * apart from the hatched hook sections, in any outcome color.
+ */
+export const TIMELINE_PAUSE_COLORS = { fill: '#f8fafc', opacity: 0.55, stripe: '#334155', stroke: '#334155' } as const;
+
 /** Human-readable duration used for timeline ticks, bar labels and tooltips. */
 export function formatTimelineTime(ms: number): string {
   if (ms < 1000) return `${ms}ms`;

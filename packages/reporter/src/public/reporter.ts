@@ -22,6 +22,7 @@ import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES } from '../internal/capture
 import { MetadataCollector, resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
 import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '@piwitests/core/step-analysis';
+import { pauseStepEvents, readPauses } from '../internal/collect/pause-events.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
@@ -622,10 +623,13 @@ export class PiwiDashboardReporter {
     }
 
     if (this.options.collectPerformanceMetrics && result.steps?.length > 0) {
-      testCase.performanceMetrics = collectStepMetrics(result.steps, result.errors);
+      // The stops at Piwi's pause bar: the steps keep their clock, the statistics leave the stopped time out.
+      const pauses = readPauses(result.attachments?.find((a) => a.name === ATTACHMENT_NAMES.pauses)?.body);
+      testCase.performanceMetrics = collectStepMetrics(result.steps, result.errors, pauses);
       const stepEvents = extractTestStepEvents(result.steps, result.startTime);
       const waitEvents = extractWaitEvents(result.steps);
-      const allEvents = [...stepEvents, ...waitEvents];
+      // The stops before the waits, which can be many: the dashboard keeps the first events of a test.
+      const allEvents = [...stepEvents, ...pauseStepEvents(pauses), ...waitEvents];
       if (allEvents.length > 0) testCase.stepEvents = allEvents;
     }
 

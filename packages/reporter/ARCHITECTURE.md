@@ -43,8 +43,20 @@ Two **external contracts** beyond the npm API:
   request context behind a proxy that records each call, the `request` fixture's and
   each browser context's own `request` (`page.request`) included
   (`internal/capture/api-requests.ts`).
-  A headed local run with `PIWI_PAUSE_AT` (the editor's breakpoints) pauses with the
-  `__piwiPauseState` page global and posts a locator picked meanwhile to the editor's
+  A headed local run with `PIWI_PAUSE_AT` (the editor's breakpoints) stops each context
+  through `context.debugger` before every call it can stop at, with `PW_CODEGEN_NO_INSPECTOR`
+  set in the worker except while a `page.pause()` it leaves to Playwright runs (it wraps
+  `Page.prototype.pause`, so every `page.pause()` of the worker's Playwright goes through it; one of a second
+  copy of Playwright does not, and stops with neither bar nor Inspector), shows the pause
+  bar at the calls on those lines and reads its answer from the `__piwiPauseState` page global,
+  takes the bar down as the test function ends, before Playwright's own failure screenshot (the
+  runner's `_onDidFinishTestFunctionCallbacks`, feature-checked; without them, as the test's page
+  or context closes, or at teardown), sets the runner's count of a test function that ended under it
+  back to what it held as the stop began (`_timeoutManager.defaultSlot()`, feature-checked), waits a
+  while for the call it let go and the requests after it, attaches the stops as
+  `piwi-pauses` (`internal/collect/pause-events.ts` sends them with the test's step events, as
+  `pause` events: the steps keep their clock, and the step statistics leave the stopped time
+  out), and posts a locator picked meanwhile to the editor's
   `PIWI_EDITOR_SEND` address (`internal/capture/pause-at.ts`). With `PIWI_RECORD_CHANNEL`,
   **Record here** and `page.pause()` connect to the editor service's local socket and relay
   the recorder's binding calls over it (`internal/capture/record-handoff.ts`).
@@ -166,7 +178,10 @@ src/
                 coverage-settings, server-coverage (the backends' collect and
                 run endpoints, batched per origin), test-coverage (each test's
                 coverage field, the wait before its result streams, the run's
-                coverage), blob-ids (the git blob of each covered file)
+                coverage), blob-ids (the git blob of each covered file),
+                pause-events (the stops a test made at the pause bar, as the
+                `pause` step events the dashboard draws and the step
+                statistics leave out)
     manifest/   collect (the committed manifest, `/__piwi/manifest` per base URL or origin),
                 run-manifests (the instrumented origins the run reached beyond its base URLs,
                 fetched as each is first seen, uploaded once the run is submitted)
@@ -181,8 +196,9 @@ src/
                 worker-metrics (what a test cost the worker and its browsers,
                 and CDP reads of pages that outlive their test)
                 inspect-on-failure, pick-on-failure (the failure-time overlay),
-                pause-at (the editor's breakpoints: PIWI_PAUSE_AT, the pause bar,
-                a pick posted to PIWI_EDITOR_SEND), record-handoff (Record here:
+                pause-at (the editor's breakpoints: PIWI_PAUSE_AT, the stop policy
+                over Playwright's debugger, the pause bar, a pick posted to
+                PIWI_EDITOR_SEND), record-handoff (Record here:
                 the paused page relayed to the editor's recorder, PIWI_RECORD_CHANNEL)
     config/     env (PIWI_* ↔ options, and the probe and flake-lab variables),
                 desktop (the desktop app's discovery file), dotenv (the `.env` reader)

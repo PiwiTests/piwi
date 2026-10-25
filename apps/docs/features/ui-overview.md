@@ -89,8 +89,8 @@ fallback the reporter took to send the run. The tabs:
   file, describe block or [lock](/reference/test-metadata#test-locks), with the same
   [test search](/reference/test-search) as a project's Tests tab and bulk triage.
 - **Changes**: what differs against one baseline run. See [What changed in a run](./run-changes).
-- **Timeline**: each worker's tests on one time axis, with hooks, waits and locks, the slowest tests and the worker
-  distribution ([Slow tests & wasted time](./slow-tests)).
+- **Timeline**: each worker's tests on one time axis, with hooks, waits, locks and [breakpoint](./editor-breakpoints)
+  stops, the slowest tests and the worker distribution ([Slow tests & wasted time](./slow-tests)).
   - **Hooks**: hook time is hatched over each test's bar: setup (`beforeAll`, `beforeEach`, fixtures) at the start,
     teardown (`afterEach`, `afterAll`, worker cleanup) at the end. A failed hook is drawn in dark red and counted in
     the header, even with **Show hooks** off; hover it for the hooks that section ran, their times and the error, and
@@ -100,7 +100,7 @@ fallback the reporter took to send the run. The tabs:
   - **Gaps**: a lane is one worker. Playwright replaces a worker process after a failed test, so a lane can hold
     several processes one after another: **↻** marks where a new one took over, and the stretch before it is the old
     process shutting down and the new one starting. A dashed line is time the worker ran no test; hover either for
-    the details.
+    details.
   - **Retries**: a retried test has one bar per attempt, the last solid, the earlier ones pale. Hover one to join
     them with arrows.
   - **Resources**: when the reporter measured them, the machine's CPU, the run's memory and the pages open in the

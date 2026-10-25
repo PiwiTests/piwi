@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { isGapKind, isHookKind, type TimelineItem } from '~/composables/useTimelineModel';
 import {
   TIMELINE_LAYOUT,
+  TIMELINE_PAUSE_COLORS,
   TIMELINE_WAIT_COLORS,
   timelineStatusFill,
   timelineRetriedAttemptStyle,
@@ -20,7 +21,7 @@ const props = defineProps<{
   lockColors?: string[];
   /** Whether this test row can be expanded into its step waterfall (test bars only). */
   expandable?: boolean;
-  /** The test's hook sections, drawn over its bar as plain shapes — test bars only. */
+  /** The test's hook sections and stops at the pause bar, drawn over its bar as plain shapes — test bars only. */
   hooks?: TimelineItem[];
   /** Where a hook section sits, on the same scale as `x` and `width`. */
   hookGeometry?: (item: TimelineItem) => { x: number; width: number };
@@ -38,8 +39,8 @@ const emit = defineEmits<{
 
 const { barHeight, stepBarHeight, hookMinWidth, failedHookMinWidth } = TIMELINE_LAYOUT;
 
-/** Setup steps render like hooks; they just aren't tied to a test case. */
-const isHookLike = computed(() => isHookKind(props.item.kind));
+/** Setup steps render like hooks; they just aren't tied to a test case. A stop is a section of its test's bar too. */
+const isHookLike = computed(() => isHookKind(props.item.kind) || props.item.kind === 'pause');
 /** An empty stretch of the lane, drawn faintly. */
 const isGap = computed(() => isGapKind(props.item.kind));
 
@@ -59,24 +60,52 @@ const gapLabel = computed<{ text: string; from: number; to: number } | null>(() 
   const center = props.x + props.width / 2;
   return { text, from: center - half, to: center + half };
 });
+/** A section drawn over a test's bar: where, its fill and edge, and the label it has room for. */
+interface SectionRect {
+  item: TimelineItem;
+  x: number;
+  width: number;
+  /** A stop at the pause bar, not a hook section. */
+  paused: boolean;
+  fill: string;
+  stroke: string;
+  label: string | null;
+}
+
 /**
- * The hook sections this bar draws: itself when it is one (a suite setup step,
- * or the hovered section's copy), else the test's own. A failed one keeps a
- * minimum width so a millisecond teardown failure stays visible; a passed one
- * narrower than a pixel is left out until zooming in makes it visible.
+ * The sections this bar draws: itself when it is one (a suite setup step, or
+ * the hovered section's copy), else the test's own hook sections and stops. A
+ * failed hook keeps a minimum width so a millisecond teardown failure stays
+ * visible; a passed one narrower than a pixel is left out until zooming in
+ * makes it visible. A stop is a pale band under upright stripes, labeled with
+ * how long it held when it has room.
  */
-const hookRects = computed(() => {
+const hookRects = computed<SectionRect[]>(() => {
   let rects: Array<{ item: TimelineItem; x: number; width: number }> = [];
   if (isHookLike.value) rects = [{ item: props.item, x: props.x, width: props.width }];
   else if (props.item.kind === 'test' && props.hooks?.length && props.hookGeometry) {
     const geometry = props.hookGeometry;
     rects = props.hooks.map((hook) => ({ item: hook, ...geometry(hook) }));
   }
-  return rects.flatMap((rect) => {
+  return rects.flatMap((rect): SectionRect[] => {
+    if (rect.item.kind === 'pause') {
+      if (rect.width < hookMinWidth) return [];
+      const label = `paused ${formatTimelineTime(rect.item.duration)}`;
+      return [
+        {
+          ...rect,
+          paused: true,
+          fill: 'url(#timeline-paused)',
+          stroke: TIMELINE_PAUSE_COLORS.stroke,
+          label: rect.width > label.length * LABEL_CHAR_PX + 8 ? label : null,
+        },
+      ];
+    }
     const failed = rect.item.status === 'failed';
     if (!failed && rect.width < hookMinWidth) return [];
     const width = failed ? Math.max(rect.width, failedHookMinWidth) : rect.width;
-    return [{ ...rect, width, stroke: timelineHookColors(rect.item.status).stroke }];
+    const fill = failed ? 'url(#timeline-hook-failed)' : 'url(#timeline-hook-passed)';
+    return [{ ...rect, width, paused: false, fill, stroke: timelineHookColors(rect.item.status).stroke, label: null }];
   });
 });
 
@@ -97,18 +126,27 @@ const testRect = computed(() => {
   };
 });
 
+/** Where a test bar's label starts: past the expand chevron when the bar has one. */
+const testLabelX = computed(() => (props.expandable ? props.x + 16 : props.x + 4));
+
 /**
  * A test bar's label: its duration, led by the attempt number when the test
- * ran more than once and the bar has room for both.
+ * ran more than once and the bar has room for both. None where a stop's band
+ * would cover it: the band carries its own label there.
  */
 const testLabel = computed<string | null>(() => {
   const time = formatTimelineTime(props.item.duration);
+  let text: string | null = props.width > 40 ? time : null;
   if (props.item.attemptKeys) {
     const room = props.width - (props.expandable ? 16 : 4) - 4;
-    const text = `Attempt ${(props.item.retries ?? 0) + 1} · ${time}`;
-    if (text.length * LABEL_CHAR_PX <= room) return text;
+    const attempt = `Attempt ${(props.item.retries ?? 0) + 1} · ${time}`;
+    if (attempt.length * LABEL_CHAR_PX <= room) text = attempt;
   }
-  return props.width > 40 ? time : null;
+  if (!text) return null;
+  const from = testLabelX.value;
+  const to = from + text.length * LABEL_CHAR_PX;
+  const covered = hookRects.value.some((rect) => rect.paused && rect.x < to && rect.x + rect.width > from);
+  return covered ? null : text;
 });
 
 /** Label text on a solid bar is white; on a retried attempt's pale wash it is the page's text color. */
@@ -342,7 +380,7 @@ function onTestClick(): void {
       </text>
       <text
         v-if="testLabel"
-        :x="expandable ? x + 16 : x + 4"
+        :x="testLabelX"
         :y="y + barHeight / 2 + 4"
         class="text-[10px] font-medium pointer-events-none"
         :class="testLabelClass"
@@ -350,25 +388,36 @@ function onTestClick(): void {
         {{ testLabel }}
       </text>
     </template>
-    <!-- Hook time over the test's bar: a wash hatched so it reads as not the test body. -->
-    <rect
-      v-for="rect in hookRects"
-      :key="rect.item.key"
-      :x="rect.x"
-      :y="y"
-      :width="rect.width"
-      :height="barHeight"
-      :rx="3"
-      :ry="3"
-      :fill="rect.item.status === 'failed' ? 'url(#timeline-hook-failed)' : 'url(#timeline-hook-passed)'"
-      :stroke="rect.stroke"
-      stroke-width="1"
-      :class="rect.item.testCaseId != null ? 'cursor-pointer' : 'cursor-default'"
-      data-timeline-hook
-      :data-status="rect.item.status"
-      @mouseenter="onHookEnter(rect.item, $event)"
-      @mouseleave="onHookLeave"
-      @click="onHookClick(rect.item)"
-    />
+    <!-- Hook time over the test's bar: a wash hatched so it reads as not the test body; a stop at the pause bar: a
+         pale band under upright stripes with a dashed edge, the time the test stood still. -->
+    <template v-for="rect in hookRects" :key="rect.item.key">
+      <rect
+        :x="rect.x"
+        :y="y"
+        :width="rect.width"
+        :height="barHeight"
+        :rx="3"
+        :ry="3"
+        :fill="rect.fill"
+        :stroke="rect.stroke"
+        stroke-width="1"
+        :stroke-dasharray="rect.paused ? '3 2' : undefined"
+        :class="rect.item.testCaseId != null ? 'cursor-pointer' : 'cursor-default'"
+        :data-timeline-hook="rect.paused ? undefined : ''"
+        :data-timeline-paused="rect.paused ? '' : undefined"
+        :data-status="rect.item.status"
+        @mouseenter="onHookEnter(rect.item, $event)"
+        @mouseleave="onHookLeave"
+        @click="onHookClick(rect.item)"
+      />
+      <text
+        v-if="rect.label"
+        :x="rect.x + 4"
+        :y="y + barHeight / 2 + 3.5"
+        class="fill-gray-800 text-[9px] font-medium pointer-events-none select-none"
+      >
+        {{ rect.label }}
+      </text>
+    </template>
   </g>
 </template>

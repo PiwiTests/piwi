@@ -651,7 +651,7 @@
         "piwi.breakpoints": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Pause the runs Piwi starts at the editor's breakpoints, in the browser, with the picker. A run with a breakpoint in a test or page object file runs headed and pauses before the locator action or assertion on that line, with Piwi's pause bar: **Resume**, **Step**, **Pick a locator**, **Finish**. A locator picked there replaces the one on the breakpoint's line. Needs `@piwitests/reporter` 0.48.0 or later."
+          "markdownDescription": "Pause the runs Piwi starts at the editor's breakpoints, in the browser, with the picker. A run with a breakpoint in a test or page object file runs headed and pauses before the call on that line that acts on, reads or checks the page (a navigation, a click, a key press, an assertion), with Piwi's pause bar: **Resume**, **Step**, **Pick a locator**, **Finish**. A locator picked there replaces the one on the breakpoint's line. Needs `@piwitests/reporter` 0.48.0 or later, and 0.60.0 or later to pause before calls other than locator actions and assertions."
         },
         "piwi.runNotifications": {
           "type": "string",

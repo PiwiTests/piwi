@@ -242,8 +242,8 @@ function normalizeStepParams(raw: unknown): Record<string, string | number | boo
   return count > 0 ? out : undefined;
 }
 
-/** Step-event category restricted to the values `extractTestStepEvents` emits. */
-export type StepEventCategory = 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait';
+/** Step-event category restricted to the values the step-event extractors emit. */
+export type StepEventCategory = 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait' | 'pause';
 
 /** A Playwright `{ file, line, column }` location as `file:line:col`; undefined without a file. */
 function locationText(location: { file?: unknown; line?: unknown; column?: unknown } | null | undefined) {
@@ -318,6 +318,67 @@ export function flattenSteps(steps: any[], depth = 0): FlatStep[] {
   return result;
 }
 
+/** A stretch of time a test stood stopped at Piwi's pause bar: its start in epoch ms and its length. */
+export interface PauseSpan {
+  startedAt: number;
+  duration: number;
+}
+
+/** The stops among a test's step events (`category: 'pause'`); none for anything else. */
+export function pauseSpans(events: unknown): PauseSpan[] {
+  if (!Array.isArray(events)) return [];
+  return events.filter(
+    (event): event is PauseSpan =>
+      !!event &&
+      typeof event === 'object' &&
+      (event as { category?: unknown }).category === 'pause' &&
+      Number.isFinite((event as PauseSpan).startedAt) &&
+      Number.isFinite((event as PauseSpan).duration),
+  );
+}
+
+function epochMs(value: unknown): number | null {
+  if (value instanceof Date) return value.getTime();
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * How long the test stood stopped while a span starting at `start` (epoch ms, or a `Date`) and lasting `duration` ran,
+ * in ms. Stops that overlap count once. Zero for a span without a start.
+ */
+export function pausedOverlap(start: unknown, duration: unknown, pauses: readonly PauseSpan[]): number {
+  const from = epochMs(start);
+  const length = typeof duration === 'number' && duration > 0 ? duration : 0;
+  if (from === null || length === 0 || pauses.length === 0) return 0;
+  const to = from + length;
+  const spans = pauses
+    .filter((p) => p.duration > 0)
+    .map((p) => [Math.max(from, p.startedAt), Math.min(to, p.startedAt + p.duration)] as const)
+    .filter(([a, b]) => b > a)
+    .sort((x, y) => x[0] - y[0]);
+  let ms = 0;
+  let reached = from;
+  for (const [a, b] of spans) {
+    const begin = Math.max(a, reached);
+    if (b > begin) ms += b - begin;
+    reached = Math.max(reached, b);
+  }
+  return ms;
+}
+
+/**
+ * A step's duration as the step statistics read it (the slowest step, the time in waits and navigations, a step's
+ * usual time): its duration less the time the test stood stopped at Piwi's pause bar while it ran. The step's own
+ * duration and start stay as Playwright measured them everywhere else.
+ */
+export function unpausedDuration(
+  step: { startTime?: unknown; duration?: unknown },
+  pauses: readonly PauseSpan[],
+): number {
+  const duration = typeof step.duration === 'number' && step.duration > 0 ? step.duration : 0;
+  return duration - pausedOverlap(step.startTime, duration, pauses);
+}
+
 /** Aggregated step performance data for a single test case */
 export interface StepMetrics {
   /** Flattened step list with categories */
@@ -339,28 +400,38 @@ export interface StepMetrics {
 /**
  * Collect step metrics (flat steps, slowest step, navigation stats) from a
  * Playwright step array. With the test's `errors`, the step errors the test
- * caught are marked `recovered`.
+ * caught are marked `recovered`. With the test's `pauses` (its stops at Piwi's
+ * pause bar), every figure reads each step's duration less the time the test
+ * stood stopped while it ran (`unpausedDuration`); the flat steps keep their
+ * measured durations, and a step that never finished keeps Playwright's `-1`.
  */
-export function collectStepMetrics(steps: any[], errors?: readonly TestErrorLike[] | null): StepMetrics {
+export function collectStepMetrics(
+  steps: any[],
+  errors?: readonly TestErrorLike[] | null,
+  pauses: readonly PauseSpan[] = [],
+): StepMetrics {
   const flatSteps = flattenSteps(steps);
   if (errors) markRecoveredSteps(flatSteps, errors);
-  const totalStepDuration = steps.reduce((sum: number, s: any) => sum + (s.duration || 0), 0);
+  const own = (s: { startTime?: unknown; duration: number }) =>
+    pauses.length > 0 && s.duration > 0 ? unpausedDuration(s, pauses) : s.duration;
+  const totalStepDuration = steps.reduce((sum: number, s: any) => sum + (own(s) || 0), 0);
 
   let slowestStep: { title: string; duration: number } | null = null;
   for (const s of flatSteps) {
-    if (!slowestStep || s.duration > slowestStep.duration) slowestStep = { title: s.title, duration: s.duration };
+    const duration = own(s);
+    if (!slowestStep || duration > slowestStep.duration) slowestStep = { title: s.title, duration };
   }
 
   const navSteps = flatSteps.filter((s) => s.category === 'navigation');
   const waitSteps = flatSteps.filter((s) => s.category === 'wait');
-  const waitTotalDuration = waitSteps.reduce((sum, s) => sum + (s.duration || 0), 0);
+  const waitTotalDuration = waitSteps.reduce((sum, s) => sum + (own(s) || 0), 0);
 
   return {
     steps: flatSteps,
     totalStepDuration,
     slowestStep,
     navigationCount: navSteps.length,
-    navigationTotalDuration: navSteps.reduce((sum: number, s) => sum + (s.duration || 0), 0),
+    navigationTotalDuration: navSteps.reduce((sum: number, s) => sum + (own(s) || 0), 0),
     waitTotalDuration,
     waitCount: waitSteps.length,
   };

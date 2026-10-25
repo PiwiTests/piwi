@@ -684,8 +684,8 @@ re-positions each drawn one. Keep every interaction proportional to what changed
   styles or a `:has(:hover)` rule, which restyle every shape on each hover.
 - Bar props stay referentially stable when nothing changed (`NO_LOCK_COLORS`, `NO_HOOKS`, `timelineStatusFill`); a
   fresh `[]` or `{}` per render re-renders every bar.
-- A test's hook sections are drawn by the test's own `TimelineBar`, not as bars of their own; only bars inside the
-  viewport's `renderRange` are drawn.
+- A test's hook sections and its stops at the pause bar (its `pause` step events) are drawn by the test's own
+  `TimelineBar`, not as bars of their own; only bars inside the viewport's `renderRange` are drawn.
 - The resource tracks (`TimelineResourceBand`) and the strips under each worker (`TimelineWorkerStrips`) build each
   path once in milliseconds and take the zoom from their group's `scale()` transform, so a zoom never rebuilds them.
   Their hover lives in its own reactive object, read only by `TimelineResourceTooltip` and `TimelineResourceCursor`.

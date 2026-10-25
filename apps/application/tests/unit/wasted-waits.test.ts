@@ -93,4 +93,13 @@ describe('computeWastedMs', () => {
     expect(computeWastedMs(null, ['*'])).toBe(0);
     expect(computeWastedMs([], ['*'])).toBe(0);
   });
+
+  test('leaves out the time the test stood paused at the pause bar while a wait ran', () => {
+    const paused: TestStepEvent[] = [
+      ...events,
+      { title: 'Click', category: 'pause', startedAt: 1002, duration: 1000, status: 'breakpoint' },
+    ];
+    expect(computeWastedMs(paused, DEFAULT_WASTED_WAIT_PATTERNS)).toBe(2000);
+    expect(computeWastedMs(paused, ['*'])).toBe(2000 + 78 + 1989);
+  });
 });

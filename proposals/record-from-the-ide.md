@@ -22,7 +22,8 @@ assignment, `~/.piwi/editor.json` for runs Piwi did not start, **End the test**,
 instance (`PIWI_ORIGIN=record`: the run reports as any run from the editor), and Part 8, item 4. Where the
 build differs from this text, the [docs](../apps/docs/features/editor-recording.md) and the code are right. The three
 spikes in the [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the
-repository.
+repository. The discovery file of Part 5 is now proposed in [`run-control.md`](run-control.md) as one file per editor
+service, `~/.piwi/editors/<pid>.json`, in place of the single `~/.piwi/editor.json`.
 
 **Summary.** VS Code users have a recorder: Microsoft's Playwright extension records into a new file or at the cursor,
 through Playwright's own code generator. Users of WebStorm, IntelliJ IDEA and Rider have none: JetBrains' Test

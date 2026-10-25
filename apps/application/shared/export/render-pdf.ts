@@ -34,6 +34,7 @@ import {
   diagnosisFacts,
   fmtBytes,
   fmtDuration,
+  fmtStepDuration,
   hasDiagnosis,
   OMISSION_REASONS,
   projectLabel,
@@ -711,7 +712,7 @@ async function renderCase(
       steps.map((step) => [
         { text: String(step.title ?? '') },
         { text: String(step.category ?? ''), color: COLORS.muted },
-        { text: fmtDuration(step.duration), font: b.mono },
+        { text: fmtStepDuration(step, d.pauses), font: b.mono },
       ]),
       [6, 2, 2],
     );

@@ -600,6 +600,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :aria-snapshot="ariaSnapshot"
           :subject="imageSubject"
           :cited="cited"
+          :pauses="testCase?.pauses ?? null"
         />
       </div>
 
