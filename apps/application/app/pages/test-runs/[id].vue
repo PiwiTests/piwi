@@ -439,25 +439,23 @@ onUnmounted(() => {
   disconnectStream();
 });
 
-// Throttled version for child components that don't need frame-perfect reactivity
+// Throttled version for child components that don't need frame-perfect reactivity.
+// It starts from the cases the page rendered with, so the server and the
+// browser render the same timeline, and each later frame takes the latest list.
 let rafId: number | null = null;
-const throttledTestCases = ref<TestCaseResult[]>([]);
+const throttledTestCases = ref<TestCaseResult[]>(displayTestCases.value);
 
-watch(
-  displayTestCases,
-  (val) => {
-    if (!import.meta.client) {
-      throttledTestCases.value = val;
-      return;
-    }
-    if (rafId !== null) return;
-    rafId = requestAnimationFrame(() => {
-      throttledTestCases.value = val;
-      rafId = null;
-    });
-  },
-  { immediate: true },
-);
+watch(displayTestCases, (val) => {
+  if (!import.meta.client) {
+    throttledTestCases.value = val;
+    return;
+  }
+  if (rafId !== null) return;
+  rafId = requestAnimationFrame(() => {
+    throttledTestCases.value = displayTestCases.value;
+    rafId = null;
+  });
+});
 
 // Display progress: the header counts, the count bar and the grouped list are
 // all derived from the same de-duplicated case list (one row per test, its
