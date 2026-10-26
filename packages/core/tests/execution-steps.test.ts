@@ -352,28 +352,28 @@ describe('bugReportFromExecution', () => {
   });
 
   test('chooses the option a select step kept in its options, and names the ones Replay cannot choose', () => {
-    const locator = "getByLabel('Domaine')";
+    const locator = "getByLabel('Country')";
     /** A `Select option` step as the reporter stores the params Playwright renders. */
     const select = (options: unknown[]) => {
       const [stored] = flattenSteps([{ title: 'Select option', subtitle: locator, params: { locator, options } }]);
       return body({ title: 'Select option', subtitle: locator, category: 'input', params: stored!.params });
     };
     const steps = [
-      select([{ valueOrLabel: 'ELEC' }]),
-      select([{ label: 'Gaz' }]),
-      select([{ value: 'GAZ' }]),
+      select([{ valueOrLabel: 'fr' }]),
+      select([{ label: 'Germany' }]),
+      select([{ value: 'es' }]),
       select([{ index: 2 }]),
-      select([{ valueOrLabel: 'ELEC' }, { valueOrLabel: 'GAZ' }]),
+      select([{ valueOrLabel: 'fr' }, { valueOrLabel: 'de' }]),
       select([{ valueOrLabel: 'x'.repeat(300) }]),
       body({ title: 'Select option', subtitle: locator, category: 'input', params: { locator } }),
     ];
     const { report, manualSteps } = convert(steps, null);
     expect(outline(report)).toEqual([
-      `selectOption ${locator} ELEC`,
-      `selectOption ${locator} Gaz`,
-      `selectOption ${locator} GAZ`,
+      `selectOption ${locator} fr`,
+      `selectOption ${locator} Germany`,
+      `selectOption ${locator} es`,
       `manual: Choose in \`${locator}\` the option at index 2`,
-      `manual: Choose in \`${locator}\` "ELEC" and "GAZ"`,
+      `manual: Choose in \`${locator}\` "fr" and "de"`,
       `manual: Choose in \`${locator}\` the option the test chose; the run does not keep which`,
       `manual: Choose in \`${locator}\` the option the test chose; the run does not keep which`,
     ]);
