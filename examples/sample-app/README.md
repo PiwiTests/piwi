@@ -74,28 +74,34 @@ feature its backend does not provide is skipped with the reason; `backends.ts` l
 | Route manifest: the routes the backend declares, so the Test Map names the ones no test reaches (`GET /api/orders`) | `route-manifest` | ✓ | ✓ |
 | Server spans on each request (`X-Piwi-Trace`) | `server-spans` | only for a probe | ✓ |
 | [Server probes](https://piwitests.dev/features/probes#server-probes): a signed fault applied inside the server | `server-probes` | ✓ | ✓ |
-| [Server coverage](https://piwitests.dev/features/server-coverage): the backend lines each test ran | `server-coverage`, `shop` | ✓ | |
+| [Server coverage](https://piwitests.dev/features/server-coverage): the backend lines each test ran | `server-coverage`, `shop` | ✓ | ✓ |
 | [Code reach](https://piwitests.dev/features/code-reach): the browser functions each test ran (`web/assets/*.js`) | every page spec | ✓ | ✓ |
-| [Combined coverage](https://piwitests.dev/features/combined-coverage): the backend's unit tests and the Playwright suite on one set of lines, split into a `front` and a `back` area | `npm run coverage:setup`, `npm run coverage:unit` | ✓ | |
+| [Combined coverage](https://piwitests.dev/features/combined-coverage): the backend's unit tests and the Playwright suite on one set of lines, split into a `front` and a `back` area | `npm run coverage:setup`, `npm run coverage:unit` | ✓ | ✓ |
 | Page inventory: the controls and links no test uses (the shop's **Orders** link) | every passing spec | ✓ | ✓ |
 | The API contract below | `api-contract` | ✓ | ✓ |
 
 The reporter options are in `playwright.shared.ts`: on top of the defaults, the page inventory, a video of a failing
-test, leak reports, and `coverage: { browser: 'functions', server: 'lines' }` (the server side only for a backend with
-coverage). `piwi.manifest.json` names the pages, so on the dashboard `/shop/orders` shows as declared and never
+test, leak reports, and `coverage: { browser: 'functions', server: 'lines' }`. Both backends run a coverage build:
+ASP.NET Core with `-p:PiwiCoverage=true`, Nitro with `PIWI_COVERAGE_BUILD=true`, which `backends/nitro/nitro.config.ts`
+sets. `piwi.manifest.json` names the pages, so on the dashboard `/shop/orders` shows as declared and never
 reached. The backend's route manifest adds its routes, so `GET /api/orders` shows the same, and so does `GET /api/before-all-marker`, which only a `beforeAll` hook calls.
 
 ### Combined coverage
 
-The backend's unit tests (`backends/aspnetcore.Tests`) call its services directly, and the Playwright suite drives
-them through the pages and the API. After `npm test` against ASP.NET Core:
+Each backend's unit tests (`backends/aspnetcore.Tests` with xUnit, `backends/nitro.tests` with Vitest) call its
+services directly, and the Playwright suite drives them through the pages and the API. After `npm test` against ASP.NET
+Core:
 
 ```bash
 npm run coverage:setup   # once: keep the coverage to the pages' scripts and the backend's sources, name the front and back areas
 npm run coverage:unit    # the unit tests on a coverage build, uploaded as the unit-back suite of this commit
 ```
 
-`coverage:unit` empties `backends/aspnetcore.Tests/TestResults/piwi-coverage/`, runs `dotnet test` with
+Against Nitro, after `npm run test:nitro`, run both with `SAMPLE_BACKEND=nitro`. `coverage:unit` then runs Vitest with
+its v8 coverage (`backends/nitro.tests/vitest.config.ts`) and uploads its LCOV report. The Playwright suite counts the
+lines of the Nitro coverage build, which are the statements Vitest counts, so both suites count on the same lines.
+
+Against ASP.NET Core, `coverage:unit` empties `backends/aspnetcore.Tests/TestResults/piwi-coverage/`, runs `dotnet test` with
 `-p:PiwiCoverage=true` and `PIWI_COVERAGE_OUTPUT` naming that directory, so each test host writes Piwi's run-level
 report in it at exit (`VSTEST_TESTHOST_SHUTDOWN_TIMEOUT` gives it the time), then `piwi coverage upload --suite
 unit-back` sends the reports (pass `--dry-run` to see what it would send). It stops with a message when no report was
