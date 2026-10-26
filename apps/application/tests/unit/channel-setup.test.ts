@@ -7,6 +7,7 @@ import {
   inspectChannelUrl,
   slackAppManifest,
   slackCreateAppUrl,
+  slackDelivery,
   suggestChannelName,
 } from '#shared/notifications/channel-setup';
 import { looksPrivateHost } from '#shared/utils/private-host';
@@ -91,6 +92,42 @@ describe('channelConfigProblem', () => {
     expect(channelConfigProblem('webhook', { url: 'https://example.com/hook' })).toBeNull();
     expect(channelConfigProblem('webhook', { webhookUrl: 'https://example.com/hook' })).toMatch(/URL/);
     expect(channelConfigProblem('browser', {})).toBeNull();
+  });
+});
+
+describe('a Slack channel posting through the Web API', () => {
+  test('a channel ID makes the delivery the Web API', () => {
+    expect(slackDelivery({ webhookUrl: SLACK })).toBe('webhook');
+    expect(slackDelivery({ token: 'xoxb-1', channelId: 'C0123456789' })).toBe('api');
+    expect(slackDelivery({ channelId: '  ' })).toBe('webhook');
+  });
+
+  test('needs a bot token and a channel ID', () => {
+    expect(channelConfigProblem('slack', { token: 'xoxb-1-2', channelId: 'C0123456789' })).toBeNull();
+    expect(channelConfigProblem('slack', { token: '', channelId: 'C0123456789' })).toMatch(/bot token/);
+    expect(channelConfigProblem('slack', { token: 'not-a-token', channelId: 'C0123456789' })).toMatch(/xoxb-/);
+    expect(channelConfigProblem('slack', { token: 'xoxb-1-2', channelId: '#general' })).toMatch(/channel ID/);
+  });
+
+  test('the app link asks for chat:write instead of an incoming webhook', () => {
+    expect(slackAppManifest('Piwi', 'api')).toMatchObject({
+      oauth_config: { scopes: { bot: ['chat:write', 'chat:write.public'] } },
+    });
+    const url = new URL(slackCreateAppUrl(undefined, 'api'));
+    const manifest = JSON.parse(url.searchParams.get('manifest_json')!) as ReturnType<typeof slackAppManifest>;
+    expect(manifest).toMatchObject({ oauth_config: { scopes: { bot: ['chat:write', 'chat:write.public'] } } });
+  });
+
+  test('explains Slack’s Web API refusals', () => {
+    const hint = (code: string) => channelDeliveryHint('slack', `Slack API refused the message: ${code}`);
+    expect(hint('invalid_auth')).toMatch(/token/);
+    expect(hint('token_revoked')).toMatch(/token/);
+    expect(hint('missing_scope')).toMatch(/chat:write/);
+    expect(hint('not_in_channel')).toMatch(/\/invite/);
+    expect(hint('channel_not_found')).toMatch(/ID/);
+    expect(hint('is_archived')).toMatch(/archived/);
+    expect(hint('msg_too_long')).toBeNull();
+    expect(channelDeliveryHint('slack', 'Slack API rate limit reached: retry in 30 s')).toMatch(/retries/);
   });
 });
 

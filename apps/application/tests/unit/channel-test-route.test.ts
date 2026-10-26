@@ -11,6 +11,7 @@ vi.mock('../../server/utils/notifications/channel-test', () => ({
     sent.count += 1;
   },
   rememberTestedDestination: () => {},
+  unsavedTestTarget: (type: string, config: Record<string, unknown>) => ({ type, config, secret: null }),
 }));
 
 vi.stubGlobal('defineRouteMeta', () => {});

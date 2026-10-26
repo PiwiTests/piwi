@@ -1,6 +1,7 @@
 /**
  * The new-channel form's setup helpers: the Slack app link pre-filled with the
- * Piwi manifest, a URL pasted under the wrong type offering the right one, a
+ * Piwi manifest, a Slack channel posting through the Web API with a bot token
+ * that is never sent back, a URL pasted under the wrong type offering the right one, a
  * test sent before saving (to a loopback address here, which the SSRF guard
  * refuses without any outside network), and a name suggested from the destination.
  */
@@ -25,11 +26,61 @@ async function pickType(page: Page, label: string) {
 
 test('the Slack steps link to an app pre-filled with the incoming-webhook scope', async ({ page }) => {
   await openForm(page);
-  await pickType(page, 'Slack webhook');
+  await pickType(page, 'Slack');
   const href = await page.getByRole('link', { name: 'Create a Slack app for Piwi' }).getAttribute('href');
   const url = new URL(href!);
   expect(url.origin + url.pathname).toBe('https://api.slack.com/apps');
   expect(JSON.parse(url.searchParams.get('manifest_json')!).oauth_config.scopes.bot).toEqual(['incoming-webhook']);
+});
+
+test('a Slack channel saved with a bot token shows its channel ID and never returns the token', async ({
+  page,
+  request,
+}) => {
+  const token = 'xoxb-e2e-0000-channel-form-secret';
+  const form = await openForm(page);
+  await pickType(page, 'Slack');
+  await form.getByRole('radio', { name: 'Bot token (Web API)' }).check();
+
+  const href = await form.getByRole('link', { name: 'Create a Slack app for Piwi' }).getAttribute('href');
+  const manifest = JSON.parse(new URL(href!).searchParams.get('manifest_json')!);
+  expect(manifest.oauth_config.scopes.bot).toEqual(['chat:write', 'chat:write.public']);
+
+  await page.getByTestId('slack-bot-token').fill(token);
+  await page.getByTestId('slack-channel-id').fill('#general');
+  await expect(form.getByText('Enter the channel ID')).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Save channel' })).toBeDisabled();
+
+  await page.getByTestId('slack-channel-id').fill('C0E2E000001');
+  await page.getByTestId('channel-name').fill('Slack bot channel-form');
+  await form.getByRole('button', { name: 'Save channel' }).click();
+  await expect(page.getByText('Slack Web API, channel C0E2E000001')).toBeVisible();
+
+  const res = await request.get('/api/channels');
+  expect(await res.text()).not.toContain(token);
+  const { items } = (await res.json()) as {
+    items: Array<{ id: number; name: string; config: Record<string, unknown> }>;
+  };
+  const channel = items.find((c) => c.name === 'Slack bot channel-form');
+  expect(channel?.config).toEqual({ channelId: 'C0E2E000001' });
+  await request.delete(`/api/channels/${channel!.id}`);
+});
+
+test('creating a Slack channel with a bot token returns it masked', async ({ request }) => {
+  const token = 'xoxb-e2e-0000-api-secret';
+  const res = await request.post('/api/channels', {
+    data: { name: 'Slack bot API', type: 'slack', config: { token, channelId: 'C0E2E000002' } },
+  });
+  expect(res.ok()).toBe(true);
+  expect(await res.text()).not.toContain(token);
+  const { channel } = (await res.json()) as { channel: { id: number; config: Record<string, unknown> } };
+  expect(channel.config).toEqual({ channelId: 'C0E2E000002' });
+  await request.delete(`/api/channels/${channel.id}`);
+
+  const refused = await request.post('/api/channels', {
+    data: { name: 'Slack bot no ID', type: 'slack', config: { token, channelId: 'general' } },
+  });
+  expect(refused.status()).toBe(400);
 });
 
 test('a Slack URL pasted under Teams offers to switch, keeping the URL', async ({ page }) => {
@@ -38,7 +89,7 @@ test('a Slack URL pasted under Teams offers to switch, keeping the URL', async (
   await page.getByTestId('teams-webhook-url').fill('https://hooks.slack.com/services/T000/B000/XXXX');
   await expect(page.getByTestId('channel-url-check')).toContainText('This is a Slack webhook.');
   await form.getByRole('button', { name: 'Switch to Slack' }).click();
-  await expect(form.getByRole('combobox').first()).toContainText('Slack webhook');
+  await expect(form.getByRole('combobox').first()).toContainText('Slack');
   await expect(page.getByTestId('slack-webhook-url')).toHaveValue('https://hooks.slack.com/services/T000/B000/XXXX');
   await expect(page.getByTestId('channel-url-check')).toContainText('Slack incoming webhook.');
 });

@@ -3,8 +3,13 @@ import { notificationChannels } from '../../database/schema';
 import { getRequestAccess, requireAuth, isAuthEnabled } from '../../utils/auth';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
 import { sanitizeChannelConfig } from '../../utils/channels';
-import { wasDestinationTested } from '../../utils/notifications/channel-test';
-import { CHANNEL_TYPES, channelConfigProblem, isDeliverableChannelType } from '#shared/notifications/channel-setup';
+import { unsavedTestTarget, wasDestinationTested } from '../../utils/notifications/channel-test';
+import {
+  CHANNEL_TYPES,
+  channelConfigProblem,
+  isDeliverableChannelType,
+  slackDelivery,
+} from '#shared/notifications/channel-setup';
 import { isAdministrator } from '#shared/permissions';
 import { z } from 'zod';
 
@@ -13,7 +18,7 @@ defineRouteMeta({
     tags: ['Notifications'],
     summary: 'Create a notification channel',
     description:
-      'Creates a new notification channel (`email`, `slack`, `teams` for a Microsoft Teams incoming webhook, `webhook` or `browser`). The destination is required: an email `address`, a `webhookUrl` for Slack and Teams, a `url` for a webhook. Webhook secrets are encrypted at rest, so a webhook `secret` answers HTTP 409 while `PIWI_SECRET_KEY` is unset. A channel whose destination the same user reached with `POST /api/channels/test` in the last few minutes is saved as verified. Administrators can create global channels; with authentication disabled every channel is global.',
+      'Creates a new notification channel (`email`, `slack`, `teams` for a Microsoft Teams incoming webhook, `webhook` or `browser`). The destination is required: an email `address`, a `webhookUrl` for Slack and Teams, a `url` for a webhook. A Slack channel can post through the Web API (`chat.postMessage`) instead of a webhook: give it the bot `token` (`xoxb-…`) and the `channelId`. Webhook secrets and Slack bot tokens are encrypted at rest and never returned, so a webhook `secret` or a Slack `token` answers HTTP 409 while `PIWI_SECRET_KEY` is unset. A channel whose destination the same user reached with `POST /api/channels/test` in the last few minutes is saved as verified. Administrators can create global channels; with authentication disabled every channel is global.',
     'x-required-permission': 'signed-in',
   },
 });
@@ -42,16 +47,21 @@ export default eventHandler(async (event) => {
   if (problem) throw apiError({ statusCode: 400, message: problem });
 
   // A destination this user's pre-save test just reached starts verified.
-  const secret = type === 'webhook' && typeof config.secret === 'string' && config.secret ? config.secret : null;
-  const verified = isDeliverableChannelType(type) && wasDestinationTested(String(user.id), { type, config, secret });
+  const verified =
+    isDeliverableChannelType(type) && wasDestinationTested(String(user.id), unsavedTestTarget(type, config));
 
   // Without auth there is no user row to own a channel — everything is global.
   const isGlobal = requestedGlobal || !isAuthEnabled(event);
 
-  // Encrypt webhook secret if present
+  // Credentials are stored encrypted: a webhook's signing secret, a Slack bot token.
   let storedConfig: Record<string, unknown> = { ...config };
   if (type === 'webhook' && typeof config.secret === 'string' && config.secret) {
     storedConfig = { ...config, secret: encryptSecret(config.secret, getEncryptionKey()) };
+  } else if (type === 'slack' && slackDelivery(config) === 'api') {
+    storedConfig = {
+      token: encryptSecret((config.token as string).trim(), getEncryptionKey()),
+      channelId: (config.channelId as string).trim(),
+    };
   }
 
   const db = await getDatabase();

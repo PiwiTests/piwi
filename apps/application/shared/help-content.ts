@@ -1005,7 +1005,7 @@ export const HELP_TOPICS = {
   },
   'notifications.channels': {
     title: 'Channels',
-    text: 'Destinations an alert can go to — browser, email, Slack, Microsoft Teams or webhook. Create a channel (the form shows where to get each URL, and can send a test first: a channel whose test went through is saved verified), then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
+    text: 'Destinations an alert can go to — browser, email, Slack (an incoming webhook, or a bot token posting through the Web API), Microsoft Teams or webhook. Create a channel (the form shows where to get each URL, and can send a test first: a channel whose test went through is saved verified), then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
     doc: 'features/notifications#channels',
   },
   'notifications.subscriptions': {

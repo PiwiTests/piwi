@@ -5,7 +5,12 @@ import { getRequestAccess, requireAuth } from '../../../utils/auth';
 import { decryptSecret, getEncryptionKey } from '../../../utils/crypto';
 import { deliverChannelTest } from '../../../utils/notifications/channel-test';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../../utils/rate-limit';
-import { channelDeliveryHint, isDeliverableChannelType, type ChannelType } from '#shared/notifications/channel-setup';
+import {
+  channelDeliveryHint,
+  isDeliverableChannelType,
+  slackDelivery,
+  type ChannelType,
+} from '#shared/notifications/channel-setup';
 import { isAdministrator } from '#shared/permissions';
 
 defineRouteMeta({
@@ -71,8 +76,10 @@ export default eventHandler(async (event) => {
       if (!owner?.email) throw new Error('Account has no email address');
       await deliverChannelTest({ type: 'email', config: { address: owner.email } });
     } else if (isDeliverableChannelType(type)) {
-      const encryptedSecret = typeof config.secret === 'string' ? config.secret : null;
-      const secret = type === 'webhook' && encryptedSecret ? decryptSecret(encryptedSecret, getEncryptionKey()) : null;
+      // The stored credential: a webhook's signing secret, or a Slack bot token.
+      const key = type === 'webhook' ? 'secret' : type === 'slack' && slackDelivery(config) === 'api' ? 'token' : null;
+      const encrypted = key && typeof config[key] === 'string' ? (config[key] as string) : null;
+      const secret = encrypted ? decryptSecret(encrypted, getEncryptionKey()) : null;
       await deliverChannelTest({ type, config, secret });
     }
 
