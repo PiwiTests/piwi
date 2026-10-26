@@ -31,7 +31,10 @@ coverage of that version ran a changed statement or a function around a changed 
 function or crossing from one into the next, coverage of another version or with no ranges, and an incomplete or
 unknown capture stay at file level. The MCP tool
 `get_impacted_tests` takes a diff and returns the same answer per file, with the changed lines no test ran. Not built
-yet: browser lines (PR 6), the Istanbul adapter (D13) and the rest of part 6. Each test's coverage is shown on the execution page and per file on a page of its own
+yet: browser lines (PR 6), the Istanbul adapter (D13) and the rest of part 6. Part 3b, added 2026-10-26 in answer to
+open question 5, proposes the same server coverage for Nitro and Nuxt backends (delivery PRs 9 and 10); nothing of it
+is built, and only its cost per call is measured.
+Each test's coverage is shown on the execution page and per file on a page of its own
 ([`test-coverage-view.md`](../adr/test-coverage-view.md)). The study's measurements came from
 a prototype built outside the repository, on Microsoft's eShopOnWeb reference application and on a small application
 written to spend its CPU in business logic (the **pricing application**). New wire fields, options and endpoints
@@ -344,6 +347,10 @@ than Chromium.
 | D11 | Line numbers (function ranges, executed lines) leave the machine only at the functions and lines granularities, which are opt-in; the files granularity, which `captureCodeReach` maps to, keeps sending paths only. Never source code, never hit counts. | The privacy page promises "never source code, coverage counts or line numbers" to today's users; that promise holds for them and changes only for those who choose more. |
 | D12 | The code index and the reach answers gain `runtime` (`browser`, `server`) and `via` (`coverage`, `route`); `origin` stays as an alias until 1.0 (`client` for browser coverage, `server` for any server reach). | `origin: 'server'` means "inferred from the route" today; measured server coverage needs its own value without breaking the editors. |
 | D13 | When a page exposes Istanbul's `window.__coverage__`, the reporter reads it at the end of the test, in any browser; for the files it covers, its counters replace V8's, and on Chromium V8's function coverage still covers the rest. | An instrumented build signals itself; it covers other browsers than Chromium, gives lines and branches, and costs less than V8 block coverage when the framework is the hot code. |
+| D14 | A Nitro backend serves the contract of part 3 unchanged: the `X-Piwi-Coverage` header, the two endpoints and their answers (part 3b). | The reporter, the wire, the tables and every consumer take a Node backend with no change. |
+| D15 | Nitro coverage comes from a coverage transform added to the server build (`PIWI_COVERAGE_BUILD=true`) that looks the request up once per function call through `AsyncLocalStorage`, not from V8's coverage. | V8's counters are per process: two snapshots around a request include what concurrent requests ran, and a page load always sends concurrent requests. |
+| D16 | The transform counts the statements and functions `istanbul-lib-instrument` counts, and writes their original lines and the source's checksum into a span table at build time. | A file's executable lines then match Vitest's for the same file (checked under Verification), which [`combined-code-coverage.md`](../adr/combined-code-coverage.md) counts against them (its D5), and no source map is read at run time. |
+| D17 | A module's top-level code records at run level; a request the server makes to itself records into the outermost request. | Nitro loads a route's chunk on its first request, and the browser receives only the outermost response. |
 
 ## Part 1: the model, the wire and the tables
 
@@ -465,6 +472,163 @@ read as the repository root). Files under `obj/` and generated sources are dropp
   'lines' }`, with `PIWI_COVERAGE_BROWSER` and `PIWI_COVERAGE_SERVER`. `files` costs what `functions` costs and sends
   paths only; `captureCodeReach: true` stays as an alias of `browser: 'files'`. At run end the reporter also fetches
   `/__piwi/coverage/run` for `run_coverage`.
+
+## Part 3b: server capture (Nitro and Nuxt)
+
+This part answers open question 5 (2026-10-26). A Nitro backend serves the contract of part 3 unchanged: the
+`X-Piwi-Coverage` header, `POST /__piwi/coverage/collect`, `GET /__piwi/coverage/run` and the same answers (D14). The
+reporter, the wire, the tables and every consumer then take it with no change; only the backend side is new, in
+`@piwitests/instrumentation-nitro`: a **coverage transform** in its module (the build step that inserts the markers
+into the server's JavaScript, the role the C# compiler plays in part 3) and a recorder in its plugin. Not built. Unlike
+the rest of this study, only the cost per call is measured (a micro-benchmark, [Appendix A](#appendix-a-measurements));
+the end-to-end cost is measured with delivery PR 9.
+
+### 3b.1 Why V8's own coverage cannot attribute
+
+V8 keeps one set of counters per isolate. `Profiler.takePreciseCoverage`, through `node:inspector`, `NODE_V8_COVERAGE`
+or `c8`, reads and resets them for the whole process. Two snapshots around a request also count what every other
+request in flight ran meanwhile, and a single page load sends several requests at once (the page, its `useFetch`
+calls, its API calls), so even one Playwright worker makes requests overlap. Each snapshot also walks every function
+of every loaded script, the framework and `node_modules` included. V8's coverage remains the right tool for one
+report of the whole run, not for per-test attribution.
+
+| Option | Per-test under parallel workers | Notes |
+|---|---|---|
+| V8 precise coverage (`node:inspector`, `NODE_V8_COVERAGE`, `c8`) | No: one set of counters per process | Exact for the run; per request only when requests never overlap, which a page load breaks. |
+| `istanbul-lib-instrument` as it is | No: one counter object per file per process (`cov_<hash>()`) | Making that object per request means a request lookup at every statement. |
+| One backend per Playwright worker, a V8 snapshot per test | Yes | One backend to start per worker, and a snapshot of every loaded function per test. |
+| **A coverage transform that looks the request up once per function call** | **Yes** | The scheme of part 3, written in JavaScript. |
+
+### 3b.2 The transform
+
+The package's Nitro module (`@piwitests/instrumentation-nitro/module`, already used for the route table) adds a Rollup
+plugin to the server build when `PIWI_COVERAGE_BUILD=true` is set at build time (D15). Nitro builds the server with
+Rollup both in development (`nitro dev`) and for production, so one plugin covers both.
+
+- **What it instruments**: the modules Rollup inlines in the server bundle, under the repository root, outside
+  `node_modules` and outside generated code (`.nuxt/`, `.nitro/`, `.output/`, virtual modules). A dependency Nitro
+  keeps external is never transformed. Include and exclude globs, matched like coverlet's `ExcludeByFile`, narrow it.
+- **Where in the build**: after Nitro's esbuild step, so the plugin reads JavaScript, never TypeScript, and
+  `this.getCombinedSourcemap()` maps each position back to the original file. A coverage build turns Nitro's
+  `sourceMap` option on so that map exists.
+- **What it inserts**, in substance, in each function (declarations, expressions, arrows, methods, getters and setters,
+  class field initializers):
+
+  ```js
+  import { __piwiModule } from '@piwitests/instrumentation-nitro/coverage-runtime';
+  const __pm = __piwiModule('9c4e1f0a', [4]);       // the file's id, the payload length of each function
+
+  export function quote(items) {
+    const __p = __pm.f(0); __p[0] = 1;              // the function was entered
+    __p[1] = 1; let total = 0;                      // before each statement
+    for (const item of items) { __p[2] = 1; total += price(item); }
+    __p[3] = 1; return total;
+  }
+  ```
+
+  Each function writes into a **payload**, a `Uint8Array` playing the part of the compiler's `bool[]`: entry 0 means
+  the function was entered, each other entry one statement. Which statements and functions count follows
+  `istanbul-lib-instrument`'s visitor (BSD-3-Clause, adapted as Roslyn's span table reader is in part 3), the
+  statements Vitest's coverage also counts, through `ast-v8-to-istanbul`: a file's executable lines should then match
+  Vitest's for it, which the verification checks (D16). Branches and hit counts are not recorded.
+- **The span table**: the build writes, beside the server entry (`.output/server/piwi-coverage.json`, under
+  `.nitro/dev/` in development), each instrumented file's repository-relative path, the sha256 of its source (the
+  `checksums` the reporter already checks), and, per function, its line range and the lines of each statement in the
+  original file. The bundle itself carries only the file id and the payload lengths; the recorder reads the table when
+  an endpoint first answers. No source map is read at run time.
+- **Line conversion** applies D9: a statement whose span encloses a function counts its own lines, and the function's
+  lines only once the function ran. `export default defineEventHandler(async (event) => { … })` is one statement that
+  spans the whole file; without the rule, loading the file would mark every line as run.
+
+### 3b.3 Attribution
+
+`__pm.f(i)` returns function `i`'s payload for the request being served, found through the plugin's
+`AsyncLocalStorage` (the store the log capture already uses, `integrations/nitro/src/index.ts`), or the shared payload
+outside a request. It runs once per call, at entry; the statements then write into a local variable.
+
+- **Every function looks the request up itself**, so a handler created when its module loads and called by a request
+  records into that request: part 3's gap on lambdas created outside a request does not exist here.
+- **An `async` function keeps the payload of the call that started it** across its `await`s. A callback a request
+  schedules (a promise, `setTimeout`, `event.waitUntil`) runs in that request's async context and records into it.
+- **A module's top-level code** records at run level, always (D17). Nitro loads a route's chunk on the route's first
+  request; without the rule, the first test to reach a route would own the module's initialization.
+- **A request the server makes to itself** (`$fetch` or `useFetch` during server rendering, which Nitro serves in the
+  same process) records into the outermost request, whose response the browser receives (D17). The plugin already
+  nests its log and span stores that way.
+- **Work after collection**: once a request is collected, what it still runs (a promise not awaited) records at run
+  level.
+- In `run` mode (`PIWI_COVERAGE_MODE=run`, as in part 3), `__pm.f` is never called: the inserted code reads the shared
+  payload from a module constant.
+
+### 3b.4 The plugin
+
+The plugin (`export { default } from '@piwitests/instrumentation-nitro'` in `server/plugins/`) serves coverage under
+the guard it already applies to logs and the route manifest: `NODE_ENV` set to `development` or `test`, or
+`PIWI_TEST_LOGS_DISABLED=false`.
+
+- **The header**: `X-Piwi-Coverage: <process key>.<sequence>.<secret>`, the .NET format, set when the response starts
+  and only when instrumented code ran for the request, so a static asset gets none. The plugin sets its headers in a
+  `res.end` patch today; the coverage header goes through `res.writeHead`, which `write` and `end` both reach, so a
+  streamed response is named too.
+- **The endpoints**: `POST /__piwi/coverage/collect` and `GET /__piwi/coverage/run`, beside `/__piwi/manifest`, with the
+  ASP.NET Core package's answers, limits and eviction (1 MB and 10,000 ids per call; 5,000 kept requests and about
+  64 MB, the oldest evicted first; `instance` naming the process).
+- **Run-level executable lines** come from the span table, so they cover every file in the bundle, including routes no
+  request loaded.
+- **Guards**, as D10: in a coverage build, the plugin throws at startup when `NODE_ENV` is `production` and coverage is
+  not explicitly enabled, and logs a warning in any other environment it is not active in.
+  `PIWI_COVERAGE_FORBIDDEN=true` at build time makes a coverage build fail, for a production pipeline to set.
+
+### 3b.5 Nuxt
+
+A Nuxt application has two server bundles:
+
+- **Its `server/` directory** (API routes, middleware, server plugins, `server/utils`), built by Nitro: covered by the
+  module above, listed under `nitro.modules`, with the plugin in `server/plugins/`. First step.
+- **Its Vue application rendered on the server** (pages, components, composables, plugins), built by Vite's server
+  build, which Nitro then bundles as it is. The same transform, added as a Vite plugin by a Nuxt module
+  (`addVitePlugin(…, { client: false })`, after Vite's own transforms so a `.vue` file maps to its own lines), records
+  it with `runtime: 'server'`. The same files' browser side stays with code reach (`runtime: 'browser'`). Second step.
+
+### 3b.6 What it costs
+
+Per call, measured on a micro-benchmark of the code the transform would insert: 50 million calls of a small function
+in one loop, each variant in its own process, medians of 5 runs.
+
+| Call | Node 22.22 | Node 24.11 |
+|---|---|---|
+| Small function, not instrumented | 1.1 ns | 0.9 ns |
+| `run` mode | 1.1 ns | 1.1 ns |
+| `test`, outside a request | 3.9 ns | 4.6 ns |
+| `test`, functions, inside a request | 5.5 ns | 11.3 ns |
+| `test`, lines, inside a request | 6.1 ns | 12.7 ns |
+| `test`, lines, after an `await` | 9.7 ns | 13.1 ns |
+| Getter, not instrumented | 0.7 ns | 0.4 ns |
+| Getter, `test`, inside a request | 5.1 ns | 12.5 ns |
+
+- **The cost of `test` is the request lookup at entry**, not the statement markers: recording only functions costs
+  about what recording lines costs, as on .NET.
+- **`run` mode costs nothing measurable** once the payload is a module constant.
+- **Node 24 reads `AsyncLocalStorage` through `AsyncContextFrame`**, its default: twice the cost per lookup of Node 22
+  in this loop, but no promise hooks, which Node 22 runs on every promise once a store is in use (the log capture
+  already pays that today).
+- **With inlining turned off** (`--max-inlined-bytecode-size=0`), the bound for code V8 does not inline: lines inside
+  a request cost 14.8 ns per call against 4.0 ns on Node 22, and 18.9 ns against 4.4 ns on Node 24. The .NET recorder
+  costs 15.6 ns to 17.7 ns per call and stayed under 2% of test time on eShopOnWeb.
+- **Not measured yet**: the end-to-end cost on a Playwright suite, the server CPU of an application whose CPU goes to
+  its own code (the pricing application's case), and how much the transform grows the bundle.
+
+### 3b.7 Known gaps
+
+- **Code the build does not inline**: a dependency Nitro keeps external, including a workspace package it resolves
+  through `node_modules`, is covered only once listed in Nitro's `externals.inline`.
+- **Callbacks that lose the async context**: a library that queues callbacks without `AsyncResource` (some connection
+  pools) runs them outside any request, so the application code they call records at run level. The log capture has
+  the same gap today.
+- **Generators** record into the request that created them, even when another request resumes them.
+- **Server-to-server calls** to another process count only if that server forwards the header, as on .NET.
+- **Runtimes other than Node**: the recorder needs Node's `AsyncLocalStorage`; Bun, Deno and the edge presets are not
+  covered.
 
 ## Part 4: consumers
 
@@ -607,8 +771,8 @@ surface: the code of each feature, executed or not. Two consequences:
 - **Coverage is as fresh as the last run that captured it.** On a scheduled job, a test's coverage can be a day old;
   suspect lines and impact say which run the coverage came from.
 - **What the capture cannot see**: calls behind a
-  front-end server that does not forward the header, other browsers than Chromium, Node backends until they implement
-  the same contract, and the startup lambdas of part 3.
+  front-end server that does not forward the header, other browsers than Chromium, Node backends until part 3b is
+  built (and those it does not cover, part 3b.7), and the startup lambdas of part 3.
 
 ## Delivery
 
@@ -622,6 +786,8 @@ surface: the code of each feature, executed or not. Two consequences:
 | 6 | Browser lines: block coverage to lines | 2, 3 |
 | 7 | Consumers: line-level impact, uncovered changed lines, gate, `get_coverage`, LCOV and Cobertura export | 3 |
 | 8 | Editors: the coverage index, line marks, function lens, hover, `.cs`, coverage on local runs | 3 |
+| 9 | Nitro (part 3b): the transform in the module, the recorder and the endpoints in the plugin, the sample application's Nitro backend built for coverage, tests (attribution under concurrency, each function form, D9, D17), the end-to-end cost, the docs and the `1.0-stabilization.md` entries for `PIWI_COVERAGE_BUILD` and `PIWI_COVERAGE_FORBIDDEN` | 5 |
+| 10 | Nuxt (part 3b.5): the Vue server build through a Vite plugin | 9 |
 
 PR 2 is worth shipping alone: it cuts the cost of today's code reach with no change in what it finds. Each PR carries
 its docs (`code-reach.md`, `backend-logs.md`, `privacy.md`, the reporter options reference).
@@ -635,6 +801,11 @@ its docs (`code-reach.md`, `backend-logs.md`, `privacy.md`, the reporter options
 - **Cost**: the eShopOnWeb suite and the pricing application, kept as a benchmark job like `reporter:bench`, comparing
   the levels on the same machine; the browser bench gains a function-coverage variant.
 - **Cross-runtime**: one test that reaches a Razor page and its JavaScript records both runtimes in one `coverage`.
+- **Nitro** (part 3b): the attribution check against the sample application's Nitro backend
+  (`examples/sample-app/backends/nitro`), with requests that nest (`$fetch` from a handler) and that continue after the
+  response; on a few TypeScript files, the span table's executable lines compared with Vitest's (v8 provider); the
+  end-to-end cost on the sample suite and on a Nuxt application, with the backend built with and without the
+  transform.
 
 ## Risks
 
@@ -661,9 +832,9 @@ its docs (`code-reach.md`, `backend-logs.md`, `privacy.md`, the reporter options
    rewriting.
 4. ~~Should a per-test `request` fixture wrapper (API tests) land with PR 5, or with the API shapes plan?~~ Answered
    2026-10-14: neither; it shipped on its own, before the API shapes plan, which builds on it.
-5. Node backends (Nitro): V8's own coverage is per process, so per-request attribution needs a build-time transform
+5. ~~Node backends (Nitro): V8's own coverage is per process, so per-request attribution needs a build-time transform
    whose counters read `AsyncLocalStorage`. The model, the header and the endpoints of this plan are runtime-neutral;
-   should the Nitro package follow the same contract?
+   should the Nitro package follow the same contract?~~ Answered 2026-10-26: yes, part 3b (D14 to D17).
 
 ## Not in this plan
 
@@ -691,6 +862,11 @@ cores (`taskset -c 0,1`), the load generator or Playwright and Chromium to the o
 - **End to end**: the 14-test eShopOnWeb suite above, `--repeat-each=5`, 2 workers, 4 rounds, rotated; collection
   inside the fixture's teardown.
 - **Isolation**: 300 requests across three pages over 16 connections, each request id collected alone.
+- **Per call, Node** (part 3b): the code the transform would insert, written by hand around a 4-statement function
+  and a getter; 50 million calls in one loop after two warm-up loops, each variant in its own process so the loop's
+  call site stays monomorphic, 5 runs, medians; Node 22.22.0 and 24.11.1, default flags, then with
+  `--max-inlined-bytecode-size=0 --max-inlined-bytecode-size-small=0`. At default flags, V8 sometimes left the
+  uninstrumented function on Node 24 not inlined (5.5 ns, 2 runs of 5); the median is the inlined case.
 - **Browser**: 8 rounds, the first discarded, one new context per run, medians; the functions check compared, per
   script URL and start offset, the functions with a count above zero in each mode.
 
