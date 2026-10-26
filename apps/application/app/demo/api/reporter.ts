@@ -96,7 +96,13 @@ import {
   assignFailureClusters,
   type PendingCluster,
 } from '#shared/handlers/failure-cluster-ops';
-import type { StreamEventPayload, TestRunFinishPayload, TestRunStartPayload } from '#shared/types';
+import type {
+  StreamEventPayload,
+  TestRunFinishPayload,
+  TestRunStartPayload,
+  WireLiveResourcesAnswer,
+} from '#shared/types';
+import { sanitizeLiveResources } from '#shared/live-resources';
 import { demoHttpError } from './http-error';
 import { sanitizeExecutionResources, sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
@@ -999,6 +1005,27 @@ export async function apiHeartbeatTestRun(id: number, body: { streamToken?: stri
   await db.update(testRuns).set({ updatedAt: new Date() }).where(eq(testRuns.id, id));
 
   return { success: true, watched: DEMO_RUN_WATCHED };
+}
+
+/**
+ * POST /api/test-runs/:id/live-resources: the demo keeps nothing between
+ * posts, so its simulator sends every point each time (`reset`) and each post
+ * reaches the run page as it is.
+ */
+export async function apiLiveResourcesTestRun(
+  id: number,
+  body: { streamToken?: string } & Record<string, unknown>,
+): Promise<WireLiveResourcesAnswer> {
+  const db = await getDemoDb();
+  const [testRun] = await db.select().from(testRuns).where(eq(testRuns.id, id));
+  if (!testRun) throw demoHttpError(404, 'Test run not found');
+  const shardTokenSet = demoShardTokens.get(id) ?? readShardTokensFromMeta(testRun.metadata);
+  const isValidShardToken = body.streamToken ? shardTokenSet?.has(body.streamToken) : false;
+  await validateAndReviveDemoRun(db, testRun, body.streamToken, !!isValidShardToken);
+  const post = sanitizeLiveResources(body);
+  if (!post) throw demoHttpError(400, 'The post carries no resource series');
+  publishDemoRunEvent(id, { type: 'resources', data: { ...post } });
+  return { watched: DEMO_RUN_WATCHED };
 }
 
 /** POST /api/test-runs/:id/finish (demo mode has no pending uploads) */

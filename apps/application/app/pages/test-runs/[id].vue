@@ -12,6 +12,9 @@ import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStream } from '~/composables/useRunStream';
 import { summarizeRunCases } from '#shared/utils/test-counts';
+import { applyLiveResourcesToParts } from '#shared/live-resources';
+import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
+import type { WireLiveResources } from '#shared/types';
 
 const route = useRoute();
 const router = useRouter();
@@ -59,6 +62,10 @@ const liveTestCaseKeys = new Map<string, true>();
 // events; nothing is persisted from them). Rendered inline on the matching
 // running rows in the test-case views.
 const liveSteps = ref<LiveStepsByWorker>({});
+// What the run's reporters measured so far (CPU, memory, open pages), one part
+// per reporter, from the stream's `resources` events. The workers timeline
+// draws them while the run is live, and the stored report once it ended.
+const liveResources = ref<RunResourceTimelinePart[]>([]);
 let eventSource: EventSource | null = null;
 
 // Combined test cases: from server data + live stream. Includes every attempt
@@ -299,6 +306,8 @@ function flushPendingEvents() {
           parentTitle: d.parentTitle ?? null,
         },
       };
+    } else if (parsed.type === 'resources') {
+      liveResources.value = applyLiveResourcesToParts(liveResources.value, data as unknown as WireLiveResources);
     } else if (parsed.type === 'run-finalizing') {
       // Tests are done, reports/traces are uploading — show progress bar
       isFinalizing.value = true;
@@ -924,6 +933,7 @@ const moreMenuItems = computed(() => {
               :wasted-patterns="testRun?.wastedWaitPatterns ?? null"
               :run-id="Number(runId)"
               :has-resources="testRun?.hasResources ?? false"
+              :live-resources="liveResources"
               @select-test-case="handleSelectTestCase"
             />
             <RunTimelineExtras

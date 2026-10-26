@@ -33,6 +33,8 @@ const props = defineProps<{
   runId?: number | null;
   /** Whether a reporter of the run sent resources; the tracks are fetched only then, once the run ended. */
   hasResources?: boolean;
+  /** What the run's reporters measured so far, drawn while the run is live. */
+  liveResources?: RunResourceTimelinePart[] | null;
 }>();
 
 const emit = defineEmits<{
@@ -71,21 +73,25 @@ const modelInput = {
 const { timelineData, workerRows, laneCount, maxTime, origin, runLocks } = useTimelineModel(modelInput);
 
 // The resources each reporter measured over time, and what each execution
-// cost, fetched once the run ended.
-const resourceParts = ref<RunResourceTimelinePart[]>([]);
+// cost: while the run is live, what its reporters posted so far; once it
+// ended, the stored report, and what was posted live until it loads.
+const storedParts = ref<RunResourceTimelinePart[]>([]);
+const resourceParts = computed(() =>
+  props.live || storedParts.value.length === 0 ? (props.liveResources ?? []) : storedParts.value,
+);
 const executionCosts = ref<RunExecutionCost[]>([]);
 async function loadResources(): Promise<void> {
   if (!props.runId || props.live || !props.hasResources) {
-    resourceParts.value = [];
+    storedParts.value = [];
     executionCosts.value = [];
     return;
   }
   try {
     const res = await $fetch<RunResourceTimeline>(`/api/test-runs/${props.runId}/resource-timeline`);
-    resourceParts.value = res.parts ?? [];
+    storedParts.value = res.parts ?? [];
     executionCosts.value = res.executions ?? [];
   } catch {
-    resourceParts.value = [];
+    storedParts.value = [];
     executionCosts.value = [];
   }
 }
@@ -111,6 +117,22 @@ const resourceBands = computed<ResourceBand[]>(() =>
     ? []
     : buildResourceBands(resourceParts.value, workerRows.value, origin.value, sharded.value),
 );
+
+/**
+ * Where the plot ends: the last test's end, and while the run is live, the
+ * last resource point read, so what the running tests use shows too.
+ */
+const plotEnd = computed(() => {
+  let end = maxTime.value;
+  if (!props.live) return end;
+  for (const band of resourceBands.value) {
+    for (const track of Object.values(band.tracks)) end = Math.max(end, track?.points.at(-1)?.[0] ?? 0);
+    for (const tree of band.sampled) {
+      end = Math.max(end, tree.cpuCores.at(-1)?.[0] ?? 0, tree.memoryBytes.at(-1)?.[0] ?? 0);
+    }
+  }
+  return end;
+});
 
 /** The tracks the header offers: those some band has data for, with whether they are shown. */
 const resourceTrackOptions = computed(() =>
@@ -300,7 +322,7 @@ const {
   zoomToRange,
 } = useTimelineViewport({
   containerRef,
-  maxTime,
+  maxTime: plotEnd,
   rowCount,
   hasData,
   live: () => props.live,
@@ -434,7 +456,7 @@ watch([bandLayout, workerStrips], ([layout, strips]) => {
 });
 
 function moveResourceHover(t: number, event: MouseEvent): void {
-  resourceHover.t = Math.max(0, Math.min(maxTime.value, t));
+  resourceHover.t = Math.max(0, Math.min(plotEnd.value, t));
   resourceHover.pos = { x: event.clientX, y: event.clientY };
 }
 
@@ -578,7 +600,7 @@ function onResourceLeave(): void {
           :tracks="entry.tracks"
           :y="bandTop(entry)"
           :px-per-ms="pxPerMs"
-          :plot-width="maxTime * pxPerMs"
+          :plot-width="plotEnd * pxPerMs"
           @hover="onResourceHover"
           @leave="onResourceLeave"
         />
@@ -588,7 +610,7 @@ function onResourceLeave(): void {
           :set="workerStrips"
           :strip-top="stripTop"
           :px-per-ms="pxPerMs"
-          :plot-width="maxTime * pxPerMs"
+          :plot-width="plotEnd * pxPerMs"
           @hover="onStripHover"
           @leave="onResourceLeave"
         />
