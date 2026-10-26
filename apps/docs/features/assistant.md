@@ -22,7 +22,9 @@ the command palette (`Ctrl` + `K`) and pick **Ask Piwi**. The palette, and an em
 
 From 1280 px wide the panel docks on the right and the page narrows beside it; below 1536 px it folds the sidebar to
 its icons until it closes. Drag its left edge to widen it, or float it over the page with the panel icon in its
-header; the browser remembers both. On a narrower window it opens over the page, full screen on a phone.
+header; the browser remembers both. Narrower, it opens over the page, full screen on a phone.
+
+![The assistant docked beside Home, the field offering the next question](/screenshots/assistant-docked.png)
 
 Each question carries the page it was asked on: its address, tab, filters, project and the parts a guide can point
 at, so "Why did this fail?" on an execution needs no ids. The clock lists your conversations; the pen starts a new
@@ -30,8 +32,8 @@ one.
 
 The answer streams in, with a line for each tool it calls. **Stop** ends it, keeping what it wrote; an answer that
 stopped or failed offers **Try again**. In the question field ([keys](/reference/keyboard-shortcuts#assistant-panel)),
-`↑` brings back earlier questions and `→` takes the suggested one shown greyed: the model's, sent with its answer for
-a few dozen tokens, else the page's. What you type stays when the panel closes.
+`↑` brings back earlier questions and `→` takes the suggested one: the model's (a few dozen tokens), else the
+page's. What you type stays when the panel closes.
 
 The [live demo](https://piwitests.dev/demo/) has no model: it answers the prepared questions **Ask about this page**
 lists, computed from its sample data in your browser, and offers them and the authored guides for any other question.
@@ -127,9 +129,11 @@ limit the model is asked to answer with what it has. Deleting a conversation doe
 `PIWI_AI_ASSISTANT_*` variables in the [configuration reference](/reference/configuration#assistant) change the
 limits, and **AI usage** on Settings → AI counts the assistant's answers apart from diagnoses.
 
-The gauge under the question field shows the share spent of the cap that binds first, yours or the instance's, and
-when it frees up; a line warns from 80%, and a spent cap stops the field from asking. With the Claude Code CLI on a
-Claude subscription, it also shows the subscription's 5-hour or weekly window as the CLI last reported it.
+The gauge under the question field opens the cap that binds first, yours or the instance's, with when it frees up,
+and with the Claude Code CLI on a Claude subscription its 5-hour or weekly window. A line warns from 80%; a spent cap
+stops the field from asking.
+
+![The question field warning at 85% of the daily allowance](/screenshots/assistant-input.png)
 
 ## Turning it off
 

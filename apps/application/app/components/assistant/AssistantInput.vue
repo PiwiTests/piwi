@@ -125,7 +125,13 @@ defineExpose({ focus, focused });
 </script>
 
 <template>
-  <form class="w-full space-y-1.5" data-assistant-input data-tour="assistant-input" @submit.prevent="submit">
+  <form
+    class="w-full space-y-1.5"
+    data-assistant-input
+    data-tour="assistant-input"
+    data-shot="assistant-input"
+    @submit.prevent="submit"
+  >
     <p
       v-if="usage.blocked || usage.warning"
       role="status"
