@@ -112,8 +112,13 @@ tools, and each finding's history on the Resources tab. What changed while build
 **Part of PR 7 built 2026-10-02 and 03** (optional): each worker row of the run's timeline draws its sampled CPU,
 memory and open pages, and the Resources tab's open pages point at it. **Live bands built 2026-10-26**: while a run
 is open on the dashboard, the same bands and strips fill in as it runs, instead of waiting for its end, and each
-running test on the Tests tab shows its worker's last cores, memory and open pages beside its step (D13). Not
-built: the leak tails, the pressure strip and the failure timeline's `resources` lane. PRs 5 and 6 are not started.
+running test on the Tests tab shows its worker's last cores, memory and open pages beside its step (D13). **The
+failure timeline's resource rows built 2026-10-26**: a failed execution's Timeline tab draws, behind a **Resources**
+switch kept per browser and off by default, the CPU and memory of the worker that ran it with its browsers and the
+pages open in that worker, sliced from the run's stored report (`shared/timeline-resources.ts`), with the pages
+earlier tests left open and its browsers' wait for a CPU. Not built: the leak tails, the pressure strip, the
+machine's CPU on the failure timeline, and the lane of the births and closes inside the test. PRs 5 and 6 are not
+started.
 
 **Detection extended 2026-10-26**, measured on a 60-test suite on one worker before each rule was set:
 

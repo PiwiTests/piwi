@@ -832,6 +832,7 @@ export const HELP_TOPICS = {
       '- **The table below** reads it in time order: a step with parameters opens them from its title, and a request or console entry opens on its own tab.',
       '- **The failed step** is the one that raised the test’s own error. An error the test caught and went on from (a probe in a try/catch, a retried `toPass` attempt) is greyed out and marked as caught.',
       '- **Paused** — a stop at an editor breakpoint, a band over the lanes. Every timestamp stays on the clock; a step that ran across a stop says how long it stood paused, which its share of the test leaves out.',
+      '- **Resources** — when the run sent its resource report, rows under the lanes draw the CPU and memory of the worker that ran the test with the browsers it started, and the pages open in that worker; the pointer reads their values, and the line below says what earlier tests left open and how long the browsers waited for a CPU. Off until you turn it on; the choice is remembered in this browser.',
       '',
       'When a run’s reporter recorded no step start times, positions are estimated from durations and the card says so.',
     ].join('\n'),
