@@ -334,10 +334,14 @@ export function createAssistantToolbox(opts: {
       return refuse(`Not shown: ${outcome.error.slice(0, 600)}. ${next}.`);
     }
     usedIds.add(outcome.block.id);
+    const content =
+      outcome.block.kind === 'next'
+        ? 'Offered to the user as their next question. Your answer ends here.'
+        : endsAssistantAnswer(outcome.block)
+          ? 'Shown to the user. Your answer ends here; their reply comes with their next message.'
+          : 'Shown to the user.';
     return {
-      content: endsAssistantAnswer(outcome.block)
-        ? 'Shown to the user. Your answer ends here; their reply comes with their next message.'
-        : 'Shown to the user.',
+      content,
       isError: false,
       block: outcome.block,
     };

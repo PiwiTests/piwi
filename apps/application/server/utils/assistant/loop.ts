@@ -11,11 +11,15 @@
  * asked to answer with what it has (block tools make the answer and do not
  * count); `maxOutputTokens` per model call; `turnTimeoutMs` for the whole
  * turn; and the tokens the daily caps leave, checked before each model call.
+ * The user's Stop (`signal`) aborts the model call in flight: the answer ends
+ * with what it wrote. In the JSON action mode the answer ends the turn, so the
+ * next question, suggested after it, is not offered there.
  */
 import type { AssistantBlock, AssistantEvent, AssistantMessageView, AssistantProposalStatus } from '#shared/assistant';
 import { assistantMessageText } from '#shared/assistant';
 import type { ResolvedAiRole } from '~~/types/api';
 import {
+  knownToolMode,
   toolStep,
   type AiChatMessage,
   type AiStepChunk,
@@ -23,7 +27,13 @@ import {
   type AiStepRequest,
   type AiToolResult,
 } from '../ai-tool-calls';
-import { createAssistantAnswer, turnTimeoutError, type AssistantTurnResult, type AssistantTurnUsage } from './answer';
+import {
+  createAssistantAnswer,
+  turnStoppedError,
+  turnTimeoutError,
+  type AssistantTurnResult,
+  type AssistantTurnUsage,
+} from './answer';
 import type { AssistantLimits } from './limits';
 import type { AssistantToolbox } from './tools';
 
@@ -74,6 +84,8 @@ function blockLine(block: AssistantBlock): string {
       return `[Card: ${block.entity.label}]`;
     case 'navigate':
       return `[Link: ${block.label} (${block.route})]`;
+    case 'next':
+      return '';
     case 'proposal': {
       const on = block.target ? ` on ${block.target.label}` : '';
       const failure = block.outcome?.status === 'failed' && block.outcome.result ? `: ${block.outcome.result}` : '';
@@ -137,6 +149,8 @@ export interface AssistantTurnOptions {
   limits: Pick<AssistantLimits, 'maxToolCalls' | 'maxOutputTokens' | 'turnTimeoutMs'>;
   /** Tokens the daily caps leave for this turn, null when uncapped, and the message that names the cap reached. */
   allowance: { remaining: number | null; message: string };
+  /** Aborted when the user stops the answer. */
+  signal?: AbortSignal;
   emit: (event: AssistantEvent) => void;
   /** One model call; the provider's tool calling by default. */
   step?: (role: ResolvedAiRole, req: AiStepRequest) => AsyncGenerator<AiStepChunk>;
@@ -149,6 +163,10 @@ export async function runAssistantTurn(opts: AssistantTurnOptions): Promise<Assi
   const { maxToolCalls, maxOutputTokens, turnTimeoutMs } = opts.limits;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error('turn timeout')), turnTimeoutMs);
+  const stopped = () => opts.signal?.aborted === true;
+  const onStop = () => controller.abort(new Error('stopped'));
+  opts.signal?.addEventListener('abort', onStop, { once: true });
+  if (stopped()) onStop();
 
   const messages: AiChatMessage[] = [...opts.history, { role: 'user', text: opts.question }];
   const usage: AssistantTurnUsage = {
@@ -166,14 +184,21 @@ export async function runAssistantTurn(opts: AssistantTurnOptions): Promise<Assi
   });
   let retriedInvalid = false;
   let toolChoice: 'auto' | 'none' = 'auto';
+  let mode = knownToolMode(opts.role);
+  const tools = () => {
+    const all = opts.toolbox.definitions();
+    return mode === 'json-action' ? all.filter((tool) => tool.name !== 'suggest_next') : all;
+  };
 
   const finish = (error: AssistantTurnResult['error']): AssistantTurnResult => {
     clearTimeout(timer);
+    opts.signal?.removeEventListener('abort', onStop);
     return answer.finish(error, usage);
   };
 
   try {
     while (true) {
+      if (stopped()) return finish(turnStoppedError());
       const spent = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
       if (opts.allowance.remaining !== null && spent >= opts.allowance.remaining) {
         return finish({ code: 'limit', message: opts.allowance.message });
@@ -184,7 +209,7 @@ export async function runAssistantTurn(opts: AssistantTurnOptions): Promise<Assi
       for await (const chunk of step(opts.role, {
         system: opts.system,
         messages,
-        tools: opts.toolbox.definitions(),
+        tools: tools(),
         toolChoice,
         maxTokens: maxOutputTokens,
         signal: controller.signal,
@@ -198,6 +223,7 @@ export async function runAssistantTurn(opts: AssistantTurnOptions): Promise<Assi
 
       usage.model = reply.model || usage.model;
       usage.toolMode = reply.mode;
+      mode = reply.mode;
       usage.inputTokens = plus(usage.inputTokens, reply.inputTokens);
       usage.outputTokens = plus(usage.outputTokens, reply.outputTokens);
       usage.costUsd = reply.costUsd === null ? usage.costUsd : (usage.costUsd ?? 0) + reply.costUsd;
@@ -248,6 +274,7 @@ export async function runAssistantTurn(opts: AssistantTurnOptions): Promise<Assi
       answer.afterTools();
     }
   } catch (err) {
+    if (stopped()) return finish(turnStoppedError());
     if (controller.signal.aborted) return finish(turnTimeoutError(turnTimeoutMs));
     const message = err instanceof Error ? err.message : String(err);
     return finish({ code: 'provider', message: `[${opts.role.provider}] ${message.slice(0, 500)}` });

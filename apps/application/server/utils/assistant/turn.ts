@@ -8,6 +8,7 @@ import {
   addAssistantMessage,
   assistantTokensSince,
   findAssistantConversation,
+  oldestAssistantUsageSince,
   isAssistantDeclined,
   listAssistantConversationEntities,
   listRecentAssistantMessages,
@@ -16,11 +17,17 @@ import {
   type AssistantOwner,
 } from '#shared/handlers/assistant';
 import type { AssistantRecordedReply } from '#shared/handlers/assistant';
-import type { AssistantEvent, AssistantPageContext, AssistantStatus } from '#shared/assistant';
+import type {
+  AssistantAllowance,
+  AssistantEvent,
+  AssistantPageContext,
+  AssistantStatus,
+  AssistantSubscriptionLimit,
+} from '#shared/assistant';
 import type { ResolvedAiRole } from '~~/types/api';
 import type { DbClient } from '../../database';
 import type { User } from '../../database/schema';
-import { claudeCliRunsAgents } from '../ai-claude-cli';
+import { claudeCliRunsAgents, getClaudeCliRateLimit } from '../ai-claude-cli';
 import { assistantRole, resolveAiConfig } from '../ai-provider';
 import { knownToolMode } from '../ai-tool-calls';
 import { apiError } from '../api-error';
@@ -82,30 +89,60 @@ export async function assistantAvailability(
 /**
  * The tokens the daily caps leave for one owner's next turn: the smaller of
  * what the per-user cap and the instance cap leave over the last 24 hours, with
- * the message naming the cap that binds. `remaining` is null when neither is set.
+ * the message naming the cap that binds and that cap as the panel shows it.
+ * `remaining` and `binding` are null when neither cap is set.
  */
 export async function assistantAllowance(
   db: DbClient,
   ownerId: AssistantOwner,
   limits: Pick<AssistantLimits, 'dailyTokensPerUser' | 'dailyTokens'>,
   now = new Date(),
-): Promise<{ remaining: number | null; message: string }> {
+): Promise<{ remaining: number | null; message: string; binding: Omit<AssistantAllowance, 'freesAt'> | null }> {
   const since = new Date(now.getTime() - DAY_MS);
   const tokens = (n: number) => n.toLocaleString('en-US');
-  let remaining: number | null = null;
-  let message = '';
+  let binding: Omit<AssistantAllowance, 'freesAt'> | null = null;
   if (limits.dailyTokensPerUser !== null) {
-    remaining = limits.dailyTokensPerUser - (await assistantTokensSince(db, since, ownerId));
-    message = `You reached your assistant allowance of ${tokens(limits.dailyTokensPerUser)} tokens in 24 hours (PIWI_AI_ASSISTANT_DAILY_TOKENS_PER_USER). It frees up as your earlier answers pass 24 hours.`;
+    binding = { scope: 'user', limit: limits.dailyTokensPerUser, used: await assistantTokensSince(db, since, ownerId) };
   }
   if (limits.dailyTokens !== null) {
-    const left = limits.dailyTokens - (await assistantTokensSince(db, since));
-    if (remaining === null || left < remaining) {
-      remaining = left;
-      message = `This instance reached its assistant allowance of ${tokens(limits.dailyTokens)} tokens in 24 hours (PIWI_AI_ASSISTANT_DAILY_TOKENS). It frees up as earlier answers pass 24 hours.`;
+    const used = await assistantTokensSince(db, since);
+    if (binding === null || limits.dailyTokens - used < binding.limit - binding.used) {
+      binding = { scope: 'instance', limit: limits.dailyTokens, used };
     }
   }
-  return { remaining: remaining === null ? null : Math.max(0, remaining), message };
+  if (binding === null) return { remaining: null, message: '', binding: null };
+  const message =
+    binding.scope === 'user'
+      ? `You reached your assistant allowance of ${tokens(binding.limit)} tokens in 24 hours (PIWI_AI_ASSISTANT_DAILY_TOKENS_PER_USER). It frees up as your earlier answers pass 24 hours.`
+      : `This instance reached its assistant allowance of ${tokens(binding.limit)} tokens in 24 hours (PIWI_AI_ASSISTANT_DAILY_TOKENS). It frees up as earlier answers pass 24 hours.`;
+  return { remaining: Math.max(0, binding.limit - binding.used), message, binding };
+}
+
+/**
+ * The allowance the panel shows one owner: the cap that binds first, what was
+ * spent under it, and when the oldest answer it counts passes 24 hours. Null
+ * when no daily cap is set.
+ */
+export async function assistantAllowanceStatus(
+  db: DbClient,
+  ownerId: AssistantOwner,
+  limits: Pick<AssistantLimits, 'dailyTokensPerUser' | 'dailyTokens'> = resolveAssistantLimits(),
+  now = new Date(),
+): Promise<AssistantAllowance | null> {
+  const { binding } = await assistantAllowance(db, ownerId, limits, now);
+  if (!binding) return null;
+  const since = new Date(now.getTime() - DAY_MS);
+  const oldest = await oldestAssistantUsageSince(db, since, binding.scope === 'user' ? ownerId : undefined);
+  return { ...binding, freesAt: oldest ? new Date(oldest.getTime() + DAY_MS).toISOString() : null };
+}
+
+/**
+ * The Claude subscription's usage limit the panel shows: what the Claude Code
+ * CLI last reported, with that CLI as the role's provider; null otherwise.
+ */
+export function assistantSubscriptionLimit(role: ResolvedAiRole | null): AssistantSubscriptionLimit | null {
+  if (role?.provider !== 'claude-cli') return null;
+  return getClaudeCliRateLimit();
 }
 
 type ConversationRow = NonNullable<Awaited<ReturnType<typeof findAssistantConversation>>>;
@@ -132,6 +169,8 @@ export async function answerQuestion(opts: {
   context: AssistantPageContext | null;
   reply?: AssistantRecordedReply | null;
   baseUrl: string;
+  /** Aborted when the user stops the answer: it ends with what it wrote. */
+  signal?: AbortSignal;
   emit: (event: AssistantEvent) => void;
 }): Promise<void> {
   const { db, ctx, ownerId, conversation, context } = opts;
@@ -172,6 +211,7 @@ export async function answerQuestion(opts: {
     toolbox,
     limits,
     allowance,
+    signal: opts.signal,
     emit: (event) => {
       if (event.event === 'done' || event.event === 'error') final = event;
       else opts.emit(event);

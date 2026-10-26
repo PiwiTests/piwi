@@ -1143,7 +1143,26 @@ composed guide through `useGuide`.
   `server/utils/assistant/tools.ts`; `tests/unit/assistant-tools.test.ts` checks every name is a read tool and every
   pattern a page.
 - **Usage outlives a conversation.** Each answer that called a model writes an `assistant_usage` row, which the daily
-  caps and Settings → AI → AI usage read; deleting a conversation never deletes it.
+  caps and Settings → AI → AI usage read; deleting a conversation never deletes it. The status gives the caller the
+  cap that binds first (`assistantAllowanceStatus`), which the panel's gauge shows and which stops its input once
+  spent; with the Claude Code CLI, also the subscription's usage window from the CLI's last `rate_limit_event`
+  (`getClaudeCliRateLimit`, kept in memory), which only warns: the subscription decides.
+- **Stop is a request to the server.** An answer runs to its end when the browser leaves, so **Stop** posts
+  `…/conversations/:id/stop`, which aborts the answer this process is writing (`server/utils/assistant/running.ts`,
+  the same registry that refuses a second question with a 409); the loop and the Claude Code run end with the
+  `stopped` error and the answer is stored with what it wrote. The demo stops its prepared answer the same way.
+- **The next question is a block the model sends last.** `suggest_next` makes a `next` block, refused until the
+  answer holds something, that ends the answer like a question block, so it costs no further model call. The panel
+  never renders it in the answer: the input offers it as its placeholder (`nextAssistantQuestion`), else the page's
+  first suggestion not asked yet, which is all the demo offers.
+- **The question history is the user's, on the server.** `GET /api/assistant/questions` reads the owner's typed
+  questions across their conversations, leaving out the replies to a block; never keep questions in the browser's
+  storage, where another user of the same browser would read them. The panel's docked state and width are
+  per-browser conveniences and do live in `localStorage` (`useAssistantDock`).
+- **The panel docks beside the page from 1280 px** (`AssistantPanel`, an `aside` in the dashboard group, after
+  `main`); below 1536 px it folds the sidebar through Nuxt UI's `dashboard:sidebar:collapse` hook and unfolds it when
+  it closes, if it folded it. A spec finds the panel in either form:
+  `getByRole('dialog', { name: 'Ask Piwi' }).or(getByRole('complementary', { name: 'Ask Piwi' }))`.
 - **An answer's blocks are checked on the server, against limits kept in one place.** Every block but text is a call
   to a block tool (`server/utils/assistant/blocks.ts`); `shared/assistant-blocks.ts` holds `ASSISTANT_BLOCK_LIMITS`,
   the zod schema of each tool's arguments (its input schema is derived from it, so the model reads the same limits)

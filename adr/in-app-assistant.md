@@ -90,7 +90,13 @@ run's **Details** popover); a proposal card follows the capability decisions of 
 those of the page's project and of each stop's, a project's enable winning over the instance's decline, in the demo's
 prepared answers too; the Claude Code CLI's turn budget counts a turn per block an answer can hold; the panel has its
 own six anchors, from the launcher to **What it read**, with a seeded conversation of the demo persona to open; and
-the live question set adds 8 changes to apply, each ending in a proposal card, 158 in all. Every planned piece is
+the live question set adds 8 changes to apply, each ending in a proposal card, 158 in all. **Panel follow-ups built
+2026-10-26**: from 1280 px the panel docks beside the page, which narrows instead of being covered (below 1536 px the
+sidebar folds to its rail while it is open), resizable and floatable, the choice kept per browser; `Ctrl` + `I` opens
+it; the input brings back the user's earlier questions with Up (`GET /api/assistant/questions`), offers the next
+question as its placeholder, taken with Right (the `next` block the model sends last, else the page's first
+suggestion), keeps what is typed, and has **Stop** (`POST …/stop`) and **Try again**; a gauge under it shows the daily
+allowance that binds and, with the Claude Code CLI, the Claude subscription's window. Every planned piece is
 built, with two items left out: the demo's four tours keep their own format rather than becoming authored guides,
 since they speak four languages and open each role's seeded screens, where an authored guide is English and finds
 its pages with resolvers, and they already run on the guide engine and the anchor registry; and the demo does not
