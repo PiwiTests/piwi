@@ -1,4 +1,5 @@
 import type { BugPhrases, BugState, BugStepValue, BugSubject, NounGender, RoleNoun } from './bug-phrases';
+import type { ManualCheckValues } from './recording';
 import { markdownCode } from './markdown-code';
 import { keyCombo } from './key-combo';
 
@@ -148,6 +149,16 @@ const STATES: Record<BugState, string> = {
 const capitalize = (text: string): string => `${text.charAt(0).toLocaleUpperCase('de')}${text.slice(1)}`;
 
 const number = (n: number): string => new Intl.NumberFormat('de-DE').format(n);
+
+/** `; im Lauf erwartete er X und erhielt Y`, as much as the run says. */
+function inRun(c: ManualCheckValues): string {
+  const parts: Array<[verb: string, value: string]> = [];
+  if (c.expected) parts.push(['erwartete', c.expected]);
+  if (c.received) parts.push(['erhielt', c.received]);
+  const [first, ...rest] = parts;
+  if (!first) return '';
+  return `; im Lauf ${first[0]} er ${first[1]}${rest.map(([verb, value]) => ` und ${verb} ${value}`).join('')}`;
+}
 /** German puts only 1 in the singular. */
 /** A zoom factor as a percentage, such as `125%`. */
 const percent = (zoom: number): string => `${Math.round(zoom * 100)}\u00a0%`;
@@ -180,6 +191,44 @@ export const GERMAN_BUG_PHRASES: BugPhrases = {
           ),
     dragTo: (s, target) => capitalize(`${subject(s, 'accusative')} auf ${subject(target, 'accusative')} ziehen`),
     manual: (description) => `Von Hand: ${description}`,
+  },
+  manualInstructions: {
+    goBack: () => 'Im Browser zur vorherigen Seite zurückgehen',
+    goForward: () => 'Im Browser zur nächsten Seite vorgehen',
+    reload: () => 'Die Seite neu laden',
+    gotoUnknown: () => 'Die Seite öffnen, die der Test geöffnet hat; der Lauf speichert nicht, welche',
+    setContent: () => `Die Seite öffnen, die der Test selbst schreibt (${markdownCode('page.setContent')})`,
+    keyboardType: () => 'Über die Tastatur eingeben, was der Test eingegeben hat; der Wert steht im Code des Tests',
+    mouseAt: (i) =>
+      `Mit der Maus tun, was der Test am Punkt (${number(i.x)}; ${number(i.y)}) der Seite getan hat: ${i.call}`,
+    mouseOrKeyboard: (i) => `Mit der Maus oder der Tastatur tun, was der Test getan hat: ${i.call}`,
+    failedCall: (i) => `Tun, was der Test tat, als er fehlschlug: ${i.call}`,
+    locatorCall: (i) => `Mit ${markdownCode(i.locator)} tun, was der Test damit getan hat: ${i.call}`,
+    fillUnknown: (i) => `${markdownCode(i.locator)} wie der Test ausfüllen; der Lauf speichert den Wert nicht`,
+    fillPartial: (i) =>
+      `${markdownCode(i.locator)} wie der Test ausfüllen; der Lauf speichert nur einen Teil des Werts`,
+    pressUnknown: (i) => `In ${markdownCode(i.locator)} die Taste drücken, die der Test gedrückt hat`,
+    selectOptionUnknown: (i) =>
+      `In ${markdownCode(i.locator)} die Option wählen, die der Test gewählt hat; der Lauf speichert nicht, welche`,
+    selectOptions: (i) =>
+      `In ${markdownCode(i.locator)} ${i.options
+        .map((o) => (typeof o === 'number' ? `die Option mit dem Index ${number(o)}` : quote(o)))
+        .join(' und ')} auswählen`,
+    setInputFiles: (i) =>
+      `In ${markdownCode(i.locator)} die Datei wählen, die der Test gewählt hat; der Lauf speichert ihren Namen nicht`,
+    dragTo: (i) =>
+      `${markdownCode(i.locator)} dorthin ziehen, wo der Test es abgelegt hat; der Lauf speichert nicht, wo`,
+    drop: (i) => `Die Dateien oder Daten, die der Test abgelegt hat, auf ${markdownCode(i.locator)} ablegen`,
+    focus: (i) => `Den Fokus auf ${markdownCode(i.locator)} setzen`,
+    blur: (i) => `Den Fokus von ${markdownCode(i.locator)} wegnehmen`,
+    dispatchEvent: (i) => `Auf ${markdownCode(i.locator)} das tun, was das vom Test gesendete Ereignis auslöst`,
+    scrollIntoViewIfNeeded: (i) => `${markdownCode(i.locator)} in den sichtbaren Bereich scrollen`,
+    expectPoll: (i) => `Prüfen, was der Test wiederholt geprüft hat (${i.matcher})${inRun(i)}`,
+    expectValue: (i) => `Prüfen, was der Test geprüft hat: ${i.what}${inRun(i)}`,
+    expectLocator: (i) => `${markdownCode(i.locator)} mit ${i.matcher} prüfen${inRun(i)}`,
+    expectURL: (i) => `Die Adresse der Seite prüfen (toHaveURL)${inRun(i)}`,
+    leadingSteps: (i) =>
+      `Die ersten ${number(i.count)} Schritte des Tests ausführen, bis Schritt ${number(i.count + 1)} beginnt: eine Schrittdatei enthält höchstens ${number(i.limit)} Schritte`,
   },
   expectation(s, e, negated) {
     const should = negated ? 'sollte nicht' : 'sollte';
