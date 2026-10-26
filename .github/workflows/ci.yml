@@ -59,6 +59,7 @@ jobs:
       desktop: ${{ steps.filter.outputs.desktop == 'true' || steps.filter.outputs.ci == 'true' }}
       docs: ${{ steps.filter.outputs.docs == 'true' || steps.filter.outputs.ci == 'true' }}
       dotnet: ${{ steps.filter.outputs.dotnet == 'true' || steps.filter.outputs.ci == 'true' }}
+      nitro: ${{ steps.filter.outputs.nitro == 'true' || steps.filter.outputs.ci == 'true' }}
       container: ${{ steps.filter.outputs.app == 'true' || steps.filter.outputs.container == 'true' || steps.filter.outputs.ci == 'true' }}
       e2e_matrix: ${{ steps.matrices.outputs.e2e }}
       smoke_matrix: ${{ steps.matrices.outputs.smoke }}
@@ -151,6 +152,13 @@ jobs:
               - 'integrations/serilog/**'
               - 'examples/sample-app/backends/aspnetcore/**'
               - 'examples/sample-app/backends/aspnetcore.Tests/**'
+            # The Nitro plugin, the sample backend that loads it from source, and the root manifests that pin its
+            # TypeScript, Vitest and peer dependencies.
+            nitro:
+              - 'integrations/nitro/**'
+              - 'examples/sample-app/backends/nitro/**'
+              - 'package.json'
+              - 'package-lock.json'
             smoke:
               - 'packages/server/**'
               - 'packages/reporter/**'
@@ -659,6 +667,32 @@ jobs:
         working-directory: integrations/aspnetcore
         run: dotnet test PiwiTests.Instrumentation.slnx -c Release
 
+  # The Nitro plugin's type check and unit tests: the checks job reads this workspace through knip alone, and
+  # reusable-publish-npm.yml only builds it. No install scripts: the plugin needs no `nuxt prepare`.
+  nitro:
+    name: Typecheck and test the Nitro instrumentation
+    needs: changes
+    if: needs.changes.outputs.nitro == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          ignore-scripts: 'true'
+
+      - name: Typecheck
+        working-directory: integrations/nitro
+        run: npm run typecheck
+
+      - name: Test
+        working-directory: integrations/nitro
+        run: npm test
+
   # The server image as the release publishes it, for linux/amd64: built, started on an empty data folder and asked
   # for /api/health. On main and on a release tag, the publish workflow runs the same check before any tag moves.
   container:
@@ -811,7 +845,7 @@ jobs:
   ci-result:
     name: CI result
     if: ${{ !cancelled() }}
-    needs: [versions, changes, build, checks, e2e, measure, package-smoke, demo, aspnet, container, docs, extension, vscode, jetbrains, desktop, perf-base, perf]
+    needs: [versions, changes, build, checks, e2e, measure, package-smoke, demo, aspnet, nitro, container, docs, extension, vscode, jetbrains, desktop, perf-base, perf]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
