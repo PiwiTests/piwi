@@ -3510,7 +3510,7 @@ const SCENES = [
   {
     name: 'run-timeline-resources-live',
     description:
-      "A run still going: the CPU, memory and open-pages tracks drawn as the reporter sends them, with each worker's open pages under its row, at 1280 px and at phone width",
+      "A run still going: the CPU, memory and open-pages tracks drawn as the reporter sends them, with each worker's open pages under its row, then each running test's worker values on the Tests tab, at 1280 px and at phone width",
     route: '/projects',
     viewport: { width: 1280, height: 900 },
     of: '[data-shot="run-timeline"]',
@@ -3533,8 +3533,30 @@ const SCENES = [
       // Back to no strip, so the next visit starts as the timeline does by default.
       await page.getByTestId('timeline-resources-menu').click();
       await page.getByRole('menuitemcheckbox', { name: 'Nothing', exact: true }).click();
+      // The Tests tab: each running test shows what its worker uses right now.
+      const list = '[data-shot="failure-clusters"]';
+      for (const [width, label] of [
+        [1280, 'tests'],
+        [390, 'tests-narrow'],
+      ]) {
+        await page.setViewportSize({ width, height: 900 });
+        await goto(`/test-runs/${this.runId}?tab=test-cases`);
+        await page.getByTestId('live-worker-resources').first().waitFor({ timeout: 60000 });
+        // A wide list follows the live run to its newest rows; on a phone the
+        // page scrolls instead, so the newest rows are put first there.
+        const newestFirst = width < 640;
+        if (newestFirst) await page.getByRole('button', { name: 'Sorted ascending' }).click();
+        await settle();
+        await shoot(label, { of: list });
+        if (newestFirst) await page.getByRole('button', { name: 'Sorted descending' }).click();
+      }
     },
-    outputs: ['run-timeline-resources-live.png', 'run-timeline-resources-live-narrow.png'],
+    outputs: [
+      'run-timeline-resources-live.png',
+      'run-timeline-resources-live-narrow.png',
+      'run-timeline-resources-live-tests.png',
+      'run-timeline-resources-live-tests-narrow.png',
+    ],
   },
   {
     name: 'run-timeline-resources-worker-strip',

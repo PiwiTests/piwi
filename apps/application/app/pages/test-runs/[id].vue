@@ -900,6 +900,7 @@ const moreMenuItems = computed(() => {
             :is-live="isLive"
             :total="displayProgress?.totalTests"
             :live-steps="liveSteps"
+            :live-resources="liveResources"
             :cluster-meta="clusterMeta"
             :quarantined-case-ids="quarantinedCaseIds"
             :project-key="testRun?.projectId"

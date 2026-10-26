@@ -111,7 +111,8 @@ tools, and each finding's history on the Resources tab. What changed while build
 
 **Part of PR 7 built 2026-10-02 and 03** (optional): each worker row of the run's timeline draws its sampled CPU,
 memory and open pages, and the Resources tab's open pages point at it. **Live bands built 2026-10-26**: while a run
-is open on the dashboard, the same bands and strips fill in as it runs, instead of waiting for its end (D13). Not
+is open on the dashboard, the same bands and strips fill in as it runs, instead of waiting for its end, and each
+running test on the Tests tab shows its worker's last cores, memory and open pages beside its step (D13). Not
 built: the leak tails, the pressure strip and the failure timeline's `resources` lane. PRs 5 and 6 are not started.
 
 ## What the reader gets
@@ -744,7 +745,8 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
   `RunSampler.liveMemory()`; `apps/application/server/api/test-runs/[id]/live-resources.post.ts`, the `resources`
   event and its catch-up in `stream.get.ts`, the state in `run-events.ts`; `shared/live-resources.ts` (merging a post
   into a reporter's series, for the server, the demo and the run page); `WorkersTimeline.vue` draws the merged parts
-  while the run is live; the demo simulator posts its timeline after each test.
+  while the run is live; `app/utils/live-worker-resources.ts` and `TestRow.vue` show each worker's last values on its
+  running test; the demo simulator posts its timeline after each test.
 
 ## Verification
 
