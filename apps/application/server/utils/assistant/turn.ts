@@ -22,6 +22,7 @@ import type { DbClient } from '../../database';
 import type { User } from '../../database/schema';
 import { claudeCliRunsAgents } from '../ai-claude-cli';
 import { runCodexCliAgent } from '../ai-codex-cli';
+import { runDeepseekCliAgent } from '../ai-deepseek-cli';
 import { assistantRole, resolveAiConfig } from '../ai-provider';
 import { knownToolMode } from '../ai-tool-calls';
 import { apiError } from '../api-error';
@@ -53,7 +54,11 @@ export async function requireAssistantNotDeclined(db: DbClient): Promise<void> {
  * can. Otherwise the CLI answers step by step in the JSON action mode.
  */
 async function runsInClaudeCode(role: ResolvedAiRole): Promise<boolean> {
-  return role.provider === 'codex-cli' || (role.provider === 'claude-cli' && (await claudeCliRunsAgents()));
+  return (
+    role.provider === 'deepseek-cli' ||
+    role.provider === 'codex-cli' ||
+    (role.provider === 'claude-cli' && (await claudeCliRunsAgents()))
+  );
 }
 
 /** Whether the assistant can answer here, with the role it would answer with. */
@@ -182,6 +187,7 @@ export async function answerQuestion(opts: {
     ? await runClaudeCodeTurn({
         ...turn,
         ...(opts.role.provider === 'codex-cli' ? { run: runCodexCliAgent } : {}),
+        ...(opts.role.provider === 'deepseek-cli' ? { run: runDeepseekCliAgent } : {}),
         conversationId: conversation.id,
         ownerId,
         baseUrl: opts.baseUrl,

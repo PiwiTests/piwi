@@ -12,6 +12,7 @@ import {
 } from '../../utils/ai-settings';
 import { claudeCliEnabled } from '../../utils/ai-claude-cli';
 import { codexCliEnabled } from '../../utils/ai-codex-cli';
+import { deepseekCliEnabled } from '../../utils/ai-deepseek-cli';
 import { storedKeyFor } from '../../utils/ai-provider';
 import type { AiModelRole, AiProvider, SaveAiSettingsBody } from '~~/types/api';
 
@@ -25,7 +26,7 @@ defineRouteMeta({
   },
 });
 
-const VALID_PROVIDERS: AiProvider[] = ['anthropic', 'openai', 'claude-cli', 'codex-cli'];
+const VALID_PROVIDERS: AiProvider[] = ['anthropic', 'openai', 'claude-cli', 'codex-cli', 'deepseek-cli'];
 
 /** Parse and range-check a role's temperature override (OpenAI's documented 0-2 range). */
 function parseTemperature(role: AiModelRole, value: number | null | undefined): number | undefined {
@@ -155,7 +156,12 @@ export default eventHandler(async (event) => {
           message: `Role "${role}": enable Codex in the desktop app or set PIWI_CODEX_CLI_PATH on the server`,
         });
       }
-      const localCli = provider === 'claude-cli' || provider === 'codex-cli';
+      if (provider === 'deepseek-cli' && !deepseekCliEnabled())
+        throw apiError({
+          statusCode: 400,
+          message: `Role "${role}": enable official DeepSeek Harness in the desktop app or set PIWI_DEEPSEEK_CLI_PATH`,
+        });
+      const localCli = provider === 'claude-cli' || provider === 'codex-cli' || provider === 'deepseek-cli';
       const model = cfg.model?.trim() || '';
       const baseUrl = cfg.baseUrl?.trim() || '';
       if (provider === 'openai' && (!baseUrl || !model)) {

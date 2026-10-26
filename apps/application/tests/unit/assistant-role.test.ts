@@ -169,6 +169,35 @@ describe('the Codex CLI provider roles', () => {
   });
 });
 
+describe('the DeepSeek CLI provider roles', () => {
+  test('resolves keyless diagnosis and research roles and refuses CLI embeddings', async () => {
+    envAi = {
+      provider: 'deepseek-cli',
+      researchModel: 'test-model',
+      embeddingProvider: 'deepseek-cli',
+      embeddingModel: 'test-model',
+    };
+    const config = (await resolveAiConfig(db))!;
+    expect(config.roles.diagnosis).toMatchObject({ provider: 'deepseek-cli', model: '', apiKey: '' });
+    expect(config.roles.research).toMatchObject({ provider: 'deepseek-cli', model: 'test-model' });
+    expect(config.roles.embedding).toBeNull();
+    expect(assistantRole(config).provider).toBe('deepseek-cli');
+  });
+
+  test('offers DeepSeek in Settings when the server has opted in', async () => {
+    vi.stubEnv('PIWI_DESKTOP_TOKEN', '');
+    vi.stubEnv('NUXT_PUBLIC_DESKTOP', '');
+    vi.stubEnv('PIWI_DEEPSEEK_CLI_PATH', '');
+    try {
+      expect((await readAiSettings(db)).deepseekCliAvailable).toBe(false);
+      vi.stubEnv('PIWI_DEEPSEEK_CLI_PATH', '/local/deepseek');
+      expect((await readAiSettings(db)).deepseekCliAvailable).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe('resolveAssistantLimits', () => {
   test('defaults with nothing set', () => {
     expect(limits.resolveAssistantLimits({})).toEqual({

@@ -1033,6 +1033,7 @@ export async function apiGetAiSettings() {
     canStoreSecrets: true,
     claudeCliAvailable: false,
     codexCliAvailable: false,
+    deepseekCliAvailable: false,
   };
 }
 

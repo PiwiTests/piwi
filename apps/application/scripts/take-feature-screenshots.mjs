@@ -5675,6 +5675,25 @@ const SCENES = [
       await shoot();
     },
   })),
+  ...[375, 1280].map((width) => ({
+    name: `ai-deepseek-cli-${width}`,
+    description: `Settings → AI: official DeepSeek Harness credentials and provider at ${width} px`,
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/ai',
+    viewport: { width, height: 1800 },
+    async run({ page, shoot, settle }) {
+      const card = page.getByText('Uses official').locator('..');
+      await card.waitFor();
+      await card.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
+      await settle();
+      await shoot('before');
+      await page.getByRole('combobox').first().click();
+      await page.getByRole('option', { name: 'DeepSeek Harness (local)' }).click();
+      await settle();
+      await shoot();
+    },
+  })),
   {
     name: 'ai-claude-cli',
     description: 'Settings → AI: use the local Claude Code CLI as the provider — no API key (desktop shell)',

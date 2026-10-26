@@ -1643,7 +1643,7 @@ export interface ScmChanges {
  *   bundled server shells out to `claude -p --output-format json`, so authentication is the CLI's
  *   own subscription/OAuth login and no API key is stored.
  */
-export type AiProvider = 'anthropic' | 'openai' | 'claude-cli' | 'codex-cli';
+export type AiProvider = 'anthropic' | 'openai' | 'claude-cli' | 'codex-cli' | 'deepseek-cli';
 
 /** Local Codex CLI health, ChatGPT authentication and usage since server startup. */
 export interface CodexCliStatus {
@@ -1808,6 +1808,8 @@ export interface AiSettings {
   claudeCliAvailable: boolean;
   /** Whether this server is allowed to run the local Codex CLI. */
   codexCliAvailable: boolean;
+  /** Whether this server may run official DeepSeek Harness. */
+  deepseekCliAvailable: boolean;
 }
 
 // ============================================================================

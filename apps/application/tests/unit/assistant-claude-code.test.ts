@@ -633,7 +633,7 @@ async function claudeCodeTurn(
     allowance?: number | null;
     maxToolCalls?: number;
     baseUrl?: string;
-    provider?: 'claude-cli' | 'codex-cli';
+    provider?: 'claude-cli' | 'codex-cli' | 'deepseek-cli';
   } = {},
 ) {
   const { toolbox, readTools } = await toolboxOf(member);
@@ -656,7 +656,7 @@ async function claudeCodeTurn(
   return { result, events, readTools };
 }
 
-describe('Codex assistant MCP access', () => {
+describe.each(['codex-cli', 'deepseek-cli'] as const)('%s assistant MCP access', (provider) => {
   test('retains user scope, refuses writes and revokes the turn token', async () => {
     let token = '';
     let listed: unknown;
@@ -667,8 +667,8 @@ describe('Codex assistant MCP access', () => {
       write = await endpoint(toolCall(2, 'set_cluster_status', { clusterId: 1, status: 'resolved' }));
       run.onText('Only readable projects are visible.');
     });
-    const { result } = await claudeCodeTurn(cli, { provider: 'codex-cli' });
-    expect(result.provider).toBe('codex-cli');
+    const { result } = await claudeCodeTurn(cli, { provider });
+    expect(result.provider).toBe(provider);
     expect(JSON.stringify(listed)).toContain('shop');
     expect(JSON.stringify(write)).toMatch(/error|not.*(?:offered|found|available)/i);
     expect(tokens.liveAssistantTurn(token, 7)).toBeNull();

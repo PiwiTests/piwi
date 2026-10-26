@@ -22,7 +22,7 @@ are not read.
 
 | Variable | Description |
 |----------|-------------|
-| `PIWI_AI_PROVIDER` | `anthropic`, `openai`, `claude-cli`, or `codex-cli` |
+| `PIWI_AI_PROVIDER` | `anthropic`, `openai`, `claude-cli`, `codex-cli`, or `deepseek-cli` |
 | `PIWI_AI_API_KEY` | Provider API key (stored encrypted when set via the UI; never returned by the API) |
 | `PIWI_AI_MODEL` | Model name (default: `claude-opus-4-8` for Anthropic) |
 | `PIWI_AI_BASE_URL` | Base URL of the provider API: required for `openai`, OpenAI itself (`https://api.openai.com/v1`) included; optional for `anthropic` (a gateway or proxy) |
@@ -48,7 +48,7 @@ To be told when a diagnosis finishes without watching the panel, turn on **Setti
 
 ### Local Codex CLI
 
-Use a local ChatGPT login without an API key: [Codex CLI setup and isolation](/guide/codex-cli).
+Use [Codex CLI](/guide/codex-cli) with a ChatGPT login, or [official DeepSeek Harness](/guide/deepseek-cli) with DeepSeek credentials.
 
 ## Model roles
 

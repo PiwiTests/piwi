@@ -300,7 +300,8 @@ async function prepareDiagnosisInputs(
   // Honour the cluster's manually-pinned baseline when the caller didn't supply one.
   const effectiveBaseCommit = opts.baseCommit || subject.cluster?.manualBaseCommit || undefined;
   // The local Claude CLI takes the prompt as text: it gets no image, and the context names none.
-  const textOnly = config.provider === 'claude-cli' || config.provider === 'codex-cli';
+  const textOnly =
+    config.provider === 'claude-cli' || config.provider === 'codex-cli' || config.provider === 'deepseek-cli';
 
   const buildCtx = (skipScm: boolean) =>
     subject.scope === 'execution'

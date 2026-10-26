@@ -1,8 +1,8 @@
-import { spawn } from 'node:child_process';
+import { runCliProcess, type CliProcessResult } from './ai-cli-process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
-import { cliCommand, isDesktopRuntime, withLoopbackNoProxy } from './ai-claude-cli';
+import { isDesktopRuntime, withLoopbackNoProxy } from './ai-claude-cli';
 import type { ClaudeCliAgentResult, ClaudeCliAgentRun } from './ai-claude-cli';
 import type { AiCallOptions, AiCallResult, StreamChunk } from './ai-provider';
 import type { CodexCliStatus, ResolvedAiRole } from '~~/types/api';
@@ -46,12 +46,6 @@ export function codexCliEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.Pro
   return Object.fromEntries(Object.entries(source).filter(([key, value]) => value !== undefined && allowed.test(key)));
 }
 
-interface ProcessResult {
-  code: number | null;
-  stdout: string;
-  timedOut: boolean;
-}
-
 /** Each process has a private home, config, working directory and file-backed login snapshot. */
 async function isolatedRun(
   binary: string,
@@ -65,7 +59,7 @@ async function isolatedRun(
     signal?: AbortSignal;
     onExit?: (dir: string) => void;
   },
-): Promise<ProcessResult> {
+): Promise<CliProcessResult> {
   const dir = mkdtempSync(join(tmpdir(), 'piwi-codex-'));
   const home = join(dir, 'home');
   const codexHome = join(home, '.codex');
@@ -96,40 +90,7 @@ async function isolatedRun(
       CODEX_HOME: codexHome,
       ...(opts.token ? { CODEX_PIWI_TURN_TOKEN: opts.token } : {}),
     });
-    const command = cliCommand(binary, [...args, ...extraArgs]);
-    const result = await new Promise<ProcessResult>((resolve) => {
-      const child = spawn(command.command, command.args, { cwd: dir, env, windowsHide: true, stdio: 'pipe' });
-      let stdout = '';
-      let buffer = '';
-      let timedOut = false;
-      const timer = setTimeout(() => {
-        timedOut = true;
-        child.kill('SIGKILL');
-      }, opts.timeoutMs);
-      child.stdout.setEncoding('utf8');
-      child.stdout.on('data', (chunk: string) => {
-        // Probes retain stdout; generations consume JSONL without retaining a second copy.
-        if (!opts.onLine) stdout = (stdout + chunk).slice(-1_000_000);
-        buffer += chunk;
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        for (const line of lines) opts.onLine?.(line);
-        if (buffer.length > 4_000_000) child.kill('SIGKILL');
-      });
-      const abort = () => child.kill('SIGKILL');
-      if (opts.signal?.aborted) abort();
-      else opts.signal?.addEventListener('abort', abort, { once: true });
-      child.stderr.resume();
-      child.stdin.on('error', () => {});
-      child.on('error', () => {});
-      child.on('close', (code) => {
-        clearTimeout(timer);
-        opts.signal?.removeEventListener('abort', abort);
-        if (buffer) opts.onLine?.(buffer);
-        resolve({ code, stdout, timedOut });
-      });
-      child.stdin.end(opts.input);
-    });
+    const result = await runCliProcess(binary, [...args, ...extraArgs], { ...opts, cwd: dir, env });
     opts.onExit?.(dir);
     return result;
   } finally {

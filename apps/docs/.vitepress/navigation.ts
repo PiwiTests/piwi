@@ -121,6 +121,7 @@ export const guideSidebar: SidebarGroup[] = [
       { text: 'Source control', link: '/guide/source-control' },
       { text: 'AI provider', link: '/guide/ai-provider' },
       { text: 'Codex CLI', link: '/guide/codex-cli' },
+      { text: 'DeepSeek CLI', link: '/guide/deepseek-cli' },
       { text: 'Backend instrumentation', link: '/guide/backend-logs' },
       { text: 'Import past runs', link: '/guide/importing-runs' },
     ],
