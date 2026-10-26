@@ -567,7 +567,7 @@ export const testRunsCases = pgTable(
     tags: jsonb('tags'), // string[] — tags this execution declared ('@' stripped)
     locks: jsonb('locks'), // string[] — lock names this execution held (best effort; none from blob imports)
     testMeta: jsonb('test_meta'), // { owner?, priority?, feature?, link? } from `piwi:` annotations
-    workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
+    workerIndex: integer('worker_index'), // Worker process index (Playwright's workerIndex, new after each worker restart; parallelIndex only when workerIndex is absent)
     shardIndex: integer('shard_index'), // Shard index (1-based) for sharded runs; null = not sharded
     startedAt: bigint('started_at', { mode: 'number' }), // Unix timestamp in ms when the test started (exceeds 32-bit int range)
     isNewRegression: integer('is_new_regression'), // boolean: passed in baseline, failed in this run
