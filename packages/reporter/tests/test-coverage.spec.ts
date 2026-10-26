@@ -155,17 +155,23 @@ describe('LastTestWatch', () => {
 
 describe('coverageSettings', () => {
   it('is off by default', () => {
-    expect(coverageSettings({})).toEqual({ browser: 'off', server: 'off' });
+    expect(coverageSettings({})).toEqual({ browser: 'off', server: 'off', css: 'off' });
   });
 
   it('reads both sides, and captureCodeReach as browser files', () => {
     expect(coverageSettings({ coverage: { browser: 'files', server: 'functions' } })).toEqual({
       browser: 'files',
       server: 'functions',
+      css: 'off',
     });
-    expect(coverageSettings({ captureCodeReach: true })).toEqual({ browser: 'files', server: 'off' });
+    expect(coverageSettings({ captureCodeReach: true })).toEqual({ browser: 'files', server: 'off', css: 'off' });
     expect(coverageSettings({ captureCodeReach: true, coverage: { browser: 'functions' } }).browser).toBe('functions');
     expect(coverageSettings({ coverage: { server: 'nope' as never } }).server).toBe('off');
+  });
+
+  it('reads the style sheets apart: rules, or off for anything else', () => {
+    expect(coverageSettings({ coverage: { css: 'rules' } })).toEqual({ browser: 'off', server: 'off', css: 'rules' });
+    expect(coverageSettings({ coverage: { css: 'lines' as never } }).css).toBe('off');
   });
 
   it('is off with collectPerformanceMetrics: false', () => {
@@ -173,9 +179,9 @@ describe('coverageSettings', () => {
       coverageSettings({
         collectPerformanceMetrics: false,
         captureCodeReach: true,
-        coverage: { browser: 'files', server: 'lines' },
+        coverage: { browser: 'files', server: 'lines', css: 'rules' },
       }),
-    ).toEqual({ browser: 'off', server: 'off' });
+    ).toEqual({ browser: 'off', server: 'off', css: 'off' });
   });
 });
 
@@ -441,6 +447,45 @@ describe('CoverageCollection', () => {
           },
         ],
       });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a style sheet's matched rules as line ranges while the scripts stay files, and the run's known rules", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-css-blobs-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'web'));
+      fs.writeFileSync(path.join(dir, 'web', 'app.css'), '.a { color: red }\n.b { color: blue }\n');
+      const collection = new CoverageCollection({
+        settings: { browser: 'files', server: 'off', css: 'rules' },
+        baseUrls: [],
+        configDir: dir,
+      });
+      const tc = testCase(['web/app.js']);
+      const rules = { v: 1, files: [{ path: 'web/app.css', runtime: 'browser', functions: [[1, 1]] }] };
+      const known = { v: 1, files: [{ path: 'web/app.css', allFunctions: [[1, 1], [2, 2]] }] };
+      collection.apply(tc, [
+        { name: ATTACHMENT_NAMES.cssCoverage, body: Buffer.from(JSON.stringify(rules)) },
+        { name: ATTACHMENT_NAMES.cssRules, body: Buffer.from(JSON.stringify(known)) },
+      ]);
+      await collection.settle();
+      const blob = gitBlobId(fs.readFileSync(path.join(dir, 'web', 'app.css')));
+      expect(tc.coverage).toEqual({
+        v: 1,
+        files: [
+          { path: 'web/app.css', runtime: 'browser', blob, functions: [[1, 1]] },
+          { path: 'web/app.js', runtime: 'browser' },
+        ],
+      });
+      const sent: unknown[] = [];
+      await collection.sendRunCoverage({ putJSON: async (_url: string, body: unknown) => void sent.push(body) } as never, 7, null);
+      expect(sent).toEqual([
+        {
+          v: 1,
+          files: [{ path: 'web/app.css', runtime: 'browser', blob, functions: [[1, 1]], allFunctions: [[1, 1], [2, 2]] }],
+        },
+      ]);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

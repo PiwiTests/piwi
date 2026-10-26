@@ -127,6 +127,7 @@ import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 import {
   browserCoverageInWorker,
   browserFunctionCoverage,
+  cssCoverageInWorker,
   newKnownFunctions,
   browserFunctionsInWorker,
   serverCoverageInWorker,
@@ -142,9 +143,11 @@ import {
   resolveCodeReachFunctions,
   startCodeReach,
   stopCodeReach,
+  stopPageCoverage,
   type CodeReachRoots,
   type CodeReachRootsOption,
 } from './code-reach.js';
+import { resolveCssCoverage } from './css-coverage.js';
 import {
   activeResourceLedger,
   noteResourceUse,
@@ -365,10 +368,13 @@ interface CaptureSink {
   // JavaScript coverage of each page the test has, when code reach is on, and
   // the source files they resolved to once stopped.
   // With `coverage.browser: 'functions'`, every function the scripts declare in those files, run or not.
+  // With `coverage.css: 'rules'`, the style sheet files the pages' matched rules resolved to, and every rule of them.
   codeReach: {
     sessions: Map<Page, CodeReachSession>;
     files: Map<string, LineRange[]>;
     known: Map<string, LineRange[]>;
+    cssFiles: Map<string, LineRange[]>;
+    cssKnown: Map<string, LineRange[]>;
   };
   // The server coverage request ids (`X-Piwi-Coverage`) the test's responses
   // carried, by origin, when server coverage is on.
@@ -414,7 +420,7 @@ function createSink(): CaptureSink {
     onReleasedRequestsEnded: null,
     releasedQuietSince: 0,
     locatorPages: new LocatorPageLog(),
-    codeReach: { sessions: new Map(), files: new Map(), known: new Map() },
+    codeReach: { sessions: new Map(), files: new Map(), known: new Map(), cssFiles: new Map(), cssKnown: new Map() },
     serverCoverage: new Map(),
     baseURL: null,
   };
@@ -438,6 +444,11 @@ const MAX_CODE_REACH_PAGES = 16;
 /** How long the start of a test waits for coverage to run on the pages already open, in ms. */
 const CODE_REACH_START_WAIT_MS = 2000;
 
+/** Whether the pages record coverage: their scripts (code reach, browser coverage), their style sheets, or both. */
+function pageCoverageInWorker(): boolean {
+  return browserCoverageInWorker() || cssCoverageInWorker();
+}
+
 /**
  * Start JavaScript coverage on a page of the running test when code reach is on
  * (`PIWI_CAPTURE_CODE_REACH=true` or `PIWI_COVERAGE_BROWSER=files`): each page
@@ -446,7 +457,7 @@ const CODE_REACH_START_WAIT_MS = 2000;
  */
 function maybeStartCodeReach(page: Page, alreadyOpen = false): Promise<boolean> {
   const sink = currentSink;
-  if (!sink || !browserCoverageInWorker() || isPageClosed(page)) return Promise.resolve(false);
+  if (!sink || !pageCoverageInWorker() || isPageClosed(page)) return Promise.resolve(false);
   const known = sink.codeReach.sessions.get(page);
   if (known) return known.started;
   if (alreadyOpen) {
@@ -465,7 +476,7 @@ function maybeStartCodeReach(page: Page, alreadyOpen = false): Promise<boolean> 
  * time, so a page that does not answer never holds the test.
  */
 async function startCodeReachOnOpenPages(): Promise<void> {
-  if (!browserCoverageInWorker() || OPEN_PAGES.size === 0) return;
+  if (!pageCoverageInWorker() || OPEN_PAGES.size === 0) return;
   const started = Promise.all([...OPEN_PAGES].map((page) => maybeStartCodeReach(page, true)));
   await Promise.race([started, new Promise((resolve) => setTimeout(resolve, CODE_REACH_START_WAIT_MS).unref())]);
 }
@@ -532,17 +543,22 @@ async function stopPageCodeReach(
 ): Promise<void> {
   try {
     if (!(await session.started) || isPageClosed(page)) return;
-    const entries = await stopCodeReach(page);
-    if (!entries) return;
-    const { reached, known } = await resolveCodeReachFunctions(entries, roots, pageMapFetcher(page), page.url(), {
+    const { scripts, sheets } = await stopPageCoverage(page);
+    const fetchMap = pageMapFetcher(page);
+    const append = (into: Map<string, LineRange[]>, from: Map<string, LineRange[]>) => {
+      for (const [file, ranges] of from) into.set(file, [...(into.get(file) ?? []), ...ranges]);
+    };
+    if (sheets.length > 0) {
+      const rules = await resolveCssCoverage(sheets, roots, fetchMap);
+      append(sink.codeReach.cssFiles, rules.reached);
+      append(sink.codeReach.cssKnown, rules.known);
+    }
+    if (!scripts) return;
+    const { reached, known } = await resolveCodeReachFunctions(scripts, roots, fetchMap, page.url(), {
       known: browserFunctionsInWorker(),
     });
-    for (const [file, functions] of reached) {
-      sink.codeReach.files.set(file, [...(sink.codeReach.files.get(file) ?? []), ...functions]);
-    }
-    for (const [file, functions] of known) {
-      sink.codeReach.known.set(file, [...(sink.codeReach.known.get(file) ?? []), ...functions]);
-    }
+    append(sink.codeReach.files, reached);
+    append(sink.codeReach.known, known);
   } catch {
     /* code reach is best-effort and must never affect the test */
   }
@@ -558,6 +574,8 @@ let currentSink: CaptureSink | null = null;
 
 /** The browser functions this worker named in a `piwi-browser-functions` attachment, by file, as `start:end`. */
 const KNOWN_FUNCTIONS_SENT = new Map<string, Set<string>>();
+/** The style sheet rules this worker named in a `piwi-css-rules` attachment, by file, as `start:end`. */
+const KNOWN_CSS_RULES_SENT = new Map<string, Set<string>>();
 
 /**
  * Element probes whose protocol call is still in flight. Closing a page,
@@ -2484,6 +2502,23 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
       contentType: 'application/json',
       body: Buffer.from(JSON.stringify(part)),
     });
+  }
+  // With `coverage.css: 'rules'`, the style sheet files whose rules matched, each rule as a function's line range,
+  // and every rule of those sheets the first time this worker finds it.
+  if (cssCoverageInWorker()) {
+    const rules = sink.codeReach.cssFiles.size > 0 ? browserFunctionCoverage(sink.codeReach.cssFiles) : null;
+    if (rules) {
+      await testInfo.attach(ATTACHMENT_NAMES.cssCoverage, {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify(rules)),
+      });
+    }
+    for (const part of newKnownFunctions(sink.codeReach.cssKnown, KNOWN_CSS_RULES_SENT)) {
+      await testInfo.attach(ATTACHMENT_NAMES.cssRules, {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify(part)),
+      });
+    }
   }
 
   // The server coverage request ids, per origin, for the reporter to collect.

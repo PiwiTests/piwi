@@ -384,8 +384,9 @@ export class PiwiDashboardReporter {
       );
     }
     if (coverage.server !== 'off') this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
-    if (coverage.browser !== 'off' || coverage.server !== 'off') {
+    if (coverage.browser !== 'off' || coverage.server !== 'off' || coverage.css === 'rules') {
       if (coverage.browser !== 'off') process.env[PIWI_ENV_KEYS.coverageBrowser] = coverage.browser;
+      if (coverage.css === 'rules') process.env[PIWI_ENV_KEYS.coverageCss] = coverage.css;
       if (coverage.server !== 'off') {
         process.env[PIWI_ENV_KEYS.coverageServer] = coverage.server;
       }

@@ -157,6 +157,19 @@ export interface PiwiDashboardOptions {
      * `PIWI_COVERAGE_SERVER`.
      */
     server?: 'off' | 'files' | 'functions' | 'lines';
+    /**
+     * What the browser's style sheets record: `'rules'`, the rules that
+     * matched an element during each test, from Chromium's CSS rule usage, each
+     * as its first and last line in the application's style sheet (a `.css`
+     * file served as written, a Vite dev server's styles, or a sheet with a
+     * source map), sent where a script's functions are; `'off'` records
+     * nothing. A change to a rule then selects the tests that rendered it. It
+     * costs style recalculation time, a little on most pages and up to half
+     * the test's time on a page with large style sheets and frequent
+     * re-renders, so it is a choice of its own. Chromium only. Defaults to
+     * `'off'`. Can also be set with `PIWI_COVERAGE_CSS`.
+     */
+    css?: 'off' | 'rules';
   };
   /**
    * Match each test to its history on the dashboard by an external ID, the ID the test has in your own test

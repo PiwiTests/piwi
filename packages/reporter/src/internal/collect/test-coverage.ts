@@ -61,6 +61,7 @@ export function composeTestCoverage(
   server: ServerCoverage | null,
   browserFiles: ReadonlyArray<string | CoverageFile> | null | undefined,
   settings: CoverageSettings,
+  cssFiles?: ReadonlyArray<CoverageFile> | null,
 ): CoverageCapture | null {
   const serverCapture: CoverageCapture | null =
     settings.server !== 'off' && server
@@ -85,8 +86,19 @@ export function composeTestCoverage(
           settings.browser,
         )
       : null;
-  const merged = mergeCoverage(serverCapture, browserCapture);
+  // A style sheet's matched rules keep their line ranges, whatever the scripts' granularity.
+  const cssCapture: CoverageCapture | null =
+    settings.css === 'rules' && cssFiles?.length
+      ? reduceCoverage({ v: 1, files: cssFiles.map((file) => ({ ...file, runtime: 'browser' as const })) }, 'functions')
+      : null;
+  const merged = mergeCoverage(serverCapture, mergeCoverage(browserCapture, cssCapture));
   return merged ? sanitizeCoverage(merged) : null;
+}
+
+/** The browser side of a test's coverage: its scripts' files, as paths or with their functions, and its style sheets'. */
+interface BrowserSide {
+  files?: ReadonlyArray<string | CoverageFile>;
+  css?: CoverageFile[];
 }
 
 /** Function ranges by file, each range once. */
@@ -189,7 +201,9 @@ export class CoverageCollection {
     this.logger = options.logger ?? new Logger();
     this.waitMs = options.waitMs ?? TEST_COVERAGE_WAIT_MS;
     this.browserBlobs =
-      options.settings.browser === 'functions' ? new BlobIds(() => repositoryRoot(options.configDir)) : null;
+      options.settings.browser === 'functions' || options.settings.css === 'rules'
+        ? new BlobIds(() => repositoryRoot(options.configDir))
+        : null;
     const granularity = options.settings.server;
     this.collector =
       granularity === 'off'
@@ -210,33 +224,47 @@ export class CoverageCollection {
   /**
    * The browser side of a test's coverage: its code reach paths, or, at
    * `functions` granularity, the files of its `piwi-browser-coverage` attachment
-   * with their blob ids, once read. Never rejects.
+   * with their blob ids, once read; with `coverage.css: 'rules'`, the style
+   * sheet files of its `piwi-css-coverage` attachment too. Never rejects.
    */
   private browserCoverage(
     testCase: CollectedTestCase,
     attachments: ReadonlyArray<{ name: string; body?: Buffer }> | undefined,
-  ): ReadonlyArray<string | CoverageFile> | undefined | Promise<ReadonlyArray<string | CoverageFile> | undefined> {
-    if (this.options.settings.browser === 'off') return undefined;
-    const paths = testCase.codeReach;
-    const attachment = this.browserBlobs
-      ? attachments?.find((a) => a.name === ATTACHMENT_NAMES.browserCoverage)
-      : undefined;
-    if (this.browserBlobs) {
-      for (const known of attachments ?? []) {
-        if (known.name === ATTACHMENT_NAMES.browserFunctions) this.addKnownFunctions(known);
-      }
+  ): BrowserSide | Promise<BrowserSide> {
+    const { browser, css } = this.options.settings;
+    if (browser === 'off' && css !== 'rules') return {};
+    const paths = browser === 'off' ? undefined : testCase.codeReach;
+    for (const known of attachments ?? []) {
+      if (browser === 'functions' && known.name === ATTACHMENT_NAMES.browserFunctions) this.addKnownFunctions(known);
+      if (css === 'rules' && known.name === ATTACHMENT_NAMES.cssRules) this.addKnownFunctions(known);
     }
-    if (!this.browserBlobs || !attachment?.body) return paths;
+    const scripts = browser === 'functions' ? this.rangedFiles(attachments, ATTACHMENT_NAMES.browserCoverage) : [];
+    const sheets = css === 'rules' ? this.rangedFiles(attachments, ATTACHMENT_NAMES.cssCoverage) : [];
+    const blobs = this.browserBlobs;
+    if (!blobs || (scripts.length === 0 && sheets.length === 0)) return { files: paths };
+    const withBlobs = (files: CoverageFile[]) => blobs.withBlobs(files).catch(() => files);
+    return Promise.all([
+      scripts.length > 0 ? withBlobs(scripts) : Promise.resolve(null),
+      sheets.length > 0 ? withBlobs(sheets) : Promise.resolve([]),
+    ]).then(([files, rules]) => ({ files: files ?? paths, css: rules }));
+  }
+
+  /** The browser files of a test's attachment holding line ranges, added to the run's. */
+  private rangedFiles(
+    attachments: ReadonlyArray<{ name: string; body?: Buffer }> | undefined,
+    name: string,
+  ): CoverageFile[] {
+    const attachment = attachments?.find((a) => a.name === name);
+    if (!attachment?.body) return [];
     let files: CoverageFile[] = [];
     try {
       files = sanitizeCoverage(JSON.parse(attachment.body.toString('utf8')))?.files ?? [];
     } catch {
-      return paths;
+      return [];
     }
     const browser = files.filter((file) => file.runtime === 'browser');
-    if (browser.length === 0) return paths;
     for (const file of browser) addRanges(this.browserRan, file.path, file.functions ?? []);
-    return this.browserBlobs.withBlobs(browser).catch(() => browser);
+    return browser;
   }
 
   /** Add the functions of a `piwi-browser-functions` attachment, one of a test's, to the run's. */
@@ -299,11 +327,11 @@ export class CoverageCollection {
     const requests = attachment?.body ? parseServerCoverageRequests(attachment.body) : null;
     if (!this.collector || !requests) {
       if (!(browser instanceof Promise)) {
-        this.assign(testCase, composeTestCoverage(null, browser, this.options.settings));
+        this.assign(testCase, composeTestCoverage(null, browser.files, this.options.settings, browser.css));
         return null;
       }
-      const ready = browser.then((files) =>
-        this.assign(testCase, composeTestCoverage(null, files, this.options.settings)),
+      const ready = browser.then((side) =>
+        this.assign(testCase, composeTestCoverage(null, side.files, this.options.settings, side.css)),
       );
       this.browserPending.add(ready);
       return ready.finally(() => this.browserPending.delete(ready));
@@ -318,8 +346,8 @@ export class CoverageCollection {
         settled = true;
         clearTimeout(timer);
         this.pending.delete(entry);
-        void Promise.resolve(browser).then((files) => {
-          this.assign(testCase, composeTestCoverage(server, files, this.options.settings));
+        void Promise.resolve(browser).then((side) => {
+          this.assign(testCase, composeTestCoverage(server, side.files, this.options.settings, side.css));
           resolve();
         });
       };
