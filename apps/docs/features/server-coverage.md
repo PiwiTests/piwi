@@ -114,7 +114,9 @@ answers it is the one that served the run's first requests.
 
 On a large ASP.NET Core and Vue application, the coverage build alone ran within 1% of a normal build, and per-test
 line coverage added under 10% to its UI tests, with no measurable change in its CPU. The build records the same way
-at every granularity, so files and functions cost what lines cost. [Coverage cost](/reference/coverage-cost) has every
+at every granularity, so files and functions cost what lines cost.
+On the sample application, whose suite runs against either backend, a coverage build cost no measurable test time
+on either, and 5.6% more server CPU on Nitro, 12.5% on ASP.NET Core. [Coverage cost](/reference/coverage-cost) has every
 mode, how it was measured, and the prototype figures.
 
 ## Try it in the demo

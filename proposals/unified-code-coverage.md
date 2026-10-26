@@ -730,8 +730,9 @@ in one loop, each variant in its own process, medians of 5 runs.
 - **With inlining turned off** (`--max-inlined-bytecode-size=0`), the bound for code V8 does not inline: lines inside
   a request cost 14.8 ns per call against 4.0 ns on Node 22, and 18.9 ns against 4.4 ns on Node 24. The .NET recorder
   costs 15.6 ns to 17.7 ns per call and stayed under 2% of test time on eShopOnWeb.
-- **Not measured yet**: the end-to-end cost on a Playwright suite, the server CPU of an application whose CPU goes to
-  its own code (the pricing application's case), and how much the transform grows the bundle.
+- **End to end**, on the sample application, the coverage build costs no measurable test time and 5.6% more server
+  CPU (3b.8). Not measured yet: the server CPU of an application whose CPU goes to its own code (the pricing
+  application's case).
 
 ### 3b.7 Known gaps
 
@@ -773,7 +774,26 @@ One run of the suite each, against the dashboard, on the same commit:
 - **Executable lines are Vitest's**: on the 33 files of the Nitro backend, the coverage build's 94 executable lines
   and the 94 lines of Vitest's LCOV report are the same, file by file, so both suites count on one set of lines.
 - **Fixed on the way**: the sample's `server-coverage` spec expected a request id of two parts, which neither backend
-  sends (both send `<process key>.<sequence>.<secret>`), and `1.0-stabilization.md` named the same two-part form.
+  sends (both send `<process key>.<sequence>.<secret>`), and `1.0-stabilization.md` named the same two-part form. The
+  reporter read the process key of such an id up to its last dot, so it never matched the process that answered, and
+  every run's server coverage, on both backends, read as *restarted* and incomplete; it reads up to the first dot now,
+  and the same runs read as complete.
+
+**What it costs.** The suite against production builds of each backend, with and without a coverage build, the
+reporter collecting as it does in any run (`coverage: { browser: 'functions', server: 'lines' }`), 5 rounds rotated,
+medians:
+
+| Backend | Build | Test durations, summed | Suite | Server CPU |
+|---|---|---|---|---|
+| Nitro | plain | 72.8 s | 42.9 s | 1.08 s |
+| Nitro | coverage | 72.2 s (−0.8%) | 42.6 s | 1.14 s (+5.6%) |
+| ASP.NET Core | plain | 70.2 s | 41.7 s | 4.40 s |
+| ASP.NET Core | coverage | 70.4 s (+0.3%) | 41.8 s | 4.95 s (+12.5%) |
+
+- **No measurable test time on either backend**: the five runs of each build overlap. The sample's handlers are
+  small, so the server's share of a test is small too; the server CPU is where the instrumentation shows.
+- **The Nitro bundle grows by 7.8%** (208 KB to 224 KB of JavaScript, the runtime and the span table included); the
+  application's own chunks, which carry the markers, by 30%.
 
 ## Part 4: consumers
 
@@ -1013,6 +1033,15 @@ cores (`taskset -c 0,1`), the load generator or Playwright and Chromium to the o
   call site stays monomorphic, 5 runs, medians; Node 22.22.0 and 24.11.1, default flags, then with
   `--max-inlined-bytecode-size=0 --max-inlined-bytecode-size-small=0`. At default flags, V8 sometimes left the
   uninstrumented function on Node 24 not inlined (5.5 ns, 2 runs of 5); the median is the inlined case.
+- **End to end, both backends** (part 3b.8): the sample application's suite, `--repeat-each=3`, 2 workers, the spec that
+  fails on purpose and the one that expects `X-Piwi-Coverage` left out so that no variant fails (a failure restarts
+  the worker, which a first series showed costs the plain builds 3% to 6% of test time); production builds (`nitro
+  build`, `dotnet build -c Release`), each started before its run and warmed with four requests; the reporter sending
+  to a dashboard on the same machine; server CPU from `/proc/<pid>/stat` over the run; the four variants rotated over
+  5 rounds; Node 22.22.0, .NET 10.0.403, 4 cores. Raw test durations, summed (s): Nitro plain 71.3, 71.5, 72.8, 74.0,
+  74.1; Nitro coverage 70.1, 72.1, 72.2, 72.6, 73.2; ASP.NET Core plain 67.9, 69.9, 70.2, 72.0, 72.6; ASP.NET Core
+  coverage 67.5, 68.7, 70.4, 71.6, 72.5. Server CPU (s): Nitro 1.07 to 1.19 and 1.14 to 1.20; ASP.NET Core 4.26 to 4.42
+  and 4.72 to 5.05.
 - **Browser**: 8 rounds, the first discarded, one new context per run, medians; the functions check compared, per
   script URL and start offset, the functions with a count above zero in each mode.
 - **CSS** (part 2b): Playwright 1.64.1 and its headless Chromium, a static server on localhost, one new context per
