@@ -90,6 +90,12 @@ interface CoverageState {
   sequence: number;
   kept: Map<string, RequestCoverage>;
   keptBytes: number;
+  /**
+   * The payloads of the requests closed last, oldest first, read again by the run level: code a request started can
+   * still run once it is collected (a promise not awaited), and writes into the payloads it already holds.
+   */
+  closed: RequestCoverage['p'][];
+  closedBytes: number;
 }
 
 const STATE_KEY = Symbol.for('piwitests.coverage');
@@ -108,6 +114,8 @@ function state(): CoverageState {
     sequence: 0,
     kept: new Map(),
     keptBytes: 0,
+    closed: [],
+    closedBytes: 0,
   } satisfies CoverageState) as CoverageState;
 }
 
@@ -121,12 +129,12 @@ export class CoverageModule {
     readonly l: number[],
     /** The shared payload of each function, the run level. */
     readonly s: Uint8Array[],
-    private readonly run: boolean,
+    private readonly state: CoverageState,
   ) {}
 
   /** The payload function `i` records into: the request's being served, else the shared one. */
   f(i: number): Uint8Array {
-    if (this.run) return this.s[i];
+    if (this.state.run) return this.s[i];
     const coverage = (requestScope.getStore() as { coverage?: RequestCoverage } | undefined)?.coverage;
     if (coverage === undefined || coverage.closed) return this.s[i];
     let functions = coverage.p[this.n];
@@ -135,6 +143,8 @@ export class CoverageModule {
     if (payload === undefined) {
       payload = functions[i] = new Uint8Array(this.l[i]);
       coverage.bytes += this.l[i] + 32;
+      // A request already named is kept: what it records from now on counts toward the kept bytes too.
+      if (coverage.id) this.state.keptBytes += this.l[i] + 32;
       coverage.ran = true;
     }
     return payload;
@@ -151,7 +161,7 @@ export function __piwiModule(id: string, lengths: number[]): CoverageModule {
     current.modules.length,
     lengths,
     lengths.map((length) => new Uint8Array(length)),
-    current.run,
+    current,
   );
   current.modules.push(module);
   current.byId.set(id, module);
@@ -197,12 +207,10 @@ export function beginRequestCoverage(): RequestCoverage | undefined {
   return { p: [], ran: false, closed: false, bytes: 0 };
 }
 
-/** Add a request's payloads to the run level and stop recording into it. */
-function close(coverage: RequestCoverage): void {
-  if (coverage.closed) return;
-  coverage.closed = true;
+/** Add a request's payloads to the shared ones, the run level. */
+function mergeShared(payloads: RequestCoverage['p']): void {
   const { modules } = state();
-  coverage.p.forEach((functions, n) => {
+  payloads.forEach((functions, n) => {
     const module = modules[n];
     if (!functions || !module) return;
     functions.forEach((payload, i) => {
@@ -211,7 +219,32 @@ function close(coverage: RequestCoverage): void {
       for (let k = 0; k < payload.length; k++) if (payload[k]) shared[k] = 1;
     });
   });
+}
+
+/**
+ * Add a request's payloads to the run level and stop handing them out. They stay among the closed ones until
+ * `MAX_KEPT_REQUESTS` or `MAX_KEPT_BYTES` pushes them out, merged once more then, so what a function already running
+ * still records is not lost.
+ */
+function close(coverage: RequestCoverage): void {
+  if (coverage.closed) return;
+  coverage.closed = true;
+  mergeShared(coverage.p);
+  const current = state();
+  current.closed.push(coverage.p);
+  current.closedBytes += coverage.bytes;
+  while (current.closed.length > MAX_KEPT_REQUESTS || current.closedBytes > MAX_KEPT_BYTES) {
+    const oldest = current.closed.shift()!;
+    mergeShared(oldest);
+    current.closedBytes -= bytesOf(oldest);
+  }
   coverage.p = [];
+}
+
+function bytesOf(payloads: RequestCoverage['p']): number {
+  let bytes = 0;
+  for (const functions of payloads) for (const payload of functions ?? []) if (payload) bytes += payload.length + 32;
+  return bytes;
 }
 
 /**
@@ -377,6 +410,7 @@ export function collectCoverage(body: unknown): object {
 export function runCoverage(granularity: CoverageGranularity): object {
   const current = state();
   const files = new Map<string, FileAccumulator>();
+  for (const payloads of current.closed) mergeShared(payloads);
   for (const module of current.modules) module.s.forEach((payload, i) => addPayload(files, module, i, payload));
   for (const coverage of current.kept.values()) addRequest(files, coverage);
   const out: CoverageFile[] = [...files.values()].map((file) => fileOf(file, granularity));

@@ -5,7 +5,7 @@
  *
  * - the module registers with the coverage runtime (`__piwiModule`), with the
  *   payload length of each of its functions;
- * - each function, on entry, asks for its payload (`__pm.f(i)`: the request's
+ * - each function, on entry, asks for its payload (`__piwi_m.f(i)`: the request's
  *   being served, else the shared one) and marks entry 0;
  * - each statement marks its own entry before it runs;
  * - top-level statements mark the module's shared payload, the run level.
@@ -71,8 +71,30 @@ const STATEMENTS = new Set([
   'LabeledStatement',
 ]);
 
+/** The nodes whose `body` is a list of statements, each taking its own marker. */
+const LISTS = new Set(['Program', 'BlockStatement', 'StaticBlock']);
+
 /** The node keys a statement's own body sits under: a statement there, if not a block, is wrapped in one. */
 const BODY_KEYS = new Set(['consequent', 'alternate', 'body']);
+
+/**
+ * The offset of an arrow function's `=>`: the first one from `from` (the end of its last parameter, else its start)
+ * that is not inside a comment.
+ */
+export function arrowToken(code: string, from: number, to: number): number {
+  for (let i = from; i < to; i++) {
+    if (code.startsWith('/*', i)) {
+      const end = code.indexOf('*/', i + 2);
+      i = end < 0 ? to : end + 1;
+    } else if (code.startsWith('//', i)) {
+      const end = code.indexOf('\n', i + 2);
+      i = end < 0 ? to : end;
+    } else if (code.startsWith('=>', i)) {
+      return i;
+    }
+  }
+  return code.lastIndexOf('=>', to);
+}
 
 function isNode(value: unknown): value is Node {
   return typeof value === 'object' && value !== null && typeof (value as Node).type === 'string';
@@ -110,7 +132,7 @@ export interface InstrumentOptions {
 export function instrument(code: string, program: Node, options: InstrumentOptions): InstrumentResult {
   const out = new MagicString(code);
   const functions: Array<{ range: [number, number] | null; scope: FunctionScope }> = [];
-  const top: FunctionScope = { index: 0, payload: '__pt', entries: [] };
+  const top: FunctionScope = { index: 0, payload: '__piwi_t', entries: [] };
   functions.push({ range: null, scope: top });
 
   const lineStarts = [0];
@@ -152,6 +174,10 @@ export function instrument(code: string, program: Node, options: InstrumentOptio
         visitFunction(statement, null, '');
         continue;
       }
+      if (statement.type === 'BlockStatement' || statement.type === 'StaticBlock') {
+        visitList(statement.body as Node[], scope);
+        continue;
+      }
       const markers = markersFor(statement, scope);
       if (markers) out.appendLeft(statement.start, markers);
       visitChildren(statement, scope);
@@ -164,9 +190,9 @@ export function instrument(code: string, program: Node, options: InstrumentOptio
       key === 'value' &&
       (parent.type === 'MethodDefinition' || (parent.type === 'Property' && (parent.method || parent.kind !== 'init')));
     const start = isMethod ? parent.start : fn.start;
-    const own: FunctionScope = { index: functions.length, payload: '__p', entries: [] };
+    const own: FunctionScope = { index: functions.length, payload: '__piwi_p', entries: [] };
     functions.push({ range: [start, Math.max(start, fn.end - 1)], scope: own });
-    const prologue = `const __p=(__pm||__pmi()).f(${own.index});__p[0]=1;`;
+    const prologue = `const __piwi_p=(__piwi_m||__piwi_mi()).f(${own.index});__piwi_p[0]=1;`;
     for (const param of (fn.params as Node[]) ?? []) visit(param, fn, 'params', own);
     const body = fn.body as Node;
     if (body.type === 'BlockStatement') {
@@ -176,7 +202,8 @@ export function instrument(code: string, program: Node, options: InstrumentOptio
         if (statement.type !== 'ExpressionStatement' || typeof statement.directive !== 'string') break;
         at = statement.end;
       }
-      out.appendLeft(at, prologue);
+      // After a directive, whose semicolon may be missing (`"use strict"` then a new line).
+      out.appendLeft(at, at > body.start + 1 ? `;${prologue}` : prologue);
       visitList(
         statements.filter((statement) => typeof statement.directive !== 'string'),
         own,
@@ -185,8 +212,9 @@ export function instrument(code: string, program: Node, options: InstrumentOptio
     }
     // An expression body: `x => expr` becomes `x => {…; return (expr)}`.
     own.entries.push(body.start);
-    const arrow = code.lastIndexOf('=>', body.start);
-    out.appendLeft(arrow + 2, `{${prologue}__p[1]=1;return (`);
+    const params = (fn.params as Node[]) ?? [];
+    const arrow = arrowToken(code, params.length ? params[params.length - 1].end : fn.start, body.start);
+    out.appendLeft(arrow + 2, `{${prologue}__piwi_p[1]=1;return (`);
     out.prependLeft(fn.end, ')}');
     visit(body, fn, 'body', own);
   };
@@ -195,7 +223,7 @@ export function instrument(code: string, program: Node, options: InstrumentOptio
     for (const [key, value] of Object.entries(node)) {
       if (key === 'type' || key === 'start' || key === 'end') continue;
       if (Array.isArray(value)) {
-        if (node.type === 'SwitchCase' && key === 'consequent') {
+        if ((node.type === 'SwitchCase' && key === 'consequent') || LISTS.has(node.type)) {
           visitList(value.filter(isNode), scope);
           continue;
         }
@@ -221,6 +249,7 @@ export function instrument(code: string, program: Node, options: InstrumentOptio
       parent !== null &&
       parent.type !== 'LabeledStatement' &&
       BODY_KEYS.has(key) &&
+      !Array.isArray(parent[key]) &&
       (STATEMENTS.has(node.type) || node.type === 'VariableDeclaration') &&
       !FUNCTIONS.has(parent.type)
     ) {
@@ -248,9 +277,10 @@ export function instrument(code: string, program: Node, options: InstrumentOptio
   // Before the top-level statements' markers, which may sit at the same offset.
   out.prependLeft(
     at,
-    `import { __piwiModule as __piwiM } from ${JSON.stringify(options.runtime)};` +
-      `var __pm;function __pmi(){return __pm=__piwiM(${JSON.stringify(options.fileId)},${JSON.stringify(lengths)});}` +
-      `__pmi();var __pt=__pm.s[0];`,
+    (at > 0 ? ';' : '') +
+      `import { __piwiModule as __piwiM } from ${JSON.stringify(options.runtime)};` +
+      `var __piwi_m;function __piwi_mi(){return __piwi_m=__piwiM(${JSON.stringify(options.fileId)},${JSON.stringify(lengths)});}` +
+      `__piwi_mi();var __piwi_t=__piwi_m.s[0];`,
   );
 
   const file: CoverageTableFile = {

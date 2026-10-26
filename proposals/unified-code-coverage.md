@@ -626,13 +626,13 @@ Rollup both in development (`nitro dev`) and for production, so one plugin cover
 
   ```js
   import { __piwiModule } from '@piwitests/instrumentation-nitro/coverage-runtime';
-  const __pm = __piwiModule('9c4e1f0a', [4]);       // the file's id, the payload length of each function
+  const __piwi_m = __piwiModule('9c4e1f0a', [1, 4]);  // the file's id, the payload length of each function
 
   export function quote(items) {
-    const __p = __pm.f(0); __p[0] = 1;              // the function was entered
-    __p[1] = 1; let total = 0;                      // before each statement
-    for (const item of items) { __p[2] = 1; total += price(item); }
-    __p[3] = 1; return total;
+    const __piwi_p = __piwi_m.f(1); __piwi_p[0] = 1;   // the function was entered
+    __piwi_p[1] = 1; let total = 0;                    // before each statement
+    for (const item of items) { __piwi_p[2] = 1; total += price(item); }
+    __piwi_p[3] = 1; return total;
   }
   ```
 
@@ -654,7 +654,7 @@ Rollup both in development (`nitro dev`) and for production, so one plugin cover
 
 ### 3b.3 Attribution
 
-`__pm.f(i)` returns function `i`'s payload for the request being served, found through the plugin's
+`__piwi_m.f(i)` returns function `i`'s payload for the request being served, found through the plugin's
 `AsyncLocalStorage` (the store the log capture already uses, `integrations/nitro/src/index.ts`), or the shared payload
 outside a request. It runs once per call, at entry; the statements then write into a local variable.
 
@@ -669,7 +669,7 @@ outside a request. It runs once per call, at entry; the statements then write in
   nests its log and span stores that way.
 - **Work after collection**: once a request is collected, what it still runs (a promise not awaited) records at run
   level.
-- In `run` mode (`PIWI_COVERAGE_MODE=run`, as in part 3), `__pm.f` returns the shared payload without looking the
+- In `run` mode (`PIWI_COVERAGE_MODE=run`, as in part 3), `__piwi_m.f` returns the shared payload without looking the
   request up, and no response is named.
 
 ### 3b.4 The plugin
@@ -723,7 +723,7 @@ in one loop, each variant in its own process, medians of 5 runs.
 - **The cost of `test` is the request lookup at entry**, not the statement markers: recording only functions costs
   about what recording lines costs, as on .NET.
 - **`run` mode costs nothing measurable** when the payload is a module constant. The built recorder still calls
-  `__pm.f`, which returns at once in `run` mode: at most the cost of `test` outside a request.
+  `__piwi_m.f`, which returns at once in `run` mode: at most the cost of `test` outside a request.
 - **Node 24 reads `AsyncLocalStorage` through `AsyncContextFrame`**, its default: twice the cost per lookup of Node 22
   in this loop, but no promise hooks, which Node 22 runs on every promise once a store is in use (the log capture
   already pays that today).

@@ -128,6 +128,54 @@ describe('the coverage transform', () => {
     expect(module.run()).toEqual([1, 0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   });
 
+  it('keeps the declarations of a block in its scope: bare blocks and case blocks are lists, not statements to wrap', async () => {
+    const { module } = await load<{ run: (x?: number) => unknown[] }>(
+      'blocks.js',
+      [
+        'export function run(x) {',
+        '  const out = [];',
+        '  { const a = 1; function g() { return a } out.push(g()) }',
+        '  let y = 1;',
+        '  switch (x ?? 1) { case 1: { let y = 2; out.push(y) } }',
+        '  switch (x ?? 1) { case 1: { const v = 10; out.push(v + 1); break } }',
+        '  out.push(y);',
+        '  return out',
+        '}',
+      ].join('\n'),
+    );
+    expect(module.run()).toEqual([1, 2, 11, 1]);
+  });
+
+  it('finds the arrow after its parameters and outside comments', async () => {
+    const { module } = await load<{ names: (rows: Array<{ name: string }>) => string[]; one: () => number }>(
+      'arrows.js',
+      [
+        'export const names = (rows) => rows.map((r) => /* id => name */ r.name);',
+        'export const one = (f = (a) => a) => // returns => 1',
+        '  f(1);',
+      ].join('\n'),
+    );
+    expect(module.names([{ name: 'a' }, { name: 'b' }])).toEqual(['a', 'b']);
+    expect(module.one()).toBe(1);
+  });
+
+  it('keeps a directive without its semicolon, and names the application uses itself', async () => {
+    const { module } = await load<{ strict: () => boolean; clash: (__p: number, __pm: number) => number }>(
+      'directives.mjs',
+      [
+        '"use strict"',
+        'export function strict() {',
+        '  "use strict"',
+        '  return this === undefined',
+        '}',
+        'export function clash(__p, __pm) { const __pt = 1; return __p + __pm + __pt }',
+        'function __pmi() { return 0 }',
+      ].join('\n'),
+    );
+    expect(module.strict.call(undefined)).toBe(true);
+    expect(module.clash(1, 2)).toBe(4);
+  });
+
   it('instruments application code only: under the root, outside node_modules, generated output and the package', () => {
     const options = { root: '/repo', runtime: 'rt', exclude: ['/repo/integrations/nitro'] };
     expect(instrumentable('/repo/server/api/orders.post.ts', options)).toBe(true);
@@ -181,6 +229,52 @@ describe('attribution', () => {
     // The call outside any request went to the run level, which nothing else has reached yet.
     const run = runCoverage('functions') as { files: Array<{ functions: number[][] }> };
     expect(run.files[0].functions).toEqual([[5, 7]]);
+  });
+});
+
+describe('the recorder', () => {
+  const late = [
+    'export async function work(gate) {', // 1
+    '  await gate;', //                      2
+    '  return 7;', //                        3
+    '}', //                                  4
+    'export function more() {', //           5
+    '  return 8;', //                        6
+    '}', //                                  7
+  ].join('\n');
+
+  it('keeps at run level what a request still runs once collected', async () => {
+    const { module, table } = await load<{ work: (gate: Promise<void>) => Promise<number> }>('late.js', late);
+    enable({ 'late.js': table });
+    const runtime = await import('../src/coverage-runtime');
+    const coverage = runtime.beginRequestCoverage()!;
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => (open = resolve));
+    const pending = requestScope.run({ coverage }, () => module.work(gate));
+    const id = runtime.nameRequest(coverage)!;
+    runtime.collectCoverage({ granularity: 'lines', groups: [{ key: 't', requests: [id] }] });
+    open();
+    await pending;
+    const run = runtime.runCoverage('lines') as { files: Array<{ lines: number[][] }> };
+    expect(run.files[0].lines).toEqual([[2, 3]]);
+  });
+
+  it('counts what a named request records afterwards toward the kept bytes, and gives them back once collected', async () => {
+    const { module, table } = await load<{ work: (gate: Promise<void>) => Promise<number>; more: () => number }>(
+      'bytes.js',
+      late,
+    );
+    enable({ 'bytes.js': table });
+    const runtime = await import('../src/coverage-runtime');
+    const state = () => (globalThis as Record<symbol, { keptBytes: number }>)[Symbol.for('piwitests.coverage')];
+    const coverage = runtime.beginRequestCoverage()!;
+    await requestScope.run({ coverage }, () => module.work(Promise.resolve()));
+    const id = runtime.nameRequest(coverage)!;
+    const named = state().keptBytes;
+    requestScope.run({ coverage }, () => module.more());
+    expect(state().keptBytes).toBeGreaterThan(named);
+    runtime.collectCoverage({ granularity: 'files', groups: [{ key: 't', requests: [id] }] });
+    expect(state().keptBytes).toBe(0);
   });
 });
 
