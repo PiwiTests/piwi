@@ -367,6 +367,43 @@ export interface WireResourceTimeline {
 }
 
 /**
+ * What a reporter posts to `/api/test-runs/:id/live-resources` while someone
+ * has the run open, beside its `streamToken`: the resources it measured since
+ * its last post, so the run's timeline draws them as the run goes. The run's
+ * stored report is still the one `finish` sends.
+ */
+export interface WireLiveResources {
+  /** The reporter's shard, as its `begin` named it; null for a run that is not sharded. */
+  shardIndex: number | null;
+  /**
+   * True when `timeline` holds every point so far and replaces what the server
+   * holds for this reporter; false when its series only add the points read
+   * since the last post.
+   */
+  reset: boolean;
+  /**
+   * The series, on the clock of the first post's `startedAt`. Each `pages`
+   * entry replaces that worker's open pages, and a `workers` entry adds to that
+   * worker's series.
+   */
+  timeline: WireResourceTimeline;
+  /** The machine's memory, or its container's limit when lower; null without the run sampler. */
+  memoryCapacityBytes: number | null;
+  /** How the run's memory is measured: PSS, or RSS where PSS cannot be read; null until it is read. */
+  memoryKind: 'pss' | 'rss' | null;
+}
+
+/** The dashboard's answer to a live resources post. */
+export interface WireLiveResourcesAnswer {
+  /** Whether anyone still has the run open; the reporter posts only while it is true. */
+  watched: boolean;
+  /** True when the dashboard holds nothing for this reporter: the next post carries every point so far. */
+  resync?: boolean;
+  /** True when the run's project declined the resources capability: the reporter posts nothing more for this run. */
+  declined?: boolean;
+}
+
+/**
  * One reporter's resource report, sent with the run's end: the findings, what
  * the run cost its machine, and the pages open in each worker test after test.
  * A sharded run sends one per shard, each from its own machine.

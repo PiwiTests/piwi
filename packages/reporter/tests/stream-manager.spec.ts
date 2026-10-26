@@ -464,6 +464,19 @@ describe('StreamManager live steps', () => {
     expect(sent(requests)).toEqual(['complete a', 'complete b', 'step-end watched']);
   });
 
+  it('says once when someone opens the run, so the live resources go out at once', async () => {
+    const answers = [{ watched: false }, { watched: true }, { watched: true }];
+    const { sm } = makeEnabledManager(() => answers.shift() ?? { watched: true });
+    const opened = vi.fn();
+    sm.onWatched = opened;
+    for (const title of ['a', 'b', 'c']) {
+      sm.queueEvent(completeEvent(title));
+      await sm.flush();
+    }
+    expect(opened).toHaveBeenCalledTimes(1);
+    expect(sm.isWatched).toBe(true);
+  });
+
   it('keeps sending step events to a dashboard that does not say', async () => {
     const { sm, requests } = makeEnabledManager(() => ({ success: true }));
     sm.queueEvent(completeEvent('a'));

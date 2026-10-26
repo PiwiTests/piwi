@@ -22,7 +22,8 @@ export interface DemoRunEvent {
     | 'step-end'
     | 'run-progress'
     | 'run-finalizing'
-    | 'run-finished';
+    | 'run-finished'
+    | 'resources';
   data: Record<string, unknown>;
 }
 

@@ -1303,6 +1303,44 @@ async function runSingleSimulation(
     return resources;
   }
 
+  // The run's report as it would read with the tests run so far, for the
+  // live resources and for the finish.
+  function resourceReport() {
+    return demoResourceReport({
+      leaky: scenario.resources === 'leaky',
+      wallMs: virtualEnd - virtualStart,
+      workers: [...testsByWorker.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([worker, spans]) => ({ worker, tests: spans.length, spans })),
+      fixtureFile: 'tests/checkout/fixtures.ts',
+      handleTest: { title: CHECKOUT_TESTS.at(-1)!.title, file: CHECKOUT_TESTS.at(-1)!.file },
+      artifactBytes,
+      shardIndex: shardOverride?.shardIndex ?? null,
+    });
+  }
+
+  // What the run used so far, as a reporter posts it while someone watches the
+  // run. The demo keeps nothing between posts, so each one holds every point.
+  function postLiveResources(): void {
+    if (!scenario.resources) return;
+    const report = resourceReport();
+    if (!report.timeline) return;
+    const machine = report.profile?.machine;
+    $fetch(`/api/test-runs/${runId}/live-resources`, {
+      method: 'POST',
+      body: {
+        streamToken,
+        shardIndex: shardOverride?.shardIndex ?? null,
+        reset: true,
+        timeline: report.timeline,
+        memoryCapacityBytes: machine ? (machine.memoryLimitBytes ?? machine.memoryBytes) : null,
+        memoryKind: report.profile?.memory.kind ?? null,
+      },
+    }).catch(() => {
+      // A lost post costs a moment of the chart, never the run.
+    });
+  }
+
   async function postEvents(events: Array<Record<string, unknown>>): Promise<void> {
     await $fetch(`/api/test-runs/${runId}/events`, {
       method: 'POST',
@@ -1466,7 +1504,9 @@ async function runSingleSimulation(
         spans.push([startedAt, startedAt + attemptDuration]);
         testsByWorker.set(workerIndex, spans);
         virtualNow += WORKER_GAP_MS;
+        virtualEnd = Math.max(virtualEnd, virtualNow);
         finalDuration = attemptDuration;
+        postLiveResources();
       }
 
       const finalAttempt = test.attempts[test.attempts.length - 1]!;
@@ -1541,21 +1581,7 @@ async function runSingleSimulation(
       playwrightVersion: scenario.playwrightVersion ?? '1.51.0',
       reporterVersion: '0.7.0',
       ...(shardOverride ? { shardIndex: shardOverride.shardIndex, shardTotal: shardOverride.shardTotal } : {}),
-      ...(scenario.resources
-        ? {
-            resourceReport: demoResourceReport({
-              leaky: scenario.resources === 'leaky',
-              wallMs: virtualEnd - virtualStart,
-              workers: [...testsByWorker.entries()]
-                .sort((a, b) => a[0] - b[0])
-                .map(([worker, spans]) => ({ worker, tests: spans.length, spans })),
-              fixtureFile: 'tests/checkout/fixtures.ts',
-              handleTest: { title: CHECKOUT_TESTS.at(-1)!.title, file: CHECKOUT_TESTS.at(-1)!.file },
-              artifactBytes,
-              shardIndex: shardOverride?.shardIndex ?? null,
-            }),
-          }
-        : {}),
+      ...(scenario.resources ? { resourceReport: resourceReport() } : {}),
     },
   });
 

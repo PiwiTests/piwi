@@ -244,7 +244,8 @@ function points(value: unknown, cap: number, max = Infinity): SeriesPoint[] {
   return out;
 }
 
-function timeline(value: unknown): WireResourceTimeline | null {
+/** A timeline as a reporter sent it, rebuilt within the report's bounds; null when it holds nothing. */
+export function sanitizeResourceTimeline(value: unknown): WireResourceTimeline | null {
   const raw = obj(value);
   const startedAt = raw ? num(raw.startedAt) : null;
   if (!raw || !startedAt) return null;
@@ -301,7 +302,7 @@ export function sanitizeResourceReport(value: unknown): WireResourceReport | nul
     workers,
     artifactBytes: artifactBytes(raw.artifactBytes) ?? {},
     workerHealth: workerHealth(raw.workerHealth),
-    timeline: timeline(raw.timeline),
+    timeline: sanitizeResourceTimeline(raw.timeline),
   };
 }
 

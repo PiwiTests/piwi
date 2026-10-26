@@ -68,6 +68,7 @@ import {
 import { Logger } from '../internal/support/logger.js';
 import { emitResourceSummary } from '../internal/support/ci-output.js';
 import { RunSampler } from '../internal/collect/process-sampler.js';
+import { LiveResources } from '../internal/streaming/live-resources.js';
 import { executionResources, resourceReportWire } from '../internal/collect/resource-wire.js';
 import {
   artifactKind,
@@ -170,6 +171,8 @@ export class PiwiDashboardReporter {
   private resourcesFile: string | null = null;
   /** Samples the run's processes and the machine from `onBegin` to `onEnd`. */
   private sampler: RunSampler | null = null;
+  /** Posts what the sampler and the censuses add while someone has the run open on the dashboard. */
+  private liveResources: LiveResources | null = null;
   /** Bytes of the files the tests attached, by kind. */
   private artifactBytes: ArtifactBytes = emptyArtifacts();
   /** The run's resource report for the dashboard, built in `onEnd`. */
@@ -411,6 +414,22 @@ export class PiwiDashboardReporter {
       // the dashboard shows the real total from the first render.
       this.plannedTests.length,
     );
+    if (this.streamManager && this.options.captureResources !== false) {
+      const live = new LiveResources(
+        this.streamManager,
+        this.httpClient,
+        {
+          sampler: this.sampler,
+          censuses: () => this.resourceCensuses,
+          shardIndex: this.shardInfo?.current ?? null,
+          runStartedAt: Date.now(),
+        },
+        this.logger,
+      );
+      this.streamManager.onWatched = () => void live.tick();
+      live.start();
+      this.liveResources = live;
+    }
   }
 
   /**
@@ -784,6 +803,8 @@ export class PiwiDashboardReporter {
    */
   private async reportResources(): Promise<void> {
     if (this.options.captureResources === false) return;
+    await this.liveResources?.stop();
+    this.liveResources = null;
     const profile = this.sampler ? await this.sampler.stop() : null;
     const samples = this.sampler?.timedSeries() ?? null;
     this.sampler = null;
