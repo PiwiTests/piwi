@@ -14,7 +14,7 @@
     "app:seed:demo": "node scripts/generate-demo-seed.mjs",
     "app:seed:dev": "node scripts/seed-dev-from-demo.mjs",
     "app:build": "nuxt build",
-    "app:dev": "cross-env NODE_OPTIONS=--max-old-space-size=4096 nuxt dev",
+    "app:dev": "cross-env NODE_OPTIONS=\"--max-old-space-size=4096 $NODE_OPTIONS\" nuxt dev",
     "app:dev:bg": "node scripts/dev-server.mjs",
     "app:preview": "nuxt preview",
     "app:lint": "oxlint --config oxlint.config.ts .",

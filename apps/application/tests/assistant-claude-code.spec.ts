@@ -37,6 +37,8 @@ function startServer(): ChildProcess {
   const child = spawn(command, args, {
     env: {
       ...process.env,
+      // `nuxt dev` outgrows Node's default heap (about 2 GB), so it gets 4 GB, as `app:dev` does.
+      NODE_OPTIONS: `--max-old-space-size=4096 ${process.env.NODE_OPTIONS ?? ''}`.trim(),
       NITRO_PORT: String(PORT),
       PORT: String(PORT),
       PIWI_DESKTOP_TOKEN: DESKTOP_TOKEN,
