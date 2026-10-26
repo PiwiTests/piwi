@@ -37,6 +37,7 @@ env:
     io.artifacthub.package.logo-url=https://piwitests.dev/logo.svg
     io.artifacthub.package.license=FSL-1.1-MIT
     io.artifacthub.package.keywords=playwright,testing,test-reporting,flaky-tests,dashboard,self-hosted
+    io.artifacthub.package.maintainers=[{"name":"Fabien Ménager","email":"piwitests@gmail.com"}]
 
 jobs:
   # Build each architecture on its own NATIVE runner and push it by digest.
