@@ -109,7 +109,8 @@ updates:
         patterns:
           - "*"
 
-  # The server image's base, pinned by tag and digest in the Dockerfile
+  # The server image's base, pinned by tag and digest in the Dockerfile. Its Node version is also the one the desktop
+  # app bundles (apps/desktop/scripts/node-version.mjs), so this update moves both.
   - package-ecosystem: docker
     directory: "/"
     schedule:
