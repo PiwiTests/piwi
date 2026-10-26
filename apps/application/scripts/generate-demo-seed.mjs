@@ -25,6 +25,7 @@
  * as runtime config so the demo SPA can detect stale IndexedDB data.
  */
 
+import './lib/utc-time-zone.mjs';
 import { writeFileSync, mkdirSync, readFileSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
