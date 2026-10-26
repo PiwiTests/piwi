@@ -16,6 +16,9 @@ const fromSource =
 // The environment `nitro dev` gives the server it starts: the sample's probe secret, and server probes on.
 process.env.PIWI_PROBE_SECRET ??= PROBE_SECRET;
 process.env.PIWI_SERVER_PROBES ??= 'true';
+// A coverage build, as the ASP.NET Core backend's `-p:PiwiCoverage=true`: the integration's module instruments the
+// server's code, so each test records the backend lines it ran. `PIWI_COVERAGE_BUILD=false` builds without it.
+process.env.PIWI_COVERAGE_BUILD ??= 'true';
 
 // The routes are the files under routes/, the Piwi integration is plugins/piwi-test-logs.ts, and its module gives the
 // route manifest the route table.

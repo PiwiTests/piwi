@@ -58,7 +58,11 @@ import {
   sourceMappingUrl,
   type SourceMapLookup,
 } from '@piwitests/core/source-map';
-import { browserFunctionsInWorker } from '../collect/coverage-settings.js';
+import {
+  browserCoverageInWorker,
+  browserFunctionsInWorker,
+  cssCoverageInWorker,
+} from '../collect/coverage-settings.js';
 import { internalCall } from './quiet-capture.js';
 
 /** Largest source map fetched, in bytes. */
@@ -202,7 +206,7 @@ function originOf(url: string | undefined): string | null {
 }
 
 /** The directories a script resolves against: its origin's, else its page's origin's, then the test's roots. */
-function scriptRoots(roots: CodeReachRoots, scriptUrl: string, pageUrl: string | undefined): string[] {
+export function scriptRoots(roots: CodeReachRoots, scriptUrl: string, pageUrl: string | undefined): string[] {
   if (!roots.byOrigin?.size) return roots.roots;
   const own = roots.byOrigin.get(originOf(scriptUrl) ?? '') ?? roots.byOrigin.get(originOf(pageUrl) ?? '');
   return own ? [...new Set([...own, ...roots.roots])] : roots.roots;
@@ -217,7 +221,7 @@ function isFile(file: string): boolean {
 }
 
 /** The existing file a source path names, absolute, or null. */
-function resolveSourcePath(source: string, roots: string[]): string | null {
+export function resolveSourcePath(source: string, roots: string[]): string | null {
   const normalized = normalizeSourcePath(source);
   if (!normalized || /(?:^|\/)node_modules\//.test(normalized)) return null;
   if (path.isAbsolute(normalized) && isFile(normalized)) return path.resolve(normalized);
@@ -261,7 +265,7 @@ function fileForUrl(url: string, roots: string[], bases: ViteBases): string | nu
   return file;
 }
 
-function relativeToRepo(file: string, repoRoot: string): string {
+export function relativeToRepo(file: string, repoRoot: string): string {
   return path.relative(repoRoot, file).split(path.sep).join('/');
 }
 
@@ -519,9 +523,40 @@ export interface RanScript {
   byRange: Map<string, CoveredScript['functions'][number]>;
 }
 
+/** A style sheet a page added while the capture ran, as `CSS.styleSheetAdded` describes it. */
+export interface CapturedSheet {
+  /** The address it was loaded from, or the page's for a `<style>` element. */
+  sourceURL: string;
+  sourceMapURL?: string;
+  isInline: boolean;
+  isConstructed?: boolean;
+  /** Where its text starts in the file that holds it, 0-based: a `<style>` element's place in its page. */
+  startLine: number;
+  /** Its owner element's `data-vite-dev-id`: the file a Vite dev server injected it from. */
+  devId?: string;
+  /** The address of the page's document as it added the sheet. */
+  pageUrl?: string;
+  /** Its text, read as it was added; undefined when it could not be read. */
+  text?: string;
+  /** The ranges of its rules that matched an element, as offsets in its text, each once. */
+  used: Map<string, { startOffset: number; endOffset: number }>;
+}
+
+/** The CSS rule usage running on one page, beside its JavaScript coverage, with `coverage.css: 'rules'`. */
+interface CssCapture {
+  /** The sheets added since the capture started, by style sheet id. */
+  sheets: Map<string, CapturedSheet>;
+  /** The reads of the sheets' text and owner, still running. */
+  reading: Set<Promise<void>>;
+}
+
 /** The function coverage running on one page, through its own CDP session. */
 interface CoverageCapture {
   cdp: CDPSession;
+  /** Whether it records JavaScript: off when only the style sheets record. */
+  js: boolean;
+  /** The style sheets' rule usage, with `coverage.css: 'rules'`. */
+  css: CssCapture | null;
   /** The scripts parsed since the capture started, by script id. */
   scripts: Map<string, ParsedScript>;
   /** The sources read, by script version; a failed read is dropped, so a later parse of that version reads again. */
@@ -594,10 +629,16 @@ function onPaused(
     event.reason === 'EventListener' &&
     (event.data as { eventName?: string } | undefined)?.eventName === 'listener:beforeunload' &&
     (event.callFrames?.[0]?.functionName ?? MARK_FUNCTION) === MARK_FUNCTION;
-  const read = leaving ? readCoverage(page, capture.cdp) : null;
+  // Both reads run while the document is still there: the page resumes only once each has answered.
+  const read = leaving
+    ? Promise.all([
+        capture.js ? readCoverage(page, capture.cdp) : Promise.resolve([]),
+        capture.css ? readCssUsage(page, capture.cdp, capture.css) : Promise.resolve(),
+      ])
+    : null;
   if (read) {
     // Merged before the page resumes, against its scripts as it knows them now.
-    const merging = read.then((coverage) =>
+    const merging = read.then(([coverage]) =>
       mergeCoverageRead(capture.ran, capture.scripts, coverage, capture.keepIdle),
     );
     capture.reading.add(merging);
@@ -625,7 +666,7 @@ function onScriptParsed(
   capture: CoverageCapture,
   event: { scriptId: string; url: string; hash: string },
 ): void {
-  if (!event.url || REPLAYED_SCRIPT.test(event.url)) return;
+  if (!capture.js || !event.url || REPLAYED_SCRIPT.test(event.url)) return;
   capture.scripts.set(event.scriptId, { url: event.url, hash: event.hash, pageUrl: capture.pageUrl });
   if (NEVER_REACHED.test(event.url)) return;
   const key = versionKey(event.url, event.hash);
@@ -659,6 +700,77 @@ function readCoverage(page: Page, cdp: CDPSession): Promise<ScriptCoverage[]> {
     () => [],
   );
   return Promise.race([taken, late]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Record a style sheet the page added, and read its text and its owner's
+ * `data-vite-dev-id` now, while its document is still there. A constructed
+ * sheet (`adoptedStyleSheets`, CSS-in-JS) has no file and is left out.
+ */
+function onStyleSheetAdded(
+  page: Page,
+  cdp: CDPSession,
+  css: CssCapture,
+  pageUrl: string,
+  header: {
+    styleSheetId: string;
+    sourceURL: string;
+    sourceMapURL?: string;
+    isInline: boolean;
+    isConstructed?: boolean;
+    startLine: number;
+    ownerNode?: number;
+  },
+): void {
+  if (header.isConstructed) return;
+  const sheet: CapturedSheet = {
+    sourceURL: header.sourceURL,
+    ...(header.sourceMapURL ? { sourceMapURL: header.sourceMapURL } : {}),
+    isInline: header.isInline,
+    startLine: header.startLine,
+    pageUrl,
+    used: new Map(),
+  };
+  css.sheets.set(header.styleSheetId, sheet);
+  const reading = (async () => {
+    try {
+      // A `<style>` element's sheet has no address of its own: its owner names the file a dev server injected.
+      if (header.ownerNode !== undefined && !/\.css(?:[?#]|$)/i.test(header.sourceURL)) {
+        const { node } = await internalCall(page, () =>
+          cdp.send('DOM.describeNode', { backendNodeId: header.ownerNode! }),
+        );
+        const attributes = node.attributes ?? [];
+        const at = attributes.indexOf('data-vite-dev-id');
+        if (at >= 0 && typeof attributes[at + 1] === 'string') sheet.devId = attributes[at + 1];
+      }
+      // A dependency's sheet counts for no file: its text is never read.
+      if (/\/node_modules\//.test(sheet.devId ?? header.sourceURL)) return;
+      const { text } = await internalCall(page, () =>
+        cdp.send('CSS.getStyleSheetText', { styleSheetId: header.styleSheetId }),
+      );
+      sheet.text = text;
+    } catch {
+      // The sheet counts for no file without its text.
+    }
+  })();
+  css.reading.add(reading);
+  void reading.finally(() => css.reading.delete(reading));
+}
+
+/** Add the rules that matched since the last read to their sheets: Chromium resets what it reports at each read. */
+async function readCssUsage(page: Page, cdp: CDPSession, css: CssCapture): Promise<void> {
+  try {
+    const { coverage } = await internalCall(page, () => cdp.send('CSS.takeCoverageDelta'));
+    for (const rule of coverage) {
+      if (!rule.used) continue;
+      css.sheets.get(rule.styleSheetId)?.used.set(`${rule.startOffset}:${rule.endOffset}`, {
+        startOffset: rule.startOffset,
+        endOffset: rule.endOffset,
+      });
+    }
+  } catch {
+    // The rules matched since the last read are lost.
+  }
 }
 
 /**
@@ -719,11 +831,16 @@ async function detach(page: Page, cdp: CDPSession): Promise<void> {
  */
 export async function startCodeReach(page: Page): Promise<boolean> {
   if (!isChromiumPage(page) || captures.has(page)) return false;
+  // Scripts record unless only the style sheets are asked for.
+  const withCss = cssCoverageInWorker();
+  const js = browserCoverageInWorker() || !withCss;
   let cdp: CDPSession | null = null;
   try {
     cdp = await internalCall(page, () => page.context().newCDPSession(page));
     const capture: CoverageCapture = {
       cdp,
+      js,
+      css: withCss ? { sheets: new Map(), reading: new Set() } : null,
       scripts: new Map(),
       sources: new Map(),
       ran: new Map(),
@@ -733,6 +850,9 @@ export async function startCodeReach(page: Page): Promise<boolean> {
     };
     const marks = marksOf(page);
     cdp.on('Debugger.scriptParsed', (event) => onScriptParsed(page, capture, event));
+    const css = capture.css;
+    if (css)
+      cdp.on('CSS.styleSheetAdded', (event) => onStyleSheetAdded(page, cdp!, css, capture.pageUrl, event.header));
     cdp.on('Debugger.paused', (event) => onPaused(page, capture, event));
     // A document the main frame commits while the capture runs gets the mark from the script added below.
     cdp.on('Page.frameNavigated', (event) => {
@@ -743,8 +863,25 @@ export async function startCodeReach(page: Page): Promise<boolean> {
     await internalCall(page, () =>
       Promise.all([
         capture.cdp.send('Debugger.enable'),
-        capture.cdp.send('Profiler.enable'),
-        capture.cdp.send('Profiler.startPreciseCoverage', { callCount: false, detailed: false }),
+        ...(js
+          ? [
+              capture.cdp.send('Profiler.enable'),
+              capture.cdp.send('Profiler.startPreciseCoverage', { callCount: false, detailed: false }),
+            ]
+          : []),
+        // The style sheets' rule usage records nothing without the DOM and CSS domains. A failure there leaves the
+        // scripts' coverage running.
+        ...(css
+          ? [
+              capture.cdp
+                .send('DOM.enable')
+                .then(() => capture.cdp.send('CSS.enable'))
+                .then(() => capture.cdp.send('CSS.startRuleUsageTracking'))
+                .catch(() => {
+                  capture.css = null;
+                }),
+            ]
+          : []),
         capture.cdp.send('Page.enable'),
         capture.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: MARK_SOURCE, worldName: MARK_WORLD }),
         capture.cdp.send('DOMDebugger.setEventListenerBreakpoint', { eventName: 'beforeunload' }),
@@ -764,17 +901,36 @@ export async function startCodeReach(page: Page): Promise<boolean> {
  * each with its functions and version; null when it cannot be read.
  */
 export async function stopCodeReach(page: Page): Promise<CoveredScript[] | null> {
+  return (await stopPageCoverage(page)).scripts;
+}
+
+/** What a page's capture recorded: its scripts (null when they cannot be read, or JavaScript is not recorded), and its sheets. */
+export interface PageCoverage {
+  scripts: CoveredScript[] | null;
+  /** The style sheets the page added, each with its matched rules; empty unless `coverage.css: 'rules'`. */
+  sheets: CapturedSheet[];
+}
+
+/** Stop the page's coverage and return what it recorded, scripts and style sheets. Never throws. */
+export async function stopPageCoverage(page: Page): Promise<PageCoverage> {
   const capture = captures.get(page);
-  if (!capture) return null;
+  if (!capture) return { scripts: null, sheets: [] };
   captures.delete(page);
   const { cdp } = capture;
-  try {
+  const sheets = async (): Promise<CapturedSheet[]> => {
+    if (!capture.css) return [];
+    await readCssUsage(page, cdp, capture.css);
+    await Promise.all(capture.css.reading);
+    await internalCall(page, () => cdp.send('CSS.stopRuleUsageTracking')).catch(() => {});
+    return [...capture.css.sheets.values()].filter((sheet) => sheet.used.size > 0 || sheet.text !== undefined);
+  };
+  const scripts = async (): Promise<CoveredScript[] | null> => {
+    if (!capture.js) return null;
     const last = await internalCall(page, async () => {
       const taken = await cdp.send('Profiler.takePreciseCoverage');
       await cdp.send('Profiler.stopPreciseCoverage');
       return taken.result as ScriptCoverage[];
     });
-    await Promise.all(capture.reading);
     mergeCoverageRead(capture.ran, capture.scripts, last, capture.keepIdle);
     const entries: CoveredScript[] = [];
     for (const [key, { script, functions }] of capture.ran) {
@@ -784,8 +940,11 @@ export async function stopCodeReach(page: Page): Promise<CoveredScript[] | null>
       entries.push(entry);
     }
     return entries;
-  } catch {
-    return null;
+  };
+  try {
+    await Promise.all(capture.reading);
+    const [read, styles] = await Promise.all([scripts().catch(() => null), sheets().catch(() => [])]);
+    return { scripts: read, sheets: styles };
   } finally {
     await detach(page, cdp);
   }

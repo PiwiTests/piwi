@@ -17,10 +17,15 @@ export type BrowserCoverageSetting = 'off' | 'files' | 'functions';
 /** What the server side of coverage records. */
 export type ServerCoverageSetting = 'off' | CoverageGranularity;
 
-/** The coverage a run records, per runtime. */
+/** Whether the browser's style sheets record the rules that matched an element. */
+export type CssCoverageSetting = 'off' | 'rules';
+
+/** The coverage a run records, per runtime, and for the browser's style sheets. */
 export interface CoverageSettings {
   browser: BrowserCoverageSetting;
   server: ServerCoverageSetting;
+  /** Off when unset. */
+  css?: CssCoverageSetting;
 }
 
 const SERVER_VALUES: ReadonlySet<string> = new Set(['files', 'functions', 'lines']);
@@ -35,10 +40,11 @@ export function isServerGranularity(value: unknown): value is CoverageGranularit
  * `collectPerformanceMetrics: false`. The browser records functions when
  * `coverage.browser` is `'functions'`, files when it is `'files'` or
  * `captureCodeReach` is true; the server records the granularity
- * `coverage.server` names, anything else is off.
+ * `coverage.server` names, anything else is off; the style sheets record their
+ * matched rules with `coverage.css: 'rules'`.
  */
 export function coverageSettings(options: PiwiDashboardOptions): CoverageSettings {
-  if (options.collectPerformanceMetrics === false) return { browser: 'off', server: 'off' };
+  if (options.collectPerformanceMetrics === false) return { browser: 'off', server: 'off', css: 'off' };
   const browser: BrowserCoverageSetting =
     options.coverage?.browser === 'functions'
       ? 'functions'
@@ -46,7 +52,13 @@ export function coverageSettings(options: PiwiDashboardOptions): CoverageSetting
         ? 'files'
         : 'off';
   const server = isServerGranularity(options.coverage?.server) ? options.coverage.server : 'off';
-  return { browser, server };
+  const css = options.coverage?.css === 'rules' ? 'rules' : 'off';
+  return { browser, server, css };
+}
+
+/** In a test worker: whether the style sheets record the rules that matched, from `PIWI_COVERAGE_CSS`. */
+export function cssCoverageInWorker(): boolean {
+  return process.env[PIWI_ENV_KEYS.coverageCss] === 'rules';
 }
 
 /** In a test worker: whether the browser side records, from `PIWI_CAPTURE_CODE_REACH` or `PIWI_COVERAGE_BROWSER`. */

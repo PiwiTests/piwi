@@ -228,9 +228,9 @@ function instanceOf(answer: unknown): BackendInstance | null {
   return { id: instance.id, startedAt };
 }
 
-/** The process key of a request id, `<process key>.<sequence>`; null for an id of another shape. */
+/** The process key of a request id, `<process key>.<sequence>[.<secret>]`; null for an id of another shape. */
 function processKeyOf(id: string): string | null {
-  const dot = id.lastIndexOf('.');
+  const dot = id.indexOf('.');
   return dot > 0 ? id.slice(0, dot) : null;
 }
 
