@@ -6333,15 +6333,28 @@ const hashLines = lines.filter((l) => !l.startsWith('-- Generated at:'));
 const content = hashLines.join('\n');
 const hash = createHash('sha256').update(content, 'utf-8').digest('hex');
 
-const versionInfo = { hash, generatedAt: new Date().toISOString() };
 const VERSION_OUTPUT = join(OUTPUT_DIR, 'seed.version.json');
+
+// The version file is rewritten only when the hash changes, so regenerating an
+// unchanged seed leaves the tracked file, its `generatedAt` included, as it is.
+function recordedHash() {
+  try {
+    return JSON.parse(readFileSync(VERSION_OUTPUT, 'utf-8')).hash;
+  } catch {
+    return undefined;
+  }
+}
 
 mkdirSync(OUTPUT_DIR, { recursive: true });
 writeFileSync(OUTPUT, content, 'utf-8');
-writeFileSync(VERSION_OUTPUT, JSON.stringify(versionInfo, null, 2) + '\n', 'utf-8');
+const versionChanged = recordedHash() !== hash;
+if (versionChanged) {
+  const versionInfo = { hash, generatedAt: new Date().toISOString() };
+  writeFileSync(VERSION_OUTPUT, JSON.stringify(versionInfo, null, 2) + '\n', 'utf-8');
+}
 
 console.log(`✅  Demo seed written to ${OUTPUT}`);
-console.log(`✅  Version file written to ${VERSION_OUTPUT}`);
+console.log(`✅  Version file ${versionChanged ? 'written to' : 'unchanged:'} ${VERSION_OUTPUT}`);
 console.log(`   Hash       : ${hash}`);
 console.log(`   Projects   : ${PROJECTS.length}`);
 console.log(`   Users      : ${USERS.length}`);

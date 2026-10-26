@@ -146,8 +146,8 @@ clusters without a stored title fall back to the deterministic one.
   the script would then drive the server that was already there. Stop it, or give `app:measure` a
   `--port`.
 - **Seeding and migrations need the server stopped** (`node scripts/dev-server.mjs --stop` first).
-- **`npm run app:seed:demo` rewrites `public/demo/seed.version.json`.** Revert it (`git checkout --`)
-  unless you changed the generator on purpose.
+- **`public/demo/seed.version.json` changes only when the seed does.** `npm run app:seed:demo` leaves it
+  as it is unless the generator or its stories changed; when they did, commit it with them.
 - **Never start `nuxt dev` in the foreground of a tool call** — it blocks until the call times out.
   `app:dev:bg` exists for that reason.
 - **`PIWI_DEMO_MODE=true` is not a dev-server flag.** To verify the demo itself, build it:

@@ -828,8 +828,9 @@ sql.js (WASM SQLite) through Drizzle, persisted in IndexedDB. `app/demo/api/rout
 share `app/demo/db.client.ts`.
 
 - **`public/demo/seed.sql` is NOT committed** — gitignored, regenerated on demand (`npm run app:seed:demo`, and by CI in
-  `docs.yml` before the demo build). Only `seed.version.json` (SHA-256 of the SQL + timestamp) is tracked. Generation is
-  deterministic (seeded PRNG), so two runs with no source changes are byte-identical. After editing
+  `docs.yml` before the demo build). Only `seed.version.json` (SHA-256 of the SQL + timestamp) is tracked, and it is
+  rewritten only when the hash changes. Generation is deterministic (seeded PRNG), so two runs with no source changes
+  are byte-identical and leave the version file as it is. After editing
   `scripts/generate-demo-seed.mjs` or `shared/demo/failure-stories.mjs`, re-seed and commit the generator plus the
   updated `seed.version.json`; never stage `seed.sql`.
 - **No dynamic `import()` in code the service worker bundles** (`shared/`, `server/utils/`, `app/demo/`): the
