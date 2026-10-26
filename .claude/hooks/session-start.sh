@@ -39,39 +39,49 @@ session_export() {
   fi
 }
 
-# Download $1 to $2 and check that its SHA-256 is $3; nothing is left behind on a mismatch.
-fetch_checked() {
-  if curl -fsSL "$1" -o "$2" && echo "$3  $2" | sha256sum --check --quiet; then
+# Download the archive at $1, check that its SHA-256 is $2, and unpack it into the
+# directory $3 without its first $4 path components. The directory takes its name
+# only once the archive is wholly unpacked, so an interrupted install never reads
+# as installed.
+install_archive() {
+  local url="$1" sha="$2" dest="$3" strip="$4" tmp
+  mkdir -p "$(dirname "$dest")" || return 1
+  tmp="$(mktemp -d "$dest.XXXXXX")" || return 1
+  if curl -fsSL "$url" -o "$tmp.download" &&
+    echo "$sha  $tmp.download" | sha256sum --check --quiet &&
+    tar -xf "$tmp.download" -C "$tmp" --strip-components "$strip" &&
+    mv "$tmp" "$dest"; then
+    rm -f "$tmp.download"
     return 0
   fi
-  rm -f "$2"
+  rm -rf "$tmp" "$tmp.download"
   return 1
 }
 
 # Run on the Node release line the root .node-version names, as CI's setup-workspace
 # action does: the newest release of that line, downloaded from nodejs.org and
-# checked against its published SHA-256. When the download fails, the session goes
+# checked against its published SHA-256. A release of the line already installed is
+# used as is, so a resumed or compacted session needs no network and does not move
+# to a release published since it started. When none can be had, the session goes
 # on with the container's Node and says so.
 install_node() {
-  local want dist arch line file dir cache="$HOME/.cache/piwi-node"
+  local want pattern dist arch line file dir cache="$HOME/.cache/piwi-node"
   want="$(tr -d '[:space:]v' < .node-version)"
-  case "$want" in
-    *.*) dist="https://nodejs.org/dist/v$want" ;;
-    *) dist="https://nodejs.org/dist/latest-v$want.x" ;;
-  esac
   case "$(uname -m)" in
     x86_64) arch=x64 ;;
     aarch64 | arm64) arch=arm64 ;;
     *) return 1 ;;
   esac
-  line="$(curl -fsSL "$dist/SHASUMS256.txt" | grep -E " node-v[0-9.]+-linux-$arch\.tar\.xz\$")" || return 1
-  file="${line##* }"
-  dir="$cache/${file%.tar.xz}"
-  if [ ! -x "$dir/bin/node" ]; then
-    mkdir -p "$cache" &&
-      fetch_checked "$dist/$file" "$cache/$file" "${line%% *}" &&
-      tar -xJf "$cache/$file" -C "$cache" &&
-      rm -f "$cache/$file" || return 1
+  case "$want" in
+    *.*) pattern="node-v$want-linux-$arch" dist="https://nodejs.org/dist/v$want" ;;
+    *) pattern="node-v$want.*-linux-$arch" dist="https://nodejs.org/dist/latest-v$want.x" ;;
+  esac
+  dir="$(find "$cache" -mindepth 1 -maxdepth 1 -type d -name "$pattern" 2>/dev/null | sort -V | tail -n 1 || true)"
+  if [ -z "$dir" ]; then
+    line="$(curl -fsSL "$dist/SHASUMS256.txt" | grep -E " node-v[0-9.]+-linux-$arch\.tar\.xz\$")" || return 1
+    file="${line##* }"
+    dir="$cache/${file%.tar.xz}"
+    install_archive "$dist/$file" "${line%% *}" "$dir" 1 || return 1
   fi
   add_to_path "$dir/bin"
 }
@@ -111,17 +121,20 @@ install_dependencies . "workspace dependencies"
 install_dependencies apps/docs "the docs site's dependencies" ||
   echo "[session-start] WARNING: could not install the docs site's dependencies; docs:build will not run"
 
-# The reporter bundles its own sources, @piwitests/core's and @piwitests/picker-dom's;
-# a resumed session rebuilds it only when one of them, or the lockfile, is newer
-# than the build.
-reporter_build="packages/reporter/dist/index.js"
-if [ -f "$reporter_build" ] && [ -z "$(find packages/reporter/src packages/reporter/package.json \
-  packages/reporter/tsup.config.ts packages/reporter/tsconfig.json packages/core packages/picker-dom \
-  package-lock.json -newer "$reporter_build" -not -path '*/node_modules/*' -print -quit)" ]; then
-  echo "[session-start] the reporter's build is newer than its sources; skipping the build"
+# The reporter bundles its own sources, @piwitests/core's and @piwitests/picker-dom's.
+# A resumed session rebuilds it only when one of them, a tsconfig or the lockfile is
+# newer than the last build that succeeded: the stamp is written once a build
+# succeeds and removed before one starts, so a failed or interrupted build is redone.
+reporter_stamp="node_modules/.session-start-reporter-build"
+if [ -f "$reporter_stamp" ] && [ -z "$(find packages/reporter/src packages/reporter/package.json \
+  packages/reporter/tsup.config.ts packages/reporter/tsconfig.json tsconfig.json packages/core packages/picker-dom \
+  package-lock.json -newer "$reporter_stamp" -not -path '*/node_modules/*' -print -quit)" ]; then
+  echo "[session-start] the reporter's last build is newer than its sources; skipping the build"
 else
   echo "[session-start] building the reporter (playwright.config.ts imports it)"
+  rm -f "$reporter_stamp"
   npm run reporter:build --workspace packages/reporter
+  touch "$reporter_stamp"
 fi
 
 # Prefer the browser Playwright pins: the full Chromium as well as the headless
@@ -158,7 +171,7 @@ fi
 # the stable release of shellcheck, which this pins with its SHA-256.
 SHELLCHECK_VERSION=0.11.0
 install_actionlint() {
-  local version arch sc_arch sc_sha base line file dir cache="$HOME/.cache/piwi-tools"
+  local version arch sc_arch sc_sha base line lint_dir check_dir cache="$HOME/.cache/piwi-tools"
   version="$(grep -oE 'rhysd/actionlint:[0-9.]+' .github/workflows/pr-lint.yml | head -n 1 | cut -d : -f 2)" || return 1
   [ -n "$version" ] || return 1
   case "$(uname -m)" in
@@ -166,29 +179,25 @@ install_actionlint() {
     aarch64 | arm64) arch=arm64 sc_arch=aarch64 sc_sha=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588 ;;
     *) return 1 ;;
   esac
-  mkdir -p "$cache" || return 1
 
-  dir="$cache/actionlint-$version"
-  if [ ! -x "$dir/actionlint" ]; then
+  lint_dir="$cache/actionlint-$version"
+  if [ ! -x "$lint_dir/actionlint" ]; then
     base="https://github.com/rhysd/actionlint/releases/download/v$version"
     line="$(curl -fsSL "$base/actionlint_${version}_checksums.txt" | grep " actionlint_${version}_linux_$arch\.tar\.gz\$")" || return 1
-    file="${line##* }"
-    mkdir -p "$dir" &&
-      fetch_checked "$base/$file" "$cache/$file" "${line%% *}" &&
-      tar -xzf "$cache/$file" -C "$dir" actionlint &&
-      rm -f "$cache/$file" || return 1
+    install_archive "$base/${line##* }" "${line%% *}" "$lint_dir" 0 || return 1
   fi
-  add_to_path "$dir"
 
-  dir="$cache/shellcheck-v$SHELLCHECK_VERSION"
-  if [ ! -x "$dir/shellcheck" ]; then
-    file="shellcheck-v$SHELLCHECK_VERSION.linux.$sc_arch.tar.xz"
-    fetch_checked "https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK_VERSION/$file" \
-      "$cache/$file" "$sc_sha" &&
-      tar -xJf "$cache/$file" -C "$cache" &&
-      rm -f "$cache/$file" || return 1
+  check_dir="$cache/shellcheck-v$SHELLCHECK_VERSION"
+  if [ ! -x "$check_dir/shellcheck" ]; then
+    install_archive \
+      "https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK_VERSION/shellcheck-v$SHELLCHECK_VERSION.linux.$sc_arch.tar.xz" \
+      "$sc_sha" "$check_dir" 1 || return 1
   fi
-  add_to_path "$dir"
+
+  # Both or neither: without shellcheck, actionlint silently skips its shellcheck
+  # rule and passes what CI fails.
+  add_to_path "$lint_dir"
+  add_to_path "$check_dir"
 }
 
 echo "[session-start] installing actionlint and shellcheck"
