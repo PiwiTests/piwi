@@ -61,7 +61,10 @@ Two **external contracts** beyond the npm API:
   **Record here** and `page.pause()` connect to the editor service's local socket and relay
   the recorder's binding calls over it (`internal/capture/record-handoff.ts`).
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
-  unref'd timer (`internal/collect/process-sampler.ts`).
+  unref'd timer (`internal/collect/process-sampler.ts`). While the dashboard says
+  someone watches the run, another unref'd timer posts what the sampler and the
+  censuses added since its last post to `/live-resources`, every five seconds
+  (`internal/streaming/live-resources.ts`).
   With server coverage on (`coverage.server`), the capture fixtures keep the
   `X-Piwi-Coverage` request ids of each test's responses, its pages' and its API
   calls' (`piwi-server-coverage-requests`),
@@ -169,7 +172,8 @@ src/
   internal/
     submit/     run-submitter, uploader, serializer
     transport/  http-client (+ HttpError)
-    streaming/  stream-manager, stream-buffer, crash-recovery
+    streaming/  stream-manager, stream-buffer, crash-recovery, live-resources (a
+                watched run's CPU, memory and open pages, posted as it runs)
     collect/    metadata-collector, error-text, resource-verdicts (the censuses
                 stitched into leaked, idle, piling-up and handle findings),
                 process-sampler (the run's processes and the machine, sampled
