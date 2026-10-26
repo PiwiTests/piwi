@@ -107,13 +107,15 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
         </UFormField>
 
         <div
-          v-if="model.provider === 'claude-cli'"
+          v-if="model.provider === 'claude-cli' || model.provider === 'codex-cli'"
           class="flex items-start gap-2 rounded-md bg-elevated/50 px-3 py-2 text-sm text-muted"
         >
           <UIcon name="i-lucide-terminal" class="size-4 mt-0.5 shrink-0 text-primary" />
           <span>
-            Runs the local <code class="font-mono">claude</code> command, so it uses your Claude Code sign-in — no API
-            key to enter. Sign-in status and usage are managed at the top of this section.
+            Runs the local
+            <code class="font-mono">{{ model.provider === 'codex-cli' ? 'codex' : 'claude' }}</code> command, so it uses
+            your {{ model.provider === 'codex-cli' ? 'ChatGPT' : 'Claude Code' }} sign-in — no API key to enter. Sign-in
+            status and usage are managed at the top of this section.
           </span>
         </div>
 
@@ -132,7 +134,7 @@ const roleEnvVars = computed<PiwiEnvVarName[]>(() => helpEnvVars(props.meta.help
         </UFormField>
 
         <UFormField
-          v-if="model.provider && model.provider !== 'claude-cli'"
+          v-if="model.provider && model.provider !== 'claude-cli' && model.provider !== 'codex-cli'"
           label="API key"
           :description="
             !canStoreSecrets && !disabled

@@ -60,6 +60,7 @@ export default eventHandler(async (event) => {
   // them all; the CLI resolves whichever the user's subscription grants (and any
   // free-typed string still works). Pricing mirrors the per-1M rates the CLI
   // reports as cost, whether or not the account is billed per token.
+  if (provider === 'codex-cli') return { models: [] };
   if (provider === 'claude-cli') {
     return { models: CLAUDE_CLI_MODELS };
   }

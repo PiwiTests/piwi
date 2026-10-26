@@ -629,12 +629,17 @@ function scriptedCli(
 
 async function claudeCodeTurn(
   cli: ReturnType<typeof scriptedCli>['cli'],
-  overrides: { allowance?: number | null; maxToolCalls?: number; baseUrl?: string } = {},
+  overrides: {
+    allowance?: number | null;
+    maxToolCalls?: number;
+    baseUrl?: string;
+    provider?: 'claude-cli' | 'codex-cli';
+  } = {},
 ) {
   const { toolbox, readTools } = await toolboxOf(member);
   const events: AssistantEvent[] = [];
   const result = await runClaudeCodeTurn({
-    role,
+    role: { ...role, provider: overrides.provider ?? role.provider },
     system: 'rules',
     history: [],
     question: 'Which projects report here?',
@@ -650,6 +655,25 @@ async function claudeCodeTurn(
   });
   return { result, events, readTools };
 }
+
+describe('Codex assistant MCP access', () => {
+  test('retains user scope, refuses writes and revokes the turn token', async () => {
+    let token = '';
+    let listed: unknown;
+    let write: unknown;
+    const { cli } = scriptedCli(async (endpoint, run) => {
+      token = run.server.token;
+      listed = await endpoint(toolCall(1, 'list_projects'));
+      write = await endpoint(toolCall(2, 'set_cluster_status', { clusterId: 1, status: 'resolved' }));
+      run.onText('Only readable projects are visible.');
+    });
+    const { result } = await claudeCodeTurn(cli, { provider: 'codex-cli' });
+    expect(result.provider).toBe('codex-cli');
+    expect(JSON.stringify(listed)).toContain('shop');
+    expect(JSON.stringify(write)).toMatch(/error|not.*(?:offered|found|available)/i);
+    expect(tokens.liveAssistantTurn(token, 7)).toBeNull();
+  });
+});
 
 describe('runClaudeCodeTurn', () => {
   test("one CLI run answers: its text streams, its calls through the endpoint emit the turn's events", async () => {

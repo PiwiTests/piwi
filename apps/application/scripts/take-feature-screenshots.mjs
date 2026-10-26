@@ -5656,6 +5656,25 @@ const SCENES = [
       await shoot('collapsed', { clip: { x: 0, y: 0, width: 320, height: 560 } });
     },
   },
+  ...[375, 1280].map((width) => ({
+    name: `ai-codex-cli-${width}`,
+    description: `Settings → AI: local Codex login and provider at ${width} px`,
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/ai',
+    viewport: { width, height: 1800 },
+    async run({ page, shoot, settle }) {
+      const card = page.getByText('Uses your local ChatGPT login.').locator('..');
+      await card.waitFor();
+      await card.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
+      await settle();
+      await shoot('before');
+      await page.getByRole('combobox').first().click();
+      await page.getByRole('option', { name: 'Codex (local)' }).click();
+      await settle();
+      await shoot();
+    },
+  })),
   {
     name: 'ai-claude-cli',
     description: 'Settings → AI: use the local Claude Code CLI as the provider — no API key (desktop shell)',

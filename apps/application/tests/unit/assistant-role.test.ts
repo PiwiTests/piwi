@@ -140,6 +140,35 @@ describe('the Claude Code CLI in Settings', () => {
   });
 });
 
+describe('the Codex CLI provider roles', () => {
+  test('resolves keyless diagnosis and research roles and refuses CLI embeddings', async () => {
+    envAi = {
+      provider: 'codex-cli',
+      researchModel: 'test-model',
+      embeddingProvider: 'codex-cli',
+      embeddingModel: 'test-model',
+    };
+    const config = (await resolveAiConfig(db))!;
+    expect(config.roles.diagnosis).toMatchObject({ provider: 'codex-cli', model: '', apiKey: '' });
+    expect(config.roles.research).toMatchObject({ provider: 'codex-cli', model: 'test-model' });
+    expect(config.roles.embedding).toBeNull();
+    expect(assistantRole(config).provider).toBe('codex-cli');
+  });
+
+  test('offers Codex in Settings when the server has opted in', async () => {
+    vi.stubEnv('PIWI_DESKTOP_TOKEN', '');
+    vi.stubEnv('NUXT_PUBLIC_DESKTOP', '');
+    vi.stubEnv('PIWI_CODEX_CLI_PATH', '');
+    try {
+      expect((await readAiSettings(db)).codexCliAvailable).toBe(false);
+      vi.stubEnv('PIWI_CODEX_CLI_PATH', '/local/codex');
+      expect((await readAiSettings(db)).codexCliAvailable).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe('resolveAssistantLimits', () => {
   test('defaults with nothing set', () => {
     expect(limits.resolveAssistantLimits({})).toEqual({

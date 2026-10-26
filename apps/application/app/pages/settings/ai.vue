@@ -158,11 +158,19 @@ const usesClaudeCli = computed(() =>
 );
 const showClaudeCli = computed(() => isDesktop || Boolean(settings.value?.claudeCliAvailable) || usesClaudeCli.value);
 
+const showCodexCli = computed(
+  () =>
+    isDesktop ||
+    Boolean(settings.value?.codexCliAvailable) ||
+    Object.values(settings.value?.roles ?? {}).some((r) => r?.provider === 'codex-cli'),
+);
+
 const providerOptions = computed(() => {
   const opts = [
     { label: 'Anthropic API', value: 'anthropic' },
     { label: 'OpenAI-compatible', value: 'openai' },
   ];
+  if (showCodexCli.value) opts.unshift({ label: 'Codex (local)', value: 'codex-cli' });
   if (showClaudeCli.value) opts.unshift({ label: 'Claude Code (local)', value: 'claude-cli' });
   return opts;
 });
@@ -426,6 +434,7 @@ function resetLimits() {
 
         <div class="space-y-5" data-shot="ai-model-providers">
           <ClaudeCliStatusCard v-if="showClaudeCli" />
+          <CodexCliStatusCard v-if="showCodexCli" help="settings.ai-provider" />
 
           <AiRoleConfigForm
             v-for="meta in ROLE_META"

@@ -536,7 +536,7 @@ const modeKey = (config: ResolvedAiRole) => `${config.baseUrl ?? ''}\u0000${conf
  */
 export function knownToolMode(config: ResolvedAiRole): AssistantToolMode | null {
   if (config.provider === 'anthropic') return 'native';
-  if (config.provider === 'claude-cli') return 'json-action';
+  if (config.provider === 'claude-cli' || config.provider === 'codex-cli') return 'json-action';
   return learnedModes.get(modeKey(config)) ?? null;
 }
 
