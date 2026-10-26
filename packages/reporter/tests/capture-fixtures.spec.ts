@@ -1739,6 +1739,86 @@ describe('network capture in Chromium', () => {
   });
 });
 
+describe('teardown reads before a page closes', () => {
+  it('takes the page reads together, while the in-flight probes drain', async () => {
+    const attrs = {
+      tagName: 'button',
+      attributes: { 'data-testid': 'save' },
+      textContent: 'Save',
+      center: { x: 1, y: 1 },
+      hasLabel: false,
+      selectorCounts: {},
+    };
+    let releaseProbe: ((value: typeof attrs) => void) | undefined;
+    const fakeLocator = {
+      click: async () => {},
+      evaluate: () =>
+        new Promise((resolve) => {
+          releaseProbe = resolve;
+        }),
+    };
+    const factory = (..._args: unknown[]) => fakeLocator;
+    const pendingReads: Array<(value: null) => void> = [];
+    let closed = false;
+    const fakePage = {
+      getByRole: factory,
+      getByTestId: factory,
+      getByText: factory,
+      getByLabel: factory,
+      getByPlaceholder: factory,
+      getByAltText: factory,
+      getByTitle: factory,
+      locator: factory,
+      on: () => {},
+      // Web vitals, the page state and the interaction read: each waits until released.
+      evaluate: vi.fn(
+        () =>
+          new Promise<null>((resolve) => {
+            pendingReads.push(resolve);
+          }),
+      ),
+      isClosed: () => closed,
+      close: vi.fn(async () => {
+        closed = true;
+      }),
+    };
+    const testInfo = { status: 'passed', attach: vi.fn(async () => {}), annotations: [] };
+    const pageFixture = piwiFixtures.page as unknown as (
+      args: { page: unknown },
+      use: (page: typeof fakePage) => Promise<void>,
+    ) => Promise<void>;
+    const [captureFixture] = piwiFixtures.piwiCapture as unknown as [
+      (args: object, use: () => Promise<void>, info: unknown) => Promise<void>,
+    ];
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+    const originalClose = fakePage.close;
+
+    await captureFixture(
+      {},
+      () =>
+        pageFixture({ page: fakePage }, async (page) => {
+          await (page.getByTestId('save') as unknown as { click: () => Promise<void> }).click();
+          const closing = page.close();
+          await tick();
+
+          // The probe is still in flight, and the three reads are all out, none answered yet.
+          expect(fakePage.evaluate).toHaveBeenCalledTimes(3);
+          expect(originalClose).not.toHaveBeenCalled();
+
+          for (const resolve of pendingReads.splice(0)) resolve(null);
+          await tick();
+          // The close still waits for the probe.
+          expect(originalClose).not.toHaveBeenCalled();
+
+          releaseProbe?.(attrs);
+          await closing;
+          expect(originalClose).toHaveBeenCalledTimes(1);
+        }),
+      testInfo,
+    );
+  });
+});
+
 describe('failure-page screenshot', () => {
   /** A fake page whose screenshot bytes are its name; closing it marks it closed. */
   function fakeShotPage(name: string) {

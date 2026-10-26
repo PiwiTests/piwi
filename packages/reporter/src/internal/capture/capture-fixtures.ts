@@ -598,6 +598,26 @@ async function drainPendingProbes(capMs: number): Promise<void> {
   clearTimeout(cap);
 }
 
+/**
+ * What the page and context close wrappers do before the close: drain the
+ * in-flight probes, and take the page-dependent teardown reads while the page
+ * can still serve them. The stops come down and the page reads run during the
+ * drain; the picker and the end of code reach follow it.
+ */
+async function settleBeforeClose(closing: { page?: Page; context?: BrowserContext }): Promise<void> {
+  const drained = drainPendingProbes(1000);
+  const sink = currentSink;
+  if (sink) {
+    await endShownStops(sink, 'closed', closing);
+    await stashPageState(sink, closing);
+  }
+  await drained;
+  if (sink) {
+    await maybeOpenPicker(sink, closing);
+    await stopSinkCodeReach(sink, closing);
+  }
+}
+
 function isPageClosed(page: Page): boolean {
   try {
     return typeof page.isClosed === 'function' ? page.isClosed() : false;
@@ -798,10 +818,13 @@ export function buildPageState(
   };
 }
 
-/** Read the page's state — null when unavailable or the page is gone. */
+/**
+ * Read the page's state — null when unavailable or the page is gone. Its three
+ * reads are independent and run together, so they cost one round trip.
+ */
 async function readPageState(page: Page): Promise<PageState | null> {
   try {
-    const raw = await page.evaluate((): RawPageState => {
+    const readRaw = page.evaluate((): RawPageState => {
       // Key names + value lengths only — values never leave the page.
       const listStorage = (s: any): Array<{ key: string; length: number }> => {
         const out: Array<{ key: string; length: number }> = [];
@@ -830,19 +853,19 @@ async function readPageState(page: Page): Promise<PageState | null> {
         sessionStorage: listStorage((globalThis as any).sessionStorage),
       };
     });
-    if (!raw) return null;
-
     // Cookie flags are only reachable from the context API, never document.cookie.
-    let cookies: Array<Record<string, unknown>> | null = null;
-    try {
-      cookies = ((await pageContext(page)?.cookies()) as Array<Record<string, unknown>> | undefined) ?? null;
-    } catch {
-      cookies = null;
-    }
-
+    const readCookies = (async () => {
+      try {
+        return ((await pageContext(page)?.cookies()) as Array<Record<string, unknown>> | undefined) ?? null;
+      } catch {
+        return null;
+      }
+    })();
     // Focus, hover and selection, which no trace snapshot records.
-    const interaction = await page.evaluate(readPageInteraction).catch(() => null);
+    const readInteraction = page.evaluate(readPageInteraction).catch(() => null);
 
+    const [raw, cookies, interaction] = await Promise.all([readRaw, readCookies, readInteraction]);
+    if (!raw) return null;
     return buildPageState(raw, cookies, interaction);
   } catch {
     return null;
@@ -973,16 +996,19 @@ async function readBlankPage(page: Page): Promise<boolean> {
   return aria != null && aria.trim() === '';
 }
 
-/** The reads {@link stashPageState} takes from the page about to close. */
+/**
+ * The reads {@link stashPageState} takes from the page about to close. The web
+ * vitals and the page state run together; in a server probe, the page state
+ * follows the blank-page check, which waits for the document to load.
+ */
 async function readPageBeforeClose(sink: CaptureSink, page: Page): Promise<void> {
-  const vitals = await readWebVitals(page);
+  const readBlank = sink.probeItem?.level === 'server' ? readBlankPage(page).catch(() => null) : null;
+  const readState =
+    process.env.PIWI_CAPTURE_PAGE_STATE !== 'false' ? Promise.resolve(readBlank).then(() => readPageState(page)) : null;
+  const [vitals, blankPage, pageState] = await Promise.all([readWebVitals(page), readBlank, readState]);
   if (vitals) sink.stashedWebVitals = vitals;
-  if (sink.probeItem?.level === 'server') sink.probeBlankPage = await readBlankPage(page);
-
-  if (process.env.PIWI_CAPTURE_PAGE_STATE !== 'false') {
-    const pageState = await readPageState(page);
-    if (pageState) sink.stashedPageState = pageState;
-  }
+  if (blankPage !== null) sink.probeBlankPage = blankPage;
+  if (pageState) sink.stashedPageState = pageState;
 
   const status = sink.testInfo?.status;
   const sampleAria = async (): Promise<void> => {
@@ -1942,14 +1968,7 @@ function instrumentPage(page: Page): void {
   if (typeof page.close === 'function') {
     const originalClose = page.close.bind(page);
     page.close = async (...args: Parameters<Page['close']>): Promise<void> => {
-      await drainPendingProbes(1000);
-      const sink = currentSink;
-      if (sink) {
-        await endShownStops(sink, 'closed', { page });
-        await stashPageState(sink, { page });
-        await maybeOpenPicker(sink, { page });
-        await stopSinkCodeReach(sink, { page });
-      }
+      await settleBeforeClose({ page });
       return originalClose(...args);
     };
   }
@@ -2312,14 +2331,7 @@ function instrumentContext(context: BrowserContext): void {
   if (typeof context.close === 'function') {
     const originalClose = context.close.bind(context);
     context.close = async (...args: Parameters<BrowserContext['close']>): Promise<void> => {
-      await drainPendingProbes(1000);
-      const sink = currentSink;
-      if (sink) {
-        await endShownStops(sink, 'closed', { context });
-        await stashPageState(sink, { context });
-        await maybeOpenPicker(sink, { context });
-        await stopSinkCodeReach(sink, { context });
-      }
+      await settleBeforeClose({ context });
       return originalClose(...args);
     };
   }
