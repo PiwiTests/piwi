@@ -110,7 +110,8 @@ or a check with a regular expression.
   "manual": {
     "description": "Choose in `getByLabel('Invoice')` the file the test chose; the run does not keep its name",
     "location": "tests/billing.spec.ts:31",
-    "call": "Set input files getByLabel('Invoice')"
+    "call": "Set input files getByLabel('Invoice')",
+    "instruction": { "kind": "setInputFiles", "locator": "getByLabel('Invoice')" }
   }
 }
 ```
@@ -118,6 +119,18 @@ or a check with a regular expression.
 `description` says what to do and is required; `location` (the test's `file:line`) and `call` (the Playwright call it
 stands for) are optional. The spec writes a manual step as a comment, `// Manual step: …`, never as code, and the
 converter warns about it. [Replay](/features/replay-a-bug-report#when-a-step-cannot-be-played) hands it to you.
+
+`instruction` is optional: the same step without its words, which Piwi writes beside the English `description` when it
+makes steps from a test run. Its `kind` says what to do, and its other fields hold the values the sentence names:
+`locator`, `call`, a check's `matcher` and the `expected` and `received` values of its error, `what` the test checked,
+a select's `options` (a value or a label as a string, an index as a number), a point's `x` and `y`, and a `count` and a
+`limit` of steps. Piwi Picker and the report write it in their own language. A reader that does not know its `kind`,
+or finds a value that does not check, leaves it out and shows `description`; a step a person wrote has none.
+
+The kinds are `goBack`, `goForward`, `reload`, `gotoUnknown`, `setContent`, `keyboardType`, `mouseAt`,
+`mouseOrKeyboard`, `failedCall`, `locatorCall`, `fillUnknown`, `fillPartial`, `pressUnknown`, `selectOptionUnknown`,
+`selectOptions`, `setInputFiles`, `dragTo`, `drop`, `focus`, `blur`, `dispatchEvent`, `scrollIntoViewIfNeeded`,
+`expectPoll`, `expectValue`, `expectLocator`, `expectURL` and `leadingSteps`.
 
 ## Viewports
 

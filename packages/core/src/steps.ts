@@ -15,6 +15,8 @@ import {
   ASSERTION_MATCHERS,
   VALUE_MATCHERS,
   type AssertionMatcher,
+  type ManualInstruction,
+  type ManualInstructionKind,
   type RecordedLocatorAlternative,
   type RecordedSession,
   type RecordedStep,
@@ -261,11 +263,88 @@ function checkManual(c: Checker, v: unknown, path: string): StepManual | undefin
   }
   const description = c.text(v.description, `${path}.description`, STEPS_LIMITS.valueLength, false);
   if (description != null && !description.trim()) c.fail(`${path}.description`, 'must not be empty');
+  const instruction = readInstruction(v.instruction);
   return {
     description: description ?? '',
     location: c.text(v.location, `${path}.location`, STEPS_LIMITS.textLength, true),
     call: c.text(v.call, `${path}.call`, STEPS_LIMITS.textLength, true),
+    ...(instruction ? { instruction } : {}),
   };
+}
+
+const isText = (v: unknown): boolean => typeof v === 'string' && v.length <= STEPS_LIMITS.valueLength;
+const isTextOrNull = (v: unknown): boolean => v == null || isText(v);
+const isCount = (v: unknown): boolean => Number.isInteger(v) && (v as number) >= 0;
+
+/** What each field of a manual instruction holds. */
+const INSTRUCTION_FIELDS = {
+  locator: isText,
+  call: isText,
+  matcher: isText,
+  what: isText,
+  expected: isTextOrNull,
+  received: isTextOrNull,
+  x: (v: unknown) => typeof v === 'number' && Number.isFinite(v),
+  y: (v: unknown) => typeof v === 'number' && Number.isFinite(v),
+  count: isCount,
+  limit: isCount,
+  options: (v: unknown) =>
+    Array.isArray(v) &&
+    v.length > 0 &&
+    v.length <= STEPS_LIMITS.alternatives &&
+    v.every((o) => isText(o) || isCount(o)),
+} satisfies Record<string, (v: unknown) => boolean>;
+
+type InstructionField = keyof typeof INSTRUCTION_FIELDS;
+
+const CHECK_VALUES: readonly InstructionField[] = ['expected', 'received'];
+
+/** The fields each kind of manual instruction has. */
+const INSTRUCTION_KINDS: Readonly<Record<ManualInstructionKind, readonly InstructionField[]>> = {
+  goBack: [],
+  goForward: [],
+  reload: [],
+  gotoUnknown: [],
+  setContent: [],
+  keyboardType: [],
+  mouseAt: ['x', 'y', 'call'],
+  mouseOrKeyboard: ['call'],
+  failedCall: ['call'],
+  locatorCall: ['locator', 'call'],
+  fillUnknown: ['locator'],
+  fillPartial: ['locator'],
+  pressUnknown: ['locator'],
+  selectOptionUnknown: ['locator'],
+  setInputFiles: ['locator'],
+  dragTo: ['locator'],
+  drop: ['locator'],
+  focus: ['locator'],
+  blur: ['locator'],
+  dispatchEvent: ['locator'],
+  scrollIntoViewIfNeeded: ['locator'],
+  selectOptions: ['locator', 'options'],
+  expectPoll: ['matcher', ...CHECK_VALUES],
+  expectValue: ['what', ...CHECK_VALUES],
+  expectLocator: ['locator', 'matcher', ...CHECK_VALUES],
+  expectURL: CHECK_VALUES,
+  leadingSteps: ['count', 'limit'],
+};
+
+/**
+ * A manual step's instruction, or null for one of a kind this version does
+ * not know or whose fields do not check: the step's `description` says what
+ * to do then.
+ */
+function readInstruction(v: unknown): ManualInstruction | null {
+  if (!isObject(v) || typeof v.kind !== 'string' || !Object.prototype.hasOwnProperty.call(INSTRUCTION_KINDS, v.kind))
+    return null;
+  const kind = v.kind as ManualInstructionKind;
+  const out: Json = { kind };
+  for (const field of INSTRUCTION_KINDS[kind]) {
+    if (!INSTRUCTION_FIELDS[field](v[field])) return null;
+    out[field] = v[field] ?? null;
+  }
+  return out as ManualInstruction;
 }
 
 /** A document's viewport sizes: whole pixels within the limit, each on a step it has, in step order, one per step. */

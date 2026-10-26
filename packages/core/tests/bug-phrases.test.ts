@@ -3,6 +3,8 @@ import { BUG_PHRASES, bugPhrases, type BugPhrases } from '../src/bug-phrases';
 import {
   BUG_REPORT_VERSION,
   describeExpectation,
+  describeManualInstruction,
+  describeStepInParts,
   describeStepInWords,
   emptyBugEvidence,
   renderBugMarkdown,
@@ -12,6 +14,7 @@ import {
 import {
   ASSERTION_MATCHERS,
   type AssertionMatcher,
+  type ManualInstruction,
   type RecordedStep,
   type RecordedTarget,
   type StepAction,
@@ -50,6 +53,43 @@ const total = target({ tagName: 'p', testId: 'cart-total', text: 'Total: 40' });
 const row = target({ tagName: 'tr', role: 'row', accessibleName: 'Invoice 42' });
 const logo = target({ tagName: 'img', role: 'img', accessibleName: 'Acme' });
 
+const COUNTRY = "getByLabel('Country')";
+
+/** One manual instruction of each kind, as a report made from a test run holds them. */
+const INSTRUCTIONS: ManualInstruction[] = [
+  { kind: 'goBack' },
+  { kind: 'goForward' },
+  { kind: 'reload' },
+  { kind: 'gotoUnknown' },
+  { kind: 'setContent' },
+  { kind: 'keyboardType' },
+  { kind: 'mouseAt', x: 10, y: 1200, call: 'Click' },
+  { kind: 'mouseOrKeyboard', call: 'Mouse wheel' },
+  { kind: 'failedCall', call: 'Wait for selector' },
+  { kind: 'locatorCall', locator: COUNTRY, call: 'Highlight' },
+  ...(
+    [
+      'fillUnknown',
+      'fillPartial',
+      'pressUnknown',
+      'selectOptionUnknown',
+      'setInputFiles',
+      'dragTo',
+      'drop',
+      'focus',
+      'blur',
+      'dispatchEvent',
+      'scrollIntoViewIfNeeded',
+    ] as const
+  ).map((kind) => ({ kind, locator: COUNTRY })),
+  { kind: 'selectOptions', locator: COUNTRY, options: ['fr', 2] },
+  { kind: 'expectPoll', matcher: 'toBe', expected: '3', received: '2' },
+  { kind: 'expectValue', what: 'the cart is saved', expected: null, received: 'false' },
+  { kind: 'expectLocator', locator: COUNTRY, matcher: 'not.toHaveText', expected: '/Fr/', received: null },
+  { kind: 'expectURL', expected: null, received: null },
+  { kind: 'leadingSteps', count: 1200, limit: 200 },
+];
+
 /** Every action and every matcher, negated or not: each template of a phrasebook. */
 function everyTemplate(): RecordedStep[] {
   return [
@@ -78,6 +118,9 @@ function everyTemplate(): RecordedStep[] {
     step('setInputFiles', { target: coupon, value: '' }),
     step('dragTo', { target: row, dropTarget: button }),
     step('manual', { manual: { description: 'Accept the cookie banner', location: null, call: null } }),
+    ...INSTRUCTIONS.map((instruction) =>
+      step('manual', { manual: { description: 'By hand', location: null, call: null, instruction } }),
+    ),
   ];
 }
 
@@ -196,6 +239,43 @@ describe('French', () => {
     expect(describeExpectation(step('assert', assertion('toHaveURL', false, '/checkout')), french)).toBe(
       'la page devrait être `/checkout`',
     );
+  });
+
+  test('writes a manual step of a test run in French, its locator as code and its values as page values', () => {
+    const select = step('manual', {
+      manual: {
+        description: 'Choose in `x` "fr" and "de"',
+        location: null,
+        call: null,
+        instruction: { kind: 'selectOptions', locator: COUNTRY, options: ['fr', 'de'] },
+      },
+    });
+    expect(words(select)).toBe(`À la main${NBSP}: Choisir dans \`${COUNTRY}\` ${q('fr')} et ${q('de')}`);
+    expect(describeStepInParts(select, french)).toEqual([
+      { kind: 'text', text: `À la main${NBSP}: Choisir dans ` },
+      { kind: 'locator', text: COUNTRY },
+      { kind: 'text', text: ' ' },
+      { kind: 'value', text: q('fr') },
+      { kind: 'text', text: ' et ' },
+      { kind: 'value', text: q('de') },
+    ]);
+    const check: ManualInstruction = {
+      kind: 'expectLocator',
+      locator: COUNTRY,
+      matcher: 'toHaveText',
+      expected: '"France"',
+      received: '"Spain"',
+    };
+    expect(describeManualInstruction(check, french)).toBe(
+      `Vérifier \`${COUNTRY}\` avec toHaveText${NNBSP}; dans l’exécution, il attendait "France" et a reçu "Spain"`,
+    );
+    expect(describeManualInstruction(check)).toBe(
+      `Check \`${COUNTRY}\` with toHaveText; in the run it expected "France" and received "Spain"`,
+    );
+    // A step a person wrote has no instruction: its description is written as it is.
+    expect(
+      words(step('manual', { manual: { description: 'Accept the cookie banner', location: null, call: null } })),
+    ).toBe(`À la main${NBSP}: Accept the cookie banner`);
   });
 
   test('counts the evidence with French plurals: 0 and 1 in the singular', () => {
