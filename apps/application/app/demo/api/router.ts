@@ -393,6 +393,7 @@ import {
   apiFinishTestRun,
   apiCancelStaleSimulatorRuns,
   apiHeartbeatTestRun,
+  apiLiveResourcesTestRun,
 } from './reporter';
 import { apiCreateUserApiKey } from './users';
 import { apiGetDemoFile } from './files';
@@ -1132,6 +1133,11 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/test-runs\/(\d+)\/heartbeat$/,
     handler: (m, body) => apiHeartbeatTestRun(+m[1]!, body as Parameters<typeof apiHeartbeatTestRun>[1]),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/live-resources$/,
+    handler: (m, body) => apiLiveResourcesTestRun(+m[1]!, body as Parameters<typeof apiLiveResourcesTestRun>[1]),
   },
 
   // Test runs

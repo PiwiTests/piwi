@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, watch, ref } from 'vue';
 import type { CacheSnapshot } from 'vue-virtual-scroller';
 import type { RunClusterMeta, TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
+import { liveResourcesByWorker, liveResourcesForCase, type LiveWorkerResources } from '~/utils/live-worker-resources';
+import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { summarizeRunCases } from '#shared/utils/test-counts';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
@@ -36,6 +38,8 @@ const props = defineProps<{
   total?: number | null;
   /** Worker index → current step, rendered inline on the matching running rows. */
   liveSteps?: LiveStepsByWorker | null;
+  /** What the run's reporters measured so far; each running row shows its worker's last values. */
+  liveResources?: RunResourceTimelinePart[] | null;
   clusterMeta?: RunClusterMeta | null;
   /** Stable test-case ids currently quarantined — marks the matching rows. */
   quarantinedCaseIds?: Set<number> | null;
@@ -60,6 +64,11 @@ function clusterIssue(id: number | null | undefined) {
 
 function liveStep(tc: TestCaseResult): LiveStepInfo | null {
   return liveStepForCase(props.liveSteps, tc);
+}
+
+const liveWorkerValues = computed(() => liveResourcesByWorker(props.liveResources));
+function liveResourcesOf(tc: TestCaseResult): LiveWorkerResources | null {
+  return liveResourcesForCase(liveWorkerValues.value, tc, (props.liveResources?.length ?? 0) <= 1);
 }
 
 // Filter state is owned by the parent page so it survives tab switches.
@@ -896,6 +905,7 @@ defineExpose({ scrollToCase });
                       item.tc.tags,
                       item.tc.locks,
                       liveStep(item.tc)?.title,
+                      liveResourcesOf(item.tc) !== null,
                       showSuitePath,
                       item.tc.suitePath,
                     ]
@@ -928,6 +938,7 @@ defineExpose({ scrollToCase });
                 :selectable="selectionEnabled && isFailedStatus(item.tc.status)"
                 :selected="selectedIds.has(item.tc.executionId)"
                 :live-step="liveStep(item.tc)"
+                :live-resources="liveResourcesOf(item.tc)"
                 :highlighted="highlightedCaseId === item.tc.executionId"
                 :indent="(item.depth ?? 0) * 16"
                 :suite-path="showSuitePath ? item.tc.suitePath : null"

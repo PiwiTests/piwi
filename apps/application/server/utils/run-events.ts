@@ -1,4 +1,7 @@
 import { EventEmitter } from 'node:events';
+import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
+import { applyLiveResourcesToParts } from '#shared/live-resources';
+import type { WireLiveResources } from '#shared/types';
 import { matchesShardToken, shardTokenDigest } from './shard-tokens';
 
 /**
@@ -22,7 +25,8 @@ export interface RunEvent {
     | 'run-progress'
     | 'run-finalizing'
     | 'run-finished'
-    | 'case-files';
+    | 'case-files'
+    | 'resources';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: Record<string, any>;
   seq: number;
@@ -89,6 +93,14 @@ class RunEventBus {
    * cleanup.
    */
   private runningCases = new Map<number, Map<string, Record<string, unknown>>>();
+  /**
+   * What each reporter of a live run measured so far, one part per reporter,
+   * from its live resources posts. A client that connects mid-run gets them as
+   * its catch-up; the run's stored report replaces them once it ends.
+   */
+  private liveResources = new Map<number, RunResourceTimelinePart[]>();
+  /** Whether each live run's project declined the resources capability, read once per run. */
+  private liveResourcesDeclined = new Map<number, boolean>();
 
   constructor() {
     // Allow many concurrent listeners (one per SSE connection)
@@ -194,12 +206,41 @@ class RunEventBus {
   }
 
   /**
+   * Apply a reporter's live resources post to the run's parts. False when the
+   * post only adds to series this server does not hold (it restarted, or the
+   * reporter's first post went elsewhere): nothing is kept, and the reporter
+   * sends every point on its next post.
+   */
+  applyLiveResources(runId: number, post: WireLiveResources): boolean {
+    const parts = this.liveResources.get(runId) ?? [];
+    if (!post.reset && !parts.some((part) => part.shardIndex === post.shardIndex)) return false;
+    this.liveResources.set(runId, applyLiveResourcesToParts(parts, post));
+    return true;
+  }
+
+  /** What the run's reporters measured so far, one part per reporter, in shard order. */
+  getLiveResources(runId: number): RunResourceTimelinePart[] {
+    return this.liveResources.get(runId) ?? [];
+  }
+
+  /** Whether the run's project declined the resources capability, when already read for this run. */
+  liveResourcesDeclinedFor(runId: number): boolean | undefined {
+    return this.liveResourcesDeclined.get(runId);
+  }
+
+  noteLiveResourcesDeclined(runId: number, declined: boolean): void {
+    this.liveResourcesDeclined.set(runId, declined);
+  }
+
+  /**
    * Clean up all in-memory state for a finished run.
    */
   cleanup(runId: number): void {
     this.sequences.delete(runId);
     this.runStates.delete(runId);
     this.runningCases.delete(runId);
+    this.liveResources.delete(runId);
+    this.liveResourcesDeclined.delete(runId);
   }
 
   /**

@@ -540,6 +540,84 @@ function reportRetriedRun(request, base) {
 }
 
 /**
+ * A run still going on three workers, 48 s in: each worker finished a few tests
+ * and runs one more, and the reporter posted what it measured so far (the
+ * machine's CPU every second, the run's memory and each worker's CPU and memory
+ * every five, and the pages each worker holds open, one more after every test
+ * on worker 1). Nothing finishes it, so the run page draws it live.
+ */
+async function reportLiveRunWithResources(request, base) {
+  const post = (path, options) => postRetrying(request, base, path, options);
+  const startTime = Date.now() - 48_000;
+  const tests = [];
+  for (let worker = 0; worker < 3; worker++) {
+    let at = 1500 + worker * 400;
+    for (let i = 0; i < 4; i++) {
+      const duration = 7000 + ((worker * 5 + i * 3) % 7) * 900;
+      tests.push({ worker, at, duration, title: `checkout step ${worker * 4 + i + 1}`, running: i === 3 });
+      at += duration + 400;
+    }
+  }
+  const { runId, streamToken } = await (
+    await post('/api/test-runs/start', {
+      data: { projectName: 'checkout-live', startTime: new Date(startTime).toISOString(), totalTests: 16 },
+    })
+  ).json();
+  const browser = { projectName: 'chromium', browserName: 'chromium' };
+  const testCases = tests.map((t, i) => ({
+    type: t.running ? 'begin' : 'complete',
+    title: t.title,
+    location: `tests/checkout.spec.ts:${i * 8 + 3}:5`,
+    ...(t.running ? {} : { status: 'passed', duration: t.duration, retries: 0 }),
+    workerIndex: t.worker,
+    startedAt: startTime + t.at,
+    browser,
+  }));
+  await post(`/api/test-runs/${runId}/events`, { data: { streamToken, testCases } });
+
+  const wave = (n) => (Math.sin(n * 1.7) + Math.sin(n * 0.45)) / 2;
+  const cpuPct = Array.from({ length: 47 }, (_, i) => [(i + 1) * 1000, Math.round(58 + 14 * wave(i) + i * 0.5)]);
+  const memoryBytes = Array.from({ length: 10 }, (_, i) => [i * 5000, Math.round((2.1 + i * 0.28) * 1024 ** 3)]);
+  const pages = [0, 1, 2].map((worker) => {
+    const done = tests.filter((t) => t.worker === worker && !t.running);
+    // Worker 1 leaves each test's page open; the others close it.
+    const points =
+      worker === 1
+        ? done.map((t, i) => [t.at, i + 1])
+        : done.flatMap((t) => [
+            [t.at, 1],
+            [t.at + t.duration, 0],
+          ]);
+    return {
+      worker,
+      points: [...points, [tests.find((t) => t.worker === worker && t.running).at, worker === 1 ? 4 : 1]],
+    };
+  });
+  const workers = [0, 1, 2].map((worker) => ({
+    worker,
+    cpuCores: Array.from({ length: 9 }, (_, i) => [
+      (i + 1) * 5000,
+      Math.round((0.6 + 0.3 * wave(i + worker) + (worker === 1 ? i * 0.12 : 0)) * 100) / 100,
+    ]),
+    memoryBytes: Array.from({ length: 9 }, (_, i) => [
+      (i + 1) * 5000,
+      Math.round((0.45 + (worker === 1 ? i * 0.11 : 0.02 * wave(i))) * 1024 ** 3),
+    ]),
+  }));
+  await post(`/api/test-runs/${runId}/live-resources`, {
+    data: {
+      streamToken,
+      shardIndex: null,
+      reset: true,
+      timeline: { startedAt: startTime, cpuPct, memoryBytes, pages, workers },
+      memoryCapacityBytes: 16 * 1024 ** 3,
+      memoryKind: 'pss',
+    },
+  });
+  return runId;
+}
+
+/**
  * A cluster whose runs record their commits but no repository URL: a passing
  * run at one commit, then the hook failure at the next. Reported once per
  * session, so both widths of its scene show the same cluster in the same state.
@@ -3526,6 +3604,57 @@ const SCENES = [
     ],
   },
   {
+    name: 'run-timeline-resources-live',
+    description:
+      "A run still going: the CPU, memory and open-pages tracks drawn as the reporter sends them, with each worker's open pages under its row, then each running test's worker values on the Tests tab, at 1280 px and at phone width",
+    route: '/projects',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="run-timeline"]',
+    pad: 12,
+    async prepare({ request, base }) {
+      this.runId = await reportLiveRunWithResources(request, base);
+    },
+    async run({ page, goto, shoot, settle }) {
+      await goto(`/test-runs/${this.runId}?tab=workers`);
+      await page.getByTestId('timeline-resource-band').first().waitFor({ timeout: 60000 });
+      await page.getByTestId('timeline-resources-menu').click();
+      await page.getByRole('menuitemcheckbox', { name: 'Open pages', exact: true }).last().click();
+      await page.keyboard.press('Escape');
+      await page.mouse.move(0, 0);
+      await settle();
+      await shoot();
+      await page.setViewportSize({ width: 390, height: 900 });
+      await settle();
+      await shoot('narrow');
+      // Back to no strip, so the next visit starts as the timeline does by default.
+      await page.getByTestId('timeline-resources-menu').click();
+      await page.getByRole('menuitemcheckbox', { name: 'Nothing', exact: true }).click();
+      // The Tests tab: each running test shows what its worker uses right now.
+      const list = '[data-shot="failure-clusters"]';
+      for (const [width, label] of [
+        [1280, 'tests'],
+        [390, 'tests-narrow'],
+      ]) {
+        await page.setViewportSize({ width, height: 900 });
+        await goto(`/test-runs/${this.runId}?tab=test-cases`);
+        await page.getByTestId('live-worker-resources').first().waitFor({ timeout: 60000 });
+        // A wide list follows the live run to its newest rows; on a phone the
+        // page scrolls instead, so the newest rows are put first there.
+        const newestFirst = width < 640;
+        if (newestFirst) await page.getByRole('button', { name: 'Sorted ascending' }).click();
+        await settle();
+        await shoot(label, { of: list });
+        if (newestFirst) await page.getByRole('button', { name: 'Sorted descending' }).click();
+      }
+    },
+    outputs: [
+      'run-timeline-resources-live.png',
+      'run-timeline-resources-live-narrow.png',
+      'run-timeline-resources-live-tests.png',
+      'run-timeline-resources-live-tests-narrow.png',
+    ],
+  },
+  {
     name: 'run-timeline-resources-worker-strip',
     description: "The leaky run's timeline with each test's CPU under its worker's row, one test's strip hovered",
     route: '/test-runs/62?tab=workers',
@@ -5752,6 +5881,44 @@ const SCENES = [
       await shoot('collapsed', { clip: { x: 0, y: 0, width: 320, height: 560 } });
     },
   },
+  ...[375, 1280].map((width) => ({
+    name: `ai-codex-cli-${width}`,
+    description: `Settings → AI: local Codex login and provider at ${width} px`,
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/ai',
+    viewport: { width, height: 1800 },
+    async run({ page, shoot, settle }) {
+      const card = page.getByText('Uses your local ChatGPT login.').locator('..');
+      await card.waitFor();
+      await card.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
+      await settle();
+      await shoot('before');
+      await page.getByRole('combobox').first().click();
+      await page.getByRole('option', { name: 'Codex (local)' }).click();
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[375, 1280].map((width) => ({
+    name: `ai-deepseek-cli-${width}`,
+    description: `Settings → AI: official DeepSeek Harness credentials and provider at ${width} px`,
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/ai',
+    viewport: { width, height: 1800 },
+    async run({ page, shoot, settle }) {
+      const card = page.getByText('Uses official').locator('..');
+      await card.waitFor();
+      await card.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
+      await settle();
+      await shoot('before');
+      await page.getByRole('combobox').first().click();
+      await page.getByRole('option', { name: 'DeepSeek Harness (local)' }).click();
+      await settle();
+      await shoot();
+    },
+  })),
   {
     name: 'ai-claude-cli',
     description: 'Settings → AI: use the local Claude Code CLI as the provider — no API key (desktop shell)',

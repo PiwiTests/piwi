@@ -25,6 +25,8 @@ const root = join(__dirname, '..');
 // These are server-only write endpoints that don't make sense in a static
 // client-side demo (no persistent server, no file system, no SCM access).
 const INTENTIONALLY_EXCLUDED = new Set([
+  'GET /api/ai/deepseek-cli/status', // official local CLI credentials have no browser-demo equivalent
+  'GET /api/ai/codex-cli/status', // local CLI authentication has no browser-demo equivalent
   'POST /api/auth/setup', // initial admin setup (server only)
   'POST /api/test-runs/submit', // bulk result submission (no server in demo)
   'POST /api/test-runs/upload', // multipart upload (no server in demo)

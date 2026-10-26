@@ -5,6 +5,9 @@
 // Every download is checked against the release's SHASUMS256.txt, and the
 // script fails on a file the list does not name or whose SHA-256 differs.
 //
+// The version is the root Dockerfile's (scripts/node-version.mjs), unless
+// --node or PIWI_NODE_VERSION names another.
+//
 // Usage: node scripts/fetch-node.mjs --target <triple> [--node <version>]
 //   e.g. --target x86_64-pc-windows-msvc
 //        --target aarch64-apple-darwin
@@ -14,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
+import { bundledNodeVersion } from './node-version.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const binaries = resolve(here, '../src-tauri/binaries');
@@ -31,7 +35,7 @@ function defaultHostTriple() {
   return 'x86_64-unknown-linux-gnu';
 }
 
-const NODE_VERSION = arg('node', process.env.PIWI_NODE_VERSION || '24.22.1').replace(/^v/, '');
+const NODE_VERSION = arg('node', process.env.PIWI_NODE_VERSION || bundledNodeVersion()).replace(/^v/, '');
 const target = arg('target', defaultHostTriple());
 const base = `https://nodejs.org/dist/v${NODE_VERSION}`;
 
