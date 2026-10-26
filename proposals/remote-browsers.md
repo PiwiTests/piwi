@@ -117,6 +117,7 @@ The grids a Playwright suite can use, as of October 2026, and what each tells it
 | [Moon](https://aerokube.com/moon/latest/) 2 | Commercial, closed source | Chrome, Chromium, Firefox, WebKit | A name from the address (`?name=`); counts in Prometheus metrics. |
 | [Selenosis](https://github.com/alcounit/selenosis) | Apache-2.0 | Chromium, Firefox, WebKit, on Kubernetes | A pod per session, labeled from the address. |
 | [Browserless](https://github.com/browserless/browserless) 2.57 | SSPL-1.0 or commercial | Chromium, Chrome, Edge, Firefox, WebKit | A label (`?trackingId=`), and a session list its docs give for its Enterprise plans. |
+| [BrowserThing](https://github.com/mbroton/browserthing) (a browser pool) | Apache-2.0 | Chromium, Firefox, WebKit | Pool capacity and the worker list (`/v1/capacity`, `/v1/workers`); nothing per session, no out-of-memory, no queue wait per session. |
 | Azure Playwright Workspaces | Managed service | All three, on Linux and Windows | The run (`runId` in the address), not the session. |
 | BrowserStack, TestMu AI (formerly LambdaTest), TestingBot | Commercial services | All three | A name and a status the test sets through a `page.evaluate` convention, and REST APIs with each session's video and logs. |
 
