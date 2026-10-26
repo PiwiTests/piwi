@@ -96,9 +96,11 @@ every comparison is made on one machine; a `report` job joins their results into
 
 ## Checking a change
 
-- Run `actionlint` before pushing (`pr-lint.yml` runs it on every pull request):
+- Run `actionlint` before pushing (`pr-lint.yml` runs it on every pull request), from the repository root:
   `docker run --rm -v "$PWD:/repo" -w /repo -e SHELLCHECK_OPTS=--severity=warning rhysd/actionlint:1.7.12 -color`.
-  It runs shellcheck on the `run` scripts, at the warning level.
+  It runs shellcheck on the `run` scripts, at the warning level. A cloud session has no Docker daemon: its
+  session-start hook installs the same actionlint and shellcheck, so run
+  `SHELLCHECK_OPTS=--severity=warning actionlint -color` there.
 - A change under `.github/workflows/` or `.github/actions/` runs every suite on its pull request, which exercises it.
   A change to `release.yml` or a `reusable-publish-*.yml` also runs `release.yml` on its pull request: every target
   builds and packs, and nothing is published.
