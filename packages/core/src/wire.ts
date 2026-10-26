@@ -248,8 +248,8 @@ export type ResourceVerdict = 'leaked' | 'idle' | 'piling' | 'handle' | 'probabl
 /** One finding of the end-of-run resource report: leaked objects, idle pages, piling handlers, Node handles. */
 export interface WireResourceFinding {
   verdict: ResourceVerdict;
-  /** The object kind, `handle` for a Node handle. */
-  kind: 'browser' | 'context' | 'page' | 'request' | 'handle';
+  /** The object kind, `handle` for a Node handle, `worker` for what piles up in a worker process itself. */
+  kind: 'browser' | 'context' | 'page' | 'request' | 'handle' | 'worker';
   /** Where it was opened: `file:line`, a fixture, or a popup's trigger. */
   where: string;
   /** The line that opened it, `file:line`, when one is known. */
@@ -269,8 +269,18 @@ export interface WireResourceFinding {
   closedByPiwi?: boolean;
   /** Leaked past its test: main-thread CPU its pages used after the test (Chromium). */
   afterTestCpuMs?: number;
-  /** Piling: what grew, from how many to how many, over how many tests. */
-  growth?: { what: 'pages' | 'listeners' | 'routes'; from: number; to: number; tests: number };
+  /**
+   * Piling: what grew, from how many to how many, over how many tests. A page
+   * or a context counts its open pages, listeners, route handlers or attached
+   * DOM elements; a worker process its heap after full garbage collections
+   * (MB) or its open file descriptors.
+   */
+  growth?: {
+    what: 'pages' | 'listeners' | 'routes' | 'elements' | 'heapMb' | 'descriptors';
+    from: number;
+    to: number;
+    tests: number;
+  };
   /** The describe a `beforeAll` belongs to, the fixtures set up with an idle page, a handle's test. */
   detail?: string;
 }

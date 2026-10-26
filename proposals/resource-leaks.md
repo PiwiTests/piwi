@@ -115,6 +115,26 @@ is open on the dashboard, the same bands and strips fill in as it runs, instead 
 running test on the Tests tab shows its worker's last cores, memory and open pages beside its step (D13). Not
 built: the leak tails, the pressure strip and the failure timeline's `resources` lane. PRs 5 and 6 are not started.
 
+**Detection extended 2026-10-26**, measured on a 60-test suite on one worker before each rule was set:
+
+- Servers and child processes are tracked one by one: the ledger wraps `net.Server.prototype.listen` and
+  `ChildProcess.prototype.spawn` in each worker (put back at its end) and records the line and the runnable as it
+  does for a context. This fixed a false positive: a worker-scoped fixture that starts a server is set up inside the
+  census window of the first test that asks for it (auto fixtures come first), and the handle count blamed that test.
+  A child process a test leaves running (`spawn`, `exec`, `fork`; Playwright's browsers and `ffmpeg` left out) is a
+  new `handle` finding, named by the line that started it. File watchers keep the count.
+- Piling up allows a dip: besides the series that never goes down, a series whose floor (the lowest reading from
+  each census on) rose by the rule's amount by three quarters of it, a quarter of that by its middle.
+- New piling series: attached DOM elements of a page that outlives its test (`document.getElementsByTagName('*')`
+  over its DevTools session; CDP's `Nodes` counts detached nodes until Blink collects them, and climbed from 165 to
+  25,341 on a page that only replaced its content), and per worker its open file descriptors and its heap after a
+  full garbage collection, read from V8's own `gc` performance entries. The heap at the end of a test is no signal:
+  it rose 30 MB over 60 clean tests, while after a forced collection plain Playwright kept 1.6 MB over 80 tests and
+  Piwi's capture 2.7 MB. A worker keeping 30 MB a test showed 143 → 602 → 1,852 MB over the three full collections
+  V8 ran in 60 tests. What tests that left something open added is left out of the worker's series, since each of
+  those is a finding already. Wire: `growth.what` gains `elements`, `heapMb` and `descriptors`, `kind` gains `worker`.
+- The ledger drops a closed object once a census reported it (about 0.7 KB of worker heap per test).
+
 ## What the reader gets
 
 At the end of a local or CI run, from the reporter alone:

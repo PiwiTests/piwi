@@ -14,6 +14,7 @@ import {
   formatResourceSummary,
   parseResourceCensus,
   parseResourceResults,
+  pileUp,
   tallyLifecycleSteps,
   userFixturesOf,
   type ResourceFinding,
@@ -386,6 +387,29 @@ describe('buildResourceReport', () => {
     ]);
   });
 
+  it('reports the servers and child processes a test left running at their lines, leaving servers out of the counts', () => {
+    const left = (at: number, ref: ResourceTestRef, running: ResourceCensus['running'], handles?: ResourceCensus['handles']) => ({
+      ...census(at, ref, {}, handles),
+      running,
+    });
+    const report = buildResourceReport({
+      censuses: [
+        left(1000, test('t1'), [{ type: 'TCPServerWrap', site: `${SPEC}:9` }], { start: {}, end: { TCPServerWrap: 1 } }),
+        left(2000, test('t2'), [], { start: { TCPServerWrap: 1 }, end: { TCPServerWrap: 1 } }),
+        left(3000, test('t3'), [
+          { type: 'ChildProcess', site: `${SPEC}:20`, command: 'docker' },
+          { type: 'ChildProcess', site: `${SPEC}:20`, command: 'docker' },
+        ]),
+        { ...left(4000, test('t4'), [{ type: 'TCPServerWrap', site: `${SPEC}:30` }]), test: { ...test('t4'), title: 't4', failed: true } },
+      ],
+    });
+    expect(report.findings.filter((f) => f.verdict === 'handle')).toEqual([
+      expect.objectContaining({ where: 'TCPServerWrap', site: `${SPEC}:9`, count: 1, detail: `"title of t1" (${SPEC})` }),
+      expect.objectContaining({ where: 'ChildProcess', site: `${SPEC}:20`, count: 2, detail: `"title of t3" (${SPEC})` }),
+    ]);
+    expect(formatResourceSummary(report, 'report')[2]).toContain(`process     ${SPEC}:20 · 2 processes · left running`);
+  });
+
   it('turns the steps of a run without the fixtures into probable leaks, per file', () => {
     const report = buildResourceReport({
       censuses: [],
@@ -404,6 +428,88 @@ describe('buildResourceReport', () => {
         detail: `2 opened, 0 closed in ${SPEC}`,
       }),
     ]);
+  });
+});
+
+describe('pileUp', () => {
+  it('keeps the rule for counts that never go down', () => {
+    expect(pileUp([1, 1, 3], 'pages')).toEqual({ from: 1, to: 3 });
+    expect(pileUp([1, 2], 'pages')).toBeNull();
+    expect(pileUp([4, 5, 5], 'listeners')).toBeNull();
+  });
+
+  it('sees through a dip when what is kept keeps growing', () => {
+    expect(pileUp([1, 2, 3, 2, 3, 4, 5], 'pages')).toEqual({ from: 1, to: 5 });
+  });
+
+  it('leaves a series that wanders, or only rises at its end', () => {
+    expect(pileUp([3, 5, 3, 5, 3, 5, 6], 'listeners')).toBeNull();
+    // A page that moves between documents of different sizes, as measured on a clean suite.
+    expect(pileUp([55, 95, 135, 175, 215, 255, 295, 55, 95, 135, 175, 215, 255, 295, 55, 95], 'elements')).toBeNull();
+  });
+
+  it('asks the larger counts for a share of where they started', () => {
+    expect(pileUp([1000, 1050, 1100, 1150], 'elements')).toBeNull();
+    expect(pileUp([2000, 2100, 2200, 2300], 'elements')).toBeNull();
+    expect(pileUp([600, 700, 800, 900], 'elements')).toEqual({ from: 600, to: 900 });
+    // The heap after the full collections V8 ran on a worker keeping 30 MB a test.
+    expect(pileUp([143, 602, 1852], 'heapMb')).toEqual({ from: 143, to: 1852 });
+    expect(pileUp([80, 81, 82], 'heapMb')).toBeNull();
+  });
+});
+
+describe('the worker process piling up', () => {
+  const measured = (at: number, ref: ResourceTestRef, worker: { fds?: number | null; heapAfterGcMb?: number | null }, extra: Partial<ResourceCensus> = {}): ResourceCensus => ({
+    ...census(at, ref),
+    metrics: {
+      worker: {
+        cpuMs: 1,
+        involuntarySwitches: 0,
+        loopUtilization: 0.1,
+        loopDelayP99Ms: 1,
+        loopDelayMaxMs: 1,
+        heapUsedMb: 100,
+        heapAfterGcMb: worker.heapAfterGcMb ?? null,
+        fds: worker.fds ?? null,
+      },
+    },
+    ...extra,
+  });
+
+  it('reports descriptors that keep growing, naming the test that added the most', () => {
+    const fds = [27, 30, 33, 36, 46, 49];
+    const report = buildResourceReport({
+      censuses: fds.map((n, i) => measured(1000 * (i + 1), test(`t${i}`), { fds: n })),
+    });
+    expect(report.findings).toEqual([
+      expect.objectContaining({
+        verdict: 'piling',
+        kind: 'worker',
+        where: 'worker process',
+        growth: { what: 'descriptors', from: 27, to: 49, tests: 6 },
+        detail: `most of it during "title of t4" (${SPEC})`,
+      }),
+    ]);
+    expect(formatResourceSummary(report, 'report')[1]).toContain('27 → 49 open file descriptors over 6 tests');
+  });
+
+  it('leaves out what the tests that left something open added, since each is a finding already', () => {
+    const report = buildResourceReport({
+      censuses: [27, 35, 43, 51, 59].map((n, i) =>
+        measured(1000 * (i + 1), test(`t${i}`), { fds: n }, i > 0 ? { leftOpen: 1 } : {}),
+      ),
+    });
+    expect(report.findings.filter((f) => f.kind === 'worker')).toEqual([]);
+  });
+
+  it('reads the heap only after full collections, without naming a test from such sparse readings', () => {
+    const heaps = [null, 143, null, null, 602, null, null, 1852, null];
+    const report = buildResourceReport({
+      censuses: heaps.map((mb, i) => measured(1000 * (i + 1), test(`t${i}`), { heapAfterGcMb: mb })),
+    });
+    const [finding] = report.findings;
+    expect(finding).toMatchObject({ kind: 'worker', growth: { what: 'heapMb', from: 143, to: 1852, tests: 7 } });
+    expect(finding).not.toHaveProperty('detail');
   });
 });
 
