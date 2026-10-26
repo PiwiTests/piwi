@@ -26,7 +26,9 @@ export const piwiOptions: PiwiDashboardOptions = {
   // backend's unit tests (`npm run coverage:unit`), the dashboard counts both on one set of lines per commit. The
   // pages load their scripts from /assets/*, which are the files under web/. `'functions'` needs @piwitests/reporter
   // 0.55.0 or later.
-  coverage: { browser: 'functions', server: backend.features.serverCoverage ? 'lines' : 'off' },
+  // The rules of web/assets/app.css each test's pages matched (`css: 'rules'`): a change to the stylesheet then selects
+  // the tests that rendered the rules it touched, not the whole suite. Needs @piwitests/reporter 0.61.0 or later.
+  coverage: { browser: 'functions', server: backend.features.serverCoverage ? 'lines' : 'off', css: 'rules' },
   codeReachRoots: ['web'],
 };
 

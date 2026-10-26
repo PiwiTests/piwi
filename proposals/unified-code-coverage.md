@@ -34,8 +34,9 @@ unknown capture stay at file level. The MCP tool
 yet: browser lines (PR 6), the Istanbul adapter (D13) and the rest of part 6. Part 3b, added 2026-10-26 in answer to
 open question 5, gives Nitro backends the same server coverage: built the same day (delivery PR 9) and checked on the
 sample application, whose Nitro backend now records what its ASP.NET Core one does, unit tests and combined coverage
-included; a Nuxt application's server rendering (PR 10) is not built. Part 2b, CSS rule coverage, is measured and not
-built (PR 11).
+included; a Nuxt application's server rendering (PR 10) is not built. Part 2b, CSS rule coverage, is built the same
+day (PR 11, `coverage.css: 'rules'`): on the sample application a stylesheet change selects 23 of its 32 tests by file
+and 12 by line, where it ran all 32.
 Each test's coverage is shown on the execution page and per file on a page of its own
 ([`test-coverage-view.md`](../adr/test-coverage-view.md)). The study's measurements came from
 a prototype built outside the repository, on Microsoft's eShopOnWeb reference application and on a small application
@@ -434,7 +435,7 @@ Code reach and browser coverage record scripts only (`SOURCE_EXTENSIONS` in `cod
 to no test: impact selection widens to the whole suite on any style change
 (`apps/application/server/utils/selection-impact.ts`), and the uncovered-changes section cannot name a CSS line.
 Chromium can tell which CSS rules matched an element during a test. Measured 2026-10-26, Playwright 1.64.1 and its
-Chromium; not built.
+Chromium; built the same day (delivery PR 11, 2b.6).
 
 ### 2b.1 What Chromium reports
 
@@ -512,8 +513,9 @@ between rounds:
   the lines of the rules that matched; at `functions`, each matched rule's line range goes in `functions`, a rule
   being to a style sheet what a function is to a script (D18). A grouping rule (`@media`, `@layer`, `@supports`)
   counts its own first line only, never its block, as D9 does for a statement that encloses a method.
-- **Executable lines**: the reporter parses the checkout's file for its rules, as the span table gives them on the
-  server; a file is `.css`, `.scss`, `.less` or a `.vue` file's `<style>` blocks.
+- **Every rule**: the reporter parses each sheet's text as the page received it, and maps its rules like the matched
+  ones; they go with the run as the file's `allFunctions`. Only rules the pages loaded are known: a sheet no page
+  loaded has none.
 - **Impact selection**: with `functions`, the line-level impact of part 4 needs no change: a changed line inside a
   rule a test matched selects that test, and a change outside every known rule (a new rule) stays at file level.
   Today the same change runs the whole suite.
@@ -533,6 +535,27 @@ between rounds:
 - **CSS-in-JS and constructed style sheets** have no file.
 - **Production builds** have no CSS map in Vite: CSS coverage needs a development server or CSS served as written.
 - **A style sheet removed mid-test** loses what it recorded since the last read.
+
+### 2b.6 As built
+
+- **The option**: `coverage.css: 'rules'` (`PIWI_COVERAGE_CSS`), apart from `coverage.browser` (D19). Only the
+  `functions` form of D18 is built: a matched rule is a browser file's function range, which code reach, the file
+  page, line-level impact and uncovered changes already read; the `lines` form waits for browser lines (PR 6).
+- **One capture per page**: the code reach capture (`internal/capture/code-reach.ts`) enables the DOM and CSS domains
+  beside the profiler, and reads the rule usage at the `beforeunload` pause it already takes for V8's coverage, then at
+  the end. With CSS alone it starts no profiler. Each sheet's text is read as it is added, and its owner's
+  `data-vite-dev-id` with it. A real-Chromium test checks that the rules of a document left through a link are kept,
+  and fails without the read at the pause.
+- **The pure part** is `@piwitests/core/css-rules`: the rule parser (comments, strings, nesting, at-rules), the
+  matching of Chromium's entries to rules (a grouping rule's entry starts inside its prelude), and the line mapping,
+  through a source map when the sheet has one. The resolution to files is `internal/capture/css-coverage.ts`.
+- **On the wire**: `piwi-css-coverage` and `piwi-css-rules` attachments, the same shapes as `piwi-browser-coverage` and
+  `piwi-browser-functions`; the reporter keeps their ranges whatever `coverage.browser` is. No dashboard change: the
+  dashboard derives code reach from a test's coverage files per runtime, so a style sheet becomes a `browser` code
+  reach file.
+- **On the sample application** (`examples/sample-app`, both backends): 23 and 24 of its tests matched rules of
+  `web/assets/app.css`. A change to the file selects 23 of the 32 tests; a change to one line of the `.actions` rule,
+  12; one in the `.field` rule, 12 others (the form and the shop), where any stylesheet change ran all 32.
 
 ## Part 3: server capture (ASP.NET Core)
 

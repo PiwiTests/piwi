@@ -13,8 +13,9 @@
  * Honest by construction: it degrades in the safe direction, widening to the
  * full suite (with a warning) rather than silently skipping a test:
  *  - A changed file that maps to no test can't be ruled out, unless it is
- *    documentation (`DOCUMENTATION_EXTENSIONS`). Styles, markup, JSON and YAML
- *    widen too: no edge maps them.
+ *    documentation (`DOCUMENTATION_EXTENSIONS`). Markup, JSON and YAML widen
+ *    too, and so do style sheets unless the run recorded CSS coverage
+ *    (`coverage.css: 'rules'`): no other edge maps them.
  *  - A changed file mapped only through source frames widens. Source frames are
  *    recorded on failure only, so they name the tests that failed inside the
  *    file, never the passing tests that also use it.

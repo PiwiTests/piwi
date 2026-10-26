@@ -361,6 +361,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/code-reach',
       },
       {
+        title: 'CSS coverage',
+        summary:
+          'The style sheet rules each test’s pages matched, from Chromium’s CSS rule usage: a change to a rule selects the tests that rendered it.',
+        needs: ['fixtures'],
+        where: 'Reporter option coverage.css; Execution → Source; a file’s coverage page',
+        doc: 'features/css-coverage',
+      },
+      {
         title: 'Server coverage',
         summary:
           'The backend files, functions and lines each test ran, per test, from an ASP.NET Core or Nitro build instrumented for coverage.',

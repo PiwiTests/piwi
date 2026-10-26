@@ -149,6 +149,12 @@ the tests still collecting, before the ladder above, and sends the run-level cov
 per file, the functions any test ran and every function V8 listed, run or not
 (`allFunctions`), which the workers name once each in `piwi-browser-functions`
 attachments, as many per test as the capture caps need.
+With `coverage.css: 'rules'`, the same per-page capture (`internal/capture/code-reach.ts`) also reads Chromium's
+CSS rule usage, at each document's `beforeunload` pause and at the end; `internal/capture/css-coverage.ts` resolves
+each sheet to its file (source map, a Vite dev server's `data-vite-dev-id`, or the served path) and its rules to
+line ranges (`@piwitests/core/css-rules`). The matched rules ride `piwi-css-coverage` as browser files' function
+ranges, whatever `coverage.browser` is, and every rule of the sheets `piwi-css-rules`, added to the run's
+`allFunctions` as the browser functions are.
 A backend's files whose source checksums (`checksums`) differ from the checkout's
 lose their line numbers (`internal/collect/source-checksums.ts`).
 Each backend answer names its process (`instance`, also the prefix of its request
