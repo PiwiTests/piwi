@@ -17,8 +17,8 @@
     "coverage:setup": "node scripts/coverage-setup.mjs"
   },
   "devDependencies": {
-    "@piwitests/instrumentation-nitro": "0.60.0",
-    "@piwitests/reporter": "0.60.0",
+    "@piwitests/instrumentation-nitro": "0.61.0",
+    "@piwitests/reporter": "0.61.0",
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.1.1",
     "@vitest/coverage-v8": "^4.1.12",
