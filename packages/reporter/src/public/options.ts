@@ -290,7 +290,7 @@ export interface PiwiDashboardOptions {
    * `--project` names, or every project but those declared `default: false`
    * (Playwright 1.64+). The check runs from this machine's network: for a
    * project whose browser runs on another machine (`connectOptions`) and whose
-   * `exposeNetwork` rule does not cover the base URL's host, its message says
+   * `exposeNetwork` rule does not cover the base URL's host and port, its message says
    * so, since that browser reaches the app from its own network. **Defaults to
    * `false`**. Can also be set with `PIWI_CHECK_BASE_URL=true`.
    */

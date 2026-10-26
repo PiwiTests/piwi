@@ -91,7 +91,7 @@ reaches the dashboard. The option is off by default, and the check runs before t
 leave it off when that setup is what starts the app.
 
 The check runs from the machine that runs Playwright. A browser on a grid (`connectOptions`) reaches the app from the
-grid's network instead, unless the `exposeNetwork` rule covers the app's host. For such a base URL, the reporter says
+grid's network instead, unless the `exposeNetwork` rule covers the app's host and port. For such a base URL, the reporter says
 so: in the stop message when the check fails, and in a line of the run's output when it passes. A run whose tests then
 fail to navigate may have hit a gap between the two networks rather than an app that is down.
 

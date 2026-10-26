@@ -142,15 +142,15 @@ describe('baseUrlTargets', () => {
       'https://api.example.test': false,
     });
     expect(remote({ PW_TEST_CONNECT_WS_ENDPOINT: 'ws://other.example.test/' })).toEqual({
-      'http://localhost:3000': true,
+      'http://localhost:3000': false,
       'https://staging.example.test': true,
       'https://api.example.test': true,
     });
     expect(
       remote({ PW_TEST_CONNECT_WS_ENDPOINT: 'ws://other.example.test/', PW_TEST_CONNECT_EXPOSE_NETWORK: '*.example.test' }),
     ).toEqual({
-      'http://localhost:3000': true,
-      'https://staging.example.test': false,
+      'http://localhost:3000': false,
+      'https://staging.example.test': true,
       'https://api.example.test': false,
     });
   });
@@ -199,6 +199,10 @@ describe('exposeNetworkCovers', () => {
   it("compares a rule's port with the URL's, 80 or 443 when it names none", () => {
     expect(covers('app.example.test:80', 'http://app.example.test/', 'https://app.example.test/')).toEqual([true, false]);
     expect(covers('app.example.test:443', 'https://app.example.test/')).toEqual([true]);
+  });
+
+  it('covers nothing with a token Playwright cannot read', () => {
+    expect(covers('<loopback>\n', 'http://localhost/')).toEqual([false]);
   });
 
   it('covers a host that any entry of a comma-separated list covers', () => {
@@ -283,7 +287,7 @@ describe('checkBaseUrls', () => {
     const error = await checkBaseUrls(remote, { ...fast, argv: PW, env: {}, attempts: 1, probe }).catch((e: Error) => e);
     expect((error as Error).message.split('\n').slice(1, 3)).toEqual([
       '  https://staging.example.test (grid): getaddrinfo ENOTFOUND staging.example.test (1 attempt)',
-      "    The check ran from this machine's network, but the remote browser (connectOptions) reaches staging.example.test from its own, since exposeNetwork does not cover that host.",
+      "    The check ran from this machine's network, but a project's remote browser reaches staging.example.test from its own, since its exposeNetwork rule does not cover that address.",
     ]);
     expect(remoteBrowserNote(target)).toBeNull();
   });

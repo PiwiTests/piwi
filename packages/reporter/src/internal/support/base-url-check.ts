@@ -134,7 +134,8 @@ function asProxy(value: unknown): Proxy | undefined {
  * each with an optional `:port`, where `*` matches every host, `<loopback>`
  * matches `localhost`, `*.localhost`, `127.0.0.1` and `[::1]`, an IP address
  * matches itself only, and a host name may hold `*` wildcards (a leading `.`
- * stands for `*.`) and never matches an IP address.
+ * stands for `*.`) and never matches an IP address. A token Playwright cannot
+ * read (one holding a line break) covers nothing.
  */
 export function exposeNetworkCovers(rule: string | undefined, url: string): boolean {
   if (!rule) return false;
@@ -147,7 +148,8 @@ export function exposeNetworkCovers(rule: string | undefined, url: string): bool
   const host = parsed.hostname;
   const port = parsed.port ? Number(parsed.port) : parsed.protocol === 'https:' ? 443 : 80;
   return rule.split(',').some((token) => {
-    const match = token.match(/^(.*?)(?::(\d+))?$/)!;
+    const match = token.match(/^(.*?)(?::(\d+))?$/);
+    if (!match) return false;
     if (match[2] !== undefined && Number(match[2]) !== port) return false;
     const tokenHost = match[1]!;
     if (tokenHost === '<loopback>') {
@@ -162,13 +164,15 @@ export function exposeNetworkCovers(rule: string | undefined, url: string): bool
 
 /**
  * Whether a project's browser reaches `url` from another machine's network:
- * it connects to a remote browser, through `PW_TEST_CONNECT_WS_ENDPOINT` or,
- * without it, `use.connectOptions`, and the `exposeNetwork` rule that goes
- * with that connection does not cover the URL.
+ * it connects to a remote browser, through `use.connectOptions` or, when the
+ * project leaves that unset, `PW_TEST_CONNECT_WS_ENDPOINT`, and the
+ * `exposeNetwork` rule that goes with that connection does not cover the URL.
  */
 function reachedRemotely(use: ProjectLike['use'], url: string, env: NodeJS.ProcessEnv): boolean {
-  if (env.PW_TEST_CONNECT_WS_ENDPOINT) return !exposeNetworkCovers(env.PW_TEST_CONNECT_EXPOSE_NETWORK, url);
-  const connect = use?.connectOptions as { wsEndpoint?: unknown; exposeNetwork?: unknown } | undefined;
+  if (use?.connectOptions === undefined) {
+    return !!env.PW_TEST_CONNECT_WS_ENDPOINT && !exposeNetworkCovers(env.PW_TEST_CONNECT_EXPOSE_NETWORK, url);
+  }
+  const connect = use.connectOptions as { wsEndpoint?: unknown; exposeNetwork?: unknown } | null;
   if (!connect || typeof connect !== 'object' || typeof connect.wsEndpoint !== 'string') return false;
   return !exposeNetworkCovers(typeof connect.exposeNetwork === 'string' ? connect.exposeNetwork : undefined, url);
 }
@@ -262,8 +266,8 @@ export async function checkBaseUrl(target: BaseUrlTarget, options: BaseUrlCheckO
  */
 export function remoteBrowserNote(target: BaseUrlTarget): string | null {
   if (!target.remoteBrowser) return null;
-  const host = new URL(target.url).hostname;
-  return `The check ran from this machine's network, but the remote browser (connectOptions) reaches ${host} from its own, since exposeNetwork does not cover that host.`;
+  const { host } = new URL(target.url);
+  return `The check ran from this machine's network, but a project's remote browser reaches ${host} from its own, since its exposeNetwork rule does not cover that address.`;
 }
 
 /**

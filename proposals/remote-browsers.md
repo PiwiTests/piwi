@@ -371,7 +371,7 @@ PR 1 is the first release.
   reads the test waits for.
 - **`checkBaseUrl` checks from the runner** (`packages/reporter/src/internal/support/base-url-check.ts`), which is not
   where a remote browser's requests come from. Fixed: its messages say so when the `exposeNetwork` rule does not cover
-  the base URL's host.
+  the base URL's host and port.
 - **The `worker_index` column's comment** (`apps/application/server/database/schema.sqlite.ts` and `schema.pg.ts`)
   says it holds Playwright's `parallelIndex`; the reporter sends `workerIndex`, which changes when a worker restarts.
 - **Outside Piwi:** `run-server` up to Playwright 1.59.1 applies a client's `args`, and, started without `--host`,
