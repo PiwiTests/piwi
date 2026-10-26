@@ -363,7 +363,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Server coverage',
         summary:
-          'The backend files, functions and lines each test ran, per test, from an ASP.NET Core build instrumented for coverage.',
+          'The backend files, functions and lines each test ran, per test, from an ASP.NET Core or Nitro build instrumented for coverage.',
         needs: ['fixtures', 'backend'],
         where: 'Reporter option coverage.server; Execution → Source; a file’s coverage page',
         doc: 'features/server-coverage',

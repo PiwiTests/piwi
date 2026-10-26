@@ -32,8 +32,10 @@ function or crossing from one into the next, coverage of another version or with
 unknown capture stay at file level. The MCP tool
 `get_impacted_tests` takes a diff and returns the same answer per file, with the changed lines no test ran. Not built
 yet: browser lines (PR 6), the Istanbul adapter (D13) and the rest of part 6. Part 3b, added 2026-10-26 in answer to
-open question 5, proposes the same server coverage for Nitro and Nuxt backends (delivery PRs 9 and 10); nothing of it
-is built, and only its cost per call is measured.
+open question 5, gives Nitro backends the same server coverage: built the same day (delivery PR 9) and checked on the
+sample application, whose Nitro backend now records what its ASP.NET Core one does, unit tests and combined coverage
+included; a Nuxt application's server rendering (PR 10) is not built. Part 2b, CSS rule coverage, is measured and not
+built (PR 11).
 Each test's coverage is shown on the execution page and per file on a page of its own
 ([`test-coverage-view.md`](../adr/test-coverage-view.md)). The study's measurements came from
 a prototype built outside the repository, on Microsoft's eShopOnWeb reference application and on a small application
@@ -351,6 +353,8 @@ than Chromium.
 | D15 | Nitro coverage comes from a coverage transform added to the server build (`PIWI_COVERAGE_BUILD=true`) that looks the request up once per function call through `AsyncLocalStorage`, not from V8's coverage. | V8's counters are per process: two snapshots around a request include what concurrent requests ran, and a page load always sends concurrent requests. |
 | D16 | The transform counts the statements and functions `istanbul-lib-instrument` counts, and writes their original lines and the source's checksum into a span table at build time. | A file's executable lines then match Vitest's for the same file (checked under Verification), which [`combined-code-coverage.md`](../adr/combined-code-coverage.md) counts against them (its D5), and no source map is read at run time. |
 | D17 | A module's top-level code records at run level; a request the server makes to itself records into the outermost request. | Nitro loads a route's chunk on its first request, and the browser receives only the outermost response. |
+| D18 | A style sheet is a `runtime: 'browser'` file of the same model: at `lines`, the lines of the rules that matched an element; at `functions`, each matched rule's line range in `functions`. A grouping rule (`@media`, `@layer`, `@supports`) counts its first line only. Executable lines come from parsing the checkout's file. | Line-level impact, uncovered changed lines and the editors then take CSS with no change; Chromium reports a matching `@media` as one entry spanning its block, and lists no unused rule. |
+| D19 | CSS rule usage is its own opt-in, `coverage.css: 'off' \| 'rules'`, off by default, Chromium only, read before each document is left like V8 coverage. | Its cost follows the page's style recalculation, not its scripts: +57% of test time on a CSS-heavy page where function coverage costs +4%, +9.5% on the sample app. |
 
 ## Part 1: the model, the wire and the tables
 
@@ -424,6 +428,112 @@ merged, caps enforced.
   source map, the conversion `c8` and `v8-to-istanbul` use. Pure logic in `packages/core`.
 - **Scope**: all the test's pages, not only the first (each page gets its own session), Chromium only as today.
 
+## Part 2b: CSS
+
+Code reach and browser coverage record scripts only (`SOURCE_EXTENSIONS` in `code-reach.ts`), so a stylesheet maps
+to no test: impact selection widens to the whole suite on any style change
+(`apps/application/server/utils/selection-impact.ts`), and the uncovered-changes section cannot name a CSS line.
+Chromium can tell which CSS rules matched an element during a test. Measured 2026-10-26, Playwright 1.64.1 and its
+Chromium; not built.
+
+### 2b.1 What Chromium reports
+
+`CSS.startRuleUsageTracking`, then `CSS.takeCoverageDelta` or `CSS.stopRuleUsageTracking`, on the page's CDP session.
+It needs `DOM.enable` and `CSS.enable` first: without them it starts, records nothing and returns no rule. Each entry
+names a style sheet and the start and end offset of one rule in its text.
+
+| Case | Reported as used |
+|---|---|
+| A rule that matched an element once, then stopped matching | Yes |
+| A rule that matched an element, overridden by a more specific one | Yes, both: matching counts, not applying |
+| `:hover`, `:focus-visible` | Only once the test hovered or focused a matching element |
+| A rule inside an `@media` that does not match | No |
+| A rule inside an `@media` that matches | Yes, and the `@media` block too, as one entry spanning the whole block (`@layer` the same) |
+| An element added and removed before any style recalculation | No |
+| An element inside a `display: none` subtree | No: its style is never computed |
+| A rule no element matched | Not listed at all: no entry says `used: false` |
+
+- **Reads are deltas**: a rule appears in the first read after it matched, not again.
+- **What leaves the page is lost**: a `<style>` removed before a read, and every style sheet of a document the page
+  navigated away from, report nothing. Reading before a document is left is what code reach already does for V8
+  coverage (the `beforeunload` stop); a style sheet a script removes mid-test is lost.
+- **The rules nobody used** must come from the style sheet itself: the reporter reads the file and lists its rules,
+  the executable lines of part 1.
+
+### 2b.2 From a rule to a source line
+
+`CSS.styleSheetAdded` gives each style sheet a header: `sourceURL`, `sourceMapURL`, `isInline`, `isConstructed`,
+`startLine` and `startColumn`, and the owner node. Checked case by case:
+
+| Style sheet | What identifies the file | Lines |
+|---|---|---|
+| A `.css` file served by path (`<link>`, the sample app's `/assets/app.css`) | `sourceURL`, resolved against the code reach roots like a module served by path | The served text's lines, the file's own |
+| A `<style>` in the HTML | `sourceURL` is the page; `isInline: true`, `startLine` its position in the HTML | Offsets in the `<style>` text, shifted by `startLine` |
+| Vite in development, a plain `.css` import | No `sourceURL`; the owner `<style>`'s `data-vite-dev-id` is the file's absolute path | Kept as is: `.title` read at lines 2 to 5, its lines in the file |
+| Vite in development, a scoped `<style>` of a `.vue` file | `data-vite-dev-id` is `App.vue?vue&type=style&index=0&scoped=…` | Lines inside the `<style>` block (2 to 5); with `css.devSourcemap: true`, the inline map gives the `.vue` file's lines (10 to 13) |
+| A constructed style sheet (`adoptedStyleSheets`, CSS-in-JS) | Nothing: `isConstructed: true`, no URL, no owner | None |
+| A Vite production build (8.3.5, `build.sourcemap: true`) | A hashed bundle, `index-<hash>.css` | None: minified to one line, and no CSS source map is written even with `build.sourcemap` |
+| Tailwind 4 utilities (`@import "tailwindcss"`) | `data-vite-dev-id` is the app's `tw.css` | With a map, every utility maps into `tailwindcss/index.css` in `node_modules`, never into the application |
+
+So CSS lines are available where the style sheets are served as written or with a development map: a development
+server (Vite, Nuxt), or an application that serves its CSS files by path. Against a production build, CSS gives
+nothing; a scoped `.vue` style without `css.devSourcemap` maps once the `<style>` block's first line in the file is
+added, which the reporter can read from the checkout.
+
+### 2b.3 What it costs
+
+One new browser context per run, Chromium headless, medians of 7 runs after a warm-up, the five variants rotated
+between rounds:
+
+| Capture | CSS-heavy page | Sample app (3 pages) |
+|---|---|---|
+| None | 1,551 ms | 319 ms |
+| Function coverage as code reach captures it | +4.4% | +16.3% |
+| `DOM.enable` and `CSS.enable` only | +1.5% | +4.0% |
+| CSS rule usage | +57.0% | +9.5% |
+| Both | +56.2% | +20.3% |
+| Time to read the last delta | 63 to 71 ms | 4 to 6 ms |
+| Read over CDP per test | 2,861 used rules, 250 KB | 90 used rules, 7.7 KB |
+
+- **The cost is in style recalculation**, not in the reads: on the CSS-heavy page, five full re-renders of 3,600
+  elements against 2,081 rules take 139 ms without capture, 153 ms with `CSS.enable` only, and 494 ms with tracking
+  on (3.5 times). It grows with the selector matching a page does, so a page with large style sheets and frequent
+  re-renders pays most.
+- **On the sample app it costs less than function coverage**, whose fixed setup (the debugger) weighs on a 320 ms
+  test.
+- The CSS-heavy page: a 2,081-rule style sheet like a component library's (16 components, 8 variants, hover and
+  focus states, size combinations, 640 `[data-v-…]` scoped selectors, 400 utility classes), 3,600 elements rendered
+  by script, five re-renders with other classes, 20 hovers, 10 focus moves, a navigation to a second page with the
+  same style sheet and three more re-renders. A second series, run on a busier machine, gave +49.3% and +55.0%.
+
+### 2b.4 In the model and the consumers
+
+- **One more file kind, the same model** (D1): a style sheet is a `runtime: 'browser'` file. At `lines`, `lines` are
+  the lines of the rules that matched; at `functions`, each matched rule's line range goes in `functions`, a rule
+  being to a style sheet what a function is to a script (D18). A grouping rule (`@media`, `@layer`, `@supports`)
+  counts its own first line only, never its block, as D9 does for a statement that encloses a method.
+- **Executable lines**: the reporter parses the checkout's file for its rules, as the span table gives them on the
+  server; a file is `.css`, `.scss`, `.less` or a `.vue` file's `<style>` blocks.
+- **Impact selection**: with `functions`, the line-level impact of part 4 needs no change: a changed line inside a
+  rule a test matched selects that test, and a change outside every known rule (a new rule) stays at file level.
+  Today the same change runs the whole suite.
+- **Uncovered changed lines** name CSS lines no test matched, in the pull-request comment and
+  `get_change_coverage`; the editors mark `.css` files and `.vue` style blocks like scripts.
+- **Opt-in on its own** (D19): `coverage.css: 'off' | 'rules'`, off by default, because its cost depends on the
+  page's styling, not on its scripts, and can pass +50% where function coverage costs +4%.
+
+### 2b.5 Limits
+
+- **Chromium only**, like V8 coverage.
+- **States the tests never reach**: a `:hover` never hovered, a breakpoint never rendered, a dark theme never set,
+  all read as unused. That is what they are for the suite, but a viewport or color scheme the suite never runs in
+  makes whole blocks read as dead code.
+- **Utility CSS** (Tailwind) maps into the framework, so it gives nothing per application file; the classes a test
+  used are in the templates, which code reach already covers.
+- **CSS-in-JS and constructed style sheets** have no file.
+- **Production builds** have no CSS map in Vite: CSS coverage needs a development server or CSS served as written.
+- **A style sheet removed mid-test** loses what it recorded since the last read.
+
 ## Part 3: server capture (ASP.NET Core)
 
 ### 3.1 The package
@@ -479,9 +589,9 @@ This part answers open question 5 (2026-10-26). A Nitro backend serves the contr
 `X-Piwi-Coverage` header, `POST /__piwi/coverage/collect`, `GET /__piwi/coverage/run` and the same answers (D14). The
 reporter, the wire, the tables and every consumer then take it with no change; only the backend side is new, in
 `@piwitests/instrumentation-nitro`: a **coverage transform** in its module (the build step that inserts the markers
-into the server's JavaScript, the role the C# compiler plays in part 3) and a recorder in its plugin. Not built. Unlike
-the rest of this study, only the cost per call is measured (a micro-benchmark, [Appendix A](#appendix-a-measurements));
-the end-to-end cost is measured with delivery PR 9.
+into the server's JavaScript, the role the C# compiler plays in part 3) and a recorder in its plugin. Built 2026-10-26
+for Nitro (delivery PR 9) and checked on the sample application's Nitro backend, beside its ASP.NET Core one (3b.8);
+a Nuxt application's server rendering (3b.5, PR 10) is not built.
 
 ### 3b.1 Why V8's own coverage cannot attribute
 
@@ -511,8 +621,8 @@ Rollup both in development (`nitro dev`) and for production, so one plugin cover
 - **Where in the build**: after Nitro's esbuild step, so the plugin reads JavaScript, never TypeScript, and
   `this.getCombinedSourcemap()` maps each position back to the original file. A coverage build turns Nitro's
   `sourceMap` option on so that map exists.
-- **What it inserts**, in substance, in each function (declarations, expressions, arrows, methods, getters and setters,
-  class field initializers):
+- **What it inserts**, in substance, in each function (declarations, expressions, arrows, methods, getters and
+  setters):
 
   ```js
   import { __piwiModule } from '@piwitests/instrumentation-nitro/coverage-runtime';
@@ -528,17 +638,19 @@ Rollup both in development (`nitro dev`) and for production, so one plugin cover
 
   Each function writes into a **payload**, a `Uint8Array` playing the part of the compiler's `bool[]`: entry 0 means
   the function was entered, each other entry one statement. Which statements and functions count follows
-  `istanbul-lib-instrument`'s visitor (BSD-3-Clause, adapted as Roslyn's span table reader is in part 3), the
-  statements Vitest's coverage also counts, through `ast-v8-to-istanbul`: a file's executable lines should then match
-  Vitest's for it, which the verification checks (D16). Branches and hit counts are not recorded.
-- **The span table**: the build writes, beside the server entry (`.output/server/piwi-coverage.json`, under
-  `.nitro/dev/` in development), each instrumented file's repository-relative path, the sha256 of its source (the
-  `checksums` the reporter already checks), and, per function, its line range and the lines of each statement in the
-  original file. The bundle itself carries only the file id and the payload lengths; the recorder reads the table when
-  an endpoint first answers. No source map is read at run time.
-- **Line conversion** applies D9: a statement whose span encloses a function counts its own lines, and the function's
-  lines only once the function ran. `export default defineEventHandler(async (event) => { … })` is one statement that
-  spans the whole file; without the rule, loading the file would mark every line as run.
+  `istanbul-lib-instrument`'s visitor, the statements Vitest's coverage also counts through `ast-v8-to-istanbul`, and
+  a statement counts at its first line (a variable's at its initializer's), as Istanbul's line coverage does (D16). On
+  the sample application the executable lines are Vitest's exactly (3b.8). The transform is its own walk over
+  Rollup's AST with `magic-string`, not Istanbul's code. Branches, hit counts and class field initializers are not
+  recorded.
+- **The span table**: each instrumented file's repository-relative path, the sha256 of its source (the `checksums`
+  the reporter already checks), and, per function, its line range and the line of each statement in the original
+  file. The module adds a generated plugin that hands it to the recorder at startup; the table is written into that
+  plugin's chunk once the bundle is rendered, when every module is transformed. A module carries only its file id and
+  the payload lengths. No source map is read at run time.
+- **Lines are first lines**, so D9 needs no counterpart: `export default defineEventHandler(async (event) => { … })`,
+  one statement over the whole file in other tools, is no statement at all for Istanbul, and the handler's own
+  statements count at their lines.
 
 ### 3b.3 Attribution
 
@@ -557,8 +669,8 @@ outside a request. It runs once per call, at entry; the statements then write in
   nests its log and span stores that way.
 - **Work after collection**: once a request is collected, what it still runs (a promise not awaited) records at run
   level.
-- In `run` mode (`PIWI_COVERAGE_MODE=run`, as in part 3), `__pm.f` is never called: the inserted code reads the shared
-  payload from a module constant.
+- In `run` mode (`PIWI_COVERAGE_MODE=run`, as in part 3), `__pm.f` returns the shared payload without looking the
+  request up, and no response is named.
 
 ### 3b.4 The plugin
 
@@ -576,7 +688,9 @@ the guard it already applies to logs and the route manifest: `NODE_ENV` set to `
 - **Run-level executable lines** come from the span table, so they cover every file in the bundle, including routes no
   request loaded.
 - **Guards**, as D10: in a coverage build, the plugin throws at startup when `NODE_ENV` is `production` and coverage is
-  not explicitly enabled, and logs a warning in any other environment it is not active in.
+  not explicitly enabled (`PIWI_TEST_LOGS_DISABLED=false`), and logs a warning in any other environment it is not
+  active in. `nitro build` replaces `process.env.NODE_ENV` with `"production"` in the bundle, so a built server always
+  needs the explicit setting, as the log capture already does.
   `PIWI_COVERAGE_FORBIDDEN=true` at build time makes a coverage build fail, for a production pipeline to set.
 
 ### 3b.5 Nuxt
@@ -608,7 +722,8 @@ in one loop, each variant in its own process, medians of 5 runs.
 
 - **The cost of `test` is the request lookup at entry**, not the statement markers: recording only functions costs
   about what recording lines costs, as on .NET.
-- **`run` mode costs nothing measurable** once the payload is a module constant.
+- **`run` mode costs nothing measurable** when the payload is a module constant. The built recorder still calls
+  `__pm.f`, which returns at once in `run` mode: at most the cost of `test` outside a request.
 - **Node 24 reads `AsyncLocalStorage` through `AsyncContextFrame`**, its default: twice the cost per lookup of Node 22
   in this loop, but no promise hooks, which Node 22 runs on every promise once a store is in use (the log capture
   already pays that today).
@@ -629,6 +744,36 @@ in one loop, each variant in its own process, medians of 5 runs.
 - **Server-to-server calls** to another process count only if that server forwards the header, as on .NET.
 - **Runtimes other than Node**: the recorder needs Node's `AsyncLocalStorage`; Bun, Deno and the edge presets are not
   covered.
+
+### 3b.8 Both backends of the sample application
+
+The sample application (`examples/sample-app`) serves the same pages and API from an ASP.NET Core and a Nitro backend,
+and one Playwright suite runs against either. Both now run a coverage build, and both have unit tests of their
+services (xUnit, and Vitest under `backends/nitro.tests`), uploaded as the `unit-back` suite for combined coverage.
+One run of the suite each, against the dashboard, on the same commit:
+
+| Recorded | ASP.NET Core | Nitro |
+|---|---|---|
+| Tests with server coverage | 28 | 29 (one more spec runs: server spans) |
+| Server files across the tests' coverage | 8 | 18 |
+| Server files per test, on average and at most | 2.5, 4 | 3.1, 8 |
+| *Placing an order*: server files | 4 | 8 |
+| Files with executable lines (run level) | 9 | 20 |
+| Executable lines | 121 | 94 |
+| Run by the Playwright suite | 117 | 90 |
+| Run by the unit tests | 47 | 46 |
+| Run by both, by the unit tests only | 46, 1 | 46, 0 |
+| Back-end functions known, run by the Playwright suite | 47, 45 | 29, 27 |
+
+- **The same features on both**: per-test files, functions and lines with their git blob ids (every checksum matched
+  the checkout), run-level coverage with executable lines, combined coverage with the unit tests, and the `front` and
+  `back` areas.
+- **The Nitro backend has more, smaller files**: one per route (`routes/api/orders.post.ts`), where ASP.NET Core
+  groups its endpoints in two classes, so a test names more files for the same path through the code.
+- **Executable lines are Vitest's**: on the 33 files of the Nitro backend, the coverage build's 94 executable lines
+  and the 94 lines of Vitest's LCOV report are the same, file by file, so both suites count on one set of lines.
+- **Fixed on the way**: the sample's `server-coverage` spec expected a request id of two parts, which neither backend
+  sends (both send `<process key>.<sequence>.<secret>`), and `1.0-stabilization.md` named the same two-part form.
 
 ## Part 4: consumers
 
@@ -788,6 +933,7 @@ surface: the code of each feature, executed or not. Two consequences:
 | 8 | Editors: the coverage index, line marks, function lens, hover, `.cs`, coverage on local runs | 3 |
 | 9 | Nitro (part 3b): the transform in the module, the recorder and the endpoints in the plugin, the sample application's Nitro backend built for coverage, tests (attribution under concurrency, each function form, D9, D17), the end-to-end cost, the docs and the `1.0-stabilization.md` entries for `PIWI_COVERAGE_BUILD` and `PIWI_COVERAGE_FORBIDDEN` | 5 |
 | 10 | Nuxt (part 3b.5): the Vue server build through a Vite plugin | 9 |
+| 11 | CSS (part 2b): rule usage through CDP, the `coverage.css` option, style sheets parsed for their rules, the sample's stylesheet | 2, 3 |
 
 PR 2 is worth shipping alone: it cuts the cost of today's code reach with no change in what it finds. Each PR carries
 its docs (`code-reach.md`, `backend-logs.md`, `privacy.md`, the reporter options reference).
@@ -869,6 +1015,20 @@ cores (`taskset -c 0,1`), the load generator or Playwright and Chromium to the o
   uninstrumented function on Node 24 not inlined (5.5 ns, 2 runs of 5); the median is the inlined case.
 - **Browser**: 8 rounds, the first discarded, one new context per run, medians; the functions check compared, per
   script URL and start offset, the functions with a count above zero in each mode.
+- **CSS** (part 2b): Playwright 1.64.1 and its headless Chromium, a static server on localhost, one new context per
+  run, five variants (none, function coverage, `DOM.enable` and `CSS.enable` only, CSS rule usage, both) rotated
+  between 8 rounds, the first discarded, medians of 7. Function coverage as code reach starts it (`Debugger.enable`
+  with pauses skipped, `Profiler.startPreciseCoverage` with `callCount: false, detailed: false`), without reading
+  script sources. Coverage read before the navigation and at the end. CSS-heavy page, raw test times (ms): none 1568,
+  1551, 1536, 1651, 1590, 1505, 1526; function coverage 1633, 1606, 1591, 1671, 1662, 1619, 1569; CSS enabled only
+  1615, 1513, 1577, 1573, 1565, 1544, 1627; CSS rule usage 2425, 2374, 2378, 2621, 2555, 2475, 2434; both 2422, 2407,
+  2406, 2475, 2499, 2360, 2575. Sample app (home with *Load items*, form filled, popup page): none 312, 331, 323, 308,
+  303, 319, 330; function coverage 361, 394, 371, 380, 364, 371, 409; CSS enabled only 345, 332, 323, 351, 327, 319,
+  350; CSS rule usage 374, 313, 347, 349, 363, 328, 364; both 381, 384, 434, 368, 407, 371, 391. Style recalculation,
+  five re-renders timed in the page, medians of 5: 139 ms without capture, 153 ms with `CSS.enable`, 494 ms with
+  tracking. The behaviors of 2b.1 and the mappings of 2b.2 were each checked on a page built for the case, and on a
+  Vite 8.3.5 project with `@vitejs/plugin-vue` 6.0.10 and Tailwind 4.3.3, in development with and without
+  `css.devSourcemap` and built with `build.sourcemap: true`.
 
 Throughput on eShopOnWeb (about 230 to 280 requests per second on two cores) varied by ±8% between identical runs,
 which is why CPU per request, not throughput, is reported.
