@@ -437,12 +437,17 @@ function stepSentence(step: RecordedStep, phrases: BugPhrases, w: StepWriter): s
   }
 }
 
-/** A manual instruction's sentence, with each of its values written by `w`: the test's own words, an option, or code. */
+/**
+ * A manual instruction's sentence, with each of its values written by `w`:
+ * the locator as code, an option as a value, and the rest (a call, a matcher,
+ * what a check expected and received, what it checked) as words on one line,
+ * since no phrasebook puts code marks around them.
+ */
 function instructionSentence(instruction: ManualInstruction, phrases: BugPhrases, w: StepWriter): string {
   const written: Record<string, unknown> = { ...instruction };
   for (const [field, value] of Object.entries(instruction)) {
     if (field === 'kind' || typeof value !== 'string') continue;
-    written[field] = field === 'what' ? w.words(value) : w.code(field === 'locator' ? 'locator' : 'code', value);
+    written[field] = field === 'locator' ? w.code('locator', value) : w.words(value);
   }
   if (instruction.kind === 'selectOptions') {
     written.options = instruction.options.map((o) => (typeof o === 'string' ? w.text('value', o) : o));

@@ -520,7 +520,9 @@ function convertLocatorAction(
       if (options.length === 1 && typeof only === 'string') {
         return act('selectOption', only.slice(0, STEPS_LIMITS.valueLength));
       }
-      const named = options.map((o) => (typeof o === 'number' ? o : capStepValue(o, 100)));
+      const named = options
+        .slice(0, STEPS_LIMITS.options)
+        .map((o) => (typeof o === 'number' ? o : capStepValue(o, 100)));
       return manual({ kind: 'selectOptions', locator, options: named });
     }
     case 'setInputFiles':

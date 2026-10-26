@@ -272,6 +272,11 @@ describe('French', () => {
     expect(describeManualInstruction(check)).toBe(
       `Check \`${COUNTRY}\` with toHaveText; in the run it expected "France" and received "Spain"`,
     );
+    // A value of the run goes into the Markdown on one line, with what would open HTML escaped.
+    const markup: ManualInstruction = { ...check, received: '"<b>Total</b>\n42"' };
+    expect(describeStepInWords(step('manual', { manual: { ...select.manual!, instruction: markup } }))).toBe(
+      `By hand: Check \`${COUNTRY}\` with toHaveText; in the run it expected "France" and received "&lt;b>Total&lt;/b> 42"`,
+    );
     // A step a person wrote has no instruction: its description is written as it is.
     expect(
       words(step('manual', { manual: { description: 'Accept the cookie banner', location: null, call: null } })),

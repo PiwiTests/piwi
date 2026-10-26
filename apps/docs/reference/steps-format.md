@@ -169,8 +169,9 @@ A file is checked in full before anything uses it, and every problem found is re
 - A `toHaveCount` assertion's `expected` is a whole number.
 - A viewport names a step the file has, after the one before it, with a whole width and height from 1 to 10,000, and
   a `zoom` from 0.25 to 5 when it has one.
-- Limits: 200 steps, 50 viewports, 10 alternatives per target, 2,000 characters for values, expected values, URLs and notes, 500 for
-  titles, names, texts and locators, and 5 MB for the file.
+- Limits: 200 steps, 50 viewports, 10 alternatives per target, 50 options in a manual step's instruction, 2,000
+  characters for values, expected values, URLs and notes, 500 for titles, names, texts and locators, and 5 MB for the
+  file.
 
 A recording saved before the format existed (`{ "steps", "startedAt", "startUrl" }`) is read too, and the old
 `assertVisible` action is read as an `assert` step with `toBeVisible`. A file is written with the oldest version that

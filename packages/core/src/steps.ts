@@ -57,6 +57,8 @@ export const STEPS_LIMITS = {
   /** Titles, names, texts, locators. */
   textLength: 500,
   viewports: 50,
+  /** The options a manual step's instruction names. */
+  options: 50,
   /** The widest and tallest viewport, in CSS pixels. */
   viewportSize: 10_000,
   /** The browser's zoom factors a viewport may name, as browsers allow them. */
@@ -289,10 +291,7 @@ const INSTRUCTION_FIELDS = {
   count: isCount,
   limit: isCount,
   options: (v: unknown) =>
-    Array.isArray(v) &&
-    v.length > 0 &&
-    v.length <= STEPS_LIMITS.alternatives &&
-    v.every((o) => isText(o) || isCount(o)),
+    Array.isArray(v) && v.length > 0 && v.length <= STEPS_LIMITS.options && v.every((o) => isText(o) || isCount(o)),
 } satisfies Record<string, (v: unknown) => boolean>;
 
 type InstructionField = keyof typeof INSTRUCTION_FIELDS;

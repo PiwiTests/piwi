@@ -116,9 +116,9 @@ interface BugReportPhrases {
 /**
  * One sentence per kind of manual step a report made from a test run holds,
  * without the phrasebook's "By hand" before it. The values arrive formatted:
- * a locator, a call, a matcher and the values a check expected and received
- * as code (marks around them are the phrasebook's to add), an option as a
- * value to quote, what the test checked as its own words.
+ * the locator as code, to put in code marks; an option as a value, to quote;
+ * a call, a matcher, the values a check expected and received and what it
+ * checked as words, written as they are.
  */
 export type ManualInstructionPhrases = {
   [K in ManualInstructionKind]: (instruction: ManualInstruction & { kind: K }) => string;
