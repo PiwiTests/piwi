@@ -191,6 +191,34 @@ function typedValue(step: StoredStep, prefix: string, param = 'value'): { value:
   return fromTitle == null ? null : { value: fromTitle, whole: isWhole(fromTitle, false) };
 }
 
+/**
+ * The options a select chose, read from the `options` param Playwright renders (`[{ valueOrLabel }]`, `[{ value }]`,
+ * `[{ label }]` or `[{ index }]`) and the store keeps as JSON: each option's value or label, else its index. Null when
+ * the run does not keep them whole.
+ */
+function chosenOptions(step: StoredStep): Array<string | number> | null {
+  const raw = paramsOf(step).options;
+  let options: unknown = raw;
+  if (typeof raw === 'string') {
+    if (MASKED_RE.test(raw)) return null;
+    try {
+      options = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(options) || options.length === 0) return null;
+  const chosen: Array<string | number> = [];
+  for (const option of options) {
+    if (!isRecord(option)) return null;
+    const text = option.valueOrLabel ?? option.value ?? option.label;
+    if (typeof text === 'string') chosen.push(text);
+    else if (typeof option.index === 'number') chosen.push(option.index);
+    else return null;
+  }
+  return chosen;
+}
+
 /** A step's call as a report names it: never with the value it typed. */
 function callOf(step: StoredStep, locator: string | null): string {
   const title = str(step.title);
@@ -485,11 +513,20 @@ function convertLocatorAction(
       return act('press', key.value);
     }
     case 'selectOption': {
-      const params = paramsOf(step);
-      const chosen =
-        typeof params.value === 'string' ? params.value : typeof params.label === 'string' ? params.label : null;
-      if (chosen && isWhole(chosen, true)) return act('selectOption', chosen);
-      return { kind: 'manual', description: `Choose in ${loc} the option the test chose; the run does not keep which` };
+      const options = chosenOptions(step);
+      if (!options)
+        return {
+          kind: 'manual',
+          description: `Choose in ${loc} the option the test chose; the run does not keep which`,
+        };
+      const [only] = options;
+      if (options.length === 1 && typeof only === 'string') {
+        return act('selectOption', only.slice(0, STEPS_LIMITS.valueLength));
+      }
+      const named = options.map((o) =>
+        typeof o === 'number' ? `the option at index ${o}` : `"${capStepValue(o, 100)}"`,
+      );
+      return { kind: 'manual', description: `Choose in ${loc} ${named.join(' and ')}` };
     }
     case 'setInputFiles':
       return {
