@@ -1,6 +1,6 @@
 # @piwitests/instrumentation-nitro
 
-Nitro / Nuxt server plugin for [Piwi Dashboard](https://piwitests.dev) — captures Warning and Error log entries per HTTP request and delivers them to the Piwi Dashboard reporter via the `X-Piwi-Logs` response header.
+Nitro / Nuxt server plugin for [Piwi Dashboard](https://piwitests.dev) — captures Warning and Error log entries per HTTP request and delivers them to the Piwi Dashboard reporter via the `X-Piwi-Logs` response header, and, in a coverage build, the server code each test ran.
 
 During a Playwright test run, the reporter reads this header from every response and stores the entries alongside the network request. The entries are then available in the Piwi Dashboard test-case view and are included in the AI diagnosis context.
 
@@ -43,6 +43,44 @@ export default defineNuxtConfig({ nitro: { modules: ['@piwitests/instrumentation
 ```
 
 The manifest then lists every route Nitro scanned (`routes/`, `api/`) and every handler the config declares, middleware and a fallback catch-all (`/**`) left out, each with its method (`GET` for a route that answers any method), its pattern (`/api/orders/:id`) and its file relative to the git repository. Without the module, it lists only the routes the server has answered since it started (a route handler matched, so neither a 404 nor a public asset), which the reporter, reading it before any test runs, rarely sees. Nuxt pages are rendered by one catch-all route, so they are not listed: name them in a `piwi.manifest.json`.
+
+## Server coverage
+
+A **coverage build** records, per Playwright test, the server files, functions and lines the test ran, even when the
+tests run in parallel against one server. The Piwi reporter collects it with `coverage: { server: 'lines' }`
+([server coverage](https://piwitests.dev/features/server-coverage)). It needs the module above and the plugin, and
+`PIWI_COVERAGE_BUILD=true` when the server is built:
+
+```bash
+PIWI_COVERAGE_BUILD=true npx nitro build          # or nitro dev, or nuxi build for a Nuxt app's server/ code
+PIWI_TEST_LOGS_DISABLED=false node .output/server/index.mjs
+```
+
+```powershell
+$env:PIWI_COVERAGE_BUILD='true'; npx nitro build
+$env:PIWI_TEST_LOGS_DISABLED='false'; node .output/server/index.mjs
+```
+
+- **What the build does:** after Nitro's own transforms, the module instruments the server's own modules (under the
+  repository, outside `node_modules`): each function looks up the request being served when it is called, and each
+  statement marks itself as run. The lines are mapped to your source files through the build's source maps, when the
+  server is built, so the server reads no source map while it runs.
+- **Per request:** a response whose request ran instrumented code carries `X-Piwi-Coverage: <process key>.<sequence>.<secret>`;
+  the reporter asks `POST /__piwi/coverage/collect` for the coverage of the ids a test received, and
+  `GET /__piwi/coverage/run` for the run's. The answers are the ASP.NET Core package's. A request the server makes to
+  itself (`$fetch` while rendering) counts for the request that made it. A module's top-level code, which runs when the
+  module loads, counts for no test.
+- **Which lines:** the statements and functions Istanbul counts, each statement at its first line, so a file's
+  executable lines are the ones Vitest's coverage counts for it, and the dashboard's
+  [combined coverage](https://piwitests.dev/features/combined-coverage) counts both suites on the same lines.
+- **`PIWI_COVERAGE_MODE=run`** records the run level only, with no request named.
+- **Guards:** a coverage build refuses to start where `NODE_ENV` is `production` (which `nitro build` sets in the
+  server) unless `PIWI_TEST_LOGS_DISABLED=false`, and warns where the plugin is otherwise off.
+  `PIWI_COVERAGE_FORBIDDEN=true` at build time makes a coverage build fail. Never ship a coverage build: it runs slower
+  code, and its endpoints serve source paths and line numbers.
+- **Not covered:** dependencies Nitro keeps external, a Nuxt application's pages and components rendered on the
+  server, class field initializers, and callbacks a library runs outside the request's async context (they count for
+  no test).
 
 ## What gets captured
 
