@@ -17,7 +17,8 @@ have. Piwi reads those runs badly today:
 This plan makes a remote browser something Piwi records and explains, whatever grid serves it, and defines what a grid
 can tell Piwi beyond what the test sees.
 
-**Status.** Proposed 2026-10-26. Nothing is built. The spikes in the [appendix](#appendix-the-spikes) are the evidence
+**Status.** Proposed 2026-10-26. Built: the `checkBaseUrl` message for a base URL that a remote browser reaches from
+its own network (Part 1). Nothing else is built. The spikes in the [appendix](#appendix-the-spikes) are the evidence
 for the claims about Playwright and the capture's cost; they are not part of the repository. Nothing here is on
 [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D61 of
 [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -278,8 +279,8 @@ the address, the run's browser token in `Authorization`, the project's name in `
 `exposeNetwork` rule limited to the loopback ports of the projects' `baseURL`s and `webServer` entries
 (`<loopback>:3000`). A `baseURL` that is not on the loopback gets no rule: the grid must reach it itself, and the docs
 say so. The capture fixtures add `x-piwi-worker`, the worker's index, so a run whose report never arrived still finds
-its sessions. `PW_TEST_CONNECT_WS_ENDPOINT` replaces the config's `connectOptions` whole, headers included; the
-reporter warns when both are set. Any other grid receives neither a token nor these headers.
+its sessions. A project's `connectOptions` replaces `PW_TEST_CONNECT_WS_ENDPOINT` whole, headers included: the variable
+applies only to a project that leaves `connectOptions` unset. The reporter warns when both are set. Any other grid receives neither a token nor these headers.
 
 ## Part 5: Documentation
 
@@ -369,7 +370,8 @@ PR 1 is the first release.
 - **The capture's cost grows with the round trip** (Part 3): 293 ms per test between no added delay and 30 ms, from
   reads the test waits for.
 - **`checkBaseUrl` checks from the runner** (`packages/reporter/src/internal/support/base-url-check.ts`), which is not
-  where a remote browser's requests come from.
+  where a remote browser's requests come from. Fixed: its messages say so when the `exposeNetwork` rule does not cover
+  the base URL's host and port.
 - **Outside Piwi:** `run-server` up to Playwright 1.59.1 applies a client's `args`, and, started without `--host`,
   listens on every interface while printing `ws://localhost:<port>/` ([spike D](#d-what-a-test-sees-and-what-a-page-reads));
   1.60.0 changed both without a word in its release notes. Playwright's Docker page still publishes the server on
