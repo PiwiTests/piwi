@@ -60,6 +60,10 @@ coverage/
 .test-temp-gzip/
 .temp-dashboard/
 
+# The throwaway tests a review writes to prove a finding (AGENTS.md, "Review before you call a change done").
+*.scratch.test.ts
+*.scratch.spec.ts
+
 # Live AI E2E scratch: the throwaway server state and the artifacts the
 # authoring run writes instead of committing.
 .live-temp/

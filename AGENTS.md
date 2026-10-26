@@ -147,7 +147,23 @@ service worker, the dashboard widgets imported from `#components`) are declared 
 standalone entry there, or knip reports its whole import tree as unused. CI's checks job runs it, after building the
 reporter the dashboard's Playwright config loads, and every workspace's `format:check`: a finding fails the check.
 
-Run typecheck, lint and tests **once at the end** before the final commit — not after every edit.
+### Before you push
+
+Run the checks **once at the end**, before the final commit — not after every edit. A workspace's scripts carry its
+name (`app:`, `reporter:`, `core:`, `picker-dom:`, `editor:`, `extension:`, `vscode:`) and run from its directory; the
+root package has none of them. What a change needs depends on what it touches:
+
+| Change touches…                                 | Run                                                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| a workspace                                     | its `typecheck`, `lint`, `format:check` and unit tests (`app:test:unit` for the dashboard)                                |
+| `integrations/nitro/`                           | its `typecheck` and `test`, **and** `app:typecheck`: the dashboard imports its sources and checks them under strict settings its own `typecheck` does not apply |
+| `apps/docs/`, or a docs link or heading in code | `npx vitest run tests/unit/docs-drift.test.ts tests/unit/docs-page-meta.test.ts` from `apps/application/` (see [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md#what-the-drift-test-checks)) |
+| `.github/workflows/` or `.github/actions/`      | `actionlint` (see [`.github/AGENTS.md`](.github/AGENTS.md#checking-a-change))                                             |
+
+**oxfmt is the only formatter**: each workspace's `format` / `format:check`, and the husky `pre-commit` hook formats the
+files a commit stages. Never run Prettier: it reports differences oxfmt does not have.
+
+Then review the change in fresh subagents (_Review before you call a change done_, below).
 
 ## Conventions that apply everywhere
 
@@ -197,7 +213,8 @@ Format `type(scope): subject`:
 
 The `commitlint` CI check lints **every commit in the PR range**, so one bad message turns the PR red. Self-check with
 `npx commitlint --from HEAD~<n> --to HEAD` from the repo root, and never bypass the husky `commit-msg` hook with
-`--no-verify`.
+`--no-verify`. When the hook rejects a message, nothing was committed and the files stay staged: fix the message and
+commit again before any other git step, or the next commit takes those files with it.
 
 ### Release notes
 
@@ -306,11 +323,15 @@ Voice rules for all of them, and for `apps/docs/`: see [`apps/docs/AGENTS.md`](a
 - **Capture global change requests**: when asked to apply a change across many files ("update all X to Y"), add the
   resulting convention as a rule to the relevant `AGENTS.md` so future edits follow it. Put it in the narrowest file
   that covers it — area guide first, this root file only if it truly applies everywhere.
-- **Review before a pull request**: before you propose or open one, unless the branch was reviewed since its last
-  change, propose a code review first. Run it in fresh subagents, not a fork of your own context: give them the diff
-  range and the area guides, never your reasoning or what you expect them to find, and ask for an adversarial
-  reading that reports defects with the input that triggers them. Verify each finding against the code, fix the real
-  ones, and open the pull request after.
+- **Review before you call a change done**: before you report it finished, or propose or open a pull request for it,
+  review it, unless the branch was reviewed since its last change. Run the review in fresh subagents, not a fork of
+  your own context: give them the diff range and the area guides, never your reasoning or what you expect them to
+  find, and ask for an adversarial reading that reports defects with the input that triggers them. A test a reviewer
+  writes to prove a finding is named `*.scratch.test.ts` or `*.scratch.spec.ts` (gitignored) and deleted once read.
+  Verify each finding against the code, fix the real ones, and report or open the pull request after.
+- **Never copy what a user shares into the repository**: the values in a screenshot, a bug report, a trace or a run
+  (customer names, business values, URLs, identifiers) stay out of tests, fixtures, docs and commit messages, which
+  are public. Use neutral placeholders that reproduce the same case.
 - **Log what you find**: bugs, inconsistencies and tech debt discovered while exploring go to
   `plans/exploration-findings.md` (local, never committed) as:
 
