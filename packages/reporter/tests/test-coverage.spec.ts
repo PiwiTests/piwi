@@ -41,6 +41,30 @@ const settings = (server: CoverageSettings['server'], browser: CoverageSettings[
 });
 
 describe('composeTestCoverage', () => {
+  it("keeps a style sheet's rules, but not in a file the scripts reached whole", () => {
+    const rules = (path: string) => ({ path, runtime: 'browser' as const, functions: [[3, 4]] as Array<[number, number]> });
+    const css = [rules('web/app.css'), rules('src/Card.vue')];
+    const settings = { browser: 'files' as const, server: 'off' as const, css: 'rules' as const };
+    expect(composeTestCoverage(null, ['src/Card.vue', 'src/main.ts'], settings, css)).toEqual({
+      v: 1,
+      files: [
+        { path: 'src/Card.vue', runtime: 'browser' },
+        { path: 'src/main.ts', runtime: 'browser' },
+        { path: 'web/app.css', runtime: 'browser', functions: [[3, 4]] },
+      ],
+    });
+    // At `functions`, the scripts' functions and the rules are both whole: they add up.
+    const functions = [{ path: 'src/Card.vue', runtime: 'browser' as const, functions: [[10, 12]] as Array<[number, number]> }];
+    expect(composeTestCoverage(null, functions, { ...settings, browser: 'functions' }, css)?.files).toContainEqual({
+      path: 'src/Card.vue',
+      runtime: 'browser',
+      functions: [
+        [3, 4],
+        [10, 12],
+      ],
+    });
+  });
+
   it('keeps the lines, functions and blob at lines granularity', () => {
     expect(composeTestCoverage({ files: [SERVER_FILE], incomplete: false }, null, settings('lines'))).toEqual({
       v: 1,

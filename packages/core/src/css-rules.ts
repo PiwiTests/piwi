@@ -59,6 +59,22 @@ export function parseCssRules(text: string): CssRule[] {
       i++;
       continue;
     }
+    // An unquoted `url(…)` may hold braces and semicolons (`url(data:image/svg+xml;utf8,<svg>{</svg>)`).
+    if ((c === 'u' || c === 'U') && /^url\(/i.test(text.slice(i, i + 4)) && !/[\w-]/.test(text[i - 1] ?? '')) {
+      let j = i + 4;
+      while (j < text.length && /\s/.test(text[j]!)) j++;
+      if (text[j] !== '"' && text[j] !== "'") {
+        if (preludeStart < 0) preludeStart = i;
+        for (; j < text.length && text[j] !== ')'; j++) if (text[j] === '\\') j++;
+        i = j;
+        continue;
+      }
+    }
+    // The HTML comment markers a style sheet may hold are whitespace to it.
+    if (text.startsWith('<!--', i) || text.startsWith('-->', i)) {
+      i += text.startsWith('<!--', i) ? 3 : 2;
+      continue;
+    }
     if (c === '{') {
       const start = preludeStart < 0 ? i : preludeStart;
       const atRule = /^@([\w-]+)/.exec(text.slice(start, i));
@@ -86,6 +102,11 @@ export function parseCssRules(text: string): CssRule[] {
       continue;
     }
     if (preludeStart < 0 && !/\s/.test(c)) preludeStart = i;
+  }
+  // A block left open at the end of the sheet ends there, as Chromium reads it.
+  for (const block of open) {
+    if (block.kind !== 'other')
+      rules.push({ kind: block.kind, start: block.start, open: block.open, end: text.length });
   }
   return rules.sort((a, b) => a.start - b.start);
 }

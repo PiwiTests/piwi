@@ -32,6 +32,10 @@ it as each document is left and when the test ends. Each style sheet goes to its
 - a sheet served as written (`/assets/app.css`) is the file at that path, found as
   [code reach](./code-reach#what-it-records) finds a module.
 
+Without a source map, a sheet's lines are the file's only when each rule sits at the same line in the file: a
+preprocessor's output served without its map (Sass, PostCSS, Tailwind, an inlined `@import`) counts at file level, so
+a change to that file keeps every test that matched one of its rules.
+
 A style rule counts from its selector to its closing brace, like a function. A grouping rule (`@media`, `@supports`,
 `@layer`, `@container`) counts its first line once a rule inside it matched. Every rule of each sheet, matched or not,
 goes with the run, for the file's ratio.
@@ -42,7 +46,7 @@ Wherever browser files are read: the execution page's coverage, a file's coverag
 [test selection](./change-impact) (a changed rule selects the tests that matched it; a change outside every rule, at
 file level, the tests that matched any), and [uncovered changes](./uncovered-changes).
 
-On the sample application, a change to its stylesheet selected 23 of its 32 tests by file, and 12 by line for a change
+On the sample application, a change to its stylesheet selected 24 of its 32 tests by file, and 12 by line for a change
 to one rule, where it ran all 32 before.
 
 ## Cost
@@ -62,6 +66,8 @@ coverage costs 4%. Turn it on where style changes are frequent, or in a schedule
 - **Production builds:** Vite writes no source map for its CSS and minifies it to one line, so a built sheet maps to no
   source. Record CSS coverage against a dev server, or an application serving its CSS as written.
 - A `<style>` in a page's HTML counts only when the page's address names its file (`/index.html`).
+- A document replaced without `beforeunload` (`page.setContent`) loses the rules it matched: Chromium drops them with
+  it.
 
 ## Related
 

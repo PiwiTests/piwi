@@ -35,7 +35,7 @@ yet: browser lines (PR 6), the Istanbul adapter (D13) and the rest of part 6. Pa
 open question 5, gives Nitro backends the same server coverage: built the same day (delivery PR 9) and checked on the
 sample application, whose Nitro backend now records what its ASP.NET Core one does, unit tests and combined coverage
 included; a Nuxt application's server rendering (PR 10) is not built. Part 2b, CSS rule coverage, is built the same
-day (PR 11, `coverage.css: 'rules'`): on the sample application a stylesheet change selects 23 of its 32 tests by file
+day (PR 11, `coverage.css: 'rules'`): on the sample application a stylesheet change selects 24 of its 32 tests by file
 and 12 by line, where it ran all 32.
 Each test's coverage is shown on the execution page and per file on a page of its own
 ([`test-coverage-view.md`](../adr/test-coverage-view.md)). The study's measurements came from
@@ -553,8 +553,12 @@ between rounds:
   `piwi-browser-functions`; the reporter keeps their ranges whatever `coverage.browser` is. No dashboard change: the
   dashboard derives code reach from a test's coverage files per runtime, so a style sheet becomes a `browser` code
   reach file.
+- **Lines are trusted, or the file counts whole**: without a map, a sheet's lines count only when each rule's
+  selector starts the same line of the file on disk; a preprocessor's output served without its map counts at file
+  level, so line-level impact keeps every test that matched it. A review found the first build taking such lines as
+  the file's, which could rule out a test that did match the changed rule.
 - **On the sample application** (`examples/sample-app`, both backends): 23 and 24 of its tests matched rules of
-  `web/assets/app.css`. A change to the file selects 23 of the 32 tests; a change to one line of the `.actions` rule,
+  `web/assets/app.css`. A change to the file selects 24 of the 32 tests; a change to one line of the `.actions` rule,
   12; one in the `.field` rule, 12 others (the form and the shop), where any stylesheet change ran all 32.
 
 ## Part 3: server capture (ASP.NET Core)

@@ -86,10 +86,26 @@ export function composeTestCoverage(
           settings.browser,
         )
       : null;
-  // A style sheet's matched rules keep their line ranges, whatever the scripts' granularity.
+  // A style sheet's matched rules keep their line ranges, whatever the scripts' granularity, except in a file the
+  // scripts reached whole (a component's `.vue` file at `files`): its rules alone would read as all the file ran.
+  const wholeFiles = new Set(
+    settings.browser === 'functions'
+      ? []
+      : (browserFiles ?? []).map((file) => (typeof file === 'string' ? file : file.path)),
+  );
   const cssCapture: CoverageCapture | null =
     settings.css === 'rules' && cssFiles?.length
-      ? reduceCoverage({ v: 1, files: cssFiles.map((file) => ({ ...file, runtime: 'browser' as const })) }, 'functions')
+      ? reduceCoverage(
+          {
+            v: 1,
+            files: cssFiles.map((file) =>
+              wholeFiles.has(file.path)
+                ? { path: file.path, runtime: 'browser' as const }
+                : { ...file, runtime: 'browser' as const },
+            ),
+          },
+          'functions',
+        )
       : null;
   const merged = mergeCoverage(serverCapture, mergeCoverage(browserCapture, cssCapture));
   return merged ? sanitizeCoverage(merged) : null;

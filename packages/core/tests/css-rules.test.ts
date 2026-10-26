@@ -40,6 +40,29 @@ describe('parseCssRules', () => {
   });
 });
 
+describe('parseCssRules, on what Chromium reads differently from a naive scan', () => {
+  const starts = (text: string) => parseCssRules(text).map((rule) => text.slice(rule.start, rule.open).trim());
+
+  test('reads an unquoted url() whole, braces and semicolons included', () => {
+    const text = '.c{background:url(x{y.png)}\n.d{background:url(data:image/svg+xml;utf8,<svg>{</svg>)}\n.e{}';
+    expect(starts(text)).toEqual(['.c', '.d', '.e']);
+    expect(parseCssRules(text)[0]!.end).toBe(text.indexOf('\n'));
+  });
+
+  test('takes the HTML comment markers for whitespace', () => {
+    expect(starts('<!-- .c{} -->\n.d{}')).toEqual(['.c', '.d']);
+  });
+
+  test('ends a block left open at the end of the sheet there, as Chromium does', () => {
+    const text = '.a{}\n@media (min-width:1px){\n.d { color: blue';
+    expect(parseCssRules(text).map((rule) => [text.slice(rule.start, rule.open).trim(), rule.end])).toEqual([
+      ['.a', 4],
+      ['@media (min-width:1px)', text.length],
+      ['.d', text.length],
+    ]);
+  });
+});
+
 describe('usedCssRules', () => {
   const rules = parseCssRules(SHEET);
 

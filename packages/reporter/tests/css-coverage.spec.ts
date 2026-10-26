@@ -43,7 +43,11 @@ describe('resolveCssCoverage', () => {
   beforeAll(() => {
     dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-css-')));
     write('web/assets/app.css', APP);
-    write('src/App.vue', '<template><p class="x">x</p></template>\n\n<style scoped>\n.x { color: red }\n.y { color: blue }\n</style>\n');
+    write(
+      'src/App.vue',
+      "<template><p class=\"x\">x</p></template>\n<script>const css = '<style>';</script>\n<style scoped>\n.x { color: red }\n.y { color: blue }\n</style>\n",
+    );
+    write('src/index.css', '@tailwind base;\n\n.btn {\n  color: red;\n}\n');
     write('src/theme.scss', '$c: red;\n\n.t {\n  color: $c;\n}\n');
     write('node_modules/tailwindcss/index.css', '.p-1 { padding: 1px }\n');
     write('dist/bundle.css', '.z{color:red}\n');
@@ -74,7 +78,18 @@ describe('resolveCssCoverage', () => {
       devId: `${dir}/src/App.vue?vue&type=style&index=0&scoped=7a7a37b1&lang.css`,
     });
     const { reached } = await resolveCssCoverage([injected], roots(), noMaps);
+    // The `<style>` in the script is no block: the file's block starts on line 3, its `.x` on line 4.
     expect(reached).toEqual(new Map([['src/App.vue', [[4, 4]]]]));
+  });
+
+  it("counts a preprocessor's output served without its map at file level, its lines not being the file's", async () => {
+    // What a dev server injects for src/index.css once Tailwind ran: the preflight first, `.btn` lines further down.
+    const text = '*, ::before { box-sizing: border-box }\nhtml { line-height: 1.5 }\n.btn {\n  color: red;\n}\n';
+    const compiled = sheet(text, ['.btn {\n  color: red;\n}'], { isInline: true, devId: `${dir}/src/index.css` });
+    expect(await resolveCssCoverage([compiled], roots(), noMaps)).toEqual({
+      reached: new Map([['src/index.css', []]]),
+      known: new Map(),
+    });
   });
 
   it("maps a sheet's lines through its source map, and drops the sources under node_modules", async () => {
@@ -169,6 +184,28 @@ describe('in Chromium', () => {
       ]);
     } finally {
       await page.close();
+    }
+  });
+
+  it.each([
+    ['the style sheets alone', { PIWI_COVERAGE_CSS: 'rules' }],
+    ['scripts and style sheets', { PIWI_COVERAGE_CSS: 'rules', PIWI_COVERAGE_BROWSER: 'functions' }],
+  ])('keeps what a document matched when a goto leaves it, with %s', async (_label, env) => {
+    for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
+    // The read at the pause once raced the page's resume: repeat to catch it.
+    for (let round = 0; round < 4; round++) {
+      resetCssCoverageCache();
+      const page = await browser!.newPage();
+      try {
+        expect(await startCodeReach(page)).toBe(true);
+        await page.goto(`${url}/next.html`);
+        await page.goto('about:blank');
+        const { sheets } = await stopPageCoverage(page);
+        const { reached } = await resolveCssCoverage(sheets, roots(), pageMapFetcher(page));
+        expect(reached.get('assets/app.css')).toEqual([[2, 2]]);
+      } finally {
+        await page.close();
+      }
     }
   });
 });

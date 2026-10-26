@@ -629,12 +629,18 @@ function onPaused(
     event.reason === 'EventListener' &&
     (event.data as { eventName?: string } | undefined)?.eventName === 'listener:beforeunload' &&
     (event.callFrames?.[0]?.functionName ?? MARK_FUNCTION) === MARK_FUNCTION;
-  const read = leaving ? (capture.js ? readCoverage(page, capture.cdp) : Promise.resolve([])) : null;
+  // Both reads run while the document is still there: the page resumes only once each has answered.
+  const read = leaving
+    ? Promise.all([
+        capture.js ? readCoverage(page, capture.cdp) : Promise.resolve([]),
+        capture.css ? readCssUsage(page, capture.cdp, capture.css) : Promise.resolve(),
+      ])
+    : null;
   if (read) {
     // Merged before the page resumes, against its scripts as it knows them now.
-    const merging = read
-      .then((coverage) => mergeCoverageRead(capture.ran, capture.scripts, coverage, capture.keepIdle))
-      .then(() => (capture.css ? readCssUsage(page, capture.cdp, capture.css) : undefined));
+    const merging = read.then(([coverage]) =>
+      mergeCoverageRead(capture.ran, capture.scripts, coverage, capture.keepIdle),
+    );
     capture.reading.add(merging);
     void merging.finally(() => capture.reading.delete(merging));
   }
@@ -728,11 +734,8 @@ function onStyleSheetAdded(
   css.sheets.set(header.styleSheetId, sheet);
   const reading = (async () => {
     try {
-      const { text } = await internalCall(page, () =>
-        cdp.send('CSS.getStyleSheetText', { styleSheetId: header.styleSheetId }),
-      );
-      sheet.text = text;
-      if (header.ownerNode !== undefined && !header.sourceURL.match(/\.css(?:[?#]|$)/i)) {
+      // A `<style>` element's sheet has no address of its own: its owner names the file a dev server injected.
+      if (header.ownerNode !== undefined && !/\.css(?:[?#]|$)/i.test(header.sourceURL)) {
         const { node } = await internalCall(page, () =>
           cdp.send('DOM.describeNode', { backendNodeId: header.ownerNode! }),
         );
@@ -740,6 +743,12 @@ function onStyleSheetAdded(
         const at = attributes.indexOf('data-vite-dev-id');
         if (at >= 0 && typeof attributes[at + 1] === 'string') sheet.devId = attributes[at + 1];
       }
+      // A dependency's sheet counts for no file: its text is never read.
+      if (/\/node_modules\//.test(sheet.devId ?? header.sourceURL)) return;
+      const { text } = await internalCall(page, () =>
+        cdp.send('CSS.getStyleSheetText', { styleSheetId: header.styleSheetId }),
+      );
+      sheet.text = text;
     } catch {
       // The sheet counts for no file without its text.
     }
@@ -860,13 +869,17 @@ export async function startCodeReach(page: Page): Promise<boolean> {
               capture.cdp.send('Profiler.startPreciseCoverage', { callCount: false, detailed: false }),
             ]
           : []),
-        // The style sheets' rule usage records nothing without the DOM and CSS domains.
+        // The style sheets' rule usage records nothing without the DOM and CSS domains. A failure there leaves the
+        // scripts' coverage running.
         ...(css
           ? [
               capture.cdp
                 .send('DOM.enable')
                 .then(() => capture.cdp.send('CSS.enable'))
-                .then(() => capture.cdp.send('CSS.startRuleUsageTracking')),
+                .then(() => capture.cdp.send('CSS.startRuleUsageTracking'))
+                .catch(() => {
+                  capture.css = null;
+                }),
             ]
           : []),
         capture.cdp.send('Page.enable'),

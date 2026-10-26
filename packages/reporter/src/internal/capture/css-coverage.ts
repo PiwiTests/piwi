@@ -13,9 +13,14 @@
  * - **the address it was served from** (`/assets/app.css`), resolved against
  *   the code reach roots like a module served by path.
  *
- * Files under `node_modules` and build output count for nothing (Tailwind's
- * utilities map into its own package). A sheet's every rule, matched or not,
- * is listed as the file's known rules. Never throws.
+ * Without a map, a sheet's lines are the file's only when each rule's
+ * selector sits at the same line in the file on disk: a preprocessor's output
+ * (Sass, PostCSS, Tailwind, an inlined `@import`) served without its map would
+ * otherwise put its rules on lines that hold others. Such a sheet counts at
+ * file level, with no line ranges, so a change to the file keeps every test
+ * that matched one of its rules. Files under `node_modules` and build output
+ * count for nothing (Tailwind's utilities map into its own package). A sheet's
+ * every rule, matched or not, is listed as the file's known rules. Never throws.
  */
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
@@ -54,6 +59,8 @@ interface SheetResolution {
   file: string | null;
   lineOffset: number;
   sources: Array<string | null>;
+  /** Whether the sheet's lines are its file's: with a map, or when its rules sit at the same lines in the file. */
+  exact: boolean;
 }
 
 const resolutions = new Map<string, Promise<SheetResolution | null>>();
@@ -90,7 +97,8 @@ function styleBlockLine(file: string, index: number): number {
   } catch {
     return 0;
   }
-  const blocks = [...text.matchAll(/<style\b[^>]*>/gi)];
+  // A component's top-level blocks start a line: a `<style` inside its script or template is not one.
+  const blocks = [...text.matchAll(/^<style\b[^>]*>/gim)];
   const block = blocks[index];
   if (!block) return 0;
   return text.slice(0, block.index! + block[0].length).split('\n').length - 1;
@@ -116,6 +124,30 @@ async function sheetMap(sheet: CapturedSheet, text: string, fetchMap: MapFetcher
   }
 }
 
+/**
+ * Whether each rule's selector, or a grouping rule's prelude, starts the same line of the file as it does in the
+ * sheet, `lineOffset` lines down: the sheet's text is the file's as written, its declarations rewritten at most (a
+ * dev server rebasing a `url()`).
+ */
+function sameLines(text: string, rules: readonly CssRule[], file: string, lineOffset: number): boolean {
+  let source: string;
+  try {
+    source = fs.readFileSync(file, 'utf-8');
+  } catch {
+    return false;
+  }
+  const fileLines = source.split(/\r?\n/);
+  const sheetLineStarts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === '\n') sheetLineStarts.push(i + 1);
+  let low = 0;
+  for (const rule of rules) {
+    while (low + 1 < sheetLineStarts.length && sheetLineStarts[low + 1]! <= rule.start) low++;
+    const head = text.slice(rule.start, rule.open).split('\n')[0]!.trim();
+    if (head && !(fileLines[low + lineOffset] ?? '').includes(head)) return false;
+  }
+  return true;
+}
+
 async function resolveSheet(
   sheet: CapturedSheet,
   text: string,
@@ -134,7 +166,7 @@ async function resolveSheet(
         return null;
       }
     });
-    return { rules, lookup, file: null, lineOffset: 0, sources };
+    return { rules, lookup, file: null, lineOffset: 0, sources, exact: true };
   }
   if (sheet.devId) {
     const file = sourceFile(sheet.devId, dirs);
@@ -142,11 +174,12 @@ async function resolveSheet(
     // A component's `<style>` block, served alone: its lines start where the block does in the file.
     const index = /[?&]index=(\d+)/.exec(sheet.devId);
     const lineOffset = /\.(?:vue|svelte|astro)$/i.test(file) && index ? styleBlockLine(file, Number(index[1])) : 0;
-    return { rules, lookup: null, file, lineOffset, sources: [] };
+    return { rules, lookup: null, file, lineOffset, sources: [], exact: sameLines(text, rules, file, lineOffset) };
   }
   const file = fileForStyleUrl(sheet.sourceURL, dirs);
   if (!file) return null;
-  return { rules, lookup: null, file, lineOffset: sheet.isInline ? sheet.startLine : 0, sources: [] };
+  const lineOffset = sheet.isInline ? sheet.startLine : 0;
+  return { rules, lookup: null, file, lineOffset, sources: [], exact: sameLines(text, rules, file, lineOffset) };
 }
 
 /** Resolve a sheet, once per worker for a given address and text. */
@@ -156,7 +189,10 @@ function cachedResolution(
   dirs: string[],
   fetchMap: MapFetcher,
 ): Promise<SheetResolution | null> {
-  const key = `${sheet.devId ?? sheet.sourceURL} ${crypto.createHash('sha1').update(text).digest('hex')}`;
+  const version = crypto.createHash('sha1').update(text).digest('hex');
+  const key = [sheet.devId ?? sheet.sourceURL, sheet.isInline ? sheet.startLine : '', dirs.join('\0'), version].join(
+    ' ',
+  );
   let pending = resolutions.get(key);
   if (!pending) {
     pending = resolveSheet(sheet, text, dirs, fetchMap).catch(() => null);
@@ -166,8 +202,15 @@ function cachedResolution(
   return pending;
 }
 
-function add(into: Map<string, LineRange[]>, file: string, ranges: LineRange[], repoRoot: string): void {
-  if (ranges.length === 0) return;
+/** Add a file's ranges; with none and `fileLevel`, the file alone, reached with no line ranges known. */
+function add(
+  into: Map<string, LineRange[]>,
+  file: string,
+  ranges: LineRange[],
+  repoRoot: string,
+  fileLevel = false,
+): void {
+  if (ranges.length === 0 && !fileLevel) return;
   const key = relativeToRepo(file, repoRoot);
   into.set(key, [...(into.get(key) ?? []), ...ranges]);
 }
@@ -185,9 +228,14 @@ export async function resolveCssCoverage(
     const dirs = scriptRoots(roots, sheet.sourceURL, sheet.pageUrl);
     const resolution = await cachedResolution(sheet, sheet.text, dirs, fetchMap);
     if (!resolution) continue;
+    const used = usedCssRules(resolution.rules, [...sheet.used.values()]);
+    if (!resolution.exact) {
+      if (resolution.file && used.length > 0) add(reached, resolution.file, [], roots.repoRoot, true);
+      continue;
+    }
     const options = { lookup: resolution.lookup, lineOffset: resolution.lineOffset };
     const fileOf = (source: number) => (source === -1 ? resolution.file : (resolution.sources[source] ?? null));
-    const matched = cssRuleLines(sheet.text, usedCssRules(resolution.rules, [...sheet.used.values()]), options);
+    const matched = cssRuleLines(sheet.text, used, options);
     for (const [source, ranges] of matched) {
       const file = fileOf(source);
       if (file) add(reached, file, ranges, roots.repoRoot);
