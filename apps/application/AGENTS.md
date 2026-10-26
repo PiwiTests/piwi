@@ -1136,6 +1136,15 @@ composed guide through `useGuide`.
   is not loopback. The token goes to the CLI in a `--mcp-config` file, never on its command line; never hand the CLI
   the desktop token or an API key. On the desktop app the guard lets that one route through on that token alone
   (`presentsAssistantTurnToken`); any other route keeps needing the desktop token.
+- **The Codex CLI uses the same turn endpoint and token** (`ai-codex-cli.ts`, injected into `runClaudeCodeTurn`).
+  Every invocation has a private home and working directory, a file-backed ChatGPT login snapshot, an allowlisted
+  environment, disabled feature flags and model metadata with no built-in execution or filesystem tools. Only the
+  turn's `piwi` MCP server and allowed tools are configured. Never import the user's Codex config, tools, plugins,
+  skills, unrelated credentials or API keys into that invocation.
+- **The official DeepSeek CLI uses a generated profile with no inherited bundles** (`ai-deepseek-cli.ts`). Its
+  explicit roster contains official model and agent plugins and, for an assistant turn, only the turn's Piwi MCP
+  client. No built-in shell, filesystem, web, skill or plugin-management tools are mounted. Copy only the selected
+  DeepSeek account grant or API key; never import user profiles, unrelated credential records or endpoint overrides.
 - **A conversation is never returned to another user**, administrators included. Every read in
   `shared/handlers/assistant.ts` is narrowed to the owner (`assistantOwnerOf`: the user's id, or null with
   authentication off), and a miss answers 404.

@@ -562,10 +562,10 @@ export const PIWI_ENV_VARS = {
   // ── AI — diagnosis model ─────────────────────────────────────────────────
   PIWI_AI_PROVIDER: {
     description:
-      'AI provider for failure diagnosis: "anthropic", "openai" (OpenAI-compatible), or "claude-cli" (the local Claude Code CLI — offered in the desktop app, or wherever PIWI_CLAUDE_CLI_PATH points at it).',
+      'AI provider for failure diagnosis: "anthropic", "openai" (OpenAI-compatible), "codex-cli" (the local Codex CLI), "deepseek-cli" (official DeepSeek Harness), or "claude-cli" (the local Claude Code CLI — offered in the desktop app, or wherever PIWI_CLAUDE_CLI_PATH points at it).',
     category: 'ai',
     type: 'enum',
-    enum: ['anthropic', 'openai', 'claude-cli'],
+    enum: ['anthropic', 'openai', 'claude-cli', 'codex-cli', 'deepseek-cli'],
   },
   PIWI_AI_API_KEY: {
     description: 'API key for the diagnosis provider. Takes precedence over the DB-stored key.',
@@ -574,7 +574,7 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AI_PROVIDER: '*' },
     requiredWhen: { PIWI_AI_PROVIDER: 'anthropic' },
     notes:
-      'Optional for OpenAI-compatible providers that need no key (e.g. a local model). Unused by "claude-cli" — the CLI carries its own login.',
+      'Optional for OpenAI-compatible providers that need no key (e.g. a local model). Unused by "claude-cli", "codex-cli", and "deepseek-cli" — the CLI carries its own login.',
   },
   PIWI_AI_MODEL: {
     description:
@@ -634,7 +634,7 @@ export const PIWI_ENV_VARS = {
     description: 'Provider for the optional research (pre-analysis) stage. Falls back to PIWI_AI_PROVIDER.',
     category: 'ai',
     type: 'enum',
-    enum: ['anthropic', 'openai', 'claude-cli'],
+    enum: ['anthropic', 'openai', 'claude-cli', 'codex-cli', 'deepseek-cli'],
     relevantWhen: { PIWI_AI_RESEARCH_MODEL: '*' },
   },
   PIWI_AI_RESEARCH_MODEL: {
@@ -701,7 +701,7 @@ export const PIWI_ENV_VARS = {
     description: 'Provider for the assistant. Falls back to PIWI_AI_PROVIDER.',
     category: 'ai',
     type: 'enum',
-    enum: ['anthropic', 'openai', 'claude-cli'],
+    enum: ['anthropic', 'openai', 'claude-cli', 'codex-cli', 'deepseek-cli'],
     since: '0.59.0',
     relevantWhen: { PIWI_AI_ASSISTANT_MODEL: '*' },
   },
@@ -739,6 +739,25 @@ export const PIWI_ENV_VARS = {
   },
 
   // ── AI — local Claude CLI ────────────────────────────────────────────────
+  PIWI_DEEPSEEK_CLI_PATH: {
+    description:
+      'Absolute path to the official DeepSeek Harness dsh launcher. Enables deepseek-cli outside the desktop app. Uses only DeepSeek credentials.',
+    category: 'ai',
+    since: '0.61.0',
+    type: 'path',
+    docs: 'guide/deepseek-cli#setup',
+    example: '/usr/local/bin/dsh',
+  },
+  PIWI_CODEX_CLI_PATH: {
+    description:
+      'Absolute path to the local Codex CLI. Enables codex-cli outside the desktop app. Uses the local file-backed ChatGPT login without an API key.',
+    category: 'ai',
+    since: '0.61.0',
+    type: 'string',
+    default: '',
+    docs: 'guide/codex-cli#setup',
+    example: '/usr/local/bin/codex',
+  },
   PIWI_CLAUDE_CLI_PATH: {
     description:
       'Absolute path to the `claude` binary for the "claude-cli" provider. Set only when the CLI is not on PATH, or to enable the provider outside the desktop app. Auto-detected otherwise.',
