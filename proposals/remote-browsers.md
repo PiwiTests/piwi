@@ -279,8 +279,8 @@ the address, the run's browser token in `Authorization`, the project's name in `
 `exposeNetwork` rule limited to the loopback ports of the projects' `baseURL`s and `webServer` entries
 (`<loopback>:3000`). A `baseURL` that is not on the loopback gets no rule: the grid must reach it itself, and the docs
 say so. The capture fixtures add `x-piwi-worker`, the worker's index, so a run whose report never arrived still finds
-its sessions. `PW_TEST_CONNECT_WS_ENDPOINT` replaces the config's `connectOptions` whole, headers included; the
-reporter warns when both are set. Any other grid receives neither a token nor these headers.
+its sessions. A project's `connectOptions` replaces `PW_TEST_CONNECT_WS_ENDPOINT` whole, headers included: the variable
+applies only to a project that leaves `connectOptions` unset. The reporter warns when both are set. Any other grid receives neither a token nor these headers.
 
 ## Part 5: Documentation
 
