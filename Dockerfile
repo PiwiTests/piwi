@@ -1,5 +1,6 @@
-# Node 24 on Alpine, pinned by digest: the major the desktop app bundles and the root package.json's engines name.
-# Dependabot moves the tag and the digest together.
+# Node 24 on Alpine, pinned by digest: the major the root package.json's engines name. The desktop app bundles this
+# tag's version (apps/desktop/scripts/node-version.mjs reads the first FROM). Dependabot moves the tag and the digest
+# together.
 # Stage 1: Build stage
 FROM node:24.22.1-alpine3.24@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS builder
 

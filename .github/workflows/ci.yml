@@ -130,8 +130,10 @@ jobs:
               - 'apps/extension/src/**'
               - 'apps/extension/public/_locales/**'
               - 'apps/extension/scripts/build.mjs'
+            # The desktop app bundles the Node version of the Dockerfile's base image.
             desktop:
               - 'apps/desktop/**'
+              - 'Dockerfile'
             # The site, and what apps/docs/scripts generate pages from.
             docs:
               - 'apps/docs/**'
