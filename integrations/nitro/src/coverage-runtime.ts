@@ -134,17 +134,18 @@ export class CoverageModule {
 
   /** The payload function `i` records into: the request's being served, else the shared one. */
   f(i: number): Uint8Array {
-    if (this.state.run) return this.s[i];
+    if (this.state.run) return this.s[i]!;
     const coverage = (requestScope.getStore() as { coverage?: RequestCoverage } | undefined)?.coverage;
-    if (coverage === undefined || coverage.closed) return this.s[i];
+    if (coverage === undefined || coverage.closed) return this.s[i]!;
     let functions = coverage.p[this.n];
     if (functions === undefined) functions = coverage.p[this.n] = [];
     let payload = functions[i];
     if (payload === undefined) {
-      payload = functions[i] = new Uint8Array(this.l[i]);
-      coverage.bytes += this.l[i] + 32;
+      const length = this.l[i]!;
+      payload = functions[i] = new Uint8Array(length);
+      coverage.bytes += length + 32;
       // A request already named is kept: what it records from now on counts toward the kept bytes too.
-      if (coverage.id) this.state.keptBytes += this.l[i] + 32;
+      if (coverage.id) this.state.keptBytes += length + 32;
       coverage.ran = true;
     }
     return payload;
@@ -216,6 +217,7 @@ function mergeShared(payloads: RequestCoverage['p']): void {
     functions.forEach((payload, i) => {
       if (!payload) return;
       const shared = module.s[i];
+      if (!shared) return;
       for (let k = 0; k < payload.length; k++) if (payload[k]) shared[k] = 1;
     });
   });
@@ -328,7 +330,10 @@ function addPayload(files: Map<string, FileAccumulator>, module: CoverageModule,
   const range = file.f[i];
   if (range && payload[0]) accumulator.functions.push(range);
   const lines = file.s[i] ?? [];
-  for (let k = 1; k < payload.length; k++) if (payload[k] && lines[k]) accumulator.lines.push(lines[k]);
+  for (let k = 1; k < payload.length; k++) {
+    const line = lines[k];
+    if (payload[k] && line) accumulator.lines.push(line);
+  }
 }
 
 function addRequest(files: Map<string, FileAccumulator>, coverage: RequestCoverage): void {

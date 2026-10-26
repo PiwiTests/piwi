@@ -142,10 +142,10 @@ export function instrument(code: string, program: Node, options: InstrumentOptio
     let high = lineStarts.length - 1;
     while (low < high) {
       const middle = (low + high + 1) >> 1;
-      if (lineStarts[middle] <= offset) low = middle;
+      if (lineStarts[middle]! <= offset) low = middle;
       else high = middle - 1;
     }
-    return options.originalLine(low + 1, offset - lineStarts[low]) ?? 0;
+    return options.originalLine(low + 1, offset - lineStarts[low]!) ?? 0;
   };
 
   /** The markers a statement adds, or none: its entries are added to the scope. */
@@ -213,7 +213,8 @@ export function instrument(code: string, program: Node, options: InstrumentOptio
     // An expression body: `x => expr` becomes `x => {…; return (expr)}`.
     own.entries.push(body.start);
     const params = (fn.params as Node[]) ?? [];
-    const arrow = arrowToken(code, params.length ? params[params.length - 1].end : fn.start, body.start);
+    const last = params[params.length - 1];
+    const arrow = arrowToken(code, last ? last.end : fn.start, body.start);
     out.appendLeft(arrow + 2, `{${prologue}__piwi_p[1]=1;return (`);
     out.prependLeft(fn.end, ')}');
     visit(body, fn, 'body', own);
