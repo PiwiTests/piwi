@@ -1333,7 +1333,7 @@ export const notificationChannels = pgTable(
     id: serial('id').primaryKey(),
     name: text('name').notNull(),
     type: text('type').notNull(), // 'email' | 'slack' | 'webhook'
-    config: jsonb('config'), // { address } | { webhookUrl } | { url, secret (encrypted) }
+    config: jsonb('config'), // { address } | { webhookUrl } | { token (encrypted), channelId } | { url, secret (encrypted) }
     userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // null = global (admin-managed)
     verified: intBoolean('verified').notNull().default(INT_BOOLEAN_FALSE),
     createdAt: timestamp('created_at', { mode: 'date' })

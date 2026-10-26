@@ -20,7 +20,9 @@ export interface ChannelTestTarget {
 export function unsavedTestTarget(type: DeliverableChannelType, config: Record<string, unknown>): ChannelTestTarget {
   const key = type === 'webhook' ? 'secret' : type === 'slack' && slackDelivery(config) === 'api' ? 'token' : null;
   const value = key ? config[key] : null;
-  return { type, config, secret: typeof value === 'string' && value ? value.trim() : null };
+  if (typeof value !== 'string' || !value) return { type, config, secret: null };
+  // A bot token is stored trimmed; a signing secret is stored, and signs, exactly as typed.
+  return { type, config, secret: key === 'token' ? value.trim() : value };
 }
 
 const TEST_TEXT = ':bell: Test notification from Piwi Dashboard';
@@ -53,7 +55,7 @@ export async function deliverChannelTest(target: ChannelTestTarget): Promise<voi
   }
   if (type === 'slack' && slackDelivery(config) === 'api') {
     if (!target.secret) throw new Error('No Slack bot token');
-    await postSlackApiMessage(target.secret, (config.channelId as string).trim(), { text: TEST_TEXT });
+    await postSlackApiMessage(target.secret, String(config.channelId ?? '').trim(), { text: TEST_TEXT });
     return;
   }
   if (type === 'slack') {
@@ -100,7 +102,7 @@ function destinationKey(owner: string, target: ChannelTestTarget): string {
   if (type === 'email') destination = config.address;
   else if (type === 'webhook') destination = [config.url, target.secret ?? ''];
   else if (type === 'slack' && slackDelivery(config) === 'api') {
-    destination = [(config.channelId as string).trim(), target.secret ?? ''];
+    destination = [String(config.channelId ?? '').trim(), target.secret ?? ''];
   }
   return createHash('sha256')
     .update(JSON.stringify([owner, type, destination ?? null]))

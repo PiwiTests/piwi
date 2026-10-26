@@ -99,7 +99,7 @@ describe('a Slack channel posting through the Web API', () => {
   test('a channel ID makes the delivery the Web API', () => {
     expect(slackDelivery({ webhookUrl: SLACK })).toBe('webhook');
     expect(slackDelivery({ token: 'xoxb-1', channelId: 'C0123456789' })).toBe('api');
-    expect(slackDelivery({ channelId: '  ' })).toBe('webhook');
+    expect(slackDelivery({ token: 'xoxb-1', channelId: '' })).toBe('api');
   });
 
   test('needs a bot token and a channel ID', () => {
@@ -107,6 +107,8 @@ describe('a Slack channel posting through the Web API', () => {
     expect(channelConfigProblem('slack', { token: '', channelId: 'C0123456789' })).toMatch(/bot token/);
     expect(channelConfigProblem('slack', { token: 'not-a-token', channelId: 'C0123456789' })).toMatch(/xoxb-/);
     expect(channelConfigProblem('slack', { token: 'xoxb-1-2', channelId: '#general' })).toMatch(/channel ID/);
+    expect(channelConfigProblem('slack', { token: 'xoxb-1-2', channelId: '' })).toMatch(/channel ID/);
+    expect(channelConfigProblem('slack', { webhookUrl: SLACK, token: 'xoxb-1-2' })).toMatch(/channel ID/);
   });
 
   test('the app link asks for chat:write instead of an incoming webhook', () => {
@@ -127,7 +129,7 @@ describe('a Slack channel posting through the Web API', () => {
     expect(hint('channel_not_found')).toMatch(/ID/);
     expect(hint('is_archived')).toMatch(/archived/);
     expect(hint('msg_too_long')).toBeNull();
-    expect(channelDeliveryHint('slack', 'Slack API rate limit reached: retry in 30 s')).toMatch(/retries/);
+    expect(channelDeliveryHint('slack', 'Slack API rate limit reached: retry in 30 s')).toMatch(/wait/);
   });
 });
 

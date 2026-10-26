@@ -36,9 +36,9 @@ export const SLACK_POST_MESSAGE_GUIDE_URL = 'https://docs.slack.dev/reference/me
  */
 export type SlackDelivery = 'webhook' | 'api';
 
-/** The delivery a Slack channel's config describes: a channel ID means the Web API. */
+/** The delivery a Slack channel's config describes: a `token` or a `channelId` field means the Web API. */
 export function slackDelivery(config: Record<string, unknown>): SlackDelivery {
-  return typeof config.channelId === 'string' && config.channelId.trim() ? 'api' : 'webhook';
+  return typeof config.channelId === 'string' || typeof config.token === 'string' ? 'api' : 'webhook';
 }
 
 /**
@@ -217,7 +217,7 @@ export function channelConfigProblem(type: ChannelType, config: Record<string, u
   if (type === 'slack' && slackDelivery(config) === 'api') {
     const token = typeof config.token === 'string' ? config.token.trim() : '';
     if (!token.startsWith('xox')) return 'Enter the app’s bot token, starting with xoxb-.';
-    const channelId = (config.channelId as string).trim();
+    const channelId = typeof config.channelId === 'string' ? config.channelId.trim() : '';
     return SLACK_CHANNEL_ID_PATTERN.test(channelId)
       ? null
       : 'Enter the channel ID, such as C0123456789, from the channel’s details in Slack.';
@@ -263,7 +263,9 @@ export function channelDeliveryHint(type: ChannelType, error: string): string | 
 
 /** What to do about an error Slack's Web API answered, keyed by its `error` code. */
 function slackApiHint(text: string): string | null {
-  if (text.includes('rate limit')) return 'Slack is limiting how often this app posts. Piwi retries after the wait.';
+  if (text.includes('rate limit')) {
+    return 'Slack is limiting how often this app posts: try again after the wait it names. A notification waits for it before its retry.';
+  }
   if (
     ['invalid_auth', 'not_authed', 'token_revoked', 'token_expired', 'account_inactive'].some((c) => text.includes(c))
   ) {

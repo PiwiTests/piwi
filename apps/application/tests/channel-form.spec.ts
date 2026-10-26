@@ -47,6 +47,8 @@ test('a Slack channel saved with a bot token shows its channel ID and never retu
   expect(manifest.oauth_config.scopes.bot).toEqual(['chat:write', 'chat:write.public']);
 
   await page.getByTestId('slack-bot-token').fill(token);
+  await expect(form.getByText('Enter the channel ID')).toBeVisible();
+  await expect(form.getByText('webhook URL')).toHaveCount(0);
   await page.getByTestId('slack-channel-id').fill('#general');
   await expect(form.getByText('Enter the channel ID')).toBeVisible();
   await expect(form.getByRole('button', { name: 'Save channel' })).toBeDisabled();

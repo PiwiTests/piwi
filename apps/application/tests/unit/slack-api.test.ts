@@ -10,7 +10,8 @@ import * as schema from '../../server/database/schema.sqlite';
  * A Slack channel posting through the Web API: `chat.postMessage` with the bot
  * token and the channel ID, Slack's `ok: false` refusals and 429 waits turned
  * into errors that never carry the token, and the outbox retrying a
- * rate-limited delivery after the wait Slack asked for.
+ * rate-limited delivery, through the Web API or a webhook, after the wait
+ * Slack asked for, up to an hour.
  */
 
 const TOKEN = 'xoxb-1111-2222-secret';
@@ -19,6 +20,8 @@ const CHANNEL_ID = 'C0123456789';
 const slack = vi.hoisted(() => ({
   calls: [] as { url: string; headers: Record<string, string>; body: Record<string, unknown> }[],
   answer: () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+  webhookAnswer: () => new Response('ok', { status: 200 }),
+  webhookCalls: 0,
 }));
 
 const fetchMock = vi.fn(async (url: string, init: { headers: Record<string, string>; body: string }) => {
@@ -28,7 +31,8 @@ const fetchMock = vi.fn(async (url: string, init: { headers: Record<string, stri
 
 vi.mock('../../server/utils/safe-fetch', () => ({
   safeFetch: vi.fn(async () => {
-    throw new Error('the Web API path never goes through the webhook fetch');
+    slack.webhookCalls++;
+    return slack.webhookAnswer();
   }),
 }));
 
@@ -53,7 +57,9 @@ beforeAll(() => vi.stubGlobal('fetch', fetchMock));
 afterAll(() => vi.unstubAllGlobals());
 beforeEach(() => {
   slack.calls.length = 0;
+  slack.webhookCalls = 0;
   answer(200, { ok: true });
+  slack.webhookAnswer = () => new Response('ok', { status: 200 });
 });
 
 describe('postSlackApiMessage', () => {
@@ -86,6 +92,18 @@ describe('postSlackApiMessage', () => {
     answer(429, '', { 'Retry-After': 'soon' });
     const err = await postSlackApiMessage(TOKEN, CHANNEL_ID, { text: 'x' }).catch((e: Error) => e);
     expect(slackRetryAfterMs(err)).toBe(60_000);
+  });
+
+  test('a Retry-After longer than an hour waits an hour', async () => {
+    answer(429, '', { 'Retry-After': '1e20' });
+    const err = await postSlackApiMessage(TOKEN, CHANNEL_ID, { text: 'x' }).catch((e: Error) => e);
+    expect(slackRetryAfterMs(err)).toBe(3_600_000);
+  });
+
+  test('a long error code is cut short', async () => {
+    answer(200, { ok: false, error: 'x'.repeat(1000) });
+    const err = await postSlackApiMessage(TOKEN, CHANNEL_ID, { text: 'x' }).catch((e: Error) => e);
+    expect((err as Error).message.length).toBeLessThan(220);
   });
 
   test('an answer that is not Slack JSON throws with its status', async () => {
@@ -123,6 +141,10 @@ describe('a test message through the Web API', () => {
     const target = unsavedTestTarget('slack', { token: ` ${TOKEN} `, channelId: CHANNEL_ID });
     expect(target.secret).toBe(TOKEN);
     expect(unsavedTestTarget('slack', { webhookUrl: 'https://hooks.slack.com/services/T/B/1' }).secret).toBeNull();
+  });
+
+  test('a webhook’s signing secret is tested exactly as it is stored', () => {
+    expect(unsavedTestTarget('webhook', { url: 'https://ci.example.com/piwi', secret: 'abc\n' }).secret).toBe('abc\n');
   });
 
   test('posts the test text to the channel', async () => {
@@ -209,6 +231,34 @@ describe('the outbox delivering to a Web API channel', () => {
     const wait = row.scheduledFor!.getTime() - before;
     expect(wait).toBeGreaterThanOrEqual(119_000);
     expect(wait).toBeLessThanOrEqual(125_000);
+  });
+
+  test('a webhook channel rate-limited by Slack also waits for Retry-After', async () => {
+    const [hook] = await db
+      .insert(schema.notificationChannels)
+      .values({ name: 'Hook', type: 'slack', config: { webhookUrl: 'https://hooks.slack.com/services/T/B/1' } })
+      .returning({ id: schema.notificationChannels.id });
+    slack.webhookAnswer = () => new Response('rate_limited', { status: 429, headers: { 'Retry-After': '45' } });
+    seq++;
+    const [row] = await db
+      .insert(schema.notificationDeliveries)
+      .values({
+        channelId: hook!.id,
+        event: 'cluster.new',
+        payload: { clusterId: seq, projectId: 1, projectName: 'shop', signature: 'TimeoutError', affectedCases: 1 },
+        dedupeKey: `cluster.new:${seq}`,
+        status: 'pending',
+        scheduledFor: new Date(Date.now() - 1000),
+      })
+      .returning({ id: schema.notificationDeliveries.id });
+    const before = Date.now();
+    await sweepOutbox(db as never);
+    expect(slack.webhookCalls).toBe(1);
+    const stored = await delivery(row!.id);
+    expect(stored.error).toBe('Slack webhook rate limit reached: retry in 45 s');
+    const wait = stored.scheduledFor!.getTime() - before;
+    expect(wait).toBeGreaterThanOrEqual(44_000);
+    expect(wait).toBeLessThanOrEqual(50_000);
   });
 
   test('a refused delivery records Slack’s error code, never the token', async () => {

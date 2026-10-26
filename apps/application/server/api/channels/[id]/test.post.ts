@@ -79,7 +79,12 @@ export default eventHandler(async (event) => {
       // The stored credential: a webhook's signing secret, or a Slack bot token.
       const key = type === 'webhook' ? 'secret' : type === 'slack' && slackDelivery(config) === 'api' ? 'token' : null;
       const encrypted = key && typeof config[key] === 'string' ? (config[key] as string) : null;
-      const secret = encrypted ? decryptSecret(encrypted, getEncryptionKey()) : null;
+      let secret: string | null = null;
+      try {
+        secret = encrypted ? decryptSecret(encrypted, getEncryptionKey()) : null;
+      } catch {
+        throw new Error('The stored credential cannot be decrypted: PIWI_SECRET_KEY changed since it was saved');
+      }
       await deliverChannelTest({ type, config, secret });
     }
 

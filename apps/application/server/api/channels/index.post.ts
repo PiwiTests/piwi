@@ -62,6 +62,8 @@ export default eventHandler(async (event) => {
       token: encryptSecret((config.token as string).trim(), getEncryptionKey()),
       channelId: (config.channelId as string).trim(),
     };
+  } else if (type === 'slack') {
+    storedConfig = { webhookUrl: config.webhookUrl };
   }
 
   const db = await getDatabase();

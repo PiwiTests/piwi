@@ -12,6 +12,10 @@ const SLACK_POST_MESSAGE_URL = 'https://slack.com/api/chat.postMessage';
 const SLACK_API_TIMEOUT_MS = 10_000;
 /** The wait assumed when Slack answers 429 without a usable `Retry-After`. */
 const DEFAULT_RETRY_AFTER_SECONDS = 60;
+/** The longest `Retry-After` honored: a Slack-compatible webhook server can name any wait. */
+const MAX_RETRY_AFTER_SECONDS = 60 * 60;
+/** The longest Slack error code carried into an error message. */
+const SLACK_ERROR_MAX = 160;
 
 /** Where a Slack message goes, with any bot token in plain text. */
 export type SlackDestination = { webhookUrl: string } | { token: string; channelId: string };
@@ -29,7 +33,8 @@ export class SlackRateLimitError extends Error {
 
 function retryAfterSeconds(res: Response): number {
   const seconds = Number(res.headers.get('retry-after'));
-  return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : DEFAULT_RETRY_AFTER_SECONDS;
+  if (!Number.isFinite(seconds) || seconds <= 0) return DEFAULT_RETRY_AFTER_SECONDS;
+  return Math.min(Math.ceil(seconds), MAX_RETRY_AFTER_SECONDS);
 }
 
 /**
@@ -54,7 +59,7 @@ export async function postSlackApiMessage(
   const body = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
   if (body?.ok === true) return;
   if (typeof body?.error === 'string' && body.error) {
-    throw new Error(`Slack API refused the message: ${body.error}`);
+    throw new Error(`Slack API refused the message: ${body.error.slice(0, SLACK_ERROR_MAX)}`);
   }
   throw new Error(`Slack API returned ${res.status}`);
 }
@@ -91,7 +96,7 @@ export function storedSlackDestination(config: Record<string, unknown>): SlackDe
     } catch {
       throw new Error('The Slack bot token cannot be decrypted: PIWI_SECRET_KEY changed since it was saved');
     }
-    return { token, channelId: (config.channelId as string).trim() };
+    return { token, channelId: typeof config.channelId === 'string' ? config.channelId.trim() : '' };
   }
   const webhookUrl = typeof config.webhookUrl === 'string' ? config.webhookUrl : '';
   if (!webhookUrl) throw new Error('No Slack webhook URL configured');

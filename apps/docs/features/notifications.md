@@ -74,8 +74,9 @@ the channel, then copy the URL from **Incoming Webhooks**. A Slack-compatible se
 [`chat.postMessage`](https://docs.slack.dev/reference/methods/chat.postMessage). The same link asks for `chat:write`
 and `chat:write.public` instead: install the app, copy the **Bot User OAuth Token** (`xoxb-…`) and the channel's
 **Channel ID**, and invite the app to a private channel first. The token is encrypted at rest and never returned, so it
-needs `PIWI_SECRET_KEY`. A refusal names Slack's error code (`not_in_channel`, `invalid_auth`) with what to do, and a
-rate-limited delivery retries after Slack's `Retry-After`.
+needs `PIWI_SECRET_KEY`. A refusal names Slack's error code (`not_in_channel`, `invalid_auth`) with what to do.
+
+Through either, a delivery Slack rate-limits retries after its `Retry-After`, up to an hour.
 
 ### Microsoft Teams
 
