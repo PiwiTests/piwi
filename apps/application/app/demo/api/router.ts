@@ -417,7 +417,9 @@ import {
   apiDeleteAssistantConversation,
   apiGetAssistantConversation,
   apiListAssistantConversations,
+  apiListAssistantQuestions,
   apiRecordAssistantProposal,
+  apiStopAssistantAnswer,
   apiTickAssistantChecklist,
 } from './assistant';
 import {
@@ -1771,6 +1773,11 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/assistant\/questions$/,
+    handler: async (_m, _b, _q, ctx) => apiListAssistantQuestions(ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/assistant\/conversations$/,
     handler: async (_m, _b, _q, ctx) => apiListAssistantConversations(ctx?.actingUserId ?? null),
   },
@@ -1806,6 +1813,11 @@ const routes: RouteEntry[] = [
             ctx?.actingUserId ?? null,
           )) as T,
       }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/stop$/,
+    handler: async (m, _b, _q, ctx) => apiStopAssistantAnswer(+m[1]!, ctx?.actingUserId ?? null),
   },
   {
     method: 'PATCH',

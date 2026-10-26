@@ -1,6 +1,6 @@
 ---
 title: Keyboard shortcuts
-description: "Every keyboard shortcut the dashboard registers: the command palette, the go-to chords, failure inbox triage, the test lists' search, and the keys of the image and element viewers."
+description: "Every keyboard shortcut the dashboard registers: the command palette, the assistant, the go-to chords, failure inbox triage, the test lists' search, and the keys of the image and element viewers."
 lang: en-US
 ---
 
@@ -13,10 +13,23 @@ The dashboard's shortcuts, by where they work. The letter keys never fire while 
 | Keys | Action |
 |---|---|
 | `Ctrl` + `K` (`⌘` + `K` on macOS) | Open the command palette: go to a page, search projects, runs and tests, start a [guide](/features/guides), or ask the [assistant](/features/assistant) |
+| `Ctrl` + `I` (`⌘` + `I` on macOS) | Open the [assistant](/features/assistant)'s panel; pressed again, put the cursor in its question field, then close it |
 | `g` then `h` | Go to Home |
 | `g` then `p` | Go to Projects |
 | `g` then `a` | Go to Analytics |
 | `g` then `s` | Go to Settings |
+
+## Assistant panel
+
+In the [assistant](/features/assistant#asking-a-question)'s question field:
+
+| Keys | Action |
+|---|---|
+| `Enter` | Ask; `Shift` + `Enter` starts a new line |
+| `↑` | On the first line, bring back your previous question, from any of your conversations |
+| `↓` | On the last line, go back toward what you were typing |
+| `→` | In the empty field, take the question it shows greyed: the one the last answer suggests, or the page's |
+| `Esc` | Stop the answer being written |
 
 ## Failure inbox
 

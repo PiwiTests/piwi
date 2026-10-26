@@ -282,6 +282,10 @@ async function execute(
   let calls = 0;
   const steps = new Map<string, DeepseekEvent['usage']>();
   const stop = new AbortController();
+  // The user's Stop on an assistant turn kills the run.
+  const onStop = () => stop.abort();
+  opts.agent?.signal?.addEventListener('abort', onStop, { once: true });
+  if (opts.agent?.signal?.aborted) onStop();
   const proc = await withRuntime(
     binary,
     auth,
@@ -343,6 +347,8 @@ async function execute(
     usage.outputTokens += result.outputTokens ?? 0;
     usage.cacheReadInputTokens += result.cacheReadInputTokens ?? 0;
   }
+  opts.agent?.signal?.removeEventListener('abort', onStop);
+  if (opts.agent?.signal?.aborted) return { ...result, outcome: 'stopped' };
   if (proc.timedOut) return { ...result, outcome: 'timeout', error: 'The DeepSeek CLI timed out.' };
   if (calls > (opts.agent?.maxTurns ?? 0)) return { ...result, outcome: 'max-turns' };
   if (

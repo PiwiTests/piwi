@@ -1,8 +1,9 @@
 /**
  * Assistant conversations belong to their owner: no read, list or delete
  * reaches another user's, administrators included, nor a reply or a
- * checklist tick. Usage outlives a deleted conversation, feeds the daily caps
- * and the AI usage summary, and the retention sweep prunes both on their own
+ * checklist tick, nor the question history. Usage outlives a deleted
+ * conversation, feeds the daily caps (and what the panel shows of them) and
+ * the AI usage summary, and the retention sweep prunes both on their own
  * horizon.
  */
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -19,7 +20,8 @@ const { getAiUsageSummary } = await import('#shared/handlers/ai-usage');
 const { setInstanceDecisions } = await import('#shared/handlers/capabilities');
 const { deleteUserRecord } = await import('#shared/handlers/users');
 const { pruneAssistantConversations } = await import('../../server/utils/retention');
-const { assistantAllowance, assistantAvailability } = await import('../../server/utils/assistant/turn');
+const { assistantAllowance, assistantAllowanceStatus, assistantAvailability } =
+  await import('../../server/utils/assistant/turn');
 const { setAppSetting } = await import('../../server/utils/app-settings');
 
 const ALICE = 1;
@@ -122,6 +124,43 @@ describe('ownership', () => {
     expect(await handlers.listAssistantConversationEntities(d(), BOB, id)).toEqual([]);
   });
 
+  test("the question history is the owner's typed questions, newest first, each once, without block replies", async () => {
+    await conversationWithExchange(ALICE, 'Why did run 4 fail?');
+    const second = await conversationWithExchange(ALICE, 'Which tests are flaky?');
+    const row = (await handlers.findAssistantConversation(d(), ALICE, second))!;
+    await handlers.addAssistantMessage(d(), row, {
+      role: 'assistant',
+      blocks: [
+        {
+          kind: 'question',
+          id: 'which',
+          prompt: 'Which one?',
+          multiple: false,
+          choices: [
+            { id: 'a', label: 'cart' },
+            { id: 'b', label: 'search' },
+          ],
+          other: false,
+          answer: { choiceIds: ['a'] },
+        },
+      ],
+    });
+    await handlers.addAssistantMessage(d(), row, { role: 'user', blocks: [{ kind: 'text', text: 'cart' }] });
+    await handlers.addAssistantMessage(d(), row, { role: 'assistant', blocks: [{ kind: 'text', text: 'It waits.' }] });
+    await handlers.addAssistantMessage(d(), row, {
+      role: 'user',
+      blocks: [{ kind: 'text', text: 'why did RUN 4  fail?' }],
+    });
+    await conversationWithExchange(BOB, 'What changed?');
+
+    expect((await handlers.listAssistantQuestions(d(), ALICE)).items).toEqual([
+      'why did RUN 4  fail?',
+      'Which tests are flaky?',
+    ]);
+    expect((await handlers.listAssistantQuestions(d(), BOB)).items).toEqual(['What changed?']);
+    expect((await handlers.listAssistantQuestions(d(), null)).items).toEqual([]);
+  });
+
   test('the owner deletes it with its messages', async () => {
     const id = await conversationWithExchange(ALICE);
     expect(await handlers.deleteAssistantConversation(d(), ALICE, id)).toBe(true);
@@ -184,6 +223,38 @@ describe('usage and the daily caps', () => {
     expect(instance.message).toContain('PIWI_AI_ASSISTANT_DAILY_TOKENS)');
     expect(await assistantAllowance(d(), ALICE, { dailyTokensPerUser: null, dailyTokens: null })).toMatchObject({
       remaining: null,
+    });
+  });
+
+  test('the panel reads the cap that binds, what it counted and when its oldest answer frees up', async () => {
+    const now = new Date();
+    await spend(ALICE, 600, new Date(now.getTime() - 3 * HOUR));
+    await spend(ALICE, 100, new Date(now.getTime() - HOUR));
+    await spend(BOB, 3000, new Date(now.getTime() - 5 * HOUR));
+    await spend(ALICE, 900, new Date(now.getTime() - 30 * HOUR));
+    const perUser = await assistantAllowanceStatus(d(), ALICE, { dailyTokensPerUser: 1000, dailyTokens: 10_000 }, now);
+    expect(perUser).toEqual({
+      scope: 'user',
+      limit: 1000,
+      used: 700,
+      freesAt: new Date(now.getTime() + 21 * HOUR).toISOString(),
+    });
+    const instance = await assistantAllowanceStatus(d(), ALICE, { dailyTokensPerUser: 1000, dailyTokens: 3900 }, now);
+    expect(instance).toEqual({
+      scope: 'instance',
+      limit: 3900,
+      used: 3700,
+      freesAt: new Date(now.getTime() + 19 * HOUR).toISOString(),
+    });
+    expect(await assistantAllowanceStatus(d(), ALICE, { dailyTokensPerUser: null, dailyTokens: null }, now)).toBeNull();
+    expect(
+      await assistantAllowanceStatus(d(), BOB, { dailyTokensPerUser: 1000, dailyTokens: null }, now),
+    ).toMatchObject({ used: 3000 });
+    expect(await assistantAllowanceStatus(d(), null, { dailyTokensPerUser: 1000, dailyTokens: null }, now)).toEqual({
+      scope: 'user',
+      limit: 1000,
+      used: 0,
+      freesAt: null,
     });
   });
 

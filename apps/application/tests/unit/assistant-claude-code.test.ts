@@ -768,11 +768,20 @@ describe('runClaudeCodeTurn', () => {
     expect(events.at(-1)).toMatchObject({ event: 'error', data: { code: 'limit' } });
   });
 
-  test('a run past the time limit, a failed run and a thrown error end with their errors', async () => {
+  test('a run past the time limit, a stopped run, a failed run and a thrown error end with their errors', async () => {
     const timedOut = await claudeCodeTurn(scriptedCli(async () => {}, { outcome: 'timeout' }).cli);
     expect(timedOut.result.error).toEqual({
       code: 'timeout',
       message: 'The answer took longer than 60 seconds (PIWI_AI_ASSISTANT_TURN_TIMEOUT_SECONDS).',
+    });
+    const stopped = await claudeCodeTurn(
+      scriptedCli(async (_endpoint, run) => run.onText('Looking at'), { outcome: 'stopped' }).cli,
+    );
+    expect(stopped.result).toMatchObject({
+      status: 'failed',
+      text: 'Looking at',
+      inputTokens: 1500,
+      error: { code: 'stopped', message: 'You stopped this answer.' },
     });
     const failed = await claudeCodeTurn(
       scriptedCli(async () => {}, { outcome: 'failed', error: 'Claude Code could not reach this server.' }).cli,

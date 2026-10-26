@@ -68,16 +68,21 @@ test.describe('Guides', () => {
     await expect(page.locator('[data-tour="get-started-wizard"].driver-active-element')).toBeVisible();
   });
 
-  test('the assistant panel lists them while it cannot answer, and starting one closes it', async ({ page }) => {
+  test('the assistant panel lists them while it cannot answer, and starting one plays it beside the docked panel', async ({
+    page,
+  }) => {
     await openWithoutModel(page);
     const launcher = page.getByRole('button', { name: 'Ask Piwi' });
     await launcher.click();
-    const panel = page.getByRole('dialog', { name: 'Ask Piwi' });
+    const panel = page
+      .getByRole('dialog', { name: 'Ask Piwi' })
+      .or(page.getByRole('complementary', { name: 'Ask Piwi' }));
     const list = panel.locator('[data-assistant-unavailable] [data-guide-list]');
     await expect(list).toBeVisible();
     await list.locator('[data-guide-id="configure-ai"]').click();
 
-    await expect(panel).toBeHidden();
+    // Docked beside the page (from 1280 px), the panel covers nothing and stays open.
+    await expect(panel).toHaveAttribute('data-assistant-docked');
     const popover = stopPopover(page, 'configure-ai');
     await expect(popover).toBeVisible({ timeout: 30_000 });
     await expect(popover).toHaveAttribute('data-guide-anchor', 'ai-model-providers');

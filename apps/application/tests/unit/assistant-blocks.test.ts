@@ -244,10 +244,22 @@ describe('blocks', () => {
     ).toMatchObject({ command: { bash: 'PIWI_URL=x npx piwi', powershell: "$env:PIWI_URL='x'; npx piwi" } });
   });
 
-  test('a question and an options block end the answer; the others do not', () => {
+  test('a question, an options block and the next question end the answer; the others do not', () => {
     expect(endsAssistantAnswer(block('ask', { id: 'q', prompt: 'Which?', choices: choices(2) }))).toBe(true);
     expect(endsAssistantAnswer(block('offer_options', { id: 'o', prompt: 'Which?', options: options(2) }))).toBe(true);
+    expect(endsAssistantAnswer(block('suggest_next', { question: 'How do I fix it?' }))).toBe(true);
     expect(endsAssistantAnswer(block('show_code', { id: 'c', language: 'ts', code: 'x' }))).toBe(false);
+  });
+
+  test('the next question is one line of at most 120 characters, its id `next` unless given', () => {
+    expect(block('suggest_next', { question: '  How do I fix it? ' })).toEqual({
+      kind: 'next',
+      id: 'next',
+      question: 'How do I fix it?',
+    });
+    expect(block('suggest_next', { id: 'follow-up', question: 'Is it flaky?' })).toMatchObject({ id: 'follow-up' });
+    expect(refusal('suggest_next', { question: text(L.labelChars + 1) })).toMatch(/^question: /);
+    expect(refusal('suggest_next', { question: ' ' })).toMatch(/^question: /);
   });
 
   test('lists the guides a block carries, with their place in the arguments', () => {

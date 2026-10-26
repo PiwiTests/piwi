@@ -286,7 +286,9 @@ async function listedGuides(page) {
   const launcher = page.getByRole('button', { name: 'Ask Piwi' });
   if (!(await launcher.isVisible())) await page.getByRole('button', { name: 'Open sidebar' }).first().click();
   await launcher.click();
-  const panel = page.getByRole('dialog', { name: 'Ask Piwi' });
+  const panel = page
+    .getByRole('dialog', { name: 'Ask Piwi' })
+    .or(page.getByRole('complementary', { name: 'Ask Piwi' }));
   await panel.locator('[data-guide-list]').waitFor({ timeout: 30000 });
   const guides = await panel.locator('[data-guide-id]').evaluateAll((buttons) =>
     buttons.map((button) => ({
@@ -518,7 +520,9 @@ async function checkGuideStopInPopover(browser, watch) {
     const launcher = page.getByRole('button', { name: 'Ask Piwi' });
     if (!(await launcher.isVisible())) await page.getByRole('button', { name: 'Open sidebar' }).first().click();
     await launcher.click();
-    const panel = page.getByRole('dialog', { name: 'Ask Piwi' });
+    const panel = page
+      .getByRole('dialog', { name: 'Ask Piwi' })
+      .or(page.getByRole('complementary', { name: 'Ask Piwi' }));
     const input = panel.getByRole('textbox', { name: 'Your question' });
     await input.fill('Where does a run say it is kept?');
     await input.press('Enter');
@@ -592,7 +596,9 @@ async function openAssistant(page) {
   const launcher = page.getByRole('button', { name: 'Ask Piwi' });
   if (!(await launcher.isVisible())) await page.getByRole('button', { name: 'Open sidebar' }).first().click();
   await launcher.click();
-  const panel = page.getByRole('dialog', { name: 'Ask Piwi' });
+  const panel = page
+    .getByRole('dialog', { name: 'Ask Piwi' })
+    .or(page.getByRole('complementary', { name: 'Ask Piwi' }));
   await panel.waitFor({ timeout: 30000 });
   return panel;
 }

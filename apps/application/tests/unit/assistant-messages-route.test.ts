@@ -3,7 +3,7 @@
  * question at a time. A second question while one is being answered is a 409,
  * however close together the two arrive, and the conversation takes the next
  * question once the answer ends, or once a question is refused before its
- * answer starts.
+ * answer starts. `POST …/stop` ends the answer being written, for its owner.
  */
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
@@ -26,7 +26,7 @@ const state = vi.hoisted(
       contextDelayMs: 0,
       contextError: null,
     }) as unknown as RouteAccessState & {
-      answers: Array<{ question: string; end: () => void }>;
+      answers: Array<{ question: string; end: () => void; signal?: AbortSignal }>;
       contextDelayMs: number;
       contextError: Error | null;
     },
@@ -42,13 +42,17 @@ vi.mock('../../server/utils/mcp/catalog', () => ({
 }));
 vi.mock('../../server/utils/assistant/turn', () => ({
   assistantOwnerOf: (_event: unknown, user: User) => user.id,
+  requireAssistantNotDeclined: async () => {},
   assistantAvailability: async () => ({
     status: { available: true, reason: null, provider: 'openai', model: 'gpt-test', toolMode: 'native' },
     role: { provider: 'openai', apiKey: 'k', model: 'gpt-test', baseUrl: 'https://llm.test/v1', temperature: null },
   }),
-  // Each answer runs until the test ends it.
-  answerQuestion: (opts: { question: string }) =>
-    new Promise<void>((resolve) => state.answers.push({ question: opts.question, end: resolve })),
+  // Each answer runs until the test ends it, or until it is stopped.
+  answerQuestion: (opts: { question: string; signal?: AbortSignal }) =>
+    new Promise<void>((resolve) => {
+      state.answers.push({ question: opts.question, end: resolve, signal: opts.signal });
+      opts.signal?.addEventListener('abort', () => resolve());
+    }),
 }));
 
 interface FakeEvent {
@@ -69,6 +73,10 @@ const handlers = await import('#shared/handlers/assistant');
 const route = (await import('../../server/api/assistant/conversations/[id]/messages.post')).default as unknown as (
   event: FakeEvent,
 ) => Promise<ReadableStream<Uint8Array>>;
+
+const stopRoute = (await import('../../server/api/assistant/conversations/[id]/stop.post')).default as unknown as (
+  event: FakeEvent,
+) => Promise<{ stopped: boolean }>;
 
 const ALICE = { id: 1, username: 'alice', role: 'member' } as User;
 
@@ -112,6 +120,9 @@ const ask = (body: unknown) =>
     node: { req: { socket: { localPort: 3000 } }, res: { on: () => {} } },
   });
 
+const stop = (id = conversationId) =>
+  stopRoute({ params: { id: String(id) }, node: { req: { socket: { localPort: 3000 } }, res: { on: () => {} } } });
+
 /** Ends the answer being written and reads its stream to the end. */
 async function finish(stream: ReadableStream<Uint8Array>): Promise<void> {
   await vi.waitFor(() => expect(state.answers.length).toBeGreaterThan(0));
@@ -142,5 +153,24 @@ describe('one question at a time', () => {
     await expect(ask({ text: 'Why?' })).rejects.toThrow('The database is gone');
     state.contextError = null;
     await finish(await ask({ text: 'Why?' }));
+  });
+});
+
+describe('Stop', () => {
+  test("ends the answer being written, of the owner's conversation only, and frees the conversation", async () => {
+    const stream = await ask({ text: 'Why?' });
+    await vi.waitFor(() => expect(state.answers.length).toBe(1));
+    await expect(stop(conversationId + 7)).rejects.toMatchObject({ statusCode: 404 });
+    expect(state.answers[0]!.signal?.aborted).toBe(false);
+
+    expect(await stop()).toEqual({ stopped: true });
+    expect(state.answers[0]!.signal?.aborted).toBe(true);
+    const reader = stream.getReader();
+    while (!(await reader.read()).done);
+    state.answers.shift();
+
+    // Nothing is being written any more; the next question is taken.
+    expect(await stop()).toEqual({ stopped: false });
+    await finish(await ask({ text: 'And now?' }));
   });
 });

@@ -1671,18 +1671,73 @@ async function walkTourStops(page, atStop) {
 const ASSISTANT_ANSWER = join(APP_DIR, 'tests', 'fixtures', 'assistant-answer.json');
 
 /**
- * Answers the assistant's routes in the browser, so a scene shows the panel
- * whatever AI the server has: the status names a model, a question starts a
- * conversation, and asking streams the fixture's answer. Reloads `path`, since
- * the sidebar reads the status as the page mounts.
+ * A short answer for the assistant's docs illustrations, from the fixture's
+ * parts: it reads a run and its failure cluster, says why the test failed,
+ * shows the run's card and the fix, and suggests the next question, which the
+ * empty field then offers.
  */
-async function openAssistantAnswer(page, goto, path = '/') {
+function assistantDocsAnswer() {
   const fixture = JSON.parse(readFileSync(ASSISTANT_ANSWER, 'utf8'));
-  const frames = fixture.answer.map((e) => `event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`).join('');
+  const block = (id) => fixture.answer.find((e) => e.event === 'block' && e.data.block.id === id);
+  return [
+    ...fixture.answer.filter((e) => e.event === 'tool').slice(0, 2),
+    {
+      event: 'text',
+      data: {
+        text: '[Run #12](piwi:run/12) failed 3 of its 48 tests, all in one failure cluster, [Cart total is stale after removing an item](piwi:cluster/3): the test reads `cart-total` before the cart call returns.\n\n',
+      },
+    },
+    block('run-12'),
+    block('fix'),
+    {
+      event: 'block',
+      data: { block: { kind: 'next', id: 'next', question: 'How do I check the fix on the next run?' } },
+    },
+    fixture.answer.find((e) => e.event === 'done'),
+  ];
+}
+
+/**
+ * The assistant's status with what its limits leave: the daily allowance with
+ * `used` of 1,000,000 tokens spent, freeing up in three hours, and, when
+ * `subscription` is set, a Claude subscription's 5-hour window at that share.
+ */
+function assistantStatusWithLimits(used, subscription = null) {
+  const fixture = JSON.parse(readFileSync(ASSISTANT_ANSWER, 'utf8'));
+  const halfHour = 30 * 60 * 1000;
+  const freesAt = new Date(Math.ceil((Date.now() + 3 * 60 * 60 * 1000) / halfHour) * halfHour).toISOString();
+  return {
+    ...fixture.status,
+    ...(subscription === null ? {} : { provider: 'claude-cli' }),
+    allowance: { scope: 'user', limit: 1_000_000, used, freesAt },
+    subscription:
+      subscription === null
+        ? null
+        : {
+            status: 'allowed',
+            window: 'five_hour',
+            utilization: subscription,
+            resetsAt: freesAt,
+            reportedAt: new Date().toISOString(),
+          },
+  };
+}
+
+/**
+ * Answers the assistant's routes in the browser, so a scene shows the panel
+ * whatever AI the server has: the status (the fixture's, or `options.status`)
+ * names a model, a question starts a conversation, and asking streams the
+ * fixture's answer (or `options.answer`). Reloads `path`, since the sidebar
+ * reads the status as the page mounts.
+ */
+async function openAssistantAnswer(page, goto, path = '/', options = {}) {
+  const fixture = JSON.parse(readFileSync(ASSISTANT_ANSWER, 'utf8'));
+  const answer = options.answer ?? fixture.answer;
+  const frames = answer.map((e) => `event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`).join('');
   await page.route('**/api/assistant/**', (route) => {
     const request = route.request();
     const { pathname } = new URL(request.url());
-    if (pathname.endsWith('/assistant/status')) return route.fulfill({ json: fixture.status });
+    if (pathname.endsWith('/assistant/status')) return route.fulfill({ json: options.status ?? fixture.status });
     if (pathname.endsWith('/assistant/conversations')) {
       return request.method() === 'POST'
         ? route.fulfill({ status: 201, json: fixture.conversation })
@@ -1860,6 +1915,47 @@ const SCENES = [
       'assistant-panel-phone.png',
       'assistant-panel-palette.png',
     ],
+  },
+  {
+    name: 'assistant-docked',
+    description:
+      'The assistant docked beside Home at 1280 px, the sidebar folded to its rail: a short answer (the run read, its card and the fix) and the next question it suggests offered in the empty field, with the usage gauge',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 720 },
+    async run({ page, shoot, settle, goto }) {
+      const panel = await openAssistantAnswer(page, goto, '/', {
+        answer: assistantDocsAnswer(),
+        status: assistantStatusWithLimits(230_000),
+      });
+      await panel
+        .getByLabel('Your question')
+        .and(page.getByPlaceholder('How do I check the fix on the next run?'))
+        .waitFor();
+      await panel.locator('[data-assistant-panel]').evaluate((node) => node.scrollTo({ top: 0 }));
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'assistant-input',
+    description:
+      'The docked assistant panel’s question field with its limits nearly spent: the warning at 85% of the daily allowance, the next question suggested in the empty field with its Right-arrow key, the model line and the usage gauge',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 720 },
+    async run({ page, shoot, settle, goto }) {
+      const panel = await openAssistantAnswer(page, goto, '/', {
+        answer: assistantDocsAnswer(),
+        status: assistantStatusWithLimits(850_000, 0.42),
+      });
+      await panel.locator('[data-assistant-usage-warning]').waitFor();
+      await panel.locator('[data-assistant-suggestion-key]').waitFor();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="assistant-input"]', pad: 16 });
+    },
   },
   {
     name: 'assistant-demo',

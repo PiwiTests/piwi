@@ -1,11 +1,12 @@
 /**
- * The assistant in demo mode (`server/api/assistant`): the status, and the
- * conversations kept in the in-browser database through the server's shared
- * handler, with the replies to questions, the checklist ticks and the
- * outcomes of proposed changes recorded on their blocks as the server records
- * them. The demo calls no model: a question gets its prepared answer
- * (`assistant-answers.ts`), computed from the seed, streamed in the server's
- * event format and stored like a real answer.
+ * The assistant in demo mode (`server/api/assistant`): the status, the
+ * visitor's question history, and the conversations kept in the in-browser
+ * database through the server's shared handler, with the replies to
+ * questions, the checklist ticks and the outcomes of proposed changes
+ * recorded on their blocks as the server records them. The demo calls no
+ * model: a question gets its prepared answer (`assistant-answers.ts`),
+ * computed from the seed, streamed in the server's event format, stopped by
+ * **Stop** like a real one, and stored like a real answer.
  */
 import {
   addAssistantMessage,
@@ -15,6 +16,7 @@ import {
   getAssistantConversation,
   isAssistantDeclined,
   listAssistantConversations,
+  listAssistantQuestions,
   recordAssistantProposalOutcome,
   recordAssistantReply,
   tickAssistantChecklist,
@@ -29,6 +31,7 @@ import {
   type AssistantBlock,
   type AssistantEvent,
   type AssistantStatus,
+  type AssistantToolCall,
 } from '#shared/assistant';
 import type { AccessSummary } from '#shared/permissions';
 import type { GuideApiGet } from '../../utils/guides/resolvers';
@@ -65,9 +68,16 @@ async function requireNotDeclined(): Promise<void> {
 /** GET /api/assistant/status */
 export async function apiAssistantStatus(): Promise<AssistantStatus> {
   const declined = await isAssistantDeclined(await getDemoDb());
-  return declined
+  const status: AssistantStatus = declined
     ? { available: false, reason: 'declined', provider: null, model: null, toolMode: null }
     : { available: true, reason: null, provider: 'demo', model: DEMO_MODEL, toolMode: null };
+  return { ...status, allowance: null, subscription: null };
+}
+
+/** GET /api/assistant/questions */
+export async function apiListAssistantQuestions(ownerId: number | null) {
+  await requireNotDeclined();
+  return listAssistantQuestions(await getDemoDb(), ownerId);
 }
 
 /** GET /api/assistant/conversations */
@@ -101,27 +111,23 @@ export async function apiDeleteAssistantConversation(id: number, ownerId: number
   return { success: true };
 }
 
-/** The blocks an answer is stored with: its text parts joined as the panel joins streamed text, its blocks in order. */
-function storedBlocks(answer: DemoAnswer): AssistantBlock[] {
-  const blocks: AssistantBlock[] = [];
-  for (const part of answer.parts) {
-    const last = blocks.at(-1);
-    if (part.kind === 'text' && last?.kind === 'text') last.text += part.text;
-    else if (part.kind === 'text') blocks.push({ kind: 'text', text: part.text });
-    else if (part.kind === 'block') blocks.push(part.block);
-  }
-  return blocks;
+/** One event of a streamed answer, the pause after it, and the read it reports. */
+interface DemoAnswerEvent {
+  event: AssistantEvent;
+  delay: number;
+  call?: AssistantToolCall;
 }
 
 /** The events that write an answer: its reads, its text a few words at a time, its blocks. */
-function answerEvents(answer: DemoAnswer): Array<{ event: AssistantEvent; delay: number }> {
-  const events: Array<{ event: AssistantEvent; delay: number }> = [];
+function answerEvents(answer: DemoAnswer): DemoAnswerEvent[] {
+  const events: DemoAnswerEvent[] = [];
   for (const part of answer.parts) {
     if (part.kind === 'tool') {
       const { name, summary, entities } = part.call;
       events.push({
         event: { event: 'tool', data: { name, summary, ...(entities ? { entities } : {}) } },
         delay: STEP_DELAY_MS,
+        call: part.call,
       });
     } else if (part.kind === 'block') {
       events.push({ event: { event: 'block', data: { block: part.block } }, delay: STEP_DELAY_MS });
@@ -136,7 +142,38 @@ function answerEvents(answer: DemoAnswer): Array<{ event: AssistantEvent; delay:
   return events;
 }
 
-/** POST /api/assistant/conversations/:id/messages — streams the question's prepared answer. */
+/** The blocks the streamed events wrote, as the panel joins them: consecutive text in one block, the blocks in order. */
+function blocksOf(events: readonly DemoAnswerEvent[]): AssistantBlock[] {
+  const blocks: AssistantBlock[] = [];
+  for (const { event } of events) {
+    const last = blocks.at(-1);
+    if (event.event === 'text' && last?.kind === 'text') last.text += event.data.text;
+    else if (event.event === 'text') blocks.push({ kind: 'text', text: event.data.text });
+    else if (event.event === 'block') blocks.push(event.data.block);
+  }
+  return blocks;
+}
+
+/** The conversations answering in this tab, and those whose answer the visitor stopped. */
+const answering = new Set<number>();
+const stopRequested = new Set<number>();
+
+/** POST /api/assistant/conversations/:id/stop */
+export async function apiStopAssistantAnswer(id: number, ownerId: number | null) {
+  await requireNotDeclined();
+  if (!(await findAssistantConversation(await getDemoDb(), ownerId, id))) {
+    throw demoHttpError(404, 'Conversation not found');
+  }
+  const stopped = answering.has(id);
+  if (stopped) stopRequested.add(id);
+  return { stopped };
+}
+
+/**
+ * POST /api/assistant/conversations/:id/messages — streams the question's
+ * prepared answer and stores what it streamed: the whole answer, or what was
+ * written before the visitor stopped it, as a failed answer.
+ */
 export async function apiAskAssistant(id: number, body: unknown, asker: DemoAsker): Promise<Response> {
   await requireNotDeclined();
   const db = await getDemoDb();
@@ -144,6 +181,7 @@ export async function apiAskAssistant(id: number, body: unknown, asker: DemoAske
   if (!conversation) throw demoHttpError(404, 'Conversation not found');
   const parsed = assistantQuestionSchema.safeParse(body);
   if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+  if (answering.has(id)) throw demoHttpError(409, 'The conversation is answering another question');
   const earlier = (await getAssistantConversation(db, asker.ownerId, id))?.messages ?? [];
   let reply: DemoReply | null = null;
   if (parsed.data.reply) {
@@ -163,40 +201,71 @@ export async function apiAskAssistant(id: number, body: unknown, asker: DemoAske
     blocks: [{ kind: 'text', text: parsed.data.text }],
     context: parsed.data.context ?? null,
   });
-  const messageId = await addAssistantMessage(db, conversation, {
-    role: 'assistant',
-    blocks: storedBlocks(answer),
-    toolCalls: answer.parts.flatMap((part) => (part.kind === 'tool' ? [part.call] : [])),
-    provider: 'demo',
-    model: DEMO_MODEL,
-    durationMs: Date.now() - started,
-  });
 
+  answering.add(id);
+  stopRequested.delete(id);
   const encoder = new TextEncoder();
   const events = answerEvents(answer);
   const stream = new ReadableStream({
     async start(controller) {
-      for (const { event, delay } of events) {
-        controller.enqueue(encoder.encode(assistantFrame(event)));
-        await new Promise((r) => setTimeout(r, delay));
+      // A tab that left stops reading: the answer is still written to its end and stored.
+      let reading = true;
+      const send = (event: AssistantEvent) => {
+        if (!reading) return;
+        try {
+          controller.enqueue(encoder.encode(assistantFrame(event)));
+        } catch {
+          reading = false;
+        }
+      };
+      const sent: DemoAnswerEvent[] = [];
+      let stopped = false;
+      try {
+        for (const item of events) {
+          if (stopRequested.has(id)) {
+            stopped = true;
+            break;
+          }
+          send(item.event);
+          sent.push(item);
+          if (reading) await new Promise((r) => setTimeout(r, item.delay));
+        }
+        const error = stopped ? 'You stopped this answer.' : null;
+        const messageId = await addAssistantMessage(db, conversation, {
+          role: 'assistant',
+          blocks: blocksOf(sent),
+          toolCalls: sent.flatMap((item) => (item.call ? [item.call] : [])),
+          provider: 'demo',
+          model: DEMO_MODEL,
+          status: stopped ? 'failed' : 'completed',
+          error,
+          durationMs: Date.now() - started,
+        });
+        send(
+          error
+            ? { event: 'error', data: { code: 'stopped', message: error, messageId } }
+            : {
+                event: 'done',
+                data: {
+                  messageId,
+                  provider: 'demo',
+                  model: DEMO_MODEL,
+                  toolMode: null,
+                  inputTokens: null,
+                  outputTokens: null,
+                  costUsd: null,
+                },
+              },
+        );
+      } finally {
+        answering.delete(id);
+        stopRequested.delete(id);
+        try {
+          controller.close();
+        } catch {
+          // Already closed.
+        }
       }
-      controller.enqueue(
-        encoder.encode(
-          assistantFrame({
-            event: 'done',
-            data: {
-              messageId,
-              provider: 'demo',
-              model: DEMO_MODEL,
-              toolMode: null,
-              inputTokens: null,
-              outputTokens: null,
-              costUsd: null,
-            },
-          }),
-        ),
-      );
-      controller.close();
     },
   });
   return new Response(stream, { headers: ASSISTANT_STREAM_HEADERS });

@@ -249,6 +249,10 @@ async function execute(
   let calls = 0;
   let maxTurns = false;
   const stop = new AbortController();
+  // The user's Stop on an assistant turn kills the run.
+  const onStop = () => stop.abort();
+  opts.agent?.signal?.addEventListener('abort', onStop, { once: true });
+  if (opts.agent?.signal?.aborted) onStop();
   const seen = new Set<string>();
   const result = await isolatedRun(
     binary,
@@ -357,6 +361,8 @@ async function execute(
     usage.cacheReadInputTokens += outcome.cacheReadInputTokens ?? 0;
     usage.since ??= new Date().toISOString();
   }
+  opts.agent?.signal?.removeEventListener('abort', onStop);
+  if (opts.agent?.signal?.aborted) return { ...outcome, outcome: 'stopped' };
   if (maxTurns) return { ...outcome, outcome: 'max-turns' };
   if (result.timedOut) return { ...outcome, outcome: 'timeout', error: 'The Codex CLI timed out.' };
   if (result.code !== 0 || !completed || outcome.error)
