@@ -150,7 +150,8 @@ const baseConfig = defineConfig({
           command: serverCommand,
           url: 'http://localhost:3000',
           reuseExistingServer: !process.env.CI,
-          timeout: 60 * 1000,
+          // A dev server builds its Nitro bundle on every start, about a minute on four cores.
+          timeout: (useBuiltServer ? 60 : 180) * 1000,
         },
         // Auth-enabled server used by reporter-with-auth.spec.ts.
         // Only started in CI; the corresponding tests are skipped when CI is not set.

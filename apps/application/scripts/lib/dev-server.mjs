@@ -187,7 +187,14 @@ export async function startServer({ mode = 'web', port = DEFAULT_PORT, env = {} 
   if (!env.PIWI_DATABASE_PATH) ensureDevDb();
   const child = spawn('npx', ['nuxt', 'dev', '--port', String(port)], {
     cwd: APP_DIR,
-    env: { ...process.env, NUXT_IGNORE_LOCK: '1', ...serverMode.env, ...env },
+    // `nuxt dev` outgrows Node's default heap (about 2 GB), so it gets 4 GB, as `app:dev` does.
+    env: {
+      ...process.env,
+      NODE_OPTIONS: `--max-old-space-size=4096 ${process.env.NODE_OPTIONS ?? ''}`.trim(),
+      NUXT_IGNORE_LOCK: '1',
+      ...serverMode.env,
+      ...env,
+    },
     stdio: 'ignore',
     // Detached puts nuxt in its own process group so stop() can kill the whole
     // tree; on Windows npx needs a shell and group-kill is unsupported anyway.

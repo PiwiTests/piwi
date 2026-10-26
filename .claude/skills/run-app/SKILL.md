@@ -150,6 +150,9 @@ clusters without a stored title fall back to the deterministic one.
   as it is unless the generator or its stories changed; when they did, commit it with them.
 - **Never start `nuxt dev` in the foreground of a tool call** — it blocks until the call times out.
   `app:dev:bg` exists for that reason.
+- **Never start `npx nuxt dev` by hand.** It outgrows Node's default heap (about 2 GB) and dies with
+  `JavaScript heap out of memory` while `Building server`; `app:dev`, `app:dev:bg` and the scripts'
+  servers give it 4 GB.
 - **`PIWI_DEMO_MODE=true` is not a dev-server flag.** To verify the demo itself, build it:
   `npm run app:generate:demo && npm run app:check:demo:runtime`.
 - Screenshots and dev data live under `.screens/` and `.data/`, both gitignored; never commit them.

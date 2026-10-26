@@ -104,8 +104,10 @@ async function waitForServer(url, timeoutMs = 90_000) {
 function startServer() {
   if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
   // Inherited by the child process (Start-Process has no -Environment support
-  // on older pwsh, and a plain spawn inherits the parent env).
+  // on older pwsh, and a plain spawn inherits the parent env). `nuxt dev`
+  // outgrows Node's default heap (about 2 GB), so it gets 4 GB, as `app:dev` does.
   process.env.NUXT_IGNORE_LOCK = '1';
+  process.env.NODE_OPTIONS = `--max-old-space-size=4096 ${process.env.NODE_OPTIONS ?? ''}`.trim();
 
   if (process.platform !== 'win32') {
     return new Promise((resolve, reject) => {

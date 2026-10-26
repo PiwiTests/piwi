@@ -1284,7 +1284,7 @@ cd apps/application
 npm run app:seed:demo                            # 1. generate public/demo/seed.sql (skip if present)
 mkdir -p .data && npm run db:migrate             # 2. create + migrate an empty dev DB (.data/piwi.db)
 npm run app:seed:dev                             # 3. load sample data (server must be stopped — DB lock)
-NUXT_IGNORE_LOCK=1 npx nuxt dev --port 3002      # 4. plain dev server, auth disabled by default
+npm run app:dev:bg -- 3002                       # 4. plain dev server, auth disabled by default
 ```
 
 `app:seed:dev` creates and migrates a missing or empty dev DB itself, so step 2 is only needed when you want a clean
