@@ -277,7 +277,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'field',
     pages: ['/settings/notifications'],
     describes:
-      'The Notification channels card: where alerts go, such as email, a Slack or Microsoft Teams webhook, or a webhook of your own.',
+      'The Notification channels card: where alerts go, such as email, Slack, a Microsoft Teams webhook, or a webhook of your own.',
     requires: { capability: 'notifications' },
     help: 'notifications.channels',
     doc: 'features/notifications#channels',
@@ -299,7 +299,7 @@ export const SETTINGS_ANCHORS = [
     pages: ['/settings/notifications'],
     reveal: [{ open: 'add-notification-channel' }],
     describes:
-      'The New channel form: the type, name and destination, the steps to get a Slack or Microsoft Teams webhook URL, and a test send.',
+      'The New channel form: the type, name and destination, the steps to get a Slack webhook or bot token or a Teams webhook URL, and a test send.',
     shownWhen: 'Once Add channel is clicked.',
     requires: { capability: 'notifications' },
     help: 'notifications.teams',

@@ -6099,10 +6099,11 @@ const SCENES = [
   },
   {
     name: 'channel-form',
-    description: 'Notifications → Add channel: the Slack app steps with a checked URL, then that URL under Teams',
+    description:
+      'Notifications → Add channel: the Slack app steps with a checked URL, then that URL under Teams, then Slack with a bot token',
     route: '/settings/notifications',
     viewport: { width: 1280, height: 1100 },
-    outputs: ['channel-form-slack.png', 'channel-form-teams.png'],
+    outputs: ['channel-form-slack.png', 'channel-form-teams.png', 'channel-form-slack-api.png'],
     async run({ page, shoot, settle }) {
       await page.getByRole('button', { name: 'Add channel' }).click();
       const form = page.locator('[data-shot="channel-form"]');
@@ -6111,7 +6112,7 @@ const SCENES = [
         await form.getByRole('combobox').first().click();
         await page.getByRole('option', { name: label, exact: true }).click();
       };
-      await pick('Slack webhook');
+      await pick('Slack');
       await page.getByTestId('slack-webhook-url').fill('https://hooks.slack.com/services/T000/B000/XXXX');
       await settle();
       await shoot('slack', { of: '[data-shot="channel-form"]', pad: 12 });
@@ -6120,6 +6121,12 @@ const SCENES = [
       await page.getByTestId('channel-url-check').waitFor();
       await settle();
       await shoot('teams', { of: '[data-shot="channel-form"]', pad: 12 });
+      await pick('Slack');
+      await form.getByRole('radio', { name: 'Bot token (Web API)' }).check();
+      await page.getByTestId('slack-bot-token').fill('xoxb-0000-0000-screenshot');
+      await page.getByTestId('slack-channel-id').fill('C0123456789');
+      await settle();
+      await shoot('slack-api', { of: '[data-shot="channel-form"]', pad: 12 });
     },
   },
   // ── Capabilities opt-out ─────────────────────────────────────────────────

@@ -310,7 +310,7 @@ export const AUTHORED_GUIDES: readonly AuthoredGuide[] = [
         id: 'channel',
         anchor: 'notification-channel-form',
         title: 'Where alerts go',
-        body: '**Add channel** opens this form: an email address, a Slack or Microsoft Teams webhook with the steps to get one, or a webhook of your own. **Send test** checks the destination before you save it.',
+        body: '**Add channel** opens this form: an email address, Slack through a webhook or a bot token, a Microsoft Teams webhook, each with the steps to get it, or a webhook of your own. **Send test** checks the destination before you save it.',
         side: 'top',
         align: 'start',
       },

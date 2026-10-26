@@ -1347,7 +1347,7 @@ export const notificationChannels = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     name: text('name').notNull(),
     type: text('type').notNull(), // 'email' | 'slack' | 'webhook'
-    config: text('config', { mode: 'json' }), // { address } | { webhookUrl } | { url, secret (encrypted) }
+    config: text('config', { mode: 'json' }), // { address } | { webhookUrl } | { token (encrypted), channelId } | { url, secret (encrypted) }
     userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // null = global (admin-managed)
     verified: integer('verified', { mode: 'boolean' }).notNull().default(false),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
