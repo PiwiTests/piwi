@@ -207,7 +207,7 @@ describe('local Codex provider', () => {
     expect(result.outcome).toBe('answered');
   });
 
-  it('kills a timed-out assistant run and enforces the tool-call bound', async () => {
+  it('kills a timed-out or stopped assistant run and enforces the tool-call bound', async () => {
     const run = {
       system: opts.system,
       prompt: opts.user,
@@ -219,6 +219,10 @@ describe('local Codex provider', () => {
     };
     stub('timeout');
     expect((await runCodexCliAgent(role, run)).outcome).toBe('timeout');
+    // The user's Stop kills the run before its time limit.
+    const stop = new AbortController();
+    setTimeout(() => stop.abort(), 100);
+    expect((await runCodexCliAgent(role, { ...run, timeoutMs: 10_000, signal: stop.signal })).outcome).toBe('stopped');
     stub('tool');
     expect((await runCodexCliAgent(role, { ...run, timeoutMs: 3000 })).outcome).toBe('max-turns');
   });

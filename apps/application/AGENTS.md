@@ -1158,8 +1158,9 @@ composed guide through `useGuide`.
   (`getClaudeCliRateLimit`, kept in memory), which only warns: the subscription decides.
 - **Stop is a request to the server.** An answer runs to its end when the browser leaves, so **Stop** posts
   `…/conversations/:id/stop`, which aborts the answer this process is writing (`server/utils/assistant/running.ts`,
-  the same registry that refuses a second question with a 409); the loop and the Claude Code run end with the
-  `stopped` error and the answer is stored with what it wrote. The demo stops its prepared answer the same way.
+  the same registry that refuses a second question with a 409); the loop and the CLI runs (Claude Code, Codex,
+  DeepSeek) end with the `stopped` error and the answer is stored with what it wrote. The demo stops its prepared
+  answer the same way.
 - **The next question is a block the model sends last.** `suggest_next` makes a `next` block, refused until the
   answer holds something, that ends the answer like a question block, so it costs no further model call. The panel
   never renders it in the answer: the input offers it as its placeholder (`nextAssistantQuestion`), else the page's

@@ -215,6 +215,12 @@ describe('official DeepSeek Harness provider', () => {
     expect(result.outcome).toBe('answered');
     stub('timeout');
     expect((await runDeepseekCliAgent(role, { ...run, timeoutMs: 100 })).outcome).toBe('timeout');
+    // The user's Stop kills the run before its time limit.
+    const stop = new AbortController();
+    setTimeout(() => stop.abort(), 100);
+    expect((await runDeepseekCliAgent(role, { ...run, timeoutMs: 10_000, signal: stop.signal })).outcome).toBe(
+      'stopped',
+    );
     stub('tool');
     expect((await runDeepseekCliAgent(role, { ...run, maxTurns: 0 })).outcome).toBe('max-turns');
     stub('unrelated-tool');
