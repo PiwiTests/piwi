@@ -5,6 +5,8 @@ import {
   checkBaseUrl,
   checkBaseUrls,
   cliProjectNames,
+  exposeNetworkCovers,
+  remoteBrowserNote,
   selectedProjects,
   type BaseUrlProbe,
   type ProbeOutcome,
@@ -37,7 +39,12 @@ function scripted(...outcomes: ProbeOutcome[]): BaseUrlProbe & { calls: number }
   return probe;
 }
 
-const target = { url: 'https://staging.example.test/', projects: ['chromium'], ignoreHTTPSErrors: false };
+const target = {
+  url: 'https://staging.example.test/',
+  projects: ['chromium'],
+  ignoreHTTPSErrors: false,
+  remoteBrowser: false,
+};
 const fast = { delayMs: 0 };
 
 describe('which projects the run selects', () => {
@@ -97,12 +104,14 @@ describe('baseUrlTargets', () => {
         projects: ['chromium', 'firefox'],
         ignoreHTTPSErrors: true,
         proxy: undefined,
+        remoteBrowser: false,
       },
       {
         url: 'https://api.example.test',
         projects: ['api'],
         ignoreHTTPSErrors: false,
         proxy: { server: 'http://proxy:3128' },
+        remoteBrowser: false,
       },
     ]);
     expect(baseUrlTargets(config, [...PW, '--project=api']).map((t) => t.url)).toEqual(['https://api.example.test']);
@@ -113,6 +122,91 @@ describe('baseUrlTargets', () => {
     const slow = { name: 'slow', default: false, use: { baseURL: 'https://perf.example.test' } };
     const config = { projects: [chromium, slow], filteredProjects: [chromium] };
     expect(baseUrlTargets(config, PW).map((t) => t.url)).toEqual(['https://staging.example.test']);
+  });
+
+  it('flags a base URL a remote browser reaches from its own network', () => {
+    const grid = { wsEndpoint: 'ws://grid.example.test:3000/' };
+    const config = {
+      projects: [
+        { name: 'local', use: { baseURL: 'http://localhost:3000', connectOptions: { ...grid, exposeNetwork: '<loopback>' } } },
+        { name: 'staging', use: { baseURL: 'https://staging.example.test', connectOptions: grid } },
+        { name: 'firefox', use: { baseURL: 'https://staging.example.test' } },
+        { name: 'api', use: { baseURL: 'https://api.example.test' } },
+      ],
+    };
+    const remote = (env: NodeJS.ProcessEnv) =>
+      Object.fromEntries(baseUrlTargets(config, PW, env).map((t) => [t.url, t.remoteBrowser]));
+    expect(remote({})).toEqual({
+      'http://localhost:3000': false,
+      'https://staging.example.test': true,
+      'https://api.example.test': false,
+    });
+    expect(remote({ PW_TEST_CONNECT_WS_ENDPOINT: 'ws://other.example.test/' })).toEqual({
+      'http://localhost:3000': true,
+      'https://staging.example.test': true,
+      'https://api.example.test': true,
+    });
+    expect(
+      remote({ PW_TEST_CONNECT_WS_ENDPOINT: 'ws://other.example.test/', PW_TEST_CONNECT_EXPOSE_NETWORK: '*.example.test' }),
+    ).toEqual({
+      'http://localhost:3000': true,
+      'https://staging.example.test': false,
+      'https://api.example.test': false,
+    });
+  });
+});
+
+describe('exposeNetworkCovers', () => {
+  const covers = (rule: string | undefined, ...urls: string[]) => urls.map((url) => exposeNetworkCovers(rule, url));
+
+  it('covers nothing without a rule', () => {
+    expect(covers(undefined, 'http://localhost/')).toEqual([false]);
+    expect(covers('', 'http://localhost/')).toEqual([false]);
+  });
+
+  it('covers every host with *, and every host on one port with *:port', () => {
+    expect(covers('*', 'https://app.example.test/', 'http://10.0.0.5:8080/')).toEqual([true, true]);
+    expect(covers('*:443', 'https://app.example.test/', 'http://app.example.test/')).toEqual([true, false]);
+  });
+
+  it('covers the loopback names and addresses with <loopback>', () => {
+    expect(
+      covers(
+        '<loopback>',
+        'http://localhost:3000/',
+        'http://app.localhost/',
+        'http://127.0.0.1:8080/',
+        'http://[::1]:3000/',
+        'http://127.0.0.2/',
+        'http://app.example.test/',
+      ),
+    ).toEqual([true, true, true, true, false, false]);
+    expect(covers('<loopback>:3000', 'http://localhost:3000/', 'http://localhost:3001/')).toEqual([true, false]);
+  });
+
+  it('matches host names with wildcards, never an IP address', () => {
+    expect(covers('*.example.test', 'https://app.example.test/', 'https://example.test/')).toEqual([true, false]);
+    expect(covers('.example.test', 'https://app.example.test/')).toEqual([true]);
+    expect(covers('app.example.test', 'https://app.example.test/', 'https://api.example.test/')).toEqual([true, false]);
+    expect(covers('127.0.0.*', 'http://127.0.0.1/')).toEqual([false]);
+  });
+
+  it('matches an IP address exactly', () => {
+    expect(covers('10.0.0.5', 'http://10.0.0.5:8080/', 'http://10.0.0.6/')).toEqual([true, false]);
+    expect(covers('10.0.0.5:8080', 'http://10.0.0.5:8080/', 'http://10.0.0.5:9090/')).toEqual([true, false]);
+  });
+
+  it("compares a rule's port with the URL's, 80 or 443 when it names none", () => {
+    expect(covers('app.example.test:80', 'http://app.example.test/', 'https://app.example.test/')).toEqual([true, false]);
+    expect(covers('app.example.test:443', 'https://app.example.test/')).toEqual([true]);
+  });
+
+  it('covers a host that any entry of a comma-separated list covers', () => {
+    expect(covers('<loopback>,*.example.test:443', 'http://localhost/', 'https://app.example.test/')).toEqual([
+      true,
+      true,
+    ]);
+    expect(covers('<loopback>,*.example.test:443', 'http://app.example.test/')).toEqual([false]);
   });
 });
 
@@ -177,6 +271,21 @@ describe('checkBaseUrls', () => {
       ].join('\n'),
     );
     expect((error as Error).stack).toBe((error as Error).message);
+  });
+
+  it('says when a remote browser reaches a base URL from its own network', async () => {
+    const remote = {
+      projects: [
+        { name: 'grid', use: { baseURL: 'https://staging.example.test', connectOptions: { wsEndpoint: 'ws://grid/' } } },
+      ],
+    };
+    const probe = scripted({ error: 'getaddrinfo ENOTFOUND staging.example.test' });
+    const error = await checkBaseUrls(remote, { ...fast, argv: PW, env: {}, attempts: 1, probe }).catch((e: Error) => e);
+    expect((error as Error).message.split('\n').slice(1, 3)).toEqual([
+      '  https://staging.example.test (grid): getaddrinfo ENOTFOUND staging.example.test (1 attempt)',
+      "    The check ran from this machine's network, but the remote browser (connectOptions) reaches staging.example.test from its own, since exposeNetwork does not cover that host.",
+    ]);
+    expect(remoteBrowserNote(target)).toBeNull();
   });
 
   it('has nothing to check without a base URL', async () => {
