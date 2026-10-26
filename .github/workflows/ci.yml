@@ -321,6 +321,12 @@ jobs:
           npm run core:typecheck
           npm run core:test
 
+      - name: Typecheck and test the Nitro instrumentation
+        working-directory: integrations/nitro
+        run: |
+          npm run typecheck
+          npm test
+
       - name: Lint, typecheck and test picker-dom
         working-directory: packages/picker-dom
         run: |
