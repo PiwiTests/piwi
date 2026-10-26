@@ -157,7 +157,7 @@ root package has none of them. What a change needs depends on what it touches:
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | a workspace                                     | its `typecheck`, `lint`, `format:check` and unit tests (`app:test:unit` for the dashboard)                                |
 | `integrations/nitro/`                           | its `typecheck` and `test`, **and** `app:typecheck`: the dashboard imports its sources and checks them under strict settings its own `typecheck` does not apply |
-| `apps/docs/`, or a docs link or heading in code | `npx vitest run tests/unit/docs-drift.test.ts tests/unit/docs-page-meta.test.ts` from `apps/application/` (see [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md#what-the-drift-test-checks)) |
+| `apps/docs/`, or a docs link or heading in code | `npx vitest run tests/unit/docs-drift.test.ts tests/unit/docs-page-meta.test.ts` from `apps/application/`, and `npm run docs:build` from `apps/docs/` for a change to the site (see [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md#what-the-drift-test-checks)) |
 | `.github/workflows/` or `.github/actions/`      | `actionlint` (see [`.github/AGENTS.md`](.github/AGENTS.md#checking-a-change))                                             |
 
 **oxfmt is the only formatter**: each workspace's `format` / `format:check`, and the husky `pre-commit` hook formats the

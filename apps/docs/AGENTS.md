@@ -219,10 +219,10 @@ It also guards the positioning line and the single-source snippets. The endpoint
 
 Run it with the page-description test before pushing a change to this site, or to a docs link or heading in code:
 `npx vitest run tests/unit/docs-drift.test.ts tests/unit/docs-page-meta.test.ts` from `apps/application/` (a few
-seconds). CI runs both with the dashboard's unit tests, so a page over its budget turns the pull request red.
+seconds), and `npm run docs:build` here for a change to the site. CI runs the tests with the dashboard's unit tests
+and the build in its _Docs build_ job, so a page over its budget turns the pull request red.
 
-The docs build itself only fails on a link to a missing page, and pull requests do not run it, so this test is what
-catches a heading that moved. It computes anchors the way VitePress does (`headingAnchor` in `.vitepress/navigation.ts`);
+The docs build itself only fails on a link to a missing page, so this test is what catches a heading that moved. It computes anchors the way VitePress does (`headingAnchor` in `.vitepress/navigation.ts`);
 when you move a section, keep its heading text or update every link the test names.
 
 
