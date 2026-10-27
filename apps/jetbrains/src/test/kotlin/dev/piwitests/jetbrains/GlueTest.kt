@@ -786,6 +786,24 @@ class GlueTest {
     }
 
     @Test
+    fun `a click picks on an image whose worker takes it, mapped to CSS pixels of the page whatever its size`() {
+        val image = PausedImage("image/jpeg", "/9j/", 1280, 800)
+        assertEquals(true, Glue.picksOnImage(listOf("pick", "pick-at"), image))
+        assertEquals(false, Glue.picksOnImage(listOf("pick", "view"), image))
+        assertEquals(false, Glue.picksOnImage(listOf("pick-at"), PausedImage("image/jpeg", "/9j/")))
+        assertEquals(false, Glue.picksOnImage(listOf("pick-at"), null))
+        // An image taken at a device scale factor of 2, shown at its own size: 2560 by 1600 pixels.
+        assertEquals(650 to 200, Glue.pagePoint(1300, 400, 2560, 1600, image))
+        assertEquals(640 to 200, Glue.pagePoint(320, 100, 640, 400, image))
+        assertEquals(1279 to 799, Glue.pagePoint(2560, 1600, 2560, 1600, image))
+        assertEquals(0 to 0, Glue.pagePoint(0, 0, 2560, 1600, image))
+        assertEquals(null, Glue.pagePoint(-1, 4, 2560, 1600, image))
+        assertEquals(null, Glue.pagePoint(4, 1601, 2560, 1600, image))
+        assertEquals(null, Glue.pagePoint(4, 4, 0, 1600, image))
+        assertEquals(null, Glue.pagePoint(4, 4, 2560, 1600, PausedImage("image/jpeg", "/9j/")))
+    }
+
+    @Test
     fun `the tooltip names the reporter the project installs`() {
         val withReporter = RunStatusResult(listOf(RunStatus(root = "/w", branch = "feature/pay", run = passed, reporterVersion = "0.47.0")))
         assertEquals(

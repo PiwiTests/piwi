@@ -30,7 +30,8 @@ in any JetBrains IDE with the LSP API and JavaScript support, from 2024.1, with 
   Playwright and writes what you do there into the test, calling your page objects when connected. No instance needed.
 - **The status bar.** The latest run, the run you started as it runs, and what it changed once it ended. That run
   pauses at your breakpoints, its paused line marked in the editor, and steps, runs to the caret or resumes with the
-  debugger's keys; from the paused line, the plugin writes an assertion or a mock of a request the page made.
+  debugger's keys; from the paused line, the plugin writes an assertion or a mock of a request the page made, and a
+  headless test's page shows in the Piwi tool window, where a click picks the locator.
 
 ![The Piwi tool window below the editor: the latest run's failures as a tree, a local run laid over them, the failing tests tinted in the spec](https://piwitests.dev/screenshots/jetbrains-failures.png)
 

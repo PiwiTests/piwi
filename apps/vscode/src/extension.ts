@@ -247,6 +247,8 @@ export interface PiwiApi {
   executionPoints(uri: string): number[];
   /** What the paused page view shows; null while it is closed. */
   pausedPage(): PausedPageView | null;
+  /** A click on the paused page's image, as the view's script posts it: the pick there, once answered. */
+  pickOnPage(message: unknown): Promise<void>;
   /** What the end of the cursor's line says of the locator there while a test is stopped; null while it says nothing. */
   caretCount(): CaretShown | null;
 }
@@ -1321,6 +1323,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     runSessions: () => runControl.sessions(),
     executionPoints: (uri) => runControl.executionPoints(uri),
     pausedPage: () => runControl.pausedPage(),
+    pickOnPage: (message) => runControl.pickOnPage(message),
     caretCount: () => runControl.caretCount(),
   };
 }

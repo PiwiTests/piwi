@@ -18,9 +18,13 @@ import {
   caretText,
   controlItems,
   controlState,
+  imageClickOf,
   lineEditOf,
   linesAbove,
+  PICK_HINT,
+  pagePoint,
   pausedPageHtml,
+  picksOnImage,
   pausedText,
   remember,
   requestPicks,
@@ -392,6 +396,73 @@ describe('the paused page view', () => {
     expect(html).toContain('<p>Click &#60;b&#62;</p>');
     expect(html).toContain('<img src="data:image/jpeg;base64,/9j/4AAQ+w==" alt="The page of the paused test">');
     expect(html).not.toContain('<script');
+  });
+
+  test('runs one script, by the style’s nonce, only where a click on the image picks', () => {
+    const image = { mime: 'image/jpeg' as const, data: '/9j/4AAQ+w==', width: 1280, height: 800 };
+    const html = pausedPageHtml({ image, caption: 'Paused', pick: { shown: 3 }, note: 'Picked <x>.' }, 'n0nce');
+    expect(html).toContain(
+      `content="default-src 'none'; img-src data:; style-src 'nonce-n0nce'; script-src 'nonce-n0nce'"`,
+    );
+    expect(html).toContain(`<p class="hint">${PICK_HINT}</p>`);
+    expect(html).toContain('<p class="note" role="status">Picked &#60;x&#62;.</p>');
+    expect(html).toContain('<img class="pick" id="page" src="data:image/jpeg;base64,/9j/4AAQ+w=="');
+    expect(html).toContain('img.pick{cursor:crosshair}');
+    const scripts = html.match(/<script[^>]*>/g) ?? [];
+    expect(scripts).toEqual(['<script nonce="n0nce">']);
+    expect(html).toContain("vscode.postMessage({type:'pick',shown:3,x:e.offsetX,y:e.offsetY,");
+    // Without the pick, or without an image, no script and no hint.
+    for (const view of [
+      { image, caption: 'Paused', pick: null },
+      { image: null, caption: 'The test went on.', pick: { shown: 3 } },
+    ]) {
+      const plain = pausedPageHtml(view, 'n');
+      expect(plain).not.toContain('<script');
+      expect(plain).not.toContain('script-src');
+      expect(plain).not.toContain(PICK_HINT);
+    }
+  });
+
+  test('picks on an image whose worker takes it and that names its viewport', () => {
+    const image = { mime: 'image/jpeg' as const, data: 'AAAA', width: 1280, height: 800 };
+    expect(picksOnImage(['pick', 'pick-at'], image)).toBe(true);
+    expect(picksOnImage(['pick', 'view'], image)).toBe(false);
+    expect(picksOnImage(['pick-at'], { mime: 'image/jpeg', data: 'AAAA' })).toBe(false);
+    expect(picksOnImage(['pick-at'], null)).toBe(false);
+  });
+
+  test('maps a click on the image as shown to CSS pixels of the page, whatever size it is shown at', () => {
+    const image = { mime: 'image/jpeg' as const, data: 'AAAA', width: 1280, height: 800 };
+    const click = (x: number, y: number, width = 640, height = 400) => ({ shown: 1, x, y, width, height });
+    expect(pagePoint(click(320, 100), image)).toEqual({ x: 640, y: 200 });
+    // Shown larger than the viewport (an image taken at a device scale factor of 2, shown whole).
+    expect(pagePoint(click(1001, 3, 2560, 1600), image)).toEqual({ x: 501, y: 2 });
+    expect(pagePoint(click(640, 400), image)).toEqual({ x: 1279, y: 799 });
+    expect(pagePoint(click(0, 0), image)).toEqual({ x: 0, y: 0 });
+    for (const outside of [click(-1, 5), click(5, 401), click(5, 5, 0, 400)]) {
+      expect(pagePoint(outside, image)).toBeNull();
+    }
+    expect(pagePoint(click(5, 5), { mime: 'image/jpeg', data: 'AAAA' })).toBeNull();
+  });
+
+  test('reads the script’s message field by field', () => {
+    expect(imageClickOf({ type: 'pick', shown: 2, x: 1.5, y: 3, width: 640, height: 400 })).toEqual({
+      shown: 2,
+      x: 1.5,
+      y: 3,
+      width: 640,
+      height: 400,
+    });
+    for (const message of [
+      null,
+      'pick',
+      { type: 'other', shown: 2, x: 1, y: 3, width: 640, height: 400 },
+      { type: 'pick', shown: 2, x: '1', y: 3, width: 640, height: 400 },
+      { type: 'pick', shown: 2, x: Number.NaN, y: 3, width: 640, height: 400 },
+      { type: 'pick', x: 1, y: 3, width: 640, height: 400 },
+    ]) {
+      expect(imageClickOf(message), JSON.stringify(message)).toBeNull();
+    }
   });
 
   test('shows no image for anything but a JPEG in base64', () => {

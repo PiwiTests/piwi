@@ -1694,6 +1694,27 @@ object Glue {
     fun decodableImage(width: Int, height: Int): Boolean =
         width in 1..MAX_IMAGE_SIDE && height in 1..MAX_IMAGE_SIDE && width.toLong() * height <= MAX_IMAGE_PIXELS
 
+    /** The hint above an image a click picks on. */
+    const val PICK_HINT = "Click the image to pick a locator: it replaces the one on the stopped line."
+
+    /** Whether a click on an image of a stop picks there: its worker takes `pick-at`, and the image names its viewport. */
+    fun picksOnImage(takes: List<String>, image: PausedImage?): Boolean =
+        "pick-at" in takes && (image?.width ?: 0) > 0 && (image?.height ?: 0) > 0
+
+    /**
+     * The point of the stopped page under a click at `x`, `y` of its image shown `shownWidth` by `shownHeight`, in CSS
+     * pixels of its viewport (`piwi/pickAt`): scaled by the viewport over the size it is shown at, whatever the image's
+     * own size and the page's device scale factor; null for a click outside the image or one that names no viewport.
+     */
+    fun pagePoint(x: Int, y: Int, shownWidth: Int, shownHeight: Int, image: PausedImage?): Pair<Int, Int>? {
+        val width = image?.width?.takeIf { it > 0 } ?: return null
+        val height = image.height?.takeIf { it > 0 } ?: return null
+        if (shownWidth <= 0 || shownHeight <= 0 || x !in 0..shownWidth || y !in 0..shownHeight) return null
+        val pageX = Math.round(x.toDouble() * width / shownWidth).toInt().coerceAtMost(width - 1)
+        val pageY = Math.round(y.toDouble() * height / shownHeight).toInt().coerceAtMost(height - 1)
+        return pageX to pageY
+    }
+
     /** The request header carrying Piwi Picker's challenge (`@piwitests/core/editor-send`). */
     const val EDITOR_CHALLENGE_HEADER = "x-piwi-editor-challenge"
 

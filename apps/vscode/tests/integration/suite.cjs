@@ -610,6 +610,8 @@ const tests = {
       });
       const shown = await waitFor(() => (api.pausedPage()?.image ? api.pausedPage() : null), 'the paused page');
       assert.equal(shown.image.data, '/9j/4AAQ');
+      // A reporter that does not take `pick-at` offers no pick on its image.
+      assert.equal(shown.pick, null);
       // The stop's line in the spec as it stands, two lines below the run's.
       assert.equal(shown.caption, 'Paused · Fill "one" locator(\'input\') · attempt 2 · checkout.spec.ts:5');
       assert.deepEqual(api.executionPoints(spec.toString()), [4]);
@@ -833,6 +835,85 @@ const tests = {
       await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
     }
     await waitFor(() => !api.runSessions().some((s) => s.ref === ref), 'the end of the run');
+  },
+
+  async 'a click on a headless stop’s image picks the element under it, and its locator replaces the stopped line’s'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const run = api.lastRun();
+    const ref = 'ed-0000c0d4';
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'coupon.spec.ts'));
+    const worker = runWorker(run.env.PIWI_RUN_CHANNEL, ref, ['pick', 'record', 'locator', 'view', 'input', 'pick-at']);
+    const { send, heardOne } = worker;
+    send({
+      type: 'test-begin',
+      testId: 't3',
+      title: ['applies a coupon'],
+      file: 'tests/coupon.spec.ts',
+      line: 3,
+      project: 'chromium',
+      retry: 0,
+      cannotPause: null,
+    });
+    send({
+      type: 'stopped',
+      stop: 1,
+      reason: 'pause',
+      title: 'Fill "MORNING10" getByLabel(\'Coupon code\')',
+      place: { file: 'tests/coupon.spec.ts', line: 5, column: 34 },
+      locator: "getByLabel('Coupon code')",
+      bar: false,
+    });
+    try {
+      // The image names the page's viewport, 1280 by 800 CSS pixels.
+      const asked = await heardOne('the image asked', (m) => m.type === 'request' && m.what === 'image');
+      send({
+        type: 'answer',
+        request: asked.request,
+        what: 'image',
+        value: { mime: 'image/jpeg', data: '/9j/4AAQ', width: 1280, height: 800 },
+      });
+      const shown = await waitFor(() => api.pausedPage()?.pick, 'the image a click picks on');
+      // A click on an image the view no longer shows picks nothing.
+      await api.pickOnPage({ type: 'pick', shown: shown.shown - 1, x: 10, y: 10, width: 640, height: 400 });
+      // The image shown at 640 by 400: a click at 320, 100 of it is the page's 640, 200.
+      const picking = api.pickOnPage({ type: 'pick', shown: shown.shown, x: 320, y: 100, width: 640, height: 400 });
+      const pick = await heardOne('the pick on the image', (m) => m.type === 'request' && m.what === 'pick-at');
+      assert.deepEqual([pick.stop, pick.x, pick.y], [1, 640, 200]);
+      assert.equal(worker.heard.filter((m) => m.what === 'pick-at').length, 1);
+      // The worker sends the locator where the bar's pick goes, then answers.
+      const [url, token] = run.env.PIWI_EDITOR_SEND.split('#');
+      const posted = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'locator',
+          text: "getByRole('textbox', { name: 'Coupon code' })",
+          at: { file: 'tests/coupon.spec.ts', line: 5 },
+        }),
+      });
+      assert.equal(posted.status, 200, await posted.clone().text());
+      const message =
+        "getByRole('textbox', { name: 'Coupon code' }) went to the editor, in place of the locator on the stopped line.";
+      send({
+        type: 'answer',
+        request: pick.request,
+        what: 'pick-at',
+        value: { ok: true, message, locator: "getByRole('textbox', { name: 'Coupon code' })" },
+      });
+      await picking;
+      assert.equal(api.pausedPage().note, message);
+      const document = await vscode.workspace.openTextDocument(spec);
+      assert.equal(
+        document.lineAt(4).text,
+        "  await page.getByRole('textbox', { name: 'Coupon code' }).fill('MORNING10');",
+      );
+    } finally {
+      worker.socket.destroy();
+      await vscode.window.showTextDocument(spec);
+      await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+    }
+    await waitFor(() => !api.runSessions().some((s) => s.ref === ref), 'the end of the run');
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   },
 
   async 'a C# file shows the lines its tests ran, its functions’ tests, and the marks hide and show again'() {

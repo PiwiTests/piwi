@@ -163,7 +163,8 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   (`workspace.onDidChangeTextDocument`, `lineEditOf`), which bring a stop to the line it stands on now (the mark, the
   lens, the caret's match) and the caret's line back to the run's for Run to the cursor, refused on a line written
   since. A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the
-  **Piwi: paused page** webview beside the editor (no script, `img-src data:`, its style by nonce: `pausedPageHtml`),
+  **Piwi: paused page** webview beside the editor (`img-src data:`, its style by nonce, a script by the same nonce only
+  where a click on the image picks, `piwi/pickAt`: `pausedPageHtml`, `pagePoint`),
   again at each such stop and on **Piwi: Show the paused page** (`piwi.showPausedPage`). The breakpoints
   `breakpointsForRun` gives go to each live run as they change (`vscode.debug.onDidChangeBreakpoints`, the
   `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the run's code (`runPlaces`: a breakpoint

@@ -80,6 +80,7 @@ import com.intellij.ui.content.ContentFactory
 import com.intellij.util.Alarm
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
 import com.intellij.xdebugger.XDebuggerManager
 import com.intellij.xdebugger.breakpoints.XBreakpoint
 import com.intellij.xdebugger.breakpoints.XBreakpointListener
@@ -89,6 +90,7 @@ import java.awt.Cursor
 import java.awt.Graphics
 import java.awt.Rectangle
 import java.awt.datatransfer.StringSelection
+import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
@@ -102,6 +104,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.imageio.ImageIO
 import javax.imageio.ImageReader
+import javax.swing.BoxLayout
 import javax.swing.ImageIcon
 import javax.swing.JList
 import javax.swing.JPanel
@@ -115,7 +118,8 @@ import javax.swing.SwingConstants
  * saying what is about to run, or how the test failed, and offering **Resume**, **Step**, **Run to Caret** and
  * **Finish**, then the code actions its worker takes there (`piwi/stopAction`: **Pick a Locator**, **Record Here**,
  * **Assert**, **Assert a Region**, **Mock a Request**); a stop no pause bar shows (a headless run's) shows an image of
- * its page in the Piwi tool window's **Paused Page** tab. The code a stop makes (`piwi/stopCode`) is written in one
+ * its page in the Piwi tool window's **Paused Page** tab, where a click picks the element under it (`piwi/pickAt`)
+ * when its worker takes it. The code a stop makes (`piwi/stopCode`) is written in one
  * command in its document, in an editor, so the service hears it; while a test is stopped, the end of the caret's line
  * in its file says how many elements the locator there matches on the stopped page (`piwi/locatorAtCaret`). The IDE's
  * breakpoints go to each live run as they change (`XBreakpointListener`, `piwi/setRunBreakpoints`), filtered as a
@@ -178,6 +182,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         override fun control(params: RunControlParams) = server()?.runControl(params)?.orNull()
 
         override fun pausedPage(params: PausedPageParams) = server()?.pausedPage(params)?.orNull()
+
+        override fun pickAt(params: PickAtParams) = server()?.pickAt(params)?.orNull()
 
         override fun action(params: StopActionParams) = server()?.stopAction(params)?.orNull()
 
@@ -515,6 +521,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             panel?.caption,
             panel?.image,
             (caretInlay?.takeIf { it.isValid }?.renderer as? CaretCountInlay)?.text,
+            panel?.picks == true,
+            panel?.note,
         )
     }
 
@@ -524,7 +532,16 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val pageCaption: String?,
         val pageImage: BufferedImage?,
         val caretCount: String? = null,
+        /** A click on the image picks there, as the hint above it says. */
+        val pagePicks: Boolean = false,
+        /** What the last pick on the image came to. */
+        val pageNote: String? = null,
     )
+
+    /** A click at `x`, `y` of the Paused Page tab's image, as a person's click reaches it, which the tests send. */
+    internal fun clickPage(x: Int, y: Int) {
+        (livePage()?.component as? PausedPagePanel)?.click(x, y)
+    }
 
     /** The page of a stop in the Paused Page tab of the Piwi tool window, asked of its worker. On the event thread. */
     fun showPage(stop: Glue.ShownStop) {
@@ -547,7 +564,28 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             val image = remote.pausedPage(PausedPageParams(stop.ref, stop.worker))?.image
             val picture = Glue.pausedImageBytes(image)?.let(::decode)
             ApplicationManager.getApplication().invokeLater({
-                if (pageStop == key) panel.show(if (picture != null) caption else "$caption · the test sent no image of its page", picture)
+                if (pageStop != key) return@invokeLater
+                if (picture == null) return@invokeLater panel.show("$caption · the test sent no image of its page", null)
+                val pick = image?.takeIf { Glue.picksOnImage(stop.takes, it) }
+                    ?.let { shown -> { x: Int, y: Int -> pickOnImage(stop, shown, panel, picture, x, y) } }
+                panel.show(caption, picture, pick)
+            }, gone)
+        }
+    }
+
+    /**
+     * A click at `x`, `y` of a stop's image in the Paused Page tab: the element under it picked on the stopped page
+     * (`piwi/pickAt`, in CSS pixels of its viewport) off the event thread, its locator going to the editor in place of
+     * the one on the stopped line as the pause bar's pick does; the answer said under the caption while the tab shows
+     * the same image. On the event thread.
+     */
+    private fun pickOnImage(stop: Glue.ShownStop, image: PausedImage, panel: PausedPagePanel, picture: BufferedImage, x: Int, y: Int) {
+        val (pageX, pageY) = Glue.pagePoint(x, y, picture.width, picture.height, image) ?: return
+        panel.note("Picking the element under the click…")
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val answer = remote.pickAt(PickAtParams(stop.ref, stop.worker, stop.stop.since ?: "", pageX, pageY))
+            ApplicationManager.getApplication().invokeLater({
+                if (panel.image === picture) panel.note(answer?.message ?: "The editor service did not answer.")
             }, gone)
         }
     }
@@ -860,6 +898,8 @@ internal interface RunRemote {
 
     fun pausedPage(params: PausedPageParams): PausedPageResult?
 
+    fun pickAt(params: PickAtParams): PickAtResult?
+
     fun action(params: StopActionParams): RunControlResult?
 
     fun requests(params: StopRequestsParams): StopRequestsResult?
@@ -874,9 +914,22 @@ internal interface RunRemote {
     fun commandEnded(params: CommandEndedParams)
 }
 
-/** The page of a stopped test, under what it is about to run: the Paused Page tab of the Piwi tool window. */
+/**
+ * The page of a stopped test, under what it is about to run: the Paused Page tab of the Piwi tool window. Where a click
+ * on the image picks, a hint says so above it and the cursor is a crosshair over it; what the pick came to shows
+ * under the caption.
+ */
 private class PausedPagePanel : JPanel(BorderLayout()) {
-    private val label = JBLabel().apply { border = JBUI.Borders.empty(4, 8) }
+    private val label = JBLabel().apply { border = JBUI.Borders.empty(4, 8, 0, 8) }
+    private val hint = JBLabel(Glue.PICK_HINT).apply {
+        border = JBUI.Borders.empty(2, 8, 0, 8)
+        foreground = UIUtil.getContextHelpForeground()
+        isVisible = false
+    }
+    private val noteLabel = JBLabel().apply {
+        border = JBUI.Borders.empty(2, 8, 0, 8)
+        isVisible = false
+    }
     private val picture = JBLabel().apply {
         horizontalAlignment = SwingConstants.LEFT
         verticalAlignment = SwingConstants.TOP
@@ -886,17 +939,53 @@ private class PausedPagePanel : JPanel(BorderLayout()) {
         private set
     var image: BufferedImage? = null
         private set
+    var note: String? = null
+        private set
+
+    /** What a click at a point of the image, in its own pixels, does; null where a click picks nothing. */
+    private var pick: ((Int, Int) -> Unit)? = null
+
+    val picks: Boolean get() = pick != null
 
     init {
-        add(label, BorderLayout.NORTH)
+        val header = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            border = JBUI.Borders.emptyBottom(4)
+            add(label)
+            add(hint)
+            add(noteLabel)
+        }
+        add(header, BorderLayout.NORTH)
         add(JBScrollPane(picture), BorderLayout.CENTER)
+        picture.addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) {
+                if (e.button == MouseEvent.BUTTON1) click(e.x, e.y)
+            }
+        })
     }
 
-    fun show(caption: String, image: BufferedImage?) {
+    fun show(caption: String, image: BufferedImage?, pick: ((Int, Int) -> Unit)? = null) {
         this.caption = caption
         this.image = image
+        this.pick = pick.takeIf { image != null }
         label.text = caption
         picture.icon = image?.let { ImageIcon(it) }
+        hint.isVisible = picks
+        picture.cursor = if (picks) Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR) else Cursor.getDefaultCursor()
+        note(null)
+    }
+
+    fun note(text: String?) {
+        note = text
+        noteLabel.text = text.orEmpty()
+        noteLabel.isVisible = text != null
+    }
+
+    /** A click at `x`, `y` of the label, whose icon is drawn at its top left: a point of the image picks there. */
+    fun click(x: Int, y: Int) {
+        val shown = image ?: return
+        if (x < 0 || y < 0 || x >= shown.width || y >= shown.height) return
+        pick?.invoke(x, y)
     }
 }
 

@@ -196,7 +196,7 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
   Rerun, Stop and Close) takes no other action. A
   stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`, at most
   `Glue.MAX_IMAGE_DATA`, decoded only within `Glue.decodableImage`) in the **Paused Page**
-  tab of the Piwi tool window, again at each such stop. An `XBreakpointListener` sends the breakpoints
+  tab of the Piwi tool window, again at each such stop, where a click picks (`piwi/pickAt`, `Glue.pagePoint`). An `XBreakpointListener` sends the breakpoints
   `PiwiProjectService.breakpoints` gives to each live run 100 ms after a burst of changes, and the settings page does
   when the breakpoints checkbox changes, as lines of the run's code (`Glue.runPlaces`: a breakpoint the run was given,
   by the `XLineBreakpoint` itself, keeps its line while it only moved with the edits, `XLineBreakpointImpl.updatePosition`
