@@ -28,6 +28,19 @@ for (const { path, source } of vueFiles) {
   }
 }
 
+/**
+ * Each static `data-tour-part` value in the app's components, with the files
+ * setting it: a template's `data-tour-part="…"`, or the `'data-tour-part': '…'`
+ * key of a static map a component spreads with `v-bind`.
+ */
+const dataTourPartFiles = new Map<string, string[]>();
+for (const { path, source } of vueFiles) {
+  for (const match of source.matchAll(/(?<![:\w-])data-tour-part="([^"]*)"|'data-tour-part':\s*'([^']*)'/g)) {
+    const value = match[1] ?? match[2]!;
+    dataTourPartFiles.set(value, [...(dataTourPartFiles.get(value) ?? []), path]);
+  }
+}
+
 describe('guide anchor ids', () => {
   test('are unique and kebab-case', () => {
     const ids = GUIDE_ANCHORS.map((anchor) => anchor.id);
@@ -65,6 +78,49 @@ describe('guide anchor ids', () => {
     expect(
       bound.map(({ path }) => path),
       'a bound data-tour cannot be found in the source',
+    ).toEqual([]);
+  });
+});
+
+describe('guide anchor parts', () => {
+  const parts = GUIDE_ANCHORS.flatMap((anchor) => (anchor.parts ?? []).map((part) => ({ anchor, part })));
+
+  test('are kebab-case, unique within their anchor, and fit', () => {
+    const problems = GUIDE_ANCHORS.flatMap(({ id, parts: own = [] }) => {
+      const ids = own.map((part) => part.id);
+      return [
+        ...ids.filter((part) => !KEBAB.test(part)).map((part) => `${id}/${part}: not kebab-case`),
+        ...ids.filter((part, i) => ids.indexOf(part) !== i).map((part) => `${id}/${part}: listed twice`),
+        ...own.flatMap((part) => {
+          const sentences = [sentenceProblem(part.describes), part.shownWhen ? sentenceProblem(part.shownWhen) : null];
+          return sentences.filter(Boolean).map((problem) => `${id}/${part.id}: ${problem}`);
+        }),
+      ];
+    });
+    expect(problems).toEqual([]);
+  });
+
+  test('every part is the data-tour-part of an element of the app', () => {
+    expect(
+      parts.filter(({ part }) => !dataTourPartFiles.has(part.id)).map(({ anchor, part }) => `${anchor.id}/${part.id}`),
+    ).toEqual([]);
+  });
+
+  test('every data-tour-part in the app is a part of an anchor', () => {
+    const known = new Set(parts.map(({ part }) => part.id));
+    expect(
+      [...dataTourPartFiles.keys()].filter((value) => !known.has(value)),
+      'data-tour-part values no anchor lists',
+    ).toEqual([]);
+  });
+
+  test('every data-tour-part is a static value', () => {
+    const bound = vueFiles.filter(({ source }) =>
+      /(?<![\w-])(?:v-bind)?:data-tour-part\b|['"]data-tour-part['"]\s*:\s*(?=\S)(?!'[^']*'\s*[,}\n])/.test(source),
+    );
+    expect(
+      bound.map(({ path }) => path),
+      'a bound data-tour-part cannot be found in the source',
     ).toEqual([]);
   });
 });

@@ -110,6 +110,8 @@ export interface AssistantGuideStop {
   title: string;
   /** At most 360 characters; `**bold**` is the only markup. */
   body: string;
+  /** Two to five parts of the anchor the body explains one by one, numbered on the page; each text at most 160 characters. */
+  points?: Array<{ part: string; text: string }>;
 }
 
 /** A guide the model composed from registry anchors, checked by the server before it is sent. */

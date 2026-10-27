@@ -35,12 +35,16 @@ engine (`useGuide`) as a `GuideRun`; `app/components/demo/` holds `DemoTour`, `D
 - **Write in the docs' voice** ([`apps/docs/AGENTS.md`](../../../../docs/AGENTS.md#voice)): informative, specific,
   never promotional. 4–7 stops a tour; a title ≤ 60 characters and a body ≤ 360 in every language. French says
   _vous_, German _Sie_, Spanish _tú_; product names are never translated.
+- **A stop that explains several parts of its anchor numbers them**: its `points` lists 2–5 part ids of the anchor's
+  `parts`, in reading order, and its copy has a `points` entry keyed by each part id in every language, one sentence of
+  ≤ 160 characters each, under the same bold-label rule; the body then introduces them. `demo-tour.test.ts` checks the
+  part ids against the registry and the keys of every language.
 - **A change to a toured screen updates the tour in the same commit**, its copy in every language included, as for the
   docs and the demo: moving or renaming an anchored element, renaming a label a stop quotes in bold, a seed change
   under a stop. A new feature that serves a role may replace a stop; it never grows a tour past 7.
 - **Verify in the built demo**: `npm run app:generate:demo && npm run app:check:demo:runtime` walks every tour (the
-  prompt, **Later**, **×**, the banner button, each stop's anchor highlighted, one tour in French, one at phone
-  width).
+  prompt, **Later**, **×**, the banner button, each stop's anchor highlighted with its line saying where it is and a
+  number on the page for each point, one tour in French, one at phone width).
 
 ## Adding a stop, a role or a language
 

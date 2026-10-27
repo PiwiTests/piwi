@@ -195,6 +195,17 @@ export async function checkGuidePlan(plan: AssistantGuidePlan, env: GuideCheckEn
       const problem = guideMarkupProblem(stop[field]);
       if (problem) return `${path}.${field}: ${problem}`;
     }
+    const seen = new Set<string>();
+    for (const [p, point] of (stop.points ?? []).entries()) {
+      if (!anchor.parts?.some((part) => part.id === point.part)) {
+        const parts = anchor.parts?.map((part) => part.id).join(', ');
+        return `${path}.points.${p}.part: anchor "${anchor.id}" has no part "${point.part}"${parts ? `; its parts are ${parts}` : ', and no parts: drop the points'}`;
+      }
+      if (seen.has(point.part)) return `${path}.points.${p}.part: "${point.part}" is numbered twice`;
+      seen.add(point.part);
+      const problem = guideMarkupProblem(point.text);
+      if (problem) return `${path}.points.${p}.text: ${problem}`;
+    }
 
     if (stop.route !== undefined) {
       if (!anchor.pages.some((page) => routeOnPage(stop.route!, page))) {

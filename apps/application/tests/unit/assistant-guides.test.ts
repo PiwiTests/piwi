@@ -173,6 +173,18 @@ describe('findAnchors', () => {
     );
   });
 
+  test('lists the parts of an anchor a stop can number', () => {
+    const found = guides.findAnchors('situation most likely next step', facts(ADMIN_ACCESS), null).anchors;
+    expect(found.find((a) => a.id === 'situation')?.parts?.map((part) => part.id)).toEqual([
+      'headline',
+      'most-likely',
+      'next',
+    ]);
+    expect(
+      found.find((a) => a.id !== 'situation' && !GUIDE_ANCHORS.find((g) => g.id === a.id)?.parts),
+    ).not.toHaveProperty('parts');
+  });
+
   test('says which anchors are on the current page, and which need a route', () => {
     const onRun: AssistantPageContext = { route: '/test-runs/1', page: '/test-runs/[id]', projectId: 1 };
     const here = guides.findAnchors('environment incident', facts(ADMIN_ACCESS), onRun).anchors;
@@ -321,6 +333,26 @@ describe('checkGuidePlan', () => {
     expect(guides.guideMarkupProblem('Open **Settings → AI** and set **Model**.')).toBeNull();
     expect(guides.guideMarkupProblem('Two lines\nhere')).toContain('line break');
     expect(guides.guideMarkupProblem('An <b>HTML</b> tag')).toContain('HTML');
+  });
+
+  test("numbers only the parts of the stop's anchor, each once, in **bold**-only copy", async () => {
+    const withPoints = (points: Array<{ part: string; text: string }>) => ({
+      ...stop('situation', '/test-run-cases/1'),
+      points,
+    });
+    const most = { part: 'most-likely', text: '**Most likely** gives the cause.' };
+    expect(await check(plan([withPoints([{ part: 'headline', text: 'What broke.' }, most])]))).toBeNull();
+    expect(await check(plan([withPoints([{ part: 'cluster', text: 'The cluster.' }, most])]))).toBe(
+      'stops.0.points.0.part: anchor "situation" has no part "cluster"; its parts are headline, most-likely, next',
+    );
+    expect(await check(plan([withPoints([most, most])]))).toBe(
+      'stops.0.points.1.part: "most-likely" is numbered twice',
+    );
+    expect(await check(plan([withPoints([most, { part: 'next', text: 'Run `it`.' }])]))).toBe(
+      'stops.0.points.1.text: backticks (only **bold** is allowed)',
+    );
+    const noParts = { ...stop('run-incident', '/test-runs/1'), points: [most] };
+    expect(await check(plan([noParts]))).toContain('and no parts: drop the points');
   });
 
   test("names the plan's place in the tool's arguments", async () => {

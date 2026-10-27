@@ -35,6 +35,11 @@ const edgeStyle = computed(() => (props.edge ? { borderLeftWidth: '4px', borderL
 const CONTEXT_START = SITUATION_ROWS.findIndex((r) => r.slot === 'cluster');
 const LEAD_ROWS = SITUATION_ROWS.slice(0, CONTEXT_START);
 const CONTEXT_ROWS = SITUATION_ROWS.slice(CONTEXT_START);
+/** The guide anchor parts of the lines a guide numbers: their labels carry `data-tour-part`. */
+const ROW_PARTS: Partial<Record<string, Record<string, string>>> = {
+  story: { 'data-tour-part': 'most-likely' },
+  next: { 'data-tour-part': 'next' },
+};
 /** Both lists of lines: one narrow label column, one content column. */
 const LINES_CLASS = 'mt-4 grid grid-cols-1 gap-y-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-x-4';
 </script>
@@ -57,13 +62,18 @@ const LINES_CLASS = 'mt-4 grid grid-cols-1 gap-y-4 sm:grid-cols-[8rem_minmax(0,1
       </div>
 
       <!-- The headline — the page's h1 -->
-      <div v-if="$slots.headline" class="mt-1.5"><slot name="headline" /></div>
+      <div v-if="$slots.headline" class="mt-1.5" data-tour-part="headline"><slot name="headline" /></div>
 
       <!-- The labelled lines that explain and act -->
       <dl v-if="LEAD_ROWS.some((r) => $slots[r.slot])" :class="LINES_CLASS">
         <template v-for="row in LEAD_ROWS" :key="row.slot">
           <template v-if="$slots[row.slot]">
-            <dt class="text-sm font-semibold text-highlighted leading-relaxed max-sm:-mb-3">{{ row.label }}</dt>
+            <dt
+              class="text-sm font-semibold text-highlighted leading-relaxed max-sm:-mb-3"
+              v-bind="ROW_PARTS[row.slot]"
+            >
+              {{ row.label }}
+            </dt>
             <dd class="min-w-0 text-sm text-highlighted leading-relaxed"><slot :name="row.slot" /></dd>
           </template>
         </template>

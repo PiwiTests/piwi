@@ -13,6 +13,19 @@ export const EXECUTIONS_ANCHORS = [
     id: 'situation',
     kind: 'block',
     pages: ['/test-run-cases/[id]', '/failure-clusters/[id]', '/bug-reports/[id]'],
+    parts: [
+      { id: 'headline', describes: 'The headline: what broke, in one line, as the page’s heading.' },
+      {
+        id: 'most-likely',
+        describes: 'Most likely: the cause the evidence points to, from the cluster’s story or its AI diagnosis.',
+        shownWhen: 'When the failure has a story or a diagnosis.',
+      },
+      {
+        id: 'next',
+        describes: 'Next: the one step to take, with the action that does it.',
+        shownWhen: 'When there is a step to take.',
+      },
+    ],
     describes:
       'The situation block that opens a failure: the headline of what broke, Most likely for the cause, Next for the step to take, and the cluster.',
     help: 'case.situation',

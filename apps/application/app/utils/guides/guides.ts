@@ -22,7 +22,18 @@ export const AUTHORED_GUIDES: readonly AuthoredGuide[] = [
         id: 'wizard',
         anchor: 'get-started-wizard',
         title: 'Three ways to the same setup',
-        body: '**Connect your Playwright suite** builds its snippets from your project name. **One command** runs npx @piwitests/reporter init, which installs the reporter, wraps the config with wrapConfig and adds the capture fixtures; **Coding agent** gives a prompt that also moves your specs onto them; **By hand** lists each step.',
+        body: '**Connect your Playwright suite** builds its snippets from your project name, and gives three ways to the same setup.',
+        points: [
+          {
+            part: 'one-command',
+            text: '**One command** runs npx @piwitests/reporter init, which installs the reporter, wraps the config with wrapConfig and adds the capture fixtures.',
+          },
+          {
+            part: 'coding-agent',
+            text: '**Coding agent** gives a prompt that also moves your specs onto the fixtures.',
+          },
+          { part: 'by-hand', text: '**By hand** lists each step.' },
+        ],
         side: 'bottom',
         align: 'start',
       },

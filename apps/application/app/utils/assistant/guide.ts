@@ -10,6 +10,7 @@ export const ASSISTANT_GUIDE_WORDS: GuideWords = {
   done: 'Done',
   close: 'End the guide',
   docs: 'Read the docs',
+  path: 'You are here',
   progress: '{{current}} of {{total}}',
 };
 
@@ -31,6 +32,7 @@ export function assistantGuideRun(plan: AssistantGuidePlan, id: string): GuideRu
         route: stop.route,
         title: stop.title,
         body: stop.body,
+        points: stop.points,
         doc: anchor?.doc,
       };
     }),

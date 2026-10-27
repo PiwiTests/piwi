@@ -13,6 +13,7 @@ export const AUTHORED_GUIDE_WORDS: GuideWords = {
   done: 'Done',
   close: 'End the guide',
   docs: 'Read the docs',
+  path: 'You are here',
   progress: '{{current}} of {{total}}',
 };
 
@@ -69,6 +70,7 @@ export function authoredGuideRun(
         absent: absent || undefined,
         title: stop.title,
         body: stop.body,
+        points: stop.points,
         doc: findGuideAnchor(stop.anchor)?.doc,
         side: stop.side,
         align: stop.align,

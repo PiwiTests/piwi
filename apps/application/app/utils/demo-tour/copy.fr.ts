@@ -24,6 +24,7 @@ export const FR_COPY = {
     progress: '{{current}} sur {{total}}',
     close: 'Quitter la visite',
     docs: 'Documentation (en anglais)',
+    path: 'Vous êtes ici',
     finishedTitle: 'Fin de la visite',
     finishedBody: 'Les visites des autres rôles sont dans « Visite guidée », dans le bandeau.',
   },
@@ -34,7 +35,12 @@ export const FR_COPY = {
       stops: {
         failure: {
           title: 'Un échec, lu de haut en bas',
-          body: 'Chaque exécution en échec s’ouvre sur ce bloc. Le titre dit ce qui a échoué, **Most likely** donne la cause que désignent les preuves, et **Next** la seule étape à suivre : ici, appliquer le patch écrit par le diagnostic IA du groupe d’échecs.',
+          body: 'Chaque exécution en échec s’ouvre sur ce bloc, qui se lit de haut en bas : ce qui a échoué, pourquoi, et quoi faire.',
+          points: {
+            headline: 'Le titre dit ce qui a échoué.',
+            'most-likely': '**Most likely** donne la cause que désignent les preuves.',
+            next: '**Next** est la seule étape à suivre : ici, appliquer le patch écrit par le diagnostic IA du groupe d’échecs.',
+          },
         },
         evidence: {
           title: 'Les preuves, conservées après la CI',
@@ -72,7 +78,13 @@ export const FR_COPY = {
         },
         flaky: {
           title: 'Les tests instables, classés par coût',
-          body: 'Les tests qui échouent puis passent, classés selon le temps de CI que gaspillent leurs nouvelles tentatives, chacun avec un score de 0 à 100 tiré de ses tentatives et de ses bascules, et son principal suspect. **Quarantine** garde un test actif, avec ses résultats, mais le contrôle de la CI l’ignore.',
+          body: 'Les tests qui échouent puis passent, classés selon le temps de CI que gaspillent leurs nouvelles tentatives. Chaque ligne dit ce que le test coûte, à quel point il est instable et quoi en faire.',
+          points: {
+            wasted: 'Les minutes de CI gaspillées par ses nouvelles tentatives, qui fixent l’ordre.',
+            score: 'Son score d’instabilité, de 0 à 100, tiré de ses tentatives et de ses bascules.',
+            'top-suspect': 'Son principal suspect : la condition que ses échecs partagent le plus.',
+            quarantine: '**Quarantine** garde le test actif, avec ses résultats, mais le contrôle de la CI l’ignore.',
+          },
         },
         suspects: {
           title: 'Ce qui le rend instable',

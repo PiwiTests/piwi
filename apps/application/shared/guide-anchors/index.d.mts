@@ -49,6 +49,20 @@ export interface GuideAnchorSample {
   surface?: 'demo' | 'desktop';
 }
 
+/**
+ * A part of an anchor a stop can number: an element inside the anchor's
+ * element carrying the static `data-tour-part` attribute, such as one line of
+ * a block or one control of a row.
+ */
+export interface GuideAnchorPart {
+  /** The value of its `data-tour-part` attribute, kebab-case, unique within its anchor. */
+  id: string;
+  /** One sentence: what the part shows. Read by people and by the model. */
+  describes: string;
+  /** When it does not always render, the condition in one sentence. */
+  shownWhen?: string;
+}
+
 export interface GuideAnchor {
   /** The value of the element's static `data-tour` attribute. */
   id: string;
@@ -59,6 +73,8 @@ export interface GuideAnchor {
    */
   pages: readonly string[];
   reveal?: readonly GuideReveal[];
+  /** The parts inside it a stop can number, in the order they show. */
+  parts?: readonly GuideAnchorPart[];
   /** One sentence: what the block shows and when someone needs it. Read by people and, later, by the model. */
   describes: string;
   /** When it does not always render, the condition in one sentence. */

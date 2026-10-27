@@ -81,6 +81,14 @@ export const HOME_ANCHORS = [
     id: 'get-started-wizard',
     kind: 'block',
     pages: ['/setup', '/'],
+    parts: [
+      { id: 'one-command', describes: 'One command: the reporter’s init command, which sets everything up.' },
+      {
+        id: 'coding-agent',
+        describes: 'Coding agent: a prompt for a coding agent, which also moves the specs onto the fixtures.',
+      },
+      { id: 'by-hand', describes: 'By hand: each step of the setup, to make yourself.' },
+    ],
     describes:
       'The reporter setup wizard: one command, a coding-agent prompt or the steps by hand, each wiring wrapConfig and the capture fixtures.',
     shownWhen: 'On Setup, and on Home while the instance has no project.',

@@ -75,6 +75,12 @@ const PATHS: { value: ConnectPath; label: string }[] = [
   { value: 'agent', label: 'Coding agent' },
   { value: 'manual', label: 'By hand' },
 ];
+/** The guide anchor parts of the three ways, which a guide numbers. */
+const PATH_PARTS: Record<ConnectPath, Record<string, string>> = {
+  command: { 'data-tour-part': 'one-command' },
+  agent: { 'data-tour-part': 'coding-agent' },
+  manual: { 'data-tour-part': 'by-hand' },
+};
 const path = ref<ConnectPath>('command');
 const reporterEntryOpen = ref(false);
 
@@ -200,6 +206,7 @@ const showCapabilities = computed(() => canSeeAdmin.value && props.showCapabilit
             :key="option.value"
             type="button"
             :aria-pressed="path === option.value ? 'true' : 'false'"
+            v-bind="PATH_PARTS[option.value]"
             class="rounded px-2 sm:px-3 py-1 text-sm whitespace-nowrap outline-none transition-colors focus-visible:outline-2 focus-visible:outline-primary"
             :class="path === option.value ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-default'"
             @click="path = option.value"
