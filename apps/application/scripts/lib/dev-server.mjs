@@ -7,8 +7,9 @@
  */
 import { spawn, execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { connect } from 'node:net';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -81,13 +82,7 @@ export function seedThrowawayDb(dir) {
   const stdio = ['ignore', 2, 2];
   if (!demoSeedIsCurrent()) {
     console.error('The demo seed is missing or stale — regenerating public/demo/seed.sql…');
-    const output = join(dir, 'demo-seed');
-    execSync('npm run app:seed:demo', {
-      cwd: APP_DIR,
-      stdio,
-      env: { ...process.env, PIWI_DEMO_SEED_OUTPUT_DIR: output },
-    });
-    copyFileSync(join(output, 'seed.sql'), SEED_SQL);
+    generateDemoSeedSql(stdio);
   }
   const env = {
     ...THROWAWAY_SERVER_SETTINGS,
@@ -99,12 +94,28 @@ export function seedThrowawayDb(dir) {
   return env;
 }
 
+/**
+ * Writes `public/demo/seed.sql` from the generator without touching the committed `seed.version.json`: the seed is
+ * generated in a scratch folder and only its SQL is copied over. `npm run app:seed:demo` is what rewrites both.
+ */
+export function generateDemoSeedSql(stdio = 'inherit') {
+  const output = mkdtempSync(join(tmpdir(), 'piwi-demo-seed-'));
+  try {
+    execSync('npm run app:seed:demo', {
+      cwd: APP_DIR,
+      stdio,
+      env: { ...process.env, PIWI_DEMO_SEED_OUTPUT_DIR: output },
+    });
+    copyFileSync(join(output, 'seed.sql'), SEED_SQL);
+  } finally {
+    rmSync(output, { recursive: true, force: true });
+  }
+}
+
 export function ensureDevDb() {
   if (existsSync(join(APP_DIR, '.data', 'piwi.db'))) return;
   console.log('No dev DB — creating and seeding one (first run only)…');
-  if (!existsSync(join(APP_DIR, 'public', 'demo', 'seed.sql'))) {
-    execSync('npm run app:seed:demo', { cwd: APP_DIR, stdio: 'inherit' });
-  }
+  if (!existsSync(SEED_SQL)) generateDemoSeedSql();
   mkdirSync(join(APP_DIR, '.data'), { recursive: true });
   execSync('npm run db:migrate', { cwd: APP_DIR, stdio: 'inherit' });
   execSync('npm run app:seed:dev', { cwd: APP_DIR, stdio: 'inherit' });
