@@ -84,6 +84,7 @@ import {
   TEST_CALL,
   testCalls,
   caseOfCall,
+  caseOfCallOrTitle,
   withoutComments,
   testsReaching,
   timeoutEdit,
@@ -1849,7 +1850,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       if (SPEC_FILE.test(relative!) && context.timeouts.size) {
         const cases = await context.casesOf(relative!);
         for (const call of testCalls(lines)) {
-          const found = caseOfCall(cases, call);
+          const found = caseOfCallOrTitle(cases, call);
           const advice = found ? context.timeouts.get(found.id) : undefined;
           if (!advice) continue;
           const i = call.line;
@@ -2957,7 +2958,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!file || !context || !relative || !SPEC_FILE.test(relative)) return none;
     const call = testCallAt((readText(file) ?? '').split(/\r?\n/), params.line);
     const cases = await context.casesOf(relative);
-    const found = call ? caseOfCall(cases, call) : undefined;
+    const found = call ? caseOfCallOrTitle(cases, call) : undefined;
     return {
       test: found ? caseToEditorTest(context, found) : null,
       spec: cases.length ? { uri: params.uri, testIds: cases.map((c) => c.id) } : null,

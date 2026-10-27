@@ -749,26 +749,34 @@ export interface TestCall {
   suite: string[];
 }
 
+/** A title as a string literal spells it, with its escaped quotes, backticks and backslashes read as those characters. */
+function unescapedTitle(title: string): string {
+  return title.replace(/\\(['"`\\])/g, '$1');
+}
+
 /**
  * The `test(…)` calls of a spec's lines, as the summary lines read them (each line holding one is a test), with the
- * titled `test.describe(…)` blocks each sits in.
+ * titled `test.describe(…)` blocks each sits in. The lines are read with their comments blanked (`withoutComments`),
+ * and a line opening a describe block can hold a test after it, inside that block.
  */
 export function testCalls(lines: string[]): TestCall[] {
+  const code = withoutComments(lines.join('\n')).split('\n');
   const blocks: Array<{ title: string; endLine: number }> = [];
   const calls: TestCall[] = [];
-  lines.forEach((text, i) => {
+  code.forEach((text, i) => {
     while (blocks.length && blocks[blocks.length - 1]!.endLine < i) blocks.pop();
     const describe = DESCRIBE_CALL.exec(text);
+    let from = 0;
     if (describe) {
       const open = text.indexOf('(', describe.index);
-      blocks.push({ title: describe[2]!, endLine: callEndLine(lines, i, open) ?? lines.length - 1 });
-      return;
+      blocks.push({ title: unescapedTitle(describe[2]!), endLine: callEndLine(code, i, open) ?? code.length - 1 });
+      from = describe.index + describe[0].length;
     }
-    const test = TEST_CALL.exec(text);
+    const test = TEST_CALL.exec(text.slice(from));
     if (!test) return;
-    const open = text.indexOf('(', test.index);
-    const endLine = (open >= 0 ? callEndLine(lines, i, open) : null) ?? i;
-    calls.push({ line: i, endLine, title: test[2]!, suite: blocks.map((b) => b.title) });
+    const open = text.indexOf('(', from + test.index);
+    const endLine = (open >= 0 ? callEndLine(code, i, open) : null) ?? i;
+    calls.push({ line: i, endLine, title: unescapedTitle(test[2]!), suite: blocks.map((b) => b.title) });
   });
   return calls;
 }
@@ -787,11 +795,55 @@ export function caseOfCall<T extends { title: string; suitePath?: string | null 
   return titled.find((c) => (c.suitePath ?? '') === suite) ?? titled.find((c) => typeof c.suitePath !== 'string');
 }
 
-/** A source text with its comments blanked out, line breaks kept; strings are left as they are. */
+/**
+ * The catalog's case of a test call as the editor's own requests take it: `caseOfCall`, else the only case of the
+ * call's title, for a call whose describe blocks do not read as the catalog spells them (a title built at run time, a
+ * regex literal the scan misreads). With two or more cases of that title and none in its describe blocks, none.
+ */
+export function caseOfCallOrTitle<T extends { title: string; suitePath?: string | null }>(
+  cases: readonly T[],
+  call: Pick<TestCall, 'title' | 'suite'>,
+): T | undefined {
+  const found = caseOfCall(cases, call);
+  if (found) return found;
+  const titled = cases.filter((c) => c.title === call.title);
+  return titled.length === 1 ? titled[0] : undefined;
+}
+
+/**
+ * A source text with its comments taken out, line breaks kept: a line comment is dropped to the end of its line, a
+ * block comment is blanked with spaces. Strings and template literals are left as they are, and the character after a
+ * backslash outside them (an escaped `/` of a regex literal) is read as code.
+ */
 export function withoutComments(text: string): string {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ' '))
-    .replace(/(^|[^:\\])\/\/.*$/gm, '$1');
+  const parts: string[] = [];
+  let copied = 0;
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i]!;
+    if (c === '/' && (text[i + 1] === '/' || text[i + 1] === '*')) {
+      let end = i + 2;
+      if (text[i + 1] === '/') {
+        while (end < text.length && text[end] !== '\n' && text[end] !== '\r') end++;
+        parts.push(text.slice(copied, i));
+      } else {
+        const close = text.indexOf('*/', end);
+        end = close < 0 ? text.length : close + 2;
+        parts.push(text.slice(copied, i), text.slice(i, end).replace(/[^\r\n]/g, ' '));
+      }
+      i = copied = end;
+    } else if (c === "'" || c === '"' || c === '`') {
+      i++;
+      while (i < text.length && text[i] !== c && (c === '`' || (text[i] !== '\n' && text[i] !== '\r'))) {
+        i += text[i] === '\\' ? 2 : 1;
+      }
+      if (text[i] === c) i++;
+    } else {
+      i += c === '\\' ? 2 : 1;
+    }
+  }
+  parts.push(text.slice(copied));
+  return parts.join('');
 }
 
 /**

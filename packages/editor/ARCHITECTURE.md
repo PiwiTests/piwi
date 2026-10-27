@@ -358,11 +358,13 @@ On a spec, `piwi/fileSummary` gives each test's line:
 
 `piwi/testAt` answers, for a position of a spec:
 
-- where the `test(…)` call spanning the position's line starts (`testCallAt`: `TEST_CALL`, `callEndLine`), as
-  Playwright's location filter takes it: `location`, such as `tests/checkout.spec.ts:42`, relative to the config's
-  folder, in the text as it stands;
-- the catalog's test of that title, matched by its title alone (the summary also matches the titles of the
-  `test.describe(…)` blocks around it);
+- where the `test(…)` call spanning the position's line starts (`testCallAt`, over `testCalls`), as Playwright's
+  location filter takes it: `location`, such as `tests/checkout.spec.ts:42`, relative to the config's folder, in the
+  text as it stands;
+- the catalog's test of that call (`caseOfCallOrTitle`): the case of its title in the same `test.describe(…)` blocks
+  (`caseOfCall`), else the only case of its title in the spec, for describe blocks that do not read as the catalog
+  spells them (a title built at run time); with two or more of that title, none. The `timeout` diagnostics match
+  their test the same way;
 - the spec's tests (`casesOf`).
 
 **Run the test at the cursor**, **Verify the test at the cursor ×3** and **Run this spec** run them. A file that is not
@@ -378,10 +380,10 @@ lists:
   is (`resolveReportedFile`), under the context whose folder holds it.
 - the specs `uris` names (`casesOf`), known to the catalog or not.
 
-Each test is given as the spec stands (`testCalls` in `src/analysis.ts`: each `test(…)` call, with the titled
-`test.describe(…)` blocks around it). It comes with the catalog's case of its title in those blocks (`caseOfCall`), its
-location, its latest result and its failure, as `piwi/fileSummary` gives them: both read them from `specTests` in
-`src/server.ts`.
+Each test is given as the spec stands (`testCalls` in `src/analysis.ts`: each `test(…)` call outside comments, one a
+line, with the titled `test.describe(…)` blocks around it, a test on the line opening its block included). It comes
+with the catalog's case of its title in those blocks (`caseOfCall`), its location, its latest result and its failure,
+as `piwi/fileSummary` gives them: both read them from `specTests` in `src/server.ts`.
 
 ### Failure lines and Flake Lab lines
 

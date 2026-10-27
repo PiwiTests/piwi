@@ -5,6 +5,7 @@ import {
   breakpointsNotice,
   callEndLine,
   caseOfCall,
+  caseOfCallOrTitle,
   withoutComments,
   flakeLabLens,
   headedCommand,
@@ -392,6 +393,42 @@ describe('testCalls', () => {
     ];
     expect(testCalls(lines)).toEqual([{ line: 1, endLine: 3, title: 'untitled group', suite: [] }]);
   });
+
+  test('reads past code commented out with //, keeping its lines', () => {
+    const lines = [
+      "import { test } from '@playwright/test';",
+      "// test.describe('old', () => {",
+      "//   test('pays', async () => {});",
+      '// });',
+      "test('pays', async () => {",
+      '  // });',
+      '});',
+      "test('ships', async () => {});",
+    ];
+    expect(testCalls(lines)).toEqual([
+      { line: 4, endLine: 6, title: 'pays', suite: [] },
+      { line: 7, endLine: 7, title: 'ships', suite: [] },
+    ]);
+  });
+
+  test('reads a test on the line that opens its describe block', () => {
+    const lines = ["test.describe('cart', () => { test('pays', async () => {}); });", "test('after', async () => {});"];
+    expect(testCalls(lines)).toEqual([
+      { line: 0, endLine: 0, title: 'pays', suite: ['cart'] },
+      { line: 1, endLine: 1, title: 'after', suite: [] },
+    ]);
+  });
+
+  test('reads escaped quotes and backslashes of a title as the characters they escape', () => {
+    const lines = [
+      "test.describe('the user\\'s cart', () => {",
+      '  test("says \\"hi\\" in C:\\\\shop", async () => {});',
+      '});',
+    ];
+    expect(testCalls(lines)).toEqual([
+      { line: 1, endLine: 1, title: 'says "hi" in C:\\shop', suite: ["the user's cart"] },
+    ]);
+  });
 });
 
 describe('caseOfCall', () => {
@@ -412,6 +449,20 @@ describe('caseOfCall', () => {
   });
 });
 
+describe('caseOfCallOrTitle', () => {
+  test('takes the only case of a title when no case is in the call’s describe blocks, none among several', () => {
+    const cases = [
+      { id: 1, title: 'pays', suitePath: 'by card' },
+      { id: 2, title: 'refunds', suitePath: 'by card' },
+      { id: 3, title: 'refunds', suitePath: 'by cash' },
+    ];
+    expect(caseOfCallOrTitle(cases, { title: 'pays', suite: ['by ${method}'] })?.id).toBe(1);
+    expect(caseOfCallOrTitle(cases, { title: 'refunds', suite: ['by cash'] })?.id).toBe(3);
+    expect(caseOfCallOrTitle(cases, { title: 'refunds', suite: ['by ${method}'] })).toBeUndefined();
+    expect(caseOfCallOrTitle(cases, { title: 'ships', suite: [] })).toBeUndefined();
+  });
+});
+
 describe('withoutComments', () => {
   test('blanks line and block comments, keeping the lines, a URL and the code', () => {
     const text = [
@@ -425,6 +476,19 @@ describe('withoutComments', () => {
       "await page.goto('https://shop.test/cart'); ",
       ' '.repeat('/* await page.pause();'.length),
       '                      await page.pause();',
+    ]);
+  });
+
+  test('leaves comment marks inside strings, template literals and an escaped regex slash', () => {
+    const text = [
+      "await page.route('**/api/*', (route) => route.abort()); // no API",
+      'const path = `//${host}/*`;',
+      "await expect(page).toHaveURL(/\\/cart\\//); /* the cart */ const a = '*/';",
+    ].join('\n');
+    expect(withoutComments(text).split('\n')).toEqual([
+      "await page.route('**/api/*', (route) => route.abort()); ",
+      'const path = `//${host}/*`;',
+      'await expect(page).toHaveURL(/\\/cart\\//); ' + ' '.repeat('/* the cart */'.length) + " const a = '*/';",
     ]);
   });
 });

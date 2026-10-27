@@ -115,6 +115,19 @@ const DESCRIBED = [
   '});',
   '',
 ].join('\n');
+/**
+ * A spec whose describe title is built at run time, holding a test of a title the catalog has once (line 3, 0-based)
+ * and one of a title it has twice (line 4).
+ */
+const UNREAD = [
+  "import { test } from '@playwright/test';",
+  "const method = 'card';",
+  'test.describe(`by ${method}`, () => {',
+  "  test('pays', async () => {});",
+  "  test('refunds', async () => {});",
+  '});',
+  '',
+].join('\n');
 
 /** The spec of the test that failed: through `checkout.row()` on line 7 (0-based 6), into the page object. */
 const FAILING_SPEC = [
@@ -383,6 +396,18 @@ beforeAll(async () => {
         }),
       );
     }
+    if (u === '/api/projects/7/test-cases?limit=1000&file=tests%2Funread.spec.ts') {
+      // One test of one title, two of another, in describe blocks the spec builds at run time.
+      return res.end(
+        JSON.stringify({
+          items: [
+            { id: 21, title: 'pays', filePath: 'tests/unread.spec.ts', suitePath: 'by card', status: 'passed' },
+            { id: 22, title: 'refunds', filePath: 'tests/unread.spec.ts', suitePath: 'by card', status: 'passed' },
+            { id: 23, title: 'refunds', filePath: 'tests/unread.spec.ts', suitePath: 'by cash', status: 'failed' },
+          ],
+        }),
+      );
+    }
     if (u.startsWith('/api/projects/7/test-cases')) {
       return res.end(
         JSON.stringify({
@@ -587,6 +612,22 @@ beforeAll(async () => {
             },
             {
               testCaseId: 12,
+              kind: 'stale-slow',
+              timeout: 90000,
+              p95: 4100,
+              recommendedTimeout: null,
+              estimatedSavingMs: 0,
+            },
+            {
+              testCaseId: 21,
+              kind: 'stale-slow',
+              timeout: 90000,
+              p95: 4100,
+              recommendedTimeout: null,
+              estimatedSavingMs: 0,
+            },
+            {
+              testCaseId: 22,
               kind: 'stale-slow',
               timeout: 90000,
               p95: 4100,
@@ -1196,6 +1237,21 @@ describe('the Piwi language server', () => {
     await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/described.spec.ts') } });
   });
 
+  test('advises on the timeout of the only case of a title when its describe blocks do not read', async () => {
+    await open('tests/unread.spec.ts', UNREAD);
+    const diags = await waitFor(() => {
+      const published = diagnostics.get(uri('tests/unread.spec.ts'));
+      return published?.some((d) => d.code === 'timeout') ? published : undefined;
+    });
+    expect(diags.filter((d) => d.code === 'timeout')).toEqual([
+      expect.objectContaining({
+        range: expect.objectContaining({ start: { line: 3, character: 2 } }),
+        data: { testCaseId: 21, line: 3 },
+      }),
+    ]);
+    await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/unread.spec.ts') } });
+  });
+
   test('completes the project’s functions for this file’s pages, and piwi: annotations and tags', async () => {
     fs.writeFileSync(path.join(dir, 'CODEOWNERS'), '* @acme/web\ntests/ @acme/qa qa@acme.test\n');
     const text = [
@@ -1468,6 +1524,26 @@ describe('the Piwi language server', () => {
       });
     } finally {
       fs.rmSync(path.join(dir, 'tests/described.spec.ts'));
+    }
+  });
+
+  test('finds the only case of a title at the cursor when its describe blocks do not read, none among several', async () => {
+    const at = (line: number) =>
+      client.sendRequest('piwi/testAt', {
+        uri: uri('tests/unread.spec.ts'),
+        line,
+        character: 2,
+      }) as Promise<TestAtResult>;
+    write('tests/unread.spec.ts', UNREAD);
+    try {
+      expect(await at(3)).toMatchObject({ test: { id: 21, title: 'pays' }, location: 'tests/unread.spec.ts:4' });
+      expect(await at(4)).toMatchObject({
+        test: null,
+        spec: { testIds: [21, 22, 23] },
+        location: 'tests/unread.spec.ts:5',
+      });
+    } finally {
+      fs.rmSync(path.join(dir, 'tests/unread.spec.ts'));
     }
   });
 });
