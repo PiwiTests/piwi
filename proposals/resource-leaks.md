@@ -655,6 +655,9 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
 
 ## Part 5 — Further out, each with an entry condition
 
+[resource-consumption-next.md](resource-consumption-next.md) ranks what comes after this plan: waste in data already
+stored, deeper detection and fixes Piwi applies.
+
 - **Memory lab** (application leaks). A lab mode that runs one test's flow repeatedly in one context, forces a garbage
   collection between rounds (`HeapProfiler.collectGarbage`) and reads the retained heap and detached DOM nodes:
   steady growth points at the application, not the test. The approach of MemLab, on tests the team already has. Entry:
