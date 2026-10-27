@@ -4,18 +4,20 @@ A design record for **selections**: named, data-driven subsets of a project's te
 the history it keeps, and that a developer, a CI job or an AI agent can actually *run* — `piwi run smoke` — instead of
 maintaining grep patterns and tag lists by hand.
 
-**Status.** M1 and M2 have shipped, and most of M3 and M4: the selection model with its catalog predicates and
-built-ins, `piwi select` / `piwi run` with duration-balanced `--shard` and `--fail-fast` ordering, run stamping, the
-`--require-selection` gate policy, the project's Selections tab with builder and live preview, the PR-feedback
-summary line, five MCP tools (`list_selections`, `resolve_selection`, `preview_selection`, `suggest_selections`,
-`analyze_selections`) with the `run-the-right-tests` skill, suggested tags and budgeted smoke mining, impact-from-diff
-over captured source frames, and selection health and drift analytics. Impact also reaches the handler file of each
-route a test called, through [code reach](../apps/docs/features/code-reach.md) with an instrumented backend (Nitro or
-ASP.NET Core). Not shipped: applying tag suggestions back to the spec files as a pull request, suggestion digests
-through notifications, the per-project route mapping for a backend without that instrumentation, and **Save as
-selection** from the test catalog, the flaky leaderboard and the cluster page (it exists on Analytics and on the
-Selections tab). The user guide is [Test selections](../apps/docs/features/test-selection.md) on the docs site; the design
-below is the original text.
+**Status.** Proposed 2026-08-14. M1 and M2 have shipped, and most of M3 and M4: the selection model with its catalog
+predicates and built-ins, `piwi select` / `piwi run` with duration-balanced `--shard` and `--fail-fast` ordering, run
+stamping, the `--require-selection` gate policy, the Selections tab with builder and live preview, the cluster page's
+run command, the PR-feedback summary line, five MCP tools (`list_selections`, `resolve_selection`, `preview_selection`,
+`suggest_selections`, `analyze_selections`) with the `run-the-right-tests` skill, `@slow` and feature tag suggestions
+and budgeted smoke mining, and selection health and drift analytics (a selection's runtime trend is the Analytics CI
+time widget narrowed to it). Impact-from-diff reads captured source frames, the handler file of each route a test
+called, and the files, functions, lines and CSS rules each test ran
+([`unified-code-coverage.md`](unified-code-coverage.md)); its page-prefix edge (edge 3) is not built, code reach maps
+front-end files instead. Remaining, from M2 to M4: **Save as selection** from the test catalog, the flaky leaderboard
+and the cluster page (it exists on Analytics and the Selections tab), tag pull requests on the auto-heal machinery,
+suggestion digests through notifications, and the per-project route mapping for a backend without Piwi's
+instrumentation. Priority-candidate suggestions are in the design but in no milestone. The user guide is [Test
+selections](../apps/docs/features/test-selection.md) on the docs site; the design below is the original text.
 
 **Summary.** Piwi already knows which tests are fast, stable, flaky, slow, quarantined, recently broken, owned by
 whom, and which routes and source files each test actually exercised. Today that knowledge flows only into dashboards;
@@ -109,7 +111,8 @@ Three layers, each useful without the ones above it:
 ```
 
 One vocabulary note up front: **"suite" is taken** — in Piwi's concepts a suite is a `describe` block
-(`test_suites`, [`concepts.md`](../apps/docs/guide/concepts.md)). The feature is called a **selection** everywhere: in the
+(`test_suites`, [`concepts.md`](../apps/docs/guide/concepts.md)). The feature is called a **selection** everywhere: in
+the
 schema, the API, the CLI and the docs.
 
 ## Layer 1 — the selection model

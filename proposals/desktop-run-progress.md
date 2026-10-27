@@ -5,19 +5,15 @@ Dock icon, and the tray — so a run can be watched without the dashboard window
 what each native surface can and cannot show, and a staged design that starts as wiring and ends with the
 platform-native flourishes.
 
-**Status.** Shipping. Tiers 1–2 and most of tier 3 have landed: the `desktop_set_run_progress` command drives the
-taskbar/Dock progress bar, the window title and the composed tray tooltip; a tray status dot and (Windows) a taskbar
-overlay icon show run state; and a Windows taskbar thumbnail toolbar adds Stop/Open buttons under the thumbnail. The
-dashboard aggregates its active runs and feeds the shell, showing progress whenever a run is active and flashing the
-outcome (green pass / red fail) before clearing.
-Still open: the live run menu in the tray (rollout step 3), the progress scenario of the ambient-state E2E test
-(step 5), the optional Rerun thumbnail button, and the **in-place progress toast** (tier 3):
-it duplicates the completion notifications that already exist, and its Windows AUMID/WinRT behaviour has to be validated
-on a real desktop, so it is deferred rather than written blind. The Rust and front-end are unit-tested and compile for
-both the native and the Windows target; the native *rendering* — bar colours, the status dot, the overlay icon, and the
-thumb-button icons and their click handling (COM + a window subclass) — is compile-verified only and still needs a
-visual/functional pass on Windows and macOS. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The design below is
-the original text.
+**Status.** Proposed 2026-09-17. Built 2026-09-17 to 23: rollout steps 1 and 2 (`desktop_set_run_progress` drives the
+taskbar or Dock bar, the window title, the tray tooltip and, on Windows, an overlay dot, fed by every run the dashboard
+watches, with a pass or fail flash at the end), the dynamic tray icon of step 3 (a status dot, red while a test has
+failed), and of the optional step 4 the Stop and Open thumbnail buttons. Remaining: the live run menu in the tray (step
+3)
+and the progress scenario of the ambient-state E2E test (step 5). Deferred: the Rerun thumbnail button and the in-place
+progress toast (step 4), which needs a Windows desktop to check its AUMID and WinRT behavior. The native rendering is
+compile-checked only and still needs a pass on Windows and macOS. Nothing here is on [`ROADMAP.md`](../ROADMAP.md). The
+design below is the original text.
 
 **Summary.** A "run" in the desktop shell is a local Playwright execution (`desktop_run_local_tests`, plus reproduce
 and bisect), spawned via the bundled Node sidecar and streamed back as `piwi:local-run` events. The front end already
@@ -59,7 +55,8 @@ progress })`, `status ∈ { None, Normal, Indeterminate, Paused, Error }`, `prog
 - **macOS** — renders across the Dock icon. The determinate fraction is the reliable, cross-platform mode here; the
   color/`Paused`/`Error`/`Indeterminate` variants are a Windows strength and may not render distinctly on the Dock (an
   open question below).
-- **Linux** — Unity launcher only, and Linux is deferred (`apps/desktop/AGENTS.md`).
+-  **Linux** — Unity launcher only; the Linux builds (`.deb`, `.rpm`, `.AppImage`) ship with the others
+  (`apps/desktop/AGENTS.md`).
 
 **The load-bearing caveat for "without the window open":** on Windows the taskbar *button* exists only while a window
 does. **Minimized is fine** — the button stays and the bar shows. But "Run in background" hides to the tray

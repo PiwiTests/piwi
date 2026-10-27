@@ -1,15 +1,18 @@
 # Roles, groups and project-scoped permissions
 
-**Status:** phases 1 to 3 shipped 2026-10-05 (#762); phase 4 (section 10: API key cap, access change log, identity provider group sync, custom roles) not started (decisions in section 9) · **Scope:** authorization on the server (route meta, `requireAuth`,
-`requireProjectAccess`, project scope), the MCP write tools, the demo router, the dashboard UI (`useAuth`, Settings →
-Users / Permissions, project Members) and the docs (`operate/authentication.md`, `operate/project-access.md`) ·
-**Replaces:** the three global roles and the `project_assignments` table
+A design record for giving each person exactly the rights their job needs, project by project, managed as groups: a
+product owner can file a Jira issue without being able to triage, quarantine, upload or edit the project, and a QA lead
+can manage their own projects without being an instance administrator. It covers authorization on the server (route
+meta, `requireAuth`, `requireProjectAccess`, project scope), the MCP write tools, the demo router, the dashboard UI
+(`useAuth`, Settings → Users / Permissions, project Members) and the docs (`operate/authentication.md`,
+`operate/project-access.md`), and replaces the three global roles and the `project_assignments` table.
 
-**Goal:** a team can give each person exactly the rights their job needs, project by project, and manage them as
-groups. A product owner can file a Jira issue without being able to triage, quarantine, upload or edit the project; a
-QA lead can manage their own projects without being an instance administrator.
-
----
+**Status.** Proposed 2026-10-05. Phases 1 to 3 shipped on 2026-10-05 (#762): the permission catalog
+(`shared/permissions.ts`, `x-required-permission` on every route), project roles through role bindings, groups, the
+permission grid with role cells, project Members for project admins, the demo personas and the docs. Phase 4 (section
+10)
+is not built: the API key cap (10.1) and the access change log (10.2) are planned, group sync from the identity provider
+(10.3) is deferred, and custom roles (10.4) are not decided.
 
 ## 1. Vocabulary
 
@@ -67,7 +70,8 @@ flowchart LR
 5. **The role name `reporter` collides** with the Playwright reporter package (`@piwitests/reporter`), which makes docs
    and support answers ambiguous.
 
-Note for today, before any of this ships: a `reporter` **already cannot edit projects** (`PATCH /api/projects/{id}` is
+When this record was written, before any of it shipped: a `reporter` **already cannot edit projects** (`PATCH
+/api/projects/{id}` is
 administrator only). Making the product owners reporters unblocks Jira issue creation now, at the cost of the extra
 rights listed in point 1.
 
@@ -177,7 +181,8 @@ flowchart LR
 | `run:delete` | delete a run, release a kept run | | | | ✓ | |
 
 `Maintainer` keeps `run:submit` because developers upload local runs with their own key. `Uploader` also reads the
-project, because the reporter reads it during a run (project menu, locator and code indexes, selections, quarantine). Creating a project on first
+project, because the reporter reads it during a run (project menu, locator and code indexes, selections, quarantine).
+Creating a project on first
 submission still requires a binding on **all projects**, as today.
 
 `share:create` stays at `Maintainer`: a share link opens data to people without an account, and a dashboard shared
@@ -380,7 +385,7 @@ Decided on 2026-10-05:
 6. **No service account kind.** CI runs as a regular user (`Member`) bound `Uploader`, through an API key. Phase 4's
    API key cap is the way to narrow a key further.
 
-No question is open; the next step is phase 1.
+No question is open for phases 1 to 3; phase 4 has its own decisions in section 10.
 
 ---
 

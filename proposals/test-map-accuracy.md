@@ -6,22 +6,18 @@ inputs it never writes, adds the signals a team already owns elsewhere, gives th
 accuracy, and joins it with the browser extension, which already sees the one thing the map cannot: the whole
 rendered surface of a page.
 
-**Status.** Proposed 2026-10-09. Part 1 items 1 to 4 and 7 to 11 have shipped, and items 5 and 6 in part: page reach
-along the journey (read from the locator pages the reporter already sends, so no new capture), control reach from
-the locator index, *API-only route* retired, nodes only untrusted tests reach raised as fragile, feature grouping
-beyond reach with hubs, route keys without the query, surface drift limited to new surface, unhandled server-probe
-findings, muting in the digest and the tab, churn and escape history for route, handler and dependency gaps, and the
-*passed with errors*, *assertion-light* and *catalog method, no test calls* detectors. Part 3's labeled benchmark and
-map health panel have shipped too. The rest is proposed. The findings table and the summary describe the demo as it
-was proposed; with the shipped items its detectors find 95 gaps, 21 of them controls no locator targets, 15 open gaps
-sit under *Ungrouped* instead of 48, and the benchmark scores every detector against labels that part from the capture
-in three places. The evidence comes from the web-dashboard demo project
-(`shared/demo/demo-test-map.mjs`), whose gaps are exactly what the live detectors compute from its graph
-(`tests/unit/demo-test-map.test.ts` recomputes them on the seed). New wire fields, attachments and endpoints freeze
-at 1.0 and get an entry in [`1.0-stabilization.md`](1.0-stabilization.md).
+**Status.** Proposed 2026-10-09. Built: Part 1 items 1 to 4 and 7 to 11, items 5 and 6 in part, and from Part 3 the
+labeled benchmark and the map health panel; what they changed on the demo is under [As built](#as-built). Remaining:
+OpenAPI tags and the grouping of dependencies (item 5), page files by convention and age from a file's first commit
+(item 6), the other indicators of Part 3, the extension's gap layer, *Record a test*, the page as a source and the probe
+by hand (Part 4, items 1 to 5), and the inputs of Part 2 (Delivery steps 2 to 6). Eight of finding 12's pure detectors
+still have no caller, and no delivery step names them. Part 5's bets wait on their entry conditions. Server-side
+coverage, Part 2's first research item, shipped through [`unified-code-coverage.md`](unified-code-coverage.md). New wire
+fields, attachments and endpoints freeze at 1.0 and get an entry in [`1.0-stabilization.md`](1.0-stabilization.md).
 
 **Summary.** The demo models an admin console: 4 features, 16 observed routes, 10 declared ones, 17 pages, 34
-controls, 16 links, 16 handlers, 7 dependencies, and 10 tests; 120 nodes and 244 edges. The detectors find 61 gaps. About a third are
+controls, 16 links, 16 handlers, 7 dependencies, and 10 tests; 120 nodes and 244 edges. The detectors find 61 gaps.
+About a third are
 wrong or missing in ways the code explains, not the model: every route a click sends reads as "reached only by
 request fixtures", a page a test walks through reads as "never visited", the nodes only a flaky test reaches raise
 nothing, features never group the surface their tests miss, and every node gap ranks on the floor value of three of
@@ -93,13 +89,15 @@ capture.
    same resource path as a route it reaches, past `api` and a version segment (0.6). With three features or more, a
    node reached by more than half the tests, or grouped by more than half the features and three at least, is a hub
    (`evidence.hub`): drawn, but adding no member, test, gap or link to a feature, its gaps listed under *Shared by
-   most features* (findings 5 and 6). A gap counts under one feature, in the list and on the map alike. The groups are rebuilt on every
+   most features* (findings 5 and 6). A gap counts under one feature, in the list and on the map alike. The groups are
+   rebuilt on every
    recompute. Still proposed: OpenAPI tags, which the parser does not keep, and grouping dependencies.
 6. **Exposure for node gaps** (churn and escape history shipped). A gap on a route, a handler or a dependency
    takes churn and escape history from the handler files behind it (`handled-by`), counted from the `changes`
    edges the default-branch runs recorded and the failure clusters' fixing commits, so no provider call is made
    (finding 7). A run's diff runs from its last green run, so churn counts distinct diff bases, and escape history
-   marks the whole diff that ended on the fix; per-commit files would make both exact. Still proposed: page files by convention, and age from the file's first commit, read once from the
+   marks the whole diff that ended on the fix; per-commit files would make both exact. Still proposed: page files by
+   convention, and age from the file's first commit, read once from the
    provider and cached.
 7. **Route keys without the query** (shipped). The node key drops the query, so `?page=` and `?role=` reach one
    node (finding 8). Once per instance, after the migrations, the keys older versions wrote are rewritten: nodes and
@@ -272,6 +270,20 @@ Map, and its page keys were made equal to the map's precisely so the two could b
 | Release readiness per feature | exposure-weighted protection and its trend per feature, in the quality report | exposure is computed for node gaps (Part 1, item 6) |
 | Redundancy, read backwards | nodes many trusted tests reach and every probe noticed: candidates for a smaller selection | the test-selection reach map reads the same edges |
 | Named features for ungrouped surface | URL clustering with a proposed name, confirmed by a person | Part 1, item 5 leaves more than ten ungrouped nodes on a project |
+
+## As built
+
+Shipped from Part 1 and Part 3: page reach along the journey (read from the locator pages the reporter already sends,
+so no new capture), control reach from the locator index, *API-only route* retired, nodes only untrusted tests reach
+raised as fragile, feature grouping beyond reach with hubs, route keys without the query, surface drift limited to
+new surface, unhandled server-probe findings, muting in the digest and the tab, churn and escape history for route,
+handler and dependency gaps, the *passed with errors*, *assertion-light* and *catalog method, no test calls*
+detectors, the labeled benchmark and the map health panel. The findings table and the summary describe the demo as it
+was proposed; with the shipped items its detectors find 95 gaps, 21 of them controls no locator targets, 15 open gaps
+sit under *Ungrouped* instead of 48, and the benchmark scores every detector against labels that part from the
+capture in three places. The evidence comes from the web-dashboard demo project (`shared/demo/demo-test-map.mjs`),
+whose gaps are exactly what the live detectors compute from its graph (`tests/unit/demo-test-map.test.ts` recomputes
+them on the seed).
 
 ## Delivery
 

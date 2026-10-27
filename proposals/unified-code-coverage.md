@@ -1,47 +1,21 @@
 # Unified code coverage: browser and server, per test
 
-A study of how to record which **server** code each test executes (ASP.NET Core first), in addition to the browser
-code that [code reach](../apps/docs/features/code-reach.md) records today, and to store both **the same way**: one
-model, one wire field, one set of tables, read by the same consumers. It answers three questions: how to capture
-server coverage **per test** while Playwright runs tests in parallel against one shared backend, what each level
-costs, and what the editors can do with the result later. Every cost below was measured on a prototype, not
-estimated; [Appendix A](#appendix-a-measurements) gives the method and the raw numbers.
+A study of how to record which **server** code each test executes (ASP.NET Core first), in addition to the browser code
+that [code reach](../apps/docs/features/code-reach.md) records today, and to store both **the same way**: one model, one
+wire field, one set of tables, read by the same consumers. It answers three questions: how to capture server coverage
+**per test** while Playwright runs tests in parallel against one shared backend, what each level costs, and what the
+editors can do with the result later. Every cost below was measured on a prototype, not estimated; [Appendix
+A](#appendix-a-measurements) gives the method and the raw numbers. The study's measurements came from a prototype built
+outside the repository, on Microsoft's eShopOnWeb reference application and on a small application written to spend its
+CPU in business logic (the **pricing application**).
 
-**Status.** Proposed 2026-10-13. Delivery PRs 1 to 5 are built: the core model, browser code reach on V8 function
-coverage, the dashboard's storage and endpoints, the .NET coverage package, and the reporter's collection of server
-coverage, checked end to end on eShopOnWeb (each test's server files, functions and lines stored with their git blob
-ids, and the run-level coverage with executable lines). Suspect lines (part 6) are built too: the API, the AI
-context, the fix plan and the failure pages, checked on eShopOnWeb with a planted bug. The editors (part 5, delivery
-PR 8) are built on 2026-10-14: line marks, a lens per function, the tests behind a line on hover, `.cs` files and
-local runs that record server coverage, in VS Code and the JetBrains IDEs, reading `GET /api/projects/:id/coverage`
-(which gained the executable lines and an ETag); their uncovered changed lines mark followed on 2026-10-24, with
-[`editor-extensions-audit.md`](../adr/editor-extensions-audit.md) (L2). So are, from part 4, the MCP tool `get_coverage`, and from part 6 a
-failure's path against its last pass, a test's path varying with the tests before it (the `order` flaky root cause),
-what quarantining tests leaves uncovered and whether a new test reached its target lines, with the missing-test skill
-checking them (see [`test-coverage-view.md`](../adr/test-coverage-view.md), "Built beyond the plan"). API tests through the
-`request` fixture record server coverage. Browser functions are built (`coverage.browser: 'functions'`, 2026-10-16),
-and the LCOV and Cobertura export came with [`combined-code-coverage.md`](../adr/combined-code-coverage.md), as the
-export of a commit's combined coverage (2026-10-17). From part 4, uncovered changed lines and the gate's line form
-are built on 2026-10-21 with [`coverage-and-the-test-map.md`](../adr/coverage-and-the-test-map.md): every changed file
-the head commit's combined coverage counts carries the changed lines no suite ran, named in the pull-request comment
-and returned by `get_change_coverage`, and the gate's line form is `--min-patch-coverage`, warn-only, with no new
-flag. Line-level impact (part 4) is built on 2026-10-24: `piwi run impact` and `piwi preflight` send each modified
-file's base blob and changed base lines, and a test that reaches the file only through coverage is kept when its
-coverage of that version ran a changed statement or a function around a changed line; a change outside every known
-function or crossing from one into the next, coverage of another version or with no ranges, and an incomplete or
-unknown capture stay at file level. The MCP tool
-`get_impacted_tests` takes a diff and returns the same answer per file, with the changed lines no test ran. Not built
-yet: browser lines (PR 6), the Istanbul adapter (D13) and the rest of part 6. Part 3b, added 2026-10-26 in answer to
-open question 5, gives Nitro backends the same server coverage: built the same day (delivery PR 9) and checked on the
-sample application, whose Nitro backend now records what its ASP.NET Core one does, unit tests and combined coverage
-included; a Nuxt application's server rendering (PR 10) is not built. Part 2b, CSS rule coverage, is built the same
-day (PR 11, `coverage.css: 'rules'`): on the sample application a stylesheet change selects 24 of its 32 tests by file
-and 12 by line, where it ran all 32.
-Each test's coverage is shown on the execution page and per file on a page of its own
-([`test-coverage-view.md`](../adr/test-coverage-view.md)). The study's measurements came from
-a prototype built outside the repository, on Microsoft's eShopOnWeb reference application and on a small application
-written to spend its CPU in business logic (the **pricing application**). New wire fields, options and endpoints
-freeze at 1.0 and need an entry in [`1.0-stabilization.md`](1.0-stabilization.md).
+**Status.** Proposed 2026-10-13. Built: delivery PRs 1 to 5, 7 and 8, PR 9 (Nitro, part 3b) and PR 11 (CSS rules, part
+2b), browser functions (`coverage.browser: 'functions'`), and from part 6 suspect lines, coverage divergence, path
+variation (the `order` flaky root cause), coverage loss under quarantine and coverage reach for a new test; what each
+delivered, and where it was checked, is under [As built](#as-built). Remaining: browser lines (PR 6), the Istanbul
+adapter (D13, which no delivery PR carries yet), a Nuxt application's server rendering (PR 10, part 3b.5), and the rest
+of part 6 in the order of 6.6. New wire fields, options and endpoints freeze at 1.0 and need an entry in
+[`1.0-stabilization.md`](1.0-stabilization.md).
 
 **Summary.** The C# compiler can instrument code for coverage by itself: building with `-p:Instrument=TestCoverage`
 inserts a statement marker in every method and calls a method the application supplies,
@@ -838,7 +812,7 @@ medians:
   any tool already in place.
 - **MCP**: `get_coverage` (a file's lines and the tests behind them, or a test's files), read-only.
 
-## Part 5: the editors (later)
+## Part 5: the editors
 
 What the editor service needs exists or is small:
 
@@ -962,9 +936,45 @@ surface: the code of each feature, executed or not. Two consequences:
   and the assertion detectors are for.
 - **Coverage is as fresh as the last run that captured it.** On a scheduled job, a test's coverage can be a day old;
   suspect lines and impact say which run the coverage came from.
-- **What the capture cannot see**: calls behind a
-  front-end server that does not forward the header, other browsers than Chromium, Node backends until part 3b is
-  built (and those it does not cover, part 3b.7), and the startup lambdas of part 3.
+- **What the capture cannot see**: calls behind a front-end server that does not forward the header, other browsers
+  than Chromium, the Node backends part 3b does not cover (part 3b.7), and the startup lambdas of part 3.
+
+## As built
+
+Delivery PRs 1 to 5 are built: the core model, browser code reach on V8 function coverage, the dashboard's storage
+and endpoints, the .NET coverage package, and the reporter's collection of server coverage, checked end to end on
+eShopOnWeb (each test's server files, functions and lines stored with their git blob ids, and the run-level coverage
+with executable lines). Suspect lines (part 6) are built too: the API, the AI context, the fix plan and the failure
+pages, checked on eShopOnWeb with a planted bug. The editors (part 5, delivery PR 8) are built on 2026-10-14: line
+marks, a lens per function, the tests behind a line on hover, `.cs` files and local runs that record server coverage,
+in VS Code and the JetBrains IDEs, reading `GET /api/projects/:id/coverage` (which gained the executable lines and an
+ETag); their uncovered changed lines mark followed on 2026-10-24, with
+[`editor-extensions-audit.md`](../adr/editor-extensions-audit.md) (L2). So are, from part 4, the MCP tool
+`get_coverage`, and from part 6 a failure's path against its last pass, a test's path varying with the tests before
+it (the `order` flaky root cause), what quarantining tests leaves uncovered and whether a new test reached its target
+lines, with the missing-test skill checking them (see [`test-coverage-view.md`](../adr/test-coverage-view.md), "Built
+beyond the plan"). API tests through the `request` fixture record server coverage. Browser functions are built
+(`coverage.browser: 'functions'`, 2026-10-16), and the LCOV and Cobertura export came with
+[`combined-code-coverage.md`](../adr/combined-code-coverage.md), as the export of a commit's combined coverage
+(2026-10-17).
+
+From part 4, uncovered changed lines and the gate's line form are built on 2026-10-21 with
+[`coverage-and-the-test-map.md`](../adr/coverage-and-the-test-map.md): every changed file the head commit's combined
+coverage counts carries the changed lines no suite ran, named in the pull-request comment and returned by
+`get_change_coverage`, and the gate's line form is `--min-patch-coverage`, warn-only, with no new flag. Line-level
+impact (part 4) is built on 2026-10-24: `piwi run impact` and `piwi preflight` send each modified file's base blob and
+changed base lines, and a test that reaches the file only through coverage is kept when its coverage of that version
+ran a changed statement or a function around a changed line; a change outside every known function or crossing from
+one into the next, coverage of another version or with no ranges, and an incomplete or unknown capture stay at file
+level. The MCP tool `get_impacted_tests` takes a diff and returns the same answer per file, with the changed lines no
+test ran.
+
+Part 3b, added 2026-10-26 in answer to open question 5, gives Nitro backends the same server coverage: built the same
+day (delivery PR 9) and checked on the sample application, whose Nitro backend now records what its ASP.NET Core one
+does, unit tests and combined coverage included. Part 2b, CSS rule coverage, is built the same day (PR 11,
+`coverage.css: 'rules'`): on the sample application a stylesheet change selects 24 of its 32 tests by file and 12 by
+line, where it ran all 32. Each test's coverage is shown on the execution page and per file on a page of its own
+([`test-coverage-view.md`](../adr/test-coverage-view.md)).
 
 ## Delivery
 

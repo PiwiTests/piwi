@@ -5,28 +5,15 @@ data changes. A reader of [Flake Lab](../apps/docs/features/flake-lab.md) learns
 holds one, on a real screen, one click away. Today the reader has to find it, and a question from a user ("I can't
 find any example to test the Flake Lab in the demo, is that normal?") shows they often don't.
 
-**Status.** Proposed 2026-09-29. **PR 1 built 2026-09-29**: the registry with five examples (three for Flake Lab, two
-for AI diagnosis), `<DemoExamples />`, the seed check and the docs drift rules, with the Flake Lab and AI diagnosis
-pages moved onto them. PR 1 took the recommended answer to "Where the section sits" and to "Word budgets"; the other two
-decisions wait for PR 2 and PR 3. What changed while building PR 1:
-
-- `<DemoExamples />` takes no `page` prop: it reads the page it renders on, so a page cannot show another page's
-  examples. The `## Try it in the demo` heading stays in the page's Markdown, so the outline and its anchor keep
-  working, and the drift test checks the component sits in that section, the last one before `## Related`.
-- The links open in a new tab. VitePress's router loads every same-origin link without a `target` as a docs page, so
-  a plain `/demo/…` link would load a docs 404.
-- `shows` is plain text, rendered as text; a control's name is written out ("the Diagnose with AI button").
-- The `expect` vocabulary as built: `testCase`, `project`, `cluster` (by its failure story's key), `diagnosis`
-  (`'with-patch'` or `'none'`), `fixLanded`, and `lab`, a test's Flake Lab state computed with the app's own rules
-  (`flakeLabTestState` and the verified-fix rule). `verifiedFix: true` in the first sketch became `lab: 'verified'`.
-- `llms-full.txt` expands `<DemoExamples />` into the page's links, with absolute URLs, so language models read the
-  same examples.
-
-**Since PR 1**, feature pages added their own examples as they shipped: the registry holds 20, on 12 pages
-(2026-10-17). PR 3's coverage is not done: most "seeded" and "audit" pages of [Coverage](#coverage) still have none
-(failure clusters, evidence, locator healing, flaky tests, analytics, dashboards, quality reports, run changes, slow
-tests…). PR 2 is not started: the screenshot scenes, the demo runtime check and the `run-app` skill do not read the
-registry. The optional PR 4 is not built; the demo's guided tour reuses only the `expect` type.
+**Status.** Proposed 2026-09-29. PR 1 shipped in #699 (2026-09-29): the registry, `<DemoExamples />`, the seed check and
+the docs drift rules, with the Flake Lab and AI diagnosis pages moved onto them, taking the recommended answers to
+"Where the section sits" and "Word budgets" (see [As built](#as-built)). PR 3 is under way: feature pages add their
+examples as they ship, and the registry holds 20 on 12 pages, but most "seeded" and "audit" pages of
+[Coverage](#coverage) still have none (failure clusters, evidence, locator healing, flaky tests, run changes, analytics,
+dashboards, quality reports, slow tests, fix plans…). PR 2 is not started: the screenshot scenes, the demo runtime check
+and the `run-app` skill do not read the registry, and the drift test does not list pages without an example. Open
+decisions: a required or a reported example, and icons. The optional PR 4 is not built; the demo's guided tour reuses
+only the `expect` type.
 
 ## Why
 
@@ -131,6 +118,22 @@ goes on the allow-list.
    time. A new feature page then ships with its example, or with a line on the allow-list saying why not.
 4. **Optional, the other direction**: the demo reads the same registry to offer a short tour ("Examples" in the demo
    banner), and a `?from=docs` visit shows a link back to the page that sent the reader.
+
+## As built
+
+What PR 1 settled where the text above leaves a choice open, or differs from it:
+
+- `<DemoExamples />` takes no `page` prop: it reads the page it renders on, so a page cannot show another page's
+  examples. The `## Try it in the demo` heading stays in the page's Markdown, so the outline and its anchor keep
+  working, and the drift test checks the component sits in that section, the last one before `## Related`.
+- The links open in a new tab. VitePress's router loads every same-origin link without a `target` as a docs page, so
+  a plain `/demo/…` link would load a docs 404.
+- `shows` is plain text, rendered as text; a control's name is written out ("the Diagnose with AI button").
+- The `expect` vocabulary as built: `testCase`, `project`, `cluster` (by its failure story's key), `diagnosis`
+  (`'with-patch'` or `'none'`), `fixLanded`, and `lab`, a test's Flake Lab state computed with the app's own rules
+  (`flakeLabTestState` and the verified-fix rule). `verifiedFix: true` in the first sketch became `lab: 'verified'`.
+- `llms-full.txt` expands `<DemoExamples />` into the page's links, with absolute URLs, so language models read the
+  same examples.
 
 ## Decisions for you
 

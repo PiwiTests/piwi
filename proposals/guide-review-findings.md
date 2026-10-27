@@ -6,7 +6,7 @@ code that looks wrong, untested or inconsistent, and left it as it was, because 
 a decision, or deserves its own pull request. This proposal keeps that list so the items can be picked up one by one.
 
 Each finding says what happens, where, and the fix the review suggested. A finding names functions and files rather than
-line numbers, which move.
+line numbers, which move. Ids follow the order the findings were recorded, and each finding sits under its theme.
 
 **Status.** Proposed 2026-10-27, from the review of the agent guide restructuring. Nothing is built yet. The findings
 are independent: each can ship alone, in any order, and close its line here.
@@ -38,7 +38,7 @@ are independent: each can ship alone, in any order, and close its line here.
 - **What happens:** with authentication on, a request with no credentials to a route scoped by a child entity answers
   404 for a missing id and 401 for an existing one.
 - **Where:** `requireResolvedProjectAccess` (`apps/application/server/utils/project-access.ts`) resolves the entity
-  before `requireAuth` runs. About 196 routes use it.
+  before `requireAuth` runs. About 100 route files use it.
 - **Fix:** call `requireAuth(event)` first, then resolve. Impact is low (ids are sequential), but it is a one-line
   change with a test in `tests/unit/route-permissions.test.ts`.
 
@@ -106,7 +106,8 @@ are independent: each can ship alone, in any order, and close its line here.
 ### F11. The JetBrains chords collide with some keymaps
 
 - **What happens:** `Ctrl+Alt+Shift+R`, `F` and `K` are free in VS Code, but bundled JetBrains plugins and keymaps use
-  some of them: the Kotlin plugin (`R`, `K`), the macOS keymap (`Cmd+Alt+Shift+R`, Force Refresh), and the Visual Studio,
+  some of them: the Kotlin plugin (`R`, `K`), the macOS keymap (`Cmd+Alt+Shift+R`, Force Refresh), and the Visual
+  Studio,
   ReSharper and Xcode keymaps preinstalled in Rider. The list is in `apps/vscode/ARCHITECTURE.md`, "Keybindings".
 - **Fix:** a product decision: keep the chords and document the conflicts in the docs page, or pick chords free in
   every bundled keymap.
@@ -139,7 +140,8 @@ are independent: each can ship alone, in any order, and close its line here.
 
 ### F15. `generate-llms.mjs` keeps its own list of generated pages
 
-- **Where:** `apps/docs/scripts/generate-llms.mjs` (`GENERATED`) repeats `apps/application/shared/docs-generated-pages.ts`.
+-  **Where:** `apps/docs/scripts/generate-llms.mjs` (`GENERATED`) repeats
+  `apps/application/shared/docs-generated-pages.ts`.
 - **Fix:** read the shared list, through the same jiti alias the other generators use.
 
 ### F21. An editor cache test fails when the config read takes more than a second

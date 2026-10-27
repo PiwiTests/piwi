@@ -4,9 +4,11 @@ A proposal to let a test keep its history when it is renamed or moved, by matchi
 gives it in its test management tool. It records the design agreed on
 [PiwiTests/piwi#847](https://github.com/PiwiTests/piwi/issues/847), the stages, and the questions left open.
 
-**Status.** Built: stages 1 to 3, and stage 4 except the remaining screens: the server files that select
-`testCases.title` beyond the first screens (search, analytics, run insights, flake profiles…) still show the full
-title. See [As built](#as-built).
+**Status.** Proposed 2026-10-20. Stages 1 to 3 shipped in #851 (2026-10-21), with stage 4's link template, text outputs
+in pull-request comments, notifications and exports, and the test case merge. Remaining from stage 4: the display title
+on the other screens (search, run insights, flake profiles, analytics movers, bug reports, scenario gaps, coverage
+insights, selections…) and in the fix plan and the tracker comments, which still show the full title. See [As
+built](#as-built).
 
 **Summary.** Piwi matches a test to its stored test case on the file path, the describe path and the title. Any rename
 or move creates a new test case, and flakiness, failure clusters, quarantine and trends restart from zero. This
@@ -204,7 +206,7 @@ and `ext` its external ID (none when the ID is listed as a duplicate for the run
 2. **`ext` unknown, `key` known**, on test case B: store `ext` on B and use B. This is how existing test cases get
    their ID on the first run, and how a test whose ID changed in the test management tool keeps its history.
 3. **`ext` unknown, `key` unknown**: insert a test case with `ext`.
-4. **No `ext`**: today's behaviour, unchanged.
+4. **No `ext`**: today's behavior, unchanged.
 
 The history follows without any copy: executions, quarantine, failure clusters, locator snapshots and the other
 tables reference `test_cases.id`, not the title. Executions keep no copy of the title, so past runs show the new one.
@@ -330,7 +332,7 @@ What differs from the design above, or what it left open:
   reporter found stays without an ID on the server, although its annotation still says `piwi:id`.
 - **Server duplicate check across batches**: the index remembers the last run that matched each ID; after a restart,
   the check asks the database whether the test case already has an execution in the run.
-- **Run page**: the facts line says "N duplicate test IDs" (warning colour), and the Details popover lists each ID
+- **Run page**: the facts line says "N duplicate test IDs" (warning color), and the Details popover lists each ID
   with its tests, next to the ingest note. Help topic `run.externalIdDuplicates`.
 - **The chip** leads the row (before the describe path), so the IDs line up. Shown in the run tests list, the
   project catalog, flaky tests and the test case page header. MCP `get_test_case` returns `externalId`.
@@ -366,7 +368,7 @@ What differs from the design above, or what it left open:
   run status; `title` is sent unchanged with `stripFromTitle`.
 - **Server unit** (`apps/application/tests/unit`): rename; move to another file; move to another describe block; step 2
   on an existing test case; ID changed; duplicate in one batch; duplicate across batches; collision with another test
-  case; no ID, behaviour unchanged; two concurrent batches with the same new test create one test case;
+  case; no ID, behavior unchanged; two concurrent batches with the same new test create one test case;
   `migration-history.test.ts`.
 - **E2E** (`apps/application/tests`, next to `test-case-history.spec.ts`): a test renamed between two runs keeps its
   executions; a duplicate shows the run note; the chip and `id:` search on the project tests tab.

@@ -118,7 +118,8 @@ checkout.page.ts                                                       ← opene
 The test's page shows Piwi's pause bar; the Piwi Picker window shows the same place, an image of the page and the
 same buttons. **Pick** in either and click the field: `getByLabel('Coupon')` on line 30 becomes
 `getByRole('textbox', { name: 'Coupon code' })`, the locator the picker verified finds that field alone. **Run to
-Cursor** with the caret on line 42 of the spec: the test runs on and stops there. **Assert a region**, then the order summary:
+Cursor** with the caret on line 42 of the spec: the test runs on and stops there. **Assert a region**, then the order
+summary:
 
 ```ts
 await expect(page.getByRole('region', { name: 'Order summary' })).toMatchAriaSnapshot(`
@@ -209,7 +210,8 @@ Each test's contexts are watched as they are made (the `page` fixture's context,
    made on any of them stops; the stops still armed on the others are resumed at once when they come, since there is
    no public way to disarm one.
 2. **A breakpoint**: while the run has breakpoints, every context stops before every call it can stop at
-   (`requestPause`, then `next()` at each stop), and the worker resumes at once (`next()` again) unless the call's place, from
+   (`requestPause`, then `next()` at each stop), and the worker resumes at once (`next()` again) unless the call's
+   place, from
    `pausedDetails().location`, is on a breakpoint line. The place is the line in the user's code that made the call,
    a page object's line included, as `PIWI_PAUSE_AT` matches it today.
 3. **Step**: `next()`, and the next stop is shown whatever its line.
@@ -238,7 +240,8 @@ once the test and its hooks are done, before its context closes, as the failure-
   waits Playwright runs in the test's process (`waitForEvent`, `waitForURL`) carry no pause flag in Playwright's
   protocol, so a breakpoint on such a line, or on a line with no Playwright call, still does nothing, and the IDE marks
   it (Part 3).
-- **Pause takes effect at the next call it can stop at.** A test inside a long call (a `waitForTimeout`, an assertion polling for
+-  **Pause takes effect at the next call it can stop at.** A test inside a long call (a `waitForTimeout`, an assertion
+  polling for
   its timeout) shows **Pausing…** until that call returns.
 - **Headless runs pause** (spike A ran headless). The pause bar needs a window; a headless pause is shown in the IDE
   and in Piwi Picker, with an image of the page (Part 6). Under CI, nothing pauses, as today.
@@ -484,13 +487,15 @@ Every protocol change lands with both clients, per the service's rule; the reque
 - **The commands are the session's** (`runControl`, the intents of Part 5, the view's input of Part 6), each checked
   field by field. There is no way to evaluate code, read a file or reach the instance.
 
-As built (`@piwitests/core/run-hub`, `packages/editor/src/run-hub.ts`): the WebSocket is `ws://127.0.0.1:<port>/piwi/hub`;
+As built (`@piwitests/core/run-hub`, `packages/editor/src/run-hub.ts`): the WebSocket is
+`ws://127.0.0.1:<port>/piwi/hub`;
 a handshake with another `Host` or `Origin` is refused with a 403 before any WebSocket opens, another path with a
 404, and past 16 connections (8 not past `hello`) with a 503. The first message is `{ type: 'hello', token }` within
 5 s, compared in constant time, else the connection closes with 4001 (or 4002 for none in time); the hub answers
 `{ type: 'welcome', pid, version, client, roots, keepaliveMs }`, its first 64 folders. A connection the hub closes
 for any reason is cut a second later when the other side has not answered the close, and only the open connections
-count toward the 16 and the 8, so a client that never answers holds no place. Each later message is a command with an `id` (1 to
+count toward the 16 and the 8, so a client that never answers holds no place. Each later message is a command with an
+`id` (1 to
 2³¹ − 1), answered once with `{ type: 'answer', id, ok, message }` like `piwi/runControl`: `subscribe` (then a
 `{ type: 'session', session }` for each live run and for each change, the session as `piwi/runSessionChanged` gives
 it with the run's `command`, its folder's `label`, its Piwi `project` and each worker's `intents`), `follow` (`on`:

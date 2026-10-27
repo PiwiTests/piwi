@@ -2,14 +2,16 @@
 
 An analysis of where a Playwright suite still spends CPU, memory, disk, network and runner time that Piwi does not
 yet name, ranked by what it would save and by how much of the data Piwi already holds, with the detection and the fix
-for each. It extends [resource-leaks.md](resource-leaks.md), which covers the objects a suite leaves open and what a
+for each. It extends [resource-leaks.md](../adr/resource-leaks.md), which covers the objects a suite leaves open and
+what a
 run costs its machine.
 
-**Status.** Proposed 2026-10-27. Nothing here is built. The detection work of 2026-10-26 (servers and child
-processes at their line, piling up with a dip, attached DOM elements, the worker's descriptors and heap after a full
-garbage collection, the resource rows of the failure timeline) is recorded in [resource-leaks.md](resource-leaks.md);
-this record starts where it stops. PRs 5 (clues, flake suspect, editor) and 6 (waste findings) of that plan are not
-started and come first here.
+**Status.** Proposed 2026-10-27. Nothing here is built. It owns what [resource-leaks.md](../adr/resource-leaks.md) left
+open: its PR 5 (idea 2, the flake suspect and `hold`, and the editor quick fixes of idea 17) and its PR 6 (the waste
+findings of its Part 3: ideas 1, 5, 7, 9 and 10, browserless tests in browser projects and disk headroom). Those come
+first here, as steps 1 and 2. The detection work of 2026-10-26 (servers and child processes at their line, piling up
+with a dip, attached DOM elements, the worker's descriptors and heap after a full garbage collection, the resource rows
+of the failure timeline) is recorded there; this record starts where it stops.
 
 ## Summary
 
@@ -22,7 +24,7 @@ test's cost, N+1 queries seen through the backend instrumentation, and fixes Piw
 lists.
 
 The order below follows one rule: a finding that needs no new capture and names its fix comes before one that needs a
-new reader, and a measured saving comes before an estimated one (D12 of [resource-leaks.md](resource-leaks.md):
+new reader, and a measured saving comes before an estimated one (D12 of [resource-leaks.md](../adr/resource-leaks.md):
 units stay physical, never a counterfactual price).
 
 ## What this rests on
@@ -65,7 +67,12 @@ Numbers measured on a 4-vCPU Linux VM, Playwright 1.63 and 1.64, Chromium headle
 
 S: a few days, M: a week or two, L: a project of its own.
 
-## A. Finish what resource-leaks.md plans
+## A. What resource-leaks.md left open
+
+Its PR 5 is idea 2 here, with the editor quick fixes of idea 17; its PR 6 is ideas 1, 5, 7, 9 and 10, and two findings
+of its [Part 3](../adr/resource-leaks.md#part-3--waste) that this record takes as written there: **browserless tests
+in browser projects** (a test that used no page in any project, over its history: run it once, in a project with no
+browser fixture) and **disk headroom** (peak disk in use and free space at the low point, against the runner's disk).
 
 ### 1. Tracing and video waste
 

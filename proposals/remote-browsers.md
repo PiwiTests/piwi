@@ -17,11 +17,12 @@ have. Piwi reads those runs badly today:
 This plan makes a remote browser something Piwi records and explains, whatever grid serves it, and defines what a grid
 can tell Piwi beyond what the test sees.
 
-**Status.** Proposed 2026-10-26. Built: the `checkBaseUrl` message for a base URL that a remote browser reaches from
-its own network (Part 1); Part 3's measurement, and its cut: the reads the test waits for as its page closes go out
-together, while the last locator captures finish. Nothing else is built. The spikes in the [appendix](#appendix-the-spikes) are the evidence
-for the claims about Playwright and the capture's cost; they are not part of the repository. Nothing here is on
-[`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D61 of
+**Status.** Proposed 2026-10-26. Built: PR 2 (Part 3's measurement through a delaying proxy, and its cut: the page reads
+at the test's close go out together, during the probe drain), and from PR 1 the `checkBaseUrl` message for a base URL a
+remote browser reaches from its own network (both 2026-10-26). Remaining: the rest of PR 1, which includes the D3
+attachment-type fix listed under defects, and PR 3. The spikes in the [appendix](#appendix-the-spikes) are the evidence
+for the claims about Playwright and the capture's cost; they are not in the repository. Nothing here is on
+[`ROADMAP.md`](../ROADMAP.md) yet; the contracts it adds are entry D61 of
 [`1.0-stabilization.md`](1.0-stabilization.md).
 
 **Summary.** What the plan delivers, in the order it should be built:
@@ -215,7 +216,8 @@ test. Two consequences:
 - **The docs say where to put a grid**: next to the runners, at a round trip of a few milliseconds. At 30 ms, tests
   ran 46% slower without the capture and 50% slower with it than with no added delay. Microsoft's hosted service
   places browsers in the region closest to the client by default
-  ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/app-testing/playwright-workspaces/how-to-optimize-regional-latency)).
+  ([Microsoft
+  Learn](https://learn.microsoft.com/en-us/azure/app-testing/playwright-workspaces/how-to-optimize-regional-latency)).
 
 ### Measured, and cut
 
@@ -322,7 +324,8 @@ the address, the run's browser token in `Authorization`, the project's name in `
 (`<loopback>:3000`). A `baseURL` that is not on the loopback gets no rule: the grid must reach it itself, and the docs
 say so. The capture fixtures add `x-piwi-worker`, the worker's index, so a run whose report never arrived still finds
 its sessions. A project's `connectOptions` replaces `PW_TEST_CONNECT_WS_ENDPOINT` whole, headers included: the variable
-applies only to a project that leaves `connectOptions` unset. The reporter warns when both are set. Any other grid receives neither a token nor these headers.
+applies only to a project that leaves `connectOptions` unset. The reporter warns when both are set. Any other grid
+receives neither a token nor these headers.
 
 ## Part 5: Documentation
 
@@ -400,7 +403,8 @@ PR 1 is the first release.
 
 - **Running a grid.** Piwi records and explains remote browsers; it does not provide them.
 - **WebDriver and Selenium**: Piwi is Playwright-only.
-- **A live view of its own**: run control's (its Part 8) would work through a remote browser unchanged.
+-  **A live view of its own**: [`run-control.md`](run-control.md)'s (its Part 8) would work through a remote browser
+  unchanged.
 
 ## Defects found while researching this plan
 
@@ -416,7 +420,8 @@ PR 1 is the first release.
   where a remote browser's requests come from. Fixed: its messages say so when the `exposeNetwork` rule does not cover
   the base URL's host and port.
 - **Outside Piwi:** `run-server` up to Playwright 1.59.1 applies a client's `args`, and, started without `--host`,
-  listens on every interface while printing `ws://localhost:<port>/` ([spike D](#d-what-a-test-sees-and-what-a-page-reads));
+  listens on every interface while printing `ws://localhost:<port>/` ([spike
+  D](#d-what-a-test-sees-and-what-a-page-reads));
   1.60.0 changed both without a word in its release notes. Playwright's Docker page still publishes the server on
   `0.0.0.0` with no authentication. Anyone who reaches such a server older than 1.60 can run commands in it.
 - **Outside Piwi:** Playwright compares the `x-playwright-attachment` and `x-playwright-debug-log` header names exactly,

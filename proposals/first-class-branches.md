@@ -4,15 +4,16 @@ A proposal to promote the git branch from a display string inside a run's `metad
 analysis-bearing dimension — and, in its final stage, to an entity with a lifecycle. The document argues the case,
 stages the work so each stage pays for itself, and records the alternatives and open questions.
 
-**Status.** Tiers 1 and 2 have shipped: the reporter resolves the branch from the CI provider's variables instead of
-recording a detached `HEAD`, honors a `PIWI_BRANCH` override and captures the pull-request number; `test_runs` carries
-an indexed scalar `branch` column; projects carry a `defaultBranch`, resolved from the SCM provider when unset; runs,
-the flaky leaderboard and the MCP tools take a `branch` filter; regression baselines and the visual-diff baseline
-prefer the same branch, then the default branch; and PR feedback exonerates a test that is also flaky on the default
-branch. The flaky leaderboard, Analytics and the project tabs read the default branch by default (2026-10-19). Still
-open from Tier 2: locator-healing candidates preferring the same branch, and quarantine release streaks counted on
-default-branch runs. Tier 3 — branches as entities, the merge-readiness verdict, branch-class policies and retention
-— has not shipped and stays under *Exploring* in [`ROADMAP.md`](../ROADMAP.md). The design below is the original text.
+**Status.** Proposed 2026-08-14. Tier 1 and most of Tier 2 are built: the reporter resolves the branch from the CI
+provider's variables instead of recording a detached `HEAD`, honors a `PIWI_BRANCH` override and captures the
+pull-request number; `test_runs` carries an indexed `branch` column; projects carry a `defaultBranch`, resolved from the
+SCM provider when unset; runs, the flaky leaderboard and the MCP tools take a `branch` filter; regression and
+visual-diff baselines prefer the same branch, then the default branch; PR feedback exonerates a test that is also flaky
+on the default branch; and the flaky leaderboard (and the quarantine candidates it feeds), Analytics and the project
+tabs read the default branch by default (#824, 2026-10-19). Remaining in Tier 2: locator-healing candidates that prefer
+the same branch, and quarantine release streaks counted on default-branch runs. Tier 3 (branches as entities, merge
+readiness, branch-class policies, cross-branch fix verification, retention by branch class) is deferred to *Exploring*
+in [`ROADMAP.md`](../ROADMAP.md). The design below is the original text.
 
 **Summary.** Branch is already load-bearing: pull-request feedback, the auto-heal policy, notification filters and
 the run-comparison diff all read it. But it is collected in a way that records the literal string `HEAD` on most CI
@@ -224,7 +225,8 @@ feature below degrades to Tier 1/2 behavior.
 
 ## 1.0 timing
 
-`proposals/1.0-stabilization.md` (D4) records that the reporter↔server exchange has no wire versioning and that
+[`1.0-stabilization.md`](1.0-stabilization.md) (D4) records that the reporter↔server exchange has no wire versioning and
+that
 unknown fields are ignored. Everything Tier 1 sends is additive metadata (`scm.branch` with better semantics,
 `scm.prNumber`), so no compatibility break is involved in any tier. The timing argument is softer but real: the
 stabilization effort is the moment the *meaning* of wire fields gets written down. `scm.branch` should be pinned as

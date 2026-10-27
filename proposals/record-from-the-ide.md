@@ -8,22 +8,21 @@ the recorder itself can be reused unchanged: a spike ran Piwi Picker's recorder 
 produces it, inside a browser launched by Playwright, and the code was regenerated in Node 2 to 7 ms after each
 captured action.
 
-**Status.** Proposed 2026-10-03. Delivery PRs 1 to 3 are built: the recorder's IDE bundle, the launcher and the
-recording sessions in the editor service, both clients, and Part 3, items 1 to 4, with Part 8, items 1 to 3. Built
-since, in part: from PR 6, the checks of the browser's recording bar (**Check an element**, **Check the address**,
-2026-10-03), in Piwi Picker too, with no Assert control in the IDE yet; from PR 4, three of item 11's matchers
-(`toContainText`, `toHaveCount`, `toBeChecked`, 2026-10-20), `toHaveAttribute` still missing; from PR 9 (Part 5),
-recording from a pause (2026-10-24): Piwi's pause bar at a breakpoint, and `page.pause()` in a headed run the editor
-started, offer **Record here**, which hands the test's page to the editor's recorder over a local socket the editor
-service opens for each of its runs (`PIWI_RECORD_CHANNEL`, in place of a discovery file) and writes the steps above
-the paused statement, without the opening navigation; Stop brings the pause bar back, and Resume continues the test.
-Not built from Part 5: **Record from here** at the caret (a run started for it), the debug session's evaluated
-assignment, `~/.piwi/editor.json` for runs Piwi did not start, **End the test**, a run that records kept from the
-instance (`PIWI_ORIGIN=record`: the run reports as any run from the editor), and Part 8, item 4. Where the
-build differs from this text, the [docs](../apps/docs/features/editor-recording.md) and the code are right. The three
-spikes in the [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the
-repository. The discovery file of Part 5 is now proposed in [`run-control.md`](run-control.md) as one file per editor
-service, `~/.piwi/editors/<pid>.json`, in place of the single `~/.piwi/editor.json`.
+**Status.** Proposed 2026-10-03. Built: Delivery PRs 1 to 3 (the recorder's IDE bundle, the launcher, the recording
+sessions in the editor service, both clients, Part 3 items 1 to 4, Part 8 items 1 to 3), and PR 8 except its desktop job
+(**Run** and **Verify ×3** after Stop, in both editors, #864, 2026-10-22). Built in part, details under [As
+built](#as-built): PR 4 (every origin is recorded; three of item 11's four matchers), PR 5 (a recorded line's other
+verified locators offered as quick fixes after Stop), PR 6 (**Check an element** and **Check the address** in the
+recording bar), PR 7 at a stopped test only, through [`run-control.md`](run-control.md), and PR 9's **Record here** from
+a pause (#872, 2026-10-24). Remaining: from PR 4, frames, popups, dialogs, downloads, uploads of a real file,
+`toHaveAttribute` and the steps document's frame and page fields; PR 5's step list (`piwi/editRecording`); an Assert
+control in the IDE during a recording (PR 6); the highlight and pick of PR 7 during a recording; PR 8's desktop job;
+from PR 9, **Record from here** at the caret (a run started for it), the debug session's evaluated assignment,
+`PIWI_ORIGIN=record` and Part 8, item 4; PRs 10, 11 and 12. Moved to [`run-control.md`](run-control.md): **End the
+test**, and `page.pause()` in a run started in a terminal (its PR 7), which finds the editor through the discovery files
+`~/.piwi/editors/<pid>.json` built there (its PR 3) in place of `~/.piwi/editor.json`. Where the build differs from this
+text, the [docs](../apps/docs/features/editor-recording.md) and the code are right. The three spikes in the
+[appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 
 **Summary.** VS Code users have a recorder: Microsoft's Playwright extension records into a new file or at the cursor,
 through Playwright's own code generator. Users of WebStorm, IntelliJ IDEA and Rider have none: JetBrains' Test
@@ -532,6 +531,24 @@ That is right in a test whose fixture is `page`, and wrong in a page object (`th
 The browser never needs the desktop app: the editor service launches it, and the project's Playwright installs its
 browsers. The app's own Playwright runs (reproduce, bisect, Flake Lab) already work the same way, with the folder's
 CLI and no bundled browser.
+
+## As built
+
+- **PR 4**: the launcher records every origin, since `context.addInitScript` loads the bundle in each. Three of item
+  11's matchers are built (`toContainText`, `toHaveCount`, `toBeChecked`, 2026-10-20). Version 2 of the steps
+  document carries `manual` steps and the new matchers, not yet the frame and page fields.
+- **PR 5**: after Stop, a recorded line's other verified locators are offered as quick fixes (#864, 2026-10-22).
+- **PR 6**: the checks of the browser's recording bar (**Check an element**, **Check the address**, 2026-10-03), in
+  Piwi Picker too. **Assert at the Stop** exists in both IDEs at a stopped test ([`run-control.md`](run-control.md),
+  #932), not during a recording.
+- **PR 7**, at a stopped test only, through [`run-control.md`](run-control.md): the locator at the caret is counted
+  and outlined in the test's page (`piwi/locatorAtCaret`, #932, 2026-10-27), and a locator picked there is written on
+  its line (`piwi/applyPick`, #775, 2026-10-07).
+- **PR 9**, recording from a pause (#872, 2026-10-24): Piwi's pause bar at a breakpoint, and `page.pause()` in a headed
+  run the editor started, offer **Record here**, which hands the test's page to the editor's recorder over a local
+  socket the editor service opens for each of its runs (`PIWI_RECORD_CHANNEL`, in place of a discovery file) and
+  writes the steps above the paused statement, without the opening navigation; Stop brings the pause bar back, and
+  Resume continues the test.
 
 ## Delivery
 

@@ -66,8 +66,8 @@ Picker show the same place."
 | --- | --- | --- |
 | The landing page's video | `apps/application/scripts/record-demo-video.mjs`, `apps/docs/public/demo-live-run.mp4` | Playwright's `recordVideo` of the demo's run simulator, turned into H.264 by ffmpeg: 12.6 s, 245 KB, committed. One surface, no zoom, no text. |
 | Feature screenshots | `apps/application/scripts/take-feature-screenshots.mjs` (`SCENES`), `npm run app:screens` | Scenes against a seeded local dashboard, recaptured as the UI changes; the model for "re-film on every release". |
-| VS Code, driven | `apps/vscode/scripts/take-screenshots.mjs`, `lib/vscode-window.mjs`, `lib/editor-fixture.mjs` | `_electron.launch` of a downloaded VS Code with the built extension, under Xvfb at 2×, quiet settings, the palette driven through the DOM ([`real-editor-checks.md`](real-editor-checks.md) §3). |
-| JetBrains, driven | `apps/jetbrains/scripts/take-screenshots.mjs`, `scripts/xinput.py` | WebStorm under Xvfb at 2×, input through XTEST, a written keymap; the license is the cost ([`real-editor-checks.md`](real-editor-checks.md) §2). |
+| VS Code, driven | `apps/vscode/scripts/take-screenshots.mjs`, `lib/vscode-window.mjs`, `lib/editor-fixture.mjs` | `_electron.launch` of a downloaded VS Code with the built extension, under Xvfb at 2×, quiet settings, the palette driven through the DOM ([`real-editor-checks.md`](../adr/real-editor-checks.md) §3). |
+| JetBrains, driven | `apps/jetbrains/scripts/take-screenshots.mjs`, `scripts/xinput.py` | WebStorm under Xvfb at 2×, input through XTEST, a written keymap; the license is the cost ([`real-editor-checks.md`](../adr/real-editor-checks.md) §2). |
 | Piwi Picker, driven | `apps/extension` e2e (`launchWithExtension`, the docs-screenshots spec) | The built extension in a persistent Chromium context at 2×, its popup and pages driven by Playwright. |
 | The sample app | `examples/sample-app` (Nitro backend, `tests/shop.spec.ts`, page objects) | A real shop and a real suite that reports to a dashboard, backend logs included. |
 | A local dashboard with data | the run-app skill, the demo seed (`generate-demo-seed.mjs`) | A dev server and seeded history; a real run reaches it through the reporter. |
@@ -286,7 +286,8 @@ The script lives in `apps/showcase/` (a private workspace, never published), wit
 - **Voices and music** carry licenses; nothing is committed that the project may not publish, and no key is.
 - **What the video shows**: a fictional shop, fictional people and addresses; no real token on screen (the pairing is
   made before filming); no real company's brand.
-- **JetBrains** needs a license or the trial on the machine that films ([`real-editor-checks.md`](real-editor-checks.md) §2).
+-  **JetBrains** needs a license or the trial on the machine that films
+  ([`real-editor-checks.md`](../adr/real-editor-checks.md) §2).
 - **The run-control pieces still to come (its PRs 6 to 9) may move** while they are built; the beats that need them
   come last (V4).
 

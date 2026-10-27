@@ -9,6 +9,10 @@ Rules for the `proposals/` directory: the design records for work that is propos
 - **Keep the Status paragraph current.** The paragraph under the title (`**Status.** …`) says what is built, what
   remains, and what was deferred or dropped. A pull request that builds part of a proposal updates it in the same
   commit.
+- **One shape for every record**: `# Title`, one intro paragraph saying what the record is, the `**Status.**`
+  paragraph, then `**Summary.**` or the sections. The Status opens with `Proposed YYYY-MM-DD.` and says in a few lines
+  what is built, what remains and what was deferred; how the build differs from the text goes in an `## As built`
+  section, not in the Status. Prose is hard-wrapped at 120 characters.
 - **Move it to `adr/` in the pull request that ships its last planned piece**: not earlier, even when most of it is
   built, and not in a later clean-up. When a proposal counts as shipped, and the steps of the move:
   [`adr/AGENTS.md`](../adr/AGENTS.md#when-a-proposal-has-shipped).

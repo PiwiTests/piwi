@@ -3,17 +3,19 @@
 A design record for turning a failure into a ticket without leaving the dashboard, keeping that ticket honest as the
 failure evolves, routing it to the team that owns the test, and — second — publishing what Piwi knows to Confluence.
 Underneath both sits an **integration layer** (connections, providers, a neutral document model, a durable action
-outbox) so the next tracker or wiki is one provider file, not one more feature.
+outbox) so the next tracker or wiki is one provider file, not one more feature. It covers Jira Cloud (shaped so Server
+and Data Center can follow), Confluence, the shared layer and the smaller trackers that fall out of it, and builds on
+entity links, the notifications and auto-heal outboxes, the SCM provider layer, ownership, fix plans, offline export and
+share links.
 
-**Status:** accepted; rollout steps 1–3 shipped (foundations, create an issue, keep it honest — two-way sync, the
-project binding with policies and owner routes, the optional webhook, the needs-ticket queue, and localization), and
-the automatic creation of step 4 (ordered rules over branches, environments, test tags, occurrences, runs and days;
-the flaky, already-tracked and labeled-issue guards; the daily cap; a preview; a run scope for the write-backs, a
-diagnosis comment and description updates that never overwrite an edit made in the tracker); flaky-test and run
-tickets (the rest of step 4) and Confluence (step 5) remain. · **Scope:** Jira Cloud (and the shape that lets Server/Data Center follow),
-Confluence, the shared layer, and the smaller trackers that fall out of it · **Date:** 2026-09-13 · **Builds on:**
-entity links, the notifications outbox, the auto-heal outbox, the SCM provider layer, ownership, fix plans, offline
-export, share links.
+**Status.** Proposed 2026-09-13. Built: rollout steps 1 to 3 (foundations, create an issue, keep it honest: two-way
+sync, the project binding with policies and owner routes, the optional webhook, the `needs-ticket` queue and
+localization), and the automatic creation of step 4 (#787: ordered rules over branches, environments, test tags,
+occurrences, runs and days; the flaky, already-tracked and labeled-issue guards; the daily cap; a preview; a run scope
+for the write-backs; a diagnosis comment and description updates that never overwrite an edit made in the tracker).
+Remaining: the rest of step 4 (flaky-test and run tickets, the `relatedIssue` run link, bare-key `issue` annotations),
+Confluence (step 5) and the next trackers (step 6: GitHub Issues, GitLab Issues, Jira Data Center, Linear). The manual
+comment route and the `comment_on_issue` MCP tool are not built.
 
 **Summary.** Piwi already ends every investigation with something to hand over — a headline, a cluster, an owner, a
 diagnosis, a validated patch, a locator replacement, a verify command. Today the hand-over to the team's tracker is a
@@ -319,7 +321,8 @@ origin         'pinned' | 'created' | 'annotation' | 'reporter' -- who put it th
 ```
 
 - **Detection learns the connections.** `detectProvider(url)` keeps its URL-shape rules; a server-side
-  `detectProviderWithConnections(db, url)` first asks each connection's `parseIssueUrl`, so `https://jira.company.com/browse/XYZ-99`
+  `detectProviderWithConnections(db, url)` first asks each connection's `parseIssueUrl`, so
+  `https://jira.company.com/browse/XYZ-99`
   is `jira` once that host is connected. The demo and the client keep the pure detector.
 - **Refresh goes through the connection**, replacing the ad-hoc `loadAtlassianConfig`. `unfurlUrl` becomes: a link
   with a `connection_id` refreshes through `tracker.getIssue(externalId)`; a link without one keeps today's path.
@@ -358,7 +361,8 @@ origin         'pinned' | 'created' | 'annotation' | 'reporter' -- who put it th
 | Run page (failed) | `test_run` | *File release blocker* |
 | MCP | any of the above | `create_issue` — an agent that just read the fix plan files the ticket with it |
 
-**The create modal** (one shared component, `CreateIssueModal.vue`, fed by `GET /api/integrations/issue-draft?entityType=&entityId=`):
+**The create modal** (one shared component, `CreateIssueModal.vue`, fed by
+`GET /api/integrations/issue-draft?entityType=&entityId=`):
 
 - **Title** — editable, prefilled from the builder.
 - **Where** — connection (hidden when there is one), Jira project (prefilled from the binding, else a picker over
@@ -406,7 +410,8 @@ resolve to `test_cases.link` (both need only a connection, no binding).
 
   Every row above is an outbox action, so it is retried, deduped (`comment:failure_cluster:42:fixed:r1234`) and
   listed.
-- **Inbound webhook** (optional): a Jira admin registers `https://piwi.example.com/api/integrations/jira/webhook/<secret>`
+-  **Inbound webhook** (optional): a Jira admin registers
+  `https://piwi.example.com/api/integrations/jira/webhook/<secret>`
   for *issue updated*; the handler looks the issue id up in `entity_links.external_id` and refreshes that one link.
   Polling stays the baseline because Atlassian Cloud usually cannot reach a self-hosted Piwi, and Data Center often
   sits on the same network but behind a proxy nobody wants to open.
@@ -625,7 +630,8 @@ Each with the default the design assumes; a different answer changes the first m
 
 Each step is a separately mergeable pull request that leaves the app green and useful on its own.
 
-1. **Foundations** — ✅ *shipped.* `integration_connections` + Settings → Integrations (Jira Cloud connect, test, env-managed),
+1.  **Foundations** — ✅ *shipped.* `integration_connections` + Settings → Integrations (Jira Cloud connect, test,
+   env-managed),
    the provider registry and `IssueTracker` interface with the Jira client (`whoAmI`, `getIssue`, `parseIssueUrl`),
    `entity_links` columns, connection-aware detection and refresh, retire the `atlassian` setting. *Outcome: the
    unfurl that has never worked works, self-hosted Jira links are recognized, nothing writes to Jira yet.*
@@ -633,7 +639,8 @@ Each step is a separately mergeable pull request that leaves the app green and u
    `buildExecutionIssue`, the outbox and sweeper, `POST issues` + `issue-draft` with dedupe, the modal on the cluster
    page and the inbox (`c`, bulk), the key on the chip, Slack/email and PR feedback, `create_issue` MCP tool, docs
    page. *Outcome: the headline feature.*
-3. **Keep it honest** — ✅ *shipped.* The sync task, the binding form with policies (comment on fix / regression, transition,
+3.  **Keep it honest** — ✅ *shipped.* The sync task, the binding form with policies (comment on fix / regression,
+   transition,
    resolve on close), merge handling, the optional webhook, `needs-ticket` queue, and the response-language setting.
    *Outcome: the loop closes both ways.*
 4. **Teams and automation** — owner routes, auto-create guards, daily cap ✅ *shipped* (as rules: see

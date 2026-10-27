@@ -8,9 +8,10 @@ test ("`GET /api/cart` no longer returns `items[].price`, a number in the last p
 calls with its shape history, exports what the suite observed as an OpenAPI document, and compares it with the
 project's declared OpenAPI.
 
-**Status.** Proposed 2026-09-27. Nothing is built. The capture is opt-in (`captureApiShapes`). It adds an attachment,
-a payload column on `test_runs_cases` and three tables; the attachment, the wire field, the option and the new
-endpoints freeze at 1.0 (one new D entry in [`1.0-stabilization.md`](1.0-stabilization.md)).
+**Status.** Proposed 2026-09-27. Nothing is built, and it is not on [`ROADMAP.md`](../ROADMAP.md): all seven delivery
+PRs are planned. The capture is opt-in (`captureApiShapes`); the option, the attachment, the wire field and the
+endpoints freeze at 1.0, and the PR that ships them adds their entry to [`1.0-stabilization.md`](1.0-stabilization.md),
+which has none yet.
 
 **Summary.** When a backend renames a field, the front end breaks in a way end-to-end tests see only indirectly: a
 price renders as `NaN`, a list is empty, a click waits for an element that never appears. The failure's error names a
@@ -72,7 +73,8 @@ API · Acme Mugs · main · 37 endpoints the suite calls
   `request` fixture's among them, and each browser context's own `page.request`. Each call is a `piwi-network` entry
   without a `resourceType`, with its response's `X-Piwi-Logs`, `X-Piwi-Trace` and `X-Piwi-Coverage` read.
 - **Per-execution payloads.** Large per-execution data goes through `case_payloads` (content-addressed per project),
-  with a payload column on `test_runs_cases`; `apps/application/server/api/test-runs/AGENTS.md` has the checklist, and `piwi-page-inventory`
+  with a payload column on `test_runs_cases`; `apps/application/server/api/test-runs/AGENTS.md` has the checklist, and
+  `piwi-page-inventory`
   and `piwi-locator-pages` follow it.
 - **Reporter options.** An option is declared with JSDoc in `public/options.ts`, given a default, an env key and a
   fallback row in `internal/config/env.ts`, and bridged into the worker's environment; `capturePageInventory` is forced
@@ -148,7 +150,8 @@ In the capture fixtures, with `captureApiShapes` on:
    ends in `+json`, and whose `content-length` (or body length) is at most 1 MB, read `response.body()`, parse it and
    build its shape. A request with a JSON body (`request.postDataJSON()`) gets a request shape the same way. The work
    joins `sink.pendingHandlers`, which `flushSink` already awaits.
-2. For GraphQL (a `POST` whose JSON body has a string `query`), the endpoint key gets `#<operationName>`, or `#anonymous`.
+2.  For GraphQL (a `POST` whose JSON body has a string `query`), the endpoint key gets `#<operationName>`, or
+   `#anonymous`.
 3. Per test, samples are merged per `(key, status, direction)`, at most 3 each (D3). A parse error or a non-JSON body
    skips the response without failing the test.
 4. At the end of the test, the fixture attaches `piwi-api-shapes`:
@@ -163,7 +166,8 @@ shape functions so the dashboard's own suite exercises them.
 The proxy that records API calls (`api-requests.ts`, built for coverage) already wraps the `APIRequestContext` methods
 (`fetch`, `get`, `post`, `put`, `patch`, `delete`, `head`) and hands each call's `APIResponse` to `recordApiCall` in
 `capture-fixtures.ts`, where each response with a JSON content type is shaped the same way (`response.body()` is
-buffered by Playwright, so reading it does not consume it for the test); the call's `data` option is added to `ApiCall`. The request body is
+buffered by Playwright, so reading it does not consume it for the test); the call's `data` option is added to `ApiCall`.
+The request body is
 shaped from the `data` option when it is an object. API tests then get shapes, and nothing else changes for them.
 
 ### 1.4 Wire and storage
