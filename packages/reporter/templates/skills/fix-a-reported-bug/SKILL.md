@@ -13,8 +13,9 @@ fixes it, and proves the fix with that same test.
 
 Prefer the **Piwi MCP server** if it is connected: `get_bug_report` (the steps in words, what was expected, the
 evidence, the reproductions, the tests that visit the page) and `render_steps` with `bugReportId` (the failing test).
-Without it, the CLI does the same: `npx @piwitests/reporter bug <id>`, with the dashboard's URL and an API key in
-`PIWI_DASHBOARD_URL` and `PIWI_API_KEY` (or `--server-url` and `--api-key`).
+Without it, the CLI does the same: `npx @piwitests/reporter bug <id>`, with the dashboard's URL and an API key in the
+`PIWI_DASHBOARD_URL` and `PIWI_API_KEY` environment variables (or `--server-url` and `--api-key`). This command does not
+read a `.env` file: export the variables, or pass the flags.
 
 ## Steps
 

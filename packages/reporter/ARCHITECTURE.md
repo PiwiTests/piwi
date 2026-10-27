@@ -292,7 +292,8 @@ coding agent. `src/cli/skills.ts` declares them: `SETUP_SKILL` (`setup-piwi`) an
 They reach users' agents four ways, all from the same files:
 
 - `piwi init` installs the workflow skills by default (`--skills` picks others), and `piwi skills add` installs
-  any of them, into `.claude/skills/` unless `--dir` names another folder. Each installed file is stamped with the
+  any of them, into `.claude/skills/` unless another folder is named (`--skills-dir` for `init`, `--dir` for
+  `skills add`). Each installed file is stamped with the
   package version and a hash of what was written (`@piwitests/core/skill-stamp`): a later install updates an
   untouched skill from an older release and keeps one a person edited, unless `--force`.
 - The dashboard bundles the workflow skills into its build (`piwi-skills` server assets in

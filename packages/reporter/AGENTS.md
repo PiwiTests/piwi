@@ -53,8 +53,7 @@ responsibilities.
 7. **The docs read this package.** Every option in `src/public/options.ts` has a JSDoc comment stating its default,
    under the `// ── Group ──` comment it belongs to: the docs build generates the Reporter options page from them and
    from `PIWI_ENV_KEYS`, and fails on an option without one. A new `piwi` flag goes into `apps/docs/reference/cli.md`
-   in the same change; `apps/application/tests/unit/docs-drift.test.ts` checks every command's `USAGE` against it,
-   except `bug`'s.
+   in the same change; `apps/application/tests/unit/docs-drift.test.ts` checks every command's `USAGE` against it.
 
 ## Agent skills (`templates/skills/`)
 

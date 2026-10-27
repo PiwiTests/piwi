@@ -3,7 +3,7 @@ import { timingSafeEqualStr } from '../../utils/timing-safe';
 // Desktop (Tauri) bootstrap endpoint.
 //
 // The shell navigates the webview here exactly once at startup, exchanging the
-// per-launch token (passed on the query string) for an httpOnly cookie. Every
+// desktop token (passed on the query string) for an httpOnly cookie. Every
 // subsequent request — the SSR HTML load, its internal /api fetches, and the
 // notification/live-run EventSource streams — then carries the cookie and is
 // authorized by server/middleware/desktop-guard.ts. Responds 404 unless

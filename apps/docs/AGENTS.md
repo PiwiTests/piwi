@@ -129,7 +129,7 @@ which the drift test also reads.
   - Keyboard shortcuts (the `defineShortcuts` chords, and the keys of the failure inbox, the test search box and the
     assistant);
   - Test search (each qualifier of `TEST_SEARCH_FIELD_DEFS`);
-  - the Piwi CLI (every flag of each command's `--help` text, except `bug`'s).
+  - the Piwi CLI (every flag of each command's `--help` text).
 
   A new event, rule, shortcut, qualifier or flag goes on its page in the same change. Gap detectors & exposure has no
   such check: the detector ids are not kept in one list.
@@ -288,7 +288,7 @@ feature-screenshot harness (`apps/application/scripts/take-feature-screenshots.m
 name, tagged `docs` with `out: 'docs'`. From `apps/application/`, `npm run app:screens -- <name>` recaptures one
 (`flaky-detection`, …) and `npm run app:screens:docs` all of them. How to add a scene, target it (`data-shot`) and pick
 its `mode`: [`../application/scripts/AGENTS.md`](../application/scripts/AGENTS.md#feature-screenshots); the scene
-options (`split`, `deviceScaleFactor`, `outputWidth`, …) are listed in the script's header.
+options (`split`, `deviceScaleFactor`, `outputWidth`, …) are listed in the script's `Scenes:` comment.
 
 - **The docs gallery's hero** (`home`) is a light/dark diagonal split, `split: true`, so it recaptures with one command
   like any other image: `npm run app:screens -- home`. It is captured at `deviceScaleFactor: 2` and written at

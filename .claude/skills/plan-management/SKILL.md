@@ -100,7 +100,19 @@ Then:
 ### 6. Capture findings
 
 Append bugs, inconsistencies or tech debt found during the assessment to `plans/exploration-findings.md` under
-**Open**, using the template at the top of that file; move fixed findings to **Resolved** with the date (one line each).
+**Open**, in this form; move fixed findings to **Resolved** with the date (one line each), and promote notable ones to
+_Quick fixes_ in `plans/roadmap.md` when they change priorities.
+
+```markdown
+## [Date] — [Exploration type/area]
+
+### Finding: [Brief title]
+
+- **File/Component**: location in codebase
+- **Issue**: what is wrong
+- **Impact**: severity and effect
+- **Suggested fix**: recommended action (omit if obvious)
+```
 
 ### 7. Start a plan from a *Build next* item
 

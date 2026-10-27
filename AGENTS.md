@@ -205,8 +205,8 @@ and `tagline`), `apps/docs/.vitepress/config.mts` (`description` and the `og:` t
   reading that reports defects with the input that triggers them. Verify each finding against the code, fix the real
   ones, and open the pull request after.
 - **Report what you find**: bugs, inconsistencies and tech debt discovered along the way go in your final report. When
-  the local `plans/` folder exists, also log them in `plans/exploration-findings.md`, with the template at the top of
-  that file.
+  the local `plans/` folder exists, also log them in `plans/exploration-findings.md`, in the form the `plan-management`
+  skill gives.
 
 ## Maintaining the agent guides
 
