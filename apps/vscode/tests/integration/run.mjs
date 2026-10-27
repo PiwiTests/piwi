@@ -155,6 +155,8 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const url = `http://127.0.0.1:${server.address().port}`;
 
 const workspace = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-vscode-')));
+/** The editor services' discovery files, apart from the user's own. */
+const editors = `${workspace}-editors`;
 const write = (file, text) => {
   fs.mkdirSync(path.dirname(path.join(workspace, file)), { recursive: true });
   fs.writeFileSync(path.join(workspace, file), text);
@@ -224,6 +226,7 @@ try {
       PIWI_PROJECT_NAME: 'Acme Mugs',
       PIWI_API_KEY: 'pd_integration',
       PIWI_DESKTOP_CONFIG: path.join(workspace, 'no-desktop.json'),
+      PIWI_EDITORS_DIR: editors,
       PIWI_TEST_WORKSPACE: workspace,
     },
   });
@@ -233,5 +236,6 @@ try {
 } finally {
   server.close();
   fs.rmSync(workspace, { recursive: true, force: true });
+  fs.rmSync(editors, { recursive: true, force: true });
 }
 process.exit(code);

@@ -39,21 +39,30 @@ per-directory responsibilities.
    local socket, as `@piwitests/core/ide-recorder` frames it, and loads the bundle the editor names. The recorder's host
    stays in the editor service: this package carries the relay alone. With `PIWI_RUN_CHANNEL` (the same socket) and
    `PIWI_ORIGIN_REF`, each worker keeps a run connection to the editor from its worker fixture's setup to its end
-   (`internal/capture/run-channel.ts`, framed by `@piwitests/core/run-channel`; `PIWI_RUN_CHANNEL` is taken out of the
-   worker's `process.env` while a test runs, `hideRunChannel`, so a process a test starts opens none on the run, and put
-   back after it, since Playwright hands what a worker's environment lost to the projects depending on its own): it says
+   (`internal/capture/run-channel.ts`, framed by `@piwitests/core/run-channel`; `PIWI_RUN_CHANNEL` and the pairing's
+   `PIWI_EDITOR_SEND` are taken out of the worker's `process.env` while a test runs, `hideRunChannel`, so a process a
+   test starts opens none on the run and is not handed the pairing's token, the test's picks still posted to it
+   (`editorSendAddress`), and put back after it, since Playwright hands what a worker's environment lost to the
+   projects depending on its own): it says
    which test it runs and where it stops, takes the editor's Pause, Step, Resume, Finish, Run to a line and breakpoints
    (in place of `PIWI_PAUSE_AT`) through the same stop policy, and answers a request for an image of the stopped page
    with a JPEG screenshot taken through an internal call, none for a stop whose page it cannot tell (a navigation or a
-   key press in a context with several pages). While it is open a headless run stops too, held until the editor answers;
-   a headed stop shows the bar as well, and the first answer wins. Whoever answers a stop, it goes to `piwi-pauses` as
-   one at the bar does, and every stop's end reaches the editor (`running`), one that ends unanswered (the test function
-   ended, its page or context closed, or for a stop whose page it cannot tell any page of its context closed) included,
-   through the same end as at the bar. A stop no bar shows goes on when the connection closes, and one stop shows at a
-   time in a worker: one waiting its turn is decided again as it comes, and goes on unshown, the editor never hearing
-   of it, when the test ended meanwhile (as on Finish), its page or context closed or its breakpoint went, leaving the
-   Step, Pause or line run to it used up for the next stop. Closing a context, itself or with its browser, lets the
-   call its debugger holds go on first, since the close never lets it go.
+   key press in a context with several pages). Its `run-attach` lists the intents it takes (`takes: ['pick',
+   'record']`): at a stop the pause bar shows, a `request` naming that stop starts the bar's own **Pick a locator** or
+   **Record here** (`BarIntents` in `pause-at.ts`, which the bar's loop races against its own buttons: the same
+   picker, the pick posted to `PIWI_EDITOR_SEND`, the same hand-off over `PIWI_RECORD_CHANNEL`, both ending with the
+   stop), the test's window brought to the front through an internal call, and is answered at once with whether it
+   started: refused at a stop that ended or is ending (its test ended, its page or context began to close), one no
+   bar shows, one whose page it cannot tell, without a record channel for Record here, and while a pick or a recording
+   runs. While it is open a headless run stops too, held until the editor answers; a headed stop shows the bar as
+   well, and the first answer wins. Whoever answers a stop, it goes to `piwi-pauses` as one at the bar does, and every
+   stop's end reaches the editor (`running`), one that ends unanswered (the test function ended, its page or context
+   closed, or for a stop whose page it cannot tell any page of its context closed) included, through the same end as
+   at the bar. A stop no bar shows goes on when the connection closes, and one stop shows at a time in a worker: one
+   waiting its turn is decided again as it comes, and goes on unshown, the editor never hearing of it, when the test
+   ended meanwhile (as on Finish), its page or context closed or its breakpoint went, leaving the Step, Pause or line
+   run to it used up for the next stop. Closing a context, itself or with its browser, lets the call its debugger
+   holds go on first, since the close never lets it go.
 4. **The desktop discovery file** — `~/.piwi/desktop.json` and its `{ url, token }` shape
    (`internal/config/desktop.ts`). The desktop shell writes it (`apps/desktop/src-tauri/src/lib.rs`) and this package reads
    it, on independent release cycles, so path and shape changes must land in both.

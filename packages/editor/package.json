@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/server.ts",
     "./protocol": "./src/protocol.ts",
+    "./discovery": "./src/discovery.ts",
     "./server": "./dist/piwi-language-server.cjs"
   },
   "scripts": {
@@ -29,7 +30,9 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
+    "@types/ws": "^8.18.1",
     "esbuild": "^0.28.2",
-    "vscode-jsonrpc": "^9.0.3"
+    "vscode-jsonrpc": "^9.0.3",
+    "ws": "^8.22.0"
   }
 }

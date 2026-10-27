@@ -99,6 +99,7 @@ import {
   askedOnce,
   atBreakpoint,
   atStop,
+  BarIntents,
   callSiteLine,
   callSitePlace,
   contextDebugger,
@@ -134,6 +135,7 @@ import {
 import { canRecordFromHere, recordFromHere } from './record-handoff.js';
 import {
   closeRunChannel,
+  editorSendAddress,
   hideRunChannel,
   holdStop,
   openRunChannel,
@@ -141,8 +143,7 @@ import {
   tellHub,
   type RunControl,
 } from './run-channel.js';
-import type { RunToHub } from '@piwitests/core/run-channel';
-import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
+import { RUN_INTENT_NAMES, type IntentAnswer, type RunIntent, type RunToHub } from '@piwitests/core/run-channel';
 import {
   browserCoverageInWorker,
   browserFunctionCoverage,
@@ -1619,10 +1620,12 @@ function stopBarPage(sink: CaptureSink, context: BrowserContext, of: StopPage): 
  * element is highlighted, and a locator picked meanwhile is folded into the call site's snapshot (which the call's own
  * capture then leaves as it is); a pick is printed and posted to the editor. The stop is kept for `piwi-pauses` from
  * the moment it shows, whoever answers it. Where its page is a guess (`StopPage`), the bar shows in the guess, and
- * the editor asks in vain for an image. A stop that must end unanswered (`endShownStops`) ends at once, the bar
- * taken down and the editor told, and its call goes on: as on Resume when its context closed, at once, or a page that
- * ends it closed, once that page is gone; as on Finish when the test ended under it, at once, its call then kept in
- * `released` (`releaseCall`). Returns the answer; none when neither a bar nor the editor can show the stop.
+ * the editor asks in vain for an image. The editor can start the bar's Pick a locator and Record here from outside the
+ * page (`intentAt`): the same pick and recording, their results going where the bar's go, ending with the stop. A stop
+ * that must end unanswered (`endShownStops`) ends at once, the bar, a pick and a recording taken down and the editor
+ * told, and its call goes on: as on Resume when its context closed, at once, or a page that ends it closed, once that
+ * page is gone; as on Finish when the test ended under it, at once, its call then kept in `released` (`releaseCall`).
+ * Returns the answer; none when neither a bar nor the editor can show the stop.
  */
 async function showStop(
   sink: CaptureSink,
@@ -1652,8 +1655,11 @@ async function showStop(
       sink.probedLocations.add(call.location);
     }
     console.log(`[piwi] Locator picked at ${callSiteLine(location)}: ${picked.picked.locator}`);
-    await postPickToEditor(process.env[PIWI_LOCAL_DEBUG_ENV.editorSend], pickPayload(picked.picked.locator, location));
+    await postPickToEditor(editorSendAddress(), pickPayload(picked.picked.locator, location));
   };
+  const onRecord =
+    bar && page ? recorderAt(page, testInfo, location, reason === 'page-pause' ? 'pause' : 'breakpoint') : undefined;
+  const intents = bar && page ? new BarIntents() : null;
   const record: PauseRecord = { title, location, reason, startedAt: Date.now(), duration: 0 };
   sink.stops.push(record);
   // `end`: the stop ends unanswered, why as its reason (`StopEnd`). `over`: that, or the editor answered; the bar
@@ -1671,6 +1677,14 @@ async function showStop(
           locator: call ? locatorSource(call.target, call.origin.method, call.origin.args) : null,
           bar,
           page: guessed ? null : page,
+          intent: intents
+            ? (what) =>
+                intentAt(intents, what, {
+                  record: !!onRecord,
+                  guessed,
+                  holds: () => !over.signal.aborted && !sink.ending && stopCanShow(context, of),
+                })
+            : undefined,
         },
         (answer) => {
           fromEditor = answer;
@@ -1695,8 +1709,9 @@ async function showStop(
         },
         { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG },
         onPick,
-        recorderAt(page, testInfo, location, reason === 'page-pause' ? 'pause' : 'breakpoint'),
+        onRecord,
         over.signal,
+        intents ?? undefined,
       ),
     );
   }).finally(() => {
@@ -1716,6 +1731,46 @@ async function showStop(
   // Its page or context closed: as on Resume, once the page that closed is gone.
   await settledWithin(stop.after ? [stop.after] : [], END_STOP_MS);
   return 'resume';
+}
+
+/** What a stop the bar shows says to an intent: whether it can record, whether its page is a guess, whether it holds. */
+export interface IntentStop {
+  record: boolean;
+  guessed: boolean;
+  /** Neither answered nor ending: its test goes on, and neither its page nor its context began to close. */
+  holds(): boolean;
+}
+
+/**
+ * Start the pause bar's Pick a locator or Record here from outside the page, at a stop the bar shows: answered at
+ * once, the pick or the recording then running in the test's window as from the bar, and ending with the stop.
+ * Refused at a stop that is over or ending, and at one whose page is a guess (`StopPage`), which the person outside
+ * the page cannot see.
+ */
+export function intentAt(intents: BarIntents, what: RunIntent, stop: IntentStop): IntentAnswer {
+  if (!stop.holds()) return { ok: false, message: 'The test went on.' };
+  if (stop.guessed) {
+    return {
+      ok: false,
+      message: `${RUN_INTENT_NAMES[what]} needs the page the test stopped in, which this call does not name among its context's pages: use the pause bar in the test's window.`,
+    };
+  }
+  if (what === 'record' && !stop.record) {
+    return {
+      ok: false,
+      message: 'Record here needs the editor that started the run: this run names no record channel.',
+    };
+  }
+  if (!intents.offer(what)) {
+    return { ok: false, message: `${RUN_INTENT_NAMES[what]} waits: a pick or a recording runs in the test's window.` };
+  }
+  return {
+    ok: true,
+    message:
+      what === 'pick'
+        ? "Pick an element in the test's window: the locator goes to the editor."
+        : "Recording in the test's window: the editor writes the steps above the stopped line.",
+  };
 }
 
 /** Settles once `signal` aborts. */

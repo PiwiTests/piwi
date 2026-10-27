@@ -3,15 +3,19 @@ import type { Page, WorkerInfo } from '@playwright/test';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import {
   RUN_CHANNEL_ENV,
+  RUN_INTENTS,
+  RUN_INTENT_NAMES,
   parseHubToRun,
   type HubToRun,
+  type IntentAnswer,
   type PausedImage,
   type Place,
+  type RunIntent,
   type RunToHub,
   type StopReason,
   type UnknownMessage,
 } from '@piwitests/core/run-channel';
-import { PIWI_ORIGIN_ENV } from '../config/env.js';
+import { PIWI_LOCAL_DEBUG_ENV, PIWI_ORIGIN_ENV } from '../config/env.js';
 import { getReporterVersion } from '../support/reporter-version.js';
 import type { PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
@@ -20,9 +24,10 @@ import { internalCall } from './quiet-capture.js';
  * The worker's run connection to the editor that started the run: the socket the run's environment names
  * (`PIWI_RUN_CHANNEL`, `@piwitests/core/run-channel`), opened once per worker before its first test and kept until
  * the worker ends. The worker says which test it runs and where it stops; the editor pauses it, answers its stops
- * (Step, Resume, Finish, Run to a line), changes the run's breakpoints and asks for an image of the stopped page. A
- * test never waits on it but while stopped, and a connection that does not open, or closes, leaves the run as
- * without it: a stop no pause bar can answer then goes on at once.
+ * (Step, Resume, Finish, Run to a line), changes the run's breakpoints, asks for an image of the stopped page, and
+ * starts the pause bar's Pick a locator or Record here from outside the page (`takes` in its attach). A test never
+ * waits on it but while stopped, and a connection that does not open, or closes, leaves the run as without it: a stop
+ * no pause bar can answer then goes on at once.
  */
 
 /** How long a worker waits for its run connection to open before its first test runs without it. */
@@ -41,12 +46,16 @@ export interface RunControl {
   runTo(place: Place): void;
 }
 
-/** The stop the editor can answer, while it holds: the page its image is of (none when not known), and its answer. */
+/**
+ * The stop the editor can answer, while it holds: the page its image is of (none when not known), its answer, and what
+ * starts an intent in the pause bar.
+ */
 interface HeldStop {
   stop: number;
   page: Page | null;
   bar: boolean;
   answer(choice: PauseAnswer): void;
+  intent(what: RunIntent): IntentAnswer;
 }
 
 /** A stop as the editor hears it. */
@@ -59,6 +68,8 @@ export interface StopToHold {
   bar: boolean;
   /** The page an image of the stop is taken of: none when the stop's page is not known. */
   page: Page | null;
+  /** Start the bar's Pick a locator or Record here from outside the page; refused without it. */
+  intent?(what: RunIntent): IntentAnswer;
 }
 
 let socket: net.Socket | null = null;
@@ -123,23 +134,40 @@ export async function openRunChannel(
     pid: process.pid,
     playwright: worker.config.version,
     reporter: getReporterVersion(),
+    takes: [...RUN_INTENTS],
   });
   return true;
 }
 
+/** What a test runs without: the run's channel, and the editor's Send to editor pairing with its token. */
+const HIDDEN_ENV = [RUN_CHANNEL_ENV, PIWI_LOCAL_DEBUG_ENV.editorSend] as const;
+
+/** `PIWI_EDITOR_SEND` while a test runs without it: where the test's picks go. */
+let hiddenEditorSend: string | undefined;
+
 /**
- * Take the run's channel out of the worker's environment while a test runs, so a process the test starts (Playwright
- * run from a test) opens no connection on this run; returns what puts it back once the test ended. Playwright compares
- * a worker's environment as it stops with the one it started with, and hands what changed to the projects that depend
- * on its own: between tests, the channel is there. `PIWI_RECORD_CHANNEL` stays, for **Record here**.
+ * Take the run's channel and the editor's pairing out of the worker's environment while a test runs, so a process the
+ * test starts (Playwright run from a test) opens no connection on this run and is not handed the pairing's token;
+ * returns what puts them back once the test ended. The test's picks still go to the pairing (`editorSendAddress`).
+ * Playwright compares a worker's environment as it stops with the one it started with, and hands what changed to the
+ * projects that depend on its own: between tests, both are there. `PIWI_RECORD_CHANNEL` stays, for **Record here**.
  */
 export function hideRunChannel(env: NodeJS.ProcessEnv = process.env): () => void {
-  const value = env[RUN_CHANNEL_ENV];
-  if (value === undefined) return () => {};
-  delete env[RUN_CHANNEL_ENV];
+  const hidden = HIDDEN_ENV.flatMap((name) => {
+    const value = env[name];
+    return value === undefined ? [] : [{ name, value }];
+  });
+  for (const { name } of hidden) delete env[name];
+  hiddenEditorSend = hidden.find(({ name }) => name === PIWI_LOCAL_DEBUG_ENV.editorSend)?.value;
   return () => {
-    env[RUN_CHANNEL_ENV] = value;
+    for (const { name, value } of hidden) env[name] = value;
+    hiddenEditorSend = undefined;
   };
+}
+
+/** The editor's Send to editor pairing a pick goes to: `PIWI_EDITOR_SEND`, also while a test runs without it. */
+export function editorSendAddress(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env[PIWI_LOCAL_DEBUG_ENV.editorSend] ?? hiddenEditorSend;
 }
 
 /** Close the worker's run connection, as the worker ends. */
@@ -175,6 +203,13 @@ export function holdStop(stop: StopToHold, onAnswer: (answer: PauseAnswer) => vo
       answered = true;
       onAnswer(choice);
     },
+    intent: (what) =>
+      answered
+        ? { ok: false, message: 'The test went on.' }
+        : (stop.intent?.(what) ?? {
+            ok: false,
+            message: `${RUN_INTENT_NAMES[what]} needs the pause bar in the test's window, and this stop shows none: run the test headed.`,
+          }),
   };
   held = holding;
   tellHub({
@@ -214,6 +249,12 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
       held.answer('resume');
       return;
     case 'request': {
+      if (message.what !== 'image') {
+        const value =
+          held?.stop === message.stop ? held.intent(message.what) : { ok: false, message: 'The test went on.' };
+        tellHub({ type: 'answer', request: message.request, what: message.what, value });
+        return;
+      }
       const page = held?.page ?? null;
       void imageOf(page).then((value) => tellHub({ type: 'answer', request: message.request, what: 'image', value }));
       return;

@@ -62,7 +62,9 @@ Two **external contracts** beyond the npm API:
   the recorder's binding calls over it (`internal/capture/record-handoff.ts`). With
   `PIWI_RUN_CHANNEL` and `PIWI_ORIGIN_REF`, each worker holds a connection to that socket
   for its whole life, opened in the `piwiResources` worker fixture
-  (`internal/capture/run-channel.ts`, messages from `@piwitests/core/run-channel`): it sends
+  (`internal/capture/run-channel.ts`, messages from `@piwitests/core/run-channel`), and
+  `PIWI_RUN_CHANNEL` and `PIWI_EDITOR_SEND` are out of `process.env` while each test runs
+  (`hideRunChannel`; a pick still goes to the pairing, `editorSendAddress`): it sends
   each test's begin and end and each stop it shows, and the editor's controls (Pause, Step,
   Resume, Finish, Run to a line, the run's breakpoints) go through the same stop policy as
   `PIWI_PAUSE_AT`. While it is open a headless run stops too, with no bar, until the editor
@@ -70,10 +72,13 @@ Two **external contracts** beyond the npm API:
   answered in the editor is attached to `piwi-pauses` as one at the bar is, and a stop that ends
   unanswered (the test function ended, its page or context closed, or for a stop whose page it
   cannot tell any page of its context closed) ends the same way with a bar or without, the editor
-  told (`running`); the editor gets no image of such a page. One stop shows at a time in a worker:
-  one waiting its turn goes on unshown when the test ended meanwhile, its page or context closed
-  or its breakpoint went, and a context's close, its own or its browser's, lets the call its
-  debugger holds go on first.
+  told (`running`); the editor gets no image of such a page. At a stop the bar shows, the editor
+  can also start the bar's Pick a locator and Record here (an intent, `request` with
+  `what: 'pick' | 'record'`), which the bar takes as its own click and which ends with the stop;
+  it is refused at a stop that is ending or whose page it cannot tell. One stop shows at a time
+  in a worker: one waiting its turn goes on unshown when the test ended meanwhile, its page or
+  context closed or its breakpoint went, and a context's close, its own or its browser's, lets
+  the call its debugger holds go on first.
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
   unref'd timer (`internal/collect/process-sampler.ts`). While the dashboard says
   someone watches the run, another unref'd timer posts what the sampler and the

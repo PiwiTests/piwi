@@ -214,7 +214,7 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
     send(connection, { type: 'request', request: stop.stop, what: 'image' });
     await until(() => connection.heard.some((m) => m.type === 'answer' && m.request === stop.stop));
     const answer = connection.heard.find((m) => m.type === 'answer' && m.request === stop.stop);
-    images[stop.place.line] = answer?.type === 'answer' ? answer.value : null;
+    images[stop.place.line] = answer?.type === 'answer' && answer.what === 'image' ? answer.value : null;
     return resume(stop.place.line === editorRun.lines['editor bp']![0] ? 0 : HOLD_MS);
   }
   if (test === 'headless a breakpoint removed while its stop waits') {

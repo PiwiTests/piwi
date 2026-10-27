@@ -1,13 +1,14 @@
 /**
  * The secrets of connected mode, in the extension origin's IndexedDB: the
- * instance's API key with the origin it was given for, and the tokens of the
- * paired desktop app and editor. A content script cannot open this database,
+ * instance's API key with the origin it was given for, the tokens of the
+ * paired desktop app and editor, and the addresses and tokens of the editor's
+ * run hubs (`background/run-hubs.ts`). A content script cannot open this database,
  * since its IndexedDB is the page's, so only the background worker and the
  * extension's own pages read them; `chrome.storage.local`, which content
  * scripts read and write, keeps the settings that are not secret.
  */
 
-export type SecretName = 'instance' | 'desktop' | 'editor';
+export type SecretName = 'instance' | 'desktop' | 'editor' | 'hubs';
 
 /** Where the secrets are kept: the extension's IndexedDB, or what a unit test hands over instead. */
 export interface SecretArea {

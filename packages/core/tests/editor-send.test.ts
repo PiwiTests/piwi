@@ -1,5 +1,17 @@
+import { createHmac } from 'node:crypto';
 import { describe, expect, test } from 'vitest';
-import { formatPairing, parsePairing, parseSendPayload, sendAuthorized } from '../src/editor-send';
+import { desktopTokenProof } from '../src/desktop-proof';
+import {
+  EDITOR_CHALLENGE_HEADER,
+  EDITOR_PROOF_HEADER,
+  editorTokenProof,
+  formatPairing,
+  isEditorChallenge,
+  newEditorChallenge,
+  parsePairing,
+  parseSendPayload,
+  sendAuthorized,
+} from '../src/editor-send';
 
 const TOKEN = 'abcdefghijklmnop_1234';
 
@@ -82,5 +94,39 @@ describe('sendAuthorized', () => {
     expect(sendAuthorized(TOKEN, TOKEN)).toBe(false);
     expect(sendAuthorized(undefined, TOKEN)).toBe(false);
     expect(sendAuthorized('Bearer ', '')).toBe(false);
+  });
+});
+
+describe('the editor token proof', () => {
+  test('is the HMAC-SHA256 of the port and the challenge, keyed by the pairing token', async () => {
+    const challenge = 'cd'.repeat(32);
+    const expected = createHmac('sha256', TOKEN).update(`piwi-editor-proof:47211:${challenge}`).digest('hex');
+    expect(await editorTokenProof(TOKEN, 47211, challenge)).toBe(expected);
+    expect([EDITOR_CHALLENGE_HEADER, EDITOR_PROOF_HEADER]).toEqual(['x-piwi-editor-challenge', 'x-piwi-editor-proof']);
+  });
+
+  test('differs for another token, another port, and the desktop app’s proof of the same challenge', async () => {
+    const challenge = newEditorChallenge();
+    const proof = await editorTokenProof(TOKEN, 47211, challenge);
+    expect(await editorTokenProof(`${TOKEN}x`, 47211, challenge)).not.toBe(proof);
+    expect(await editorTokenProof(TOKEN, 47212, challenge)).not.toBe(proof);
+    expect(await desktopTokenProof(TOKEN, 47211, challenge)).not.toBe(proof);
+  });
+
+  test('takes only a hex challenge of 32 to 128 characters', () => {
+    expect(isEditorChallenge(newEditorChallenge())).toBe(true);
+    expect(isEditorChallenge('a'.repeat(128))).toBe(true);
+    expect(newEditorChallenge()).not.toBe(newEditorChallenge());
+    for (const value of [
+      'ab'.repeat(15),
+      'AB'.repeat(16),
+      'g'.repeat(32),
+      'a'.repeat(129),
+      ` ${'a'.repeat(32)}`,
+      42,
+      null,
+    ]) {
+      expect(isEditorChallenge(value)).toBe(false);
+    }
   });
 });

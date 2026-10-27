@@ -173,7 +173,8 @@ test.describe('in a French browser', () => {
     }
     await expect(page.getByRole('button', { name: 'Réglages' })).toBeVisible();
     await expect(page.locator('#coverage-hint')).toHaveText('Connectez Piwi pour voir ce que vos tests atteignent');
-    await expect(page.locator('.tile .key')).toHaveText(['1', '2', 'B', 'R', 'T', '3', '4', '5', '6', '7']);
+    // `U`, the Runs tile's, is there while hidden, until a paired editor's runs show it.
+    await expect(page.locator('.tile .key')).toHaveText(['1', '2', 'B', 'R', 'T', '3', '4', '5', '6', '7', 'U']);
     expect(await untranslated(page)).toEqual([]);
     expect(await clipped(page)).toEqual([]);
 
