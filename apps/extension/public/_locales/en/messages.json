@@ -7644,7 +7644,7 @@
     "description": "Runs window, button on a stopped test: starts the pause bar’s Record here in the test’s window."
   },
   "runs_recordTitle": {
-    "message": "Record steps in the test’s window: they are written above this line",
+    "message": "Record steps in the test’s window: they go to the editor, which writes them above this line",
     "description": "Runs window, the Record button’s tooltip."
   },
   "runs_pause": {
@@ -7678,7 +7678,7 @@
     "description": "Runs window, button on a stopped test: starts the recorder’s Check an element in the test’s window; the editor writes the check. Short: it shares a row with Pick and Record."
   },
   "runs_assertTitle": {
-    "message": "Check an element in the test’s window: the check is written above this line",
+    "message": "Check an element in the test’s window: the check goes to the editor, which writes it above this line",
     "description": "Runs window, the Assert button’s tooltip."
   },
   "runs_assertRegion": {
@@ -7686,7 +7686,7 @@
     "description": "Runs window, button on a stopped test: pick a region of the page in the test’s window; the editor writes its ARIA snapshot (toMatchAriaSnapshot). Short."
   },
   "runs_assertRegionTitle": {
-    "message": "Pick a region in the test’s window: its ARIA snapshot is written above this line",
+    "message": "Pick a region in the test’s window: its ARIA snapshot goes to the editor, which writes it above this line",
     "description": "Runs window, the Assert a region button’s tooltip."
   },
   "runs_mock": {
@@ -7694,7 +7694,7 @@
     "description": "Runs window, button on a stopped test: lists the requests its page made, to mock one. Short."
   },
   "runs_mockTitle": {
-    "message": "Choose a request the page made: a page.route() answering it as the server did is written above this line",
+    "message": "Choose a request the page made: a page.route() answering it as the server did goes to the editor, which writes it above this line",
     "description": "Runs window, the Mock a request button’s tooltip. page.route() is code: keep it."
   },
   "runs_codeActions": {
@@ -7703,7 +7703,7 @@
   },
   "runs_codeWarnings": {
     "message": "What to review in this code",
-    "description": "Runs window, the name screen readers give the list of warnings under the sentence saying the editor wrote code at a stop (a value hidden as a credential, a brittle locator)."
+    "description": "Runs window, the name screen readers give the list of warnings under the sentence saying the code made at a stop went to the editor to write (a value hidden as a credential, a brittle locator)."
   },
   "runs_resumeFailureTitle": {
     "message": "Let the test end as it failed",

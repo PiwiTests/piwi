@@ -316,7 +316,7 @@ object Glue {
             if (live != null) return StatusView(liveText(live), tooltip, null, StatusAction.REFRESH, StatusIcon.RUNNING, liveFailing)
             return StatusView("Piwi: no run", tooltip, null, StatusAction.REFRESH)
         }
-        // The tests still failing once the later runs are laid over the run; the run's own count from an older service.
+        // The tests still failing once the later runs are laid over the run; the run's own count when the answer has none.
         val failing = run.failingTests ?: r.failedTests
         val fixed = run.resolved ?: 0
         val local = if (overlays > 0) "\n${plural(overlays, "local run")} since · ${plural(fixed, "test")} fixed locally" else ""
@@ -1530,8 +1530,9 @@ object Glue {
     /**
      * The count at the caret's questions, one at a time: the caret stands at a query (`want`, by its key: the stop, the
      * file and line, the line's text), which is asked once it settled (`ask`), unless another is on its way or it was
-     * asked already; the answer is shown only while the caret is still there (`answered`), and the query it stands at
-     * then asked once that one settled. A key of null is no stop: nothing is asked, and the next query is asked anew.
+     * asked already while the caret stayed there; the answer is shown only while the caret is still there (`answered`),
+     * and the query it stands at then asked once that one settled. The caret coming back to a query asks it again, its
+     * count being gone. A key of null is no stop: nothing is asked.
      */
     class CaretAsks {
         var wanted: String? = null
@@ -1543,7 +1544,7 @@ object Glue {
         fun want(key: String?): Boolean {
             if (key == wanted) return false
             wanted = key
-            if (key == null) asked = null
+            asked = null
             return true
         }
 

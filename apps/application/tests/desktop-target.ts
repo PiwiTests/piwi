@@ -8,7 +8,7 @@ import { join } from 'node:path';
  * By default that is the Playwright-managed dev/preview server on
  * `http://localhost:3000`. Set `PIWI_DESKTOP_E2E` to instead run the whole suite
  * against the Piwi **desktop app** already running on this machine: the shell
- * publishes its loopback URL and per-launch access token to `~/.piwi/desktop.json`
+ * publishes its loopback URL and access token to `~/.piwi/desktop.json`
  * while it runs (the same discovery file the reporter reads — see
  * `packages/reporter/src/internal/config/desktop.ts`), and that token gates every
  * `/api` and `/mcp` request (`server/middleware/desktop-guard.ts`). Override the

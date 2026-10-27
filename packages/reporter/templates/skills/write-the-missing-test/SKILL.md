@@ -15,21 +15,24 @@ drafts it from the graph, and opens it in the same change.
 
 Prefer the **Piwi MCP server** if it is connected (`list_scenario_gaps`,
 `draft_scenario`, `get_change_coverage`, `get_coverage`, `triage_gap`). Otherwise use the dashboard's **Gaps**
-view, or the reporter CLI with `PIWI_DASHBOARD_URL` / `PIWI_API_KEY` /
-`PIWI_PROJECT_NAME` set.
+view, and work from what it shows plus the repo.
 
 ## Steps
 
-1. **Find the gaps.** On a change, call `get_change_coverage` for the current
-   branch first — the files whose `reach` is `unreached` (the uncovered
-   changes) and the `lines.notRun` of the files it did reach are what the
-   change left untested. Otherwise call `list_scenario_gaps` for the project. Filter to what you are
-   working on with `class`, `feature`, `minScore` or `pr`. Read the classes:
+1. **Find the gaps.** On a change, call `get_change_coverage` first, with the
+   change's `base` and `head` commits (or a `run` of it): the files whose `reach`
+   is `unreached` (the uncovered changes) and the `lines.notRun` of the files it
+   did reach are what the change left untested. Otherwise call
+   `list_scenario_gaps` for the project. Filter to what you are working on with
+   `class`, `feature`, `minScore` or `pr`. Read the classes:
    - **blind-spot** — no trusted test reaches it (a route, a page, a control, a
      new error path).
    - **false-comfort** — tests reach it and a probe showed they would not notice
      it breaking. The most valuable to fix: the catalog says it is covered.
    - **fragile** — reached by a single, flaky, quarantined or long-skipped test.
+   - **unhandled** / **degraded** — a server probe made a route or a dependency
+     fail, and the application did not handle it, or degraded visibly: an
+     error-state scenario is missing.
 
 2. **Pick one.** Take the highest-scored gap in scope. Every gap is *observed
    reach*, never instrumented coverage, and every evidence line pairs "no test"
@@ -52,12 +55,12 @@ view, or the reporter CLI with `PIWI_DASHBOARD_URL` / `PIWI_API_KEY` /
    the draft named over hand-rolled locators.
 
 5. **Run just this test, then verify.** Run the new spec with a file filter
-   (`npx @piwitests/reporter run` or `playwright test <file>`). Confirm it passes
+   (`npx playwright test <file>`). Confirm it passes
    for the right reason: temporarily break the behavior it asserts and see it
    fail. Open it in the same pull request as the change that motivated it.
 
 6. **Prove it reaches its target lines.** When the project records server
-   coverage (an ASP.NET Core backend in a coverage build), run the new test with
+   coverage (an ASP.NET Core or Nitro backend built for coverage), run the new test with
    it on and reporting to Piwi:
 
    ```bash
@@ -83,7 +86,7 @@ view, or the reporter CLI with `PIWI_DASHBOARD_URL` / `PIWI_API_KEY` /
    the gap may need a fixture.
 
 8. **Report back to Piwi.** Tell Piwi what you decided about the gap with
-   `triage_gap` (reporter or admin access): `verb: "accept"` for the gap you
+   `triage_gap` (Maintainer role or above on the project): `verb: "accept"` for the gap you
    wrote the test for, `covered-by` with the covering test's id when a test you
    found already covers it, or `dismiss` with the reason (`not-worth-testing`,
    `covered-elsewhere`, `wrong`) when the evidence did not hold. Each verdict counts toward the precision of the

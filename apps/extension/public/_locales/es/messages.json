@@ -6443,7 +6443,7 @@
     "message": "Grabar"
   },
   "runs_recordTitle": {
-    "message": "Grabar pasos en la ventana del test: se escriben encima de esta línea"
+    "message": "Grabar pasos en la ventana del test: van al editor, que los escribe encima de esta línea"
   },
   "runs_pause": {
     "message": "Pausar"
@@ -6470,19 +6470,19 @@
     "message": "Comprobar"
   },
   "runs_assertTitle": {
-    "message": "Comprobar un elemento en la ventana del test: la comprobación se escribe encima de esta línea"
+    "message": "Comprobar un elemento en la ventana del test: la comprobación va al editor, que la escribe encima de esta línea"
   },
   "runs_assertRegion": {
     "message": "Comprobar una región"
   },
   "runs_assertRegionTitle": {
-    "message": "Elegir una región en la ventana del test: su snapshot ARIA se escribe encima de esta línea"
+    "message": "Elegir una región en la ventana del test: su snapshot ARIA va al editor, que lo escribe encima de esta línea"
   },
   "runs_mock": {
     "message": "Simular una petición"
   },
   "runs_mockTitle": {
-    "message": "Elegir una petición de la página: un page.route() que la responde como el servidor se escribe encima de esta línea"
+    "message": "Elegir una petición de la página: un page.route() que la responde como el servidor va al editor, que lo escribe encima de esta línea"
   },
   "runs_codeActions": {
     "message": "Código desde esta parada"

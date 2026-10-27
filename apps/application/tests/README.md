@@ -40,7 +40,7 @@ npm run app:test:desktop
 ```
 
 `PIWI_DESKTOP_E2E=1` (what the script sets) makes the suite adopt the desktop
-app's loopback URL and per-launch access token from `~/.piwi/desktop.json` — the
+app's loopback URL and access token from `~/.piwi/desktop.json` — the
 same discovery file the reporter reads — points `baseURL`, the reporter stream
 and the setup/teardown cleanup at it, injects the token on every request, and
 starts no server of its own. Override the discovery path with

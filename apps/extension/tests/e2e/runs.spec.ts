@@ -23,8 +23,8 @@ import {
  * The Runs window in the real extension, against the real editor service and its hub: the worker finds the hub
  * through the pairing, the popup's Runs tile opens the window, and the window pauses, steps and resumes a run whose
  * worker the spec plays, with the image of the stopped page. At a stop it starts the code the editor writes there
- * (Assert, Assert a region, Mock a request, as the worker's reporter takes them), and holds a failed test. A page
- * served from 127.0.0.1 never reaches the hub.
+ * (Assert, Assert a region, Mock a request, as the worker's reporter takes them), and holds a failed test, a headless
+ * one only while a Runs window is open. A page served from 127.0.0.1 never reaches the hub.
  */
 
 let editor: Editor;
@@ -341,7 +341,7 @@ test.describe('code from a stop', () => {
         const assert = card.getByRole('button', { name: 'Assert', exact: true });
         await expect(assert).toHaveAttribute(
           'title',
-          'Check an element in the test’s window: the check is written above this line',
+          'Check an element in the test’s window: the check goes to the editor, which writes it above this line',
         );
         await assert.focus();
         await runs.keyboard.press('Enter');
@@ -373,10 +373,12 @@ test.describe('code from a stop', () => {
         } finally {
           handoff.socket.destroy();
         }
-        // What the editor wrote comes to the window, in place of what Assert's answer said, and is read out.
-        const wrote = /^Piwi wrote the check above checkout\.spec\.ts:5\. The stopped test goes on with the code/;
-        await expect(card.locator('.note.written')).toHaveText(wrote);
-        await expect(runs.locator('#announce')).toHaveText(wrote);
+        // That the check went to the editor to write comes to the window, in place of what Assert's answer said, and is
+        // read out; the editor says itself whether it wrote it.
+        const sent =
+          /^Piwi sent the check to Test Editor to write above checkout\.spec\.ts:5\. The stopped test goes on with the code/;
+        await expect(card.locator('.note.sent')).toHaveText(sent);
+        await expect(runs.locator('#announce')).toHaveText(sent);
         await expect(card.locator('.note')).toHaveCount(1);
         expect(await runs.content()).not.toContain('toHaveText(');
 
@@ -397,8 +399,8 @@ test.describe('code from a stop', () => {
           editor.svc.codes.find((c) => c.ref === run.ref && c.action === 'assert-region'),
         );
         expect(snapshot.code).toContain("await expect(page.getByTestId('summary')).toMatchAriaSnapshot(`");
-        await expect(card.locator('.note.written')).toHaveText(
-          "Piwi wrote the region's ARIA snapshot above checkout.spec.ts:5.",
+        await expect(card.locator('.note.sent')).toHaveText(
+          "Piwi sent the region's ARIA snapshot to Test Editor to write above checkout.spec.ts:5.",
         );
 
         // The test goes on: what Assert a region said goes with its stop.
@@ -489,12 +491,14 @@ test.describe('code from a stop', () => {
         expect(mocked).toMatchObject({ what: 'mock', stop: 1, id: 1 });
         const written = await waitFor(() => editor.svc.codes.find((c) => c.ref === run.ref && c.action === 'mock'));
         expect(written.code).toContain("await page.route('**/api/cart', (route) =>");
-        const said = card.locator('.note.written');
-        await expect(said).toHaveText(/^Piwi wrote the mock above checkout\.spec\.ts:5\./);
+        const said = card.locator('.note.sent');
+        await expect(said).toHaveText(/^Piwi sent the mock to Test Editor to write above checkout\.spec\.ts:5\./);
         // What to review in the code, under it, and read out with it.
         const hidden = 'A value named or shaped like a credential is written as <hidden>.';
         await expect(card.getByRole('list', { name: 'What to review in this code' })).toHaveText(hidden);
-        await expect(runs.locator('#announce')).toHaveText(/^Piwi wrote the mock above checkout\.spec\.ts:5\./);
+        await expect(runs.locator('#announce')).toHaveText(
+          /^Piwi sent the mock to Test Editor to write above checkout\.spec\.ts:5\./,
+        );
         await expect(runs.locator('#announce')).toContainText(hidden);
         // The list closes, and the focus goes back to the button that opened it. No code comes to the window.
         await expect(list).toHaveCount(0);
@@ -533,7 +537,7 @@ test.describe('code from a stop', () => {
           response: CART_RESPONSE,
         });
         expect(await fromEditor).toMatchObject({ ok: true });
-        await expect(said).toHaveText('Piwi wrote the mock above checkout.spec.ts:5.');
+        await expect(said).toHaveText('Piwi sent the mock to Test Editor to write above checkout.spec.ts:5.');
         await expect(card.getByRole('list', { name: 'What to review in this code' })).toHaveCount(0);
       } finally {
         await endRun(run);
@@ -650,6 +654,41 @@ test.describe('code from a stop', () => {
         await expect(card.getByText('Running')).toBeVisible();
         stopAtCheckout(run.worker, 2, { reason: 'failure', error: null });
         await expect(card.locator('.stop')).toHaveText('Errorexpect(locator).toBeVisible() failed');
+      } finally {
+        await endRun(run);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('a plain run’s headless failure waits for an answer only while a Runs window is open', async () => {
+    const { context, extensionId } = await pairedExtension(editor);
+    try {
+      // Paired, its Runs window never opened: the popup's tile shows once the worker hears the hub's runs.
+      const popup = await context.newPage();
+      await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+      await expect(popup.getByRole('button', { name: /Runs/ })).toBeVisible();
+      await popup.close();
+      const run = await startRun(editor, 'pays', [...RUN_TAKES]);
+      const shown = () => editor.svc.sessions.some((s) => s.ref === run.ref && s.workers.some((w) => w.stop));
+      try {
+        // A plain run, neither with breakpoints nor for a page.pause(): its failure goes on at once, shown to nobody.
+        stopAtCheckout(run.worker, 1, { reason: 'failure', bar: false });
+        expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
+        expect(shown()).toBe(false);
+
+        // A Runs window opens: the next failure waits there for an answer.
+        const runs = await openRuns(context, extensionId);
+        const card = liveRun(runs);
+        await expect(card.getByText('cart › pays')).toBeVisible();
+        await runs.waitForTimeout(300);
+        stopAtCheckout(run.worker, 2, { reason: 'failure', bar: false });
+        await expect(card.locator('.state')).toHaveText('Failed at tests/checkout.spec.ts:5');
+        expect(run.worker.heard.filter((m) => m.type === 'control')).toHaveLength(1);
+        // The window closes: the failure goes on.
+        await runs.close();
+        expect(await run.worker.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 2 });
       } finally {
         await endRun(run);
       }

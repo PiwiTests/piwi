@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { hideSecretsInUrl } from '@piwitests/core/mask';
 import { HIDDEN_VALUE, mockCode, mockFileName, mockUrlPattern, responseBody } from '../../src/shared/mock-code.js';
 
 const cart = {
@@ -38,6 +39,31 @@ describe('mockUrlPattern', () => {
     expect(mockUrlPattern('https://shop.test/reset/<hidden>/done?q=<hidden>&token=<hidden>')).toBe(
       '**/reset/*/done?q=**&token=**',
     );
+  });
+
+  it('matches the request a URL its credentials were hidden from stands for, its host and ids as they are', () => {
+    for (const [url, pattern] of [
+      [
+        'https://www.googleapis.com/drive/v3/files/1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT1uV2?alt=media&access_token=ya29.a0Af',
+        '**/drive/v3/files/1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT1uV2?alt=media&access_token=**',
+      ],
+      [
+        'https://api.shop.test/orders/550e8400-e29b-41d4-a716-446655440000/lines/42',
+        '**/orders/550e8400-e29b-41d4-a716-446655440000/lines/42',
+      ],
+      [
+        'https://git.shop.test/c/c31cdf852a287e61fcc71852717ba5d999b8cfb3',
+        '**/c/c31cdf852a287e61fcc71852717ba5d999b8cfb3',
+      ],
+      ['https://shop.test/reset/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl/done', '**/reset/*/done'],
+    ]) {
+      const listed = hideSecretsInUrl(url!);
+      expect(listed.startsWith(url!.slice(0, url!.indexOf('/', 8))), listed).toBe(true);
+      expect(mockUrlPattern(listed)).toBe(pattern);
+      expect(mockUrlPattern(listed)).not.toContain(HIDDEN_VALUE);
+    }
+    // One no URL parser reads: a hidden value is matched by a wildcard all the same.
+    expect(mockUrlPattern('/reset/<hidden>?q=<hidden>')).toBe('/reset/**?q=**');
   });
 
   it('turns glob characters of the URL into wildcards', () => {
@@ -127,7 +153,7 @@ describe('mockCode', () => {
       'AIzaSyD-abcdefghijklmnopqrstuvwxyz12345',
       'ghp_abcdefghijklmnopqrstuvwxyz0123456789',
       'xoxb-1234-5678-abcdefghij',
-      'sk8Hd92jfKs0dLq3mZx7Pw1VbN4tRy6cUe5o',
+      'sk8Hd92jfKs0dLq3mZx7Pw1VbN4tRy6cUe5oQ2wXz9Lm',
     ];
     const json = mockCode({
       ...cart,
@@ -143,10 +169,41 @@ describe('mockCode', () => {
     const text = mockCode({ ...cart, mimeType: 'text/plain', body: `token: ${jwt}\nsee /cb?code=4/0Ab&x=1` });
     expect(text.code).not.toContain(jwt);
     expect(text.code).toContain(`/cb?code=${HIDDEN_VALUE}&x=1`);
-    // A UUID, a hex hash and a long name stay.
-    const ids =
-      '550e8400-e29b-41d4-a716-446655440000 8f14e45fceea167a5a36dedd4bea2543 getProductRecommendationsForCustomer2024';
+    // A UUID, a hex hash, a long name, an id shorter than a random token and a cursor that encodes text stay.
+    const ids = [
+      '550e8400-e29b-41d4-a716-446655440000',
+      '8f14e45fceea167a5a36dedd4bea2543',
+      'getProductRecommendationsForCustomer2024',
+      '1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT1uV2',
+      'eyJpZCI6MTIzNDUsInRzIjoxNjk1ODIwODAwfQ==',
+      '/api/v2/items/Ab3x/Cd4y/Ef5z/Gh6w/Ij7v/Kl8u',
+    ].join(' ');
     expect(mockCode({ ...cart, mimeType: 'text/plain', body: ids }).hidden).toBe(0);
+    expect(mockCode({ ...cart, body: JSON.stringify({ ids: ids.split(' ') }) }).hidden).toBe(0);
+  });
+
+  it('reads a JSON text inside a JSON string as JSON, and writes it again with its credentials hidden', () => {
+    const inner = { user: 'ada', password: 'hunter2', apiKey: 12345, nested: JSON.stringify({ token: 'abc' }) };
+    const body = JSON.stringify({ data: JSON.stringify(inner), note: '{not json' });
+    const { code, hidden } = mockCode({ ...cart, body });
+    expect(hidden).toBe(3);
+    for (const secret of ['hunter2', '12345', 'abc']) expect(code).not.toContain(secret);
+    const start = code.indexOf('json: ') + 6;
+    const json = new Function(`return ${code.slice(start, code.indexOf('\n    },', start) + 6)};`)() as {
+      data: string;
+      note: string;
+    };
+    const data = JSON.parse(json.data) as Record<string, unknown>;
+    expect(data).toEqual({
+      user: 'ada',
+      password: HIDDEN_VALUE,
+      apiKey: HIDDEN_VALUE,
+      nested: JSON.stringify({ token: HIDDEN_VALUE }),
+    });
+    expect(json.note).toBe('{not json');
+    // A string of JSON with nothing to hide stays as it came.
+    const plain = JSON.stringify({ data: '{"a": 1,  "b": [1,2]}' });
+    expect(mockCode({ ...cart, body: plain }).code).toContain(JSON.stringify('{"a": 1,  "b": [1,2]}'));
   });
 
   it('says a body that is neither JSON nor a form was written as it came, and one that holds personal data', () => {

@@ -21,7 +21,7 @@ export const BUDGET_VIEWPORT = { width: 1280, height: 800 };
 
 /**
  * The routes measured by default: executions with a diagnosed patch (#37), a
- * broken locator (#13), a cluster without a ticket (#87), a pass on retry
+ * click that timed out on its button (#13), a cluster without a ticket (#87), a pass on retry
  * (#768) and a test that did not run (#748), then four clusters.
  */
 export const DEFAULT_ROUTES = [

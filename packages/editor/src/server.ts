@@ -1687,10 +1687,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /** A file as `RunLines` names it: its absolute path, in lower case on Windows, as `samePath` compares them. */
   const lineKey = (file: string): string =>
     process.platform === 'win32' ? path.resolve(file).toLowerCase() : path.resolve(file);
-  /** A file's text and modification time on disk; null when it cannot be read. */
+  /**
+   * A file's text and modification time on disk; null when it cannot be read. Its text is an editor's: without the byte
+   * order mark a file saved with one starts with, which an editor's document never holds.
+   */
   const diskFile = (file: string): DiskFile => {
     try {
-      return { text: fs.readFileSync(file, 'utf-8'), mtime: fs.statSync(file).mtimeMs };
+      return { text: fs.readFileSync(file, 'utf-8').replace(/^\uFEFF/, ''), mtime: fs.statSync(file).mtimeMs };
     } catch {
       return null;
     }
@@ -1709,17 +1712,22 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       void connection.sendNotification(RUN_SESSION_NOTIFICATION, session);
       runHub?.push(session);
     },
-    // The client, or a Piwi Picker following the runs.
+    // The client, or a Piwi Picker subscribed to the hub.
     answersStops: () => answersStops || !!runHub?.answersStops(),
     watched: (ref) => watchedRuns.has(ref),
-    followed: () => !!runHub?.answersStops(),
-    sessionStarted: (ref) => runLines.started(ref, unsavedFiles, true),
+    // A Runs window open in Piwi Picker: its connection says it follows the runs.
+    followed: () => !!runHub?.follows(),
+    // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.
+    sessionStarted: (ref, again) => runLines.started(ref, unsavedFiles, !again),
     notice: (root, severity, message) =>
       void connection.sendNotification(NOTICE_NOTIFICATION, { root, severity, message } satisfies Notice),
     // A run runs in its config's folder as the file system spells it (`commandFolder`).
     rootOf: (cwd) => contexts.find((c) => samePath(commandFolder(c), cwd) || samePath(c.root, cwd))?.root ?? null,
     writesCode: () => writesCode,
-    onRegion: (stop, locator, snapshot) => stopActions.region(stop, locator, snapshot),
+    onRegion: (stop, region) =>
+      'refused' in region
+        ? stopActions.regionRefused(stop, region.refused)
+        : stopActions.region(stop, region.locator, region.snapshot),
   });
   const recordRequested = (handoff: Handoff) => {
     // The run ran in its config's folder as the file system spells it (`commandFolder`): the test names its file so,
@@ -1788,6 +1796,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       };
     },
     language: () => clientLocale,
+    editor: () => clientName,
   });
 
   /**

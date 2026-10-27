@@ -1,22 +1,22 @@
 /**
  * Code from a stopped test: the actions a client (`piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`) and
  * Piwi Picker (the hub's commands) start at a stop of a run the editor started, each ending the same way: the worker
- * does the page's part through internal calls, this service renders the code (`stop-code.ts`), and the client writes
- * it above the stopped line (`piwi/stopCode`), whichever surface asked. Pick a locator and Record here go where the
- * pause bar's go (the client's Send to editor listener, `piwi/recordRequested`). Assert runs the check panel in the
- * test's page through a hand-off in its `check` mode (`check`); Assert a region has the worker pick the region and read
- * its ARIA snapshot (`region`); Mock a request asks the worker for the one response chosen among those its test kept.
- * The code goes above the stopped statement where it stands now: the stopped line, the run's, mapped through the edits
- * made since the run started (`lineNow`, `run-lines.ts`), the code Piwi wrote at an earlier action included. An action
- * that writes code is refused when the client writes none, and before it starts when nothing can be written at the
- * stopped line; the code never goes to Piwi Picker, which hears what each one came to (`outcome`): the sentence the
- * client shows, the warnings of the code, or why it was refused once it started. Every command names the stop it
- * answers (`since`). The responses a test kept are listed with the credentials of their URLs hidden, whatever the
- * worker's reporter hid.
+ * does the page's part through internal calls, this service renders the code (`stop-code.ts`), and the client writes it
+ * above the stopped line (`piwi/stopCode`), whichever surface asked. Pick a locator and Record here go where the pause
+ * bar's go (the client's Send to editor listener, `piwi/recordRequested`). Assert runs the check panel in the test's
+ * page through a hand-off in its `check` mode (`check`); Assert a region has the worker pick the region and read its
+ * ARIA snapshot (`region`); Mock a request asks the worker for the one response chosen among those its test kept. The
+ * code goes above the stopped statement where it stands now: the stopped line, the run's, mapped through the edits made
+ * since the run started (`lineNow`, `run-lines.ts`), the code Piwi wrote at an earlier action included. An action that
+ * writes code is refused when the client writes none, and before it starts when nothing can be written at the stopped
+ * line; the code never goes to Piwi Picker, which hears what each one came to (`outcome`): that the code was sent to
+ * the editor to write, with its warnings (the editor, which can still refuse the write, says itself whether it wrote
+ * it), or why it was refused once it started. Every command names the stop it answers (`since`). The responses a test
+ * kept are listed with the credentials of their URLs hidden, whatever the worker's reporter hid.
  */
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hideSecretsInText } from '@piwitests/core/mask';
+import { hideSecretsInUrl } from '@piwitests/core/mask';
 import { sessionFromEvents, type RawCaptureEvent } from '@piwitests/core/recording';
 import type {
   LocatorAtCaretParams,
@@ -47,8 +47,8 @@ export interface StopTarget {
 }
 
 /**
- * What an action that writes code came to at a stop, whichever surface started it: written (`ok`, the sentence the
- * client shows, and the warnings of the code), or refused once it started, and why. No code.
+ * What an action that writes code came to at a stop, whichever surface started it: sent to the client to write (`ok`,
+ * a sentence saying so, and the warnings of the code), or refused once it started, and why. No code.
  */
 export interface StopOutcome {
   ref: string;
@@ -78,6 +78,8 @@ export interface StopActionsOptions {
   lineNow(stop: StopRef, target: StopTarget): LineNow;
   /** The editor's display language, for the check panel. */
   language(): string | null;
+  /** The editor's name, as `initialize` gives it (`Visual Studio Code`); null when it gave none. */
+  editor?(): string | null;
 }
 
 /** What each action writes, as a sentence names it. */
@@ -131,7 +133,7 @@ export class StopActions {
         if ('message' in at) return at;
         const place = this.place(at);
         if ('refusal' in place) return refuse(place.refusal);
-        const cannot = stopCodeRefusal(place.target.text, place.line);
+        const cannot = stopCodeRefusal(place.target.text, place.line, at.character);
         if (cannot) return refuse(cannot);
         return sessions.intent({ ...stop, what: params.action, viewer });
       }
@@ -153,7 +155,7 @@ export class StopActions {
 
   /**
    * `piwi/stopRequests`, and the hub's `requests`: the responses the stopped test kept, without their bodies, each URL
-   * with its credentials hidden (`hideSecretsInText`, as the reporter hides them).
+   * with its credentials hidden (`hideSecretsInUrl`, as the reporter hides them).
    */
   async requests(params: StopRequestsParams): Promise<StopRequestsResult> {
     if (typeof params?.since !== 'string' || !params.since) return { ok: false, message: NEEDS_STOP, requests: [] };
@@ -164,7 +166,7 @@ export class StopActions {
     });
     // A URL a hidden value made longer than a worker may send is left out, as the reporter leaves it out.
     const requests = answer.requests
-      .map((request) => ({ ...request, url: hideSecretsInText(request.url) }))
+      .map((request) => ({ ...request, url: hideSecretsInUrl(request.url) }))
       .filter((request) => request.url.length <= MAX_URL);
     return { ok: answer.ok, message: answer.message, requests };
   }
@@ -209,7 +211,7 @@ export class StopActions {
     }
     const place = this.place(at);
     if ('refusal' in place) return clear(place.refusal, false, found.locator);
-    const page = stopPage(place.target.text, place.line);
+    const page = stopPage(place.target.text, place.line, at.character);
     if ('refusal' in page) return clear(page.refusal, false, found.locator);
     if (page.page !== found.page) {
       return clear(
@@ -226,6 +228,14 @@ export class StopActions {
   region(stop: StopRef, locator: string, snapshot: string): void {
     const written = this.write(stop, { action: 'assert-region', locator, snapshot });
     if (!written.ok) this.refusedOnceStarted(stop, 'assert-region', written.message);
+  }
+
+  /**
+   * A worker said why the region picked at its stop brought no snapshot (its locator finds several elements, its
+   * snapshot is too long): the client hears it, and so does Piwi Picker, which Assert a region told it had started.
+   */
+  regionRefused(stop: StopRef, message: string): void {
+    this.refusedOnceStarted(stop, 'assert-region', message);
   }
 
   /**
@@ -246,7 +256,7 @@ export class StopActions {
     if (!this.options.writesCode()) return refused(NO_CODE);
     const place = this.place(stop);
     if ('refusal' in place) return refused(place.refusal);
-    const cannot = stopCodeRefusal(place.target.text, place.line);
+    const cannot = stopCodeRefusal(place.target.text, place.line, stop.character);
     if (cannot) return refused(cannot);
     const startedAt = Date.now();
     const missing = this.options.recordings.check(handoff, {
@@ -293,6 +303,7 @@ export class StopActions {
     const rendered = renderStopCode(target.text, place.line, input, {
       preferLocators: target.preferLocators,
       expectModule: target.expectModule,
+      character: stop.character,
     });
     if ('refusal' in rendered) return refuse(rendered.refusal);
     const action = input.action;
@@ -300,9 +311,11 @@ export class StopActions {
     this.told.add(stop.ref);
     while (this.told.size > 50) this.told.delete(this.told.values().next().value!);
     const where = `${path.basename(file)}:${rendered.line + 1}`;
-    const message =
-      `Piwi wrote ${WRITTEN[action]} above ${where}.` +
-      (first ? ' The stopped test goes on with the code it started with: the new lines run next time.' : '');
+    const goesOn = first ? ' The stopped test goes on with the code it started with: the new lines run next time.' : '';
+    // The client says it wrote the code once it did; anyone else hears it was sent, the client still able to refuse it.
+    const wrote = `Piwi wrote ${WRITTEN[action]} above ${where}.${goesOn}`;
+    const editor = this.options.editor?.() || 'the editor';
+    const sent = `Piwi sent ${WRITTEN[action]} to ${editor} to write above ${where}.${goesOn}`;
     this.options.notify({
       ref: stop.ref,
       worker: stop.worker,
@@ -313,7 +326,7 @@ export class StopActions {
       line: rendered.line,
       code: rendered.code,
       edits: rendered.edits,
-      message,
+      message: wrote,
       warnings: rendered.warnings,
     });
     this.options.outcome?.({
@@ -322,9 +335,9 @@ export class StopActions {
       since: stop.since,
       action,
       ok: true,
-      message,
+      message: sent,
       warnings: rendered.warnings,
     });
-    return { ok: true, message };
+    return { ok: true, message: sent };
   }
 }

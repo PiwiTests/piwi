@@ -5,7 +5,10 @@
  * goes to the paired port only once the program there proved it holds it (`proveEditor`). The hubs' addresses and
  * tokens go to the secret area beside the editor's pairing, never to `chrome.storage.local`, and are found again
  * whenever a hub's connection fails, with a backoff. What each code written at a stop came to goes to the listeners,
- * with the hub that said it. Nothing here runs in a content script or an extension page.
+ * with the hub that said it. While a listener (a Runs window) is there, each connection says the runs are followed
+ * (`follow`), which holds a failure no pause bar shows for the person watching: as the first window opens, on each
+ * connection that opens while one is, and `on: false` as the last one closes. Nothing here runs in a content script or
+ * an extension page.
  */
 import type { EditorPairing } from '@piwitests/core/editor-send';
 import { liveUrlOf, parseLiveAnswer, type HubSession, type LiveHub } from '@piwitests/core/run-hub';
@@ -77,12 +80,22 @@ export class RunHubs {
 
   /**
    * Hears every change, and what each code written at a stop came to; while a listener (a Runs window) is there,
-   * failures are retried without end.
+   * failures are retried without end, and each hub hears that the runs are followed.
    */
   listen(changed: () => void, code: (code: RunsCode) => void = () => {}): () => void {
     const listener: RunsListener = { changed, code };
     this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    if (this.listeners.size === 1) this.follow(true);
+    return () => {
+      if (this.listeners.delete(listener) && this.listeners.size === 0) this.follow(false);
+    };
+  }
+
+  /** Tells each open connection whether a person follows the runs, a Runs window open. */
+  private follow(on: boolean): void {
+    for (const connection of this.connections.values()) {
+      if (connection.state === 'open') void connection.command({ type: 'follow', on });
+    }
   }
 
   state(): RunsState {
@@ -239,6 +252,7 @@ export class RunHubs {
         // A connection that opens starts the count of failures again; a run's changes on another one do not.
         opened: () => {
           this.retries = 0;
+          if (this.listeners.size > 0) void connection.command({ type: 'follow', on: true });
         },
         changed: () => this.changed(),
         ended: (session) => this.keepEnded(hub.url, session, connection.sessions.get(session.ref)),

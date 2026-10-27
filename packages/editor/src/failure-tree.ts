@@ -222,7 +222,7 @@ function runSummary(run: FailuresRun): string {
 /**
  * The run's node over `children`: the baseline run (its tooltip naming the baseline chosen, `Baseline: CI run #120 on
  * feature/x`), with the runs laid over it under `Your runs since`; `Your local runs` with a developer's own runs alone.
- * Null without a run, and with runs laid over none but no baseline named (an older service).
+ * Null without a run, and with runs laid over none but no baseline named.
  */
 function runNode(view: FailuresInput, children: FailureTreeNode[]): FailureTreeNode | null {
   const run = view.run ?? null;

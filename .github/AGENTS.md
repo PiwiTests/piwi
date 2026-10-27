@@ -1,105 +1,63 @@
 # CI workflows: agent instructions
 
-Area guide for `.github/`: the GitHub Actions workflows, the composite action they share, and Dependabot. The design
-record these follow, with its measurements, is [`adr/ci-workflows.md`](../adr/ci-workflows.md).
-
-## Layout
-
-| File                                       | Runs on                         | Does                                                                                     |
-| ------------------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------- |
-| `workflows/ci.yml`                         | pull requests, pushes to `main` | every check, behind the one required check `CI result`                                   |
-| `workflows/reusable-e2e-extension.yml`     | called by `ci.yml`, on demand   | the browser extension's E2E suite, in 3 shards                                           |
-| `workflows/reusable-e2e-vscode.yml`        | called by `ci.yml`, on demand   | the VS Code extension's integration suite                                                |
-| `workflows/reusable-jetbrains.yml`         | called by `ci.yml`, on demand   | the JetBrains plugin's tests, build and Plugin Verifier runs (2 IDEs on PRs, 4 on main)  |
-| `workflows/reusable-e2e-desktop.yml`       | called by `ci.yml`, on demand   | the desktop shell's Rust tests and E2E smoke test, on macOS, from `ci.yml`'s build       |
-| `workflows/reusable-perf.yml`              | called by `ci.yml`              | the performance suite on the pull request's build and its base commit's, its pages split across 2 machines, as a PR comment |
-| `workflows/pr-lint.yml`                    | pull requests                   | `commitlint`, `title` (the PR title) and `actionlint`                                    |
-| `workflows/docs.yml`                       | pushes to `main`                | builds and deploys the docs and the demo                                                 |
-| `workflows/release-please.yml`             | pushes to `main`                | the release PR, and the tag once it merges; the previous release stays GitHub's latest   |
-| `workflows/release.yml`                    | release tags, on demand, PRs    | every publication, through the `reusable-publish-*.yml` below; a PR run publishes none   |
-| `workflows/reusable-publish-npm.yml`       | called by `release.yml`         | `@piwitests/reporter`, `@piwitests/server` (from the shared build), `instrumentation-nitro` |
-| `workflows/reusable-publish-container.yml` | called by `release.yml`, `edge.yml` | the multi-arch image: version tags on a tag (minor, major and `latest` for the newest release of each line only), `edge` on main, a build only elsewhere; the amd64 image answers `/api/health` before a tag moves |
-| `workflows/reusable-publish-nuget.yml`     | called by `release.yml`         | the instrumentation NuGet packages                                                       |
-| `workflows/reusable-publish-desktop.yml`   | called by `release.yml`         | the desktop installers, from the shared build, attached to the GitHub release, which then becomes the latest |
-| `workflows/reusable-publish-vscode.yml`    | called by `release.yml`         | the VS Code extension (Marketplace, Open VSX)                                            |
-| `workflows/reusable-publish-jetbrains.yml` | called by `release.yml`         | the JetBrains plugin (JetBrains Marketplace)                                             |
-| `workflows/reusable-publish-extension.yml` | called by `release.yml`         | the browser extension (Chrome, Edge, Firefox)                                            |
-| `workflows/edge.yml`                       | pushes to `main`                | the `edge` container image                                                               |
-| `workflows/release-notes.yml`              | releases, on demand             | tidies the release notes                                                                 |
-| `workflows/live-jira.yml`                  | on demand                       | the live Jira E2E                                                                        |
-| `workflows/nightly-vscode.yml`             | every night, on demand          | the VS Code extension in the real VS Code (`apps/vscode/tests/e2e`), at the pinned release |
-| `actions/setup-workspace/action.yml`       | used by the workflows above     | Node, the npm cache, `npm ci`, and Playwright's Chromium when asked                      |
-| `actions/container-health/action.yml`      | `ci.yml`, the container publish | starts a server image on an empty data folder and waits for `/api/health`                |
-
-`ci.yml`'s `changes` job reads which areas a change touches (`dorny/paths-filter`) and each job runs for the areas it
-covers; a change to `.github/workflows/`, `.github/actions/` or `.node-version` runs them all. It also picks the
-matrices: a pull request runs the dashboard E2E suite on two backends (`local + sqlite` on Node 22, `s3 + postgres`)
-and the package smoke test on Linux (on Windows and macOS too when it changes the packages or their dependencies);
-`main` runs the four backends and the three systems. The JetBrains Plugin Verifier runs on two IDEs for a pull request
-and on four on `main`, where the plugin job also writes the Gradle cache. The extension, VS Code and desktop suites run
-on pull requests only, and so do the container image check (the publish workflow runs it on `main` and on a tag) and
-the performance comparison, which measures against the base commit's build that the
-`build` job cached by its sha when it ran on `main` (when that commit has none, the `perf-base` job builds it alongside
-the pull request's own build, cached for the pull request's runs only) and reports a regression in its comment without
-failing. Its pages are split across two `measure` jobs that run at once, each measuring both builds on its own pages so
-every comparison is made on one machine; a `report` job joins their results into the comment. The release PR runs the `Versions` job alone.
+Rules for `.github/`: the GitHub Actions workflows, the composite actions they share, and Dependabot. What each file
+does, how `ci.yml` picks the jobs of a change, and what Dependabot updates: [`ARCHITECTURE.md`](ARCHITECTURE.md). The
+design record these rules follow, with its measurements: [`adr/ci-workflows.md`](../adr/ci-workflows.md).
 
 ## Conventions
 
 - **One required check.** A new check is a job of `ci.yml` (or a reusable workflow it calls) listed in the `needs` of
-  `CI result`, never a separate required check. A job skipped by its `if` counts as passed; a workflow its path filter
-  never started stays pending, so gate jobs on `needs.changes.outputs.*`, not workflows on `paths`.
+  `CI result`, never a separate required check. A job skipped by its `if` counts as passed, but a workflow its `paths`
+  filter never started stays pending: gate jobs on `needs.changes.outputs.*`, not workflows on `paths`.
 - **A job that runs on some events and not others is never a required check of the same name** in another run on the
-  same commit: the latest run of a check is the one branch protection reads. `pr-lint.yml` runs every job on every
-  event for this reason.
-- **Node through `setup-workspace`.** The version comes from the root `.node-version`; a job names another only to test
-  a floor (`engines`, Node 22) or a bundled runtime (the desktop's, the root `Dockerfile`'s Node version, read by
-  `apps/desktop/scripts/node-version.mjs`). `npm ci` runs with
-  `--prefer-offline --no-audit --fund=false`.
-- **Playwright's headless shell is cached by Playwright version** (`playwright: shell`), saved as soon as it is
-  installed, so the cache holds the shell alone. The full Chromium build (`playwright: full`) is installed on every
-  run: its workflows run on pull requests only, where a cache serves its own pull request alone. The checks job
-  installs it too, beside the shell and after the cache is saved, for the reporter's breakpoint run, which opens
-  Chromium's windows under `xvfb-run`.
-- **Least privilege.** `permissions: contents: read` on every workflow; anything more on the job that needs it. A job
-  that calls a reusable workflow grants the permissions its jobs ask for: a called job asking for more fails the run.
-- **Publishing only from a release tag.** A publishing step runs when `github.ref` is a `v*` tag (`TAG_BUILD`), or
-  `main` for the `edge` image; anywhere else the workflow builds and packs, so a pull request can run it.
-- **The GHCR image name is fixed.** It is `ghcr.io/piwitests/platform` (`IMAGE_NAME` in
-  `reusable-publish-container.yml`), never derived from `github.repository`: users pull it by that name, and a
-  registry does not redirect when the repository is renamed.
+  same commit: branch protection reads the latest run of a check. `pr-lint.yml` runs every job on every event for this
+  reason.
+- **Node through `setup-workspace`.** The version comes from the root `.node-version`. A job names another version only
+  to test a floor (`engines`, Node 22) or a bundled runtime (the desktop's: the root `Dockerfile`'s Node, read by
+  `apps/desktop/scripts/node-version.mjs`). `npm ci` runs with `--prefer-offline --no-audit --fund=false`.
+- **Playwright's headless shell is cached by Playwright version** (`playwright: shell`), and saved as soon as it is
+  installed, so the cache holds the shell alone. The full Chromium build (`playwright: full`) is installed on every run:
+  the workflows that use it run on pull requests only, where a cache serves its own pull request alone. The checks job
+  also installs the full build, after the shell's cache is saved, for the reporter's breakpoint run under `xvfb-run`.
+- **Least privilege.** `permissions: contents: read` at the top of every workflow, anything more on the job that needs
+  it. A job that calls a reusable workflow grants the permissions its jobs ask for: a called job asking for more fails
+  the run. `id-token: write` only where a step uses it (npm provenance).
+- **Publish only from a release tag.** A publishing step runs when `github.ref` is a `v*` tag (`TAG_BUILD`), or `main`
+  for the `edge` image. Anywhere else the workflow builds and packs, so a pull request can run it.
 - **Publishing secrets reach a release tag only.** A `reusable-publish-*.yml` declares the secrets it uses
-  (`on.workflow_call.secrets`), and `release.yml` passes each one only when `github.ref` is a `v*` tag, never
+  (`on.workflow_call.secrets`), and `release.yml` passes each one only when `github.ref` is a `v*` tag, never through
   `secrets: inherit`: a pull request's dry run gets none. A step that runs project code with a signing key (the
-  JetBrains `signPlugin`, the Tauri updater key) runs on a tag only. The publishing jobs of a tag run in the
-  `release` environment (`environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}`), whose
-  protection rules and secrets are set in the repository settings. `id-token: write` only where a step uses it (npm
-  provenance). `.github/` is owned by its maintainer (`CODEOWNERS`).
-- **A release becomes GitHub's latest once its installers are attached.** The desktop updater reads its manifests from
-  `releases/latest/download/`, and the download links open `releases/latest`. `release-please.yml` marks the previous
-  release the latest again as soon as it creates a release, and the `latest` job of `reusable-publish-desktop.yml`
+  JetBrains `signPlugin`, the Tauri updater key) runs on a tag only. The publishing jobs of a tag run in the `release`
+  environment (`environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}`), whose protection rules
+  and secrets are set in the repository settings.
+- **`.github/` is owned by its maintainer** (`CODEOWNERS`): a change here needs their review.
+- **The GHCR image name is fixed.** It is `ghcr.io/piwitests/platform` (`REGISTRY` and `IMAGE_NAME` in
+  `reusable-publish-container.yml`), never derived from `github.repository`: users pull it by that name, and a registry
+  does not redirect when the repository is renamed.
+- **A release becomes GitHub's latest only once its installers are attached.** The desktop updater reads its manifests
+  from `releases/latest/download/`, and the download links open `releases/latest`. `release-please.yml` marks the
+  previous release the latest again as soon as it creates one, and the `latest` job of `reusable-publish-desktop.yml`
   marks the new one once every leg has uploaded, when its tag is the newest. tauri-action gets the release's id, never
-  its tag: given a tag, it rewrites the release's name and body, and the body to an empty one.
-- **The bundled server fits Windows' MAX_PATH.** The installers fail on a file whose installed path passes 259
-  characters, so the `build` job runs `apps/desktop/scripts/check-path-lengths.mjs` on the server it builds. A
-  dependency installed in two versions, one nested under the other, is the usual cause.
-- **The editor extensions' changelogs are written at publish time.** `scripts/ide-changelog.mjs` keeps the `ide`
-  entries of the root `CHANGELOG.md`, under their version and section: `reusable-publish-vscode.yml` writes every
-  version's as `apps/vscode/CHANGELOG.md` (gitignored; `.vscodeignore` lets it into the VSIX) before `vsce package`,
-  and `reusable-publish-jetbrains.yml` writes the release's as HTML into `CHANGE_NOTES`, which `build.gradle.kts`
-  reads as the plugin's change notes, before its first Gradle run. Nothing generated is committed, and what
-  release-please writes is left as it is.
+  its tag: given a tag, it rewrites the release's name and empties its body.
+- **The bundled server fits Windows' MAX_PATH.** The installers fail on a file whose installed path is longer than 259
+  characters, so `ci.yml`'s `build` job runs `apps/desktop/scripts/check-path-lengths.mjs` on the server it builds. The
+  usual cause is a dependency installed in two versions, one nested under the other.
+- **The editor extensions' changelogs are written at publish time, never committed.** `scripts/ide-changelog.mjs`
+  derives them from the `ide` entries of the root `CHANGELOG.md`, which it reads and never rewrites (how each publish
+  workflow uses it: [`ARCHITECTURE.md`](ARCHITECTURE.md#editor-extension-changelogs)).
 - **Bounded.** `timeout-minutes` on every job, about three times its usual duration.
 - **Actions pinned by commit.** Every `uses:` of an action outside this repository names the full commit SHA of a
-  release, with its tag in a trailing comment: `uses: actions/checkout@<sha> # v7.0.1`. Resolve it with
-  `git ls-remote https://github.com/<owner>/<repo> refs/tags/<tag>` (the `^{}` line of an annotated tag). An action
-  followed by branch, such as `dtolnay/rust-toolchain`, is pinned to that branch's commit, with its inputs named.
+  release, with its tag in a trailing comment: `uses: actions/checkout@<sha> # v7.0.1`. Dependabot moves the two
+  together. Resolve a SHA with `git ls-remote https://github.com/<owner>/<repo> refs/tags/<tag>` (the `^{}` line of an
+  annotated tag). An action followed by branch, such as `dtolnay/rust-toolchain`, is pinned to that branch's commit,
+  with its inputs named.
 - **Readable.** A `name` on every step, and a `name:` on every workflow that says what it does.
-- **Superseded runs cancelled.** Every pull-request workflow has
-  `concurrency: { group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}, cancel-in-progress: true }`.
-  A reusable workflow has none: there `github.workflow` is the caller's name, so its group would collide with the
-  caller's and cancel the run.
-- **Artifacts expire.** An explicit `retention-days` on every artifact: 1 day for the ones jobs hand to each other.
+- **Superseded pull-request runs cancelled.** A workflow that runs on pull requests has
+  `concurrency: { group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}, cancel-in-progress: true }`
+  (`release.yml` cancels its pull-request runs only, never a tag's). A reusable workflow has none: there
+  `github.workflow` is the caller's name, so its group would collide with the caller's and cancel the run.
+- **Artifacts expire.** An explicit `retention-days` on every artifact: 1 day for the ones jobs hand to each other, 3
+  for `release.yml`'s server bundle, which **Re-run failed jobs** needs in the following days.
 - **Comments state the rule** the workflow follows, as everywhere in the repository (see the root `AGENTS.md`).
 
 ## Checking a change
@@ -107,10 +65,9 @@ every comparison is made on one machine; a `report` job joins their results into
 - Run `actionlint` before pushing (`pr-lint.yml` runs it on every pull request):
   `docker run --rm -v "$PWD:/repo" -w /repo -e SHELLCHECK_OPTS=--severity=warning rhysd/actionlint:1.7.12 -color`.
   It runs shellcheck on the `run` scripts, at the warning level.
-- A change under `.github/workflows/` or `.github/actions/` runs every suite on its pull request, which exercises it.
-  A change to `release.yml` or a `reusable-publish-*.yml` also runs `release.yml` on its pull request: every target
-  builds and packs, and nothing is published.
-- Dependabot updates the actions of the workflows and of `.github/actions/*`: the commit SHA and the version comment
-  together. It also updates the npm lockfiles (the root's, `apps/desktop`'s and `apps/docs`'s), the desktop shell's
-  crates, the JetBrains plugin's Gradle dependencies, the .NET packages (within their major) and the Dockerfile's base
-  image, whose tag and digest move together.
+- A change under `.github/workflows/` or `.github/actions/` runs every job of `ci.yml` on its pull request, which
+  exercises it. A change to `release.yml` or a `reusable-publish-*.yml` also runs `release.yml` on its pull request:
+  every target builds and packs, and nothing is published.
+- **The other workflows never run on a pull request** (`docs.yml`, `edge.yml`, `release-please.yml`,
+  `release-notes.yml`, `live-jira.yml`, `nightly-vscode.yml`): actionlint is the only check a change to them gets
+  before it merges.

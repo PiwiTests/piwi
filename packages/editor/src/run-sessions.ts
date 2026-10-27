@@ -1,23 +1,22 @@
 /**
  * The runs the editor started, as their workers tell them over the run channel (`@piwitests/core/run-channel`): a
- * session per run, by the ref of its command (`PIWI_ORIGIN_REF`), holding its workers, the test each one runs and
- * where it stands stopped. The record channel's socket (`recorder/handoff.ts`) hands each worker's run connection here.
- * The client hears each session (`piwi/runSessionChanged`) and steers it (`piwi/runControl`, `piwi/setRunBreakpoints`,
- * `piwi/pausedPage`), as Piwi Picker does through the hub (`run-hub.ts`); both can start an intent at a stop
- * (`intent`: the pause bar's Pick a locator and Record here, the check panel's Check an element, a region's ARIA
- * snapshot) and ask the stopped worker what it holds (`requests`, `mock`, `locator`: the responses its test kept, the
- * one to mock, a locator's matches), which `stop-actions.ts` turns into code. A viewer outside the page (a Piwi
- * Picker connection of the hub) watches a stopped page's live view (`view`): the worker starts it with the first
- * viewer of a stop and stops it with the last, and its frames go to that stop's viewers alone, none of an older stop;
- * a viewer plays its input on the page it watches (`input`), and the intents a stop no pause bar shows takes from a
- * viewer of its view. Any client picks the element under a point of an image of a stopped page (`pickAt`). A worker
- * names places relative to the run's working directory; the client, by their file's URI as the workspace names it:
- * the session converts both ways.
- * A stop that shows no pause bar while no surface can answer stops (the client does not, and no Piwi Picker follows
- * the runs) is resumed at once, and so is one held when the last of them goes. A failure no pause bar shows is held
- * only in a run started to be watched (`watched`: with the editor's breakpoints or a `page.pause()`) or while a Piwi
- * Picker follows the runs, else it goes on at once and no client hears of it. A worker's connection that closes lets
- * a stop no pause bar shows go on; a stop the bar shows waits there for its answer.
+ * session per run, by the ref of its command (`PIWI_ORIGIN_REF`), holding its workers, the test each one runs and where
+ * it stands stopped. The record channel's socket (`recorder/handoff.ts`) hands each worker's run connection here. The
+ * client hears each session (`piwi/runSessionChanged`) and steers it (`piwi/runControl`, `piwi/setRunBreakpoints`,
+ * `piwi/pausedPage`), as Piwi Picker does through the hub (`run-hub.ts`); both can start an intent at a stop (`intent`:
+ * the pause bar's Pick a locator and Record here, the check panel's Check an element, a region's ARIA snapshot) and ask
+ * the stopped worker what it holds (`requests`, `mock`, `locator`: the responses its test kept, the one to mock, a
+ * locator's matches), which `stop-actions.ts` turns into code. A viewer outside the page (a Piwi Picker connection of
+ * the hub) watches a stopped page's live view (`view`): the worker starts it with the first viewer of a stop and stops
+ * it with the last, and its frames go to that stop's viewers alone, none of an older stop; a viewer plays its input on
+ * the page it watches (`input`), and the intents a stop no pause bar shows takes from a viewer of its view. Any client
+ * picks the element under a point of an image of a stopped page (`pickAt`). A worker names places relative to the
+ * run's working directory; the client, by their file's URI as the workspace names it: the session converts both ways.
+ * A stop that shows no pause bar while no surface can answer stops (the client does not, and no Piwi Picker hears the
+ * runs) is resumed at once, and so is one held when the last of them goes. A failure no pause bar shows is held only
+ * in a run started to be watched (`watched`: with the editor's breakpoints or a `page.pause()`) or while a Runs window
+ * of Piwi Picker follows the runs, else it goes on at once and no client hears of it. A worker's connection that
+ * closes lets a stop no pause bar shows go on; a stop the bar shows waits there for its answer.
  */
 import * as path from 'node:path';
 import type * as net from 'node:net';
@@ -32,6 +31,7 @@ import {
   type PickAtAnswer,
   type Place,
   type RequestsAnswer,
+  type RunHold,
   type RunIntent,
   type RunQuery,
   type RunTake,
@@ -62,8 +62,10 @@ export const SESSION_BURST_MS = 50;
 export const SESSION_LINGER_MS = 5_000;
 /** How long `piwi/pausedPage`, and an intent, wait for the worker's answer. */
 export const PAUSED_PAGE_WAIT_MS = 10_000;
-/** The runs whose breakpoints the service keeps for workers that connect later, at most. */
-const MAX_BREAKPOINT_RUNS = 50;
+/** The runs whose breakpoints (for workers that connect later) and whose command's end the service keeps, at most. */
+const MAX_KEPT_RUNS = 50;
+/** The stops the service shows and answers among those a worker holds only then (`attached`): a held failure. */
+const SHOWN_HOLDS: readonly RunHold[] = ['failure'];
 
 type RunAttach = Extract<RunToHub, { type: 'run-attach' }>;
 
@@ -116,9 +118,10 @@ export interface StopRef {
   stop: number;
   since: string;
   reason: RunStop['reason'];
-  /** The file of the stopped call, as the workspace names it, and its 0-based line. */
+  /** The file of the stopped call, as the workspace names it, its 0-based line, and its 0-based column when known. */
   uri: string;
   line: number;
+  character: number | null;
   /** The run's folder, as `piwi/status` names it. */
   root: string | null;
 }
@@ -144,7 +147,7 @@ export interface RunSessionsOptions {
   notify(session: RunSession): void;
   /**
    * Whether a surface shows the stops and answers them: the client (`InitializationOptions.runControl`), or a Piwi
-   * Picker following the runs.
+   * Picker subscribed to the hub.
    */
   answersStops(): boolean;
   /** A sentence for the client to show once, about the folder `root`. */
@@ -153,17 +156,27 @@ export interface RunSessionsOptions {
   rootOf(cwd: string): string | null;
   /** Whether the client writes the code made at a stop (`InitializationOptions.stopCode`). */
   writesCode?(): boolean;
-  /** A worker sent the region picked at its stop, with its ARIA snapshot, for the code it makes. */
-  onRegion?(stop: StopRef, locator: string, snapshot: string): void;
+  /**
+   * A worker sent the region picked at its stop, with its ARIA snapshot, for the code it makes; or why the region
+   * brought none (`refused`).
+   */
+  onRegion?(stop: StopRef, region: { locator: string; snapshot: string } | { refused: string }): void;
   /**
    * Whether the run of `ref` was started to be watched: the service built its command with the editor's breakpoints,
    * or for a spec that calls `page.pause()` (both headed). A failure no bar shows is held in such a run.
    */
   watched?(ref: string): boolean;
-  /** Whether a Piwi Picker follows the runs now: a failure no bar shows is held while one does. */
+  /**
+   * Whether a person follows the runs in Piwi Picker now (a Runs window open, its hub connection saying so): a failure
+   * no bar shows is held while one does.
+   */
   followed?(): boolean;
-  /** A run the service did not hear of before: its first worker connected. */
-  sessionStarted?(ref: string): void;
+  /**
+   * A session starts: the first worker of a run connected, the run's command being one the service built or one it did
+   * not, or a run of a ref whose command ended before (`again`: a rerun of that command, its environment and ref as
+   * they were, whose code is the files as they stand now).
+   */
+  sessionStarted?(ref: string, again: boolean): void;
   paceMs?: number;
   burstMs?: number;
   lingerMs?: number;
@@ -253,13 +266,16 @@ export class RunSessions {
   private readonly sessions = new Map<string, Session>();
   /** The breakpoints a client sent for each run, as files and 0-based lines, newest last. */
   private readonly breakpoints = new Map<string, Array<{ file: string; line: number }>>();
+  /** The refs whose command ended (`commandEnded`), the latest 50: a session of one is a rerun's. */
+  private readonly endedCommands = new Set<string>();
   private lastRequest = 0;
 
   constructor(private readonly options: RunSessionsOptions) {}
 
   /**
-   * A worker connected with `attach`: it joins its run's session, a new one when none runs, and hears the breakpoints
-   * sent for the run since it started. Returns where its next lines go. A connection naming the index of a worker
+   * A worker connected with `attach`: it joins its run's session, a new one when none runs, hears which of the stops it
+   * holds only then the service shows (`attached`, to a worker that lists them: a failure's) and the breakpoints sent
+   * for the run since it started. Returns where its next lines go. A connection naming the index of a worker
    * connected now is closed: another process the run's environment reached (a test running Playwright itself) takes
    * no worker's place. The workers of a command that ended are let go with its session (`commandEnded`), so those of
    * a rerun start a new one.
@@ -287,7 +303,7 @@ export class RunSessions {
         resumedSaid: false,
       };
       this.sessions.set(attach.ref, session);
-      this.options.sessionStarted?.(attach.ref);
+      this.options.sessionStarted?.(attach.ref, this.endedCommands.delete(attach.ref));
     }
     if (session.linger) clearTimeout(session.linger);
     session.linger = null;
@@ -309,6 +325,8 @@ export class RunSessions {
     if (holder) this.closeWorker(holder);
     const own = session;
     socket.on('close', () => this.detach(own, worker));
+    if (attach.holds)
+      this.send(worker, { type: 'attached', holds: SHOWN_HOLDS.filter((h) => attach.holds!.includes(h)) });
     const breakpoints = this.breakpoints.get(attach.ref);
     if (breakpoints) this.sendBreakpoints(worker, breakpoints, session.root);
     this.changed(session);
@@ -609,6 +627,7 @@ export class RunSessions {
       reason: view.reason,
       uri: view.uri,
       line: view.line,
+      character: view.character,
       root: session.root,
     };
   }
@@ -669,13 +688,13 @@ export class RunSessions {
 
   /**
    * Whether a worker stands at a failure nobody watches: no bar shows it, its run was not started to be watched, and
-   * no Piwi Picker follows the runs. It goes on at once.
+   * no Runs window follows the runs. It goes on at once.
    */
   private unwatchedFailure(session: Session, worker: Worker): boolean {
     return worker.stop?.view.reason === 'failure' && !this.watches(session);
   }
 
-  /** Whether someone watches the run's failures: it was started to be watched, or a Piwi Picker follows the runs. */
+  /** Whether someone watches the run's failures: it was started to be watched, or a Runs window follows the runs. */
   private watches(session: Session): boolean {
     return !!this.options.watched?.(session.ref) || !!this.options.followed?.();
   }
@@ -690,7 +709,7 @@ export class RunSessions {
     this.breakpoints.delete(params.ref);
     this.breakpoints.set(params.ref, files);
     for (const oldest of this.breakpoints.keys()) {
-      if (this.breakpoints.size <= MAX_BREAKPOINT_RUNS) break;
+      if (this.breakpoints.size <= MAX_KEPT_RUNS) break;
       this.breakpoints.delete(oldest);
     }
     const session = this.sessions.get(params.ref);
@@ -729,6 +748,12 @@ export class RunSessions {
    * is ending, are closed, which lets a stop no pause bar shows go on at once.
    */
   commandEnded(ref: string): void {
+    this.endedCommands.delete(ref);
+    this.endedCommands.add(ref);
+    for (const oldest of this.endedCommands) {
+      if (this.endedCommands.size <= MAX_KEPT_RUNS) break;
+      this.endedCommands.delete(oldest);
+    }
     const session = this.sessions.get(ref);
     if (session) this.end(session);
   }
@@ -818,16 +843,20 @@ export class RunSessions {
         worker.requests.delete(message.request);
         return asked.settle(message.value);
       }
-      case 'region':
-        if (worker.stop?.id !== message.stop) return;
-        return this.options.onRegion?.(this.refOf(session, worker), message.locator, message.snapshot);
+      case 'region': {
+        const region = 'refused' in message ? { refused: message.refused } : message;
+        if (worker.stop?.id === message.stop) return this.options.onRegion?.(this.refOf(session, worker), region);
+        // The stop ended: a snapshot has nowhere to go, a refusal still says why.
+        if ('refused' in region) this.options.notice(session.root ?? worker.cwd, 'warning', region.refused);
+        return;
+      }
       case 'notice':
         return this.options.notice(session.root ?? worker.cwd, 'warning', message.message);
     }
   }
 
   /**
-   * A stop no one can answer: no pause bar shows it, the client shows no stop, and no Piwi Picker follows the runs. It
+   * A stop no one can answer: no pause bar shows it, the client shows no stop, and no Piwi Picker hears the runs. It
    * goes on, said once a run.
    */
   private resumeUnanswered(session: Session, worker: Worker, place: Place): void {

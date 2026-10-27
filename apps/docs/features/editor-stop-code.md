@@ -54,7 +54,8 @@ says.
 Nothing is written, and the editor says why, at a stop:
 
 - outside a test's or a function's body, such as a test timeout stopped at its `test(` line;
-- as the body of an `if`, `else`, `for`, `while` or `do` without braces, or on a line where no statement starts;
+- as the body of an `if`, `else`, `for`, `while`, `do` or arrow function (`() => page.click(…)`) without braces,
+  or on a line where no statement starts;
 - in a file written on disk since the run started, or unsaved as it started: Piwi follows a file through the edits
   the editor makes, not through another program's;
 - that the test went on from: an action answers the stop it was offered at.
@@ -73,12 +74,7 @@ not say) and when it finished in the test. Only the answer you choose is read wh
 await page.route('**/api/shipping?country=FR', (route) =>
   route.fulfill({
     json: {
-      "methods": [
-        {
-          "id": "standard",
-          "price": 4.9
-        }
-      ],
+      "price": 4.9,
       "token": "<hidden>"
     },
   }),
@@ -89,9 +85,10 @@ It is written as [Piwi Picker's Network tab](./mock-requests#mock-this-response)
 its size, with what it hides:
 
 - **Credentials.** A field named like a password, a token, a key, a signature or a session is written as `<hidden>`,
-  whatever it holds, and so is a value shaped like a token anywhere in the body (a JWT, a bearer token, an AWS,
-  Google, Stripe, GitHub or Slack key); such a query value becomes `**` in the URL pattern. The list hides them in its
-  URLs too. Headers, cookies included, are never written.
+  whatever it holds, and so is a value shaped like a credential anywhere in the body, by the
+  [rule Piwi Picker's mocks follow](./mock-requests#mock-this-response): ids, hashes and cursors stay. The URL pattern
+  matches such a value with a wildcard, and keeps the host. The list hides them too. Headers, cookies included, are
+  never written.
 - **Warnings.** The editor says how many values it wrote as `<hidden>`, that a body neither JSON nor a form was
   written as it came (read it before you commit it), and that a body seems to hold an email address or a phone
   number (replace it with made-up data).
@@ -100,7 +97,7 @@ its size, with what it hides:
 
 While a test is stopped, put the cursor on a line of the stopped file: its end says how many elements the line's
 locator matches on the stopped page, `Piwi: 3 matches`, `1 match` or `no match`, and where the pause bar shows, the
-matches are outlined in the page. Edit the locator and it is counted again once you stop typing. The outline goes
+matches are outlined in the page. Edit the locator and it is counted again. The outline goes
 when the cursor leaves the file or the test goes on.
 
 The locator must start from the page the test stopped on, as the code written there would: a line of `adminPage` at a
@@ -112,7 +109,7 @@ counted, and a line without a locator says nothing.
 In a run Piwi started, a failing test holds its page once the test function, its hooks and its fixtures are done,
 instead of closing it, when someone can see it: in a headed browser, where the pause bar shows the failure (a run
 started with breakpoints, or for a spec with `page.pause()`, is headed), or while Piwi Picker's
-[Runs window](./extension#runs-from-the-editor) follows the runs. The editor shows it as a stop of its own, at the
+[Runs window](./extension#runs-from-the-editor) is open. The editor shows it as a stop of its own, at the
 line where the error entered the test's code, or at the call a test timeout cut short:
 
 `Failed · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' }) · attempt 2`  Resume  Pick  Record …
@@ -127,10 +124,12 @@ entries and dialogs of the hold are not recorded. Playwright's own trace and vid
 
 ## Limits
 
-- **Runs Piwi started only**, with a reporter that takes the actions.
+- **Runs Piwi started only**, with a reporter that takes the actions; an editor extension older than the reporter
+  holds no failure.
 - **Assert offers what a recording's check panel offers**: a value, a text, a name, visible or hidden, enabled or
   disabled, with no `toBeChecked` or `toHaveCount` choice.
-- **Assert a region** leaves out a password field's value and a link whose URL holds a credential.
+- **Assert a region** leaves out the value of a password, one-time code or card field, in a shadow root too, and a link
+  whose URL holds a credential.
 - **Mock a request** knows `fetch` and XHR answers with a text body only; one the browser no longer holds cannot be
   mocked, which the editor says.
 - **The count needs a locator Piwi reads**: literal arguments, starting from a page in scope on the line.

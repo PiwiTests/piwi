@@ -213,9 +213,13 @@ describe('code from a stop, with a client that writes it', () => {
       const mocking = action({ ref, since, action: 'mock', request: 1 });
       const asked = await answer(worker, 1, 'mock', { ok: true, message: 'GET', response: RESPONSE });
       expect(asked).toEqual({ type: 'request', request: expect.any(Number), what: 'mock', stop: 1, id: 1 });
+      // The client says it wrote the code once it did; the answer, that it was sent to the client to write.
       const said = 'Piwi wrote the mock above checkout.spec.ts:5.';
       const goesOn = ' The stopped test goes on with the code it started with: the new lines run next time.';
-      expect(await mocking).toEqual({ ok: true, message: said + goesOn });
+      expect(await mocking).toEqual({
+        ok: true,
+        message: `Piwi sent the mock to Test Editor to write above checkout.spec.ts:5.${goesOn}`,
+      });
       const code = [
         "  await page.route('**/api/cart', (route) =>",
         '    route.fulfill({',
@@ -437,7 +441,10 @@ describe('code from a stop, with a client that writes it', () => {
 
       const mocking = action({ ref, since, action: 'mock', request: 1 });
       await answer(worker, 1, 'mock', { ok: true, message: 'GET', response: RESPONSE });
-      expect(await mocking).toMatchObject({ ok: true, message: 'Piwi wrote the mock above first.spec.ts:8.' });
+      expect(await mocking).toMatchObject({
+        ok: true,
+        message: 'Piwi sent the mock to Test Editor to write above first.spec.ts:8.',
+      });
       const second = last(svc.codes)!;
       // The import the first one added and its three lines are above the stopped statement now.
       expect(second.line).toBe(7);
@@ -496,6 +503,88 @@ describe('code from a stop, with a client that writes it', () => {
         code: expect.stringMatching(/^ {4}await this\.page\.route\('\*\*\/api\/cart', \(route\) =>\n/),
       });
     } finally {
+      worker.socket.destroy();
+    }
+  });
+
+  test('writes the code of a rerun under the same ref above its stopped line, the files as they stand when it ran', async () => {
+    const file = path.join(dir, 'tests/rerun.spec.ts');
+    const spec = [
+      "import { test } from '@playwright/test';",
+      '',
+      "test('pays', async ({ page }) => {",
+      "  await page.goto('/cart');",
+      "  await page.getByRole('button', { name: 'Pay' }).click();",
+      "  await page.getByRole('link', { name: 'Orders' }).click();",
+      '});',
+      '',
+    ].join('\n');
+    fs.writeFileSync(file, spec);
+    const doc = pathToFileURL(file).href;
+    await svc.client.sendNotification('textDocument/didOpen', {
+      textDocument: { uri: doc, languageId: 'typescript', version: 1, text: spec },
+    });
+    const { ref, channel } = await svc.command();
+    const first = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    let again: FakeWorker | null = null;
+    try {
+      first.begin('pays');
+      await waitFor(() => svc.latest(ref)?.workers[0]?.test ?? undefined);
+      first.socket.destroy();
+      await svc.client.sendNotification('piwi/commandEnded', { ref, exitCode: 0 });
+      await waitFor(() => (svc.latest(ref)?.ended ? true : undefined));
+      // Between the runs, three lines written above the click, and saved: the rerun runs them.
+      const added = '  // one\n  // two\n  // three\n';
+      await svc.client.sendNotification('textDocument/didChange', {
+        textDocument: { uri: doc, version: 2 },
+        contentChanges: [{ range: { start: { line: 4, character: 0 }, end: { line: 4, character: 0 } }, text: added }],
+      });
+      const saved = spec.replace("  await page.getByRole('button'", `${added}  await page.getByRole('button'`);
+      fs.writeFileSync(file, saved);
+      await new Promise((r) => setTimeout(r, 100));
+      // The rerun (JetBrains' Rerun starts the command again, its environment and ref as they were) stops at the click.
+      again = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+      again.begin('pays');
+      again.send({
+        type: 'stopped',
+        stop: 1,
+        reason: 'breakpoint',
+        title: "Click getByRole('button', { name: 'Pay' })",
+        place: { file: 'tests/rerun.spec.ts', line: 8, column: 5 },
+        locator: "getByRole('button', { name: 'Pay' })",
+        bar: true,
+      });
+      const stop = await waitFor(() =>
+        svc.latest(ref)?.ended === false ? svc.latest(ref)?.workers[0]?.stop : undefined,
+      );
+      const mocking = action({ ref, since: stop!.since, action: 'mock', request: 1 });
+      await answer(again, 0, 'mock', { ok: true, message: 'GET', response: RESPONSE });
+      expect(await mocking).toMatchObject({ ok: true, message: expect.stringContaining('rerun.spec.ts:8.') });
+      expect(last(svc.codes)).toMatchObject({ uri: doc, line: 7 });
+      expect(saved.split('\n')[7]).toBe("  await page.getByRole('button', { name: 'Pay' }).click();");
+    } finally {
+      await svc.client.sendNotification('textDocument/didClose', { textDocument: { uri: doc } });
+      first.socket.destroy();
+      again?.socket.destroy();
+    }
+  });
+
+  test('writes in a file saved with a byte order mark, which an editor’s document holds without it', async () => {
+    const file = path.join(dir, 'tests/bom.spec.ts');
+    fs.writeFileSync(file, `\uFEFF${SPEC}`);
+    const doc = pathToFileURL(file).href;
+    await svc.client.sendNotification('textDocument/didOpen', {
+      textDocument: { uri: doc, languageId: 'typescript', version: 1, text: SPEC },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const { ref, worker, since } = await stoppedWorker(svc, 'tests/bom.spec.ts', 5, true);
+    try {
+      const mocking = action({ ref, since, action: 'mock', request: 1 });
+      await answer(worker, 0, 'mock', { ok: true, message: 'GET', response: RESPONSE });
+      expect(await mocking).toMatchObject({ ok: true });
+      expect(last(svc.codes)).toMatchObject({ uri: doc, version: 1, line: 4 });
+    } finally {
+      await svc.client.sendNotification('textDocument/didClose', { textDocument: { uri: doc } });
       worker.socket.destroy();
     }
   });
@@ -736,7 +825,10 @@ describe('code from a stop, started from Piwi Picker', () => {
       send({ type: 'mock', id: 3, ref, since, request: 1 });
       await answer(worker, 1, 'mock', { ok: true, message: 'GET', response: RESPONSE });
       const mocked = await reply(3);
-      expect(mocked).toMatchObject({ ok: true, message: expect.stringMatching(/^Piwi wrote the mock above/) });
+      expect(mocked).toMatchObject({
+        ok: true,
+        message: expect.stringMatching(/^Piwi sent the mock to Test Editor to write above/),
+      });
       expect(JSON.stringify(mocked)).not.toContain('route');
       expect(last(svc.codes)).toMatchObject({ action: 'mock', ref, since });
 
@@ -795,7 +887,7 @@ describe('code from a stop, started from Piwi Picker', () => {
         since,
         action: 'assert-region',
         ok: true,
-        message: "Piwi wrote the region's ARIA snapshot above checkout.spec.ts:5.",
+        message: "Piwi sent the region's ARIA snapshot to Test Editor to write above checkout.spec.ts:5.",
       });
 
       // Assert from Piwi Picker: its answer says the check starts, and the check written comes after.
@@ -819,7 +911,7 @@ describe('code from a stop, started from Piwi Picker', () => {
           since,
           action: 'assert',
           ok: true,
-          message: 'Piwi wrote the check above checkout.spec.ts:5.',
+          message: 'Piwi sent the check to Test Editor to write above checkout.spec.ts:5.',
         });
       } finally {
         test.socket.destroy();
@@ -855,6 +947,92 @@ describe('code from a stop, started from Piwi Picker', () => {
       worker.socket.destroy();
       follower.socket.close();
       bystander.socket.close();
+      svc.stop();
+    }
+  });
+
+  test('tells the client and each follower why a region picked brought no snapshot', async () => {
+    const svc = await service(dir, true, { distDir: dist }, { stopCode: true });
+    const published = await waitFor(() => svc.published[0] ?? undefined);
+    const follower = await hubClient(published.hub!, true);
+    const { ref, worker, since } = await stoppedWorker(svc, 'tests/checkout.spec.ts', 5, true);
+    const codes = () => follower.messages.filter((m): m is HubCodeMessage => m.type === 'code');
+    try {
+      follower.send({ type: 'assert-region', id: 2, ref, since });
+      await answer(worker, 0, 'assert-region', { ok: true, message: 'Pick the region.' });
+      expect(await follower.reply(2)).toMatchObject({ ok: true, message: 'Pick the region.' });
+      const notices = svc.notices.length;
+      const why = "getByRole('listitem') finds 3 elements: pick a region it finds alone.";
+      worker.send({ type: 'region', stop: 1, refused: why });
+      expect(await waitFor(() => codes()[0])).toEqual({
+        type: 'code',
+        ref,
+        worker: 0,
+        since,
+        action: 'assert-region',
+        ok: false,
+        message: why,
+      });
+      expect(await waitFor(() => svc.notices[notices])).toEqual({ root: dir, severity: 'warning', message: why });
+      // Of a stop that ended, the client alone hears why.
+      worker.send({ type: 'region', stop: 7, refused: 'The ARIA snapshot of x could not be read.' });
+      expect(await waitFor(() => svc.notices[notices + 1])).toMatchObject({
+        message: 'The ARIA snapshot of x could not be read.',
+      });
+      expect(codes()).toHaveLength(1);
+    } finally {
+      worker.socket.destroy();
+      follower.socket.close();
+      svc.stop();
+    }
+  });
+
+  test('holds a failure no pause bar shows only while a connection follows the runs, a Runs window open', async () => {
+    const svc = await service(dir, true, { distDir: dist }, { stopCode: true });
+    const published = await waitFor(() => svc.published[0] ?? undefined);
+    // Piwi Picker's background worker, paired, with no Runs window open: subscribed, not following.
+    const picker = await hubClient(published.hub!, true);
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    const fail = (stop: number) =>
+      worker.send({
+        type: 'stopped',
+        stop,
+        reason: 'failure',
+        title: 'Failed: Timed out',
+        place: { file: 'tests/checkout.spec.ts', line: 5, column: 5 },
+        locator: null,
+        bar: false,
+      });
+    const controls = () => worker.heard.filter((m) => m.type === 'control');
+    try {
+      worker.begin('pays');
+      fail(1);
+      expect(await worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
+      await new Promise((r) => setTimeout(r, 100));
+      expect(svc.sessions.some((s) => s.workers.some((w) => w.stop))).toBe(false);
+      // A Runs window opens: the next failure waits for an answer.
+      picker.send({ type: 'follow', id: 2, on: true });
+      expect(await picker.reply(2)).toMatchObject({ ok: true });
+      fail(2);
+      await waitFor(() => svc.latest(ref)?.workers[0]?.stop ?? undefined);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(controls()).toHaveLength(1);
+      // The last Runs window closes: the failure goes on.
+      picker.send({ type: 'follow', id: 3, on: false });
+      expect(await worker.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 2 });
+      worker.send({ type: 'running', stop: 2 });
+      // Following again, then the connection closes: the failure it held goes on as well.
+      picker.send({ type: 'follow', id: 4, on: true });
+      await picker.reply(4);
+      fail(3);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(controls()).toHaveLength(2);
+      picker.socket.close();
+      expect(await worker.next('control', 2)).toEqual({ type: 'control', action: 'resume', stop: 3 });
+      expect(svc.notices).toEqual([]);
+    } finally {
+      worker.socket.destroy();
       svc.stop();
     }
   });

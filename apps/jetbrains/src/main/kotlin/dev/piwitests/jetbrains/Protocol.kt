@@ -31,7 +31,7 @@ data class SummaryLine(
 
 /**
  * The line of the test a failure went through (0-based), followed through the edits since the run, and why it failed.
- * `state` is `edited` once the line the run failed at changed since, `failing` otherwise; null from an older service.
+ * `state` is `edited` once the line the run failed at changed since, `failing` otherwise; may be null.
  */
 data class TestFailure(
     val line: Int = 0,
@@ -64,7 +64,7 @@ data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null)
  * `piwi/testAt`: the test whose `test(…)` call spans the line, null outside every test Piwi knows; the spec's tests,
  * null for a file that is not a spec or holds none of them; and where that `test(…)` call starts, as Playwright's
  * location filter takes it (`tests/checkout.spec.ts:42`, relative to the Playwright config's folder), whether Piwi
- * knows the test or not, null outside every `test(…)` call and from an older service.
+ * knows the test or not, null outside every `test(…)` call.
  */
 data class TestAtResult(val test: EditorTest? = null, val spec: SpecTests? = null, val location: String? = null)
 
@@ -150,7 +150,7 @@ data class RunCommandArgs(val cwd: String, val command: String, val env: Map<Str
 
 /**
  * A command line that runs tests. `ref` is the ref its run carries (`PIWI_ORIGIN_REF` in `env`), which
- * `piwi/commandEnded` names once the command ends; null from an older service. `notice` is a sentence to show once
+ * `piwi/commandEnded` names once the command ends; may be null. `notice` is a sentence to show once
  * as a warning while it runs anyway: breakpoints passed to a project whose reporter does not pause at them. `pauses`
  * says the run pauses at a `page.pause()` of a spec it runs, where a locator can be picked: the plugin names its
  * Send to editor pairing (`PIWI_EDITOR_SEND`), as for a run with breakpoints (`PIWI_PAUSE_AT`).
@@ -201,7 +201,7 @@ data class ContextStatus(
     val instance: NamedInstance? = null,
     /**
      * `root` as the editor names it: relative to the workspace folder holding it, after the folder's name when the
-     * workspace has several; the folder's name for a config at its root. Null from an older service.
+     * workspace has several; the folder's name for a config at its root. May be null.
      */
     val label: String? = null,
 )
@@ -249,8 +249,7 @@ data class LiveTest(val testCaseId: Int = 0, val status: String? = null)
  * event stream is connected or `polling`, `updatedAt` when the latest run was last read (ISO 8601), and `liveTests` the
  * tests `live` began or ended until the latest run is read once it ended, `reporterVersion` the version of
  * `@piwitests/reporter` the project installs (null when none is found), `baseline` the baseline chosen and what it
- * found, `branches` the branches a baseline can be chosen from, the default branch first. The fields after
- * `checkedOut` are null from an older service.
+ * found, `branches` the branches a baseline can be chosen from, the default branch first.
  */
 data class RunStatus(
     val root: String? = null,
@@ -319,7 +318,7 @@ data class RepeatVerdict(val verdict: String? = null, val failed: Boolean = fals
  * failed at changed since) or `fixed-locally`, `browserName` the Playwright project. `file` is the test's spec relative
  * to the Playwright config's folder, `status` `failed` or `timedOut`, `clusterId` and `clusterTitle` its failure
  * cluster, `owner` the test's owner, `isNew` whether it did not fail on this project in the latest complete run,
- * `duration` in milliseconds. The fields after `hasTrace` are null from an older service. `piwi/failuresChanged`
+ * `duration` in milliseconds. `piwi/failuresChanged`
  * carries the list again when a line or a state changes.
  */
 data class WorkspaceFailure(

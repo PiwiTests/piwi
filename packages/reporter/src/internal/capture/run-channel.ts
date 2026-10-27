@@ -3,6 +3,7 @@ import type { Page, WorkerInfo } from '@playwright/test';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import {
   RUN_CHANNEL_ENV,
+  RUN_HOLDS,
   RUN_INTENT_NAMES,
   RUN_TAKES,
   parseHubToRun,
@@ -12,6 +13,7 @@ import {
   type PausedImage,
   type PickAtAnswer,
   type Place,
+  type RunHold,
   type RunIntent,
   type RunToHub,
   type StopReason,
@@ -45,14 +47,15 @@ import { internalCall } from './quiet-capture.js';
  * the pause bar's Pick a locator or Record here, the check panel's Check an element or a region's ARIA snapshot from
  * outside the page, asks for the responses the test kept (`kept-responses.ts`) and the one to mock, and counts a
  * locator on the stopped page, outlining its matches where the bar shows until the test goes on (`takes` in its
- * attach). For a viewer outside the page, it shows the stopped page's live view (`view`: the page's screencast, its
- * frames sent at most `MAX_VIEW_FPS` a second, the latest one when the connection is backed up, never kept), plays
- * the viewer's input on it as trusted input (`input`: `page.mouse`, `page.keyboard`, at most `MAX_VIEW_EVENT_RATE`
- * events a second, what it holds down let go before the test goes on), and sends the locator of the element under a
- * point of an image of the page where a pick goes (`pick-at`, `pick-at.ts`). The view ends with its stop, before the
- * test goes on, and as its page or the connection closes. A test never waits on it but while stopped, and a
- * connection that does not open, or closes, leaves the run as without it: a stop no pause bar can answer then goes on
- * at once.
+ * attach). Its attach also lists the stops it holds only once the editor says it shows them (`holds`: a failure), which
+ * the editor answers with `attached`; an editor that predates it says nothing, and no failure is held for it. For a
+ * viewer outside the page, it shows the stopped page's live view (`view`: the page's screencast, its frames sent at
+ * most `MAX_VIEW_FPS` a second, the latest one when the connection is backed up, never kept), plays the viewer's input
+ * on it as trusted input (`input`: `page.mouse`, `page.keyboard`, at most `MAX_VIEW_EVENT_RATE` events a second, what
+ * it holds down let go before the test goes on), and sends the locator of the element under a point of an image of
+ * the page where a pick goes (`pick-at`, `pick-at.ts`). The view ends with its stop, before the test goes on, and as
+ * its page or the connection closes. A test never waits on it but while stopped, and a connection that does not open,
+ * or closes, leaves the run as without it: a stop no pause bar can answer then goes on at once.
  */
 
 /** How long a worker waits for its run connection to open before its first test runs without it. */
@@ -131,6 +134,8 @@ export interface StopToHold {
 
 let socket: net.Socket | null = null;
 let control: RunControl | null = null;
+/** The stops the editor said it shows, of those this worker holds only then (`attached`). */
+let shown = new Set<RunHold>();
 let stops = 0;
 let held: HeldStop | null = null;
 /** The outline of a locator's matches in a stopped page, and the stop it belongs to. */
@@ -210,6 +215,7 @@ export async function openRunChannel(
   }
   socket = opening;
   control = handlers;
+  shown = new Set();
   opening.unref();
   opening.on(
     'data',
@@ -239,8 +245,17 @@ export async function openRunChannel(
     playwright: worker.config.version,
     reporter: getReporterVersion(),
     takes: [...RUN_TAKES],
+    holds: [...RUN_HOLDS],
   });
   return true;
+}
+
+/**
+ * Whether the editor shows and answers a stop held for `what` (`attached`): a failure is held only for an editor that
+ * said so, while the run connection is open.
+ */
+export function editorShows(what: RunHold): boolean {
+  return runChannelOpen() && shown.has(what);
 }
 
 /** What a test runs without: the run's channel, and the editor's Send to editor pairing with its token. */
@@ -682,6 +697,9 @@ async function countLocator(holding: HeldStop, source: string | null): Promise<L
 function onMessage(message: HubToRun | UnknownMessage | null): void {
   if (!message) return;
   switch (message.type) {
+    case 'attached':
+      shown = new Set(message.holds);
+      return;
     case 'breakpoints':
       control?.breakpoints(message.places);
       return;

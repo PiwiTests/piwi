@@ -1,5 +1,5 @@
 import type { Request, Response } from '@playwright/test';
-import { hideSecretsInText } from '@piwitests/core/mask';
+import { hideSecretsInUrl } from '@piwitests/core/mask';
 import { MAX_KEPT_BODY, MAX_KEPT_RESPONSES, type KeptRequest, type KeptResponse } from '@piwitests/core/run-channel';
 import { internalCall } from './quiet-capture.js';
 
@@ -7,10 +7,11 @@ import { internalCall } from './quiet-capture.js';
  * The responses an interactive run keeps for **Mock a request** at a stop: while the worker's run connection to the
  * editor is open, the fetch and XHR answers the running test's pages receive whose type is text (or unnamed), from the
  * test's start, the latest `MAX_KEPT_RESPONSES` at most and `MAX_KEPT_BODY` bytes each, in this worker's memory alone:
- * each one's place in the list and its `Response`, whose body the browser holds, its size as the response says it. They never go into an attachment or
- * an upload, and they are dropped as the test ends. A stop lists them without their bodies, a credential in a URL
- * hidden (`keptRequests`); the editor asks for the one chosen (`keptResponse`), whose body is read then, as an
- * internal call, and handed over when it is text.
+ * each one's place in the list and its `Response`, whose body the browser holds, its size as the response says it. They
+ * never go into an attachment or an upload, and they are dropped as the test ends. A stop lists them without their
+ * bodies, a credential in a URL hidden part by part, its host and ids kept (`keptRequests`, `hideSecretsInUrl`); the
+ * editor asks for the one chosen (`keptResponse`), whose body is read then, as an internal call, and handed over when
+ * it is text.
  */
 
 /** A kept response, with the `Response` its body is read from. */
@@ -67,7 +68,7 @@ export async function keepResponse(request: Request, response: Response | null):
   try {
     const kind = request.resourceType();
     if (kind !== 'fetch' && kind !== 'xhr') return;
-    const url = hideSecretsInText(request.url());
+    const url = hideSecretsInUrl(request.url());
     const method = request.method().toUpperCase();
     if (url.length > 8192 || !/^[A-Z]{1,16}$/.test(method)) return;
     const headers = response.headers();

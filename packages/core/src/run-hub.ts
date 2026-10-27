@@ -7,11 +7,12 @@
  * `moz-extension://<uuid>`); the first message must be `hello` with the token, within `HUB_HELLO_MS`. Every later
  * message is a command with an `id`, answered once with that `id` (`HubAnswer`); `subscribe` has the hub push each run
  * as it changes (`HubSessionMessage`), and what each action that writes code at a stop came to, whichever surface
- * started it (`HubCodeMessage`: its sentence, never the code); `view` has it push the frames of a stopped page's live
- * view to that connection alone (`HubFrameMessage`), and `input` plays the connection's input on the page it views.
- * The hub sends `keepalive` every `HUB_KEEPALIVE_MS`, and a frame longer than `MAX_HUB_FRAME` closes the connection.
- * Messages are text frames of JSON, checked field by field on both sides. Nothing a command asks evaluates code, reads
- * a file or reaches an instance.
+ * started it (`HubCodeMessage`: its sentence, never the code); `follow` says whether a person watches the runs there
+ * (a Runs window is open), which holds a failure no pause bar shows; `view` has it push the frames of a stopped page's
+ * live view to that connection alone (`HubFrameMessage`), and `input` plays the connection's input on the page it
+ * views. The hub sends `keepalive` every `HUB_KEEPALIVE_MS`, and a frame longer than `MAX_HUB_FRAME` closes the
+ * connection. Messages are text frames of JSON, checked field by field on both sides. Nothing a command asks evaluates
+ * code, reads a file or reaches an instance.
  */
 import type { EditorDiscovery, HubAddress } from './editor-discovery';
 import { MAX_STOP_ERROR, type KeptRequest } from './run-channel';
@@ -211,6 +212,11 @@ export type HubCommand =
   /** Hear every run of the editor: one `session` for each live now, after the answer, then each change. */
   | { type: 'subscribe'; id: number }
   /**
+   * Whether a person watches the runs through this connection now (`on`): a Runs window is open. While one connection
+   * follows them, a failure no pause bar shows is held for it; a connection that never says so, or closes, does not.
+   */
+  | { type: 'follow'; id: number; on: boolean }
+  /**
    * Steer a run, as `piwi/runControl` does: `pause` every running worker (or `worker`), or answer the stop of the one
    * stopped (`worker`, needed when several are): `step`, `resume`, `finish`. `since` names the stop the extension
    * showed, and these three need it: one that went on is refused (`The test went on.`), so a click twice does not skip
@@ -300,10 +306,12 @@ export interface HubSessionMessage {
 
 /**
  * What an action that writes code at a stop came to, sent to every subscribed connection once, whichever surface
- * started it (the editor or a Runs page): the editor wrote the code (`ok`, its sentence, such as `Piwi wrote the check
- * above checkout.spec.ts:5.`, and what to check in it, `warnings`), or the action was refused once it had started
- * (`ok: false`, why: the check could not be written, the region's snapshot could not be read). The stop is the one
- * `since` names, of the worker `worker`; a page shows it while that worker stands there. The code itself never comes.
+ * started it (the editor or a Runs page): the code was sent to the editor to write (`ok`, its sentence, such as `Piwi
+ * sent the check to Visual Studio Code to write above checkout.spec.ts:5.`, and what to check in it, `warnings`; the
+ * editor, which can still refuse the write, says itself whether it wrote it), or the action was refused once it had
+ * started (`ok: false`, why: the check could not be written, the region picked brought no snapshot). The stop is the
+ * one `since` names, of the worker `worker`; a page shows it while that worker stands there. The code itself never
+ * comes.
  */
 export interface HubCodeMessage {
   type: 'code';
@@ -455,6 +463,9 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
   const invalid = (message: string): ParsedHubCommand => ({ type: 'invalid', id, message });
   if (typeof value.type !== 'string' || !value.type) return invalid('A command needs a type.');
   if (value.type === 'subscribe') return { type: 'subscribe', id };
+  if (value.type === 'follow') {
+    return typeof value.on === 'boolean' ? { type: 'follow', id, on: value.on } : invalid('on must be true or false.');
+  }
   if (
     !['runControl', 'pausedPage', 'requests', 'mock', 'view', 'input', 'pick-at', ...HUB_INTENTS].includes(value.type)
   ) {

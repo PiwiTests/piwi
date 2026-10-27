@@ -141,6 +141,8 @@ describe('the hub’s WebSocket', () => {
 
   test('reads each command field by field', () => {
     expect(parseHubCommand(json({ type: 'subscribe', id: 1 }))).toEqual({ type: 'subscribe', id: 1 });
+    expect(parseHubCommand(json({ type: 'follow', id: 1, on: true }))).toEqual({ type: 'follow', id: 1, on: true });
+    expect(parseHubCommand(json({ type: 'follow', id: 1, on: false }))).toEqual({ type: 'follow', id: 1, on: false });
     expect(parseHubCommand(json({ type: 'runControl', id: 2, ref: 'ed-1', action: 'pause' }))).toEqual({
       type: 'runControl',
       id: 2,
@@ -196,6 +198,9 @@ describe('the hub’s WebSocket', () => {
       { type: 'mock', ref: 'ed-1', since: 'S' },
       { type: 'mock', ref: 'ed-1', since: 'S', request: 0 },
       { type: 'mock', ref: 'ed-1', since: 'S', request: '3' },
+      { type: 'follow' },
+      { type: 'follow', on: 'true' },
+      { type: 'follow', on: 1 },
       { type: '' },
       { type: 7 },
     ]) {

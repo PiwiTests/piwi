@@ -30,15 +30,16 @@ import { fileURLToPath } from 'url';
 import { tmpdir } from 'os';
 
 import { checkoutFormPage, buttonGalleryPage, adminReportsPage, mobileNavPage } from './demo-pages.mjs';
+import { resolveChromium } from './lib/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
-const pw = require(join(dirname(fileURLToPath(import.meta.url)), '../../node_modules/playwright/index.js'));
+const pw = require('playwright');
 const chromium = pw.chromium;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TRACES_DIR = join(__dirname, '../public/demo/traces');
 const VIDEOS_DIR = join(__dirname, '../public/demo/videos');
-const EXECUTABLE = process.env.PIWI_DEMO_CHROMIUM || '/opt/pw-browsers/chromium';
+const EXECUTABLE = process.env.PIWI_DEMO_CHROMIUM || resolveChromium();
 
 /**
  * Each scenario declares the routes its page needs (path → html, or a

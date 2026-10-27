@@ -258,6 +258,10 @@ beforeAll(async () => {
           }
           const message = parseRunToHub(line);
           if (!message) return;
+          // As the editor service answers a worker that holds a failure only for an editor that shows one.
+          if (message.type === 'run-attach' && message.holds) {
+            socket.write(`${JSON.stringify({ type: 'attached', holds: message.holds })}\n`);
+          }
           connection.heard.push(message);
           if (message.type === 'test-begin') connection.test = message.title[message.title.length - 1]!;
           if (message.type === 'stopped') void onStopped(connection, message);

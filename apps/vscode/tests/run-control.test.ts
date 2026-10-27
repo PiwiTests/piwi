@@ -18,6 +18,7 @@ import {
   caretText,
   controlItems,
   controlState,
+  heardSession,
   imageClickOf,
   lineEditOf,
   linesAbove,
@@ -106,6 +107,31 @@ describe('the sessions kept', () => {
     expect(kept.get('ed-1')).toBe(stopped);
     kept = withSession(kept, session('ed-1', [], true));
     expect([...kept.keys()]).toEqual(['ed-2']);
+  });
+
+  test('map a rerun’s lines from when it is first heard, the run of its ref having ended, its edits left behind', () => {
+    const log = new EditLog();
+    const runs = new Map<string, RunBreakpoints>();
+    // A run started here, under its ref: its lines map from its start.
+    remember(runs, 'ed-1', runStarted(log.now(), null));
+    let kept: Map<string, RunSession> = new Map();
+    ({ sessions: kept } = heardSession(kept, runs, session('ed-1', [worker(0, 'running')]), log.now()));
+    ({ sessions: kept } = heardSession(kept, runs, session('ed-1', [], true), log.now()));
+    expect(runs.has('ed-1')).toBe(false);
+    // Three lines written above the stopped line between the runs, and saved: the rerun runs them.
+    log.add(spec, lineEditOf(change([1, 0], [1, 0], '  // one\n  // two\n  // three\n'))!);
+    const rerun = heardSession(
+      kept,
+      runs,
+      session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 7) })]),
+      log.now(),
+    );
+    expect(rerun.fresh).toBe(true);
+    expect(log.forward(spec, 7, runs.get('ed-1')!.since)).toBe(7);
+    // The same run heard again keeps where it maps from.
+    log.add(spec, lineEditOf(change([1, 0], [1, 0], '  // four\n'))!);
+    expect(heardSession(rerun.sessions, runs, session('ed-1', [worker(0, 'running')]), log.now()).fresh).toBe(false);
+    expect(log.forward(spec, 7, runs.get('ed-1')!.since)).toBe(8);
   });
 
   test('name their files as the editor spells them', () => {
@@ -642,6 +668,29 @@ describe('the count of the locator at the cursor', () => {
       expect(shown()).toBeNull();
       await vi.advanceTimersByTimeAsync(CARET_WAIT_MS);
       expect(asked).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('asks again when the cursor comes back to a line it left before the count settled', async () => {
+    const { counts, asked, at, shown } = counting();
+    try {
+      counts.moved(at(4), 'a');
+      await vi.advanceTimersByTimeAsync(CARET_WAIT_MS);
+      asked[0]!.resolve(answer(1));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(shown()?.text).toBe('1 match');
+      // Down a line and back, quicker than the count waits: the count shows again.
+      counts.moved(at(5), 'b');
+      await vi.advanceTimersByTimeAsync(50);
+      counts.moved(at(4), 'a');
+      expect(shown()).toBeNull();
+      await vi.advanceTimersByTimeAsync(CARET_WAIT_MS);
+      expect(asked.map((a) => a.query.line)).toEqual([4, 4]);
+      asked[1]!.resolve(answer(1));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(shown()).toEqual({ uri: spec, line: 4, text: '1 match', brief: false });
     } finally {
       vi.useRealTimers();
     }

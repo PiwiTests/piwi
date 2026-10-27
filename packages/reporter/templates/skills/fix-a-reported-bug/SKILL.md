@@ -13,7 +13,9 @@ fixes it, and proves the fix with that same test.
 
 Prefer the **Piwi MCP server** if it is connected: `get_bug_report` (the steps in words, what was expected, the
 evidence, the reproductions, the tests that visit the page) and `render_steps` with `bugReportId` (the failing test).
-Without it, the CLI does the same with the dashboard's URL and an API key: `npx @piwitests/reporter bug <id>`.
+Without it, the CLI does the same: `npx @piwitests/reporter bug <id>`, with the dashboard's URL and an API key in the
+`PIWI_DASHBOARD_URL` and `PIWI_API_KEY` environment variables (or `--server-url` and `--api-key`). This command does not
+read a `.env` file: export the variables, or pass the flags.
 
 ## Steps
 
@@ -21,10 +23,12 @@ Without it, the CLI does the same with the dashboard's URL and an API key: `npx 
    the reporter's note, the failed requests and console errors. The evidence often names the cause (a `POST … 500`).
 
 2. **Write the failing test.** `npx @piwitests/reporter bug <id> --write` writes the spec to the project's bugs folder
-   (`tests/bugs` unless the project names another) and runs it once. It is marked `test.fail()` and annotated
-   `piwi:bug <id>`, so it passes while the bug exists. Exit code 0 means the bug reproduces here. Exit code 1 means it
-   does not: read the output. A step that finds no element means the page or the data differ here (a user, a cart, a
-   flag the report assumed): make the test's setup provide them, in the project's style, rather than deleting steps.
+   (`tests/bugs` unless the project names another) and runs it once. It is marked `test.fail()`, tagged `@bug` and
+   annotated `piwi:bug <id>`, so it passes while the bug exists. Exit code 0 means the bug reproduces here. Exit code 1
+   means it does not: read the output. Exit code 2 means the report could not be read or the file could not be written
+   (`--force` replaces an existing file). A step that finds no element means the page or the data differ here (a
+   user, a cart, a flag the report assumed): make the test's setup provide them, in the project's style, rather than
+   deleting steps.
 
 3. **Look at the tests that already visit the page** (`missedBy` in `get_bug_report`). If one of them reaches the
    element, the missing piece is often one assertion in that test; say so in your report, and keep the bug's own spec
@@ -35,9 +39,9 @@ Without it, the CLI does the same with the dashboard's URL and an API key: `npx 
 5. **Prove the fix.** Remove the `test.fail()` line from the bug's spec and run it: it must pass. Run the tests that
    visit the page too (`npx playwright test <their files>`), so the fix breaks nothing around it.
 
-6. **Report.** The cause, the fix, the spec file, and the two runs. Once the spec runs in CI without `test.fail()`, Piwi
-   closes the report on its own; before that, a run where the spec still carries `test.fail()` and passes marks it
-   "looks fixed".
+6. **Report.** The cause, the fix, the spec file, and the two runs. Once the spec passes without `test.fail()` in a
+   run on the project's default branch (not a `piwi bug` run), Piwi closes the report on its own; before that, such a
+   run where the spec still carries `test.fail()` and passes marks it "looks fixed".
 
 ## Guardrails
 

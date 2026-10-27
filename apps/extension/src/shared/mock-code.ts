@@ -3,15 +3,16 @@
  * Mock this response in the Piwi panel. Pure: the panel hands it the request's
  * method, URL, status, type and body.
  *
- * Credentials are hidden unless the caller asks otherwise, by name and by
- * shape (`isSecretName`, `isSecretValue` and `hideSecretsInText` of
- * `@piwitests/core/mask`): the whole value of a JSON or form field named like
- * a password, a token, a secret, a key, a signature or a session, whatever it
- * holds, and a token-shaped value anywhere in a body, get {@link HIDDEN_VALUE};
- * such a query parameter, or a path segment shaped like one, is matched by a
- * wildcard. A JSON body keeps each number as written. Headers never reach the
- * code. The editor service bundles it too, for Mock a request at a stopped
- * test.
+ * Credentials are hidden unless the caller asks otherwise, by the rule
+ * `@piwitests/core/mask` writes down (`isSecretName`, `isSecretValue`,
+ * `hideSecretsInText`): the whole value of a JSON or form field named like a
+ * password, a token, a secret, a key, a signature or a session, whatever it
+ * holds, and a value with a credential's shape anywhere in a body, a JSON text
+ * inside a JSON string included, get {@link HIDDEN_VALUE}; such a query
+ * parameter, or a path segment shaped like one, is matched by a wildcard, the
+ * host and the ids of the path kept. A JSON body keeps each number as written.
+ * Headers never reach the code. The editor service bundles it too, for Mock a
+ * request at a stopped test.
  */
 
 import { quoteJsString } from '@piwitests/core/locator-chain';
@@ -105,7 +106,11 @@ export function mockUrlPattern(url: string): string {
   try {
     parsed = new URL(url);
   } catch {
-    return url;
+    // Not a URL to read: a hidden value still matches what it stands for, never itself.
+    return url
+      .split(HIDDEN_VALUE)
+      .map((part) => part.replace(/[*{}[\]\\]/g, '*'))
+      .join('**');
   }
   const path = parsed.pathname
     .split('/')
@@ -153,21 +158,31 @@ function holdsValue(value: unknown): boolean {
   return true;
 }
 
+/** The deepest JSON text inside a JSON string, inside another, read as JSON; a deeper one is read as text. */
+const MAX_JSON_IN_STRING = 4;
+
 /**
  * Replaces credentials in a JSON value, counting them: the whole value of a field named like a credential, whatever it
- * holds (a token, an object, a list of keys; `null` and booleans, which hold none, stay), and the token-shaped parts of
- * every other string. Every key is kept, `__proto__` too.
+ * holds (a token, an object, a list of keys; `null` and booleans, which hold none, stay), and the credential-shaped
+ * parts of every other string. A string that holds a JSON object or array is read as JSON the same way, and written
+ * again, compact, when a value of it was hidden. Every key is kept, `__proto__` too.
  */
-function hideInJson(value: unknown, count: { n: number }): unknown {
-  if (Array.isArray(value)) return value.map((item) => hideInJson(item, count));
-  if (typeof value === 'string') return hideSecretsInText(value, count);
+function hideInJson(value: unknown, count: { n: number }, nested = 0): unknown {
+  if (Array.isArray(value)) return value.map((item) => hideInJson(item, count, nested));
+  if (typeof value === 'string') {
+    const inner = nested < MAX_JSON_IN_STRING && /^\s*[[{]/.test(value) ? parseJson(value) : null;
+    if (!inner?.ok) return hideSecretsInText(value, count);
+    const before = count.n;
+    const hidden = hideInJson(inner.value, count, nested + 1);
+    return count.n > before ? writeJson(hidden, 'json', true) : value;
+  }
   if (value && typeof value === 'object' && !(value instanceof JsonNumber)) {
     const out: Record<string, unknown> = Object.create(null);
     for (const [key, item] of Object.entries(value)) {
       if (isSecretName(key) && holdsValue(item)) {
         count.n++;
         out[key] = HIDDEN_VALUE;
-      } else out[key] = hideInJson(item, count);
+      } else out[key] = hideInJson(item, count, nested);
     }
     return out;
   }

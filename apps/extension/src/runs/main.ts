@@ -23,14 +23,14 @@ import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
 
 /**
  * The Runs window: the runs the paired editor started, each worker's test and where it stands, an image of a stopped
- * page, and the controls, with the code a stop can write (Pick, Record, Assert, Assert a region, Mock a request) as
- * the worker's reporter and the editor take them. Opened from the popup's Runs tile in a small window of its own. It
- * reads everything from the background worker through its port (`RUNS_PORT`), and makes no network call: the worker
- * holds the hubs' connections and tokens. The code itself never comes here: the editor writes it, and the window
- * shows what it answered and what each code written at the stop came to, whoever asked for it. What a hub sends is
- * shown as text, and its image as an image. Each part of the window is
- * drawn again only when what it shows changes (`part`), so a button under the pointer or the keyboard stays the same
- * element while the run goes on around it.
+ * page, and the controls, with the code a stop can write (Pick, Record, Assert, Assert a region, Mock a request) as the
+ * worker's reporter and the editor take them. Opened from the popup's Runs tile in a small window of its own. It reads
+ * everything from the background worker through its port (`RUNS_PORT`), and makes no network call: the worker holds the
+ * hubs' connections and tokens. The code itself never comes here: it goes to the editor, which writes it and says there
+ * whether it did, and the window shows what the hub answered and what each code made at the stop came to (sent to the
+ * editor to write, or refused), whoever asked for it. What a hub sends is shown as text, and its image as an image.
+ * Each part of the window is drawn again only when what it shows changes (`part`), so a button under the pointer or the
+ * keyboard stays the same element while the run goes on around it.
  */
 
 await initI18n();
@@ -54,13 +54,13 @@ let state: RunsState | null = null;
 /** The image of each stopped worker's page, for the stop it was taken at. */
 const images = new Map<string, { since: string; loading: boolean; img: HTMLImageElement | null; note: string }>();
 /**
- * What the last command for a worker answered, or what the last code written at its stop came to, when there is
+ * What the last command for a worker answered, or what the last code made at its stop came to, when there is
  * something to say, for the stop it was sent at (null for Pause): shown while the worker stands there, and gone with
- * that stop. `written` when the editor wrote code, with what to check in it (`warnings`).
+ * that stop. `sent` when the code went to the editor to write, with what to check in it (`warnings`).
  */
 const answers = new Map<
   string,
-  { ok: boolean; text: string; since: string | null; written: boolean; warnings: string[] }
+  { ok: boolean; text: string; since: string | null; sent: boolean; warnings: string[] }
 >();
 /** The requests a stopped worker's test kept, listed for Mock a request at the stop they were asked at. */
 interface RequestList {
@@ -187,15 +187,15 @@ async function send(
 }
 
 /** Shows what a command answered under the test, or what a code came to, with what to check in it, and reads it out. */
-function say(key: string, answer: RunsAnswer, since: string | null, written = false, warnings: string[] = []): void {
+function say(key: string, answer: RunsAnswer, since: string | null, sent = false, warnings: string[] = []): void {
   const text = answer.ok ? answer.message : failureText(answer);
-  answers.set(key, { ok: answer.ok, text, since, written: answer.ok && written, warnings });
+  answers.set(key, { ok: answer.ok, text, since, sent: answer.ok && sent, warnings });
   if (text) announce([text, ...warnings].join(' '));
 }
 
 /**
- * What a code written at a stop came to, whoever asked for it (this window, the editor): shown under the test, and
- * read out, while its worker stands at that stop; dropped otherwise.
+ * What a code made at a stop came to, whoever asked for it (this window, the editor): sent to the editor to write, or
+ * refused, shown under the test and read out while its worker stands at that stop; dropped otherwise.
  */
 function heardCode(code: RunsCode): void {
   const run = state?.runs.find((r) => r.hub === code.hub && r.session.ref === code.ref && !r.session.ended);
@@ -241,12 +241,12 @@ async function toggleRequests(run: RunsRun, worker: number, since: string): Prom
   render();
 }
 
-/** Mocks the request chosen in the list: the editor writes the code; the list closes once it did. */
+/** Mocks the request chosen in the list: the code goes to the editor to write; the list closes once it went. */
 async function mockRequest(run: RunsRun, worker: number, since: string, request: number): Promise<void> {
   const key = workerKey(run.hub, run.session.ref, { worker });
   const answer = await send(run, worker, 'mock', since, request);
   if (!answer) return;
-  // What the editor wrote came before this answer, with what to review in it: the answer says it again.
+  // The hub said what the code came to before this answer, with what to review in it: the answer says it again.
   const shown = answers.get(key);
   if (!(answer.ok && shown?.since === since && shown.text === answer.message)) say(key, answer, since, true);
   if (answer.ok) closeRequests(key);
@@ -842,8 +842,8 @@ function renderWorker(run: RunsRun, worker: HubWorker, count: number): HTMLEleme
     if (answer && answer.since === since) {
       const [className, icon]: [string, IconName] = !answer.ok
         ? ['answer', 'alert']
-        : answer.written
-          ? ['note written', 'check-circle']
+        : answer.sent
+          ? ['note sent', 'send']
           : ['note', 'info'];
       parts.push(part(`${key}|answer`, answer, () => iconText(element('p', className), icon, answer.text)));
       if (answer.warnings.length > 0) parts.push(part(`${key}|warnings`, answer.warnings, () => warningList(answer)));
@@ -860,7 +860,7 @@ function renderWorker(run: RunsRun, worker: HubWorker, count: number): HTMLEleme
   return item;
 }
 
-/** What to check in the code the editor wrote, as it said it: a line each. */
+/** What to check in the code sent to the editor, as the hub said it: a line each. */
 function warningList(answer: { warnings: readonly string[] }): HTMLElement {
   const list = element(
     'ul',

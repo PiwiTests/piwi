@@ -220,6 +220,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     /** The count at the caret: its questions, its wait, the inlay at the end of the caret's line and the query it is for. */
     private val caretAsks = Glue.CaretAsks()
     private val caretAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
+
+    /** Asks, on the event thread, whether the service has a document the code of a stop opened. */
+    private val openAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
     private val caretFade = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
     private var caretInlay: Inlay<*>? = null
     private var caretQuery: CaretQuery? = null
@@ -719,9 +722,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     /**
      * Write the code a stop made, on the event thread, in one command (one undo step) in its document, so the service
      * follows it as it follows every edit: in an editor, the file opened first when no editor shows it, its code written
-     * once the IDE told the service it opened it; only into the text the service placed it in (the version it names,
-     * else the file as saved), else its code is offered to copy. The block is scrolled to without taking the focus, and
-     * the sentence and warnings said.
+     * once the IDE told the service it opened it (`whenOpened`); only into the text the service placed it in (the
+     * version it names, else the file as saved), else its code is offered to copy. The block is scrolled to without
+     * taking the focus, and the sentence and warnings said.
      */
     fun write(code: StopCode, opened: Boolean = false) {
         if (!ApplicationManager.getApplication().isDispatchThread) {
@@ -734,12 +737,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val editors = FileEditorManager.getInstance(project)
         if (!opened && !editors.isFileOpen(file)) {
             editors.openTextEditor(OpenFileDescriptor(project, file, code.line, 0), false)
-            AppExecutorUtil.getAppScheduledExecutorService().schedule(
-                { ApplicationManager.getApplication().invokeLater({ write(code, true) }, gone) },
-                OPEN_WAIT_MILLIS,
-                TimeUnit.MILLISECONDS,
-            )
-            return
+            return whenOpened(document) { write(code, true) }
         }
         val placed = if (code.version == null) !FileDocumentManager.getInstance().isDocumentUnsaved(document) else remote.documentVersion(document) == code.version
         val writes = Glue.stopCodeWrites(document.immutableCharSequence, code.edits.orEmpty())
@@ -757,6 +755,21 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         EditorFactory.getInstance().getEditors(document, project).firstOrNull()?.scrollingModel?.scrollTo(LogicalPosition(lines.first, 0), ScrollType.MAKE_VISIBLE)
         val notice = Glue.stopCodeNotice(code)
         PiwiCommands.notify(project, notice.text, if (notice.warning) NotificationType.WARNING else NotificationType.INFORMATION)
+    }
+
+    /**
+     * `then`, on the event thread, once the IDE gave the service the document it opened (its version known,
+     * `RunRemote.documentVersion`), asked every `OPEN_POLL_MILLIS` by an alarm; after `OPEN_WAIT_MILLIS`, all the same,
+     * the write then checking the text as it does any other.
+     */
+    private fun whenOpened(document: Document, then: () -> Unit) {
+        val deadline = System.currentTimeMillis() + OPEN_WAIT_MILLIS
+        lateinit var check: () -> Unit
+        check = {
+            if (remote.documentVersion(document) != null || System.currentTimeMillis() >= deadline) then()
+            else openAlarm.addRequest({ check() }, OPEN_POLL_MILLIS)
+        }
+        openAlarm.addRequest({ check() }, OPEN_POLL_MILLIS)
     }
 
     /** Why the code a stop made was not written, with the code to copy. */
@@ -860,8 +873,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         /** How long a run started here is waited for, its edits kept, before its first worker connects. */
         private const val STARTING_MILLIS = 120_000L
 
-        /** How long the code a stop made waits once its file was opened: the IDE tells the service it opened it first. */
-        private const val OPEN_WAIT_MILLIS = 500L
+        /**
+         * How long the code a stop made waits at most once its file was opened, for the IDE to tell the service it opened
+         * it, and how often it asks.
+         */
+        private const val OPEN_WAIT_MILLIS = 3_000L
+        private const val OPEN_POLL_MILLIS = 50
 
         /** How long the count at the caret waits for the caret to settle, and how long a refusal shows. */
         private const val CARET_WAIT_MILLIS = 200

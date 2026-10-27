@@ -6443,7 +6443,7 @@
     "message": "Aufzeichnen"
   },
   "runs_recordTitle": {
-    "message": "Schritte im Fenster des Tests aufzeichnen: Sie werden über dieser Zeile eingefügt"
+    "message": "Schritte im Fenster des Tests aufzeichnen: Sie gehen an den Editor, der sie über dieser Zeile einfügt"
   },
   "runs_pause": {
     "message": "Anhalten"
@@ -6470,19 +6470,19 @@
     "message": "Prüfen"
   },
   "runs_assertTitle": {
-    "message": "Ein Element im Fenster des Tests prüfen: Die Prüfung wird über dieser Zeile eingefügt"
+    "message": "Ein Element im Fenster des Tests prüfen: Die Prüfung geht an den Editor, der sie über dieser Zeile einfügt"
   },
   "runs_assertRegion": {
     "message": "Bereich prüfen"
   },
   "runs_assertRegionTitle": {
-    "message": "Einen Bereich im Fenster des Tests wählen: Sein ARIA-Snapshot wird über dieser Zeile eingefügt"
+    "message": "Einen Bereich im Fenster des Tests wählen: Sein ARIA-Snapshot geht an den Editor, der ihn über dieser Zeile einfügt"
   },
   "runs_mock": {
     "message": "Anfrage nachbilden"
   },
   "runs_mockTitle": {
-    "message": "Eine Anfrage der Seite wählen: Ein page.route(), das sie wie der Server beantwortet, wird über dieser Zeile eingefügt"
+    "message": "Eine Anfrage der Seite wählen: Ein page.route(), das sie wie der Server beantwortet, geht an den Editor, der es über dieser Zeile einfügt"
   },
   "runs_codeActions": {
     "message": "Code an dieser Stelle"

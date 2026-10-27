@@ -59,6 +59,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private var image: PausedImage? = null
     private val picks = CopyOnWriteArrayList<PickAtParams>()
     private var picked = PickAtResult(true, "getByRole('button', { name: 'Pay now' }) went to the editor, in place of the locator on the stopped line.", "getByRole('button', { name: 'Pay now' })")
+    /** The version of a document the IDE gave the service: none until the platform tells it the document opened. */
+    private var version: (Document) -> Int? = { (it as DocumentEx).modificationSequence }
     private lateinit var base: File
 
     override fun setUp() {
@@ -104,7 +106,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
                 return count(params)
             }
 
-            override fun documentVersion(document: Document): Int = (document as DocumentEx).modificationSequence
+            override fun documentVersion(document: Document): Int? = version(document)
         }
         base = File(project.basePath!!).apply { mkdirs() }
     }
@@ -289,6 +291,28 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
+     * A rerun under the ref of a run that ended (the Run tool window's Rerun starts the configuration again, its
+     * environment as it was) maps its lines from when it is heard: the edits made between the runs are in its code.
+     */
+    fun testARerunUnderTheRefOfARunThatEndedMapsItsLinesFromItsOwnStart() {
+        val file = file("tests/pages/checkout.page.ts", page)
+        myFixture.openFileInEditor(file)
+        val document = myFixture.editor.document
+        // Another run stays live meanwhile, so the edits are followed.
+        hear(running("ed-13"))
+        hear(running("ed-12"))
+        hear(RunSession("ed-12", base.path, emptyList(), ended = true))
+        WriteCommandAction.runWriteCommandAction(project) { document.insertString(0, "// one\n// two\n// three\n") }
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        hear(stopped("ed-12", file, 6, bar = true, since = "2026-10-25T10:00:12.000Z"))
+        assertEquals(6, sessions.stops().single { it.ref == "ed-12" }.stop.line)
+        // An edit while the rerun is live moves its stop.
+        WriteCommandAction.runWriteCommandAction(project) { document.insertString(0, "// four\n") }
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(7, sessions.stops().single { it.ref == "ed-12" }.stop.line)
+    }
+
+    /**
      * At a stop whose reporter takes them, the inlay and the actions offer the code actions: Assert starts at the
      * caret's stop, and Mock a Request lists the responses, the latest first, and mocks the one chosen.
      */
@@ -375,13 +399,21 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         assertEquals(coupon, document.text)
         assertEquals(4, sessions.stops().single().stop.line)
 
-        // No editor shows the file: it is opened, then written.
+        // No editor shows the file: it is opened, then written once the service has it, however long that takes.
         FileDocumentManager.getInstance().saveDocument(document)
         FileEditorManagerEx.getInstanceEx(project).closeAllFiles()
         PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        version = { null }
         sessions.write(code.copy(version = null))
-        waitFor("the code written in the file opened") { document.text.takeIf { it.contains(block) } }
+        val waited = System.currentTimeMillis() + 800
+        while (System.currentTimeMillis() < waited) {
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            Thread.sleep(20)
+        }
         assertTrue(FileEditorManager.getInstance(project).isFileOpen(file))
+        assertFalse(document.text.contains(block))
+        version = { (it as DocumentEx).modificationSequence }
+        waitFor("the code written in the file opened") { document.text.takeIf { it.contains(block) } }
     }
 
     /**
