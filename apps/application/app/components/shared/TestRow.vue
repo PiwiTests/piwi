@@ -21,6 +21,7 @@
  */
 import type { TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo } from '~/utils/live-steps';
+import { liveResourcesLabel, type LiveWorkerResources } from '~/utils/live-worker-resources';
 import type { TestRowBadge } from '~/utils/test-row-badges';
 import type { KnownIssueRef } from '#shared/handlers/known-issues';
 import type { TestSearchHighlights } from '#shared/test-search';
@@ -71,6 +72,8 @@ const props = withDefaults(
     active?: boolean;
     /** The step this row's worker is on right now (live runs only). */
     liveStep?: LiveStepInfo | null;
+    /** What this row's worker and its browsers use right now, as last measured (live runs only). */
+    liveResources?: LiveWorkerResources | null;
     highlighted?: boolean;
     projectKey?: string | number | null;
     projectName?: string | null;
@@ -106,6 +109,7 @@ const props = withDefaults(
     selectOnClick: false,
     active: false,
     liveStep: null,
+    liveResources: null,
     highlighted: false,
     projectKey: null,
     projectName: null,
@@ -119,6 +123,11 @@ const props = withDefaults(
 const emit = defineEmits<{ toggle: []; select: [] }>();
 
 const tc = computed(() => props.testCase);
+const liveResourcesText = computed(() => (props.liveResources ? liveResourcesLabel(props.liveResources) : ''));
+const liveResourcesTitle = computed(() => {
+  const kind = props.liveResources?.memoryKind ? ` (memory as ${props.liveResources.memoryKind.toUpperCase()})` : '';
+  return `What worker ${tc.value?.workerIndex ?? ''} and the browsers it started use right now, as last measured${kind}, and the pages open in it`;
+});
 
 const title = computed(() => props.title ?? tc.value?.title ?? '');
 /** What the row shows: the title without its external ID when the reporter removed it; `title` stays the tooltip. */
@@ -246,6 +255,15 @@ const clusterLabel = computed(() =>
               <template v-if="tc">
                 <template v-if="tc.status === 'running'">
                   <span v-if="!liveStep" class="text-info">In progress…</span>
+                  <span
+                    v-if="liveResourcesText"
+                    class="inline-flex items-center gap-0.5 tabular-nums"
+                    data-testid="live-worker-resources"
+                    :title="liveResourcesTitle"
+                  >
+                    <UIcon name="i-lucide-cpu" class="size-3 shrink-0" />
+                    {{ liveResourcesText }}
+                  </span>
                 </template>
                 <DurationValue v-else-if="tc.duration" :ms="tc.duration" />
                 <BrowserBadge :browser="tc.browser" size="sm" />

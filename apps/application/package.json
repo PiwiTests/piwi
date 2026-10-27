@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/dashboard",
-  "version": "0.59.0",
+  "version": "0.61.0",
   "private": true,
   "type": "module",
   "imports": {
@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.137.0",
-    "@aws-sdk/client-s3": "^3.1154.0",
+    "@aws-sdk/client-s3": "^3.1156.0",
     "@emnapi/core": "1.11.3",
     "@emnapi/runtime": "1.11.3",
     "@iconify-json/lucide": "^1.2.147",
@@ -59,8 +59,8 @@
     "@libsql/client": "^0.18.0",
     "@nuxt/test-utils": "^4.3.4",
     "@nuxt/ui": "^4.12.0",
-    "@opentelemetry/api": "~1.9.1",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.223.0",
+    "@opentelemetry/api": "~1.10.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.300.0",
     "@opentelemetry/resources": "^2.11.0",
     "@opentelemetry/sdk-trace-node": "^2.12.0",
     "@piwitests/core": "*",
@@ -76,7 +76,7 @@
     "fflate": "^0.8.2",
     "highlight.js": "^11.12.0",
     "marked": "^18.1.1",
-    "nodemailer": "^10.1.7",
+    "nodemailer": "^10.2.1",
     "nuxt": "^4.6.2",
     "pdf-lib": "^1.17.1",
     "pixelmatch": "^8.0.0",
@@ -87,6 +87,7 @@
     "undici": "^8.12.3",
     "vue-virtual-scroller": "^3.0.5",
     "write-excel-file": "^4.1.1",
+    "yaml": "^2.9.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {

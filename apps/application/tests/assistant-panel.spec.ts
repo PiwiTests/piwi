@@ -7,8 +7,12 @@
  * every kind of block renders, a question is answered with the reply the
  * contract describes, a checklist tick reaches its route and **Show me** plays
  * a guide on a registry anchor, and a link to another tab of the page the
- * question was asked on opens that tab. At phone width the panel fills the
- * screen without scrolling sideways.
+ * question was asked on opens that tab. From 1280 px the panel docks beside
+ * the page, folding the sidebar while it needs the room, or floats over it;
+ * Up brings back earlier questions, Right takes the suggested next one, what
+ * is typed stays, Ctrl+I opens and closes it, Stop ends an answer and Try
+ * again asks its question again, and the usage limits warn and stop the
+ * input. At phone width the panel fills the screen without scrolling sideways.
  */
 import { test, expect } from './fixtures';
 import type { APIRequestContext, Page, Request } from '@playwright/test';
@@ -224,13 +228,23 @@ async function openPanel(page: Page) {
   const launcher = page.getByRole('button', { name: 'Ask Piwi' });
   if (!(await launcher.isVisible())) await page.getByRole('button', { name: 'Open sidebar' }).first().click();
   await launcher.click();
-  const panel = page.getByRole('dialog', { name: 'Ask Piwi' });
+  const panel = page
+    .getByRole('dialog', { name: 'Ask Piwi' })
+    .or(page.getByRole('complementary', { name: 'Ask Piwi' }));
   await expect(panel).toBeVisible();
   return panel;
 }
 
-/** Answers every assistant route in the browser: the status, a conversation, the fixture's answers or `answer`. */
-async function routeAssistant(page: Page, answer: AssistantEvent[] = fixture.answer) {
+/**
+ * Answers every assistant route in the browser: the status (`options.status`,
+ * else the fixture's), a conversation, the fixture's answers or `answer`, and
+ * the question history (`options.questions`, else none).
+ */
+async function routeAssistant(
+  page: Page,
+  answer: AssistantEvent[] = fixture.answer,
+  options: { status?: AssistantStatus; questions?: string[] } = {},
+) {
   const asks: Request[] = [];
   const ticks: Request[] = [];
   /** Answers each tick with the block the server would return, in order, when the test says. */
@@ -239,7 +253,8 @@ async function routeAssistant(page: Page, answer: AssistantEvent[] = fixture.ans
   await page.route('**/api/assistant/**', async (route) => {
     const request = route.request();
     const { pathname } = new URL(request.url());
-    if (pathname.endsWith('/assistant/status')) return route.fulfill({ json: fixture.status });
+    if (pathname.endsWith('/assistant/status')) return route.fulfill({ json: options.status ?? fixture.status });
+    if (pathname.endsWith('/assistant/questions')) return route.fulfill({ json: { items: options.questions ?? [] } });
     if (pathname.endsWith('/assistant/conversations')) {
       return request.method() === 'POST'
         ? route.fulfill({ status: 201, json: fixture.conversation })
@@ -642,9 +657,9 @@ test.describe('Assistant panel blocks', () => {
     await expect(question.getByLabel('Other')).toHaveValue('checkout › pays by card');
     await expect(options.getByRole('button', { name: /^Choose / })).toHaveCount(0);
 
-    // Show me: the panel closes and the guide plays on the registry anchor.
+    // Show me: the guide plays on the registry anchor; docked beside the page, the panel stays open.
     await answer.locator('[data-assistant-block="guide"]').getByRole('button', { name: 'Show me' }).click();
-    await expect(panel).toBeHidden();
+    await expect(panel).toHaveAttribute('data-assistant-docked');
     const popover = page.locator('.piwi-guide[data-guide="assistant-101-where"]');
     await expect(popover).toBeVisible({ timeout: 20_000 });
     await expect(popover).toHaveAttribute('data-guide-stop', 'stop-1');
@@ -655,7 +670,12 @@ test.describe('Assistant panel blocks', () => {
     await page.keyboard.press('Escape');
     await expect(popover).toBeHidden();
     await openPanel(page);
-    await expect(page.getByRole('dialog', { name: 'Ask Piwi' }).getByText('Then start with')).toBeVisible();
+    await expect(
+      page
+        .getByRole('dialog', { name: 'Ask Piwi' })
+        .or(page.getByRole('complementary', { name: 'Ask Piwi' }))
+        .getByText('Then start with'),
+    ).toBeVisible();
   });
 
   test('a link to another tab of the page it was asked on opens that tab', async ({ page }) => {
@@ -688,9 +708,191 @@ test.describe('Assistant panel blocks', () => {
     await page.getByRole('button', { name: /^Search…/ }).click();
     await page.getByPlaceholder('Type a command or search…').fill('Why is the cart test flaky?');
     await page.getByRole('option', { name: /Ask Piwi/ }).click();
-    await expect(page.getByRole('dialog', { name: 'Ask Piwi' })).toBeVisible();
+    await expect(
+      page.getByRole('dialog', { name: 'Ask Piwi' }).or(page.getByRole('complementary', { name: 'Ask Piwi' })),
+    ).toBeVisible();
     await expect.poll(() => asks.length).toBe(1);
     expect(asks[0]!.postDataJSON()).toMatchObject({ text: 'Why is the cart test flaky?' });
+  });
+});
+
+test.describe('Assistant panel layout and input', () => {
+  const done = fixture.replyAnswer.find((e) => e.event === 'done')!;
+
+  test('docks beside the page from 1280 px, folding the sidebar while it is open, or floats over it', async ({
+    page,
+  }) => {
+    await routeAssistant(page);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/');
+    await waitForHydration(page);
+    const sidebar = page.locator('#dashboard-sidebar-default');
+    await expect(sidebar).toHaveAttribute('data-collapsed', 'false');
+
+    const docked = await openPanel(page);
+    await expect(docked).toHaveAttribute('data-assistant-docked');
+    // The page narrows beside it instead of being covered, and keeps its room with the sidebar folded.
+    await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
+    const main = (await page.locator('#main-content').boundingBox())!;
+    const box = (await docked.boundingBox())!;
+    expect(main.x + main.width).toBeLessThanOrEqual(box.x + 1);
+    expect(main.width).toBeGreaterThanOrEqual(760);
+
+    // Floating, it covers the page and gives the sidebar back; the choice holds after a reload.
+    await docked.getByRole('button', { name: 'Float over the page' }).click();
+    const floating = page.getByRole('dialog', { name: 'Ask Piwi' });
+    await expect(floating).toBeVisible();
+    await expect(sidebar).toHaveAttribute('data-collapsed', 'false');
+    await page.reload();
+    await waitForHydration(page);
+    await openPanel(page);
+    await expect(floating).toBeVisible();
+
+    await floating.getByRole('button', { name: 'Dock beside the page' }).click();
+    const again = page.getByRole('complementary', { name: 'Ask Piwi' });
+    await expect(again).toBeVisible();
+    await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
+    // Closed, it unfolds the sidebar it folded.
+    await again.getByRole('button', { name: 'Close' }).click();
+    await expect(again).toBeHidden();
+    await expect(sidebar).toHaveAttribute('data-collapsed', 'false');
+  });
+
+  test('Up brings back earlier questions, Right takes the suggested next one, and what is typed stays', async ({
+    page,
+  }) => {
+    const next: AssistantBlock = { kind: 'next', id: 'next', question: 'How do I fix it?' };
+    const { asks } = await routeAssistant(
+      page,
+      [{ event: 'text', data: { text: 'Run 12 timed out.' } }, { event: 'block', data: { block: next } }, done],
+      { questions: ['What changed since yesterday?'] },
+    );
+    await page.goto('/');
+    await waitForHydration(page);
+    const panel = await openPanel(page);
+    const input = panel.getByLabel('Your question');
+
+    // An empty conversation offers the page's first question; after an answer, the one it suggests.
+    await expect(input).toHaveAttribute('placeholder', 'What failed most this week?');
+    await input.fill('Why did run 12 fail?');
+    await input.press('Enter');
+    await expect(panel.getByText('Run 12 timed out.')).toBeVisible();
+    await expect(input).toHaveAttribute('placeholder', 'How do I fix it?');
+    await input.press('ArrowRight');
+    await expect(input).toHaveValue('How do I fix it?');
+
+    // Up walks back through this question and the earlier ones, Down returns to what was typed.
+    await input.fill('');
+    await input.press('ArrowUp');
+    await expect(input).toHaveValue('Why did run 12 fail?');
+    await input.press('ArrowUp');
+    await expect(input).toHaveValue('What changed since yesterday?');
+    await input.press('ArrowDown');
+    await expect(input).toHaveValue('Why did run 12 fail?');
+    await input.press('ArrowDown');
+    await expect(input).toHaveValue('');
+    expect(asks).toHaveLength(1);
+
+    // What is typed stays when the panel closes; Ctrl+I opens it with the caret in the input, and closes it.
+    await input.fill('Half a thought');
+    await panel.getByRole('button', { name: 'Close' }).click();
+    await expect(panel).toBeHidden();
+    await page.keyboard.press('ControlOrMeta+i');
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue('Half a thought');
+    await page.keyboard.press('ControlOrMeta+i');
+    await expect(panel).toBeHidden();
+  });
+
+  test('Stop ends the answer being written, and Try again asks its question again', async ({ page }) => {
+    await routeAssistant(page);
+    const asked: Request[] = [];
+    const stops: Request[] = [];
+    let release = () => {};
+    const stopped = new Promise<void>((resolve) => (release = resolve));
+    await page.route('**/api/assistant/conversations/*/stop', (route) => {
+      stops.push(route.request());
+      release();
+      return route.fulfill({ json: { stopped: true } });
+    });
+    await page.route('**/api/assistant/conversations/*/messages', async (route) => {
+      asked.push(route.request());
+      const first = asked.length === 1;
+      if (first) await stopped;
+      return route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+        body: eventStream(
+          first
+            ? [
+                { event: 'text', data: { text: 'Run 12 failed' } },
+                { event: 'error', data: { code: 'stopped', message: 'You stopped this answer.', messageId: 102 } },
+              ]
+            : [{ event: 'text', data: { text: 'Run 12 failed on a timeout.' } }, done],
+        ),
+      });
+    });
+    await page.goto('/');
+    await waitForHydration(page);
+    const panel = await openPanel(page);
+    const input = panel.getByLabel('Your question');
+    await input.fill('Why did run 12 fail?');
+    await input.press('Enter');
+
+    await expect(panel.getByRole('button', { name: 'Stop' })).toBeVisible();
+    await input.press('Escape');
+    await expect(panel.getByText('You stopped this answer.')).toBeVisible();
+    expect(new URL(stops[0]!.url()).pathname).toBe('/api/assistant/conversations/501/stop');
+    await expect(panel.getByRole('button', { name: 'Stop' })).toHaveCount(0);
+
+    await panel.getByRole('button', { name: 'Try again' }).click();
+    await expect(panel.getByText('Run 12 failed on a timeout.')).toBeVisible();
+    expect(asked).toHaveLength(2);
+    expect(asked[1]!.postDataJSON()).toEqual(asked[0]!.postDataJSON());
+  });
+
+  test('the usage gauge says what the limits leave, warns from 80% and stops the input once spent', async ({
+    page,
+  }) => {
+    const freesAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
+    const status: AssistantStatus = {
+      ...fixture.status,
+      allowance: { scope: 'user', limit: 1_000_000, used: 850_000, freesAt },
+      subscription: {
+        status: 'allowed',
+        window: 'five_hour',
+        utilization: 0.3,
+        resetsAt: freesAt,
+        reportedAt: new Date().toISOString(),
+      },
+    };
+    await routeAssistant(page, fixture.answer, { status });
+    await page.goto('/');
+    await waitForHydration(page);
+    const panel = await openPanel(page);
+    await expect(panel.locator('[data-assistant-usage-warning]')).toContainText(
+      '85% of your daily assistant allowance is spent. It frees up at',
+    );
+    await panel.getByRole('button', { name: 'Usage limits: 85% spent' }).click();
+    const details = page.locator('[data-assistant-usage-details]');
+    await expect(details).toContainText('Your daily allowance');
+    await expect(details).toContainText('850,000 of 1,000,000 tokens in the last 24 hours');
+    await expect(details).toContainText('Claude subscription · 5-hour window');
+    await expect(details).toContainText('30% used');
+    await page.keyboard.press('Escape');
+
+    await page.unroute('**/api/assistant/**');
+    await routeAssistant(page, fixture.answer, {
+      status: { ...status, allowance: { ...status.allowance!, used: 1_000_000 } },
+    });
+    await page.reload();
+    await waitForHydration(page);
+    const spent = await openPanel(page);
+    await expect(spent.locator('[data-assistant-usage-warning]')).toContainText(
+      'You reached your daily assistant allowance.',
+    );
+    await spent.getByLabel('Your question').fill('Why did run 12 fail?');
+    await expect(spent.getByRole('button', { name: 'Ask', exact: true })).toBeDisabled();
   });
 });
 

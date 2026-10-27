@@ -1,7 +1,7 @@
 {
   "name": "@piwitests/instrumentation-nitro",
-  "version": "0.59.0",
-  "description": "Nitro/Nuxt server plugin for sending backend logs to Piwi Dashboard via the X-Piwi-Logs response header",
+  "version": "0.61.0",
+  "description": "Nitro/Nuxt server plugin for Piwi Dashboard: backend logs (X-Piwi-Logs), server spans, probes, the route manifest and per-test server coverage",
   "homepage": "https://piwitests.dev",
   "repository": {
     "type": "git",
@@ -21,6 +21,10 @@
     "./module": {
       "types": "./dist/module.d.ts",
       "import": "./dist/module.js"
+    },
+    "./coverage-runtime": {
+      "types": "./dist/coverage-runtime.d.ts",
+      "import": "./dist/coverage-runtime.js"
     }
   },
   "keywords": [
@@ -29,7 +33,8 @@
     "playwright",
     "piwi-dashboard",
     "server-logs",
-    "test-results"
+    "test-results",
+    "code-coverage"
   ],
   "author": "piwitests",
   "license": "MIT",
@@ -43,6 +48,13 @@
   "files": [
     "dist/"
   ],
+  "dependencies": {
+    "@jridgewell/trace-mapping": "^0.3.31",
+    "magic-string": "^0.30.21"
+  },
+  "devDependencies": {
+    "rollup": "^4.65.0"
+  },
   "peerDependencies": {
     "consola": ">=3.0.0",
     "h3": ">=1.0.0",

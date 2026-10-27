@@ -629,12 +629,17 @@ function scriptedCli(
 
 async function claudeCodeTurn(
   cli: ReturnType<typeof scriptedCli>['cli'],
-  overrides: { allowance?: number | null; maxToolCalls?: number; baseUrl?: string } = {},
+  overrides: {
+    allowance?: number | null;
+    maxToolCalls?: number;
+    baseUrl?: string;
+    provider?: 'claude-cli' | 'codex-cli' | 'deepseek-cli';
+  } = {},
 ) {
   const { toolbox, readTools } = await toolboxOf(member);
   const events: AssistantEvent[] = [];
   const result = await runClaudeCodeTurn({
-    role,
+    role: { ...role, provider: overrides.provider ?? role.provider },
     system: 'rules',
     history: [],
     question: 'Which projects report here?',
@@ -650,6 +655,25 @@ async function claudeCodeTurn(
   });
   return { result, events, readTools };
 }
+
+describe.each(['codex-cli', 'deepseek-cli'] as const)('%s assistant MCP access', (provider) => {
+  test('retains user scope, refuses writes and revokes the turn token', async () => {
+    let token = '';
+    let listed: unknown;
+    let write: unknown;
+    const { cli } = scriptedCli(async (endpoint, run) => {
+      token = run.server.token;
+      listed = await endpoint(toolCall(1, 'list_projects'));
+      write = await endpoint(toolCall(2, 'set_cluster_status', { clusterId: 1, status: 'resolved' }));
+      run.onText('Only readable projects are visible.');
+    });
+    const { result } = await claudeCodeTurn(cli, { provider });
+    expect(result.provider).toBe(provider);
+    expect(JSON.stringify(listed)).toContain('shop');
+    expect(JSON.stringify(write)).toMatch(/error|not.*(?:offered|found|available)/i);
+    expect(tokens.liveAssistantTurn(token, 7)).toBeNull();
+  });
+});
 
 describe('runClaudeCodeTurn', () => {
   test("one CLI run answers: its text streams, its calls through the endpoint emit the turn's events", async () => {
@@ -744,11 +768,20 @@ describe('runClaudeCodeTurn', () => {
     expect(events.at(-1)).toMatchObject({ event: 'error', data: { code: 'limit' } });
   });
 
-  test('a run past the time limit, a failed run and a thrown error end with their errors', async () => {
+  test('a run past the time limit, a stopped run, a failed run and a thrown error end with their errors', async () => {
     const timedOut = await claudeCodeTurn(scriptedCli(async () => {}, { outcome: 'timeout' }).cli);
     expect(timedOut.result.error).toEqual({
       code: 'timeout',
       message: 'The answer took longer than 60 seconds (PIWI_AI_ASSISTANT_TURN_TIMEOUT_SECONDS).',
+    });
+    const stopped = await claudeCodeTurn(
+      scriptedCli(async (_endpoint, run) => run.onText('Looking at'), { outcome: 'stopped' }).cli,
+    );
+    expect(stopped.result).toMatchObject({
+      status: 'failed',
+      text: 'Looking at',
+      inputTokens: 1500,
+      error: { code: 'stopped', message: 'You stopped this answer.' },
     });
     const failed = await claudeCodeTurn(
       scriptedCli(async () => {}, { outcome: 'failed', error: 'Claude Code could not reach this server.' }).cli,

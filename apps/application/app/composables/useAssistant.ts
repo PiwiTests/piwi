@@ -1,6 +1,7 @@
 import type { CommandPaletteGroup, CommandPaletteItem } from '@nuxt/ui';
 import {
   ASSISTANT_MAX_QUESTION_CHARS,
+  assistantMessageText,
   assistantTitleFrom,
   type AssistantBlock,
   type AssistantConversation,
@@ -25,7 +26,8 @@ import { assistantActionRequest } from '#shared/assistant-actions';
 import { assistantGuideRun } from '~/utils/assistant/guide';
 import { assistantPageContext, renderedAnchors } from '~/utils/assistant/page-context';
 import { answerableMessageId, assistantKnownEntities, type AssistantReplyQuestion } from '~/utils/assistant/replies';
-import { assistantSuggestionsFor } from '~/utils/assistant/suggestions';
+import { rememberAssistantQuestion } from '~/utils/assistant/history';
+import { assistantSuggestionsFor, nextAssistantQuestion } from '~/utils/assistant/suggestions';
 
 /** A question being asked, and the answer it is getting. */
 export interface AssistantExchange {
@@ -38,6 +40,9 @@ export type AssistantView = 'conversation' | 'list';
 
 /** The status request in flight, shared by every caller. */
 let statusRequest: Promise<void> | null = null;
+
+/** The question history request in flight, shared by every caller. */
+let questionsRequest: Promise<void> | null = null;
 
 /** The last checklist tick being saved, per conversation, message and block: the next one waits for it. */
 const savingTicks = new Map<string, Promise<void>>();
@@ -92,19 +97,23 @@ function ticked(block: AssistantBlock, stepId: string, done: boolean): Assistant
 
 /**
  * The in-app assistant's panel state, kept across navigation: whether the
- * panel is open, the assistant's status, the user's conversations, the open
- * conversation and the answer being written. Asking sends the question with
- * the page it was asked on and reads the answer's Server-Sent Events with
- * `fetch` and a reader (the demo's service worker answers it the same way),
- * applying the events once per frame. Replies to `question` and `options`
- * blocks, checklist ticks, the **Show me** of a composed guide and the
- * **Apply** and **Dismiss** of a proposed change go through here too.
+ * panel is open, the assistant's status (with what its limits leave), the
+ * user's conversations, the open conversation, the answer being written, the
+ * question being typed and the user's earlier questions. Asking sends the
+ * question with the page it was asked on and reads the answer's Server-Sent
+ * Events with `fetch` and a reader (the demo's service worker answers it the
+ * same way), applying the events once per frame; **Stop** asks the server to
+ * end it, and **Try again** asks a failed answer's question again. Replies to
+ * `question` and `options` blocks, checklist ticks, the **Show me** of a
+ * composed guide and the **Apply** and **Dismiss** of a proposed change go
+ * through here too.
  */
 export function useAssistant() {
   const config = useRuntimeConfig();
   const router = useRouter();
   const toast = useToast();
   const guide = useGuide();
+  const { docked } = useAssistantDock();
 
   const open = useState('assistant-open', () => false);
   const view = useState<AssistantView>('assistant-view', () => 'conversation');
@@ -115,6 +124,11 @@ export function useAssistant() {
   const conversation = useState<AssistantConversation | null>('assistant-conversation', () => null);
   const conversationError = useState<string | null>('assistant-conversation-error', () => null);
   const exchange = useState<AssistantExchange | null>('assistant-exchange', () => null);
+  /** The question being typed, kept while the panel is closed and across navigation. */
+  const draft = useState('assistant-draft', () => '');
+  /** The user's earlier questions, newest first: the ones read from the server and those asked since. */
+  const questions = useState<string[]>('assistant-questions', () => []);
+  const questionsRead = useState('assistant-questions-read', () => false);
 
   const available = computed(() => status.value?.available === true);
   const busy = computed(() => exchange.value?.draft.state === 'streaming');
@@ -129,6 +143,10 @@ export function useAssistant() {
   /** The `app/pages` pattern of the current page, for its suggestions. */
   const currentPage = computed(() => pageContext().page ?? null);
   const suggestions = computed(() => assistantSuggestionsFor(currentPage.value, Boolean(config.public.demoMode)));
+  /** The question the empty input offers next; none while an answer is written. */
+  const nextQuestion = computed(() =>
+    exchange.value ? null : nextAssistantQuestion(messages.value, suggestions.value),
+  );
 
   function apiUrl(path: string): string {
     return `${(config.app.baseURL || '/').replace(/\/$/, '')}${path}`;
@@ -161,6 +179,31 @@ export function useAssistant() {
         statusRequest = null;
       });
     await statusRequest;
+  }
+
+  /**
+   * Reads the user's earlier questions once, for the input's Up arrow, keeping
+   * the ones asked meanwhile first. A failed read is tried again next time.
+   */
+  async function loadQuestions(): Promise<void> {
+    if (import.meta.server || questionsRead.value) return;
+    questionsRequest ??= $fetch<{ items: string[] }>('/api/assistant/questions')
+      .then((result) => {
+        questions.value = rememberAll(result.items, questions.value);
+        questionsRead.value = true;
+      })
+      .catch(() => {
+        // The history stays what this tab asked.
+      })
+      .finally(() => {
+        questionsRequest = null;
+      });
+    await questionsRequest;
+  }
+
+  /** `read` with the questions asked since, `asked` (newest first), put first. */
+  function rememberAll(read: readonly string[], asked: readonly string[]): string[] {
+    return [...asked].reverse().reduce((list, question) => rememberAssistantQuestion(list, question), [...read]);
   }
 
   async function loadConversations(): Promise<void> {
@@ -254,6 +297,8 @@ export function useAssistant() {
       const summary = { id: target.id, title: target.title, createdAt: target.createdAt, updatedAt: now };
       conversations.value = [summary, ...conversations.value.filter((c) => c.id !== conversationId)];
     }
+    // What the answer spent changes what the limits leave.
+    void loadStatus(true);
   }
 
   /** Fails the exchange before its stream started: the question was refused or did not reach the server. */
@@ -321,14 +366,16 @@ export function useAssistant() {
 
   /**
    * Asks `text` in the open conversation (starting one when there is none),
-   * with the page it is asked on; `reply` makes it the answer to a block,
-   * shown answered at once.
+   * with the page it is asked on, or `asked` when it is asked again; `reply`
+   * makes it the answer to a block, shown answered at once. A question the
+   * user typed or picked joins their history; a reply does not.
    */
-  async function ask(text: string, reply?: AssistantReply): Promise<void> {
+  async function ask(text: string, reply?: AssistantReply, asked?: AssistantPageContext | null): Promise<void> {
     const question = text.trim().slice(0, ASSISTANT_MAX_QUESTION_CHARS);
     if (!question || busy.value) return;
-    const anchors = renderedAnchors(document);
-    const context: AssistantPageContext = { ...pageContext(), ...(anchors.length ? { anchors } : {}) };
+    const anchors = asked ? [] : renderedAnchors(document);
+    const context: AssistantPageContext = asked ?? { ...pageContext(), ...(anchors.length ? { anchors } : {}) };
+    if (!reply) questions.value = rememberAssistantQuestion(questions.value, question);
     view.value = 'conversation';
     exchange.value = {
       question: {
@@ -374,6 +421,34 @@ export function useAssistant() {
   /** Sends a reply built by `questionReply` or `optionReply`. */
   async function sendReply(reply: AssistantReplyQuestion | null): Promise<void> {
     if (reply) await ask(reply.text, reply.reply);
+  }
+
+  /**
+   * **Stop**: asks the server to end the answer being written; its stream
+   * then ends with what it wrote, stored as a stopped answer.
+   */
+  async function stop(): Promise<void> {
+    const target = conversation.value;
+    if (!busy.value || !target) return;
+    try {
+      await $fetch(`/api/assistant/conversations/${target.id}/stop`, { method: 'POST' });
+    } catch (error) {
+      toast.add({ title: 'The answer could not be stopped', description: errorMessage(error), color: 'error' });
+    }
+  }
+
+  /**
+   * **Try again**: asks the question of the last answer again, when that
+   * answer failed or never started, on the page it was first asked on.
+   */
+  async function retry(): Promise<void> {
+    if (busy.value) return;
+    const failed = exchange.value?.draft.state === 'failed' ? exchange.value.question : null;
+    const last = messages.value.at(-1);
+    const question =
+      failed ?? (last?.role === 'assistant' && last.status === 'failed' ? messages.value.at(-2) : undefined);
+    if (question?.role !== 'user') return;
+    await ask(assistantMessageText(question.blocks), undefined, question.context);
   }
 
   /** Changes block `blockId` of message `messageId` in the open conversation, when it is still `conversationId`. */
@@ -472,9 +547,9 @@ export function useAssistant() {
     await recordProposal(messageId, block, { status: 'dismissed' });
   }
 
-  /** **Show me**: closes the panel, which would cover the page, and plays the composed guide `plan`. */
+  /** **Show me**: closes the panel when it covers the page, and plays the composed guide `plan`. */
   function showGuide(plan: AssistantGuidePlan, id: string): void {
-    open.value = false;
+    if (!docked.value) open.value = false;
     void guide.start(assistantGuideRun(plan, id));
   }
 
@@ -524,7 +599,11 @@ export function useAssistant() {
     knownEntities,
     answerableId,
     suggestions,
+    nextQuestion,
+    draft,
+    questions: readonly(questions),
     loadStatus,
+    loadQuestions,
     loadConversations,
     openPanel,
     closePanel,
@@ -534,6 +613,8 @@ export function useAssistant() {
     deleteConversation,
     ask,
     sendReply,
+    stop,
+    retry,
     tick,
     applyProposal,
     dismissProposal,

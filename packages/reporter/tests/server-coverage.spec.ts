@@ -402,6 +402,10 @@ describe('ServerCoverageCollector restart detection', () => {
   const HELD_BY: Record<string, Record<string, CoverageFile[]>> = {
     [FIRST.id]: {
       [`${FIRST.id}.1`]: [{ path: 'src/Web/Basket.cs', runtime: 'server', functions: [[3, 9]], lines: [[4, 6]] }],
+      // The form both backends send: `<process key>.<sequence>.<secret>`.
+      [`${FIRST.id}.2.9c4e1f0a7b3d52e86f1a0c9d4b7e2a31`]: [
+        { path: 'src/Web/Basket.cs', runtime: 'server', functions: [[3, 9]], lines: [[4, 6]] },
+      ],
     },
     [SECOND.id]: {
       [`${SECOND.id}.1`]: [{ path: 'src/Web/Orders.cs', runtime: 'server', functions: [[2, 8]], lines: [[3, 5]] }],
@@ -441,6 +445,18 @@ describe('ServerCoverageCollector restart detection', () => {
       },
     });
   }
+
+  it('reads the process key of a request id with a secret, so the same process reads as no restart', async () => {
+    const server = await restartable({ instance: FIRST });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const c = collector([server.url]);
+    await c.collect({ [server.url]: [`${FIRST.id}.2.9c4e1f0a7b3d52e86f1a0c9d4b7e2a31`] });
+
+    const run = await c.fetchRun(server.url);
+
+    expect(run.gap).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+  });
 
   it('marks the run incomplete when another process answers the run-level coverage, keeping the lines the tests ran', async () => {
     const current = { instance: FIRST };

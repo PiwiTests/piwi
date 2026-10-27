@@ -10,8 +10,10 @@ import { startFixtureServer, type FixtureServer } from './fixture-server.js';
  *
  * `PIWI_BENCH_FIXTURES=off` runs the plain Playwright `test`, with no Piwi
  * fixtures registered at all — the reference every other variant is measured
- * against. Requires `npm run reporter:build`; the built package is what users
- * install, so that is what gets benchmarked.
+ * against. Each test notes its body's own time (`bench-body-ms`), so `run.mjs`
+ * can tell the test's calls apart from the fixtures' setup and teardown.
+ * Requires `npm run reporter:build`; the built package is what users install,
+ * so that is what gets benchmarked.
  */
 const withFixtures = process.env.PIWI_BENCH_FIXTURES !== 'off';
 const test = withFixtures ? extendPiwiFixtures(base) : base;
@@ -102,6 +104,7 @@ test.afterAll(async () => {
  */
 for (let index = 0; index < TESTS; index++) {
   test(`workload ${index}`, async ({ page }) => {
+    const bodyStarted = performance.now();
     await page.goto(server.url);
 
     await page.getByLabel('Email').fill('bench@example.com');
@@ -116,5 +119,6 @@ for (let index = 0; index < TESTS; index++) {
     }
 
     await expect(page.getByRole('status')).toContainText('opened');
+    test.info().annotations.push({ type: 'bench-body-ms', description: String(performance.now() - bodyStarted) });
   });
 }

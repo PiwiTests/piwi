@@ -28,6 +28,7 @@ import {
   type TreeStepLike,
 } from '@piwitests/core/step-tree';
 import { parseCallsiteLocation } from './callsite-location';
+import type { TimelineResources } from './timeline-resources';
 
 /** The rows a lane groups. `backend` holds log entries attached to a request. */
 export type TimelineLane = 'steps' | 'console' | 'network' | 'backend' | 'dialogs';
@@ -162,6 +163,13 @@ export interface FailureTimeline {
   estimated: boolean;
   /** The default view: the failed step plus lead/trail, or the whole execution. */
   window: TimelineWindow;
+  /**
+   * What the test's worker and its browsers used while it ran, and the pages
+   * open in that worker, on this clock (`#shared/timeline-resources`). Set by
+   * the handler from the run's resource report; absent without one, or when
+   * the project declined the resources capability.
+   */
+  resources?: TimelineResources | null;
 }
 
 /** Optional trace anchor (epoch ms): the failing action's window, used only for `failureAt`. */

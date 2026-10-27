@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Notifications'],
     summary: 'List notification channels',
     description:
-      'Returns channels owned by the current user and global (admin-managed) channels. Auto-creates a personal email channel if the user has an account email set. A webhook `url` shows in full to the channel owner and to administrators; anyone else reads its origin. With authentication disabled every channel is global. `canStoreSecrets` is false when `PIWI_SECRET_KEY` is unset, in which case a webhook channel cannot store a signing secret.',
+      'Returns channels owned by the current user and global (admin-managed) channels. Auto-creates a personal email channel if the user has an account email set. A webhook `url` shows in full to the channel owner and to administrators; anyone else reads its origin. With authentication disabled every channel is global. A Slack channel posting through the Web API returns its `channelId`, never its bot token. `canStoreSecrets` is false when `PIWI_SECRET_KEY` is unset, in which case a webhook channel cannot store a signing secret, nor a Slack channel a bot token.',
     'x-required-permission': 'signed-in',
   },
 });

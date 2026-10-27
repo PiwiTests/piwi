@@ -25,10 +25,6 @@ on:
 permissions:
   contents: read
 
-env:
-  # Match the runtime the app is built and tested against (apps/application/engines).
-  PIWI_NODE_VERSION: 24.22.1
-
 jobs:
   desktop:
     name: desktop (${{ matrix.target }}, ${{ matrix.bundles }})
@@ -125,9 +121,10 @@ jobs:
           name: ${{ inputs.server-artifact }}
           path: apps/application/.output
 
+      # The root Dockerfile's Node version (scripts/node-version.mjs), the one reusable-e2e-desktop.yml tests against.
       - name: Fetch Node sidecar
         working-directory: apps/desktop
-        run: node scripts/fetch-node.mjs --target ${{ matrix.target }} --node ${{ env.PIWI_NODE_VERSION }}
+        run: node scripts/fetch-node.mjs --target ${{ matrix.target }}
 
       - name: Stage server (native modules for this OS)
         working-directory: apps/desktop

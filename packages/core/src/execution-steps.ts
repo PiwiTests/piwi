@@ -17,6 +17,7 @@
 import {
   BUG_EVIDENCE_LIMITS,
   BUG_REPORT_VERSION,
+  describeManualInstruction,
   emptyBugEvidence,
   reportedRequestUrl,
   type BugConsoleEntry,
@@ -27,7 +28,14 @@ import {
 import { safeLocator } from './codegen';
 import { parsePlaywrightError, stripAnsi } from './error-parse';
 import { LOCATING_METHODS, locatorCallValues, type LocatorCall, type LocatorChain } from './locator-chain';
-import type { RecordedLocatorAlternative, RecordedStep, RecordedTarget, StepAssertion } from './recording';
+import type {
+  ManualCheckValues,
+  ManualInstruction,
+  RecordedLocatorAlternative,
+  RecordedStep,
+  RecordedTarget,
+  StepAssertion,
+} from './recording';
 import { capStepValue, MAX_STEP_PARAM_VALUE_CHARS, stepLabel } from './step-analysis';
 import { extractStepLocatorUse, findLocationRoot, stepLocations, stripLocationRoot } from './step-locators';
 import { parseSteps, STEPS_LIMITS, stepsVersionFor, type PiwiSteps } from './steps';
@@ -113,7 +121,7 @@ interface StoredStep {
 /** What one stored step becomes. */
 type Converted =
   | { kind: 'step'; step: Omit<RecordedStep, 'pageUrl' | 'timestamp'> }
-  | { kind: 'manual'; description: string }
+  | { kind: 'manual'; instruction: ManualInstruction }
   | { kind: 'note'; reason: string }
   | { kind: 'drop' };
 
@@ -189,6 +197,34 @@ function typedValue(step: StoredStep, prefix: string, param = 'value'): { value:
   if (typeof fromParams === 'string') return { value: fromParams, whole: isWhole(fromParams, true) };
   const fromTitle = quotedTitleValue(step, prefix);
   return fromTitle == null ? null : { value: fromTitle, whole: isWhole(fromTitle, false) };
+}
+
+/**
+ * The options a select chose, read from the `options` param Playwright renders (`[{ valueOrLabel }]`, `[{ value }]`,
+ * `[{ label }]` or `[{ index }]`) and the store keeps as JSON: each option's value or label, else its index. Null when
+ * the run does not keep them whole.
+ */
+function chosenOptions(step: StoredStep): Array<string | number> | null {
+  const raw = paramsOf(step).options;
+  let options: unknown = raw;
+  if (typeof raw === 'string') {
+    if (MASKED_RE.test(raw)) return null;
+    try {
+      options = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(options) || options.length === 0) return null;
+  const chosen: Array<string | number> = [];
+  for (const option of options) {
+    if (!isRecord(option)) return null;
+    const text = option.valueOrLabel ?? option.value ?? option.label;
+    if (typeof text === 'string') chosen.push(text);
+    else if (typeof option.index === 'number') chosen.push(option.index);
+    else return null;
+  }
+  return chosen;
 }
 
 /** A step's call as a report names it: never with the value it typed. */
@@ -353,11 +389,14 @@ function navigationUrl(step: StoredStep): string | null {
   return /^(?:Navigate to|page\.goto\() ?"([^"]+)"/.exec(str(step.title))?.[1] ?? null;
 }
 
-const BROWSER_MOVES: ReadonlyArray<[RegExp, string]> = [
-  [/^(?:go back|page\.goback)/i, 'Go back to the previous page in the browser'],
-  [/^(?:go forward|page\.goforward)/i, 'Go forward to the next page in the browser'],
-  [/^(?:reload|page\.reload)/i, 'Reload the page'],
+const BROWSER_MOVES: ReadonlyArray<[RegExp, 'goBack' | 'goForward' | 'reload']> = [
+  [/^(?:go back|page\.goback)/i, 'goBack'],
+  [/^(?:go forward|page\.goforward)/i, 'goForward'],
+  [/^(?:reload|page\.reload)/i, 'reload'],
 ];
+
+/** A step a person does by hand. */
+const manual = (instruction: ManualInstruction): Converted => ({ kind: 'manual', instruction });
 
 /** Calls of the test that act on no page, and why a report leaves them out. */
 const OTHER_CALLS: ReadonlyArray<[RegExp, string | null]> = [
@@ -380,9 +419,9 @@ function convertStep(step: StoredStep, index: number, failing: boolean, ctx: Con
   const use = extractStepLocatorUse(step, index);
 
   if (category === 'navigation') {
-    for (const [re, description] of BROWSER_MOVES) if (re.test(title)) return { kind: 'manual', description };
+    for (const [re, kind] of BROWSER_MOVES) if (re.test(title)) return manual({ kind });
     const url = navigationUrl(step);
-    if (!url) return { kind: 'manual', description: 'Open the page the test opened; the run does not keep which' };
+    if (!url) return manual({ kind: 'gotoUnknown' });
     const value = pathOnOrigin(url, ctx.origin).slice(0, STEPS_LIMITS.valueLength);
     return { kind: 'step', step: { action: 'goto', target: null, value, redacted: false } };
   }
@@ -396,9 +435,7 @@ function convertStep(step: StoredStep, index: number, failing: boolean, ctx: Con
     for (const [re, reason] of OTHER_CALLS) {
       if (!re.test(title)) continue;
       if (reason === null) return { kind: 'drop' };
-      if (reason === 'manual') {
-        return { kind: 'manual', description: 'Open the page the test writes itself (`page.setContent`)' };
-      }
+      if (reason === 'manual') return manual({ kind: 'setContent' });
       return { kind: 'note', reason };
     }
     return { kind: 'note', reason: 'A Playwright call Replay does not perform.' };
@@ -419,22 +456,18 @@ function convertPageInput(step: StoredStep): Converted {
     }
   }
   if (/^(?:Type|Insert text) "/.test(title)) {
-    return {
-      kind: 'manual',
-      description: 'Type on the keyboard what the test typed; the run keeps it in the test’s source',
-    };
+    return manual({ kind: 'keyboardType' });
   }
   const params = paramsOf(step);
   if (typeof params.x === 'number' && typeof params.y === 'number') {
-    return {
-      kind: 'manual',
-      description: `Do with the mouse what the test did at the point (${Math.round(params.x)}, ${Math.round(params.y)}) of the page: ${capStepValue(title, 100)}`,
-    };
+    return manual({
+      kind: 'mouseAt',
+      x: Math.round(params.x),
+      y: Math.round(params.y),
+      call: capStepValue(title, 100),
+    });
   }
-  return {
-    kind: 'manual',
-    description: `Do what the test did with the mouse or the keyboard: ${capStepValue(title, 100)}`,
-  };
+  return manual({ kind: 'mouseOrKeyboard', call: capStepValue(title, 100) });
 }
 
 /** An action on an element: played when the run kept what it needs, else handed to a person. */
@@ -447,9 +480,8 @@ function convertLocatorAction(
 ): Converted {
   const snapshot = snapshotFor(step, leafCall(chain), ctx.snapshots);
   const target = targetWith(locator, seenInRun(snapshot));
-  const loc = `\`${locator}\``;
-  if (!target)
-    return { kind: 'manual', description: `Do what the test did on ${loc}: ${capStepValue(str(step.title), 100)}` };
+  const call = capStepValue(str(step.title), 100);
+  if (!target) return manual({ kind: 'locatorCall', locator, call });
   const act = (action: RecordedStep['action'], value: string | null = null): Converted => ({
     kind: 'step',
     step: { action, target, value, redacted: false },
@@ -472,49 +504,42 @@ function convertLocatorAction(
         return { kind: 'step', step: { action: 'fill', target, value: null, redacted: true } };
       }
       const typed = typedValue(step, action === 'fill' ? 'Fill "' : 'Type "');
-      if (!typed)
-        return { kind: 'manual', description: `Fill ${loc} as the test did; the run does not keep the value` };
-      if (!typed.whole) {
-        return { kind: 'manual', description: `Fill ${loc} as the test did; the run keeps only part of the value` };
-      }
+      if (!typed) return manual({ kind: 'fillUnknown', locator });
+      if (!typed.whole) return manual({ kind: 'fillPartial', locator });
       return act('fill', typed.value.slice(0, STEPS_LIMITS.valueLength));
     }
     case 'press': {
       const key = typedValue(step, 'Press "', 'key');
-      if (!key?.whole || !key.value) return { kind: 'manual', description: `Press in ${loc} the key the test pressed` };
+      if (!key?.whole || !key.value) return manual({ kind: 'pressUnknown', locator });
       return act('press', key.value);
     }
     case 'selectOption': {
-      const params = paramsOf(step);
-      const chosen =
-        typeof params.value === 'string' ? params.value : typeof params.label === 'string' ? params.label : null;
-      if (chosen && isWhole(chosen, true)) return act('selectOption', chosen);
-      return { kind: 'manual', description: `Choose in ${loc} the option the test chose; the run does not keep which` };
+      const options = chosenOptions(step);
+      if (!options) return manual({ kind: 'selectOptionUnknown', locator });
+      const [only] = options;
+      if (options.length === 1 && typeof only === 'string') {
+        return act('selectOption', only.slice(0, STEPS_LIMITS.valueLength));
+      }
+      const named = options
+        .slice(0, STEPS_LIMITS.options)
+        .map((o) => (typeof o === 'number' ? o : capStepValue(o, 100)));
+      return manual({ kind: 'selectOptions', locator, options: named });
     }
     case 'setInputFiles':
-      return {
-        kind: 'manual',
-        description: `Choose in ${loc} the file the test chose; the run does not keep its name`,
-      };
     case 'dragTo':
-      return { kind: 'manual', description: `Drag ${loc} to where the test dropped it; the run does not keep where` };
     case 'drop':
-      return { kind: 'manual', description: `Drop onto ${loc} the files or data the test dropped` };
     case 'focus':
-      return { kind: 'manual', description: `Put the focus on ${loc}` };
     case 'blur':
-      return { kind: 'manual', description: `Move the focus away from ${loc}` };
     case 'dispatchEvent':
-      return { kind: 'manual', description: `Do on ${loc} what fires the event the test dispatched` };
     case 'scrollIntoViewIfNeeded':
-      return { kind: 'manual', description: `Scroll ${loc} into view` };
+      return manual({ kind: action, locator });
     case 'waitFor':
     case 'count':
       return { kind: 'drop' };
     case 'evaluate':
       return { kind: 'note', reason: 'Runs a script of the test on an element; Replay runs none.' };
     default:
-      return { kind: 'manual', description: `Do what the test did on ${loc}: ${capStepValue(str(step.title), 100)}` };
+      return manual({ kind: 'locatorCall', locator, call });
   }
 }
 
@@ -536,24 +561,22 @@ function convertAssertion(
   const matcher = head?.matcher ?? parsed?.assertion ?? null;
   const negated = head ? head.negated : (parsed?.negated ?? false);
   const locator = chain ? (extractStepLocatorUse(step, index)?.locator ?? null) : null;
-  const facts = parsed ? inRun(parsed.expected, parsed.received) : '';
+  const values = inRun(parsed?.expected ?? null, parsed?.received ?? null);
 
   if (head?.polls) {
     if (!failed) return { kind: 'note', reason: 'A check the test retried until it held; Replay does not run it.' };
-    return { kind: 'manual', description: `Check what the test checked again and again (${matcher})${facts}` };
+    return manual({ kind: 'expectPoll', matcher: head.matcher, ...values });
   }
   if (!matcher || !locator) {
     if (matcher === 'toHaveURL') return convertUrlAssertion(negated, failed, parsed, ctx);
     if (!failed && locator) return { kind: 'note', reason: 'A check that passed; the run does not name its matcher.' };
     if (!failed) return { kind: 'note', reason: 'A check on a value, not on the page.' };
     const what = parsed?.customMessage ?? (matcher ? `${matcher}` : title);
-    return { kind: 'manual', description: `Check what the test checked: ${capStepValue(what, 200)}${facts}` };
+    return manual({ kind: 'expectValue', what: capStepValue(what, 200), ...values });
   }
   const snapshot = seenInRun(snapshotFor(step, chain ? leafCall(chain) : null, ctx.snapshots));
   const target = targetWith(locator, snapshot);
-  const loc = `\`${locator}\``;
-  if (!target)
-    return failed ? { kind: 'manual', description: `Check ${loc} with ${matcher}${facts}` } : { kind: 'drop' };
+  if (!target) return failed ? manual({ kind: 'expectLocator', locator, matcher, ...values }) : { kind: 'drop' };
 
   if (matcher in STATE_EXPECTATIONS) {
     const option = STATE_EXPECTATIONS[matcher]!;
@@ -572,7 +595,7 @@ function convertAssertion(
       return { kind: 'note', reason: `A check that passed (${matcher}); the run does not keep the value it expected.` };
     const expected = plainValue(parsed?.expected ?? null);
     if (expected == null || (matcher === 'toHaveCount' && !/^\d{1,6}$/.test(expected))) {
-      return { kind: 'manual', description: `Check ${loc} with ${matcher}${facts}` };
+      return manual({ kind: 'expectLocator', locator, matcher, ...values });
     }
     const assertion: StepAssertion = {
       matcher: matcher as StepAssertion['matcher'],
@@ -584,7 +607,7 @@ function convertAssertion(
     return { kind: 'step', step: { action: 'assert', target, value: null, redacted: false, assertion } };
   }
   if (!failed) return { kind: 'note', reason: `A check that passed (${matcher}); Replay cannot make it.` };
-  return { kind: 'manual', description: `Check ${loc} with ${negated ? 'not.' : ''}${matcher}${facts}` };
+  return manual({ kind: 'expectLocator', locator, matcher: `${negated ? 'not.' : ''}${matcher}`, ...values });
 }
 
 /** The page's address checked: its expected address from the error when it failed, else a note. */
@@ -597,8 +620,7 @@ function convertUrlAssertion(
   if (!failed)
     return { kind: 'note', reason: 'A check that passed (toHaveURL); the run does not keep the address it expected.' };
   const expected = plainValue(parsed?.expected ?? null);
-  const facts = inRun(parsed?.expected ?? null, parsed?.received ?? null);
-  if (!expected) return { kind: 'manual', description: `Check the page’s address (toHaveURL)${facts}` };
+  if (!expected) return manual({ kind: 'expectURL', ...inRun(parsed?.expected ?? null, parsed?.received ?? null) });
   const received = plainValue(parsed?.received ?? null);
   const assertion: StepAssertion = {
     matcher: 'toHaveURL',
@@ -610,13 +632,12 @@ function convertUrlAssertion(
   return { kind: 'step', step: { action: 'assert', target: null, value: null, redacted: false, assertion } };
 }
 
-/** `; in the run it expected X and received Y`, from what the error says. */
-function inRun(expected: string | null, received: string | null): string {
-  const parts = [
-    expected ? `expected ${capStepValue(stripAnsi(expected), 200)}` : null,
-    received ? `received ${capStepValue(stripAnsi(received), 200)}` : null,
-  ].filter(Boolean);
-  return parts.length > 0 ? `; in the run it ${parts.join(' and ')}` : '';
+/** What a check expected and received in the run, as its error says. */
+function inRun(expected: string | null, received: string | null): ManualCheckValues {
+  return {
+    expected: expected ? capStepValue(stripAnsi(expected), 200) : null,
+    received: received ? capStepValue(stripAnsi(received), 200) : null,
+  };
 }
 
 /** The target of a step found by `locator`, with what the snapshot saw of the element; null when no locator for it fits a steps document. */
@@ -683,7 +704,7 @@ export function bugReportFromExecution(input: ExecutionReportInput): ExecutionRe
     }
     let converted = convertStep(step, i, i === failing, ctx);
     if (i === failing && (converted.kind === 'note' || converted.kind === 'drop')) {
-      converted = { kind: 'manual', description: `Do what the test did when it failed: ${capStepValue(call, 200)}` };
+      converted = manual({ kind: 'failedCall', call: capStepValue(call, 200) });
     }
     if (converted.kind === 'drop') continue;
     if (converted.kind === 'note') {
@@ -699,7 +720,12 @@ export function bugReportFromExecution(input: ExecutionReportInput): ExecutionRe
             redacted: false,
             pageUrl: page,
             timestamp: 0,
-            manual: { description: capStepValue(converted.description, STEPS_LIMITS.valueLength), location, call },
+            manual: {
+              description: capStepValue(describeManualInstruction(converted.instruction), STEPS_LIMITS.valueLength),
+              location,
+              call,
+              instruction: converted.instruction,
+            },
           }
         : { ...converted.step, pageUrl: page, timestamp: 0 };
     if (recorded.action === 'goto') recorded.pageUrl = recorded.value ?? '';
@@ -725,6 +751,7 @@ export function bugReportFromExecution(input: ExecutionReportInput): ExecutionRe
   let kept = steps;
   if (steps.length > STEPS_LIMITS.steps) {
     const left = steps.length - (STEPS_LIMITS.steps - 1);
+    const instruction: ManualInstruction = { kind: 'leadingSteps', count: left, limit: STEPS_LIMITS.steps };
     kept = [
       {
         action: 'manual',
@@ -733,11 +760,7 @@ export function bugReportFromExecution(input: ExecutionReportInput): ExecutionRe
         redacted: false,
         pageUrl: '',
         timestamp: steps[0]!.timestamp,
-        manual: {
-          description: `Do the first ${left} steps of the test by hand, up to where step ${left + 1} starts: a steps file holds ${STEPS_LIMITS.steps} steps`,
-          location: null,
-          call: null,
-        },
+        manual: { description: describeManualInstruction(instruction), location: null, call: null, instruction },
       },
       ...steps.slice(left),
     ];

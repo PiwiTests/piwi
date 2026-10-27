@@ -17,7 +17,13 @@
 import { ASSISTANT_BLOCK_LIMITS } from '#shared/assistant-blocks';
 import type { AiChatMessage } from '../ai-tool-calls';
 import { runClaudeCliAgent } from '../ai-claude-cli';
-import { createAssistantAnswer, turnTimeoutError, type AssistantTurnResult, type AssistantTurnUsage } from './answer';
+import {
+  createAssistantAnswer,
+  turnStoppedError,
+  turnTimeoutError,
+  type AssistantTurnResult,
+  type AssistantTurnUsage,
+} from './answer';
 import type { AssistantTurnOptions } from './loop';
 import { mintAssistantTurnToken } from './turn-token';
 
@@ -108,6 +114,7 @@ export async function runClaudeCodeTurn(opts: ClaudeCodeTurnOptions): Promise<As
       tools: opts.allowedTools,
       maxTurns: claudeCodeMaxTurns(maxToolCalls),
       timeoutMs: turnTimeoutMs,
+      signal: opts.signal,
       onText: (text) => answer.write(text),
     });
     Object.assign(usage, {
@@ -119,6 +126,8 @@ export async function runClaudeCodeTurn(opts: ClaudeCodeTurnOptions): Promise<As
     switch (run.outcome) {
       case 'timeout':
         return answer.finish(turnTimeoutError(turnTimeoutMs), usage);
+      case 'stopped':
+        return answer.finish(turnStoppedError(), usage);
       case 'max-turns':
         return answer.finish({ code: 'limit', message: answer.limitMessage }, usage);
       case 'failed':

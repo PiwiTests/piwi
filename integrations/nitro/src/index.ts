@@ -1,4 +1,5 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
+import type { AsyncLocalStorage } from 'node:async_hooks';
+import type { IncomingMessage } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { consola } from 'consola';
@@ -15,6 +16,18 @@ import {
   type ManifestRouteEntry,
 } from './manifest.js';
 import { declaredRoutes } from './route-table.js';
+import { requestScope } from './request-scope.js';
+import {
+  beginRequestCoverage,
+  collectCoverage,
+  coverageActive,
+  CoverageRequestError,
+  nameRequest,
+  parseGranularity,
+  runCoverage,
+  settleRequest,
+  type RequestCoverage,
+} from './coverage-runtime.js';
 import {
   routeMatchesRequest,
   faultStatus,
@@ -132,6 +145,11 @@ interface RequestStore {
   probeDependencyPending?: boolean;
   /** True once a dependency fault has failed one outbound call for this request. */
   probeDependencyConsumed?: boolean;
+  /**
+   * The coverage the request's code records into, in a coverage build. A request the server makes to itself shares
+   * the enclosing request's: the browser only sees the outer response.
+   */
+  coverage?: RequestCoverage;
 }
 
 /**
@@ -156,10 +174,11 @@ function pushSpan(store: RequestStore, span: PiwiServerSpan): void {
 /** Signed probe nonces already honored this process, so a header is single-use. */
 const probeNonces = new ProbeNonceCache();
 
-// Links consola calls and recorded spans to the request being handled. The store
-// is scoped with als.run() around the whole downstream handler chain: a binding
-// made with enterWith() from a request hook dies with the hook's own async scope.
-const als = new AsyncLocalStorage<RequestStore>();
+// Links consola calls, recorded spans and coverage to the request being handled.
+// The store is scoped with als.run() around the whole downstream handler chain: a
+// binding made with enterWith() from a request hook dies with the hook's own async
+// scope. The coverage runtime reads the same store (`request-scope.ts`).
+const als = requestScope as AsyncLocalStorage<RequestStore>;
 
 /**
  * Record a server-side span for the in-flight request. Shows up in the Piwi
@@ -172,8 +191,9 @@ export function recordServerSpan(span: PiwiServerSpan): void {
   if (store) pushSpan(store, span);
 }
 
-// The consola reporter is process-global — register it only once.
-let reporterAdded = false;
+// The consola reporter is process-global, and so is the request store it writes into: register it once per
+// process, even when the bundle holds two copies of this module.
+const REPORTER_KEY = Symbol.for('piwitests.consolaReporter');
 
 // Capture and probe verification run only in development and test (the ASP.NET
 // package's default allow-list is Development and Test): NODE_ENV must be
@@ -192,6 +212,71 @@ const PROBE_SECRET = process.env.PIWI_PROBE_SECRET || undefined;
 
 /** The declared-surface route path the plugin serves outside production. */
 const MANIFEST_PATH = '/__piwi/manifest';
+
+/** The coverage endpoints a coverage build serves beside the manifest. */
+const COVERAGE_COLLECT_PATH = '/__piwi/coverage/collect';
+const COVERAGE_RUN_PATH = '/__piwi/coverage/run';
+
+/** Largest collection body read, in bytes. */
+const MAX_COVERAGE_BODY_BYTES = 1024 * 1024;
+
+/** The body of a request as JSON, refused past `MAX_COVERAGE_BODY_BYTES`. */
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_COVERAGE_BODY_BYTES) throw new CoverageRequestError(413, 'the body is limited to 1 MB');
+    chunks.push(chunk as Buffer);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw new CoverageRequestError(400, 'the body is not JSON');
+  }
+}
+
+/** Answer a coverage endpoint; false when the request is not one, so it reaches the application. */
+function serveCoverage(event: any, requestPath: string): boolean {
+  if ((requestPath !== COVERAGE_COLLECT_PATH && requestPath !== COVERAGE_RUN_PATH) || !coverageActive()) return false;
+  const res = event.node.res as any;
+  const method = String(event.method ?? event.node.req.method ?? 'GET').toUpperCase();
+  const answer = (status: number, body: unknown) => {
+    res.statusCode = status;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(JSON.stringify(body));
+  };
+  const fail = (error: unknown) =>
+    error instanceof CoverageRequestError
+      ? answer(error.status, { error: error.message })
+      : answer(500, { error: errorMessageOf(error) });
+  if (requestPath === COVERAGE_RUN_PATH) {
+    if (method !== 'GET') {
+      answer(405, { error: 'GET only' });
+      return true;
+    }
+    const query = new URL(String(event.node.req.url ?? ''), 'http://localhost').searchParams;
+    try {
+      answer(200, runCoverage(parseGranularity(query.get('granularity'))));
+    } catch (error) {
+      fail(error);
+    }
+    return true;
+  }
+  if (method !== 'POST') {
+    answer(405, { error: 'POST only' });
+    return true;
+  }
+  readJsonBody(event.node.req)
+    .then((body) => answer(200, collectCoverage(body)))
+    .catch(fail);
+  return true;
+}
+
+function errorMessageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 /**
  * Routes the server has matched this process, accumulated for `/__piwi/manifest`
@@ -222,8 +307,9 @@ function resolveHandlerFile(event: any): string | undefined {
 const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
   if (TEST_LOGS_DISABLED) return;
 
-  if (!reporterAdded) {
-    reporterAdded = true;
+  const globals = globalThis as Record<symbol, unknown>;
+  if (!globals[REPORTER_KEY]) {
+    globals[REPORTER_KEY] = true;
     consola.addReporter({
       log(logObj) {
         if (logObj.level > 1) return; // Warning (1) and Error/Fatal (0) only
@@ -251,6 +337,7 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
     // returned early when log capture is disabled): the routes the module declared,
     // then the ones observed.
     const requestPath = String(event.path ?? event.node.req.url ?? '').split('?')[0] ?? '';
+    if (serveCoverage(event, requestPath)) return;
     if (requestPath === MANIFEST_PATH) {
       const routes = new Map<string, ManifestRouteEntry>();
       for (const route of [...declaredRoutes(), ...observedRoutes.values()]) recordObservedRoute(routes, route);
@@ -262,11 +349,14 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
     }
 
     const enclosing = als.getStore();
+    const nested = enclosing !== undefined && !enclosing.ended;
+    const coverage = nested ? enclosing.coverage : beginRequestCoverage();
     const store: RequestStore = {
       logs: [],
       spans: [],
       startMs: Date.now(),
-      ...(enclosing && !enclosing.ended ? { parent: enclosing } : {}),
+      ...(nested ? { parent: enclosing } : {}),
+      ...(coverage ? { coverage } : {}),
     };
     event.context._piwiLogs = store.logs;
     event.context._piwiSpans = store.spans;
@@ -306,6 +396,20 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
     // 'beforeResponse' hook (h3 skips onBeforeResponse once the error handler
     // has called res.end).
     const res = event.node.res as any;
+
+    // Name the request's coverage on its response once instrumented code ran for it. Every way of sending headers
+    // goes through writeHead (`end` and `write` call it when nothing did), so a streamed response is named too. A
+    // request the server makes to itself is named by the outer one.
+    if (coverage && !nested) {
+      const originalWriteHead = res.writeHead as (...args: any[]) => any;
+      res.writeHead = function (this: unknown, ...args: any[]) {
+        const id = nameRequest(coverage);
+        if (id && !res.headersSent) res.setHeader('X-Piwi-Coverage', id);
+        return originalWriteHead.apply(this, args);
+      };
+      res.once('close', () => settleRequest(coverage));
+    }
+
     const originalEnd = res.end.bind(res) as (...args: any[]) => any;
     res.end = (...args: any[]) => {
       if (!res.headersSent) {

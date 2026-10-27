@@ -540,6 +540,84 @@ function reportRetriedRun(request, base) {
 }
 
 /**
+ * A run still going on three workers, 48 s in: each worker finished a few tests
+ * and runs one more, and the reporter posted what it measured so far (the
+ * machine's CPU every second, the run's memory and each worker's CPU and memory
+ * every five, and the pages each worker holds open, one more after every test
+ * on worker 1). Nothing finishes it, so the run page draws it live.
+ */
+async function reportLiveRunWithResources(request, base) {
+  const post = (path, options) => postRetrying(request, base, path, options);
+  const startTime = Date.now() - 48_000;
+  const tests = [];
+  for (let worker = 0; worker < 3; worker++) {
+    let at = 1500 + worker * 400;
+    for (let i = 0; i < 4; i++) {
+      const duration = 7000 + ((worker * 5 + i * 3) % 7) * 900;
+      tests.push({ worker, at, duration, title: `checkout step ${worker * 4 + i + 1}`, running: i === 3 });
+      at += duration + 400;
+    }
+  }
+  const { runId, streamToken } = await (
+    await post('/api/test-runs/start', {
+      data: { projectName: 'checkout-live', startTime: new Date(startTime).toISOString(), totalTests: 16 },
+    })
+  ).json();
+  const browser = { projectName: 'chromium', browserName: 'chromium' };
+  const testCases = tests.map((t, i) => ({
+    type: t.running ? 'begin' : 'complete',
+    title: t.title,
+    location: `tests/checkout.spec.ts:${i * 8 + 3}:5`,
+    ...(t.running ? {} : { status: 'passed', duration: t.duration, retries: 0 }),
+    workerIndex: t.worker,
+    startedAt: startTime + t.at,
+    browser,
+  }));
+  await post(`/api/test-runs/${runId}/events`, { data: { streamToken, testCases } });
+
+  const wave = (n) => (Math.sin(n * 1.7) + Math.sin(n * 0.45)) / 2;
+  const cpuPct = Array.from({ length: 47 }, (_, i) => [(i + 1) * 1000, Math.round(58 + 14 * wave(i) + i * 0.5)]);
+  const memoryBytes = Array.from({ length: 10 }, (_, i) => [i * 5000, Math.round((2.1 + i * 0.28) * 1024 ** 3)]);
+  const pages = [0, 1, 2].map((worker) => {
+    const done = tests.filter((t) => t.worker === worker && !t.running);
+    // Worker 1 leaves each test's page open; the others close it.
+    const points =
+      worker === 1
+        ? done.map((t, i) => [t.at, i + 1])
+        : done.flatMap((t) => [
+            [t.at, 1],
+            [t.at + t.duration, 0],
+          ]);
+    return {
+      worker,
+      points: [...points, [tests.find((t) => t.worker === worker && t.running).at, worker === 1 ? 4 : 1]],
+    };
+  });
+  const workers = [0, 1, 2].map((worker) => ({
+    worker,
+    cpuCores: Array.from({ length: 9 }, (_, i) => [
+      (i + 1) * 5000,
+      Math.round((0.6 + 0.3 * wave(i + worker) + (worker === 1 ? i * 0.12 : 0)) * 100) / 100,
+    ]),
+    memoryBytes: Array.from({ length: 9 }, (_, i) => [
+      (i + 1) * 5000,
+      Math.round((0.45 + (worker === 1 ? i * 0.11 : 0.02 * wave(i))) * 1024 ** 3),
+    ]),
+  }));
+  await post(`/api/test-runs/${runId}/live-resources`, {
+    data: {
+      streamToken,
+      shardIndex: null,
+      reset: true,
+      timeline: { startedAt: startTime, cpuPct, memoryBytes, pages, workers },
+      memoryCapacityBytes: 16 * 1024 ** 3,
+      memoryKind: 'pss',
+    },
+  });
+  return runId;
+}
+
+/**
  * A cluster whose runs record their commits but no repository URL: a passing
  * run at one commit, then the hook failure at the next. Reported once per
  * session, so both widths of its scene show the same cluster in the same state.
@@ -1497,6 +1575,37 @@ function pausedTestScene(width, colorScheme, suffix) {
   };
 }
 
+/** A failed execution of a run that left pages open in its workers: one earlier test's page was open when it started. */
+const RESOURCES_TIMELINE_EXECUTION = 705;
+
+/**
+ * The Timeline tab of a failed execution with its Resources rows switched on: the CPU and memory of the worker that
+ * ran it with the browsers it started, and the pages open in that worker, under the lanes, the pointer over them so
+ * the readout gives their values, at `width` px in `colorScheme`.
+ */
+function timelineResourcesScene(width, colorScheme, suffix) {
+  return {
+    name: `failure-timeline-resources${suffix}`,
+    description: `A failed execution's Timeline tab with the Resources rows on and the pointer over them, at ${width} px (${colorScheme})`,
+    route: `/test-run-cases/${RESOURCES_TIMELINE_EXECUTION}`,
+    viewport: { width, height: width < 640 ? 2600 : 1500 },
+    colorScheme,
+    async run({ page, openTab, settle, shoot }) {
+      await openTab('Timeline');
+      const toggle = page.getByTestId('timeline-resources-toggle');
+      await toggle.waitFor({ timeout: 30_000 });
+      if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
+      const rows = page.locator('[data-shot="evidence-card"] [data-timeline-resources]');
+      await rows.waitFor({ timeout: 30_000 });
+      await settle();
+      const box = await rows.boundingBox();
+      if (box) await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2);
+      await page.getByTestId('timeline-resources-readout').waitFor({ timeout: 10_000 });
+      await shoot(undefined, { of: '[data-shot="evidence-card"]', pad: 12 });
+    },
+  };
+}
+
 function quarantineDismissScene(width, suffix) {
   return {
     name: `quarantine-dismiss${suffix}`,
@@ -1593,18 +1702,73 @@ async function walkTourStops(page, atStop) {
 const ASSISTANT_ANSWER = join(APP_DIR, 'tests', 'fixtures', 'assistant-answer.json');
 
 /**
- * Answers the assistant's routes in the browser, so a scene shows the panel
- * whatever AI the server has: the status names a model, a question starts a
- * conversation, and asking streams the fixture's answer. Reloads `path`, since
- * the sidebar reads the status as the page mounts.
+ * A short answer for the assistant's docs illustrations, from the fixture's
+ * parts: it reads a run and its failure cluster, says why the test failed,
+ * shows the run's card and the fix, and suggests the next question, which the
+ * empty field then offers.
  */
-async function openAssistantAnswer(page, goto, path = '/') {
+function assistantDocsAnswer() {
   const fixture = JSON.parse(readFileSync(ASSISTANT_ANSWER, 'utf8'));
-  const frames = fixture.answer.map((e) => `event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`).join('');
+  const block = (id) => fixture.answer.find((e) => e.event === 'block' && e.data.block.id === id);
+  return [
+    ...fixture.answer.filter((e) => e.event === 'tool').slice(0, 2),
+    {
+      event: 'text',
+      data: {
+        text: '[Run #12](piwi:run/12) failed 3 of its 48 tests, all in one failure cluster, [Cart total is stale after removing an item](piwi:cluster/3): the test reads `cart-total` before the cart call returns.\n\n',
+      },
+    },
+    block('run-12'),
+    block('fix'),
+    {
+      event: 'block',
+      data: { block: { kind: 'next', id: 'next', question: 'How do I check the fix on the next run?' } },
+    },
+    fixture.answer.find((e) => e.event === 'done'),
+  ];
+}
+
+/**
+ * The assistant's status with what its limits leave: the daily allowance with
+ * `used` of 1,000,000 tokens spent, freeing up in three hours, and, when
+ * `subscription` is set, a Claude subscription's 5-hour window at that share.
+ */
+function assistantStatusWithLimits(used, subscription = null) {
+  const fixture = JSON.parse(readFileSync(ASSISTANT_ANSWER, 'utf8'));
+  const halfHour = 30 * 60 * 1000;
+  const freesAt = new Date(Math.ceil((Date.now() + 3 * 60 * 60 * 1000) / halfHour) * halfHour).toISOString();
+  return {
+    ...fixture.status,
+    ...(subscription === null ? {} : { provider: 'claude-cli' }),
+    allowance: { scope: 'user', limit: 1_000_000, used, freesAt },
+    subscription:
+      subscription === null
+        ? null
+        : {
+            status: 'allowed',
+            window: 'five_hour',
+            utilization: subscription,
+            resetsAt: freesAt,
+            reportedAt: new Date().toISOString(),
+          },
+  };
+}
+
+/**
+ * Answers the assistant's routes in the browser, so a scene shows the panel
+ * whatever AI the server has: the status (the fixture's, or `options.status`)
+ * names a model, a question starts a conversation, and asking streams the
+ * fixture's answer (or `options.answer`). Reloads `path`, since the sidebar
+ * reads the status as the page mounts.
+ */
+async function openAssistantAnswer(page, goto, path = '/', options = {}) {
+  const fixture = JSON.parse(readFileSync(ASSISTANT_ANSWER, 'utf8'));
+  const answer = options.answer ?? fixture.answer;
+  const frames = answer.map((e) => `event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`).join('');
   await page.route('**/api/assistant/**', (route) => {
     const request = route.request();
     const { pathname } = new URL(request.url());
-    if (pathname.endsWith('/assistant/status')) return route.fulfill({ json: fixture.status });
+    if (pathname.endsWith('/assistant/status')) return route.fulfill({ json: options.status ?? fixture.status });
     if (pathname.endsWith('/assistant/conversations')) {
       return request.method() === 'POST'
         ? route.fulfill({ status: 201, json: fixture.conversation })
@@ -1782,6 +1946,47 @@ const SCENES = [
       'assistant-panel-phone.png',
       'assistant-panel-palette.png',
     ],
+  },
+  {
+    name: 'assistant-docked',
+    description:
+      'The assistant docked beside Home at 1280 px, the sidebar folded to its rail: a short answer (the run read, its card and the fix) and the next question it suggests offered in the empty field, with the usage gauge',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 720 },
+    async run({ page, shoot, settle, goto }) {
+      const panel = await openAssistantAnswer(page, goto, '/', {
+        answer: assistantDocsAnswer(),
+        status: assistantStatusWithLimits(230_000),
+      });
+      await panel
+        .getByLabel('Your question')
+        .and(page.getByPlaceholder('How do I check the fix on the next run?'))
+        .waitFor();
+      await panel.locator('[data-assistant-panel]').evaluate((node) => node.scrollTo({ top: 0 }));
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'assistant-input',
+    description:
+      'The docked assistant panel’s question field with its limits nearly spent: the warning at 85% of the daily allowance, the next question suggested in the empty field with its Right-arrow key, the model line and the usage gauge',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 720 },
+    async run({ page, shoot, settle, goto }) {
+      const panel = await openAssistantAnswer(page, goto, '/', {
+        answer: assistantDocsAnswer(),
+        status: assistantStatusWithLimits(850_000, 0.42),
+      });
+      await panel.locator('[data-assistant-usage-warning]').waitFor();
+      await panel.locator('[data-assistant-suggestion-key]').waitFor();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="assistant-input"]', pad: 16 });
+    },
   },
   {
     name: 'assistant-demo',
@@ -3324,6 +3529,9 @@ const SCENES = [
   pausedTestScene(1280, 'dark', '-dark'),
   pausedTestScene(390, 'light', '-phone'),
   pausedTestScene(390, 'dark', '-phone-dark'),
+  timelineResourcesScene(1280, 'light', ''),
+  timelineResourcesScene(1280, 'dark', '-dark'),
+  timelineResourcesScene(390, 'light', '-phone'),
   {
     name: 'run-timeline-retries',
     description:
@@ -3427,6 +3635,57 @@ const SCENES = [
       'run-timeline-resources-worker-pages.png',
       'run-timeline-resources-worker-cpu.png',
       'run-timeline-resources-narrow.png',
+    ],
+  },
+  {
+    name: 'run-timeline-resources-live',
+    description:
+      "A run still going: the CPU, memory and open-pages tracks drawn as the reporter sends them, with each worker's open pages under its row, then each running test's worker values on the Tests tab, at 1280 px and at phone width",
+    route: '/projects',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="run-timeline"]',
+    pad: 12,
+    async prepare({ request, base }) {
+      this.runId = await reportLiveRunWithResources(request, base);
+    },
+    async run({ page, goto, shoot, settle }) {
+      await goto(`/test-runs/${this.runId}?tab=workers`);
+      await page.getByTestId('timeline-resource-band').first().waitFor({ timeout: 60000 });
+      await page.getByTestId('timeline-resources-menu').click();
+      await page.getByRole('menuitemcheckbox', { name: 'Open pages', exact: true }).last().click();
+      await page.keyboard.press('Escape');
+      await page.mouse.move(0, 0);
+      await settle();
+      await shoot();
+      await page.setViewportSize({ width: 390, height: 900 });
+      await settle();
+      await shoot('narrow');
+      // Back to no strip, so the next visit starts as the timeline does by default.
+      await page.getByTestId('timeline-resources-menu').click();
+      await page.getByRole('menuitemcheckbox', { name: 'Nothing', exact: true }).click();
+      // The Tests tab: each running test shows what its worker uses right now.
+      const list = '[data-shot="failure-clusters"]';
+      for (const [width, label] of [
+        [1280, 'tests'],
+        [390, 'tests-narrow'],
+      ]) {
+        await page.setViewportSize({ width, height: 900 });
+        await goto(`/test-runs/${this.runId}?tab=test-cases`);
+        await page.getByTestId('live-worker-resources').first().waitFor({ timeout: 60000 });
+        // A wide list follows the live run to its newest rows; on a phone the
+        // page scrolls instead, so the newest rows are put first there.
+        const newestFirst = width < 640;
+        if (newestFirst) await page.getByRole('button', { name: 'Sorted ascending' }).click();
+        await settle();
+        await shoot(label, { of: list });
+        if (newestFirst) await page.getByRole('button', { name: 'Sorted descending' }).click();
+      }
+    },
+    outputs: [
+      'run-timeline-resources-live.png',
+      'run-timeline-resources-live-narrow.png',
+      'run-timeline-resources-live-tests.png',
+      'run-timeline-resources-live-tests-narrow.png',
     ],
   },
   {
@@ -5656,6 +5915,44 @@ const SCENES = [
       await shoot('collapsed', { clip: { x: 0, y: 0, width: 320, height: 560 } });
     },
   },
+  ...[375, 1280].map((width) => ({
+    name: `ai-codex-cli-${width}`,
+    description: `Settings → AI: local Codex login and provider at ${width} px`,
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/ai',
+    viewport: { width, height: 1800 },
+    async run({ page, shoot, settle }) {
+      const card = page.getByText('Uses your local ChatGPT login.').locator('..');
+      await card.waitFor();
+      await card.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
+      await settle();
+      await shoot('before');
+      await page.getByRole('combobox').first().click();
+      await page.getByRole('option', { name: 'Codex (local)' }).click();
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[375, 1280].map((width) => ({
+    name: `ai-deepseek-cli-${width}`,
+    description: `Settings → AI: official DeepSeek Harness credentials and provider at ${width} px`,
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/ai',
+    viewport: { width, height: 1800 },
+    async run({ page, shoot, settle }) {
+      const card = page.getByText('Uses official').locator('..');
+      await card.waitFor();
+      await card.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
+      await settle();
+      await shoot('before');
+      await page.getByRole('combobox').first().click();
+      await page.getByRole('option', { name: 'DeepSeek Harness (local)' }).click();
+      await settle();
+      await shoot();
+    },
+  })),
   {
     name: 'ai-claude-cli',
     description: 'Settings → AI: use the local Claude Code CLI as the provider — no API key (desktop shell)',
@@ -5836,10 +6133,11 @@ const SCENES = [
   },
   {
     name: 'channel-form',
-    description: 'Notifications → Add channel: the Slack app steps with a checked URL, then that URL under Teams',
+    description:
+      'Notifications → Add channel: the Slack app steps with a checked URL, then that URL under Teams, then Slack with a bot token',
     route: '/settings/notifications',
     viewport: { width: 1280, height: 1100 },
-    outputs: ['channel-form-slack.png', 'channel-form-teams.png'],
+    outputs: ['channel-form-slack.png', 'channel-form-teams.png', 'channel-form-slack-api.png'],
     async run({ page, shoot, settle }) {
       await page.getByRole('button', { name: 'Add channel' }).click();
       const form = page.locator('[data-shot="channel-form"]');
@@ -5848,7 +6146,7 @@ const SCENES = [
         await form.getByRole('combobox').first().click();
         await page.getByRole('option', { name: label, exact: true }).click();
       };
-      await pick('Slack webhook');
+      await pick('Slack');
       await page.getByTestId('slack-webhook-url').fill('https://hooks.slack.com/services/T000/B000/XXXX');
       await settle();
       await shoot('slack', { of: '[data-shot="channel-form"]', pad: 12 });
@@ -5857,6 +6155,12 @@ const SCENES = [
       await page.getByTestId('channel-url-check').waitFor();
       await settle();
       await shoot('teams', { of: '[data-shot="channel-form"]', pad: 12 });
+      await pick('Slack');
+      await form.getByRole('radio', { name: 'Bot token (Web API)' }).check();
+      await page.getByTestId('slack-bot-token').fill('xoxb-0000-0000-screenshot');
+      await page.getByTestId('slack-channel-id').fill('C0123456789');
+      await settle();
+      await shoot('slack-api', { of: '[data-shot="channel-form"]', pad: 12 });
     },
   },
   // ── Capabilities opt-out ─────────────────────────────────────────────────

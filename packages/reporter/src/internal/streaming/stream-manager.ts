@@ -105,6 +105,12 @@ export class StreamManager {
   get startPromise(): Promise<void> | null {
     return this._startPromise;
   }
+  /** Whether anyone has the run open live, as the dashboard last said; `null` until it says. */
+  get isWatched(): boolean | null {
+    return this.watched;
+  }
+  /** Called when the dashboard says someone opened the run. */
+  onWatched: (() => void) | null = null;
 
   /**
    * @param httpClient  HTTP client for server communication.
@@ -427,9 +433,12 @@ export class StreamManager {
     }, delay);
   }
 
-  // Take the dashboard's answer on whether anyone watches the run. An answer
-  // without the flag (an older dashboard) keeps step events flowing.
-  private noteWatched(response: unknown): void {
+  /**
+   * Take the dashboard's answer on whether anyone watches the run, from any
+   * request of the stream. An answer without the flag (an older dashboard)
+   * keeps step events flowing.
+   */
+  noteWatched(response: unknown): void {
     const watched = (response as { watched?: unknown } | null | undefined)?.watched;
     const next = typeof watched === 'boolean' ? watched : null;
     if (next !== null && next !== this.watched) {
@@ -439,7 +448,9 @@ export class StreamManager {
           : 'Nobody is watching the run: live steps are not sent.',
       );
     }
+    const opened = next === true && this.watched !== true;
     this.watched = next;
+    if (opened) this.onWatched?.();
   }
 
   // Idle time after which a heartbeat goes out.

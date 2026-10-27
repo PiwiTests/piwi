@@ -14,7 +14,7 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(PiwiFromSource)' != 'true'">
-    <PackageReference Include="PiwiTests.Instrumentation.AspNetCore" Version="0.59.0" /> <!-- x-release-please-version -->
+    <PackageReference Include="PiwiTests.Instrumentation.AspNetCore" Version="0.61.0" /> <!-- x-release-please-version -->
   </ItemGroup>
 
   <!-- A project reference brings no build props: the coverage package's props, which turn -p:PiwiCoverage=true into

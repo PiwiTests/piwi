@@ -143,6 +143,7 @@ import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 import {
   browserCoverageInWorker,
   browserFunctionCoverage,
+  cssCoverageInWorker,
   newKnownFunctions,
   browserFunctionsInWorker,
   serverCoverageInWorker,
@@ -158,9 +159,11 @@ import {
   resolveCodeReachFunctions,
   startCodeReach,
   stopCodeReach,
+  stopPageCoverage,
   type CodeReachRoots,
   type CodeReachRootsOption,
 } from './code-reach.js';
+import { resolveCssCoverage } from './css-coverage.js';
 import {
   activeResourceLedger,
   noteResourceUse,
@@ -386,10 +389,13 @@ interface CaptureSink {
   // JavaScript coverage of each page the test has, when code reach is on, and
   // the source files they resolved to once stopped.
   // With `coverage.browser: 'functions'`, every function the scripts declare in those files, run or not.
+  // With `coverage.css: 'rules'`, the style sheet files the pages' matched rules resolved to, and every rule of them.
   codeReach: {
     sessions: Map<Page, CodeReachSession>;
     files: Map<string, LineRange[]>;
     known: Map<string, LineRange[]>;
+    cssFiles: Map<string, LineRange[]>;
+    cssKnown: Map<string, LineRange[]>;
   };
   // The server coverage request ids (`X-Piwi-Coverage`) the test's responses
   // carried, by origin, when server coverage is on.
@@ -437,7 +443,7 @@ function createSink(): CaptureSink {
     releasedQuietSince: 0,
     releasedUntil: null,
     locatorPages: new LocatorPageLog(),
-    codeReach: { sessions: new Map(), files: new Map(), known: new Map() },
+    codeReach: { sessions: new Map(), files: new Map(), known: new Map(), cssFiles: new Map(), cssKnown: new Map() },
     serverCoverage: new Map(),
     baseURL: null,
   };
@@ -461,6 +467,11 @@ const MAX_CODE_REACH_PAGES = 16;
 /** How long the start of a test waits for coverage to run on the pages already open, in ms. */
 const CODE_REACH_START_WAIT_MS = 2000;
 
+/** Whether the pages record coverage: their scripts (code reach, browser coverage), their style sheets, or both. */
+function pageCoverageInWorker(): boolean {
+  return browserCoverageInWorker() || cssCoverageInWorker();
+}
+
 /**
  * Start JavaScript coverage on a page of the running test when code reach is on
  * (`PIWI_CAPTURE_CODE_REACH=true` or `PIWI_COVERAGE_BROWSER=files`): each page
@@ -469,7 +480,7 @@ const CODE_REACH_START_WAIT_MS = 2000;
  */
 function maybeStartCodeReach(page: Page, alreadyOpen = false): Promise<boolean> {
   const sink = currentSink;
-  if (!sink || !browserCoverageInWorker() || isPageClosed(page)) return Promise.resolve(false);
+  if (!sink || !pageCoverageInWorker() || isPageClosed(page)) return Promise.resolve(false);
   const known = sink.codeReach.sessions.get(page);
   if (known) return known.started;
   if (alreadyOpen) {
@@ -488,7 +499,7 @@ function maybeStartCodeReach(page: Page, alreadyOpen = false): Promise<boolean> 
  * time, so a page that does not answer never holds the test.
  */
 async function startCodeReachOnOpenPages(): Promise<void> {
-  if (!browserCoverageInWorker() || OPEN_PAGES.size === 0) return;
+  if (!pageCoverageInWorker() || OPEN_PAGES.size === 0) return;
   const started = Promise.all([...OPEN_PAGES].map((page) => maybeStartCodeReach(page, true)));
   await Promise.race([started, new Promise((resolve) => setTimeout(resolve, CODE_REACH_START_WAIT_MS).unref())]);
 }
@@ -555,17 +566,22 @@ async function stopPageCodeReach(
 ): Promise<void> {
   try {
     if (!(await session.started) || isPageClosed(page)) return;
-    const entries = await stopCodeReach(page);
-    if (!entries) return;
-    const { reached, known } = await resolveCodeReachFunctions(entries, roots, pageMapFetcher(page), page.url(), {
+    const { scripts, sheets } = await stopPageCoverage(page);
+    const fetchMap = pageMapFetcher(page);
+    const append = (into: Map<string, LineRange[]>, from: Map<string, LineRange[]>) => {
+      for (const [file, ranges] of from) into.set(file, [...(into.get(file) ?? []), ...ranges]);
+    };
+    if (sheets.length > 0) {
+      const rules = await resolveCssCoverage(sheets, roots, fetchMap);
+      append(sink.codeReach.cssFiles, rules.reached);
+      append(sink.codeReach.cssKnown, rules.known);
+    }
+    if (!scripts) return;
+    const { reached, known } = await resolveCodeReachFunctions(scripts, roots, fetchMap, page.url(), {
       known: browserFunctionsInWorker(),
     });
-    for (const [file, functions] of reached) {
-      sink.codeReach.files.set(file, [...(sink.codeReach.files.get(file) ?? []), ...functions]);
-    }
-    for (const [file, functions] of known) {
-      sink.codeReach.known.set(file, [...(sink.codeReach.known.get(file) ?? []), ...functions]);
-    }
+    append(sink.codeReach.files, reached);
+    append(sink.codeReach.known, known);
   } catch {
     /* code reach is best-effort and must never affect the test */
   }
@@ -581,6 +597,8 @@ let currentSink: CaptureSink | null = null;
 
 /** The browser functions this worker named in a `piwi-browser-functions` attachment, by file, as `start:end`. */
 const KNOWN_FUNCTIONS_SENT = new Map<string, Set<string>>();
+/** The style sheet rules this worker named in a `piwi-css-rules` attachment, by file, as `start:end`. */
+const KNOWN_CSS_RULES_SENT = new Map<string, Set<string>>();
 
 /**
  * Element probes whose protocol call is still in flight. Closing a page,
@@ -601,6 +619,28 @@ async function drainPendingProbes(capMs: number): Promise<void> {
     }),
   ]);
   clearTimeout(cap);
+}
+
+/**
+ * What the page and context close wrappers do before the close: drain the
+ * in-flight probes, and take the page-dependent teardown reads while the page
+ * can still serve them. The stops come down, a call a stop let go as the test
+ * ended runs to its end (its effects are the test's), and the page reads run
+ * during the drain; the picker and the end of code reach follow it.
+ */
+async function settleBeforeClose(closing: { page?: Page; context?: BrowserContext }): Promise<void> {
+  const drained = drainPendingProbes(1000);
+  const sink = currentSink;
+  if (sink) {
+    await endShownStops(sink, 'closed', closing);
+    await awaitReleasedCalls(sink);
+    await stashPageState(sink, closing);
+  }
+  await drained;
+  if (sink) {
+    await maybeOpenPicker(sink, closing);
+    await stopSinkCodeReach(sink, closing);
+  }
 }
 
 function isPageClosed(page: Page): boolean {
@@ -803,10 +843,13 @@ export function buildPageState(
   };
 }
 
-/** Read the page's state — null when unavailable or the page is gone. */
+/**
+ * Read the page's state — null when unavailable or the page is gone. Its three
+ * reads are independent and run together, so they cost one round trip.
+ */
 async function readPageState(page: Page): Promise<PageState | null> {
   try {
-    const raw = await page.evaluate((): RawPageState => {
+    const readRaw = page.evaluate((): RawPageState => {
       // Key names + value lengths only — values never leave the page.
       const listStorage = (s: any): Array<{ key: string; length: number }> => {
         const out: Array<{ key: string; length: number }> = [];
@@ -835,19 +878,19 @@ async function readPageState(page: Page): Promise<PageState | null> {
         sessionStorage: listStorage((globalThis as any).sessionStorage),
       };
     });
-    if (!raw) return null;
-
     // Cookie flags are only reachable from the context API, never document.cookie.
-    let cookies: Array<Record<string, unknown>> | null = null;
-    try {
-      cookies = ((await pageContext(page)?.cookies()) as Array<Record<string, unknown>> | undefined) ?? null;
-    } catch {
-      cookies = null;
-    }
-
+    const readCookies = (async () => {
+      try {
+        return ((await pageContext(page)?.cookies()) as Array<Record<string, unknown>> | undefined) ?? null;
+      } catch {
+        return null;
+      }
+    })();
     // Focus, hover and selection, which no trace snapshot records.
-    const interaction = await page.evaluate(readPageInteraction).catch(() => null);
+    const readInteraction = page.evaluate(readPageInteraction).catch(() => null);
 
+    const [raw, cookies, interaction] = await Promise.all([readRaw, readCookies, readInteraction]);
+    if (!raw) return null;
     return buildPageState(raw, cookies, interaction);
   } catch {
     return null;
@@ -978,16 +1021,19 @@ async function readBlankPage(page: Page): Promise<boolean> {
   return aria != null && aria.trim() === '';
 }
 
-/** The reads {@link stashPageState} takes from the page about to close. */
+/**
+ * The reads {@link stashPageState} takes from the page about to close. The web
+ * vitals and the page state run together; in a server probe, the page state
+ * follows the blank-page check, which waits for the document to load.
+ */
 async function readPageBeforeClose(sink: CaptureSink, page: Page): Promise<void> {
-  const vitals = await readWebVitals(page);
+  const readBlank = sink.probeItem?.level === 'server' ? readBlankPage(page).catch(() => null) : null;
+  const readState =
+    process.env.PIWI_CAPTURE_PAGE_STATE !== 'false' ? Promise.resolve(readBlank).then(() => readPageState(page)) : null;
+  const [vitals, blankPage, pageState] = await Promise.all([readWebVitals(page), readBlank, readState]);
   if (vitals) sink.stashedWebVitals = vitals;
-  if (sink.probeItem?.level === 'server') sink.probeBlankPage = await readBlankPage(page);
-
-  if (process.env.PIWI_CAPTURE_PAGE_STATE !== 'false') {
-    const pageState = await readPageState(page);
-    if (pageState) sink.stashedPageState = pageState;
-  }
+  if (blankPage !== null) sink.probeBlankPage = blankPage;
+  if (pageState) sink.stashedPageState = pageState;
 
   const status = sink.testInfo?.status;
   const sampleAria = async (): Promise<void> => {
@@ -2018,16 +2064,7 @@ function instrumentPage(page: Page): void {
   if (typeof page.close === 'function') {
     const originalClose = page.close.bind(page);
     page.close = async (...args: Parameters<Page['close']>): Promise<void> => {
-      await drainPendingProbes(1000);
-      const sink = currentSink;
-      if (sink) {
-        await endShownStops(sink, 'closed', { page });
-        // A call a stop let go as the test ended runs to its end first: its effects are the test's.
-        await awaitReleasedCalls(sink);
-        await stashPageState(sink, { page });
-        await maybeOpenPicker(sink, { page });
-        await stopSinkCodeReach(sink, { page });
-      }
+      await settleBeforeClose({ page });
       return originalClose(...args);
     };
   }
@@ -2394,16 +2431,7 @@ function instrumentContext(context: BrowserContext): void {
     const originalClose = context.close.bind(context);
     context.close = async (...args: Parameters<BrowserContext['close']>): Promise<void> => {
       CLOSING_CONTEXTS.add(context);
-      await drainPendingProbes(1000);
-      const sink = currentSink;
-      if (sink) {
-        await endShownStops(sink, 'closed', { context });
-        // A call a stop let go as the test ended runs to its end first: its effects are the test's.
-        await awaitReleasedCalls(sink);
-        await stashPageState(sink, { context });
-        await maybeOpenPicker(sink, { context });
-        await stopSinkCodeReach(sink, { context });
-      }
+      await settleBeforeClose({ context });
       return originalClose(...args);
     };
   }
@@ -2586,6 +2614,23 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
       contentType: 'application/json',
       body: Buffer.from(JSON.stringify(part)),
     });
+  }
+  // With `coverage.css: 'rules'`, the style sheet files whose rules matched, each rule as a function's line range,
+  // and every rule of those sheets the first time this worker finds it.
+  if (cssCoverageInWorker()) {
+    const rules = sink.codeReach.cssFiles.size > 0 ? browserFunctionCoverage(sink.codeReach.cssFiles) : null;
+    if (rules) {
+      await testInfo.attach(ATTACHMENT_NAMES.cssCoverage, {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify(rules)),
+      });
+    }
+    for (const part of newKnownFunctions(sink.codeReach.cssKnown, KNOWN_CSS_RULES_SENT)) {
+      await testInfo.attach(ATTACHMENT_NAMES.cssRules, {
+        contentType: 'application/json',
+        body: Buffer.from(JSON.stringify(part)),
+      });
+    }
   }
 
   // The server coverage request ids, per origin, for the reporter to collect.

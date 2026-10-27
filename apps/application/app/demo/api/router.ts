@@ -393,6 +393,7 @@ import {
   apiFinishTestRun,
   apiCancelStaleSimulatorRuns,
   apiHeartbeatTestRun,
+  apiLiveResourcesTestRun,
 } from './reporter';
 import { apiCreateUserApiKey } from './users';
 import { apiGetDemoFile } from './files';
@@ -416,7 +417,9 @@ import {
   apiDeleteAssistantConversation,
   apiGetAssistantConversation,
   apiListAssistantConversations,
+  apiListAssistantQuestions,
   apiRecordAssistantProposal,
+  apiStopAssistantAnswer,
   apiTickAssistantChecklist,
 } from './assistant';
 import {
@@ -1131,6 +1134,11 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/test-runs\/(\d+)\/heartbeat$/,
     handler: (m, body) => apiHeartbeatTestRun(+m[1]!, body as Parameters<typeof apiHeartbeatTestRun>[1]),
   },
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/live-resources$/,
+    handler: (m, body) => apiLiveResourcesTestRun(+m[1]!, body as Parameters<typeof apiLiveResourcesTestRun>[1]),
+  },
 
   // Test runs
   {
@@ -1765,6 +1773,11 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/assistant\/questions$/,
+    handler: async (_m, _b, _q, ctx) => apiListAssistantQuestions(ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/assistant\/conversations$/,
     handler: async (_m, _b, _q, ctx) => apiListAssistantConversations(ctx?.actingUserId ?? null),
   },
@@ -1800,6 +1813,11 @@ const routes: RouteEntry[] = [
             ctx?.actingUserId ?? null,
           )) as T,
       }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/stop$/,
+    handler: async (m, _b, _q, ctx) => apiStopAssistantAnswer(+m[1]!, ctx?.actingUserId ?? null),
   },
   {
     method: 'PATCH',

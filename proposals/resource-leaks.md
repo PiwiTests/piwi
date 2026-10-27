@@ -110,8 +110,35 @@ tools, and each finding's history on the Resources tab. What changed while build
   0%), inside the 3% the Verification section sets.
 
 **Part of PR 7 built 2026-10-02 and 03** (optional): each worker row of the run's timeline draws its sampled CPU,
-memory and open pages, and the Resources tab's open pages point at it. Not built: the leak tails, the pressure strip
-and the failure timeline's `resources` lane. PRs 5 and 6 are not started.
+memory and open pages, and the Resources tab's open pages point at it. **Live bands built 2026-10-26**: while a run
+is open on the dashboard, the same bands and strips fill in as it runs, instead of waiting for its end, and each
+running test on the Tests tab shows its worker's last cores, memory and open pages beside its step (D13). **The
+failure timeline's resource rows built 2026-10-26**: a failed execution's Timeline tab draws, behind a **Resources**
+switch kept per browser and off by default, the CPU and memory of the worker that ran it with its browsers and the
+pages open in that worker, sliced from the run's stored report (`shared/timeline-resources.ts`), with the pages
+earlier tests left open and its browsers' wait for a CPU. Not built: the leak tails, the pressure strip, the
+machine's CPU on the failure timeline, and the lane of the births and closes inside the test. PRs 5 and 6 are not
+started.
+
+**Detection extended 2026-10-26**, measured on a 60-test suite on one worker before each rule was set:
+
+- Servers and child processes are tracked one by one: the ledger wraps `net.Server.prototype.listen` and
+  `ChildProcess.prototype.spawn` in each worker (put back at its end) and records the line and the runnable as it
+  does for a context. This fixed a false positive: a worker-scoped fixture that starts a server is set up inside the
+  census window of the first test that asks for it (auto fixtures come first), and the handle count blamed that test.
+  A child process a test leaves running (`spawn`, `exec`, `fork`; Playwright's browsers and `ffmpeg` left out) is a
+  new `handle` finding, named by the line that started it. File watchers keep the count.
+- Piling up allows a dip: besides the series that never goes down, a series whose floor (the lowest reading from
+  each census on) rose by the rule's amount by three quarters of it, a quarter of that by its middle.
+- New piling series: attached DOM elements of a page that outlives its test (`document.getElementsByTagName('*')`
+  over its DevTools session; CDP's `Nodes` counts detached nodes until Blink collects them, and climbed from 165 to
+  25,341 on a page that only replaced its content), and per worker its open file descriptors and its heap after a
+  full garbage collection, read from V8's own `gc` performance entries. The heap at the end of a test is no signal:
+  it rose 30 MB over 60 clean tests, while after a forced collection plain Playwright kept 1.6 MB over 80 tests and
+  Piwi's capture 2.7 MB. A worker keeping 30 MB a test showed 143 → 602 → 1,852 MB over the three full collections
+  V8 ran in 60 tests. What tests that left something open added is left out of the worker's series, since each of
+  those is a finding already. Wire: `growth.what` gains `elements`, `heapMb` and `descriptors`, `kind` gains `worker`.
+- The ledger drops a closed object once a census reported it (about 0.7 KB of worker heap per test).
 
 ## What the reader gets
 
@@ -383,6 +410,7 @@ browser was starved as well.
 | D10 | No new channel for per-test data: it rides on a `piwi-resources` attachment. The worker-end census, which has no test to attach to, is one line per worker appended to a results file whose path the reporter sets in `onBegin`, before workers start, and reads in `onEnd`: the flake mode pattern. | Attachments already reach every submit path; the results file already solves output with no test. |
 | D11 | The reporter alone gives a fixture-free tier: `Create …`/`Launch browser` steps without a matching close in the same scope are **probable** leaks, with their locations. Popups, use and per-page cost need the fixtures. | Users who never adopted the fixtures still see the commonest leaks. |
 | D12 | Units stay physical: CPU-seconds, MB of PSS, page-seconds. Runner minutes are priced only where they are measured: a run's wall time, never a counterfactual. | CPU-seconds are not runner minutes; a made-up saving would undermine every other number. |
+| D13 | A live run's resources travel apart from its test events: while someone has the run open (the `watched` flag the stream already returns), the reporter posts what its sampler and the censuses added since its last post to `POST /api/test-runs/:id/live-resources` every five seconds. The server keeps each reporter's series in memory, capped, replays them to a page that opens mid-run and drops them when the run ends; the stored report stays what `finish` sends. A server that lost them asks for the whole series again; a server without the route (404) ends the posts. Only the bands and open pages are live: verdicts, tails and the machine panel wait for the end. | The sampler runs anyway, so a live view costs a few hundred bytes every five seconds, and only while watched. Kept out of the event queue, a lost post costs one gap in a chart, never a test result, and needs neither the disk buffer nor crash recovery. |
 
 ## Part 1 — The ledger
 
@@ -621,10 +649,14 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
   - Data: the lane reads the births and closes of the test's own census (a few objects, stored with the execution);
     the tails read `resource_occurrences`; the step line reads the open counts at each boundary; the bands need
     per-worker series, two values every two seconds, about 14,400 numbers for an hour-long run on four workers. A live
-    run draws tails and open pages as tests end, and the bands once it finishes. Without the fixtures only the bands
-    remain; outside Linux the bands are as coarse as [2.7](#27-platforms) says.
+    run draws the bands and the open pages as it runs (D13), and the tails once it finishes, since a leak verdict needs
+    the censuses that follow it (D3, D4). Without the fixtures only the machine's bands remain; outside Linux the bands
+    are as coarse as [2.7](#27-platforms) says.
 
 ## Part 5 — Further out, each with an entry condition
+
+[resource-consumption-next.md](resource-consumption-next.md) ranks what comes after this plan: waste in data already
+stored, deeper detection and fixes Piwi applies.
 
 - **Memory lab** (application leaks). A lab mode that runs one test's flow repeatedly in one context, forces a garbage
   collection between rounds (`HeapProfiler.collectGarbage`) and reads the retained heap and detached DOM nodes:
@@ -737,6 +769,12 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
   alike), `FailureTimelineCard.vue`, `TimelineTypeFilter.vue`; demo seed rows.
 - Storage: the per-worker series in the run's profile, and the census births and closes in the execution's
   `resources`.
+- Live (D13): `packages/reporter/src/internal/streaming/live-resources.ts` (the posts and their cursors) and
+  `RunSampler.liveMemory()`; `apps/application/server/api/test-runs/[id]/live-resources.post.ts`, the `resources`
+  event and its catch-up in `stream.get.ts`, the state in `run-events.ts`; `shared/live-resources.ts` (merging a post
+  into a reporter's series, for the server, the demo and the run page); `WorkersTimeline.vue` draws the merged parts
+  while the run is live; `app/utils/live-worker-resources.ts` and `TestRow.vue` show each worker's last values on its
+  running test; the demo simulator posts its timeline after each test.
 
 ## Verification
 

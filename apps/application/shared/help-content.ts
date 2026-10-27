@@ -581,7 +581,7 @@ export const HELP_TOPICS = {
   },
   'run.test-cases': {
     title: 'Tests',
-    text: 'Every execution in this run, in the order the tests ran (file order when grouped by file). Words search the title, describe blocks, path and error; qualifiers such as `file:`, `describe:`, `tag:` or `browser:` search one field, and a leading `-` excludes. Ctrl+F jumps to the search. Group by cluster, file, file and describe block, lock, or none. The count bar in the header filters by status (`test.skip()` and `test.fixme()` skips apart); New regressions and Newly flaky narrow the list further.',
+    text: 'Every execution in this run, in the order the tests ran (file order when grouped by file). Words search the title, describe blocks, path and error; qualifiers such as `file:`, `describe:`, `tag:` or `browser:` search one field, and a leading `-` excludes. Ctrl+F jumps to the search. Group by cluster, file, file and describe block, lock, or none. The count bar in the header filters by status (`test.skip()` and `test.fixme()` skips apart); New regressions and Newly flaky narrow the list further. While the run goes on, a running test shows the step its worker is on and what that worker and its browsers use right now: cores, memory and open pages.',
     doc: 'reference/test-search',
   },
   'run.changes': {
@@ -605,7 +605,7 @@ export const HELP_TOPICS = {
       '- **Click a test** to expand its steps into a nested waterfall on the same axis, like a span viewer.',
       '- **Show waits** marks the wasted waits; **Show locks** shows when each named lock was held and how much of the run it serialized.',
       '- **Paused** — a pale striped band over a test is a stop at an editor breakpoint: the test stood still while someone looked at the page. Its time stays on the clock and out of the test’s duration (for a test that ended under the bar, Piwi corrects the runner’s count where Playwright lets it), and the slowest-step and wasted-time figures leave it out too; the bar of a test that stood paused ends where the test ended.',
-      '- **Resources** — when the reporter measured them, the machine’s CPU, the memory of the run’s processes and the pages open in the workers share the axis above the rows, one set per shard. Hover them for the values at that moment and the tests running then. The Resources menu turns each off, and draws one metric under each worker row: its open pages, the CPU or memory of the worker and the browsers it started, or the share of each test spent waiting for a CPU.',
+      '- **Resources** — when the reporter measured them, the machine’s CPU, the memory of the run’s processes and the pages open in the workers share the axis above the rows, one set per shard. While the run is open live, they fill in every few seconds as the reporter measures them. Hover them for the values at that moment and the tests running then. The Resources menu turns each off, and draws one metric under each worker row: its open pages, the CPU or memory of the worker and the browsers it started, or the share of each test spent waiting for a CPU.',
     ].join('\n'),
     doc: 'features/ui-overview#test-run-detail',
   },
@@ -832,6 +832,7 @@ export const HELP_TOPICS = {
       '- **The table below** reads it in time order: a step with parameters opens them from its title, and a request or console entry opens on its own tab.',
       '- **The failed step** is the one that raised the test’s own error. An error the test caught and went on from (a probe in a try/catch, a retried `toPass` attempt) is greyed out and marked as caught.',
       '- **Paused** — a stop at an editor breakpoint, a band over the lanes. Every timestamp stays on the clock; a step that ran across a stop says how long it stood paused, which its share of the test leaves out.',
+      '- **Resources** — when the run sent its resource report, rows under the lanes draw the CPU and memory of the worker that ran the test with the browsers it started, and the pages open in that worker; the pointer reads their values, and the line below says what earlier tests left open and how long the browsers waited for a CPU. Off until you turn it on; the choice is remembered in this browser.',
       '',
       'When a run’s reporter recorded no step start times, positions are estimated from durations and the card says so.',
     ].join('\n'),
@@ -1005,7 +1006,7 @@ export const HELP_TOPICS = {
   },
   'notifications.channels': {
     title: 'Channels',
-    text: 'Destinations an alert can go to — browser, email, Slack, Microsoft Teams or webhook. Create a channel (the form shows where to get each URL, and can send a test first: a channel whose test went through is saved verified), then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
+    text: 'Destinations an alert can go to — browser, email, Slack (an incoming webhook, or a bot token posting through the Web API), Microsoft Teams or webhook. Create a channel (the form shows where to get each URL, and can send a test first: a channel whose test went through is saved verified), then subscribe events to it. Administrators can make a channel global (usable by everyone); without authentication every channel is global.',
     doc: 'features/notifications#channels',
   },
   'notifications.subscriptions': {

@@ -13,7 +13,7 @@
  */
 import { fileNames, renderSpec, type CodegenOptions, type CodegenResult } from './codegen';
 import { mappedPageKey, normalizePathPrefix, normalizeRoute } from './page-key';
-import type { RecordedStep, RecordedTarget, StepAssertion, ViewportBox } from './recording';
+import type { ManualInstruction, RecordedStep, RecordedTarget, StepAssertion, ViewportBox } from './recording';
 import { parseSteps, sessionFromSteps, type PiwiSteps } from './steps';
 import {
   bugPhrases,
@@ -428,9 +428,45 @@ function stepSentence(step: RecordedStep, phrases: BugPhrases, w: StepWriter): s
     case 'assertVisible':
     case 'assert':
       return phrases.capitalize(expectationSentence(step, phrases, w));
-    case 'manual':
-      return phrases.steps.manual(w.words(step.manual?.description ?? ''));
+    case 'manual': {
+      const instruction = step.manual?.instruction;
+      return phrases.steps.manual(
+        instruction ? instructionSentence(instruction, phrases, w) : w.words(step.manual?.description ?? ''),
+      );
+    }
   }
+}
+
+/**
+ * A manual instruction's sentence, with each of its values written by `w`:
+ * the locator as code, an option as a value, and the rest (a call, a matcher,
+ * what a check expected and received, what it checked) as words on one line,
+ * since no phrasebook puts code marks around them.
+ */
+function instructionSentence(instruction: ManualInstruction, phrases: BugPhrases, w: StepWriter): string {
+  const written: Record<string, unknown> = { ...instruction };
+  for (const [field, value] of Object.entries(instruction)) {
+    if (field === 'kind' || typeof value !== 'string') continue;
+    written[field] = field === 'locator' ? w.code('locator', value) : w.words(value);
+  }
+  if (instruction.kind === 'selectOptions') {
+    written.options = instruction.options.map((o) => (typeof o === 'string' ? w.text('value', o) : o));
+  }
+  const write = phrases.manualInstructions[instruction.kind] as (i: ManualInstruction) => string;
+  return write(written as ManualInstruction);
+}
+
+/** Every value as it is: for a sentence kept as data, such as a manual step's `description`. */
+const AS_IS: StepWriter = {
+  text: (_kind, text) => text,
+  code: (_kind, text) => text,
+  key: (name) => name,
+  words: (text) => text,
+};
+
+/** What a manual instruction asks, in the phrasebook's language, as a manual step's `description` holds it. */
+export function describeManualInstruction(instruction: ManualInstruction, phrases: BugPhrases = ENGLISH): string {
+  return instructionSentence(instruction, phrases, AS_IS);
 }
 
 /** A step in plain words, for a person reproducing it by hand, in the phrasebook's language. */

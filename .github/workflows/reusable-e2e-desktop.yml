@@ -20,10 +20,6 @@ on:
 permissions:
   contents: read
 
-env:
-  # Match the runtime the app bundles (apps/application/engines / reusable-publish-desktop.yml).
-  PIWI_NODE_VERSION: 24.22.1
-
 jobs:
   e2e:
     name: e2e
@@ -35,10 +31,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The runtime the app bundles, the root Dockerfile's Node (apps/desktop/scripts/node-version.mjs): the server is
+      # built and tested on it. The runner's own Node reads it.
+      - name: Read the bundled Node version
+        id: node
+        run: echo "version=$(node apps/desktop/scripts/node-version.mjs)" >> "$GITHUB_OUTPUT"
+
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
         with:
-          node-version: ${{ env.PIWI_NODE_VERSION }}
+          node-version: ${{ steps.node.outputs.version }}
           install: ${{ inputs.build-artifact == '' }}
 
       - name: Download the server bundle
@@ -64,7 +66,7 @@ jobs:
       - name: Stage the Node sidecar + bundled server
         working-directory: apps/desktop
         run: |
-          node scripts/fetch-node.mjs --node "$PIWI_NODE_VERSION"
+          node scripts/fetch-node.mjs
           npm run stage
 
       - name: Install Rust

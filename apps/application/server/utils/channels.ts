@@ -1,9 +1,9 @@
 // Config fields that are themselves credentials and must never be returned to
 // clients: the webhook signing `secret`, the Slack incoming-webhook URL
-// (`webhookUrl`) — anyone holding that URL can post to the channel — and any
-// stored `token`/`apiKey`/`password`. The list and create endpoints only ever
-// echo an email `address` or a webhook `url`, so dropping the secrets doesn't
-// affect the dashboard. Global channels are visible to every user, so this
+// (`webhookUrl`) — anyone holding that URL can post to the channel — the Slack
+// bot `token` of a Web API channel, and any stored `apiKey`/`password`. The
+// list and create endpoints only ever echo an email `address`, a webhook `url`
+// or a Slack `channelId`, so dropping the secrets doesn't affect the dashboard. Global channels are visible to every user, so this
 // stops a low-privilege user from reading another team's Slack URL.
 export const SECRET_CONFIG_FIELDS = new Set(['webhookUrl', 'secret', 'token', 'apiKey', 'password']);
 

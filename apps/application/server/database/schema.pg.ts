@@ -567,7 +567,7 @@ export const testRunsCases = pgTable(
     tags: jsonb('tags'), // string[] — tags this execution declared ('@' stripped)
     locks: jsonb('locks'), // string[] — lock names this execution held (best effort; none from blob imports)
     testMeta: jsonb('test_meta'), // { owner?, priority?, feature?, link? } from `piwi:` annotations
-    workerIndex: integer('worker_index'), // Parallel worker index (from Playwright's parallelIndex)
+    workerIndex: integer('worker_index'), // Worker process index (Playwright's workerIndex, new after each worker restart; parallelIndex only when workerIndex is absent)
     shardIndex: integer('shard_index'), // Shard index (1-based) for sharded runs; null = not sharded
     startedAt: bigint('started_at', { mode: 'number' }), // Unix timestamp in ms when the test started (exceeds 32-bit int range)
     isNewRegression: integer('is_new_regression'), // boolean: passed in baseline, failed in this run
@@ -1333,7 +1333,7 @@ export const notificationChannels = pgTable(
     id: serial('id').primaryKey(),
     name: text('name').notNull(),
     type: text('type').notNull(), // 'email' | 'slack' | 'webhook'
-    config: jsonb('config'), // { address } | { webhookUrl } | { url, secret (encrypted) }
+    config: jsonb('config'), // { address } | { webhookUrl } | { token (encrypted), channelId } | { url, secret (encrypted) }
     userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // null = global (admin-managed)
     verified: intBoolean('verified').notNull().default(INT_BOOLEAN_FALSE),
     createdAt: timestamp('created_at', { mode: 'date' })

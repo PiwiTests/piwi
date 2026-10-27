@@ -17,13 +17,15 @@
     "coverage:setup": "node scripts/coverage-setup.mjs"
   },
   "devDependencies": {
-    "@piwitests/instrumentation-nitro": "0.59.0",
-    "@piwitests/reporter": "0.59.0",
+    "@piwitests/instrumentation-nitro": "0.61.0",
+    "@piwitests/reporter": "0.61.0",
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.1.1",
+    "@vitest/coverage-v8": "^4.1.12",
     "consola": "^3.4.2",
     "h3": "^1.15.11",
     "nitropack": "^2.13.4",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.12"
   }
 }

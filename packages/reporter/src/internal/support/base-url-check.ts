@@ -4,8 +4,12 @@
  * a redirect or a 404 included, except a 502, 503 or 504, which a gateway
  * sends when the app behind it is down. The request goes through Playwright's
  * own request context with the project's `ignoreHTTPSErrors` and `proxy`, so
- * it reaches the app the way the tests do.
+ * it reaches the app the way the tests do, from this machine's network. A
+ * project whose browser runs on another machine (`connectOptions`) reaches a
+ * base URL from that machine's network unless its `exposeNetwork` rule covers
+ * the URL's host; the check's messages say so for such a base URL.
  */
+import * as net from 'node:net';
 import { errorMessage } from './errors.js';
 
 /** How many times a base URL is tried before it counts as down. */
@@ -24,7 +28,7 @@ const GATEWAY_ANSWERS: Record<number, string> = {
 interface ProjectLike {
   name?: string;
   dependencies?: string[];
-  use?: { baseURL?: unknown; ignoreHTTPSErrors?: unknown; proxy?: unknown };
+  use?: { baseURL?: unknown; ignoreHTTPSErrors?: unknown; proxy?: unknown; connectOptions?: unknown };
 }
 
 /** The part of Playwright's `FullConfig` the check reads. */
@@ -48,6 +52,12 @@ export interface BaseUrlTarget {
   projects: string[];
   ignoreHTTPSErrors: boolean;
   proxy?: Proxy;
+  /**
+   * A project that uses it drives a browser on another machine whose
+   * `exposeNetwork` rule does not cover the URL's host: that browser reaches
+   * the URL from its own machine's network, not from the one the check runs on.
+   */
+  remoteBrowser: boolean;
 }
 
 /**
@@ -69,9 +79,9 @@ export function cliProjectNames(argv: string[] = process.argv): string[] | null 
   return names;
 }
 
-function wildcard(pattern: string): RegExp {
+function wildcard(pattern: string, flags = 'i'): RegExp {
   const escaped = pattern.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  return new RegExp(`^${escaped.join('.*')}$`, 'i');
+  return new RegExp(`^${escaped.join('.*')}$`, flags);
 }
 
 /**
@@ -93,7 +103,7 @@ export function selectedProjects<T extends ProjectLike>(
   } else {
     const names = cliProjectNames(argv);
     if (!names || names.length === 0) return projects;
-    const patterns = names.map(wildcard);
+    const patterns = names.map((name) => wildcard(name));
     chosen = new Set(projects.filter((p) => patterns.some((re) => re.test(p.name ?? ''))));
   }
   if (!argv.includes('--no-deps')) {
@@ -117,17 +127,73 @@ function asProxy(value: unknown): Proxy | undefined {
   return proxy && typeof proxy === 'object' && typeof proxy.server === 'string' ? proxy : undefined;
 }
 
+/**
+ * Whether Playwright's `exposeNetwork` rule sends a browser's request to `url`
+ * back through the connection, to be opened from the runner's network. The
+ * rule is Playwright's SOCKS proxy pattern: a comma-separated list of hosts,
+ * each with an optional `:port`, where `*` matches every host, `<loopback>`
+ * matches `localhost`, `*.localhost`, `127.0.0.1` and `[::1]`, an IP address
+ * matches itself only, and a host name may hold `*` wildcards (a leading `.`
+ * stands for `*.`) and never matches an IP address. A token Playwright cannot
+ * read (one holding a line break) covers nothing.
+ */
+export function exposeNetworkCovers(rule: string | undefined, url: string): boolean {
+  if (!rule) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  const host = parsed.hostname;
+  const port = parsed.port ? Number(parsed.port) : parsed.protocol === 'https:' ? 443 : 80;
+  return rule.split(',').some((token) => {
+    const match = token.match(/^(.*?)(?::(\d+))?$/);
+    if (!match) return false;
+    if (match[2] !== undefined && Number(match[2]) !== port) return false;
+    const tokenHost = match[1]!;
+    if (tokenHost === '<loopback>') {
+      return host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1' || host === '[::1]';
+    }
+    if (tokenHost === '*') return true;
+    if (net.isIP(tokenHost)) return host === tokenHost;
+    if (net.isIP(host)) return false;
+    return wildcard(tokenHost.startsWith('.') ? `*${tokenHost}` : tokenHost, '').test(host);
+  });
+}
+
+/**
+ * Whether a project's browser reaches `url` from another machine's network:
+ * it connects to a remote browser, through `use.connectOptions` or, when the
+ * project leaves that unset, `PW_TEST_CONNECT_WS_ENDPOINT`, and the
+ * `exposeNetwork` rule that goes with that connection does not cover the URL.
+ */
+function reachedRemotely(use: ProjectLike['use'], url: string, env: NodeJS.ProcessEnv): boolean {
+  if (use?.connectOptions === undefined) {
+    return !!env.PW_TEST_CONNECT_WS_ENDPOINT && !exposeNetworkCovers(env.PW_TEST_CONNECT_EXPOSE_NETWORK, url);
+  }
+  const connect = use.connectOptions as { wsEndpoint?: unknown; exposeNetwork?: unknown } | null;
+  if (!connect || typeof connect !== 'object' || typeof connect.wsEndpoint !== 'string') return false;
+  return !exposeNetworkCovers(typeof connect.exposeNetwork === 'string' ? connect.exposeNetwork : undefined, url);
+}
+
 /** The distinct base URLs of the projects the run selects, each with the projects that use it. */
-export function baseUrlTargets(config: BaseUrlConfig, argv: string[] = process.argv): BaseUrlTarget[] {
+export function baseUrlTargets(
+  config: BaseUrlConfig,
+  argv: string[] = process.argv,
+  env: NodeJS.ProcessEnv = process.env,
+): BaseUrlTarget[] {
   const projects: ProjectLike[] = config.projects?.length ? config.projects : [{ name: '', use: config.use }];
   const filtered = config.projects?.length ? config.filteredProjects : undefined;
   const targets = new Map<string, BaseUrlTarget>();
   for (const project of selectedProjects(projects, argv, filtered)) {
     const url = project.use?.baseURL;
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) continue;
+    const remoteBrowser = reachedRemotely(project.use, url, env);
     const target = targets.get(url);
     if (target) {
       if (project.name) target.projects.push(project.name);
+      target.remoteBrowser ||= remoteBrowser;
       continue;
     }
     targets.set(url, {
@@ -135,6 +201,7 @@ export function baseUrlTargets(config: BaseUrlConfig, argv: string[] = process.a
       projects: project.name ? [project.name] : [],
       ignoreHTTPSErrors: project.use?.ignoreHTTPSErrors === true,
       proxy: asProxy(project.use?.proxy),
+      remoteBrowser,
     });
   }
   return [...targets.values()];
@@ -194,21 +261,32 @@ export async function checkBaseUrl(target: BaseUrlTarget, options: BaseUrlCheckO
 }
 
 /**
+ * For a base URL a remote browser reaches from its own network, the sentence
+ * saying so; null for any other.
+ */
+export function remoteBrowserNote(target: BaseUrlTarget): string | null {
+  if (!target.remoteBrowser) return null;
+  const { host } = new URL(target.url);
+  return `The check ran from this machine's network, but a project's remote browser reaches ${host} from its own, since its exposeNetwork rule does not cover that address.`;
+}
+
+/**
  * Check every base URL the run's projects use, all at once. Throws an error
  * naming each one that did not answer, so Playwright stops before any worker
  * starts; resolves when there is nothing to check or every one answered.
  */
 export async function checkBaseUrls(
   config: BaseUrlConfig,
-  options: BaseUrlCheckOptions & { argv?: string[] } = {},
+  options: BaseUrlCheckOptions & { argv?: string[]; env?: NodeJS.ProcessEnv } = {},
 ): Promise<BaseUrlTarget[]> {
-  const targets = baseUrlTargets(config, options.argv);
+  const targets = baseUrlTargets(config, options.argv, options.env);
   const reasons = await Promise.all(targets.map((target) => checkBaseUrl(target, options)));
   const down = targets.flatMap((target, i) => (reasons[i] ? [{ target, reason: reasons[i]! }] : []));
   if (down.length === 0) return targets;
   const lines = down.map(({ target, reason }) => {
     const used = target.projects.length > 0 ? ` (${target.projects.join(', ')})` : '';
-    return `  ${target.url}${used}: ${reason}`;
+    const note = remoteBrowserNote(target);
+    return `  ${target.url}${used}: ${reason}${note ? `\n    ${note}` : ''}`;
   });
   const message = [
     `[Piwi Dashboard] The app under test did not answer, so no test ran:`,

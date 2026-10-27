@@ -26,26 +26,52 @@ export const TEAMS_WORKFLOWS_GUIDE_URL =
 export const SLACK_INCOMING_WEBHOOKS_GUIDE_URL =
   'https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks';
 
+/** Slack's guide to `chat.postMessage`, the Web API method a bot-token channel posts with. */
+export const SLACK_POST_MESSAGE_GUIDE_URL = 'https://docs.slack.dev/reference/methods/chat.postMessage';
+
 /**
- * A Slack app manifest with the one scope Piwi needs: `incoming-webhook`, which
- * makes installing the app ask for a channel and mint that channel's webhook URL.
+ * How a Slack channel posts: through an incoming webhook (`webhookUrl`), or
+ * through the Web API with a bot token (`token`, encrypted at rest) and a
+ * channel ID (`channelId`).
  */
-export function slackAppManifest(appName = 'Piwi'): Record<string, unknown> {
+export type SlackDelivery = 'webhook' | 'api';
+
+/** The delivery a Slack channel's config describes: a `token` or a `channelId` field means the Web API. */
+export function slackDelivery(config: Record<string, unknown>): SlackDelivery {
+  return typeof config.channelId === 'string' || typeof config.token === 'string' ? 'api' : 'webhook';
+}
+
+/**
+ * The scopes a Slack app needs for each delivery: `incoming-webhook` makes
+ * installing the app ask for a channel and mint that channel's webhook URL;
+ * `chat:write` lets the bot post where it is a member, and `chat:write.public`
+ * in any public channel without being invited.
+ */
+const SLACK_APP_SCOPES: Record<SlackDelivery, string[]> = {
+  webhook: ['incoming-webhook'],
+  api: ['chat:write', 'chat:write.public'],
+};
+
+/** A Slack app manifest with the scopes Piwi needs for one delivery. */
+export function slackAppManifest(appName = 'Piwi', delivery: SlackDelivery = 'webhook'): Record<string, unknown> {
   return {
     display_information: {
       name: appName,
       description: 'Playwright test results and alerts from Piwi.',
     },
     features: { bot_user: { display_name: appName, always_online: false } },
-    oauth_config: { scopes: { bot: ['incoming-webhook'] } },
+    oauth_config: { scopes: { bot: SLACK_APP_SCOPES[delivery] } },
     settings: { org_deploy_enabled: false, socket_mode_enabled: false, token_rotation_enabled: false },
   };
 }
 
-/** Slack's "create an app" page, pre-filled with the Piwi manifest. */
-export function slackCreateAppUrl(appName?: string): string {
-  return `https://api.slack.com/apps?new_app=1&manifest_json=${encodeURIComponent(JSON.stringify(slackAppManifest(appName)))}`;
+/** Slack's "create an app" page, pre-filled with the Piwi manifest for one delivery. */
+export function slackCreateAppUrl(appName?: string, delivery: SlackDelivery = 'webhook'): string {
+  return `https://api.slack.com/apps?new_app=1&manifest_json=${encodeURIComponent(JSON.stringify(slackAppManifest(appName, delivery)))}`;
 }
+
+/** A Slack conversation ID: a public (`C…`) or private (`G…`) channel, or a direct message (`D…`). */
+const SLACK_CHANNEL_ID_PATTERN = /^[CGD][A-Z0-9]{6,}$/;
 
 /** Which chat webhook, if any, a URL is. */
 export type ChatWebhookKind = 'slack' | 'slack-workflow' | 'teams-workflow' | 'teams-connector';
@@ -178,7 +204,8 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * The problem with a channel's destination, or null when it can be saved: an
- * email channel needs an address, the webhook types an http(s) URL. Shape only —
+ * email channel needs an address, the webhook types an http(s) URL, a Slack
+ * channel posting through the Web API a bot token and a channel ID. Shape only —
  * whether the destination accepts a delivery is what a test proves.
  */
 export function channelConfigProblem(type: ChannelType, config: Record<string, unknown>): string | null {
@@ -186,6 +213,14 @@ export function channelConfigProblem(type: ChannelType, config: Record<string, u
   if (type === 'email') {
     const address = typeof config.address === 'string' ? config.address.trim() : '';
     return EMAIL_PATTERN.test(address) ? null : 'Enter a valid email address.';
+  }
+  if (type === 'slack' && slackDelivery(config) === 'api') {
+    const token = typeof config.token === 'string' ? config.token.trim() : '';
+    if (!token.startsWith('xox')) return 'Enter the app’s bot token, starting with xoxb-.';
+    const channelId = typeof config.channelId === 'string' ? config.channelId.trim() : '';
+    return SLACK_CHANNEL_ID_PATTERN.test(channelId)
+      ? null
+      : 'Enter the channel ID, such as C0123456789, from the channel’s details in Slack.';
   }
   const key = type === 'webhook' ? 'url' : 'webhookUrl';
   const url = typeof config[key] === 'string' ? (config[key] as string) : '';
@@ -207,6 +242,7 @@ export function channelDeliveryHint(type: ChannelType, error: string): string | 
   if (text.includes('smtp not configured')) {
     return 'Email delivery is not set up on this instance. An administrator configures SMTP through environment variables.';
   }
+  if (type === 'slack' && text.includes('slack api')) return slackApiHint(text);
   if (type === 'slack') {
     const gone = ['no_service', 'no_team', 'invalid_token', ' 403', ' 404'];
     if (gone.some((marker) => text.includes(marker))) {
@@ -222,6 +258,29 @@ export function channelDeliveryHint(type: ChannelType, error: string): string | 
   if (type === 'webhook' && (text.includes(' 401') || text.includes(' 403'))) {
     return 'Your endpoint refused the request. If it checks X-Piwi-Signature, make sure it uses the same secret.';
   }
+  return null;
+}
+
+/** What to do about an error Slack's Web API answered, keyed by its `error` code. */
+function slackApiHint(text: string): string | null {
+  if (text.includes('rate limit')) {
+    return 'Slack is limiting how often this app posts: try again after the wait it names. A notification waits for it before its retry.';
+  }
+  if (
+    ['invalid_auth', 'not_authed', 'token_revoked', 'token_expired', 'account_inactive'].some((c) => text.includes(c))
+  ) {
+    return 'Slack does not accept this token: it was revoked, or the app was uninstalled. Copy the Bot User OAuth Token again.';
+  }
+  if (text.includes('missing_scope')) {
+    return 'The app lacks the chat:write scope. Add it under OAuth & Permissions, then reinstall the app.';
+  }
+  if (text.includes('not_in_channel')) {
+    return 'The app is not a member of this channel. Invite it with /invite @Piwi, or add the chat:write.public scope.';
+  }
+  if (text.includes('channel_not_found')) {
+    return 'Slack finds no channel with this ID for this app. Check the ID; invite the app to a private channel first.';
+  }
+  if (text.includes('is_archived')) return 'The channel is archived. Unarchive it, or pick another channel.';
   return null;
 }
 

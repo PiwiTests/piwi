@@ -233,17 +233,28 @@ describe('coverage options and their variables', () => {
     expect(resolveOptions({}).coverage).toEqual({ browser: 'files', server: 'functions' });
   });
 
+  it('bridges the style sheets apart, both ways', () => {
+    applyOptionsToEnv({ coverage: { css: 'rules' } });
+    expect(process.env.PIWI_COVERAGE_CSS).toBe('rules');
+    expect(resolveOptions({}).coverage).toEqual({ css: 'rules' });
+  });
+
   it('leaves the variables unset when the options are', () => {
     applyOptionsToEnv({});
     expect(process.env.PIWI_COVERAGE_BROWSER).toBeUndefined();
     expect(process.env.PIWI_COVERAGE_SERVER).toBeUndefined();
+    expect(process.env.PIWI_COVERAGE_CSS).toBeUndefined();
   });
 
-  it('turns both sides off with collectPerformanceMetrics: false', () => {
+  it('turns every side off with collectPerformanceMetrics: false', () => {
     process.env.PIWI_COVERAGE_SERVER = 'lines';
-    applyOptionsToEnv({ collectPerformanceMetrics: false, coverage: { browser: 'files', server: 'lines' } });
+    applyOptionsToEnv({
+      collectPerformanceMetrics: false,
+      coverage: { browser: 'files', server: 'lines', css: 'rules' },
+    });
     expect(process.env.PIWI_COVERAGE_BROWSER).toBe('off');
     expect(process.env.PIWI_COVERAGE_SERVER).toBe('off');
+    expect(process.env.PIWI_COVERAGE_CSS).toBe('off');
   });
 });
 
