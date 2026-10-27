@@ -658,13 +658,18 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /**
-     * Asks the live endpoint as Piwi Picker does, with `bearer` (none without) and a `challenge`, and waits, pumping the
-     * event queue meanwhile.
+     * Asks the live endpoint as Piwi Picker does, with `bearer` (none without) and a `challenge`, from `origin`, and
+     * waits, pumping the event queue meanwhile.
      */
-    private fun liveFromPicker(bearer: String?, challenge: String? = null, method: String = "GET"): java.net.http.HttpResponse<String> {
+    private fun liveFromPicker(
+        bearer: String?,
+        challenge: String? = null,
+        method: String = "GET",
+        origin: String = "chrome-extension://abc",
+    ): java.net.http.HttpResponse<String> {
         val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
         val request = java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiSendHandler.LIVE_PATH}"))
-            .header("Origin", "chrome-extension://abc")
+            .header("Origin", origin)
             .method(method, java.net.http.HttpRequest.BodyPublishers.noBody())
         if (bearer != null) request.header("Authorization", "Bearer $bearer")
         if (challenge != null) request.header(Glue.EDITOR_CHALLENGE_HEADER, challenge)
@@ -748,6 +753,25 @@ class PiwiPluginTest : BasePlatformTestCase() {
         // A preflight names the challenge header among those it asks to send.
         val preflight = liveFromPicker(null, null, "OPTIONS")
         assertTrue(preflight.headers().firstValue("Access-Control-Allow-Headers").orElse("").contains(Glue.EDITOR_CHALLENGE_HEADER))
+    }
+
+    /**
+     * The request Piwi Picker's worker sends before the pairing's token goes anywhere, Send to editor's post included:
+     * a GET of the live endpoint carrying a challenge alone, from the extension's origin in Chrome and Edge, or in
+     * Firefox. It is answered 401 with the proof, which the worker can read; the send endpoint takes a POST alone.
+     */
+    fun testPiwiPickersChallengeAloneIsAnsweredWithTheProofOnTheLiveEndpoint() {
+        val token = PiwiSendToken.ensure()
+        val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        val challenge = "0123456789abcdef".repeat(4)
+        val proof = Glue.editorTokenProof(token, port, challenge)
+        for (origin in listOf("chrome-extension://pakhnokpjboejcghgcmkjlpnogfjihhe", "moz-extension://4b7a2f0e-91c3-4d5e-8f6a-0123456789ab")) {
+            val res = liveFromPicker(null, challenge, origin = origin)
+            assertEquals(origin, 401, res.statusCode())
+            assertEquals(origin, proof, res.headers().firstValue(Glue.EDITOR_PROOF_HEADER).orElse(null))
+            assertEquals(origin, origin, res.headers().firstValue("Access-Control-Allow-Origin").orElse(null))
+            assertEquals(origin, Glue.EDITOR_PROOF_HEADER, res.headers().firstValue("Access-Control-Expose-Headers").orElse(null))
+        }
     }
 
     /** A page reached under another name than this machine's (DNS rebinding) gets nothing from the endpoint. */
