@@ -72,7 +72,7 @@ each rule below ends with the section to read there.
 - **No network call from a content script, ever.** Only `piwi-client.ts` sends requests, from `src/options/` and the
   worker; content scripts read caches and ask the worker. `piwi-client.test.ts` fails on a file of `src/content/`
   importing it. (see "The requests and who makes them")
-- **Connected mode is opt-in, off by default, and never sends a recording to the instance.** A bug report, a replay
+- **Connected mode is opt-in, off by default, and never sends a recording or anything read from a page on its own.** A bug report, a replay
   verdict or steps for the desktop app go only from a preview the user confirms; a new feature that sends recorded data
   needs the same opt-in, separation and preview. (see "What is read and what is sent")
 - **No secret in `chrome.storage.local`, which content scripts read.** The API key and the desktop and editor tokens
@@ -84,15 +84,16 @@ each rule below ends with the section to read there.
 - **The worker never takes a project id from a page:** for a content script it resolves the project from the sending
   tab's URL (`bug-reports.ts`, `project-refresh.ts`), and records a verdict only on the stored replay's report or one
   sent to the desktop app. (see "The requests and who makes them")
-- **A message that names a tab or an address for the worker to act on is accepted only from extension pages:** list it
-  in `EXTENSION_PAGE_MESSAGES` (`src/background/index.ts`, `fromExtensionPage`). (see "What each folder holds")
+- **A message only the extension's own pages send is refused from anything else:** starting a recording, the viewport,
+  request-condition and language messages, listed in `EXTENSION_PAGE_MESSAGES` (`src/background/index.ts`, `fromExtensionPage`). (see "What each folder holds")
 - **A new request to the instance goes through `withConnectionHealth`**, so the popup and the settings page show
   whether the instance answers. (see "Connection health")
 - **Never add a fetch to `refreshHud`: it runs on every captured step.** (see "Cache freshness")
 - **The active project comes only from `resolveActiveProject(settings, override, url)`.** (see "Project mappings and
   the active project")
 - **The function matcher never invents a function:** it scores catalog entries only, with the same
-  `scoreTargetMatch` in the recorder and the Test functions panel. (see "What connecting adds")
+  `scoreTargetMatch` in the recorder and the Test functions panel. (see "What connecting adds" and "The Test functions
+  panel")
 - **A settings button that starts a request disables itself inside the click (`whileRunning`); a late answer is
   written through `writeConnection`.** (see "Buttons that start a request")
 - **Connect and a desktop pairing send only the browser and OS names (`describeClient`); the instance marker reads
@@ -102,7 +103,7 @@ each rule below ends with the section to read there.
 
 - **Content scripts are separate IIFE bundles, injected on demand:** no shared runtime chunk, no `<all_urls>`, no
   feature injected as `func:`. Only the worker calls `registerContentScripts` (scoped to one granted origin) and
-  `chrome.action.*`. (see "How content scripts are injected")
+  `chrome.action.*`. (see "How content scripts are injected" and "What each folder holds")
 - **A momentary tool claims the page through `src/shared/tool-session.ts`.** `startTool` before mounting, `bindToTool`
   for each panel or wait, `toolIsCurrent(epoch)` after each `await`, `endTool` at the end; the recorder stays outside.
   (see "How a tool claims the page")
@@ -123,8 +124,8 @@ each rule below ends with the section to read there.
   A direct call breaks only in Firefox, which no CI run exercises. (see "Session storage from a content script")
 - **A content script calls `ensureSessionAccess()` before reading session storage:** until the worker's
   `setAccessLevel` has run, the read throws. (see "Session storage from a content script")
-- **Change a recording only through `appendRecordingEvent` and `updateRecording(startedAt, …)`,** which queue each
-  change (one worker message each in Firefox), so no append is lost. (see "Session storage from a content script")
+- **Append recording events only through `appendRecordingEvent`, and change Pause or the title only through
+  `updateRecording(startedAt, …)`,** which queue each change (one worker message each in Firefox), so no append is lost. (see "Session storage from a content script")
 - **A page writes the replay's state only through `updateReplayState(change, replayId)`; only the worker writes its
   tab** (`piwiReplayTab`). (see "A replay belongs to one tab")
 - **Bug evidence has its own keys (`bug-storage.ts`), never `RecordingState`; only the worker writes
@@ -148,7 +149,7 @@ each rule below ends with the section to read there.
 
 - **Register a main-world script only while its feature runs, for its granted origin:** `bug-evidence-main.js` for a
   bug recording or a replay, `request-conditions-main.js` for request conditions `via: 'page'`. (see "The main-world
-  evidence script")
+  evidence script" and "Slow down or fail a request")
 - **A main-world script imports nothing that touches `chrome.*`, and only wraps and listens:** each wrapper calls the
   original with the same arguments and returns its result. (see "The main-world evidence script")
 - **It never reads a header or a body (URLs go through `reportedRequestUrl`), and what it relays is page-controlled
@@ -175,7 +176,8 @@ each rule below ends with the section to read there.
 - **Every tool that names an element or offers a locator goes through `verified-locators.ts`;** nothing estimates a
   count. (see "Naming and ranking an element")
 - **Hover stays cheap: locators are checked only once the pointer rests (`HOVER_REST_MS`).** The Pick results' ring
-  (`spotlight`) redraws on events, never in a frame loop. (see "Naming and ranking an element")
+  (`spotlight`) redraws on events, never in a frame loop. (see "Naming and ranking an element" and "How a tool claims
+  the page")
 - **Never show a locator's score alone as its verdict; use `verdictWords`.** (see "Naming and ranking an element")
 - **Compare a page with the locator index, or key a bug report, only with the URL mapping's prefixes applied:**
   `pageHere` for the index, `bugContextFrom` with `activePathPrefixes` for a report, never `pageKey(location.href)`.
@@ -222,7 +224,8 @@ each rule below ends with the section to read there.
   `no-hardcoded-text.test.ts`). A new message goes into every catalog in the same change, English with a
   `description` (`i18n/README.md`, `locales.test.ts`). (see "Rules, with their reasons")
 - **Translated text reaches the page as text or escaped, never as raw HTML.** (see "Rules, with their reasons")
-- **Run `initI18n()` before the first text:** a content script ends with `void initI18n().then(start)`, and a panel
+- **Run `initI18n()` before the first text:** a content script ends with `void initI18n().then(start)` or runs `initI18n()` beside the
+  storage reads it already awaits, and a panel
   sets `lang` from `uiLanguage()`. (see "Rules, with their reasons")
 
 ### Tests
@@ -258,7 +261,7 @@ Run them from `apps/extension/`: the root `package.json` has no `extension:*` sc
 
 `extension:dev` watches `src/`, `public/`, the HTML pages, `manifest.json`, `scripts/build.mjs`, and the `src/` and
 `package.json` of `packages/core` and `packages/picker-dom`, which are bundled from source. The `--pseudo` build is never
-released. `extension:lab` needs a running Piwi dashboard (`LAB_SET=wild`: public sites).
+released. `extension:lab` records on a running Piwi dashboard, or with `LAB_SET=wild` on public sites (no dashboard needed).
 
 ## Loading it locally
 

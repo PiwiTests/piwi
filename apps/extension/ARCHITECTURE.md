@@ -182,7 +182,7 @@ replay's panel only when the start message asks, `inject`).
 | `request-conditions-main.js` | main     | request conditions go through the page (`via: 'page'`)   | `piwi-conditions-main` |
 | `instance-marker.js`         | isolated | an instance is connected and its origin granted          | `piwi-instance-marker` |
 
-The ids of the recording and the replay are in `src/background/index.ts`, the marker's in
+The ids of the recording, the replay and the request conditions are in `src/background/index.ts`, the marker's in
 `src/background/instance-marker.ts`. A page the browser restores from its back/forward cache runs no script again: the
 recorder attaches there on `pageshow` (`persisted`), or lets go of the page when the recording ended meanwhile.
 
@@ -285,8 +285,9 @@ Two rules come from browser differences:
   sends each get, set and remove to the background script (`piwi-session-storage`). A module reaching
   `chrome.storage.session` itself works in Chrome and breaks only in Firefox, which no CI run exercises.
 
-The recording is changed only through two functions of `recording-storage.ts`, which queue each change so that no
-append is lost:
+While a recording runs, its events are appended and its Pause and title changed only through two functions of
+`recording-storage.ts`, which queue each change so that no append is lost (starting, stopping and discarding it write
+the state directly):
 
 - `appendRecordingEvent` adds a captured event. In a Firefox content script each event goes as one
   `piwi-append-recording-event` message, so a click that navigates away is not lost between a read and a write.
@@ -1436,7 +1437,7 @@ recording, the Test functions scan, and the others) is split in two:
 - a **pure logic file**, such as `lint-scan.ts`, `assertion-suggest.ts`, `src/shared/session-export.ts`,
   `record-capture.ts` or `test-function-scan.ts`;
 - a separate **entry file** that wires picking, the DOM and `chrome.*` calls around it, such as `lint-overlay.ts`,
-  `assertion-panel.ts`, `src/devtools/panel-session.ts` or `record-panel.ts`.
+  `assertion-panel.ts` or `record-panel.ts`.
 
 Keep new features on this split rather than mixing pure logic into the entry file. It is what makes the logic half
 testable with plain unit tests, or on the real bundle (see "Rules, with their reasons"), instead of needing a live
