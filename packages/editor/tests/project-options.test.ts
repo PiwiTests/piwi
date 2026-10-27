@@ -264,14 +264,17 @@ describe('readProjectOptions', () => {
     const config = project('spellings', 'export default {};\n');
     const link = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-spelling-')), 'project');
     fs.symlinkSync(path.dirname(config), link, 'dir');
+    // The five minutes count from the call that starts the read, made between `before` and `after`.
+    const before = Date.now();
     const first = readProjectOptions(config, reporter);
+    const after = Date.now();
     expect(readProjectOptions(path.join(link, 'playwright.config.ts'), reporter)).toBe(first);
     await first;
     vi.useFakeTimers({ toFake: ['Date'] });
     try {
-      vi.setSystemTime(Date.now() + 5 * 60_000 - 1_000);
+      vi.setSystemTime(before + 5 * 60_000 - 1_000);
       expect(readProjectOptions(config, reporter)).toBe(first);
-      vi.setSystemTime(Date.now() + 2_000);
+      vi.setSystemTime(after + 5 * 60_000);
       const again = readProjectOptions(config, reporter);
       expect(again).not.toBe(first);
       expect(readProjectOptions(config, reporter)).toBe(again);
