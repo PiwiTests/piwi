@@ -375,6 +375,8 @@ interface CaptureSink {
   shownStops: Map<AbortController, ShownStop>;
   // How many times the stops shown ended with the test (`endShownStops`): a stop waiting its turn meanwhile ends too.
   stopEnds: number;
+  // Set as the capture fixture's teardown begins: a stop after it goes on unshown.
+  ending: boolean;
   // The calls a stop let go when the test ended under its bar, each settling once its call does (at once for a call
   // other than a locator's), the requests the test's pages started since, until each ends (`releasedRequestsEnded`),
   // since when none of them has started, ended or settled, and until when they are waited for, set as the first wait
@@ -437,6 +439,7 @@ function createSink(): CaptureSink {
     stops: [],
     shownStops: new Map(),
     stopEnds: 0,
+    ending: false,
     released: [],
     releasedRequests: new Set(),
     onReleasedRequestsEnded: null,
@@ -1468,7 +1471,8 @@ let stopTurn: Promise<unknown> = Promise.resolve();
  * otherwise. A stop outside a test that pauses (one armed before the test ended) resumes at once, and a `page.pause()`
  * left to Playwright is left alone. A stop that comes while another shows waits for it, and goes on unshown when its
  * test ended meanwhile (as on Finish, its call kept in `released`), when its context closed, or when it is a
- * breakpoint's and the other's answer was Finish. Whatever happens while the stop is shown, the call goes on.
+ * breakpoint's and the other's answer was Finish; one that comes once the capture fixture's teardown began goes on
+ * unshown too. Whatever happens while the stop is shown, the call goes on.
  */
 function onDebuggerStop(context: BrowserContext): void {
   const details = contextDebugger(context)?.pausedDetails();
@@ -1489,7 +1493,7 @@ function onDebuggerStop(context: BrowserContext): void {
       if (pagePause) stopShown(state);
       const ends = sink.stopEnds;
       const shown = stopTurn.then(() => {
-        if (currentSink !== sink || sink.stopEnds !== ends) return endedWaiting(sink, callSite);
+        if (currentSink !== sink || sink.ending || sink.stopEnds !== ends) return endedWaiting(sink, callSite);
         if (CLOSING_CONTEXTS.has(context) || (decided.show === 'breakpoint' && state.finished)) return undefined;
         return showStop(sink, context, details.title, callSite ?? pagePause!, decided.show);
       });
@@ -1503,7 +1507,10 @@ function onDebuggerStop(context: BrowserContext): void {
   })();
 }
 
-/** A stop that waited its turn while the test ended under the one before it: its call goes on as on Finish. */
+/**
+ * A stop that waited its turn while the test ended under the one before it, or came as the capture fixture's teardown
+ * began: its call goes on as on Finish.
+ */
 function endedWaiting(sink: CaptureSink, callSite: string | null): PauseAnswer {
   const call = callSite ? sink.locatorCalls.get(callSiteLine(callSite)) : undefined;
   releaseCall(sink, call?.settled ?? Promise.resolve());
@@ -3048,6 +3055,7 @@ export const piwiFixtures: Fixtures<
       } finally {
         // A stop still shown ends, and the calls it let go settle, a while at most, while their effects are this
         // test's.
+        sink.ending = true;
         await endShownStops(sink, 'ended');
         await awaitReleasedCalls(sink);
         showRunChannel();
