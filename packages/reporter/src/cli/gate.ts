@@ -121,6 +121,7 @@ export function parseGateArgs(argv: string[], env: NodeJS.ProcessEnv, dirs: stri
     { serverUrl: readOption(argv, '--server-url'), apiKey: readOption(argv, '--api-key') },
     env,
     dirs,
+    'piwi gate',
   );
   if (!connection)
     throw new Error('No dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL (environment or .env)');

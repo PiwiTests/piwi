@@ -90,6 +90,7 @@ export function parseReportArgs(argv: string[], env: NodeJS.ProcessEnv, dirs: st
     { serverUrl: readOption(argv, '--server-url'), apiKey: readOption(argv, '--api-key') },
     env,
     dirs,
+    'piwi report',
   );
   if (!connection)
     throw new Error('No dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL (environment or .env)');

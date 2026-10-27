@@ -9,9 +9,8 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { originEnv } from '../internal/config/env.js';
-import { resolveCliConnection } from '../internal/support/connection.js';
+import { connectionFolders, gitRoot, resolveCliConnection } from '../internal/support/connection.js';
 import { resolvePlaywrightCli, spawnPlaywright } from '../internal/support/playwright-spawn.js';
 
 const EXIT_OK = 0;
@@ -85,6 +84,7 @@ export function parseBugArgs(argv: string[], env: NodeJS.ProcessEnv, dirs: strin
     { serverUrl: readOption(argv, '--server-url'), apiKey: readOption(argv, '--api-key') },
     env,
     dirs,
+    'piwi bug',
   );
   if (!connection) throw new Error('No dashboard — pass --server-url or set PIWI_DASHBOARD_URL (environment or .env)');
   const out = readOption(argv, '--out') ?? null;
@@ -134,20 +134,6 @@ async function fetchBugSpec(
   return { code: body.code, path: body.path, warnings: Array.isArray(body.warnings) ? body.warnings : [] };
 }
 
-/** The root of the git repository holding `cwd`; null outside one. */
-function repositoryRoot(cwd: string): string | null {
-  try {
-    const out = execFileSync('git', ['rev-parse', '--show-toplevel'], {
-      cwd,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    return out ? path.resolve(out) : null;
-  } catch {
-    return null;
-  }
-}
-
 /** `dir` with symbolic links resolved, as far as it exists. */
 function realFolder(dir: string): string {
   const rest: string[] = [];
@@ -188,14 +174,14 @@ export async function runBug(
   }
   let args: BugArgs;
   try {
-    args = parseBugArgs(argv, env, [cwd]);
+    args = parseBugArgs(argv, env, connectionFolders(cwd));
   } catch (e) {
     console.error(`piwi bug: ${(e as Error).message}\n\n${USAGE}`);
     return EXIT_ERROR;
   }
 
   // --out is read from the working directory; the bugs folder from the repository root.
-  const root = args.write ? repositoryRoot(cwd) : null;
+  const root = args.write ? gitRoot(cwd) : null;
   const outFile = args.out !== null ? path.resolve(cwd, args.out) : null;
   let spec: BugSpec;
   try {

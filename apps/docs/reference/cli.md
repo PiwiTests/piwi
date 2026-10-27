@@ -33,7 +33,9 @@ npx @piwitests/reporter <command> [options]
 | [`preflight`](#preflight) | List the test locators your change breaks, and fix them |
 | [`bug`](#bug) | Write a bug report's failing test into the project and run it once |
 
-The commands that talk to a dashboard find it in their flags first, then in the environment: `PIWI_DASHBOARD_URL` (dashboard URL), `PIWI_API_KEY` (API key) and `PIWI_PROJECT_NAME` (project), then in the project's `.env` (the one `init` writes), then in the running [desktop app](/features/desktop). An API key goes only to the URL it came with: a key exported in the environment is never sent to a URL the `.env` names.
+The commands that talk to a dashboard, all but `ai resolve`, find it in their flags first, then in the environment: `PIWI_DASHBOARD_URL` (dashboard URL), `PIWI_API_KEY` (API key) and `PIWI_PROJECT_NAME` (project), then in the project's `.env` (the one `init` writes), then in the running [desktop app](/features/desktop). `bug`, `codegen` and `preflight` read the `.env` of the Playwright config's folder, the working directory and the repository root, the first that sets a variable winning; the others read the working directory's. An empty variable counts as unset. `PIWI_DESKTOP_APP` places the desktop app as it does for the reporter: `off` never uses it, `prefer` uses it before the environment and the `.env` outside CI (a `--server-url` flag still wins), and `fallback`, the default, keeps it last. `ai resolve` reads `PIWI_DASHBOARD_URL` and `PIWI_API_KEY` from the environment only.
+
+An API key goes only to the URL it came with: a key exported in the environment is never sent to a URL the `.env` names, and an `--api-key` flag is never sent to a URL that comes from a `.env` or the desktop app. The command then says so in one line on stderr; pass `--server-url` with the key to name the instance it is for.
 
 ## `init`
 
@@ -97,7 +99,7 @@ npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 | `--run-id <id>` | Run id to evaluate |
 | `--from-file <path>` | Read `runId` from the reporter's output JSON |
 | `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
-| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
 | `--require-tag <tags>` | Comma-separated; every test carrying the tag must pass |
 | `--max-failed <n>` | Fail when more than *n* tests failed |
 | `--max-new-regressions <n>` | Fail when more than *n* tests newly started failing |
@@ -130,7 +132,7 @@ npx @piwitests/reporter report --project checkout --period 7d --format md
 | Flag | Description |
 |---|---|
 | `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
-| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
 | `--project <names>` | Comma-separated project names or ids (default: every project the key can see) |
 | `--period <period>` | `7d`, `30d` (default), `last-month`, `this-quarter`, `2026-08-01..2026-08-31`, … |
 | `--compare <mode>` | `previous` (default), `year` or `none` |
@@ -377,7 +379,7 @@ npx @piwitests/reporter preflight --fix --run -- --workers=2
 | `--fix` | Write the rewrites into the call sites whose line holds the string |
 | `--run` | Run the tests that reach the changed files and the specs of the broken locators; Playwright arguments go after `--` |
 | `--strict` | Exit 1 when a likely break is left unfixed |
-| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, then `.env`, then the running desktop app) |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
 | `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
 | `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`, `.env`) |
 | `--json` | Print the breaks, their call sites, the edits and the impact as JSON |

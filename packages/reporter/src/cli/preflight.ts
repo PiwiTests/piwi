@@ -34,7 +34,7 @@ import {
 import { buildLiteralEdit } from '@piwitests/core/locator-edit';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
 import { diffImpactInput } from '@piwitests/core/suspect-lines';
-import { resolveCliConnection } from '../internal/support/connection.js';
+import { findPlaywrightRoot, resolveCliConnection } from '../internal/support/connection.js';
 import {
   fetchCodeIndex,
   fetchImpact,
@@ -71,8 +71,8 @@ Actions:
 
 Connection:
   --server-url <url>    Dashboard URL         (env PIWI_DASHBOARD_URL, .env, the desktop app)
-  --api-key <key>       API key               (env PIWI_API_KEY)
-  --project <name|id>   Project               (env PIWI_PROJECT_NAME)
+  --api-key <key>       API key               (env PIWI_API_KEY, .env)
+  --project <name|id>   Project               (env PIWI_PROJECT_NAME, .env)
 
 Output:
   --json                Print the breaks, the edits and the impact as JSON
@@ -151,19 +151,6 @@ export function parsePreflightArgs(argv: string[]): PreflightArgs {
 
 // ── The workspace ────────────────────────────────────────────────────────────
 
-const CONFIG_NAMES = ['playwright.config.ts', 'playwright.config.js', 'playwright.config.mjs', 'playwright.config.cjs'];
-
-/** The directory of the nearest Playwright config at or above `from`; null when there is none. */
-export function findPlaywrightRoot(from: string): string | null {
-  let dir = path.resolve(from);
-  for (;;) {
-    if (CONFIG_NAMES.some((name) => fs.existsSync(path.join(dir, name)))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-}
-
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, {
     cwd,
@@ -185,7 +172,12 @@ const TEST_FILE = /(?:^|\/)[^/]+\.(?:spec|test)\.[cm]?[jt]sx?$/;
 
 /** The connection from flags, the environment, the workspace `.env`, then the desktop app. */
 function resolveConnection(args: PreflightArgs, env: NodeJS.ProcessEnv, dirs: string[]): PiwiConnection | null {
-  return resolveCliConnection({ serverUrl: args.serverUrl, apiKey: args.apiKey, project: args.project }, env, dirs);
+  return resolveCliConnection(
+    { serverUrl: args.serverUrl, apiKey: args.apiKey, project: args.project },
+    env,
+    dirs,
+    'piwi preflight',
+  );
 }
 
 /**

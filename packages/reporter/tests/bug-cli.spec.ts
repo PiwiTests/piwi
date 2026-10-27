@@ -106,6 +106,20 @@ describe('runBug', () => {
     expect(init.headers).toEqual({ 'X-API-Key': 'pd_workspace' });
   });
 
+  it('reads the .env of the repository root when run from a folder below it', async () => {
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    fs.writeFileSync(path.join(dir, '.env'), 'PIWI_DASHBOARD_URL=https://root.example\nPIWI_API_KEY=pd_root\n');
+    const below = path.join(dir, 'packages', 'shop');
+    fs.mkdirSync(below, { recursive: true });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(SPEC), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    expect(await runBug(['37'], NO_DESKTOP, below)).toBe(0);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://root.example/api/bug-reports/37/spec?mode=commit');
+    expect(init.headers).toEqual({ 'X-API-Key': 'pd_root' });
+  });
+
   it('writes it without running it, and keeps an existing file without --force', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(SPEC), { status: 200 })));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);

@@ -15,7 +15,7 @@ import { renderSpec, type CodegenOptions, type CodegenResult } from '@piwitests/
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
 import { parseSteps, sessionFromSteps, type PiwiSteps } from '@piwitests/core/steps';
-import { resolveCliConnection } from '../internal/support/connection.js';
+import { connectionFolders, resolveCliConnection } from '../internal/support/connection.js';
 import { resolveProjectId } from '../internal/support/selection-client.js';
 
 const EXIT_OK = 0;
@@ -128,6 +128,7 @@ export function parseCodegenArgs(argv: string[], env: NodeJS.ProcessEnv, dirs: s
     },
     env,
     dirs,
+    'piwi codegen',
   );
   return {
     file,
@@ -230,7 +231,7 @@ export async function runCodegen(
   }
   let args: CodegenArgs;
   try {
-    args = parseCodegenArgs(argv, env, [cwd]);
+    args = parseCodegenArgs(argv, env, connectionFolders(cwd));
   } catch (e) {
     console.error(`piwi codegen: ${(e as Error).message}\n\n${USAGE}`);
     return EXIT_ERROR;

@@ -147,6 +147,7 @@ export function parseCoverageUploadArgs(
     { serverUrl: values.get('--server-url'), apiKey: values.get('--api-key'), project: values.get('--project') },
     env,
     dirs,
+    'piwi coverage upload',
   );
   const serverUrl = connection?.serverUrl ?? '';
   const dryRun = flags.has('--dry-run');

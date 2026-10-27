@@ -135,7 +135,12 @@ export function parseDuration(raw: string): number | null {
 }
 
 /** Parse the arguments; the connection falls back to the `.env` of `dirs`, then the desktop app. */
-export function parseSelectArgs(argv: string[], env: NodeJS.ProcessEnv, dirs: string[] = []): SelectArgs {
+export function parseSelectArgs(
+  argv: string[],
+  env: NodeJS.ProcessEnv,
+  dirs: string[] = [],
+  command = 'piwi select',
+): SelectArgs {
   const dashIndex = argv.indexOf('--');
   const own = dashIndex === -1 ? argv : argv.slice(0, dashIndex);
   const extra = dashIndex === -1 ? [] : argv.slice(dashIndex + 1);
@@ -148,6 +153,7 @@ export function parseSelectArgs(argv: string[], env: NodeJS.ProcessEnv, dirs: st
     },
     env,
     dirs,
+    command,
   );
   if (!connection)
     throw new Error('No dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL (environment or .env)');
@@ -455,7 +461,7 @@ export async function runRun(argv: string[], env: NodeJS.ProcessEnv = process.en
 
   let args: SelectArgs;
   try {
-    args = parseSelectArgs(argv, env, [process.cwd()]);
+    args = parseSelectArgs(argv, env, [process.cwd()], 'piwi run');
   } catch (e) {
     console.error(`piwi run: ${(e as Error).message}\n`);
     console.error(USAGE);

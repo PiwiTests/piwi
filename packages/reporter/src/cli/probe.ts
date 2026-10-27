@@ -61,6 +61,7 @@ export async function runProbe(argv: string[]): Promise<number> {
     },
     env,
     [process.cwd()],
+    'piwi probe',
   );
   if (!connection) {
     console.error('piwi probe: no dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL (environment or .env)');
