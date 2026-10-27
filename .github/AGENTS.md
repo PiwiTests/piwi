@@ -75,6 +75,9 @@ every comparison is made on one machine; a `report` job joins their results into
   `release` environment (`environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}`), whose
   protection rules and secrets are set in the repository settings. `id-token: write` only where a step uses it (npm
   provenance). `.github/` is owned by its maintainer (`CODEOWNERS`).
+- **The bundled server fits Windows' MAX_PATH.** The installers fail on a file whose installed path passes 259
+  characters, so the `build` job runs `apps/desktop/scripts/check-path-lengths.mjs` on the server it builds. A
+  dependency installed in two versions, one nested under the other, is the usual cause.
 - **The editor extensions' changelogs are written at publish time.** `scripts/ide-changelog.mjs` keeps the `ide`
   entries of the root `CHANGELOG.md`, under their version and section: `reusable-publish-vscode.yml` writes every
   version's as `apps/vscode/CHANGELOG.md` (gitignored; `.vscodeignore` lets it into the VSIX) before `vsce package`,

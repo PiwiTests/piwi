@@ -231,6 +231,10 @@ jobs:
         working-directory: apps/application
         run: npm run app:build
 
+      # The desktop installers bundle this output, and Windows' MAX_PATH bounds how deep a file in it can sit.
+      - name: Check the server's paths fit the Windows installers
+        run: node apps/desktop/scripts/check-path-lengths.mjs apps/application/.output
+
       - name: Upload build output
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

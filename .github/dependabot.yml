@@ -24,6 +24,15 @@ updates:
       # the dashboard's typecheck on code 3.3.11 accepts.
       - dependency-name: "vue-tsc"
         versions: ["3.3.12", "3.3.13"]
+      # OpenTelemetry stays on SDK 2, the last line @opentelemetry/sdk-trace-node is published on (see the opentelemetry
+      # group below): the API from 1.10, the exporter from 0.300 and resources from 3.0 belong to SDK 3. They move with
+      # sdk-trace-node, by hand.
+      - dependency-name: "@opentelemetry/api"
+        versions: [">= 1.10.0"]
+      - dependency-name: "@opentelemetry/exporter-trace-otlp-http"
+        versions: [">= 0.300.0"]
+      - dependency-name: "@opentelemetry/resources"
+        versions: [">= 3.0.0"]
     groups:
       # @vueuse/nuxt pins the @vueuse/core it auto-imports: the two move together, majors included.
       vueuse:
