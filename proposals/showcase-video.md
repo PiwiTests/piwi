@@ -3,8 +3,9 @@
 A plan for a short video that shows Piwi as one product: a red CI run on the dashboard, the editor opening at the
 failing line, the test paused in its browser, Piwi Picker beside it, the fix written into the code, the run green again
 on the team instance. The video is not edited by hand. A script plays the story on the real tools (the dashboard, VS
-Code with Piwi's extension, Piwi Picker in Chrome, the reporter, the test's browser) on one virtual screen, records it,
-and renders the cut: the zooms, a cursor that reads at any size, subtitles and, if asked, a voice. Played without the
+Code with Piwi's extension, Piwi Picker in Chrome, the reporter, the test's browser) on one screen, records it, and
+renders the cut: the zooms, a cursor that reads at any size, subtitles and, if asked, a voice. The screen is a virtual
+one for quick re-films, or a maintainer's own Windows machine for the release (the native take). Played without the
 recording, the same script is a check that the tools still work together, which no test does today.
 
 **Status.** Proposed 2026-10-27. Nothing is built. Two measurements in the [appendix](#appendix-what-was-measured)
@@ -12,14 +13,19 @@ settle how the screen is captured and how the cut is rendered. The story needs p
 [`run-control.md`](run-control.md) that are not merged yet: the editor's controls (its PR 2, beats 4 and 8), the Runs
 window (PR 3, beats 3 and 5), **Assert a region** (PR 4, beat 7), **Debug in my editor** (PR 7, beat 2) and the
 dashboard's live view (PR 8, beat 9). A first cut can be made once its PR 3 has shipped, with today's **Open in IDE**
-in place of **Debug in my editor** and the run page's **Live activity** in place of the live view. Nothing here is on [`ROADMAP.md`](../ROADMAP.md).
+in place of **Debug in my editor** and the run page's **Live activity** in place of the live view. The release cut is
+meant to be filmed as a native take on a maintainer's Windows machine (Part 3, D11); nobody on the project films on a
+Mac. Nothing here is on [`ROADMAP.md`](../ROADMAP.md).
 
 **Summary.**
 
 - **One story, three minutes**: an order the shop's redesign broke, fixed from the failure page to the green run,
   every step on a real tool (the [story](#the-story)).
 - **Filmed from a script, on the real tools**: the sample app and its suite, a local dashboard, VS Code with the built
-  extension, Chrome with the built Piwi Picker, the test's own browser, on one Xvfb screen at twice the output's size.
+  extension, Chrome with the built Piwi Picker, the test's own browser, on one screen at twice the output's size.
+- **Two takes, one script**: the virtual take, an Xvfb screen anywhere (this container, CI), for re-films and the
+  check; the native take, a maintainer's Windows desktop with its own Chrome and, if wanted, WebStorm and the desktop
+  app, recorded by ffmpeg's Desktop Duplication capture, for the release cut.
 - **The cut is rendered, not edited**: a stage page draws each frame from the recording, the camera on the window that
   matters, a cursor and click marks from the input log, subtitles and cards; ffmpeg encodes it.
 - **Subtitles always, a voice on request**: the script's lines are the subtitles; a voice is synthesized from them, or
@@ -74,14 +80,15 @@ Picker show the same place."
 | --- | --- | --- |
 | D1 | The video is made by a script, from beats written as code, and re-made on release. | A hand-edited video is stale at the next UI change; the screenshots already follow the UI this way. |
 | D2 | Everything on screen is real: the sample app and its suite, a local dashboard, the built VS Code extension and editor service, the built Piwi Picker, the reporter, the test's browser. Only the "CI" run is made by the script, a real headless run of the redesign's commit reported with `PIWI_ORIGIN=ci`. | The video then proves what it shows, and the script can check it (D9). Stubs (the editor fixture's stub instance) look the same but test nothing together. |
-| D3 | One Xvfb screen at 3840 × 2160, every app at device scale 2, recorded whole by ffmpeg's `x11grab` at 24 frames a second; the cut is 1920 × 1080. | Playwright's `recordVideo` and `page.screencast` record at the page's CSS size, 960 × 600 for a 2× page asked for 1920 × 1200 (appendix): a zoom would blur. The X screen holds every window on one clock. 4K at 30 fps dropped to 23.7 here. |
+| D3 | The virtual take: one Xvfb screen at 3840 × 2160, every app at device scale 2, recorded whole by ffmpeg's `x11grab` at 24 frames a second; the cut is 1920 × 1080. | Playwright's `recordVideo` and `page.screencast` record at the page's CSS size, 960 × 600 for a 2× page asked for 1920 × 1200 (appendix): a zoom would blur. The X screen holds every window on one clock. 4K at 30 fps dropped to 23.7 here. |
 | D4 | The windows are tiled without overlap, each at a fixed place; the cut composes them. | Capture stays simple and every window is always fully visible in the master; the stage can still move, scale and overlap them on its own background (Part 4). No window manager: on a bare X server the keys go to the window under the pointer (to check per app in V1). |
-| D5 | What the viewer sees done is done as a person does it: the pointer moves and clicks and the keys are typed through XTEST, at screen coordinates computed from each element's box. Waits and reads go through Playwright, the DOM and the editor's API. | The apps get trusted input (the picker and the recorder need it), the same in Chromium, Electron and a JetBrains IDE; the script stays robust because it waits on state, never on time. |
+| D5 | What the viewer sees done is done as a person does it, through Playwright's input in Chromium and Electron (clicks at the element, keys typed at a person's pace), and through the operating system's input only where Playwright cannot reach (XTEST for a JetBrains IDE on Linux). Every gesture is logged with its time and its box on the screen. Waits and reads go through Playwright, the DOM and the editor's API. | Playwright's input is trusted input to the page, which the picker and the recorder need, and it works the same on Linux and Windows. The cut draws its own cursor from the log (Part 4), so the screen's pointer does not need to move. The script stays robust because it waits on state, never on time. |
 | D6 | The cut is rendered by a stage page, frame by frame: the master's frame, the camera, a cursor and click marks from the input log, subtitles, cards; Playwright screenshots each frame and ffmpeg encodes. | Eased zooms, rounded window frames with shadows, a large cursor and branded cards are CSS. ffmpeg's `zoompan` and `drawtext` cannot ease or lay out; Remotion does all this but needs a company license past three people. 0.29 s a frame measured (appendix). |
 | D7 | Timing comes from the lines: before filming, each line's voice (or its reading time without one) sets the least a beat holds. | Picture and voice then line up without retiming; a beat that runs longer than its line simply shows more. |
 | D8 | Subtitles always (burned into the social cut, a `.vtt`/`.srt` beside the others); a voice on request: none by default, a local TTS, a hosted one with a key from the environment, or a person reading the exported cue sheet. | The landing page plays muted; a synthetic voice is fine for review, maybe not for the release; the choice stays the maintainers'. |
 | D9 | The script has two modes: **film** (capture, holds, the cut) and **check** (no capture, no holds, every beat's assertions). Check runs nightly. | Nothing else runs the dashboard, the editor service, both editors' clients, the extension and the reporter together. |
 | D10 | Large files never go into git: the full cut is a release asset (and wherever the maintainers post it); only the teaser (as small as `demo-live-run.mp4`), the posters and the subtitles are committed. | The repository already keeps its one video at 245 KB. |
+| D11 | The release cut is a native take: the same script on a maintainer's Windows desktop, recorded by ffmpeg's `ddagrab` (the Desktop Duplication API), the apps at the display's own scaling; the stage, the subtitles and the voice are the same as for the virtual take. | A real desktop gives real window frames and fonts, a real Google Chrome with the store's Piwi Picker, the maintainer's WebStorm license and the real desktop app, and a machine fast enough for 30 frames a second at 2×. Windows is the machine the project has; the stage frames each window on its own background, so the cut does not depend on the OS's look. |
 
 ## Part 1: The set
 
@@ -138,10 +145,11 @@ beat({
 });
 ```
 
-- **`gesture`** turns a Playwright locator (or an editor position) into screen coordinates: the element's box, the
-  window's content origin on the screen (`window.screenX`, `screenY` and the frame's offsets, times the device scale),
-  then moves the X pointer there along an eased path at 60 steps a second and clicks through XTEST; typing goes key by
-  key at a person's pace. Every gesture is logged with its time and its screen box.
+- **`gesture`** acts on a Playwright locator (or an editor position): it waits for the element, logs its box in screen
+  coordinates (the element's box, the window's content origin on the screen from `window.screenX` and `screenY` and the
+  frame's offsets, times the device scale), pauses as a person would before acting, then clicks or types through
+  Playwright, key by key at a person's pace. The stage turns the log into a pointer moving along an eased path. In a
+  JetBrains IDE on Linux the same call goes through XTEST (`apps/jetbrains/scripts/xinput.py`).
 - **Waits are on state**: a locator visible, a line in a file, the session's stop in the editor service, the run's
   status on the instance. A beat that does not reach its state in its budget fails with a capture of the whole screen
   and the logs of each app.
@@ -151,12 +159,42 @@ beat({
 
 ## Part 3: Capture
 
-- `ffmpeg -f x11grab -framerate 24 -video_size 3840x2160 -draw_mouse 0`, lossless (`libx264 -preset ultrafast -qp
-  0`): the real pointer is left out, the stage draws its own (Part 4). About 1 MB a second on a calm screen.
+**Both takes.**
+
 - **One clock**: the capture's start and every log entry are wall-clock times; a sync flash (a white square shown by
   the stage page in its own window for one frame at start) checks the offset.
 - **A take is the whole story**, about four minutes with the holds; a beat that fails ends the take. The set is
   rebuilt from scratch for each take, which a script makes cheap.
+- **The pointer is left out of the capture**; the stage draws its own (Part 4).
+
+**The virtual take** (`--take virtual`, Linux): `ffmpeg -f x11grab -framerate 24 -video_size 3840x2160 -draw_mouse
+0`, lossless (`libx264 -preset ultrafast -qp 0`), about 1 MB a second on a calm screen.
+
+**The native take** (`--take native`, Windows 10 or 11):
+
+- **Capture**: `ffmpeg -f lavfi -i ddagrab=framerate=30:draw_mouse=0` (ffmpeg 6.1 or later), downloaded to system
+  memory (`hwdownload,format=bgra`) and encoded lossless, or by the GPU's encoder (`h264_nvenc`, `h264_qsv`,
+  `h264_amf`) at a high quality where the CPU cannot keep up. `gdigrab` is the fallback; OBS, started and stopped by
+  the script through its WebSocket, if both drop frames. The Game Bar records one app's window, not the desktop, and
+  does not fit.
+- **Scaling**: a 4K display at 200 % gives the virtual take's 2×; a 1440p display at 150 % gives 1.33× over the 1080p
+  cut, which keeps the zooms gentler. The apps follow the system's scaling; the script reads it and records it in the
+  log, so the stage knows the master's pixels per CSS pixel.
+- **The developer's browser** is Google Chrome. It ignores `--load-extension` since Chrome 137, and since Chrome 136 it
+  opens no remote debugging port on the default profile, so the script starts it on a profile of its own
+  (`--user-data-dir`, `--remote-debugging-port`) and attaches with `connectOverCDP`. Piwi Picker is installed in that
+  profile once, from the Chrome Web Store, or with **Load unpacked** for a build not released yet; the pairing with VS
+  Code is made there once, before filming.
+- **VS Code** is the installed one or the one `@vscode/test-electron` downloads, launched by `_electron.launch` as on
+  Linux, with the built extension. **The test's browser** is Playwright's Chromium, placed by the workspace's config.
+  **The dashboard and the sample app** run on the machine (Node.js; the dashboard also in its container image).
+- **WebStorm and the desktop app**, if the take includes them: WebStorm with the maintainer's license, its beats played
+  by a person against the script's cues, or skipped; the desktop app as released (its installer), driven through its
+  WebView2 page (`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=…` and `connectOverCDP`).
+- **The machine**: a Windows account kept for filming; Do not disturb on; the taskbar hidden; app notifications off;
+  the windows placed by the script (`--window-position` and `--window-size` for Chrome, the window's bounds for
+  Electron). `npm run showcase -- --take native --prepare` checks what it can (ffmpeg's version and `ddagrab`, the
+  display's scaling, Chrome's profile and the extension in it, VS Code, Node.js) and lists the rest.
 
 ## Part 4: The cut
 
@@ -220,6 +258,7 @@ Each PR is usable on its own; sizes are relative (S, M, L).
 | V2 | Capture and the cut: the master, the stage, the camera, the cursor, subtitles, cards; the full cut, the teaser, the clips, the posters. | M | V1 |
 | V3 | Voice and publishing: the providers, lines-first timing, mixing, the cue sheet; the teaser on the landing page; the docs' clips. | S | V2 |
 | V4 | The story complete: **Debug in my editor**, **Assert a region**, **Watch**, the coda; a JetBrains cut if wanted. | M | run-control PRs 4, 7, 8 (and 6 or 9) |
+| V5 | The native take on Windows: `ddagrab` capture, the scaling read from the system, Chrome on its own profile attached over CDP, the window placement, the desktop app through WebView2, `--prepare`; the first native release cut. | M | V2; filmed on the maintainer's machine |
 
 The script lives in `apps/showcase/` (a private workspace, never published), with its own guide.
 
@@ -239,6 +278,10 @@ The script lives in `apps/showcase/` (a private workspace, never published), wit
   3200 × 1800 (1.67× headroom) is the fallback; the cut is unchanged.
 - **The look of a bare X server**: no window titles, no dock; the stage draws its own frames, so the video does not
   pretend to be a given OS. Fonts must be installed for the apps to look as on a desktop (the container has a few).
+  The native take has real window frames and fonts.
+- **The native take depends on one machine**: its drivers, its display, its notifications. `--prepare` checks what it
+  can; a take that drops frames shows in the log (the capture's frame count against its length) and is filmed again;
+  the virtual take stays the fallback for any release. Chrome's own profile must not hold the maintainer's sign-ins.
 - **Rendering time**: about 25 minutes per three minutes of cut in one renderer, less across several.
 - **Voices and music** carry licenses; nothing is committed that the project may not publish, and no key is.
 - **What the video shows**: a fictional shop, fictional people and addresses; no real token on screen (the pairing is
@@ -255,20 +298,21 @@ The script lives in `apps/showcase/` (a private workspace, never published), wit
    cues if wanted.
 4. **Where the full cut is posted**: a release asset only, or a video site too? Recommendation: both, the landing page
    linking to it.
-5. **The editor**: VS Code only, or a second cut in WebStorm? Recommendation: VS Code; WebStorm when the license on the
-   filming machine is settled.
+5. **The editor**: VS Code only, or a second cut in WebStorm? Recommendation: VS Code; WebStorm in the native take,
+   with the maintainer's license, as its own clip.
 6. **The coda**: the coding agent (run-control PR 9) or the desktop app's Flake Lab (run-control PR 6)? Recommendation:
-   the agent; the desktop app filmed on a machine that builds it, as its own clip.
+   the agent in the main cut; the desktop app in the native take, as its own clip.
 7. **The look**: dark editor and dashboard, as `demo-live-run.mp4`? Recommendation: dark, with the brand's background
    behind the windows.
 
 ## Not in this plan
 
 - **A hand-edited video.** The script can export its master and log for someone who wants one.
-- **Filming on macOS or Windows.** The script targets Linux under Xvfb, where CI runs; a maintainer can film the
-  desktop app on their own machine for its clip.
-- **The desktop app in the main story.** Its shell needs a build toolchain the filming container does not have; its
-  web UI in desktop mode (the screenshot harness's `mode: 'desktop'`) cannot run tests.
+- **Filming on macOS.** Nobody on the project has a Mac. The script's beats, gestures and stage do not depend on the
+  OS; a Mac take would need its own capture (ffmpeg's `avfoundation` input or ScreenCaptureKit) and window placement.
+- **The desktop app in the main story.** Its shell needs a build toolchain the virtual take's container does not have,
+  and its web UI in desktop mode (the screenshot harness's `mode: 'desktop'`) cannot run tests; it appears in the
+  native take's own clip (Open question 6).
 - **Screen readers' audio or sign language.** The subtitles are the accessible version; an audio description track is
   a later question.
 
