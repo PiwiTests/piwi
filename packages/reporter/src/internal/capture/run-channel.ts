@@ -621,6 +621,8 @@ async function openView(page: Page, stop: number): Promise<View | null> {
       pacer.close();
       page.off('close', onClose);
       if (shots) clearTimeout(shots);
+      // A lighter image on its way is the view's last call to the page.
+      await lighter;
       if (end && !page.isClosed()) await end().catch(() => undefined);
     },
   };

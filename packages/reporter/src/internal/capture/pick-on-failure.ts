@@ -215,13 +215,11 @@ export async function pickLocator(
       { timeout: 0, polling: 250 },
     );
     polling = true;
-    if (
-      await unlessEnded(
-        wait.then(() => true),
-        ended,
-      )
-    )
-      polling = false;
+    const done = await unlessEnded(
+      wait.then(() => true),
+      ended,
+    );
+    if (done) polling = false;
     return !ended?.aborted;
   };
   try {
