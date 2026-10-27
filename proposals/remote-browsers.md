@@ -18,7 +18,8 @@ This plan makes a remote browser something Piwi records and explains, whatever g
 can tell Piwi beyond what the test sees.
 
 **Status.** Proposed 2026-10-26. Built: the `checkBaseUrl` message for a base URL that a remote browser reaches from
-its own network (Part 1). Nothing else is built. The spikes in the [appendix](#appendix-the-spikes) are the evidence
+its own network (Part 1); Part 3's measurement, and its cut: the reads the test waits for as its page closes go out
+together, while the last locator captures finish. Nothing else is built. The spikes in the [appendix](#appendix-the-spikes) are the evidence
 for the claims about Playwright and the capture's cost; they are not part of the repository. Nothing here is on
 [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D61 of
 [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -215,6 +216,46 @@ test. Two consequences:
   places browsers in the region closest to the client by default
   ([Microsoft Learn](https://learn.microsoft.com/en-us/azure/app-testing/playwright-workspaces/how-to-optimize-regional-latency)).
 
+### Measured, and cut
+
+The benchmark's `--remote <ms>` mode (`packages/reporter/tests/bench/`) runs it against `chromium.launchServer`
+behind a proxy that delays each message and counts the client's. Per test, with the default capture, before the cut:
+
+| | 0 ms | 10 ms | 30 ms |
+| --- | --- | --- | --- |
+| A locator capture, from its start to its answer (23 per test) | 46 ms | 71 ms | 129 ms |
+| Captures still in flight when the test's context closes | 4 | 3 | 3 |
+| The close waiting for them (the drain) | 30 ms | 55 ms | 116 ms |
+| Then the reads of the page's end state, one after the other | 21 ms | 66 ms | 148 ms |
+
+A capture is three messages (`waitForSelector`, `evaluateExpression`, `dispose`); the ARIA snapshot ran once per test,
+for a form field. The end-state reads are four, in a row: the web vitals, the page state's `evaluate`, the cookies and
+the focus read. The test body itself took 112 to 211 ms longer with the capture, with no trend across the delays: the
+captures run beside the test's own calls, and what they cost it does not grow with the round trip.
+
+The cut: the four reads go out together, and while the drain waits, so the close waits about one round trip for both.
+Measured with the two builds alternating, the median test with the default capture against none:
+
+| Browser | Without the capture | Capture, before the cut | Capture, after it |
+| --- | --- | --- | --- |
+| A local browser | 870 ms | +224 ms | +221 ms |
+| Through the proxy, no added delay | 816 ms | +270 ms | +206 ms |
+| Through the proxy, 10 ms round trip | 1,051 ms | +332 ms | +324 ms |
+| Through the proxy, 30 ms round trip | 1,588 ms | +379 ms | +255 ms |
+
+At 30 ms the cut saved 124 ms per test here and 136 ms in a second batch; at 10 ms, 8 ms here and 100 ms in the second
+batch, within the noise of two rounds. Between no added delay and 30 ms, the capture's cost grew by 49 ms after the cut,
+against 109 ms before it.
+
+Two cuts were measured and not built:
+
+- **One message per capture** (`locator.evaluateAll`, `evalOnSelectorAll`): 109 messages per test fell to 63 and the
+  drain at 30 ms to 41 ms, but the test's next action started later, since the one message resolves the selector and
+  runs the probe in one go ahead of it. Locally the test took 98 ms longer; through the proxy, the total was 32 ms worse
+  with no added delay, flat at 10 ms, and no better than the reads alone at 30 ms.
+- **The accessible name in the capture's own read**, in place of the ARIA snapshot: one message per test on this
+  benchmark.
+
 ## Part 4: What a grid can tell Piwi
 
 An interface any grid can implement in part or in whole. Each piece stands alone.
@@ -314,7 +355,7 @@ Each PR is usable on its own; sizes are relative (S, M, L).
 | PR | Content | Size |
 | --- | --- | --- |
 | 1 | Remote browsers from any grid (Parts 1 and 2, its first list): the per-worker entry, the `piwi-grid-session` attachment and the close reason read, the reporter's own attachments read only as JSON, the clue, the Resources tab, the incident classifier's count, the `checkBaseUrl` message; the docs page (Part 5). | M |
-| 2 | The capture's cost at a distance (Part 3): the measurement, then fewer awaited reads, checked with the benchmark through a delaying WebSocket proxy at 0, 10 and 30 ms. | M |
+| 2 | The capture's cost at a distance (Part 3): the measurement, then fewer awaited reads, checked with the benchmark through a delaying WebSocket proxy at 0, 10 and 30 ms. Built. | M |
 | 3 | What a grid can tell Piwi (Part 4 and Part 2, its second list): browser tokens and grid keys, `grid:connect`, the token check, the grids' credentials in Settings, the session reports, the run page, the timeline, the events, the `grid` incident rule, analytics, MCP, the capability; `PIWI_GRID_URL` and the `x-piwi-*` headers. | L |
 
 PR 1 is the first release.
@@ -368,7 +409,8 @@ PR 1 is the first release.
   write theirs, and the reporter takes the first of each name without checking its type. The fix is D3's, and does
   not wait for this plan.
 - **The capture's cost grows with the round trip** (Part 3): 293 ms per test between no added delay and 30 ms, from
-  reads the test waits for.
+  reads the test waits for. Fixed: the reads at the page's close go out together, during the drain (49 ms of growth
+  where the same machine measured 109).
 - **`checkBaseUrl` checks from the runner** (`packages/reporter/src/internal/support/base-url-check.ts`), which is not
   where a remote browser's requests come from. Fixed: its messages say so when the `exposeNetwork` rule does not cover
   the base URL's host and port.

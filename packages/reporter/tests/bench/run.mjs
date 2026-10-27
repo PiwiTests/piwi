@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-import { execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -29,8 +30,15 @@ import { fileURLToPath } from 'node:url';
  * which skips the extra `ariaSnapshot()` round trip each capture otherwise
  * takes — the difference between the two targets is what that snapshot costs.
  *
+ * `--remote <ms>` runs every variant against a browser server
+ * (`launchServer`) reached through `connectOptions`, behind a WebSocket proxy
+ * that adds `<ms>` to each round trip (`latency-proxy.mjs`): a remote browser
+ * on a grid at that distance. `--remote 0` is the proxy with no added delay.
+ * The proxy also counts the protocol messages the client sends per test.
+ *
  * Usage:
  *   npm run reporter:bench
+ *   node tests/bench/run.mjs --only baseline,resources --remote 10
  *   node tests/bench/run.mjs --rounds 5 --rows 800 --actions 20
  *   node tests/bench/run.mjs --only baseline,full --target roleless
  *   node tests/bench/run.mjs --json bench-results.json
@@ -104,13 +112,19 @@ function parseArgs(argv) {
     only: null,
     target: 'role',
     sites: 'distinct',
+    remote: null,
   };
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i]?.replace(/^--/, '');
     const value = argv[i + 1];
     if (flag === undefined || value === undefined) continue;
     if (flag === 'json' || flag === 'only' || flag === 'target' || flag === 'sites') options[flag] = value;
-    else if (flag in options) options[flag] = Number.parseInt(value, 10);
+    else if (flag === 'remote') {
+      options.remote = Number(value);
+      if (!Number.isInteger(options.remote / 2) || options.remote < 0) {
+        throw new Error('--remote takes an even whole number of milliseconds: half of it is added each way');
+      }
+    } else if (flag in options) options[flag] = Number.parseInt(value, 10);
     else throw new Error(`unknown flag --${flag}`);
   }
   return options;
@@ -133,33 +147,85 @@ function collectDurations(report) {
   return durations;
 }
 
-function runVariant(variant, options, outputFile) {
+/** The test bodies' own time, from the `bench-body-ms` annotation the workload writes. */
+function collectBodyDurations(report) {
+  const durations = [];
+  const walk = (suite) => {
+    for (const spec of suite.specs ?? []) {
+      for (const test of spec.tests ?? []) {
+        for (const result of test.results ?? []) {
+          const note = (result.annotations ?? []).find((a) => a.type === 'bench-body-ms');
+          if (result.status === 'passed' && note) durations.push(Number(note.description));
+        }
+      }
+    }
+    for (const child of suite.suites ?? []) walk(child);
+  };
+  for (const suite of report.suites ?? []) walk(suite);
+  return durations;
+}
+
+/** Run Playwright without blocking this process, which serves the latency proxy. */
+function runPlaywright(env) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('npx', ['playwright', 'test', `--config=${CONFIG}`], {
+      cwd: PACKAGE_ROOT,
+      stdio: ['ignore', 'ignore', 'inherit'],
+      env,
+    });
+    child.on('error', reject);
+    child.on('exit', (code, signal) =>
+      code === 0 ? resolve() : reject(new Error(`playwright test exited with ${code ?? signal}`)),
+    );
+  });
+}
+
+async function runVariant(variant, options, outputFile, remote) {
   fs.rmSync(outputFile, { force: true });
+  remote?.proxy.reset();
   const started = process.hrtime.bigint();
-  execFileSync('npx', ['playwright', 'test', `--config=${CONFIG}`], {
-    cwd: PACKAGE_ROOT,
-    stdio: ['ignore', 'ignore', 'inherit'],
-    env: {
-      ...process.env,
-      ...variant.env,
-      PIWI_BENCH_ROWS: String(options.rows),
-      PIWI_BENCH_TESTS: String(options.tests),
-      PIWI_BENCH_ACTIONS: String(options.actions),
-      PIWI_BENCH_ASSERTIONS: String(options.assertions),
-      PIWI_BENCH_TARGET: options.target,
-      PIWI_BENCH_SITES: options.sites,
-      PLAYWRIGHT_JSON_OUTPUT_NAME: outputFile,
-      // The reporter package itself is never loaded here — only the capture
-      // fixtures are — but keep any ambient dashboard config from making the
-      // benchmark talk to a server.
-      PIWI_DASHBOARD_URL: '',
-    },
+  await runPlaywright({
+    ...process.env,
+    ...variant.env,
+    PIWI_BENCH_ROWS: String(options.rows),
+    PIWI_BENCH_TESTS: String(options.tests),
+    PIWI_BENCH_ACTIONS: String(options.actions),
+    PIWI_BENCH_ASSERTIONS: String(options.assertions),
+    PIWI_BENCH_TARGET: options.target,
+    PIWI_BENCH_SITES: options.sites,
+    PLAYWRIGHT_JSON_OUTPUT_NAME: outputFile,
+    // The reporter package itself is never loaded here — only the capture
+    // fixtures are — but keep any ambient dashboard config from making the
+    // benchmark talk to a server.
+    PIWI_DASHBOARD_URL: '',
+    ...(remote ? { PW_TEST_CONNECT_WS_ENDPOINT: remote.proxy.wsEndpoint } : {}),
   });
   const wallMs = Number(process.hrtime.bigint() - started) / 1e6;
   const report = JSON.parse(fs.readFileSync(outputFile, 'utf-8'));
   const durations = collectDurations(report);
   if (durations.length === 0) throw new Error(`variant "${variant.key}" produced no passing tests`);
-  return { durations, wallMs };
+  const traffic = remote?.proxy.stats() ?? null;
+  return { durations, bodyDurations: collectBodyDurations(report), wallMs, traffic };
+}
+
+/** A browser server and the delaying proxy in front of it, shared by every variant. */
+async function startRemote(delayRoundTripMs) {
+  const { startLatencyProxy } = await import('./latency-proxy.mjs');
+  const require = createRequire(path.join(PACKAGE_ROOT, 'package.json'));
+  const { chromium } = require('@playwright/test');
+  const executablePath = process.env.PIWI_BENCH_CHROMIUM;
+  const server = await chromium.launchServer({ headless: true, ...(executablePath ? { executablePath } : {}) });
+  const proxy = await startLatencyProxy(server.wsEndpoint(), delayRoundTripMs / 2).catch(async (error) => {
+    await server.close();
+    throw error;
+  });
+  return {
+    proxy,
+    async close() {
+      await proxy.close();
+      await server.close();
+    },
+  };
 }
 
 const median = (values) => {
@@ -176,7 +242,7 @@ const fmt = (ms) => `${ms.toFixed(0)} ms`;
 const pad = (text, width) => String(text).padEnd(width);
 const padStart = (text, width) => String(text).padStart(width);
 
-function main() {
+async function main() {
   const options = parseArgs(process.argv.slice(2));
   const variants = options.only ? VARIANTS.filter((v) => options.only.split(',').includes(v.key)) : VARIANTS;
   if (variants.length === 0) throw new Error(`--only matched no variant`);
@@ -199,25 +265,43 @@ function main() {
       `targeting ${options.target === 'roleless' ? 'role-less spans' : 'buttons'}, ` +
       `${options.sites} call sites`,
   );
+  if (options.remote !== null) {
+    console.log(`Remote browser: a browser server behind a proxy adding ${options.remote} ms to each round trip`);
+  }
   console.log(`${options.rounds} measured round(s) + 1 warm-up, ${variants.length} variants per round\n`);
 
-  const samples = new Map(variants.map((v) => [v.key, { durations: [], wallMs: [] }]));
+  const samples = new Map(
+    variants.map((v) => [v.key, { durations: [], bodyDurations: [], wallMs: [], messages: [], byMethod: {} }]),
+  );
+  const remote = options.remote !== null ? await startRemote(options.remote) : null;
 
-  for (let round = 0; round < rounds; round++) {
-    const warmup = round === 0;
-    for (const variant of variants) {
-      process.stdout.write(`  round ${round}/${rounds - 1}${warmup ? ' (warm-up)' : ''} — ${pad(variant.key, 12)}`);
-      const { durations, wallMs } = runVariant(variant, options, outputFile);
-      process.stdout.write(` median ${fmt(median(durations))}, wall ${fmt(wallMs)}\n`);
-      if (warmup) continue;
-      const bucket = samples.get(variant.key);
-      bucket.durations.push(...durations);
-      bucket.wallMs.push(wallMs);
+  try {
+    for (let round = 0; round < rounds; round++) {
+      const warmup = round === 0;
+      for (const variant of variants) {
+        process.stdout.write(`  round ${round}/${rounds - 1}${warmup ? ' (warm-up)' : ''} — ${pad(variant.key, 12)}`);
+        const { durations, bodyDurations, wallMs, traffic } = await runVariant(variant, options, outputFile, remote);
+        process.stdout.write(` median ${fmt(median(durations))}, wall ${fmt(wallMs)}\n`);
+        if (warmup) continue;
+        const bucket = samples.get(variant.key);
+        bucket.durations.push(...durations);
+        bucket.bodyDurations.push(...bodyDurations);
+        bucket.wallMs.push(wallMs);
+        if (traffic) {
+          bucket.messages.push(traffic.messages / durations.length);
+          for (const [method, count] of Object.entries(traffic.byMethod)) {
+            bucket.byMethod[method] = (bucket.byMethod[method] ?? 0) + count / durations.length;
+          }
+        }
+      }
     }
+  } finally {
+    await remote?.close();
   }
 
   const rows = variants.map((variant) => {
-    const { durations, wallMs } = samples.get(variant.key);
+    const { durations, bodyDurations, wallMs, messages, byMethod } = samples.get(variant.key);
+    const measuredRounds = Math.max(1, messages.length);
     return {
       key: variant.key,
       label: variant.label,
@@ -226,6 +310,13 @@ function main() {
       meanMs: mean(durations),
       p95Ms: percentile(durations, 0.95),
       wallMs: median(wallMs),
+      bodyMs: bodyDurations.length > 0 ? median(bodyDurations) : null,
+      messagesPerTest: messages.length > 0 ? mean(messages) : null,
+      byMethodPerTest: Object.fromEntries(
+        Object.entries(byMethod)
+          .map(([method, total]) => [method, total / measuredRounds])
+          .sort((a, b) => b[1] - a[1]),
+      ),
     };
   });
 
@@ -251,6 +342,27 @@ function main() {
     const delta = rows[i].medianMs - rows[i - 1].medianMs;
     console.log(`    ${pad(rows[i].label, 32)}${padStart(`${delta >= 0 ? '+' : ''}${delta.toFixed(1)} ms/test`, 16)}`);
   }
+
+  console.log(`\n  Where a test's time goes (median): its body, and the fixtures' setup and teardown around it:`);
+  for (const row of rows) {
+    if (row.bodyMs === null) continue;
+    console.log(
+      `    ${pad(row.label, 32)}${padStart(`body ${fmt(row.bodyMs)}`, 14)}` +
+        `${padStart(`around it ${fmt(row.medianMs - row.bodyMs)}`, 20)}`,
+    );
+  }
+
+  if (remote) {
+    console.log(`\n  Protocol messages the client sent per test (mean), and the most frequent:`);
+    for (const row of rows) {
+      const top = Object.entries(row.byMethodPerTest)
+        .slice(0, 6)
+        .map(([method, n]) => `${method} ${n.toFixed(1)}`)
+        .join(', ');
+      const messages = row.messagesPerTest === null ? '—' : row.messagesPerTest.toFixed(1);
+      console.log(`    ${pad(row.label, 32)}${padStart(messages, 8)}   ${top}`);
+    }
+  }
   console.log('');
 
   if (options.json) {
@@ -259,4 +371,4 @@ function main() {
   }
 }
 
-main();
+await main();
