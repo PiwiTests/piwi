@@ -465,7 +465,12 @@ function ownHub(
   refusal = 'No action here.',
 ): Promise<RunHub | null> {
   const session: RunSession = { ref: 'ed-1', root: '/work/shop', workers: [], ended: false };
-  const sessions = { current: () => [session], intentsOf: () => [] } as unknown as RunSessions;
+  const sessions = {
+    current: () => [session],
+    intentsOf: () => [],
+    stopIntentsOf: () => [],
+    unwatchAll: () => {},
+  } as unknown as RunSessions;
   return RunHub.open({
     sessions,
     actions: {
@@ -555,7 +560,10 @@ describe('a failure held at its line', () => {
         const stop = svc.latest(ref)?.workers[0]?.stop;
         return stop?.since === since ? stop : undefined;
       };
-      expect(await waitFor(() => stopOf(heard.since))).toEqual(heard);
+      // Piwi Picker hears what the stop takes from it, the client what its worker takes.
+      const { intents, ...asTheClientHears } = heard;
+      expect(intents).toEqual(['pick', 'record']);
+      expect(await waitFor(() => stopOf(heard.since))).toEqual(asTheClientHears);
       worker.send({ type: 'running', stop: 1 });
       await waitFor(() => (client.session(ref)?.workers[0]?.stop ? undefined : true));
       failed(2, undefined);

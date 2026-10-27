@@ -23,6 +23,7 @@ import {
   type HubMessage,
   type HubSession,
 } from '../src/run-hub';
+import { MAX_VIEW_EVENTS, MAX_VIEW_FRAME_BASE64 } from '../src/run-view';
 
 const json = (value: unknown) => JSON.stringify(value);
 
@@ -192,7 +193,7 @@ describe('the hub’s WebSocket', () => {
         );
       }
     }
-    for (const type of ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock']) {
+    for (const type of ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'view', 'input', 'pick-at']) {
       expect(parseHubCommand(json({ type, id: 9, ref: 'ed-1', worker: 0, request: 1 }))).toEqual(needsStop);
       expect(parseHubCommand(json({ type, id: 9, ref: 'ed-1', since: null }))).toEqual(needsStop);
     }
@@ -390,6 +391,170 @@ describe('the hub’s WebSocket', () => {
       expect(parseHubMessage(json(broken)), JSON.stringify(broken)).toBeNull();
     }
     expect(parseHubMessage('not json')).toBeNull();
+  });
+});
+
+describe('the live view on the hub', () => {
+  test('reads view, input and pick-at, each naming the stop it is at, field by field', () => {
+    expect(parseHubCommand(json({ type: 'view', id: 1, ref: 'ed-1', worker: 0, since: 'S', on: true }))).toEqual({
+      type: 'view',
+      id: 1,
+      ref: 'ed-1',
+      worker: 0,
+      since: 'S',
+      on: true,
+    });
+    expect(parseHubCommand(json({ type: 'view', id: 1, ref: 'ed-1', since: 'S', on: false }))).toMatchObject({
+      worker: null,
+      on: false,
+    });
+    expect(parseHubCommand(json({ type: 'view', id: 1, ref: 'ed-1', since: 'S' }))).toEqual({
+      type: 'invalid',
+      id: 1,
+      message: 'view needs on: true to watch the stop, false to stop watching it.',
+    });
+    const events = [
+      { type: 'mouse', action: 'move', x: 1, y: 2 },
+      { type: 'text', text: 'é' },
+    ];
+    expect(parseHubCommand(json({ type: 'input', id: 2, ref: 'ed-1', since: 'S', events }))).toEqual({
+      type: 'input',
+      id: 2,
+      ref: 'ed-1',
+      worker: null,
+      since: 'S',
+      events,
+    });
+    // The input says which event it cannot play.
+    expect(
+      parseHubCommand(json({ type: 'input', id: 2, ref: 'ed-1', since: 'S', events: [events[0], { type: 'code' }] })),
+    ).toEqual({
+      type: 'invalid',
+      id: 2,
+      message: 'Event 2 is of a type other than mouse, wheel, key or text.',
+    });
+    const many = Array.from({ length: MAX_VIEW_EVENTS + 1 }, () => events[0]);
+    expect(parseHubCommand(json({ type: 'input', id: 2, ref: 'ed-1', since: 'S', events: many }))).toMatchObject({
+      type: 'invalid',
+      message: `The input carries ${MAX_VIEW_EVENTS} events at most.`,
+    });
+    expect(parseHubCommand(json({ type: 'pick-at', id: 3, ref: 'ed-1', worker: 2, since: 'S', x: 20, y: 90 }))).toEqual(
+      { type: 'pick-at', id: 3, ref: 'ed-1', worker: 2, since: 'S', x: 20, y: 90 },
+    );
+    for (const [x, y] of [
+      [-1, 5],
+      [5, 10_001],
+      [Number.NaN, 5],
+      ['5', 5],
+      [undefined, 5],
+    ]) {
+      expect(parseHubCommand(json({ type: 'pick-at', id: 3, ref: 'ed-1', since: 'S', x, y }))).toEqual({
+        type: 'invalid',
+        id: 3,
+        message: 'pick-at needs x and y, the point in CSS pixels of the page.',
+      });
+    }
+  });
+
+  test('has the extension read a frame, a pick’s locator, an image’s viewport and what a stop takes from it', () => {
+    const frame: HubMessage = {
+      type: 'frame',
+      ref: 'ed-1',
+      worker: 0,
+      since: '2026-10-25T10:00:00.000Z',
+      width: 1280,
+      height: 720,
+      data: '/9j/4A==',
+    };
+    expect(parseHubMessage(json(frame))).toEqual(frame);
+    for (const broken of [
+      { ...frame, ref: 'ed 1' },
+      { ...frame, worker: -1 },
+      { ...frame, since: '' },
+      { ...frame, width: 0 },
+      { ...frame, data: 'A'.repeat(MAX_VIEW_FRAME_BASE64 + 4) },
+      { ...frame, data: '<svg>' },
+    ]) {
+      expect(parseHubMessage(json(broken))).toBeNull();
+    }
+    const picked: HubMessage = { type: 'answer', id: 7, ok: true, message: 'Sent.', locator: "getByText('Go')" };
+    expect(parseHubMessage(json(picked))).toEqual(picked);
+    expect(parseHubMessage(json({ ...picked, locator: null }))).toEqual({ ...picked, locator: null });
+    expect(parseHubMessage(json({ ...picked, locator: 'x'.repeat(1001) }))).toBeNull();
+    const image: HubMessage = {
+      type: 'answer',
+      id: 8,
+      ok: true,
+      message: 'The stopped page.',
+      image: { mime: 'image/jpeg', data: '/9j/', width: 640, height: 480 },
+    };
+    expect(parseHubMessage(json(image))).toEqual(image);
+    const stop = session.workers[0]!.stop!;
+    const withIntents = {
+      ...session,
+      workers: [{ ...session.workers[0]!, stop: { ...stop, intents: ['view', 'pick', 'dance', 'input'] } }],
+    };
+    expect(parseHubMessage(json({ type: 'session', session: withIntents }))).toEqual({
+      type: 'session',
+      session: {
+        ...session,
+        workers: [{ ...session.workers[0]!, stop: { ...stop, intents: ['pick', 'view', 'input'] } }],
+      },
+    });
+    // A service that predates them names none: the stop has no intents of its own.
+    expect(
+      (parseHubMessage(json({ type: 'session', session })) as { session: HubSession }).session.workers[0]!.stop,
+    ).not.toHaveProperty('intents');
+  });
+
+  test('reads any command and message without throwing', () => {
+    let state = 5;
+    const next = () => {
+      state = (state * 1664525 + 1013904223) % 4294967296;
+      return state / 4294967296;
+    };
+    const odd = [
+      null,
+      undefined,
+      0,
+      -1,
+      1,
+      2.5,
+      2 ** 31,
+      '',
+      'S',
+      'ed-1',
+      '/9j/',
+      [],
+      {},
+      true,
+      [{ type: 'key', action: 'press', key: 'Tab' }],
+    ];
+    const pick = () => odd[Math.floor(next() * odd.length)];
+    const types = ['view', 'input', 'pick-at', 'frame', 'answer'];
+    for (let i = 0; i < 20_000; i++) {
+      const message = {
+        type: types[i % types.length],
+        id: next() < 0.7 ? 1 + (i % 100) : pick(),
+        ref: next() < 0.7 ? 'ed-1' : pick(),
+        worker: pick(),
+        since: next() < 0.7 ? 'S' : pick(),
+        on: pick(),
+        events: pick(),
+        x: pick(),
+        y: pick(),
+        width: pick(),
+        height: pick(),
+        data: pick(),
+        ok: pick(),
+        message: pick(),
+        locator: pick(),
+      };
+      const command = parseHubCommand(json(message));
+      if (command?.type === 'input') expect(command.events.length).toBeLessThanOrEqual(MAX_VIEW_EVENTS);
+      const heard = parseHubMessage(json(message));
+      if (heard?.type === 'frame') expect(heard.data.length).toBeLessThanOrEqual(MAX_VIEW_FRAME_BASE64);
+    }
   });
 });
 

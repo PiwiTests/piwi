@@ -1332,10 +1332,22 @@ export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-p
 
 /**
  * What a worker's reporter takes at a stop, as its run connection lists it: the intents `pick`, `record`, `assert` and
- * `assert-region` (`piwi/stopAction`), and the queries `requests` (`piwi/stopRequests`), `mock` and `locator`
- * (`piwi/locatorAtCaret`). An older reporter lists fewer, or none: the service refuses what it does not take.
+ * `assert-region` (`piwi/stopAction`), the queries `requests` (`piwi/stopRequests`), `mock` and `locator`
+ * (`piwi/locatorAtCaret`), and, for a viewer outside the page, the stopped page's live view (`view`), the input played
+ * on it (`input`) and the element under a point of an image of it (`pick-at`, `piwi/pickAt`). An older reporter lists
+ * fewer, or none: the service refuses what it does not take.
  */
-export type RunTake = 'pick' | 'record' | 'assert' | 'assert-region' | 'requests' | 'mock' | 'locator';
+export type RunTake =
+  | 'pick'
+  | 'record'
+  | 'assert'
+  | 'assert-region'
+  | 'requests'
+  | 'mock'
+  | 'locator'
+  | 'view'
+  | 'input'
+  | 'pick-at';
 
 /** Where a worker stands stopped: before a call, which runs as soon as the stop is answered. */
 export interface RunStop {
@@ -1490,10 +1502,16 @@ export interface PausedPageParams {
   what: 'image';
 }
 
-/** An image of a stopped page, without the pause bar: a JPEG, base64. */
+/**
+ * An image of a stopped page, without the pause bar: a JPEG, base64, and the page's viewport in CSS pixels (`width`,
+ * `height`), which `piwi/pickAt` names a point in: a point of the image a client shows is `x * width / naturalWidth`,
+ * whatever the image's own size and the page's device scale factor. A reporter that predates them names neither.
+ */
 export interface PausedImage {
   mime: 'image/jpeg';
   data: string;
+  width?: number;
+  height?: number;
 }
 
 /**
@@ -1505,6 +1523,34 @@ export interface PausedPageResult {
 }
 
 export const PAUSED_PAGE_REQUEST = 'piwi/pausedPage';
+
+/**
+ * `piwi/pickAt`: Pick on the image, at the stop `since` names, of the run's one stopped worker or `worker`: the element
+ * under the point `x`, `y` of the stopped page, in CSS pixels of its viewport (a point of the image `piwi/pausedPage`
+ * gave is `x * image.width / naturalWidth`, `y * image.height / naturalHeight`). The worker reads the page's ARIA
+ * snapshot with its boxes, takes the smallest element under the point (Piwi's own overlays left out), ranks it as the
+ * pause bar's Pick a locator does, and sends the first locator that finds it alone where the bar's pick goes: the
+ * client's Send to editor listener, then `piwi/applyPick`, in place of the locator on the stopped line.
+ */
+export interface PickAtParams {
+  ref: string;
+  worker?: number | null;
+  since: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * The locator sent, with `ok`; null with why otherwise: no element there (the page's background), an iframe, a stop
+ * the test went on from, a Playwright older than 1.64 or a reporter that does not take it.
+ */
+export interface PickAtResult {
+  ok: boolean;
+  message: string;
+  locator: string | null;
+}
+
+export const PICK_AT_REQUEST = 'piwi/pickAt';
 
 /**
  * What a client starts at a stop (`piwi/stopAction`): `pick` and `record` start the pause bar's Pick a locator and

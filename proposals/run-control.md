@@ -13,7 +13,8 @@ tools that follow the run, read the stopped page as its accessibility tree and a
 
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
 (Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2 and 3 are built too, and PR 4's
-service half and IDE clients (below), while PR 4's Runs window and PRs 5 to 9 are not. PR 1 differs from the text in four ways. A headed
+service half and IDE clients (below), and PR 5's first half (below), while PR 4's Runs window, PR 5's Runs window,
+IDE clients and forwarded addresses, and PRs 6 to 9 are not. PR 1 differs from the text in four ways. A headed
 browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
@@ -155,6 +156,41 @@ caret settles, one request at a time, at the end of its line; a line holding no 
 answer tells apart from a refusal by naming the chain it read in a refusal too. A failure reads `Failed · <how it
 failed> · attempt N`, with Resume alone among its controls, and one the service lets go at once never reaches a
 client, so a plain Run's headless failure shows nothing.
+PR 5's first half is the worker's, the run channel's, the editor service's and the hub's side of the live view, the
+input on it, Pick on the image, and Pick and Record through the view on a headless page (Part 6), built in
+`@piwitests/core/run-view`; the Runs window and both IDE clients build on it next. A viewer is a hub connection that
+sent `view { id, ref, worker, since, on }`: the worker starts the stopped page's screencast through an internal call
+with the stop's first viewer and stops its own client with the last, as the stop ends (before its `running`), and as
+its page or the connection closes. Each frame (`frame { ref, worker, since, width, height, data }`: a JPEG in base64,
+the viewport scaled to fit 1280 by 800, quality 60, 384 KB at most, `width` and `height` the viewport in CSS pixels)
+goes to that stop's viewers alone, ten a second at most at each step: the worker acknowledges the browser's frames at
+that pace, so Chromium and Firefox paint no more of them, drops a frame like the one before, keeps the latest alone
+while its connection holds 1 MB unsent, as the hub does for each WebSocket holding 1 MB unread, and sends none of a
+stop that began to end; nobody keeps one. A test's video, or its trace's images, starting first gives every later
+client of the page's one screencast its size and quality (800 by 512 at quality 90 for a 1000 by 640 viewport); the
+view stops its own client alone (the disposable `start()` returns), and a run with `video: 'on'` keeps a whole video
+through a watched stop, its duration checked with `ffprobe`. Where the screencast cannot start (the test runs its
+own), the view is an image of the page twice a second. `input { id, ref, worker, since, events }` plays `mouse`
+(`move`, `down`, `up`, `click` with `button` and a `clickCount` of 1 to 3), `wheel` and `key` events (`down`, `up`,
+`press`: Playwright's key names or a printable ASCII character, modifiers before a pressed key) and `text` (1,000
+characters), 50 a message and 200 a second, at points in CSS pixels, as trusted input through internal calls, only
+from a connection watching the stop, and lets go of what it holds down before the test goes on; it reaches Piwi's
+overlays as a person's input does, the picker, the recorder and a headed stop's pause bar included. At a headless
+stop, Pick a locator, Record here, Assert and Assert a region start for a connection watching its view, in the page
+as at a headed stop, driven through that input, and end with the view or the stop, leaving nothing in the page (the
+picker's choice list, which had no way out of the page unanswered, now has one); each session tells each connection
+what each stop takes from it (`stop.intents`). `pick-at { id, ref, worker, since, x, y }` and the IDE's
+`piwi/pickAt { ref, worker?, since, x, y }` read the ARIA snapshot in AI mode with its boxes, take the innermost
+element under the point rather than the smallest (a field overflows its label's box), Piwi's overlays left out and an
+iframe refused, rank it as the bar's pick does with `locator.normalize()`'s locator among the candidates, and send the
+first that finds it alone where a pick goes (`ok`, `message`, `locator`); an image names the viewport its points are
+in (`width`, `height`), so an image at a device scale factor of 2 maps through it. The worker's `takes` and its
+`intents` on the hub gain `view`, `input` and `pick-at`. Measured headless at 1280 by 720 on a page of text, whose
+frames are about 260 KB at quality 60 (a plain form's, about 10 KB): a still page sends one frame (Firefox paints
+about ten a second there, all alike, and sends one too), an animated one ten a second, 1.8 MB a second; the worker's
+CPU, 0.3 % while a stop waits unwatched, is 1.7 % watching the still page and 9 % the animated one in Chromium, 6.7 %
+and 8.7 % in Firefox (acknowledging every frame at once costs 31 % in Chromium); a view starts in 4 to 11 ms and stops
+in 2 to 5 ms, two input events play in 10 to 43 ms, and a pick on the image takes 150 to 260 ms.
 The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of

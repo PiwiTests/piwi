@@ -209,6 +209,7 @@ import {
   TEST_AT_REQUEST,
   TEST_ITEMS_REQUEST,
   PAUSED_PAGE_REQUEST,
+  PICK_AT_REQUEST,
   RUN_CONTROL_REQUEST,
   RUN_SESSION_NOTIFICATION,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
@@ -246,6 +247,8 @@ import {
   type Notice,
   type PausedPageParams,
   type PausedPageResult,
+  type PickAtParams,
+  type PickAtResult,
   type RunControlParams,
   type RunControlResult,
   type SetRunBreakpointsParams,
@@ -3445,6 +3448,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   connection.onRequest(PAUSED_PAGE_REQUEST, (params: PausedPageParams): Promise<PausedPageResult> =>
     runSessions.pausedPage(params),
   );
+
+  connection.onRequest(PICK_AT_REQUEST, (params: PickAtParams): Promise<PickAtResult> => runSessions.pickAt(params));
 
   connection.onRequest(STOP_ACTION_REQUEST, (params: StopActionParams): Promise<StopActionResult> =>
     stopActions.action(params),

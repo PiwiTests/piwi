@@ -13,8 +13,13 @@
  * stop (Assert, Assert a region, Mock a request, `stop-actions.ts`) write their code in the editor, through its
  * client: the answer says whether they started, never the code, and each subscribed connection hears what each one came
  * to, whichever surface started it (`code`: the sentence the client shows and the code's warnings, or why it was
- * refused once it started). A connection the hub closes is cut a second later when the other side does not answer the
- * close, and only the open connections count toward its limits.
+ * refused once it started). A connection watches a stopped page's live view (`view`): its frames come to it alone, at
+ * most `MAX_VIEW_FPS` a second, the latest one once its socket is no longer backed up, none of a stop that ended or it
+ * stopped watching; it plays its input on the page it watches (`input`, at most `MAX_VIEW_EVENT_RATE` events a
+ * second), and starts there, at a stop no pause bar shows, the intents the bar's buttons start (`stop.intents` in each
+ * session it hears says which a stop takes from it). The hub keeps no frame. Any connection picks the element under a
+ * point of an image of a stopped page (`pick-at`). A connection the hub closes is cut a second later when the other
+ * side does not answer the close, and only the open connections count toward its limits.
  */
 import { randomBytes } from 'node:crypto';
 import * as http from 'node:http';
@@ -44,9 +49,10 @@ import {
   type HubSession,
   type ParsedHubCommand,
 } from '@piwitests/core/run-hub';
+import { LatestPacer, MAX_VIEW_EVENT_RATE, MAX_VIEW_FPS, RateWindow } from '@piwitests/core/run-view';
 import type { RunControlResult, RunSession } from './protocol.js';
 import { sameToken } from './recorder/handoff.js';
-import type { RunSessions } from './run-sessions.js';
+import type { RunSessions, ViewFrame, Viewer } from './run-sessions.js';
 import type { StopActions, StopOutcome } from './stop-actions.js';
 
 /** The connections a hub holds at once, and those among them that did not say `hello` yet. */
@@ -56,6 +62,10 @@ const MAX_UNAUTHENTICATED = 8;
 const MAX_BUFFERED = 32 * 1024 * 1024;
 /** How long a connection the hub closes has to answer the close before it is cut. */
 const CLOSE_GRACE_MS = 1_000;
+/** What a connection may leave unread before a frame waits for it, in bytes: the latest frame alone waits. */
+const MAX_VIEW_BUFFERED = 1024 * 1024;
+/** The workers a connection keeps the pace of frames for: the oldest is forgotten past it. */
+const MAX_VIEW_PACERS = 32;
 
 /** What a run session's view lacks for the Runs page: the command, the folder's label and the project. */
 export interface HubRunInfo {
@@ -87,6 +97,12 @@ interface Connection {
   alive: boolean;
   /** It is cut once `CLOSE_GRACE_MS` passed, unless it closed by then. */
   cutting: boolean;
+  /** It, as a viewer of the live views it watches. */
+  viewer: Viewer;
+  /** The pace of the frames it is sent, by run and worker: the latest one waits, no other. */
+  frames: Map<string, LatestPacer<ViewFrame>>;
+  /** The input it sends, in events a second. */
+  input: RateWindow;
 }
 
 /** Cut a connection being closed once `CLOSE_GRACE_MS` passed, unless the other side closed it by then. */
@@ -180,14 +196,66 @@ export class RunHub {
     return false;
   }
 
-  /** A run changed: every subscribed connection hears it. */
+  /** A run changed: every subscribed connection hears it, with what each stop takes from it. */
   push(session: RunSession): void {
-    let message: HubMessage | null = null;
+    let view: HubSession | null = null;
     for (const connection of this.connections) {
       if (!connection.subscribed) continue;
-      message ??= { type: 'session', session: this.view(session) };
-      this.send(connection, message);
+      view ??= this.view(session);
+      this.send(connection, { type: 'session', session: this.forViewer(view, connection) });
     }
+  }
+
+  /** A session as one connection hears it: each stop with what it takes from that connection now. */
+  private forViewer(session: HubSession, connection: Connection): HubSession {
+    const { sessions } = this.options;
+    return {
+      ...session,
+      workers: session.workers.map((worker) =>
+        worker.stop
+          ? {
+              ...worker,
+              stop: { ...worker.stop, intents: sessions.stopIntentsOf(session.ref, worker.worker, connection.viewer) },
+            }
+          : worker,
+      ),
+    };
+  }
+
+  /** A connection started or stopped watching a stop of a run: it hears the run again, with what its stops take now. */
+  private resend(connection: Connection, ref: string): void {
+    if (!connection.subscribed) return;
+    const session = this.options.sessions.current().find((s) => s.ref === ref);
+    if (session) this.send(connection, { type: 'session', session: this.forViewer(this.view(session), connection) });
+  }
+
+  /**
+   * A frame of a live view a connection watches: sent at most `MAX_VIEW_FPS` a second for each worker, the latest one
+   * once the connection's socket left less than `MAX_VIEW_BUFFERED` unread, and only while the connection watches the
+   * stop it shows.
+   */
+  private frame(connection: Connection, frame: ViewFrame): void {
+    const key = `${frame.ref} ${frame.worker}`;
+    let pacer = connection.frames.get(key);
+    if (!pacer) {
+      pacer = new LatestPacer<ViewFrame>({
+        intervalMs: 1000 / MAX_VIEW_FPS,
+        busy: () => connection.socket.bufferedAmount > MAX_VIEW_BUFFERED,
+        send: (latest) => {
+          // A frame of a stop that ended, or that the connection stopped watching, waits no more.
+          if (this.options.sessions.viewing(connection.viewer, latest.ref, latest.worker, latest.since)) {
+            this.send(connection, { type: 'frame', ...latest });
+          }
+        },
+      });
+      connection.frames.set(key, pacer);
+      for (const [oldest, old] of connection.frames) {
+        if (connection.frames.size <= MAX_VIEW_PACERS) break;
+        old.close();
+        connection.frames.delete(oldest);
+      }
+    }
+    pacer.offer(frame);
   }
 
   /** What an action that writes code came to: every subscribed connection hears its sentence, never its code. */
@@ -245,6 +313,9 @@ export class RunHub {
       pending: 0,
       alive: true,
       cutting: false,
+      viewer: { frame: (frame) => this.frame(connection, frame) },
+      frames: new Map(),
+      input: new RateWindow(MAX_VIEW_EVENT_RATE),
     };
     this.connections.add(connection);
     const hello = setTimeout(
@@ -286,6 +357,10 @@ export class RunHub {
     socket.on('close', () => {
       clearTimeout(hello);
       this.connections.delete(connection);
+      // It watches nothing any more: the last viewer of a stop has its view stop.
+      this.options.sessions.unwatchAll(connection.viewer);
+      for (const pacer of connection.frames.values()) pacer.close();
+      connection.frames.clear();
       if (connection.subscribed) this.options.surfacesChanged();
     });
   }
@@ -315,7 +390,9 @@ export class RunHub {
           const first = !connection.subscribed;
           connection.subscribed = true;
           reply({ ok: true, message: live.length === 1 ? 'Following 1 run.' : `Following ${live.length} runs.` });
-          for (const session of live) this.send(connection, { type: 'session', session: this.view(session) });
+          for (const session of live) {
+            this.send(connection, { type: 'session', session: this.forViewer(this.view(session), connection) });
+          }
           if (first) this.options.surfacesChanged();
           return;
         }
@@ -362,14 +439,35 @@ export class RunHub {
               request: command.request,
             }),
           );
+        case 'view': {
+          const { ref, worker, since, on } = command;
+          const watched = await sessions.watch({ ref, worker, since, on }, connection.viewer);
+          reply(watched);
+          return this.resend(connection, ref);
+        }
+        case 'input': {
+          if (!connection.input.take(command.events.length)) {
+            return reply({ ok: false, message: `Too much input: ${MAX_VIEW_EVENT_RATE} events a second at most.` });
+          }
+          const { ref, worker, since } = command;
+          return reply(await sessions.input({ ref, worker, since }, connection.viewer, command.events));
+        }
+        case 'pick-at': {
+          const { ref, worker, since, x, y } = command;
+          const picked = await sessions.pickAt({ ref, worker, since, x, y });
+          return reply(picked, { locator: picked.locator });
+        }
         default:
           return reply(
-            await this.options.actions.action({
-              ref: command.ref,
-              worker: command.worker,
-              since: command.since,
-              action: command.type as HubIntent | HubCodeIntent,
-            }),
+            await this.options.actions.action(
+              {
+                ref: command.ref,
+                worker: command.worker,
+                since: command.since,
+                action: command.type as HubIntent | HubCodeIntent,
+              },
+              connection.viewer,
+            ),
           );
       }
     } finally {

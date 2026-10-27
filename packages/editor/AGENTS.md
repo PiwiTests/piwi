@@ -13,7 +13,7 @@ clients stay thin and both editors give the same answers.
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
   `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/coverage`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
-  `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, `piwi/runControl`, `piwi/pausedPage`, `piwi/stopAction`,
+  `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, `piwi/runControl`, `piwi/pausedPage`, `piwi/pickAt`, `piwi/stopAction`,
   `piwi/stopRequests`, `piwi/locatorAtCaret`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`, `piwi/commandEnded`, `piwi/declineRecord` and `piwi/setRunBreakpoints` notifications, and the
   `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/runEnded`, `piwi/statusChanged`, `piwi/notice`,
   `piwi/desktopJobChanged`, `piwi/recordingChanged`, `piwi/recordRequested`, `piwi/coverageChanged`,
@@ -293,7 +293,12 @@ clients stay thin and both editors give the same answers.
   after that is refused the same way. A place a client sends (`run-to`, the breakpoints) is a line of the
   run's code, which the client maps back from a document edited since the run started. `piwi/setRunBreakpoints` replaces the run's breakpoints
   in each worker and in each one that connects later (the 50 latest runs' are kept), and `piwi/pausedPage` asks a
-  stopped worker for a JPEG of its page, null after 10 s (`PAUSED_PAGE_WAIT_MS`), when it leaves or is not stopped. A
+  stopped worker for a JPEG of its page, null after 10 s (`PAUSED_PAGE_WAIT_MS`), when it leaves or is not stopped,
+  with the page's viewport in CSS pixels (`width`, `height`) from a reporter that names it. `piwi/pickAt { ref,
+  worker?, since, x, y }` (`RunSessions.pickAt`, the hub's `pick-at` too) has the stopped worker pick the element
+  under a point of the page, in those CSS pixels (a point of the image is `x * width / naturalWidth`, whatever the
+  device scale factor), and send its locator where a pick goes, answering `{ ok, message, locator }`; refused without
+  `since`, for a point outside 0 to 10,000 and for a reporter that does not take `pick-at`. A
   worker names a place relative to the run's working directory (`run-attach`'s `cwd`, the config's folder as the file
   system spells it); the session gives the client the file's URI under the folder as the workspace spells it, and takes
   the client's lines (URIs, 0-based) relative to either, refusing a file outside the run's folder, as `PIWI_PAUSE_AT`
@@ -344,7 +349,21 @@ clients stay thin and both editors give the same answers.
   named, at the stop `since` names): refused at a stop no pause bar shows (`bar: false`) and for a reporter whose
   `run-attach` does not list it in `takes`, else sent as a `request` naming the stop, the worker's answer passed on
   (10 s at most): the worker refuses one at a stop that is ending, or whose page it cannot tell, which also has no
-  image. Nothing a command asks evaluates code, reads a file or reaches an instance.
+  image. A connection watches a stop's live view (`view`, with `since` and `on`; `RunSessions.watch`, the connection
+  a `Viewer`): the worker starts it as the stop's first viewer comes and stops it as the last goes (a viewer whose
+  connection closes goes, `unwatchAll`), and a reporter that does not take `view` is refused; each `frame` of the
+  stop the worker stands at goes to that stop's viewers alone, none of an older stop (a view ends as its stop does),
+  and the hub sends a connection ten a second at most for each worker, the latest one waiting while its socket holds
+  more than 1 MB unread (`LatestPacer`), and none of a stop it no longer watches (`RunSessions.viewing`); it keeps
+  none. `input` plays the connection's events (`@piwitests/core/run-view`: mouse, wheel, key and text, checked field
+  by field, Playwright's key names alone) on the page of the stop it watches, 200 events a second at most for each
+  connection, and is refused to any other. At a stop no pause bar shows, the intents start for a connection that
+  watches its view alone, which drives them through it (`IntentParams.viewer`, `StopActions.action`'s `viewer`), and
+  each session a connection hears names, for each stop, what it takes from that connection now (`stop.intents`,
+  `RunSessions.stopIntentsOf`: `input` only while it watches; Pick, Record, Assert and Assert a region where the bar
+  shows or while it watches); a connection that starts or stops watching hears the run again. The frames carry
+  whatever the page shows: they reach only the paired, authenticated connections that asked for them, never the
+  client, an instance or a file. Nothing a command asks evaluates code, reads a file or reaches an instance.
 - Code from a stop (`src/stop-actions.ts`, `StopActions`, and `src/stop-code.ts`, pure): what a client (`piwi/stopAction
   { ref, worker?, since, action, request? }`, `piwi/stopRequests { ref, worker?, since }`, `piwi/locatorAtCaret { ref,
   worker?, since, uri, line }`, each refused without `since`) and Piwi Picker (the hub's commands) start at a stop of a

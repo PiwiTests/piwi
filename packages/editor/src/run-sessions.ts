@@ -6,8 +6,13 @@
  * `piwi/pausedPage`), as Piwi Picker does through the hub (`run-hub.ts`); both can start an intent at a stop
  * (`intent`: the pause bar's Pick a locator and Record here, the check panel's Check an element, a region's ARIA
  * snapshot) and ask the stopped worker what it holds (`requests`, `mock`, `locator`: the responses its test kept, the
- * one to mock, a locator's matches), which `stop-actions.ts` turns into code. A worker names places relative to the
- * run's working directory; the client, by their file's URI as the workspace names it: the session converts both ways.
+ * one to mock, a locator's matches), which `stop-actions.ts` turns into code. A viewer outside the page (a Piwi
+ * Picker connection of the hub) watches a stopped page's live view (`view`): the worker starts it with the first
+ * viewer of a stop and stops it with the last, and its frames go to that stop's viewers alone, none of an older stop;
+ * a viewer plays its input on the page it watches (`input`), and the intents a stop no pause bar shows takes from a
+ * viewer of its view. Any client picks the element under a point of an image of a stopped page (`pickAt`). A worker
+ * names places relative to the run's working directory; the client, by their file's URI as the workspace names it:
+ * the session converts both ways.
  * A stop that shows no pause bar while no surface can answer stops (the client does not, and no Piwi Picker follows
  * the runs) is resumed at once, and so is one held when the last of them goes. A failure no pause bar shows is held
  * only in a run started to be watched (`watched`: with the editor's breakpoints or a `page.pause()`) or while a Piwi
@@ -24,6 +29,7 @@ import {
   type IntentAnswer,
   type LocatorAnswer,
   type MockAnswer,
+  type PickAtAnswer,
   type Place,
   type RequestsAnswer,
   type RunIntent,
@@ -31,10 +37,13 @@ import {
   type RunTake,
   type RunToHub,
 } from '@piwitests/core/run-channel';
+import { isViewPoint, type ViewInput } from '@piwitests/core/run-view';
 import type {
   PausedImage,
   PausedPageParams,
   PausedPageResult,
+  PickAtParams,
+  PickAtResult,
   RunControlParams,
   RunControlResult,
   RunSession,
@@ -59,7 +68,24 @@ const MAX_BREAKPOINT_RUNS = 50;
 type RunAttach = Extract<RunToHub, { type: 'run-attach' }>;
 
 /** What a worker's answer to a request carries: an image, whether an intent started, or a query's answer. */
-type Answered = PausedImage | IntentAnswer | RequestsAnswer | MockAnswer | LocatorAnswer | null;
+type Answered = PausedImage | IntentAnswer | RequestsAnswer | MockAnswer | LocatorAnswer | PickAtAnswer | null;
+
+/** A frame of a stopped page's live view, as a viewer gets it: the stop it shows, named by `since`. */
+export interface ViewFrame {
+  ref: string;
+  worker: number;
+  since: string;
+  /** The page's viewport, in CSS pixels. */
+  width: number;
+  height: number;
+  /** A JPEG, base64. */
+  data: string;
+}
+
+/** Who watches the live view of a stop: each frame of it goes to `frame`, while it watches. */
+export interface Viewer {
+  frame(frame: ViewFrame): void;
+}
 
 /** A stop as a client names it: the run, the one stopped worker or `worker`, and the stop it showed (`since`). */
 export interface StopParams {
@@ -72,6 +98,14 @@ export interface StopParams {
 export interface IntentParams extends StopParams {
   since: string;
   what: RunIntent;
+  /** Who asks: a viewer of the stop's live view starts one at a stop no pause bar shows. */
+  viewer?: Viewer | null;
+}
+
+/** A stop's live view: start (`on`) or stop watching it. */
+export interface ViewParams extends StopParams {
+  since: string;
+  on: boolean;
 }
 
 /** A worker's stop, as the code made there names it. */
@@ -93,11 +127,17 @@ export interface StopRef {
 export const NO_CODE = "The editor cannot write code from a stop: update Piwi's extension in the editor.";
 
 /** What each query asks, as a refusal names it. */
-const QUERY_WORDS: Record<RunQuery, string> = {
+const QUERY_WORDS: Record<RunQuery | 'view' | 'input' | 'pick-at', string> = {
   requests: 'list the responses its test kept',
   mock: 'hand over a response it kept',
   locator: 'count a locator on the stopped page',
+  view: "show the stopped page's live view",
+  input: 'play input on the stopped page',
+  'pick-at': 'pick the element under a point of an image of the stopped page',
 };
+
+/** Why the input of a viewer that does not watch the stop is refused. */
+const NEEDS_VIEW = 'The input needs the live view of this stop: watch it first.';
 
 export interface RunSessionsOptions {
   /** A session changed, or ended: the client hears it. */
@@ -145,6 +185,11 @@ interface Worker {
   reporter: string;
   /** The requests waiting for the worker's answer, by what they ask. */
   requests: Map<number, { what: 'image' | RunTake; settle(value: Answered): void }>;
+  /**
+   * The live view of its stop while viewers watch it: the stop, its viewers, and the worker's answer to starting it.
+   * Null when nobody watches, and as the stop ends.
+   */
+  view: { stop: number; viewers: Set<Viewer>; started: Promise<IntentAnswer> } | null;
 }
 
 interface Session {
@@ -167,12 +212,7 @@ interface Session {
 }
 
 /** The request asking a worker `what`, at the stop `stop` but for an image. */
-function requestOf(
-  request: number,
-  what: 'image' | RunTake,
-  stop: number,
-  extra: { id?: number; locator?: string | null },
-): HubToRun {
+function requestOf(request: number, what: 'image' | RunTake, stop: number, extra: RequestExtra): HubToRun {
   switch (what) {
     case 'image':
       return { type: 'request', request, what };
@@ -180,9 +220,25 @@ function requestOf(
       return { type: 'request', request, what, stop, id: extra.id ?? 0 };
     case 'locator':
       return { type: 'request', request, what, stop, locator: extra.locator ?? null };
+    case 'view':
+      return { type: 'request', request, what, stop, on: extra.on ?? false };
+    case 'input':
+      return { type: 'request', request, what, stop, events: extra.events ?? [] };
+    case 'pick-at':
+      return { type: 'request', request, what, stop, x: extra.x ?? 0, y: extra.y ?? 0 };
     default:
       return { type: 'request', request, what, stop };
   }
+}
+
+/** What a request carries beside the stop it names. */
+interface RequestExtra {
+  id?: number;
+  locator?: string | null;
+  on?: boolean;
+  events?: ViewInput[];
+  x?: number;
+  y?: number;
 }
 
 function uriToPath(uri: string): string | null {
@@ -246,6 +302,7 @@ export class RunSessions {
       takes: new Set(attach.takes),
       reporter: attach.reporter,
       requests: new Map(),
+      view: null,
     };
     session.workers.set(worker.index, worker);
     // A worker of that index whose connection closed, before its close was heard.
@@ -358,9 +415,10 @@ export class RunSessions {
   /**
    * At the stop `since` names (of the run's one stopped worker, or the one named), start an intent in the test's
    * window: the pause bar's Pick a locator or Record here as its button does, the check panel's Check an element
-   * (`assert`) or the picker for a region (`assert-region`). Refused without the stop, at a stop no bar shows, for a
-   * reporter that does not take it, and, for `assert` and `assert-region`, when the client writes no code. Answers
-   * once the worker said whether it started, or after `PAUSED_PAGE_WAIT_MS`.
+   * (`assert`) or the picker for a region (`assert-region`). At a stop no bar shows, only for a viewer of its live
+   * view, which drives it there. Refused without the stop, at a stop no bar shows for anyone else, for a reporter that
+   * does not take it, and, for `assert` and `assert-region`, when the client writes no code. Answers once the worker
+   * said whether it started, or after `PAUSED_PAGE_WAIT_MS`.
    */
   intent(params: IntentParams): Promise<RunControlResult> {
     const refuse = (message: string): Promise<RunControlResult> => Promise.resolve({ ok: false, message });
@@ -373,7 +431,7 @@ export class RunSessions {
     if ((params.what === 'assert' || params.what === 'assert-region') && !this.options.writesCode?.()) {
       return refuse(NO_CODE);
     }
-    if (!worker.stop!.view.bar) {
+    if (!worker.stop!.view.bar && !this.watching(worker, params.viewer ?? null)) {
       return refuse(`${name} needs the pause bar in the test's window, and this test runs headless: run it headed.`);
     }
     if (!worker.takes.has(params.what)) {
@@ -387,8 +445,108 @@ export class RunSessions {
     );
   }
 
+  /** Whether `viewer` watches the live view of the stop its worker stands at. */
+  private watching(worker: Worker, viewer: Viewer | null): boolean {
+    return !!viewer && !!worker.stop && worker.view?.stop === worker.stop.id && worker.view.viewers.has(viewer);
+  }
+
+  /** Whether `viewer` watches the live view of the stop `since` names, of the run's worker `workerIndex`. */
+  viewing(viewer: Viewer, ref: string, workerIndex: number, since: string): boolean {
+    const worker = this.sessions.get(ref)?.workers.get(workerIndex);
+    return !!worker && worker.stop?.view.since === since && this.watching(worker, viewer);
+  }
+
+  /**
+   * Start or stop watching the live view of the stop a viewer names: the worker starts it as the first viewer of the
+   * stop comes and stops it as the last one goes, and its frames go to that stop's viewers alone until then or until
+   * the stop ends. Answers once the worker said whether it started.
+   */
+  async watch(params: ViewParams, viewer: Viewer): Promise<RunControlResult> {
+    if (typeof params?.since !== 'string' || !params.since) {
+      return { ok: false, message: 'The command needs the stop it answers.' };
+    }
+    const at = this.stopped(params);
+    // A stop that ended took its view with it.
+    if ('message' in at) return params.on ? at : { ok: true, message: 'You no longer watch the page.' };
+    const { worker } = at;
+    if (!params.on) {
+      this.unwatch(worker, viewer);
+      return { ok: true, message: 'You no longer watch the page.' };
+    }
+    const refused = this.refusesQuery(worker, 'view');
+    if (refused) return { ok: false, message: refused };
+    const stop = worker.stop!.id;
+    let view = worker.view;
+    if (view?.stop !== stop) {
+      const started = this.ask(worker, 'view', stop, { on: true }).then(
+        (answer) => (answer as IntentAnswer | null) ?? { ok: false, message: 'The test did not answer.' },
+      );
+      view = { stop, viewers: new Set(), started };
+      const own = view;
+      worker.view = own;
+      void started.then((answer) => {
+        if (!answer.ok && worker.view === own) worker.view = null;
+      });
+    }
+    view.viewers.add(viewer);
+    const answer = await view.started;
+    if (!answer.ok) {
+      view.viewers.delete(viewer);
+      return { ok: false, message: answer.message };
+    }
+    if (worker.view === view) return { ok: true, message: answer.message };
+    // The stop ended meanwhile, or the viewer left it, the last one.
+    return { ok: false, message: worker.stop?.id === stop ? 'You no longer watch the page.' : 'The test went on.' };
+  }
+
+  /** A viewer stops watching a worker's stop: the last one to go has the worker stop the view. */
+  private unwatch(worker: Worker, viewer: Viewer): void {
+    const view = worker.view;
+    if (!view?.viewers.delete(viewer) || view.viewers.size) return;
+    worker.view = null;
+    void this.ask(worker, 'view', view.stop, { on: false });
+  }
+
+  /** A viewer left (its connection closed): it watches nothing any more. */
+  unwatchAll(viewer: Viewer): void {
+    for (const session of this.sessions.values()) {
+      for (const worker of session.workers.values()) this.unwatch(worker, viewer);
+    }
+  }
+
+  /**
+   * Play a viewer's input on the page of the stop it names, which it watches: refused for a viewer that does not watch
+   * it and for a reporter that does not take it. Answers once the worker played it, or why not.
+   */
+  async input(params: StopParams & { since: string }, viewer: Viewer, events: ViewInput[]): Promise<RunControlResult> {
+    const at = this.stopped(params);
+    if ('message' in at) return at;
+    const refused = this.refusesQuery(at.worker, 'input');
+    if (refused) return { ok: false, message: refused };
+    if (!this.watching(at.worker, viewer)) return { ok: false, message: NEEDS_VIEW };
+    const answer = (await this.ask(at.worker, 'input', at.worker.stop!.id, { events })) as IntentAnswer | null;
+    return answer ?? { ok: false, message: 'The test did not answer.' };
+  }
+
+  /**
+   * `piwi/pickAt`, and the hub's `pick-at`: the element under the point `x`, `y` (CSS pixels of the stopped page's
+   * viewport) of the stop a client names, its locator sent where a pick goes; why there is none otherwise.
+   */
+  async pickAt(params: PickAtParams): Promise<PickAtResult> {
+    const refuse = (message: string): PickAtResult => ({ ok: false, message, locator: null });
+    if (typeof params?.since !== 'string' || !params.since) return refuse('The command needs the stop it answers.');
+    const { x, y } = params;
+    if (!isViewPoint(x, y)) return refuse('Pick on the image needs the point, in CSS pixels of the page.');
+    const at = this.stopped(params);
+    if ('message' in at) return refuse(at.message);
+    const refused = this.refusesQuery(at.worker, 'pick-at');
+    if (refused) return refuse(refused);
+    const answer = (await this.ask(at.worker, 'pick-at', at.worker.stop!.id, { x, y })) as PickAtAnswer | null;
+    return answer ?? refuse('The test did not answer.');
+  }
+
   /** Why the worker at a stop is not asked `what`; null when it takes it. */
-  private refusesQuery(worker: Worker, what: RunQuery): string | null {
+  private refusesQuery(worker: Worker, what: RunQuery | 'view' | 'input' | 'pick-at'): string | null {
     return worker.takes.has(what)
       ? null
       : `@piwitests/reporter ${worker.reporter || ''}`.trimEnd() + ` cannot ${QUERY_WORDS[what]}: update it.`;
@@ -463,10 +621,26 @@ export class RunSessions {
     const found = this.sessions.get(ref)?.workers.get(worker);
     if (!found) return [];
     const code = !!this.options.writesCode?.();
-    const intents = (['pick', 'record', 'assert', 'assert-region'] as const).filter(
+    const intents: HubAction[] = (['pick', 'record', 'assert', 'assert-region'] as const).filter(
       (what) => found.takes.has(what) && (code || (what !== 'assert' && what !== 'assert-region')),
     );
-    return code && found.takes.has('requests') && found.takes.has('mock') ? [...intents, 'mock'] : intents;
+    if (code && found.takes.has('requests') && found.takes.has('mock')) intents.push('mock');
+    return [...intents, ...(['view', 'input', 'pick-at'] as const).filter((what) => found.takes.has(what))];
+  }
+
+  /**
+   * What the stop of a run's worker takes from `viewer` now, of `intentsOf`: the input only while `viewer` watches its
+   * live view, and, at a stop no pause bar shows, the actions in the test's window (Pick, Record, Assert, Assert a
+   * region) only then too, driven through that view.
+   */
+  stopIntentsOf(ref: string, worker: number, viewer: Viewer | null): HubAction[] {
+    const found = this.sessions.get(ref)?.workers.get(worker);
+    if (!found?.stop) return [];
+    const watching = this.watching(found, viewer);
+    const inWindow = found.stop.view.bar || watching;
+    return this.intentsOf(ref, worker).filter((what) =>
+      what === 'input' ? watching : what === 'mock' || what === 'view' || what === 'pick-at' || inWindow,
+    );
   }
 
   /**
@@ -531,12 +705,7 @@ export class RunSessions {
   }
 
   /** Ask a worker, and settle with its answer, or null after `PAUSED_PAGE_WAIT_MS` or when it leaves. */
-  private ask(
-    worker: Worker,
-    what: 'image' | RunTake,
-    stop?: number,
-    extra: { id?: number; locator?: string | null } = {},
-  ): Promise<Answered> {
+  private ask(worker: Worker, what: 'image' | RunTake, stop?: number, extra: RequestExtra = {}): Promise<Answered> {
     const request = ++this.lastRequest;
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
@@ -590,6 +759,7 @@ export class RunSessions {
           cannotPause: message.cannotPause,
         };
         worker.stop = null;
+        worker.view = null;
         if (message.cannotPause) worker.pausing = false;
         return this.changed(session);
       case 'stopped':
@@ -597,6 +767,7 @@ export class RunSessions {
         if (message.reason === 'failure' && !message.bar && (!this.options.answersStops() || !this.watches(session))) {
           return this.send(worker, { type: 'control', action: 'resume', stop: message.stop });
         }
+        worker.view = null;
         worker.stop = {
           id: message.stop,
           place: message.place,
@@ -619,11 +790,28 @@ export class RunSessions {
       case 'running':
         if (worker.stop?.id !== message.stop) return;
         worker.stop = null;
+        worker.view = null;
         return this.changed(session, true);
       case 'test-end':
         if (worker.test?.id === message.testId) worker.test = null;
         worker.stop = null;
+        worker.view = null;
         return this.changed(session);
+      case 'frame': {
+        // A frame of the stop the worker stands at, for its viewers alone.
+        const view = worker.view;
+        if (!view || !worker.stop || worker.stop.id !== message.stop || view.stop !== message.stop) return;
+        const frame: ViewFrame = {
+          ref: session.ref,
+          worker: worker.index,
+          since: worker.stop.view.since,
+          width: message.width,
+          height: message.height,
+          data: message.data,
+        };
+        for (const viewer of view.viewers) viewer.frame(frame);
+        return;
+      }
       case 'answer': {
         const asked = worker.requests.get(message.request);
         if (asked?.what !== message.what) return;
@@ -666,6 +854,7 @@ export class RunSessions {
    * nothing.
    */
   private closeWorker(worker: Worker): void {
+    worker.view = null;
     worker.socket.destroy();
     for (const asked of worker.requests.values()) asked.settle(null);
     worker.requests.clear();
