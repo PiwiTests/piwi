@@ -26,7 +26,7 @@
  * Usage (from application/):
  *   node scripts/measure-detail-pages.mjs                       # seed .data/measure/, boot a server on --port (3060)
  *   node scripts/measure-detail-pages.mjs --build .output       # the same, on a production build (CI)
- *   node scripts/measure-detail-pages.mjs --url http://localhost:3000
+ *   node scripts/measure-detail-pages.mjs --url http://localhost:7494
  *   node scripts/measure-detail-pages.mjs --routes /test-run-cases/37,/failure-clusters/10
  *   node scripts/measure-detail-pages.mjs --width 1280 --height 800
  *   node scripts/measure-detail-pages.mjs --json

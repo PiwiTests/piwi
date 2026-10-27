@@ -717,7 +717,7 @@ function reportSupersededBranch(request, base) {
 /** Surfaces a scene can be captured against, in the order a run boots their servers. */
 const MODES = ['web', 'tour', 'desktop', 'demo'];
 
-/** Where the `demo` mode serves the built demo: off 3000 and 3050, where dev servers run. */
+/** Where the `demo` mode serves the built demo: off the ports where dev servers and the desktop app run. */
 const DEMO_PORT = 4175;
 
 /** Serves the built demo for the `demo` mode; its base is the demo's sub-path, which every scene route follows. */

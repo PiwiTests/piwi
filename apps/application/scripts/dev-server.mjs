@@ -3,11 +3,12 @@
  *
  * Usage: node scripts/dev-server.mjs [port]   |   node scripts/dev-server.mjs --stop [port]
  *
- * - Defaults to port 3000 (the port Playwright's webServer reuses).
+ * - Defaults to `DEV_SERVER_PORT` (`shared/dev-server-port.mjs`), the port
+ *   Playwright's webServer reuses.
  * - Records the spawned PID in `.data/dev-server.pid`; the next start (or
  *   `--stop`) kills that previous instance first, so no manual cleanup.
- * - Refuses to start only when the port is held by a *foreign* process
- *   (usually the Piwi desktop app) — stop that one yourself.
+ * - Refuses to start only when the port is held by a *foreign* process — stop
+ *   that one yourself.
  * - Logs go to `.data/dev-server.log` — watch it for compile errors.
  *
  * The server is launched detached (no inherited handles) so the invoking
@@ -21,11 +22,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, openSync } 
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEV_SERVER_PORT } from '../shared/dev-server-port.mjs';
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const stopOnly = args.includes('--stop');
-const port = args.find((a) => !a.startsWith('-')) ?? '3000';
+const port = args.find((a) => !a.startsWith('-')) ?? String(DEV_SERVER_PORT);
 
 const dataDir = path.join(appDir, '.data');
 const pidFile = path.join(dataDir, 'dev-server.pid');
@@ -189,7 +191,9 @@ if (stopOnly) {
 await new Promise((r) => setTimeout(r, 1500));
 
 if (await portInUse(port)) {
-  console.error(`Port ${port} is held by a foreign process — if the Piwi desktop app is running, close it first.`);
+  console.error(
+    `Port ${port} is held by a foreign process — stop it, or pass another port (node scripts/dev-server.mjs <port>).`,
+  );
   process.exit(1);
 }
 

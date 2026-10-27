@@ -10,7 +10,7 @@ Prerequisites: **Node.js 24+**, npm, Git.
 git clone https://github.com/PiwiTests/piwi.git
 cd piwi/apps/application
 npm install
-npm run app:dev      # dashboard at http://localhost:3000
+npm run app:dev      # dashboard at http://localhost:7494
 ```
 
 The SQLite database and `.data/` storage are created automatically on first API call — no configuration needed. To hack on the reporter package instead, work in `packages/reporter/` (`npm run reporter:build`, or `npm run reporter:dev` for watch mode).

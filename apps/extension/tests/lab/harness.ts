@@ -21,7 +21,7 @@ import { labFile, type Scenario } from './scenarios.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 export const LAB = {
-  origin: (process.env.LAB_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, ''),
+  origin: (process.env.LAB_ORIGIN ?? 'http://localhost:7494').replace(/\/$/, ''),
   dry: !!process.env.LAB_DRY,
   out: path.join(here, 'out'),
   viewport: { width: 1400, height: 900 },

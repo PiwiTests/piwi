@@ -1,8 +1,9 @@
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
+import { resolveE2ETarget } from './desktop-target';
 
 test.describe('Metadata Tests', () => {
-  const baseUrl = process.env.PIWI_BASE_URL || 'http://localhost:3000';
+  const baseUrl = resolveE2ETarget().baseUrl;
 
   test('should accept test run with metadata via JSON submission', async ({ request }) => {
     const response = await request.post(`${baseUrl}/api/test-runs/submit`, {
