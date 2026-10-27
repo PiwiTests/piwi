@@ -202,7 +202,29 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
   by the `XLineBreakpoint` itself, keeps its line while it only moved with the edits, `XLineBreakpointImpl.updatePosition`
   firing `breakpointChanged`; one added or dragged is mapped back through them), only to a run whose places differ
   from those its command started with or was last sent (`Glue.breakpointUpdates`, `PiwiCommands.startRun` recording
-  the first). Its calls of the service go
+  the first). A stop also offers the code actions its worker takes (`RunWorker.takes`, `Glue.stopActions`), after the
+  controls in its inlay, its gutter popup and the status bar item's menu, and under **Tools → Piwi** while some stop
+  offers them (`StopCodeAction`: `Piwi.PickAtStop`, `Piwi.RecordAtStop`, `Piwi.AssertAtStop`,
+  `Piwi.AssertRegionAtStop`, `Piwi.MockAtStop`, no shortcut): **Pick a Locator**, **Record Here**, **Assert** and
+  **Assert a Region** at a stop the pause bar shows, **Mock a Request** at any, each a `piwi/stopAction` on a pooled
+  thread naming its stop, its answer a balloon. Mock a Request lists `piwi/stopRequests` in a popup, the latest first,
+  filtered by URL as you type (`setNamerForFiltering`; `RequestRenderer`: the method and URL, then the status, type,
+  size or `no size`, and when it finished: `Glue.requestDetails`). The code a stop makes, from here or Piwi Picker
+  (`piwi/stopCode`, `PiwiLsp4jClient.stopCode`; the initialization options say the plugin writes it, `stopCode`), is
+  written in one `WriteCommandAction` on the file's `Document` (`PiwiRunSessions.write`, `Glue.stopCodeWrites`: the
+  edits as offsets, the last in the file first), in an editor, so the platform sends the service the change: a file no
+  editor shows is opened first, and written half a second later, once the platform told the service it opened it; only
+  into the version the service placed it in (`LspServer.getDocumentVersion`, else the file as saved), else a warning
+  balloon offers **Copy the Code**. The block is scrolled to without taking the focus, and its sentence is a balloon, a
+  warning with what its reader should check (`Glue.stopCodeNotice`). While a stopped worker counts locators, a
+  `CaretListener` on the multicaster has the end of the caret's line in the stopped file say how many elements the
+  locator there matches on the stopped page (`piwi/locatorAtCaret`, an after-line-end inlay, `CaretCountInlay`): asked
+  200 ms after the caret settles (an `Alarm`), one request at a time, an answer the caret left dropped
+  (`Glue.CaretAsks`); `3 matches`, `no match`, a refusal for three seconds, nothing on a line holding no locator
+  (`Glue.caretText`), and the caret leaving the file takes the page's outline down. A failure held for the IDE
+  (`reason: 'failure'`, `Glue.isFailure`) is `Failed · <how it failed> · attempt N`, with
+  `AllIcons.RunConfigurations.TestError` in the gutter, **Resume** alone among its controls (`Glue.stopControls`), and
+  `Piwi: failed · checkout.spec.ts:12` in the status bar. Its calls of the service go
   through `RunRemote`, which `PiwiRunControlTest` replaces.
 - Once the project is open, `PiwiProjectService.findPlaywright` looks for Playwright configs on a pooled thread
   (`Glue.findPlaywright`, with the editor service's depth and skipped folders): in the project folder (in Rider, the
@@ -408,7 +430,9 @@ in `build.gradle.kts`. CI (`reusable-jetbrains.yml`) installs JDK 21, so it down
 
 The platform test `testTheBundledServiceAnswersThroughTheDescriptor` starts the bundled service with the descriptor's
 command line against a stub instance, and reads its answers with the Kotlin protocol classes, a run's session and
-controls with a fake worker on the run channel among them. `PiwiRunControlTest` drives the run controls with the
-sessions the service would send: the execution point, the inlay, the actions, the edits above a stop and Run to Caret
-from them, the paused page of a file the VFS has not loaded, the breakpoint listener (a breakpoint moved as the
-platform moves one outside tests, which a unit test does not), the promoter and the IDE's Playwright runner's runs.
+controls with a fake worker on the run channel among them, and the code from a stop (`piwi/stopRequests`,
+`piwi/stopAction`, the `piwi/stopCode` it sends, `piwi/locatorAtCaret`). `PiwiRunControlTest` drives the run controls
+with the sessions the service would send: the execution point, the inlay, the actions, the edits above a stop and Run
+to Caret from them, the paused page of a file the VFS has not loaded, the breakpoint listener (a breakpoint moved as
+the platform moves one outside tests, which a unit test does not), the promoter, the IDE's Playwright runner's runs,
+the code actions, a failure's stop, the code a stop made written in one command (one undo) and the count at the caret.

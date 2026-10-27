@@ -5,6 +5,7 @@ import com.intellij.execution.configurations.RunProfile
 import com.intellij.execution.executors.DefaultRunExecutor
 import com.intellij.execution.process.NopProcessHandler
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPromoter
 import com.intellij.openapi.actionSystem.AnAction
@@ -12,10 +13,16 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.command.WriteCommandAction
-import com.intellij.openapi.editor.EditorFactory
+import com.intellij.openapi.command.undo.UndoManager
 import com.intellij.openapi.components.service
+import com.intellij.openapi.editor.Document
+import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.Inlay
+import com.intellij.openapi.editor.ex.DocumentEx
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
+import com.intellij.openapi.fileEditor.impl.text.TextEditorProvider
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.RegisterToolWindowTask
@@ -44,6 +51,11 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private val breakpoints = CopyOnWriteArrayList<SetRunBreakpointsParams>()
     private val pages = CopyOnWriteArrayList<PausedPageParams>()
     private val ended = CopyOnWriteArrayList<CommandEndedParams>()
+    private val started = CopyOnWriteArrayList<StopActionParams>()
+    private val listed = CopyOnWriteArrayList<StopRequestsParams>()
+    private val counted = CopyOnWriteArrayList<LocatorAtCaretParams>()
+    private var requests = StopRequestsResult(true, "The test kept no response yet.", emptyList())
+    private var count: (LocatorAtCaretParams) -> LocatorAtCaretResult = { LocatorAtCaretResult(true, "The outline is gone.", null, null) }
     private var image: PausedImage? = null
     private lateinit var base: File
 
@@ -69,6 +81,23 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             override fun commandEnded(params: CommandEndedParams) {
                 ended += params
             }
+
+            override fun action(params: StopActionParams): RunControlResult {
+                started += params
+                return RunControlResult(true, "Started.")
+            }
+
+            override fun requests(params: StopRequestsParams): StopRequestsResult {
+                listed += params
+                return requests
+            }
+
+            override fun locatorAtCaret(params: LocatorAtCaretParams): LocatorAtCaretResult {
+                counted += params
+                return count(params)
+            }
+
+            override fun documentVersion(document: Document): Int = (document as DocumentEx).modificationSequence
         }
         base = File(project.basePath!!).apply { mkdirs() }
     }
@@ -116,6 +145,27 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     )
 
     private fun running(ref: String) = RunSession(ref, base.path, listOf(RunWorker(0, 0, "running", test(retry = 1))))
+
+    private val takes = listOf("pick", "record", "assert", "assert-region", "requests", "mock", "locator")
+
+    /** A worker of `ref` stopped at `line` of `file` for `reason`, its reporter taking every code action. */
+    private fun taking(ref: String, file: VirtualFile, line: Int, since: String, reason: String = "breakpoint", title: String = "Fill \"MORNING10\" getByLabel('Coupon code')") =
+        RunSession(
+            ref,
+            base.path,
+            listOf(RunWorker(0, 0, "stopped", test(retry = 1), RunStop(reason, title, uri(file), line, 4, null, true, since), takes = takes)),
+        )
+
+    private val coupon = listOf(
+        "import { test } from '@playwright/test';",
+        "",
+        "test('applies a coupon', async ({ page }) => {",
+        "  await page.goto('/cart');",
+        "  await page.getByLabel('Coupon code').fill('MORNING10');",
+        "  await page.getByRole('button', { name: 'Apply' }).click();",
+        "});",
+        "",
+    ).joinToString("\n")
 
     private fun hear(session: RunSession) {
         sessions.heard(session)
@@ -229,6 +279,134 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         Thread.sleep(200)
         PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
         assertEquals(1, controls.size)
+    }
+
+    /**
+     * At a stop whose reporter takes them, the inlay and the actions offer the code actions: Assert starts at the
+     * caret's stop, and Mock a Request lists the responses, the latest first, and mocks the one chosen.
+     */
+    fun testAStopOffersTheCodeActionsItsReporterTakes() {
+        val file = file("tests/coupon.spec.ts", coupon)
+        val since = "2026-10-25T10:00:07.000Z"
+        hear(taking("ed-7", file, 4, since))
+        val inlay = sessions.shown().inlays.single()
+        val renderer = inlay.renderer as StopInlay
+        assertEquals(Glue.StopControl.entries + Glue.StopAction.entries, renderer.links)
+        assertEquals(Glue.StopAction.MOCK, renderer.controlAt(inlay, renderer.calcWidthInPixels(inlay) - 1))
+        val popup = sessions.stopActions(sessions.stops().single()).getChildren(null).mapNotNull { it.templatePresentation.text }
+        assertEquals(listOf("Resume", "Step", "Run to Caret", "Finish", PiwiRunSessions.SHOW_PAUSED_PAGE) + Glue.StopAction.entries.map { it.label }, popup)
+
+        myFixture.openFileInEditor(file)
+        val actions = ActionManager.getInstance()
+        assertTrue(myFixture.testAction(actions.getAction("Piwi.AssertAtStop")).isEnabled)
+        assertEquals(StopActionParams("ed-7", 0, since, "assert"), waitFor("the assert") { started.firstOrNull() })
+
+        val cart = StopRequest(1, "GET", "http://localhost:3000/api/cart", 200, "application/json", 12, 840.0)
+        val pay = StopRequest(2, "POST", "http://localhost:3000/api/pay", 402, "", null, 900.0)
+        requests = StopRequestsResult(true, "The test kept 2 responses.", listOf(cart, pay))
+        val offered = CopyOnWriteArrayList<List<StopRequest>>()
+        sessions.chooseRequest = { list, chosen ->
+            offered += list
+            chosen(list.last())
+        }
+        assertTrue(myFixture.testAction(actions.getAction("Piwi.MockAtStop")).isEnabled)
+        assertEquals(StopActionParams("ed-7", 0, since, "mock", 1), waitFor("the mock") { started.getOrNull(1) })
+        assertEquals(StopRequestsParams("ed-7", 0, since), listed.single())
+        assertEquals(listOf(listOf(pay, cart)), offered.toList())
+
+        // At a headless stop, Mock a Request alone.
+        val headless = taking("ed-7", file, 4, "2026-10-25T10:00:07.500Z")
+        hear(headless.copy(workers = headless.workers!!.map { w -> w.copy(stop = w.stop!!.copy(bar = false)) }))
+        assertEquals(listOf(Glue.StopAction.MOCK), (sessions.shown().inlays.single().renderer as StopInlay).links.filterIsInstance<Glue.StopAction>())
+        assertFalse(myFixture.testAction(actions.getAction("Piwi.AssertAtStop")).isEnabled)
+    }
+
+    /** A failure the IDE holds: its own icon and words, Resume alone among the controls, then the code actions. */
+    fun testAFailureIsAStopOfItsOwn() {
+        val file = file("tests/coupon.spec.ts", coupon)
+        hear(taking("ed-8", file, 5, "2026-10-25T10:00:08.000Z", "failure", "Failed: Timed out 5000ms waiting for getByRole('button', { name: 'Apply' })"))
+        val shown = sessions.shown()
+        val renderer = shown.inlays.single().renderer as StopInlay
+        assertEquals("Failed · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' }) · attempt 2", renderer.text)
+        assertEquals(listOf(Glue.StopControl.RESUME) + Glue.StopAction.entries, renderer.links)
+        assertEquals(AllIcons.RunConfigurations.TestError, shown.highlighters.single().gutterIconRenderer!!.icon)
+        val statusBar = PiwiStatusBarWidget(project)
+        com.intellij.openapi.util.Disposer.register(testRootDisposable, statusBar)
+        statusBar.update()
+        assertEquals("Piwi: failed · coupon.spec.ts:6", (statusBar.component as javax.swing.JLabel).text)
+    }
+
+    /**
+     * The code a stop made is written in one command: the import line and the block above the stopped statement, which
+     * the mark follows; one undo takes both away. Code placed in another version of the text is not written, and a file
+     * no editor shows is opened first.
+     */
+    fun testTheCodeAStopMadeIsWrittenInOneCommand() {
+        val file = file("tests/coupon.spec.ts", coupon)
+        val since = "2026-10-25T10:00:09.000Z"
+        hear(taking("ed-9", file, 4, since))
+        myFixture.openFileInEditor(file)
+        val document = myFixture.editor.document
+        val at = { line: Int, newText: String -> FileEdit(EditRange(EditPosition(line, 0), EditPosition(line, 0)), newText) }
+        val block = "  await expect(page.getByTestId('total')).toHaveText('Total €72.00');"
+        val code = StopCode(
+            "ed-9", 0, since, "assert", uri(file), (document as DocumentEx).modificationSequence, 4, block,
+            listOf(at(1, "import { expect } from '@playwright/test';\n"), at(4, "$block\n")),
+            "Piwi wrote the check above coupon.spec.ts:5.", emptyList(),
+        )
+        sessions.write(code.copy(version = code.version!! + 1))
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(coupon, document.text)
+        sessions.write(code)
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        val lines = document.text.lines()
+        assertEquals("import { expect } from '@playwright/test';", lines[1])
+        assertEquals(block, lines[5])
+        assertEquals("  await page.getByLabel('Coupon code').fill('MORNING10');", lines[6])
+        assertEquals(6, sessions.stops().single().stop.line)
+        UndoManager.getInstance(project).undo(TextEditorProvider.getInstance().getTextEditor(myFixture.editor))
+        assertEquals(coupon, document.text)
+        assertEquals(4, sessions.stops().single().stop.line)
+
+        // No editor shows the file: it is opened, then written.
+        FileDocumentManager.getInstance().saveDocument(document)
+        FileEditorManagerEx.getInstanceEx(project).closeAllFiles()
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        sessions.write(code.copy(version = null))
+        waitFor("the code written in the file opened") { document.text.takeIf { it.contains(block) } }
+        assertTrue(FileEditorManager.getInstance(project).isFileOpen(file))
+    }
+
+    /**
+     * While a test is stopped, the end of the caret's line in its file says how many elements the locator there
+     * matches, asked once the caret settled; a line without a locator says nothing, and the count goes with the stop.
+     */
+    fun testTheLocatorAtTheCaretIsCountedOnTheStoppedPage() {
+        val file = file("tests/coupon.spec.ts", coupon)
+        val since = "2026-10-25T10:00:10.000Z"
+        count = { params ->
+            when (params.line) {
+                4 -> LocatorAtCaretResult(true, "2 elements match.", "getByLabel('Coupon code')", 2)
+                5 -> LocatorAtCaretResult(false, "The test is stopped on page: Piwi counts a locator that starts from page.", "getByRole('button')", null)
+                else -> LocatorAtCaretResult(false, "No locator on this line.", null, null)
+            }
+        }
+        hear(taking("ed-10", file, 4, since))
+        assertEquals("Piwi: 2 matches", waitFor("the count") { sessions.shown().caretCount })
+        assertEquals(LocatorAtCaretParams("ed-10", 0, since, uri(file), 4), counted.first())
+        val editor = FileEditorManager.getInstance(project).selectedTextEditor!!
+        editor.caretModel.moveToOffset(editor.document.getLineStartOffset(3))
+        waitFor("the line without a locator asked") { counted.find { it.line == 3 } }
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertNull(sessions.shown().caretCount)
+        editor.caretModel.moveToOffset(editor.document.getLineStartOffset(5))
+        assertEquals("Piwi: The test is stopped on page: Piwi counts a locator that starts from page.", waitFor("the refusal") { sessions.shown().caretCount })
+        val asked = counted.size
+        hear(running("ed-10"))
+        assertNull(sessions.shown().caretCount)
+        Thread.sleep(300)
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(asked, counted.size)
     }
 
     /** While a run is live, its controls go first among the actions a keymap gives their key; without one, none do. */

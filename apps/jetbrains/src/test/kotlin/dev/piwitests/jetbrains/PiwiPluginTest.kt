@@ -1066,7 +1066,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
         try {
             val cwd = com.google.gson.Gson().toJson(run.cwd)
-            send("""{"type":"run-attach","token":"$token","ref":"$ref","cwd":$cwd,"workerIndex":0,"parallelIndex":0,"pid":1,"playwright":"1.64.1","reporter":"0.60.0"}""")
+            val takes = """["pick","record","assert","assert-region","requests","mock","locator"]"""
+            send("""{"type":"run-attach","token":"$token","ref":"$ref","cwd":$cwd,"workerIndex":0,"parallelIndex":0,"pid":1,"playwright":"1.64.1","reporter":"0.60.0","takes":$takes}""")
             send("""{"type":"test-begin","testId":"t1","title":["removes a row"],"file":"tests/checkout.spec.ts","line":4,"project":"chromium","retry":1,"cannotPause":null}""")
             send("""{"type":"stopped","stop":1,"reason":"breakpoint","title":"Click locator('.cart-row').nth(2)","place":{"file":"tests/pages/checkout.page.ts","line":5,"column":21},"locator":"locator('.cart-row').nth(2)","bar":false}""")
             val session = waitFor("the stopped session") { client.sessions.lastOrNull { it.ref == ref && it.workers?.firstOrNull()?.stop != null } }
@@ -1090,6 +1091,38 @@ class PiwiPluginTest : BasePlatformTestCase() {
             val request = waitFor("the image asked") { heard.firstOrNull { it["type"].asString == "request" } }
             send("""{"type":"answer","request":${request["request"].asInt},"what":"image","value":{"mime":"image/jpeg","data":"/9j/"}}""")
             assertEquals(PausedImage("image/jpeg", "/9j/"), page.get(5, TimeUnit.SECONDS)?.image)
+            assertEquals(listOf("pick", "record", "assert", "assert-region", "requests", "mock", "locator"), worker.takes)
+
+            // Code from a stop in the spec: the responses the test kept, one mocked and sent to write, the caret's line.
+            send("""{"type":"running","stop":1}""")
+            send("""{"type":"stopped","stop":2,"reason":"step","title":"Click","place":{"file":"tests/checkout.spec.ts","line":5,"column":3},"locator":null,"bar":false}""")
+            fun request(what: String) = waitFor("the $what asked") { heard.lastOrNull { it["type"].asString == "request" && it["what"].asString == what } }
+            fun answer(asked: com.google.gson.JsonObject, value: String) =
+                send("""{"type":"answer","request":${asked["request"].asInt},"what":"${asked["what"].asString}","value":$value}""")
+            val since = waitFor("the stop in the spec") { client.sessions.lastOrNull { it.ref == ref }?.workers?.firstOrNull()?.stop?.takeIf { it.reason == "step" } }.since!!
+            val listing = server.stopRequests(StopRequestsParams(ref, since = since))
+            answer(
+                request("requests"),
+                """{"ok":true,"message":"The test kept 1 response.","requests":[{"id":1,"method":"GET","url":"http://localhost:3000/api/cart","status":200,"type":"application/json","size":null,"time":840}]}""",
+            )
+            assertEquals(
+                StopRequestsResult(true, "The test kept 1 response.", listOf(StopRequest(1, "GET", "http://localhost:3000/api/cart", 200, "application/json", null, 840.0))),
+                listing.get(5, TimeUnit.SECONDS),
+            )
+            val mocking = server.stopAction(StopActionParams(ref, since = since, action = "mock", request = 1))
+            answer(request("mock"), """{"ok":true,"message":"GET","response":{"method":"GET","url":"http://localhost:3000/api/cart","status":200,"type":"application/json","body":"{}"}}""")
+            assertEquals(true, mocking.get(5, TimeUnit.SECONDS)?.ok)
+            val code = waitFor("the code to write") { client.codes.firstOrNull() }
+            assertEquals(listOf(ref, since, "mock", spec, "4"), listOf(code.ref, code.since, code.action, code.uri, "${code.line}"))
+            assertEquals(null, code.version)
+            assertEquals(listOf(EditRange(EditPosition(4, 0), EditPosition(4, 0))), code.edits?.map { it.range })
+            assertTrue(code.code!!.startsWith("  await page.route('**/api/cart', (route) =>"))
+            assertEquals(emptyList<String>(), code.warnings)
+            // The caret on a line holding no locator: refused, the page's outline taken down.
+            val caret = server.locatorAtCaret(LocatorAtCaretParams(ref, null, since, spec, 4))
+            answer(request("locator"), """{"ok":true,"message":"The outline is gone.","count":null}""")
+            assertEquals(LocatorAtCaretResult(false, "No locator on this line.", null, null), caret.get(5, TimeUnit.SECONDS))
+            assertEquals(RunControlResult(false, "The test went on."), server.stopAction(StopActionParams(ref, since = "then", action = "assert")).get(5, TimeUnit.SECONDS))
 
             server.commandEnded(CommandEndedParams(ref, 0))
             waitFor("the end of the run") { client.sessions.lastOrNull { it.ref == ref }?.takeIf { it.ended } }
@@ -1159,9 +1192,16 @@ class PiwiPluginTest : BasePlatformTestCase() {
 
         val sessions = java.util.concurrent.CopyOnWriteArrayList<RunSession>()
 
+        val codes = java.util.concurrent.CopyOnWriteArrayList<StopCode>()
+
         @JsonNotification("piwi/runSessionChanged")
         fun runSessionChanged(session: RunSession) {
             sessions += session
+        }
+
+        @JsonNotification("piwi/stopCode")
+        fun stopCode(code: StopCode) {
+            codes += code
         }
 
         @JsonNotification("piwi/runStatusChanged")

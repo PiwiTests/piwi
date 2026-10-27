@@ -602,6 +602,101 @@ class GlueTest {
         assertEquals(listOf(one, two), Glue.stopsFor(listOf(one, two), null, null))
     }
 
+    private val allTakes = listOf("pick", "record", "assert", "assert-region", "requests", "mock", "locator")
+
+    @Test
+    fun `a failure held for the IDE says how the test failed and offers Resume alone among the controls`() {
+        val failed = stopAt(specUri, 5).copy(reason = "failure", title = "Failed: Timed out 5000ms waiting for click")
+        assertEquals("Failed · Timed out 5000ms waiting for click · attempt 2", Glue.pausedText(failed, runTest(retry = 1)))
+        assertEquals(listOf(Glue.StopControl.RESUME), Glue.stopControls(failed))
+        assertEquals(Glue.StopControl.entries, Glue.stopControls(stopAt(specUri, 5)))
+        val stopped = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), failed, takes = allTakes)))
+        assertEquals("Piwi: failed · checkout.spec.ts:6", Glue.runControlStatus(Glue.runControls(stopped), Glue.stopsOf(stopped)))
+        assertEquals(Glue.StopAction.entries.toSet(), Glue.runControls(stopped).actions)
+    }
+
+    @Test
+    fun `a stop offers the code actions its reporter takes, those in the test's window where the pause bar shows`() {
+        val shown = { bar: Boolean, takes: List<String> -> Glue.ShownStop("ed-1", 0, stopAt(specUri, 5, bar), runTest(), takes) }
+        assertEquals(Glue.StopAction.entries, Glue.stopActions(shown(true, allTakes)))
+        assertEquals(listOf(Glue.StopAction.MOCK), Glue.stopActions(shown(false, allTakes)))
+        assertEquals(listOf(Glue.StopAction.PICK, Glue.StopAction.RECORD), Glue.stopActions(shown(true, listOf("pick", "record", "requests"))))
+        assertEquals(emptyList<Glue.StopAction>(), Glue.stopActions(shown(true, emptyList())))
+        val sessions = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5), takes = listOf("pick"))))
+        assertEquals(listOf("pick"), Glue.stopsOf(sessions).single().takes)
+    }
+
+    @Test
+    fun `Mock a Request lists the responses latest first, with their status, type, size and time`() {
+        val cart = StopRequest(1, "GET", "http://localhost:3000/api/cart", 200, "application/json", 12, 840.0)
+        val pay = StopRequest(2, "POST", "http://localhost:3000/api/pay", 402, "", null, 12_400.0)
+        assertEquals(listOf(pay, cart), Glue.requestsToMock(listOf(cart, pay)))
+        assertEquals("GET http://localhost:3000/api/cart", Glue.requestLabel(cart))
+        assertEquals("200 · application/json · 12 B · at 840 ms", Glue.requestDetails(cart))
+        assertEquals("402 · no type · no size · at 12.4 s", Glue.requestDetails(pay))
+        assertEquals(listOf("1023 B", "2.0 KB", "3.0 MB"), listOf(1023L, 2048L, 3L * 1024 * 1024).map(Glue::sizeText))
+        val listed = Gson().fromJson("""{"ok":true,"message":"m","requests":[{"id":3,"method":"GET","url":"u","status":200,"type":"","size":null,"time":5}]}""", StopRequestsResult::class.java)
+        assertEquals(StopRequest(3, "GET", "u", 200, "", null, 5.0), listed.requests!!.single())
+    }
+
+    @Test
+    fun `the count at the caret says the matches, why none were counted, and nothing on a line without a locator`() {
+        assertEquals("3 matches", Glue.caretText(LocatorAtCaretResult(true, "3 elements match.", "getByRole('button')", 3)))
+        assertEquals("1 match", Glue.caretText(LocatorAtCaretResult(true, "1 element matches.", "getByRole('button')", 1)))
+        assertEquals("no match", Glue.caretText(LocatorAtCaretResult(true, "No element matches.", "getByRole('button')", 0)))
+        assertEquals("Another page.", Glue.caretText(LocatorAtCaretResult(false, "Another page.", "getByRole('button')", null)))
+        assertEquals(null, Glue.caretText(LocatorAtCaretResult(false, "No locator on this line.", null, null)))
+    }
+
+    @Test
+    fun `the count at the caret asks one query at a time, once, and shows an answer only while the caret stands there`() {
+        val asks = Glue.CaretAsks()
+        assertEquals(true, asks.want("a"))
+        assertEquals(false, asks.want("a"))
+        assertEquals(true, asks.ask("a"))
+        // The caret moves on while the answer is on its way: nothing more is asked, and the answer is dropped.
+        assertEquals(true, asks.want("b"))
+        assertEquals(false, asks.ask("b"))
+        assertEquals(false, asks.answered("a"))
+        assertEquals(true, asks.ask("b"))
+        assertEquals(true, asks.answered("b"))
+        assertEquals(false, asks.ask("b"))
+        // No stop: asked anew afterwards.
+        assertEquals(true, asks.want(null))
+        assertEquals(true, asks.want("b"))
+        assertEquals(true, asks.ask("b"))
+    }
+
+    @Test
+    fun `a stop's code is written the last edit first, below the import lines it adds, and says what it wrote`() {
+        val text = "import { test } from '@playwright/test';\n\ntest('pays', async ({ page }) => {\n  await page.goto('/');\n});\n"
+        val at = { line: Int, character: Int, newText: String -> FileEdit(EditRange(EditPosition(line, character), EditPosition(line, character)), newText) }
+        val code = StopCode(
+            ref = "ed-1",
+            since = "s1",
+            action = "mock",
+            uri = specUri,
+            line = 3,
+            code = "  await page.route('**/api/cart', (route) =>\n    route.fulfill({ json: {} }),\n  );",
+            edits = listOf(at(1, 0, "import { expect } from '@playwright/test';\n"), at(3, 0, "  block\n")),
+            message = "Piwi wrote the mock above checkout.spec.ts:4.",
+            warnings = listOf("1 value named or shaped like a credential is written as <hidden>."),
+        )
+        val writes = Glue.stopCodeWrites(text, code.edits!!)!!
+        assertEquals(listOf(Glue.TextWrite(text.indexOf("  await"), text.indexOf("  await"), "  block\n"), Glue.TextWrite(41, 41, "import { expect } from '@playwright/test';\n")), writes)
+        val written = writes.fold(StringBuilder(text)) { b, w -> b.replace(w.start, w.end, w.text) }.toString().lines()
+        assertEquals(listOf("import { test } from '@playwright/test';", "import { expect } from '@playwright/test';", "", "test('pays', async ({ page }) => {", "  block", "  await page.goto('/');"), written.take(6))
+        // Two at one place: the later one ends up after the other.
+        assertEquals(listOf("b", "a"), Glue.stopCodeWrites(text, listOf(at(1, 0, "a"), at(1, 0, "b")))!!.map { it.text })
+        assertEquals(null, Glue.stopCodeWrites(text, listOf(at(40, 0, "x"))))
+        assertEquals(4..6, Glue.writtenLines(code))
+        assertEquals(
+            Glue.StopCodeNotice(true, "Piwi wrote the mock above checkout.spec.ts:4. 1 value named or shaped like a credential is written as <hidden>."),
+            Glue.stopCodeNotice(code),
+        )
+        assertEquals(Glue.StopCodeNotice(false, "Piwi wrote the mock above checkout.spec.ts:4."), Glue.stopCodeNotice(code.copy(warnings = null)))
+    }
+
     private fun at(key: String, line: Int, uri: String = specUri) = Glue.RunBreakpoint(EditorBreakpoint(uri, line), key)
 
     @Test

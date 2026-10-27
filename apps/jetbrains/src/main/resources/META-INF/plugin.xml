@@ -199,6 +199,18 @@
             <action id="Piwi.ShowPausedPage" class="dev.piwitests.jetbrains.ShowPausedPageAction" text="Show the Paused Page"
                     icon="AllIcons.Actions.Preview"
                     description="An image of the stopped test's page, in the Piwi tool window"/>
+            <!-- The code actions at a stop: enabled while a stop offers them, with no shortcut. -->
+            <action id="Piwi.PickAtStop" class="dev.piwitests.jetbrains.PickAtStopAction" text="Pick a Locator at the Stop"
+                    description="Pick an element in the stopped test's window: its locator replaces the one on the stopped line"/>
+            <action id="Piwi.RecordAtStop" class="dev.piwitests.jetbrains.RecordAtStopAction" text="Record Here at the Stop"
+                    description="Record what you do in the stopped test's window above the stopped line"/>
+            <action id="Piwi.AssertAtStop" class="dev.piwitests.jetbrains.AssertAtStopAction" text="Assert at the Stop"
+                    description="Check an element in the stopped test's window: the expect() goes above the stopped line"/>
+            <action id="Piwi.AssertRegionAtStop" class="dev.piwitests.jetbrains.AssertRegionAtStopAction"
+                    text="Assert a Region at the Stop"
+                    description="Pick a region in the stopped test's window: its ARIA snapshot goes above the stopped line"/>
+            <action id="Piwi.MockAtStop" class="dev.piwitests.jetbrains.MockAtStopAction" text="Mock a Request at the Stop"
+                    description="Answer a request the stopped test made as the server did: page.route() goes above the stopped line"/>
             <action id="Piwi.StopRun" class="dev.piwitests.jetbrains.StopRunAction" text="Stop the Run"
                     icon="AllIcons.Actions.Suspend"
                     description="End the process of the run started from Piwi"/>
