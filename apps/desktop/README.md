@@ -179,6 +179,13 @@ bundler makes the macOS update artifact (`.app.tar.gz`) from it only. Builds
 without the overlay report updates as unsupported, the plugin
 is not even registered there (see `src-tauri/src/updates.rs`).
 
+Both endpoints read GitHub's **latest** release, so a release becomes the latest
+only once every leg has attached its installers and manifest: `release-please.yml`
+keeps the previous release the latest when it creates one, and the `latest` job of
+`reusable-publish-desktop.yml` promotes the new one after the four legs pass. While
+a release builds, or when one of its legs failed, the app keeps finding the
+previous release and its complete manifests.
+
 The `.exe` channel installs **quietly**: its overlay sets the updater's
 `windows.installMode` to `quiet`, so the plugin starts the NSIS installer with
 `/S /R` — no window, and the installer relaunches the app when it is done. The
