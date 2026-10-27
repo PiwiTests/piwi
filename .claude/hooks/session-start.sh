@@ -5,8 +5,8 @@
 # class of verification impossible:
 #   1. node_modules — nothing runs at all.
 #   2. packages/reporter/dist — playwright.config.ts imports the built reporter, so the
-#      E2E suite cannot even load its config, and a unit test that compares the
-#      app against the reporter's build fails.
+#      E2E suite cannot even load its config (nor knip, which reads it), and the
+#      reporter's own specs that load its build (build-output, flake-run) fail.
 #   3. A Chromium matching the pinned Playwright — without it every
 #      browser-driven spec dies on a missing binary, which reads like an
 #      unrelated failure and tempts you to skip UI verification entirely.
@@ -17,6 +17,25 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
 fi
 
 cd "${CLAUDE_PROJECT_DIR:-$(pwd)}"
+
+# Each step writes its output to a log rather than to the session, which reads everything this hook prints; a step
+# that fails prints the end of the log.
+log="${TMPDIR:-/tmp}/piwi-session-start.log"
+: >"$log"
+quietly() {
+  if ! "$@" >>"$log" 2>&1; then
+    echo "[session-start] '$*' failed; the end of $log:" >&2
+    tail -n 40 "$log" >&2
+    return 1
+  fi
+}
+
+# The repository pins its Node major in .node-version (CI, engines). Another Node still runs most checks, so this
+# warns rather than stops: a failure caused by the version then reads as one.
+wanted_node="$(cut -d . -f 1 .node-version 2>/dev/null | tr -d 'v \r' || true)"
+if [ -n "$wanted_node" ] && [ "$(node -p 'process.versions.node.split(".")[0]')" != "$wanted_node" ]; then
+  echo "[session-start] WARNING: Node $(node --version) runs this session; the repository pins Node $wanted_node (.node-version)"
+fi
 
 # Install exactly what package-lock.json pins, as CI does, without writing it: the
 # container's npm 10 would rewrite the npm 11 lockfile under `npm install`, leaving
@@ -31,12 +50,28 @@ if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$installed" ]; then
   echo "[session-start] workspace dependencies match package-lock.json; skipping the install"
 else
   echo "[session-start] installing workspace dependencies"
-  npm ci --no-audit --fund=false
+  quietly npm ci --no-audit --fund=false
   echo "$installed" > "$stamp"
 fi
 
-echo "[session-start] building the reporter (playwright.config.ts imports it)"
-npm run reporter:build --workspace packages/reporter
+# The build takes ~10s, mostly the type declarations, so a resumed session skips it while its output is there and no
+# input of the bundle changed since the last one: the reporter, the core and picker-dom sources and manifests it
+# inlines, the tsconfig it extends, the installed dependencies. The stamp lives outside dist/ (tsup's clean leaves dot
+# files, and dist/ is what npm packs), is taken before the build so an edit made during it still counts, and is kept
+# only once the build succeeded.
+build_stamp="node_modules/.cache/piwi-session-start/reporter-build"
+if [ -f "$build_stamp" ] && [ -f packages/reporter/dist/index.js ] && [ -f packages/reporter/dist/index.d.ts ] &&
+  [ -z "$(find packages/reporter/src packages/reporter/package.json packages/reporter/tsconfig.json \
+    packages/reporter/tsup.config.ts tsconfig.json packages/core/src packages/core/package.json \
+    packages/picker-dom/src packages/picker-dom/package.json "$stamp" -newer "$build_stamp" -print -quit)" ]; then
+  echo "[session-start] the reporter build is up to date; skipping it"
+else
+  echo "[session-start] building the reporter (playwright.config.ts imports it)"
+  mkdir -p "$(dirname "$build_stamp")"
+  touch "$build_stamp.next"
+  quietly npm run reporter:build --workspace packages/reporter
+  mv "$build_stamp.next" "$build_stamp"
+fi
 
 # Prefer the browser Playwright pins: the full Chromium as well as the headless
 # shell, because the extension's specs load an unpacked extension, which only a
@@ -44,7 +79,7 @@ npm run reporter:build --workspace packages/reporter
 # Chromium the image already provides and tell Playwright about it via the
 # repo's PLAYWRIGHT_CHROMIUM_EXECUTABLE hook.
 echo "[session-start] resolving a Chromium for Playwright"
-if npx --yes playwright install chromium >/dev/null 2>&1; then
+if quietly npx --yes playwright install chromium; then
   echo "[session-start] using the pinned Playwright Chromium"
 else
   found=""

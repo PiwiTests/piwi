@@ -1485,7 +1485,7 @@ class GlueTest {
         )
         assertEquals("4 min ago" to "/w/apps/shop", shop.children.single().description to shop.children.single().root)
         assertEquals("running 4/9", admin.children.single().description)
-        // The run's node of an older service names no config: the editor's own run shows on it.
+        // A run node that names no config: the editor's own run shows on it.
         assertEquals("running 4/9", Glue.failureNodes(treeFailures, treeNow, live, liveRoot = "/w/apps/admin").single().description)
         // The header names no run: each config's node carries its own.
         assertEquals(null, Glue.runHeader(several, treeNow))
@@ -1639,7 +1639,7 @@ class GlueTest {
             Glue.runVerdict(passing),
         )
         assertEquals("Run #124 · 4 passed, 0 failed, 1 flaky", Glue.runVerdict(passing.copy(fixed = 0, passed = 4, flaky = 1))?.text)
-        // From an older service, without the counts: the titles count.
+        // Without the counts: the titles count.
         assertEquals(ended.copy(stillFailingCount = null).let { Glue.runVerdict(it)?.text }, Glue.runVerdict(ended)?.text)
     }
 
@@ -1674,7 +1674,7 @@ class GlueTest {
         assertEquals(RunTestsArgs(uri, emptyList(), locations = listOf("tests/checkout.spec.ts:12")), Glue.testAtRun(uri, recorded))
         assertEquals(null, Glue.testAtRun(uri, TestAtResult()))
         assertEquals(null, Glue.testAtRun(uri, null))
-        // An older service gives no location: a test it knows still runs, but cannot be verified.
+        // Without a location: a test the service knows still runs, but cannot be verified.
         assertEquals(RunTestsArgs(uri, listOf(7)), Glue.testAtRun(uri, known.copy(location = null)))
         assertEquals(null, Glue.testAtRun(uri, known.copy(location = null), 3))
     }

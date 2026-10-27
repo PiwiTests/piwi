@@ -81,8 +81,9 @@
 
     <!--
       The shortcuts go in the default keymap, which every bundled keymap descends from: the macOS keymaps turn their
-      ctrl into the command key. Each typing action's is a chord no bundled keymap uses, in the ctrl alt shift family; a
-      run's controls use the debugger's shortcuts while they apply (below).
+      ctrl into the command key. Each typing action's is a ctrl alt shift chord, which some bundled plugins and keymaps
+      also bind (the list is in apps/vscode/ARCHITECTURE.md, Keybindings); a run's controls use the debugger's shortcuts
+      while they apply (below).
     -->
     <actions>
         <group id="Piwi.Actions" text="Piwi" popup="true">

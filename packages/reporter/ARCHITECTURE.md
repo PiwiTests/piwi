@@ -1,118 +1,212 @@
 # Reporter architecture
 
 A map for contributors. The `@piwitests/reporter` package collects Playwright
-test results and sends them to a Piwi Dashboard server.
+test results and sends them to a Piwi Dashboard server. It also ships the `piwi`
+command line (`src/cli/`) and the agent skills that `piwi init` installs
+(`templates/skills/`). The rules to follow when you change it are in
+[`AGENTS.md`](AGENTS.md).
 
-## Public vs internal — the one rule
+## Public and internal code
 
-If it's exported from **`src/index.ts`** (the `.` entry — the package's single
+If it's exported from **`src/index.ts`** (the `.` entry, the package's single
 public surface), it's the **public API** and changing it is a breaking
-change. Everything under **`src/internal/`** is private plumbing — change it freely.
+change. Everything under **`src/internal/`** is private plumbing, except the
+capture modules the dashboard's own tests import (see [Build output](#build-output)).
 
 | Public surface | Where | What |
 |---|---|---|
 | `PiwiDashboardReporter` (default + named) | `public/reporter.ts` | the Playwright reporter |
-| `wrapConfig` | `public/config-wrapper.ts` | injects reporter + global setup into a PW config |
-| `createGlobalSetup` | `public/global-setup.ts` | registers the run before `globalSetup`, after checking each `baseURL` answers when `checkBaseUrl` is on |
+| `wrapConfig` | `public/config-wrapper.ts` | injects the reporter and the global setup into a Playwright config |
+| `createGlobalSetup` | `public/global-setup.ts` | registers the run before the user's own `globalSetup`, after checking each `baseURL` answers when `checkBaseUrl` is on |
 | `resolveSelection` | `public/selection.ts` | resolves `PIWI_SELECTION` from an ESM config, returns a grep and stamps the run |
-| `PiwiDashboardOptions`, `PlaywrightTestConfig`, `PiwiFixtures`, `PiwiWorkerFixtures` | `public/options.ts` / `internal/capture/capture-fixtures.ts` | the config contract + capture fixtures types (types) |
-| `piwiFixtures`, `extendPiwiFixtures` | `internal/capture/capture-fixtures.ts` → re-exported by `index.ts` | capture fixtures (imported from `@piwitests/reporter`) |
+| `piwiFixtures`, `extendPiwiFixtures` | `internal/capture/capture-fixtures.ts`, re-exported by `index.ts` | the capture fixtures (imported from `@piwitests/reporter`) |
+| `piwiAiFixtures`, `extendPiwiAi` | `internal/ai/ai-fixtures.ts`, re-exported by `index.ts` | the AI-step fixtures (`page.piwiLocator`, `page.piwiRun`), replayed from committed artifacts |
+| `PiwiDashboardOptions`, `PlaywrightTestConfig` | `public/options.ts` | the options type (types) |
+| `PiwiFixtures`, `PiwiWorkerFixtures`, `PiwiAi`, `AiMode`, `AiOnMiss` | `internal/capture/capture-fixtures.ts`, `internal/ai/ai-fixtures.ts` | the fixtures' types |
+| `ResolveSelectionResult`, `ResolveSelectionOptions` | `public/selection.ts` | `resolveSelection`'s types |
+| `PiwiConfig`, `PiwiCodegenConfig` | `public/piwi-config.ts` | the `'@piwi'` section of a Playwright config, which the editor service reads |
 
 Two **external contracts** beyond the npm API:
-- **Wire types** (`types/wire.ts`) — the JSON sent to / received from the server.
+
+- **Wire types** (`types/wire.ts`): the JSON sent to and received from the server.
   The small leaf shapes (`BrowserConfig`, `TestStepEvent`, …) are re-exported from
-  `@piwitests/core/wire`; the per-case `WireTestCase`/stream union stay here and are
-  kept compatible with the server's `TestCasePayload`/`StreamEventPayload` by the
+  `@piwitests/core/wire`. The per-case `WireTestCase` and the stream union stay here,
+  kept compatible with the server's `TestCasePayload` and `StreamEventPayload` by the
   dashboard's `wire-shared-drift.test.ts`. A change here is a server-contract change.
-- **Side effects** — `PIWI_*` env vars (`internal/config/env.ts`), with `PIWI_DASHBOARD_URL`,
-  `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also read from the `.env` in the Playwright config's folder,
-  below the environment, by the reporter and the global setup alike, `piwi-*` testInfo
-  attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`,
-  `[Piwi Dashboard]`-prefixed logs (`internal/support/logger.ts`), and the
-  `__piwiProbeElement` page global the capture fixtures seed via `addInitScript`
-  (`internal/capture/capture-fixtures.ts`) so a capture ships a stub call rather
-  than the probe's source, and the boxed stack prefix `internal/capture/quiet-capture.ts`
-  adds for this package's `dist/` in each worker (so a wrapped action is located at the
-  test's line), and the resource ledger's listener on each worker's Playwright
-  instrumentation, with its wrappers on the browser types' `launch`/`connect`
-  (`internal/capture/resource-ledger.ts`). On Linux each worker writes `5` to
-  `/proc/<pid>/clear_refs` of the processes it started at each test's start,
-  which resets their peak RSS for the test (`internal/capture/worker-metrics.ts`),
-  and in Chromium it opens a DevTools session on each page that outlives its test.
-  The capture fixtures wrap `playwright.request.newContext` and hand out every API
-  request context behind a proxy that records each call, the `request` fixture's and
-  each browser context's own `request` (`page.request`) included
-  (`internal/capture/api-requests.ts`).
-  A headed local run with `PIWI_PAUSE_AT` (the editor's breakpoints) stops each context
-  through `context.debugger` before every call it can stop at, with `PW_CODEGEN_NO_INSPECTOR`
-  set in the worker except while a `page.pause()` it leaves to Playwright runs (it wraps
-  `Page.prototype.pause`, so every `page.pause()` of the worker's Playwright goes through it; one of a second
-  copy of Playwright does not, and stops with neither bar nor Inspector), shows the pause
-  bar at the calls on those lines and reads its answer from the `__piwiPauseState` page global,
-  takes the bar down as the test function ends, before Playwright's own failure screenshot (the
-  runner's `_onDidFinishTestFunctionCallbacks`, feature-checked; without them, as the test's page
-  or context closes, or at teardown), sets the runner's count of a test function that ended under it
-  back to what it held as the stop began (`_timeoutManager.defaultSlot()`, feature-checked), waits a
-  while for the call it let go and the requests after it, attaches the stops as
-  `piwi-pauses` (`internal/collect/pause-events.ts` sends them with the test's step events, as
-  `pause` events: the steps keep their clock, and the step statistics leave the stopped time
-  out), and posts a locator picked meanwhile to the editor's
-  `PIWI_EDITOR_SEND` address (`internal/capture/pause-at.ts`). With `PIWI_RECORD_CHANNEL`,
-  **Record here** and `page.pause()` connect to the editor service's local socket and relay
-  the recorder's binding calls over it (`internal/capture/record-handoff.ts`). With
-  `PIWI_RUN_CHANNEL` and `PIWI_ORIGIN_REF`, each worker holds a connection to that socket
-  for its whole life, opened in the `piwiResources` worker fixture
-  (`internal/capture/run-channel.ts`, messages from `@piwitests/core/run-channel`), and
-  `PIWI_RUN_CHANNEL` and `PIWI_EDITOR_SEND` are out of `process.env` while each test runs
-  (`hideRunChannel`; a pick still goes to the pairing, `editorSendAddress`): it sends
-  each test's begin and end and each stop it shows, and the editor's controls (Pause, Step,
-  Resume, Finish, Run to a line, the run's breakpoints) go through the same stop policy as
-  `PIWI_PAUSE_AT`. While it is open a headless run stops too, with no bar, until the editor
-  answers or the connection closes; the editor's answer takes a headed stop's bar down. A stop
-  answered in the editor is attached to `piwi-pauses` as one at the bar is, and a stop that ends
-  unanswered (the test function ended, its page or context closed, or for a stop whose page it
-  cannot tell any page of its context closed) ends the same way with a bar or without, the editor
-  told (`running`); the editor gets no image of such a page. At a stop the bar shows, the editor
-  can also start the bar's Pick a locator and Record here (an intent, `request` with
-  `what: 'pick' | 'record'`), which the bar takes as its own click, Assert (the record hand-off
-  in its `check` mode: the editor's check panel) and Assert a region (the bar's picker, then the
-  region's `ariaSnapshot()`, sent as `region`), each ending with the stop; an intent is refused
-  at a stop that is ending or whose page it cannot tell; a region's snapshot leaves out the
-  value of a field that holds a secret (in a shadow root too) and a link whose URL holds a
-  credential, and a region the worker cannot send says why (`region` with `refused`). At any stop
-  it asks for the
-  responses the test kept (`internal/capture/kept-responses.ts`: while the run connection is
-  open, the test's fetch and XHR answers of a text type, the latest 50, 256 KB each, as their
-  `Response` in memory only, the body read when the one to mock is asked for, dropped as the
-  test ends, their URLs' credentials hidden), the one to mock, and a locator's count on the
-  stopped page (`internal/capture/chain-locator.ts`), one at a time, its matches outlined while
-  the bar shows. One stop shows at a time in a worker: one waiting its turn goes on unshown when
-  the test ended meanwhile, its page or context closed or its breakpoint went, and a context's
-  close, its own or its browser's, lets the call its debugger holds go on first. With the
-  connection open to an editor that answered its `run-attach` with `attached` naming `failure`
-  (`editorShows`; an older editor says nothing, and no failure is held), a failing test's page is
-  held once the test and its hooks are done (`holdFailure`, from Piwi's `page` fixture), as a stop
-  with the reason `failure` at the failing line that names the error's first lines
-  (`failureError`, its URLs' credentials hidden), the bar offering Resume, Pick and
-  Record, its evidence kept as it was when the hold began (Playwright's trace and video record the
-  hold too); the test ends as it failed.
-  The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
-  unref'd timer (`internal/collect/process-sampler.ts`). While the dashboard says
-  someone watches the run, another unref'd timer posts what the sampler and the
-  censuses added since its last post to `/live-resources`, every five seconds
-  (`internal/streaming/live-resources.ts`).
-  With server coverage on (`coverage.server`), the capture fixtures keep the
-  `X-Piwi-Coverage` request ids of each test's responses, its pages' and its API
-  calls' (`piwi-server-coverage-requests`),
-  `onBegin` writes `PIWI_COVERAGE_BROWSER` / `PIWI_COVERAGE_SERVER` for the workers,
-  and the reporter process calls each origin's `/__piwi/coverage/collect` and
-  `/__piwi/coverage/run` and reads the covered files from the checkout for their
-  blob ids (`internal/collect/server-coverage.ts`, `test-coverage.ts`).
+- **Side effects**: what a user's suite can observe, listed below.
+
+## Side effects
+
+What the package does to a user's run, process by process.
+
+**Configuration and logs**
+
+- `PIWI_*` env vars (`internal/config/env.ts`). `PIWI_DASHBOARD_URL`, `PIWI_API_KEY`
+  and `PIWI_PROJECT_NAME` are also read from the `.env` in the Playwright config's
+  folder, below the environment, by the reporter and the global setup alike.
+- `piwi-*` testInfo attachment names (`internal/capture/attachments.ts`), temp files in
+  `os.tmpdir()`, and `[Piwi Dashboard]`-prefixed logs (`internal/support/logger.ts`).
+
+**In each test worker** (the capture fixtures)
+
+- The `__piwiProbeElement` page global, seeded via `addInitScript`
+  (`internal/capture/capture-fixtures.ts`), so a capture ships a stub call rather than
+  the probe's source.
+- The boxed stack prefix `internal/capture/quiet-capture.ts` adds for this package's
+  `dist/`, so a wrapped action is located at the test's line.
+- The resource ledger's listener on the worker's Playwright instrumentation, and its
+  wrappers on the browser types' `launch`/`connect` (and `connectOverCDP`)
+  (`internal/capture/resource-ledger.ts`).
+- On Linux, `5` written to `/proc/<pid>/clear_refs` of the processes the worker started,
+  at each test's start, which resets their peak RSS for the test
+  (`internal/capture/worker-metrics.ts`). In Chromium, a DevTools session on each page
+  that outlives its test.
+- The API request proxy (`internal/capture/api-requests.ts`): the fixtures wrap
+  `playwright.request.newContext` and hand out every API request context behind a
+  proxy that records each call, the `request` fixture's and each browser context's own
+  `request` (`page.request`) included.
+- Code reach (`internal/capture/code-reach.ts`): a `beforeunload` listener on each
+  document of a covered page, added in an isolated world.
+- With server coverage on (`coverage.server`), the `X-Piwi-Coverage` request ids of each
+  test's responses, its pages' and its API calls' (`piwi-server-coverage-requests`).
+
+**The editor's breakpoints** (`internal/capture/pause-at.ts`, a headed local run with `PIWI_PAUSE_AT`)
+
+- Each context stops through `context.debugger` before every call it can stop at, on
+  the lines `PIWI_PAUSE_AT` names, and shows the pause bar. The bar's answer is read
+  from the `__piwiPauseState` page global.
+- `PW_CODEGEN_NO_INSPECTOR` is set in the worker, except while a `page.pause()` it
+  leaves to Playwright runs. It wraps `Page.prototype.pause`, so every `page.pause()`
+  of the worker's Playwright goes through it; one of a second copy of Playwright does
+  not, and stops with neither bar nor Inspector.
+- The stops shown (the bar's, and those the run connection holds) end as the test
+  function ends, before Playwright's own failure screenshot: through the runner's
+  `_onDidFinishTestFunctionCallbacks` (feature-checked), else as the test's page or
+  context closes, or at teardown.
+- The runner's count of a test function that ended under a stop is set back to what it
+  held as the stop began (`_timeoutManager.defaultSlot()`, feature-checked). The call
+  the stop let go, and the requests after it, are then waited for, 2 seconds at most:
+  before a page or context of the test closes, and at the test's teardown.
+- The stops shown, at the bar or in the editor, are attached as `piwi-pauses`.
+  `internal/collect/pause-events.ts` sends them with the test's step events, as `pause`
+  events: the steps keep their clock, and the step statistics leave the stopped time out.
+- A locator picked at the bar is posted to the editor's `PIWI_EDITOR_SEND` address.
+- With `PIWI_RECORD_CHANNEL`, **Record here** and `page.pause()` connect to the editor
+  service's local socket and relay the recorder's binding calls over it
+  (`internal/capture/record-handoff.ts`).
+
+**The editor's run connection** (`internal/capture/run-channel.ts`, with `PIWI_RUN_CHANNEL` and `PIWI_ORIGIN_REF`)
+
+- `PIWI_RUN_CHANNEL` names the same local socket as `PIWI_RECORD_CHANNEL`. Each worker
+  connects to it in the `piwiResources` worker fixture, before its first test (it waits
+  2 seconds at most), and stays connected until the worker ends. The messages are defined
+  in `@piwitests/core/run-channel`.
+- The first message, `run-attach`, lists what the worker takes (`takes`: the intents
+  `pick`, `record`, `assert`, `assert-region` and the queries `requests`, `mock`,
+  `locator`) and the stops it holds for an editor that shows them (`holds: ['failure']`).
+  The worker then sends each test's begin and end, each stop it shows, and each stop's
+  end (`running`).
+- The editor's controls (Pause, Step, Resume, Finish, Run to a line) and its breakpoints,
+  which replace `PIWI_PAUSE_AT`, go through the same stop policy as `PIWI_PAUSE_AT`.
+- While the connection is open, a headless run stops too (never under CI or Playwright's
+  own debugger): the stop waits for the editor's answer, and goes on if the connection
+  closes. In a headed run the pause bar shows as well, and the first answer wins: the
+  editor's answer takes the bar down.
+- A stop answered in the editor is attached to `piwi-pauses` like one answered at the
+  bar. A stop that ends unanswered (the test function ended, its page or context closed,
+  or, for a stop whose page the worker cannot tell, any page of its context closed) ends
+  the same way with or without a bar, and the editor gets `running`.
+- The editor can ask for an image of the stopped page: a JPEG screenshot without the
+  pause bar, taken through an internal call. It gets none for a stop whose page the
+  worker cannot tell (a navigation or a key press in a context with several pages).
+- At a stop the bar shows, the editor can start the bar's **Pick a locator** or **Record
+  here** (an intent: a `request` with `what: 'pick' | 'record'` that names the stop).
+  `BarIntents` (`pause-at.ts`) hands it to the bar, which takes it as a click on its own
+  button: the same picker, the pick posted to `PIWI_EDITOR_SEND`, the same hand-off over
+  `PIWI_RECORD_CHANNEL`. The test's window is brought to the front, and the pick or the
+  recording ends with the stop. The worker answers at once whether it started. It
+  refuses at a stop that ended or is ending (its test ended, its page or context began to
+  close), at one no bar shows or whose page it cannot tell, Record here and Assert when
+  the run has no `PIWI_RECORD_CHANNEL`, and any intent while a pick, a check or a
+  recording runs.
+- **Assert** is the same hand-off in its `check` mode, naming the stop: the editor's
+  recorder opens the check panel's Check an element alone, and the editor service writes
+  the check.
+- **Assert a region** is the bar's picker, then the confirmed locator's `ariaSnapshot()`,
+  sent as `region` (`region-snapshot.ts`). The snapshot leaves out the value of a field
+  that holds a secret (a password field's, or one whose `autocomplete` asks for a
+  password, a one-time code or a card's number or code: `SECRET_AUTOCOMPLETE` of
+  `@piwitests/core/mask`, read through a locator, so in open shadow roots too) and a
+  link's URL holding a credential; a link left without a child ends without its colon,
+  so `toMatchAriaSnapshot` reads it. A region its locator does not find alone, or whose
+  snapshot is too long, is sent as `region` with `refused` instead.
+- At any stop, headless included, `requests` lists the responses the test kept and
+  `mock` hands over one of them with its body (`kept-responses.ts`). While the run
+  connection is open, the fetch and XHR answers of the test's pages whose type is text
+  or unnamed are kept: the latest 50, 256 KB each at most as their `content-length` says
+  (one that says none is listed without a size), each as its `Response` in the worker's
+  memory alone. A body is read only when `mock` asks for it, through an internal call,
+  refused when the browser no longer holds it or it is not text; it is never in an
+  attachment, and is dropped as the test ends. Every URL listed or handed over has its
+  credentials hidden part by part, its host and ids kept (`hideSecretsInUrl`).
+- `locator` counts a chain (`chain-locator.ts`, built through the chain grammar's calls
+  alone) on the stopped page, one count after the other, and, where the bar shows,
+  outlines its matches with Playwright's highlight, the one before taken down first and
+  the last before the stop ends.
+- One stop shows at a time in a worker. A stop that waits for its turn is decided again
+  when its turn comes. It goes on without showing, and the editor never hears of it,
+  when the test ended meanwhile (as on Finish), when its page or context began to close,
+  or when it is a breakpoint's stop and that breakpoint was removed or the stop before
+  was answered with Finish. The Step, Pause or Run to a line it would have used then
+  applies to the next stop.
+- Closing a context, directly or through its browser, first lets the call its debugger
+  holds go on, since the close does not.
+- **A held failure** (`holdFailure` in `capture-fixtures.ts`). A test that fails while
+  the connection is open to an editor that shows a held failure (`editorShows`: the
+  editor answered the `run-attach`'s `holds` with `attached` naming `failure`; one that
+  predates it says nothing, and no failure is held) holds its page once the test
+  function, its hooks and the fixtures built on `page` are done (Piwi's `page` fixture,
+  after `use(page)`; a page the test left open, at the capture fixture's teardown). Not
+  an expected failure, never under CI nor Playwright's own debugger, never from a close
+  while the test runs. Its evidence is read first and kept as it was (`frozenAt`: no
+  request, console entry or dialog of the hold is recorded, and its context's code reach
+  ends; Playwright's own trace and video record the hold too), and the test timeout is
+  held while the stop shows.
+- It is a stop with the reason `failure` at the failing line (where the error's stack
+  enters the test's code, else the failing locator's, else the call a test timeout cut
+  short, the runner's step in progress, else the test's declaration). It names its error
+  to the editor (`error`, `failureError`: the failing error's lines up to a blank one or
+  its call log, four at most, without ANSI codes nor the `Error: ` the runner writes
+  before a plain error's message), its title and error with the credentials of the URLs
+  they name hidden (`hideSecretsInText`). The bar says `Failed at …` with Resume, Pick a
+  locator (which replaces the failing locator, and is folded into its snapshot) and
+  Record here. Any answer lets the test end as it failed, and the editor service lets
+  one go at once in a run nobody watches.
+- While each test runs, the capture fixtures take `PIWI_RUN_CHANNEL` and
+  `PIWI_EDITOR_SEND` out of the worker's `process.env` (`hideRunChannel`), whether a run
+  connection is open or not, so a process the test starts does not connect to the run
+  and does not get the pairing's token. Picks still go to the pairing
+  (`editorSendAddress`). Both are put back after the test, since Playwright passes a
+  worker's environment changes to the projects that depend on its project.
+  `PIWI_RECORD_CHANNEL` stays, for **Record here**.
+
+**In the reporter process**
+
+- The run sampler reads `/proc`, the cgroup filesystem or `ps` on an unref'd timer
+  (`internal/collect/process-sampler.ts`).
+- While the dashboard says someone watches the run, another unref'd timer posts what the
+  sampler and the censuses added since its last post to `/live-resources`, every five
+  seconds (`internal/streaming/live-resources.ts`).
+- `onBegin` writes `PIWI_RESOURCES_RESULTS` (see below) and, with coverage on,
+  `PIWI_COVERAGE_BROWSER` / `PIWI_COVERAGE_SERVER` / `PIWI_COVERAGE_CSS` for the workers.
+- With server coverage on, it calls each origin's `/__piwi/coverage/collect` and
+  `/__piwi/coverage/run`, and reads the covered files from the checkout for their blob
+  ids (`internal/collect/server-coverage.ts`, `test-coverage.ts`).
 
 ## Two processes, two paths
 
 Playwright runs the **reporter** in the main process and **fixtures** in each test
-worker. They never share memory — they communicate through `piwi-*` testInfo attachments.
+worker. They never share memory: they communicate through `piwi-*` testInfo attachments.
 
 ```
             TEST WORKER                                MAIN PROCESS
@@ -148,10 +242,10 @@ submit.
 
 On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order:
 
-1. **streaming `/finish`** — when a streaming session is open (`internal/streaming/`),
-2. **multipart `/upload`** — when there are reports or traces to attach,
-3. **plain JSON `/submit`** — last resort,
-4. **crash recovery** — on total failure, persist the payload to disk for the next run: one owner-only file per
+1. **streaming `/finish`**: when a streaming session is open (`internal/streaming/`),
+2. **multipart `/upload`**: when there are reports or traces to attach,
+3. **plain JSON `/submit`**: last resort,
+4. **crash recovery**: on total failure, persist the payload to disk for the next run: one owner-only file per
    dashboard and project, replayed to that dashboard only and deleted once it took the run (or refused it as
    invalid).
 
@@ -173,58 +267,73 @@ All HTTP to the dashboard goes through `internal/transport/http-client.ts`, whic
 
 ## Coverage (`internal/collect/test-coverage.ts`)
 
-A test's `coverage` is its browser files (code reach; at `coverage.browser:
-'functions'`, the lines of each function that ran, from `piwi-browser-coverage`,
-with the blob ids the reporter reads from the checkout) and, with `coverage.server`
-on, the server coverage the reporter collects from the backend after the test
-ends, never in the worker. `onTestEnd` queues the result event of such a test only
-once its coverage is in, or after 30 seconds; every other event keeps its place.
-Collection batches tests per origin (25 tests or 1 second), and the run's last test
-ending sends what is queued at once and fetches the run-level coverage, since
-Playwright stops a `webServer` before `onEnd`. `onEnd` waits at most 15 seconds for
-the tests still collecting, before the ladder above, and sends the run-level coverage
-(`PUT /api/test-runs/:id/coverage`) once the ladder returned the run id. At
-`coverage.browser: 'functions'` that includes the browser's run-level coverage:
-per file, the functions any test ran and every function V8 listed, run or not
-(`allFunctions`), which the workers name once each in `piwi-browser-functions`
-attachments, as many per test as the capture caps need.
+A test's `coverage` holds two parts:
+
+- its **browser files**: code reach, and at `coverage.browser: 'functions'` the lines of each function that ran,
+  from `piwi-browser-coverage`, with the blob ids the reporter reads from the checkout;
+- with `coverage.server` on, the **server coverage** the reporter collects from the backend after the test ends,
+  never in the worker.
+
+Timing:
+
+- `onTestEnd` queues the result event of such a test only once its coverage is in, or after 30 seconds; every
+  other event keeps its place.
+- Collection batches tests per origin (25 tests or 1 second). The run's last test ending sends what is queued at
+  once and fetches the run-level coverage, since Playwright stops a `webServer` before `onEnd`.
+- `onEnd` waits at most 15 seconds for the tests still collecting, before the ladder above. It sends the
+  run-level coverage (`PUT /api/test-runs/:id/coverage`, in chunks) once the ladder returned the run id.
+
+At `coverage.browser: 'functions'` the run-level coverage includes the browser's: per file, the functions any
+test ran and every function V8 listed, run or not (`allFunctions`). The workers name each function once, in
+`piwi-browser-functions` attachments, as many per test as the capture caps need.
+
 With `coverage.css: 'rules'`, the same per-page capture (`internal/capture/code-reach.ts`) also reads Chromium's
-CSS rule usage, at each document's `beforeunload` pause and at the end; `internal/capture/css-coverage.ts` resolves
+CSS rule usage, at each document's `beforeunload` pause and at the end. `internal/capture/css-coverage.ts` resolves
 each sheet to its file (source map, a Vite dev server's `data-vite-dev-id`, or the served path) and its rules to
 line ranges (`@piwitests/core/css-rules`). The matched rules ride `piwi-css-coverage` as browser files' function
-ranges, whatever `coverage.browser` is, and every rule of the sheets `piwi-css-rules`, added to the run's
+ranges, whatever `coverage.browser` is. Every rule of the sheets rides `piwi-css-rules`, added to the run's
 `allFunctions` as the browser functions are.
-A backend's files whose source checksums (`checksums`) differ from the checkout's
-lose their line numbers (`internal/collect/source-checksums.ts`).
-Each backend answer names its process (`instance`, also the prefix of its request
-ids); the run-level coverage of an origin gets the lines and functions its tests'
-coverage named added, and is sent with an `incomplete` entry when another process
-answers it than the one that gave out the run's first ids (a restart), or when no
-run-level answer comes (unreachable).
+
+A backend's files whose source checksums (`checksums`) differ from the checkout's lose their line numbers
+(`internal/collect/source-checksums.ts`).
+
+Each backend answer names its process (`instance`, also the prefix of its request ids). The run-level coverage
+of an origin gets the lines and functions its tests' coverage named added. It is sent with an `incomplete` entry
+when another process answers it than the one that gave out the run's first ids (a restart), or when no run-level
+answer comes (unreachable).
 
 ## Directory layout
 
 ```
 src/
   index.ts                 public entry (.)            — re-exports the whole public API (incl. fixtures)
-  global-setup-module.ts   default createGlobalSetup() — resolved by path at runtime
+  global-setup-module.ts   default createGlobalSetup() — resolved by path at runtime (config-wrapper.ts)
   types.ts                 barrel re-exporting types/wire + types/collected
 
-  public/      reporter, config-wrapper, options, global-setup   ← the supported API
+  public/      reporter, config-wrapper, global-setup, selection, options,
+               piwi-config (the '@piwi' config section)            ← the supported API
+  cli/         the `piwi` command line (package.json `bin`, its own tsup entry):
+               index (the command switch), one file per command (init, skills, gate,
+               quality-report for `report`, coverage, select for `select` and `run`,
+               probe, flake, ai, codegen, preflight, bug); detect, configure (what
+               init inspects and edits), add-reporter (`run`'s --add-reporter),
+               report (the step results init and skills print)
   internal/
     submit/     run-submitter, uploader, serializer
-    transport/  http-client (+ HttpError)
-    streaming/  stream-manager, stream-buffer, crash-recovery, live-resources (a
-                watched run's CPU, memory and open pages, posted as it runs)
-    collect/    metadata-collector, error-text, resource-verdicts (the censuses
-                stitched into leaked, idle, piling-up and handle findings),
-                process-sampler (the run's processes and the machine, sampled
-                from the reporter), machine-panel (the end-of-run CPU, memory
-                and disk lines), resource-wire (what the server receives),
-                coverage-settings, server-coverage (the backends' collect and
-                run endpoints, batched per origin), test-coverage (each test's
-                coverage field, the wait before its result streams, the run's
-                coverage), blob-ids (the git blob of each covered file),
+    transport/  http-client (+ HttpError), backend-request
+    streaming/  stream-manager, stream-buffer, bounded-queue, crash-recovery,
+                live-resources (a watched run's CPU, memory and open pages,
+                posted as it runs)
+    collect/    metadata-collector, error-text, test-meta, external-ids,
+                resource-verdicts (the censuses stitched into leaked, idle,
+                piling-up and handle findings), process-sampler (the run's
+                processes and the machine, sampled from the reporter),
+                machine-panel (the end-of-run CPU, memory and disk lines),
+                resource-wire (what the server receives), coverage-settings,
+                server-coverage (the backends' collect and run endpoints,
+                batched per origin), test-coverage (each test's coverage field,
+                the wait before its result streams, the run's coverage),
+                blob-ids (the git blob of each covered file), source-checksums,
                 pause-events (the stops a test made, at the pause bar or in
                 the editor, as the `pause` step events the dashboard draws and
                 the step statistics leave out)
@@ -241,6 +350,8 @@ src/
                 contexts each worker opens, and the census per test),
                 worker-metrics (what a test cost the worker and its browsers,
                 and CDP reads of pages that outlive their test)
+                code-reach, css-coverage (browser and style sheet coverage),
+                locator-pages, page-interaction, page-inventory, failure-screenshot,
                 inspect-on-failure, pick-on-failure (the failure-time overlay),
                 pause-at (the editor's breakpoints: PIWI_PAUSE_AT, the stop policy
                 over Playwright's debugger, the pause bar, a pick posted to
@@ -250,33 +361,59 @@ src/
                 PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in),
                 kept-responses (the text bodies an interactive run keeps for
                 Mock a request), chain-locator (a locator chain's source built
-                against a page, for the locator at the editor's caret)
+                against a page, for the locator at the editor's caret),
+                region-snapshot (a region's ARIA snapshot without its secrets)
+    ai/         ai-fixtures, artifact, keys, params, ground, compile, resolution
+                (the authoring loop), interpreter (replay), check (`piwi ai check`)
+    coverage-upload/  git-inventory, report-files (`piwi coverage upload`)
     config/     env (PIWI_* ↔ options, and the probe and flake-lab variables),
                 desktop (the desktop app's discovery file), dotenv (the `.env` reader)
     probe/      probe mode: plan matching, faults, the shared route interception
                 (a matcher over route keys + an action), server-probe signing
     flake/      flake mode: the arm's plan, its conditions on the target's first
-                page, the results file
+                page, the results file; lab (the command line's side of an arm)
     support/    logger, limiter, ci, ci-output, failure-links, run-url, instance-id,
                 system-readers (`/proc`, cgroup and `ps` readers),
                 cli-filters, setup-file, source-snippet, worker-index, errors,
-                selection-client, selection-env, shard-info,
+                selection-client, selection-env, shard-info, aria-sampling,
+                run-mode, test-paths, reporter-version, connection (the
+                commands' dashboard), playwright-spawn (how commands start
+                `playwright test` and package managers),
                 base-url-check (the `checkBaseUrl` check the global setup runs)
   types/
     wire.ts        EXTERNAL server contract
     collected.ts   INTERNAL in-process model
+
+templates/skills/<slug>/SKILL.md   the agent skills (see below)
 ```
+
+## Agent skills (`templates/skills/`)
+
+Each skill is one `SKILL.md`: a YAML front matter with `name` and `description`, then Markdown instructions for a
+coding agent. `src/cli/skills.ts` declares them: `SETUP_SKILL` (`setup-piwi`) and the six `WORKFLOW_SKILLS`.
+
+They reach users' agents four ways, all from the same files:
+
+- `piwi init` installs the workflow skills by default (`--skills` picks others), and `piwi skills add` installs
+  any of them, into `.claude/skills/` unless another folder is named (`--skills-dir` for `init`, `--dir` for
+  `skills add`). Each installed file is stamped with the
+  package version and a hash of what was written (`@piwitests/core/skill-stamp`): a later install updates an
+  untouched skill from an older release and keeps one a person edited, unless `--force`.
+- The dashboard bundles the workflow skills into its build (`piwi-skills` server assets in
+  `apps/application/nuxt.config.ts`) and serves each one as an MCP prompt named after it (`investigate_failure`, …),
+  its description taken from `apps/application/shared/mcp-prompts.ts`.
+- The desktop app installs them into a project's linked folder, from the dashboard's `/api/agent-skills`.
 
 ## Conventions
 
 - **Imports:** Node built-ins as `import * as x from 'node:x'`; type-only imports use
-  `import type` (both lint-enforced).
+  `import type` (the `node:` protocol and the type imports are lint-enforced).
 - **Classes** take dependencies as `private readonly` constructor parameter properties;
   an injected `logger` defaults to `new Logger()`. Stateless logic is a plain function module.
-- **Errors:** throw `HttpError(status)` for non-2xx; `catch (error)` is `unknown` — narrow
+- **Errors:** throw `HttpError(status)` for non-2xx; `catch (error)` is `unknown`: narrow
   with `instanceof`, format with `errorMessage(error)` (`internal/support/errors.ts`).
 - **Types:** `strict` is on. `any` is allowed only at the Playwright reporter-API / browser
-  `evaluate` boundary (with a comment) and the dynamic options merge — everywhere else use
+  `evaluate` boundary (with a comment) and the dynamic options merge; everywhere else use
   precise types or `unknown`.
 - **Wire changes** touch `types/wire.ts` and `internal/submit/serializer.ts` together, and must
   stay structurally compatible with `apps/application/shared/types.ts` (kept in sync by the drift test).
@@ -298,19 +435,19 @@ other: setting both stops it with a message (`labModeConflict`).
 | Run stamp | `piwiProbe: true` | `piwiFlakeLab: { experimentId, armId }` |
 
 Both apply route changes through `internal/probe/interception.ts`: one
-`page.route('**/*')` handler walks a list of rules, each a matcher over route keys,
-which matches it acts on (every one, or the Nth after the first navigation), and a
-handler. A probe installs one rule that applies its fault (`slow` is a 5-second
-`delay` action); a flake arm installs one rule per `delay` or `fail` condition,
-matching a request when `requestRouteKey(method, url)` (core) equals the
-condition's route, the key the dashboard's flake profile names suspects by. The
-route actions are `delay` (fetch, hold until `ms` after the request started,
-fulfill), `status` and `abort` (`connectionreset`).
+`page.route('**/*')` handler walks a list of rules. Each rule has a matcher over
+route keys, which of the matching requests it acts on (every one, or the Nth after
+the first navigation), and a handler. A probe installs one rule that applies its
+fault (`slow` is a 5-second `delay` action). A flake arm installs one rule per
+`delay` or `fail` condition, matching a request when `requestRouteKey(method, url)`
+(core) equals the condition's route, the key the dashboard's flake profile names
+suspects by. The route actions are `delay` (fetch, hold until `ms` after the
+request started, fulfill), `status` and `abort` (`connectionreset`).
 
-Flake mode installs the conditions on the target's first instrumented page and the
+Flake mode installs the conditions on the target's first instrumented page, and the
 page-creating paths await the install, so they are on before the test navigates.
 `cpu` and `network` go through a DevTools session (`Emulation.setCPUThrottlingRate`,
-`Network.emulateNetworkConditions`) and are reported `skipped` outside Chromium;
+`Network.emulateNetworkConditions`) and are reported `skipped` outside Chromium.
 `alongside`, `after` and `project` are applied by the command line's Playwright
 arguments and reported `by-command`. Each results line carries the attempt's
 status, error signature (`flakeErrorSignature`) and whether it matches one of the
@@ -319,26 +456,27 @@ Workers append whole lines (`O_APPEND`) to the one file.
 
 ## Shared core (`@piwitests/core`)
 
-Pure cross-cutting logic — locator generation/scoring, ARIA parsing, element-match
-healing, the wire leaf shapes, the locator-method list — lives in the private
+Pure cross-cutting logic (locator generation/scoring, ARIA parsing, element-match
+healing, the wire leaf shapes, the locator-method list) lives in the private
 `@piwitests/core` workspace package and is the single source of truth shared with
-the app. The reporter **`import`s it and tsup bundles it into `dist/`** at build
-time, so the published package stays self-contained: no `@piwitests/core` runtime
-dependency and no monorepo path in the public `dist/index.d.ts`. Reporter-only
-runtime that needs Node (`captureCallerLocation`) stays in `internal/capture/locator-healing.ts`.
+the app. The in-page overlays (the element probe, the picker, the pause bar) come
+from the private `@piwitests/picker-dom` package. The reporter **`import`s both and
+tsup bundles them into `dist/`** at build time, so the published package stays
+self-contained: no `@piwitests/core` runtime dependency and no monorepo path in the
+public `dist/index.d.ts`. Reporter-only runtime that needs Node (`captureCallerLocation`)
+stays in `internal/capture/locator-healing.ts`.
 
-## Build & test
+## Build output
 
-```bash
-npm run reporter:build      # tsup: bundles src/ + @piwitests/core → dist/ (CJS + .d.ts)
-npm run reporter:typecheck  # tsc --noEmit on src/, then on tests/ (tests/tsconfig.json)
-npm run reporter:test       # vitest
-npm run reporter:bench      # capture-overhead benchmark (tests/bench/README.md)
-npm run reporter:lint
-npm run reporter:format
-```
+`npm run reporter:build` runs tsup (`tsup.config.ts`): it bundles `src/`, `@piwitests/core` and
+`@piwitests/picker-dom` into `dist/` as CommonJS with `.d.ts`, leaving `form-data` and `@playwright/test`
+external.
 
-The package entries (`index`, `global-setup-module`) stay at `dist/` root so
-`package.json` `main`/`types`/`exports` don't move. The capture modules the
-dashboard dogfoods (`internal/capture/*`) are emitted as their own entries so their
-`dist/` paths are preserved.
+- The package entries (`index`, `global-setup-module`) stay at `dist/` root so `package.json`
+  `main`/`types`/`exports` don't move.
+- The CLI is its own entry (`dist/cli/index.js`, the `piwi` bin), so the main bundle carries no CLI code.
+- The capture modules the dashboard dogfoods (`locator-healing`, `capture-fixtures`, `inspect-on-failure`,
+  `pick-on-failure`, `attachments`) are emitted as their own entries, so their `dist/internal/capture/` paths are
+  preserved: `apps/application/tests/fixtures.ts` imports them from there.
+- `templates/` ships beside `dist/` (`files` in `package.json`); `findTemplatesDir` finds it from `dist/cli/` and
+  from `src/cli/` alike.

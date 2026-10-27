@@ -504,7 +504,7 @@ PRs 1–3 close the loop between a tester and a developer with files alone: reco
   `src/popup/` and `popup.html` (tile `B`), `scripts/build.mjs` (entry).
 - Docs: `features/report-a-bug.md` (new, in the feature catalog `apps/application/shared/piwi-features.ts`, since
   `features/extension.md` is at its word budget; the extension page links it from its tool table),
-  `apps/extension/AGENTS.md` (Report a bug, the main-world script, screenshots).
+  `apps/extension/ARCHITECTURE.md` (Report a bug, the main-world script, screenshots).
 - Tests: `apps/extension/tests/e2e/bug-report.spec.ts` on the fixture shop (`bug-shop.ts`): record, mark, missing
   element (one on the page refused), console error and warning, failed request, outline, each export, and the steps
   rendered and run on a new page, failing on the marked assertion and passing once the shop is fixed; wrong page and no

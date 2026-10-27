@@ -1,13 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run lint)",
-      "Bash(npm run typecheck)",
       "Bash(npm run app:typecheck)",
       "Bash(npm run app:lint)",
+      "Bash(npm run app:format:check)",
+      "Bash(npm run app:test:unit)",
+      "Bash(npm run reporter:typecheck)",
       "Bash(npm run reporter:lint)",
+      "Bash(npm run reporter:format:check)",
       "Bash(npm run reporter:test)",
-      "Bash(npm test)"
+      "Bash(npm run knip)",
+      "Bash(npm test)",
+      "Bash(npx vitest run:*)",
+      "Bash(npx commitlint --from:*)"
     ]
   },
   "hooks": {

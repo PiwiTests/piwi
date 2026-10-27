@@ -76,7 +76,7 @@ export interface TestFailure {
   url: string;
   /**
    * `edited` once the line the run failed at changed since (the test stays `failed` until a run covers it),
-   * `failing` otherwise. Absent from an older service.
+   * `failing` otherwise.
    */
   state?: 'failing' | 'edited';
 }
@@ -137,7 +137,7 @@ export interface TestAtResult {
    * Where the `test(…)` call spanning `line` starts, as Playwright's location filter takes it: the spec relative to its
    * Playwright config's folder and the call's 1-based line (`tests/checkout.spec.ts:42`), in the text as it stands,
    * whether Piwi knows the test or not. `piwi/runArgs` runs it (`RunTestsArgs.locations`). Null outside every
-   * `test(…)` call of a spec under a Playwright config's folder; absent from an older service.
+   * `test(…)` call of a spec under a Playwright config's folder.
    */
   location?: string | null;
 }
@@ -249,7 +249,7 @@ export interface CoverageResult {
    * Uncovered changes, with `none`: the lines changed since the project's default branch (since the merge base of
    * `HEAD` with it, as a pull request into it counts them) of a file Piwi can observe (a page or a server route by the
    * file-routing convention, or executable lines a run's coverage recorded) and no test reaches, which the pull
-   * request's change coverage will list; blank lines left out. Absent when there are none, and from an older service.
+   * request's change coverage will list; blank lines left out. Absent when there are none.
    */
   uncovered?: LineSpan[];
 }
@@ -314,7 +314,7 @@ export interface RunCommand {
   env?: Record<string, string>;
   /**
    * The ref the run carries (`PIWI_ORIGIN_REF` in `env`), by which the service finds and follows it: the client
-   * names it in `piwi/commandEnded` once the command ends. Absent from an older service.
+   * names it in `piwi/commandEnded` once the command ends.
    */
   ref?: string;
   /**
@@ -356,7 +356,7 @@ export interface StatusResult {
     root: string;
     /**
      * That directory as the editor names it: relative to the workspace folder holding it, after the folder's name when
-     * the workspace has several; the folder's name for a config at its root. Absent from an older service.
+     * the workspace has several; the folder's name for a config at its root.
      */
     label?: string;
     connected: boolean;
@@ -590,19 +590,19 @@ export interface RunStatus {
   updatedAt?: string;
   /**
    * The tests `live` began or ended, as its stream says, until the latest run is read once it ended; absent while it
-   * has none, and from an older service.
+   * has none.
    */
   liveTests?: LiveTest[];
   /**
    * The version of `@piwitests/reporter` the project installs, read from `node_modules` at each refresh; null when
-   * none is found. Absent from an older service.
+   * none is found.
    */
   reporterVersion?: string | null;
-  /** The baseline chosen for this context and what it found; absent from an older service. */
+  /** The baseline chosen for this context and what it found. */
   baseline?: Baseline;
   /**
    * The branches a baseline can be chosen from: the default branch, then the branches with runs the project's locator
-   * index knows. Absent from an older service.
+   * index knows.
    */
   branches?: string[];
 }
@@ -910,7 +910,7 @@ export interface FailureTreeNode {
   /**
    * On a `context` node and a `run` node: the folder of the Playwright config they stand for, whose failures **Re-run
    * the failing tests** runs from them (`FailuresResult.rerun` with this `root`) and whose baseline **Compare with…**
-   * chooses. Absent from an older service.
+   * chooses.
    */
   root?: string;
   /** On a failure: the `executionId` of its item in `FailuresResult.items`. */
@@ -937,7 +937,7 @@ export interface FailuresResult {
   /**
    * The baseline run of the one context that has a run, runs laid over none (a developer's own runs only) or failures;
    * null when only overlays are read. Absent when several contexts do, each `context` node of the tree carrying its
-   * own, and from an older service.
+   * own.
    */
   run?: FailuresRun | null;
   /** The runs of its branch laid over it, newest first; absent with `run`. */
