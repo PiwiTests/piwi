@@ -179,6 +179,14 @@ Verified on VS Code 1.143.0, the stable build `@vscode/test-electron` downloaded
 - **Scenes.** *heal*: the page object, the Problems panel focused below, the caret at the failing line, the quick
   fixes open. *failures*: the spec, the failures view in the side bar. *hover*: the page object, the hover over the
   failing locator. A scene that fails leaves `vscode-<scene>-failed.png` with the window as it stood.
+- **A run without Playwright** (the *run-control* scenes, VS Code 1.143.1). The task's `npx playwright test` runs a
+  stand-in command written to the fixture's `node_modules/.bin`, which writes `PIWI_RUN_CHANNEL` and `PIWI_ORIGIN_REF`
+  from its environment to a file and stays alive; the script connects to the channel as the run's worker. Some
+  commands are listed in the palette without their category (`Increase Editor Width`, `Collapse Folders in
+  Explorer`), so the helper is given the label as the row shows it. A startup notification whose toast hid on its own
+  keeps the bell's dot until Clear All Notifications runs. The paused page webview's document is
+  `frameLocator('iframe.webview').frameLocator('#active-frame')`. A symbol such as `⏸` (U+23F8) has no glyph in the
+  editor font and renders as a small square on Linux, so a lens's icon is a codicon (`$(debug-pause)`).
 
 ## 4. What was found about the browser extension
 

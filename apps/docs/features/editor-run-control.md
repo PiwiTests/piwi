@@ -26,9 +26,9 @@ it goes on. The [pause bar](./editor-breakpoints#pause-a-run) in the page answer
 
 The keys are the IDE's own debugger keys: VS Code's defaults, and in a JetBrains IDE the shortcuts of those debugger
 actions in your keymap (the default keymap's shown). They are Piwi's only while their control applies and no debug
-session runs; the rest of the time they do what they always do. In a JetBrains keymap that gives one of them to another
-action too (the VSCode keymap's `F5`, NetBeans' `F4`), Piwi's goes first while it applies. On macOS, `Cmd+F10` runs to
-the cursor in VS Code. **Pause** has no key in VS Code, since it applies for as long as the test runs: bind one in
+session runs; otherwise they do what they always do. In a JetBrains keymap that gives one of them to another action
+too (the VSCode keymap's `F5`, NetBeans' `F4`), Piwi's goes first while it applies. On macOS, `Cmd+F10` runs to the
+cursor in VS Code. **Pause** has no key in VS Code, since it applies for as long as the test runs: bind one in
 **Preferences: Open Keyboard Shortcuts** (search `piwi`), where the others change too. There, `F5` pressed again within
 two seconds of an answer waits for the next stop rather than start a debug session.
 
@@ -58,8 +58,12 @@ Playwright names the call, with the controls:
 `attempt 2` shows on a retry. In VS Code the line is a CodeLens, and the hover on the paused line has the same
 controls; the color is `piwi.executionPointBackground`. In a JetBrains IDE the line is an inlay whose words are links,
 the arrow's click lists the controls, and the color is **Settings → Editor → Color Scheme → Piwi → Line a run is
-stopped at**. The mark goes as soon as the test goes on, from the editor or from the pause bar, or when the test ends
-under the stop or closes its page.
+stopped at**. The mark goes when the test goes on, from the editor or the pause bar, ends, or closes its page.
+
+<figure>
+  <img src="/screenshots/vscode-run-control.png" alt="VS Code: a test paused at a page object's line, the controls above it and in the status bar">
+  <figcaption>A run paused before it types the coupon.</figcaption>
+</figure>
 
 With several workers stopped, each has its own mark, and the controls above a line act on its worker; a key or a
 command acts on the one stopped at the cursor's line, else asks which. A control answers the stop it was shown for:

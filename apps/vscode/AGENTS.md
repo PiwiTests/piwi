@@ -285,9 +285,12 @@ against the stub instance the same module serves, in the VS Code `scripts/lib/vs
 release `VSCODE_VERSION` pins, moved on purpose: the workbench's DOM changes between releases), and drives the window
 with Playwright's Electron support. On Linux, run it under Xvfb at twice the window size for 2× images:
 `xvfb-run -a -s "-screen 0 2880x1800x24" node scripts/take-screenshots.mjs`. A scene is a function of `SCENES`; one
-that fails leaves `vscode-<scene>-failed.png` with the window as it stood. The JetBrains plugin's script reuses the
-fixture, so a change to it recaptures both sets. What was found about driving VS Code this way is recorded in
-[`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md).
+that fails leaves `vscode-<scene>-failed.png` with the window as it stood. The `run-control` scenes share one run of
+the coupon test, started with **Run the test at the cursor**: its task's `npx playwright` finds the stand-in command
+`scripts/lib/run-worker.mjs` writes into the fixture, which hands the script the run channel, and the script plays the
+run's worker there, as the integration suite does; the paused page is the fixture shop's page, rendered by Playwright's
+Chromium. The JetBrains plugin's script reuses the fixture, so a change to it recaptures both sets. What was found
+about driving VS Code this way is recorded in [`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md).
 
 **The nightly suite** (`tests/e2e/`, `npm run vscode:test:e2e`) opens the same fixture in the same window and asserts
 on the workbench's DOM what the in-process suites check as answers: the status bar's counts, the Problems panel's rows,
