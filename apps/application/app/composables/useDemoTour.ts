@@ -34,7 +34,7 @@ function preferredTourLanguage(): TourLanguage {
 
 /** A role's tour as the guide engine runs it, in `language`: its stops with their copy, and the tour's own words. */
 function tourGuide(profile: TourProfile, language: TourLanguage, onFinish: () => void): GuideRun {
-  const { next, back, done, close, docs, progress } = tourCopyFor(language).ui;
+  const { next, back, done, close, docs, path, progress } = tourCopyFor(language).ui;
   return {
     id: `demo-tour-${profile.id}`,
     lang: language,
@@ -46,12 +46,13 @@ function tourGuide(profile: TourProfile, language: TourLanguage, onFinish: () =>
         route: stop.route,
         title: words?.title ?? '',
         body: words?.body ?? '',
+        points: stop.points?.map((part) => ({ part, text: words?.points?.[part] ?? '' })),
         doc: stop.doc,
         side: stop.side,
         align: stop.align,
       };
     }),
-    words: { next, back, done, close, docs, progress },
+    words: { next, back, done, close, docs, path, progress },
     dataset: { tourProfile: profile.id },
     onFinish,
   };

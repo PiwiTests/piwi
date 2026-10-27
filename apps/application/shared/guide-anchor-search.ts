@@ -185,6 +185,9 @@ export function findAnchors(query: string, facts: AnchorFacts, context: Assistan
       pages: anchor.pages,
       describes: anchor.describes,
       ...(anchor.shownWhen ? { shownWhen: anchor.shownWhen } : {}),
+      ...(anchor.parts?.length
+        ? { parts: anchor.parts.map((part) => ({ id: part.id, describes: part.describes })) }
+        : {}),
       ...(here ? { onThisPage: true } : {}),
       ...(needsRoute(anchor, context?.route) ? { needsRoute: true } : {}),
     })),

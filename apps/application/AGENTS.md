@@ -573,7 +573,7 @@ Where to add things in subsystems whose wiring spans several files:
 | Trace-file import                  | `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Quality report language            | Its code in `shared/reports/languages.ts`, the `lang` enum of `server/api/reports/preview.get.ts` (a literal the test checks) and a `shared/reports/sentences.<code>.ts` implementing `ReportSentences` (copy `sentences.fr.ts`), registered in `REPORT_SENTENCES`; validation, the MCP tool, the pickers and the CLI follow. `tests/unit/report-languages.test.ts` names the labels, metrics and gap titles the file lacks, and a new gap detector needs a sample in `tests/unit/gap-title-samples.ts`. The PDF's standard fonts write Windows-1252 only                                                                                                                           |
 | Issue automation criterion         | The rule field and its check in `shared/integrations/automation.ts` (`AutoCreateRule`, `resolveAutoCreateRule`, `evaluateAutoCreate`, `describeAutoCreateRule`); the fact it reads in `gatherAutoCreateFacts` (`shared/handlers/tracker-automation.ts`, shared with the demo preview); the form in `app/utils/tracker-binding-form.ts` and `AutoCreateRulesEditor.vue`; the table on `apps/docs/features/issue-automation.md`. The run trigger (`server/utils/integrations/automation.ts`) and the write-back scope (`policies.ts`, `tracker-run.ts`) read the rules, never re-implement them                                                                                       |
-| Guide anchor                       | Its entry in the area file of `shared/guide-anchors/` (`id`, `kind`, `pages`, `reveal`, `describes`, `shownWhen`, `requires`, `help`, `doc`, `sample`), or an exemption there for an item no anchor covers, and the static `data-tour` value on the one element it names; a new area file is one import and one `GUIDE_AREAS` entry in `index.mjs`. Rules under [Guide anchors](#guide-anchors)                                                                                                                                                                                                                                                                                     |
+| Guide anchor                       | Its entry in the area file of `shared/guide-anchors/` (`id`, `kind`, `pages`, `reveal`, `parts`, `describes`, `shownWhen`, `requires`, `help`, `doc`, `sample`), or an exemption there for an item no anchor covers, and the static `data-tour` value on the one element it names, with a static `data-tour-part` on each of its parts; a new area file is one import and one `GUIDE_AREAS` entry in `index.mjs`. Rules under [Guide anchors](#guide-anchors)                                                                                                                                                                                                                       |
 | Guided tour stop / role / language | A stop: its entry in `TOUR_PROFILES` (`app/utils/demo-tour/profiles.ts`), its title and body under its id in every `copy.<code>.ts`, and the guide anchor it points at. A role: its id in `TourProfileId` (`types.ts`), its `TOUR_PROFILES` entry, and its label, hint and stops in every copy file. A language: its code in `TOUR_LANGUAGES` and `TOUR_LANGUAGE_INFO` (`languages.ts`), and a `copy.<code>.ts` registered in `TOUR_COPY` (`copy.ts`). A role or language is also named in the _Live demo_ paragraph of `apps/docs/features/ui-overview.md`. Rules under [Guided tour](#guided-tour)                                                                                |
 
 ## Subsystem invariants
@@ -917,7 +917,11 @@ tour as a guide (`GuideRun`, its stops with their copy) that the guide engine ru
   the test checks that every language names the same bold labels as the English, in order. `**bold**` is the only
   markup (`app/utils/guide/markup.ts`), and a translation keeps the English's placeholders. The voice is the docs'
   ([`apps/docs/AGENTS.md`](../docs/AGENTS.md#voice)): informative, specific, never promotional. 4–7 stops a tour; a
-  title ≤ 60 characters and a body ≤ 360 in every language. French says _vous_, German _Sie_, Spanish _tú_; product
+  title ≤ 60 characters and a body ≤ 360 in every language.
+- **A stop that explains several parts of its anchor numbers them**: its `points` lists 2–5 part ids of the anchor's
+  `parts`, in reading order, and its copy has a `points` entry keyed by each part id in every language, one sentence
+  of ≤ 160 characters each, under the same bold-label rule; the body then introduces them. `demo-tour.test.ts` checks
+  the part ids against the registry and the keys of every language. French says _vous_, German _Sie_, Spanish _tú_; product
   names are never translated.
 - **A change to a toured screen updates the tour in the same commit**, its copy in every language included, exactly
   like the docs and the demo: moving or renaming an anchored element, renaming a label a stop quotes in bold, a seed
@@ -927,7 +931,8 @@ tour as a guide (`GuideRun`, its stops with their copy) that the guide engine ru
   for the file, then for every key — and its English name in the _Live demo_ paragraph of
   `apps/docs/features/ui-overview.md`, which `docs-drift.test.ts` checks for every role and language.
 - Verify with `npm run app:generate:demo && npm run app:check:demo:runtime`: it walks every tour in the built demo
-  (the prompt, **Later**, the banner button, each stop's anchor highlighted, one tour in French, one at phone width).
+  (the prompt, **Later**, the banner button, each stop's anchor highlighted with its line saying where it is and a
+  number on the page for each point, one tour in French, one at phone width).
 
 ## Guide anchors
 
@@ -947,6 +952,9 @@ one import and one entry there), with the entry shape in `index.d.mts`. An entry
   the layout and the demo banner; a route opens a pattern when each `[param]` is an id, or for `/analytics/d/[id]` a
   built-in dashboard's key (`/analytics/d/engineering`; `PARAM_KEYS` in `shared/guide-stops.ts`, read from
   `BUILTIN_DASHBOARDS`);
+- `parts`, the parts inside it a stop can number (an element carrying a static `data-tour-part`, such as one line
+  of a block or one control of a row), each with its `id` (kebab-case, unique within the anchor), `describes` and,
+  when it does not always render, `shownWhen`; `find_anchors` returns them, so the assistant numbers them too;
 - `reveal`, what the engine does before the anchor shows, in order: `{ query }` (a tab or pane selected through the
   URL), `{ unfold: <anchor> }` (clicks the anchor, the toggle of a folded section, while it reads
   `aria-expanded="false"`; an open section, or an anchor that is no toggle, stays as it is),
@@ -961,7 +969,14 @@ one import and one entry there), with the entry shape in `index.d.mts`. An entry
 The engine is `app/composables/useGuide.ts`: `start(run)` takes a `GuideRun` (`app/utils/guide/types.ts`: an id, a
 language, the stops with their copy, the words of the popover's controls) and opens each stop's route (else its
 anchor's main page when that is a fixed path), runs the anchor's reveal, scrolls the panels holding it and highlights
-it. Its pure parts are in `app/utils/guide/` (`stopRoute`, the `**bold**` markup). A stop whose anchor does not render
+it. Before each move it makes (another page, a query value, an `unfold` toggle, an `open` opener) it points at the
+control that makes it for `WAY_MS`, a ring and its label (`piwi-guide-way`): the toggle or the opener, and for a page
+or a tab the first link on the screen leading to the route (`linkMatch`), none when no such link shows. The popover's
+first line (`piwi-guide-path`) says where the stop is: the breadcrumb of the page's navbar, or its title, then the tab
+each query value selects and the control of each reveal step, the segments the move to the stop opened marked
+(`guidePath`). A stop's `points` are listed under its body (`piwi-guide-points`) and numbered on the page
+(`piwi-guide-badge`), each badge over its part inside the highlighted element; an item whose part does not render is
+`data-missing`. Its pure parts are in `app/utils/guide/` (`stopRoute`, the `**bold**` markup, `path.ts`). A stop whose anchor does not render
 shows centered, with the anchor's `shownWhen` under its body; an `absent` stop does so at once, without opening a page
 or waiting. A stop whose anchor sits in what an `open` step opened (`opensLayer`) marks its popover
 `data-dismissable-layer`, so Reka UI counts it as a layer opened from that one: Next taking focus leaves a popover
@@ -979,6 +994,11 @@ back into it. The popover carries `data-guide`, `data-guide-stop`, `data-guide-a
   on each role's form and `Toolbox.vue`'s `SECTION_ANCHORS` on each section's toggle. The value stays a literal the
   source test reads, never a computed string. An element can carry both `data-tour` and the harness's `data-shot`. A
   demo-only anchor (`requires.demo`) is set in a component under `app/components/demo/`.
+- **A part is a static `data-tour-part`** on an element inside its anchor's element: a template's
+  `data-tour-part="…"`, or a static `'data-tour-part': '…'` key of a map the component spreads with `v-bind`, as
+  `SituationBlock`'s `ROW_PARTS` does on its labels, never a bound value. The source test checks that every part is
+  set in the source and every `data-tour-part` is a part; `check-demo-runtime.mjs` finds each part inside its anchor
+  at the anchor's sample, which therefore shows every part.
 - **Four checks hold every anchor.** `tests/unit/guide-anchors.test.ts` checks the registry against the source:
   each id is the `data-tour` of exactly one element and every `data-tour` is an anchor, each page is a file of
   `app/pages`, a reveal names anchors on the same page, the sample route opens one of its pages with its reveal's
@@ -1047,7 +1067,8 @@ stops), `resolvers.ts` (`GUIDE_RESOLVERS`) and `run.ts` (the `GuideRun` the engi
   cluster seen last, the flakiest test and its project, the first saved dashboard the user can edit), each reading API
   routes the demo serves too. A resolver that finds nothing makes its stops `absent`. A new resolver lists the pages it
   fills, and every one must find its entity in the demo seed, or the built-demo walk fails.
-- **Limits**: 3–7 stops; a title ≤ 60 characters and a body ≤ 360, a guide title ≤ 60 and a one-line summary ≤ 80;
+- **Limits**: 3–7 stops; a title ≤ 60 characters and a body ≤ 360, 2–5 `points` of ≤ 160 characters on a stop that
+  numbers parts of its anchor, a guide title ≤ 60 and a one-line summary ≤ 80;
   English, in the docs' voice ([`apps/docs/AGENTS.md`](../docs/AGENTS.md#voice)); `**bold**` the only markup, a
   dashboard label bold and spelled as the screen shows it. A stop on the page the guide is already on adds no query
   value, since a page reads its `?tab=` when it opens. No stop on an anchor inside a modal.
@@ -1056,7 +1077,8 @@ stops), `resolvers.ts` (`GUIDE_RESOLVERS`) and `run.ts` (the `GuideRun` the engi
   files, so a renamed label fails; the resolvers on stubbed routes; the docs page listing every guide),
   `tests/guides.spec.ts` (the palette and the panel with no model, a declined capability), and
   `scripts/check-demo-runtime.mjs`, which starts every guide from the palette in the built demo and walks it, each stop
-  highlighted on its anchor and in view, one guide at 390 px.
+  highlighted on its anchor and in view, with its line saying where it is and a number on the page for each point, one
+  guide at 390 px.
 - **A change to a screen a guide stop shows updates the guide in the same commit**, as for the tour: moving or
   renaming an anchored element, renaming a label a stop puts in bold, a change that makes a resolver find nothing in
   the seed. A new guide, or a renamed one, updates the table of `apps/docs/features/guides.md`.

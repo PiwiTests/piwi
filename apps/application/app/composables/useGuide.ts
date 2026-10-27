@@ -2,8 +2,9 @@ import type { Config, Driver, DriveStep, PopoverDOM } from 'driver.js';
 import { docsUrl } from '#shared/docs';
 import { findGuideAnchor, type GuideAnchor } from '#shared/guide-anchors/index.mjs';
 import { escapeGuideHtml, guideMarkup } from '~/utils/guide/markup';
-import { anchorSelector, opensLayer, stopRoute } from '~/utils/guide/stops';
-import type { GuideRun, GuideStop } from '~/utils/guide/types';
+import { changedQuery, guidePath, linkMatch, segmentLabel, type GuidePathSegment } from '~/utils/guide/path';
+import { anchorSelector, opensLayer, revealQuery, stopRoute } from '~/utils/guide/stops';
+import type { GuidePoint, GuideRun, GuideStop } from '~/utils/guide/types';
 
 /** How long a stop waits for its anchor to render before it shows centered. */
 const TARGET_WAIT_MS = 8000;
@@ -55,6 +56,39 @@ const DRIVER_ARIA = ['aria-haspopup', 'aria-expanded', 'aria-controls'] as const
 const SECTION_TOGGLE = 'button, [role="button"]';
 /** Where `aria-expanded` is in a `savedAria` entry. */
 const EXPANDED_AT = DRIVER_ARIA.indexOf('aria-expanded');
+/** The line above the popover's title saying where the stop is. */
+const PATH_CLASS = 'piwi-guide-path';
+/** A segment of that line the guide opened on its way to the stop. */
+const PATH_OPENED_CLASS = 'piwi-guide-path-opened';
+/** Text a screen reader reads and the screen does not show. */
+const SR_CLASS = 'piwi-guide-sr';
+/** The numbered list of a stop's points, under its body. */
+const POINTS_CLASS = 'piwi-guide-points';
+/** A point's number, in the list and on the page. */
+const NUMBER_CLASS = 'piwi-guide-number';
+/** A point's number on the page, over its part. */
+const BADGE_CLASS = 'piwi-guide-badge';
+/** On a point's list item and its number on the page while the pointer is on the item. */
+const ACTIVE_POINT_CLASS = 'piwi-guide-point-active';
+/** How far a point's number sits up and left of its part's top left corner: it overlaps the part by a few pixels. */
+const BADGE_OFFSET = 16;
+/** The ring and the label on the control the guide is about to use. */
+const WAY_CLASS = 'piwi-guide-way';
+/** The label under, or over, that ring. */
+const WAY_LABEL_CLASS = 'piwi-guide-way-label';
+/** On the way's label when the ring is too close to the bottom of the screen for it to go under. */
+const WAY_ABOVE_CLASS = 'piwi-guide-way-above';
+/** On the way's label when the ring is in the right half of the screen: it lines up with the ring's right edge. */
+const WAY_END_CLASS = 'piwi-guide-way-end';
+/** The space between the control and its ring. */
+const WAY_PADDING = 4;
+/** How long the guide points at a control before it uses it; shorter when the user asks for less motion. */
+const WAY_MS = 900;
+const WAY_MS_REDUCED = 600;
+/** The links that lead to another page or tab: not a link to a place on the page itself, such as a skip link. */
+const PAGE_LINKS = 'a[href]:not([href^="#"])';
+/** What names a control on the path line and the way's label, the first that holds text. */
+const CONTROL_LABELS = ['[data-slot="linkLabel"]', '[data-slot="label"]', 'h1, h2, h3, h4'];
 /** The path drawing the spotlight's edge, beside driver.js's own in its overlay. */
 const RING_CLASS = 'piwi-guide-ring';
 /** On the ring while the stop shows centered, with nothing to outline. */
@@ -68,6 +102,28 @@ const CLOSE_ICON = `<svg ${SVG_ATTRS}><path d="M18 6 6 18"/><path d="m6 6 12 12"
 const EXTERNAL_ICON = `<svg ${SVG_ATTRS}><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>`;
 /** Lucide's `info`, before the line saying when a centered stop's anchor shows. */
 const INFO_ICON = `<svg ${SVG_ATTRS}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`;
+/** Lucide's `map-pin`, before the line saying where the stop is. */
+const PIN_ICON = `<svg ${SVG_ATTRS}><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>`;
+/** Lucide's `chevron-right`, between two segments of that line. */
+const CHEVRON_ICON = `<svg ${SVG_ATTRS}><path d="m9 18 6-6-6-6"/></svg>`;
+/** Lucide's `mouse-pointer-click`, before the label of the control the guide is about to use. */
+const POINTER_ICON = `<svg ${SVG_ATTRS}><path d="M14 4.1 12 6"/><path d="m5.1 8-2.9-.8"/><path d="m6 12-1.9 2"/><path d="M7.2 2.2 8 5.1"/><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></svg>`;
+
+/** What the guide did on its way to the stop shown, which the path line marks. */
+interface GuideMoves {
+  /** It opened another page. */
+  page: boolean;
+  /** The query keys whose value it changed, a tab or a pane selected through the URL. */
+  query: Set<string>;
+  /** The anchors it clicked: the toggles of folded sections, the openers of menus. */
+  clicked: Set<string>;
+}
+
+/** A point's number on the page, over its part. */
+interface PointBadge {
+  part: Element;
+  badge: HTMLElement;
+}
 
 /** A guide in progress; one at a time, in the browser only. */
 interface RunningGuide {
@@ -93,6 +149,12 @@ interface RunningGuide {
   ring?: SVGPathElement;
   /** The `DRIVER_ARIA` values of each highlighted element before driver.js changed them. */
   savedAria: Map<Element, (string | null)[]>;
+  /** What the guide did on its way to the stop shown. */
+  moves: GuideMoves;
+  /** The numbers of the stop's points on the page. */
+  badges: PointBadge[];
+  /** The ring on the control the guide is pointing at, while it does. */
+  way?: HTMLElement;
   /** Removes the listeners the guide added. */
   cleanups: (() => void)[];
 }
@@ -189,26 +251,36 @@ async function rendered(selector: string, timeoutMs: number): Promise<Element | 
 
 /**
  * Opens the section whose toggle is the anchor `section`, when the toggle
- * reads `aria-expanded="false"`; an open section, or an anchor that is no
- * toggle (a section that never folds), stays as it is. A toggle the guide
- * highlights carries driver.js's `aria-expanded`, so its own value is read
- * from `savedAria`, and updated there once it opened.
+ * reads `aria-expanded="false"`, pointing at the toggle first; an open
+ * section, or an anchor that is no toggle (a section that never folds), stays
+ * as it is. A toggle the guide highlights carries driver.js's
+ * `aria-expanded`, so its own value is read from `savedAria`, and updated
+ * there once it opened.
  */
 async function unfold(run: RunningGuide, section: string): Promise<void> {
   const toggle = await rendered(anchorSelector(section), REVEAL_WAIT_MS);
   if (!(toggle instanceof HTMLElement) || !toggle.matches(SECTION_TOGGLE)) return;
   const saved = run.savedAria.get(toggle);
   if ((saved ? saved[EXPANDED_AT] : toggle.getAttribute('aria-expanded')) !== 'false') return;
+  await pointAt(run, toggle);
+  if (running !== run) return;
+  run.moves.clicked.add(section);
   toggle.click();
   await nextTick();
   if (saved) saved[EXPANDED_AT] = toggle.getAttribute('aria-expanded');
 }
 
-/** Clicks `opener` (an anchor id), the button opening the menu, drawer or modal holding `target`, when `target` is not rendered. */
-async function open(opener: string, target: string): Promise<void> {
+/**
+ * Clicks `opener` (an anchor id), the button opening the menu, drawer or
+ * modal holding `target`, when `target` is not rendered, pointing at it first.
+ */
+async function open(run: RunningGuide, opener: string, target: string): Promise<void> {
   if (document.querySelector(anchorSelector(target))) return;
   const button = await rendered(anchorSelector(opener), REVEAL_WAIT_MS);
   if (!(button instanceof HTMLElement)) return;
+  await pointAt(run, button);
+  if (running !== run) return;
+  run.moves.clicked.add(opener);
   button.click();
   await nextTick();
 }
@@ -218,7 +290,7 @@ async function reveal(run: RunningGuide, anchor: GuideAnchor): Promise<void> {
   for (const step of anchor.reveal ?? []) {
     if (running !== run) return;
     if ('unfold' in step) await unfold(run, step.unfold);
-    if ('open' in step) await open(step.open, anchor.id);
+    if ('open' in step) await open(run, step.open, anchor.id);
   }
 }
 
@@ -275,6 +347,238 @@ function holdScrollIntoView(element: Element): void {
   queueMicrotask(() => Reflect.deleteProperty(element, 'scrollIntoView'));
 }
 
+function noMoves(): GuideMoves {
+  return { page: false, query: new Set(), clicked: new Set() };
+}
+
+function reducedMotion(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/**
+ * The part of `element` the user sees, as a viewport box: its box cut by the
+ * viewport and by each panel scrolling it; null when nothing of it shows, or
+ * when it is hidden or fully transparent.
+ */
+function visibleBox(element: Element): DOMRect | null {
+  const box = element.getBoundingClientRect();
+  let top = Math.max(box.top, 0);
+  let left = Math.max(box.left, 0);
+  let bottom = Math.min(box.bottom, window.innerHeight);
+  let right = Math.min(box.right, window.innerWidth);
+  for (const panel of scrollPanels(element)) {
+    if (panel === document.scrollingElement) continue;
+    const clip = panel.getBoundingClientRect();
+    top = Math.max(top, clip.top);
+    left = Math.max(left, clip.left);
+    bottom = Math.min(bottom, clip.bottom);
+    right = Math.min(right, clip.right);
+  }
+  if (bottom - top < 1 || right - left < 1) return null;
+  if (element.checkVisibility && !element.checkVisibility({ opacityProperty: true, visibilityProperty: true })) {
+    return null;
+  }
+  return new DOMRect(left, top, right - left, bottom - top);
+}
+
+/**
+ * What a control is called: its `aria-label`, else its label or heading, else
+ * the text of the element holding its first words, so a toggle reading
+ * `Diagnosis` then its summary is called `Diagnosis`.
+ */
+function controlText(element: Element): string {
+  const named = element.getAttribute('aria-label');
+  if (named?.trim()) return named;
+  for (const selector of CONTROL_LABELS) {
+    const text = element.querySelector(selector)?.textContent;
+    if (text?.trim()) return text;
+  }
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      node.textContent?.trim() && !(node.parentElement && screenReaderOnly(node.parentElement))
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_SKIP,
+  });
+  return walker.nextNode()?.parentElement?.textContent ?? '';
+}
+
+/**
+ * Whether `element` is rendered for screen readers only (`sr-only`): laid out
+ * in a box of a pixel or less. A part of the page hidden at this width, which
+ * has no box at all, still names what it holds.
+ */
+function screenReaderOnly(element: Element): boolean {
+  const { width, height } = element.getBoundingClientRect();
+  return width <= 1 && height <= 1 && (element.checkVisibility?.() ?? true);
+}
+
+/**
+ * The link on the screen that leads to `href`, an absolute URL of the app: a
+ * link to the route itself first, else one to its page; null when none shows.
+ */
+function wayTo(href: string): HTMLElement | null {
+  let toPage: HTMLElement | null = null;
+  for (const link of document.querySelectorAll<HTMLAnchorElement>(PAGE_LINKS)) {
+    if (link.closest(`.${POPOVER_CLASS}`)) continue;
+    const match = linkMatch(link.href, href);
+    if (!match || !visibleBox(link)) continue;
+    if (match === 'route') return link;
+    toPage ??= link;
+  }
+  return toPage;
+}
+
+/**
+ * Shows the control the guide is about to use, a link to the next page, the
+ * toggle of a folded section or the opener of a menu: a ring around it and
+ * its label, for `WAY_MS`, so the user sees how the guide gets there. A
+ * control out of view is scrolled into it first; one that still does not
+ * show is used without being shown.
+ */
+async function pointAt(run: RunningGuide, element: Element | null): Promise<void> {
+  if (!element || running !== run) return;
+  if (!visibleBox(element)) scrollToTarget(element, 0);
+  const box = visibleBox(element);
+  if (!box) return;
+  if (run.driver?.isActive()) document.body.classList.add(PAGING_CLASS);
+  const way = document.createElement('div');
+  way.className = WAY_CLASS;
+  way.setAttribute('aria-hidden', 'true');
+  way.style.top = `${box.top - WAY_PADDING}px`;
+  way.style.left = `${box.left - WAY_PADDING}px`;
+  way.style.width = `${box.width + 2 * WAY_PADDING}px`;
+  way.style.height = `${box.height + 2 * WAY_PADDING}px`;
+  const label = segmentLabel(controlText(element));
+  if (label) {
+    const caption = document.createElement('span');
+    caption.className = WAY_LABEL_CLASS;
+    caption.classList.toggle(WAY_ABOVE_CLASS, box.bottom + 48 > window.innerHeight);
+    caption.classList.toggle(WAY_END_CLASS, box.left + box.width / 2 > window.innerWidth / 2);
+    caption.insertAdjacentHTML('afterbegin', POINTER_ICON);
+    caption.append(label);
+    way.append(caption);
+  }
+  run.way?.remove();
+  run.way = way;
+  document.body.append(way);
+  await new Promise((resolve) => setTimeout(resolve, reducedMotion() ? WAY_MS_REDUCED : WAY_MS));
+  way.remove();
+  if (run.way === way) run.way = undefined;
+}
+
+/**
+ * The page's breadcrumb, or its title: the navbar of the panel holding
+ * `element`, else the first one of the page. A breadcrumb's levels hidden
+ * on narrow screens are read too.
+ */
+function pageCrumbs(element: Element | null): string[] {
+  const read = (scope: Element): string[] | null => {
+    const navbar = scope.querySelector('[data-slot="left"]:has(ol[data-slot="list"], h1[data-slot="title"])');
+    if (!navbar) return null;
+    const items = [...navbar.querySelectorAll('ol[data-slot="list"] > li[data-slot="item"]')];
+    if (items.length > 0) return items.map(controlText);
+    return [navbar.querySelector('h1[data-slot="title"]')?.textContent ?? ''];
+  };
+  for (let node = element?.parentElement; node && node !== document.body; node = node.parentElement) {
+    const crumbs = read(node);
+    if (crumbs) return crumbs;
+  }
+  return read(document.body) ?? [];
+}
+
+/**
+ * The label of the tab the query value `key=value` selects on the page of
+ * `href`: a link to it (a page's tab strip), else, for a value the stop's
+ * anchor reveals, the selected tab of the tab list nearest `element`.
+ */
+function tabLabel(key: string, value: string, href: string, revealed: boolean, element: Element | null): string {
+  const page = new URL(href).pathname;
+  for (const link of document.querySelectorAll<HTMLAnchorElement>(PAGE_LINKS)) {
+    const url = new URL(link.href);
+    if (url.pathname === page && url.searchParams.get(key) === value && !link.closest(`.${POPOVER_CLASS}`)) {
+      return controlText(link);
+    }
+  }
+  if (!revealed) return '';
+  for (let node = element?.parentElement; node && node !== document.body; node = node.parentElement) {
+    const tab = node.querySelector('[role="tab"][aria-selected="true"]');
+    if (tab) return controlText(tab);
+  }
+  return '';
+}
+
+/** The popover's list of a stop's points, numbered, each item naming its part. */
+function pointList(points: readonly GuidePoint[]): HTMLOListElement {
+  const list = document.createElement('ol');
+  list.className = POINTS_CLASS;
+  list.setAttribute('role', 'list');
+  points.forEach((point, i) => {
+    const item = document.createElement('li');
+    item.dataset.guidePart = point.part;
+    const number = document.createElement('span');
+    number.className = NUMBER_CLASS;
+    number.setAttribute('aria-hidden', 'true');
+    number.textContent = String(i + 1);
+    const text = document.createElement('span');
+    text.innerHTML = guideMarkup(point.text);
+    item.append(number, text);
+    list.append(item);
+  });
+  return list;
+}
+
+/** Removes the numbers of the stop's points from the page. */
+function clearBadges(run: RunningGuide): void {
+  for (const { badge } of run.badges.splice(0)) badge.remove();
+}
+
+/** Puts each number of the stop's points on its part's top left corner, hidden while the part is out of view. */
+function placeBadges(run: RunningGuide): void {
+  for (const { part, badge } of run.badges) {
+    const box = part.isConnected ? visibleBox(part) : null;
+    const corner = part.getBoundingClientRect();
+    const shows = box !== null && box.top <= corner.top + 1 && box.left <= corner.left + 1;
+    badge.hidden = !shows;
+    if (!shows) continue;
+    badge.style.top = `${Math.max(corner.top - BADGE_OFFSET, 0)}px`;
+    badge.style.left = `${Math.max(corner.left - BADGE_OFFSET, 0)}px`;
+  }
+}
+
+/**
+ * Numbers the stop's points on the page: a badge over each part found in the
+ * highlighted `element`, with the same number as its item in the popover's
+ * list. Pointing at an item marks its number on the page too. An item whose
+ * part does not render is marked `data-missing`.
+ */
+function showBadges(run: RunningGuide, element: Element | undefined, points: readonly GuidePoint[] | undefined): void {
+  clearBadges(run);
+  if (!points?.length) return;
+  const items = run.driver?.getState('popover')?.wrapper.querySelectorAll(`.${POINTS_CLASS} > li`);
+  points.forEach((point, i) => {
+    const item = items?.[i];
+    const part = element?.querySelector(`[data-tour-part="${point.part}"]`);
+    if (!part) {
+      item?.setAttribute('data-missing', '');
+      return;
+    }
+    const badge = document.createElement('span');
+    badge.className = `${BADGE_CLASS} ${NUMBER_CLASS}`;
+    badge.setAttribute('aria-hidden', 'true');
+    badge.textContent = String(i + 1);
+    document.body.append(badge);
+    run.badges.push({ part, badge });
+    if (!item) return;
+    const mark = (on: boolean) => {
+      item.classList.toggle(ACTIVE_POINT_CLASS, on);
+      badge.classList.toggle(ACTIVE_POINT_CLASS, on);
+    };
+    item.addEventListener('pointerenter', () => mark(true));
+    item.addEventListener('pointerleave', () => mark(false));
+  });
+  placeBadges(run);
+}
+
 /**
  * Draws the spotlight's edge (`RING_CLASS`, styled in guide.css) in
  * driver.js's overlay, once the overlay exists: a second path that copies the
@@ -316,8 +620,10 @@ function isOnRoute(path: string, router: ReturnType<typeof useRouter>): boolean 
  * driver.js popover on each stop's anchor. A stop opens its route, runs its
  * anchor's reveal (folded sections, openers), scrolls the panels holding the
  * anchor and highlights it; the guide makes every move itself, Next and Back
- * included, and a navigation it did not make ends it. driver.js and its CSS
- * load when the first guide starts.
+ * included, pointing first at the link or the button that makes it, and a
+ * navigation it did not make ends it. Each popover says where its stop is, and
+ * a stop's points are numbered on the page. driver.js and its CSS load when
+ * the first guide starts.
  */
 export function useGuide() {
   const router = useRouter();
@@ -345,6 +651,8 @@ export function useGuide() {
       popoverHeight: POPOVER_HEIGHT_GUESS,
       centered: false,
       savedAria: new Map(),
+      moves: noMoves(),
+      badges: [],
       cleanups: [],
     };
     running = run;
@@ -361,6 +669,8 @@ export function useGuide() {
     activeGuideId.value = null;
     for (const cleanup of run.cleanups.splice(0)) cleanup();
     document.body.classList.remove(MOVING_CLASS, PAGING_CLASS);
+    run.way?.remove();
+    clearBadges(run);
     if (run.driver?.isActive()) run.driver.destroy();
     restoreAria(run);
   }
@@ -372,8 +682,10 @@ export function useGuide() {
   }
 
   /**
-   * Shows stop `index`: opens its page first when it is on another one, then
-   * runs its anchor's reveal, then highlights the anchor.
+   * Shows stop `index`: opens its page first when it is on another one,
+   * pointing at the link to it when one shows, then runs its anchor's reveal,
+   * then highlights the anchor. What it did on the way is kept in `moves`
+   * for the stop's path line.
    */
   async function goTo(run: RunningGuide, index: number): Promise<void> {
     const guideStop = run.guide.stops[index];
@@ -381,12 +693,22 @@ export function useGuide() {
     const anchor = run.anchors[index];
     run.moving = true;
     run.userActed = false;
+    run.moves = noMoves();
+    clearBadges(run);
     document.body.classList.add(MOVING_CLASS);
     run.driver?.getState('popover')?.wrapper.removeAttribute(SETTLED_ATTRIBUTE);
     try {
       const route = stopRoute(guideStop.route, anchor);
       if (route && !isOnRoute(route, router)) {
+        const current = router.currentRoute.value;
+        const target = router.resolve(route);
+        run.moves.page = target.path !== current.path;
+        for (const [key] of changedQuery(run.moves.page ? null : current.fullPath, target.fullPath)) {
+          run.moves.query.add(key);
+        }
         if (run.driver?.isActive()) document.body.classList.add(PAGING_CLASS);
+        await pointAt(run, wayTo(new URL(target.href, window.location.origin).href));
+        if (running !== run) return;
         await navigate(run, route);
       }
       if (running === run && anchor) await reveal(run, anchor);
@@ -447,10 +769,12 @@ export function useGuide() {
       if (redrawn || run.travelling || !run.driver?.isActive()) return;
       redrawn = true;
       run.driver.refresh();
+      placeBadges(run);
       requestAnimationFrame(() => {
         redrawn = false;
       });
     };
+    const onResize = () => placeBadges(run);
     const onUserInput = () => {
       run.userActed = true;
     };
@@ -469,14 +793,17 @@ export function useGuide() {
       const box = `${top} ${left} ${width} ${height}`;
       if (box !== lastBox) instance.refresh();
       lastBox = box;
+      placeBadges(run);
     };
     window.addEventListener('popstate', onHistory);
+    window.addEventListener('resize', onResize, { passive: true });
     document.addEventListener('scroll', onScroll, { capture: true, passive: true });
     for (const type of USER_INPUT_EVENTS) window.addEventListener(type, onUserInput, { capture: true, passive: true });
     const timer = window.setInterval(checkTarget, TARGET_CHECK_MS);
     run.cleanups.push(
       removeGuard,
       () => window.removeEventListener('popstate', onHistory),
+      () => window.removeEventListener('resize', onResize),
       () => document.removeEventListener('scroll', onScroll, { capture: true }),
       () => {
         for (const type of USER_INPUT_EVENTS) window.removeEventListener(type, onUserInput, { capture: true });
@@ -509,7 +836,7 @@ export function useGuide() {
     const { words } = run.guide;
     const activeIndex = () => run.driver?.getActiveIndex() ?? 0;
     return {
-      animate: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      animate: !reducedMotion(),
       smoothScroll: false,
       allowClose: true,
       overlayClickBehavior: () => {},
@@ -543,9 +870,12 @@ export function useGuide() {
         scrollToTarget(element, opensAbove ? run.popoverHeight + POPOVER_GAP : 0);
         holdScrollIntoView(element);
       },
-      onHighlighted: () => {
+      onHighlighted: (element) => {
         run.travelling = false;
         attachRing(run);
+        const index = run.driver?.getActiveIndex();
+        const points = index === undefined ? undefined : run.guide.stops[index]?.points;
+        showBadges(run, element && element.id !== CENTERED_ELEMENT_ID ? element : undefined, points);
         run.driver?.getState('popover')?.wrapper.setAttribute(SETTLED_ATTRIBUTE, '');
         run.driver?.refresh();
       },
@@ -557,13 +887,59 @@ export function useGuide() {
   }
 
   /**
+   * The segments of the line saying where stop `index` is: the page's
+   * breadcrumb, the tab each query value of the route selects, then the
+   * section or menu each step of its anchor's reveal unfolds or opens; each
+   * one the guide opened on its way there is marked.
+   */
+  function stopPath(run: RunningGuide, index: number, element: Element | null): GuidePathSegment[] {
+    const anchor = run.anchors[index];
+    const route = router.currentRoute.value;
+    const href = new URL(router.resolve(route.fullPath).href, window.location.origin).href;
+    const revealed = revealQuery(anchor);
+    const inner: GuidePathSegment[] = [];
+    for (const [key, raw] of Object.entries(route.query)) {
+      const value = Array.isArray(raw) ? raw[0] : raw;
+      if (typeof value !== 'string') continue;
+      const label = tabLabel(key, value, href, key in revealed, element);
+      if (label) inner.push({ label, opened: run.moves.page || run.moves.query.has(key) });
+    }
+    for (const step of anchor?.reveal ?? []) {
+      const control = 'unfold' in step ? step.unfold : 'open' in step ? step.open : undefined;
+      const found = control ? document.querySelector(anchorSelector(control)) : null;
+      if (control && found) inner.push({ label: controlText(found), opened: run.moves.clicked.has(control) });
+    }
+    return guidePath(pageCrumbs(element), inner, run.moves.page);
+  }
+
+  /** The line saying where the stop is, its segments separated by chevrons, the ones the guide opened marked. */
+  function pathLine(segments: readonly GuidePathSegment[], name: string): HTMLParagraphElement {
+    const line = document.createElement('p');
+    line.className = PATH_CLASS;
+    line.insertAdjacentHTML('afterbegin', PIN_ICON);
+    const said = document.createElement('span');
+    said.className = SR_CLASS;
+    said.textContent = `${name}: `;
+    line.append(said);
+    segments.forEach((segment, i) => {
+      if (i > 0) line.insertAdjacentHTML('beforeend', CHEVRON_ICON);
+      const part = document.createElement('span');
+      part.textContent = segment.label;
+      if (segment.opened) part.className = PATH_OPENED_CLASS;
+      line.append(part);
+    });
+    return line;
+  }
+
+  /**
    * Finishes a popover driver.js just rendered: what a check reads (`lang`,
    * `data-guide`, `data-guide-stop`, `data-guide-anchor`, empty for a stop
    * shown centered, and the guide's own `dataset`), the localized close button,
-   * on a stop shown centered for want of its anchor the line saying when the
-   * anchor shows, the docs link, room above the target for a popover that
-   * opens above it, room under it for one that opens below it (every popover
-   * below `sm`), and focus on Next. On a stop whose anchor sits in a layer its
+   * the line saying where the stop is above the title, the stop's points
+   * numbered under the body, on a stop shown centered for want of its anchor
+   * the line saying when the anchor shows, the docs link, room above the
+   * target for a popover that opens above it, room under it for one that
+   * opens below it (every popover below `sm`), and focus on Next. On a stop whose anchor sits in a layer its
    * reveal opened (a popover, a menu), the popover is marked as a layer opened
    * from that one, so Next taking focus leaves that layer, and the anchor in
    * it, open.
@@ -572,7 +948,7 @@ export function useGuide() {
     const { words } = run.guide;
     const guideStop: GuideStop | undefined = index === undefined ? undefined : run.guide.stops[index];
     const anchor = index === undefined ? undefined : run.anchors[index];
-    const { wrapper, closeButton, description, nextButton } = popover;
+    const { wrapper, closeButton, title, description, nextButton } = popover;
     const centered = !element || element.id === CENTERED_ELEMENT_ID;
     wrapper.lang = run.guide.lang;
     wrapper.dataset.guide = run.guide.id;
@@ -585,10 +961,13 @@ export function useGuide() {
     closeButton.innerHTML = CLOSE_ICON;
     closeButton.setAttribute('aria-label', words.close);
     closeButton.title = words.close;
-    // Under the body: the line saying when the anchor shows, on a stop shown centered for want of it, then the docs link.
+    const path = index === undefined ? [] : stopPath(run, index, centered ? null : (element ?? null));
+    if (path.length > 0) title.before(pathLine(path, words.path));
+    // Under the body: the points, the line saying when the anchor shows, on a stop shown centered for want of it, then the docs link.
     const note = centered && index !== undefined ? run.notes[index] : undefined;
     if (guideStop?.doc) description.after(docsLink(guideStop.doc, words.docs));
     if (note) description.after(noteLine(note));
+    if (guideStop?.points?.length) description.after(pointList(guideStop.points));
     run.moving = false;
     document.body.classList.remove(MOVING_CLASS, PAGING_CLASS);
     run.popoverHeight = wrapper.offsetHeight;

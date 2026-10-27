@@ -112,6 +112,30 @@ const PROMPT_DELAY_MS = 3000;
 const WIDE = { width: 1280, height: 860 };
 const PHONE = { width: 390, height: 844 };
 
+/**
+ * What a settled popover shows beside its copy: the line saying where its stop
+ * is, its numbered points with those whose part does not show, and the
+ * numbers on the page. Runs in the page.
+ */
+function readGuideMarks(node) {
+  return {
+    path: node.querySelector('.piwi-guide-path')?.textContent?.trim() ?? '',
+    points: node.querySelectorAll('.piwi-guide-points > li').length,
+    missing: [...node.querySelectorAll('.piwi-guide-points > li[data-missing]')].map((item) => item.dataset.guidePart),
+    badges: document.querySelectorAll('.piwi-guide-badge').length,
+  };
+}
+
+/** What is wrong with a stop's marks: no line saying where it is, a point whose part does not show, a number missing. */
+function markProblems(marks) {
+  const problems = [];
+  if (!marks.path) problems.push('no line saying where the stop is');
+  if (marks.missing.length > 0) problems.push(`points whose part does not show: ${marks.missing.join(', ')}`);
+  else if (marks.badges !== marks.points)
+    problems.push(`${marks.badges} numbers on the page for ${marks.points} points`);
+  return problems;
+}
+
 /** What this browser stored about the prompt (`snoozed`, `dismissed`, `started`), or null. */
 function storedTourDecision(page) {
   return page.evaluate(() => {
@@ -176,7 +200,7 @@ async function walkTour(page, profile, { lang = 'en', inViewport = false } = {})
     });
     const [current, of] = (stop.progress.match(/\d+/g) ?? []).map(Number);
     total ||= of;
-    const problems = [];
+    const problems = markProblems(await popover.evaluate(readGuideMarks));
     if (stop.profile !== profile) problems.push(`the ${stop.profile} tour's popover`);
     if (!stop.anchor) problems.push('shown centered, with no anchor');
     else if (!stop.highlighted) problems.push(`"${stop.anchor}" is not highlighted in view`);
@@ -363,7 +387,7 @@ async function walkAuthoredGuide(page, id, { inViewport = false } = {}) {
     });
     const [current, of] = (stop.progress.match(/\d+/g) ?? []).map(Number);
     total ||= of;
-    const problems = [];
+    const problems = markProblems(await popover.evaluate(readGuideMarks));
     if (stop.guide !== `guide-${id}`) problems.push(`the ${stop.guide} guide's popover`);
     if (!stop.anchor) problems.push(`shown centered${stop.note ? ` (${stop.note})` : ''}`);
     else if (!stop.highlighted) problems.push(`"${stop.anchor}" is not highlighted in view`);
@@ -851,6 +875,30 @@ async function becomesOpaque(page, element) {
   );
 }
 
+/**
+ * One check per part of `anchor`: it renders inside the anchor's element at
+ * the anchor's sample, which shows every part, with a box once scrolled into view.
+ */
+async function checkParts(page, anchor) {
+  for (const part of anchor.parts ?? []) {
+    const label = `guide anchor ${anchor.id} shows its part ${part.id} at ${anchor.sample.route}`;
+    try {
+      const element = page
+        .locator(`[data-tour="${anchor.id}"]`)
+        .first()
+        .locator(`[data-tour-part="${part.id}"]`)
+        .first();
+      await element.waitFor({ state: 'attached', timeout: ANCHOR_WAIT_MS });
+      await element.scrollIntoViewIfNeeded({ timeout: 10000 });
+      const box = await element.boundingBox();
+      const problem = box === null ? 'no box' : box.width > 0 && box.height > 0 ? '' : 'an empty box';
+      check(problem === '', label, problem);
+    } catch (error) {
+      check(false, label, String(error).split('\n')[0].slice(0, 160));
+    }
+  }
+}
+
 /** One check: `anchor` renders at its sample, visible and not transparent, with a box in the viewport once scrolled into view. */
 async function checkAnchor(page, anchor) {
   const label = `guide anchor ${anchor.id} shows at ${anchor.sample.route}`;
@@ -905,6 +953,7 @@ async function checkGuideAnchors(browser, watch, anchors) {
             if (SERVER) await waitForHydration(page);
           }
           await checkAnchor(page, anchor);
+          await checkParts(page, anchor);
           checked++;
           // What an `open` step opened stays open over the page.
           loaded = !anchor.reveal?.some((step) => 'open' in step);

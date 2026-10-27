@@ -24,6 +24,7 @@ export const EN_COPY = {
     progress: '{{current}} of {{total}}',
     close: 'End the tour',
     docs: 'Read the docs',
+    path: 'You are here',
     finishedTitle: 'That’s the tour',
     finishedBody: 'The other roles’ tours are under Guided tour, in the banner.',
   },
@@ -34,7 +35,12 @@ export const EN_COPY = {
       stops: {
         failure: {
           title: 'One failure, read top to bottom',
-          body: 'Every failing execution opens on this block. The headline says what broke, **Most likely** gives the cause the evidence points to, and **Next** the one step to take: here, applying the patch the cluster’s AI diagnosis wrote.',
+          body: 'Every failing execution opens on this block, which reads from the top: what broke, why, and what to do about it.',
+          points: {
+            headline: 'The headline says what broke.',
+            'most-likely': '**Most likely** gives the cause the evidence points to.',
+            next: '**Next** is the one step to take: here, applying the patch the cluster’s AI diagnosis wrote.',
+          },
         },
         evidence: {
           title: 'The evidence, kept after CI',
@@ -72,7 +78,13 @@ export const EN_COPY = {
         },
         flaky: {
           title: 'Flaky tests, ranked by cost',
-          body: 'Tests that fail and then pass, ranked by the CI time their retries waste, each with a 0–100 score from its retries and flips, and its top suspect. **Quarantine** keeps a test running and reporting while the CI gate leaves it out.',
+          body: 'Tests that fail and then pass, ranked by the CI time their retries waste. Each row says what the test costs, how flaky it is and what to do about it.',
+          points: {
+            wasted: 'The CI minutes its retries wasted, which set the order.',
+            score: 'Its flaky score, from 0 to 100, from its retries and flips.',
+            'top-suspect': 'Its top suspect: the condition its failures share most.',
+            quarantine: '**Quarantine** keeps the test running and reporting while the CI gate leaves it out.',
+          },
         },
         suspects: {
           title: 'What makes it flaky',

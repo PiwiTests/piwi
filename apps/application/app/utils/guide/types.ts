@@ -1,4 +1,16 @@
 /**
+ * One numbered point of a stop: a part of its anchor (`parts` in the
+ * registry) and what the popover says about it. The popover lists the points
+ * under its body, and the page shows each one's number on its part.
+ */
+export interface GuidePoint {
+  /** The id of a part of the stop's anchor: the `data-tour-part` of an element inside it. */
+  part: string;
+  /** Plain text; `**bold**` is the only markup. */
+  text: string;
+}
+
+/**
  * One stop of a guide: a guide anchor (`shared/guide-anchors/`) and what the
  * popover pointing at it says.
  */
@@ -28,6 +40,8 @@ export interface GuideStop {
   title: string;
   /** Plain text; `**bold**` is the only markup. */
   body: string;
+  /** The parts of the anchor the body explains one by one, numbered in this order. */
+  points?: readonly GuidePoint[];
   /** The docs page (and `#anchor`) the popover links to. */
   doc?: string;
   /** Where the popover sits against the anchor from `sm` up; below it, the popover goes where it fits. */
@@ -44,6 +58,8 @@ export interface GuideWords {
   close: string;
   /** The docs link. */
   docs: string;
+  /** The accessible name of the line saying where the stop is: the page, then the tab and the section opened for it. */
+  path: string;
   /** driver.js's progress line, with its `{{current}}` and `{{total}}` placeholders. */
   progress: string;
 }
