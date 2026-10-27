@@ -202,9 +202,12 @@ as at a headed stop, driven through that input, and end with the view or the sto
 picker's choice list, which had no way out of the page unanswered, now has one); each session tells each connection
 what each stop takes from it (`stop.intents`: Assert, Assert a region and Mock a request still only while the IDE
 writes the code from a stop, as in PR 4). `pick-at { id, ref, worker, since, x, y }` and the IDE's
-`piwi/pickAt { ref, worker?, since, x, y }` read the ARIA snapshot in AI mode with its boxes, take the innermost
-element under the point rather than the smallest (a field overflows its label's box), Piwi's overlays left out and an
-iframe refused, rank it as the bar's pick does with `locator.normalize()`'s locator among the candidates, and send the
+`piwi/pickAt { ref, worker?, since, x, y }` read the ARIA snapshot in AI mode with its boxes, and take of the elements
+under the point the innermost that is or holds the element a click there lands on, rather than the smallest box (a
+field overflows its label's box; a dialog, a fixed banner or a sticky header covers what is under it): the page's hit
+test in paint order (`elementsFromPoint`, into open shadow roots), Piwi's overlays left out (each one's root an
+`__piwi` id) and an iframe refused; they rank it as the bar's pick does with `locator.normalize()`'s locator among
+the candidates, and send the
 first that finds it alone where a pick goes (`ok`, `message`, `locator`); an image names the viewport its points are
 in (`width`, `height`), so an image at a device scale factor of 2 maps through it. The worker's `takes` and its
 `intents` on the hub gain `view`, `input` and `pick-at`. Measured headless at 1280 by 720 on a page of text, whose

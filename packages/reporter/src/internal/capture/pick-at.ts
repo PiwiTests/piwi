@@ -13,11 +13,14 @@ import type { PickedLocator, PickerProbe } from './pick-on-failure.js';
  * Pick on the image: the element under a point of an image of a stopped page (the IDE's, the Runs window's, a frame of
  * its live view), found without touching the page, as an agent finds one. The page's ARIA snapshot in AI mode with
  * each element's box on the screen (`page.ariaSnapshot({ mode: 'ai', boxes: true })`, Playwright 1.60) names the
- * elements under the point; the innermost of them (none of whose descendants is under it too, the smallest first),
- * Piwi's own overlays left out, is read through its ref
- * (`page.getByRef`, 1.64) and ranked as the pause bar's Pick a locator ranks a picked element, with the locator
- * `locator.normalize()` writes among the candidates. The first candidate that finds that element alone on the page is
- * the pick. Every call is the caller's to make internal.
+ * elements under the point, read through their refs (`page.getByRef`, 1.64). Of those, the pick is the innermost one
+ * that is, or holds, the element a click there lands on: the page's hit test in paint order
+ * (`document.elementsFromPoint`, into open shadow roots, an element of `pointer-events: none` passed through), Piwi's
+ * own overlays left out, so a dialog, a fixed banner or a sticky header over another element is the one picked. Only
+ * where the hit test finds nothing of the snapshot's, the innermost of the boxes under the point is (none of whose
+ * descendants is under it too, the smallest first). It is ranked as the pause bar's Pick a locator ranks a picked
+ * element, with the locator `locator.normalize()` writes among the candidates, and the first candidate that finds
+ * that element alone on the page is the pick. Every call is the caller's to make internal.
  */
 
 /** An element of a snapshot with its box on the screen, in CSS pixels of the viewport. */
@@ -85,10 +88,13 @@ export function boxesAt(boxes: readonly SnapshotBox[], x: number, y: number): Sn
 /** What Pick on the image found: the pick, or why there is none. */
 export type PointPick = { picked: PickedLocator } | { refusal: string };
 
-/** The elements Piwi puts in a stopped page: the pause bar, the picker, the recorder's panels. */
+/**
+ * The elements Piwi puts in a stopped page: the pause bar, the picker's panels and outlines (each root an `__piwi`
+ * id), the recorder's and the extension's panels (a `piwi-…-host`).
+ */
 const PIWI_OVERLAY = '[id^="__piwi"], [id^="piwi-"][id$="-host"]';
-/** The most elements under a point read, the smallest first, for one that is not Piwi's. */
-const MAX_UNDER = 5;
+/** The most elements under a point read, the innermost first. */
+const MAX_UNDER = 24;
 /** The most candidates counted on the page for the one that finds the element alone. */
 const MAX_CHECKED = 8;
 /** Where the locator `normalize()` writes ranks among the candidates: below a role's, a label's or a test id's. */
@@ -107,6 +113,50 @@ export function canPickAt(page: Page): boolean {
   return typeof (page as unknown as ByRef).getByRef === 'function';
 }
 
+/** What the page's hit test says of a point: which element a click there lands on, among those it is given. */
+interface HitArg {
+  x: number;
+  y: number;
+  overlay: string;
+  /** The elements of the boxes under the point, in their order; null for one that is not found. */
+  elements: unknown[];
+}
+
+/**
+ * In the page: the index of the element of `elements` that is, or holds, the element a click at the point lands on,
+ * the nearest to it in the tree the page draws (a slotted element in its slot, a shadow root in its host); -1 when
+ * none is; null when no element is there but Piwi's. Self-contained: it runs in the page.
+ */
+const hitIn = ({ x, y, overlay, elements }: HitArg): number | null => {
+  // A browser-side element, hence the loose type: this package has no DOM types.
+  type Node = {
+    closest?(selector: string): unknown;
+    getRootNode?(): unknown;
+    shadowRoot?: { elementsFromPoint(x: number, y: number): Node[] } | null;
+    assignedSlot?: Node | null;
+    parentElement?: Node | null;
+    parentNode?: (Node & { host?: Node }) | null;
+  };
+  type Scope = { elementsFromPoint(x: number, y: number): Node[] };
+  let scope: Scope | null = (globalThis as unknown as { document: Scope }).document;
+  let hit: Node | null = null;
+  // In paint order, the topmost first, Piwi's overlays left out: into each open shadow root the point is in.
+  for (let depth = 0; scope && depth < 32; depth++) {
+    const within: Scope = scope;
+    const top = within.elementsFromPoint(x, y).find((el) => el.getRootNode?.() === within && !el.closest?.(overlay));
+    if (!top) break;
+    hit = top;
+    scope = top.shadowRoot ?? null;
+  }
+  if (!hit) return null;
+  for (let node: Node | null = hit; node;) {
+    const at = elements.indexOf(node);
+    if (at >= 0) return at;
+    node = node.assignedSlot ?? node.parentElement ?? node.parentNode?.host ?? null;
+  }
+  return -1;
+};
+
 /**
  * The element under the point `x`, `y` of `page` (CSS pixels of its viewport), ranked: the pick, or why there is none
  * (no element there, the page's background, an iframe, a Playwright without the calls it needs). Throws when the page
@@ -118,24 +168,38 @@ export async function pickAtPoint(page: Page, probe: PickerProbe, x: number, y: 
     Page['ariaSnapshot']
   >[0]);
   if (!/\[box=/.test(snapshot)) return { refusal: PICK_AT_NEEDS };
-  for (const box of boxesAt(snapshotBoxes(snapshot), x, y).slice(0, MAX_UNDER)) {
-    if (box.role === 'iframe') return { refusal: IN_IFRAME };
-    if (box.depth === 0 && box.role === 'generic') return { refusal: NO_ELEMENT };
-    const locator = (page as unknown as Required<ByRef>).getByRef(box.ref);
-    const handle = await locator.elementHandle({ timeout: 2000 }).catch(() => null);
-    if (!handle) continue;
-    try {
-      // A browser-side element, hence the cast: this package has no DOM types.
-      const piwi = await handle.evaluate(
-        (el, overlay) => !!(el as { closest(selector: string): unknown }).closest(overlay),
-        PIWI_OVERLAY,
-      );
-      if (!piwi) return await rank(page, probe, locator, handle);
-    } finally {
-      await handle.dispose().catch(() => undefined);
+  const under = boxesAt(snapshotBoxes(snapshot), x, y).slice(0, MAX_UNDER);
+  const byRef = (ref: string) => (page as unknown as Required<ByRef>).getByRef(ref);
+  const handles = await Promise.all(
+    under.map((box) =>
+      byRef(box.ref)
+        .elementHandle({ timeout: 2000 })
+        .catch(() => null),
+    ),
+  );
+  try {
+    const hit = await page.evaluate(hitIn, { x, y, overlay: PIWI_OVERLAY, elements: handles });
+    const tested = hit !== null && hit >= 0;
+    for (const [i, box] of under.entries()) {
+      if (tested && i !== hit) continue;
+      if (box.role === 'iframe') return { refusal: IN_IFRAME };
+      if (box.depth === 0 && box.role === 'generic') return { refusal: NO_ELEMENT };
+      const handle = handles[i];
+      if (!handle) continue;
+      // Without the hit test, Piwi's own overlays are left out here.
+      const piwi =
+        !tested &&
+        (await handle.evaluate(
+          // A browser-side element, hence the cast: this package has no DOM types.
+          (el, overlay) => !!(el as { closest(selector: string): unknown }).closest(overlay),
+          PIWI_OVERLAY,
+        ));
+      if (!piwi) return await rank(page, probe, byRef(box.ref), handle);
     }
+    return { refusal: NO_ELEMENT };
+  } finally {
+    await Promise.all(handles.map((handle) => handle?.dispose().catch(() => undefined)));
   }
-  return { refusal: NO_ELEMENT };
 }
 
 /**

@@ -1528,9 +1528,11 @@ export const PAUSED_PAGE_REQUEST = 'piwi/pausedPage';
  * `piwi/pickAt`: Pick on the image, at the stop `since` names, of the run's one stopped worker or `worker`: the element
  * under the point `x`, `y` of the stopped page, in CSS pixels of its viewport (a point of the image `piwi/pausedPage`
  * gave is `x * image.width / naturalWidth`, `y * image.height / naturalHeight`). The worker reads the page's ARIA
- * snapshot with its boxes, takes the smallest element under the point (Piwi's own overlays left out), ranks it as the
- * pause bar's Pick a locator does, and sends the first locator that finds it alone where the bar's pick goes: the
- * client's Send to editor listener, then `piwi/applyPick`, in place of the locator on the stopped line.
+ * snapshot with its boxes and takes, of the elements under the point, the innermost that is or holds the element a
+ * click there lands on (the page's hit test, in paint order: a dialog or a fixed banner over another element is the
+ * one taken; Piwi's own overlays left out), ranks it as the pause bar's Pick a locator does, and sends the first
+ * locator that finds it alone where the bar's pick goes: the client's Send to editor listener, then `piwi/applyPick`,
+ * in place of the locator on the stopped line.
  */
 export interface PickAtParams {
   ref: string;

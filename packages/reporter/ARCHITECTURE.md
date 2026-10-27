@@ -178,9 +178,13 @@ What the package does to a user's run, process by process.
   the page while its view is watched (`viewHere` in `pause-at.ts`), driven through that
   input. They end with the view or the stop, leaving nothing of theirs in the page (the
   picker's choice list included, `__piwiChoiceCleanup`).
-- `pick-at` (`pick-at.ts`) reads the page's ARIA snapshot in AI mode with its boxes, takes
-  the innermost element under a point (Piwi's overlays left out, an iframe refused), ranks
-  it as the bar's pick does, with `locator.normalize()`'s locator among the candidates,
+- `pick-at` (`pick-at.ts`) reads the page's ARIA snapshot in AI mode with its boxes, and
+  takes, of the elements under a point, the innermost that is or holds the element a click
+  there lands on: the page's hit test in paint order (`elementsFromPoint`, into open shadow
+  roots), so a dialog, a fixed banner or a sticky header over another element is the one
+  taken. Piwi's overlays are left out (each root an `__piwi` id or a `piwi-…-host`), an
+  iframe refused. It ranks it as the bar's pick does, with `locator.normalize()`'s locator
+  among the candidates,
   and posts the first that finds it alone to `PIWI_EDITOR_SEND` (`page.getByRef` and the
   boxes feature-checked, refused before Playwright 1.64). An image of a stopped page names
   its viewport (`width`, `height`), the CSS pixels a point is in.
