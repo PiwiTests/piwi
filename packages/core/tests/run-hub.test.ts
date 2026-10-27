@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { EditorDiscovery } from '../src/editor-discovery';
+import { MAX_STOP_ERROR } from '../src/run-channel';
 import {
   HUB_CLOSE,
   HUB_KEEPALIVE_MS,
@@ -7,8 +8,10 @@ import {
   MAX_HUB_CLIENT,
   MAX_HUB_COMMAND,
   MAX_HUB_FRAME,
+  MAX_HUB_MESSAGE,
   MAX_HUB_PROJECT,
   MAX_HUB_ROOTS,
+  MAX_HUB_WARNINGS,
   isExtensionOrigin,
   isHubHost,
   liveHubsOf,
@@ -256,6 +259,25 @@ describe('the hub’s WebSocket', () => {
         ],
       },
       { type: 'answer', id: 5, ok: false, message: 'The test went on.', requests: [] },
+      {
+        type: 'code',
+        ref: 'ed-0a1b2c3d',
+        worker: 0,
+        since: '2026-10-25T10:00:00.000Z',
+        action: 'mock',
+        ok: true,
+        message: 'Piwi wrote the mock above cart.spec.ts:5.',
+        warnings: ['A value named or shaped like a credential is written as <hidden>.'],
+      },
+      {
+        type: 'code',
+        ref: 'ed-0a1b2c3d',
+        worker: 0,
+        since: '2026-10-25T10:00:00.000Z',
+        action: 'assert',
+        ok: false,
+        message: 'Nothing was checked: the test went on.',
+      },
       { type: 'session', session },
       {
         type: 'session',
@@ -289,6 +311,44 @@ describe('the hub’s WebSocket', () => {
         }),
       ),
     ).toMatchObject({ session: { workers: [{ intents: ['pick', 'mock'] }] } });
+    // A failure's stop names its error; a hub that predates it names none.
+    const failed = { ...worker.stop!, reason: 'failure', error: 'expect(locator).toBeVisible() failed' };
+    expect(
+      parseHubMessage(json({ type: 'session', session: { ...session, workers: [{ ...worker, stop: failed }] } })),
+    ).toEqual({ type: 'session', session: { ...session, workers: [{ ...worker, stop: failed }] } });
+  });
+
+  test('has the extension read what a code from a stop came to, its warnings bounded, and never its code', () => {
+    const code = {
+      type: 'code',
+      ref: 'ed-0a1b2c3d',
+      worker: 1,
+      since: '2026-10-25T10:00:00.000Z',
+      action: 'assert-region',
+      ok: true,
+      message: "Piwi wrote the region's ARIA snapshot above cart.spec.ts:5.",
+    };
+    expect(parseHubMessage(json({ ...code, code: 'await expect(page).toMatchAriaSnapshot(``);' }))).toEqual(code);
+    expect(parseHubMessage(json({ ...code, warnings: [] }))).toEqual({ ...code, warnings: [] });
+    const most = Array.from({ length: MAX_HUB_WARNINGS }, (_, i) => `Warning ${i}.`);
+    expect(parseHubMessage(json({ ...code, warnings: most }))).toEqual({ ...code, warnings: most });
+    for (const broken of [
+      { ...code, ref: 'ed 1' },
+      { ...code, worker: -1 },
+      { ...code, worker: null },
+      { ...code, since: '' },
+      { ...code, since: 'x'.repeat(65) },
+      { ...code, action: 'pick' },
+      { ...code, ok: 'yes' },
+      { ...code, message: 5 },
+      { ...code, message: 'x'.repeat(MAX_HUB_MESSAGE + 1) },
+      { ...code, warnings: 'A warning.' },
+      { ...code, warnings: [5] },
+      { ...code, warnings: ['x'.repeat(MAX_HUB_MESSAGE + 1)] },
+      { ...code, warnings: [...most, 'One more.'] },
+    ]) {
+      expect(parseHubMessage(json(broken)), JSON.stringify(broken)).toBeNull();
+    }
   });
 
   test('has the extension refuse a message it cannot read', () => {
@@ -307,6 +367,15 @@ describe('the hub’s WebSocket', () => {
       { type: 'session', session: { ...session, workers: [{ ...worker, test: { ...worker.test, title: [1] } }] } },
       { type: 'session', session: { ...session, command: 'x'.repeat(MAX_HUB_COMMAND + 1) } },
       { type: 'session', session: { ...session, project: 'x'.repeat(MAX_HUB_PROJECT + 1) } },
+      { type: 'session', session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, error: 5 } }] } },
+      {
+        type: 'session',
+        session: {
+          ...session,
+          workers: [{ ...worker, stop: { ...worker.stop, error: 'x'.repeat(MAX_STOP_ERROR + 1) } }],
+        },
+      },
+      { type: 'answer', id: 1, ok: true, message: 'x'.repeat(MAX_HUB_MESSAGE + 1) },
       {
         type: 'welcome',
         pid: 1,

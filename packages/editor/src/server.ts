@@ -1757,6 +1757,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         severity: 'warning',
         message,
       } satisfies Notice),
+    // Piwi Picker hears what each code from a stop came to, whichever surface started it.
+    outcome: (outcome) => runHub?.code(outcome),
     lineNow: (stop, target) => {
       const file = uriToPath(target.uri);
       if (!file) return { refusal: `${target.uri} is not a file.` };

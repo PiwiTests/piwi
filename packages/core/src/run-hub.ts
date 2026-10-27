@@ -6,12 +6,13 @@
  * (`127.0.0.1:<port>` or `localhost:<port>`) and an extension's `Origin` (`chrome-extension://<id>`,
  * `moz-extension://<uuid>`); the first message must be `hello` with the token, within `HUB_HELLO_MS`. Every later
  * message is a command with an `id`, answered once with that `id` (`HubAnswer`); `subscribe` has the hub push each run
- * as it changes (`HubSessionMessage`). The hub sends `keepalive` every `HUB_KEEPALIVE_MS`, and a frame longer than
- * `MAX_HUB_FRAME` closes the connection. Messages are text frames of JSON, checked field by field on both sides.
- * Nothing a command asks evaluates code, reads a file or reaches an instance.
+ * as it changes (`HubSessionMessage`), and what each action that writes code at a stop came to, whichever surface
+ * started it (`HubCodeMessage`: its sentence, never the code). The hub sends `keepalive` every `HUB_KEEPALIVE_MS`,
+ * and a frame longer than `MAX_HUB_FRAME` closes the connection. Messages are text frames of JSON, checked field by
+ * field on both sides. Nothing a command asks evaluates code, reads a file or reaches an instance.
  */
 import type { EditorDiscovery, HubAddress } from './editor-discovery';
-import type { KeptRequest } from './run-channel';
+import { MAX_STOP_ERROR, type KeptRequest } from './run-channel';
 
 /** The WebSocket's path. */
 export const HUB_PATH = '/piwi/hub';
@@ -31,6 +32,10 @@ export const MAX_HUB_ROOTS = 64;
 export const MAX_HUB_PROJECT = 500;
 /** The longest client name a `welcome` carries: the hub cuts a longer one. */
 export const MAX_HUB_CLIENT = 200;
+/** The longest sentence an answer or a `code` carries: the hub cuts a longer one. */
+export const MAX_HUB_MESSAGE = 1000;
+/** The most warnings a `code` carries: the hub sends the first ones. */
+export const MAX_HUB_WARNINGS = 16;
 
 /** Why the hub closed a connection, as the WebSocket's close code. */
 export const HUB_CLOSE = {
@@ -69,6 +74,11 @@ export interface HubStop {
   bar: boolean;
   /** Names the stop: a control passes it back as `since`, and one that no worker stands at any more is refused. */
   since: string;
+  /**
+   * A failure's error: the failing error's first lines as plain text, at most `MAX_STOP_ERROR` characters. Absent for
+   * another stop, and from a service or a reporter that predates it, whose `title` alone says how the test failed.
+   */
+  error?: string;
 }
 
 /** A test a worker runs. */
@@ -99,6 +109,11 @@ export type HubCodeIntent = 'assert' | 'assert-region';
 
 /** What a stop can take from the Runs page: the intents, and Mock a request (`mock`, with the `requests` it lists). */
 export type HubAction = HubIntent | HubCodeIntent | 'mock';
+
+/** The actions that write code at a stop, in the editor. */
+export type HubCodeAction = HubCodeIntent | 'mock';
+
+const HUB_CODE_ACTIONS: readonly string[] = ['assert', 'assert-region', 'mock'];
 
 const HUB_INTENTS: readonly string[] = ['pick', 'record', 'assert', 'assert-region'];
 
@@ -231,8 +246,27 @@ export interface HubSessionMessage {
   session: HubSession;
 }
 
+/**
+ * What an action that writes code at a stop came to, sent to every subscribed connection once, whichever surface
+ * started it (the editor or a Runs page): the editor wrote the code (`ok`, its sentence, such as `Piwi wrote the check
+ * above checkout.spec.ts:5.`, and what to check in it, `warnings`), or the action was refused once it had started
+ * (`ok: false`, why: the check could not be written, the region's snapshot could not be read). The stop is the one
+ * `since` names, of the worker `worker`; a page shows it while that worker stands there. The code itself never comes.
+ */
+export interface HubCodeMessage {
+  type: 'code';
+  ref: string;
+  worker: number;
+  since: string;
+  action: HubCodeAction;
+  ok: boolean;
+  message: string;
+  /** At most `MAX_HUB_WARNINGS`; absent for none. */
+  warnings?: string[];
+}
+
 /** What the hub sends. */
-export type HubMessage = HubWelcome | HubAnswer | HubSessionMessage | { type: 'keepalive' };
+export type HubMessage = HubWelcome | HubAnswer | HubSessionMessage | HubCodeMessage | { type: 'keepalive' };
 
 /** A live hub, as the Send to editor endpoint's `GET …/live` lists it. */
 export interface LiveHub extends HubAddress {
@@ -399,6 +433,8 @@ function readStop(value: unknown): HubStop | null | undefined {
   if (typeof reason !== 'string' || str(title, 1000) === null || str(uri, 8192) === null) return undefined;
   if (!isInt(line, 0) || (character !== null && !isInt(character, 0)) || typeof bar !== 'boolean') return undefined;
   if ((locator !== null && str(locator, 1000) === null) || str(since, 64) === null) return undefined;
+  const { error } = value;
+  if (error !== undefined && str(error, MAX_STOP_ERROR) === null) return undefined;
   return {
     reason: STOP_REASONS.includes(reason) ? (reason as HubStopReason) : 'other',
     title: title as string,
@@ -408,7 +444,29 @@ function readStop(value: unknown): HubStop | null | undefined {
     locator: locator as string | null,
     bar,
     since: since as string,
+    ...(error === undefined ? {} : { error: error as string }),
   };
+}
+
+/** What an action that writes code came to, field by field; null when it is not one. */
+function readCode(value: Record<string, unknown>): HubCodeMessage | null {
+  const { ref, worker, since, action, ok, message, warnings } = value;
+  if (typeof ref !== 'string' || !REF.test(ref) || !isInt(worker, 0) || str(since, 64) === null || !since) return null;
+  if (typeof action !== 'string' || !HUB_CODE_ACTIONS.includes(action) || typeof ok !== 'boolean') return null;
+  if (str(message, MAX_HUB_MESSAGE) === null) return null;
+  const code: HubCodeMessage = {
+    type: 'code',
+    ref,
+    worker,
+    since: since as string,
+    action: action as HubCodeAction,
+    ok,
+    message: message as string,
+  };
+  if (warnings === undefined) return code;
+  if (!Array.isArray(warnings) || warnings.length > MAX_HUB_WARNINGS) return null;
+  if (!warnings.every((w) => str(w, MAX_HUB_MESSAGE) !== null)) return null;
+  return { ...code, warnings: warnings as string[] };
 }
 
 function readTest(value: unknown): HubTest | null | undefined {
@@ -483,7 +541,7 @@ export function parseHubMessage(text: string): HubMessage | null {
     }
     case 'answer': {
       const { id, ok, message } = value;
-      if (!isInt(id, 1) || typeof ok !== 'boolean' || str(message, 1000) === null) return null;
+      if (!isInt(id, 1) || typeof ok !== 'boolean' || str(message, MAX_HUB_MESSAGE) === null) return null;
       const answer: HubAnswer = { type: 'answer', id, ok, message: message as string };
       if (value.requests !== undefined) {
         if (!Array.isArray(value.requests) || value.requests.length > 50) return null;
@@ -499,6 +557,8 @@ export function parseHubMessage(text: string): HubMessage | null {
       const session = readSession(value.session);
       return session ? { type: 'session', session } : null;
     }
+    case 'code':
+      return readCode(value);
     case 'keepalive':
       return { type: 'keepalive' };
     default:

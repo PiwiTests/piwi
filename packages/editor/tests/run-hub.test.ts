@@ -12,7 +12,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { WebSocket } from 'ws';
 import {
   MAX_HUB_COMMAND,
+  MAX_HUB_MESSAGE,
   MAX_HUB_ROOTS,
+  MAX_HUB_WARNINGS,
   parseHubMessage,
   type HubAnswer,
   type HubMessage,
@@ -460,13 +462,14 @@ function ownHub(
     client: string | null;
     roots: string[];
   },
+  refusal = 'No action here.',
 ): Promise<RunHub | null> {
   const session: RunSession = { ref: 'ed-1', root: '/work/shop', workers: [], ended: false };
   const sessions = { current: () => [session], intentsOf: () => [] } as unknown as RunSessions;
   return RunHub.open({
     sessions,
     actions: {
-      action: async () => ({ ok: false, message: 'No action here.' }),
+      action: async () => ({ ok: false, message: refusal }),
       requests: async () => ({ ok: false, message: 'No request here.', requests: [] }),
     },
     runInfo,
@@ -524,7 +527,100 @@ describe('a connection the hub lets go', () => {
   });
 });
 
+describe('a failure held at its line', () => {
+  test('names its error in the stop both the client and Piwi Picker hear, and a reporter before it names none', async () => {
+    const client = await paired();
+    client.send({ type: 'subscribe', id: 1 });
+    await client.answer(1);
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
+    const error = "expect(locator).toBeVisible() failed\nLocator: getByRole('button', { name: 'Pay' })";
+    const failed = (stop: number, named: string | undefined) =>
+      worker.send({
+        type: 'stopped',
+        stop,
+        reason: 'failure',
+        title: 'Failed: Error: expect(locator).toBeVisible() failed',
+        place: { file: 'tests/cart.spec.ts', line: 3, column: 3 },
+        locator: "getByRole('button', { name: 'Pay' })",
+        bar: true,
+        ...(named === undefined ? {} : { error: named }),
+      });
+    try {
+      worker.begin();
+      failed(1, error);
+      const heard = await waitFor(() => client.session(ref)?.workers[0]?.stop ?? undefined);
+      expect(heard).toMatchObject({ reason: 'failure', error });
+      const stopOf = (since: string) => {
+        const stop = svc.latest(ref)?.workers[0]?.stop;
+        return stop?.since === since ? stop : undefined;
+      };
+      expect(await waitFor(() => stopOf(heard.since))).toEqual(heard);
+      worker.send({ type: 'running', stop: 1 });
+      await waitFor(() => (client.session(ref)?.workers[0]?.stop ? undefined : true));
+      failed(2, undefined);
+      const older = await waitFor(() => client.session(ref)?.workers[0]?.stop ?? undefined);
+      expect(older).toMatchObject({ reason: 'failure', title: 'Failed: Error: expect(locator).toBeVisible() failed' });
+      expect(older).not.toHaveProperty('error');
+      expect(await waitFor(() => stopOf(older.since))).not.toHaveProperty('error');
+    } finally {
+      worker.socket.destroy();
+      client.socket.close();
+    }
+  });
+});
+
 describe('what the hub sends', () => {
+  test('tells what a code came to to the connections that follow the runs alone, cut to fit what they read', async () => {
+    const long = 'Piwi could not write the check: '.padEnd(MAX_HUB_MESSAGE + 200, 'x');
+    const own = (await ownHub(() => ({ command: null, label: null, project: null }), undefined, long))!;
+    const connect = async (subscribe: boolean) => {
+      const socket = new WebSocket(own.url, { origin: ORIGIN });
+      const heard: HubMessage[] = [];
+      socket.on('message', (data) => {
+        heard.push(parseHubMessage(String(data)) ?? ({ type: 'unreadable' } as unknown as HubMessage));
+      });
+      await new Promise((resolve) => socket.on('open', resolve));
+      socket.send(JSON.stringify({ type: 'hello', token: own.token }));
+      await waitFor(() => heard.find((m) => m.type === 'welcome'));
+      if (subscribe) {
+        socket.send(JSON.stringify({ type: 'subscribe', id: 1 }));
+        await waitFor(() => heard.find((m) => m.type === 'answer'));
+      }
+      return { socket, heard };
+    };
+    const follower = await connect(true);
+    const bystander = await connect(false);
+    try {
+      own.code({
+        ref: 'ed-1',
+        worker: 0,
+        since: '2026-10-27T10:00:00.000Z',
+        action: 'mock',
+        ok: true,
+        message: long,
+        warnings: Array.from({ length: 20 }, (_, i) => `Warning ${i}: `.padEnd(MAX_HUB_MESSAGE + 10, 'w')),
+      });
+      const code = await waitFor(() => follower.heard.find((m) => m.type === 'code'));
+      expect(code).toMatchObject({ type: 'code', ref: 'ed-1', since: '2026-10-27T10:00:00.000Z', ok: true });
+      const { message, warnings } = code as Extract<HubMessage, { type: 'code' }>;
+      expect(message).toBe(`${long.slice(0, MAX_HUB_MESSAGE - 1)}…`);
+      expect(warnings).toHaveLength(MAX_HUB_WARNINGS);
+      expect(warnings!.every((w) => w.length === MAX_HUB_MESSAGE && w.endsWith('…'))).toBe(true);
+      // An answer too long for the extension is cut the same way.
+      follower.socket.send(JSON.stringify({ type: 'assert', id: 2, ref: 'ed-1', since: 's' }));
+      const answer = await waitFor(() => follower.heard.find((m) => m.type === 'answer' && m.id === 2));
+      expect(answer).toMatchObject({ ok: false, message: `${long.slice(0, MAX_HUB_MESSAGE - 1)}…` });
+      expect(follower.heard.map((m) => m.type)).not.toContain('unreadable');
+      await new Promise((r) => setTimeout(r, 50));
+      expect(bystander.heard.map((m) => m.type)).toEqual(['welcome']);
+    } finally {
+      follower.socket.close();
+      bystander.socket.close();
+      own.close();
+    }
+  });
+
   test('fits what the extension reads: a command line cut, marked, and the first of many folders', async () => {
     const long = `npx playwright test ${'tests/cart.spec.ts:3 '.repeat(2000)}`;
     const roots = Array.from({ length: 100 }, (_, i) => `/work/shop-${i}`);

@@ -9,7 +9,9 @@
  * The code goes above the stopped statement where it stands now: the stopped line, the run's, mapped through the edits
  * made since the run started (`lineNow`, `run-lines.ts`), the code Piwi wrote at an earlier action included. An action
  * that writes code is refused when the client writes none, and before it starts when nothing can be written at the
- * stopped line; the code never goes to Piwi Picker. Every command names the stop it answers (`since`).
+ * stopped line; the code never goes to Piwi Picker, which hears what each one came to (`outcome`): the sentence the
+ * client shows, the warnings of the code, or why it was refused once it started. Every command names the stop it
+ * answers (`since`).
  */
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +44,21 @@ export interface StopTarget {
   expectModule: string;
 }
 
+/**
+ * What an action that writes code came to at a stop, whichever surface started it: written (`ok`, the sentence the
+ * client shows, and the warnings of the code), or refused once it started, and why. No code.
+ */
+export interface StopOutcome {
+  ref: string;
+  worker: number;
+  /** The stop it was made at (`RunStop.since`). */
+  since: string;
+  action: StopCode['action'];
+  ok: boolean;
+  message: string;
+  warnings: string[];
+}
+
 export interface StopActionsOptions {
   sessions: RunSessions;
   recordings: RecordingSessions;
@@ -51,6 +68,8 @@ export interface StopActionsOptions {
   notify(code: StopCode): void;
   /** A sentence for the client about a run's folder: a code that could not be made, after the action started. */
   notice(root: string | null, message: string): void;
+  /** What an action that writes code came to, once per action: Piwi Picker hears it (`RunHub.code`). */
+  outcome?(outcome: StopOutcome): void;
   /** What a file's code is written from; null for a file no Playwright config of the workspace holds. */
   target(file: string): StopTarget | null;
   /** Where a stop's line, the run's, stands in the file's text now (`RunLines.lineNow`); why it cannot be told. */
@@ -185,7 +204,7 @@ export class StopActions {
   /** A worker sent the region picked at its stop: its `toMatchAriaSnapshot` goes to the client. */
   region(stop: StopRef, locator: string, snapshot: string): void {
     const written = this.write(stop, { action: 'assert-region', locator, snapshot });
-    if (!written.ok) this.options.notice(stop.root, written.message);
+    if (!written.ok) this.refusedOnceStarted(stop, 'assert-region', written.message);
   }
 
   /**
@@ -196,10 +215,11 @@ export class StopActions {
   check(handoff: Handoff): void {
     const named = handoff.stop;
     const stop = named ? this.options.sessions.stopAt(named.ref, named.worker, named.stop) : null;
-    // The test hears why, and so does the client, which Assert told it had started; of a stop that ended, the test alone.
+    // The test hears why, and so do the client and Piwi Picker, which Assert told it had started; of a stop that
+    // ended, the test alone.
     const refused = (message: string) => {
       handoff.socket.end(`${JSON.stringify({ type: 'refused', message })}\n`);
-      if (stop) this.options.notice(stop.root, `Nothing was checked: ${message}`);
+      if (stop) this.refusedOnceStarted(stop, 'assert', `Nothing was checked: ${message}`);
     };
     if (!stop) return refused('the test went on.');
     if (!this.options.writesCode()) return refused(NO_CODE);
@@ -213,11 +233,25 @@ export class StopActions {
       language: this.options.language(),
       onCheck: (event: RawCaptureEvent) => {
         const written = this.write(stop, { action: 'assert', session: sessionFromEvents([event], startedAt) });
-        if (!written.ok) this.options.notice(stop.root, written.message);
+        if (!written.ok) this.refusedOnceStarted(stop, 'assert', written.message);
       },
       onEnd: () => {},
     });
-    if (missing) this.options.notice(stop.root, `Nothing was checked: ${missing}`);
+    if (missing) this.refusedOnceStarted(stop, 'assert', `Nothing was checked: ${missing}`);
+  }
+
+  /** An action refused once it started: the client hears why, and so does Piwi Picker. */
+  private refusedOnceStarted(stop: StopRef, action: StopCode['action'], message: string): void {
+    this.options.notice(stop.root, message);
+    this.options.outcome?.({
+      ref: stop.ref,
+      worker: stop.worker,
+      since: stop.since,
+      action,
+      ok: false,
+      message,
+      warnings: [],
+    });
   }
 
   /** The file a stop's code is written in, what it is written from, and the stopped line as it stands now; why not. */
@@ -258,6 +292,15 @@ export class StopActions {
       line: rendered.line,
       code: rendered.code,
       edits: rendered.edits,
+      message,
+      warnings: rendered.warnings,
+    });
+    this.options.outcome?.({
+      ref: stop.ref,
+      worker: stop.worker,
+      since: stop.since,
+      action,
+      ok: true,
       message,
       warnings: rendered.warnings,
     });

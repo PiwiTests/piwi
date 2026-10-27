@@ -11,8 +11,10 @@
  * code, reads a file or reaches an instance. A subscribed connection hears every run as the editor does, and counts as
  * a surface that answers stops: while one is, a stop no pause bar shows waits for it. The code actions it starts at a
  * stop (Assert, Assert a region, Mock a request, `stop-actions.ts`) write their code in the editor, through its
- * client: the answer says whether they started, never the code. A connection the hub closes is cut a second later
- * when the other side does not answer the close, and only the open connections count toward its limits.
+ * client: the answer says whether they started, never the code, and each subscribed connection hears what each one came
+ * to, whichever surface started it (`code`: the sentence the client shows and the code's warnings, or why it was
+ * refused once it started). A connection the hub closes is cut a second later when the other side does not answer the
+ * close, and only the open connections count toward its limits.
  */
 import { randomBytes } from 'node:crypto';
 import * as http from 'node:http';
@@ -27,9 +29,11 @@ import {
   MAX_HUB_CLIENT,
   MAX_HUB_COMMAND,
   MAX_HUB_FRAME,
+  MAX_HUB_MESSAGE,
   MAX_HUB_PENDING,
   MAX_HUB_PROJECT,
   MAX_HUB_ROOTS,
+  MAX_HUB_WARNINGS,
   isExtensionOrigin,
   isHubHost,
   parseHubCommand,
@@ -43,7 +47,7 @@ import {
 import type { RunControlResult, RunSession } from './protocol.js';
 import { sameToken } from './recorder/handoff.js';
 import type { RunSessions } from './run-sessions.js';
-import type { StopActions } from './stop-actions.js';
+import type { StopActions, StopOutcome } from './stop-actions.js';
 
 /** The connections a hub holds at once, and those among them that did not say `hello` yet. */
 const MAX_CONNECTIONS = 16;
@@ -186,6 +190,22 @@ export class RunHub {
     }
   }
 
+  /** What an action that writes code came to: every subscribed connection hears its sentence, never its code. */
+  code(outcome: StopOutcome): void {
+    const warnings = outcome.warnings.slice(0, MAX_HUB_WARNINGS).map((w) => cut(w, MAX_HUB_MESSAGE)!);
+    const message: HubMessage = {
+      type: 'code',
+      ref: outcome.ref,
+      worker: outcome.worker,
+      since: outcome.since,
+      action: outcome.action,
+      ok: outcome.ok,
+      message: cut(outcome.message, MAX_HUB_MESSAGE)!,
+      ...(warnings.length > 0 ? { warnings } : {}),
+    };
+    for (const connection of this.connections) if (connection.subscribed) this.send(connection, message);
+  }
+
   /** The service stops: every connection is closed, saying so. */
   close(): void {
     clearInterval(this.keepalive);
@@ -272,7 +292,13 @@ export class RunHub {
 
   private async answer(connection: Connection, command: ParsedHubCommand): Promise<void> {
     const reply = (result: RunControlResult, extra: Record<string, unknown> = {}) =>
-      this.send(connection, { type: 'answer', id: command.id, ok: result.ok, message: result.message, ...extra });
+      this.send(connection, {
+        type: 'answer',
+        id: command.id,
+        ok: result.ok,
+        message: cut(result.message, MAX_HUB_MESSAGE)!,
+        ...extra,
+      });
     if (command.type === 'unknown') {
       return reply({ ok: false, message: `Piwi does not know the command ${JSON.stringify(command.what)}.` });
     }

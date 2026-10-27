@@ -622,6 +622,11 @@ it with the run's `command`, its folder's `label`, its Piwi `project` and each w
 command needs the stop it answers.`); `pause` takes none (`piwi/runControl` keeps `since` optional, for older IDE
 clients). A subscriber is given each run as the editor's client last heard it, and hears each change after with it,
 so both show the same; the command line is cut at 20,000 characters, the cut marked, as the extension reads it. A
+failure's stop names its error (`error`, the failing error's first lines as plain text), which the Runs window shows
+under its label, and reads from the stop's title only for an older service or reporter. Each subscriber also hears,
+once, what each code from a stop (Part 5) came to, whichever surface started it: `{ type: 'code', ref, worker, since,
+action, ok, message, warnings? }`, the sentence the IDE shows with the code and its warnings, or why it was refused
+once it started, never the code; the Runs window shows it while the worker stands at that stop. A
 command of a type the hub does not know, or with a field it cannot take, is answered `ok: false` with why; one that is
 no command (not JSON, no `id`) closes the connection with 4003, a binary frame with 1003, a frame over 64 KiB with
 1009. The hub sends `{ type: 'keepalive' }` and a ping every 20 s, and drops a connection that did not answer the last

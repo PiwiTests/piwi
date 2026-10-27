@@ -322,15 +322,20 @@ clients stay thin and both editors give the same answers.
   `record`, `assert` and `assert-region`, `requests` and `mock` (`request`, a kept response's id), each naming the
   stop it answers (`since`) and going through the same `StopActions` as the client's `piwi/stopAction`, the code to
   the client alone, each answered once (`{ type: 'answer', id, ok, message }`, `image` too for `pausedPage`,
-  `requests` for `requests`); one of another type, with a field it cannot take, or answering a stop without naming
-  it (`The command needs the stop it answers.`), is answered `ok: false` with why, at most 16 waiting per connection;
+  `requests` for `requests`, the sentence cut at `MAX_HUB_MESSAGE` with the cut marked); one of another type, with a
+  field it cannot take, or answering a stop without naming it (`The command needs the stop it answers.`), is answered
+  `ok: false` with why, at most 16 waiting per connection;
   a message that is no command (not JSON, no `id`) closes the connection (4003), a binary frame too (1003), a frame
   over 64 KiB (`MAX_HUB_FRAME`, 1009). `subscribe` answers, then sends each live run as the client last heard it
   (`RunSessions.current`: the view last sent, a run the client heard nothing of yet left out) and from then on every
   `piwi/runSessionChanged` the client hears, so both show the same, as a `session` with the run's command line (kept
   by ref for the 50 latest commands the service built, cut at `MAX_HUB_COMMAND` with the cut marked), its folder's
   label, its Piwi project and each worker's `intents` (`RunSessions.intentsOf`): what the hub sends fits what
-  `parseHubMessage` reads. Every 20 s
+  `parseHubMessage` reads. A subscribed connection also hears, once, what each action that writes code came to,
+  whichever surface started it (`RunHub.code`, from `StopActions`' `outcome`): `{ type: 'code', ref, worker, since,
+  action, ok, message, warnings? }`, the sentence the client is sent with the code and its warnings (16 at most, each
+  cut as a sentence is), or, with `ok: false`, why an action was refused once it had started (the cases a
+  `piwi/notice` says); never the code. Every 20 s
   (`HUB_KEEPALIVE_MS`, within the 30 s Chrome keeps an MV3 worker alive after a WebSocket message) each connection
   that said hello hears `keepalive` and a WebSocket ping; one that did not answer the last ping is dropped, as is one
   with 32 MB unread. A subscribed connection is a surface that answers stops (`answersStops` in `src/server.ts`): while
@@ -358,8 +363,9 @@ clients stay thin and both editors give the same answers.
   its start. The block goes inside the body of a test or a function, never on its declaration's line
   (`BlockPlacement.context`, where the line starts), nor as the body of an `if`, `else`, `for`, `while` or `do` without
   braces, nor at a line where no statement starts (`placementBefore` refuses both, for Record here too); Assert and
-  Assert a region are refused at such a place before anything starts in the test's window, and a check refused once it
-  started (the recorder missing, the code not written) reaches the client as a `piwi/notice`. `pick` and `record` are
+  Assert a region are refused at such a place before anything starts in the test's window, and a check or a region
+  refused once it started (the recorder missing, the code not written) reaches the client as a `piwi/notice`, and Piwi
+  Picker as a `code` with `ok: false`. `pick` and `record` are
   the pause bar's intents (their results take their own paths: Send to editor, then `piwi/applyPick`;
   `piwi/recordRequested`). `assert` starts the check panel in the test's window through the record channel's hand-off in
   its `check` mode, naming the stop it was started at (`RecordChannel`'s `onCheck`, `RecordingSessions.check`: the
@@ -379,7 +385,9 @@ clients stay thin and both editors give the same answers.
   be the stopped page's (`stopPage`: the expression the code at the stop runs on, in the stopped file; another, or a
   chain in another file, is refused), and has the worker count it on the stopped page and outline its matches where the
   bar shows; a line without one, a refused one, or a null `uri`, takes the outline down. A worker's stop with the reason
-  `failure` (a test failed in an interactive run, its page held once the test ended) takes the same actions. One no bar
+  `failure` (a test failed in an interactive run, its page held once the test ended) takes the same actions, and names
+  the failing error's first lines (`RunStop.error`, in `piwi/runSessionChanged` and the hub's `session`), which a
+  reporter that predates it leaves out. One no bar
   shows waits only in a run started to be watched (`watched`: the service built it with the editor's breakpoints or for
   a `page.pause()`, both headed) or while Piwi Picker follows the runs (`followed`), and goes on at once, with no
   notice, otherwise and when the last Piwi Picker leaves (`RunSessions.surfacesChanged`): every run the service builds
