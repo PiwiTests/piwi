@@ -8,6 +8,7 @@ import { parseRunToHub, type HubToRun, type Place, type RunToHub } from '@piwite
 import {
   closeRunChannel,
   editorSendAddress,
+  editorShows,
   hideRunChannel,
   holdStop,
   openRunChannel,
@@ -135,6 +136,27 @@ describe('the worker’s run connection', () => {
     expect(editorSendAddress(none)).toBeUndefined();
   });
 
+  it('holds a failure only for an editor that says it shows one, as one that predates it does not', async () => {
+    const hub = await startHub();
+    try {
+      const { control } = handlers();
+      expect(await openRunChannel(WORKER, control, hub.env)).toBe(true);
+      await until(() => hub.heard[0]);
+      expect(editorShows('failure')).toBe(false);
+      hub.send({ type: 'attached', holds: ['failure'] });
+      await until(() => (editorShows('failure') ? true : undefined));
+      // A connection opened again starts from nothing.
+      closeRunChannel();
+      expect(editorShows('failure')).toBe(false);
+      expect(await openRunChannel(WORKER, control, hub.env)).toBe(true);
+      hub.send({ type: 'attached', holds: [] });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(editorShows('failure')).toBe(false);
+    } finally {
+      await hub.close();
+    }
+  });
+
   it('attaches first, holds a stop until the editor answers it, once, and says when it ended', async () => {
     const hub = await startHub();
     try {
@@ -151,6 +173,7 @@ describe('the worker’s run connection', () => {
         playwright: '1.64.1',
         reporter: expect.any(String),
         takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'],
+        holds: ['failure'],
       });
       const answers: string[] = [];
       const held = holdStop(STOP, (answer) => void answers.push(answer));

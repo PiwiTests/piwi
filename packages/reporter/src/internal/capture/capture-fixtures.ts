@@ -85,7 +85,7 @@ import {
 import type { FlakePlan } from '@piwitests/core/flake-plan';
 import { joinErrorMessages } from '@piwitests/core/error-text';
 import { finalizeCodeReach } from '@piwitests/core/code-reach';
-import { maskUrlFragment } from '@piwitests/core/mask';
+import { SECRET_AUTOCOMPLETE, hideSecretsInText, maskUrlFragment } from '@piwitests/core/mask';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import {
   applyPickToSnapshots,
@@ -143,6 +143,7 @@ import { canRecordFromHere, recordFromHere } from './record-handoff.js';
 import {
   closeRunChannel,
   editorSendAddress,
+  editorShows,
   hideRunChannel,
   holdStop,
   openRunChannel,
@@ -1868,9 +1869,9 @@ async function checkAt(
 /**
  * **Assert a region** at a stop: the region picked with the bar's picker, its ARIA snapshot read through the locator
  * the person confirmed (`locator.ariaSnapshot()`, inside the bar's internal call), sent to the editor, which writes
- * `toMatchAriaSnapshot` above the stopped line, without the value of a password field nor a link's URL that holds a
- * credential (`regionSnapshotWithoutSecrets`). A region the locator does not find alone, or a snapshot too long, is
- * said to the editor instead.
+ * `toMatchAriaSnapshot` above the stopped line, without the value of a field that holds a secret nor a link's URL that
+ * holds a credential (`regionSnapshotWithoutSecrets`). A region the locator does not find alone, or a snapshot too
+ * long, is said to the editor instead, as what the region came to at the stop (`region` with `refused`).
  */
 async function regionAt(page: Page, location: string, stop: number, ended?: AbortSignal): Promise<void> {
   const picked = await pickLocator(page, { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG }, null, ended).catch(
@@ -1880,7 +1881,7 @@ async function regionAt(page: Page, location: string, stop: number, ended?: Abor
   const source = picked.picked.locator;
   const say = (message: string) => {
     console.log(`[piwi] ${message}`);
-    tellHub({ type: 'notice', message });
+    tellHub({ type: 'region', stop, refused: message });
   };
   const region = locatorOn(page, source);
   if (!region) return say(`The region's locator, ${source}, is not one Piwi can read.`);
@@ -1888,17 +1889,9 @@ async function regionAt(page: Page, location: string, stop: number, ended?: Abor
   if (count !== 1) return say(`${source} finds ${count} elements: pick a region it finds alone.`);
   const read = await region.ariaSnapshot({ timeout: 5000 }).catch(() => null);
   if (!read?.trim()) return say(`The ARIA snapshot of ${source} could not be read.`);
-  const passwords = await region
-    .evaluate((root) => {
-      type Field = { tagName: string; type?: unknown; value?: unknown };
-      const fields = [root, ...root.querySelectorAll('input')] as unknown as Field[];
-      return fields
-        .filter((el) => el.tagName === 'INPUT' && String(el.type).toLowerCase() === 'password')
-        .map((el) => String(el.value ?? ''));
-    })
-    .catch(() => null);
-  if (passwords === null) return say(`The password fields of ${source} could not be read.`);
-  const snapshot = regionSnapshotWithoutSecrets(read, passwords);
+  const secrets = await regionSecrets(region).catch(() => null);
+  if (secrets === null) return say(`The fields of ${source} that hold a secret could not be read.`);
+  const snapshot = regionSnapshotWithoutSecrets(read, secrets);
   if (snapshot.length > MAX_REGION_SNAPSHOT) {
     return say(
       `The ARIA snapshot of ${source} is longer than ${MAX_REGION_SNAPSHOT} characters: pick a smaller region.`,
@@ -1909,21 +1902,40 @@ async function regionAt(page: Page, location: string, stop: number, ended?: Abor
 }
 
 /**
- * A failure in an interactive run (the worker's run connection open, a test that can stop): once the test function
- * and its hooks are done, the failing page is held, as a stop at the failing line with the reason `failure`. The
- * evidence is read first, and nothing the pages do during the hold is the failure's (`frozenAt`): no request, console
- * entry or dialog is recorded from then on, and the code reach of its context ends. The test timeout is held while the
- * stop shows (`withTestTimeoutHeld`). The editor and the bar answer it as any stop, with Pick (which replaces the
- * failing locator), Record (the missing steps, above the failing line) and the code actions; any answer lets the test
- * end as it failed. The editor lets it go at once when the run was not started to be watched. Once per attempt, never
- * for an expected failure. The page held is the test's last active one, else `fallback` (the page fixture's) when that
- * one closed. The failing line is the first an error names in the test's code other than the test's own declaration
- * (`errorPlace`), else the failing locator's, else the call a test timeout cut short (`stepInProgress`), else the
- * test's declaration.
+ * The values of a region's fields that are never written down, the region's own included, in its open shadow roots
+ * too (a locator pierces them): a password field's, and one's whose `autocomplete` asks for a password, a one-time
+ * code or a card's number or security code (`SECRET_AUTOCOMPLETE`).
+ */
+function regionSecrets(region: Locator): Promise<string[]> {
+  return region.locator(':scope:is(input, textarea), input, textarea').evaluateAll(
+    (elements, secret: string[]) => {
+      type Field = { localName: string; type?: unknown; value?: unknown; getAttribute(name: string): string | null };
+      return (elements as unknown as Field[]).flatMap((field) => {
+        const tokens = (field.getAttribute('autocomplete') ?? '').toLowerCase().split(/\s+/);
+        const password = field.localName === 'input' && String(field.type).toLowerCase() === 'password';
+        return password || tokens.some((token) => secret.includes(token)) ? [String(field.value ?? '')] : [];
+      });
+    },
+    [...SECRET_AUTOCOMPLETE],
+  );
+}
+
+/**
+ * A failure in an interactive run (the worker's run connection open to an editor that shows a held failure,
+ * `editorShows`, and a test that can stop): once the test function and its hooks are done, the failing page is held, as
+ * a stop at the failing line with the reason `failure`. The evidence is read first, and nothing the pages do during the
+ * hold is the failure's (`frozenAt`): no request, console entry or dialog is recorded from then on, and the code reach
+ * of its context ends. The test timeout is held while the stop shows (`withTestTimeoutHeld`). The editor and the bar
+ * answer it as any stop, with Pick (which replaces the failing locator), Record (the missing steps, above the failing
+ * line) and the code actions; any answer lets the test end as it failed. The editor lets it go at once when the run was
+ * not started to be watched. Once per attempt, never for an expected failure. The page held is the test's last active
+ * one, else `fallback` (the page fixture's) when that one closed. The failing line is the first an error names in the
+ * test's code other than the test's own declaration (`errorPlace`), else the failing locator's, else the call a test
+ * timeout cut short (`stepInProgress`), else the test's declaration.
  */
 async function holdFailure(sink: CaptureSink, fallback?: Page): Promise<void> {
   const testInfo = sink.testInfo;
-  if (sink.failureHeld || !sink.pause || !testInfo || !runChannelOpen()) return;
+  if (sink.failureHeld || !sink.pause || !testInfo || !editorShows('failure')) return;
   const { status, expectedStatus } = testInfo;
   if ((status !== 'failed' && status !== 'timedOut') || status === expectedStatus) return;
   const page = [sink.lastActivePage, fallback].find((open) => !!open && !isPageClosed(open));
@@ -1953,8 +1965,10 @@ async function holdFailure(sink: CaptureSink, fallback?: Page): Promise<void> {
     await internalCall(page, () => readPageBeforeClose(sink, page)).catch(() => undefined);
   sink.frozenAt = Date.now();
   await stopSinkCodeReach(sink, { context });
-  const title = `Failed: ${said.trim().slice(0, 300)}`;
-  const named = failureError(error?.message ?? error?.value);
+  // An error names what the test used: a URL's credentials stay in the worker.
+  const title = hideSecretsInText(`Failed: ${said.trim().slice(0, 300)}`).slice(0, 1000);
+  const errorText = failureError(error?.message ?? error?.value);
+  const named = errorText === null ? null : hideSecretsInText(errorText).slice(0, MAX_STOP_ERROR);
   await showStop(sink, context, title, location, 'failure', undefined, { page }, { failed, error: named });
 }
 

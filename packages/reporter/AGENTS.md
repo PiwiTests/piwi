@@ -54,7 +54,11 @@ per-directory responsibilities.
    `PIWI_EDITOR_SEND`, the same hand-off over `PIWI_RECORD_CHANNEL`), **Assert** (the same hand-off in its `check`
    mode, naming the stop: the editor's recorder opens the check panel's Check an element alone, and the editor service
    writes the check) or **Assert a region** (the bar's picker, then the confirmed locator's `ariaSnapshot()`, sent as
-   `region` without a password field's value nor a link's URL holding a credential, `region-snapshot.ts`), each
+   `region` without the value of a field that holds a secret (a password field's, or one whose `autocomplete` asks for
+   a password, a one-time code or a card's number, `SECRET_AUTOCOMPLETE` of `@piwitests/core/mask`, read through a
+   locator, so in open shadow roots too) nor a link's URL holding a credential, a link left without a child ending
+   without its colon, `region-snapshot.ts`; a region its locator does not find alone, or whose snapshot is too long,
+   is sent as `region` with `refused` instead), each
    ending with the stop, the test's window brought to the front through an internal call, and is
    answered at once with whether it started: refused at a stop that ended or is ending (its test ended, its page or
    context began to close), one no bar shows, one whose page it cannot tell, without a record channel for Record here
@@ -64,8 +68,8 @@ per-directory responsibilities.
    the latest 50, 256 KB each at most as their `content-length` says (one that says none is listed without a size),
    each kept as its `Response` in the worker's memory alone, its body read only when `mock` asks for it, through an
    internal call, refused when the browser no longer holds it or it is not text, never in an attachment, and dropped
-   as the test ends; every URL listed or handed over with its credentials hidden, `hideSecretsInText` of
-   `@piwitests/core/mask`), and `locator` counts a chain (`chain-locator.ts`, built through the chain grammar's calls
+   as the test ends; every URL listed or handed over with its credentials hidden part by part, its host and ids kept,
+   `hideSecretsInUrl` of `@piwitests/core/mask`), and `locator` counts a chain (`chain-locator.ts`, built through the chain grammar's calls
    alone) on the stopped page, one count after the other, and, where the bar shows, outlines its matches with
    Playwright's highlight, the one before taken down first and the last before the stop ends. While it is open a headless run stops too, held until the
    editor answers; a headed stop shows the bar as well, and the first answer wins. Whoever answers a stop, it goes to
@@ -76,8 +80,10 @@ per-directory responsibilities.
    unshown, the editor never hearing of it, when the test ended meanwhile (as on Finish), its page or context closed
    or its breakpoint went, leaving the Step, Pause or line run to it used up for the next stop. Closing a context,
    itself or with its browser, lets the call its debugger holds go on first, since the close never lets it go. A test
-   that fails while the connection is open (`holdFailure` in `capture-fixtures.ts`: not an expected failure, never
-   under CI nor Playwright's own debugger) holds its page once the test function, its hooks and the fixtures built on
+   that fails while the connection is open to an editor that shows a held failure (`holdFailure` in
+   `capture-fixtures.ts`, `editorShows`: the worker's `run-attach` lists `holds`, and the editor answers it with
+   `attached` naming `failure`; one that predates it says nothing, and no failure is held; not an expected failure,
+   never under CI nor Playwright's own debugger) holds its page once the test function, its hooks and the fixtures built on
    `page` are done (Piwi's `page` fixture, after `use(page)`; a page the test left open, at the capture fixture's
    teardown), never from a close while the test runs: its evidence is read first and kept as it was (`frozenAt`: no
    request, console entry or dialog of the hold is recorded, and its context's code reach ends; Playwright's own
@@ -85,7 +91,8 @@ per-directory responsibilities.
    with the reason `failure` at the failing line (where the error's stack enters the test's code, else the failing
    locator's, else the call a test timeout cut short, the runner's step in progress, else the test's declaration),
    naming its error to the editor (`error`: the failing error's lines up to a blank one or its call log, four at most,
-   without ANSI codes nor the `Error: ` the runner writes before a plain error's message, `failureError`), the bar
+   without ANSI codes nor the `Error: ` the runner writes before a plain error's message, `failureError`; its title and
+   its error with the credentials of the URLs they name hidden, `hideSecretsInText`), the bar
    saying `Failed at …` with Resume, Pick a locator (which replaces the failing locator, and is folded into
    its snapshot) and Record here; any answer lets the test end as it failed, and the editor service lets one go at
    once in a run nobody watches. Without a run connection nothing of it runs.

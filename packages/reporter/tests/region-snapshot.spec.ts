@@ -20,10 +20,26 @@ describe('the ARIA snapshot Assert a region sends', () => {
         '  - textbox "Email": ada@shop.test',
         '  - textbox "Password"',
         '  - textbox "PIN" [disabled]',
-        '  - link "Forgot?":',
+        // Its only child gone, the link ends its line as Playwright writes a node without children.
+        '  - link "Forgot?"',
         '  - link "Help":',
         '    - /url: /help?topic=sign-in',
       ].join('\n'),
+    );
+  });
+
+  it('keeps the colon of a link left with other children, and of a line that never lost one', () => {
+    const snapshot = [
+      '- link "Reset":',
+      '  - img "Key"',
+      '  - /url: /reset?token=RESET-SECRET-42',
+      '- list:',
+      '  - listitem: "Total:"',
+      '- link "Last":',
+      '  - /url: /reset?token=RESET-SECRET-43',
+    ].join('\n');
+    expect(regionSnapshotWithoutSecrets(snapshot, [])).toBe(
+      ['- link "Reset":', '  - img "Key"', '- list:', '  - listitem: "Total:"', '- link "Last"'].join('\n'),
     );
   });
 

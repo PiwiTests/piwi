@@ -12,11 +12,12 @@ import { jsonRes, startServer, type FakeServer } from './_helpers.js';
 /**
  * Code from a stop, the worker's part, in real Playwright runs through the built package under a fake editor service:
  * the text bodies an interactive run keeps and the one handed over to mock, a locator counted and outlined on the
- * stopped page, a region picked with its ARIA snapshot, a check handed to the editor's check panel, and a failure
- * held at its line, headed and headless, once the test and its hooks are done, where Pick replaces the failing
- * locator and Resume lets the test end as it failed, the evidence being what the test left at the failure. Under CI,
- * and without a run connection, a failure is not held. Without a display, Chromium runs the headed project without a
- * window (`--headless=new`); under `xvfb-run -a` it opens one.
+ * stopped page, a region picked with its ARIA snapshot (its `toMatchAriaSnapshot` run against the page) or refused,
+ * a check handed to the editor's check panel, and a failure held at its line, headed and headless, once the test and
+ * its hooks are done, where Pick replaces the failing locator and Resume lets the test end as it failed, the evidence
+ * being what the test left at the failure, its error's credentials hidden. Under CI, without a run connection, and
+ * for an editor that does not say it shows a held failure, a failure is not held. Without a display, Chromium runs the
+ * headed project without a window (`--headless=new`); under `xvfb-run -a` it opens one.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -33,16 +34,26 @@ const LOOK_MS = 300;
 /**
  * A page of the app: `/k` fetches its answers one after another, then says so in its title; `/h` asks every 100 ms
  * whether its failure is held, and once it is, fetches again and logs an error. Every page says when the pause bar
- * shows, and plays a person's part in the element picker, picking the region on `/r` and the button elsewhere. The
- * region holds a password field with its value and a link with a token.
+ * shows, and plays a person's part in the element picker, picking the region on `/r` and `/big` and the button
+ * elsewhere. The region holds a password field with its value, one in a shadow root, a one-time code's field and a link
+ * with a token; on `/big`, text past what a region's snapshot may hold.
  */
 const PAGE = `<!doctype html><meta charset="utf-8"><title>a</title>
 <section aria-label="Order summary"><h2>Order summary</h2><p>Total 72</p>
 <label>Password <input type="password" value="hunter2-secret"></label>
+<label>Code <input autocomplete="one-time-code" value="246810"></label>
+<x-secret></x-secret>
 <a href="/reset?token=RESET-SECRET-42">Forgot?</a></section>
 <button data-testid="go">Go</button>
 <script>
-const PICK = location.pathname === '/r' ? 'section' : 'button';
+customElements.define('x-secret', class extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' }).innerHTML = '<label>Shadow <input type="password" value="shadow-secret"></label>';
+  }
+});
+if (location.pathname === '/big') document.querySelector('section p').textContent = 'many words '.repeat(105 * 1024);
+const PICK = location.pathname === '/r' || location.pathname === '/big' ? 'section' : 'button';
 new MutationObserver(() => {
   if (document.querySelector('x-pw-glass') && !window.__glassSaid) {
     window.__glassSaid = true;
@@ -101,6 +112,10 @@ test('asserts a region', async ({ page }) => {
   await page.goto('${base}/r');
   await page.keyboard.press('Tab'); // bp
 });
+test('asserts a region too long', async ({ page }) => {
+  await page.goto('${base}/big');
+  await page.keyboard.press('Tab'); // bp
+});
 test('checks an element', async ({ page }) => {
   await page.goto('${base}/a');
   await page.keyboard.press('Tab'); // bp
@@ -128,6 +143,18 @@ test('fails, its page acting during the hold', async ({ page }) => {
   await page.goto('${base}/h');
   await page.waitForResponse('**/api/poll');
   await expect(page.getByRole('button', { name: 'Missing' })).toBeVisible({ timeout: 300 }); // fails
+});
+test('fails at an address with a credential', async ({ page }) => {
+  await page.goto('${base}/a');
+  await page.goto('http://127.0.0.1:1/reset?token=s3cr3t-reset-value&user=jane'); // fails
+});
+`;
+
+/** The check Assert a region writes, run against the page the region was picked on. */
+const CHECK_SPEC = (base: string, locator: string, snapshot: string) => `const { test, expect } = require('../fixture.cjs');
+test('matches the region', async ({ page }) => {
+  await page.goto('${base}/r');
+  await expect(page.${locator}).toMatchAriaSnapshot(${JSON.stringify(snapshot)});
 });
 `;
 
@@ -207,6 +234,8 @@ const outlined: string[] = [];
 const heard: Record<string, unknown[]> = {};
 /** The stops each test made, by test. */
 const stops: Record<string, Stopped[]> = {};
+/** Whether the fake editor says it shows a held failure, as one that predates the hold does not. */
+let showsFailures = true;
 /** Whether the page of the failure held is told so, and whether it acted then. */
 let held = false;
 let actedDuringHold = false;
@@ -274,8 +303,9 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       said.push(await ask(connection, { what: 'requests', ...at }));
       break;
     case 'asserts a region':
+    case 'asserts a region too long':
       said.push(await ask(connection, { what: 'assert-region', ...at }));
-      said.push(await waitFor(() => connection.heard.find((m) => m.type === 'region')));
+      said.push(await waitFor(() => connection.heard.find((m) => m.type === 'region' && m.stop === stop.stop)));
       await waitFor(() => (bars.length > barsBefore + 1 ? true : undefined));
       break;
     case 'checks an element':
@@ -358,6 +388,10 @@ beforeAll(async () => {
           }
           const message = parseRunToHub(line);
           if (!message) return;
+          // As the editor service answers a worker that holds a failure only for an editor that shows one.
+          if (message.type === 'run-attach' && message.holds && showsFailures) {
+            send(connection, { type: 'attached', holds: message.holds });
+          }
           connection.heard.push(message);
           connection.times.push(Date.now());
           if (message.type === 'test-begin') connection.test = message.title[message.title.length - 1]!;
@@ -425,6 +459,7 @@ module.exports = defineConfig({
   workers: 1,
   reporter: [['./steps-reporter.cjs', { outputFile: 'results.json' }]],
   projects: [
+    { name: 'check', testMatch: 'check.spec.cjs', use: { headless: true } },
     {
       name: 'headed',
       testMatch: 'headed.spec.cjs',
@@ -478,15 +513,18 @@ describe('code from a stop, the worker’s part', () => {
       ['keeps the text bodies', 'passed'],
       ['keeps nothing of the test before', 'passed'],
       ['asserts a region', 'passed'],
+      ['asserts a region too long', 'passed'],
       ['checks an element', 'passed'],
       ['takes every outline down', 'passed'],
       ['fails headed', 'failed'],
       ['fails headless', 'failed'],
       ['fails, its page acting during the hold', 'failed'],
+      ['fails at an address with a credential', 'failed'],
     ]);
     expect(connections[0]!.heard[0]).toMatchObject({
       type: 'run-attach',
       takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'],
+      holds: ['failure'],
     });
   });
 
@@ -591,12 +629,34 @@ describe('code from a stop, the worker’s part', () => {
       locator: "getByRole('region', { name: 'Order summary' })",
       snapshot: expect.stringContaining('- heading "Order summary" [level=2]'),
     });
-    // Neither a password nor a link's token goes to the editor: the field and the link are written without them.
+    // Neither a secret nor a link's token goes to the editor: the fields and the link are written without them, a
+    // password in a shadow root and a one-time code included.
     const { snapshot } = region as { snapshot: string };
     expect(snapshot).toContain('- textbox "Password"\n');
-    expect(snapshot).toContain('- link "Forgot?"');
-    expect(snapshot).not.toContain('hunter2-secret');
-    expect(snapshot).not.toContain('RESET-SECRET-42');
+    expect(snapshot).toContain('- textbox "Code"\n');
+    expect(snapshot).toContain('- textbox "Shadow"\n');
+    expect(snapshot).toMatch(/- link "Forgot\?"$/m);
+    for (const secret of ['hunter2-secret', '246810', 'shadow-secret', 'RESET-SECRET-42']) {
+      expect(snapshot).not.toContain(secret);
+    }
+  });
+
+  it('sends a region’s snapshot whose toMatchAriaSnapshot passes against the page it was picked on', async () => {
+    const [, region] = heard['asserts a region']!;
+    const { locator, snapshot } = region as { locator: string; snapshot: string };
+    write('tests/check.spec.cjs', CHECK_SPEC(server.url, locator, snapshot));
+    const checked = await run(baseEnv, ['--project=check'], 60_000);
+    expect(checked.tests.map((t) => [t.title, t.status]), checked.output).toEqual([['matches the region', 'passed']]);
+  }, 90_000);
+
+  it('says why a region picked brings no snapshot, at its stop', () => {
+    const [started, region] = heard['asserts a region too long']!;
+    expect(started).toMatchObject({ ok: true });
+    expect(region).toEqual({
+      type: 'region',
+      stop: stops['asserts a region too long']![0]!.stop,
+      refused: "The ARIA snapshot of getByRole('region', { name: 'Order summary' }) is longer than 1048576 characters: pick a smaller region.",
+    });
   });
 
   it('hands the page to the editor’s check panel through a hand-off in its check mode', () => {
@@ -665,6 +725,15 @@ describe('code from a stop, the worker’s part', () => {
     expect(counted).toEqual({ ok: true, message: '1 element matches.', count: 1 });
   });
 
+  it('hides the credentials of the URL a failure names in its title and its error', () => {
+    const [stop] = stops['fails at an address with a credential']!;
+    expect(stop).toMatchObject({ reason: 'failure', bar: false });
+    for (const text of [stop!.title, stop!.error!]) {
+      expect(text).toContain('/reset?token=<hidden>&user=jane');
+      expect(text).not.toContain('s3cr3t-reset-value');
+    }
+  });
+
   it('keeps the evidence of a failure held as it was when the hold began', () => {
     const result = tests.find((t) => t.title === 'fails, its page acting during the hold')!;
     expect(actedDuringHold).toBe(true);
@@ -729,6 +798,24 @@ describe('code from a stop, the worker’s part', () => {
     const region = allSteps(tests.find((t) => t.title === 'asserts a region')!.steps).map((s) => s.title);
     expect(region).not.toContainEqual(expect.stringMatching(/Evaluate/i));
   });
+
+  it('holds no failure for an editor that does not say it shows one, as one that predates the hold', async () => {
+    const before = connections.length;
+    showsFailures = false;
+    try {
+      const old = await run({ ...baseEnv, PIWI_RUN_CHANNEL: channel() }, [
+        '--project=headless',
+        '--grep',
+        'fails headless',
+      ]);
+      expect(old.tests.map((t) => [t.title, t.status])).toEqual([['fails headless', 'failed']]);
+    } finally {
+      showsFailures = true;
+    }
+    const connection = connections[before]!;
+    expect(connection.heard[0]).toMatchObject({ type: 'run-attach', holds: ['failure'] });
+    expect(connection.heard.filter((m) => m.type === 'stopped')).toEqual([]);
+  }, 120_000);
 
   it('holds no failure under CI, nor without a run connection', async () => {
     const before = connections.length;
