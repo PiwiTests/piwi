@@ -262,7 +262,11 @@ export interface ProjectWithStats {
   tags?: TagInfo[];
   createdAt: Date;
   updatedAt: Date;
+  defaultBranch?: string | null;
+  /** The runs that set the project's status, `latestRun`; null for every run. */
+  statusFilter?: import('#shared/project-run-scope').ProjectRunScope | null;
   // Statistics added by API
+  /** The latest run in the status filter, lab runs left out. */
   latestRun?: {
     id: number;
     status: string;
@@ -282,6 +286,8 @@ export interface ProjectWithStats {
     metadata: TestRunMetadata;
   } | null;
   totalRuns: number;
+  /** When the latest run of any kind started, whatever the status filter. */
+  lastRunAt?: string | Date | null;
   totalTestCases: number;
 }
 
@@ -415,6 +421,8 @@ export interface ProjectWithTestRuns {
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
   targets?: import('#shared/analytics/targets').ProjectTargets | null;
+  /** The runs that set the project's status (its latest run in the project list); null for every run. */
+  statusFilter?: import('#shared/project-run-scope').ProjectRunScope | null;
   /** The files coverage totals count; null for the default excludes. */
   coverageScope?: import('@piwitests/core/coverage-scope').CoverageScope | null;
   coverageAreas?: import('@piwitests/core/coverage-scope').CoverageArea[] | null;

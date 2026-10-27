@@ -188,6 +188,9 @@ const PROJECTS = [
     updated_at: ts('2025-04-24T16:45:00'),
     // Targets the component suite meets.
     targets: { testPassRate: 60, maxOpenClusterAgeDays: 400 },
+    // The latest runs are on feature/new-ui: the status filter keeps the
+    // project's status on its default branch's full runs.
+    status_filter: { environments: [], branches: [], allBranches: false, fullRunsOnly: true },
   },
   {
     id: 4,

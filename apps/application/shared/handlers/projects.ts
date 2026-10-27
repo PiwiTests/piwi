@@ -34,6 +34,7 @@ import {
   isNull,
   isNotNull,
   count,
+  max,
   ne,
   notInArray,
   type SQL,
@@ -51,7 +52,7 @@ import { splitSuitePath } from '#shared/utils/suites';
 import { notLabExecutionInProject, notLabRun } from './probes';
 import { resolveStoredDefaultBranch } from '../../server/utils/scm/stored-default-branch';
 import { projectRunScopeConditions, scopedExecutionInProject, scopedExecutionInProjectJoin } from './project-run-scope';
-import { parseProjectRunScope, type ProjectRunScope } from '../project-run-scope';
+import { parseProjectRunScope, resolveProjectRunScope, type ProjectRunScope } from '../project-run-scope';
 import { eligibleRunSql } from '../run-eligibility';
 import { isFailedStatus } from '../utils/test-counts';
 import { getHoldingVerifiedFixes } from './flake-verified';
@@ -117,27 +118,56 @@ async function getProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
   };
 }
 
+/**
+ * The `test_runs` condition of the runs that set each project's status, its
+ * latest run: the runs in its status filter (`projects.statusFilter`, a run
+ * scope), or every run when it has none. A lab run never sets a status.
+ */
+async function statusRunConditions(
+  db: DrizzleDB,
+  rows: { id: number; statusFilter?: unknown }[],
+): Promise<SQL | undefined> {
+  const unfiltered: number[] = [];
+  const perProject: SQL[] = [];
+  for (const row of rows) {
+    const filter = resolveProjectRunScope(row.statusFilter);
+    if (!filter) {
+      unfiltered.push(row.id);
+      continue;
+    }
+    const conditions = await projectRunScopeConditions(db, row.id, filter);
+    perProject.push(and(eq(testRuns.projectId, row.id), ...conditions)!);
+  }
+  if (unfiltered.length > 0) perProject.push(inArray(testRuns.projectId, unfiltered));
+  return and(notLabRun(testRuns.origin), or(...perProject));
+}
+
 export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
   const { ids: projectIds, projects: allProjects } = await getProjects(db, scope);
 
-  // 1. Run counts per project
+  // 1. Run counts and the start of the latest run, of any kind, per project
   const runStats: any[] = await db
     .select({
       projectId: testRuns.projectId,
       count: count(),
+      lastRunAt: max(testRuns.startTime),
     })
     .from(testRuns)
     .where(inArray(testRuns.projectId, projectIds))
     .groupBy(testRuns.projectId);
 
   const runCountByProjectId = new Map<number, number>();
+  const lastRunAtByProjectId = new Map<number, Date | null>();
   for (const r of runStats) {
     runCountByProjectId.set(r.projectId, r.count);
+    lastRunAtByProjectId.set(r.projectId, r.lastRunAt ?? null);
   }
 
-  // Latest run id per project, ranked by start_time (id as a deterministic
-  // tiebreaker): rows can be ingested out of chronological order (historical
-  // uploads on the server; the demo seed inserts runs newest-first).
+  // Latest run id per project among the runs that set its status, ranked by
+  // start_time (id as a deterministic tiebreaker): rows can be ingested out of
+  // chronological order (historical uploads on the server; the demo seed
+  // inserts runs newest-first).
+  const statusRuns = await statusRunConditions(db, allProjects);
   const rankedRuns = db.$with('ranked_latest_runs').as(
     db
       .select({
@@ -148,7 +178,7 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
         ),
       })
       .from(testRuns)
-      .where(inArray(testRuns.projectId, projectIds)),
+      .where(and(inArray(testRuns.projectId, projectIds), statusRuns)),
   );
   const latestIdRows: any[] = await db
     .with(rankedRuns)
@@ -224,6 +254,7 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
       ...project,
       latestRun: latestRun ? { ...latestRun, reports: reportsByRunId.get(latestRun.id) ?? [] } : null,
       totalRuns: runCountByProjectId.get(project.id) ?? 0,
+      lastRunAt: lastRunAtByProjectId.get(project.id) ?? null,
       totalTestCases: caseCountByProjectId.get(project.id) ?? 0,
       tags: tagsByProjectId.get(project.id) ?? [],
     };
@@ -465,6 +496,8 @@ export async function updateProject(
     coverageScope?: unknown;
     /** Named areas of the code (`CoverageArea[]`), each counted apart; null or [] removes them. */
     coverageAreas?: unknown;
+    /** The runs that set the project's status (`ProjectRunScope`); null for every run. */
+    statusFilter?: unknown;
     tagIds?: number[];
   },
 ) {
@@ -489,6 +522,7 @@ export async function updateProject(
     targets,
     coverageScope,
     coverageAreas,
+    statusFilter,
     tagIds: dataTagIds,
   } = data;
   const linkTemplate = externalIdUrl === undefined ? undefined : normalizeExternalIdUrl(externalIdUrl);
@@ -531,6 +565,7 @@ export async function updateProject(
         gateStatus,
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
+        statusFilter: statusFilter === undefined ? undefined : resolveProjectRunScope(statusFilter),
         ...(scopeChanged ? { coverageScope: scope } : {}),
         // Totals counted under another scope or other areas read as stale.
         ...(scopeChanged || areasChanged ? { coverageScopeVersion: sql`${projects.coverageScopeVersion} + 1` } : {}),

@@ -20,7 +20,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Update a project',
     description:
-      'Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), targets, the coverage scope (`coverageScope`: `include` and `exclude` lists of gitignore-style patterns over repository-relative paths, the files coverage totals count; null restores the default excludes), the coverage areas (`coverageAreas`: up to 20 `{ name, include }`, named areas of the code such as `front` and `back`, each counted apart; a file belongs to the first whose patterns match it; null or `[]` removes them), and tags. A change of the scope or the areas recounts the commits whose totals are kept, the newest on the default branch a few seconds later and the others after it, 200 at most, and an area no longer named leaves the coverage trend. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. `repositoryUrl` is the repository every SCM call of the project reads with its token (`https://host/owner/repo`; an SSH remote is accepted and stored in that form): the first run that names a remote sets it, a run naming another repository is ignored for SCM calls, and `null` or an empty string clears it so the next run that names one sets it again. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires `project:manage` (Project admin on the project).',
+      'Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), targets, the coverage scope (`coverageScope`: `include` and `exclude` lists of gitignore-style patterns over repository-relative paths, the files coverage totals count; null restores the default excludes), the coverage areas (`coverageAreas`: up to 20 `{ name, include }`, named areas of the code such as `front` and `back`, each counted apart; a file belongs to the first whose patterns match it; null or `[]` removes them), the status filter (`statusFilter`: `{ environments, branches, allBranches, fullRunsOnly }`, the run scope of the project page, which picks the runs that set the project’s status, its `latestRun` in the project list; null for every run), and tags. A change of the scope or the areas recounts the commits whose totals are kept, the newest on the default branch a few seconds later and the others after it, 200 at most, and an area no longer named leaves the coverage trend. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. `repositoryUrl` is the repository every SCM call of the project reads with its token (`https://host/owner/repo`; an SSH remote is accepted and stored in that form): the first run that names a remote sets it, a run naming another repository is ignored for SCM calls, and `null` or an empty string clears it so the next run that names one sets it again. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires `project:manage` (Project admin on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:manage',
   },
@@ -76,6 +76,17 @@ const updateProjectSchema = z.object({
   coverageScope: z.unknown().optional(),
   /** Named areas of the code, `[{ name, include }]`, each counted apart; null or [] removes them. */
   coverageAreas: z.unknown().optional(),
+  /** The runs that set the project's status, a run scope; null for every run. */
+  statusFilter: z
+    .object({
+      environments: z.array(z.string().max(200)).max(50),
+      branches: z.array(z.string().max(500)).max(50),
+      allBranches: z.boolean(),
+      fullRunsOnly: z.boolean(),
+    })
+    .partial()
+    .optional()
+    .nullable(),
   tagIds: z.array(z.number()).optional(),
 });
 
@@ -116,6 +127,7 @@ export default eventHandler(async (event) => {
     targets,
     coverageScope,
     coverageAreas,
+    statusFilter,
     tagIds,
   } = validation.data;
 
@@ -160,6 +172,7 @@ export default eventHandler(async (event) => {
       targets,
       coverageScope,
       coverageAreas,
+      statusFilter,
       tagIds,
     }).then(async (project) => {
       if (coverageScope !== undefined || coverageAreas !== undefined) await recountProjectCoverage(db, id);
