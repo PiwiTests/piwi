@@ -1300,7 +1300,10 @@
     "message": "Non envoyé"
   },
   "common_editorNotProven": {
-    "message": "Le programme sur le port de l’éditeur n’a pas prouvé qu’il est l’éditeur associé, donc rien n’a été envoyé : mettez à jour l’extension Piwi de l’éditeur, ou associez-le à nouveau."
+    "message": "Le programme sur le port de l’éditeur n’a pas prouvé qu’il est l’éditeur associé, donc rien n’a été envoyé : associez à nouveau Piwi Picker à votre éditeur dans les réglages."
+  },
+  "common_editorOutdated": {
+    "message": "L’extension Piwi de votre éditeur est trop ancienne pour prouver qu’il s’agit de l’éditeur associé, donc rien n’a été envoyé : mettez à jour Piwi dans VS Code, ou le plugin Piwi de votre IDE JetBrains, puis envoyez à nouveau."
   },
   "common_editorUnreachable": {
     "message": "L’éditeur ne répond pas : ouvrez-le, avec l’extension Piwi, et envoyez à nouveau."
@@ -6227,6 +6230,24 @@
   },
   "runs_runToCursor": {
     "message": "Exécuter jusqu’au curseur se fait dans l’éditeur, qui a le fichier."
+  },
+  "runs_shortcutNone": {
+    "message": "Aucune touche ne met encore en pause ni ne reprend les exécutions. Choisissez-en une, Global dans Chrome ou Edge, pour l’utiliser depuis n’importe quelle fenêtre."
+  },
+  "runs_shortcutKey": {
+    "message": "$key$ met en pause les exécutions, ou reprend un test arrêté.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt+Shift+P"
+      }
+    }
+  },
+  "runs_shortcutSet": {
+    "message": "Choisir un raccourci"
+  },
+  "runs_shortcutChange": {
+    "message": "Changer le raccourci"
   },
   "runs_failOffline": {
     "message": "Le service de l’éditeur n’est pas connecté : Piwi Picker se reconnecte."

@@ -161,7 +161,8 @@ export class RunHubs {
     // The editor is closed, or the window that held its port: the hubs found last may still be there.
     if (proof === 'unreachable') return this.settle('unreachable', await this.storedHubs());
     if (proof === 'outdated') return this.settle('outdated', []);
-    if (proof === 'unproven') return this.settle('unproven', await this.storedHubs());
+    // Another program holds the paired port: no hub's token goes anywhere until the editor proves itself again.
+    if (proof === 'unproven') return this.settle('unproven', []);
     let response: Response;
     try {
       response = await this.deps.fetch(live, {
@@ -212,10 +213,11 @@ export class RunHubs {
       hub,
       this.deps.open,
       {
-        changed: () => {
-          if (connection.state === 'open') this.retries = 0;
-          this.changed();
+        // A connection that opens starts the count of failures again; a run's changes on another one do not.
+        opened: () => {
+          this.retries = 0;
         },
+        changed: () => this.changed(),
         ended: (session) => this.keepEnded(hub.url, session, connection.sessions.get(session.ref)),
         lost: (why) => this.lost(hub, connection, why),
       },

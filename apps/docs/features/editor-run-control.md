@@ -12,8 +12,8 @@ A test run the [editor extensions](./editors) start can be paused, stepped and r
 own commands: no debug session starts, and the IDE's debugger works as usual beside it. The editor marks the line the
 test is stopped at as a debugger marks its execution point, and the breakpoints you set or remove reach the run while
 it goes on. The [pause bar](./editor-breakpoints#pause-a-run) in the page answers the same stops, and so does Piwi
-Picker's [Runs window](./extension#runs-from-the-editor), beside the test's browser, with a shortcut that pauses and
-resumes from any window.
+Picker's [Runs window](./extension#runs-from-the-editor), beside the test's browser, with a shortcut you can set to
+pause and resume from any window.
 
 ## The controls
 

@@ -1300,7 +1300,10 @@
     "message": "Não enviado"
   },
   "common_editorNotProven": {
-    "message": "O programa na porta do editor não provou que é o editor pareado, então nada foi enviado: atualize a extensão do Piwi no editor ou pareie de novo."
+    "message": "O programa na porta do editor não provou que é o editor pareado, então nada foi enviado: pareie o Piwi Picker com o seu editor de novo nas configurações."
+  },
+  "common_editorOutdated": {
+    "message": "A extensão do Piwi no seu editor é antiga demais para provar que é o editor pareado, então nada foi enviado: atualize o Piwi no VS Code, ou o plugin do Piwi no seu IDE JetBrains, e envie de novo."
   },
   "common_editorUnreachable": {
     "message": "O editor não responde: abra-o, com a extensão do Piwi, e envie de novo."
@@ -6227,6 +6230,24 @@
   },
   "runs_runToCursor": {
     "message": "Executar até o cursor fica no editor, que tem o arquivo."
+  },
+  "runs_shortcutNone": {
+    "message": "Nenhuma tecla pausa nem retoma as execuções ainda. Defina uma, Global no Chrome ou no Edge, para usá-la de qualquer janela."
+  },
+  "runs_shortcutKey": {
+    "message": "$key$ pausa as execuções ou retoma um teste parado.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt+Shift+P"
+      }
+    }
+  },
+  "runs_shortcutSet": {
+    "message": "Definir um atalho"
+  },
+  "runs_shortcutChange": {
+    "message": "Mudar o atalho"
   },
   "runs_failOffline": {
     "message": "O serviço do editor não está conectado: o Piwi Picker se conecta de novo."

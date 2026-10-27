@@ -128,8 +128,13 @@
         background: var(--surface);
         overflow: hidden;
       }
+      /* An ended run: its frame dashed and its names muted, each in a color that keeps its contrast. */
       .run.ended {
-        opacity: 0.75;
+        border-style: dashed;
+      }
+      .run.ended h2,
+      .run.ended .test {
+        color: var(--muted);
       }
       .run-head {
         padding: 9px 12px 8px;
@@ -276,6 +281,15 @@
       .worker .piwi-actions {
         margin-top: 8px;
       }
+      /* A command on its way: the buttons wait for its answer, and keep the focus. */
+      .piwi-btn[aria-disabled='true'] {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .piwi-btn[aria-disabled='true']:hover {
+        background: var(--piwi-btn-bg);
+        border-color: var(--piwi-btn-border);
+      }
       /* What a command answered when it was not done. */
       .answer {
         display: flex;
@@ -297,6 +311,26 @@
       footer {
         margin-top: 4px;
       }
+      /* The run shortcut: its key, or that it has none, and the button to the browser's shortcuts page. */
+      .shortcut {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 10px;
+        margin-bottom: 6px;
+      }
+      .shortcut .note {
+        flex: 1 1 220px;
+        margin: 0;
+      }
+      kbd {
+        padding: 0 4px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--surface);
+        color: var(--fg);
+        font: 11px/16px var(--mono);
+      }
     </style>
   </head>
   <body>
@@ -314,6 +348,10 @@
       </div>
       <div id="runs"></div>
       <footer>
+        <div id="shortcut" class="shortcut" hidden>
+          <p id="shortcut-text" class="note"></p>
+          <div id="shortcut-actions" class="piwi-actions"></div>
+        </div>
         <p class="note" data-i18n="runs_runToCursor" data-icon="info">Run to Cursor is in the editor, which has the file.</p>
       </footer>
     </main>

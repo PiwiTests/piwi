@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
+  canonicalEditorUrl,
   editorOriginPattern,
   getEditorPairing,
   moveLegacyEditorPairing,
+  parseEditorPairing,
   setEditorPairing,
 } from '../../src/shared/editor-pairing.js';
 import { memorySecretArea } from './memory-secret-area.js';
@@ -75,6 +77,41 @@ describe('the editor pairing', () => {
   it('asks only for the editor’s origin', () => {
     expect(editorOriginPattern(PAIRING)).toBe('http://127.0.0.1:47211/*');
   });
+
+  it('marks each pairing with its time, so pairing again at the same address is a change the worker hears', async () => {
+    const area = memorySecretArea();
+    const now = vi.spyOn(Date, 'now').mockReturnValueOnce(1000).mockReturnValueOnce(2000);
+    try {
+      await setEditorPairing(PAIRING, area);
+      expect(store.piwiEditorPairing).toEqual({ url: PAIRING.url, at: 1000 });
+      await setEditorPairing({ ...PAIRING, token: 'another_token_0123456789' }, area);
+      expect(store.piwiEditorPairing).toEqual({ url: PAIRING.url, at: 2000 });
+    } finally {
+      now.mockRestore();
+    }
+    expect(await getEditorPairing(area)).toEqual({ ...PAIRING, token: 'another_token_0123456789' });
+  });
+
+  it('keeps an address typed with another loopback name on 127.0.0.1, where the editors listen', async () => {
+    expect(parseEditorPairing(`http://localhost:47211/piwi/send#${PAIRING.token}`)).toEqual(PAIRING);
+    expect(parseEditorPairing(`http://[::1]:47211/piwi/send#${PAIRING.token}`)).toEqual(PAIRING);
+    expect(parseEditorPairing(`http://LocalHost:63342/api/piwi/send#${PAIRING.token}`)).toEqual({
+      url: 'http://127.0.0.1:63342/api/piwi/send',
+      token: PAIRING.token,
+    });
+    expect(parseEditorPairing('http://example.com:47211/piwi/send#abcdefghijklmnop_1234')).toBeNull();
+    expect(canonicalEditorUrl('not an address')).toBe('not an address');
+
+    // Stored, and read back, on 127.0.0.1: what an older version kept under `localhost` too.
+    const area = memorySecretArea();
+    await setEditorPairing({ ...PAIRING, url: 'http://localhost:47211/piwi/send' }, area);
+    expect(await getEditorPairing(area)).toEqual(PAIRING);
+    expect(store.piwiEditorPairing).toMatchObject({ url: PAIRING.url });
+    await area.set('editor', { ...PAIRING, url: 'http://localhost:47211/piwi/send' });
+    expect(await getEditorPairing(area)).toEqual(PAIRING);
+    store.piwiEditorPairing = { url: 'http://localhost:47211/piwi/send' };
+    expect(await getEditorPairing()).toEqual({ url: PAIRING.url, token: '' });
+  });
 });
 
 describe('sendToEditor', () => {
@@ -100,6 +137,31 @@ function editorEndpoint(answer: () => Promise<Response>, token = PAIRING.token) 
   });
 }
 
+const JETBRAINS = { url: 'http://127.0.0.1:63342/api/piwi/send', token: PAIRING.token };
+
+/**
+ * A JetBrains IDE's built-in server, as `PiwiSendHandler.isSupported` routes it: `…/send` takes POST and OPTIONS,
+ * `…/live` GET and OPTIONS; anything else never reaches the handler, and the platform answers 404 without the proof.
+ */
+function jetbrainsEndpoint() {
+  return vi.fn(async (url: string, init: RequestInit) => {
+    const method = init.method ?? 'GET';
+    const path = new URL(url).pathname;
+    const handled =
+      (path === '/api/piwi/send' && (method === 'POST' || method === 'OPTIONS')) ||
+      (path === '/api/piwi/live' && (method === 'GET' || method === 'OPTIONS'));
+    if (!handled) return new Response('{"error":"Not Found"}', { status: 404 });
+    const headers = init.headers as Record<string, string>;
+    const challenge = headers[EDITOR_CHALLENGE_HEADER];
+    const proof: Record<string, string> = {};
+    if (challenge) proof[EDITOR_PROOF_HEADER] = await editorTokenProof(PAIRING.token, 63342, challenge);
+    if (headers.Authorization !== `Bearer ${PAIRING.token}`) {
+      return new Response('{"error":"not paired"}', { status: 401, headers: proof });
+    }
+    return new Response(JSON.stringify({ inserted: true, file: '/work/shop/tests/cart.spec.ts' }), { status: 200 });
+  });
+}
+
 describe('postToEditor', () => {
   it('posts the payload with the token as a bearer credential, once the editor proved it holds it', async () => {
     const fetchMock = editorEndpoint(
@@ -108,8 +170,9 @@ describe('postToEditor', () => {
     vi.stubGlobal('fetch', fetchMock);
     const result = await postToEditor(PAIRING, { kind: 'steps', steps: { v: 1 } });
     expect(result).toEqual({ ok: true, file: null });
+    // Asked on the live endpoint beside send, which answers a request without a body in both editors.
     const [challengeUrl, challenge] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(challengeUrl).toBe(PAIRING.url);
+    expect(challengeUrl).toBe('http://127.0.0.1:47211/piwi/live');
     expect(challenge.headers).toEqual({ [EDITOR_CHALLENGE_HEADER]: expect.stringMatching(/^[0-9a-f]{64}$/) });
     const [url, init] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
     expect(url).toBe(PAIRING.url);
@@ -118,11 +181,25 @@ describe('postToEditor', () => {
     expect(JSON.parse(init.body as string)).toEqual({ kind: 'steps', steps: { v: 1 } });
   });
 
+  it('posts to a JetBrains IDE, whose send endpoint takes a POST alone, once its live endpoint proved it', async () => {
+    const fetchMock = jetbrainsEndpoint();
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await postToEditor(JETBRAINS, { kind: 'locator', text: "getByRole('button')" })).toEqual({
+      ok: true,
+      file: '/work/shop/tests/cart.spec.ts',
+    });
+    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
+    expect(calls.map(([url, init]) => `${init.method ?? 'GET'} ${new URL(url).pathname}`)).toEqual([
+      'GET /api/piwi/live',
+      'POST /api/piwi/send',
+    ]);
+    expect(JSON.stringify(calls[0]![1].headers)).not.toContain(PAIRING.token);
+  });
+
   it('sends nothing to a program on the paired port that cannot prove it holds the token', async () => {
     for (const fetchMock of [
       editorEndpoint(async () => new Response('{}'), 'another_token_0123456789'),
       vi.fn(async () => new Response('{}', { status: 200 })),
-      vi.fn(async () => new Response('not found', { status: 404 })),
     ]) {
       vi.stubGlobal('fetch', fetchMock);
       expect(await postToEditor(PAIRING, { kind: 'locator', text: 'x' })).toEqual({
@@ -133,6 +210,17 @@ describe('postToEditor', () => {
       const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
       expect(JSON.stringify(init.headers)).not.toContain(PAIRING.token);
     }
+  });
+
+  it('asks to update the editor’s Piwi extension or plugin when it answers as one older than the proof', async () => {
+    const fetchMock = vi.fn(async () => new Response('not found', { status: 404 }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await postToEditor(PAIRING, { kind: 'locator', text: 'x' })).toEqual({
+      ok: false,
+      error: t('common_editorOutdated'),
+    });
+    expect(t('common_editorOutdated')).toContain('update Piwi');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('reports the editor’s reason when it refuses', async () => {

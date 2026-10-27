@@ -78,16 +78,20 @@ lists in its `run-attach` (`takes`) rather than the hub reading the reporter's v
 pick or recording, in the test's window brought to the front, and both IDE clients now name their pairing in
 `PIWI_EDITOR_SEND` for every run that names a run channel, since any such run can stop with the bar, Pause included.
 The live endpoint lists loopback addresses: a remote window forwards them with Part 6. PR 3's extension half is the
-worker's hub connections, the Runs window, the popup's **Runs** tile and the run shortcut (Part 4.1 and 4.4). It
-differs from the text in five ways. The shortcut is `Ctrl+Shift+9` (`Command+Shift+9` on macOS), not `Ctrl+Shift+5`:
-Chrome suggests a global key only as `Ctrl` (`Command`) + `Shift` + a digit, macOS keeps `Command+Shift+3` to `6` for
-its screenshots, and a global key takes its combination from every application, VS Code's Split Terminal
-(`Ctrl+Shift+5` on Windows and Linux) among them; Firefox's manifest leaves `global` out. It resumes every stopped test,
-each at its stop, and with none stopped pauses every run. A run that ends says so, with the tests it ran last, and has
-no verdict, **Open in editor** or **Open the run**, and a running worker shows its test without its last call: the
-session carries none of these. The **Runs** tile fills More tools' free cell, so the popup stays within 600 pixels in
-every language. Before the pairing's token goes to `…/live`, the program on the paired port proves it holds it
-(`editorTokenProof`, as the desktop app's pairing does), else it is sent nothing. The spikes in the
+worker's hub connections, the Runs window, the popup's **Runs** tile and the run shortcut (Part 4.1 and 4.4). It differs
+from the text in five ways. The shortcut is assigned by the person, not at install, where the text gives it
+`Ctrl+Shift+5`: a global key is taken from every application on the computer, paired with an editor or not, and the only
+keys Chrome binds a global command to at install, `Ctrl` (`Command`) + `Shift` + a digit, are other applications'
+already (a JetBrains IDE's numbered bookmarks, VS Code's Split Terminal on `Ctrl+Shift+5`, Excel's Unhide Rows on
+`Ctrl+Shift+9`, macOS's screenshots on `Command+Shift+3` to `6`). The command is global in Chrome and Edge with no key;
+the Runs window's **Set a shortcut** opens the browser's shortcuts page, where the person picks a key and the Global
+scope, and Firefox's manifest leaves `global` out. It resumes every stopped test, each at its stop, and with none
+stopped pauses every run. A run that ends says so, with the tests it ran last, and has no verdict, **Open in editor** or
+**Open the run**, and a running worker shows its test without its last call: the session carries none of these. The
+**Runs** tile fills More tools' free cell, so the popup stays within 600 pixels in every language. Before the pairing's
+token goes to `…/live` or to Send to editor's endpoint, the program on the paired port proves it holds it
+(`editorTokenProof`, as the desktop app's pairing does), asked on `…/live`, which takes a GET in both IDEs, else it is
+sent nothing. The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of
 [`1.0-stabilization.md`](1.0-stabilization.md).

@@ -1300,7 +1300,10 @@
     "message": "No enviado"
   },
   "common_editorNotProven": {
-    "message": "El programa del puerto del editor no demostró ser el editor emparejado, así que no se envió nada: actualiza la extensión de Piwi en el editor o vuelve a emparejarlo."
+    "message": "El programa del puerto del editor no demostró ser el editor emparejado, así que no se envió nada: vuelve a emparejar Piwi Picker con tu editor en la configuración."
+  },
+  "common_editorOutdated": {
+    "message": "La extensión de Piwi de tu editor es demasiado antigua para demostrar que es el editor emparejado, así que no se envió nada: actualiza Piwi en VS Code, o el plugin de Piwi de tu IDE de JetBrains, y vuelve a enviar."
   },
   "common_editorUnreachable": {
     "message": "El editor no responde: ábrelo, con la extensión de Piwi, y vuelve a enviar."
@@ -6227,6 +6230,24 @@
   },
   "runs_runToCursor": {
     "message": "Ejecutar hasta el cursor está en el editor, que tiene el archivo."
+  },
+  "runs_shortcutNone": {
+    "message": "Ninguna tecla pausa ni reanuda las ejecuciones todavía. Asigna una, Global en Chrome o Edge, para usarla desde cualquier ventana."
+  },
+  "runs_shortcutKey": {
+    "message": "$key$ pausa las ejecuciones o reanuda un test detenido.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt+Shift+P"
+      }
+    }
+  },
+  "runs_shortcutSet": {
+    "message": "Asignar un atajo"
+  },
+  "runs_shortcutChange": {
+    "message": "Cambiar el atajo"
   },
   "runs_failOffline": {
     "message": "El servicio del editor no está conectado: Piwi Picker vuelve a conectarse."

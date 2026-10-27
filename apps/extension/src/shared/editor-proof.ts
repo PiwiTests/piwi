@@ -1,9 +1,10 @@
 /**
  * Whether the program at the paired editor's endpoint holds the pairing's token, asked before the token goes there
- * (Send to editor's post, the run hubs' `…/live`): a request carrying a challenge alone (`EDITOR_CHALLENGE_HEADER`)
- * is answered, refused or not, with the proof only the token's holder computes for the port it was asked on
- * (`editorTokenProof`, `@piwitests/core/editor-send`). Another program that took the port holds no token; one that
- * relays the challenge to the editor on another port gets a proof for that port. Only the background worker asks.
+ * (Send to editor's post, the run hubs' `…/live`), on the live endpoint beside `…/send`, which takes a GET in both
+ * editors: a request carrying a challenge alone (`EDITOR_CHALLENGE_HEADER`) is answered, refused or not, with the
+ * proof only the token's holder computes for the port it was asked on (`editorTokenProof`,
+ * `@piwitests/core/editor-send`). Another program that took the port holds no token; one that relays the challenge to
+ * the editor on another port gets a proof for that port. Only the background worker asks.
  */
 import {
   EDITOR_CHALLENGE_HEADER,
@@ -14,7 +15,8 @@ import {
 
 /**
  * What the endpoint answered: the proof (`proven`), none or a wrong one (`unproven`), a 404 without one, as an editor
- * older than the proof answers (`outdated`), or nothing (`unreachable`). Only `proven` lets the token go.
+ * whose Piwi extension or plugin is older than the proof answers (`outdated`), or nothing (`unreachable`). Only
+ * `proven` lets the token go.
  */
 export type EditorProof = 'proven' | 'unproven' | 'outdated' | 'unreachable';
 

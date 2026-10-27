@@ -44,10 +44,11 @@ and the Edge Add-ons listing that is still outstanding.
   without `scripts` (Edge lists it as an error) and `dist-firefox/` with it, and `gecko.data_collection_permissions` is
   `"none"`, which holds only while nothing is sent anywhere but the user's own instance and the editor paired on
   the same computer (Send to editor, and its run hubs: see "The editor's runs"). `commands` holds the pick shortcut and
-  the run shortcut, `"global": true` (Chrome and Edge suggest a global command's key only on `Ctrl+Shift+[0-9]`,
-  `Command+Shift+[0-9]` on macOS, whose `3` to `6` are its screenshots); `firefoxManifest` leaves `global` out, which
-  Firefox does not have. See
-  `PUBLISHING.md` §4. The manifest's `description` and the shortcut's label are `__MSG_*__`
+  the run shortcut, `"global": true` with no `suggested_key`: a global key is taken from every application on the
+  computer, paired with an editor or not, and the only keys Chrome binds a global command to at install
+  (`Ctrl+Shift+[0-9]`) are JetBrains' numbered bookmarks and, on macOS, the screenshots, so the person gives it a key,
+  and its scope, on the browser's shortcuts page; `firefoxManifest` leaves `global` out, which Firefox does not have.
+  See `PUBLISHING.md` §4. The manifest's `description` and the shortcut's label are `__MSG_*__`
   strings, translated in `public/_locales/` (English, the default, French, and German, Spanish and
   Brazilian Portuguese as drafts). The
   description doubles as the store listings' summary, so it stays within 132 characters in every
@@ -408,15 +409,22 @@ The runs the paired editor starts (`proposals/run-control.md` Part 4; the editor
 and `@piwitests/core/run-hub`) are followed and steered from the background worker alone, beside Send to editor:
 
 - **Finding the hubs** (`background/run-hubs.ts`, `RunHubs`): the Send to editor pairing's address with `send` replaced
-  by `live` (`liveUrlOf`), and its origin's grant from the pairing. Before the pairing's token goes there, as before
-  Send to editor's post (`postToEditor`), a request with a challenge alone (`EDITOR_CHALLENGE_HEADER`) must come back
-  with `editorTokenProof` for the port it was sent to, compared in constant time (`proveEditor`,
-  `src/shared/editor-proof.ts`): an endpoint without it gets nothing (`unproven`, asked again later), one answering
-  404 without it predates the proof (`outdated`). Then `GET …/live` with the bearer token, read by
-  `parseLiveAnswer`. The hubs (address and token) go to the secret area under `hubs`, never to `chrome.storage.local`;
-  Unpair removes them (`setEditorPairing(null)`). Found again as the worker starts, when the pairing or a grant changes,
-  when a hub's connection fails (1 s, doubling to 30 s; four tries in a row with no Runs window open, without end while
-  one is), and when the popup, the window or the shortcut asks. An unreachable editor leaves the hubs found last to try.
+  by `live` (`liveUrlOf`), and its origin's grant from the pairing. The address is kept on 127.0.0.1 whatever loopback
+  name it was typed with, as it is stored and as it is read (`canonicalEditorUrl`, `editor-pairing.ts`): the proof
+  names the port alone, so `localhost` could reach another program on `[::1]` at that port, which would relay the
+  challenge to the editor. Before the pairing's token goes there, and before Send to editor's post (`postToEditor`),
+  a request with a challenge alone (`EDITOR_CHALLENGE_HEADER`) to `…/live`, which answers a GET in both editors (a
+  JetBrains IDE's `…/send` takes a POST alone), must come back with `editorTokenProof` for the port it was sent to,
+  compared in constant time (`proveEditor`, `src/shared/editor-proof.ts`): an endpoint without it gets nothing, and no
+  hub kept is connected (`unproven`, asked again later); one answering 404 without it predates the proof
+  (`outdated`; Send to editor asks to update the editor's Piwi extension or plugin, `common_editorOutdated`). Then
+  `GET …/live` with the bearer token, read by `parseLiveAnswer`. The hubs (address and token) go to the secret area
+  under `hubs`, never to `chrome.storage.local`; Unpair removes them (`setEditorPairing(null)`). Found again as the
+  worker starts, when the pairing changes (`piwiEditorPairing` carries `at`, the time of the pairing, so pairing again
+  at the same address with another token is a change too) or a grant does, when a hub's connection fails (1 s,
+  doubling to 30 s, counted again only once a connection opens, never for another hub's runs; four tries in a row with
+  no Runs window open, without end while one is), and when the popup, the window or the shortcut asks. An unreachable
+  editor leaves the hubs found last to try.
 - **A connection per hub** (`background/hub-connection.ts`, `HubConnection`): the browser's WebSocket
   (`browserSocket`), which sends the extension's origin; `hello` with the hub's token, `subscribe` once welcomed, each
   `session` kept by ref, an ended one kept ten minutes with its last workers. Every message goes through
@@ -432,19 +440,32 @@ and `@piwitests/core/run-hub`) are followed and steered from the background work
   `parseRunsRequest`; the state it posts (`RunsState`) carries no token, and the window makes no network call. Every
   control but Pause names the stop shown (`since`), so a click made twice never answers the next stop. The image of a
   stopped page is asked once per stop and shown as a `data:` JPEG after its base64 is checked again; a hub's sentences
-  are text, a call's title goes through `richText`. Focus is kept across redraws by `data-focus`; `#announce` (a polite
-  live region) says when a test stops, goes on, or a run ends. The window pings every 20 s, which keeps the worker
-  alive while it is open.
+  are text, a call's title goes through `richText`. Each part of the window (a run's heading, a worker's state, its
+  test, its stop, its image, its buttons, an answer) is kept by key and drawn again only when what it shows changes
+  (`part`, `place`), so a button under the pointer stays the same element while the run goes on; a worker's buttons
+  are drawn again for each stop, each naming its own. While a command is on its way they are `aria-disabled` and take
+  no press, never `disabled`, so they keep the focus. Focus is kept across redraws by `data-focus`: a control a redraw
+  took away gets it back when it is drawn again (Step, at the next stop), and meanwhile another control of the same
+  worker holds it. `#announce` (a polite live region) says when a test stops, goes on, or a run ends, and what a
+  command answered under the test. The line under the heading says the window follows the editor while any of its
+  hubs is connected. The window pings every 20 s, which keeps the worker alive while it is open.
 - **The popup's tile** asks `piwi-runs-summary` (both messages are the extension pages' alone, `EXTENSION_PAGE_MESSAGES`).
-- **The run shortcut** (`run-pause-resume`, `RUN_COMMAND`): `shortcutCommands` resumes every stopped test at its stop,
-  else pauses every run with a worker. The e2e suite cannot press a shortcut the browser holds: the worker's
-  `__piwiRunShortcut()` does what it does.
+- **The run shortcut** (`run-pause-resume`, `RUN_COMMAND` in `src/shared/runs.ts`): `shortcutCommands` resumes every
+  stopped test at its stop, else pauses every run with a worker. It has no key at install (see `manifest.json` above):
+  the Runs window's footer shows the key it was given (`chrome.commands.getAll`, read again when the window gets the
+  focus back) or says it has none, with **Set a shortcut**, which opens `chrome://extensions/shortcuts`
+  (`edge://extensions/shortcuts` in Edge) through `chrome.tabs.create`, Firefox's Manage Extension Shortcuts through
+  `commands.openShortcutSettings`, else the docs. The e2e suite cannot press a shortcut the browser holds: the
+  worker's `__piwiRunShortcut()` does what it does.
 - **Tests**: `run-hubs.test.ts` plays the editor's endpoint and each hub's socket (the proof, discovery, hello, subscribe,
-  answers, keepalive, backoff, the shortcut); `runs.test.ts` the pure half; `runs.spec.ts` runs the real extension
-  against the real editor service started in-process (`tests/e2e/runs-fixtures.ts`, on
+  answers, keepalive, backoff, the shortcut); `editor-pairing.test.ts` Send to editor's proof against a JetBrains
+  IDE's routes, and the pairing's address and `at`; `runs.test.ts` the pure half; `runs.spec.ts` runs the real
+  extension against the real editor service started in-process (`tests/e2e/runs-fixtures.ts`, on
   `packages/editor/tests/run-fixtures.ts`), with a stub Send to editor endpoint and a fake worker on the run channel:
-  the popup's tile, the window's Pause, Step, Resume, image, Pick and Record, the shortcut, and a page served from
-  `127.0.0.1` refused by the hub. `docs-screenshots.spec.ts` captures `picker-runs.png` the same way.
+  the popup's tile, the window's Pause, Step (the focus kept), Resume, image, Pick and Record, a press held while the
+  run changes, the shortcut and its Set a shortcut, and a page served from `127.0.0.1` refused by the hub.
+  `docs-screenshots.spec.ts` captures `picker-runs.png` the same way, the page's image without the pause bar, as the
+  reporter takes it.
 
 ## Tested elements (the project's locator index, evaluated on the page)
 
@@ -1143,4 +1164,5 @@ launches with Developer mode on (`launchWithExtension(path, { developerMode: tru
 Chromium enables a reloaded unpacked extension again only then.
 
 Disable the Chrome Web Store copy while a local build is loaded — two installs both claim the
-`Ctrl+Shift+E` and `Ctrl+Shift+9` commands, and only one of them gets each, which reads as "my change didn't apply".
+`Ctrl+Shift+E` command, and the run shortcut's key once one is set, and only one of them gets each, which reads as "my
+change didn't apply".

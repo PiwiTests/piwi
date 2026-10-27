@@ -263,6 +263,20 @@ describe('finding the hubs through the pairing', () => {
     expect(sockets.map((s) => s.url)).toEqual([OTHER_HUB.url]);
   });
 
+  it('connects to none of the hubs found last while the program on the paired port cannot prove it', async () => {
+    const { hubs, stored, prove, sockets } = setup();
+    await hubs.find();
+    expect(sockets.map((s) => s.url)).toEqual([HUB.url]);
+    prove('wrong');
+    await hubs.find();
+    expect(hubs.state()).toMatchObject({ discovery: 'unproven', hubs: [] });
+    // The connection made while the editor proved itself is closed, and no other is opened.
+    expect(sockets[0]!.closedWith).toBe(1000);
+    expect(sockets).toHaveLength(1);
+    // The hubs stay kept for an editor that proves itself, or does not answer, later.
+    expect(stored.hubs).toEqual([HUB]);
+  });
+
   it('sends the token nowhere the program on the paired port cannot prove it holds it', async () => {
     const { hubs, fetches, prove, challenges } = setup();
     for (const prover of ['wrong', 'none'] as const) {
@@ -428,6 +442,40 @@ describe('connections that fail', () => {
     await vi.advanceTimersByTimeAsync(1000);
     await until(() => fetches.length === 4);
     expect(fetches).toHaveLength(4);
+  });
+
+  it('waits longer for a hub that keeps failing while another one’s runs change', async () => {
+    const { hubs, sockets, fetches, answer } = setup();
+    hubs.listen(() => {});
+    answer(async () => Response.json({ hubs: [HUB, OTHER_HUB] }));
+    await hubs.find();
+    await welcome(sockets[0]!, [session([RUNNING])]);
+    const failing = () => sockets.filter((s) => s.url === OTHER_HUB.url);
+    let tests = 0;
+    /** The first hub's run goes on: a test begins every 100 ms. */
+    const busy = async (ms: number) => {
+      for (let waited = 0; waited < ms; waited += 100) {
+        sockets[0]!.hear({
+          type: 'session',
+          session: session([{ ...RUNNING, test: { ...RUNNING.test!, id: `t${tests++}` } }]),
+        });
+        await vi.advanceTimersByTimeAsync(100);
+        await settle();
+      }
+    };
+    // The other hub fails each time: 1 s, then 2 s, then 4 s before the editor is asked again.
+    for (const wait of [1000, 2000, 4000]) {
+      const before = fetches.length;
+      failing().pop()!.hangUp(1006);
+      await busy(wait - 100);
+      expect(fetches).toHaveLength(before);
+      await busy(200);
+      await until(() => fetches.length === before + 1);
+      expect(fetches).toHaveLength(before + 1);
+    }
+    // The first hub's connection was kept all along, and says the window follows it.
+    expect(sockets.filter((s) => s.url === HUB.url)).toHaveLength(1);
+    expect(hubs.connected()).toBe(true);
   });
 
   it('drops a hub that refuses its token from the hubs kept, and asks the editor again', async () => {

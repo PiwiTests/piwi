@@ -1300,7 +1300,10 @@
     "message": "Nicht gesendet"
   },
   "common_editorNotProven": {
-    "message": "Das Programm am Port des Editors hat nicht bewiesen, dass es der gekoppelte Editor ist, daher wurde nichts gesendet: Aktualisieren Sie die Piwi-Erweiterung im Editor oder koppeln Sie erneut."
+    "message": "Das Programm am Port des Editors hat nicht bewiesen, dass es der gekoppelte Editor ist, daher wurde nichts gesendet: Koppeln Sie Piwi Picker in den Einstellungen erneut mit Ihrem Editor."
+  },
+  "common_editorOutdated": {
+    "message": "Die Piwi-Erweiterung Ihres Editors ist zu alt, um zu beweisen, dass es der gekoppelte Editor ist, daher wurde nichts gesendet: Aktualisieren Sie Piwi in VS Code oder das Piwi-Plugin Ihrer JetBrains-IDE und senden Sie erneut."
   },
   "common_editorUnreachable": {
     "message": "Der Editor antwortet nicht: Öffnen Sie ihn mit der Piwi-Erweiterung und senden Sie erneut."
@@ -6227,6 +6230,24 @@
   },
   "runs_runToCursor": {
     "message": "„Bis zum Cursor ausführen“ gibt es im Editor, der die Datei kennt."
+  },
+  "runs_shortcutNone": {
+    "message": "Noch hält keine Taste die Läufe an oder setzt sie fort. Legen Sie eine fest, in Chrome oder Edge als „Global“, um sie aus jedem Fenster zu nutzen."
+  },
+  "runs_shortcutKey": {
+    "message": "$key$ hält die Läufe an oder setzt einen angehaltenen Test fort.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt+Shift+P"
+      }
+    }
+  },
+  "runs_shortcutSet": {
+    "message": "Tastenkürzel festlegen"
+  },
+  "runs_shortcutChange": {
+    "message": "Tastenkürzel ändern"
   },
   "runs_failOffline": {
     "message": "Der Dienst des Editors ist nicht verbunden: Piwi Picker verbindet sich erneut."

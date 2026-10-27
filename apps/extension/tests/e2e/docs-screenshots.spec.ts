@@ -169,8 +169,12 @@ test('picker-pause', async ({ context }) => {
   await shoot(page, 'picker-pause');
 });
 
+/** What the reporter's image of a stopped page leaves out: its pause bar (`BAR_HIDDEN`, the run channel's). */
+const BAR_HIDDEN = '#__piwi-pause-bar { display: none !important; }';
+
 // The Runs window beside the test's browser, the test stopped at a breakpoint before a click on Checkout, with the
-// pause bar in its page: the real editor service's hub, a worker the spec plays, the page's image as the worker sends it.
+// pause bar in its page: the real editor service's hub, a worker the spec plays, the page's image as the worker sends
+// it, without the bar.
 test('picker-runs', async () => {
   const editor = await startEditor();
   const { context, extensionId } = await pairedExtension(editor, { deviceScaleFactor: 2 });
@@ -186,7 +190,9 @@ test('picker-runs', async () => {
     });
     await shop.waitForTimeout(300);
     const backdrop = await shop.screenshot();
-    const image = (await shop.screenshot({ type: 'jpeg', quality: 70, scale: 'css' })).toString('base64');
+    const image = (await shop.screenshot({ type: 'jpeg', quality: 70, scale: 'css', style: BAR_HIDDEN })).toString(
+      'base64',
+    );
 
     const runs = await context.newPage();
     await runs.setViewportSize({ width: 440, height: 700 });

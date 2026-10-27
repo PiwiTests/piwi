@@ -3,16 +3,17 @@
  * and the browser's WebSocket; the window's port (`RUNS_PORT`, taken from `runs.html` alone), which gets the state at
  * each change and passes the window's commands on; the popup's Runs tile; and the global shortcut.
  */
-import { parsePairing } from '@piwitests/core/editor-send';
 import { parseLiveAnswer } from '@piwitests/core/run-hub';
-import { EDITOR_PAIRING_KEY, editorOriginPattern, getEditorPairing } from '../shared/editor-pairing.js';
+import {
+  EDITOR_PAIRING_KEY,
+  editorOriginPattern,
+  getEditorPairing,
+  parseEditorPairing,
+} from '../shared/editor-pairing.js';
 import { secretArea } from '../shared/secret-store.js';
 import { RUNS_PAGE, RUNS_PORT, liveRuns, parseRunsRequest, type RunsEvent } from '../shared/runs.js';
 import { browserSocket } from './hub-connection.js';
 import { RunHubs } from './run-hubs.js';
-
-/** The command of the global shortcut, in the manifest. */
-export const RUN_COMMAND = 'run-pause-resume';
 
 /** The Runs window's size: beside the test's window, the width of a phone. */
 const RUNS_WINDOW = { width: 440, height: 720 };
@@ -21,7 +22,7 @@ export const runHubs = new RunHubs({
   pairing: async () => {
     const stored = await getEditorPairing();
     // Checked as a pasted pairing is: a loopback address and a token.
-    return stored ? parsePairing(`${stored.url}#${stored.token}`) : null;
+    return stored ? parseEditorPairing(`${stored.url}#${stored.token}`) : null;
   },
   granted: (pairing) => chrome.permissions.contains({ origins: [editorOriginPattern(pairing)] }),
   fetch: (url, init) => fetch(url, init),

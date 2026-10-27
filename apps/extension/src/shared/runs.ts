@@ -17,6 +17,8 @@ import type {
 
 /** The name of the Runs window's port to the worker. */
 export const RUNS_PORT = 'piwi-runs';
+/** The run shortcut's command, in the manifest: it has no key until the person gives it one. */
+export const RUN_COMMAND = 'run-pause-resume';
 /** The Runs window's page. */
 export const RUNS_PAGE = 'runs.html';
 /** How often the window says it is still open: within the 30 s an MV3 worker stays alive after a message. */

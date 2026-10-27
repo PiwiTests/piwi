@@ -100,13 +100,23 @@ test('pauses, steps and resumes a run from the Runs window, with the image of th
         value: { ok: false, message: 'Record here waits: a pick runs in the test’s window.' },
       });
       await expect(card.locator('.answer')).toHaveText('Record here waits: a pick runs in the test’s window.');
+      // A refusal is read out too.
+      await expect(runs.locator('#announce')).toHaveText('Record here waits: a pick runs in the test’s window.');
 
-      // Step: the worker runs the call and stops before the next one, whose image is asked for in turn.
-      await card.getByRole('button', { name: 'Step' }).click();
+      // Step, with the keyboard: the worker runs the call and stops before the next one, whose image is asked for in
+      // turn. The focus stays on Step while the command is on its way, is on Pause while the test runs, and on Step
+      // again at the next stop.
+      const step = card.getByRole('button', { name: 'Step' });
+      await step.focus();
+      await runs.keyboard.press('Enter');
+      await expect(step).toBeFocused();
       expect(await run.worker.next('control', 1)).toEqual({ type: 'control', action: 'step', stop: 1 });
       run.worker.send({ type: 'running', stop: 1 });
+      await expect(card.getByText('Running')).toBeVisible();
+      await expect(card.getByRole('button', { name: 'Pause' })).toBeFocused();
       run.worker.stopAt(2, 31, true);
       await expect(card.getByText('tests/pages/cart.page.ts:31')).toBeVisible();
+      await expect(step).toBeFocused();
       const again = await run.worker.next('request', 3);
       expect(again).toMatchObject({ what: 'image' });
       run.worker.send({ type: 'answer', request: again.request, what: 'image', value: null });
@@ -143,10 +153,12 @@ test('the run shortcut pauses the runs, then resumes the stopped test, with no R
   try {
     const shortcut = () =>
       worker.evaluate(() => (globalThis as { __piwiRunShortcut?: () => Promise<unknown> }).__piwiRunShortcut!());
-    // The command is the browser's, global in Chrome and Edge.
+    // The command is the browser's, with no key until the person gives it one (global in Chrome and Edge).
     const commands = await worker.evaluate(async () => chrome.commands.getAll());
-    expect(commands.find((c) => c.name === 'run-pause-resume')).toMatchObject({
+    expect(commands.find((c) => c.name === 'run-pause-resume')).toEqual({
+      name: 'run-pause-resume',
       description: 'Pause the editor’s runs, or resume a stopped test',
+      shortcut: '',
     });
     const run = await startRun(editor);
     try {
@@ -196,6 +208,59 @@ test('a page served from 127.0.0.1 cannot open the hub’s WebSocket, which the 
       editor.hub.url,
     );
     expect(fromWorker).toBe('open');
+  } finally {
+    await context.close();
+  }
+});
+
+test('a press on Pause reaches the run while its tests change under it', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  try {
+    const runs = await context.newPage();
+    await runs.goto(`chrome-extension://${extensionId}/runs.html`);
+    await runs.locator('html[data-ready]').waitFor({ state: 'attached' });
+    const run = await startRun(editor);
+    try {
+      const pause = runs.getByRole('button', { name: 'Pause' });
+      await expect(pause).toBeVisible();
+      // Short tests, one after another: the window hears a change every 60 ms, while the button is held down.
+      let n = 0;
+      const tests = setInterval(() => run.worker.begin(`test ${n++}`), 60);
+      try {
+        const test = runs.locator('.test');
+        await expect(test).toHaveText(/cart › test \d+/);
+        const box = (await pause.boundingBox())!;
+        await runs.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await runs.mouse.down();
+        const pressed = await test.textContent();
+        // Held until the window has shown another test.
+        await expect(test).not.toHaveText(pressed!);
+        await runs.mouse.up();
+        expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'pause' });
+      } finally {
+        clearInterval(tests);
+      }
+    } finally {
+      run.worker.socket.destroy();
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test('the Runs window says the run shortcut has no key, and opens the browser’s shortcuts page to set one', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  try {
+    const runs = await context.newPage();
+    await runs.goto(`chrome-extension://${extensionId}/runs.html`);
+    await runs.locator('html[data-ready]').waitFor({ state: 'attached' });
+    await expect(runs.locator('#shortcut-text')).toHaveText(
+      'No key pauses and resumes the runs yet. Set one, Global in Chrome or Edge, to use it from any window.',
+    );
+    const opened = context.waitForEvent('page');
+    await runs.getByRole('button', { name: 'Set a shortcut' }).click();
+    const shortcuts = await opened;
+    await expect.poll(() => shortcuts.url()).toBe('chrome://extensions/shortcuts');
   } finally {
     await context.close();
   }

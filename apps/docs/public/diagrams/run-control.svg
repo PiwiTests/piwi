@@ -77,11 +77,12 @@
   <text class="l" x="696" y="158">breakpoints; writes the code</text>
   <text class="m" x="696" y="176">Send to editor: the pairing</text>
 
-  <rect class="box" x="680" y="246" width="216" height="88" rx="8"/>
-  <text class="lb" x="696" y="270">Piwi Picker</text>
-  <text class="l" x="696" y="290">in your own browser: the Runs</text>
-  <text class="l" x="696" y="306">window, the global shortcut</text>
-  <text class="m" x="696" y="324">Chrome, Edge, Firefox</text>
+  <rect class="box" x="680" y="246" width="216" height="96" rx="8"/>
+  <text class="lb" x="696" y="268">Piwi Picker</text>
+  <text class="l" x="696" y="287">in your own browser: the Runs</text>
+  <text class="l" x="696" y="303">window, and a shortcut you set</text>
+  <text class="m" x="696" y="320">Runs: Chrome, Edge, Firefox</text>
+  <text class="m" x="696" y="334">global shortcut: Chrome, Edge</text>
 
   <path class="edge" d="M 578 176 L 678 148" marker-start="url(#rcA)" marker-end="url(#rcA)"/>
   <text class="et" x="628" y="150" text-anchor="middle">LSP</text>

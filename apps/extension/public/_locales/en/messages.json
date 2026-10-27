@@ -1588,8 +1588,12 @@
     "description": "A Send to editor button’s label when the editor did not accept what was sent; the reason is in the button’s tooltip."
   },
   "common_editorNotProven": {
-    "message": "The program on the editor’s port did not prove it is the paired editor, so nothing was sent: update Piwi’s extension in the editor, or pair again.",
-    "description": "Send to editor, why nothing was sent: the program on the paired editor’s port did not prove it holds the pairing’s token (another program took the port, or the editor’s Piwi extension is older than this check)."
+    "message": "The program on the editor’s port did not prove it is the paired editor, so nothing was sent: pair Piwi Picker with your editor again in the settings.",
+    "description": "Send to editor, why nothing was sent: the program on the paired editor’s port did not prove it holds the pairing’s token (another program took the port, or the editor’s pairing changed since)."
+  },
+  "common_editorOutdated": {
+    "message": "Your editor’s Piwi extension is too old to prove it is the paired editor, so nothing was sent: update Piwi in VS Code, or the Piwi plugin of your JetBrains IDE, and send again.",
+    "description": "Send to editor, why nothing was sent: the paired editor answered as a Piwi extension (VS Code) or plugin (JetBrains IDE) older than the check that it holds the pairing’s token."
   },
   "common_editorUnreachable": {
     "message": "The editor does not answer: open it, with Piwi’s extension, and send again.",
@@ -7378,6 +7382,28 @@
   "runs_runToCursor": {
     "message": "Run to Cursor is in the editor, which has the file.",
     "description": "Runs window, a note at the bottom: the editor’s Run to Cursor control is not in this window."
+  },
+  "runs_shortcutNone": {
+    "message": "No key pauses and resumes the runs yet. Set one, Global in Chrome or Edge, to use it from any window.",
+    "description": "Runs window, at the bottom, while the run shortcut has no key: the browser gives it none at install. “Global” is the scope’s name on the browser’s page of keyboard shortcuts for extensions."
+  },
+  "runs_shortcutKey": {
+    "message": "$key$ pauses the runs, or resumes a stopped test.",
+    "description": "Runs window, at the bottom: the key the run shortcut was given, shown as a key cap. $key$ is the shortcut as the browser writes it.",
+    "placeholders": {
+      "key": {
+        "content": "$1",
+        "example": "Alt+Shift+P"
+      }
+    }
+  },
+  "runs_shortcutSet": {
+    "message": "Set a shortcut",
+    "description": "Runs window, a button that opens the browser’s keyboard shortcuts for extensions, where the run shortcut gets a key."
+  },
+  "runs_shortcutChange": {
+    "message": "Change the shortcut",
+    "description": "Runs window, the same button once the run shortcut has a key."
   },
   "runs_failOffline": {
     "message": "The editor’s service is not connected: Piwi Picker connects again.",

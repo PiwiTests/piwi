@@ -57,6 +57,8 @@ export type HubLoss = 'refused' | 'stopped' | 'silent' | 'closed';
 export type HubRequest = HubCommand extends infer C ? (C extends HubCommand ? Omit<C, 'id'> : never) : never;
 
 export interface HubConnectionEvents {
+  /** The hub welcomed it: the connection went from connecting to open. */
+  opened(): void;
   /** Its state or a run changed. */
   changed(): void;
   /** A run ended, as the hub said last; `sessions` still holds it as it was before. */
@@ -166,6 +168,7 @@ export class HubConnection {
       this.listen();
       this.subscribeId = this.nextId;
       void this.command({ type: 'subscribe' }).then(() => this.markReady());
+      this.events.opened();
       this.events.changed();
       return;
     }

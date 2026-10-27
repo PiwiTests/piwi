@@ -20,12 +20,12 @@ import {
 import { pageKey } from '@piwitests/core/page-key';
 import { parseSteps, sessionFromSteps } from '@piwitests/core/steps';
 import { postToEditor } from '../shared/piwi-client.js';
-import { editorOriginPattern, getEditorPairing } from '../shared/editor-pairing.js';
+import { editorOriginPattern, getEditorPairing, parseEditorPairing } from '../shared/editor-pairing.js';
 import { hostPattern } from '../shared/web-origin.js';
 import { moveLegacySecrets } from '../shared/legacy-secrets.js';
 import type { SendToEditorResult } from '../shared/editor-send.js';
 import type { ScreenshotFailure } from '../shared/bug-storage.js';
-import { parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
+import type { EditorSendPayload } from '@piwitests/core/editor-send';
 import { BUILD_ID } from '../shared/build-id.js';
 import { serveSessionStorage, sessionArea } from '../shared/session-area.js';
 import { LANGUAGE_KEY, initI18n, isLanguage, t } from '../shared/i18n.js';
@@ -74,7 +74,8 @@ import {
 } from './step-views.js';
 import { handleRelayLeft } from './relay-left.js';
 import { connectionChanged, syncInstanceMarker } from './instance-marker.js';
-import { RUN_COMMAND, openRunsWindow, runHubs, runsSummary, startRunHubs } from './runs-window.js';
+import { RUN_COMMAND } from '../shared/runs.js';
+import { openRunsWindow, runHubs, runsSummary, startRunHubs } from './runs-window.js';
 import {
   captureThroughDebugger,
   collectsThroughDebugger,
@@ -154,8 +155,8 @@ async function showStateBadge(): Promise<void> {
  * manifest — the popup injects the content script itself, needing no
  * message through here). `chrome.commands` firing is itself the qualifying
  * user gesture for `activeTab`, so this can inject directly. The run
- * shortcut, global in Chrome and Edge, pauses or resumes the editor's runs,
- * with or without a Runs window.
+ * shortcut, on the key the person gives it (global in Chrome and Edge when they
+ * choose so), pauses or resumes the editor's runs, with or without a Runs window.
  */
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command === RUN_COMMAND) {
@@ -844,7 +845,7 @@ async function handleSendToEditor(payload: EditorSendPayload): Promise<SendToEdi
   await i18nReady;
   const stored = await getEditorPairing();
   // Checked as a pasted pairing is: a loopback address and a token.
-  const pairing = stored ? parsePairing(`${stored.url}#${stored.token}`) : null;
+  const pairing = stored ? parseEditorPairing(`${stored.url}#${stored.token}`) : null;
   if (!pairing) return { ok: false, error: t('options_editorInvalid') };
   if (!(await chrome.permissions.contains({ origins: [editorOriginPattern(pairing)] }))) {
     return { ok: false, error: t('options_editorPermission') };
