@@ -172,7 +172,7 @@ beat({
 
 **The native take** (`--take native`, Windows 10 or 11):
 
-- **Capture**: `ffmpeg -f lavfi -i ddagrab=framerate=30:draw_mouse=0` (ffmpeg 6.1 or later), downloaded to system
+- **Capture**: `ffmpeg -f lavfi -i ddagrab=framerate=30:draw_mouse=0` (ffmpeg 6.0 or later), downloaded to system
   memory (`hwdownload,format=bgra`) and encoded lossless, or by the GPU's encoder (`h264_nvenc`, `h264_qsv`,
   `h264_amf`) at a high quality where the CPU cannot keep up. `gdigrab` is the fallback; OBS, started and stopped by
   the script through its WebSocket, if both drop frames. The Game Bar records one app's window, not the desktop, and
