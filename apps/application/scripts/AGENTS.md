@@ -83,8 +83,8 @@ node scripts/perf/run.mjs --database postgres --pg-url postgresql://postgres:pos
 - **Traces and videos**: `node scripts/record-demo-media.mjs` reproduces each story's failure with a real interaction,
   per its `SCENARIOS` table: add an entry for a new story's media. Traces record with `sources: true`, so the call-stack
   evidence view has real content.
-- **Both scripts launch the Chromium at `/opt/pw-browsers/chromium`**; `record-demo-media.mjs` takes another path from
-  `PIWI_DEMO_CHROMIUM`.
+- **Both scripts launch the Chromium `PIWI_DEMO_CHROMIUM` names**, else the one in `PLAYWRIGHT_BROWSERS_PATH`
+  (`resolveChromium`, `scripts/lib/dev-server.mjs`), else Playwright's own download.
 - **Commit the binaries, then run `npm run app:seed:demo`** to rewire the `files` rows with the real sizes.
 - **A story's `media` (`screenshot`, `trace`, `video`) is all the seed needs**: the generator attaches the screenshot
   to the most recent failing execution of each member case, and the trace and the video to the first member case's

@@ -48,7 +48,10 @@ types/        Front-end API response types (`api.ts`)
   the two compatible.
 - **Authorization model.** `shared/permissions.ts` holds `InstanceRole`, `ProjectRole`, `Permission`, the role matrix
   `ROLE_PERMISSIONS`, a user's `AccessSummary` and the checks on it (`can`, `passesEarlyCheck`, `projectScopeFor`). It
-  is pure; the server, the MCP tools, the demo and `useAuth` import it.
+  is pure; the server, the MCP tools, the demo and `useAuth` import it. Instance roles are `administrator` and `member`
+  (`users.role`); project roles are `viewer`, `contributor`, `maintainer`, `project_admin` and `uploader`; a
+  `Permission` is a `ProjectPermission` or an `InstancePermission`, named `resource:action`. Role bindings and groups
+  are read and written by `shared/handlers/role-bindings.ts` and `shared/handlers/groups.ts`, shared with the demo.
 - **Project run scope.** `shared/project-run-scope.ts` describes the runs a project page's Filters block picks
   (environments, branches, the branch policy, full runs only), the scope's query keys (the analytics ones, so an
   analytics drill-down address is a scope too) and the in-browser matcher (`runInProjectScope`).
@@ -360,6 +363,11 @@ The main files of `server/utils/`, by area.
   and frames go back under their entry names). The file endpoint and the exports use it.
 - `trace-manifest.ts`: the slim blob's manifest: what went to the shared pool (`resources`, and the screenshots and
   screencast frames by content hash in `pooledEntries`). The one reader and path helper.
+- `trace-evidence.ts`: the one loader of a stored trace for the views (`getTrace*FromBlob`, `loadStoredTraceEvents`).
+  It inflates only the event streams (`.trace`, `.stacks`, `.network`); the ARIA snapshots and screenshots stay
+  compressed until a view reads one (from the pool when the manifest lists them in `pooledEntries`), and the screencast
+  is never read. A content-addressed blob (`project-<id>/blobs/<sha256>.zip`) is loaded once for the requests of one
+  page and kept two minutes after its last read, within 64 MB for all loaded traces.
 
 **Housekeeping and observability**
 
@@ -682,6 +690,10 @@ How the guide engine plays a guide (`app/composables/useGuide.ts`):
   `copy.<code>.ts` per language, registered in `TOUR_COPY`), the tour languages and the prompt's stored state.
 - `app/utils/guides/`: the authored guides as data: the guides (`AUTHORED_GUIDES`), the resolvers that find the entity
   a stop opens on this instance (`GUIDE_RESOLVERS`) and the guide run they make for the engine.
+- The assistant's panel (`AssistantPanel`, state in `useAssistant`) renders every block with the dashboard's own
+  components and plays a composed guide through `useGuide`. From 1280 px it docks beside the page unless the user
+  floats it, and below 1536 px a docked panel folds the sidebar to its rail; below 1280 px it is a slide-over, and a
+  full-screen sheet on a phone.
 - `app/utils/assistant/`: the assistant panel's pure parts: the event reducer, the page context a question carries
   (with the guide anchors rendered on the page), the replies to a question or options block, the page suggestions and
   the next question the input offers, the input's question history, the usage limits as the input shows them, and the

@@ -218,8 +218,8 @@ Every guide is read by agents before they edit, so its size is paid on every tas
 - **A rule is one bullet**: the rule in bold, then at most two sentences naming the files and the test that guards it.
   Prefer a test or a lint rule over a sentence when the rule can be checked.
 - **Put it in the narrowest guide**: the guide of the directory holding the code it constrains, a new guide beside that
-  code when none fits (with a `CLAUDE.md` holding `@AGENTS.md` next to it, and a row in its area guide's table), this
-  root file only when it applies everywhere.
+  code when none fits (with a `CLAUDE.md` holding `@AGENTS.md` next to it, and a link from the guide of the nearest
+  directory above it), this root file only when it applies everywhere.
 - **Size limits**, checked by `apps/application/tests/unit/agent-guides.test.ts`: 20,000 characters for this file and
   30,000 for any other guide (Claude Code keeps only the first 40,000 characters of a guide it loads on its own). Over
   the limit, move detail to `ARCHITECTURE.md` or a topic guide; never raise the limit.

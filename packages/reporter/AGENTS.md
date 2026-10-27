@@ -75,8 +75,10 @@ responsibilities.
   `apps/application/tests/unit/reporter-core-identity.test.ts` asserts the reporter re-exports the exact core functions
   and fails on a copy. **Never import `apps/application/shared`** from the reporter: the path would leak into the
   published `.d.ts`.
-- `internal/submit/serializer.ts` is the single source of truth for the wire field list: `toWireTestCase` for per-case
-  fields, `serializeRun` for the run body (used by both `uploadJSON` and `uploadWithFiles`).
+- **A wire field is projected in one place per body**: a per-case field in `toWireTestCase` and a field of the batch
+  run body in `serializeRun` (`internal/submit/serializer.ts`, used by `uploadJSON` and `uploadWithFiles`). The
+  streaming routes build their own run bodies: `/finish` in `internal/submit/run-submitter.ts`, `/start` and `/begin`
+  in `internal/streaming/stream-manager.ts`, so a run-level field the server reads while streaming is added there too.
 
 ## Workflow
 

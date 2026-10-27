@@ -36,6 +36,9 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 
 - The `changes` job reads which areas a change touches (`dorny/paths-filter`), and each job runs for the areas it
   covers. A change to `.github/workflows/`, `.github/actions/` or `.node-version` runs them all.
+- The agent guides' test (`apps/application/tests/unit/agent-guides.test.ts`) runs in the checks job with every unit
+  test; a change that touches only guides (`AGENTS.md`, `ARCHITECTURE.md`, `CLAUDE.md`), `adr/` or `proposals/` runs it
+  alone in the `Agent guides` job.
 - The release PR (a `release-please--` branch) runs the `Versions` job alone. The other jobs run on `main` once it
   merges.
 - `changes` also picks two matrices:

@@ -13,6 +13,7 @@ in-app assistant).
 | trace blobs, the resource pool, `trace-*.ts`, `resource-compression.ts`          | [Trace storage](#trace-storage)                     |
 | `dom-snapshot-render.ts`, `shared/snapshot-picker-extras.ts`                     | [DOM snapshot live state](#dom-snapshot-live-state) |
 | `ai-claude-cli.ts`, `ai-codex-cli.ts`, `ai-deepseek-cli.ts`, `ai-cli-process.ts` | [AI CLI providers](#ai-cli-providers)               |
+| `ai-context*.ts`, `integrations/automation.ts`                                   | [Wiring rules](#wiring-rules)                       |
 
 ## SCM providers
 
@@ -186,3 +187,12 @@ message, a page's text), which must never make it run a command, read a file or 
   API key; never import user profiles, unrelated credential records or endpoint overrides.
 - `tests/unit/ai-claude-cli.test.ts`, `tests/unit/ai-codex-cli.test.ts` and `tests/unit/ai-deepseek-cli.test.ts` check
   the options and the isolation.
+
+## Wiring rules
+
+- **A computed AI-context section changes three places in one batch**: the `SectionId` union (`ai-context.types.ts`),
+  `DIAGNOSIS_SECTIONS` (`shared/diagnosis-sections.ts`) and `DiagnosisContextCoverage` (`types/api.ts`), before the section's
+  builder is written. The files of the other subsystems: [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md#extension-points).
+- **Issue automation decides from `shared/integrations/automation.ts` alone**: the run trigger
+  (`server/utils/integrations/automation.ts`) and the write-back scope (`policies.ts`, `tracker-run.ts`) call its rule
+  functions (`resolveAutoCreateRule`, `evaluateAutoCreate`), never a copy of them.

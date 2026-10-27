@@ -17,6 +17,11 @@ Rules for the routes that write runs (the reporter's `setup`, `start`, `begin`, 
   pull-request feedback, auto-heal). The comment on the helper lists the order of the rest and the use each step
   follows.
 
+## Writing run cases
+
+- **Run cases are written only through `persistRunCases`** (`server/utils/persist-run-cases.ts`, mirrored for the demo
+  in `app/demo/api/reporter.ts`): every ingest route hands it the mapped cases, never an `insert` of its own.
+
 ## Timed-out tests fold into `failedTests`
 
 `test_runs` has no `timedOutTests` column. Playwright's `'timedOut'` (stored as `'timedout'`) counts as failed, so that
@@ -50,6 +55,8 @@ How the server merges shards:
 - Each shard's counters add up with SQL `+`, and the run settles only once `shardsFinished` reaches `shardTotal`
   (`finalizeShardedRun`, which runs the side effects once). `cancelInstanceRuns()` with `isShardedRun: true` cancels
   only the instance's non-sharded runs.
+- **A shard's resource report replaces the one it sent before, whole**: one `test_run_resource_reports` row per run
+  and shard (`saveResourceReportPart`, `shared/handlers/resource-reports.ts`), never merged into another shard's row.
 
 ### Stream tokens
 

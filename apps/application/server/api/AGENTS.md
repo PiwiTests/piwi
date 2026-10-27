@@ -15,6 +15,8 @@ Rules for the Nitro routes (`server/api/`, `server/routes/`) and the authorizati
   and the app's requests.
 - **An endpoint the demo serves too gets its demo handler**; `npm run app:check:demo` compares the route patterns. See
   [`app/demo/AGENTS.md`](../../app/demo/AGENTS.md).
+- **A settings route returns whether a secret is set, never its value** (an API key, an SCM token, the SMTP password):
+  the AI settings answer "API key presence", the SMTP settings `configured`.
 - On the desktop app, every `/api` and `/mcp` request also needs the desktop token
   (`server/middleware/desktop-guard.ts`); its open routes: [`apps/desktop/AGENTS.md`](../../../desktop/AGENTS.md).
 

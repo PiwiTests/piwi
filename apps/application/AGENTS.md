@@ -13,21 +13,22 @@ code.
 Claude Code loads a topic guide by itself when you open a file in its directory; other agents read the matching row
 before editing. A change that spans several rows reads each of them.
 
-| Editing…                                                                                | Read                                                                   |
-| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `app/`: pages, components, composables, utils (UI conventions)                          | [`app/AGENTS.md`](app/AGENTS.md)                                       |
-| `app/components/run/`: the run page, its workers timeline                               | [`app/components/run/AGENTS.md`](app/components/run/AGENTS.md)         |
-| `app/demo/`, `shared/demo/`, the demo seed, or any change the demo must mirror          | [`app/demo/AGENTS.md`](app/demo/AGENTS.md)                             |
-| `app/utils/demo-tour/`: the live demo's guided tour                                     | [`app/utils/demo-tour/AGENTS.md`](app/utils/demo-tour/AGENTS.md)       |
-| `shared/guide-anchors/`, `app/utils/guide/`, `app/utils/guides/`, a `data-tour` element | [`shared/guide-anchors/AGENTS.md`](shared/guide-anchors/AGENTS.md)     |
-| `server/api/`, `server/routes/`, authentication and permissions                         | [`server/api/AGENTS.md`](server/api/AGENTS.md)                         |
-| The reporter's routes (`server/api/test-runs/`), a new field on run data, sharding      | [`server/api/test-runs/AGENTS.md`](server/api/test-runs/AGENTS.md)     |
-| `server/database/`: schema, migrations, queries                                         | [`server/database/AGENTS.md`](server/database/AGENTS.md)               |
-| `server/utils/`: SCM, fingerprints, locator healing, traces, DOM snapshots, AI CLIs     | [`server/utils/AGENTS.md`](server/utils/AGENTS.md)                     |
-| `server/utils/mcp/`, `shared/mcp-tools.ts`: the MCP tools                               | [`server/utils/mcp/AGENTS.md`](server/utils/mcp/AGENTS.md)             |
-| The in-app assistant and its nudges                                                     | [`server/utils/assistant/AGENTS.md`](server/utils/assistant/AGENTS.md) |
-| `shared/env-format*.ts`, `shared/deploy/`, the deploy manifests                         | [`shared/deploy/AGENTS.md`](shared/deploy/AGENTS.md)                   |
-| `scripts/`: feature screenshots, page measurements, performance suite, demo media       | [`scripts/AGENTS.md`](scripts/AGENTS.md)                               |
+| Editing…                                                                                        | Read                                                                   |
+| ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `app/`: pages, components, composables, utils (UI conventions)                                  | [`app/AGENTS.md`](app/AGENTS.md)                                       |
+| `app/pages/`: page layout (gutter, tab strips, settings menus)                                  | [`app/pages/AGENTS.md`](app/pages/AGENTS.md)                           |
+| `app/components/run/`: the run page, its workers timeline                                       | [`app/components/run/AGENTS.md`](app/components/run/AGENTS.md)         |
+| `app/demo/`, `shared/demo/`, the demo seed, or any change the demo must mirror                  | [`app/demo/AGENTS.md`](app/demo/AGENTS.md)                             |
+| `app/utils/demo-tour/`: the live demo's guided tour                                             | [`app/utils/demo-tour/AGENTS.md`](app/utils/demo-tour/AGENTS.md)       |
+| `shared/guide-anchors/`, `app/utils/guide/`, `app/utils/guides/`, a `data-tour` element         | [`shared/guide-anchors/AGENTS.md`](shared/guide-anchors/AGENTS.md)     |
+| `server/api/`, `server/routes/`, authentication and permissions                                 | [`server/api/AGENTS.md`](server/api/AGENTS.md)                         |
+| The reporter's routes (`server/api/test-runs/`), a new field on run data, sharding              | [`server/api/test-runs/AGENTS.md`](server/api/test-runs/AGENTS.md)     |
+| `server/database/`: schema, migrations, queries                                                 | [`server/database/AGENTS.md`](server/database/AGENTS.md)               |
+| `server/utils/`: SCM, fingerprints, locator healing, traces, DOM snapshots, AI CLIs             | [`server/utils/AGENTS.md`](server/utils/AGENTS.md)                     |
+| `server/utils/mcp/`, `shared/mcp-tools.ts`: the MCP tools                                       | [`server/utils/mcp/AGENTS.md`](server/utils/mcp/AGENTS.md)             |
+| The in-app assistant and its nudges                                                             | [`server/utils/assistant/AGENTS.md`](server/utils/assistant/AGENTS.md) |
+| `shared/env-format*.ts`, `shared/deploy/`, the deploy manifests                                 | [`shared/deploy/AGENTS.md`](shared/deploy/AGENTS.md)                   |
+| `scripts/`: feature screenshots, page measurements, performance suite, demo media, brand assets | [`scripts/AGENTS.md`](scripts/AGENTS.md)                               |
 
 Where to add things in a subsystem whose wiring spans several files (a flaky root-cause category, a regression signal,
 an AI context section, an import path, a quality report language, an issue automation criterion): the _Extension
@@ -41,8 +42,8 @@ What each top-level folder holds: [`ARCHITECTURE.md`](ARCHITECTURE.md#shape).
   without a folder prefix (`pathPrefix: false` in `nuxt.config.ts`), so two components of the same name collide.
 - **Import `shared/` as `#shared/...`** from `app/`, `server/` and the demo, never with a relative path or
   `~~/shared/...`. `shared/` holds the types, constants and pure helpers the app, the server and the demo share.
-- **Cross-package pure logic lives in `@piwitests/core`** (`packages/core/`), re-exported through thin `shared/*` shims
-  so `#shared/...` paths never change. Never put app-only (Nuxt, Drizzle, server) or reporter-only (Node-dependent) code
+- **Cross-package pure logic lives in `@piwitests/core`** (`packages/core/`): import it as `@piwitests/core/<module>`,
+  or through the `shared/*` file that re-exports it where one exists. Never put app-only (Nuxt, Drizzle, server) or reporter-only (Node-dependent) code
   there: `packages/core/tests/boundary.test.ts` fails on a dependency or on an import that is not relative (`node:`, a
   package, the app).
 
@@ -50,10 +51,17 @@ What each top-level folder holds: [`ARCHITECTURE.md`](ARCHITECTURE.md#shape).
 
 `server/` and `app/demo/api/` mirror each other (same schema, same persist logic). A helper that would otherwise live
 in both is extracted into `server/utils/` (the demo imports it as `~~/server/utils/...`) or `shared/`, and imported by
-both. Keep two implementations only where they genuinely differ (error handling, authentication).
+both. Keep two implementations only where they genuinely differ (error handling, authentication). The run import and
+the offline export are written once in `shared/` and differ only in the port each side passes them (`ImportPort`,
+`ExportAssetReader`).
 
 ## Rules for every change
 
+- **Every document Piwi writes for use outside the dashboard ends with the Piwi credit** of `shared/brand.ts` (the
+  offline exports, the quality reports, the emails, and any new format): `piwiCreditHtml`, `drawPiwiCredit` for a PDF,
+  `piwiCreditMarkdown`; `emailLayout` draws it in every email. The mark (`shared/brand-mark.json`) never loads over
+  the network: inline SVG in HTML, vector paths in a PDF, an attachment in an email (`sendEmail` attaches it when the
+  message shows it). Data files (CSV, XLSX, JSON) carry none.
 - **Every `PIWI_*` variable is registered in `shared/piwi-env-vars.ts`** (`PIWI_ENV_VARS`, the single source of truth
   for its description, category, type, default, limits, `secret` flag, `since` release and docs page). Register a new
   one in the same change (in `nuxt.config.ts` or a server util alike), stamped `since: '<next release>'`;

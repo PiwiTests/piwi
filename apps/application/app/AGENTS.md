@@ -161,11 +161,6 @@ views are exempt only where a rule says so.
 - **Logos, favicons and app icons are generated, never edited by hand**:
   [`scripts/AGENTS.md`](../scripts/AGENTS.md#brand-assets). Show the wide lockup with `<BrandLogo>`, which swaps in the
   reversed drawing on a dark page. The accent (`primary` in `app/app.config.ts`) is the brand violet.
-- **Every document Piwi writes for use outside the dashboard ends with the Piwi credit** of `shared/brand.ts` (the
-  offline exports, the quality reports, the emails, and any new format): `piwiCreditHtml`, `drawPiwiCredit` for a PDF,
-  `piwiCreditMarkdown`; `emailLayout` draws it in every email. The mark (`shared/brand-mark.json`) never loads over
-  the network: inline SVG in HTML, vector paths in a PDF, an attachment in an email (`sendEmail` attaches it when the
-  message shows it). Data files (CSV, XLSX, JSON) carry none.
 
 ## Test outcome colors
 
