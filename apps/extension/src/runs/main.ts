@@ -7,10 +7,12 @@ import {
   RUNS_PING_MS,
   RUNS_PORT,
   RUN_COMMAND,
+  stopError,
   stopPlace,
   testName,
   workerKey,
   type RunsAnswer,
+  type RunsCode,
   type RunsEvent,
   type RunsRequest,
   type RunsRun,
@@ -25,7 +27,8 @@ import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
  * the worker's reporter and the editor take them. Opened from the popup's Runs tile in a small window of its own. It
  * reads everything from the background worker through its port (`RUNS_PORT`), and makes no network call: the worker
  * holds the hubs' connections and tokens. The code itself never comes here: the editor writes it, and the window
- * shows what it answered. What a hub sends is shown as text, and its image as an image. Each part of the window is
+ * shows what it answered and what each code written at the stop came to, whoever asked for it. What a hub sends is
+ * shown as text, and its image as an image. Each part of the window is
  * drawn again only when what it shows changes (`part`), so a button under the pointer or the keyboard stays the same
  * element while the run goes on around it.
  */
@@ -51,10 +54,14 @@ let state: RunsState | null = null;
 /** The image of each stopped worker's page, for the stop it was taken at. */
 const images = new Map<string, { since: string; loading: boolean; img: HTMLImageElement | null; note: string }>();
 /**
- * What the last command for a worker answered, when there is something to say, for the stop it was sent at (null for
- * Pause): shown while the worker stands there, and gone with that stop. `written` when the editor wrote code.
+ * What the last command for a worker answered, or what the last code written at its stop came to, when there is
+ * something to say, for the stop it was sent at (null for Pause): shown while the worker stands there, and gone with
+ * that stop. `written` when the editor wrote code, with what to check in it (`warnings`).
  */
-const answers = new Map<string, { ok: boolean; text: string; since: string | null; written: boolean }>();
+const answers = new Map<
+  string,
+  { ok: boolean; text: string; since: string | null; written: boolean; warnings: string[] }
+>();
 /** The requests a stopped worker's test kept, listed for Mock a request at the stop they were asked at. */
 interface RequestList {
   since: string;
@@ -96,6 +103,8 @@ function connect(): void {
   opened.onMessage.addListener((event: RunsEvent) => {
     if (event?.type === 'state') {
       showState(event.state);
+    } else if (event?.type === 'code') {
+      heardCode(event);
     } else if (event?.type === 'answer') {
       const { id, type: _type, ...answer } = event;
       waiting.get(id)?.(answer);
@@ -177,11 +186,23 @@ async function send(
   return null;
 }
 
-/** Shows what a command answered under the test, and reads it out. */
-function say(key: string, answer: RunsAnswer, since: string | null, written = false): void {
+/** Shows what a command answered under the test, or what a code came to, with what to check in it, and reads it out. */
+function say(key: string, answer: RunsAnswer, since: string | null, written = false, warnings: string[] = []): void {
   const text = answer.ok ? answer.message : failureText(answer);
-  answers.set(key, { ok: answer.ok, text, since, written: answer.ok && written });
-  if (text) announce(text);
+  answers.set(key, { ok: answer.ok, text, since, written: answer.ok && written, warnings });
+  if (text) announce([text, ...warnings].join(' '));
+}
+
+/**
+ * What a code written at a stop came to, whoever asked for it (this window, the editor): shown under the test, and
+ * read out, while its worker stands at that stop; dropped otherwise.
+ */
+function heardCode(code: RunsCode): void {
+  const run = state?.runs.find((r) => r.hub === code.hub && r.session.ref === code.ref && !r.session.ended);
+  if (!run || stopNow(run, code.worker) !== code.since) return;
+  const key = workerKey(code.hub, code.ref, { worker: code.worker });
+  say(key, { ok: code.ok, message: code.message }, code.since, true, code.warnings);
+  render();
 }
 
 /** The intents a stop starts in the test's window, which say there what to do. */
@@ -225,7 +246,9 @@ async function mockRequest(run: RunsRun, worker: number, since: string, request:
   const key = workerKey(run.hub, run.session.ref, { worker });
   const answer = await send(run, worker, 'mock', since, request);
   if (!answer) return;
-  say(key, answer, since, true);
+  // What the editor wrote came before this answer, with what to review in it: the answer says it again.
+  const shown = answers.get(key);
+  if (!(answer.ok && shown?.since === since && shown.text === answer.message)) say(key, answer, since, true);
   if (answer.ok) closeRequests(key);
   render();
 }
@@ -249,7 +272,7 @@ function wantImage(run: RunsRun, worker: HubWorker, stop: HubStop): void {
       img = element('img');
       img.alt =
         stop.reason === 'failure'
-          ? t('runs_imageAltFailure', { error: failureOf(stop.title) })
+          ? t('runs_imageAltFailure', { error: stopError(stop).split('\n')[0]! })
           : t('runs_imageAlt', { call: stop.title });
       img.src = `data:image/jpeg;base64,${answer.image.data}`;
     }
@@ -553,14 +576,6 @@ const STOP_WORDS = {
   other: 'runs_stoppedOther',
 } as const satisfies Record<Exclude<HubStop['reason'], 'failure'>, string>;
 
-/**
- * The error a failure's stop names, under its label: the reporter titles the stop `Failed: ` and the error's first
- * line, which Playwright starts with the error's name (`Error: expect(locator).toBeVisible() failed`).
- */
-function failureOf(title: string): string {
-  return title.replace(/^Failed:\s*(?:Error:\s*)?/, '');
-}
-
 function stateLine(worker: HubWorker, count: number, place: string | null): HTMLElement {
   const line = element('p', 'state');
   const stop = worker.state === 'stopped' ? worker.stop : null;
@@ -799,7 +814,8 @@ function renderWorker(run: RunsRun, worker: HubWorker, count: number): HTMLEleme
   }
   if (!ended) {
     if (stop && where) {
-      parts.push(part(`${key}|stop`, { title: stop.title, where, reason: stop.reason }, () => stopView(stop, where)));
+      const stopShown = { title: stop.title, where, reason: stop.reason, error: stop.error ?? null };
+      parts.push(part(`${key}|stop`, stopShown, () => stopView(stop, where)));
       wantImage(run, worker, stop);
       const kept = images.get(key);
       const image = kept?.since === stop.since ? { ...kept, img: !!kept.img } : { since: stop.since };
@@ -830,6 +846,7 @@ function renderWorker(run: RunsRun, worker: HubWorker, count: number): HTMLEleme
           ? ['note written', 'check-circle']
           : ['note', 'info'];
       parts.push(part(`${key}|answer`, answer, () => iconText(element('p', className), icon, answer.text)));
+      if (answer.warnings.length > 0) parts.push(part(`${key}|warnings`, answer.warnings, () => warningList(answer)));
     }
     if (listed) {
       const requests = part(`${key}|requests`, { since: listed.since, serial: listed.serial }, () =>
@@ -843,6 +860,17 @@ function renderWorker(run: RunsRun, worker: HubWorker, count: number): HTMLEleme
   return item;
 }
 
+/** What to check in the code the editor wrote, as it said it: a line each. */
+function warningList(answer: { warnings: readonly string[] }): HTMLElement {
+  const list = element(
+    'ul',
+    'warnings',
+    ...answer.warnings.map((warning) => iconText(element('li', 'note'), 'alert', warning)),
+  );
+  list.setAttribute('aria-label', t('runs_codeWarnings'));
+  return list;
+}
+
 /** Where the test stands: the call about to run and its place; where it failed, the error alone, its place above. */
 function stopView(stop: HubStop, where: string): HTMLElement {
   if (stop.reason === 'failure') {
@@ -850,7 +878,7 @@ function stopView(stop: HubStop, where: string): HTMLElement {
       'dl',
       'stop',
       element('dt', undefined, t('runs_errorLabel')),
-      element('dd', 'error', ...richText(failureOf(stop.title))),
+      element('dd', 'error', ...richText(stopError(stop))),
     );
   }
   return element(

@@ -7701,6 +7701,10 @@
     "message": "Code from this stop",
     "description": "Runs window, the name screen readers give the row of Pick, Record, Assert, Assert a region and Mock a request."
   },
+  "runs_codeWarnings": {
+    "message": "What to review in this code",
+    "description": "Runs window, the name screen readers give the list of warnings under the sentence saying the editor wrote code at a stop (a value hidden as a credential, a brittle locator)."
+  },
   "runs_resumeFailureTitle": {
     "message": "Let the test end as it failed",
     "description": "Runs window, the Resume button’s tooltip on a test held where it failed."

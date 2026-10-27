@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
-import { parseRunsRequest, runFile, shortcutCommands, stopPlace, testName } from '../../src/shared/runs.js';
+import { parseRunsRequest, runFile, shortcutCommands, stopError, stopPlace, testName } from '../../src/shared/runs.js';
 
 const worker = (over: Partial<HubWorker>): HubWorker => ({
   worker: 0,
@@ -139,5 +139,14 @@ describe('where a test stands, as text', () => {
 
   it('names a test by its describe blocks, then its title', () => {
     expect(testName({ title: ['cart', 'coupons', 'applies WELCOME10'] })).toBe('cart › coupons › applies WELCOME10');
+  });
+
+  it('names the error a failure stopped at, as its stop says it, else as an older one titles it', () => {
+    const title = 'Failed: Error: expect(locator).toBeVisible() failed';
+    expect(stopError({ title, error: "Error: the cart's own message\nLocator: getByTestId('cart')" })).toBe(
+      "Error: the cart's own message\nLocator: getByTestId('cart')",
+    );
+    expect(stopError({ title })).toBe('expect(locator).toBeVisible() failed');
+    expect(stopError({ title: 'Failed: Test timeout of 5000ms exceeded.' })).toBe('Test timeout of 5000ms exceeded.');
   });
 });

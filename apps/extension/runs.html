@@ -290,8 +290,10 @@
       .worker[data-failed] .state {
         color: var(--error);
       }
+      /* A failure's error, its lines as it states them. */
       .stop .error {
         overflow-wrap: anywhere;
+        white-space: pre-line;
       }
       /* A command on its way: the buttons wait for its answer, and keep the focus. */
       .piwi-btn[aria-disabled='true'] {
@@ -328,6 +330,19 @@
       /* The editor wrote the code. */
       .note.written > .piwi-icon {
         color: var(--ok);
+      }
+      /* What to review in the code the editor wrote: a line each, under the sentence that says it was written. */
+      .warnings {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .warnings .note {
+        margin-top: 4px;
+        overflow-wrap: anywhere;
+      }
+      .warnings .note > .piwi-icon {
+        color: var(--warn);
       }
       /* The requests a stopped test kept, to choose the one to mock: one row each, scrolled within its box. */
       .requests {

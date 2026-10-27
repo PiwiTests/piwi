@@ -12,6 +12,7 @@ import {
   waitFor,
   CART_RESPONSE,
   CHECK,
+  FAILURE_ERROR,
   KEPT,
   PAIRING_TOKEN,
   RUN_TAKES,
@@ -372,6 +373,11 @@ test.describe('code from a stop', () => {
         } finally {
           handoff.socket.destroy();
         }
+        // What the editor wrote comes to the window, in place of what Assert's answer said, and is read out.
+        const wrote = /^Piwi wrote the check above checkout\.spec\.ts:5\. The stopped test goes on with the code/;
+        await expect(card.locator('.note.written')).toHaveText(wrote);
+        await expect(runs.locator('#announce')).toHaveText(wrote);
+        await expect(card.locator('.note')).toHaveCount(1);
         expect(await runs.content()).not.toContain('toHaveText(');
 
         // Assert a region: the worker answers that the pick starts, then sends the region picked, which the editor
@@ -391,6 +397,9 @@ test.describe('code from a stop', () => {
           editor.svc.codes.find((c) => c.ref === run.ref && c.action === 'assert-region'),
         );
         expect(snapshot.code).toContain("await expect(page.getByTestId('summary')).toMatchAriaSnapshot(`");
+        await expect(card.locator('.note.written')).toHaveText(
+          "Piwi wrote the region's ARIA snapshot above checkout.spec.ts:5.",
+        );
 
         // The test goes on: what Assert a region said goes with its stop.
         run.worker.send({ type: 'running', stop: 1 });
@@ -424,7 +433,7 @@ test.describe('code from a stop', () => {
         expect(asked).toMatchObject({ what: 'requests', stop: 1 });
         const list = card.getByRole('group', { name: 'Choose the request to mock' });
         await expect(list.getByRole('listitem')).toHaveCount(KEPT.length);
-        await expect(runs.locator('#announce')).toHaveText('7 requests: choose the one to mock.');
+        await expect(runs.locator('#announce')).toHaveText(`${KEPT.length} requests: choose the one to mock.`);
         // The list opens under the button, which keeps the focus and says it is open.
         await expect(mock).toBeFocused();
         await expect(mock).toHaveAttribute('aria-expanded', 'true');
@@ -440,6 +449,13 @@ test.describe('code from a stop', () => {
         await expect(list.getByRole('link')).toHaveCount(0);
         await expect(list.locator('img')).toHaveCount(0);
         await expect(list.getByRole('button', { name: /api\/search/ })).toContainText('<img src=x onerror=alert(1)>');
+        // A body sent in chunks states no size; the credential its address carried is hidden by the editor.
+        const stream = list.getByRole('button', { name: /api\/stream/ });
+        await expect(stream).toHaveText(
+          'GET http://127.0.0.1:3000/api/stream?token=<hidden> 200 · text/plain · size unknown · at 2.6s',
+        );
+        await expect(stream).toHaveAttribute('title', 'GET http://127.0.0.1:3000/api/stream?token=<hidden>');
+        expect(await runs.content()).not.toContain('abc123');
 
         // The keyboard: Tab reaches the list's close button, its filter and its rows; the arrows move between rows.
         await runs.keyboard.press('Tab');
@@ -468,14 +484,18 @@ test.describe('code from a stop', () => {
         const mocked = await answerNext(run.worker, 'mock', {
           ok: true,
           message: `GET ${CART_RESPONSE.url}`,
-          response: CART_RESPONSE,
+          response: { ...CART_RESPONSE, body: '{"items":[],"token":"cart-session-0123"}' },
         });
         expect(mocked).toMatchObject({ what: 'mock', stop: 1, id: 1 });
         const written = await waitFor(() => editor.svc.codes.find((c) => c.ref === run.ref && c.action === 'mock'));
         expect(written.code).toContain("await page.route('**/api/cart', (route) =>");
         const said = card.locator('.note.written');
         await expect(said).toHaveText(/^Piwi wrote the mock above checkout\.spec\.ts:5\./);
+        // What to review in the code, under it, and read out with it.
+        const hidden = 'A value named or shaped like a credential is written as <hidden>.';
+        await expect(card.getByRole('list', { name: 'What to review in this code' })).toHaveText(hidden);
         await expect(runs.locator('#announce')).toHaveText(/^Piwi wrote the mock above checkout\.spec\.ts:5\./);
+        await expect(runs.locator('#announce')).toContainText(hidden);
         // The list closes, and the focus goes back to the button that opened it. No code comes to the window.
         await expect(list).toHaveCount(0);
         await expect(mock).toBeFocused();
@@ -498,6 +518,23 @@ test.describe('code from a stop', () => {
         await runs.keyboard.press('Escape');
         await expect(list).toHaveCount(0);
         await expect(mock).toBeFocused();
+
+        // A mock the editor asks for itself shows here too, at the stop it was made at.
+        const since = editor.svc.latest(run.ref)!.workers[0]!.stop!.since;
+        const fromEditor = editor.svc.client.sendRequest('piwi/stopAction', {
+          ref: run.ref,
+          since,
+          action: 'mock',
+          request: 1,
+        });
+        await answerNext(run.worker, 'mock', {
+          ok: true,
+          message: `GET ${CART_RESPONSE.url}`,
+          response: CART_RESPONSE,
+        });
+        expect(await fromEditor).toMatchObject({ ok: true });
+        await expect(said).toHaveText('Piwi wrote the mock above checkout.spec.ts:5.');
+        await expect(card.getByRole('list', { name: 'What to review in this code' })).toHaveCount(0);
       } finally {
         await endRun(run);
       }
@@ -590,8 +627,9 @@ test.describe('code from a stop', () => {
         stopAtCheckout(run.worker, 1, { reason: 'failure' });
         await expect(card.locator('.state')).toHaveText('Failed at tests/checkout.spec.ts:5');
         await expect(card.locator('.worker')).toHaveAttribute('data-failed', '');
-        // The error as Playwright states it, under its label.
-        await expect(card.locator('.stop')).toHaveText('Errorexpect(locator).toBeVisible() failed');
+        // The error its stop names, under its label, its lines kept.
+        await expect(card.locator('.stop dt')).toHaveText('Error');
+        expect(await card.locator('.stop .error').innerText()).toBe(FAILURE_ERROR);
         await expect(runs.locator('#announce')).toHaveText('cart › pays failed at tests/checkout.spec.ts:5.');
         // No Step nor Finish: whatever answers it, the test ends as it failed.
         await expect(card.locator('.controls button')).toHaveText([
@@ -606,6 +644,12 @@ test.describe('code from a stop', () => {
         await expect(resume).toHaveAttribute('title', 'Let the test end as it failed');
         await resume.click();
         expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
+
+        // A reporter that names no error: the window reads it from the stop's title.
+        run.worker.send({ type: 'running', stop: 1 });
+        await expect(card.getByText('Running')).toBeVisible();
+        stopAtCheckout(run.worker, 2, { reason: 'failure', error: null });
+        await expect(card.locator('.stop')).toHaveText('Errorexpect(locator).toBeVisible() failed');
       } finally {
         await endRun(run);
       }

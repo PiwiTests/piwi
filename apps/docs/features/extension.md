@@ -76,11 +76,13 @@ image of the page.
 actions' code at the stopped line, when its Piwi extension and your reporter take them. Where Piwi's pause bar
 shows in the test's window, **Pick** and **Record** start its **Pick a locator** and **Record here**, **Assert**
 the recorder's **Check an element**, and **Assert a region** a pick whose ARIA snapshot becomes
-`toMatchAriaSnapshot`. **Mock a request** lists the page's fetch and XHR requests, headless too: the one you choose
-becomes a `page.route` answering as the server did. A refusal says why.
+`toMatchAriaSnapshot`. **Mock a request** lists the page's fetch and XHR requests, headless too, each address with
+its credentials hidden: the one you choose becomes a `page.route` answering as the server did. Under the test, the
+window says where the editor wrote the code, whether you started the action there or in the editor, and what to review
+in it (a value hidden as a credential), or why it was not written. A refusal says why.
 
-A failing test is held at its line, **Failed at** in red: **Resume** lets it end as it failed, and the code actions
-work there, **Pick** replacing the failing locator.
+A failing test is held at its line, **Failed at** in red, its error under it: **Resume** lets it end as it failed, and
+the code actions work there, **Pick** replacing the failing locator.
 
 <figure>
   <img src="/screenshots/picker-runs.png" alt="The Runs window beside a shop page stopped before a click on Checkout: the test, its place, an image of the page, its controls and code actions">

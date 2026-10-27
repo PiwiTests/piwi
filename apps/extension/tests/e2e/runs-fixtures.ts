@@ -159,13 +159,19 @@ export async function startRun(
   return { ref, worker, channel };
 }
 
-/** The worker stops before the click on Pay in the checkout spec, at a breakpoint, or there as the test failed. */
+/** The error a failed checkout test stopped at, as its reporter names it: the error's first lines, as plain text. */
+export const FAILURE_ERROR = "expect(locator).toBeVisible() failed\nLocator: getByRole('button', { name: 'Pay' })";
+
+/**
+ * The worker stops before the click on Pay in the checkout spec, at a breakpoint, or there as the test failed, naming
+ * its error (`FAILURE_ERROR`), or none as a reporter that predates it (`error: null`), which titles it alone.
+ */
 export function stopAtCheckout(
   worker: FakeWorker,
   stop: number,
-  options: { reason?: 'breakpoint' | 'failure'; bar?: boolean } = {},
+  options: { reason?: 'breakpoint' | 'failure'; bar?: boolean; error?: string | null } = {},
 ): void {
-  const { reason = 'breakpoint', bar = true } = options;
+  const { reason = 'breakpoint', bar = true, error = FAILURE_ERROR } = options;
   worker.send({
     type: 'stopped',
     stop,
@@ -177,6 +183,7 @@ export function stopAtCheckout(
     place: { file: CHECKOUT, line: 5, column: 5 },
     locator: "getByRole('button', { name: 'Pay' })",
     bar,
+    ...(reason === 'failure' && error !== null ? { error } : {}),
   });
 }
 
@@ -263,7 +270,8 @@ const APP = 'http://127.0.0.1:3000';
 
 /**
  * The responses a stopped checkout test kept, oldest first, as its reporter lists them: one of them with an address
- * longer than the window, one whose address carries markup, which the window shows as text.
+ * longer than the window, one whose address carries markup, which the window shows as text, and one sent in chunks,
+ * which states no size, with a credential in its address, as a reporter that hides none lists it: the editor hides it.
  */
 export const KEPT: HubKeptRequest[] = [
   { id: 1, method: 'GET', url: `${APP}/api/cart`, status: 200, type: 'application/json', size: 12, time: 840 },
@@ -289,6 +297,15 @@ export const KEPT: HubKeptRequest[] = [
   { id: 5, method: 'GET', url: `${APP}/api/shipping`, status: 200, type: 'application/json', size: 96, time: 2050 },
   { id: 6, method: 'GET', url: `${APP}/api/user`, status: 401, type: 'application/json', size: 27, time: 2300 },
   { id: 7, method: 'PUT', url: `${APP}/api/basket/7`, status: 204, type: '', size: 0, time: 2410 },
+  {
+    id: 8,
+    method: 'GET',
+    url: `${APP}/api/stream?token=abc123`,
+    status: 200,
+    type: 'text/plain',
+    size: null,
+    time: 2600,
+  },
 ];
 
 /** The body the worker hands over for the cart's request, the one chosen to mock. */

@@ -6487,6 +6487,9 @@
   "runs_codeActions": {
     "message": "Du code depuis cet arrêt"
   },
+  "runs_codeWarnings": {
+    "message": "À relire dans ce code"
+  },
   "runs_resumeFailureTitle": {
     "message": "Laisser le test se terminer en échec"
   },

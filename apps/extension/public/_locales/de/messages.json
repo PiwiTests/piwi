@@ -6487,6 +6487,9 @@
   "runs_codeActions": {
     "message": "Code an dieser Stelle"
   },
+  "runs_codeWarnings": {
+    "message": "Was Sie in diesem Code durchsehen sollten"
+  },
   "runs_resumeFailureTitle": {
     "message": "Den Test als fehlgeschlagen enden lassen"
   },

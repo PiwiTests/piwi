@@ -1,15 +1,16 @@
 /**
  * One connection to an editor service's hub (`@piwitests/core/run-hub`), from the background worker alone: the
  * WebSocket the editor's live endpoint named, `hello` with its token, `subscribe` once welcomed, then each run as the
- * hub pushes it. Every message is read with `parseHubMessage`, field by field; one it cannot read is left aside, as a
- * newer hub's would be. A command waits for the answer of its `id`, and is answered by the worker itself when the
- * connection closes or the hub stays silent. The hub sends `keepalive` every `keepaliveMs`: a connection that hears
- * nothing for two of them and a bit is closed as silent.
+ * hub pushes it, and what each code written at a stop came to. Every message is read with `parseHubMessage`, field by
+ * field; one it cannot read is left aside, as a newer hub's would be. A command waits for the answer of its `id`, and
+ * is answered by the worker itself when the connection closes or the hub stays silent. The hub sends `keepalive` every
+ * `keepaliveMs`: a connection that hears nothing for two of them and a bit is closed as silent.
  */
 import {
   HUB_CLOSE,
   parseHubMessage,
   type HubAnswer,
+  type HubCodeMessage,
   type HubCommand,
   type HubSession,
   type HubWelcome,
@@ -63,6 +64,8 @@ export interface HubConnectionEvents {
   changed(): void;
   /** A run ended, as the hub said last; `sessions` still holds it as it was before. */
   ended(session: HubSession): void;
+  /** What an action that writes code at a stop came to, as the hub said. */
+  code(code: HubCodeMessage): void;
   /** The connection closed by itself. */
   lost(why: HubLoss): void;
 }
@@ -175,6 +178,8 @@ export class HubConnection {
     switch (message.type) {
       case 'answer':
         return this.answered(message);
+      case 'code':
+        return this.events.code(message);
       case 'session': {
         const { session } = message;
         if (session.ended) {

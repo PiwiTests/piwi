@@ -6487,6 +6487,9 @@
   "runs_codeActions": {
     "message": "Código desde esta parada"
   },
+  "runs_codeWarnings": {
+    "message": "Qué revisar en este código"
+  },
   "runs_resumeFailureTitle": {
     "message": "Dejar que el test termine con el fallo"
   },

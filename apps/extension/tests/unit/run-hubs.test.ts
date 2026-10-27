@@ -357,6 +357,63 @@ describe('a hub’s connection', () => {
     expect(socket.closedWith).toBeNull();
   });
 
+  it('tells each listener what a code written at a stop came to, with its hub, and never its code', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    const socket = sockets[0]!;
+    await welcome(socket, [session([STOPPED])]);
+    const heard: unknown[] = [];
+    const changes = vi.fn();
+    const unlisten = hubs.listen(changes, (code) => heard.push(code));
+    const written = {
+      type: 'code',
+      ref: 'r1',
+      worker: 1,
+      since: 's7',
+      action: 'assert',
+      ok: true,
+      message: 'Piwi wrote the check above cart.page.ts:13.',
+    };
+    socket.hear({ ...written, code: "await expect(page.getByTestId('total')).toHaveText('72');" });
+    socket.hear({
+      ...written,
+      action: 'mock',
+      message: 'Piwi wrote the mock above cart.page.ts:13.',
+      warnings: ['A value named or shaped like a credential is written as <hidden>.'],
+    });
+    // One it cannot read is left aside.
+    socket.hear({ ...written, worker: 'all' });
+    socket.hear({ ...written, warnings: 'none' });
+    expect(heard).toEqual([
+      {
+        hub: HUB.url,
+        ref: 'r1',
+        worker: 1,
+        since: 's7',
+        action: 'assert',
+        ok: true,
+        message: 'Piwi wrote the check above cart.page.ts:13.',
+        warnings: [],
+      },
+      {
+        hub: HUB.url,
+        ref: 'r1',
+        worker: 1,
+        since: 's7',
+        action: 'mock',
+        ok: true,
+        message: 'Piwi wrote the mock above cart.page.ts:13.',
+        warnings: ['A value named or shaped like a credential is written as <hidden>.'],
+      },
+    ]);
+    expect(JSON.stringify(heard)).not.toContain('toHaveText');
+    // It changes no run: the state stays as it was.
+    expect(changes).not.toHaveBeenCalled();
+    unlisten();
+    socket.hear(written);
+    expect(heard).toHaveLength(2);
+  });
+
   it('passes each command on and hands back the answer of its id', async () => {
     const { hubs, sockets } = setup();
     await hubs.find();

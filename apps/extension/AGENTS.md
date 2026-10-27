@@ -427,7 +427,8 @@ and `@piwitests/core/run-hub`) are followed and steered from the background work
   editor leaves the hubs found last to try.
 - **A connection per hub** (`background/hub-connection.ts`, `HubConnection`): the browser's WebSocket
   (`browserSocket`), which sends the extension's origin; `hello` with the hub's token, `subscribe` once welcomed, each
-  `session` kept by ref, an ended one kept ten minutes with its last workers. Every message goes through
+  `session` kept by ref, an ended one kept ten minutes with its last workers, and each `code` (what a code written at
+  a stop came to) passed on to the windows with its hub (`RunHubs.listen`, `RunsCode`). Every message goes through
   `parseHubMessage`; one it cannot read is ignored. A command gets the next `id` and waits for its answer, answered by
   the connection itself as `offline` or `timeout`; the hub's own `id` never leaves it, and the answer's `image` and
   `requests` (50 at most, each field bounded by `parseHubMessage`) go on to the window. Silence past two keepalives and
@@ -441,15 +442,19 @@ and `@piwitests/core/run-hub`) are followed and steered from the background work
   `parseRunsRequest`; the state it posts (`RunsState`) carries no token, and the window makes no network call. Every
   control but Pause names the stop shown (`since`), so a click made twice never answers the next stop. At a stop the
   test's controls are Resume, Step and Finish, Resume alone where it failed (`reason: 'failure'`, its state line
-  **Failed at** and the place, the error under it); then, in a group of their own, the actions the worker's `intents`
-  list, which the hub fills from what the reporter and the editor's client take: Pick, Record, Assert and Assert a
-  region where the pause bar shows (`stop.bar`), Mock a request at any stop. No code comes to the window: the editor
-  writes it (`piwi/stopCode`), and the window shows the hub's sentence. Mock a request asks for the stop's `requests`
-  and lists them under the buttons (`aria-expanded`), a button each (the method, the address as text cut with an
-  ellipsis and whole in the tooltip, the status, type, size and time), the arrows, Home and End moving between them
-  (one tab stop), Escape closing the list, a filter from six; the one chosen is `mock` with its `id`. An answer and a
-  list belong to the stop they were asked at: a stop the worker no longer stands at shows neither, and an answer that
-  comes after it is dropped (`send`). The image of a
+  **Failed at** and the place, the error under it: the stop's `error`, its lines kept, else, from a service or a
+  reporter that predates it, read from its title, `stopError`); then, in a group of their own, the actions the
+  worker's `intents` list, which the hub fills from what the reporter and the editor's client take: Pick, Record,
+  Assert and Assert a region where the pause bar shows (`stop.bar`), Mock a request at any stop. No code comes to the
+  window: the editor writes it (`piwi/stopCode`), and the window shows the hub's sentence: the command's answer, then
+  what the code came to (the hub's `code`, whichever surface started it: the editor's sentence and, in a list named for
+  screen readers, what to review in the code, or why it was not written), read out, while the worker stands at the
+  stop it names; a `code` for another stop is dropped, and one that says what the answer after it says is shown and
+  read once. Mock a request asks for the stop's `requests` and lists them under the buttons (`aria-expanded`), a
+  button each (the method, the address as text cut with an ellipsis and whole in the tooltip, the status, type, size
+  and time), the arrows, Home and End moving between them (one tab stop), Escape closing the list, a filter from six;
+  the one chosen is `mock` with its `id`. An answer and a list belong to the stop they were asked at: a stop the
+  worker no longer stands at shows neither, and an answer that comes after it is dropped (`send`). The image of a
   stopped page is asked once per stop and shown as a `data:` JPEG after its base64 is checked again; a hub's sentences
   are text, a call's title goes through `richText`. Each part of the window (a run's heading, a worker's state, its
   test, its stop, its image, its buttons, an answer) is kept by key and drawn again only when what it shows changes
@@ -469,16 +474,18 @@ and `@piwitests/core/run-hub`) are followed and steered from the background work
   `commands.openShortcutSettings`, else the docs. The e2e suite cannot press a shortcut the browser holds: the
   worker's `__piwiRunShortcut()` does what it does.
 - **Tests**: `run-hubs.test.ts` plays the editor's endpoint and each hub's socket (the proof, discovery, hello, subscribe,
-  answers, keepalive, backoff, the shortcut); `editor-pairing.test.ts` Send to editor's proof against a JetBrains
-  IDE's routes, and the pairing's address and `at`; `runs.test.ts` the pure half; `runs.spec.ts` runs the real
-  extension against the real editor service started in-process (`tests/e2e/runs-fixtures.ts`, on
+  answers, what a code came to, keepalive, backoff, the shortcut); `editor-pairing.test.ts` Send to editor's proof
+  against a JetBrains IDE's routes, and the pairing's address and `at`; `runs.test.ts` the pure half; `runs.spec.ts`
+  runs the real extension against the real editor service started in-process (`tests/e2e/runs-fixtures.ts`, on
   `packages/editor/tests/run-fixtures.ts`), with a stub Send to editor endpoint and a fake worker on the run channel:
   the popup's tile, the window's Pause, Step (the focus kept), Resume, image, Pick and Record, a press held while the
   run changes, the shortcut and its Set a shortcut, and a page served from `127.0.0.1` refused by the hub; with an
   editor whose client writes code (`stopCode`), Assert through the check's hand-off the spec plays (`checkHandoff`) to
-  the code the client is sent, Assert a region, Mock a request's list with the keyboard and its filter to the route
-  written, a refusal and a stop the test went on from, a failure held at its line, and the actions an older reporter
-  or a headless stop leaves out. `i18n.spec.ts` checks the window in French and German, the list open, nothing
+  the code the client is sent and the sentence the window shows, Assert a region, Mock a request's list with the
+  keyboard and its filter (a response that states no size, an address whose credential the editor hides) to the route
+  written, with what to review in it, and a mock the editor asks for itself, a refusal and a stop the test went on
+  from, a failure held at its line with its error, and one an older reporter titles alone, and the actions an older
+  reporter or a headless stop leaves out. `i18n.spec.ts` checks the window in French and German, the list open, nothing
   clipping.
   `docs-screenshots.spec.ts` captures `picker-runs.png` the same way, the page's image without the pause bar, as the
   reporter takes it.
