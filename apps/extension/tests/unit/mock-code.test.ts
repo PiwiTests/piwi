@@ -34,6 +34,10 @@ describe('mockUrlPattern', () => {
     expect(mockUrlPattern('https://shop.test/reset/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln/done')).toBe(
       '**/reset/*/done',
     );
+    // A URL whose credentials a stopped test hid already.
+    expect(mockUrlPattern('https://shop.test/reset/<hidden>/done?q=<hidden>&token=<hidden>')).toBe(
+      '**/reset/*/done?q=**&token=**',
+    );
   });
 
   it('turns glob characters of the URL into wildcards', () => {

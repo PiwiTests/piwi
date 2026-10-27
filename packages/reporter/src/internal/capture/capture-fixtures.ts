@@ -135,6 +135,7 @@ import {
   type StopReason,
 } from './pause-at.js';
 import { locatorOn } from './chain-locator.js';
+import { regionSnapshotWithoutSecrets } from './region-snapshot.js';
 import { keepResponse, startKeeping, stopKeeping } from './kept-responses.js';
 import { PIWI_ORIGIN_ENV } from '../config/env.js';
 import { stripAnsi } from '@piwitests/core/error-parse';
@@ -391,6 +392,9 @@ interface CaptureSink {
   shownStops: Map<AbortController, ShownStop>;
   // The attempt's failure was held already (`holdFailure`): it is held once.
   failureHeld: boolean;
+  // When the hold of the attempt's failure began: what the test's pages do from then on (a request, a console entry,
+  // a dialog, the page's state) is no part of the failure's evidence.
+  frozenAt: number | null;
   // How many times the stops shown ended with the test (`endShownStops`): a stop waiting its turn meanwhile ends too.
   stopEnds: number;
   // Set as the capture fixture's teardown begins: a stop after it goes on unshown.
@@ -457,6 +461,7 @@ function createSink(): CaptureSink {
     stops: [],
     shownStops: new Map(),
     failureHeld: false,
+    frozenAt: null,
     stopEnds: 0,
     ending: false,
     released: [],
@@ -657,7 +662,6 @@ async function settleBeforeClose(closing: { page?: Page; context?: BrowserContex
     await endShownStops(sink, 'closed', closing);
     await awaitReleasedCalls(sink);
     await stashPageState(sink, closing);
-    await holdFailure(sink, closing);
   }
   await drained;
   if (sink) {
@@ -1036,7 +1040,8 @@ async function recordPageWindow(sink: CaptureSink, page: Page): Promise<void> {
  */
 async function stashPageState(sink: CaptureSink, closing: { page?: Page; context?: BrowserContext }): Promise<void> {
   const page = sink.lastActivePage;
-  if (!page || isPageClosed(page)) return;
+  // A held failure's page was read as its hold began.
+  if (!page || isPageClosed(page) || sink.frozenAt !== null) return;
   const belongsToClosing =
     closing.page === page || (closing.context !== undefined && pageContext(page) === closing.context);
   if (!belongsToClosing) return;
@@ -1859,7 +1864,8 @@ async function checkAt(
 /**
  * **Assert a region** at a stop: the region picked with the bar's picker, its ARIA snapshot read through the locator
  * the person confirmed (`locator.ariaSnapshot()`, inside the bar's internal call), sent to the editor, which writes
- * `toMatchAriaSnapshot` above the stopped line. A region the locator does not find alone, or a snapshot too long, is
+ * `toMatchAriaSnapshot` above the stopped line, without the value of a password field nor a link's URL that holds a
+ * credential (`regionSnapshotWithoutSecrets`). A region the locator does not find alone, or a snapshot too long, is
  * said to the editor instead.
  */
 async function regionAt(page: Page, location: string, stop: number, ended?: AbortSignal): Promise<void> {
@@ -1876,8 +1882,19 @@ async function regionAt(page: Page, location: string, stop: number, ended?: Abor
   if (!region) return say(`The region's locator, ${source}, is not one Piwi can read.`);
   const count = await region.count().catch(() => 0);
   if (count !== 1) return say(`${source} finds ${count} elements: pick a region it finds alone.`);
-  const snapshot = await region.ariaSnapshot({ timeout: 5000 }).catch(() => null);
-  if (!snapshot?.trim()) return say(`The ARIA snapshot of ${source} could not be read.`);
+  const read = await region.ariaSnapshot({ timeout: 5000 }).catch(() => null);
+  if (!read?.trim()) return say(`The ARIA snapshot of ${source} could not be read.`);
+  const passwords = await region
+    .evaluate((root) => {
+      type Field = { tagName: string; type?: unknown; value?: unknown };
+      const fields = [root, ...root.querySelectorAll('input')] as unknown as Field[];
+      return fields
+        .filter((el) => el.tagName === 'INPUT' && String(el.type).toLowerCase() === 'password')
+        .map((el) => String(el.value ?? ''));
+    })
+    .catch(() => null);
+  if (passwords === null) return say(`The password fields of ${source} could not be read.`);
+  const snapshot = regionSnapshotWithoutSecrets(read, passwords);
   if (snapshot.length > MAX_REGION_SNAPSHOT) {
     return say(
       `The ARIA snapshot of ${source} is longer than ${MAX_REGION_SNAPSHOT} characters: pick a smaller region.`,
@@ -1888,29 +1905,38 @@ async function regionAt(page: Page, location: string, stop: number, ended?: Abor
 }
 
 /**
- * A failure in an interactive run (the worker's run connection open, a test that can stop): the failing page is held
- * before its context closes, as a stop at the failing line with the reason `failure`, the test timeout lifted, after
- * the failure's evidence was read. The editor and the bar answer it as any stop, with Pick (which replaces the
+ * A failure in an interactive run (the worker's run connection open, a test that can stop): once the test function
+ * and its hooks are done, the failing page is held, as a stop at the failing line with the reason `failure`. The
+ * evidence is read first, and nothing the pages do during the hold is the failure's (`frozenAt`): no request, console
+ * entry or dialog is recorded from then on, and the code reach of its context ends. The test timeout is held while the
+ * stop shows (`withTestTimeoutHeld`). The editor and the bar answer it as any stop, with Pick (which replaces the
  * failing locator), Record (the missing steps, above the failing line) and the code actions; any answer lets the test
- * end as it failed. Without a surface to answer it, the editor lets it go at once. Once per attempt, never for an
- * expected failure. With `closing`, only for a page that closes, or one in a context that closes.
+ * end as it failed. The editor lets it go at once when the run was not started to be watched. Once per attempt, never
+ * for an expected failure. The page held is the test's last active one, else `fallback` (the page fixture's) when that
+ * one closed. The failing line is the first an error names in the test's code other than the test's own declaration
+ * (`errorPlace`), else the failing locator's, else the call a test timeout cut short (`stepInProgress`), else the
+ * test's declaration.
  */
-async function holdFailure(sink: CaptureSink, closing?: { page?: Page; context?: BrowserContext }): Promise<void> {
+async function holdFailure(sink: CaptureSink, fallback?: Page): Promise<void> {
   const testInfo = sink.testInfo;
   if (sink.failureHeld || !sink.pause || !testInfo || !runChannelOpen()) return;
   const { status, expectedStatus } = testInfo;
   if ((status !== 'failed' && status !== 'timedOut') || status === expectedStatus) return;
-  const page = sink.lastActivePage;
+  const page = [sink.lastActivePage, fallback].find((open) => !!open && !isPageClosed(open));
   const context = page ? pageContext(page) : null;
-  if (!page || !context || isPageClosed(page)) return;
-  if (closing && closing.page !== page && (!closing.context || context !== closing.context)) return;
+  if (!page || !context) return;
   sink.failureHeld = true;
   const failed = sink.failedLocators[sink.failedLocators.length - 1] ?? deriveFailedLocator(testInfo);
-  const error = testInfo.errors[0] ?? testInfo.error;
-  // The runner names the failing line of the test's code (feature-checked: the public type leaves it out).
-  const at = (error as { location?: { file: string; line: number; column: number } } | undefined)?.location;
+  const errors = testInfo.errors.length ? testInfo.errors : testInfo.error ? [testInfo.error] : [];
+  const declared = (place: CodePlace) => place.file === testInfo.file && place.line === testInfo.line;
+  const placed = errors.flatMap((error) => {
+    const place = errorPlace(error);
+    return place && !declared(place) ? [{ error, place }] : [];
+  })[0];
+  const error = placed?.error ?? errors[0];
+  const place = placed?.place ?? (failed?.location ? null : stepInProgress(testInfo));
   const location =
-    (at?.file && at.line ? stopCallSite(at) : null) ??
+    (place ? stopCallSite(place) : null) ??
     failed?.location ??
     stopCallSite({ file: testInfo.file, line: testInfo.line, column: testInfo.column });
   if (!location) return;
@@ -1918,9 +1944,67 @@ async function holdFailure(sink: CaptureSink, closing?: { page?: Page; context?:
     stripAnsi(error?.message ?? '')
       .split('\n')
       .find((line) => line.trim()) ?? status;
-  testInfo.setTimeout(0);
+  // The evidence is the last active page's: read now, or as it closed.
+  if (page === sink.lastActivePage)
+    await internalCall(page, () => readPageBeforeClose(sink, page)).catch(() => undefined);
+  sink.frozenAt = Date.now();
+  await stopSinkCodeReach(sink, { context });
   const title = `Failed: ${said.trim().slice(0, 300)}`;
   await showStop(sink, context, title, location, 'failure', undefined, { page }, { failed });
+}
+
+/** A place in the test's code. */
+type CodePlace = { file: string; line: number; column: number };
+
+/**
+ * Where an error happened in the test's code: the place the runner gives it, else the first frame of its stack in a
+ * file of the project, not in a package, Node's own or this package's. Null for an error with no such frame (a test
+ * timeout).
+ */
+function errorPlace(error: unknown): CodePlace | null {
+  const given = (error as { location?: Partial<CodePlace> } | undefined)?.location;
+  if (typeof given?.file === 'string' && typeof given.line === 'number') {
+    return { file: given.file, line: given.line, column: given.column ?? 0 };
+  }
+  const stack = (error as { stack?: unknown } | undefined)?.stack;
+  for (const line of typeof stack === 'string' ? stack.split('\n') : []) {
+    const frame = /^\s*at\s+(?:.*?\s+\()?(?:file:\/\/)?(\/[^():]+|[A-Za-z]:[\\/][^():]+):(\d+):(\d+)\)?$/.exec(line);
+    if (!frame) continue;
+    const file = frame[1]!;
+    if (/[\\/]node_modules[\\/]/.test(file) || path.dirname(path.resolve(file)) === __dirname) continue;
+    return { file, line: Number(frame[2]), column: Number(frame[3]) };
+  }
+  return null;
+}
+
+type RunnerStep = {
+  category?: unknown;
+  endWallTime?: unknown;
+  steps?: unknown;
+  stack?: Array<{ file?: unknown; line?: unknown; column?: unknown }>;
+};
+
+/**
+ * The call still running in the test, where the runner placed it in the test's code: the innermost step not ended of
+ * a Playwright call, an assertion or a `test.step`, which a test timeout cut short (the runner's steps, a Playwright
+ * internal, feature-checked). Null for none.
+ */
+function stepInProgress(testInfo: TestInfo): CodePlace | null {
+  let found: CodePlace | null = null;
+  const visit = (steps: unknown): void => {
+    if (!Array.isArray(steps)) return;
+    for (const step of steps as RunnerStep[]) {
+      if (step.endWallTime) continue;
+      const at = step.stack?.[0];
+      const called = step.category === 'pw:api' || step.category === 'expect' || step.category === 'test.step';
+      if (called && typeof at?.file === 'string' && typeof at.line === 'number') {
+        found = { file: at.file, line: at.line, column: typeof at.column === 'number' ? at.column : 0 };
+      }
+      visit(step.steps);
+    }
+  };
+  visit((testInfo as unknown as { _steps?: unknown })._steps);
+  return found;
 }
 
 /** Settles once `signal` aborts. */
@@ -2462,7 +2546,7 @@ function instrumentPage(page: Page): void {
 
   page.on('console', (msg: ConsoleMessage) => {
     const sink = currentSink;
-    if (!sink) return;
+    if (!sink || sink.frozenAt !== null) return;
     const type = msg.type();
     if (['warning', 'error', 'assert'].includes(type)) {
       const location = msg.location();
@@ -2484,7 +2568,7 @@ function instrumentPage(page: Page): void {
     try {
       (page.on as (event: string, handler: (dialog: DialogLike) => void) => void)('dialogclosed', (dialog) => {
         const sink = currentSink;
-        if (!sink) return;
+        if (!sink || sink.frozenAt !== null) return;
         try {
           sink.dialogs.push({
             type: typeof dialog.type === 'function' ? dialog.type() : null,
@@ -2509,14 +2593,17 @@ function instrumentPage(page: Page): void {
     if (!sink) return;
     try {
       const request = response.request();
+      if (HELD_REQUESTS.has(request)) return;
       if (isTrackedRequest(request.url(), request.resourceType())) sink.openResponses.set(request, response);
     } catch {
       /* a page event handler must never throw */
     }
   });
   // A request started after a stop let its call go as the test ended under it: the waits for that call wait for it.
+  // One started while the test's failure is held is no part of the failure.
   page.on('request', (request: Request) => {
     const sink = currentSink;
+    if (sink && sink.frozenAt !== null) HELD_REQUESTS.add(request);
     if (!sink || sink.released.length === 0) return;
     sink.releasedRequests.add(request);
     sink.releasedQuietSince = Date.now();
@@ -2527,7 +2614,7 @@ function instrumentPage(page: Page): void {
       sink.releasedQuietSince = Date.now();
       if (sink.releasedRequests.size === 0) sink.onReleasedRequestsEnded?.();
     }
-    if (!sink || RECORDED_OPEN.has(request)) return;
+    if (!sink || RECORDED_OPEN.has(request) || HELD_REQUESTS.has(request)) return;
     sink.lastActivePage = page;
     const response = sink.openResponses.get(request) ?? null;
     sink.openResponses.delete(request);
@@ -2548,6 +2635,9 @@ type RequestEnd = 'finished' | 'failed' | 'unfinished';
 
 /** Requests recorded while still open at a test's end: their late finish or failure is not recorded again. */
 const RECORDED_OPEN = new WeakSet<Request>();
+
+/** Requests a page started while its test's failure was held (`frozenAt`): none is recorded. */
+const HELD_REQUESTS = new WeakSet<Request>();
 
 /** An API call or a document: not a static asset (script, style, font, image, media), nor a `data:` or `blob:` URL. */
 function isTrackedRequest(url: string, resourceType: string): boolean {
@@ -2658,6 +2748,7 @@ function readResponseHeaders(
  * response. Never throws.
  */
 function recordApiCall(sink: CaptureSink, call: ApiCall): void {
+  if (sink.frozenAt !== null) return;
   try {
     const entry = apiCallEntry(call, sink.baseURL);
     if (!entry) return;
@@ -2898,6 +2989,8 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
     await holdFailure(sink);
     await maybeOpenPicker(sink);
   }
+  // A page read live, unless its failure was held: its evidence is what it was as the hold began.
+  const live = pageReadable && sink.frozenAt === null;
 
   // The stops the pause bar showed.
   if (sink.stops.length > 0) {
@@ -2984,14 +3077,14 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
       // Prefer a live read; fall back to the snapshot the close wrappers
       // stashed — the standard test page is already closed when this auto
       // fixture tears down.
-      const snapshot = (pageReadable ? await readRootAria(page) : null) ?? sink.stashedAria;
+      const snapshot = (live ? await readRootAria(page) : null) ?? sink.stashedAria;
       if (snapshot) {
         await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
           contentType: 'text/plain',
           body: snapshot,
         });
 
-        const snapshotJson = (pageReadable ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson;
+        const snapshotJson = (live ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson;
         if (snapshotJson) {
           await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshotJson, {
             contentType: 'application/json',
@@ -3028,8 +3121,7 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
   if (testInfo.status !== 'passed' && testInfo.status !== 'skipped' && sink.failureScreenshot) {
     const option = sink.failureScreenshot;
     const shot =
-      (pageReadable ? await internalCall(page, () => readFailureScreenshot(page, option)) : null) ??
-      sink.stashedScreenshot;
+      (live ? await internalCall(page, () => readFailureScreenshot(page, option)) : null) ?? sink.stashedScreenshot;
     if (shot) {
       try {
         await testInfo.attach(FAILURE_SCREENSHOT_ATTACHMENT, { contentType: 'image/png', body: shot });
@@ -3049,13 +3141,13 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
     isDueForAriaSample(testInfo)
   ) {
     try {
-      const snapshot = (pageReadable ? await readRootAria(page) : null) ?? sink.stashedAria;
+      const snapshot = (live ? await readRootAria(page) : null) ?? sink.stashedAria;
       if (snapshot) {
         await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
           contentType: 'text/plain',
           body: snapshot,
         });
-        const snapshotJson = (pageReadable ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson;
+        const snapshotJson = (live ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson;
         if (snapshotJson) {
           await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshotJson, {
             contentType: 'application/json',
@@ -3121,8 +3213,7 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
 
   // Live read when the page still exists (e.g. a browser.newPage the test left
   // open); otherwise the vitals the close wrappers stashed before the page went.
-  const webVitals =
-    (pageReadable ? await internalCall(page, () => readWebVitals(page)) : null) ?? sink.stashedWebVitals;
+  const webVitals = (live ? await internalCall(page, () => readWebVitals(page)) : null) ?? sink.stashedWebVitals;
   if (webVitals) {
     await testInfo.attach(ATTACHMENT_NAMES.webVitals, {
       contentType: 'application/json',
@@ -3132,8 +3223,7 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
 
   // Page state at test end (pass AND fail — the pass side is the diff baseline).
   if (process.env.PIWI_CAPTURE_PAGE_STATE !== 'false') {
-    const pageState =
-      (pageReadable ? await internalCall(page, () => readPageState(page)) : null) ?? sink.stashedPageState;
+    const pageState = (live ? await internalCall(page, () => readPageState(page)) : null) ?? sink.stashedPageState;
     if (pageState) {
       await testInfo.attach(ATTACHMENT_NAMES.pageState, {
         contentType: 'application/json',
@@ -3150,7 +3240,7 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
   // final page state) is captured; its controls/links are read at most once per
   // page key per worker.
   if (testInfo.status === 'passed' && process.env.PIWI_CAPTURE_PAGE_INVENTORY === 'true') {
-    if (pageReadable) await recordPageWindow(sink, page);
+    if (live) await recordPageWindow(sink, page);
     const windows = sink.pageInventories.slice(0, MAX_PAGE_INVENTORY_WINDOWS).map((inv) => capPageInventory(inv));
     if (windows.length > 0) {
       await testInfo.attach(ATTACHMENT_NAMES.pageInventory, {
@@ -3315,6 +3405,10 @@ export const piwiFixtures: Fixtures<
     await awaitFlakeConditions();
     await maybeStartCodeReach(page);
     await use(page);
+    // The test function and its hooks are done, every fixture built on the page torn down: a failure holds its page
+    // now, before the page's context closes.
+    const sink = currentSink;
+    if (sink) await holdFailure(sink, page);
   },
 
   // Auto, test-scoped: open a capture sink for the running test and flush it

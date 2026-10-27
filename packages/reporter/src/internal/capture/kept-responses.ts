@@ -1,19 +1,21 @@
 import type { Request, Response } from '@playwright/test';
+import { hideSecretsInText } from '@piwitests/core/mask';
 import { MAX_KEPT_BODY, MAX_KEPT_RESPONSES, type KeptRequest, type KeptResponse } from '@piwitests/core/run-channel';
 import { internalCall } from './quiet-capture.js';
 
 /**
  * The responses an interactive run keeps for **Mock a request** at a stop: while the worker's run connection to the
- * editor is open, the text bodies of the fetch and XHR answers the running test's pages receive, from the test's start,
- * the latest `MAX_KEPT_RESPONSES` at most and `MAX_KEPT_BODY` bytes each, in this worker's memory alone. They never go
- * into an attachment or an upload, and they are dropped as the test ends. A stop lists them without their bodies
- * (`keptRequests`); the editor asks for the one chosen (`keptResponse`). The body is read as an internal call, once the
- * request finished.
+ * editor is open, the fetch and XHR answers the running test's pages receive whose type is text (or unnamed), from the
+ * test's start, the latest `MAX_KEPT_RESPONSES` at most and `MAX_KEPT_BODY` bytes each, in this worker's memory alone:
+ * each one's place in the list and its `Response`, whose body the browser holds, its size as the response says it. They never go into an attachment or
+ * an upload, and they are dropped as the test ends. A stop lists them without their bodies, a credential in a URL
+ * hidden (`keptRequests`); the editor asks for the one chosen (`keptResponse`), whose body is read then, as an
+ * internal call, and handed over when it is text.
  */
 
-/** A kept response, with its body. */
+/** A kept response, with the `Response` its body is read from. */
 interface Kept extends KeptRequest {
-  body: string;
+  response: Response;
 }
 
 /** The test whose responses are kept: when it began, the responses, the last number given. */
@@ -56,8 +58,8 @@ export function stopKeeping(): void {
 
 /**
  * Keep a finished request's response when the running test keeps responses and it is a fetch or an XHR answer whose
- * body is text of `MAX_KEPT_BODY` bytes at most. A body larger than that is not read when the response says its size.
- * Never throws.
+ * type is text, or unnamed, and whose body is `MAX_KEPT_BODY` bytes at most as its `content-length` says, or that
+ * says no size. Neither its body nor its size is read from the browser. Never throws.
  */
 export async function keepResponse(request: Request, response: Response | null): Promise<void> {
   const into = keeping;
@@ -65,45 +67,55 @@ export async function keepResponse(request: Request, response: Response | null):
   try {
     const kind = request.resourceType();
     if (kind !== 'fetch' && kind !== 'xhr') return;
-    const url = request.url();
+    const url = hideSecretsInText(request.url());
     const method = request.method().toUpperCase();
     if (url.length > 8192 || !/^[A-Z]{1,16}$/.test(method)) return;
     const headers = response.headers();
     const type = mimeOf(headers['content-type']);
     if (type && !TEXT_TYPE.test(type)) return;
-    const declared = Number(headers['content-length']);
-    if (Number.isFinite(declared) && declared > MAX_KEPT_BODY) return;
     const status = response.status();
     if (status < 100 || status > 599) return;
-    const body = await internalCall(response, () => response.body());
-    if (body.length > MAX_KEPT_BODY || keeping !== into) return;
-    const text = textOf(body);
-    if (text === null) return;
-    into.kept.push({
-      id: ++into.last,
-      method,
-      url,
-      status,
-      type,
-      size: body.length,
-      time: Math.max(0, Math.round(Date.now() - into.startedAt)),
-      body: text,
-    });
+    const time = Math.max(0, Math.round(Date.now() - into.startedAt));
+    const size = /^\d+$/.test(headers['content-length'] ?? '') ? Number(headers['content-length']) : null;
+    if (size !== null && size > MAX_KEPT_BODY) return;
+    into.kept.push({ id: ++into.last, method, url, status, type, size, time, response });
     if (into.kept.length > MAX_KEPT_RESPONSES) into.kept.splice(0, into.kept.length - MAX_KEPT_RESPONSES);
   } catch {
-    // A body the browser no longer holds (a redirect, a page that closed) is not kept.
+    // A request the browser no longer describes (a page that closed) is not kept.
   }
 }
 
-/** The responses the running test kept, oldest first, without their bodies. */
+/** The responses the running test kept, oldest first, without their bodies, a credential in a URL hidden. */
 export function keptRequests(): KeptRequest[] {
-  return (keeping?.kept ?? []).map(({ body: _body, ...request }) => request);
+  return (keeping?.kept ?? []).map(({ id, method, url, status, type, size, time }) => ({
+    id,
+    method,
+    url,
+    status,
+    type,
+    size,
+    time,
+  }));
 }
 
-/** The kept response `id`, with its body; null when the test kept none by that number. */
-export function keptResponse(id: number): KeptResponse | null {
+/**
+ * The kept response `id`, with its body as the browser still holds it, read now; why not otherwise: no response kept
+ * by that number, a body the browser no longer holds (a page that navigated or closed), one larger than
+ * `MAX_KEPT_BODY` or not text. Its URL hides its credentials, as the list's does.
+ */
+export async function keptResponse(id: number): Promise<KeptResponse | { refusal: string }> {
   const found = keeping?.kept.find((kept) => kept.id === id);
-  return found
-    ? { method: found.method, url: found.url, status: found.status, type: found.type, body: found.body }
-    : null;
+  if (!found) return { refusal: 'The test kept no such response: it keeps the latest 50.' };
+  let body: Buffer;
+  try {
+    body = await internalCall(found.response, () => found.response.body());
+  } catch {
+    return {
+      refusal: "The browser no longer holds this answer's body: mock one the page received since it last loaded.",
+    };
+  }
+  if (body.length > MAX_KEPT_BODY) return { refusal: 'This answer is larger than 256 KB: Piwi mocks a smaller one.' };
+  const text = textOf(body);
+  if (text === null) return { refusal: 'This answer is not text: Piwi mocks a text answer.' };
+  return { method: found.method, url: found.url, status: found.status, type: found.type, body: text };
 }

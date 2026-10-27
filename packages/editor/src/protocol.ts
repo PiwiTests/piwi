@@ -1550,8 +1550,8 @@ export interface StopRequest {
   status: number;
   /** The response's MIME type without its parameters; empty when it named none. */
   type: string;
-  /** The body's size, in bytes. */
-  size: number;
+  /** The body's size, in bytes, as the response said it; null when it did not (a body sent in chunks). */
+  size: number | null;
   /** When it finished, in ms after the test began. */
   time: number;
 }

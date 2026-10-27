@@ -13,9 +13,10 @@ import { jsonRes, startServer, type FakeServer } from './_helpers.js';
  * Code from a stop, the worker's part, in real Playwright runs through the built package under a fake editor service:
  * the text bodies an interactive run keeps and the one handed over to mock, a locator counted and outlined on the
  * stopped page, a region picked with its ARIA snapshot, a check handed to the editor's check panel, and a failure
- * held at its line, headed and headless, where Pick replaces the failing locator and Resume lets the test end as it
- * failed. Under CI, and without a run connection, a failure is not held. Without a display, Chromium runs the headed
- * project without a window (`--headless=new`); under `xvfb-run -a` it opens one.
+ * held at its line, headed and headless, once the test and its hooks are done, where Pick replaces the failing
+ * locator and Resume lets the test end as it failed, the evidence being what the test left at the failure. Under CI,
+ * and without a run connection, a failure is not held. Without a display, Chromium runs the headed project without a
+ * window (`--headless=new`); under `xvfb-run -a` it opens one.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -30,12 +31,15 @@ const MARKER = 'KEPT-BODY-MARKER';
 const LOOK_MS = 300;
 
 /**
- * A page of the app: `/k` fetches its answers one after another, then says so in its title; every page says when the
- * pause bar shows, and plays a person's part in the element picker, picking the region on `/r` and the button
- * elsewhere.
+ * A page of the app: `/k` fetches its answers one after another, then says so in its title; `/h` asks every 100 ms
+ * whether its failure is held, and once it is, fetches again and logs an error. Every page says when the pause bar
+ * shows, and plays a person's part in the element picker, picking the region on `/r` and the button elsewhere. The
+ * region holds a password field with its value and a link with a token.
  */
 const PAGE = `<!doctype html><meta charset="utf-8"><title>a</title>
-<section aria-label="Order summary"><h2>Order summary</h2><p>Total 72</p></section>
+<section aria-label="Order summary"><h2>Order summary</h2><p>Total 72</p>
+<label>Password <input type="password" value="hunter2-secret"></label>
+<a href="/reset?token=RESET-SECRET-42">Forgot?</a></section>
 <button data-testid="go">Go</button>
 <script>
 const PICK = location.pathname === '/r' ? 'section' : 'button';
@@ -62,7 +66,7 @@ setInterval(() => {
 }, 100);
 if (location.pathname === '/k') {
   (async () => {
-    for (const url of ['/api/cart', '/api/big', '/img.png', '/api/text']) await (await fetch(url)).arrayBuffer();
+    for (const url of ['/api/cart', '/api/big', '/img.png', '/api/text?token=abc123secret']) await (await fetch(url)).arrayBuffer();
     await new Promise((resolve) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/xhr');
@@ -71,6 +75,14 @@ if (location.pathname === '/k') {
     });
     document.title = 'done';
   })();
+}
+if (location.pathname === '/h') {
+  const poll = setInterval(async () => {
+    if ((await (await fetch('/api/poll')).text()) !== 'held') return;
+    clearInterval(poll);
+    console.error('logged during the hold');
+    await fetch('/api/during-hold');
+  }, 100);
 }
 </script>`;
 
@@ -93,6 +105,13 @@ test('checks an element', async ({ page }) => {
   await page.goto('${base}/a');
   await page.keyboard.press('Tab'); // bp
 });
+test('takes every outline down', async ({ page }) => {
+  await page.goto('${base}/a');
+  const before = await page.screenshot();
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  const after = await page.screenshot();
+  test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
+});
 test('fails headed', async ({ page }) => {
   await page.goto('${base}/a');
   await expect(page.getByRole('button', { name: 'Missing' })).toBeVisible({ timeout: 300 }); // fails
@@ -104,6 +123,27 @@ test('fails headless', async ({ page }) => {
   await page.goto('${base}/k');
   await expect(page).toHaveTitle('done');
   await expect(page.getByRole('button', { name: 'Missing' })).toBeVisible({ timeout: 300 }); // fails
+});
+test('fails, its page acting during the hold', async ({ page }) => {
+  await page.goto('${base}/h');
+  await page.waitForResponse('**/api/poll');
+  await expect(page.getByRole('button', { name: 'Missing' })).toBeVisible({ timeout: 300 }); // fails
+});
+`;
+
+/** Tests whose failure comes while the test goes on: a soft one, then a test timeout. */
+const LATE_SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
+test('fails softly, closes a popup, then times out', async ({ page, context }) => {
+  await page.goto('${base}/a');
+  await expect.soft(page.getByRole('button', { name: 'Missing' })).toBeVisible({ timeout: 200 }); // soft
+  const popup = await context.newPage();
+  await popup.goto('${base}/a');
+  await popup.close();
+  await page.getByRole('button', { name: 'Never' }).click();
+});
+test('times out in a click', async ({ page }) => {
+  await page.goto('${base}/a');
+  await page.getByRole('button', { name: 'Never' }).click(); // cut short
 });
 `;
 
@@ -145,6 +185,8 @@ interface DumpedTest {
 interface Connection {
   socket: net.Socket;
   heard: RunToHub[];
+  /** When each message was heard, in ms. */
+  times: number[];
   test: string | null;
 }
 
@@ -165,6 +207,9 @@ const outlined: string[] = [];
 const heard: Record<string, unknown[]> = {};
 /** The stops each test made, by test. */
 const stops: Record<string, Stopped[]> = {};
+/** Whether the page of the failure held is told so, and whether it acted then. */
+let held = false;
+let actedDuringHold = false;
 let tests: DumpedTest[] = [];
 let exitCode: number | null = null;
 let output = '';
@@ -216,6 +261,15 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       said.push(await ask(connection, { what: 'locator', ...at, locator: "getByTestId('go')" }));
       break;
     }
+    case 'takes every outline down':
+      // Two asked at once, as the caret moves from line to line.
+      said.push(
+        ...(await Promise.all([
+          ask(connection, { what: 'locator', ...at, locator: "getByRole('button', { name: 'Go' })" }),
+          ask(connection, { what: 'locator', ...at, locator: "getByTestId('go')" }),
+        ])),
+      );
+      break;
     case 'keeps nothing of the test before':
       said.push(await ask(connection, { what: 'requests', ...at }));
       break;
@@ -239,6 +293,10 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       said.push(await ask(connection, { what: 'requests', ...at }));
       said.push(await ask(connection, { what: 'locator', ...at, locator: "getByTestId('go')" }));
       break;
+    case 'fails, its page acting during the hold':
+      held = true;
+      await waitFor(() => (actedDuringHold ? true : undefined));
+      break;
   }
   send(connection, { type: 'control', action: 'resume', stop: stop.stop });
 }
@@ -249,14 +307,18 @@ function write(file: string, text: string): void {
 }
 
 /** Runs the project's Playwright with `env`, and reads what its reporter wrote. */
-function run(env: NodeJS.ProcessEnv, args: string[] = []): Promise<{ code: number; output: string; tests: DumpedTest[] }> {
+function run(
+  env: NodeJS.ProcessEnv,
+  args: string[] = [],
+  timeout = 120_000,
+): Promise<{ code: number; output: string; tests: DumpedTest[] }> {
   const results = path.join(project, 'results.json');
   fs.rmSync(results, { force: true });
   return new Promise((resolve) => {
     execFile(
       process.execPath,
       [createRequire(import.meta.url).resolve('@playwright/test/cli'), 'test', ...args],
-      { cwd: project, env, timeout: 120_000 },
+      { cwd: project, env, timeout, killSignal: 'SIGKILL' },
       (error, stdout, stderr) => {
         resolve({
           code: error ? ((error as { code?: number }).code ?? 1) : 0,
@@ -276,7 +338,7 @@ beforeAll(async () => {
   folder = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-run-code-'));
   socketPath = path.join(folder, 'channel.sock');
   hub = net.createServer((socket) => {
-    const connection: Connection = { socket, heard: [], test: null };
+    const connection: Connection = { socket, heard: [], times: [], test: null };
     socket.setEncoding('utf8');
     socket.on('error', () => socket.destroy());
     let first = true;
@@ -297,6 +359,7 @@ beforeAll(async () => {
           const message = parseRunToHub(line);
           if (!message) return;
           connection.heard.push(message);
+          connection.times.push(Date.now());
           if (message.type === 'test-begin') connection.test = message.title[message.title.length - 1]!;
           if (message.type === 'stopped') void onStopped(connection, message);
         },
@@ -330,6 +393,11 @@ beforeAll(async () => {
         return res.end('hello');
       case '/api/xhr':
         return jsonRes(res, 201, { saved: true });
+      case '/api/poll':
+        return res.end(held ? 'held' : 'no');
+      case '/api/during-hold':
+        actedDuringHold = true;
+        return jsonRes(res, 200, { during: 'hold' });
     }
     res.writeHead(200, { 'content-type': 'text/html' });
     res.end(PAGE);
@@ -337,6 +405,7 @@ beforeAll(async () => {
 
   write('tests/headed.spec.cjs', HEADED_SPEC(server.url));
   write('tests/headless.spec.cjs', HEADLESS_SPEC(server.url));
+  write('tests/late.spec.cjs', LATE_SPEC(server.url));
   write(
     'fixture.cjs',
     `const { test: base, expect } = require('@playwright/test');
@@ -362,6 +431,7 @@ module.exports = defineConfig({
       use: { headless: false, launchOptions: { args: ${WINDOWS ? '[]' : "['--headless=new']"} } },
     },
     { name: 'headless', testMatch: 'headless.spec.cjs', use: { headless: true } },
+    { name: 'late', testMatch: 'late.spec.cjs', use: { headless: true } },
   ],
 });
 `,
@@ -372,13 +442,16 @@ module.exports = defineConfig({
     .join(';');
   baseEnv = { ...process.env, PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: REF };
   for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL']) delete baseEnv[name];
-  const ran = await run({
-    ...baseEnv,
-    PIWI_RUN_CHANNEL: channel(),
-    PIWI_RECORD_CHANNEL: channel(),
-    PIWI_EDITOR_SEND: `${server.url}/piwi/send#${SEND_TOKEN}`,
-    PIWI_PAUSE_AT: breakpoints,
-  });
+  const ran = await run(
+    {
+      ...baseEnv,
+      PIWI_RUN_CHANNEL: channel(),
+      PIWI_RECORD_CHANNEL: channel(),
+      PIWI_EDITOR_SEND: `${server.url}/piwi/send#${SEND_TOKEN}`,
+      PIWI_PAUSE_AT: breakpoints,
+    },
+    ['--project=headed', '--project=headless'],
+  );
   exitCode = ran.code;
   output = ran.output;
   tests = ran.tests;
@@ -406,8 +479,10 @@ describe('code from a stop, the worker’s part', () => {
       ['keeps nothing of the test before', 'passed'],
       ['asserts a region', 'passed'],
       ['checks an element', 'passed'],
+      ['takes every outline down', 'passed'],
       ['fails headed', 'failed'],
       ['fails headless', 'failed'],
+      ['fails, its page acting during the hold', 'failed'],
     ]);
     expect(connections[0]!.heard[0]).toMatchObject({
       type: 'run-attach',
@@ -421,9 +496,34 @@ describe('code from a stop, the worker’s part', () => {
       ok: true,
       message: 'The test kept 3 responses.',
       requests: [
-        { id: 1, method: 'GET', url: `${server.url}/api/cart`, status: 200, type: 'application/json', size: expect.any(Number), time: expect.any(Number) },
-        { id: 2, method: 'GET', url: `${server.url}/api/text`, status: 200, type: 'text/plain', size: 5, time: expect.any(Number) },
-        { id: 3, method: 'POST', url: `${server.url}/api/xhr`, status: 201, type: 'application/json', size: expect.any(Number), time: expect.any(Number) },
+        {
+          id: 1,
+          method: 'GET',
+          url: `${server.url}/api/cart`,
+          status: 200,
+          type: 'application/json',
+          size: expect.any(Number),
+          time: expect.any(Number),
+        },
+        // A credential in a URL is hidden; a body sent in chunks says no size.
+        {
+          id: 2,
+          method: 'GET',
+          url: `${server.url}/api/text?token=<hidden>`,
+          status: 200,
+          type: 'text/plain',
+          size: null,
+          time: expect.any(Number),
+        },
+        {
+          id: 3,
+          method: 'POST',
+          url: `${server.url}/api/xhr`,
+          status: 201,
+          type: 'application/json',
+          size: expect.any(Number),
+          time: expect.any(Number),
+        },
       ],
     });
     expect(mock).toEqual({
@@ -437,7 +537,11 @@ describe('code from a stop, the worker’s part', () => {
         body: JSON.stringify({ marker: MARKER, items: [] }),
       },
     });
-    expect(gone).toEqual({ ok: false, message: 'The test kept no such response: it keeps the latest 50.', response: null });
+    expect(gone).toEqual({
+      ok: false,
+      message: 'The test kept no such response: it keeps the latest 50.',
+      response: null,
+    });
     // A new test keeps its own.
     expect(heard['keeps nothing of the test before']).toEqual([
       {
@@ -466,6 +570,15 @@ describe('code from a stop, the worker’s part', () => {
     expect(glass?.description).toBe('0');
   });
 
+  it('takes the outlines of two locators counted at once down, the page as it was before the stop', () => {
+    expect(heard['takes every outline down']).toEqual([
+      { ok: true, message: '1 element matches.', count: 1 },
+      { ok: true, message: '1 element matches.', count: 1 },
+    ]);
+    const result = tests.find((t) => t.title === 'takes every outline down')!;
+    expect(result.annotations.find((a) => a.type === 'same')?.description).toBe('true');
+  });
+
   it('picks a region in the test’s window and sends its ARIA snapshot', () => {
     const [started, region] = heard['asserts a region']!;
     expect(started).toEqual({
@@ -478,17 +591,29 @@ describe('code from a stop, the worker’s part', () => {
       locator: "getByRole('region', { name: 'Order summary' })",
       snapshot: expect.stringContaining('- heading "Order summary" [level=2]'),
     });
+    // Neither a password nor a link's token goes to the editor: the field and the link are written without them.
+    const { snapshot } = region as { snapshot: string };
+    expect(snapshot).toContain('- textbox "Password"\n');
+    expect(snapshot).toContain('- link "Forgot?"');
+    expect(snapshot).not.toContain('hunter2-secret');
+    expect(snapshot).not.toContain('RESET-SECRET-42');
   });
 
   it('hands the page to the editor’s check panel through a hand-off in its check mode', () => {
     expect(heard['checks an element']).toEqual([
-      { ok: true, message: "Check an element in the test's window: the editor writes the check above the stopped line." },
+      {
+        ok: true,
+        message: "Check an element in the test's window: the editor writes the check above the stopped line.",
+      },
     ]);
     expect(handoffs).toEqual([
       expect.objectContaining({
         type: 'attach',
         token: TOKEN,
-        line: HEADED_SPEC(server.url).split('\n').findIndex((l) => l.includes("'checks an element'")) + 3,
+        line:
+          HEADED_SPEC(server.url)
+            .split('\n')
+            .findIndex((l) => l.includes("'checks an element'")) + 3,
         reason: 'breakpoint',
         mode: 'check',
         stop: { ref: REF, worker: expect.any(Number), stop: stops['checks an element']![0]!.stop },
@@ -533,24 +658,81 @@ describe('code from a stop, the worker’s part', () => {
     expect(counted).toEqual({ ok: true, message: '1 element matches.', count: 1 });
   });
 
+  it('keeps the evidence of a failure held as it was when the hold began', () => {
+    const result = tests.find((t) => t.title === 'fails, its page acting during the hold')!;
+    expect(actedDuringHold).toBe(true);
+    const network = result.attachments.find((a) => a.name === 'piwi-network')!;
+    expect(network.body).toContain('/api/poll');
+    expect(network.body).not.toContain('/api/during-hold');
+    const consoleEntries = result.attachments.find((a) => a.name === 'piwi-console')?.body ?? '';
+    expect(consoleEntries).not.toContain('logged during the hold');
+  });
+
+  it('holds a failure once its test ended, the test timeout as it was, at the call a test timeout cut short', async () => {
+    const before = connections.length;
+    const late = await run(
+      { ...baseEnv, PIWI_RUN_CHANNEL: channel(), PIWI_RECORD_CHANNEL: channel() },
+      ['--project=late'],
+      60_000,
+    );
+    expect(late.tests.map((t) => t.title)).toEqual([
+      'fails softly, closes a popup, then times out',
+      'times out in a click',
+    ]);
+    for (const result of late.tests) {
+      expect(['failed', 'timedOut'], result.title).toContain(result.status);
+      // The test timeout of 5 s still ends the test: the hold neither lifts it nor comes before.
+      expect(result.duration, result.title).toBeLessThan(8000);
+    }
+    const heardLate = connections.slice(before).flatMap((c) => c.heard.map((m, i) => ({ m, at: c.times[i]! })));
+    const held = heardLate.flatMap(({ m }) => (m.type === 'stopped' ? [m] : []));
+    expect(held.map((m) => [m.reason, m.place.line])).toEqual([
+      ['failure', lineOf(LATE_SPEC(server.url), '// soft')],
+      ['failure', lineOf(LATE_SPEC(server.url), '// cut short')],
+    ]);
+    // Each one held once its test ended, after its test timeout of 5 s.
+    for (const stop of held) {
+      const at = heardLate.find(({ m }) => m === stop)!.at;
+      const begun = heardLate.filter(({ m, at: t }) => m.type === 'test-begin' && t < at).pop()!.at;
+      expect(at - begun).toBeGreaterThanOrEqual(5000);
+    }
+  }, 90_000);
+
   it('shows none of its own calls among the test’s steps', () => {
     for (const result of tests) {
+      // The test that compares the page before and after its stop takes its own two screenshots.
+      const own = result.title === 'takes every outline down' ? 2 : 0;
       const titles = allSteps(result.steps).map((s) => s.title);
+      expect(
+        titles.filter((t) => /Screenshot/i.test(t)),
+        result.title,
+      ).toHaveLength(own);
       expect(titles, result.title).not.toContainEqual(
-        expect.stringMatching(/Bring to front|Pause on next|Wait for function|Screenshot|Highlight|Aria snapshot|Count|Piwi capture|Response body/i),
+        expect.stringMatching(
+          /Bring to front|Pause on next|Wait for function|Highlight|Aria snapshot|Count|Piwi capture|Response body/i,
+        ),
       );
     }
+    // Reading a region's password fields is no step either.
+    const region = allSteps(tests.find((t) => t.title === 'asserts a region')!.steps).map((s) => s.title);
+    expect(region).not.toContainEqual(expect.stringMatching(/Evaluate/i));
   });
 
   it('holds no failure under CI, nor without a run connection', async () => {
     const before = connections.length;
-    const ci = await run({ ...baseEnv, CI: '1', PIWI_RUN_CHANNEL: channel() }, ['--project=headless']);
+    const ci = await run({ ...baseEnv, CI: '1', PIWI_RUN_CHANNEL: channel() }, [
+      '--project=headless',
+      '--grep',
+      'fails headless',
+    ]);
     expect(ci.tests.map((t) => [t.title, t.status])).toEqual([['fails headless', 'failed']]);
     const ciConnection = connections[before]!;
-    expect(ciConnection.heard).toContainEqual(expect.objectContaining({ type: 'test-begin', cannotPause: expect.stringContaining('CI') }));
+    expect(ciConnection.heard).toContainEqual(
+      expect.objectContaining({ type: 'test-begin', cannotPause: expect.stringContaining('CI') }),
+    );
     expect(ciConnection.heard.filter((m) => m.type === 'stopped')).toEqual([]);
 
-    const plain = await run(baseEnv, ['--project=headless']);
+    const plain = await run(baseEnv, ['--project=headless', '--grep', 'fails headless']);
     expect(plain.tests.map((t) => [t.title, t.status])).toEqual([['fails headless', 'failed']]);
     expect(connections.length).toBe(before + 1);
   }, 120_000);

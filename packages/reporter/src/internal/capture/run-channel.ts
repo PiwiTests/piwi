@@ -90,7 +90,10 @@ let stops = 0;
 let held: HeldStop | null = null;
 /** The outline of a locator's matches in a stopped page, and the stop it belongs to. */
 let outline: { stop: number; remove(): Promise<void> } | null = null;
-/** The count of a locator under way, whose outline the end of its stop waits for to take it down. */
+/**
+ * The counts of locators asked, one after another (the editor asks one per move of its caret): each takes the outline
+ * of the one before down before it draws its own, and the end of a stop waits for the last to take its outline down.
+ */
 let counting: Promise<unknown> = Promise.resolve();
 
 /**
@@ -328,18 +331,20 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
           return;
         }
         case 'mock': {
-          const response = at ? keptResponse(message.id) : null;
-          const said = !at
-            ? WENT_ON
-            : response
-              ? `${response.method} ${response.url}`
-              : 'The test kept no such response: it keeps the latest 50.';
-          tellHub({ type: 'answer', request, what: 'mock', value: { ok: !!response, message: said, response } });
+          void (at ? keptResponse(message.id) : Promise.resolve({ refusal: WENT_ON })).then((found) => {
+            const value =
+              'refusal' in found
+                ? { ok: false, message: found.refusal, response: null }
+                : { ok: true, message: `${found.method} ${found.url}`, response: found };
+            tellHub({ type: 'answer', request, what: 'mock', value });
+          });
           return;
         }
         case 'locator': {
-          const counted = at
-            ? countLocator(at, message.locator)
+          const counted: Promise<LocatorAnswer> = at
+            ? counting.then(() =>
+                held === at ? countLocator(at, message.locator) : { ok: false, message: WENT_ON, count: null },
+              )
             : Promise.resolve({ ok: false, message: WENT_ON, count: null });
           counting = counted.catch(() => undefined);
           void counted.then((value) => tellHub({ type: 'answer', request, what: 'locator', value }));

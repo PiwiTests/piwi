@@ -229,7 +229,10 @@ describe('the worker’s run connection', () => {
     try {
       expect(await openRunChannel(WORKER, handlers().control, hub.env)).toBe(true);
       startKeeping(Date.now() - 1000);
-      await keepResponse(fakeRequest('fetch', 'POST', 'https://shop.test/api/cart'), fakeResponse(201, '{"id":7}'));
+      await keepResponse(
+        fakeRequest('fetch', 'POST', 'https://shop.test/api/cart'),
+        fakeResponse(201, '{"id":7}', { 'content-length': '8' }),
+      );
       const held = holdStop(STOP, () => {});
       const { stop } = (await until(() => hub.heard.find((m) => m.type === 'stopped'))) as { stop: number };
       const answers = () => hub.heard.filter((m) => m.type === 'answer');

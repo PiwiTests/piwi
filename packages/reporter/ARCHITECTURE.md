@@ -77,17 +77,20 @@ Two **external contracts** beyond the npm API:
   `what: 'pick' | 'record'`), which the bar takes as its own click, Assert (the record hand-off
   in its `check` mode: the editor's check panel) and Assert a region (the bar's picker, then the
   region's `ariaSnapshot()`, sent as `region`), each ending with the stop; an intent is refused
-  at a stop that is ending or whose page it cannot tell. At any stop it asks for the responses
-  the test kept (`internal/capture/kept-responses.ts`: while the run connection is open, the
-  text bodies of the test's fetch and XHR answers, the latest 50, 256 KB each, in memory only,
-  dropped as the test ends), the one to mock, and a locator's count on the stopped page
-  (`internal/capture/chain-locator.ts`), its matches outlined while the bar shows. One stop
-  shows at a time in a worker: one waiting its turn goes on unshown when the test ended
-  meanwhile, its page or context closed or its breakpoint went, and a context's close, its own
-  or its browser's, lets the call its debugger holds go on first. With the connection open, a
-  failing test's page is held as its context closes (`holdFailure`), as a stop with the reason
-  `failure` at the failing line, the bar offering Resume, Pick and Record; the test ends as it
-  failed.
+  at a stop that is ending or whose page it cannot tell; a region's snapshot leaves out a
+  password field's value and a link whose URL holds a credential. At any stop it asks for the
+  responses the test kept (`internal/capture/kept-responses.ts`: while the run connection is
+  open, the test's fetch and XHR answers of a text type, the latest 50, 256 KB each, as their
+  `Response` in memory only, the body read when the one to mock is asked for, dropped as the
+  test ends, their URLs' credentials hidden), the one to mock, and a locator's count on the
+  stopped page (`internal/capture/chain-locator.ts`), one at a time, its matches outlined while
+  the bar shows. One stop shows at a time in a worker: one waiting its turn goes on unshown when
+  the test ended meanwhile, its page or context closed or its breakpoint went, and a context's
+  close, its own or its browser's, lets the call its debugger holds go on first. With the
+  connection open, a failing test's page is held once the test and its hooks are done
+  (`holdFailure`, from Piwi's `page` fixture), as a stop with the reason `failure` at the failing
+  line, the bar offering Resume, Pick and Record, its evidence kept as it was when the hold
+  began (Playwright's trace and video record the hold too); the test ends as it failed.
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
   unref'd timer (`internal/collect/process-sampler.ts`). While the dashboard says
   someone watches the run, another unref'd timer posts what the sampler and the

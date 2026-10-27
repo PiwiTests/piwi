@@ -93,8 +93,8 @@ export interface KeptRequest {
   status: number;
   /** The response's MIME type without its parameters (`application/json`); empty when it named none. */
   type: string;
-  /** The body's size, in bytes. */
-  size: number;
+  /** The body's size, in bytes, as the response said it (`content-length`); null when it did not. */
+  size: number | null;
   /** When it finished, in ms after the test began. */
   time: number;
 }
@@ -307,7 +307,7 @@ function readKeptRequest(value: unknown): KeptRequest | null {
   if (!isObject(value)) return null;
   const { id, method, url, status, type, size, time } = value;
   if (!isInt(id, 1) || !isMethod(method) || !isUrl(url) || !isStatus(status) || !isMime(type)) return null;
-  if (!isInt(size, 0) || size > MAX_KEPT_BODY || !isInt(time, 0)) return null;
+  if ((size !== null && (!isInt(size, 0) || size > MAX_KEPT_BODY)) || !isInt(time, 0)) return null;
   return { id, method: method.toUpperCase(), url, status, type, size, time };
 }
 

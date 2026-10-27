@@ -109,7 +109,10 @@ export function mockUrlPattern(url: string): string {
   }
   const path = parsed.pathname
     .split('/')
-    .map((segment) => (isSecretValue(decodeURIComponentSafe(segment)) ? '*' : globSafe(segment)))
+    .map((segment) => {
+      const decoded = decodeURIComponentSafe(segment);
+      return decoded === HIDDEN_VALUE || isSecretValue(decoded) ? '*' : globSafe(segment);
+    })
     .join('/');
   if (!parsed.search) return `**${path}`;
   const params = parsed.search

@@ -176,6 +176,9 @@ describe('the run channel', () => {
       expect(
         parseRunToHub(line({ ...listed, value: { ...listed.value, requests: [{ ...kept, method: 'post' }] } })),
       ).toMatchObject({ value: { requests: [{ method: 'POST' }] } });
+      // A body that said no size is listed without one.
+      const chunked = { ...listed, value: { ...listed.value, requests: [{ ...kept, size: null }] } };
+      expect(parseRunToHub(line(chunked))).toEqual(chunked);
       expect(parseRunToHub(line({ ...listed, value: { ok: false, message: 'gone', requests: [] } }))).toMatchObject({
         value: { ok: false, requests: [] },
       });
@@ -188,6 +191,7 @@ describe('the run channel', () => {
         { ...kept, status: 600 },
         { ...kept, type: 'application/json; charset=utf-8' },
         { ...kept, size: MAX_KEPT_BODY + 1 },
+        { ...kept, size: -1 },
         { ...kept, time: -1 },
       ]) {
         expect(

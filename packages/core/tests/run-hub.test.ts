@@ -233,7 +233,7 @@ describe('the hub’s WebSocket', () => {
         type: 'answer',
         id: 4,
         ok: true,
-        message: 'The test kept 1 response.',
+        message: 'The test kept 2 responses.',
         requests: [
           {
             id: 1,
@@ -243,6 +243,15 @@ describe('the hub’s WebSocket', () => {
             type: 'application/json',
             size: 12,
             time: 830,
+          },
+          {
+            id: 2,
+            method: 'POST',
+            url: 'https://shop.test/api/orders',
+            status: 201,
+            type: 'application/json',
+            size: null,
+            time: 900,
           },
         ],
       },

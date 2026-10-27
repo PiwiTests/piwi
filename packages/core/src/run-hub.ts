@@ -380,7 +380,7 @@ function readKeptRequest(value: unknown): HubKeptRequest | null {
   const { id, method, url, status, type, size, time } = value;
   if (!isInt(id, 1) || typeof method !== 'string' || !/^[A-Z]{1,16}$/.test(method)) return null;
   if (str(url, 8192) === null || !isInt(status, 100, 599) || str(type, 200) === null) return null;
-  if (!isInt(size, 0) || !isInt(time, 0)) return null;
+  if ((size !== null && !isInt(size, 0)) || !isInt(time, 0)) return null;
   return { id, method, url: url as string, status, type: type as string, size, time };
 }
 

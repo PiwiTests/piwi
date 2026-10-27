@@ -54,16 +54,20 @@ per-directory responsibilities.
    `PIWI_EDITOR_SEND`, the same hand-off over `PIWI_RECORD_CHANNEL`), **Assert** (the same hand-off in its `check`
    mode, naming the stop: the editor's recorder opens the check panel's Check an element alone, and the editor service
    writes the check) or **Assert a region** (the bar's picker, then the confirmed locator's `ariaSnapshot()`, sent as
-   `region`), each ending with the stop, the test's window brought to the front through an internal call, and is
+   `region` without a password field's value nor a link's URL holding a credential, `region-snapshot.ts`), each
+   ending with the stop, the test's window brought to the front through an internal call, and is
    answered at once with whether it started: refused at a stop that ended or is ending (its test ended, its page or
    context began to close), one no bar shows, one whose page it cannot tell, without a record channel for Record here
    and Assert, and while a pick, a check or a recording runs. At any stop, headless included, `requests` lists the
    responses the test kept and `mock` hands over one of them with its body (`kept-responses.ts`: while the run
-   connection is open, the text bodies of the fetch and XHR answers of the test's pages since it began, the latest
-   50, 256 KB each at most, read through an internal call once each request finished, in the worker's memory alone,
-   never in an attachment, and dropped as the test ends), and `locator` counts a chain (`chain-locator.ts`, built
-   through the chain grammar's calls alone) on the stopped page and, where the bar shows, outlines its matches with
-   Playwright's highlight, taken down before the stop ends. While it is open a headless run stops too, held until the
+   connection is open, the fetch and XHR answers of the test's pages since it began whose type is text or unnamed,
+   the latest 50, 256 KB each at most as their `content-length` says (one that says none is listed without a size),
+   each kept as its `Response` in the worker's memory alone, its body read only when `mock` asks for it, through an
+   internal call, refused when the browser no longer holds it or it is not text, never in an attachment, and dropped
+   as the test ends; every URL listed or handed over with its credentials hidden, `hideSecretsInText` of
+   `@piwitests/core/mask`), and `locator` counts a chain (`chain-locator.ts`, built through the chain grammar's calls
+   alone) on the stopped page, one count after the other, and, where the bar shows, outlines its matches with
+   Playwright's highlight, the one before taken down first and the last before the stop ends. While it is open a headless run stops too, held until the
    editor answers; a headed stop shows the bar as well, and the first answer wins. Whoever answers a stop, it goes to
    `piwi-pauses` as one at the bar does, and every stop's end reaches the editor (`running`), one that ends unanswered
    (the test function ended, its page or context closed, or for a stop whose page it cannot tell any page of its
@@ -73,10 +77,16 @@ per-directory responsibilities.
    or its breakpoint went, leaving the Step, Pause or line run to it used up for the next stop. Closing a context,
    itself or with its browser, lets the call its debugger holds go on first, since the close never lets it go. A test
    that fails while the connection is open (`holdFailure` in `capture-fixtures.ts`: not an expected failure, never
-   under CI nor Playwright's own debugger) holds its page as its context closes, after its evidence was read, the test
-   timeout lifted: a stop with the reason `failure` at the failing line, the bar saying `Failed at …` with Resume,
-   Pick a locator (which replaces the failing locator, and is folded into its snapshot) and Record here; any answer
-   lets the test end as it failed. Without a run connection nothing of it runs.
+   under CI nor Playwright's own debugger) holds its page once the test function, its hooks and the fixtures built on
+   `page` are done (Piwi's `page` fixture, after `use(page)`; a page the test left open, at the capture fixture's
+   teardown), never from a close while the test runs: its evidence is read first and kept as it was (`frozenAt`: no
+   request, console entry or dialog of the hold is recorded, and its context's code reach ends; Playwright's own
+   trace and video go on recording through the hold), and the test timeout is held while the stop shows. It is a stop
+   with the reason `failure` at the failing line (where the error's stack enters the test's code, else the failing
+   locator's, else the call a test timeout cut short, the runner's step in progress, else the test's declaration),
+   the bar saying `Failed at …` with Resume, Pick a locator (which replaces the failing locator, and is folded into
+   its snapshot) and Record here; any answer lets the test end as it failed, and the editor service lets one go at
+   once in a run nobody watches. Without a run connection nothing of it runs.
 4. **The desktop discovery file** — `~/.piwi/desktop.json` and its `{ url, token }` shape
    (`internal/config/desktop.ts`). The desktop shell writes it (`apps/desktop/src-tauri/src/lib.rs`) and this package reads
    it, on independent release cycles, so path and shape changes must land in both.
