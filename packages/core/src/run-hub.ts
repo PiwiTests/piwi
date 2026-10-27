@@ -79,10 +79,11 @@ export interface HubStop {
   /** Names the stop: a control passes it back as `since`, and one that no worker stands at any more is refused. */
   since: string;
   /**
-   * What this stop takes now from the connection that hears it, of its worker's `intents`: at a stop the pause bar
-   * shows, all of them; at one it does not (a headless run), Pick, Record, Assert, Assert a region and the input on the
-   * view only while this connection watches the stop's live view (`view`), which they are driven through. Absent from
-   * a service that predates it, where those need the bar.
+   * What this stop takes now from the connection that hears it, of its worker's `intents`: the input on the view only
+   * while this connection watches the stop's live view (`view`); at a stop the pause bar shows, all the others; at one
+   * it does not (a headless run), Pick, Record, Assert and Assert a region only while it watches too, driven through
+   * that view. Following the runs (`follow`) grants none of them. Absent from a service that predates it, where those
+   * need the bar.
    */
   intents?: HubAction[];
   /**
@@ -165,7 +166,10 @@ export interface HubWorker {
   stop: HubStop | null;
   /** A Pause reached it and it has not stopped yet. */
   pausing: boolean;
-  /** The actions its reporter takes: none for one that predates them, whose stops every action is refused at. */
+  /**
+   * The actions its reporter takes, Assert, Assert a region and Mock a request only while the editor writes the code
+   * from a stop: none for a reporter that predates them, whose stops every action is refused at.
+   */
   intents: HubAction[];
 }
 
