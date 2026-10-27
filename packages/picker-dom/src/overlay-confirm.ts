@@ -20,7 +20,9 @@ export function showPickerChoices(arg: PickerChoicesArg): void {
   }
   const Z = 2147483600;
 
+  // An `__piwi` id, as every element Piwi adds to a page has: Pick on the image leaves Piwi's own out.
   const wrap = doc.createElement('div');
+  wrap.id = '__piwi_picker_choices';
   wrap.style.cssText =
     `position:fixed;inset:0;z-index:${Z + 3};background:rgba(0,0,0,.45);` +
     'display:flex;align-items:center;justify-content:center;font:13px/1.5 system-ui,sans-serif;';

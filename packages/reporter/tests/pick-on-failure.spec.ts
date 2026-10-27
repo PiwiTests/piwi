@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import { chromium } from '@playwright/test';
+import { probeElementAttrs } from '@piwitests/picker-dom';
+import { CAPTURED_ATTRS_ARG } from '../src/internal/capture/capture-fixtures.js';
 import {
   applyPickToSnapshots,
   deriveFailedLocator,
   parseLeafLocatorExpression,
+  pickLocator,
   type UserPickResult,
 } from '../src/internal/capture/pick-on-failure.js';
 import { renderFailing, type LocatorSnapshot, type RankedLocator } from '../src/internal/capture/locator-healing.js';
@@ -225,4 +229,27 @@ describe('picker gate plumbing', () => {
       else process.env.PIWI_PICK_LOCATOR_ON_FAIL = saved;
     }
   });
+});
+
+describe('a pick that ends unanswered', () => {
+  it('leaves nothing of Piwi in the page: its overlay, and the mark that stops the wait polling there', async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.setContent('<!doctype html><button>Pay</button>');
+      const ended = new AbortController();
+      const picked = pickLocator(page, { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG }, null, ended.signal);
+      await page.locator('#__piwi_picker_banner').waitFor({ state: 'attached' });
+      ended.abort();
+      expect(await picked).toBeNull();
+      const piwi = () =>
+        page.evaluate(() => [
+          ...Object.keys(globalThis).filter((key) => key.startsWith('__piwi')),
+          ...[...document.querySelectorAll('[id^="__piwi"]')].map((el) => el.id),
+        ]);
+      await expect.poll(piwi, { timeout: 3000 }).toEqual([]);
+    } finally {
+      await browser.close();
+    }
+  }, 15_000);
 });

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser } from '@playwright/test';
-import { probeElementAttrs } from '@piwitests/picker-dom';
+import { probeElementAttrs, showAnchorPicker, showPickerChoices } from '@piwitests/picker-dom';
 import { CAPTURED_ATTRS_ARG } from '../src/internal/capture/capture-fixtures.js';
 import { boxesAt, pickAtPoint, snapshotBoxes } from '../src/internal/capture/pick-at.js';
 
@@ -126,4 +126,32 @@ describe('pick on the image, on a page', () => {
       'No element there: pick an element of the page, not its background.',
     );
   });
+
+  it('leaves Piwi’s own panels out: the picker’s choice list and anchors step pick the page under them', async () => {
+    const context = await browser.newContext({ viewport: { width: 800, height: 600 } });
+    try {
+      const page = await context.newPage();
+      await page.setContent(`<!doctype html><meta charset="utf-8">${STYLE}
+        <form data-testid="shop"><button id="page" style="position:fixed;inset:0;width:100%;height:100%">Page</button></form>`);
+      await page.evaluate(showPickerChoices, { failing: null, choices: [{ locator: "getByRole('link')", score: 90 }] });
+      const choice = await page.locator('#__piwi_picker_choices button').first().boundingBox({ timeout: 2000 });
+      const atChoice = await pickAtPoint(page, PROBE, choice!.x + 5, choice!.y + 5);
+      expect('picked' in atChoice && atChoice.picked.picked.locator).toBe("getByRole('button', { name: 'Page' })");
+      await page.evaluate(() => (globalThis as any).__piwiChoiceCleanup?.());
+      await page.evaluate(() => ((globalThis as any).__piwiPickedElement = document.getElementById('page')));
+      await page.evaluate(showAnchorPicker, {
+        tagRoles: { button: 'button', form: 'form' },
+        inputRoles: {},
+        roleSources: 'button',
+        leafRole: 'button',
+        leafLevel: null,
+        leafTestId: null,
+      });
+      const panel = await page.locator('#__piwi_anchor_panel').boundingBox({ timeout: 2000 });
+      const atPanel = await pickAtPoint(page, PROBE, panel!.x + 10, panel!.y + 10);
+      expect('picked' in atPanel && atPanel.picked.picked.locator).toBe("getByRole('button', { name: 'Page' })");
+    } finally {
+      await context.close();
+    }
+  }, 15_000);
 });

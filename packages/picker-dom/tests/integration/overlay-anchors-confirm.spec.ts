@@ -287,3 +287,36 @@ test.describe('showPickerChoices', () => {
     await expect(page.locator('body')).toHaveText('The page');
   });
 });
+
+test.describe('what the anchors step and the choice list add to the page', () => {
+  test('is each marked as Piwi’s own, with an `__piwi` id, which Pick on the image leaves out', async ({ page }) => {
+    await page.setContent(`<!doctype html><html><body>
+      <form data-testid="signup-form"><button id="target">Join</button></form>
+    </body></html>`);
+    const added = () =>
+      page.evaluate(() =>
+        [...document.body.children].filter((el) => el.tagName !== 'FORM' && el.tagName !== 'SCRIPT').map((el) => el.id),
+      );
+    await page.evaluate(() => {
+      (globalThis as any).__piwiPickedElement = document.getElementById('target');
+    });
+    await page.evaluate(showAnchorPicker, {
+      tagRoles: { button: 'button', form: 'form' },
+      inputRoles: {},
+      roleSources: 'button',
+      leafRole: 'button',
+      leafLevel: null,
+      leafTestId: null,
+    });
+    expect(await added()).toEqual([
+      '__piwi_anchor_picked',
+      '__piwi_anchor_outline',
+      '__piwi_anchor_label',
+      '__piwi_anchor_panel',
+    ]);
+    await page.evaluate(() => (globalThis as any).__piwiAnchorCleanup());
+    expect(await added()).toEqual([]);
+    await page.evaluate(showPickerChoices, { failing: null, choices: [{ locator: `getByTestId('x')`, score: 100 }] });
+    expect(await added()).toEqual(['__piwi_picker_choices']);
+  });
+});

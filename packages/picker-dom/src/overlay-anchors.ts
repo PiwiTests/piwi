@@ -277,19 +277,23 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
   const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
   // A light hairline outside each ring and a dark one outside that, so both
   // outlines keep their edge over white, black and busy backgrounds alike.
+  // Each element the step adds to the page has an `__piwi` id: Pick on the image leaves Piwi's own out.
   const outline = doc.createElement('div');
+  outline.id = '__piwi_anchor_outline';
   outline.style.cssText =
     `position:fixed;pointer-events:none;z-index:${Z};box-sizing:border-box;` +
     'border:2px solid #22c55e;background:rgba(34,197,94,.10);border-radius:4px;display:none;' +
     'box-shadow:0 0 0 1px rgba(255,255,255,.9),0 0 0 3px rgba(5,46,22,.5);';
   // Names the ancestor the hovered row would scope to, pinned to that ancestor.
   const outlineLabel = doc.createElement('div');
+  outlineLabel.id = '__piwi_anchor_label';
   outlineLabel.style.cssText =
     `position:fixed;pointer-events:none;z-index:${Z + 1};display:none;box-sizing:border-box;` +
     'max-width:min(420px,90vw);background:#0b1120;color:#f9fafb;border:1px solid #22c55e;' +
     `border-radius:6px;padding:3px 7px;font:12px/1.45 ${MONO};white-space:nowrap;` +
     'overflow:hidden;text-overflow:ellipsis;box-shadow:0 4px 18px rgba(0,0,0,.5);';
   const pickedOutline = doc.createElement('div');
+  pickedOutline.id = '__piwi_anchor_picked';
   const pr = el.getBoundingClientRect();
   pickedOutline.style.cssText =
     `position:fixed;pointer-events:none;z-index:${Z};box-sizing:border-box;` +
@@ -297,6 +301,7 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
     'box-shadow:0 0 0 1px rgba(255,255,255,.9),0 0 0 3px rgba(59,7,100,.55);' +
     `left:${pr.left}px;top:${pr.top}px;width:${pr.width}px;height:${pr.height}px;`;
   const panel = doc.createElement('div');
+  panel.id = '__piwi_anchor_panel';
   panel.style.cssText =
     `position:fixed;top:12px;right:12px;z-index:${Z + 3};width:min(340px,calc(100vw - 56px));` +
     'max-height:82vh;overflow:auto;' +
