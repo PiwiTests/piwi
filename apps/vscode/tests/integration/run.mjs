@@ -176,6 +176,19 @@ write(
 );
 write('tests/checkout.spec.ts', "import { test } from '@playwright/test';\n\ntest('pays', async ({ page }) => {});\n");
 write(
+  'tests/coupon.spec.ts',
+  [
+    "import { test } from '@playwright/test';",
+    '',
+    "test('applies a coupon', async ({ page }) => {",
+    "  await page.goto('/cart');",
+    "  await page.getByLabel('Coupon code').fill('MORNING10');",
+    "  await page.getByRole('button', { name: 'Apply' }).click();",
+    '});',
+    '',
+  ].join('\n'),
+);
+write(
   'tests/admin.spec.ts',
   [
     "import { test } from './fixtures';",

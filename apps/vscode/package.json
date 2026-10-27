@@ -398,6 +398,37 @@
         "command": "piwi.showPausedPage",
         "title": "Show the paused page",
         "category": "Piwi"
+      },
+      {
+        "command": "piwi.pickAtStop",
+        "title": "Pick a locator in the stopped test's page",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.recordAtStop",
+        "title": "Record in the stopped test's page",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.assertAtStop",
+        "title": "Assert in the stopped test's page",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.assertRegionAtStop",
+        "title": "Assert a region of the stopped test's page",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.mockAtStop",
+        "title": "Mock a request of the stopped test",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.codeAtStop",
+        "title": "Write code at the stop…",
+        "category": "Piwi",
+        "icon": "$(code)"
       }
     ],
     "menus": {
@@ -509,6 +540,30 @@
         {
           "command": "piwi.showPausedPage",
           "when": "piwi.runStopped"
+        },
+        {
+          "command": "piwi.pickAtStop",
+          "when": "piwi.runCanPick"
+        },
+        {
+          "command": "piwi.recordAtStop",
+          "when": "piwi.runCanRecord"
+        },
+        {
+          "command": "piwi.assertAtStop",
+          "when": "piwi.runCanAssert"
+        },
+        {
+          "command": "piwi.assertRegionAtStop",
+          "when": "piwi.runCanAssertRegion"
+        },
+        {
+          "command": "piwi.mockAtStop",
+          "when": "piwi.runCanMock"
+        },
+        {
+          "command": "piwi.codeAtStop",
+          "when": "piwi.runCanPick || piwi.runCanRecord || piwi.runCanAssert || piwi.runCanAssertRegion || piwi.runCanMock"
         }
       ],
       "editor/context": [

@@ -1,24 +1,47 @@
-import { describe, expect, test } from 'vitest';
-import type { RunSession, RunStop, RunTest, RunWorker } from '@piwitests/editor/protocol';
+import { describe, expect, test, vi } from 'vitest';
+import type {
+  LocatorAtCaretResult,
+  RunSession,
+  RunStop,
+  RunTake,
+  RunTest,
+  RunWorker,
+  StopCode,
+} from '@piwitests/editor/protocol';
 import {
+  CARET_REFUSAL_MS,
+  CARET_WAIT_MS,
+  CaretCounts,
   EditLog,
   MAX_IMAGE_DATA,
   breakpointUpdates,
+  caretText,
   controlItems,
   controlState,
   lineEditOf,
+  linesAbove,
   pausedPageHtml,
   pausedText,
   remember,
+  requestPicks,
   runStarted,
   runTargetArg,
+  sizeText,
   spelledSession,
+  stopActions,
+  stopCodeNotice,
+  stopControls,
+  stopIcon,
   stopKey,
   stopPick,
   stopsFor,
   stopsOf,
   targetStop,
+  timeText,
   withSession,
+  writtenLines,
+  type CaretQuery,
+  type CaretShown,
   type RunBreakpoint,
   type RunBreakpoints,
   type ShownStop,
@@ -93,21 +116,27 @@ describe('the sessions kept', () => {
 
 describe('what the controls offer', () => {
   test('nothing without a run', () => {
-    expect(controlState(new Map())).toEqual({ active: false, pausable: false, pausing: false, stopped: false });
+    expect(controlState(new Map())).toEqual({
+      active: false,
+      pausable: false,
+      pausing: false,
+      stopped: false,
+      actions: [],
+    });
     expect(controlItems(controlState(new Map()))).toEqual([]);
   });
 
   test('Pause and Stop while a test runs or a worker is between tests', () => {
     for (const state of ['running', 'between'] as const) {
       const shown = controlState(sessionsOf(session('ed-1', [worker(0, state)])));
-      expect(shown).toEqual({ active: true, pausable: true, pausing: false, stopped: false });
+      expect(shown).toEqual({ active: true, pausable: true, pausing: false, stopped: false, actions: [] });
       expect(controlItems(shown).map((i) => i.command)).toEqual(['piwi.pauseRun', 'piwi.stopRun']);
     }
   });
 
   test('Pausing… once a Pause reached the worker, and Stop alone while its test cannot stop', () => {
     const pausing = controlState(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true })])));
-    expect(pausing).toEqual({ active: true, pausable: false, pausing: true, stopped: false });
+    expect(pausing).toEqual({ active: true, pausable: false, pausing: true, stopped: false, actions: [] });
     expect(controlItems(pausing).map((i) => [i.text, i.command])).toEqual([
       ['$(loading~spin) Pausing…', null],
       ['$(debug-stop)', 'piwi.stopRun'],
@@ -123,7 +152,7 @@ describe('what the controls offer', () => {
     const shown = controlState(
       sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) }), worker(1, 'running')])),
     );
-    expect(shown).toEqual({ active: true, pausable: true, pausing: false, stopped: true });
+    expect(shown).toEqual({ active: true, pausable: true, pausing: false, stopped: true, actions: [] });
     expect(controlItems(shown).map((i) => [i.command, i.tooltip])).toEqual([
       ['piwi.resumeRun', 'Piwi: Resume (F5)'],
       ['piwi.stepRun', 'Piwi: Step to the next call (F10)'],
@@ -164,8 +193,8 @@ describe('a stop', () => {
 });
 
 describe('the stop a control acts on', () => {
-  const one: ShownStop = { ref: 'ed-1', worker: 0, stop: stopAt(spec, 5), test: runTest() };
-  const two: ShownStop = { ref: 'ed-1', worker: 1, stop: stopAt(pageObject, 8), test: runTest() };
+  const one: ShownStop = { ref: 'ed-1', worker: 0, stop: stopAt(spec, 5), test: runTest(), takes: [] };
+  const two: ShownStop = { ref: 'ed-1', worker: 1, stop: stopAt(pageObject, 8), test: runTest(), takes: [] };
 
   test('is the only one, wherever the caret is', () => {
     expect(stopsFor([one], { uri: pageObject, line: 1 })).toEqual([one]);
@@ -254,6 +283,36 @@ describe('the edits since a run started', () => {
     expect(lines).toEqual(code);
     expect(log.forward(spec, 2, since)).toBe(2);
     expect(log.back(spec, 2, since)).toBe(2);
+  });
+
+  test('of an event of several, read each change below the lines those above it add, unless one shares its lines', () => {
+    const imports = change([1, 0], [1, 0], "import { expect } from '@playwright/test';\n");
+    const block = change([4, 0], [4, 0], '  await expect(x).toBeVisible();\n');
+    expect(linesAbove(block, [block, imports])).toBe(1);
+    expect(linesAbove(imports, [block, imports])).toBe(0);
+    const removed = change([6, 0], [8, 0], '');
+    expect(linesAbove(removed, [removed, block, imports])).toBe(2);
+    expect(linesAbove(block, [block, change([4, 9], [4, 9], 'x')])).toBeNull();
+    // The stopped statement on line 4 goes down with the block written above it, and with the import line.
+    const after = [
+      "import { test } from '@playwright/test';",
+      "import { expect } from '@playwright/test';",
+      '',
+      "test('pays', async ({ page }) => {",
+      "  await page.goto('/');",
+      '  await expect(x).toBeVisible();',
+      '  await pay(page);',
+    ];
+    const log = new EditLog();
+    const since = log.now();
+    for (const c of [block, imports]) {
+      const shift = linesAbove(c, [block, imports])!;
+      log.add(
+        spec,
+        lineEditOf(c, (line) => after[line + shift])!,
+      );
+    }
+    expect(log.forward(spec, 4, since)).toBe(6);
   });
 
   test('lose a line a change of several lines touched, when the change came with others', () => {
@@ -346,5 +405,252 @@ describe('the paused page view', () => {
       'n',
     );
     expect(huge).not.toContain('<img');
+  });
+});
+
+const ALL_TAKES: RunTake[] = ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'];
+
+const shown = (stop: RunStop, takes: RunTake[] = ALL_TAKES, test: RunTest | null = runTest()): ShownStop => ({
+  ref: 'ed-1',
+  worker: 0,
+  stop,
+  test,
+  takes,
+});
+
+describe('a failure held for the editor', () => {
+  const failed: RunStop = {
+    ...stopAt(spec, 5),
+    reason: 'failure',
+    title: 'Failed: Timed out 5000ms waiting for click',
+  };
+
+  test('says how the test failed, with its own icon, and offers Resume alone among the controls', () => {
+    expect(pausedText(failed, runTest(1))).toBe('Failed · Timed out 5000ms waiting for click · attempt 2');
+    expect(stopIcon(failed)).toBe('$(error)');
+    expect(stopIcon(stopAt(spec, 5))).toBe('$(debug-pause)');
+    expect(stopControls(failed).map((c) => c.title)).toEqual(['Resume']);
+    expect(stopControls(stopAt(spec, 5)).map((c) => c.title)).toEqual(['Resume', 'Step', 'Run to cursor', 'Finish']);
+    expect(stopPick(shown(failed)).label).toBe('$(error) Failed · Timed out 5000ms waiting for click');
+  });
+
+  test('offers the code actions as any stop does', () => {
+    expect(stopActions(shown(failed)).map((a) => a.title)).toEqual([
+      'Pick a locator',
+      'Record here',
+      'Assert',
+      'Assert a region',
+      'Mock a request',
+    ]);
+  });
+});
+
+describe('the code actions at a stop', () => {
+  test('are those the worker takes, the ones in the test’s window only where the pause bar shows', () => {
+    expect(stopActions(shown(stopAt(spec, 5))).map((a) => a.action)).toEqual([
+      'pick',
+      'record',
+      'assert',
+      'assert-region',
+      'mock',
+    ]);
+    expect(stopActions(shown(stopAt(spec, 5, false))).map((a) => a.action)).toEqual(['mock']);
+    expect(stopActions(shown(stopAt(spec, 5), ['pick', 'record', 'requests'])).map((a) => a.action)).toEqual([
+      'pick',
+      'record',
+    ]);
+    expect(stopActions(shown(stopAt(spec, 5), []))).toEqual([]);
+  });
+
+  test('set the context keys and the status bar’s menu while a stop offers one', () => {
+    const state = controlState(
+      sessionsOf(
+        session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5, false), takes: ['requests', 'mock'] })]),
+      ),
+    );
+    expect(state.actions).toEqual(['mock']);
+    expect(controlItems(state).map((i) => [i.command, i.tooltip])).toContainEqual([
+      'piwi.codeAtStop',
+      'Piwi: Write code at the stop: Mock a request',
+    ]);
+    const none = controlState(sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) })])));
+    expect(controlItems(none).map((i) => i.command)).not.toContain('piwi.codeAtStop');
+  });
+});
+
+describe('the responses Mock a request lists', () => {
+  test('come latest first, by method and URL, with their status, type, size and time', () => {
+    const picks = requestPicks([
+      {
+        id: 1,
+        method: 'GET',
+        url: 'http://localhost:3000/api/cart',
+        status: 200,
+        type: 'application/json',
+        size: 12,
+        time: 840,
+      },
+      { id: 2, method: 'POST', url: 'http://localhost:3000/api/pay', status: 402, type: '', size: null, time: 12_400 },
+    ]);
+    expect(picks).toEqual([
+      { label: 'POST http://localhost:3000/api/pay', description: '402 · no type · no size · at 12.4 s', id: 2 },
+      { label: 'GET http://localhost:3000/api/cart', description: '200 · application/json · 12 B · at 840 ms', id: 1 },
+    ]);
+  });
+
+  test('name a size in bytes, kilobytes or megabytes', () => {
+    expect([sizeText(0), sizeText(1023), sizeText(2048), sizeText(3 * 1024 * 1024), sizeText(null)]).toEqual([
+      '0 B',
+      '1023 B',
+      '2.0 KB',
+      '3.0 MB',
+      'no size',
+    ]);
+    expect([timeText(0), timeText(999.6), timeText(1000)]).toEqual(['0 ms', '1000 ms', '1.0 s']);
+  });
+});
+
+describe('the count of the locator at the cursor', () => {
+  const answer = (
+    count: number | null,
+    ok = true,
+    locator: string | null = "getByRole('button')",
+  ): LocatorAtCaretResult => ({
+    ok,
+    message: ok ? `${count} elements match.` : 'The test is stopped on adminPage: page may be another page.',
+    locator,
+    count,
+  });
+
+  test('says the matches, or why it counted none, and nothing on a line holding no locator', () => {
+    expect(caretText(answer(3))).toBe('3 matches');
+    expect(caretText(answer(1))).toBe('1 match');
+    expect(caretText(answer(0))).toBe('no match');
+    expect(caretText(answer(null, false))).toBe('The test is stopped on adminPage: page may be another page.');
+    expect(caretText(answer(null, false, null))).toBeNull();
+  });
+
+  /** A count asking `ask`, its answers given by hand; what it showed last. */
+  function counting() {
+    vi.useFakeTimers();
+    const asked: Array<{ query: CaretQuery; resolve: (a: LocatorAtCaretResult | null) => void }> = [];
+    let last: CaretShown | null = null;
+    const counts = new CaretCounts(
+      (query) => new Promise((resolve) => asked.push({ query, resolve })),
+      (shown) => (last = shown),
+    );
+    const at = (line: number, since = 's1'): CaretQuery => ({ ref: 'ed-1', worker: 0, since, uri: spec, line });
+    return { counts, asked, at, shown: () => last };
+  }
+
+  test('asks once the cursor settled, one request at a time, and drops an answer the cursor left', async () => {
+    const { counts, asked, at, shown } = counting();
+    try {
+      counts.moved(at(3), 'a');
+      counts.moved(at(4), 'b');
+      await vi.advanceTimersByTimeAsync(CARET_WAIT_MS - 1);
+      expect(asked).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(asked.map((a) => a.query.line)).toEqual([4]);
+      // The cursor moves while the answer is on its way: nothing more is asked until it comes, and it is dropped.
+      counts.moved(at(6), 'c');
+      await vi.advanceTimersByTimeAsync(CARET_WAIT_MS);
+      expect(asked).toHaveLength(1);
+      asked[0]!.resolve(answer(2));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(shown()).toBeNull();
+      expect(asked.map((a) => a.query.line)).toEqual([4, 6]);
+      asked[1]!.resolve(answer(3));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(shown()).toEqual({ uri: spec, line: 6, text: '3 matches', brief: false });
+      // The same line asks nothing again; an edit of it does.
+      counts.moved(at(6), 'c');
+      await vi.advanceTimersByTimeAsync(CARET_WAIT_MS);
+      expect(asked).toHaveLength(2);
+      counts.moved(at(6), 'c2');
+      expect(shown()).toBeNull();
+      await vi.advanceTimersByTimeAsync(CARET_WAIT_MS);
+      expect(asked).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('shows a refusal for a moment, takes the outline down outside the stopped file, and stops with the stop', async () => {
+    const { counts, asked, at, shown } = counting();
+    try {
+      counts.moved(at(3), 'a');
+      await vi.advanceTimersByTimeAsync(CARET_WAIT_MS);
+      asked[0]!.resolve(answer(null, false));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(shown()?.brief).toBe(true);
+      await vi.advanceTimersByTimeAsync(CARET_REFUSAL_MS);
+      expect(shown()).toBeNull();
+      // The cursor left the stopped file: asked once with no line, which shows nothing.
+      counts.moved({ ...at(3), uri: null, line: null });
+      await vi.advanceTimersByTimeAsync(CARET_WAIT_MS);
+      expect(asked[1]!.query).toMatchObject({ uri: null, line: null });
+      asked[1]!.resolve({ ok: true, message: 'The outline is gone.', locator: null, count: null });
+      counts.moved({ ...at(3), uri: null, line: null });
+      await vi.advanceTimersByTimeAsync(CARET_WAIT_MS);
+      expect(asked).toHaveLength(2);
+      // Back on a line, then the stop ends: cleared at once, nothing asked.
+      counts.moved(at(5), 'e');
+      await vi.advanceTimersByTimeAsync(CARET_WAIT_MS);
+      asked[2]!.resolve(answer(1));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(shown()?.text).toBe('1 match');
+      counts.moved(null);
+      expect(shown()).toBeNull();
+      await vi.advanceTimersByTimeAsync(CARET_WAIT_MS);
+      expect(asked).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('the code a stop makes', () => {
+  const code = (extra: Partial<StopCode> = {}): StopCode => ({
+    ref: 'ed-1',
+    worker: 0,
+    since: 's1',
+    action: 'assert-region',
+    uri: spec,
+    version: 3,
+    line: 4,
+    code: "  await expect(page.getByTestId('summary')).toMatchAriaSnapshot(`\n    - text: x\n  `);",
+    edits: [
+      {
+        range: { start: { line: 1, character: 0 }, end: { line: 1, character: 0 } },
+        newText: "import { expect } from '@playwright/test';\n",
+      },
+      { range: { start: { line: 4, character: 0 }, end: { line: 4, character: 0 } }, newText: 'x\n' },
+    ],
+    message: "Piwi wrote the region's ARIA snapshot above checkout.spec.ts:5.",
+    warnings: [],
+    ...extra,
+  });
+
+  test('stands below the import lines written above it', () => {
+    expect(writtenLines(code())).toEqual({ start: 5, end: 7 });
+    expect(writtenLines(code({ edits: code().edits.slice(1), code: '  await x();' }))).toEqual({ start: 4, end: 4 });
+  });
+
+  test('says what it wrote, as a warning when its reader should check something', () => {
+    expect(stopCodeNotice(code())).toEqual({
+      severity: 'information',
+      text: "Piwi wrote the region's ARIA snapshot above checkout.spec.ts:5.",
+    });
+    const mock = stopCodeNotice(
+      code({
+        message: 'Piwi wrote the mock above checkout.spec.ts:5.',
+        warnings: ['2 values named or shaped like credentials are written as <hidden>.'],
+      }),
+    );
+    expect(mock).toEqual({
+      severity: 'warning',
+      text: 'Piwi wrote the mock above checkout.spec.ts:5. 2 values named or shaped like credentials are written as <hidden>.',
+    });
   });
 });

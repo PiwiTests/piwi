@@ -169,10 +169,27 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the run's code (`runPlaces`: a breakpoint
   the run was given, by `vscode.Breakpoint.id`, keeps its line while it only moved with the edits; another is mapped
   back through them), only to a run whose places differ from those its command started with or was last sent
-  (`breakpointUpdates`), and once to a run as its first worker connects.
+  (`breakpointUpdates`), and once to a run as its first worker connects. A stop's lens and hover also offer the code
+  actions its worker takes (`RunWorker.takes`, `stopActions`): **Pick a locator**, **Record here**, **Assert** and
+  **Assert a region** at a stop the pause bar shows, **Mock a request** at any, each a `piwi/stopAction` naming its
+  stop, in the palette while a stop offers it (`piwi.pickAtStop`, `piwi.recordAtStop`, `piwi.assertAtStop`,
+  `piwi.assertRegionAtStop`, `piwi.mockAtStop`, the `piwi.runCan…` context keys) and in the status bar's `$(code)`
+  item, **Piwi: Write code at the stop…** (`piwi.codeAtStop`); none has a key. Mock a request lists `piwi/stopRequests`
+  in a quick pick, the latest first (`requestPicks`: the method and URL, which it filters on, then the status, type,
+  size or `no size`, and when it finished). The code a stop makes, from here or Piwi Picker (`piwi/stopCode`, which the
+  initialization options ask for: `stopCode: true`), is one workspace edit in its document, opened when it is not, made
+  only in the version the service placed it in (else the file as saved; otherwise a warning offers **Copy the code**),
+  the block revealed without taking the focus, and its sentence said, as a warning with what its reader should check
+  (`stopCodeNotice`). An event of several changes (that edit, its undo) is read change by change in the document after
+  them all (`linesAbove`), so the mark follows it. While a stopped worker counts locators (`takes` holds `locator`),
+  the end of the cursor's line in the stopped file says how many elements the locator there matches on the stopped
+  page (`piwi/locatorAtCaret`, `CaretCounts`: asked 200 ms after the cursor settles, one request at a time, an answer
+  the cursor left dropped; `3 matches`, `no match`, a refusal for three seconds, nothing on a line holding no locator),
+  and the cursor leaving the file takes the page's outline down. A failure held for the editor (`reason: 'failure'`)
+  is `Failed · <how it failed> · attempt N` after `$(error)`, with Resume alone among its controls.
   `src/run-control.ts` is its pure half, tested without an editor; the API `activate` returns gives the sessions
-  (`runSessions`), the lines drawn as the execution point (`executionPoints`) and what the paused page shows
-  (`pausedPage`).
+  (`runSessions`), the lines drawn as the execution point (`executionPoints`), what the paused page shows
+  (`pausedPage`) and what the cursor's line says (`caretCount`).
 - `src/send-listener.ts` is the Send to editor endpoint: `POST /piwi/send` on `127.0.0.1`, on the port kept in
   global state, with the token from `SecretStorage` (`piwi.sendToken`); **Piwi: Pair with Piwi Picker** starts it and
   copies the pairing address as the browser's machine reaches it (`pickerPairing`: `vscode.env.asExternalUri`, which
@@ -319,5 +336,6 @@ through its public commands (`vscode.executeCodeActionProvider`, `vscode.execute
 API `activate` returns (`pageCandidates`, the service's answer for a position, `failureChildren`, the failures view's
 nodes, `lastRun`, the command a breakpoint's run was given, `gutter`, the tests last drawn in a file's gutter,
 `coverage`, a file's coverage answer and whether its marks are shown, `testExplorer`, the Testing view's tests
-with the result last shown for each, and `runSessions`, `executionPoints` and `pausedPage`, a run's stops as a fake
-worker on the run channel plays them).
+with the result last shown for each, and `runSessions`, `executionPoints`, `pausedPage` and `caretCount`, a run's stops
+as a fake worker on the run channel plays them, the code written there, a check's included, whose hand-off it plays
+too).
