@@ -17,6 +17,7 @@ import { join, dirname, isAbsolute, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { copyDemoMedia, DEMO_MEDIA_PREFIX, projectMediaPath } from './copy-demo-media.mjs';
+import { generateDemoSeedSql } from './lib/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const { createClient } = require('@libsql/client');
@@ -38,7 +39,7 @@ const publicDemoDir = join(appDir, 'public/demo');
 
 if (!existsSync(sqlPath)) {
   console.log('No demo seed yet — generating public/demo/seed.sql…');
-  execSync('npm run app:seed:demo', { cwd: appDir, stdio: 'inherit' });
+  generateDemoSeedSql();
 }
 const sql = readFileSync(sqlPath, 'utf8');
 

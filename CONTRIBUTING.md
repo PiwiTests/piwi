@@ -41,7 +41,7 @@ If an E2E test creates a project, use a static name registered in `apps/applicat
 | `npm run db:studio:pg` | Browse the PostgreSQL database in Drizzle Studio |
 | `npm run app:seed:demo` | Regenerate the demo seed data used by the live demo |
 
-**Migration workflow:** edit `server/database/schema.sqlite.ts` (and `schema.pg.ts` for the PostgreSQL equivalent — `schema.ts` is just a dialect-selecting re-export, don't edit it) → run `npm run db:generate` (SQLite) or `npm run db:generate:pg` (PostgreSQL) → review the generated `.sql` file → restart the app. Never create migration files or edit `meta/_journal.json` by hand — the Drizzle migrator depends on the journal to track which migrations have been applied, and manual entries cause it to silently skip the migration.
+**Migration workflow:** edit both `server/database/schema.sqlite.ts` and `server/database/schema.pg.ts` (`schema.ts` is just a dialect-selecting re-export, don't edit it) → run `npm run db:generate` (SQLite) and `npm run db:generate:pg` (PostgreSQL) → review the generated `.sql` files → restart the app. Never create migration files or edit `meta/_journal.json` by hand — the Drizzle migrator depends on the journal to track which migrations have been applied, and manual entries cause it to silently skip the migration.
 
 ## What to work on
 
@@ -57,7 +57,7 @@ The repository is licensed in two parts (see [LICENSE](LICENSE)): `packages/repo
 
 This repo uses [Conventional Commits](https://www.conventionalcommits.org/), enforced by commitlint (locally and in CI) and a PR-title check. [release-please](https://github.com/googleapis/release-please) reads commit history to compute version bumps and generate the changelog, so following this format isn't just style — it's what makes releases work.
 
-Because PRs are squash-merged, **the PR title becomes the commit message on `main`** — that's what release-please actually reads. Give the PR itself a Conventional Commit title; individual commits within the PR are not required to follow the format, though it's good practice.
+Because PRs are squash-merged, **the PR title becomes the commit message on `main`** — that's what release-please actually reads. Give the PR itself a Conventional Commit title. Every commit within the PR must follow the format too: the `commitlint` check lints each one, so a single bad message turns the PR red.
 
 ### Format
 
@@ -73,10 +73,10 @@ type(scope): subject
 
 | Type | Bump | Appears in changelog |
 |---|---|---|
-| `feat:` | **minor** (0.x.0) | 🚀 Features |
-| `fix:` / `perf:` | **patch** (0.0.x) | 🐛 Fixes |
-| `feat!:` / `fix!:` / body with `BREAKING CHANGE:` | **major**\* | ⚠ Breaking |
-| `docs:` `chore:` `ci:` `refactor:` `test:` `build:` `style:` `revert:` | none | hidden |
+| `feat:` | **minor** (0.x.0) | Features |
+| `fix:` / `perf:` / `revert:` | **patch** (0.0.x) | Bug Fixes / Performance Improvements / Reverts |
+| `feat!:` / `fix!:` / body with `BREAKING CHANGE:` | **major**\* | ⚠ BREAKING CHANGES |
+| `docs:` `chore:` `ci:` `refactor:` `test:` `build:` `style:` | none | hidden |
 
 \* Pre-1.0, breaking changes bump **minor** instead of major (`bump-minor-pre-major` in `release-please-config.json`).
 

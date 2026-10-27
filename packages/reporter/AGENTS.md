@@ -1,109 +1,113 @@
-# Reporter — agent guide
+# Reporter: agent guide
 
-Rules for working inside `packages/reporter/` (the published `@piwitests/reporter` package). Read
-[`../../AGENTS.md`](../../AGENTS.md) first for repo-wide conventions, and **[`ARCHITECTURE.md`](ARCHITECTURE.md)** for the
-full map: public/internal split, the two-process collect-and-submit data flow, the submit fallback ladder, and the
-per-directory responsibilities.
+Rules for working inside `packages/reporter/` (the published `@piwitests/reporter` package: the reporter, its
+fixtures, the `piwi` command line and the agent skills). Read [`../../AGENTS.md`](../../AGENTS.md) first for repo-wide
+conventions, and **[`ARCHITECTURE.md`](ARCHITECTURE.md)** for the map: the public and internal code, its side effects,
+the two-process collect-and-submit data flow, the submit fallback ladder, the agent skills and the per-directory
+responsibilities.
 
 ## The contracts you can break
 
-1. **Public API** — anything exported from `src/index.ts` (the single `.` entry). Changing it is a breaking change.
-   Everything under `src/internal/` is private plumbing; change it freely.
-2. **Wire types** (`src/types/wire.ts`) — the JSON exchanged with the server. A change here is a server-contract change
-   and must land with the matching dashboard change; `apps/application/tests/unit/wire-shared-drift.test.ts` pins the two
-   together.
-3. **Side effects** — `PIWI_*` env vars (`internal/config/env.ts`; `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and
-   `PIWI_PROJECT_NAME` also from the `.env` in the Playwright config's folder, below the environment), `piwi-*`
-   attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`, `[Piwi Dashboard]`-prefixed log
-   output, the `__piwiProbeElement` global the capture fixtures install into every instrumented page
-   (`internal/capture/capture-fixtures.ts`), the `beforeunload` listener code reach adds to each document of a covered
-   page in its own isolated world, where the debugger stops to read the coverage as the document is left
-   (`internal/capture/code-reach.ts`), the boxed stack prefix `internal/capture/quiet-capture.ts` registers
-   for this package's `dist/` in each worker, the proxy every API request context is handed out behind
-   (`internal/capture/api-requests.ts`: the `request` fixture's, any `playwright.request.newContext()`'s and
-   `page.request`), and the editor's breakpoints (`internal/capture/pause-at.ts`): a headed local run with
-   `PIWI_PAUSE_AT` steers each context's `context.debugger` to stop before every call it can stop at, shows the pause
-   bar at a call on those lines, sets `PW_CODEGEN_NO_INSPECTOR` in the worker so Playwright's Inspector stays closed
-   at those stops, and clears it while a `page.pause()` it leaves to Playwright runs (it wraps `Page.prototype.pause`,
-   so a page of a browser the test launched itself goes through it too, unless it came from a second copy of
-   Playwright, whose `page.pause()` then stops with neither bar nor Inspector), ends the stops shown (the bar's, and
-   those the run connection holds) as the test function ends, ahead of the runner's other callbacks there
-   (`_onDidFinishTestFunctionCallbacks`), setting the runner's count of a test function that ended under one back to
-   what it held as the stop began (`_timeoutManager.defaultSlot()`, feature-checked) and waiting a while for the call
-   it let go and its requests, attaches a test's stops as
-   `piwi-pauses` (the reporter sends them as `pause` step events, and leaves their time out of the step statistics,
-   the steps keeping their measured times), and posts a locator picked meanwhile to the editor's `PIWI_EDITOR_SEND`
-   address with the line, as `@piwitests/core/editor-send` reads it; with `PIWI_RECORD_CHANNEL`, the pause bar's
-   **Record here** (and `page.pause()` in a headed run, patched by the capture fixtures) hands the page to the
-   editor's recorder (`internal/capture/record-handoff.ts`): it relays each call of the recorder's binding over that
-   local socket, as `@piwitests/core/ide-recorder` frames it, and loads the bundle the editor names. The recorder's host
-   stays in the editor service: this package carries the relay alone. With `PIWI_RUN_CHANNEL` (the same socket) and
-   `PIWI_ORIGIN_REF`, each worker keeps a run connection to the editor from its worker fixture's setup to its end
-   (`internal/capture/run-channel.ts`, framed by `@piwitests/core/run-channel`; `PIWI_RUN_CHANNEL` and the pairing's
-   `PIWI_EDITOR_SEND` are taken out of the worker's `process.env` while a test runs, `hideRunChannel`, so a process a
-   test starts opens none on the run and is not handed the pairing's token, the test's picks still posted to it
-   (`editorSendAddress`), and put back after it, since Playwright hands what a worker's environment lost to the
-   projects depending on its own): it says
-   which test it runs and where it stops, takes the editor's Pause, Step, Resume, Finish, Run to a line and breakpoints
-   (in place of `PIWI_PAUSE_AT`) through the same stop policy, and answers a request for an image of the stopped page
-   with a JPEG screenshot taken through an internal call, none for a stop whose page it cannot tell (a navigation or a
-   key press in a context with several pages). Its `run-attach` lists the intents it takes (`takes: ['pick',
-   'record']`): at a stop the pause bar shows, a `request` naming that stop starts the bar's own **Pick a locator** or
-   **Record here** (`BarIntents` in `pause-at.ts`, which the bar's loop races against its own buttons: the same
-   picker, the pick posted to `PIWI_EDITOR_SEND`, the same hand-off over `PIWI_RECORD_CHANNEL`, both ending with the
-   stop), the test's window brought to the front through an internal call, and is answered at once with whether it
-   started: refused at a stop that ended or is ending (its test ended, its page or context began to close), one no
-   bar shows, one whose page it cannot tell, without a record channel for Record here, and while a pick or a recording
-   runs. While it is open a headless run stops too, held until the editor answers; a headed stop shows the bar as
-   well, and the first answer wins. Whoever answers a stop, it goes to `piwi-pauses` as one at the bar does, and every
-   stop's end reaches the editor (`running`), one that ends unanswered (the test function ended, its page or context
-   closed, or for a stop whose page it cannot tell any page of its context closed) included, through the same end as
-   at the bar. A stop no bar shows goes on when the connection closes, and one stop shows at a time in a worker: one
-   waiting its turn is decided again as it comes, and goes on unshown, the editor never hearing of it, when the test
-   ended meanwhile (as on Finish), its page or context closed or its breakpoint went, leaving the Step, Pause or line
-   run to it used up for the next stop. Closing a context, itself or with its browser, lets the call its debugger
-   holds go on first, since the close never lets it go.
-4. **The desktop discovery file** — `~/.piwi/desktop.json` and its `{ url, token }` shape
-   (`internal/config/desktop.ts`). The desktop shell writes it (`apps/desktop/src-tauri/src/lib.rs`) and this package reads
-   it, on independent release cycles, so path and shape changes must land in both.
-5. **Invisible capture.** Nothing the capture fixtures do may show up as the test's own: a Playwright method a
-   wrapper forwards is called on its receiver (`callMethod` — never `fn.apply`, which renames the call
-   `locator.apply`), and every page read the fixtures make goes through `internalCall` (never a bare
-   `page.evaluate` / `ariaSnapshot`), so it is neither a step nor a trace action. A copy that wraps locators
-   from its own file (the dogfood mirror) passes that file to `boxCaptureFrames` so its frames are boxed too.
-   `tests/integration/verify-reporter.ts` checks both.
+1. **Public API.** Anything exported from `src/index.ts` (the single `.` entry) is public: changing it is a breaking
+   change. `tests/build-output.spec.ts` pins the package to that one entry. Code under `src/internal/` is private and
+   free to change, except the modules of contract 5.
+2. **Wire types** (`src/types/wire.ts`) are the JSON exchanged with the server. A change here is a server-contract
+   change and must land with the matching dashboard change; `apps/application/tests/unit/wire-shared-drift.test.ts`
+   pins the two together.
+3. **Side effects**: what a user's suite can observe, each changed only on purpose:
+   - `PIWI_*` env vars (`internal/config/env.ts`; `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also from
+     the `.env` in the Playwright config's folder, below the environment), and the ones `onBegin` sets for the
+     workers;
+   - `piwi-*` attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`, and
+     `[Piwi Dashboard]`-prefixed log output;
+   - the `__piwiProbeElement` global the capture fixtures install into every instrumented page
+     (`internal/capture/capture-fixtures.ts`), and the `beforeunload` listener code reach adds to each document of a
+     covered page, in its own isolated world (`internal/capture/code-reach.ts`);
+   - the boxed stack prefix `internal/capture/quiet-capture.ts` registers for this package's `dist/` in each worker;
+   - the resource ledger's listener on each worker's Playwright and its wrappers on the browser types
+     (`internal/capture/resource-ledger.ts`), and the `clear_refs` writes and DevTools sessions of
+     `internal/capture/worker-metrics.ts`;
+   - the proxy every API request context is handed out behind (`internal/capture/api-requests.ts`: the `request`
+     fixture's, any `playwright.request.newContext()`'s and `page.request`);
+   - the editor's breakpoints (`internal/capture/pause-at.ts`, with `PIWI_PAUSE_AT` in a headed local run): the pause
+     bar, `PW_CODEGEN_NO_INSPECTOR`, the wrapped `Page.prototype.pause`, the runner internals it reads
+     (`_onDidFinishTestFunctionCallbacks`, `_timeoutManager.defaultSlot()`, both feature-checked), the `piwi-pauses`
+     attachment and the locator posted to `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`);
+   - with `PIWI_RECORD_CHANNEL`, **Record here** handing the page to the editor's recorder
+     (`internal/capture/record-handoff.ts`, framed as `@piwitests/core/ide-recorder`): this package carries the relay
+     alone, the recorder's host stays in the editor service;
+   - with `PIWI_RUN_CHANNEL` and `PIWI_ORIGIN_REF`, each worker's run connection to the editor
+     (`internal/capture/run-channel.ts`, framed as `@piwitests/core/run-channel`), open from the `piwiResources`
+     worker fixture's setup to the worker's end: it reports each test and stop, takes the editor's controls,
+     breakpoints and intents (`takes` in its `run-attach`), and makes a headless run stop too;
+   - `PIWI_RUN_CHANNEL` and `PIWI_EDITOR_SEND` taken out of the worker's `process.env` while each test runs
+     (`hideRunChannel`; picks still reach the editor through `editorSendAddress`), so a process the test starts gets
+     neither, and put back after it, since Playwright passes a worker's environment changes to the projects that
+     depend on its project.
+
+   How each of them works: [`ARCHITECTURE.md`](ARCHITECTURE.md#side-effects).
+4. **The desktop discovery file.** The desktop shell writes `~/.piwi/desktop.json` (`apps/desktop/src-tauri/src/lib.rs`)
+   and this package reads its `url`, `token` and `pid` (`internal/config/desktop.ts`); the shell also writes
+   `projects` for other readers ([`apps/desktop/AGENTS.md`](../../apps/desktop/AGENTS.md)). The two ship on independent
+   release cycles, so a path or shape change must land in both.
+5. **The dogfooded capture modules.** The dashboard's E2E fixtures (`apps/application/tests/fixtures.ts`) import five
+   capture modules from `dist/internal/capture/`, each its own entry in `tsup.config.ts`. Renaming or moving one, or
+   changing what it exports, breaks the dashboard's suite.
+6. **Invisible capture.** Nothing the capture fixtures do may show up as the test's own. A Playwright method a wrapper
+   forwards is called on its receiver (`callMethod`, never `fn.apply`, which renames the call `locator.apply`), and
+   every page read the fixtures make goes through `internalCall` (never a bare `page.evaluate` / `ariaSnapshot`), so it
+   is neither a step nor a trace action. A copy that wraps locators from its own file (the dogfood mirror,
+   `apps/application/tests/fixtures.ts`) passes that file to `boxCaptureFrames` so its frames are boxed too. `tests/integration/verify-reporter.ts` checks both.
+7. **The docs read this package.** Every option in `src/public/options.ts` has a JSDoc comment stating its default,
+   under the `// ── Group ──` comment it belongs to: the docs build generates the Reporter options page from them and
+   from `PIWI_ENV_KEYS`, and fails on an option without one. A new `piwi` flag goes into `apps/docs/reference/cli.md`
+   in the same change; `apps/application/tests/unit/docs-drift.test.ts` checks every command's `USAGE` against it.
+
+## Agent skills (`templates/skills/`)
+
+- **The skills are public.** `piwi init`, `piwi skills add` and the desktop app write them into users' projects, and
+  the dashboard serves them as MCP prompts: name nothing internal to this repository. Every MCP tool, argument, `piwi`
+  command and flag a skill names must exist (`apps/application/shared/mcp-tools.ts`, `src/cli/`); no test checks them.
+- **A workflow skill's `description` is mirrored.** The dashboard serves each workflow skill as an MCP prompt, and
+  `apps/application/shared/mcp-prompts.ts` holds its description: change both in the same commit;
+  `apps/application/tests/unit/mcp-prompts.test.ts` fails when they differ. A new skill is declared in
+  `src/cli/skills.ts` (checked by `tests/skills-cli.spec.ts`) and, for a workflow skill, in `MCP_PROMPT_DEFS`.
 
 ## Conventions
 
-- The package is **strict-mode TypeScript**. Node built-ins are imported as `import * as x from 'node:x'`.
-- Classes use `private readonly` constructor parameter-property DI.
-- HTTP failures throw `HttpError` (carrying `status`) from `internal/transport/http-client.ts`.
-- `catch (error)` is `unknown` — narrow with `instanceof`, format with `errorMessage` (`internal/support/errors.ts`).
+- Code style (imports, dependency injection, `HttpError`, `catch` and `any`):
+  [`ARCHITECTURE.md`](ARCHITECTURE.md#conventions).
 - Shared pure logic (locator generation/scoring, ARIA fingerprints, wire leaf shapes) comes from **`@piwitests/core`**
-  and is bundled in by tsup, so the published package stays self-contained. **Never re-implement a core function here**
-  — `apps/application/tests/unit/reporter-core-identity.test.ts` asserts the reporter re-exports the exact core functions and
-  fails on a copy. **Never import `apps/application/shared`** from the reporter.
-- `internal/submit/serializer.ts` is the single source of truth for the wire field list: `toWireTestCase` for per-case
-  fields, `serializeRun` for the run body (used by both `uploadJSON` and `uploadWithFiles`).
+  and is bundled in by tsup, so the published package stays self-contained. **Never re-implement a core function here**:
+  `apps/application/tests/unit/reporter-core-identity.test.ts` asserts the reporter re-exports the exact core functions
+  and fails on a copy. **Never import `apps/application/shared`** from the reporter: the path would leak into the
+  published `.d.ts`.
+- **A wire field is projected in one place per body**: a per-case field in `toWireTestCase` and a field of the batch
+  run body in `serializeRun` (`internal/submit/serializer.ts`, used by `uploadJSON` and `uploadWithFiles`). The
+  streaming routes build their own run bodies: `/setup` in `public/global-setup.ts`, `/finish` in
+  `internal/submit/run-submitter.ts`, `/start` and `/begin` in `internal/streaming/stream-manager.ts`, so a run-level
+  field the server reads while streaming is added there too.
 
 ## Workflow
 
+From `packages/reporter/`:
+
 ```bash
 npm run reporter:build      # tsup → dist/ (.js + .d.ts); reporter:dev for watch mode
-npm run reporter:typecheck
+npm run reporter:typecheck  # src/, then tests/ (tests/tsconfig.json)
 npm run reporter:lint       # :fix to auto-fix
-npm run reporter:format     # :check to verify only
+npm run reporter:format     # src/ only; :check to verify only
 npm run reporter:test       # :watch, :coverage, :integration
                             # :integration:ai runs the AI-step authoring loop against a stubbed resolver;
                             # :integration:ai:live drives a real model through a real dashboard (spends tokens)
 npm run reporter:bench      # capture-overhead benchmark; :micro for the Node-side hot path
 ```
 
-`tests/bench/` measures what the capture fixtures cost a suite — see its [`README.md`](tests/bench/README.md) for the
+`tests/bench/` measures what the capture fixtures cost a suite: see its [`README.md`](tests/bench/README.md) for the
 variant ladder, the knobs, and reference numbers. Reach for it before optimizing anything under `internal/capture/`.
 
-Source is TypeScript in `src/`; `dist/` is generated — never edit it. To try the package in a real project, build then
+Source is TypeScript in `src/`; `dist/` is generated, never edit it. To try the package in a real project, build then
 `npm link` here and in the target project.
 
-Adding a field that flows from Playwright to the dashboard touches both repos' halves — follow the ordered checklist in
-[`apps/application/AGENTS.md`](../../apps/application/AGENTS.md#adding-a-field-to-test-run-data).
+Adding a field that flows from Playwright to the dashboard touches both halves: follow the ordered checklist in
+[`apps/application/server/api/test-runs/AGENTS.md`](../../apps/application/server/api/test-runs/AGENTS.md#adding-a-field-to-test-run-data).

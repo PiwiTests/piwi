@@ -65,7 +65,7 @@ channel, so a per-user install pulls a per-user update.
    and focuses it. Only navigations the browser marks `Sec-Fetch-Site: none`
    qualify, so a web page cannot drive the window.
 
-Local access is gated by a per-launch token (see
+Local access is gated by a token the app creates once and keeps for the install (see
 `apps/application/server/middleware/desktop-guard.ts`), so only the app — not other
 local processes or browser pages — can reach the bundled API.
 

@@ -4,7 +4,7 @@
  * recorded browser-extension session is matched against so a raw locator
  * span can collapse into a call to the project's own code. See
  * `packages/core/src/function-match.ts` for the matching algorithm and
- * `extension/AGENTS.md` for how the extension consumes this list.
+ * `apps/extension/ARCHITECTURE.md` for how the extension consumes this list.
  */
 import type { ProjectDetails, TestFunctionsResponse, TestFunctionInfo, TestFunctionStepAction } from '~~/types/api';
 import { buildExtractionPrompt, LOW_CONFIDENCE_THRESHOLD } from '#shared/test-function-extract-prompt';

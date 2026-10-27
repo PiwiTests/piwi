@@ -271,7 +271,7 @@ export function statusBarView(
     };
   }
   const r = run.run;
-  // The tests still failing once the later runs are laid over the run; the run's own count from an older service.
+  // The tests still failing once the later runs are laid over the run; the run's own count when the answer has none.
   const failing = run.failingTests ?? r.failedTests;
   const fixed = run.resolved ?? 0;
   const tooltip = lines(

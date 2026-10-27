@@ -389,7 +389,7 @@ describe('statusBarView', () => {
       );
     });
 
-    test('without the label of an older service, the folder’s name', () => {
+    test('without a label, the folder’s name', () => {
       const older: StatusResult = { contexts: [shop, { ...admin, label: undefined }] };
       expect(statusBarView(older, runs, false, Date.now(), '/w/apps/admin/a.ts').tooltip).toContain(
         "The active file's Playwright config, in admin (one of 2)",
@@ -1228,7 +1228,7 @@ describe('the test at a line', () => {
   test('runs nothing outside every test, or by an id alone to verify', () => {
     expect(testAtRun(uri, { test: null, spec: null, location: null })).toBeNull();
     expect(testAtRun(uri, null)).toBeNull();
-    // An older service gives no location.
+    // Without a location.
     expect(testAtRun(uri, { test: known.test, spec: known.spec })).toEqual({ uri, testIds: [7] });
     expect(testAtRun(uri, { test: known.test, spec: known.spec }, 3)).toBeNull();
   });
@@ -1456,7 +1456,7 @@ describe('the failures view', () => {
     });
     expect(shop!.children[0]).toMatchObject({ kind: 'run', root: '/w/apps/shop', description: '4 min ago' });
     expect(admin!.children[0]).toMatchObject({ root: '/w/apps/admin', description: 'running 4/9' });
-    // The run's node of an older service names no config: the editor's own run shows on it.
+    // A run node that names no config: the editor's own run shows on it.
     expect(failureNodes(result, { now, live, liveRoot: '/w/apps/admin' })[0]!.description).toBe('running 4/9');
   });
 

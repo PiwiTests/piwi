@@ -15,7 +15,7 @@ Prefer the **Piwi MCP server** if it is connected (`get_locator_healing`, `expla
 
 1. **Find the failing case.** From a run the user names, or the latest failed run (`list_recent_activity` → `get_run` with a failed filter). Identify the case whose failure is a locator that matched nothing (a timeout on `click` / `fill` / `expect(locator)`).
 
-2. **Get the healed locator.** Call `get_locator_healing` for that case. It returns the **recommended durable locator** plus ranked alternatives, each stamped with the **call site** (file and line) where the original locator was used. Read the call site — that is the exact spot to edit.
+2. **Get the healed locator.** Call `get_locator_healing` for that case. It returns the **recommended durable locator** plus ranked alternatives, each stamped with the **call site** (file and line) where the original locator was used, and a ready-to-apply `edit`. Read the call site — that is the exact spot to edit. An answer with `applicable: false` means the locator resolved and the failure came after it: do not rewrite the selector.
 
 3. **Confirm it's really a locator problem.** The suggestion is only right if the element still exists under a new selector. Skim the error and the ARIA snapshot (`get_test_run_case` / `explain_failure`): if the element is genuinely gone or the page errored before rendering, this is not a healing case — hand it to the `investigate-failure` skill instead.
 
@@ -25,7 +25,7 @@ Prefer the **Piwi MCP server** if it is connected (`get_locator_healing`, `expla
 
 6. **Report.** Show the before/after locator, the file and line, and the verifying result. If several tests shared the selector, list every place you changed.
 
-7. **Report back to Piwi.** Commit with the trailer `Piwi-Cluster: <clusterId>` as the last line of the message (the cluster of the failing case; `get_fix_plan` returns the line in `verify.commitTrailer`), then call `report_fix_attempt` with that cluster, `kind: "locator-edit"`, the commit or the branch, and the `edit` (`filePath`, `line`, `from`: the old locator, `to`: the one you applied). Do it once per call site you changed. Piwi records the attempt verified when the test passes on that commit, and counts the healing suggestion as adopted.
+7. **Report back to Piwi.** Commit with the trailer `Piwi-Cluster: <clusterId>` as the last line of the message (the cluster of the failing case; `get_fix_plan` returns the line in `verify.commitTrailer`), then call `report_fix_attempt` with that cluster, `kind: "locator-edit"`, the commit or the branch, and the `edit` (`filePath`, `line`, `from`: the old locator, `to`: the one you applied). Do it once per call site you changed. Piwi records the attempt verified when the test passes on that commit, and records the healing suggestion applied once a run uses the recommended locator at that call site. `report_fix_attempt` needs the Maintainer role or above on the project.
 
 ## Guardrails
 
