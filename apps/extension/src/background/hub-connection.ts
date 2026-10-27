@@ -62,7 +62,7 @@ export type HubRequest = HubCommand extends infer C ? (C extends HubCommand ? Om
 export interface HubConnectionEvents {
   /** The hub welcomed it: the connection went from connecting to open. */
   opened(): void;
-  /** Its state or a run changed. */
+  /** A run changed, the runs live at `subscribe` were heard, or the connection closed. */
   changed(): void;
   /** A run ended, as the hub said last; `sessions` still holds it as it was before. */
   ended(session: HubSession): void;
@@ -92,6 +92,11 @@ export class HubConnection {
   welcome: HubWelcome | null = null;
   /** The live runs, by ref. */
   readonly sessions = new Map<string, HubSession>();
+  /**
+   * The runs live at `subscribe` were heard: until then, `sessions` may lack some of them, and the connection is no
+   * hub that answers for its runs yet (`RunHubs` says it is not connected).
+   */
+  heardRuns = false;
   /** Resolves once the runs live at `subscribe` were heard, or the connection closed. */
   readonly ready: Promise<void>;
 
@@ -174,9 +179,14 @@ export class HubConnection {
       this.silenceMs = message.keepaliveMs * 2 + this.timings.silenceSlackMs;
       this.listen();
       this.subscribeId = this.nextId;
-      void this.command({ type: 'subscribe' }).then(() => this.markReady());
+      // A change once the runs live now were heard: before, a run not heard yet would read as gone.
+      void this.command({ type: 'subscribe' }).then(() => {
+        this.markReady();
+        if (this.state !== 'open') return;
+        this.heardRuns = true;
+        this.events.changed();
+      });
       this.events.opened();
-      this.events.changed();
       return;
     }
     switch (message.type) {

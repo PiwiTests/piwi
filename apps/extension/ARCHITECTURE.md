@@ -810,7 +810,9 @@ An unreachable editor leaves the hubs found last to try.
 
 - It uses the browser's WebSocket (`browserSocket`), which sends the extension's origin.
 - It sends `hello` with the hub's token, then `subscribe` once the hub welcomed it. Each `session` the hub pushes is
-  kept by its ref. `RunHubs` keeps an ended run ten minutes with its last workers (`keepEnded`, five at most), so the
+  kept by its ref. The hub reads as connected to the windows only once the runs live at `subscribe` were heard
+  (`heardRuns`): a window forgets Watch live for a worker a connected hub no longer has, so a reconnection, the
+  worker's restart included, must not show a connected hub without its runs. `RunHubs` keeps an ended run ten minutes with its last workers (`keepEnded`, five at most), so the
   window still names its tests.
 - It sends `follow` with `on: true` while a Runs window is open (`RunHubs.listen`): as the first window's port
   connects, on each connection that opens meanwhile (a reconnection included), and `on: false` as the last one leaves.

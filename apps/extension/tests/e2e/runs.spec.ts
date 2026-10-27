@@ -1026,6 +1026,43 @@ test.describe('the live view', () => {
     }
   });
 
+  test('Watch live stays on as the extension’s worker restarts, and the view is asked again', async () => {
+    const { context, extensionId } = await pairedExtension(editor);
+    try {
+      const runs = await openRuns(context, extensionId);
+      const { before } = await shopFrames(context);
+      const run = await startRun(editor, 'pays', [...RUN_TAKES]);
+      try {
+        const card = liveRun(runs);
+        const views = () => heardRequests(run.worker, 'view').map((r) => [r.stop, r.on]);
+        stopAtCheckout(run.worker, 1, { bar: false });
+        await answerImage(run.worker, before);
+        const watch = card.getByRole('button', { name: 'Watch live' });
+        await watch.click();
+        await answerView(run.worker);
+        sendFrame(run.worker, 1, before);
+        await expect(card.locator('img.live')).toBeVisible();
+        // The browser stops the worker, as it does an idle one: its connection to the hub goes with it.
+        const cdp = await context.newCDPSession(runs);
+        await cdp.send('ServiceWorker.enable');
+        await cdp.send('ServiceWorker.stopAllWorkers');
+        await expect.poll(views, { timeout: 20_000 }).toEqual([
+          [1, true],
+          [1, false],
+          [1, true],
+        ]);
+        await expect(watch).toHaveAttribute('aria-pressed', 'true');
+        await answerView(run.worker);
+        sendFrame(run.worker, 1, before);
+        await expect(card.locator('img.live')).toBeVisible();
+      } finally {
+        await endRun(run);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
   test('says why a view sends no frame in place of its start, until a frame comes', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {

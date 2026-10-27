@@ -163,7 +163,8 @@ export class RunHubs {
         const connection = this.connections.get(hub.url);
         return {
           id: hub.url,
-          connected: connection?.state === 'open',
+          // Connected once its runs were heard: a window forgets what it keeps for a run gone from a connected hub.
+          connected: connection?.state === 'open' && connection.heardRuns,
           client: connection?.welcome?.client ?? hub.client,
         };
       }),

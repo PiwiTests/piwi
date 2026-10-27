@@ -589,6 +589,40 @@ describe('a hub’s connection', () => {
   });
 });
 
+describe('a connection that opens', () => {
+  it('reads as connected only once the hub told its runs, so a window forgets none on a reconnection', async () => {
+    const { hubs, sockets } = setup();
+    const seen: Array<{ connected: boolean; runs: number }> = [];
+    hubs.listen(() => {
+      const state = hubs.state();
+      seen.push({ connected: state.hubs[0]?.connected ?? false, runs: state.runs.length });
+    });
+    for (const reconnection of [false, true]) {
+      await hubs.find();
+      const socket = sockets[sockets.length - 1]!;
+      socket.open();
+      socket.hear({
+        type: 'welcome',
+        pid: 4242,
+        version: '0.60.0',
+        client: 'Visual Studio Code',
+        roots: [],
+        keepaliveMs: 20_000,
+      });
+      expect(hubs.state().hubs[0]?.connected, `welcomed, reconnection: ${reconnection}`).toBe(false);
+      socket.hear({ type: 'answer', id: socket.last('subscribe')!.id, ok: true, message: 'Following 1 run.' });
+      socket.hear({ type: 'session', session: session([STOPPED]) });
+      expect(hubs.state().hubs[0]?.connected).toBe(false);
+      await vi.advanceTimersByTimeAsync(60);
+      expect(hubs.state()).toMatchObject({ hubs: [{ connected: true }], runs: [{ session: { ref: 'r1' } }] });
+      if (!reconnection) socket.hangUp(1006);
+    }
+    // A window never saw the hub connected without its run.
+    expect(seen.filter((s) => s.connected && s.runs === 0)).toEqual([]);
+    expect(seen.some((s) => s.connected)).toBe(true);
+  });
+});
+
 describe('connections that fail', () => {
   it('finds the hubs again after a hub closes, waiting longer after each failure in a row', async () => {
     const { hubs, sockets, fetches } = setup();
