@@ -58,7 +58,7 @@ When the tests run as another user or in a container, **Setup → Send results t
 address (port 3000 unless it is taken) and the token to configure by hand. Keep the token in `PIWI_API_KEY`, not in
 the config.
 
-A dashboard link opened in your browser opens in the app instead.
+A dashboard link opened in your browser opens in the app, closing the tab.
 
 ## Projects from local folders
 

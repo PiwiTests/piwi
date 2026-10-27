@@ -58,7 +58,8 @@ channel, so a per-user install pulls a per-user update.
    when the window regains focus.
 8. A dashboard link opened in the system browser (the reporter's `View run:`
    URL clicked in a terminal) shows in the app window instead: the server
-   answers the tab with a notice and forwards the page as an `open-page`
+   answers the tab with a notice that closes the tab where the browser allows
+   it (a tab holding no other page), and forwards the page as an `open-page`
    message on `/api/desktop/events`
    (`apps/application/server/middleware/desktop-handoff.ts`); the window
    navigates to it and calls `desktop_bring_to_front`, which restores, shows
