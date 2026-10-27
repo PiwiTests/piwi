@@ -29,10 +29,28 @@ describe('maskUrlFragment', () => {
 
 describe('the credentials a mock, a list or a snapshot hides', () => {
   test('are named by a word of a credential, in any spelling', () => {
-    for (const name of ['password', 'pwd', 'accessToken', 'refresh_token', 'api-key', 'apiKeys', 'X-Amz-Signature', 'sig']) {
+    for (const name of [
+      'password',
+      'pwd',
+      'accessToken',
+      'refresh_token',
+      'api-key',
+      'apiKeys',
+      'X-Amz-Signature',
+      'sig',
+    ]) {
       expect(isSecretName(name), name).toBe(true);
     }
-    for (const name of ['sessionId', 'Cookie', 'client_secret', 'jwt', 'csrfToken', 'code', 'PIN', 'X-Amz-Credential']) {
+    for (const name of [
+      'sessionId',
+      'Cookie',
+      'client_secret',
+      'jwt',
+      'csrfToken',
+      'code',
+      'PIN',
+      'X-Amz-Credential',
+    ]) {
       expect(isSecretName(name), name).toBe(true);
     }
     for (const name of ['author', 'authorId', 'keyboard', 'monkey', 'countryCode', 'passport', 'sku', 'zip']) {
