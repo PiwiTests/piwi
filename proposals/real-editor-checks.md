@@ -187,6 +187,11 @@ Verified on VS Code 1.143.0, the stable build `@vscode/test-electron` downloaded
   keeps the bell's dot until Clear All Notifications runs. The paused page webview's document is
   `frameLocator('iframe.webview').frameLocator('#active-frame')`. A symbol such as `⏸` (U+23F8) has no glyph in the
   editor font and renders as a small square on Linux, so a lens's icon is a codicon (`$(debug-pause)`).
+- **Secrets without a keyring** (VS Code 1.143.1). On a Linux machine with no OS keyring and no session bus, as in a
+  container, the extension's `SecretStorage` never answers, so a run, which mints the pairing's token there, never
+  starts; the window is launched with `--password-store=basic`, which keeps the profile's secrets in a file of its own.
+  A CodeLens row wider than the editor is moved left past the line's start rather than wrapped: the *run-control-code*
+  scene closes the side bar and the panel to show the stop's lens whole.
 
 ## 4. What was found about the browser extension
 

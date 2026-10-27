@@ -631,6 +631,15 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/editor-run-control',
       },
       {
+        title: 'Code from a pause',
+        summary:
+          "At a test paused or failed in a run Piwi started, an assertion, a region's ARIA snapshot or a mock of a request the page made written above the stopped line, a locator picked or steps recorded there, and the count of the locator at the cursor on the stopped page.",
+        needs: ['fixtures'],
+        where:
+          "The paused line's CodeLens in VS Code, Piwi: Write code at the stop…; its inlay and Tools → Piwi in a JetBrains IDE",
+        doc: 'features/editor-stop-code',
+      },
+      {
         title: 'Record tests from the editor',
         summary:
           "A browser your project's own Playwright opens from VS Code or a JetBrains IDE, and each step you take there written at the cursor as you go, with verified locators and calls to your page objects.",

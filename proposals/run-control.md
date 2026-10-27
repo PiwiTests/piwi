@@ -13,7 +13,7 @@ tools that follow the run, read the stopped page as its accessibility tree and a
 
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
 (Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2 and 3 are built too, and PR 4's
-service half (below), while PR 4's surfaces and PRs 5 to 9 are not. PR 1 differs from the text in four ways. A headed
+service half and IDE clients (below), while PR 4's Runs window and PRs 5 to 9 are not. PR 1 differs from the text in four ways. A headed
 browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
@@ -107,7 +107,7 @@ stopped pauses every run. A run that ends says so, with the tests it ran last, a
 token goes to `…/live` or to Send to editor's endpoint, the program on the paired port proves it holds it
 (`editorTokenProof`, as the desktop app's pairing does), asked on `…/live`, which takes a GET in both IDEs, else it is
 sent nothing. PR 4's service half is the worker's part of Part 5, the editor service's code and the three
-protocols; both IDE clients and the Runs window are to come, from `piwi/stopAction`, `piwi/stopRequests`,
+protocols; the Runs window is to come, from `piwi/stopAction`, `piwi/stopRequests`,
 `piwi/locatorAtCaret`, `piwi/stopCode` and the hub's `assert`, `assert-region`, `requests` and `mock`. It differs from
 the text in eight ways. The code reaches the client in a notification of its own (`piwi/stopCode`: the run, the stop,
 the file and its version, and the edits, the import lines the block needs and the block above the stopped
@@ -143,6 +143,18 @@ with the reason `breakpoint`, as the record channel's `attach` names two. The pa
 the code actions, which start from the IDE and the Runs window; the paused call going on with its old code is said in
 the first code of each run. `run-attach.takes` lists the queries (`requests`, `mock`, `locator`) beside the intents,
 and the hub's `intents` the actions a stop takes (`mock` when the worker lists and hands over responses).
+PR 4's IDE half is both clients' side of it, and differs from the text in five ways. The code actions are where
+the paused line's controls are (VS Code's CodeLens and hover, a JetBrains IDE's inlay and gutter popup), in the
+palette or under **Tools → Piwi** while a stop offers them, and in the status bar, only those the stopped worker takes,
+the ones in the test's window only where the pause bar shows, with no key; the lens and the inlay name them shorter
+(Pick, Record, Assert, Assert region, Mock), the stop's lens sharing its row with the line's own. Mock a request lists
+the responses the latest first. The code is written in one edit (one undo step) through an editor of its file, a
+JetBrains IDE opening the file first and writing once the platform told the service, and only into the version of
+the text the service placed it in, else it is offered to copy. The locator at the caret is counted 200 ms after the
+caret settles, one request at a time, at the end of its line; a line holding no locator says nothing, which the
+answer tells apart from a refusal by naming the chain it read in a refusal too. A failure reads `Failed · <how it
+failed> · attempt N`, with Resume alone among its controls, and one the service lets go at once never reaches a
+client, so a plain Run's headless failure shows nothing.
 The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of

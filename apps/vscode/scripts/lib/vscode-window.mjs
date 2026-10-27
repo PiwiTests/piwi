@@ -82,6 +82,8 @@ export async function launchVSCode({ extensionPath, workspace, env = {}, scale =
         '--disable-updates',
         '--no-sandbox',
         '--disable-gpu',
+        // The profile's secrets in a file of its own: without an OS keyring, the extension's SecretStorage never answers.
+        '--password-store=basic',
         `--force-device-scale-factor=${scale}`,
         workspace,
       ],

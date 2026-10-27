@@ -33,7 +33,8 @@
       <li><b>The status bar.</b> The latest run of the Playwright config you are editing in, the run you started as it
           runs, and what it changed once it ended, in red while tests fail; a click lists Piwi's actions. That run
           pauses at your breakpoints, its paused line marked in the editor, and steps, runs to the caret or resumes
-          with the debugger's keys.</li>
+          with the debugger's keys; from the paused line, the plugin writes an assertion or a mock of a request the
+          page made.</li>
     </ul>
 
     <p><b>Connect</b></p>

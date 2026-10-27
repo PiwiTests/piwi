@@ -171,8 +171,9 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   back through them), only to a run whose places differ from those its command started with or was last sent
   (`breakpointUpdates`), and once to a run as its first worker connects. A stop's lens and hover also offer the code
   actions its worker takes (`RunWorker.takes`, `stopActions`): **Pick a locator**, **Record here**, **Assert** and
-  **Assert a region** at a stop the pause bar shows, **Mock a request** at any, each a `piwi/stopAction` naming its
-  stop, in the palette while a stop offers it (`piwi.pickAtStop`, `piwi.recordAtStop`, `piwi.assertAtStop`,
+  **Assert a region** at a stop the pause bar shows, **Mock a request** at any (the lens names them shorter, `lens`:
+  its row is shared with the line's own lenses), each a `piwi/stopAction` naming its stop, in the palette while a stop
+  offers it (`piwi.pickAtStop`, `piwi.recordAtStop`, `piwi.assertAtStop`,
   `piwi.assertRegionAtStop`, `piwi.mockAtStop`, the `piwi.runCan…` context keys) and in the status bar's `$(code)`
   item, **Piwi: Write code at the stop…** (`piwi.codeAtStop`); none has a key. Mock a request lists `piwi/stopRequests`
   in a quick pick, the latest first (`requestPicks`: the method and URL, which it filters on, then the status, type,
@@ -319,8 +320,10 @@ with Playwright's Electron support. On Linux, run it under Xvfb at twice the win
 that fails leaves `vscode-<scene>-failed.png` with the window as it stood. The `run-control` scenes share one run of
 the coupon test, started with **Run the test at the cursor**: its task's `npx playwright` finds the stand-in command
 `scripts/lib/run-worker.mjs` writes into the fixture, which hands the script the run channel, and the script plays the
-run's worker there, as the integration suite does; the paused page is the fixture shop's page, rendered by Playwright's
-Chromium. The JetBrains plugin's script reuses the fixture, so a change to it recaptures both sets. What was found
+run's worker there, as the integration suite does, its reporter taking every code action (`RUN_TAKES`), answering a
+count at the cursor with one match and listing three kept responses, which `run-control-code` shows in Mock a
+request's list; the paused page is the fixture shop's page, rendered by Playwright's Chromium. The window keeps its
+secrets in a file (`--password-store=basic`): without an OS keyring, `SecretStorage` never answers and no run starts. The JetBrains plugin's script reuses the fixture, so a change to it recaptures both sets. What was found
 about driving VS Code this way is recorded in [`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md).
 
 **The nightly suite** (`tests/e2e/`, `npm run vscode:test:e2e`) opens the same fixture in the same window and asserts
