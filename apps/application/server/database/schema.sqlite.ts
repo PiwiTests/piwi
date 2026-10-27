@@ -28,6 +28,7 @@ export const projects = sqliteTable(
     locatorIndexBuiltAt: integer('locator_index_built_at', { mode: 'timestamp' }), // when locator_usages was first built from stored executions; null = not yet
     quarantineFailsStatus: integer('quarantine_fails_status', { mode: 'boolean' }).notNull().default(false), // true = a quarantined failure turns the run's commit status red; false = the status ignores quarantined failures
     gateStatus: integer('gate_status', { mode: 'boolean' }).notNull().default(false), // true = each gate evaluation also posts the `<statusContext>/gate` commit status; off by default
+    statusFilter: text('status_filter', { mode: 'json' }), // ProjectRunScope — the runs that set the project's status (its latest run in the sidebar and the projects list); null = every run
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),

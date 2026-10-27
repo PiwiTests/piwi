@@ -85,3 +85,42 @@ export function runInProjectScope(run: ScopedRunFields, scope: ProjectRunScope, 
   if (scope.allBranches) return true;
   return branch === null || branch === defaultBranch;
 }
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const items = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  return [...new Set(items)];
+}
+
+/**
+ * A stored or submitted scope, normalized: trimmed, deduplicated lists and
+ * booleans, `fullRunsOnly` on unless set to false. Null for anything that is
+ * not an object, which stands for every run.
+ */
+export function resolveProjectRunScope(raw: unknown): ProjectRunScope | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Partial<Record<keyof ProjectRunScope, unknown>>;
+  return {
+    environments: stringList(r.environments),
+    branches: stringList(r.branches),
+    allBranches: r.allBranches === true,
+    fullRunsOnly: r.fullRunsOnly !== false,
+  };
+}
+
+/** A scope in words: "the default branch (main) in production, full runs only". */
+export function describeProjectRunScope(scope: ProjectRunScope, defaultBranch?: string | null): string {
+  const branches =
+    scope.branches.length > 0
+      ? scope.branches.join(', ')
+      : scope.allBranches
+        ? 'any branch'
+        : defaultBranch
+          ? `the default branch (${defaultBranch})`
+          : 'the default branch';
+  const environments = scope.environments.length > 0 ? ` in ${scope.environments.join(', ')}` : '';
+  return `${branches}${environments}${scope.fullRunsOnly ? ', full runs only' : ''}`;
+}

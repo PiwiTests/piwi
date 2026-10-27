@@ -14,6 +14,7 @@ const emit = defineEmits<{ saved: [] }>();
 
 const SECTION_IDS = [
   'general',
+  'status',
   'members',
   'source-control',
   'ai',
@@ -62,6 +63,7 @@ const showServerProbes = computed(() => !isHidden('server-probes'));
 
 const sections = computed<Section[]>(() => [
   { id: 'general', label: 'General', icon: 'i-lucide-settings', group: 'project', visible: true },
+  { id: 'status', label: 'Status', icon: 'i-lucide-circle-check-big', group: 'project', visible: canManage.value },
   { id: 'members', label: 'Members', icon: 'i-lucide-users', group: 'project', visible: canSeeMembers.value },
   { id: 'source-control', label: 'Source control', icon: 'i-lucide-git-branch', group: 'project', visible: true },
   { id: 'ai', label: 'AI diagnosis', icon: 'i-lucide-sparkles', group: 'project', visible: true },
@@ -188,6 +190,13 @@ const activeIcon = computed(() => sections.value.find((s) => s.id === active.val
         v-if="active === 'general'"
         :project="project"
         data-tour="project-settings-general"
+        @saved="emit('saved')"
+      />
+
+      <ProjectStatusFilterSettings
+        v-else-if="active === 'status'"
+        :project="project"
+        data-tour="project-settings-status"
         @saved="emit('saved')"
       />
 

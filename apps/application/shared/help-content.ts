@@ -501,6 +501,17 @@ export const HELP_TOPICS = {
     text: 'Goals this project is checked against over the period a dashboard or a quality report shows: a pass rate to reach, and limits on flaky tests, wasted CI minutes per week, the age of the oldest open failure cause and the median time to fix. Each is optional; a met or missed target shows on the headline tiles, in the portfolio, in the insights and in the report.',
     doc: 'features/analytics#targets',
   },
+  'project.status-filter': {
+    title: 'Status filter',
+    text: [
+      'The runs that set this project’s status: the badge beside it in the sidebar, and its latest run in the Projects list and for agents.',
+      '',
+      '- **Off** — the latest run of any environment and branch sets the status.',
+      '- **On** — only the runs the filter keeps, read like the project page’s Filters: environments, branches (with none picked, the default branch and the runs that report none) and full runs only.',
+      '- **Lab runs** — Flake Lab and probe runs never set a status.',
+    ].join('\n'),
+    doc: 'features/branches#the-project-status',
+  },
   'project.url-patterns': {
     title: 'Browser extension URLs',
     text: [
