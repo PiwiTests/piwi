@@ -130,7 +130,7 @@ describe('the code made at a stop', () => {
     if ('refusal' in rendered) throw new Error(rendered.refusal);
     expect(rendered.code).toBe(
       [
-        "    await this.page.route('**/api/cart?_=*&token=*', (route) =>",
+        "    await this.page.route('**/api/cart?_=*&token=**', (route) =>",
         '      route.fulfill({',
         '        json: {',
         '          "items": [',
@@ -146,7 +146,7 @@ describe('the code made at a stop', () => {
     );
     expect(rendered.code).not.toContain('hunter2');
     expect(rendered.code).not.toContain('abc');
-    expect(rendered.warnings).toEqual(['A value named like a credential is written as <hidden>.']);
+    expect(rendered.warnings).toEqual(['A value named or shaped like a credential is written as <hidden>.']);
     // No import: page.route needs none.
     expect(rendered.edits).toEqual([
       { range: { start: { line: 6, character: 0 }, end: { line: 6, character: 0 } }, newText: `${rendered.code}\n` },
@@ -166,6 +166,21 @@ describe('the code made at a stop', () => {
     });
     if ('refusal' in plain) throw new Error(plain.refusal);
     expect(plain.code).toContain(`body: 'it\\'s \`done\` \${now}\\n'`);
+  });
+
+  test('warns of a body written as it came, and of one that holds personal data', () => {
+    const html = renderStopCode(SPEC, 4, {
+      action: 'mock',
+      response: { ...CART, type: 'text/html', body: '<p>Ada, ada@shop.test</p>' },
+    });
+    if ('refusal' in html) throw new Error(html.refusal);
+    expect(html.warnings).toEqual([
+      'The body is neither JSON nor a form: it is written as the server sent it, but for its token-shaped values, and may hold other secrets. Read it before you commit it.',
+      'The body looks like it holds an email address or a phone number: replace it with made-up data.',
+    ]);
+    const json = renderStopCode(SPEC, 4, { action: 'mock', response: { ...CART, url: 'http://a.test/c', body: '{"a":1}' } });
+    if ('refusal' in json) throw new Error(json.refusal);
+    expect(json.warnings).toEqual([]);
   });
 
   test('refuses a stop outside a test or a function, and a region’s locator it cannot write', () => {

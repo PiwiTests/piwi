@@ -356,8 +356,9 @@ clients stay thin and both editors give the same answers.
   pick a region and send its ARIA snapshot (`region`), written as `toMatchAriaSnapshot` (`renderSpec`). `mock` asks the
   worker for the response chosen among those `piwi/stopRequests` lists (method, URL, status, type, size, time; no
   header, no body) and writes it with the browser extension's `mockCode` (`apps/extension/src/shared/mock-code.ts`,
-  bundled in: credentials hidden, in a JSON or form body and in the query, no header written, the body inline), on the
-  page expression in scope. Each block goes where `placementBefore` puts a recording's (a chain broken over lines
+  bundled in: credentials hidden by name and by shape, in a JSON, form or text body and in the URL, no header written,
+  the body inline; the warnings say what was hidden, that a body neither JSON nor a form was written as it came, and
+  that one seems to hold an email address or a phone number), on the page expression in scope. Each block goes where `placementBefore` puts a recording's (a chain broken over lines
   included), on the page expression `pageCandidates` gives there (`this.page` in a page object), checks with the
   config's preferred locators and the import of `expect` the file lacks (`blockImports`); the first code of a run adds
   that the stopped test goes on with the code it started with. `piwi/locatorAtCaret` reads the line's locator chain

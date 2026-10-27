@@ -919,9 +919,14 @@ style.
   from `chrome.devtools.network` (`getHAR` at open, then `onRequestFinished`), kept in the panel's memory, fetch and
   XHR only, and never leave the browser but through the user's copy or download. The list shows the inspected page's
   origin, read again when `onNavigated` reports a page on another. A body comes through `responseBody`: Chrome's
-  `getContent` calls back, Firefox's returns a promise. `mockCode` hides credential fields
-  (`HIDDEN_VALUE`) unless revealed, matches a query parameter named like one with `*` (`mockUrlPattern`), and never
-  writes a header. `devtools-network.spec.ts` runs the copied code as a test body against a real page. The editor
+  `getContent` calls back, Firefox's returns a promise. `mockCode` hides credentials (`HIDDEN_VALUE`) unless revealed,
+  with `@piwitests/core/mask`'s matcher, which the reporter uses for what a stopped test lists: the whole value of a
+  field named like one (`isSecretName`), whatever it holds, and a value shaped like one (`isSecretValue`: a JWT, a
+  bearer token, a known service's key, a random token) in a JSON, form or text body; it matches a query parameter
+  named or shaped like one with `**` and such a path segment with `*` (`mockUrlPattern`), keeps each JSON number as
+  written and a `__proto__` key as the object's own (`["__proto__"]`), says when a body was written as it came
+  (`asReceived`: neither JSON nor a form) or holds an email address or a phone number (`personal`), and never writes a
+  header. `devtools-network.spec.ts` runs the copied code as a test body against a real page. The editor
   service bundles `mockCode` too, for Mock a request at a stopped test (`packages/editor/src/stop-code.ts`), with its
   `page` option (`this.page` in a page object): a change here changes what the editor writes.
 - **Slow down or fail a request** (`panel-conditions.ts`, pure half `src/shared/request-conditions.ts`): the panel asks

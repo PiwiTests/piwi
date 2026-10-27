@@ -3,8 +3,9 @@
  * (`assert`), a region's `toMatchAriaSnapshot` (`assert-region`) and a kept response as `page.route(…)` (`mock`),
  * each on a new line above the stopped statement (`placementBefore`), indented for it, on the page expression in scope
  * there (`this.page` in a page object), with the import lines it needs placed after the file's own. One generator for
- * each: `renderSpec` for the checks, the browser extension's `mockCode` for a mock (credentials hidden, no header
- * written, the body always inline). And the locator at a caret, as `piwi/locatorAtCaret` counts it. Pure: the text of
+ * each: `renderSpec` for the checks, the browser extension's `mockCode` for a mock (credentials hidden by name and by
+ * shape, no header written, the body always inline, a warning for a body written as it came or one holding personal
+ * data). And the locator at a caret, as `piwi/locatorAtCaret` counts it. Pure: the text of
  * the file in, the code and its edits out.
  */
 import { isPageExpression, renderSpec, safeLocator, type CodegenResult } from '@piwitests/core/codegen';
@@ -116,9 +117,17 @@ export function renderStopCode(
     if (mock.hidden > 0) {
       warnings.push(
         mock.hidden === 1
-          ? 'A value named like a credential is written as <hidden>.'
-          : `${mock.hidden} values named like credentials are written as <hidden>.`,
+          ? 'A value named or shaped like a credential is written as <hidden>.'
+          : `${mock.hidden} values named or shaped like credentials are written as <hidden>.`,
       );
+    }
+    if (mock.asReceived) {
+      warnings.push(
+        'The body is neither JSON nor a form: it is written as the server sent it, but for its token-shaped values, and may hold other secrets. Read it before you commit it.',
+      );
+    }
+    if (mock.personal) {
+      warnings.push('The body looks like it holds an email address or a phone number: replace it with made-up data.');
     }
   } else {
     if (input.action === 'assert-region' && !safeLocator(input.locator)) {
