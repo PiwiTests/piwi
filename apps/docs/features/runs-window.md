@@ -81,9 +81,10 @@ The first time, a hint under the view says so. Whatever you hold down is let go 
 ## Pick on the image
 
 **Pick on the image**, beside **Watch live**, or a `Shift`+click on the image or the view, names the element under the
-pointer without touching the page: the locator the pause bar's **Pick a locator** would rank first for it, sent to
-the editor in place of the one on the stopped line. The window shows that locator, or why there is none. It works on
-a headed stop's image too. `Esc` turns it off.
+pointer, the one a click there would reach (a dialog or a banner over the page included), without touching the page:
+the locator the pause bar's **Pick a locator** would rank first for it, sent to the editor in place of the one on the
+stopped line. The window shows that locator, or why there is none. It works on a headed stop's image too. `Esc`
+turns it off.
 
 ## The run shortcut
 
@@ -106,6 +107,11 @@ and the controls alone.
 - **A heavy page.** A frame over 384 KB (noise, large photos) gives way to a lighter image of the page, twice a
   second; when even that is too heavy, the window says so under the stop's image.
 - **The browser's keys stay its own.** A shortcut of the browser, a function key and `Esc` never reach the page.
+- **No input method.** Characters an input method composes (Chinese, Japanese, Korean) do not reach the page; paste
+  them instead.
+- **The test's own page alone.** A page or a popup the page opens (`window.open`, a link with `Ctrl`) is not shown.
+  A download your click starts and a dialog the page opens go to the test as its own would: Playwright deletes the
+  download with the test's context, and dismisses the dialog unless the test handles it.
 - **The middle button stays the window's.** It would open a link in a tab the view does not show; `Shift`+click picks
   instead of clicking.
 
