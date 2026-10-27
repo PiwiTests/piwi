@@ -6,6 +6,7 @@
  * project's locator index for `piwi preflight`.
  */
 import type { LocatorIndex, LocatorIndexTest } from '@piwitests/core/locator-index';
+import type { BaseLineChange } from '@piwitests/core/suspect-lines';
 
 export interface SelectionResolution {
   key: string | null;
@@ -25,6 +26,8 @@ export interface ImpactResolution extends SelectionResolution {
     widened: boolean;
     /** Changed files that forced the full suite: mapped to no test, or only through failure frames. */
     unmappedSourceFiles: string[];
+    /** Changed files whose tests were narrowed to the changed lines they ran; absent from an older dashboard. */
+    lineLevelFiles?: number;
   };
 }
 
@@ -79,11 +82,15 @@ export async function fetchResolution(
   return (await res.json()) as SelectionResolution;
 }
 
-/** Map a set of changed files to the tests they impact. */
+/**
+ * Map a set of changed files to the tests they impact; `changes`, the changed
+ * base lines of modified files, narrows them to the tests that ran those lines.
+ */
 export async function fetchImpact(
   options: SelectionClientOptions,
   projectId: number,
   changedFiles: string[],
+  changes: BaseLineChange[] = [],
 ): Promise<ImpactResolution> {
   const url = `${options.serverUrl}/api/projects/${projectId}/selections/impact`;
   const res = await fetch(url, {
@@ -91,6 +98,7 @@ export async function fetchImpact(
     headers: { 'Content-Type': 'application/json', ...authHeaders(options.apiKey) },
     body: JSON.stringify({
       changedFiles,
+      ...(changes.length > 0 ? { changes } : {}),
       format: options.format ?? 'args',
       shard: options.shard ?? undefined,
       order: options.order ?? undefined,

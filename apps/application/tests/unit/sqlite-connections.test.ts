@@ -91,15 +91,29 @@ describe('SQLite connections', () => {
     await transaction.done;
   });
 
-  test('the pragmas hold on the connection opened after a transaction', async () => {
-    await db.transaction(async (tx) => tx.insert(schema.projects).values({ name: 'after' }));
-    const [busyTimeout] = await db.all<{ timeout: number }>(sql`PRAGMA busy_timeout`);
-    const [synchronous] = await db.all<{ synchronous: number }>(sql`PRAGMA synchronous`);
-    const [foreignKeys] = await db.all<{ foreign_keys: number }>(sql`PRAGMA foreign_keys`);
-    const [journal] = await db.all<{ journal_mode: string }>(sql`PRAGMA journal_mode`);
-    expect(busyTimeout?.timeout).toBe(5000);
-    expect(synchronous?.synchronous).toBe(1);
-    expect(foreignKeys?.foreign_keys).toBe(1);
-    expect(journal?.journal_mode).toBe('wal');
+  test('the pragmas hold on both connections of the pool', async () => {
+    // A select, so it runs beside an open transaction; `uncommitted` counts the
+    // row that transaction inserted, which only its own connection sees.
+    const settings = sql`SELECT
+      (SELECT timeout FROM pragma_busy_timeout) AS busyTimeout,
+      (SELECT synchronous FROM pragma_synchronous) AS synchronous,
+      (SELECT foreign_keys FROM pragma_foreign_keys) AS foreignKeys,
+      (SELECT journal_mode FROM pragma_journal_mode) AS journalMode,
+      (SELECT count(*) FROM projects WHERE name = 'pooled') AS uncommitted`;
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let inside!: (rows: unknown[]) => void;
+    const transactionRows = new Promise<unknown[]>((resolve) => (inside = resolve));
+    const done = db.transaction(async (tx) => {
+      await tx.insert(schema.projects).values({ name: 'pooled' });
+      inside(await tx.all(settings));
+      await released;
+    });
+    const expected = { busyTimeout: 5000, synchronous: 1, foreignKeys: 1, journalMode: 'wal' };
+    expect(await transactionRows).toEqual([{ ...expected, uncommitted: 1 }]);
+    expect(await db.all(settings)).toEqual([{ ...expected, uncommitted: 0 }]);
+
+    release();
+    await done;
   });
 });

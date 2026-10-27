@@ -99,7 +99,7 @@ async function resetDefault() {
 </script>
 
 <template>
-  <div class="space-y-6" data-shot="localization-settings">
+  <div class="space-y-6" data-shot="localization-settings" data-tour="localization-page">
     <SectionCard icon="i-lucide-user-round" title="Your format" help="settings.locale">
       <template #subtitle>
         Choose how dates and times look <strong>for you</strong>, saved in this browser. This overrides the instance
@@ -111,6 +111,7 @@ async function resetDefault() {
           label="Date & time format"
           help="settings.locale"
           description="The locale that decides day/month order and 12-hour vs 24-hour time."
+          data-tour="localization-format"
         >
           <USelect v-model="userLocale" :items="userLocaleItems" value-key="value" class="w-full max-w-md" />
         </SettingsField>
@@ -119,6 +120,7 @@ async function resetDefault() {
           label="Time zone"
           help="settings.time-zone"
           description="The zone times are shown in. Automatic uses this browser's own time zone."
+          data-tour="localization-time-zone"
         >
           <USelectMenu
             v-model="userTimeZone"
@@ -147,7 +149,13 @@ async function resetDefault() {
       </template>
     </SectionCard>
 
-    <SectionCard v-if="canSeeAdmin" icon="i-lucide-building-2" title="Instance default" help="settings.locale">
+    <SectionCard
+      v-if="canSeeAdmin"
+      icon="i-lucide-building-2"
+      title="Instance default"
+      help="settings.locale"
+      data-tour="localization-instance-default"
+    >
       <template #subtitle>
         The format applied to everyone who has not chosen their own. Each viewer can still override it above.
       </template>

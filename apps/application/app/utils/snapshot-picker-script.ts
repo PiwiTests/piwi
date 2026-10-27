@@ -16,7 +16,6 @@ export {
   snapshotPickerScriptTag,
   buildPickerDocument,
   buildReadonlyDocument,
-  type SnapshotPickerConfig,
 } from '#shared/snapshot-picker-document';
 
 /** A text hint the in-iframe picker highlights on open. */

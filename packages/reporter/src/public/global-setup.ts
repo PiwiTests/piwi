@@ -12,7 +12,7 @@ import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { getSetupFilePath } from '../internal/support/setup-file.js';
 import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
 import { isUiMode, isListMode } from '../internal/support/run-mode.js';
-import { checkBaseUrls } from '../internal/support/base-url-check.js';
+import { checkBaseUrls, remoteBrowserNote } from '../internal/support/base-url-check.js';
 import { readCommittedManifest, fetchInstrumentationManifest } from '../internal/manifest/collect.js';
 import { configDirFromConfig } from '../internal/support/test-paths.js';
 import { lookupProjectId, uploadManifest } from '../internal/manifest/run-manifests.js';
@@ -65,7 +65,10 @@ export function createGlobalSetup(
       }
     }
 
-    const opts = resolveOptions({ ...inlineReporterOptions, ...options } as Record<string, any>);
+    const opts = resolveOptions(
+      { ...inlineReporterOptions, ...options } as Record<string, any>,
+      configDirFromConfig(config),
+    );
     const logger = new Logger(opts.verbose ?? false);
 
     // In Playwright's UI mode the reporter never runs to finish a registered
@@ -90,7 +93,16 @@ export function createGlobalSetup(
     // Before the run is registered, so a run stopped here leaves none behind.
     if (opts.checkBaseUrl === true) {
       const checked = await checkBaseUrls(config ?? {});
-      for (const target of checked) logger.debug(`Base URL answered: ${target.url}`);
+      for (const target of checked) {
+        const note = remoteBrowserNote(target);
+        if (note) {
+          logger.info(
+            `Base URL answered: ${target.url}. ${note} A navigation failure from that browser can mean its machine cannot reach the app, not that the app is down.`,
+          );
+        } else {
+          logger.debug(`Base URL answered: ${target.url}`);
+        }
+      }
     }
 
     if (opts.enabled === false || !opts.serverUrl) {

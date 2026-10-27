@@ -6,7 +6,7 @@ lang: en-US
 
 # Choose what you use
 
-The **Setup** page (`/setup`, administrators only) is the permanent home for "how do I connect this, and what else can it do?". Above the connect steps it asks one coarse question, *What do you want Piwi for?*, with **See why tests fail** always on and three opt-out groups: **Triage as a team** (notifications, quarantine, pull-request feedback, issue tracking), **Fix faster** (locator healing, auto-heal), and **Let agents in** (AI diagnosis). Below it, a ladder lists every optional capability grouped by state: **Active** (evidence has arrived), **Available** (configured but not used yet), **Not set up**, and a folded **Declined** group.
+The **Setup** page (`/setup`, administrators only) is the permanent home for "how do I connect this, and what else can it do?". Above the connect steps it asks one coarse question, *What do you want Piwi for?*, with **See why tests fail** always on and three opt-out groups: **Triage as a team** (notifications, quarantine, pull-request feedback, issue tracking), **Fix faster** (locator healing, auto-heal), and **Let agents in** (AI diagnosis, the assistant). Below it, a ladder lists every optional capability grouped by state: **Active** (evidence has arrived), **Available** (configured but not used yet), **Not set up**, and a folded **Declined** group.
 
 ## Declining a capability
 

@@ -295,7 +295,7 @@ The application source files a test executed: those whose functions ran in the p
 coverage when [code reach](/features/code-reach) is on, those it ran in an ASP.NET Core backend with
 [server coverage](/features/server-coverage) on, and the handler files of the routes it called
 when the backend is instrumented. Observed reach at file level, never line coverage. It feeds
-[impact-from-diff](/features/test-selection#impact-from-diff) and [Uncovered changes](/features/uncovered-changes).
+[impact-from-diff](/features/change-impact) and [Uncovered changes](/features/uncovered-changes).
 
 ### Coverage
 

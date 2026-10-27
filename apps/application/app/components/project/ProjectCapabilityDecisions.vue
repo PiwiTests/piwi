@@ -73,6 +73,7 @@ async function onChange(id: CapabilityId, value: Choice) {
     icon="i-lucide-toggle-right"
     title="Capabilities"
     help="project.capabilities"
+    data-tour="project-capabilities"
     subtitle="Override the instance default for this project. A change applies at once."
     data-shot="project-capabilities"
   >

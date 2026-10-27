@@ -1,4 +1,5 @@
 import type { BugPhrases, BugState, BugStepValue, BugSubject, RoleNoun } from './bug-phrases';
+import type { ManualCheckValues } from './recording';
 import { markdownCode } from './markdown-code';
 import { keyCombo } from './key-combo';
 
@@ -137,6 +138,14 @@ const STATES: Record<BugState, [masculine: string, feminine: string]> = {
 };
 
 const number = (n: number): string => new Intl.NumberFormat('es').format(n);
+
+/** `; en la ejecución esperaba X y recibió Y`, as much as the run says. */
+function inRun(c: ManualCheckValues): string {
+  const parts = [c.expected ? `esperaba ${c.expected}` : null, c.received ? `recibió ${c.received}` : null].filter(
+    Boolean,
+  );
+  return parts.length > 0 ? `; en la ejecución ${parts.join(' y ')}` : '';
+}
 /** Spanish puts only 1 in the singular. */
 /** A zoom factor as a percentage, such as `125%`. */
 const percent = (zoom: number): string => `${Math.round(zoom * 100)}\u00a0%`;
@@ -167,6 +176,43 @@ export const SPANISH_BUG_PHRASES: BugPhrases = {
         : `Elegir ${files.length === 1 ? 'el archivo' : 'los archivos'} ${files.map(quote).join(', ')} en ${phrase(s)}`,
     dragTo: (s, target) => `Arrastrar ${phrase(s)} hasta ${phrase(target)}`,
     manual: (description) => `A mano: ${description}`,
+  },
+  manualInstructions: {
+    goBack: () => 'Volver a la página anterior en el navegador',
+    goForward: () => 'Avanzar a la página siguiente en el navegador',
+    reload: () => 'Recargar la página',
+    gotoUnknown: () => 'Abrir la página que abrió la prueba; la ejecución no guarda cuál',
+    setContent: () => `Abrir la página que la prueba escribe ella misma (${markdownCode('page.setContent')})`,
+    keyboardType: () => 'Escribir con el teclado lo que escribió la prueba; el valor está en el código de la prueba',
+    mouseAt: (i) =>
+      `Hacer con el ratón lo que hizo la prueba en el punto (${number(i.x)}, ${number(i.y)}) de la página: ${i.call}`,
+    mouseOrKeyboard: (i) => `Hacer con el ratón o el teclado lo que hizo la prueba: ${i.call}`,
+    failedCall: (i) => `Hacer lo que hacía la prueba cuando falló: ${i.call}`,
+    locatorCall: (i) => `Hacer en ${markdownCode(i.locator)} lo que hizo la prueba: ${i.call}`,
+    fillUnknown: (i) => `Rellenar ${markdownCode(i.locator)} como lo hizo la prueba; la ejecución no guarda el valor`,
+    fillPartial: (i) =>
+      `Rellenar ${markdownCode(i.locator)} como lo hizo la prueba; la ejecución solo guarda una parte del valor`,
+    pressUnknown: (i) => `Presionar en ${markdownCode(i.locator)} la tecla que presionó la prueba`,
+    selectOptionUnknown: (i) =>
+      `Elegir en ${markdownCode(i.locator)} la opción que eligió la prueba; la ejecución no guarda cuál`,
+    selectOptions: (i) =>
+      `Elegir en ${markdownCode(i.locator)} ${i.options
+        .map((o) => (typeof o === 'number' ? `la opción del índice ${number(o)}` : quote(o)))
+        .join(' y ')}`,
+    setInputFiles: (i) =>
+      `Elegir en ${markdownCode(i.locator)} el archivo que eligió la prueba; la ejecución no guarda su nombre`,
+    dragTo: (i) => `Arrastrar ${markdownCode(i.locator)} hasta donde lo soltó la prueba; la ejecución no guarda dónde`,
+    drop: (i) => `Soltar sobre ${markdownCode(i.locator)} los archivos o datos que soltó la prueba`,
+    focus: (i) => `Poner el foco en ${markdownCode(i.locator)}`,
+    blur: (i) => `Quitar el foco de ${markdownCode(i.locator)}`,
+    dispatchEvent: (i) => `Hacer en ${markdownCode(i.locator)} lo que dispara el evento que envió la prueba`,
+    scrollIntoViewIfNeeded: (i) => `Desplazar la página hasta ${markdownCode(i.locator)}`,
+    expectPoll: (i) => `Comprobar lo que la prueba comprobaba una y otra vez (${i.matcher})${inRun(i)}`,
+    expectValue: (i) => `Comprobar lo que comprobó la prueba: ${i.what}${inRun(i)}`,
+    expectLocator: (i) => `Comprobar ${markdownCode(i.locator)} con ${i.matcher}${inRun(i)}`,
+    expectURL: (i) => `Comprobar la dirección de la página (toHaveURL)${inRun(i)}`,
+    leadingSteps: (i) =>
+      `Hacer los primeros ${number(i.count)} pasos de la prueba, hasta donde empieza el paso ${number(i.count + 1)}: un archivo de pasos contiene ${number(i.limit)} pasos como máximo`,
   },
   expectation(s, e, negated) {
     const should = negated ? 'no debería' : 'debería';

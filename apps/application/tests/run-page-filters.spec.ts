@@ -295,7 +295,7 @@ test.describe.serial('Run page Tests tab', () => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Failed', exact: true }).click();
+    await page.getByRole('button', { name: '3 failed' }).first().click();
     await searchBox(page).fill('cart');
     await searchBox(page).press('Escape');
     await expect(visibleTitles(page)).toHaveText(['cart shows items']);
@@ -309,7 +309,7 @@ test.describe.serial('Run page Tests tab', () => {
 
     await expect(page).toHaveURL(new RegExp(`/test-runs/${runId}`));
     await expect(searchBox(page)).toHaveValue('cart');
-    await expect(page.getByRole('button', { name: 'Failed', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: '3 failed' }).first()).toHaveAttribute('aria-pressed', 'true');
     await expect(visibleTitles(page)).toHaveText(['cart shows items']);
   });
 
@@ -390,9 +390,9 @@ test.describe.serial('Run page status segments and tag filter', () => {
     await expect(visibleTitles(page).filter({ hasText: 'refund flow' })).toHaveCount(1);
     await expect(visibleTitles(page).filter({ hasText: 'refund email' })).toHaveCount(1);
 
-    // The Skipped chip holds the plain skip only.
-    await page.getByRole('button', { name: 'Fixme', exact: true }).click();
-    await page.getByRole('button', { name: 'Skipped', exact: true }).click();
+    // The skipped segment holds the plain skip only.
+    await page.getByRole('button', { name: '2 fixme' }).first().click();
+    await page.getByRole('button', { name: '1 skipped' }).first().click();
     await expect(visibleTitles(page)).toHaveCount(1);
     await expect(visibleTitles(page).first()).toHaveText('webkit only flow');
   });
@@ -406,7 +406,8 @@ test.describe.serial('Run page status segments and tag filter', () => {
     await expect(visibleTitles(page).first()).toHaveText('home loads');
 
     await page.getByRole('button', { name: '1 passed', exact: true }).first().click();
-    await page.getByRole('button', { name: '1 passed on retry' }).first().click();
+    // A narrow segment shows a short label first in its name: "1 flaky, passed on retry".
+    await page.getByRole('button', { name: /^1 (flaky, )?passed on retry$/ }).click();
     await expect(visibleTitles(page)).toHaveCount(1);
     await expect(visibleTitles(page).first()).toHaveText('orders list');
   });

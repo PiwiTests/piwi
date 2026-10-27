@@ -221,6 +221,7 @@ const costliest = computed(() => data.value?.costliest ?? []);
         subtitle="Each worker's pages are drawn on the timeline, above its row"
         help="run.resource-pages"
         data-shot="run-resources-pages"
+        data-tour="run-open-pages"
       >
         <div class="flex flex-wrap items-center gap-3">
           <p class="text-sm text-highlighted leading-relaxed flex-1 min-w-40">
@@ -240,6 +241,7 @@ const costliest = computed(() => data.value?.costliest ?? []);
           :subtitle="machineHead(part.profile)"
           help="run.resource-machine"
           data-shot="run-resources-machine"
+          data-tour="run-machine"
         >
           <div class="space-y-3">
             <div v-if="part.profile.cpu.series.length >= 2">
@@ -303,6 +305,7 @@ const costliest = computed(() => data.value?.costliest ?? []);
         :subtitle="`By CPU in their worker and browser processes · ${costliest.length} of ${data?.measuredExecutions ?? 0} measured`"
         help="run.resource-costliest"
         data-shot="run-resources-costliest"
+        data-tour="run-costliest-tests"
       >
         <ul class="divide-y divide-default -my-2">
           <li v-for="execution in costliest" :key="execution.executionId" class="py-2.5 flex items-start gap-3 min-w-0">

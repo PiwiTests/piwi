@@ -25,7 +25,13 @@ const TONE_LABEL: Record<VerdictTone, string> = { good: 'Good', mixed: 'Mixed', 
 </script>
 
 <template>
-  <SectionCard icon="i-lucide-scale" :title="title ?? 'Verdict'" help="analytics.verdict" data-shot="analytics-verdict">
+  <SectionCard
+    icon="i-lucide-scale"
+    :title="title ?? 'Verdict'"
+    help="analytics.verdict"
+    data-tour="analytics-verdict"
+    data-shot="analytics-verdict"
+  >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load the verdict: ${errorMessage(error)}`">
       <template #action>

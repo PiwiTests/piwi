@@ -47,32 +47,30 @@ export async function getAnalyticsList(
     );
     return {
       ...empty,
-      items: runs.map(
-        (r): AnalyticsListItem => ({
+      items: runs.map((r): AnalyticsListItem => ({
+        id: r.id,
+        title: `Run #${r.id}`,
+        detail: [
+          r.status,
+          `${r.passedTests}/${r.totalTests} passed`,
+          r.branch ? `on ${r.branch}` : null,
+          r.environment ? `in ${r.environment}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        projectName: names.get(r.projectId) ?? '',
+        at: iso(r.startTime),
+        href: `/test-runs/${r.id}`,
+        facts: {
+          source: 'runs',
           id: r.id,
-          title: `Run #${r.id}`,
-          detail: [
-            r.status,
-            `${r.passedTests}/${r.totalTests} passed`,
-            r.branch ? `on ${r.branch}` : null,
-            r.environment ? `in ${r.environment}` : null,
-          ]
-            .filter(Boolean)
-            .join(' · '),
-          projectName: names.get(r.projectId) ?? '',
-          at: iso(r.startTime),
-          href: `/test-runs/${r.id}`,
-          facts: {
-            source: 'runs',
-            id: r.id,
-            status: r.status,
-            passed: r.passedTests,
-            total: r.totalTests,
-            branch: r.branch ?? null,
-            environment: r.environment ?? null,
-          },
-        }),
-      ),
+          status: r.status,
+          passed: r.passedTests,
+          total: r.totalTests,
+          branch: r.branch ?? null,
+          environment: r.environment ?? null,
+        },
+      })),
     };
   }
 

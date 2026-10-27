@@ -69,7 +69,7 @@ editLink: false
 
 The features that landed in each release, newest first — the answer to "what
 changed since I last upgraded, and is any of it worth reading about". It is
-generated from the project [changelog](https://github.com/PiwiTests/platform/blob/main/CHANGELOG.md),
+generated from the project [changelog](https://github.com/PiwiTests/piwi/blob/main/CHANGELOG.md),
 which also holds the bug fixes and the full commit history.
 
 Piwi is pre-1.0: minor releases can carry breaking changes and the database

@@ -1,3 +1,24 @@
+/**
+ * True when the environment is a CI job: one of the providers `collectCiInfo`
+ * names, a provider that sets no `CI` (TeamCity, AWS CodeBuild, Bamboo), or any
+ * system that sets `CI` to anything but `false` or `0`.
+ */
+export function detectCi(env: NodeJS.ProcessEnv | Record<string, string | undefined>): boolean {
+  return Boolean(
+    env.JENKINS_URL ||
+    env.GITHUB_ACTIONS ||
+    env.GITLAB_CI ||
+    env.CIRCLECI ||
+    env.TRAVIS ||
+    env.TF_BUILD ||
+    env.BITBUCKET_BUILD_NUMBER ||
+    env.TEAMCITY_VERSION ||
+    env.CODEBUILD_BUILD_ID ||
+    env.bamboo_buildKey ||
+    (env.CI && env.CI.toLowerCase() !== 'false' && env.CI !== '0'),
+  );
+}
+
 /** A CI provider's id for the current pipeline and, where it exposes one, for the current job. */
 interface CiIds {
   run: string;

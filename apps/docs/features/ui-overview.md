@@ -80,16 +80,17 @@ chain in the locator index, per branch. See [Who uses a locator](./locator-usage
 
 `/test-runs/:id`: one run. The header carries the status, the primary action (**Copy retry command** on a red run,
 the HTML report on a green one) and one facts line, and a **count bar** filters the tests by status. While it runs,
-results stream in live. When ingest left something out or rebuilt it, the facts line counts **ingest notes** and
-**Details** lists them: steps and console entries over the [ingest caps](/reference/configuration#ingest-limits), traces not stored,
-evidence rebuilt from a trace, and the fallback the reporter took to send the run. The tabs:
+results stream in live, and the tab's icon and title show its progress. When ingest left something out or rebuilt
+it, the facts line counts **ingest notes** and **Details** lists them: steps and console entries over the
+[ingest caps](/reference/configuration#ingest-limits), traces not stored, evidence rebuilt from a trace, and the
+fallback the reporter took to send the run. The tabs:
 
 - **Tests**: every execution with its failure headline, in run order, grouped by cluster (the default on a red run),
   file, describe block or [lock](/reference/test-metadata#test-locks), with the same
   [test search](/reference/test-search) as a project's Tests tab and bulk triage.
 - **Changes**: what differs against one baseline run. See [What changed in a run](./run-changes).
-- **Timeline**: each worker's tests on one time axis, with hooks, waits and locks, the slowest tests and the worker
-  distribution ([Slow tests & wasted time](./slow-tests)).
+- **Timeline**: each worker's tests on one time axis, with hooks, waits, locks and [breakpoint](./editor-breakpoints)
+  stops, the slowest tests and the worker distribution ([Slow tests & wasted time](./slow-tests)).
   - **Hooks**: hook time is hatched over each test's bar: setup (`beforeAll`, `beforeEach`, fixtures) at the start,
     teardown (`afterEach`, `afterAll`, worker cleanup) at the end. A failed hook is drawn in dark red and counted in
     the header, even with **Show hooks** off; hover it for the hooks that section ran, their times and the error, and
@@ -99,13 +100,12 @@ evidence rebuilt from a trace, and the fallback the reporter took to send the ru
   - **Gaps**: a lane is one worker. Playwright replaces a worker process after a failed test, so a lane can hold
     several processes one after another: **↻** marks where a new one took over, and the stretch before it is the old
     process shutting down and the new one starting. A dashed line is time the worker ran no test; hover either for
-    the details.
+    details.
   - **Retries**: a retried test has one bar per attempt, the last solid, the earlier ones pale. Hover one to join
     them with arrows.
   - **Resources**: when the reporter measured them, the machine's CPU, the run's memory and the pages open in the
-    workers are drawn above the worker rows, on the same axis, and one metric of your choice under each worker row.
-    Hover a track for its values at that moment; turn each one off from the **Resources** menu. See
-    [CPU, memory & disk](./cpu-memory-disk#in-the-dashboard).
+    workers are drawn above the worker rows, and one metric of your choice under each worker row. Hover a track for
+    its values; turn each off from the **Resources** menu. See [CPU, memory & disk](./cpu-memory-disk#in-the-dashboard).
 
 ## Test case detail
 
@@ -127,8 +127,9 @@ other sections and the [fix plan](./fix-plans); the occurrence chart and the act
 
 ## Setup
 
-`/setup`, administrators only: the reporter setup steps and a checklist of which optional capabilities this instance
-actually uses, judged from the data it holds ([Choose what you use](/operate/capabilities)).
+`/setup`, administrators only: the [connect wizard](/guide/getting-started#_2-connect-your-suite) and a checklist of
+which optional capabilities this instance actually uses, judged from the data it holds
+([Choose what you use](/operate/capabilities)).
 
 ## Settings
 
@@ -148,13 +149,13 @@ instance's own OpenAPI reference.
 
 ## Live demo
 
-The [live demo](https://piwitests.dev/demo/) runs entirely in your browser and adds three controls. **Simulate a test
-run** replays a reporter's stream, so you can watch a run arrive. **Acting as** switches between seeded identities to
-show how [roles](/operate/project-access) change what each one sees and can do, including changes made on
-the [permission grid](/operate/project-access#permission-grid). **Guided tour** asks what you do (**Developer**,
-**QA engineer**, **Product owner** or **DevOps / platform**) and walks you through the screens that role uses most,
-pointing at one element on each, linked to its docs page. The tour is in English,
-French, Spanish and German; the dashboard stays in English.
+The [live demo](https://piwitests.dev/demo/) runs in your browser and adds three controls. **Simulate a test run**
+replays a reporter's stream, so you can watch a run arrive. **Acting as** switches between seeded identities to show
+how [roles](/operate/project-access) change what each one sees and can do, including changes made on the
+[permission grid](/operate/project-access#permission-grid). **Guided tour** asks what you do (**Developer**,
+**QA engineer**, **Product owner** or **DevOps / platform**) and walks you through that role's screens, pointing at one
+element on each. The tour is in English, French, Spanish and German; the dashboard stays in English. With no model,
+**Ask Piwi** answers [prepared questions](/features/assistant#asking-a-question) from the sample data.
 
 ## Related
 

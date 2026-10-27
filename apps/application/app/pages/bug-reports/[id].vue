@@ -136,7 +136,7 @@ async function setStatus(status: 'open' | 'dismissed') {
       <ErrorState v-if="error" class="p-4" text="Could not load this bug report." />
       <DetailPageLayout v-else-if="report" v-model="activeTab" :tab-items="tabItems">
         <template #summary>
-          <SituationBlock help="project.bug-reports" :edge="EDGE[report.status]">
+          <SituationBlock help="project.bug-reports" :edge="EDGE[report.status]" data-tour="bug-report-summary">
             <template #identity>
               <span>Bug report #{{ report.id }}</span>
             </template>
@@ -146,6 +146,7 @@ async function setStatus(status: 'open' | 'dismissed') {
                 size="xs"
                 icon="i-simple-icons-jira"
                 data-shot="bug-report-create-issue"
+                data-tour="bug-report-create-issue"
                 @click="issueModalOpen = true"
               >
                 Create issue
@@ -250,19 +251,19 @@ async function setStatus(status: 'open' | 'dismissed') {
         </template>
 
         <template #tab-steps>
-          <div class="p-4">
+          <div class="p-4" data-tour="bug-report-steps">
             <BugReportSteps :steps="report.steps" />
           </div>
         </template>
 
         <template #tab-evidence>
-          <div class="p-4">
+          <div class="p-4" data-tour="bug-report-evidence">
             <BugReportEvidence :report="report" />
           </div>
         </template>
 
         <template #tab-reproductions>
-          <div class="p-4">
+          <div class="p-4" data-tour="bug-report-reproductions">
             <EmptyState
               v-if="report.reproductionList.length === 0"
               icon="i-lucide-repeat"
@@ -287,7 +288,7 @@ async function setStatus(status: 'open' | 'dismissed') {
         </template>
 
         <template #tab-spec>
-          <div class="p-4">
+          <div class="p-4" data-tour="bug-report-spec">
             <BugReportSpec :report-id="report.id" :project-id="report.projectId" />
           </div>
         </template>

@@ -240,7 +240,13 @@ async function handleRevokeApiKey() {
 
     <!-- Create action -->
     <div v-if="!isCreatingKey" class="flex justify-end">
-      <UButton label="Create API key" icon="i-lucide-plus" size="sm" @click="startCreateKey" />
+      <UButton
+        label="Create API key"
+        icon="i-lucide-plus"
+        size="sm"
+        data-tour="create-api-key"
+        @click="startCreateKey"
+      />
     </div>
 
     <!-- Revoke confirmation -->

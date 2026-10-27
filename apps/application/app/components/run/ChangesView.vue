@@ -357,7 +357,7 @@ function clusterIssue(tc: TestCaseResult) {
               <NuxtLink
                 v-for="r in data.mostRegressed"
                 :key="r.executionId"
-                :to="`/test-run-cases/${r.executionId}?tab=performance`"
+                :to="`/test-run-cases/${r.executionId}?evidence=performance`"
                 class="flex items-center gap-2 py-1.5 text-sm hover:bg-elevated/50 rounded px-1 -mx-1"
               >
                 <span class="text-red-500 font-mono shrink-0 tabular-nums">+{{ r.pctChange }}%</span>
@@ -374,7 +374,7 @@ function clusterIssue(tc: TestCaseResult) {
               <NuxtLink
                 v-for="i in data.mostImproved"
                 :key="i.executionId"
-                :to="`/test-run-cases/${i.executionId}?tab=performance`"
+                :to="`/test-run-cases/${i.executionId}?evidence=performance`"
                 class="flex items-center gap-2 py-1.5 text-sm hover:bg-elevated/50 rounded px-1 -mx-1"
               >
                 <span class="text-green-600 font-mono shrink-0 tabular-nums">{{ i.pctChange }}%</span>

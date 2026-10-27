@@ -23,7 +23,7 @@ loggerConfiguration.WriteTo.PiwiTestLogs();
 app.UsePiwiTestLogs(env, e => e.IsDevelopment() || e.IsEnvironment("Podman") || e.IsEnvironment("Integration"));
 ```
 
-Register the sink unconditionally. It does nothing outside a request the middleware brackets, so the middleware's environment gate is the only one you need. See [Choosing the environments](https://github.com/PiwiTests/platform/tree/main/integrations/aspnetcore#choosing-the-environments) for the ways to set it.
+Register the sink unconditionally. It does nothing outside a request the middleware brackets, so the middleware's environment gate is the only one you need. See [Choosing the environments](https://github.com/PiwiTests/piwi/tree/main/integrations/aspnetcore#choosing-the-environments) for the ways to set it.
 
 | Serilog level               | Captured as  |
 |-----------------------------|--------------|

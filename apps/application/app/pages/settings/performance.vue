@@ -1,5 +1,5 @@
 <script setup lang="ts">
- /**
+/**
  * Performance — the two detectors that judge test timing live on one tab:
  * wasted-time patterns (which waits count as wasted) and timeout hygiene
  * (oversized per-test timeouts and stale `test.slow()` marks). Both feed the
@@ -12,7 +12,7 @@
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6" data-tour="performance-page">
     <WastedTimeCard />
     <TimeoutHygieneCard />
     <CiCostCard />

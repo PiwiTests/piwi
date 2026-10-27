@@ -90,14 +90,18 @@ export interface TestSourceFrame {
   snippet: string;
 }
 
-/** A hook/fixture/step event with absolute timings (for the workers timeline). */
+/**
+ * A hook/fixture/step event with absolute timings (for the timelines). A `pause` event is a stop at Piwi's pause bar
+ * (an editor breakpoint): the call it held as its title, its call site as its location.
+ */
 export interface TestStepEvent {
   title: string;
   /** The step's target (rendered locator or URL), carried separately by newer Playwright. */
   subtitle?: string | null;
-  category: 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait';
+  category: 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait' | 'pause';
   startedAt: number;
   duration: number;
+  /** `passed` or `failed`; `wasted` for a wait; for a stop, why it stopped: `breakpoint`, `step` or `page-pause`. */
   status: string;
   location?: string | null;
   /** The first line of the step's error, when it failed — hook and fixture events only. */
@@ -244,8 +248,8 @@ export type ResourceVerdict = 'leaked' | 'idle' | 'piling' | 'handle' | 'probabl
 /** One finding of the end-of-run resource report: leaked objects, idle pages, piling handlers, Node handles. */
 export interface WireResourceFinding {
   verdict: ResourceVerdict;
-  /** The object kind, `handle` for a Node handle. */
-  kind: 'browser' | 'context' | 'page' | 'request' | 'handle';
+  /** The object kind, `handle` for a Node handle, `worker` for what piles up in a worker process itself. */
+  kind: 'browser' | 'context' | 'page' | 'request' | 'handle' | 'worker';
   /** Where it was opened: `file:line`, a fixture, or a popup's trigger. */
   where: string;
   /** The line that opened it, `file:line`, when one is known. */
@@ -265,8 +269,18 @@ export interface WireResourceFinding {
   closedByPiwi?: boolean;
   /** Leaked past its test: main-thread CPU its pages used after the test (Chromium). */
   afterTestCpuMs?: number;
-  /** Piling: what grew, from how many to how many, over how many tests. */
-  growth?: { what: 'pages' | 'listeners' | 'routes'; from: number; to: number; tests: number };
+  /**
+   * Piling: what grew, from how many to how many, over how many tests. A page
+   * or a context counts its open pages, listeners, route handlers or attached
+   * DOM elements; a worker process its heap after full garbage collections
+   * (MB) or its open file descriptors.
+   */
+  growth?: {
+    what: 'pages' | 'listeners' | 'routes' | 'elements' | 'heapMb' | 'descriptors';
+    from: number;
+    to: number;
+    tests: number;
+  };
   /** The describe a `beforeAll` belongs to, the fixtures set up with an idle page, a handle's test. */
   detail?: string;
 }
@@ -360,6 +374,43 @@ export interface WireResourceTimeline {
    * before it.
    */
   workers?: Array<{ worker: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }>;
+}
+
+/**
+ * What a reporter posts to `/api/test-runs/:id/live-resources` while someone
+ * has the run open, beside its `streamToken`: the resources it measured since
+ * its last post, so the run's timeline draws them as the run goes. The run's
+ * stored report is still the one `finish` sends.
+ */
+export interface WireLiveResources {
+  /** The reporter's shard, as its `begin` named it; null for a run that is not sharded. */
+  shardIndex: number | null;
+  /**
+   * True when `timeline` holds every point so far and replaces what the server
+   * holds for this reporter; false when its series only add the points read
+   * since the last post.
+   */
+  reset: boolean;
+  /**
+   * The series, on the clock of the first post's `startedAt`. Each `pages`
+   * entry replaces that worker's open pages, and a `workers` entry adds to that
+   * worker's series.
+   */
+  timeline: WireResourceTimeline;
+  /** The machine's memory, or its container's limit when lower; null without the run sampler. */
+  memoryCapacityBytes: number | null;
+  /** How the run's memory is measured: PSS, or RSS where PSS cannot be read; null until it is read. */
+  memoryKind: 'pss' | 'rss' | null;
+}
+
+/** The dashboard's answer to a live resources post. */
+export interface WireLiveResourcesAnswer {
+  /** Whether anyone still has the run open; the reporter posts only while it is true. */
+  watched: boolean;
+  /** True when the dashboard holds nothing for this reporter: the next post carries every point so far. */
+  resync?: boolean;
+  /** True when the run's project declined the resources capability: the reporter posts nothing more for this run. */
+  declined?: boolean;
 }
 
 /**

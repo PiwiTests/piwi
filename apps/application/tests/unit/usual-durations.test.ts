@@ -13,6 +13,7 @@ import {
   type PastExecution,
 } from '#shared/duration-standout';
 import { buildFailureTimeline } from '#shared/failure-timeline';
+import { diffAttempts } from '#shared/attempt-diff';
 
 /**
  * The usual duration of a step or a request: the median over the test's last
@@ -22,7 +23,7 @@ import { buildFailureTimeline } from '#shared/failure-timeline';
 
 // The schema barrel picks PostgreSQL at import time when PIWI_DATABASE_URL is set.
 delete process.env.PIWI_DATABASE_URL;
-const { getUsualDurations, getFailureTimeline } = await import('#shared/handlers/test-cases');
+const { getUsualDurations, getFailureTimeline, attemptSteps } = await import('#shared/handlers/test-cases');
 
 const loadReport = (duration: number | null, params?: Record<string, string>) => ({
   title: 'Load report',
@@ -99,6 +100,16 @@ describe('buildUsualDurations', () => {
     const usual = buildUsualDurations(past);
     expect(usualStepDuration(usual, loadReport(2500))).toBeNull();
     expect(usualRequestDuration(usual, reportRequest(9, 1600))).toBeNull();
+  });
+
+  test('a step that ran across a stop at the pause bar counts its own time', () => {
+    const at = (startTime: number, ms: number) => ({ ...loadReport(ms), startTime });
+    const past: PastExecution[] = [
+      { steps: [at(1000, 4600)], stepEvents: [{ category: 'pause', startedAt: 1100, duration: 4000 }] },
+      { steps: [at(1000, 600)] },
+      { steps: [at(1000, 620)], stepEvents: [{ category: 'hook', startedAt: 1000, duration: 50 }] },
+    ];
+    expect(usualStepDuration(buildUsualDurations(past), loadReport(2500))).toBe(600);
   });
 
   test('malformed rows are skipped', () => {
@@ -241,5 +252,19 @@ describe('getUsualDurations', () => {
     const timeline = await getFailureTimeline(db, 30);
     expect(timeline.lanes.steps.map((item) => item.usual)).toEqual([640]);
     expect(timeline.lanes.network.map((item) => item.usual)).toEqual([300]);
+  });
+});
+
+describe('attemptSteps', () => {
+  test('an attempt that stood paused at the pause bar is compared on its own time', () => {
+    const failing = [{ ...loadReport(4600), startTime: 1000 }];
+    const pauses = [{ title: 'Click', category: 'pause', startedAt: 1100, duration: 4000, status: 'breakpoint' }];
+    expect(attemptSteps(failing, pauses)).toEqual([{ ...loadReport(600), startTime: 1000 }]);
+    expect(attemptSteps(failing, null)).toBe(failing);
+    expect(attemptSteps(null, pauses)).toBeNull();
+    const steps = (list: unknown) => ({ error: null, steps: list as never });
+    const slower = (diff: ReturnType<typeof diffAttempts>) => diff.filter((d) => d.kind === 'step');
+    expect(slower(diffAttempts(steps(failing), steps([loadReport(550)])))).toHaveLength(1);
+    expect(slower(diffAttempts(steps(attemptSteps(failing, pauses)), steps([loadReport(550)])))).toEqual([]);
   });
 });

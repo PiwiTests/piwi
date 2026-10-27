@@ -11,6 +11,6 @@
     // copied anywhere else, the path does not exist and the npm package is used.
     "paths": { "@piwitests/instrumentation-nitro": ["../../integrations/nitro/src/index.ts"] }
   },
-  "include": ["tests/**/*.ts", "backends.ts", "playwright*.ts", "backends/nitro/**/*.ts"],
+  "include": ["tests/**/*.ts", "backends.ts", "playwright*.ts", "backends/nitro/**/*.ts", "backends/nitro.tests/**/*.ts"],
   "exclude": ["backends/nitro/.nitro"]
 }

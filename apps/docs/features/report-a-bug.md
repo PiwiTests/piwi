@@ -18,9 +18,11 @@ send it to your [Piwi instance](./bug-reports).
 
 Open the popup on the page where the flow starts and choose **Report a bug**, or press `B`. The first time on a site,
 Piwi Picker asks for access to it, as [Record actions](./record-actions) does. From then on, clicks, fills,
-checks, select changes and Enter are recorded across the site's pages, and a red border marks the tab.
+checks, select changes, Enter and the browser's **Back**, **Forward** and reload are recorded across the site's pages,
+and a red border marks the tab.
 
-A panel in the corner lists the last steps and offers three ways to say what is wrong:
+A panel in the corner lists the last steps (its four-arrow button moves it to the next corner when it covers something
+you need to click) and offers three ways to say what is wrong:
 
 - **Mark what's wrong**: pick the element, then choose what is wrong with it: its text, its value, its name as screen
   readers announce it, or its state (it should be hidden, visible, enabled or disabled). The panel shows what the page shows now and

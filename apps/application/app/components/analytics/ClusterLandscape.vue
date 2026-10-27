@@ -24,6 +24,7 @@ function ageClass(ageDays: number): string {
     title="Failure clusters"
     subtitle="Open root causes across all projects"
     help="analytics.cluster-landscape"
+    data-tour="analytics-cluster-landscape"
   >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load clusters: ${errorMessage(error)}`">

@@ -95,6 +95,7 @@ const footer = computed(() => {
     storage-key="test-path-variation"
     :default-folded="false"
     data-shot="test-path-variation"
+    data-tour="test-path-variation"
     data-testid="path-variation"
   >
     <template #folded>{{ headline }}</template>

@@ -17,6 +17,8 @@ export const ATTACHMENT_NAMES = {
   codeReach: 'piwi-code-reach',
   browserCoverage: 'piwi-browser-coverage',
   browserFunctions: 'piwi-browser-functions',
+  cssCoverage: 'piwi-css-coverage',
+  cssRules: 'piwi-css-rules',
   serverCoverageRequests: 'piwi-server-coverage-requests',
   webVitals: 'piwi-web-vitals',
   locatorSuggestion: 'piwi-locator-suggestion',
@@ -25,6 +27,7 @@ export const ATTACHMENT_NAMES = {
   aiUsage: 'piwi-ai-usage',
   aiMeta: 'piwi-ai-meta',
   resources: 'piwi-resources',
+  pauses: 'piwi-pauses',
 } as const;
 
 /** Set of every internal attachment name — used to skip them when collecting user attachments. */

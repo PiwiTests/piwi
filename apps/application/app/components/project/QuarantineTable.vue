@@ -205,6 +205,7 @@ async function release(testCaseId: number) {
                   :color="entry.releaseProposed && !entry.releaseDismissed ? 'primary' : 'neutral'"
                   variant="soft"
                   :loading="busy === entry.testCaseId"
+                  data-tour="quarantine-release"
                   @click="release(entry.testCaseId)"
                 >
                   Release

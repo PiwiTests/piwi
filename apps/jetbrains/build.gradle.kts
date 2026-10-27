@@ -7,7 +7,8 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "2.2.21"
+    // The newest Kotlin that still compiles language version 1.9 (see `kotlin` below): 2.4 needs 2.0 or later.
+    id("org.jetbrains.kotlin.jvm") version "2.3.21"
     id("org.jetbrains.intellij.platform") version "2.19.0"
 }
 
@@ -76,10 +77,12 @@ intellijPlatform {
     publishing {
         token = providers.environmentVariable("PUBLISH_TOKEN")
     }
-    // `verifyIdes` lists `<type code>:<version>` pairs, comma-separated; each IDE is a large download.
+    // `verifyIdes` lists `<type code>:<version>` pairs, comma-separated; each IDE is a large download. The Marketplace
+    // refuses an upload that uses an internal API.
     pluginVerification {
         failureLevel = listOf(
             VerifyPluginTask.FailureLevel.COMPATIBILITY_PROBLEMS,
+            VerifyPluginTask.FailureLevel.INTERNAL_API_USAGES,
             VerifyPluginTask.FailureLevel.INVALID_PLUGIN,
         )
         ides {

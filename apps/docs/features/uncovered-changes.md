@@ -44,6 +44,9 @@ Piwi can observe a file when one of these could happen to it, or when the head c
 lines. A skipped test reaches nothing. A *changed, unreached* gap closes when a later diff no longer counts its file
 as uncovered, or when the Test Map's next recompute finds it reached or out of scope.
 
+Before the pull request, the [editor extensions](./editor-coverage#uncovered-changes) mark the lines of an uncovered
+change of a page or a server route in the file itself, by the same rule.
+
 The diff comes from the [source control](/guide/source-control) connection: a pull-request run is compared with its
 base branch, any other run with the commit of the last passing run. With no SCM token or no diff, nothing appears.
 

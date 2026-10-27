@@ -109,12 +109,13 @@ async function saveAsSelection() {
       icon="i-lucide-filter"
       trailing-icon="i-lucide-chevron-down"
       data-testid="analytics-test-filter"
+      data-tour="analytics-tests-button"
     >
       {{ activeCount > 0 ? `Tests (${activeCount})` : 'All tests' }}
     </UButton>
 
     <template #content>
-      <div class="w-[min(22rem,calc(100vw-2rem))] p-3 space-y-3 text-sm">
+      <div class="w-[min(22rem,calc(100vw-2rem))] p-3 space-y-3 text-sm" data-tour="analytics-test-filter">
         <div class="flex items-center gap-1">
           <span class="text-xs font-medium text-muted">Tests</span>
           <HelpHint topic="analytics.test-filter" />

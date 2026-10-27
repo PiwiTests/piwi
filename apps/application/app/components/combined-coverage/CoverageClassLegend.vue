@@ -16,7 +16,11 @@ const items = computed(() =>
 </script>
 
 <template>
-  <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted" data-class-legend>
+  <p
+    class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted"
+    data-class-legend
+    data-tour="coverage-class-legend"
+  >
     <span v-for="item in items" :key="item.kind" class="inline-flex items-center gap-1.5">
       <span class="inline-block h-2.5 w-2.5 rounded-sm" :class="item.legend" aria-hidden="true" />{{ item.label }}
     </span>

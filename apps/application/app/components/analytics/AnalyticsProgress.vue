@@ -20,6 +20,7 @@ const f = computed(() => metricFormatter());
     icon="i-lucide-list-checks"
     :title="title ?? 'Fixes and triage'"
     help="analytics.progress"
+    data-tour="analytics-progress"
     data-shot="analytics-progress"
   >
     <LoadingState v-if="pending" />

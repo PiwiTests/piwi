@@ -5,7 +5,8 @@ import { niceTicks } from '~/utils/chart';
  * Responsive SVG shell shared by the trend charts: measures its own width,
  * draws the y-axis gridlines and labels for a 0-based linear scale, and hands
  * the plot geometry to the default slot, which renders the marks (bars, lines,
- * x labels, marker lines) in plot coordinates.
+ * x labels, marker lines) in plot coordinates. It also renders the tooltip of
+ * the `ChartMarkerLines` in that slot, outside the SVG.
  */
 const props = withDefaults(
   defineProps<{
@@ -28,6 +29,8 @@ const ticks = computed(() => niceTicks(props.yMax));
 const yTop = computed(() => ticks.value[ticks.value.length - 1] || 1);
 const plotWidth = computed(() => Math.max(0, width.value - MARGIN.left - MARGIN.right));
 const plotHeight = computed(() => Math.max(0, props.height - MARGIN.top - MARGIN.bottom));
+
+const { data: hoveredMarker, pos: markerPos, clickable: markerClickable } = provideChartMarkerTooltip();
 
 function yScale(value: number): number {
   return plotHeight.value - (value / yTop.value) * plotHeight.value;
@@ -60,5 +63,6 @@ function yScale(value: number): number {
         <slot :plot-width="plotWidth" :plot-height="plotHeight" :y-scale="yScale" />
       </g>
     </svg>
+    <ChartMarkerTooltip :marker="hoveredMarker" :pos="markerPos" :clickable="markerClickable" />
   </div>
 </template>

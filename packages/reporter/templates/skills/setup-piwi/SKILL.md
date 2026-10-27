@@ -13,6 +13,9 @@ Find out two things (ask the user only if you cannot infer them):
 
 - **Dashboard URL** — e.g. `http://localhost:3000` for a local server, or a deployed URL. Defaults to `http://localhost:3000`.
 - **Project name** — the label runs are grouped under. Defaults to the package or folder name.
+- **Where local runs go** — when developers run the Piwi desktop app and CI reports to a shared server, add
+  `--desktop-app prefer`: a local run lands in the app while it is running, and CI runs go to `--server-url`. When the
+  desktop app is the only dashboard, pass `--no-server-url` instead of a URL: the reporter finds the running app itself.
 
 Confirm this is a Playwright project: there should be a `playwright.config.ts|js` and `@playwright/test` in `package.json`. If there is no Playwright at all, set that up first.
 
@@ -47,7 +50,7 @@ change it to import from the fixtures file instead, e.g. `import { test, expect 
 
 ## Authentication
 
-If the dashboard has auth enabled, runs need an API key. Have the user create one in the dashboard (**Settings → Account → API keys**; keys start with `pd_`), then put it in `.env` as `PIWI_API_KEY=pd_...` and make sure `.env` is git-ignored. Never hardcode a key into `playwright.config.ts` or commit it. In CI, pass it as a secret (`PIWI_API_KEY`).
+If the dashboard has auth enabled, runs need an API key. Have the user create one in the dashboard (**Settings → Account → API keys**; keys start with `pd_`), then put it in `.env` as `PIWI_API_KEY=pd_...` and make sure `.env` is git-ignored. The reporter reads `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` from the `.env` next to `playwright.config`, so the config needs no dotenv loading; a variable set in the environment wins over the file. Never hardcode a key into `playwright.config.ts` or commit it. In CI, where `.env` is not checked out, pass it as a secret (`PIWI_API_KEY`).
 
 ## Verify it worked
 

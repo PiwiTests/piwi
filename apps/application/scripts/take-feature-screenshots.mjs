@@ -33,9 +33,14 @@
  * captures the Tauri shell — the server runs with `NUXT_PUBLIC_DESKTOP=true`
  * and a mocked Tauri IPC bridge is injected into the page, so no shell build is
  * needed. A desktop scene can shape what the mock answers (linked folder,
- * inspection result). A run covering several modes boots one server per mode,
- * web first. With `--url`, every scene drives that one server, so point a tour
- * scene at a server started with `NUXT_PUBLIC_DEMO_TOUR=true`.
+ * inspection result). `demo` captures the built demo SPA (run
+ * `npm run app:generate:demo` first), served from its `/demo/` sub-path with
+ * its service worker answering from the in-browser seed, for what only the
+ * demo build does, such as its assistant's prepared answers. A run covering
+ * several modes boots one server per mode, web first. With `--url`, every
+ * scene drives that one server, so point a tour scene at a server started with
+ * `NUXT_PUBLIC_DEMO_TOUR=true`, and a demo scene at a served demo's base
+ * (`http://localhost:4173/demo`).
  *
  * Output goes where the scene's `out` says: `screens` → `.screens/` (gitignored
  * report artifacts) and `docs` → `apps/docs/public/screenshots/` (committed
@@ -60,6 +65,8 @@ import {
   coverageSceneSource,
 } from './lib/coverage-scene.mjs';
 import { ORDER_SCENE, orderSceneSource } from './lib/coverage-insights-scene.mjs';
+import { READY_INSPECTION, bridgeScript } from './lib/desktop-bridge.mjs';
+import { BUILT_DEMO_BASE, BUILT_DEMO_ROOT, serveBuiltDemo } from './lib/built-demo.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -533,6 +540,84 @@ function reportRetriedRun(request, base) {
 }
 
 /**
+ * A run still going on three workers, 48 s in: each worker finished a few tests
+ * and runs one more, and the reporter posted what it measured so far (the
+ * machine's CPU every second, the run's memory and each worker's CPU and memory
+ * every five, and the pages each worker holds open, one more after every test
+ * on worker 1). Nothing finishes it, so the run page draws it live.
+ */
+async function reportLiveRunWithResources(request, base) {
+  const post = (path, options) => postRetrying(request, base, path, options);
+  const startTime = Date.now() - 48_000;
+  const tests = [];
+  for (let worker = 0; worker < 3; worker++) {
+    let at = 1500 + worker * 400;
+    for (let i = 0; i < 4; i++) {
+      const duration = 7000 + ((worker * 5 + i * 3) % 7) * 900;
+      tests.push({ worker, at, duration, title: `checkout step ${worker * 4 + i + 1}`, running: i === 3 });
+      at += duration + 400;
+    }
+  }
+  const { runId, streamToken } = await (
+    await post('/api/test-runs/start', {
+      data: { projectName: 'checkout-live', startTime: new Date(startTime).toISOString(), totalTests: 16 },
+    })
+  ).json();
+  const browser = { projectName: 'chromium', browserName: 'chromium' };
+  const testCases = tests.map((t, i) => ({
+    type: t.running ? 'begin' : 'complete',
+    title: t.title,
+    location: `tests/checkout.spec.ts:${i * 8 + 3}:5`,
+    ...(t.running ? {} : { status: 'passed', duration: t.duration, retries: 0 }),
+    workerIndex: t.worker,
+    startedAt: startTime + t.at,
+    browser,
+  }));
+  await post(`/api/test-runs/${runId}/events`, { data: { streamToken, testCases } });
+
+  const wave = (n) => (Math.sin(n * 1.7) + Math.sin(n * 0.45)) / 2;
+  const cpuPct = Array.from({ length: 47 }, (_, i) => [(i + 1) * 1000, Math.round(58 + 14 * wave(i) + i * 0.5)]);
+  const memoryBytes = Array.from({ length: 10 }, (_, i) => [i * 5000, Math.round((2.1 + i * 0.28) * 1024 ** 3)]);
+  const pages = [0, 1, 2].map((worker) => {
+    const done = tests.filter((t) => t.worker === worker && !t.running);
+    // Worker 1 leaves each test's page open; the others close it.
+    const points =
+      worker === 1
+        ? done.map((t, i) => [t.at, i + 1])
+        : done.flatMap((t) => [
+            [t.at, 1],
+            [t.at + t.duration, 0],
+          ]);
+    return {
+      worker,
+      points: [...points, [tests.find((t) => t.worker === worker && t.running).at, worker === 1 ? 4 : 1]],
+    };
+  });
+  const workers = [0, 1, 2].map((worker) => ({
+    worker,
+    cpuCores: Array.from({ length: 9 }, (_, i) => [
+      (i + 1) * 5000,
+      Math.round((0.6 + 0.3 * wave(i + worker) + (worker === 1 ? i * 0.12 : 0)) * 100) / 100,
+    ]),
+    memoryBytes: Array.from({ length: 9 }, (_, i) => [
+      (i + 1) * 5000,
+      Math.round((0.45 + (worker === 1 ? i * 0.11 : 0.02 * wave(i))) * 1024 ** 3),
+    ]),
+  }));
+  await post(`/api/test-runs/${runId}/live-resources`, {
+    data: {
+      streamToken,
+      shardIndex: null,
+      reset: true,
+      timeline: { startedAt: startTime, cpuPct, memoryBytes, pages, workers },
+      memoryCapacityBytes: 16 * 1024 ** 3,
+      memoryKind: 'pss',
+    },
+  });
+  return runId;
+}
+
+/**
  * A cluster whose runs record their commits but no repository URL: a passing
  * run at one commit, then the hook failure at the next. Reported once per
  * session, so both widths of its scene show the same cluster in the same state.
@@ -630,7 +715,23 @@ function reportSupersededBranch(request, base) {
 }
 
 /** Surfaces a scene can be captured against, in the order a run boots their servers. */
-const MODES = ['web', 'tour', 'desktop'];
+const MODES = ['web', 'tour', 'desktop', 'demo'];
+
+/** Where the `demo` mode serves the built demo: off 3000 and 3050, where dev servers run. */
+const DEMO_PORT = 4175;
+
+/** Serves the built demo for the `demo` mode; its base is the demo's sub-path, which every scene route follows. */
+async function startBuiltDemo() {
+  if (!existsSync(join(BUILT_DEMO_ROOT, 'index.html'))) {
+    throw new Error(
+      `the demo mode serves the built demo, and ${BUILT_DEMO_ROOT} holds none: run "npm run app:generate:demo"`,
+    );
+  }
+  const server = await serveBuiltDemo({ port: DEMO_PORT });
+  const base = `http://localhost:${DEMO_PORT}${BUILT_DEMO_BASE.replace(/\/$/, '')}`;
+  console.error(`Serving the built demo at ${base}/…`);
+  return { base, stop: () => server.close() };
+}
 
 /** Cookie `@nuxtjs/color-mode` reads the stored light/dark preference from (`colorMode` in nuxt.config.ts). */
 const COLOR_MODE_COOKIE = 'piwi-color-mode';
@@ -742,19 +843,6 @@ const REPRO_SCENE_STEPS = (() => {
     ],
   };
 })();
-
-/** What the mocked `desktop_inspect_folder` reports unless a scene overrides it. */
-const READY_INSPECTION = {
-  path: '/home/dev/code/acme-checkout',
-  exists: true,
-  packageName: '@acme/checkout',
-  suggestedName: 'checkout-web',
-  playwrightConfig: 'playwright.config.ts',
-  playwrightInstalled: true,
-  reporterInstalled: true,
-  reporterConfigured: true,
-  configuredProjectName: 'checkout-web',
-};
 
 /**
  * Scenes: one entry per user-facing feature (or state of it) worth showing.
@@ -1405,6 +1493,119 @@ function screenshotLightboxScene(width, suffix) {
   };
 }
 
+function markersPanelScene(width, suffix) {
+  return {
+    name: `markers-panel${suffix}`,
+    description: `The timeline markers panel: the markers as a vertical list, then the edit form in place, at ${width} px`,
+    tags: ['desktop'],
+    route: '/projects/1',
+    viewport: { width, height: 1000 },
+    async run({ page, settle, shoot }) {
+      const open = page.getByRole('button', { name: /Markers \(/ });
+      await open.waitFor({ timeout: 60_000 });
+      await settle();
+      await open.click();
+      await page.locator('[data-shot="markers-panel"]').waitFor();
+      await settle();
+      await shoot('list');
+      await page.getByRole('button', { name: 'Edit Enabled strict CSP in production' }).click();
+      await page.getByTestId('marker-form').waitFor();
+      await settle();
+      await shoot('form');
+    },
+  };
+}
+
+/** The connect wizard on Setup: each of its three paths, then local runs sent to the desktop app. */
+function setupConnectScene(width, suffix) {
+  return {
+    name: `setup-connect${suffix}`,
+    description: `Connect wizard on Setup: one command, a coding agent, by hand, and the desktop-app switch, at ${width} px`,
+    tags: ['desktop'],
+    route: '/setup',
+    viewport: { width, height: 2400 },
+    async run({ page, settle, shoot }) {
+      const wizard = '[data-shot="get-started-wizard"]';
+      await page.locator(wizard).waitFor({ timeout: 60_000 });
+      await page.getByRole('textbox', { name: 'Project name' }).fill('checkout');
+      await settle();
+      await shoot('command', { of: wizard, pad: 12 });
+      await page.getByRole('button', { name: 'Coding agent' }).click();
+      await settle();
+      await shoot('agent', { of: wizard, pad: 12 });
+      await page.getByRole('button', { name: 'By hand' }).click();
+      await settle();
+      await shoot('manual', { of: wizard, pad: 12 });
+      await page.getByRole('button', { name: 'One command' }).click();
+      await page.getByRole('switch', { name: 'Local runs go to the desktop app' }).click();
+      await settle();
+      await shoot('prefer-desktop', { of: wizard, pad: 12 });
+    },
+  };
+}
+
+/** The seed's run from the editor whose one test stood paused at two breakpoints, and that test's execution. */
+const PAUSED_SCENE_RUN = 74;
+const PAUSED_SCENE_EXECUTION = 833;
+
+/**
+ * A test that stood paused at editor breakpoints: its Timeline tab, with a Paused band over the lanes for each stop,
+ * the steps the stops held and a request the page made during one, then its run's workers timeline with the stops on
+ * the test's bar, at `width` px in `colorScheme`.
+ */
+function pausedTestScene(width, colorScheme, suffix) {
+  const name = `paused-test${suffix}`;
+  return {
+    name,
+    description: `A test paused at two editor breakpoints: its Timeline tab with the Paused bands, then its run's workers timeline, at ${width} px (${colorScheme})`,
+    route: `/test-run-cases/${PAUSED_SCENE_EXECUTION}`,
+    viewport: { width, height: width < 640 ? 2600 : 1500 },
+    colorScheme,
+    outputs: [`${name}.png`, `${name}-workers.png`],
+    async run({ page, goto, openTab, settle, shoot }) {
+      await openTab('Timeline');
+      await page.locator('[data-shot="evidence-card"] [data-timeline-paused]').first().waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="evidence-card"]', pad: 12 });
+      await goto(`/test-runs/${PAUSED_SCENE_RUN}?tab=workers`);
+      await page.locator('[data-shot="run-timeline"] [data-timeline-paused]').first().waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot('workers', { of: '[data-shot="run-timeline"]', pad: 12 });
+    },
+  };
+}
+
+/** A failed execution of a run that left pages open in its workers: one earlier test's page was open when it started. */
+const RESOURCES_TIMELINE_EXECUTION = 705;
+
+/**
+ * The Timeline tab of a failed execution with its Resources rows switched on: the CPU and memory of the worker that
+ * ran it with the browsers it started, and the pages open in that worker, under the lanes, the pointer over them so
+ * the readout gives their values, at `width` px in `colorScheme`.
+ */
+function timelineResourcesScene(width, colorScheme, suffix) {
+  return {
+    name: `failure-timeline-resources${suffix}`,
+    description: `A failed execution's Timeline tab with the Resources rows on and the pointer over them, at ${width} px (${colorScheme})`,
+    route: `/test-run-cases/${RESOURCES_TIMELINE_EXECUTION}`,
+    viewport: { width, height: width < 640 ? 2600 : 1500 },
+    colorScheme,
+    async run({ page, openTab, settle, shoot }) {
+      await openTab('Timeline');
+      const toggle = page.getByTestId('timeline-resources-toggle');
+      await toggle.waitFor({ timeout: 30_000 });
+      if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
+      const rows = page.locator('[data-shot="evidence-card"] [data-timeline-resources]');
+      await rows.waitFor({ timeout: 30_000 });
+      await settle();
+      const box = await rows.boundingBox();
+      if (box) await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2);
+      await page.getByTestId('timeline-resources-readout').waitFor({ timeout: 10_000 });
+      await shoot(undefined, { of: '[data-shot="evidence-card"]', pad: 12 });
+    },
+  };
+}
+
 function quarantineDismissScene(width, suffix) {
   return {
     name: `quarantine-dismiss${suffix}`,
@@ -1455,8 +1656,8 @@ async function waitForTourPrompt(page) {
 /**
  * Starts a role's tour from the prompt, in `language` when given (its name in
  * the prompt's select, `Français`), and waits for the first stop to settle: the
- * popover rendered and the cutout on the stop's target. A stop whose target is
- * missing settles centered, with an empty `data-tour-target`.
+ * popover rendered and the cutout on the stop's anchor. A stop whose anchor is
+ * missing settles centered, with an empty `data-guide-anchor`.
  */
 async function startTourFromPrompt(page, { profile, language }) {
   await waitForTourPrompt(page);
@@ -1465,36 +1666,212 @@ async function startTourFromPrompt(page, { profile, language }) {
     await page.getByRole('option', { name: language }).click();
   }
   await page.getByTestId(`tour-profile-${profile}`).click();
-  const popover = page.locator('.driver-popover.piwi-tour[data-tour-settled]');
+  const popover = page.locator('.driver-popover.piwi-guide[data-guide-settled]');
   await popover.waitFor({ timeout: 60_000 });
-  const target = await popover.getAttribute('data-tour-target');
-  if (target) await page.locator(`[data-tour="${target}"].driver-active-element`).waitFor();
+  const anchor = await popover.getAttribute('data-guide-anchor');
+  if (anchor) await page.locator(`[data-tour="${anchor}"].driver-active-element`).waitFor();
 }
 
 /**
  * Walks the running tour with Next, calling `atStop` on each stop once it has
- * settled (its id, its target, empty for a stop shown centered), and ends the
+ * settled (its id, its anchor, empty for a stop shown centered), and ends the
  * tour on its last stop.
  */
 async function walkTourStops(page, atStop) {
   let last = null;
   for (;;) {
     const popover = page.locator(
-      `.driver-popover.piwi-tour[data-tour-settled]${last ? `:not([data-tour-stop="${last}"])` : ''}`,
+      `.driver-popover.piwi-guide[data-guide-settled]${last ? `:not([data-guide-stop="${last}"])` : ''}`,
     );
     await popover.waitFor({ timeout: 60_000 });
     const stop = await popover.evaluate((node) => ({
-      id: node.dataset.tourStop,
-      target: node.dataset.tourTarget,
+      id: node.dataset.guideStop,
+      anchor: node.dataset.guideAnchor,
       isLast: Boolean(node.querySelector('.driver-popover-done-btn')),
     }));
-    if (stop.target) await page.locator(`[data-tour="${stop.target}"].driver-active-element`).waitFor();
+    if (stop.anchor) await page.locator(`[data-tour="${stop.anchor}"].driver-active-element`).waitFor();
     await atStop(stop);
     if (stop.isLast) break;
     last = stop.id;
     await popover.locator('.driver-popover-next-btn').click();
   }
   await page.keyboard.press('Escape');
+}
+
+/** A fixed assistant answer holding one block of each kind, shared with `tests/assistant-panel.spec.ts`. */
+const ASSISTANT_ANSWER = join(APP_DIR, 'tests', 'fixtures', 'assistant-answer.json');
+
+/**
+ * A short answer for the assistant's docs illustrations, from the fixture's
+ * parts: it reads a run and its failure cluster, says why the test failed,
+ * shows the run's card and the fix, and suggests the next question, which the
+ * empty field then offers.
+ */
+function assistantDocsAnswer() {
+  const fixture = JSON.parse(readFileSync(ASSISTANT_ANSWER, 'utf8'));
+  const block = (id) => fixture.answer.find((e) => e.event === 'block' && e.data.block.id === id);
+  return [
+    ...fixture.answer.filter((e) => e.event === 'tool').slice(0, 2),
+    {
+      event: 'text',
+      data: {
+        text: '[Run #12](piwi:run/12) failed 3 of its 48 tests, all in one failure cluster, [Cart total is stale after removing an item](piwi:cluster/3): the test reads `cart-total` before the cart call returns.\n\n',
+      },
+    },
+    block('run-12'),
+    block('fix'),
+    {
+      event: 'block',
+      data: { block: { kind: 'next', id: 'next', question: 'How do I check the fix on the next run?' } },
+    },
+    fixture.answer.find((e) => e.event === 'done'),
+  ];
+}
+
+/**
+ * The assistant's status with what its limits leave: the daily allowance with
+ * `used` of 1,000,000 tokens spent, freeing up in three hours, and, when
+ * `subscription` is set, a Claude subscription's 5-hour window at that share.
+ */
+function assistantStatusWithLimits(used, subscription = null) {
+  const fixture = JSON.parse(readFileSync(ASSISTANT_ANSWER, 'utf8'));
+  const halfHour = 30 * 60 * 1000;
+  const freesAt = new Date(Math.ceil((Date.now() + 3 * 60 * 60 * 1000) / halfHour) * halfHour).toISOString();
+  return {
+    ...fixture.status,
+    ...(subscription === null ? {} : { provider: 'claude-cli' }),
+    allowance: { scope: 'user', limit: 1_000_000, used, freesAt },
+    subscription:
+      subscription === null
+        ? null
+        : {
+            status: 'allowed',
+            window: 'five_hour',
+            utilization: subscription,
+            resetsAt: freesAt,
+            reportedAt: new Date().toISOString(),
+          },
+  };
+}
+
+/**
+ * Answers the assistant's routes in the browser, so a scene shows the panel
+ * whatever AI the server has: the status (the fixture's, or `options.status`)
+ * names a model, a question starts a conversation, and asking streams the
+ * fixture's answer (or `options.answer`). Reloads `path`, since the sidebar
+ * reads the status as the page mounts.
+ */
+async function openAssistantAnswer(page, goto, path = '/', options = {}) {
+  const fixture = JSON.parse(readFileSync(ASSISTANT_ANSWER, 'utf8'));
+  const answer = options.answer ?? fixture.answer;
+  const frames = answer.map((e) => `event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`).join('');
+  await page.route('**/api/assistant/**', (route) => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname.endsWith('/assistant/status')) return route.fulfill({ json: options.status ?? fixture.status });
+    if (pathname.endsWith('/assistant/conversations')) {
+      return request.method() === 'POST'
+        ? route.fulfill({ status: 201, json: fixture.conversation })
+        : route.fulfill({ json: { items: [fixture.conversation] } });
+    }
+    if (pathname.endsWith('/messages')) {
+      return route.fulfill({ headers: { 'Content-Type': 'text/event-stream' }, body: frames });
+    }
+    if (pathname.endsWith('/proposal')) {
+      const { blockId, status } = request.postDataJSON();
+      const block = fixture.answer.find((e) => e.event === 'block' && e.data.block.id === blockId)?.data.block;
+      return route.fulfill({ json: { block: { ...block, outcome: { status, at: new Date().toISOString() } } } });
+    }
+    return route.fallback();
+  });
+  // The fixture's proposal resolves cluster 3, which the scene's server need not hold: its route answers here.
+  await page.route('**/api/failure-clusters/3/status', (route) =>
+    route.fulfill({ json: { id: 3, status: 'resolved' } }),
+  );
+  await goto(path);
+  const launcher = page.getByRole('button', { name: 'Ask Piwi' });
+  if (!(await launcher.isVisible())) await page.getByRole('button', { name: 'Open sidebar' }).first().click();
+  await launcher.click();
+  const panel = page.locator('[data-shot="assistant-panel"]');
+  await panel.getByLabel('Your question').fill(fixture.question);
+  await panel.getByLabel('Your question').press('Enter');
+  await panel.locator('[data-assistant-read]').waitFor({ timeout: 30_000 });
+  return panel;
+}
+
+// The nudges scene submits a timed-out failure in a project without capture
+// fixtures; `prepareNudgeFailure` records its execution id.
+let nudgeExecId = 0;
+async function prepareNudgeFailure({ base, request }) {
+  const projectName = 'nudge-demo-timeout';
+  await request.post(`${base}/api/test-runs/submit`, {
+    data: {
+      projectName,
+      status: 'failed',
+      startTime: new Date().toISOString(),
+      duration: 31000,
+      totalTests: 1,
+      passedTests: 0,
+      failedTests: 0,
+      timedOutTests: 1,
+      skippedTests: 0,
+      testCases: [
+        {
+          title: 'checkout waits for the payment provider',
+          status: 'timedOut',
+          duration: 30000,
+          location: 'tests/checkout.spec.ts:12:3',
+          error: 'Test timeout of 30000ms exceeded.',
+        },
+      ],
+    },
+  });
+  const { items } = await (await request.get(`${base}/api/projects`)).json();
+  const project = items.find((p) => p.name === projectName);
+  const detail = await (await request.get(`${base}/api/projects/${project.id}`)).json();
+  const run = await (await request.get(`${base}/api/test-runs/${detail.testRuns[0].id}`)).json();
+  nudgeExecId = run.testCases[0].executionId;
+}
+
+/**
+ * Answers the nudges scene's reads in the browser: the assistant's status names
+ * a model, so the Setup nudge's question can be asked, and the diagnosis context
+ * of a cluster with a completed diagnosis reads no commits for want of an SCM
+ * token, as on an instance with none set.
+ */
+async function routeNudgeScene(page, clusterId) {
+  await page.route('**/api/assistant/status', (route) =>
+    route.fulfill({
+      json: { available: true, reason: null, provider: 'anthropic', model: 'claude-sonnet-4-5', toolMode: 'native' },
+    }),
+  );
+  await page.route(`**/api/failure-clusters/${clusterId}/context**`, async (route) => {
+    const response = await route.fetch();
+    const json = await response.json();
+    json.scmChanges = null;
+    json.coverage = {
+      ...json.coverage,
+      scm: {
+        hasLastGreen: true,
+        hasCommitRange: true,
+        baseCommitUsed: null,
+        provider: 'github',
+        commitsCount: 0,
+        filesCount: 0,
+        patchedFilesCount: 0,
+        patchesOmitted: false,
+        patchesTruncated: false,
+        baselineKind: 'run-green',
+        repositoryUrl: 'https://github.com/acme/shop',
+        range: { from: 'a1b2c3d', to: 'e4f5a6b' },
+        compareUrl: 'https://github.com/acme/shop/compare/a1b2c3d...e4f5a6b',
+        gitCommand: 'git log --oneline a1b2c3d..e4f5a6b',
+        error: null,
+        hasToken: false,
+      },
+    };
+    await route.fulfill({ response, json });
+  });
 }
 
 const SCENES = [
@@ -1532,6 +1909,243 @@ const SCENES = [
       await shoot('narrow');
     },
     outputs: ['page-not-found-wide.png', 'page-not-found-narrow.png'],
+  },
+  {
+    name: 'assistant-panel',
+    description:
+      'The assistant panel on an answer holding every kind of block (a fixed answer streamed into it): beside the page, whole at 1280 and 390 px, and the command palette offering Ask Piwi',
+    route: '/',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle, goto }) {
+      const panel = await openAssistantAnswer(page, goto);
+      await settle();
+      await shoot('wide');
+      // Tall enough for the whole answer, so one image shows every block.
+      const tall = async (width) => {
+        await page.setViewportSize({ width, height: 860 });
+        const content = await panel.locator('[data-assistant-panel]').evaluate((node) => node.scrollHeight);
+        await page.setViewportSize({ width, height: content + 260 });
+        await panel.locator('[data-assistant-panel]').evaluate((node) => node.scrollTo({ top: 0 }));
+        await settle();
+      };
+      await tall(1280);
+      await shoot('blocks', { of: '[data-shot="assistant-panel"]' });
+      await tall(390);
+      await shoot('phone', { of: '[data-shot="assistant-panel"]' });
+      await page.setViewportSize({ width: 1280, height: 860 });
+      await panel.getByRole('button', { name: 'Close' }).click();
+      await page.getByRole('button', { name: /^Search…/ }).click();
+      await page.getByPlaceholder('Type a command or search…').fill('Why does the cart test keep failing?');
+      await page.getByRole('option', { name: /Ask Piwi/ }).waitFor();
+      await settle();
+      await shoot('palette');
+    },
+    outputs: [
+      'assistant-panel-wide.png',
+      'assistant-panel-blocks.png',
+      'assistant-panel-phone.png',
+      'assistant-panel-palette.png',
+    ],
+  },
+  {
+    name: 'assistant-docked',
+    description:
+      'The assistant docked beside Home at 1280 px, the sidebar folded to its rail: a short answer (the run read, its card and the fix) and the next question it suggests offered in the empty field, with the usage gauge',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 720 },
+    async run({ page, shoot, settle, goto }) {
+      const panel = await openAssistantAnswer(page, goto, '/', {
+        answer: assistantDocsAnswer(),
+        status: assistantStatusWithLimits(230_000),
+      });
+      await panel
+        .getByLabel('Your question')
+        .and(page.getByPlaceholder('How do I check the fix on the next run?'))
+        .waitFor();
+      await panel.locator('[data-assistant-panel]').evaluate((node) => node.scrollTo({ top: 0 }));
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'assistant-input',
+    description:
+      'The docked assistant panel’s question field with its limits nearly spent: the warning at 85% of the daily allowance, the next question suggested in the empty field with its Right-arrow key, the model line and the usage gauge',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 1280, height: 720 },
+    async run({ page, shoot, settle, goto }) {
+      const panel = await openAssistantAnswer(page, goto, '/', {
+        answer: assistantDocsAnswer(),
+        status: assistantStatusWithLimits(850_000, 0.42),
+      });
+      await panel.locator('[data-assistant-usage-warning]').waitFor();
+      await panel.locator('[data-assistant-suggestion-key]').waitFor();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="assistant-input"]', pad: 16 });
+    },
+  },
+  {
+    name: 'assistant-demo',
+    mode: 'demo',
+    description:
+      'The live demo’s assistant answering a prepared question with blocks computed from the seed (why a checkout test failed: the situation, the clues, the cluster, the diagnosed patch, the reproduce command and the ways to fix it): beside the page at 1280 px, and whole at 1280 and 390 px',
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle }) {
+      // The demo's guided tour asks a first-time visitor their role; this scene is about the panel.
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.locator('[data-tour="situation"]').waitFor({ timeout: 90_000 });
+      const launcher = page.getByRole('button', { name: 'Ask Piwi' });
+      await launcher.click();
+      const panel = page.locator('[data-shot="assistant-panel"]');
+      await panel.locator('[data-assistant-empty]').getByRole('button', { name: 'Why did this test fail?' }).click();
+      await panel.locator('[data-assistant-read]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('wide');
+      // Tall enough for the whole answer, so one image shows every block: grown until the panel scrolls no more.
+      const scroller = panel.locator('[data-assistant-panel]');
+      const tall = async (width) => {
+        await page.setViewportSize({ width, height: 860 });
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const hidden = await scroller.evaluate((node) => node.scrollHeight - node.clientHeight);
+          if (hidden <= 0) break;
+          await page.setViewportSize({ width, height: page.viewportSize().height + hidden + 40 });
+        }
+        await scroller.evaluate((node) => node.scrollTo({ top: 0 }));
+        await settle();
+      };
+      await tall(1280);
+      await shoot('blocks', { of: '[data-shot="assistant-panel"]' });
+      await tall(390);
+      await shoot('phone', { of: '[data-shot="assistant-panel"]' });
+    },
+    outputs: ['assistant-demo-wide.png', 'assistant-demo-blocks.png', 'assistant-demo-phone.png'],
+  },
+  {
+    name: 'assistant-proposal',
+    description:
+      'A change the assistant proposes, in the panel on the fixed answer: the card with Apply and Dismiss, then the same card applied, at 1280 and 390 px',
+    route: '/',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle, goto }) {
+      const panel = await openAssistantAnswer(page, goto);
+      const card = panel.locator('[data-assistant-block="proposal"]');
+      const showCard = async (width) => {
+        await page.setViewportSize({ width, height: 860 });
+        await card.evaluate((node) => node.scrollIntoView({ block: 'center' }));
+        await settle();
+      };
+      await showCard(1280);
+      await shoot('wide', { of: '[data-shot="assistant-panel"]' });
+      await showCard(390);
+      await shoot('phone', { of: '[data-shot="assistant-panel"]' });
+      await card.getByRole('button', { name: 'Apply', exact: true }).click();
+      await card.getByText('Applied').waitFor();
+      await showCard(390);
+      await shoot('phone-applied', { of: '[data-shot="assistant-panel"]' });
+      await showCard(1280);
+      await shoot('wide-applied', { of: '[data-shot="assistant-panel"]' });
+    },
+    outputs: [
+      'assistant-proposal-wide.png',
+      'assistant-proposal-phone.png',
+      'assistant-proposal-phone-applied.png',
+      'assistant-proposal-wide-applied.png',
+    ],
+  },
+  {
+    name: 'assistant-nudges',
+    description:
+      'The three nudges in place, at 1280 and 390 px: Setup with undecided capabilities (Ask), a cluster diagnosis that read no commits for want of an SCM token, and a timed-out failure in a project without capture fixtures (Show me)',
+    prepare: prepareNudgeFailure,
+    route: '/',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle, goto }) {
+      const clusterId = 3;
+      await routeNudgeScene(page, clusterId);
+      const pages = [
+        ['setup', '/setup'],
+        ['cluster', `/failure-clusters/${clusterId}`],
+        ['failure', `/test-run-cases/${nudgeExecId}`],
+      ];
+      for (const [width, height, suffix] of [
+        [1280, 860, ''],
+        [390, 844, '-phone'],
+      ]) {
+        await page.setViewportSize({ width, height });
+        for (const [label, path] of pages) {
+          // Each page view gets the browser's weekly budget afresh.
+          await page.evaluate(() => localStorage.removeItem('piwi-nudges'));
+          await goto(path);
+          const nudge = page.locator('[data-shot="assistant-nudge"]');
+          await nudge.waitFor({ timeout: 90_000 });
+          // Centered by scrolling the panel that holds it, so the page header stays in place.
+          await nudge.evaluate((node) => {
+            let panel = node.parentElement;
+            while (panel && !/(auto|scroll)/.test(getComputedStyle(panel).overflowY)) panel = panel.parentElement;
+            if (!panel) return;
+            const offset = node.getBoundingClientRect().top - panel.getBoundingClientRect().top;
+            panel.scrollTop += offset - (panel.clientHeight - node.offsetHeight) / 2;
+          });
+          await settle();
+          await shoot(`${label}${suffix}`);
+        }
+      }
+    },
+    outputs: [
+      'assistant-nudges-setup.png',
+      'assistant-nudges-cluster.png',
+      'assistant-nudges-failure.png',
+      'assistant-nudges-setup-phone.png',
+      'assistant-nudges-cluster-phone.png',
+      'assistant-nudges-failure-phone.png',
+    ],
+  },
+  {
+    name: 'guides',
+    description:
+      "The command palette's Guides group, then the first stop of the Flake Lab guide started from it, at 1280 and 390 px",
+    route: '/',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle }) {
+      const input = page.getByPlaceholder('Type a command or search…');
+      const guides = page.getByRole('group', { name: 'Guides' });
+      const showGuides = async () => {
+        await page.keyboard.press('Control+KeyK');
+        await guides.waitFor({ timeout: 30_000 });
+        // The group follows Go to: scroll the palette's list to it.
+        await guides.evaluate((group) => group.scrollIntoView({ block: 'start' }));
+        await settle();
+      };
+      const startFlakeLab = async () => {
+        await input.fill('Run the Flake Lab');
+        await guides.getByRole('option').first().filter({ hasText: 'Run the Flake Lab' }).waitFor();
+        await page.waitForTimeout(300);
+        await guides.getByRole('option').first().click();
+        await page
+          .locator('.piwi-guide[data-guide="guide-run-flake-lab"][data-guide-settled]')
+          .waitFor({ timeout: 60_000 });
+        await settle();
+      };
+      await showGuides();
+      await shoot('palette');
+      await startFlakeLab();
+      await shoot('stop');
+      await page.keyboard.press('Escape');
+      await page.setViewportSize({ width: 390, height: 844 });
+      await showGuides();
+      await shoot('palette-phone');
+      await startFlakeLab();
+      await shoot('stop-phone');
+    },
+    outputs: ['guides-palette.png', 'guides-stop.png', 'guides-palette-phone.png', 'guides-stop-phone.png'],
   },
   {
     name: 'user-menu-piwi-tools',
@@ -2911,6 +3525,13 @@ const SCENES = [
       await shoot();
     },
   },
+  pausedTestScene(1280, 'light', ''),
+  pausedTestScene(1280, 'dark', '-dark'),
+  pausedTestScene(390, 'light', '-phone'),
+  pausedTestScene(390, 'dark', '-phone-dark'),
+  timelineResourcesScene(1280, 'light', ''),
+  timelineResourcesScene(1280, 'dark', '-dark'),
+  timelineResourcesScene(390, 'light', '-phone'),
   {
     name: 'run-timeline-retries',
     description:
@@ -3014,6 +3635,57 @@ const SCENES = [
       'run-timeline-resources-worker-pages.png',
       'run-timeline-resources-worker-cpu.png',
       'run-timeline-resources-narrow.png',
+    ],
+  },
+  {
+    name: 'run-timeline-resources-live',
+    description:
+      "A run still going: the CPU, memory and open-pages tracks drawn as the reporter sends them, with each worker's open pages under its row, then each running test's worker values on the Tests tab, at 1280 px and at phone width",
+    route: '/projects',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="run-timeline"]',
+    pad: 12,
+    async prepare({ request, base }) {
+      this.runId = await reportLiveRunWithResources(request, base);
+    },
+    async run({ page, goto, shoot, settle }) {
+      await goto(`/test-runs/${this.runId}?tab=workers`);
+      await page.getByTestId('timeline-resource-band').first().waitFor({ timeout: 60000 });
+      await page.getByTestId('timeline-resources-menu').click();
+      await page.getByRole('menuitemcheckbox', { name: 'Open pages', exact: true }).last().click();
+      await page.keyboard.press('Escape');
+      await page.mouse.move(0, 0);
+      await settle();
+      await shoot();
+      await page.setViewportSize({ width: 390, height: 900 });
+      await settle();
+      await shoot('narrow');
+      // Back to no strip, so the next visit starts as the timeline does by default.
+      await page.getByTestId('timeline-resources-menu').click();
+      await page.getByRole('menuitemcheckbox', { name: 'Nothing', exact: true }).click();
+      // The Tests tab: each running test shows what its worker uses right now.
+      const list = '[data-shot="failure-clusters"]';
+      for (const [width, label] of [
+        [1280, 'tests'],
+        [390, 'tests-narrow'],
+      ]) {
+        await page.setViewportSize({ width, height: 900 });
+        await goto(`/test-runs/${this.runId}?tab=test-cases`);
+        await page.getByTestId('live-worker-resources').first().waitFor({ timeout: 60000 });
+        // A wide list follows the live run to its newest rows; on a phone the
+        // page scrolls instead, so the newest rows are put first there.
+        const newestFirst = width < 640;
+        if (newestFirst) await page.getByRole('button', { name: 'Sorted ascending' }).click();
+        await settle();
+        await shoot(label, { of: list });
+        if (newestFirst) await page.getByRole('button', { name: 'Sorted descending' }).click();
+      }
+    },
+    outputs: [
+      'run-timeline-resources-live.png',
+      'run-timeline-resources-live-narrow.png',
+      'run-timeline-resources-live-tests.png',
+      'run-timeline-resources-live-tests-narrow.png',
     ],
   },
   {
@@ -3562,6 +4234,34 @@ const SCENES = [
     pad: 12,
   },
   {
+    name: 'run-trend-marker-tooltip',
+    description:
+      'Run trend: hovering a timeline marker line shows its category, label, date, environment and description',
+    tags: ['desktop'],
+    route: '/projects/1',
+    viewport: { width: 1400, height: 900 },
+    charts: true,
+    async run({ page, settle, shoot }) {
+      const marker = page.locator('[data-shot="run-trend"] [data-testid="chart-marker"]').nth(4);
+      await marker.waitFor({ timeout: 60_000 });
+      await settle();
+      const box = await marker.boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.getByTestId('chart-marker-tooltip').waitFor();
+      const boxes = [
+        await page.locator('[data-shot="run-trend"]').boundingBox(),
+        await page.getByTestId('chart-marker-tooltip').boundingBox(),
+      ];
+      const x = Math.max(0, Math.min(...boxes.map((b) => b.x)) - 12);
+      const y = Math.max(0, Math.min(...boxes.map((b) => b.y)) - 12);
+      const right = Math.max(...boxes.map((b) => b.x + b.width)) + 12;
+      const bottom = Math.max(...boxes.map((b) => b.y + b.height)) + 12;
+      await shoot('', { of: false, clip: { x, y, width: right - x, height: bottom - y } });
+    },
+  },
+  markersPanelScene(1280, ''),
+  markersPanelScene(390, '-mobile'),
+  {
     name: 'run-skip-kinds',
     description: 'Run page: the count bar draws skipped and fixme in two greys; the Tests list filters by tag',
     route: '/test-runs/2',
@@ -3589,19 +4289,22 @@ const SCENES = [
   },
   {
     name: 'run-skip-kinds-mobile',
-    description: 'Run page at phone width: the two skipped greys and the search box above the wrapped status chips',
+    description:
+      'Run page at phone width: the two skipped greys on the count bar, and the search box with the New regressions and Newly flaky toggles',
     route: '/test-runs/2',
     viewport: { width: 390, height: 1400 },
   },
   {
     name: 'run-count-bar-active',
-    description: 'Run page count bar: an active segment grows taller than the track, in the middle and at both ends',
+    description:
+      'Run page count bar: a selected segment carries a ring and the others fade, in the middle and at both ends, and a narrow one widens to its whole label',
+    // Seeded run #2 has one test passed on retry: its segment is too narrow for the
+    // whole label until it is selected.
     route: '/test-runs/2',
     viewport: { width: 1280, height: 900 },
     async run({ page, shoot, settle }) {
       const header = page.locator('[data-shot="run-header"]');
-      // The bar segment comes before the legend chip of the same name.
-      const segment = (name) => header.getByRole('button', { name, exact: true }).first();
+      const segment = (name) => header.getByRole('button', { name });
       await segment('3 failed').click();
       await settle();
       await shoot('middle', { of: '[data-shot="run-header"]', pad: 12 });
@@ -3610,6 +4313,11 @@ const SCENES = [
       await segment('1 fixme').click();
       await settle();
       await shoot('ends', { of: '[data-shot="run-header"]', pad: 12 });
+      await segment('6 passed').click();
+      await segment('1 fixme').click();
+      await segment(/^1 (flaky, )?passed on retry$/).click();
+      await settle();
+      await shoot('narrow', { of: '[data-shot="run-header"]', pad: 12 });
     },
   },
   {
@@ -3656,7 +4364,7 @@ const SCENES = [
   },
   {
     name: 'test-search-mobile',
-    description: 'Run Tests tab at phone width: the search box completing a describe: value above the status chips',
+    description: 'Run Tests tab at phone width: the search box completing a describe: value',
     route: '/test-runs/2',
     viewport: { width: 390, height: 1100 },
     async run({ page, shoot }) {
@@ -4571,13 +5279,82 @@ const SCENES = [
     of: '[data-shot="companion-tools"]',
     pad: 12,
   },
+  setupConnectScene(1280, ''),
+  setupConnectScene(390, '-phone'),
   {
-    name: 'wizard-fast-path',
-    description: 'Get-started wizard: the one-command init fast path above the manual steps',
+    name: 'home-empty-connect',
+    description:
+      'Home on an instance with no project yet: the connect wizard waiting for the first run, then the run reporting',
+    tags: ['desktop'],
+    route: '/settings',
+    viewport: { width: 1280, height: 2000 },
+    async run({ page, settle, shoot }) {
+      let runs = [];
+      for (const api of ['projects/overview', 'failure-clusters', 'gaps/inbox', 'flake-lab/inbox']) {
+        await page.route(`**/api/${api}*`, (route) => route.fulfill({ json: { items: [] } }));
+      }
+      await page.route('**/api/test-runs/recent*', (route) => route.fulfill({ json: { items: runs } }));
+      // A client-side navigation, so the routes above answer the page's first fetch, not the server render.
+      await page.locator('a[href="/"]').first().click();
+      const wizard = '[data-shot="get-started-wizard"]';
+      await page.locator(wizard).waitFor({ timeout: 60_000 });
+      await page.getByText('Waiting for the first run').waitFor();
+      await settle();
+      await shoot('waiting', { of: wizard, pad: 12 });
+      runs = [
+        {
+          id: 1,
+          projectName: 'checkout',
+          status: 'running',
+          startTime: new Date().toISOString(),
+          passedTests: 3,
+          failedTests: 0,
+          skippedTests: 0,
+          didNotRunTests: 0,
+          flakyTests: 0,
+          totalTests: 12,
+        },
+      ];
+      await page.locator('a[href="/settings/account"], a[href="/projects"]').first().click();
+      await page.locator('a[href="/"]').first().click();
+      await page.getByText('A run of checkout is reporting now').waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot('reporting', { of: '[data-shot="setup-run-status"]', pad: 16 });
+    },
+  },
+  {
+    name: 'setup-connect-desktop',
+    description:
+      'Connect wizard (desktop app): the one command with no URL, then with CI reporting to a team server and local runs kept in the app',
+    tags: ['desktop'],
+    mode: 'desktop',
     route: '/setup',
-    viewport: { width: 1280, height: 2600 },
-    of: '[data-shot="wizard-fast-path"]',
+    viewport: { width: 1280, height: 2400 },
+    async run({ page, settle, shoot }) {
+      const wizard = '[data-shot="get-started-wizard"]';
+      await page.locator(wizard).waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('', { of: wizard, pad: 12 });
+      await page.getByRole('switch', { name: 'CI reports to a team server' }).click();
+      await page.getByRole('textbox', { name: 'Team server URL' }).fill('https://piwi.acme.dev');
+      await settle();
+      await shoot('team-server', { of: wizard, pad: 12 });
+    },
+  },
+  {
+    name: 'mcp-tool-details',
+    description: 'MCP page: one tool opened, its Markdown description and parameters',
+    route: '/mcp',
+    viewport: { width: 1280, height: 2400 },
+    of: '[data-shot="mcp-tool-get_fix_plan"]',
     pad: 12,
+    run: async ({ page, shoot, settle }) => {
+      const tool = page.locator('[data-shot="mcp-tool-get_fix_plan"]');
+      await tool.getByRole('button', { expanded: false }).click();
+      await tool.getByRole('button', { expanded: true }).waitFor();
+      await settle();
+      await shoot();
+    },
   },
   {
     name: 'mcp-agent-skills',
@@ -4601,7 +5378,7 @@ const SCENES = [
     name: 'mcp-tool-modules',
     description: 'MCP page: the tool catalog grouped by module with the Core tools only switch',
     route: '/mcp',
-    viewport: { width: 1280, height: 5300 },
+    viewport: { width: 1280, height: 6200 },
     of: '[data-shot="mcp-tool-modules"]',
     pad: 12,
   },
@@ -5138,6 +5915,44 @@ const SCENES = [
       await shoot('collapsed', { clip: { x: 0, y: 0, width: 320, height: 560 } });
     },
   },
+  ...[375, 1280].map((width) => ({
+    name: `ai-codex-cli-${width}`,
+    description: `Settings → AI: local Codex login and provider at ${width} px`,
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/ai',
+    viewport: { width, height: 1800 },
+    async run({ page, shoot, settle }) {
+      const card = page.getByText('Uses your local ChatGPT login.').locator('..');
+      await card.waitFor();
+      await card.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
+      await settle();
+      await shoot('before');
+      await page.getByRole('combobox').first().click();
+      await page.getByRole('option', { name: 'Codex (local)' }).click();
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[375, 1280].map((width) => ({
+    name: `ai-deepseek-cli-${width}`,
+    description: `Settings → AI: official DeepSeek Harness credentials and provider at ${width} px`,
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/ai',
+    viewport: { width, height: 1800 },
+    async run({ page, shoot, settle }) {
+      const card = page.getByText('Uses official').locator('..');
+      await card.waitFor();
+      await card.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
+      await settle();
+      await shoot('before');
+      await page.getByRole('combobox').first().click();
+      await page.getByRole('option', { name: 'DeepSeek Harness (local)' }).click();
+      await settle();
+      await shoot();
+    },
+  })),
   {
     name: 'ai-claude-cli',
     description: 'Settings → AI: use the local Claude Code CLI as the provider — no API key (desktop shell)',
@@ -5318,10 +6133,11 @@ const SCENES = [
   },
   {
     name: 'channel-form',
-    description: 'Notifications → Add channel: the Slack app steps with a checked URL, then that URL under Teams',
+    description:
+      'Notifications → Add channel: the Slack app steps with a checked URL, then that URL under Teams, then Slack with a bot token',
     route: '/settings/notifications',
     viewport: { width: 1280, height: 1100 },
-    outputs: ['channel-form-slack.png', 'channel-form-teams.png'],
+    outputs: ['channel-form-slack.png', 'channel-form-teams.png', 'channel-form-slack-api.png'],
     async run({ page, shoot, settle }) {
       await page.getByRole('button', { name: 'Add channel' }).click();
       const form = page.locator('[data-shot="channel-form"]');
@@ -5330,7 +6146,7 @@ const SCENES = [
         await form.getByRole('combobox').first().click();
         await page.getByRole('option', { name: label, exact: true }).click();
       };
-      await pick('Slack webhook');
+      await pick('Slack');
       await page.getByTestId('slack-webhook-url').fill('https://hooks.slack.com/services/T000/B000/XXXX');
       await settle();
       await shoot('slack', { of: '[data-shot="channel-form"]', pad: 12 });
@@ -5339,6 +6155,12 @@ const SCENES = [
       await page.getByTestId('channel-url-check').waitFor();
       await settle();
       await shoot('teams', { of: '[data-shot="channel-form"]', pad: 12 });
+      await pick('Slack');
+      await form.getByRole('radio', { name: 'Bot token (Web API)' }).check();
+      await page.getByTestId('slack-bot-token').fill('xoxb-0000-0000-screenshot');
+      await page.getByTestId('slack-channel-id').fill('C0123456789');
+      await settle();
+      await shoot('slack-api', { of: '[data-shot="channel-form"]', pad: 12 });
     },
   },
   // ── Capabilities opt-out ─────────────────────────────────────────────────
@@ -5567,9 +6389,9 @@ const SCENES = [
         await page.evaluate(() => localStorage.removeItem('piwi-demo-tour'));
         await goto('/');
         await startTourFromPrompt(page, { profile });
-        await walkTourStops(page, async ({ id, target }) => {
-          if (!target) {
-            console.log(`   ${profile}/${id}: left out, its target is in the demo banner`);
+        await walkTourStops(page, async ({ id, anchor }) => {
+          if (!anchor) {
+            console.log(`   ${profile}/${id}: left out, its anchor is in the demo banner`);
             return;
           }
           await settle();
@@ -5858,52 +6680,6 @@ async function openCoverageScene(page, goto, settle) {
   await section.getByRole('button', { name: 'Show the source of api/Users/UsersEndpoints.cs' }).click();
   await section.locator('[data-coverage-source] [data-not-executed]').first().waitFor({ timeout: 30_000 });
   await settle();
-}
-
-/** Mocked Tauri IPC bridge, shaped per scene. Mirrors the real shell's commands. */
-function bridgeScript(scene) {
-  const inspection = scene.inspection ?? READY_INSPECTION;
-  const link = scene.link ?? null;
-  const importableRuns = scene.importableRuns ?? [];
-  const pickedFiles = scene.pickedFiles ?? [];
-  return `
-    window.__mockLink = ${JSON.stringify(link)};
-    window.__TAURI__ = {
-      core: {
-        invoke: (cmd, args) => {
-          switch (cmd) {
-            case 'desktop_pick_folder':
-              return Promise.resolve(${JSON.stringify(inspection.path)});
-            case 'desktop_inspect_folder':
-              return Promise.resolve({ ...${JSON.stringify(inspection)}, path: args.path });
-            case 'desktop_find_importable_runs':
-              return Promise.resolve(${JSON.stringify(importableRuns)});
-            case 'desktop_pick_import_files':
-              return Promise.resolve(${JSON.stringify(pickedFiles)});
-            case 'desktop_get_project_link':
-              return Promise.resolve(window.__mockLink);
-            case 'desktop_set_project_link':
-              window.__mockLink = args.path ? { path: args.path, exists: true } : null;
-              return Promise.resolve(null);
-            case 'desktop_open_window':
-              return Promise.resolve(null);
-            case 'desktop_save_download':
-              return Promise.resolve('~/Downloads/' + (args?.filename ?? 'download'));
-            case 'desktop_get_service_settings':
-              return Promise.resolve({ run_in_background: false, start_on_login: false });
-            case 'desktop_check_update':
-              return Promise.resolve({ state: 'unsupported' });
-            case 'desktop_mcp_clients':
-              return Promise.resolve([]);
-            default:
-              return Promise.resolve(null);
-          }
-        },
-      },
-      event: { listen: () => Promise.resolve(() => {}) },
-      window: { getCurrentWindow: () => ({ label: 'main' }) },
-    };
-  `;
 }
 
 /** Attributes the region capture puts on the page, and takes off again. */
@@ -6358,7 +7134,11 @@ async function main() {
   let written = 0;
   try {
     for (const [mode, group] of byMode) {
-      const server = flags.url ? { base: flags.url, stop: () => {} } : await startServer({ mode });
+      const server = flags.url
+        ? { base: flags.url, stop: () => {} }
+        : mode === 'demo'
+          ? await startBuiltDemo()
+          : await startServer({ mode });
       try {
         for (const scene of group) {
           try {

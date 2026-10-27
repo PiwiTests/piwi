@@ -1,5 +1,5 @@
 <script setup lang="ts">
- /**
+/**
  * Marks a card whose data was recovered from the uploaded trace because the
  * capture fixtures were absent — so a reader knows it came from the trace, not
  * from Piwi's own capture.

@@ -29,12 +29,13 @@ const instanceRows = INSTANCE_PERMISSIONS.map((permission) => ({ permission, lab
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6" data-tour="roles-page">
     <SectionCard
       title="Project roles"
       subtitle="Held on one project or on all projects, directly or through a group. A user's rights on a project are the union of every role they hold there."
       help="settings.roles"
       data-shot="roles-matrix"
+      data-tour="project-roles-matrix"
     >
       <dl class="grid gap-x-6 gap-y-2 sm:grid-cols-[10rem_1fr] mb-6">
         <template v-for="role in PROJECT_ROLES" :key="role">
@@ -92,6 +93,7 @@ const instanceRows = INSTANCE_PERMISSIONS.map((permission) => ({ permission, lab
       title="Administrator"
       subtitle="An instance role, granted to a user on their own row in Settings → Users, never through a group. An Administrator can do everything on every project, and alone holds these permissions."
       data-shot="roles-instance"
+      data-tour="administrator-role"
     >
       <ul class="space-y-1">
         <li v-for="row in instanceRows" :key="row.permission" class="text-sm text-highlighted">

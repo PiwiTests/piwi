@@ -299,6 +299,12 @@ describe('the strip under each worker', () => {
     expect(set.strips[0]!.spans[0]).toMatchObject({ end: 6000, value: 1.5 });
   });
 
+  test('measures a test that stood paused at the pause bar against its own time, which Playwright reports', () => {
+    const pausedBar = { ...bar(1, 0, 0, 6000), reportedDuration: 2000, pausedMs: 4000 };
+    const set = buildWorkerStrips('cpu', { ...input, tests: [pausedBar] })!;
+    expect(set.strips[0]!.spans[0]).toMatchObject({ end: 6000, value: 1.5 });
+  });
+
   test('draws the sampler’s readings of a worker’s processes, and per-test values where it read none', () => {
     const sampledPart = part(null, {
       timeline: {

@@ -49,10 +49,16 @@ function refresh() {
 </script>
 
 <template>
-  <SectionCard v-if="hasChangesToShow" icon="i-lucide-git-compare-arrows" title="What changed" help="cluster.scm">
+  <SectionCard
+    v-if="hasChangesToShow"
+    icon="i-lucide-git-compare-arrows"
+    title="What changed"
+    help="cluster.scm"
+    data-tour="what-changed-card"
+  >
     <div class="space-y-3">
       <div class="pb-2 border-b border-default">
-        <div class="flex items-center gap-2 flex-wrap">
+        <div class="flex items-center gap-2 flex-wrap" data-tour="what-changed-baseline">
           <span class="text-xs text-gray-500 font-medium shrink-0 inline-flex items-center gap-1">
             Baseline <HelpHint topic="cluster.baseline" />
           </span>
@@ -71,7 +77,14 @@ function refresh() {
                 <UIcon name="i-lucide-x" class="size-3" />
               </button>
             </div>
-            <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-list" @click="commitBrowserOpen = true">
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-list"
+              data-tour="what-changed-browse"
+              @click="commitBrowserOpen = true"
+            >
               Browse
             </UButton>
             <UButton

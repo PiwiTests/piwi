@@ -27,6 +27,7 @@ record these follow, with its measurements, is [`adr/ci-workflows.md`](../adr/ci
 | `workflows/edge.yml`                       | pushes to `main`                | the `edge` container image                                                               |
 | `workflows/release-notes.yml`              | releases, on demand             | tidies the release notes                                                                 |
 | `workflows/live-jira.yml`                  | on demand                       | the live Jira E2E                                                                        |
+| `workflows/nightly-vscode.yml`             | every night, on demand          | the VS Code extension in the real VS Code (`apps/vscode/tests/e2e`), at the pinned release |
 | `actions/setup-workspace/action.yml`       | used by the workflows above     | Node, the npm cache, `npm ci`, and Playwright's Chromium when asked                      |
 | `actions/container-health/action.yml`      | `ci.yml`, the container publish | starts a server image on an empty data folder and waits for `/api/health`                |
 
@@ -52,15 +53,21 @@ every comparison is made on one machine; a `report` job joins their results into
   same commit: the latest run of a check is the one branch protection reads. `pr-lint.yml` runs every job on every
   event for this reason.
 - **Node through `setup-workspace`.** The version comes from the root `.node-version`; a job names another only to test
-  a floor (`engines`, Node 22) or a bundled runtime (the desktop's `24.22.0`). `npm ci` runs with
+  a floor (`engines`, Node 22) or a bundled runtime (the desktop's, the root `Dockerfile`'s Node version, read by
+  `apps/desktop/scripts/node-version.mjs`). `npm ci` runs with
   `--prefer-offline --no-audit --fund=false`.
-- **Playwright's headless shell is cached by Playwright version** (`playwright: shell`). The full Chromium build
-  (`playwright: full`) is installed on every run: its workflows run on pull requests only, where a cache serves its own
-  pull request alone.
+- **Playwright's headless shell is cached by Playwright version** (`playwright: shell`), saved as soon as it is
+  installed, so the cache holds the shell alone. The full Chromium build (`playwright: full`) is installed on every
+  run: its workflows run on pull requests only, where a cache serves its own pull request alone. The checks job
+  installs it too, beside the shell and after the cache is saved, for the reporter's breakpoint run, which opens
+  Chromium's windows under `xvfb-run`.
 - **Least privilege.** `permissions: contents: read` on every workflow; anything more on the job that needs it. A job
   that calls a reusable workflow grants the permissions its jobs ask for: a called job asking for more fails the run.
 - **Publishing only from a release tag.** A publishing step runs when `github.ref` is a `v*` tag (`TAG_BUILD`), or
   `main` for the `edge` image; anywhere else the workflow builds and packs, so a pull request can run it.
+- **The GHCR image name is fixed.** It is `ghcr.io/piwitests/platform` (`IMAGE_NAME` in
+  `reusable-publish-container.yml`), never derived from `github.repository`: users pull it by that name, and a
+  registry does not redirect when the repository is renamed.
 - **Publishing secrets reach a release tag only.** A `reusable-publish-*.yml` declares the secrets it uses
   (`on.workflow_call.secrets`), and `release.yml` passes each one only when `github.ref` is a `v*` tag, never
   `secrets: inherit`: a pull request's dry run gets none. A step that runs project code with a signing key (the

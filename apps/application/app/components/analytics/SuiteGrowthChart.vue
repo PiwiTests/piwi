@@ -77,6 +77,7 @@ const exportData = computed(() =>
     :title="title ?? 'Suite growth'"
     :subtitle="subtitle"
     help="analytics.suite-growth"
+    data-tour="analytics-suite-growth"
     :legend="legend"
     :export-data="exportData"
     data-shot="analytics-suite-growth"

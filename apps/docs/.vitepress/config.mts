@@ -102,7 +102,7 @@ export default defineConfig({
     sidebar: sidebars(),
 
     editLink: {
-      pattern: 'https://github.com/PiwiTests/platform/edit/main/apps/docs/:path',
+      pattern: 'https://github.com/PiwiTests/piwi/edit/main/apps/docs/:path',
       text: 'Edit this page on GitHub',
     },
 
@@ -115,7 +115,7 @@ export default defineConfig({
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/PiwiTests/platform' },
+      { icon: 'github', link: 'https://github.com/PiwiTests/piwi' },
     ],
 
     externalLinkIcon: true,

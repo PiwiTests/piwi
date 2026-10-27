@@ -29,6 +29,18 @@ test.describe('showPauseBar', () => {
     }
   });
 
+  test('offers Record here only when the editor can record from the pause', async ({ page }) => {
+    await page.setContent('<!doctype html><html><body></body></html>');
+    await page.evaluate(showPauseBar, ARG);
+    const bar = page.getByRole('toolbar', { name: 'Piwi: test paused' });
+    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Pick a locator', 'Finish']);
+    await page.evaluate(takePauseState);
+    await page.evaluate(showPauseBar, { ...ARG, record: true });
+    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Pick a locator', 'Record here', 'Finish']);
+    await bar.getByRole('button', { name: 'Record here' }).click();
+    expect(await page.evaluate(takePauseState)).toBe('record');
+  });
+
   test('resumes on Escape, and leaves the attempt out of the first one', async ({ page }) => {
     await page.setContent('<!doctype html><html><body></body></html>');
     await page.evaluate(showPauseBar, { ...ARG, attempt: null, locator: null });

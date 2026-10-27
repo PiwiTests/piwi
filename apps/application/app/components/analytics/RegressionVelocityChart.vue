@@ -76,6 +76,7 @@ const subtitle = computed(() => {
     title="Regression velocity"
     :subtitle="subtitle"
     help="analytics.regression-velocity"
+    data-tour="analytics-regression-velocity"
     :legend="legendItems"
     :export-data="exportData"
   >

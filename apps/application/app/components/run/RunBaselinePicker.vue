@@ -97,6 +97,7 @@ const showAutomatic = computed(() => props.insights.baselineSource !== 'auto' ||
   <div
     v-if="showBaseBranch || runOptions.length > 0 || showAutomatic"
     class="flex flex-wrap items-center gap-x-2 gap-y-2"
+    data-tour="run-baseline-picker"
   >
     <template v-if="showBaseBranch">
       <span class="text-xs font-medium text-muted">Base branch</span>

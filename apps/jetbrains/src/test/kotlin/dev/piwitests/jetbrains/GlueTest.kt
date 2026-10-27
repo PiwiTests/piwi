@@ -394,8 +394,8 @@ class GlueTest {
         val json = JsonParser.parseString(
             Glue.mcpConfiguration(
                 listOf(
-                    McpServerDefinition("Piwi (a)", "https://a/mcp", mapOf("Authorization" to "Bearer pd_x")),
-                    McpServerDefinition("Piwi (b)", "http://b/mcp", emptyMap()),
+                    McpServerDefinition("Piwi (a)", "https://a/mcp", mapOf("Authorization" to "Bearer pd_x"), "key"),
+                    McpServerDefinition("Piwi (b)", "http://b/mcp", emptyMap(), "sign-in"),
                 ),
             ),
         ).asJsonObject.getAsJsonObject("mcpServers")
@@ -407,6 +407,18 @@ class GlueTest {
         )
         assertEquals("Bearer pd_x", first.getAsJsonObject("env").get("PIWI_AUTH").asString)
         assertEquals(listOf("-y", "mcp-remote", "http://b/mcp"), json.getAsJsonObject("piwi-2").getAsJsonArray("args").map { it.asString })
+    }
+
+    @Test
+    fun `the copied MCP configuration says whether it holds a key, or that the agent signs in`() {
+        val keyed = McpServerDefinition("Piwi (a)", "https://a/mcp", mapOf("Authorization" to "Bearer pd_x"), "key")
+        val signIn = McpServerDefinition("Piwi (b)", "http://b/mcp", emptyMap(), "sign-in")
+        assertEquals("It holds your API key: keep it out of the repository.", Glue.mcpAuthorizationNote(listOf(keyed, signIn)))
+        assertEquals(
+            "It holds no key: the first time the agent connects, it opens the instance in your browser to sign in.",
+            Glue.mcpAuthorizationNote(listOf(signIn)),
+        )
+        assertEquals("", Glue.mcpAuthorizationNote(listOf(signIn.copy(authorization = "none"))))
     }
 
     @Test
@@ -1439,6 +1451,32 @@ class GlueTest {
         assertEquals(true, Glue.hasCoverageMarks(mappedCoverage))
         assertEquals(false, Glue.hasCoverageMarks(other))
         assertEquals(false, Glue.hasCoverageMarks(other.copy(state = "none")))
+    }
+
+    @Test
+    fun `the uncovered changes of a file no test reaches are marks of their own, with what they mean`() {
+        val uncovered = CoverageResult(
+            uri = "file:///w/server/api/refunds.post.ts",
+            state = "none",
+            label = "3 lines changed since main, and no test reaches this file",
+            uncovered = listOf(LineSpan(0, 0), LineSpan(2, 30)),
+        )
+        assertEquals(true, Glue.hasCoverageMarks(uncovered))
+        val tooltip = "Piwi: uncovered change: 3 lines changed since main, and no test reaches this file"
+        val marks = Glue.coverageMarks(uncovered, 10, shown = true)
+        assertEquals(
+            listOf(
+                Glue.CoverageMark(Glue.CoverageKind.UNCOVERED, 0, 0, tooltip),
+                Glue.CoverageMark(Glue.CoverageKind.UNCOVERED, 2, 9, tooltip),
+            ),
+            marks,
+        )
+        assertEquals(
+            "<html>$tooltip<br>The orange bar at the left of a line: it changed since the default branch, and no test " +
+                "reaches this file.</html>",
+            Glue.coverageMarkTooltip(marks[0]),
+        )
+        assertEquals(emptyList<Glue.CoverageMark>(), Glue.coverageMarks(uncovered, 10, shown = false))
     }
 
     @Test

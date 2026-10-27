@@ -25,7 +25,7 @@ Every outbound connection Piwi can make:
 | A URL you attach as a link | When someone adds a link to a run, test or cluster | A request for its title (the git host's API for an issue or PR link) |
 | Your issue tracker (Jira) | Only if you [connect it](/features/issue-tracking) | Issue reads, and the issues and comments you file |
 | Your SMTP server | Only if you configure [email notifications](/features/notifications) | Notification and account emails |
-| Your Slack / webhook URLs | Only for subscriptions you create | The event payload (run status, cluster, test names, file paths, short error excerpts) |
+| Slack or your webhook URLs | Only for subscriptions you create | The event payload (run status, cluster, test names, file paths, short error excerpts) |
 | Your S3 endpoint | Only if you switch [storage](/operate/storage) to S3 | Trace files, HTML reports, attachments |
 | Google / GitHub | Only if you enable [OAuth sign-in](/operate/authentication#oauth-google-github) | The standard OAuth exchange |
 
@@ -134,7 +134,7 @@ by anything else. See [Storage → Data retention](/operate/storage#data-retenti
 ## Verifying any of this
 
 The source is public and the outbound surface is small enough to audit: watch the container's egress, or read
-[`server/utils/`](https://github.com/PiwiTests/platform/tree/main/apps/application/server/utils) — the AI
+[`server/utils/`](https://github.com/PiwiTests/piwi/tree/main/apps/application/server/utils) — the AI
 provider, SCM, SMTP, notification, OAuth, Jira and link-unfurl clients are the only things there that open
 a socket; the S3 client is in `server/storage/`.
 

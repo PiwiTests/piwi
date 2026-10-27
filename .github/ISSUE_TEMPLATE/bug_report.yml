@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for taking the time to report a bug! A few details help us fix it quickly.
-        For security vulnerabilities, please use [private reporting](https://github.com/PiwiTests/platform/security/advisories/new) instead.
+        For security vulnerabilities, please use [private reporting](https://github.com/PiwiTests/piwi/security/advisories/new) instead.
   - type: textarea
     id: what-happened
     attributes:

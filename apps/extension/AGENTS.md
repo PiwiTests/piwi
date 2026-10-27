@@ -189,6 +189,28 @@ page, or ends when another tab asks. The page writes the replay's state only thr
 `updateReplayState(change, replayId)`, onto the stored state, so a Pause, a Stop or a replay started meanwhile is
 never overwritten by a step that was waiting.
 
+### How a replay finds a step's element
+
+`resolveForAction` (`replay-actions.ts`) looks for the element with every locator it was recorded with
+(`locatorsOf`: the spec's own, `stepLocator` with `locators: 'stable'`, first, then the other alternatives in their
+recorded rank), all on one engine per poll. `chooseElement` (`replay-core.ts`, pure, unit-tested) decides: each
+locator that finds one element alone votes for it, the spec's own with 1.5 votes, another with 1, or 0.5 when the
+stability rules call it brittle (`voteWeight`: a position, a CSS class), so only two steady ones agreeing outvote the
+spec's; another locator votes only for an element of the recorded tag or role that carries no other test id
+(`fitsTarget`); the most votes win, the
+better-ranked locator on a tie. A label that changed, an id made up on each load, or a second element sharing a name
+leaves the others to find it, and the step's result says which locator did (`foundWith` in `replay-panel.ts`,
+`replay_foundWith*`); a step none finds keeps the reason in the spec's own locator's words. The element is then waited
+for as Playwright waits (visible, enabled, still), for `stepTimeout`: `ACTION_TIMEOUT_MS`, or the time the person
+waited before the step when recording plus five seconds, up to a minute, so a reply the server sends after fifteen
+seconds is waited for, for its page as for its element. Another locator's element is taken only once the spec's own
+has had `FALLBACK_AFTER_MS` to find one, since the page a step plays on may still be on its way, and never an element
+carrying another test id than the recorded one. A `fill` whose value the report does not hold (`redacted`: a password,
+a card number, a one-time code, or every typed value when the sender left them out) is handed to the person
+(`replay_reasonSecret`) rather than typed empty, and a hover recorded without
+any locator is skipped (`replay_hoverNoLocator`): the next step's pointer goes over its own element. Assertions look
+for their element with the spec's own locator only, as the spec does.
+
 ### Trusted input in a replay
 
 `replay-panel.ts` asks the worker for the driver on each page (`piwi-replay-driver`; the choice is kept in
@@ -202,10 +224,19 @@ value set as Playwright sets them. The replay's panel lets the pointer through w
 pointer and focus events from the page (a click on Next leaves the page's focus and its open menu as they are); a key
 press with no element goes to the page's element that last had focus. Input lost before it reached the page (the bar
 cancelled, a command refused) replays the step with the page's own events (`replay-actions.ts`); lost after part of it did (the button
-went down, not up), the step fails with `replay_reasonInputInterrupted` rather than being done twice; each step result keeps its `driver`, and
+went down, not up), the step fails with `replay_reasonInputInterrupted` rather than being done twice. A click or a key
+the browser sent but the page never heard (`sendHeard`: none of its pointer, mouse or key events reached the window of
+the element's document within `INPUT_REACH_MS`) goes to the person (`replay_reasonInputBlocked`): a tab-modal browser
+dialog, such as Chrome's warning about a password found in a data breach after a login, makes the tab ignore input,
+and the step would otherwise pass with nothing done. `trusted-replay.spec.ts` stands one in with
+`Input.setIgnoreInputEvents`; each step result keeps its `driver`, and
 the panels show it. A file step asks the developer for the file in the replay's panel (a report names files, never
 carries them, and `DOM.setFileInputFiles` needs a path on disk), or lets them skip it (`skipped`); the file chooser a
 click opens is intercepted while a replay holds the tab (`Page.setInterceptFileChooserDialog`).
+
+With the page's own events (`replay-actions.ts`), a key carries the legacy `keyCode` and `which` the browser gives it,
+and a `keypress` its `charCode`, from the same `keyDefinition` the trusted path sends (`cdp-input.ts`): older pages
+(the classic TodoMVC adds a todo on `keyCode === 13`) read them, and an event a script makes has 0 otherwise.
 
 ## Connected mode (recording → your own functions)
 
@@ -451,6 +482,15 @@ recorder takes:
   `deriveTopLocator` (assertions, the Tested
   elements overlay) and `rankElementLocators` (At risk replacements) are built on it; a scan passes one engine to every
   call so the engine's caches serve the whole scan.
+- **An element with a role and no name** (an unlabelled checkbox) gets its bare role as a candidate (`rankElement`,
+  score 12, ranked among the others: above a hashed class's CSS), which `checkLocators` narrows or keeps with
+  `.first()`/`.nth()`: never no locator at all, which the replay could not play.
+- **A step is never lost to its locators**: a recorded target whose candidates cannot be checked against the page
+  (`checkLocators` throwing on a tree it does not expect) keeps its ranked candidates as they are
+  (`recordedAlternatives`, `record-panel.ts`), and a click whose hover search throws is recorded without hovers.
+- **A name longer than 80 characters** (a link around a whole card: its title, summary and tags) is written by the
+  words it starts with, 60 characters at most (`shortName`): Playwright matches a name as a substring, so it finds the
+  same element, which `checkLocators` checks.
 - **Multi-pick** (`derivePattern`, `multi-pick-derive.ts`) shares `repeatedContainers` with the ladder: picks
   sharing a role, each alone in its container, the containers siblings of one kind (rows of one table, cards of one
   grid), give the container's pattern, `getByTestId('product-card').getByRole('button', { name: 'Add to cart' })`
@@ -634,6 +674,42 @@ HTML drag and drop is recorded from `dragstart` and `drop` as `dragTo`, with the
 drag done with pointer events alone (a sortable list, a slider) is not recorded as a drag.
 `record.spec.ts` checks all three, and that a file's content is not stored.
 
+## The recording bar's corner
+
+Both bars (a test recording's, `renderHud` in `record-panel.ts`, and a bug report's, `renderBugHud`) sit in a corner
+of the viewport, bottom right by default, over the page: a checkout bar or a form's last button can be under it. Its
+**Move** button (`moveHudButton`, `hud-corner.ts`; `data-piwi-control="hud-move"`) moves it to the next corner, kept
+in `chrome.storage.local` (`piwiHudCorner`) for every page and later recording, read as the recorder attaches
+(`loadHudCorner`). The bug bar has it last in its DOM, drawn in its top right corner, so its actions come first from
+the keyboard (`bug-report.spec.ts` reaches them by Tab).
+
+## What a click lands on, and pages reached without one
+
+A press records the control it is part of (`nearestActionable`, `record-panel.ts`): the element or its nearest
+actionable ancestor. Inside a tree item, whose expand arrow and label act apart, it is the part of the item where the
+page made the pointer a hand (`compositePart`, `pointerRegion`: the outermost element showing `cursor: pointer` that its
+parent does not, unless the item or the body shows one itself), when that part is under half the item's width and
+something locates it, else the item. For an icon's drawing (an SVG `<path>`) in no control at all, it is the outermost
+element around the icon, still within `ICON_SLACK` of its size, that shows a pointer cursor and has a locator, else the
+`<svg>` (`iconControl`): a row the icon sits in is not its control. A drawing in an SVG larger than `ICON_MAX` (a
+chart, a map) records itself. `record.spec.ts` records them and has Playwright click their locators.
+
+A page the person reaches through the browser's Back or Forward, or by reloading, records its `navigate` event with
+`navigation`, which `normalizeSteps` turns into a `goto` to that page; one a page or an action led to does not:
+
+- **Within a page that routes itself**, the Navigation API's `navigate` event says which moves through the history are
+  the person's (`userInitiated`): not the page's `history.back()`, nor a hash it sets. Without the API, a `popstate`
+  counts unless it comes within `ACTION_LED_NAVIGATION_MS` of the person's last action (`ownNavigation`,
+  `record-capture.ts`).
+- **A page that loads**, from its navigation entry or the back/forward cache (timed at its `pageshow`), counts unless it
+  loads within `ACTION_LED_NAVIGATION_MS` of the last action with no page reached since (`lastActionOf`). The last
+  action is the last press (a page can move on `pointerdown`) or recorded step; the browser's own Back, Forward and
+  reload shortcuts are not recorded as key presses (`BROWSER_NAVIGATION_KEYS`).
+- **While paused** no navigation is a step. `parseCaptureEvent` keeps `navigation` only on an event to the http(s)
+  address it was sent from.
+
+The replay and the spec go there again with a goto.
+
 ## Hovers a click depends on
 
 Some elements show only while another is hovered. At each press, `record-panel.ts` asks `hoverTargets` which hovers
@@ -650,6 +726,9 @@ revealed the pressed element or an ancestor, and records a `hover` step for each
   no press in between, was revealed by that ancestor's hover.
 - The step names the element the pointer entered the subject through when the subject's own name includes what the
   hover shows (a row read as "Invoice 42Delete"), through the same verified locators as the click.
+- An insertion in the same batch of mutations as the removal of an element the pointer is over is that element
+  swapped for another (a link the page re-renders as the pointer enters it), which no hover reveals
+  (`HoverTracker.mutations`); `hover-swap.html` is its case.
 
 Played with trusted input, a replay's hover is the browser's own. With the page's own events (Firefox, a session
 refused or cancelled), it emulates CSS `:hover` (`hover-emulation.ts`): a constructed sheet in each document (the
@@ -982,7 +1061,7 @@ found by its icon and its color before its words are read, and a step reads at a
 | `npm run extension:format` / `extension:format:check` | oxfmt |
 | `npm run extension:test` | Unit tests (Vitest) — pure logic only |
 | `npm run extension:test:e2e` | Builds, then drives the real built extension with Playwright (`--load-extension`) |
-| `npm run extension:lab` | The replay lab: records scenarios on a running Piwi dashboard with the real extension, replays them with the extension and as Playwright specs, and prints the comparison (see `tests/lab/README.md`; not part of CI) |
+| `npm run extension:lab` | The replay lab: records scenarios on a running Piwi dashboard (or, with `LAB_SET=wild`, on public sites) with the real extension, replays them with the extension and as Playwright specs, and prints the comparison (see `tests/lab/README.md`; not part of CI) |
 
 ## Loading it locally
 

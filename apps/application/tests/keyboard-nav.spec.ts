@@ -7,7 +7,8 @@ import { PROJECT } from '#shared/test-project-names';
  * Regression guards for keyboard navigation:
  *  - the global `g h` / `g p` "go to" chords,
  *  - the skip link being the first Tab stop,
- *  - project tabs reflecting `?tab=` in the URL via replace() (no history growth).
+ *  - project tabs reflecting `?tab=` in the URL via replace() (no history growth),
+ *  - a project tab picked in the command palette opening on the project page.
  */
 test.describe('Keyboard navigation & tab URL sync', () => {
   test.setTimeout(60000);
@@ -74,5 +75,20 @@ test.describe('Keyboard navigation & tab URL sync', () => {
 
     const endLen = await page.evaluate(() => history.length);
     expect(endLen, 'switching tabs must use replace(), not push()').toBe(startLen);
+  });
+
+  test('a project tab picked in the command palette opens on the project page', async ({ page, request }) => {
+    const projectId = await findProjectId(request);
+    await page.goto(`/projects/${projectId}`);
+    await waitForHydration(page);
+    await expect(page.getByRole('button', { name: /^Runs/ })).toHaveAttribute('aria-current', 'true');
+
+    await page.getByRole('button', { name: /^Search…/ }).click();
+    await page.getByRole('group', { name: 'This project' }).getByRole('option', { name: 'Performance' }).click();
+    await expect(page).toHaveURL(/[?&]tab=performance/);
+    await expect(page.getByRole('button', { name: 'Performance', exact: true })).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
   });
 });

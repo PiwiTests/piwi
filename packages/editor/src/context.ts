@@ -43,6 +43,7 @@ import {
   committedTextAt,
   currentBranch,
   headCommit,
+  mergeBase,
   reporterVersion,
   repositoryRoot,
   translationValues,
@@ -468,6 +469,9 @@ export class PiwiContext {
   /** Where stored files are downloaded: {@link EVIDENCE_ROOT}. */
   evidenceFolder = EVIDENCE_ROOT;
   private readonly catalog = new Map<string, { at: number; items: CatalogCase[] }>();
+  /** The whole catalog, read once per refresh, and its read on the way. */
+  private allCatalog: { at: number; items: CatalogCase[] } | null = null;
+  private allCatalogRead: Promise<CatalogCase[]> | null = null;
   private readonly alternatives = new Map<string, { at: number; items: CallSiteAlternatives[] }>();
   private committedFiles = new Map<string, string | null>();
   private readonly commitTexts = new Map<string, CommitText>();
@@ -480,6 +484,13 @@ export class PiwiContext {
     head: null,
   };
   private head: string | null = null;
+  /** Where the checked-out branch's changes start, read once per `HEAD` and default branch, and the files there. */
+  private base: {
+    head: string | null;
+    branch: string;
+    commit: Promise<string | null>;
+    texts: Map<string, Promise<string | null>>;
+  } | null = null;
 
   constructor(
     /** The Playwright config's directory: call sites resolve against it. */
@@ -561,6 +572,7 @@ export class PiwiContext {
       const client = this.client;
       const projectId = this.project.id;
       this.catalog.clear();
+      this.allCatalog = null;
       this.alternatives.clear();
       this.functions = null;
       this.words = null;
@@ -652,6 +664,7 @@ export class PiwiContext {
     this.branches = [];
     this.functions = null;
     this.words = null;
+    this.allCatalog = null;
     this.coverages.clear();
     for (const cache of [
       this.issues,
@@ -949,6 +962,30 @@ export class PiwiContext {
     }
   }
 
+  /**
+   * Every case of the catalog, read once per refresh and kept five minutes at most; what was read before stands in when
+   * a read fails.
+   */
+  async allCases(): Promise<CatalogCase[]> {
+    const client = this.client;
+    const project = this.project;
+    if (!client || !project) return [];
+    const kept = this.allCatalog;
+    if (kept && Date.now() - kept.at < FILE_CACHE_MS) return kept.items;
+    this.allCatalogRead ??= client
+      .allTestCases(project.id)
+      .then(
+        (items) => {
+          // A read the next refresh or another instance overtook keeps nothing.
+          if (this.client === client) this.allCatalog = { at: Date.now(), items };
+          return items;
+        },
+        () => kept?.items ?? [],
+      )
+      .finally(() => (this.allCatalogRead = null));
+    return this.allCatalogRead;
+  }
+
   /** The stored alternatives of a file's call sites. */
   async alternativesOf(relativeFile: string): Promise<CallSiteAlternatives[]> {
     if (!this.client || !this.project) return [];
@@ -990,6 +1027,26 @@ export class PiwiContext {
     this.head = await headCommit(this.repoRoot);
     this.committedFiles = new Map();
     this.translations = { head: this.head };
+  }
+
+  /**
+   * A file (repository-relative) where the checked-out branch's changes start, as a pull request into the project's
+   * default branch counts them: at the merge base of `HEAD` with that branch (`mergeBase`), its text there, null for a
+   * file the base lacks. Null without a default branch or a merge base. The base is read once per `HEAD`, each file
+   * once per base.
+   */
+  async atChangeBase(repoRelative: string): Promise<{ branch: string; text: string | null } | null> {
+    const branch = this.index?.defaultBranch;
+    if (!branch) return null;
+    if (!this.base || this.base.head !== this.head || this.base.branch !== branch) {
+      this.base = { head: this.head, branch, commit: mergeBase(this.repoRoot, branch), texts: new Map() };
+    }
+    const base = this.base;
+    const commit = await base.commit;
+    if (!commit) return null;
+    if (!base.texts.has(repoRelative))
+      base.texts.set(repoRelative, committedTextAt(this.repoRoot, commit, repoRelative));
+    return { branch, text: await base.texts.get(repoRelative)! };
   }
 
   /** A file as `HEAD` holds it (repository-relative), cached until `HEAD` moves. */

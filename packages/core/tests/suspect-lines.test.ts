@@ -2,7 +2,15 @@ import { describe, expect, test } from 'vitest';
 import type { CoverageCapture, CoverageFile, LineRange } from '../src/coverage';
 import { diffFileFromPatch, parseUnifiedDiff, type DiffHunk } from '../src/diff-anchors';
 import { diffLines } from '../src/line-diff';
-import { MAX_SUSPECTS, hunkHeadLines, ochiai, suspectLines, type SuspectChange } from '../src/suspect-lines';
+import {
+  MAX_SUSPECTS,
+  diffImpactInput,
+  hunkBaseLines,
+  hunkHeadLines,
+  ochiai,
+  suspectLines,
+  type SuspectChange,
+} from '../src/suspect-lines';
 
 const BLOB_HEAD = 'a'.repeat(40);
 const BLOB_OTHER = 'b'.repeat(40);
@@ -86,6 +94,93 @@ describe('hunkHeadLines', () => {
     expect(lines.hunks.map(hunkHeadLines)).toEqual([[[2, 3]]]);
     const first = diffLines('f.txt', 'l1\nl2\nl3\n', 'l2\nl3\n');
     expect(first.hunks.map(hunkHeadLines)).toEqual([[[1, 1]]]);
+  });
+});
+
+describe('hunkBaseLines', () => {
+  test('a hunk that removes or replaces lines changes its removed lines', () => {
+    const [hunk] = hunksOf('@@ -3,2 +3 @@\n-l3\n-l4\n+new\n');
+    expect(hunkBaseLines(hunk!)).toEqual([[3, 4]]);
+  });
+
+  test('a -U0 insertion (-n,0) changes the base lines on both sides of the insertion point', () => {
+    const hunks = hunksOf('@@ -2,0 +3,2 @@\n+a\n+b\n@@ -10 +12 @@\n-l10\n+new\n');
+    expect(hunks.map(hunkBaseLines)).toEqual([[[2, 3]], [[10, 10]]]);
+  });
+
+  test('an insertion at the start of the file (-0,0) changes line 1', () => {
+    expect(hunkBaseLines(hunksOf('@@ -0,0 +1,2 @@\n+a\n+b\n')[0]!)).toEqual([[1, 1]]);
+  });
+
+  test('an insertion with context is placed from the context line before it', () => {
+    const [hunk] = hunksOf('@@ -1,4 +1,5 @@\n l1\n l2\n+x\n l3\n l4\n');
+    expect(hunkBaseLines(hunk!)).toEqual([[2, 3]]);
+  });
+
+  test('a context hunk keeps its removed lines and the insertion no removed line makes room for', () => {
+    const [hunk] = hunksOf('@@ -1,5 +1,6 @@\n l1\n-l2\n+n2\n l3\n+x\n l4\n l5\n');
+    // l2 is replaced, x goes between l3 and l4: [2, 2] and [3, 4], merged.
+    expect(hunkBaseLines(hunk!)).toEqual([[2, 4]]);
+  });
+
+  test('reading a diff backwards gives the head lines of the reversed change', () => {
+    const forward = diffLines('f.txt', 'l1\nl2\nl3\nl4\nl5\n', 'l1\nx\nl2\nl4\nl5\ny\n');
+    const backward = diffLines('f.txt', 'l1\nx\nl2\nl4\nl5\ny\n', 'l1\nl2\nl3\nl4\nl5\n');
+    expect(forward.hunks.map(hunkBaseLines)).toEqual(backward.hunks.map(hunkHeadLines));
+  });
+});
+
+describe('diffImpactInput', () => {
+  test('gives every touched path, and the changed base lines of modified files whose base blob is known', () => {
+    const files = parseUnifiedDiff(
+      [
+        'diff --git a/src/a.ts b/src/a.ts',
+        'index 3f2a91c..9b0e1d4 100644',
+        '--- a/src/a.ts',
+        '+++ b/src/a.ts',
+        '@@ -3 +3 @@',
+        '-old',
+        '+new',
+        '@@ -9,0 +10 @@',
+        '+inserted',
+        'diff --git a/src/old.ts b/src/moved.ts',
+        'similarity index 95%',
+        'rename from src/old.ts',
+        'rename to src/moved.ts',
+        'index 1111111..2222222 100644',
+        '--- a/src/old.ts',
+        '+++ b/src/moved.ts',
+        '@@ -1 +1 @@',
+        '-a',
+        '+b',
+        'diff --git a/src/new.ts b/src/new.ts',
+        'new file mode 100644',
+        'index 0000000..e69de29',
+        '--- /dev/null',
+        '+++ b/src/new.ts',
+        '@@ -0,0 +1 @@',
+        '+x',
+        'diff --git a/src/b.ts b/src/b.ts',
+        '--- a/src/b.ts',
+        '+++ b/src/b.ts',
+        '@@ -1 +1 @@',
+        '-a',
+        '+b',
+      ].join('\n'),
+    );
+    expect(diffImpactInput(files)).toEqual({
+      changedFiles: ['src/a.ts', 'src/moved.ts', 'src/old.ts', 'src/new.ts', 'src/b.ts'],
+      changes: [
+        {
+          filePath: 'src/a.ts',
+          blob: '3f2a91c',
+          lines: [
+            [3, 3],
+            [9, 10],
+          ],
+        },
+      ],
+    });
   });
 });
 

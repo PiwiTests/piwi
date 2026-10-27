@@ -64,7 +64,7 @@ const running = computed(() => contextRun.value?.status === 'running');
 
 /** Keep the result on the button for a moment after the run ends. */
 const FLASH_MS = 8000;
-const now = useTimestamp({ interval: 1000 });
+const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
 const flashRun = computed(() => {
   const run = contextRun.value;
   if (!run || !run.finishedAt || (run.status !== 'passed' && run.status !== 'failed')) return null;

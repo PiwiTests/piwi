@@ -15,6 +15,7 @@ import { FRENCH_BUG_PHRASES } from './bug-phrases.fr';
 import { GERMAN_BUG_PHRASES } from './bug-phrases.de';
 import { SPANISH_BUG_PHRASES } from './bug-phrases.es';
 import { PORTUGUESE_BUG_PHRASES } from './bug-phrases.pt';
+import type { ManualInstruction, ManualInstructionKind } from './recording';
 
 export { markdownCode } from './markdown-code';
 
@@ -112,6 +113,17 @@ interface BugReportPhrases {
   notReplayedLine(entry: { call: string; location: string | null; reason: string }): string;
 }
 
+/**
+ * One sentence per kind of manual step a report made from a test run holds,
+ * without the phrasebook's "By hand" before it. The values arrive formatted:
+ * the locator as code, to put in code marks; an option as a value, to quote;
+ * a call, a matcher, the values a check expected and received and what it
+ * checked as words, written as they are.
+ */
+export type ManualInstructionPhrases = {
+  [K in ManualInstructionKind]: (instruction: ManualInstruction & { kind: K }) => string;
+};
+
 export interface BugPhrases {
   /** The language, as a BCP 47 tag: `en`, `fr`. */
   language: string;
@@ -144,6 +156,7 @@ export interface BugPhrases {
     /** A step to do by hand, from its description (in the words of whoever wrote it). */
     manual(description: string): string;
   };
+  manualInstructions: ManualInstructionPhrases;
   /** What should be true of a subject, starting in lower case where the language allows. */
   expectation(subject: BugSubject, expectation: BugExpectation, negated: boolean): string;
   /** `1 screenshot · 2 console errors · page outline`. */

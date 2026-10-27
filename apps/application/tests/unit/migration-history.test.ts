@@ -455,6 +455,39 @@ function repairScenarios(fixture: DialectFixture, open: () => Promise<TestDataba
 
 describe('applyMigrations on SQLite', () => {
   repairScenarios(sqliteFixture, async () => sqliteDatabase());
+
+  test('rebuilds a table without running the ON DELETE actions of the rows that reference it', async () => {
+    const database = sqliteDatabase();
+    const init = { tag: '0000_init', when: 1000, sql: [sqliteFixture.projects] };
+    await database.migrateWith(
+      writeFolder(
+        [init, { tag: '0001_branch_widgets', when: 3000, sql: sqliteFixture.branchWidgets() }],
+        buildSnapshot('sqlite'),
+      ),
+    );
+    await database.exec(sqliteFixture.insertWidget);
+    // A column added the way drizzle-kit adds one it cannot ALTER in: a copy of the table replaces it.
+    const rebuildProjects = [
+      'PRAGMA foreign_keys=OFF',
+      'CREATE TABLE `__new_projects` (`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL, `name` text NOT NULL, `color` text)',
+      'INSERT INTO `__new_projects`("id", "name") SELECT "id", "name" FROM `projects`',
+      'DROP TABLE `projects`',
+      'ALTER TABLE `__new_projects` RENAME TO `projects`',
+      'PRAGMA foreign_keys=ON',
+    ];
+    const build = writeFolder(
+      [
+        init,
+        { tag: '0001_projects_color', when: 2000, sql: rebuildProjects },
+        { tag: '0002_widgets', when: 4000, sql: sqliteFixture.widgets },
+      ],
+      buildSnapshot('sqlite'),
+    );
+    await applyMigrations(database.target(build), build, quietLog().log);
+
+    expect(await database.rows('SELECT name, size FROM widgets')).toEqual([{ name: 'kept', size: 0 }]);
+    expect(await database.rows('SELECT foreign_keys FROM pragma_foreign_keys')).toEqual([{ foreign_keys: 1 }]);
+  });
 });
 
 describe.skipIf(!postgresUrl)('applyMigrations on PostgreSQL (PIWI_POSTGRES_TEST_URL)', () => {

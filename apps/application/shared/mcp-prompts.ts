@@ -77,7 +77,7 @@ export const MCP_PROMPT_DEFS = [
     name: 'run_the_right_tests',
     skill: 'run-the-right-tests',
     description:
-      'Pick and run the right subset of Playwright tests using Piwi\'s data-driven selections, instead of always running the whole suite. Use when the user asks to "run smoke tests", "run the right tests", "just run what\'s relevant", "verify this fix", or wants a fast, targeted test loop rather than the full run.',
+      'Pick and run the right subset of Playwright tests using Piwi\'s data-driven selections and the tests a change impacts, instead of always running the whole suite. Use when the user asks to "run smoke tests", "run the right tests", "just run what\'s relevant", "run the tests my change affects", "verify this fix", or wants a fast, targeted test loop rather than the full run.',
     arguments: [FOCUS_ARG],
   },
   {

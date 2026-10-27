@@ -223,6 +223,6 @@ Eight months in, the mission fits in three sentences: **keep the history, explai
 
 The rhythm is slower now, on purpose. I stabilize what exists: features, performance, security, with regular audits to keep the code cohesive, performant, maintainable and secure. New ideas still come, but each one has to answer two questions first: **would I actually use this? Will it help me the day I am fixing or improving my tests?** If the answer is no, it does not get built.
 
-If you have ever lost a morning to a flaky test, or gone looking for the report of a failure that CI deleted days ago, you know exactly why I built this. It is open source and MIT, the [demo](https://piwitests.dev/demo/) opens in your browser in about ten seconds with no signup, and the [code is on GitHub](https://github.com/PiwiTests/platform). I hope it gives you back as much time as it has given me.
+If you have ever lost a morning to a flaky test, or gone looking for the report of a failure that CI deleted days ago, you know exactly why I built this. It is open source and MIT, the [demo](https://piwitests.dev/demo/) opens in your browser in about ten seconds with no signup, and the [code is on GitHub](https://github.com/PiwiTests/piwi). I hope it gives you back as much time as it has given me.
 
 *Update: the dashboard has moved to a fair source license, FSL-1.1-MIT. It stays free to use and self-host, and each release becomes MIT two years after it is published; the reporter and the integrations stay MIT. See [License](/guide/license).*

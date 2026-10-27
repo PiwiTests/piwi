@@ -34,6 +34,7 @@ const sentences = computed(() =>
     role="note"
     aria-label="What these numbers leave out"
     data-testid="coverage-notes"
+    data-tour="coverage-notes"
   >
     <UIcon name="i-lucide-info" class="mt-0.5 size-4 shrink-0 text-muted" />
     <ul class="min-w-0 flex-1 space-y-1 text-sm text-highlighted leading-relaxed">

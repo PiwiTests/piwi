@@ -133,6 +133,7 @@ const primaryTitle = computed(() => {
         variant="solid"
         :data-next-action="nextStep.primary.action"
         :title="primaryTitle"
+        data-tour="next-step-action"
         @click="emit('action', nextStep.primary.action, nextStep.primary.payload)"
       >
         {{ nextStep.primary.label }}

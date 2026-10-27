@@ -49,7 +49,7 @@ const scoreTitle = (score: number) =>
 </script>
 
 <template>
-  <div data-shot="suspect-lines" class="space-y-1.5">
+  <div data-shot="suspect-lines" data-tour="suspect-lines" class="space-y-1.5">
     <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
       <span class="inline-flex items-center gap-1 text-sm font-semibold text-highlighted">
         Suspect lines <HelpHint topic="cluster.suspect-lines" />

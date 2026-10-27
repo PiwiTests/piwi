@@ -6,8 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Have a look at the [roadmap](https://github.com/PiwiTests/platform/blob/main/ROADMAP.md) and
-        [existing issues](https://github.com/PiwiTests/platform/issues?q=is%3Aissue) first — your idea may already be tracked.
+        Have a look at the [roadmap](https://github.com/PiwiTests/piwi/blob/main/ROADMAP.md) and
+        [existing issues](https://github.com/PiwiTests/piwi/issues?q=is%3Aissue) first — your idea may already be tracked.
   - type: textarea
     id: problem
     attributes:

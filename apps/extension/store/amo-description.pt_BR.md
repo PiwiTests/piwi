@@ -1,4 +1,4 @@
-*Esta tradução é um rascunho: nenhum falante nativo a revisou ainda. Encontrou um erro? [Sugira uma correção](https://github.com/PiwiTests/platform/issues/new?template=translation.yml).*
+*Esta tradução é um rascunho: nenhum falante nativo a revisou ainda. Encontrou um erro? [Sugira uma correção](https://github.com/PiwiTests/piwi/issues/new?template=translation.yml).*
 
 O Piwi Picker dá a você o locator do Playwright a usar para qualquer elemento da página em que você está. Cada candidato é pontuado pela estabilidade e depois executado na página como ela está, para que o primeiro encontre exatamente um elemento. Percorra um fluxo clicando e a extensão escreve o teste; reproduza um bug e ela escreve o teste que falha e o relatório.
 

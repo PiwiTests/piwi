@@ -4,9 +4,9 @@ import type { DemoExampleExpect } from '#shared/demo/demo-examples.mjs';
 export type TourProfileId = 'developer' | 'qa' | 'product' | 'platform';
 
 /**
- * One stop of a tour: a screen of the demo and the element on it the popover
- * points at. What the popover says is in the copy files (`copy.<code>.ts`),
- * under the stop's `id`.
+ * One stop of a tour: a screen of the demo and the guide anchor on it the
+ * popover points at. What the popover says is in the copy files
+ * (`copy.<code>.ts`), under the stop's `id`.
  */
 export interface TourStop {
   /** Stable, kebab-case, unique within its tour; the key of its copy. */
@@ -25,16 +25,11 @@ export interface TourStop {
    */
   expect?: DemoExampleExpect;
   /**
-   * The `data-tour` attribute value of the element the stop points at. Omitted,
-   * the popover is centered on the page.
+   * The id of the guide anchor the stop points at (`shared/guide-anchors/`); its
+   * reveal unfolds or opens what holds it. Omitted, the popover is centered on
+   * the page.
    */
-  target?: string;
-  /**
-   * The `data-tour` attribute value of the element that holds the target folded:
-   * the first `aria-expanded="false"` button in it, or the element itself when it
-   * is that button, is clicked before the stop shows.
-   */
-  unfold?: string;
+  anchor?: string;
   /** Where the popover sits against the target from `sm` up; below it, the popover goes where it fits. */
   side?: 'top' | 'right' | 'bottom' | 'left';
   align?: 'start' | 'center' | 'end';

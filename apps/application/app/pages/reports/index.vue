@@ -68,7 +68,7 @@ useViewScroll(() => dashboardPanelBody('reports'));
 <template>
   <UDashboardPanel id="reports">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="reports-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <BreadcrumbNav :items="[{ label: 'Quality reports', icon: 'i-lucide-file-chart-column', to: '/reports' }]" />
@@ -82,6 +82,7 @@ useViewScroll(() => dashboardPanelBody('reports'));
                 color: 'primary',
                 title: 'Schedule a quality report',
                 onClick: newSchedule,
+                attrs: { 'data-tour': 'new-schedule' },
               },
             ]"
           />
@@ -95,13 +96,14 @@ useViewScroll(() => dashboardPanelBody('reports'));
         icon="i-lucide-circle-slash"
         text="Quality reports are turned off on this instance. An administrator can turn them back on in Settings."
       />
-      <div v-else class="space-y-6 max-w-4xl" data-shot="reports-page">
+      <div v-else class="space-y-4 max-w-4xl" data-shot="reports-page">
         <SectionCard
           icon="i-lucide-files"
           title="Report snapshots"
           :count="snapshots.items.length || undefined"
           subtitle="Every quality report generated, kept with its numbers as they were."
           help="reports.snapshots"
+          data-tour="report-snapshots"
         >
           <LoadingState v-if="snapshotsLoading && snapshots.items.length === 0" />
           <ErrorState

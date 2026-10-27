@@ -307,7 +307,7 @@ function saveSmoke(testCaseIds: number[]) {
 <template>
   <UDashboardPanel id="project-selections">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="project-selections-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <BreadcrumbNav
@@ -323,7 +323,7 @@ function saveSmoke(testCaseIds: number[]) {
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4">
+      <div class="space-y-4 max-sm:px-4">
         <SectionCard
           title="Test selections"
           icon="i-lucide-list-filter"

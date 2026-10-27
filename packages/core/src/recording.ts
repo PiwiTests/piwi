@@ -127,7 +127,55 @@ export interface StepManual {
   location: string | null;
   /** The Playwright call or step title it stands for, when known. */
   call: string | null;
+  /**
+   * What to do without its words, for each reader to write in its own
+   * language; `description` says the same in English. Absent from a step a
+   * person wrote.
+   */
+  instruction?: ManualInstruction | null;
 }
+
+/** What a check found in the run, as its error says: the values it expected and received, when it says. */
+export interface ManualCheckValues {
+  expected: string | null;
+  received: string | null;
+}
+
+/**
+ * A manual step a report made from a test run holds, by kind, with the
+ * values its sentence names: the element as the locator the test found it
+ * by, the Playwright call or step title (`call`), a check's matcher (`not.`
+ * first when negated) or the test's own words for what it checked (`what`),
+ * a select's options by value or label (a string) or by index (a number).
+ */
+export type ManualInstruction =
+  | { kind: 'goBack' | 'goForward' | 'reload' | 'gotoUnknown' | 'setContent' | 'keyboardType' }
+  | { kind: 'mouseAt'; x: number; y: number; call: string }
+  | { kind: 'mouseOrKeyboard' | 'failedCall'; call: string }
+  | { kind: 'locatorCall'; locator: string; call: string }
+  | {
+      kind:
+        | 'fillUnknown'
+        | 'fillPartial'
+        | 'pressUnknown'
+        | 'selectOptionUnknown'
+        | 'setInputFiles'
+        | 'dragTo'
+        | 'drop'
+        | 'focus'
+        | 'blur'
+        | 'dispatchEvent'
+        | 'scrollIntoViewIfNeeded';
+      locator: string;
+    }
+  | { kind: 'selectOptions'; locator: string; options: Array<string | number> }
+  | ({ kind: 'expectPoll'; matcher: string } & ManualCheckValues)
+  | ({ kind: 'expectValue'; what: string } & ManualCheckValues)
+  | ({ kind: 'expectLocator'; locator: string; matcher: string } & ManualCheckValues)
+  | ({ kind: 'expectURL' } & ManualCheckValues)
+  | { kind: 'leadingSteps'; count: number; limit: number };
+
+export type ManualInstructionKind = ManualInstruction['kind'];
 
 /** A box on the page, in CSS pixels from the viewport's top left corner. */
 export interface ViewportBox {
@@ -227,6 +275,12 @@ export interface RawCaptureEvent {
   viewport?: { width: number; height: number; zoom?: number };
   /** The page as the action began, in a bug recording; see {@link StepView}. */
   view?: StepView;
+  /**
+   * On a `navigate` event, a page the person reached on their own: through the
+   * history (Back, Forward) or by reloading it, with no action of theirs
+   * leading there. The steps go to it again.
+   */
+  navigation?: 'history' | 'reload';
 }
 
 /**
@@ -301,10 +355,11 @@ function isRecordedKey(key: string | null | undefined): key is string {
  *  - a `hover` event becomes a `hover` step: the recorder sends one only for
  *    the element whose hover revealed what the next click lands on; a second
  *    hover on the same element right after the first is dropped;
- *  - `navigate` events become `goto` steps only for the session's very first
- *    page — later navigations are implied by the click/press that caused
- *    them and are dropped (they still update `pageUrl` on later steps via
- *    the caller passing the current page's URL on each event).
+ *  - `navigate` events become `goto` steps for the session's very first page,
+ *    and for a page the person reached through the history or by reloading
+ *    (`navigation`) — other navigations are implied by the click/press that
+ *    caused them and are dropped (they still update `pageUrl` on later steps
+ *    via the caller passing the current page's URL on each event).
  *  - an `assert` event becomes an `assert` step where it was added, after
  *    committing any fill in progress; one without an assertion is dropped;
  *  - password-field values are never carried through — `redacted: true`,
@@ -344,7 +399,7 @@ export function normalizeSteps(events: RawCaptureEvent[]): RecordedStep[] {
 
     if (ev.kind === 'navigate') {
       flushPendingFill();
-      if (!sawFirstGoto) {
+      if (!sawFirstGoto || ev.navigation) {
         sawFirstGoto = true;
         steps.push({
           action: 'goto',
@@ -697,7 +752,8 @@ function parseViewport(v: unknown): RawCaptureEvent['viewport'] | null {
  * alternatives that parse. Null when it has no known `kind`, no `pageUrl`
  * string, no finite `timestamp`, or an assertion without a known matcher. A
  * password field's value is never kept; a viewport out of bounds is left out,
- * and so is `view`.
+ * and so is `view`. A navigation's cause stays on a navigate event to the
+ * http(s) address the event was sent from only.
  */
 export function parseCaptureEvent(value: unknown): RawCaptureEvent | null {
   if (!isRecord(value)) return null;
@@ -724,5 +780,13 @@ export function parseCaptureEvent(value: unknown): RawCaptureEvent | null {
   if (value.dropTarget !== undefined) event.dropTarget = parseTarget(value.dropTarget);
   const viewport = parseViewport(value.viewport);
   if (viewport) event.viewport = viewport;
+  if (
+    kind === 'navigate' &&
+    (value.navigation === 'history' || value.navigation === 'reload') &&
+    event.value === event.pageUrl &&
+    /^https?:\/\//i.test(event.pageUrl)
+  ) {
+    event.navigation = value.navigation;
+  }
   return event;
 }

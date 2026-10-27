@@ -51,6 +51,7 @@ const dbBackendLabel = computed(() => {
          desktop, stacked and centered on phones. -->
     <div
       class="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left"
+      data-tour="about-page"
     >
       <BrandLogo class="h-14 sm:h-16" />
       <div class="text-sm text-muted">
@@ -121,7 +122,7 @@ const dbBackendLabel = computed(() => {
         <DocLink to="">Documentation</DocLink>
         <ULink to="/docs" class="inline-flex items-center gap-1 text-primary hover:underline"> API reference </ULink>
         <ULink
-          to="https://github.com/piwitests/platform"
+          to="https://github.com/piwitests/piwi"
           target="_blank"
           rel="noopener noreferrer"
           class="inline-flex items-center gap-1 text-primary hover:underline"

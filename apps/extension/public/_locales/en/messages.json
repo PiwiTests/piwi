@@ -2667,6 +2667,10 @@
     "message": "Recording",
     "description": "Recorder bar shown on the page while a recording runs: its accessible name, read by screen readers, not shown."
   },
+  "record_hudMove": {
+    "message": "Move this bar to another corner",
+    "description": "The recording bar's icon button (its name and tooltip): moves the bar to the next corner of the page, when it covers something to click."
+  },
   "record_pause": {
     "message": "Pause",
     "description": "Recorder bar, while a recording runs: button that pauses the recording, so nothing done in the page is recorded until Resume. Short."
@@ -3973,6 +3977,78 @@
       }
     }
   },
+  "replay_reasonSecret": {
+    "message": "The report does not hold what was typed here: a recording never keeps a password or another secret, and whoever sent the report may have left the typed values out. Type it on the page, then continue.",
+    "description": "Why a replay step was handed to the person: the step types into a field whose value the report does not hold (a password or another secret, or every typed value when the sender left them out), so the person types it."
+  },
+  "replay_hoverNoLocator": {
+    "message": "Skipped: the recording has no locator for the element hovered; the next step points at its own element.",
+    "description": "Replay panel, under a hover step it skipped: the step was recorded without any locator for its element."
+  },
+  "replay_foundWithNoMatch": {
+    "message": "Found with $locator$: $spec$, the locator the test is written with, finds nothing here.",
+    "description": "Replay panel, under a step it played: its element was found with another locator recorded for it, as the locator the generated test uses finds nothing on the page. $locator$ and $spec$ are Playwright locators, as code.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$2",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithOther": {
+    "message": "Found with $locator$, which the other recorded locators agree on: $spec$, the locator the test is written with, finds another element.",
+    "description": "Replay panel, under a step it played: its element was found with another locator recorded for it, which more of the recorded locators agree on than on the element the generated test's locator finds. $locator$ and $spec$ are Playwright locators, as code.",
+    "placeholders": {
+      "locator": {
+        "content": "$1",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$2",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithMany_one": {
+    "message": "Found with $locator$: $spec$, the locator the test is written with, finds $count$ element here.",
+    "description": "Replay panel, under a step it played: its element was found with another locator recorded for it, as the locator the generated test uses finds several elements. $locator$ and $spec$ are Playwright locators, as code.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$3",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
+  "replay_foundWithMany_other": {
+    "message": "Found with $locator$: $spec$, the locator the test is written with, finds $count$ elements here.",
+    "description": "Replay panel, under a step it played: its element was found with another locator recorded for it, as the locator the generated test uses finds several elements. $locator$ and $spec$ are Playwright locators, as code.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "locator": {
+        "content": "$2",
+        "example": "getByTestId('add-to-cart')"
+      },
+      "spec": {
+        "content": "$3",
+        "example": "getByRole('button', { name: 'Add' })"
+      }
+    }
+  },
   "replay_reasonOtherPage": {
     "message": "This step happened on $expected$, and the tab is on $actual$.",
     "description": "Why a replay step could not be done: the tab is on another page. $expected$ and $actual$ are page paths.",
@@ -4026,6 +4102,10 @@
         "example": "div \"Loading\""
       }
     }
+  },
+  "replay_reasonInputBlocked": {
+    "message": "The page did not get this input: something in front of the tab took it, such as a browser dialog about a password. Close it, then do this step on the page.",
+    "description": "Why a replay step was handed to the person: the click or key sent with trusted input never reached the page, as when a browser dialog (a warning about a leaked password) is in front of the tab."
   },
   "replay_reasonOffscreen": {
     "message": "$element$ stays outside the visible part of the page.",

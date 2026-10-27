@@ -188,7 +188,7 @@ function rowMenu(d: DashboardSummary) {
 <template>
   <UDashboardPanel id="analytics-dashboards">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="dashboards-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <UBreadcrumb
@@ -207,6 +207,7 @@ function rowMenu(d: DashboardSummary) {
                 color: 'primary',
                 title: 'Create a dashboard, empty or from another one',
                 onClick: openNew,
+                attrs: { 'data-tour': 'new-dashboard' },
               },
             ]"
           />
@@ -215,12 +216,13 @@ function rowMenu(d: DashboardSummary) {
     </template>
 
     <template #body>
-      <div class="space-y-6 max-w-4xl" data-shot="dashboards-list">
+      <div class="space-y-4 max-w-4xl" data-shot="dashboards-list">
         <SectionCard
           v-if="list?.canSetDefault"
           icon="i-lucide-home"
           title="Default for everyone"
           help="dashboards.default"
+          data-tour="default-dashboard"
         >
           <p class="text-sm text-highlighted leading-relaxed mb-2">
             The dashboard Analytics opens for everyone who has not picked their own.

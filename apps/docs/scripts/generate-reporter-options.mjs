@@ -264,6 +264,12 @@ editLink: false
 
 These options go in the reporter's options object in \`playwright.config.ts\`, or in \`wrapConfig\`'s second argument (see [Reporter](/guide/reporter#configuration-options)). Most of them can also be set with the environment variable shown in their row. The variable only fills in an option you left unset, so an explicit option always wins, with one exception: on a plain reporter entry, \`PIWI_VERBOSE\` overrides even an explicit \`verbose\` option (under \`wrapConfig\` the option wins).
 
+## Values from \`.env\`
+
+\`PIWI_DASHBOARD_URL\`, \`PIWI_API_KEY\` and \`PIWI_PROJECT_NAME\` (\`serverUrl\`, \`apiKey\` and \`projectName\`) are also read from the \`.env\` file in the Playwright config's folder, the file [\`init\`](/reference/cli#init) writes, so a key kept there reaches the run without loading the file in your config. A value in the file only fills what the config and the environment leave unset, one variable at a time, as if the file were loaded into the environment without overriding it: an option in the config wins, then an environment variable, then \`.env\`, then the [desktop app](/guide/reporter#finding-the-desktop-app-automatically). An empty value (\`PIWI_API_KEY=\`) counts as unset. The file is parsed as the [command line](/reference/cli) parses it: \`KEY=value\` lines, an optional \`export\`, quotes and \`#\` comments, no variable expansion.
+
+The reporter and Piwi's [global setup](/guide/reporter#global-setup-phase) read the same file, in the folder of the config the run uses (the one \`-c\` names) rather than the working directory, so the run is registered and uploaded with the same server and key. Other variables in the file are not read: set them in the environment, or load the file in your config yourself (\`process.loadEnvFile()\` or the \`dotenv\` package). \`.env\` stays out of git, so in CI the same variables come from the pipeline's secrets. With \`PIWI_VERBOSE=true\`, the reporter logs which variables it took from the file.
+
 ${groups.map(groupMarkdown).join('\n')}
 ## Related
 

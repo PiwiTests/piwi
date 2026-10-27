@@ -456,7 +456,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
         <EmptyState v-else text="No tracker is connected." />
       </div>
 
-      <div v-else class="space-y-4">
+      <div v-else class="space-y-4" data-tour="create-issue-draft">
         <div class="flex justify-end -mb-2">
           <HelpHint topic="integrations.create-issue" />
         </div>

@@ -4,10 +4,10 @@
  * (`resolvePiwiConnection` in `@piwitests/core/dotenv` keeps each key with the
  * URL it came with).
  */
-import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { parseDotEnv, resolvePiwiConnection, type PiwiConnection } from '@piwitests/core/dotenv';
+import { resolvePiwiConnection, type PiwiConnection } from '@piwitests/core/dotenv';
 import { defaultDesktopConfigPath, readDesktopConfig } from '../config/desktop.js';
+import { readDotEnv } from '../config/dotenv.js';
 import { PIWI_DESKTOP_CONFIG_ENV } from '../config/env.js';
 
 export function resolveCliConnection(
@@ -16,13 +16,7 @@ export function resolveCliConnection(
   dirs: string[],
 ): PiwiConnection | null {
   let dotEnv: Record<string, string> = {};
-  for (const dir of dirs) {
-    try {
-      dotEnv = { ...parseDotEnv(fs.readFileSync(path.join(dir, '.env'), 'utf-8')), ...dotEnv };
-    } catch {
-      // No .env there.
-    }
-  }
+  for (const dir of dirs) dotEnv = { ...readDotEnv(path.join(dir, '.env')), ...dotEnv };
   return resolvePiwiConnection({
     flags,
     env,

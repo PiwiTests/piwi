@@ -223,7 +223,13 @@ const exportItems = [
         </ul>
       </SectionCard>
 
-      <SectionCard v-if="summary.areas.length" title="Areas" :count="summary.areas.length" help="coverage.areas">
+      <SectionCard
+        v-if="summary.areas.length"
+        title="Areas"
+        :count="summary.areas.length"
+        help="coverage.areas"
+        data-tour="coverage-areas"
+      >
         <ul class="divide-y divide-default" data-testid="coverage-areas-list">
           <li
             v-for="area in summary.areas"
@@ -270,7 +276,7 @@ const exportItems = [
       </p>
     </SectionCard>
 
-    <SectionCard v-else title="Files" help="coverage.tree">
+    <SectionCard v-else title="Files" help="coverage.tree" data-tour="coverage-files">
       <template #actions>
         <USelect
           v-if="summary.areas.length"
@@ -342,7 +348,11 @@ const exportItems = [
             </li>
           </ul>
 
-          <div v-if="summary.leastCovered.length" class="space-y-1 border-t border-default pt-3">
+          <div
+            v-if="summary.leastCovered.length"
+            class="space-y-1 border-t border-default pt-3"
+            data-tour="coverage-least-covered"
+          >
             <p class="inline-flex items-center gap-1 text-xs font-medium text-muted">
               Least covered here <HelpHint topic="coverage.least-covered" />
             </p>

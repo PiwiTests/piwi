@@ -386,7 +386,7 @@ defineExpose({
     <!-- AI configured: interactive controls -->
     <template v-if="aiStatus?.configured">
       <!-- Additional context (collapsible, collapsed by default) -->
-      <div>
+      <div data-tour="diagnosis-additional-context">
         <div class="flex items-center gap-1 mb-1">
           <button
             class="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-left"
@@ -496,6 +496,7 @@ defineExpose({
           color="primary"
           variant="solid"
           :loading="posting"
+          data-tour="diagnose-with-ai"
           @click="diagnose(diagnosis?.status === 'running')"
         >
           {{ diagnosis?.status === 'running' ? 'Restart diagnosis' : 'Diagnose with AI' }}

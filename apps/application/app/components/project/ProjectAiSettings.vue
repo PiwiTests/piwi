@@ -33,6 +33,7 @@ async function submit() {
       <div class="space-y-5">
         <UFormField
           name="diagnosisInstructions"
+          data-tour="project-ai-instructions"
           description="Combined with the global instructions from Settings → AI."
         >
           <template #label>

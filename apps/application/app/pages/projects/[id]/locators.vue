@@ -117,7 +117,7 @@ useViewScroll(() => dashboardPanelBody('project-locators'));
 <template>
   <UDashboardPanel id="project-locators">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="project-locators-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <BreadcrumbNav
@@ -133,7 +133,7 @@ useViewScroll(() => dashboardPanelBody('project-locators'));
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4">
+      <div class="space-y-4 max-sm:px-4">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center" data-shot="locator-branch">
           <USelect
             v-model="branch"
@@ -146,7 +146,12 @@ useViewScroll(() => dashboardPanelBody('project-locators'));
           <p class="text-xs text-muted">{{ branchHint }}</p>
         </div>
 
-        <SectionCard title="Check locators" icon="i-lucide-scan-search" help="project.locator-check">
+        <SectionCard
+          title="Check locators"
+          icon="i-lucide-scan-search"
+          help="project.locator-check"
+          data-tour="locator-check"
+        >
           <template #subtitle>
             Find the tests that use some locators: the ones the
             <DocLink to="features/extension" no-icon :class="SENTENCE_LINK_CLASS">Piwi Picker extension</DocLink>
@@ -167,6 +172,7 @@ useViewScroll(() => dashboardPanelBody('project-locators'));
           icon="i-lucide-crosshair"
           :count="index?.locators.length ?? null"
           help="project.locator-index"
+          data-tour="locator-index"
         >
           <template #subtitle>Read from the steps of every run, the chains shared by the most tests first.</template>
           <LoadingState v-if="loading" text="Loading the locator index…" />

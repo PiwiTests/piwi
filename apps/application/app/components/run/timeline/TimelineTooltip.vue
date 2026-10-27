@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { isGapKind, isHookKind, type TimelineItem } from '~/composables/useTimelineModel';
+import { isGapKind, isHookKind, testTimeNotes, type TimelineItem } from '~/composables/useTimelineModel';
 import {
+  TIMELINE_PAUSE_COLORS,
   TIMELINE_WAIT_COLORS,
+  pauseReasonText,
   timelineStatusColor,
   timelineHookColors,
   timelineStepColor,
@@ -30,6 +32,8 @@ const swatchStyle = computed(() => {
   if (hovered.kind === 'wait') {
     return { backgroundColor: TIMELINE_WAIT_COLORS.swatch + '66', borderColor: TIMELINE_WAIT_COLORS.swatch };
   }
+  if (hovered.kind === 'pause')
+    return { backgroundColor: TIMELINE_PAUSE_COLORS.fill, borderColor: TIMELINE_PAUSE_COLORS.stroke };
   if (isGapKind(hovered.kind)) return { borderColor: '#9ca3af' };
   const hook = timelineHookColors(hovered.status);
   return { backgroundColor: hook.fill, opacity: Math.max(hook.opacity, 0.5) };
@@ -40,6 +44,7 @@ const kindLabel = computed(() => {
   const hovered = item.value;
   if (!hovered) return '';
   if (hovered.kind === 'step') return hovered.category ?? 'step';
+  if (hovered.kind === 'pause') return 'paused';
   return hovered.section ?? hovered.kind;
 });
 
@@ -117,10 +122,15 @@ const gapText = computed<string[]>(() => {
   return [];
 });
 
+/** What a test bar says about its time: the duration Playwright reported, and how long the test stood paused. */
+const timeNotes = computed(() => (item.value?.kind === 'test' ? testTimeNotes(item.value) : []));
+
 /** What clicking the bar does, for the bars whose click is not obvious. */
 const clickHint = computed(() => {
   const hovered = item.value;
-  if (!hovered || hovered.testCaseId == null || !isHookKind(hovered.kind)) return null;
+  if (!hovered || hovered.testCaseId == null) return null;
+  if (hovered.kind === 'pause') return 'Click to open the steps around this stop';
+  if (!isHookKind(hovered.kind)) return null;
   return 'Click to open the steps on this hook';
 });
 
@@ -132,7 +142,10 @@ const positionStyle = computed(() => {
   if (typeof window === 'undefined') return { left: `${x + 12}px`, top: `${y - 10}px` };
   const flipX = x + 12 + TOOLTIP_MAX_WIDTH > window.innerWidth;
   const extraRows =
-    hookRows.value.length + gapText.value.length * 2 + (attemptRows.value.length ? attemptRows.value.length + 1 : 0);
+    hookRows.value.length +
+    gapText.value.length * 2 +
+    timeNotes.value.length * 2 +
+    (attemptRows.value.length ? attemptRows.value.length + 1 : 0);
   const flipY = y + 90 + extraRows * 16 > window.innerHeight;
   return {
     left: flipX ? undefined : `${x + 12}px`,
@@ -172,7 +185,8 @@ const positionStyle = computed(() => {
         {{ item.subtitle }}
       </div>
       <div class="flex items-center gap-3 text-gray-500">
-        <span v-if="!isGap">{{ statusChipLabel(item.status, item.retries) }}</span>
+        <span v-if="item.kind === 'pause'">{{ pauseReasonText(item.status) }}</span>
+        <span v-else-if="!isGap">{{ statusChipLabel(item.status, item.retries) }}</span>
         <span>{{ formatTimelineTime(item.duration) }}</span>
         <span>
           Worker {{ item.slot ?? item.workerIndex }}<template v-if="processLabel"> · {{ processLabel }}</template>
@@ -180,10 +194,14 @@ const positionStyle = computed(() => {
         <span v-if="item.parentTitle" class="italic truncate max-w-48"> for {{ item.parentTitle }} </span>
       </div>
       <p v-for="(line, i) in gapText" :key="i" class="mt-1 text-gray-500 dark:text-gray-400 max-w-72">{{ line }}</p>
-      <div v-if="item.reportedDuration != null" class="mt-1 text-gray-400 max-w-72">
-        Playwright reports {{ formatTimelineTime(item.reportedDuration) }}; the rest ran in hooks it does not count
-        (beforeAll, afterAll, worker fixtures).
-      </div>
+      <p
+        v-for="(note, i) in timeNotes"
+        :key="`time${i}`"
+        class="mt-1 text-gray-400 max-w-72"
+        data-testid="timeline-time-note"
+      >
+        {{ note }}
+      </p>
       <ul v-if="hookRows.length" class="mt-1.5 space-y-0.5 max-w-72" data-testid="timeline-tooltip-hooks">
         <li
           v-for="(hook, i) in hookRows"

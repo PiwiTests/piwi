@@ -28,8 +28,12 @@ const rows = readdirSync(path.join(out, 'results'))
   .sort((a, b) => a.name.localeCompare(b.name));
 
 const lines = ['| Scenario | Steps | Extension replay | Playwright |', '| --- | --- | --- | --- |'];
+const passes = (row, r) => r.divergedAt == null && r.status === 'done' && r.endUrl === row.recordedEndUrl;
 for (const row of rows) {
   const r = row.replay;
+  const all = row.replays ?? [r];
+  // Of several replays of one recording, how many passed: a step that plays only sometimes.
+  const tally = all.length > 1 ? `${all.filter((x) => passes(row, x)).length}/${all.length} passed; ` : '';
   const extension = row.knownGap
     ? `known gap: ${row.knownGap}`
     : r.divergedAt != null
@@ -41,7 +45,7 @@ for (const row of rows) {
           : `passed (${r.seconds} s${r.driver ? `, ${r.driver.driver === 'cdp' ? 'trusted input' : `page events: ${r.driver.reason}`}` : ''})`;
   const pw = specs.get(row.name);
   const playwright = pw ? (pw.status === 'passed' ? 'passed' : `${pw.status}: ${pw.message}`) : 'not run';
-  lines.push(`| ${row.name} | ${row.steps.length} | ${extension} | ${playwright} |`.replace(/\n/g, ' '));
+  lines.push(`| ${row.name} | ${row.steps.length} | ${tally}${extension} | ${playwright} |`.replace(/\n/g, ' '));
 }
 const table = lines.join('\n');
 writeFileSync(path.join(out, 'summary.md'), `${table}\n`);

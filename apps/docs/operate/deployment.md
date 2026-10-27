@@ -56,7 +56,7 @@ fix before its release; don't run it in production: it has had no release testin
 Pin a specific version in production, and read [Upgrading](./upgrading) before you bump it, because
 migrations are forward-only. Browse the published tags on
 [Docker Hub](https://hub.docker.com/r/phenx/piwitests-server/tags) or
-[GHCR](https://github.com/PiwiTests/platform/pkgs/container/platform).
+[GHCR](https://github.com/PiwiTests/piwi/pkgs/container/platform).
 
 ### Image details
 
@@ -92,7 +92,7 @@ provider and what to check before you rely on it.
 
 ## Docker Compose
 
-The repository ships a ready-to-use [`docker-compose.yml`](https://github.com/PiwiTests/platform/blob/main/docker-compose.yml) with commented options (secret key, auth, PostgreSQL). Minimal version:
+The repository ships a ready-to-use [`docker-compose.yml`](https://github.com/PiwiTests/piwi/blob/main/docker-compose.yml) with commented options (secret key, auth, PostgreSQL). Minimal version:
 
 ```yaml
 services:

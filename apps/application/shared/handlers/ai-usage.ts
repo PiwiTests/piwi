@@ -13,9 +13,17 @@
  * diagnoses in the window, and the `verified` and `regressed` outcomes of the
  * diagnosis kind recorded in the window, read from the outcome rows still
  * stored (their details name the provider and the model).
+ *
+ * Assistant answers count as their own kind, `assistantTurns`, from the usage
+ * rows each answer records; their tokens join the model's totals.
  */
 import { and, count, eq, gte, inArray, isNotNull, ne, sql, sum } from 'drizzle-orm';
-import { failureDiagnoses, failureDiagnosisVersions, handbackOutcomes } from '../../server/database/schema';
+import {
+  assistantUsage,
+  failureDiagnoses,
+  failureDiagnosisVersions,
+  handbackOutcomes,
+} from '../../server/database/schema';
 import { HANDBACK_MIN_SAMPLE } from '#shared/analytics/metrics';
 import { storedPatchValidation } from '#shared/patch';
 import type { AiUsageModelRow, AiUsageSummary } from '../../types/api';
@@ -138,6 +146,18 @@ export async function getAiUsageSummary(db: DrizzleDB, days: number, now: Date =
     )
     .groupBy(failureDiagnosisVersions.provider, failureDiagnosisVersions.model);
 
+  const assistant = await db
+    .select({
+      provider: assistantUsage.provider,
+      model: assistantUsage.model,
+      turns: count(),
+      inputTokens: sum(assistantUsage.inputTokens),
+      outputTokens: sum(assistantUsage.outputTokens),
+    })
+    .from(assistantUsage)
+    .where(and(isNotNull(assistantUsage.model), gte(assistantUsage.createdAt, since)))
+    .groupBy(assistantUsage.provider, assistantUsage.model);
+
   const quality = await readQuality(db, since);
 
   // sum/count come back as string | number | null depending on the driver — normalize to numbers.
@@ -149,6 +169,7 @@ export async function getAiUsageSummary(db: DrizzleDB, days: number, now: Date =
       model: r.model ?? '',
       diagnoses: 0,
       failed: 0,
+      assistantTurns: 0,
       inputTokens: 0,
       outputTokens: 0,
       avgDurationMs: null,
@@ -166,6 +187,28 @@ export async function getAiUsageSummary(db: DrizzleDB, days: number, now: Date =
     merged.set(key, row);
   }
 
+  for (const r of assistant) {
+    const key = modelKey(r.provider, r.model);
+    const row = merged.get(key) ?? {
+      provider: r.provider,
+      model: r.model ?? '',
+      diagnoses: 0,
+      failed: 0,
+      assistantTurns: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      avgDurationMs: null,
+      durationTotal: 0,
+      durationCount: 0,
+      ...emptyQuality(),
+      ...quality.get(key),
+    };
+    row.assistantTurns += Number(r.turns ?? 0);
+    row.inputTokens += Number(r.inputTokens ?? 0);
+    row.outputTokens += Number(r.outputTokens ?? 0);
+    merged.set(key, row);
+  }
+
   // A model whose diagnoses predate the window can still have a fix confirm one inside it.
   for (const [key, q] of quality) {
     if (!merged.has(key)) {
@@ -173,6 +216,7 @@ export async function getAiUsageSummary(db: DrizzleDB, days: number, now: Date =
         ...q,
         diagnoses: 0,
         failed: 0,
+        assistantTurns: 0,
         inputTokens: 0,
         outputTokens: 0,
         avgDurationMs: null,
@@ -194,6 +238,7 @@ export async function getAiUsageSummary(db: DrizzleDB, days: number, now: Date =
     minRatings: HANDBACK_MIN_SAMPLE,
     totals: {
       diagnoses: byModel.reduce((acc, r) => acc + r.diagnoses, 0),
+      assistantTurns: byModel.reduce((acc, r) => acc + r.assistantTurns, 0),
       inputTokens: byModel.reduce((acc, r) => acc + r.inputTokens, 0),
       outputTokens: byModel.reduce((acc, r) => acc + r.outputTokens, 0),
     },

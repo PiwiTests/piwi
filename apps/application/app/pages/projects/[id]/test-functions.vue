@@ -392,7 +392,7 @@ function describeSteps(entry: TestFunctionInfo): string {
 <template>
   <UDashboardPanel id="project-test-functions">
     <template #header>
-      <UDashboardNavbar>
+      <UDashboardNavbar data-tour="project-test-functions-page">
         <template #leading>
           <UDashboardSidebarCollapse />
           <BreadcrumbNav
@@ -408,7 +408,7 @@ function describeSteps(entry: TestFunctionInfo): string {
     </template>
 
     <template #body>
-      <div class="p-4 space-y-4">
+      <div class="space-y-4 max-sm:px-4">
         <SectionCard title="Test function catalog" icon="i-lucide-function-square" :count="entries.length || null">
           <template #subtitle>
             Page-object methods and helpers a recording is matched against, in the

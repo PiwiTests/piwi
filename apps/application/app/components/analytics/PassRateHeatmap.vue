@@ -98,6 +98,7 @@ const axisTicks = computed(() => {
     title="Pass rate heatmap"
     :subtitle="subtitle"
     help="analytics.heatmap"
+    data-tour="analytics-heatmap"
     :legend="legendItems"
     :export-data="exportData"
     :png="false"

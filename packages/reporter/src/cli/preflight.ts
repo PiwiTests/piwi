@@ -33,6 +33,7 @@ import {
 } from '@piwitests/core/locator-break';
 import { buildLiteralEdit } from '@piwitests/core/locator-edit';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
+import { diffImpactInput } from '@piwitests/core/suspect-lines';
 import { resolveCliConnection } from '../internal/support/connection.js';
 import {
   fetchCodeIndex,
@@ -524,7 +525,19 @@ export async function runPreflight(
 
   let files: DiffFile[];
   try {
-    files = parseUnifiedDiff(git(repoRoot, ['diff', '--unified=0', '--no-color', '--no-ext-diff', args.base, '--']));
+    files = parseUnifiedDiff(
+      git(repoRoot, [
+        'diff',
+        '--full-index',
+        '--unified=0',
+        '--no-color',
+        '--no-ext-diff',
+        '--src-prefix=a/',
+        '--dst-prefix=b/',
+        args.base,
+        '--',
+      ]),
+    );
   } catch (e) {
     console.error(`piwi preflight: could not diff against ${args.base} — ${(e as Error).message.split('\n')[0]}`);
     return EXIT_ERROR;
@@ -583,7 +596,7 @@ export async function runPreflight(
 
   // The tests that reach the changed files, with the specs of the broken locators when running them.
   let impact: ImpactResolution | null = null;
-  const changed = files.map((f) => f.path);
+  const { changedFiles: changed, changes } = diffImpactInput(files);
   const breakSpecs = [...new Set(breaks.flatMap((b) => b.tests.map((t) => t.file)))];
   if (projectId !== null && (changed.length || (args.run && breakSpecs.length))) {
     try {
@@ -591,6 +604,7 @@ export async function runPreflight(
         { ...connection, key: 'impact', format: 'args', pkgRunner: args.pkgRunner },
         projectId,
         args.run ? [...new Set([...changed, ...breakSpecs])] : changed,
+        changes,
       );
     } catch (e) {
       console.error(`piwi preflight: could not ask which tests reach the changed files — ${(e as Error).message}`);

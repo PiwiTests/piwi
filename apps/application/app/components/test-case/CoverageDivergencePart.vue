@@ -79,6 +79,7 @@ function toggle(row: DivergenceRow) {
     v-if="baseline && differs"
     class="space-y-1.5"
     data-shot="execution-coverage-divergence"
+    data-tour="coverage-divergence"
     data-testid="coverage-divergence"
   >
     <h4 class="inline-flex items-center gap-1 text-sm font-semibold text-highlighted">

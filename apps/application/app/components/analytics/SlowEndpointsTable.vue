@@ -42,6 +42,7 @@ function methodColor(method: string): 'success' | 'info' | 'warning' | 'error' |
     :count="slow?.endpoints.length || undefined"
     subtitle="Backend calls across all projects, slowest first"
     help="analytics.slow-endpoints"
+    data-tour="analytics-slow-endpoints"
   >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load slow endpoints: ${errorMessage(error)}`">

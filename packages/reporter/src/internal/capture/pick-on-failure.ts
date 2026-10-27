@@ -133,22 +133,30 @@ export function deriveFailedLocator(testInfo: TestInfo): FailedLocatorInfo | nul
   return null;
 }
 
-/** Best-effort in-page cleanup of every picker artifact. */
-async function cleanupPicker(page: Page): Promise<void> {
+/** Set in the page by a pick that ended unanswered, so the waits still polling for the overlay's answer stop. */
+const PICK_ENDED = '__piwiPickEnded';
+
+/** Best-effort in-page cleanup of every picker artifact; `ended` marks the pick as ended unanswered. */
+async function cleanupPicker(page: Page, ended = false): Promise<void> {
   try {
-    await page.evaluate(() => {
-      const g = globalThis as any;
-      if (typeof g.__piwiPickCleanup === 'function') g.__piwiPickCleanup();
-      if (typeof g.__piwiAnchorCleanup === 'function') g.__piwiAnchorCleanup();
-      delete g.__piwiPickCleanup;
-      delete g.__piwiAnchorCleanup;
-      delete g.__piwiPickState;
-      delete g.__piwiPickChoice;
-      delete g.__piwiPickedElement;
-      delete g.__piwiAnchorState;
-      delete g.__piwiPickAnchors;
-      delete g.__piwiPickChainCount;
-    });
+    await page.evaluate(
+      ([endedKey, unanswered]) => {
+        const g = globalThis as any;
+        if (typeof g.__piwiPickCleanup === 'function') g.__piwiPickCleanup();
+        if (typeof g.__piwiAnchorCleanup === 'function') g.__piwiAnchorCleanup();
+        delete g.__piwiPickCleanup;
+        delete g.__piwiAnchorCleanup;
+        delete g.__piwiPickState;
+        delete g.__piwiPickChoice;
+        delete g.__piwiPickedElement;
+        delete g.__piwiAnchorState;
+        delete g.__piwiPickAnchors;
+        delete g.__piwiPickChainCount;
+        if (unanswered) g[endedKey] = true;
+        else delete g[endedKey];
+      },
+      [PICK_ENDED, ended] as const,
+    );
   } catch {
     // The page may be gone — nothing left to clean.
   }
@@ -157,26 +165,48 @@ async function cleanupPicker(page: Page): Promise<void> {
 /** What the element → anchors → confirm flow yields: the confirmed locator, its alternatives and the element. */
 export type PickedLocator = Omit<UserPickResult, 'failing'>;
 
+/** `run`, or undefined as soon as `ended` aborts; `run` itself is left to settle on its own. */
+export function unlessEnded<T>(run: Promise<T>, ended: AbortSignal | undefined): Promise<T | undefined> {
+  if (!ended) return run;
+  return Promise.race([
+    run,
+    new Promise<undefined>((resolve) => {
+      if (ended.aborted) resolve(undefined);
+      else ended.addEventListener('abort', () => resolve(undefined), { once: true });
+    }),
+  ]);
+}
+
 /**
  * Run the element → anchors → confirm flow on a live page: element pick (snap
  * + tree-walk), optional stable-parent anchoring with live match counts, ranked
  * candidates (standard generation merged with anchor-scoped chains), and a
  * final confirmation. `failing` is the locator the pick replaces, rendered, for
  * the overlay's headings; null to pick any element. Returns null when the
- * human skips or no locator could be generated; throws when the page breaks.
+ * human skips, no locator could be generated or `ended` aborts, the overlay
+ * then taken out of the page; throws when the page breaks.
  */
 export async function pickLocator(
   page: Page,
   probe: PickerProbe,
   failing: string | null,
+  ended?: AbortSignal,
 ): Promise<PickedLocator | null> {
+  /** Wait for the overlay to set `name`; false once `ended` aborts first. */
+  const answered = async (name: string): Promise<boolean> => {
+    const wait = page.waitForFunction(
+      ([key, endedKey]) => (globalThis as any)[key] !== undefined || (globalThis as any)[endedKey] === true,
+      [name, PICK_ENDED] as const,
+      { timeout: 0, polling: 250 },
+    );
+    await unlessEnded(wait, ended);
+    return !ended?.aborted;
+  };
   try {
     const overlayArg: PickerOverlayArg = { transport: 'global', failing };
+    await page.evaluate((endedKey) => delete (globalThis as any)[endedKey], PICK_ENDED);
     await page.evaluate(installPickerOverlay, overlayArg);
-    await page.waitForFunction(() => (globalThis as any).__piwiPickState !== undefined, undefined, {
-      timeout: 0,
-      polling: 250,
-    });
+    if (!(await answered('__piwiPickState'))) return null;
     const state = (await page.evaluate(() => (globalThis as any).__piwiPickState)) as string;
     if (state !== 'picked') return null;
 
@@ -202,10 +232,7 @@ export async function pickLocator(
         leafLevel: level,
         leafTestId: attrs.attributes['data-testid'] ?? null,
       });
-      await page.waitForFunction(() => (globalThis as any).__piwiAnchorState !== undefined, undefined, {
-        timeout: 0,
-        polling: 250,
-      });
+      if (!(await answered('__piwiAnchorState'))) return null;
       const anchorResult = (await page.evaluate(() => {
         const g = globalThis as any;
         return { state: g.__piwiAnchorState, anchors: g.__piwiPickAnchors ?? [], chainCount: g.__piwiPickChainCount };
@@ -229,10 +256,7 @@ export async function pickLocator(
       failing,
       choices: ranked.map((r) => ({ locator: r.locator, score: r.score })),
     });
-    await page.waitForFunction(() => (globalThis as any).__piwiPickChoice !== undefined, undefined, {
-      timeout: 0,
-      polling: 250,
-    });
+    if (!(await answered('__piwiPickChoice'))) return null;
     const choice = (await page.evaluate(() => (globalThis as any).__piwiPickChoice)) as number;
     if (typeof choice !== 'number' || choice < 0 || choice >= ranked.length) return null;
 
@@ -252,7 +276,7 @@ export async function pickLocator(
       ...(anchors.length > 0 ? { anchors } : {}),
     };
   } finally {
-    await cleanupPicker(page);
+    await cleanupPicker(page, ended?.aborted);
   }
 }
 

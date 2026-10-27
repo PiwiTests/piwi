@@ -14,7 +14,12 @@ const EMPTY_CELL_CLASS = 'bg-gray-100 dark:bg-gray-800 text-gray-400';
 </script>
 
 <template>
-  <SectionCard icon="i-lucide-monitor-smartphone" title="Browser matrix" help="analytics.browser-matrix">
+  <SectionCard
+    icon="i-lucide-monitor-smartphone"
+    title="Browser matrix"
+    help="analytics.browser-matrix"
+    data-tour="analytics-browser-matrix"
+  >
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" :text="`Couldn't load the browser matrix: ${errorMessage(error)}`">
       <template #action>

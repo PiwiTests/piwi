@@ -1,0 +1,8 @@
+# Artifact Hub repository metadata for the Docker Hub image
+# (oci://index.docker.io/phenx/piwitests-server). Artifact Hub reads it from the
+# image's `artifacthub.io` tag, which the container publish workflow pushes on
+# every release; it gives the repository the "Verified publisher" badge.
+repositoryID: 4076eb85-5a4d-4092-a51d-7fd5297ced7a
+owners:
+  - name: Fabien Ménager
+    email: piwitests@gmail.com

@@ -5,9 +5,12 @@ import type { FullConfig, Suite, TestCase, TestResult, FullResult, TestStep } fr
 import {
   resolveOptions,
   usedDesktopDiscovery,
+  desktopReplacedServer,
+  usedDotEnv,
   PIWI_DEFAULTED_CAPTURE_ENV,
   PIWI_ENV_KEYS,
   PIWI_RESOURCES_RESULTS_ENV,
+  type DotEnvUse,
 } from '../internal/config/env.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient } from '../internal/transport/http-client.js';
@@ -19,6 +22,7 @@ import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES } from '../internal/capture
 import { MetadataCollector, resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
 import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '@piwitests/core/step-analysis';
+import { pauseStepEvents, readPauses } from '../internal/collect/pause-events.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
@@ -64,6 +68,7 @@ import {
 import { Logger } from '../internal/support/logger.js';
 import { emitResourceSummary } from '../internal/support/ci-output.js';
 import { RunSampler } from '../internal/collect/process-sampler.js';
+import { LiveResources } from '../internal/streaming/live-resources.js';
 import { executionResources, resourceReportWire } from '../internal/collect/resource-wire.js';
 import {
   artifactKind,
@@ -148,6 +153,10 @@ export class PiwiDashboardReporter {
   private readonly listMode: boolean;
   /** True when the server URL and API key came from the desktop app, not from config. */
   private viaDesktopApp: boolean;
+  /** The configured server `desktopApp: 'prefer'` set aside for the desktop app, if any. */
+  private readonly desktopReplaced: string | null;
+  /** The config folder's `.env` file and the connection variables taken from it, if any. */
+  private readonly viaDotEnv: DotEnvUse | null;
   private isFullRun = true;
   private filterDetails: FilterDetails | null = null;
   /** Configured `maxFailures` (0 = unlimited) — disambiguates an interrupted run's unrun reason. */
@@ -162,6 +171,8 @@ export class PiwiDashboardReporter {
   private resourcesFile: string | null = null;
   /** Samples the run's processes and the machine from `onBegin` to `onEnd`. */
   private sampler: RunSampler | null = null;
+  /** Posts what the sampler and the censuses add while someone has the run open on the dashboard. */
+  private liveResources: LiveResources | null = null;
   /** Bytes of the files the tests attached, by kind. */
   private artifactBytes: ArtifactBytes = emptyArtifacts();
   /** The run's resource report for the dashboard, built in `onEnd`. */
@@ -191,10 +202,14 @@ export class PiwiDashboardReporter {
   static createGlobalSetup = createGlobalSetup;
 
   constructor(rawOptions: Record<string, any> = {}) {
-    this.options = resolveOptions(rawOptions);
+    // Playwright passes the config's folder to every reporter it constructs.
+    const configDir = typeof rawOptions.configDir === 'string' ? rawOptions.configDir : undefined;
+    this.options = resolveOptions(rawOptions, configDir);
     this.enabled = this.options.enabled !== false && !!this.options.serverUrl;
     this.listMode = isListMode();
     this.viaDesktopApp = usedDesktopDiscovery();
+    this.desktopReplaced = desktopReplacedServer();
+    this.viaDotEnv = usedDotEnv();
     this.coverageSettings = coverageSettings(this.options);
 
     const logger = new Logger(this.options.verbose ?? false);
@@ -254,8 +269,13 @@ export class PiwiDashboardReporter {
     // Nothing in the config pointed at a server, so results are going to the
     // desktop app found on this machine — say so rather than uploading silently.
     if (this.viaDesktopApp) {
-      this.logger.info(`Using the desktop app running at ${this.options.serverUrl} (no serverUrl configured).`);
+      this.logger.info(
+        this.desktopReplaced
+          ? `Using the desktop app running at ${this.options.serverUrl} instead of ${this.desktopReplaced} (desktopApp: 'prefer', not on CI).`
+          : `Using the desktop app running at ${this.options.serverUrl} (no serverUrl configured).`,
+      );
     }
+    if (this.viaDotEnv) this.logger.debug(`Read ${this.viaDotEnv.keys.join(', ')} from ${this.viaDotEnv.file}.`);
     this.startTime = new Date().toISOString();
     this.testPathBase = configDirFromConfig(config);
     this.playwrightVersion = config.version;
@@ -367,8 +387,9 @@ export class PiwiDashboardReporter {
       );
     }
     if (coverage.server !== 'off') this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
-    if (coverage.browser !== 'off' || coverage.server !== 'off') {
+    if (coverage.browser !== 'off' || coverage.server !== 'off' || coverage.css === 'rules') {
       if (coverage.browser !== 'off') process.env[PIWI_ENV_KEYS.coverageBrowser] = coverage.browser;
+      if (coverage.css === 'rules') process.env[PIWI_ENV_KEYS.coverageCss] = coverage.css;
       if (coverage.server !== 'off') {
         process.env[PIWI_ENV_KEYS.coverageServer] = coverage.server;
       }
@@ -394,6 +415,22 @@ export class PiwiDashboardReporter {
       // the dashboard shows the real total from the first render.
       this.plannedTests.length,
     );
+    if (this.streamManager && this.options.captureResources !== false) {
+      const live = new LiveResources(
+        this.streamManager,
+        this.httpClient,
+        {
+          sampler: this.sampler,
+          censuses: () => this.resourceCensuses,
+          shardIndex: this.shardInfo?.current ?? null,
+          runStartedAt: Date.now(),
+        },
+        this.logger,
+      );
+      this.streamManager.onWatched = () => void live.tick();
+      live.start();
+      this.liveResources = live;
+    }
   }
 
   /**
@@ -606,10 +643,13 @@ export class PiwiDashboardReporter {
     }
 
     if (this.options.collectPerformanceMetrics && result.steps?.length > 0) {
-      testCase.performanceMetrics = collectStepMetrics(result.steps, result.errors);
+      // The stops at Piwi's pause bar: the steps keep their clock, the statistics leave the stopped time out.
+      const pauses = readPauses(result.attachments?.find((a) => a.name === ATTACHMENT_NAMES.pauses)?.body);
+      testCase.performanceMetrics = collectStepMetrics(result.steps, result.errors, pauses);
       const stepEvents = extractTestStepEvents(result.steps, result.startTime);
       const waitEvents = extractWaitEvents(result.steps);
-      const allEvents = [...stepEvents, ...waitEvents];
+      // The stops before the waits, which can be many: the dashboard keeps the first events of a test.
+      const allEvents = [...stepEvents, ...pauseStepEvents(pauses), ...waitEvents];
       if (allEvents.length > 0) testCase.stepEvents = allEvents;
     }
 
@@ -764,6 +804,8 @@ export class PiwiDashboardReporter {
    */
   private async reportResources(): Promise<void> {
     if (this.options.captureResources === false) return;
+    await this.liveResources?.stop();
+    this.liveResources = null;
     const profile = this.sampler ? await this.sampler.stop() : null;
     const samples = this.sampler?.timedSeries() ?? null;
     this.sampler = null;

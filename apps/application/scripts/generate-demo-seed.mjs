@@ -4375,6 +4375,260 @@ function seedCoverageReports(story, run, fragmentIdOf) {
   }
 }
 
+// ── A test paused at editor breakpoints (post-processing, rng-free) ─────────
+// A run the editor started on a branch, one checkout test in a headed browser
+// with two breakpoints (`PIWI_PAUSE_AT`): it stood 4.2 s at the click on Add to
+// cart and 6.4 s at the cart total's assertion, which then ran out its 5 s and
+// failed. As the reporter stores it: every timestamp is the clock's, each stop
+// is a `pause` step event, the step of each held call holds its stop, and the
+// test's duration, Playwright's, leaves the stops out. The page polls its quote
+// during the second stop. Dated before the project's newest runs and on a
+// branch, so the project's pages, which read its default branch, leave it out,
+// and a run from the editor sends no notification. Its failure joins no cluster.
+{
+  const testCase = TEST_CASES.find((c) => c.project_id === 1 && c.title === 'should display cart total correctly');
+  const template = TEST_RUNS_CASES.filter((row) => row.test_case_id === testCase.id && row.status === 'passed')
+    .filter((row) => row.started_at !== null)
+    .sort((a, b) => b.started_at - a.started_at)[0];
+  if (!template) throw new Error('No passing cart total execution to model the paused one on');
+  const caseDef = caseById.get(testCase.id);
+  const commit = SCM_REPOS[1].commits[0];
+  const base = new URL(DEMO_PROJECTS.find((p) => p.id === 1).baseUrl);
+  const url = (path) => new URL(path, base).href;
+  const file = caseDef.file;
+  const line = (n) => `${file}:${caseDef.declLine + n}`;
+
+  const T = BASE_START_MS - 90 * 60 * 1000;
+  const stops = [
+    { at: 1_080, duration: 4_200, title: "Click getByRole('button', { name: 'Add to cart' })", line: 2 },
+    { at: 5_820, duration: 6_400, title: 'Expect "toHaveText" getByTestId(\'cart-total\')', line: 4 },
+  ];
+  const expectTimeoutMs = 5_000;
+  const error = buildWebAssertionError({
+    matcher: 'expect(locator).toHaveText(expected)',
+    locator: "getByTestId('cart-total')",
+    expected: '"$59.98"',
+    received: '"$54.98"',
+    timeoutMs: expectTimeoutMs,
+    callLog: [
+      `Expect "toHaveText" with timeout ${expectTimeoutMs}ms`,
+      "waiting for getByTestId('cart-total')",
+      `  9 × locator resolved to <output data-testid="cart-total">$54.98</output>`,
+      '    - unexpected value "$54.98"',
+    ],
+    frames: [{ file, line: caseDef.declLine + 4, column: 47 }],
+  });
+  const steps = [
+    {
+      title: 'Navigate',
+      subtitle: '/cart',
+      category: 'navigation',
+      at: 400,
+      duration: 620,
+      params: { url: url('/cart') },
+      location: `${line(1)}:16`,
+    },
+    {
+      title: 'Click',
+      subtitle: "getByRole('button', { name: 'Add to cart' })",
+      category: 'action',
+      at: 1_060,
+      duration: 4_200 + 260,
+      params: { locator: "getByRole('button', { name: 'Add to cart' })" },
+      location: `${line(2)}:62`,
+    },
+    {
+      title: 'Fill "2"',
+      subtitle: "getByLabel('Quantity')",
+      category: 'input',
+      at: 5_560,
+      duration: 210,
+      params: { locator: "getByLabel('Quantity')", value: '2' },
+      location: `${line(3)}:40`,
+    },
+    {
+      title: 'Expect "toHaveText"',
+      subtitle: "getByTestId('cart-total')",
+      category: 'assertion',
+      at: 5_800,
+      duration: 6_400 + expectTimeoutMs + 20,
+      params: { locator: "getByTestId('cart-total')", expected: '$59.98' },
+      location: `${line(4)}:47`,
+      failed: true,
+      error: { message: error.split('\n')[0] },
+    },
+  ];
+  const lastStep = steps[steps.length - 1];
+  const afterHooksAt = lastStep.at + lastStep.duration + 20;
+  const clockMs = afterHooksAt + 220;
+  const pausedMs = stops.reduce((sum, stop) => sum + stop.duration, 0);
+  const duration = clockMs - pausedMs;
+  const ownMs = (step) =>
+    step.duration -
+    stops.reduce(
+      (sum, stop) =>
+        sum + Math.max(0, Math.min(step.at + step.duration, stop.at + stop.duration) - Math.max(step.at, stop.at)),
+      0,
+    );
+  const slowest = steps.reduce((a, b) => (ownMs(b) > ownMs(a) ? b : a));
+
+  const id = runId++;
+  const executionId = trcId++;
+  const startTime = Math.floor(T / 1000);
+  TEST_RUNS.push({
+    id,
+    project_id: 1,
+    status: 'failed',
+    start_time: startTime,
+    duration: clockMs + 1_400,
+    total_tests: 1,
+    passed_tests: 0,
+    failed_tests: 1,
+    skipped_tests: 0,
+    did_not_run_tests: 0,
+    flaky_tests: 0,
+    avg_test_duration: duration,
+    p90_test_duration: duration,
+    environment: 'development',
+    branch: 'fix/cart-total',
+    label: null,
+    metadata: {
+      piwiOrigin: { kind: 'editor' },
+      scm: { commit: commit.sha, branch: 'fix/cart-total', author: commit.author, commitMessage: commit.message },
+    },
+    // `runOrigin(metadata)`: the run the editor started.
+    origin: 'editor',
+    commit_sha: commit.sha,
+    stream_token: null,
+    instance_id: null,
+    playwright_version: '1.64.1',
+    reporter_version: '0.59.0',
+    is_full_run: 0,
+    filter_details: JSON.stringify({ files: [`${file}:${caseDef.declLine}`] }),
+    kept_at: null,
+    kept_by: null,
+    keep_source: null,
+    keep_reason: null,
+    created_at: startTime,
+    updated_at: startTime + Math.ceil((clockMs + 1_400) / 1000),
+  });
+  TEST_RUNS_CASES.push({
+    ...template,
+    id: executionId,
+    test_run_id: id,
+    status: 'failed',
+    duration,
+    error,
+    failure_cluster_id: null,
+    retries: 0,
+    repeat_each_index: 0,
+    attempts: JSON.stringify([{ retry: 0, status: 'failed', duration, startedAt: T }]),
+    is_new_regression: 0,
+    is_new_flaky: 0,
+    line: caseDef.declLine,
+    column: caseDef.declColumn,
+    steps: steps.map(({ at, ...step }) => ({ ...step, startTime: T + at })),
+    locator_pages_payload_id: null,
+    step_events: [
+      {
+        title: 'Before Hooks',
+        category: 'hook',
+        startedAt: T,
+        duration: 380,
+        status: 'passed',
+        location: null,
+        hooks: [
+          { title: 'Fixture "context"', category: 'fixture', duration: 130 },
+          { title: 'Fixture "page"', category: 'fixture', duration: 110 },
+          { title: 'beforeEach hook', category: 'hook', duration: 140 },
+        ],
+      },
+      ...stops.map((stop) => ({
+        title: stop.title,
+        category: 'pause',
+        startedAt: T + stop.at,
+        duration: stop.duration,
+        status: 'breakpoint',
+        location: `${line(stop.line)}:5`,
+      })),
+      {
+        title: 'After Hooks',
+        category: 'hook',
+        startedAt: T + afterHooksAt,
+        duration: 220,
+        status: 'passed',
+        location: null,
+        hooks: [
+          { title: 'afterEach hook', category: 'hook', duration: 140 },
+          { title: 'Fixture "page"', category: 'fixture', duration: 80 },
+        ],
+      },
+    ],
+    wasted_time_ms: 0,
+    slowest_step: slowest.title,
+    slowest_step_duration: ownMs(slowest),
+    web_vitals: null,
+    page_state: {
+      url: url('/cart'),
+      hash: null,
+      historyState: null,
+      localStorage: [{ key: 'cart', length: 214 }],
+      sessionStorage: [],
+      cookies: [],
+    },
+    ai_usage: null,
+    console_logs: null,
+    dialogs: null,
+    aria_snapshot:
+      '- main:\n  - heading "Your cart" [level=1]\n  - listitem: Linen tote\n  - spinbutton "Quantity": "2"\n' +
+      '  - status: $54.98\n  - button "Checkout"',
+    aria_snapshot_json: null,
+    aria_snapshot_payload_id: null,
+    test_source: null,
+    test_source_frames: null,
+    test_source_payload_id: null,
+    test_source_frames_payload_id: null,
+    evidence_sources: null,
+    code_reach_payload_id: null,
+    coverage_payload_id: null,
+    page_inventory_payload_id: null,
+    resources: null,
+    worker_index: 0,
+    shard_index: null,
+    started_at: T,
+    did_not_run_reason: null,
+    blocked_by: null,
+    created_at: T,
+  });
+  const requests = [
+    { method: 'GET', path: '/cart', status: 200, at: 430, duration: 170, type: 'document', content: 'text/html' },
+    { method: 'GET', path: '/api/cart', status: 200, at: 690, duration: 120 },
+    { method: 'POST', path: '/api/cart/items', status: 201, at: 5_340, duration: 140 },
+    { method: 'PATCH', path: '/api/cart/items/1042', status: 200, at: 5_640, duration: 230 },
+    // The page polls its quote while the test stands at the assertion's breakpoint.
+    { method: 'GET', path: '/api/cart/quote', status: 200, at: 6_900, duration: 1_800 },
+    { method: 'GET', path: '/api/cart/quote', status: 200, at: 12_400, duration: 160 },
+  ];
+  for (const req of requests) {
+    NETWORK_REQUESTS.push({
+      id: nrId++,
+      test_runs_case_id: executionId,
+      test_run_id: id,
+      method: req.method,
+      url: url(req.path),
+      normalized_url: seedNormalizeUrl(url(req.path)),
+      status: req.status,
+      duration: req.duration,
+      start_time: T + req.at,
+      resource_type: req.type ?? 'fetch',
+      content_type: req.content ?? 'application/json',
+      server_logs: null,
+      server_traces: null,
+      failure: null,
+    });
+  }
+}
+
 function collectAnchorSec() {
   let max = 0;
   // Fold a candidate timestamp into the running max, normalizing to seconds.
@@ -4978,6 +5232,8 @@ const REBASE_SQL = [
   `UPDATE group_members SET created_at = created_at + ${D_MS};`,
   `UPDATE role_bindings SET created_at = created_at + ${D_MS};`,
   `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
+  `UPDATE assistant_conversations SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  `UPDATE assistant_messages SET created_at = created_at + ${D_MS};`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
   `UPDATE handback_outcomes SET created_at = created_at + ${D_MS};`,
@@ -5020,7 +5276,7 @@ const REBASE_SQL = [
 // their reaches edges, one pull-request-stamped run and the ranked gaps that
 // fall out — enough for the gaps endpoints and the uncovered-changes section to
 // render against real data.
-const gapRun = TEST_RUNS.filter((r) => r.project_id === 1).reduce((a, b) => (b.id > a.id ? b : a));
+const gapRun = TEST_RUNS.filter((r) => r.project_id === 1 && r.origin === 'ci').reduce((a, b) => (b.id > a.id ? b : a));
 gapRun.metadata.scm.remoteUrl = SCM_REPOS[1].repositoryUrl;
 gapRun.metadata.scm.prNumber = 418;
 gapRun.metadata.scm.baseBranch = SCM_REPOS[1].defaultBranch ?? 'main';
@@ -5822,6 +6078,101 @@ const SAVED_DASHBOARDS = [
   },
 ];
 
+// ── An assistant conversation ─────────────────────────────────────────────
+// One question the demo's default persona asked the assistant on the users
+// table cluster, and its answer: what it read (the tools it called, with their
+// one-line summaries) and the card of the cluster it links. The assistant
+// panel lists it under Conversations, and its guide anchors open it there.
+// Every fact the answer states is read from the cluster's story and its seeded
+// row: the row counts from the story's error, the page size from the endpoints
+// file it traces to, the patch from its diagnosis and the fix from the row.
+const USERS_STORY = storyByClusterId(10);
+const USERS_FAILURE = USERS_STORY.failingCases[0];
+const USERS_CLUSTER_ROW = FAILURE_CLUSTERS.find((c) => c.id === USERS_STORY.clusterId);
+const USERS_ENDPOINTS_FILE = USERS_STORY.appFiles[0];
+const USERS_CLUSTER = { type: 'cluster', id: USERS_STORY.clusterId, label: USERS_FAILURE.title };
+
+/** The number the users story states where `pattern` matches `text`; throws when it no longer does. */
+function usersStoryNumber(pattern, text, what) {
+  const match = pattern.exec(text);
+  if (!match) throw new Error(`The users table story no longer states ${what}`);
+  return Number(match[1]);
+}
+
+const USERS_ROWS_EXPECTED = usersStoryNumber(/^Expected: (\d+)$/m, USERS_FAILURE.error, 'the rows it expects');
+const USERS_ROWS_RECEIVED = usersStoryNumber(/^Received: (\d+)$/m, USERS_FAILURE.error, 'the rows it finds');
+const USERS_API_PAGE_SIZE = usersStoryNumber(
+  /DefaultPageSize = (\d+);/,
+  SOURCE_FILES[USERS_ENDPOINTS_FILE].join('\n'),
+  'the API default page size',
+);
+const USERS_ANSWER_LEADS = [
+  `The suspect lines are in \`${USERS_ENDPOINTS_FILE}\``,
+  USERS_STORY.diagnosis?.fix?.patch ? 'the stored diagnosis suggests a patch' : null,
+  USERS_CLUSTER_ROW.fix_landed_run_id ? 'the fix has since landed' : null,
+].filter(Boolean);
+const USERS_ANSWER =
+  `[${USERS_CLUSTER.label}](piwi:cluster/${USERS_CLUSTER.id}) expects ${USERS_ROWS_EXPECTED} rows, the header ` +
+  `and ${USERS_ROWS_EXPECTED - 1} users, and finds ${USERS_ROWS_RECEIVED}. Pagination moved to the server, and ` +
+  `the users endpoint pages with the API default page size, ${USERS_API_PAGE_SIZE}, when a request names no ` +
+  `page size, and the users table names none. ` +
+  `${new Intl.ListFormat('en', { type: 'conjunction' }).format(USERS_ANSWER_LEADS)}.`;
+const ASKED_AT_MS = (ANCHOR_SEC - 3 * 60 * 60) * 1000;
+const ASSISTANT_CONVERSATIONS = [
+  {
+    id: 1,
+    owner_id: DEFAULT_DEMO_USER.id,
+    title: 'Why does the users table test fail?',
+    created_at: ASKED_AT_MS,
+    updated_at: ASKED_AT_MS + 9000,
+  },
+];
+const ASSISTANT_MESSAGES = [
+  {
+    id: 1,
+    conversation_id: 1,
+    role: 'user',
+    content: { blocks: [{ kind: 'text', text: 'Why does the users table test fail?' }] },
+    context: {
+      route: `/failure-clusters/${USERS_CLUSTER.id}`,
+      page: '/failure-clusters/[id]',
+      params: { id: String(USERS_CLUSTER.id) },
+      projectId: USERS_STORY.projectId,
+    },
+    status: 'completed',
+    created_at: ASKED_AT_MS,
+  },
+  {
+    id: 2,
+    conversation_id: 1,
+    role: 'assistant',
+    content: {
+      blocks: [
+        { kind: 'text', text: USERS_ANSWER },
+        { kind: 'entity', id: 'users-cluster', entity: USERS_CLUSTER, status: USERS_CLUSTER_ROW.status },
+      ],
+    },
+    tool_calls: [
+      {
+        name: 'get_cluster',
+        arguments: { clusterId: USERS_CLUSTER.id },
+        summary: `Get cluster (clusterId ${USERS_CLUSTER.id})`,
+        entities: [USERS_CLUSTER],
+      },
+      {
+        name: 'get_fix_plan',
+        arguments: { clusterId: USERS_CLUSTER.id },
+        summary: `Get fix plan (clusterId ${USERS_CLUSTER.id})`,
+      },
+    ],
+    provider: 'demo',
+    model: 'demo',
+    status: 'completed',
+    duration_ms: 9000,
+    created_at: ASKED_AT_MS + 9000,
+  },
+];
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -5964,6 +6315,10 @@ const lines = [
   '',
   '-- Scenario gaps (references test_cases; test_run_id is not an FK)',
   insert('scenario_gaps', SCENARIO_GAPS),
+  '',
+  '-- An assistant conversation of the default persona',
+  insert('assistant_conversations', ASSISTANT_CONVERSATIONS),
+  insert('assistant_messages', ASSISTANT_MESSAGES),
   '',
   ...REBASE_SQL,
   '',

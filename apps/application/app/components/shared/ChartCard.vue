@@ -109,6 +109,7 @@ const exportItems = computed(() => [
           :aria-label="`Export ${title}`"
           title="Export this chart"
           data-testid="chart-export"
+          data-tour="chart-export"
         />
         <template #content-bottom>
           <div class="flex items-center gap-1 px-2.5 py-1.5 text-xs text-muted border-t border-default">

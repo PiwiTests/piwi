@@ -177,8 +177,9 @@ describe('PIWI_ENV_VARS registry', () => {
     // registry/identifier names that happen to start with PIWI_ but are not env
     // vars (this registry's own constant, and the reporter's PIWI_ENV_KEYS map
     // referenced in comments), plus reporter-side vars the app only *mentions*
-    // in generated setup copy (the wizard, the API-key modal) without reading
-    // them itself — they belong to the reporter's own env map, not this one.
+    // in generated setup copy (the wizard, the API-key modal, the demo
+    // assistant's CI steps) without reading them itself — they belong to the
+    // reporter's own env map, not this one.
     const knownFalsePositives = new Set([
       'PIWI_AI',
       'PIWI_AI_MAX',
@@ -187,6 +188,7 @@ describe('PIWI_ENV_VARS registry', () => {
       'PIWI_ENV_KEYS',
       'PIWI_FEATURE_GROUPS',
       'PIWI_API_KEY',
+      'PIWI_DASHBOARD_URL',
       'PIWI_OUTPUT_FILE',
       // Desktop-shell debug flag, read only by the Tauri Rust process (see
       // `desktop/src-tauri/src/lib.rs`), not the server — the app just names it

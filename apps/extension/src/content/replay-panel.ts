@@ -50,6 +50,7 @@ import {
   quoted,
   replayVerdict,
   stepStatus,
+  stepTimeout,
   VERDICT_ICONS,
   verdictText,
   wait,
@@ -63,10 +64,10 @@ import {
   ACTION_TIMEOUT_MS,
   ASSERT_TIMEOUT_MS,
   assignFiles,
-  dropLocatorFor,
   endHover,
   findAll,
   locatorFor,
+  locatorsOf,
   observe,
   pageEngine,
   performCheck,
@@ -78,6 +79,7 @@ import {
   performPress,
   performSelect,
   resolveForAction,
+  type Resolution,
   waitForPageReady,
   waitForStepReady,
 } from './replay-actions.js';
@@ -515,13 +517,10 @@ function renderHud(
       detail.className = 'detail';
       detail.append(...richText(result.detail));
       list.appendChild(detail);
-    } else if (
-      result?.detail &&
-      (result.status === 'skipped' || result.status === 'manual' || step.action === 'setInputFiles')
-    ) {
+    } else if (result?.detail) {
       const note = document.createElement('div');
       note.className = 'note';
-      note.textContent = result.detail;
+      note.append(...richText(result.detail));
       list.appendChild(note);
     }
   });
@@ -691,6 +690,26 @@ function renderHud(
 
 // ---------------------------------------------------------------------------
 // The run
+
+/** How a step's element was found: a resolution, or none needed (a key press with no element). */
+type Found = Resolution | { ok: true; element: null; locator: null; specCount: 0 };
+
+/**
+ * What a step's result says when another of its recorded locators found its
+ * element (or where it drops) rather than the spec's own; null when the
+ * spec's own did.
+ */
+function foundWith(step: RecordedStep, element: Found | null, dropOn: Found | null): string | null {
+  const notes = [element, dropOn].flatMap((r, i) => {
+    const spec = locatorsOf(i === 0 ? step.target : step.dropTarget)[0];
+    if (!r?.ok || !r.locator || !spec || r.locator === spec) return [];
+    const words = { locator: r.locator, spec };
+    if (r.specCount === 0) return [t('replay_foundWithNoMatch', words)];
+    if (r.specCount === 1) return [t('replay_foundWithOther', words)];
+    return [tn('replay_foundWithMany', r.specCount, words)];
+  });
+  return notes.length > 0 ? notes.join(' ') : null;
+}
 
 /**
  * Stores a step's result on the stored replay, so a Pause, a Stop or a change
@@ -1005,14 +1024,11 @@ const HANDED_LOCATORS = 3;
 /** How often the elements a handed-over step is about are looked for again while the person acts. */
 const HAND_OVER_LOOK_MS = 400;
 
-/** The locators a step's element was recorded with: the one the replay looked for first, then the others. */
+/** The locators a step's element was recorded with: the spec's own, then the others the replay looked for. */
 function recordedLocators(step: RecordedStep): { element: string[]; dropOn: string[] } {
-  const listed = (first: string | null, target: RecordedStep['target'] | undefined) => [
-    ...new Set([first, ...(target?.alternatives ?? []).map((a) => a.locator)].filter((l): l is string => !!l)),
-  ];
   return {
-    element: listed(locatorFor(step), step.target),
-    dropOn: step.action === 'dragTo' ? listed(dropLocatorFor(step), step.dropTarget) : [],
+    element: locatorsOf(step.target),
+    dropOn: step.action === 'dragTo' ? locatorsOf(step.dropTarget) : [],
   };
 }
 
@@ -1444,7 +1460,9 @@ async function runReplay(): Promise<void> {
         continue;
       }
 
-      if (!(await waitForPage(step.pageUrl, ACTION_TIMEOUT_MS, state.startPage, replayId))) {
+      // As long as the person waited before the step when recording, and at least as long as Playwright waits.
+      const timeout = stepTimeout(steps, index, ACTION_TIMEOUT_MS);
+      if (!(await waitForPage(step.pageUrl, timeout, state.startPage, replayId))) {
         if (movedAway === replayId) continue;
         const reason = t('replay_reasonOtherPage', { expected: pathOf(step.pageUrl), actual: pathOf(location.href) });
         if (!(await playByHand(state, index, reason))) return;
@@ -1457,6 +1475,12 @@ async function runReplay(): Promise<void> {
       // `/items/1` to `/items/2`): the step plays there.
       if (leaving) {
         await waitForUnload(replayId);
+        continue;
+      }
+
+      // A password, or another field whose value the recording never keeps: the person types it.
+      if (step.action === 'fill' && step.redacted) {
+        if (!(await playByHand(state, index, t('replay_reasonSecret')))) return;
         continue;
       }
 
@@ -1479,14 +1503,21 @@ async function runReplay(): Promise<void> {
         continue;
       }
 
-      const resolved =
-        step.action === 'press' && !step.target ? ({ ok: true, element: null } as const) : await resolveForAction(step);
+      // A hover recorded with nothing to find its element by: the next step's pointer goes over its own element.
+      if (step.action === 'hover' && locatorsOf(step.target).length === 0) {
+        await recordResult(state, index, { status: 'skipped', detail: t('replay_hoverNoLocator') });
+        continue;
+      }
+
+      const resolved: Found =
+        step.action === 'press' && !step.target
+          ? { ok: true, element: null, locator: null, specCount: 0 }
+          : await resolveForAction(step, timeout);
       if (!resolved.ok) {
         if (!(await playByHand(state, index, resolved.reason))) return;
         continue;
       }
-      const dropOn =
-        step.action === 'dragTo' ? await resolveForAction(step, ACTION_TIMEOUT_MS, dropLocatorFor(step)) : null;
+      const dropOn = step.action === 'dragTo' ? await resolveForAction(step, timeout, step.dropTarget) : null;
       if (dropOn && !dropOn.ok) {
         if (!(await playByHand(state, index, dropOn.reason))) return;
         continue;
@@ -1527,7 +1558,7 @@ async function runReplay(): Promise<void> {
       if (!current || (current.stepMode && !state.stepMode)) continue;
       // Saved before acting: the action may leave the page, and the next one continues from here.
       const driver = current.driver?.driver ?? 'synthetic';
-      await recordResult(current, index, { status: 'done', detail: null, driver });
+      await recordResult(current, index, { status: 'done', detail: foundWith(step, resolved, dropOn), driver });
       const worked = await act(replayId, step, resolved.element, dropOn?.ok ? dropOn.element : null);
       if (!worked.ok) {
         // Back on the step, which the person does or skips.

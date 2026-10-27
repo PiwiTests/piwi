@@ -24,7 +24,7 @@ const ownerLink = computed(() =>
 </script>
 
 <template>
-  <div class="space-y-1">
+  <div class="space-y-1" data-tour="cluster-owner">
     <div class="flex items-center gap-1.5 text-xs">
       <UIcon name="i-lucide-users" class="size-3.5 shrink-0 text-gray-400" />
       <span class="text-gray-500">Owner</span>

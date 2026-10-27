@@ -3,7 +3,7 @@
  * write tool checks, on the project it acts on, the permission its REST twin
  * declares, and `tools/list` leaves out the tools a caller can use nowhere.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
@@ -92,6 +92,8 @@ describe('the write tools check it on the project they act on', () => {
   const tool = (name: string) => MCP_TOOLS.find((t) => t.name === name)!.handler;
 
   beforeEach(async () => {
+    // No Jira connection from the environment: `create_issue` answers as on an instance without one.
+    for (const name of ['PIWI_JIRA_BASE_URL', 'PIWI_JIRA_EMAIL', 'PIWI_JIRA_API_TOKEN']) vi.stubEnv(name, '');
     ({ db, close } = await openTempDb());
     await db.insert(schema.projects).values([
       { id: 1, name: 'shop' },
@@ -115,6 +117,7 @@ describe('the write tools check it on the project they act on', () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await close();
   });
 

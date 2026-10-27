@@ -10,7 +10,7 @@ import { dispatchRuntimeMessage, readStoredEvents, setRecordingActive, stubChrom
 import { stubChromeI18n } from './i18n-stub.js';
 import { playwrightLocator } from './playwright-locator.js';
 import { normalizeSteps, type RawCaptureEvent } from '@piwitests/core/recording';
-import { renderSpec } from '@piwitests/core/codegen';
+import { renderSpec, stepLocator } from '@piwitests/core/codegen';
 import { parseSteps, sessionFromSteps, type PiwiSteps } from '@piwitests/core/steps';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import { clippedInShadows, openShadowRoots } from './shadow.js';
@@ -122,8 +122,59 @@ const EDITABLE_PAGE = `<!doctype html><html><body>
   <div contenteditable aria-label="Comment"><p>Looks <b>good</b> to me</p></div>
 </body></html>`;
 
+/**
+ * Icons a page made clickable: a row's edit icon drawn in SVG inside a span that handles the click, a delete icon
+ * in a row that opens as a whole, a chat launcher in the body and a chart's bar; a tree item whose expand arrow and
+ * label act apart, and one whose whole row is what the page made clickable.
+ */
+const ICONS_PAGE = `<!doctype html><html><head><style>
+  .action, .switcher, .title, .open, .launcher, .row { cursor: pointer; }
+  .switcher { display: inline-block; width: 16px; height: 16px; background: #ccc; }
+  .launcher { position: fixed; right: 16px; top: 16px; width: 32px; height: 32px; }
+</style></head><body>
+  <table><tbody>
+    <tr><td>Cierra</td><td><span class="action" id="edit-record-1" title="Edit" onclick="document.body.dataset.edit = '1'">
+      <svg viewBox="0 0 16 16" width="16" height="16"><path d="M0 0h16v16H0z"></path></svg></span></td></tr>
+    <tr><td>Alden</td><td><span class="action" id="edit-record-2" title="Edit" onclick="document.body.dataset.edit = '2'">
+      <svg viewBox="0 0 16 16" width="16" height="16"><path d="M0 0h16v16H0z"></path></svg></span></td></tr>
+    <tr class="open" onclick="document.body.dataset.open = '3'"><td>Bran</td><td><span id="delete-record-3"
+      title="Delete" onclick="event.stopPropagation(); document.body.dataset.deleted = '3'">
+      <svg viewBox="0 0 16 16" width="16" height="16"><path d="M0 0h16v16H0z"></path></svg></span></td></tr>
+  </tbody></table>
+  <div role="tree"><div role="treeitem" aria-expanded="false">
+    <span class="switcher" onclick="this.parentElement.setAttribute('aria-expanded', 'true')"></span>
+    <span class="title" title="Home">Home</span>
+  </div></div>
+  <ul role="tree"><li role="treeitem" aria-expanded="false" id="docs">
+    <div class="row" onclick="this.parentElement.setAttribute('aria-expanded', 'true')"><span>▸</span> <span>Docs</span></div>
+  </li></ul>
+  <svg role="img" aria-label="Sales" width="300" height="120" viewBox="0 0 300 120">
+    <rect id="bar-q1" x="20" y="40" width="60" height="80" onclick="document.body.dataset.bar = 'q1'"></rect>
+    <rect id="bar-q2" x="120" y="20" width="60" height="100" onclick="document.body.dataset.bar = 'q2'"></rect>
+  </svg>
+  <div class="launcher" onclick="document.body.dataset.chat = 'open'">
+    <svg viewBox="0 0 24 24" width="24" height="24"><path d="M0 0h24v24H0z"></path></svg></div>
+</body></html>`;
+
+/**
+ * A page that routes itself: a link that pushes an address, a button whose page goes back on its own later, and
+ * Ctrl+R kept for a shortcut of its own.
+ */
+const ROUTED_PAGE = `<!doctype html><html><body>
+  <a id="item" href="/routed/item" onclick="event.preventDefault(); history.pushState({}, '', '/routed/item')">Open item</a>
+  <button id="later" onclick="setTimeout(() => history.back(), 1600)">Close later</button>
+  <script>
+    addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.code === 'KeyR') e.preventDefault();
+    });
+  </script>
+</body></html>`;
+
 /** The pages by path; any other path is the login page. */
 const PAGES: Record<string, string> = {
+  '/icons': ICONS_PAGE,
+  '/routed': ROUTED_PAGE,
+  '/routed/item': ROUTED_PAGE,
   '/editable': EDITABLE_PAGE,
   '/reveal': REVEAL_PAGE,
   '/dashboard': DASHBOARD_PAGE,
@@ -184,6 +235,131 @@ test.describe('record-panel.js', () => {
     expect(steps[3]!.target?.testId).toBe('add-to-cart');
     // Both pages' events are present under one session — proof the recording survived the navigation.
     expect(new Set(events.map((e) => e.pageUrl)).size).toBeGreaterThanOrEqual(2);
+  });
+
+  test('a Back and a reload the person makes are steps of their own, a Back an action made is not', async ({
+    context,
+  }) => {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+    const page = await context.newPage();
+    const attach = async () => {
+      await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+      await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    };
+    await page.goto(`${ORIGIN}/login`);
+    await attach();
+    await page.click('#submit');
+    await page.waitForURL('**/dashboard');
+    await attach();
+    // The person goes back with the browser at once, then reloads.
+    await page.goBack();
+    await page.waitForURL('**/login');
+    await attach();
+    await page.reload();
+    await attach();
+    // A link that goes back as it is clicked: the click is the step.
+    await page.evaluate(() => {
+      const back = document.createElement('a');
+      back.href = '#';
+      back.textContent = 'Previous page';
+      back.onclick = (event) => {
+        event.preventDefault();
+        history.forward();
+      };
+      document.body.append(back);
+    });
+    await page.getByText('Previous page').click();
+    await page.waitForURL('**/dashboard');
+    await attach();
+    await page.click('#add');
+
+    await expect.poll(async () => normalizeSteps(await readStoredEvents(page)).length).toBe(6);
+    const steps = normalizeSteps(await readStoredEvents(page));
+    expect(steps.map((s) => [s.action, s.action === 'goto' ? s.value : (s.target?.accessibleName ?? null)])).toEqual([
+      ['goto', `${ORIGIN}/login`],
+      ['click', 'Log in'],
+      ['goto', `${ORIGIN}/login`],
+      ['goto', `${ORIGIN}/login`],
+      ['click', 'Previous page'],
+      ['click', 'Add to cart'],
+    ]);
+  });
+
+  test('in a page that routes itself, the person’s Back is a step however soon, the page’s own moves are not', async ({
+    context,
+  }) => {
+    test.setTimeout(30_000);
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${ORIGIN}/*` },
+      },
+    });
+    const page = await context.newPage();
+    await page.goto(`${ORIGIN}/routed`);
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    // The browser's Back and Forward keys are not the page's: no key press. The page keeps Ctrl+R for itself.
+    await page.keyboard.press('Alt+ArrowLeft');
+    await page.keyboard.press('Alt+ArrowRight');
+    await page.keyboard.press('Control+r');
+    await page.click('#item');
+    await page.waitForURL('**/routed/item');
+    // Back with the browser right after the click.
+    await page.goBack();
+    await page.waitForURL(`${ORIGIN}/routed`);
+    // The page sets its own hash, long after the person's last action.
+    await page.waitForTimeout(1_600);
+    await page.evaluate(() => {
+      location.hash = 'details';
+    });
+    await page.click('#item');
+    await page.waitForURL('**/routed/item');
+    // A button whose page goes back on its own, long after the click.
+    await page.click('#later');
+    await page.waitForURL(`${ORIGIN}/routed#details`, { timeout: 5_000 });
+    await page.waitForTimeout(200);
+
+    const steps = normalizeSteps(await readStoredEvents(page));
+    expect(steps.map((s) => [s.action, s.target ? s.target.accessibleName : s.value])).toEqual([
+      ['goto', `${ORIGIN}/routed`],
+      ['press', 'ControlOrMeta+r'],
+      ['click', 'Open item'],
+      ['goto', `${ORIGIN}/routed`],
+      ['click', 'Open item'],
+      ['click', 'Close later'],
+    ]);
+  });
+
+  test('a reload while the recording is paused is no step', async ({ context }) => {
+    await routePages(context);
+    await stubChromeStorage(context, {
+      session: {
+        piwiRecording: {
+          active: true,
+          paused: true,
+          events: [],
+          startedAt: Date.now(),
+          grantedOriginPattern: `${ORIGIN}/*`,
+        },
+      },
+    });
+    const page = await context.newPage();
+    const attach = async () => {
+      await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+      await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    };
+    await page.goto(`${ORIGIN}/login`);
+    await attach();
+    await page.reload();
+    await attach();
+    await expect.poll(async () => (await readStoredEvents(page)).filter((e) => e.kind === 'navigate').length).toBe(2);
+    expect((await readStoredEvents(page)).map((e) => e.navigation ?? null)).toEqual([null, null]);
   });
 
   test('records the name Playwright computes and ranks a repeated link as the other tools do', async ({ context }) => {
@@ -343,6 +519,51 @@ test.describe('record-panel.js', () => {
     await expect.poll(() => readStoredEvents(page).then((e) => e.length)).toBeGreaterThanOrEqual(2);
     await page.waitForTimeout(200);
     expect(normalizeSteps(await readStoredEvents(page)).map((s) => s.action)).toEqual(['goto', 'click']);
+  });
+
+  test('a click on an icon is a click on what the page made clickable around it, a tree’s arrow apart from its item', async ({
+    context,
+  }) => {
+    const page = await recordingOn(context, '/icons');
+    const home = page.getByRole('treeitem').first();
+    await page.locator('#edit-record-2 path').click();
+    await expect(page.locator('body')).toHaveAttribute('data-edit', '2');
+    await page.locator('.switcher').click();
+    await expect(home).toHaveAttribute('aria-expanded', 'true');
+    await page.locator('#delete-record-3 path').click();
+    await expect(page.locator('body')).toHaveAttribute('data-deleted', '3');
+    await page.getByText('Docs').click();
+    await expect(page.locator('#docs')).toHaveAttribute('aria-expanded', 'true');
+    await page.locator('#bar-q2').click();
+    await expect(page.locator('body')).toHaveAttribute('data-bar', 'q2');
+    await page.locator('.launcher path').click();
+    await expect(page.locator('body')).toHaveAttribute('data-chat', 'open');
+    await expect.poll(async () => normalizeSteps(await readStoredEvents(page)).length).toBe(7);
+    const steps = normalizeSteps(await readStoredEvents(page));
+    const [edit, arrow, remove, docs, bar, launcher] = steps
+      .slice(1)
+      .map((s) => stepLocator(s.target, { locators: 'stable' }));
+    expect(edit).toBe("locator('#edit-record-2')");
+    expect(arrow).toBe("locator('.switcher')");
+    // An icon is its own control, not the row it sits in; a bar is not the whole chart.
+    expect(remove).toBe("locator('#delete-record-3')");
+    expect(bar).toBe("locator('#bar-q2')");
+    expect(launcher).toBe("locator('.launcher')");
+    // A row as wide as its item is the item.
+    expect(docs).toMatch(/^getByRole\('treeitem'/);
+    // Each plays where it was recorded: the edit of the second row, the arrow rather than the item's middle.
+    await page.reload();
+    await playwrightLocator(page, edit!).click();
+    await expect(page.locator('body')).toHaveAttribute('data-edit', '2');
+    await playwrightLocator(page, arrow!).click();
+    await expect(home).toHaveAttribute('aria-expanded', 'true');
+    await playwrightLocator(page, remove!).click();
+    await expect(page.locator('body')).toHaveAttribute('data-deleted', '3');
+    await expect(page.locator('body')).not.toHaveAttribute('data-open', '3');
+    await playwrightLocator(page, bar!).click();
+    await expect(page.locator('body')).toHaveAttribute('data-bar', 'q2');
+    await playwrightLocator(page, launcher!).click();
+    await expect(page.locator('body')).toHaveAttribute('data-chat', 'open');
   });
 
   test('a click inside an editable element is a click on the element', async ({ context }) => {
@@ -735,6 +956,31 @@ test.describe('record-panel.js', () => {
     expect(await dotAnimation()).toBe('pulse');
     await page.emulateMedia({ reducedMotion: 'reduce' });
     expect(await dotAnimation()).toBe('none');
+  });
+
+  test('the bar moves to another corner when it covers the page, and stays there on the next page', async ({
+    context,
+  }) => {
+    await openShadowRoots(context);
+    const page = await recordingInProgress(context);
+    const hud = page.locator('#piwi-record-hud-host');
+    const corner = () =>
+      hud.evaluate((host) => {
+        const r = host.getBoundingClientRect();
+        return `${r.top < innerHeight / 2 ? 'top' : 'bottom'}-${r.left < innerWidth / 2 ? 'left' : 'right'}`;
+      });
+    expect(await corner()).toBe('bottom-right');
+    const move = hud.getByRole('button', { name: 'Move this bar to another corner' });
+    await move.click();
+    expect(await corner()).toBe('bottom-left');
+    await move.click();
+    expect(await corner()).toBe('top-left');
+    // Moving it is no step of the recording.
+    expect(normalizeSteps(await readStoredEvents(page)).map((s) => s.action)).toEqual(['goto']);
+    await page.reload();
+    await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+    await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+    expect(await corner()).toBe('top-left');
   });
 
   test('a page restored from the back/forward cache records that the flow came back to it', async ({ context }) => {

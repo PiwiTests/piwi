@@ -108,6 +108,7 @@ function stateLine(t: FlakeLabTest): string {
               :icon="copied && copiedCommand === t.nextCommand ? 'i-lucide-check' : 'i-lucide-clipboard'"
               :title="t.nextCommand"
               data-testid="flake-lab-copy"
+              data-tour="flake-lab-copy-command"
               @click="copyCommand(t.nextCommand)"
             >
               {{ flakeLabNextStep(t.state) === 'verify' ? 'Copy verify command' : 'Copy command' }}
@@ -123,6 +124,7 @@ function stateLine(t: FlakeLabTest): string {
       icon="i-lucide-flask-conical"
       title="Experiments"
       help="case.flake-experiments"
+      data-tour="flake-lab-experiments"
       :subtitle="
         lab.counts.experiments > lab.experiments.length
           ? `The newest ${lab.experiments.length} of ${lab.counts.experiments}`

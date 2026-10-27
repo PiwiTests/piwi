@@ -412,8 +412,8 @@ export class RunSubmitter {
   private stopForMissingAuth(run: CollectedRun, payload: RunPayload): SubmitOutcome {
     this.logger.error(
       `Authentication is required by ${run.options.serverUrl ?? 'the dashboard'} but no credentials were configured. ` +
-        `Create an API key (Settings → Users on the dashboard) and set the reporter's \`apiKey\` option ` +
-        `or the PIWI_API_KEY environment variable.`,
+        `Create an API key (Settings → Users on the dashboard) and set the reporter's \`apiKey\` option, ` +
+        `or PIWI_API_KEY in the environment or in the .env file next to the Playwright config.`,
     );
     this.logRecoverySaved();
     this.saveRecovery(payload);

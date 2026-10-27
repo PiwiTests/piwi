@@ -1,6 +1,6 @@
 ---
 title: AI provider
-description: "Connect an LLM to the dashboard: Anthropic, OpenAI, a local OpenAI-compatible model or the Claude Code CLI, with model roles, response language and token limits."
+description: "Connect an LLM to the dashboard: Anthropic, OpenAI, a local OpenAI-compatible model or a local Claude Code or Codex CLI, with model roles, response language and token limits."
 lang: en-US
 ---
 
@@ -22,7 +22,7 @@ are not read.
 
 | Variable | Description |
 |----------|-------------|
-| `PIWI_AI_PROVIDER` | `anthropic`, `openai`, or `claude-cli` |
+| `PIWI_AI_PROVIDER` | `anthropic`, `openai`, `claude-cli`, `codex-cli`, or `deepseek-cli` |
 | `PIWI_AI_API_KEY` | Provider API key (stored encrypted when set via the UI; never returned by the API) |
 | `PIWI_AI_MODEL` | Model name (default: `claude-opus-4-8` for Anthropic) |
 | `PIWI_AI_BASE_URL` | Base URL of the provider API: required for `openai`, OpenAI itself (`https://api.openai.com/v1`) included; optional for `anthropic` (a gateway or proxy) |
@@ -31,8 +31,7 @@ are not read.
 | `PIWI_AI_RESEARCH_MODEL` / `_PROVIDER` / `_BASE_URL` / `_API_KEY` | Optional **research** model for two-stage diagnosis; provider/base URL/key default to the main ones |
 | `PIWI_AI_EMBEDDING_PROVIDER` / `_MODEL` / `_BASE_URL` / `_API_KEY` | Optional **embedding** model for semantic failure clustering (OpenAI-compatible only: Anthropic has no embeddings API) |
 
-A saved key is sent only to the provider and base URL it was saved for: pointing a role at another base URL in
-**Settings → AI**, or testing one there, needs the key entered again.
+Saved keys are bound to their provider and base URL. Enter the key again when changing either.
 
 The [Configuration reference](/reference/configuration#ai-diagnosis) lists every AI variable.
 
@@ -47,13 +46,18 @@ protocol (the in-app reference at `/docs` shows the same spec).
 
 To be told when a diagnosis finishes without watching the panel, turn on **Settings → AI → Diagnosis notifications**: a per-browser preference (stored on that device only) that shows a browser notification on completion once you grant the permission.
 
+### Local Codex CLI
+
+Use [Codex CLI](/guide/codex-cli) with a ChatGPT login, or [official DeepSeek Harness](/guide/deepseek-cli) with DeepSeek credentials.
+
 ## Model roles
 
-Piwi calls models in up to three distinct roles, each with its own complete provider configuration (or a **reuse** pointer to inherit another role's provider and credentials):
+Piwi calls models in up to four distinct roles, each with its own complete provider configuration (or a **reuse** pointer to inherit another role's provider and credentials):
 
 - **Diagnosis**: the main model that writes the final diagnosis (required to enable AI). The quality report narrative uses it too.
 - **Research**: an optional cheaper, faster model that pre-analyzes the failure first (*two-stage diagnosis*).
 - **Embedding**: an optional embeddings model that powers semantic failure clustering and the **Fixed before** similarity.
+- **Assistant**: an optional model the [assistant](/features/assistant) answers with; unset, it uses the diagnosis model.
 
 Configure each role in **Settings → AI → Model providers**. A role set to *reuse* another role uses that role's provider, key, and base URL (only its model can differ), so you don't re-enter credentials for, say, a Haiku research pass on the same Anthropic key.
 
@@ -87,7 +91,7 @@ PIWI_AI_API_KEY=ollama   # optional: sent only when set, for servers that check 
 
 A local model keeps every diagnosis on your own infrastructure; see [Privacy & data flow](./privacy).
 
-**Claude Code CLI (local, no API key)**: in the [desktop app](/features/desktop), pick **Claude Code (local)**. It runs the local `claude` CLI with your Claude Code sign-in, so **Settings → AI** manages sign-in and shows a live usage tally. Every role but embeddings can use it; `PIWI_CLAUDE_CLI_PATH` overrides the path. Each call runs with every tool and MCP server off, for one turn, and with none of the server's own environment variables, so an error message in a prompt cannot make the CLI run a command; a Claude Code version too old to turn its tools off is refused until you update it. The CLI reads the prompt as text, so a diagnosis it writes gets no screenshot.
+**Claude Code CLI (local, no API key)**: pick **Claude Code (local)** in the [desktop app](/features/desktop), or on a server with `PIWI_CLAUDE_CLI_PATH` set. It runs the local `claude` CLI with your Claude Code sign-in, so **Settings → AI** manages sign-in and shows a live usage tally. Every role but embeddings can use it. Each call runs with every tool and MCP server off, for one turn, and with none of the server's own environment variables, so an error message in a prompt cannot make the CLI run a command; a Claude Code version too old to turn its tools off is refused until you update it. The CLI reads the prompt as text, so a diagnosis it writes gets no screenshot. The [assistant](/features/assistant) is the exception: one CLI run writes a whole answer, with one MCP server attached, this server's endpoint for that answer. It serves the assistant's tools only (the read tools, run with your access, and the blocks of an answer; in the desktop app also `read_local_source`, held to the folders linked to your projects), on a token minted for that answer that stops working when it ends; the desktop app's own token never reaches the CLI. The CLI's built-in tools stay off; its turns cover the tool calls `PIWI_AI_ASSISTANT_MAX_TOOL_CALLS` allows and the blocks of an answer. An older Claude Code answers step by step instead.
 
 Each role's form in **Settings → AI** has a **Test connection** button that checks its provider. The dashboard shows its AI actions only once a provider is configured.
 

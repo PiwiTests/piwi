@@ -16,6 +16,8 @@ export interface StatusPaletteEntry {
   ring: string;
   /** Text utility for a count in this outcome, readable on the page background. */
   text: string;
+  /** Text utility for a count written on a `bg` segment. */
+  onBg: string;
   /** Pressed filter chip: tinted background and matching text. */
   chip: string;
   /** A row in this outcome among neutral rows: a faint background its text stays readable on. */
@@ -28,6 +30,7 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     bg: 'bg-status-passed',
     ring: 'ring-status-passed',
     text: 'text-emerald-700 dark:text-emerald-400',
+    onBg: 'text-white',
     chip: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
     tint: 'bg-emerald-50 dark:bg-emerald-950/30',
   },
@@ -36,6 +39,7 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     bg: 'bg-status-failed',
     ring: 'ring-status-failed',
     text: 'text-rose-700 dark:text-rose-400',
+    onBg: 'text-white',
     chip: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
     tint: 'bg-rose-50 dark:bg-rose-950/30',
   },
@@ -44,6 +48,7 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     bg: 'bg-status-flaky',
     ring: 'ring-status-flaky',
     text: 'text-fuchsia-700 dark:text-fuchsia-400',
+    onBg: 'text-white',
     chip: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-400',
     tint: 'bg-fuchsia-50 dark:bg-fuchsia-950/30',
   },
@@ -52,6 +57,7 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     bg: 'bg-status-skipped',
     ring: 'ring-status-skipped',
     text: 'text-zinc-500 dark:text-zinc-400',
+    onBg: 'text-white',
     chip: 'bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300',
     tint: 'bg-zinc-50 dark:bg-zinc-800/40',
   },
@@ -62,6 +68,7 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     bg: 'bg-status-fixme',
     ring: 'ring-status-fixme',
     text: 'text-zinc-700 dark:text-zinc-300',
+    onBg: 'text-white dark:text-zinc-900 dark:text-shadow-none',
     chip: 'bg-zinc-300 text-zinc-800 dark:bg-zinc-600 dark:text-zinc-100',
     tint: 'bg-zinc-100 dark:bg-zinc-800/60',
   },
@@ -70,6 +77,7 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     bg: 'bg-status-didnotrun',
     ring: 'ring-status-didnotrun',
     text: 'text-amber-700 dark:text-amber-400',
+    onBg: 'text-white',
     chip: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
     tint: 'bg-amber-50 dark:bg-amber-950/30',
   },
@@ -78,6 +86,7 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     bg: 'bg-status-running',
     ring: 'ring-status-running',
     text: 'text-blue-700 dark:text-blue-400',
+    onBg: 'text-white',
     chip: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
     tint: 'bg-blue-50 dark:bg-blue-950/30',
   },

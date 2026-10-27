@@ -186,6 +186,42 @@ describe('parseSteps', () => {
     expect(parseSteps(blank)).toEqual({ ok: false, errors: ['steps[4].manual.description: must not be empty'] });
   });
 
+  test('keeps a manual step’s instruction that checks, and leaves out one it does not know or that does not check', () => {
+    const doc = valid();
+    const manual = (instruction: unknown): RecordedStep => ({
+      ...doc.steps[0]!,
+      action: 'manual',
+      target: null,
+      manual: { description: 'Choose in `x` "fr"', location: null, call: null, instruction } as RecordedStep['manual'],
+    });
+    const select = {
+      kind: 'selectOptions',
+      locator: "getByLabel('Country')",
+      options: ['fr', ...Array.from({ length: 15 }, (_, i) => i)],
+    };
+    const check = { kind: 'expectURL', expected: '/cart' };
+    doc.steps.push(
+      manual(select),
+      manual(check),
+      manual({ kind: 'shakeTheDevice' }),
+      manual({ kind: 'selectOptions', locator: "getByLabel('Country')", options: [] }),
+      manual({ ...select, options: Array.from({ length: STEPS_LIMITS.options + 1 }, (_, i) => i) }),
+      manual({ kind: 'mouseAt', x: '10', y: 20, call: 'Click' }),
+    );
+    const result = parseSteps(JSON.stringify(doc));
+    expect(result.ok).toBe(true);
+    const manuals = result.ok ? result.steps.steps.slice(4).map((s) => s.manual) : [];
+    expect(manuals.map((m) => m?.instruction ?? null)).toEqual([
+      select,
+      { kind: 'expectURL', expected: '/cart', received: null },
+      null,
+      null,
+      null,
+      null,
+    ]);
+    expect(manuals.every((m) => m?.description === 'Choose in `x` "fr"')).toBe(true);
+  });
+
   test('reads the newer matchers, a count being a whole number', () => {
     const doc = valid();
     const check = (matcher: string, expected: string | null) => ({

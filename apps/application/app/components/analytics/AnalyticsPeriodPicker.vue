@@ -156,12 +156,16 @@ const buttonLabel = computed(() => {
           : 'Period'
       "
       data-testid="analytics-period"
+      data-tour="analytics-period-button"
     >
       <span class="truncate max-w-[12rem]">{{ buttonLabel }}</span>
     </UButton>
 
     <template #content>
-      <div class="w-[min(22rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto p-3 space-y-4 text-sm">
+      <div
+        class="w-[min(22rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto p-3 space-y-4 text-sm"
+        data-tour="analytics-period"
+      >
         <div class="flex items-center gap-1">
           <span class="text-xs font-medium text-muted">Period</span>
           <HelpHint topic="analytics.period" />
@@ -231,14 +235,14 @@ const buttonLabel = computed(() => {
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-default">
-          <div class="space-y-1">
+          <div class="space-y-1" data-tour="analytics-comparison">
             <div class="flex items-center gap-1">
               <span class="text-xs font-medium text-muted">Compare with</span>
               <HelpHint topic="analytics.comparison" />
             </div>
             <USelect v-model="compareModel" :items="COMPARE_ITEMS" size="xs" class="w-full" />
           </div>
-          <div class="space-y-1">
+          <div class="space-y-1" data-tour="analytics-buckets">
             <div class="flex items-center gap-1">
               <span class="text-xs font-medium text-muted">Buckets</span>
               <HelpHint topic="analytics.granularity" />

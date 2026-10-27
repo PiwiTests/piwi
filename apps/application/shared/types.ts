@@ -2,7 +2,6 @@ import type { LocatorSnapshot } from './locator-healing.types';
 import type {
   BrowserConfig,
   FilterDetails,
-  SelectionStamp,
   SuiteConfigEntry,
   TestAnnotation,
   TestMetadata,
@@ -15,6 +14,8 @@ import type {
   RoleUsage,
   SeriesPoint,
   WireExecutionResources,
+  WireLiveResources,
+  WireLiveResourcesAnswer,
   WireNetworkRequest,
   WireResourceFinding,
   WireResourceReport,
@@ -28,7 +29,6 @@ import type {
 export type {
   BrowserConfig,
   FilterDetails,
-  SelectionStamp,
   SuiteConfigEntry,
   TestAnnotation,
   TestMetadata,
@@ -41,6 +41,8 @@ export type {
   RoleUsage,
   SeriesPoint,
   WireExecutionResources,
+  WireLiveResources,
+  WireLiveResourcesAnswer,
   WireNetworkRequest,
   WireResourceFinding,
   WireResourceReport,

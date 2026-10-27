@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Product tile</title>
+    <style>
+      body {
+        font: 14px sans-serif;
+        margin: 40px;
+      }
+      .tile {
+        display: inline-flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px;
+        border: 1px solid #ccc;
+      }
+      img {
+        width: 160px;
+        height: 120px;
+        background: #9cf;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Product tile</h1>
+    <div class="tile">
+      <img alt="Blue mug" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" />
+    </div>
+    <output id="out"></output>
+    <script>
+      // As the pointer enters the tile, the page renders it again: a new image, and a button under it, until it leaves.
+      const tile = document.querySelector('.tile');
+      function image() {
+        const img = document.createElement('img');
+        img.alt = 'Blue mug';
+        img.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+        return img;
+      }
+      tile.addEventListener('mouseenter', () => {
+        const button = document.createElement('button');
+        button.textContent = 'Quick view';
+        button.addEventListener('click', () => {
+          document.getElementById('out').textContent = 'Quick view of the blue mug';
+        });
+        tile.replaceChildren(image(), button);
+      });
+      tile.addEventListener('mouseleave', () => tile.replaceChildren(image()));
+    </script>
+  </body>
+</html>

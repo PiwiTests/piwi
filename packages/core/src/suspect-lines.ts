@@ -152,6 +152,44 @@ export function hunkHeadLines(hunk: DiffHunk): LineRange[] {
   return normalizeLineRanges(lines);
 }
 
+/**
+ * A hunk's changed lines on the base side, as normalized line ranges: its
+ * removed lines and, for each run of added lines that replaces no removed
+ * line, the base lines on both sides of the insertion point (line 1 alone for
+ * an insertion at the file's start). The mirror of {@link hunkHeadLines}: a
+ * diff read backwards adds what it removed.
+ */
+export function hunkBaseLines(hunk: DiffHunk): LineRange[] {
+  return hunkHeadLines({ oldStart: hunk.newStart, newStart: hunk.oldStart, removed: hunk.added, added: hunk.removed });
+}
+
+/** A modified file of a diff, read on its base side: the version tests ran before the change. */
+export interface BaseLineChange {
+  filePath: string;
+  /** The file's git blob id before the change, as the diff's `index` line gives it. */
+  blob: string;
+  /** The changed lines on the base side ({@link hunkBaseLines}). */
+  lines: LineRange[];
+}
+
+/**
+ * What a diff gives impact-from-diff: every path it touches (a rename's old
+ * path too), and the changed base lines of each modified file whose base blob
+ * the diff names. Added, deleted and renamed files count as whole files.
+ */
+export function diffImpactInput(files: DiffFile[]): { changedFiles: string[]; changes: BaseLineChange[] } {
+  const changedFiles = new Set<string>();
+  const changes: BaseLineChange[] = [];
+  for (const file of files) {
+    changedFiles.add(file.path);
+    if (file.oldPath) changedFiles.add(file.oldPath);
+    if (file.status !== 'modified' || !file.oldBlob) continue;
+    const lines = normalizeLineRanges(file.hunks.flatMap(hunkBaseLines));
+    if (lines.length > 0) changes.push({ filePath: file.path, blob: file.oldBlob, lines });
+  }
+  return { changedFiles: [...changedFiles], changes };
+}
+
 /** The Ochiai coefficient of an element `failing` failing and `passing` passing captures executed, out of `totalFailing`. */
 export function ochiai(failing: number, passing: number, totalFailing: number): number {
   if (failing === 0 || totalFailing === 0) return 0;

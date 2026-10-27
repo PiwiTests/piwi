@@ -18,6 +18,7 @@ const openGaps = computed(() => (data.value?.byClass ?? []).reduce((sum, c) => s
     icon="i-lucide-map"
     :title="title ?? 'Scenario gaps'"
     help="analytics.scenario-gaps"
+    data-tour="analytics-scenario-gaps"
     data-shot="analytics-scenario-gaps"
   >
     <LoadingState v-if="pending" />

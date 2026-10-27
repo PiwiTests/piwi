@@ -35,6 +35,7 @@ const openAtStart = computed(() => props.resources.openAtStart ?? null);
     :help="help"
     :embedded="embedded"
     data-shot="execution-resources"
+    data-tour="execution-resources"
   >
     <div class="space-y-3">
       <StatTileGrid min-tile-width="9rem">

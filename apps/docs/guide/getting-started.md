@@ -45,6 +45,13 @@ to look around first? The [live demo](https://piwitests.dev/demo/) runs in your 
 
 ## 2. Connect your suite
 
+The dashboard's connect wizard, on **Home** while it has no project and on **Setup** after, builds every snippet below
+from your project name and its own URL, and offers three ways to the same setup: one command, a prompt for a coding
+agent, or the steps by hand.
+Each ends in [`wrapConfig`](./reporter#installing-via-wrapconfig) around your config and the
+[capture fixtures](./capture-fixtures) in your specs: the reporter entry alone keeps your runs, and those two add the
+failure screenshots and traces, the network and console capture, and locator healing.
+
 ### Fast path: one command
 
 From your Playwright project, one command installs the reporter, wraps your `playwright.config`, creates the
@@ -64,8 +71,19 @@ steps. `init` also adds the [Piwi agent skills](/features/agent-skills) to the p
 > `npx @piwitests/reporter <command>`, so npx resolves this package: `npx piwi` would fetch an unrelated `piwi`
 > package from npm. Once the reporter is a dependency of your project, `npx piwi <command>` works too.
 
-If authentication is on, pass an [API key](/operate/api-keys) as `PIWI_API_KEY`. To wire the reporter in by
-hand, or to send one run without editing your config, see [Reporter](./reporter).
+Then import `test` from the fixtures file in your specs, the one change `init` leaves to you:
+
+```typescript
+import { test, expect } from './fixtures'
+```
+
+A coding agent can do both: the **Coding agent** path on **Setup** gives it a prompt that runs `init --json`, finishes
+the steps it reports as `manual` and moves the specs onto the fixtures.
+
+If authentication is on, pass an [API key](/operate/api-keys) as `PIWI_API_KEY`; **Setup** creates one in place. When
+developers run the [desktop app](/features/desktop) and CI reports to a shared dashboard, add `--desktop-app prefer`:
+[local runs then land in the app](./reporter#local-runs-to-the-desktop-app-ci-to-a-team-server). To wire the reporter
+in by hand, or to send one run without editing your config, see [Reporter](./reporter).
 
 ## 3. Run your tests
 

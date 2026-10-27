@@ -83,8 +83,13 @@ async function resetToDefaults() {
 
 <template>
   <CapabilityDeclinedGuard capability="pr-feedback" label="Pull-request feedback">
-    <div class="space-y-6">
-      <SectionCard icon="i-lucide-git-pull-request" title="Pull-request feedback" help="settings.pr-feedback">
+    <div class="space-y-6" data-tour="pr-feedback-page">
+      <SectionCard
+        icon="i-lucide-git-pull-request"
+        title="Pull-request feedback"
+        help="settings.pr-feedback"
+        data-tour="pr-feedback-settings"
+      >
         <template #subtitle>
           When a run finishes on a branch with an open pull request, post the result back to it — new failures separated
           from pre-existing ones, the failure clusters behind them, and the locator to use instead of the one that
@@ -142,7 +147,9 @@ async function resetToDefaults() {
                 label="Reset to defaults"
                 @click="resetToDefaults"
               />
-              <UButton color="primary" :loading="saving" icon="i-lucide-save" @click="save">Save</UButton>
+              <UButton color="primary" :loading="saving" icon="i-lucide-save" data-tour="save-pr-feedback" @click="save"
+                >Save</UButton
+              >
             </div>
           </div>
         </template>

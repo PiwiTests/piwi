@@ -47,7 +47,14 @@ import {
   type ImportBindings,
 } from './imports.js';
 import { projectNode, projectNodeEnv } from './node.js';
-import { declaredNamesAt, fileFixtures, pageCandidates, recordingPlacement } from './page-candidates.js';
+import {
+  declaredNamesAt,
+  fileFixtures,
+  pageCandidates,
+  placementBefore,
+  recordingPlacement,
+} from './page-candidates.js';
+import { handoffLauncher, type Handoff } from './handoff.js';
 import { canonicalPath } from './playwright.js';
 import type { ProjectOptions } from './project-options.js';
 
@@ -58,6 +65,9 @@ export const MESSAGES_FILE = 'record-ide-messages.json';
 
 /** How long a launcher may take to close its browser and exit before it is killed. */
 const EXIT_TIMEOUT_MS = 8_000;
+
+/** How long a recording from a test's page waits for the config's Piwi options before it starts without them. */
+const CONFIG_WAIT_MS = 10_000;
 
 /** The shortest time between two renderings of a session, in ms. */
 export const UPDATE_INTERVAL_MS = 100;
@@ -186,7 +196,8 @@ interface Session {
   /** The origin of the project's `baseURL`: a recording on it writes paths. */
   baseOrigin: string | null;
   cwd: string;
-  browser: RecorderBrowser;
+  /** The browser the launcher opens; null for a test's page handed over. */
+  browser: RecorderBrowser | null;
   /** Sentences for the first update: the options left out. */
   notes: string[];
   /** The latest update rendered, kept when a later rendering fails. */
@@ -401,9 +412,15 @@ export class RecordingSessions {
   /**
    * Starts a recording into a file: reads the config's project options, picks the project, the start page and the
    * page expression, and starts the launcher. Answers once the launcher is asked to open the browser; what it writes
-   * comes in updates.
+   * comes in updates. With `params.handoff`, the recording is that of a test's page instead (`attach`), from `handoff`,
+   * the waiting hand-off it names, null when the test no longer waits.
    */
-  async start(params: RecordParams, target: RecordTarget): Promise<RecordResult> {
+  async start(params: RecordParams, target: RecordTarget, handoff: Handoff | null = null): Promise<RecordResult> {
+    if (params.handoff) {
+      return handoff
+        ? this.attach(params, target, handoff)
+        : { ok: false, message: 'The test no longer waits for this recording: it went on.' };
+    }
     const into = params.into;
     if (into !== 'steps' && into !== 'test' && into !== 'file')
       return { ok: false, message: 'Unknown recording target.' };
@@ -556,6 +573,111 @@ export class RecordingSessions {
     };
   }
 
+  /**
+   * Records in the page of a test paused in a run the editor started (`handoff`), from where it is paused: the steps
+   * are rendered as a test's body continuing on its page (no opening navigation), on the page expression in scope at
+   * the paused statement, with the config's Piwi options when they are read in time, and written on a new line above
+   * that statement. The test loads the recorder into its page; the session drives it as a launcher's browser.
+   */
+  private async attach(params: RecordParams, target: RecordTarget, handoff: Handoff): Promise<RecordResult> {
+    const placement = placementBefore(target.text, handoff.line - 1);
+    const at = pageCandidates(target.text, placement.line);
+    const refuse = (message: string): RecordResult => {
+      handoff.socket.end(`${JSON.stringify({ type: 'refused', message })}\n`);
+      return { ok: false, message };
+    };
+    if (at.context !== 'test' && at.context !== 'function') {
+      return refuse('The test is paused outside a test or a function of this file: nothing can be written there.');
+    }
+    const bundle = path.join(this.options.distDir, BUNDLE_FILE);
+    const messages = this.messages(recorderLanguage(params.language));
+    if (!fs.existsSync(bundle) || !messages) {
+      return refuse(
+        `The recorder is missing from this installation: ${BUNDLE_FILE} or ${MESSAGES_FILE} was not found in ${this.options.distDir}.`,
+      );
+    }
+    const [options, catalog] = await Promise.all([
+      Promise.race([
+        this.options.readOptions(target.configFile).catch(() => null),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), CONFIG_WAIT_MS).unref?.()),
+      ]),
+      Promise.resolve(target.catalog).catch(() => []),
+    ]);
+    const config = path.basename(target.configFile);
+    const fromConfig = codegenConfigOf(options?.piwi);
+    const codegen: CodegenOptions = {
+      format: 'body',
+      continuePage: true,
+      bodyImports: 'none',
+      declaredNames: declaredNamesAt(target.text, placement.line),
+      locators: 'stable',
+      urlChecks: true,
+      ...repositoryCodegen(fromConfig.options, 'steps', at.context),
+      page: at.default,
+      catalog,
+      preferLocators: target.preferLocators,
+    };
+    let exit = () => {};
+    const exited = new Promise<void>((resolve) => {
+      exit = resolve;
+    });
+    const cwd = path.dirname(canonicalPath(target.configFile));
+    const session: Session = {
+      id: randomUUID(),
+      uri: params.uri,
+      text: target.text,
+      into: 'steps',
+      state: 'starting',
+      events: [],
+      startedAt: Date.now(),
+      codegen,
+      expectModule: expectModuleOf(target.text, { siblings: () => siblingSpecs(target.file) }),
+      baseOrigin: originOf(handoff.baseURL),
+      cwd,
+      browser: null,
+      notes: fromConfig.problems.map((problem) => `${config}: ${problem}`),
+      latest: null,
+      rendered: null,
+      sentAt: -Infinity,
+      wait: 0,
+      timer: null,
+      launcher: null,
+      exited,
+      exit,
+    };
+    const testIdAttribute = handoff.testIdAttribute;
+    session.launcher = handoffLauncher(handoff)(cwd, {
+      message: (message) => this.onMessage(session, message),
+      exit: (code, detail) => this.onExit(session, code, detail),
+    });
+    this.sessions.set(session.id, session);
+    session.launcher.send({
+      type: 'start',
+      request: {
+        cwd,
+        browserName: 'chromium',
+        launchOptions: {},
+        contextOptions: {},
+        testIdAttribute,
+        startUrl: 'about:blank',
+        bundle,
+        language: messages,
+        settings: { file: path.basename(target.file), testIdAttribute },
+        startedAt: session.startedAt,
+      },
+    });
+    const where = `${path.basename(target.file)}:${placement.line + 1}`;
+    return {
+      ok: true,
+      sessionId: session.id,
+      message:
+        handoff.reason === 'pause'
+          ? `Recording in the test's browser from page.pause() at ${where}.`
+          : `Recording in the test's browser from the breakpoint at ${where}.`,
+      placement,
+    };
+  }
+
   /** Pauses or resumes a session from the editor; the recorder's bar in the browser shows it too. */
   command(sessionId: string, command: 'pause' | 'resume'): void {
     const session = this.sessions.get(sessionId);
@@ -653,7 +775,7 @@ export class RecordingSessions {
     session: Session,
     failed: Extract<LauncherToService, { type: 'failed' }>,
   ): [string, PiwiCommand | null] {
-    if (failed.reason !== 'browser-missing') return [failed.message, null];
+    if (failed.reason !== 'browser-missing' || !session.browser) return [failed.message, null];
     const channel = session.browser.launchOptions.channel;
     const install = typeof channel === 'string' && channel !== 'chromium' ? channel : session.browser.browserName;
     const label = LABELS[install] ?? install;

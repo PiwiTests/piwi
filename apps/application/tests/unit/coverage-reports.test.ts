@@ -8,7 +8,7 @@ import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq, sql } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
-import { configureSqliteConnections } from '../../server/database/sqlite-connections';
+import { configureSqliteConnections, sqliteClientConfig } from '../../server/database/sqlite-connections';
 
 vi.mock('../../server/storage', () => ({
   getStorage: () => ({
@@ -47,7 +47,7 @@ afterAll(() => rmSync(tmpDir, { recursive: true, force: true }));
 
 async function freshDb(): Promise<Db> {
   // Configured as the server configures its client: writes wait for an open transaction.
-  const client = createClient({ url: `file:${join(tmpDir, `test-${++dbCount}.db`)}` });
+  const client = createClient(sqliteClientConfig(`file:${join(tmpDir, `test-${++dbCount}.db`)}`));
   await configureSqliteConnections(client);
   const db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });

@@ -75,7 +75,10 @@ let server: http.Server;
 let url = '';
 let requests: string[] = [];
 let apiKeys: Array<string | undefined> = [];
-let impactBodies: Array<{ changedFiles: string[] }> = [];
+let impactBodies: Array<{
+  changedFiles: string[];
+  changes?: Array<{ filePath: string; blob: string; lines: number[][] }>;
+}> = [];
 let codeIndex: unknown = null;
 
 beforeAll(async () => {
@@ -234,6 +237,13 @@ describe('piwi preflight', () => {
       'tests/checkout.spec.ts',
       'tests/coupon.spec.ts',
     ]);
+    // Each modified file goes with its base blob and changed base lines, for line-level impact.
+    const { changes } = impactBodies[impactBodies.length - 1]!;
+    expect(changes?.map((c) => [c.filePath, c.lines])).toEqual([
+      ['src/components/CheckoutButton.vue', [[3, 3]]],
+      ['src/locales/en.json', [[4, 4]]],
+    ]);
+    expect(changes?.every((c) => /^[0-9a-f]{40}$/.test(c.blob))).toBe(true);
     expect(spawn).toHaveBeenCalledWith('npx', ['tests/checkout.spec.ts:3', '--headed'], {
       ...ENV,
       PIWI_ORIGIN: 'preflight',

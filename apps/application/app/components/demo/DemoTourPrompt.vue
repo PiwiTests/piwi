@@ -5,7 +5,7 @@
  * later, and **×** never again. It never takes focus when it appears.
  */
 import { TOUR_LANGUAGE_INFO, TOUR_LANGUAGES, type TourLanguage } from '~/utils/demo-tour/languages';
-import { fillTourText } from '~/utils/demo-tour/markup';
+import { fillGuideText } from '~/utils/guide/markup';
 import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
 
 const { promptOpen, language, copy, setLanguage, start, snooze, dismiss } = useDemoTour();
@@ -79,7 +79,7 @@ const selectedLanguage = computed({
             </span>
             <span class="text-xs text-muted">{{ copy.profiles[profile.id].hint }}</span>
             <span class="mt-auto pt-1 text-xs text-muted">
-              {{ fillTourText(copy.ui.stopCount, { count: profile.stops.length }) }}
+              {{ fillGuideText(copy.ui.stopCount, { count: profile.stops.length }) }}
             </span>
           </button>
         </li>

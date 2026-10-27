@@ -90,6 +90,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/ui-overview',
       },
       {
+        title: 'Guides',
+        summary:
+          'Step-by-step walkthroughs of common tasks on your own dashboard, from a first run to the Flake Lab, with no AI model.',
+        needs: [],
+        where: 'Command palette → Guides; the assistant panel',
+        doc: 'features/guides',
+      },
+      {
         title: 'Branches',
         summary: 'Branch as a first-class dimension: filter by it, and compare against a baseline computed per branch.',
         needs: [],
@@ -206,6 +214,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/ai-diagnosis',
       },
       {
+        title: 'Assistant',
+        summary:
+          'Questions about your runs, failures and setup answered by your AI model from the read tools agents use, with your access; a change it proposes runs only when you click Apply.',
+        needs: ['llm'],
+        where: 'API reference → Assistant',
+        doc: 'features/assistant',
+      },
+      {
         title: 'Backend logs',
         summary:
           'Server-side warnings, errors and spans captured per test and shown next to the request that triggered them.',
@@ -299,6 +315,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/test-selection',
       },
       {
+        title: 'Impact from a diff',
+        summary:
+          'The tests a change affects, from what each test was seen to run: down to the tests that ran the changed lines when tests record coverage.',
+        needs: [],
+        where: 'CLI (`piwi run impact`); MCP get_impacted_tests',
+        doc: 'features/change-impact',
+      },
+      {
         title: 'AI steps',
         summary: 'Author and replay natural-language test steps an LLM turns into Playwright actions.',
         needs: ['llm'],
@@ -337,9 +361,17 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/code-reach',
       },
       {
+        title: 'CSS coverage',
+        summary:
+          'The style sheet rules each test’s pages matched, from Chromium’s CSS rule usage: a change to a rule selects the tests that rendered it.',
+        needs: ['fixtures'],
+        where: 'Reporter option coverage.css; Execution → Source; a file’s coverage page',
+        doc: 'features/css-coverage',
+      },
+      {
         title: 'Server coverage',
         summary:
-          'The backend files, functions and lines each test ran, per test, from an ASP.NET Core build instrumented for coverage.',
+          'The backend files, functions and lines each test ran, per test, from an ASP.NET Core or Nitro build instrumented for coverage.',
         needs: ['fixtures', 'backend'],
         where: 'Reporter option coverage.server; Execution → Source; a file’s coverage page',
         doc: 'features/server-coverage',

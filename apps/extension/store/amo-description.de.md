@@ -1,4 +1,4 @@
-Diese deutsche Übersetzung ist ein Entwurf: Muttersprachler haben sie noch nicht geprüft. Wenn Ihnen ein Fehler oder eine holprige Formulierung auffällt, [schlagen Sie eine Korrektur vor](https://github.com/PiwiTests/platform/issues/new?template=translation.yml).
+Diese deutsche Übersetzung ist ein Entwurf: Muttersprachler haben sie noch nicht geprüft. Wenn Ihnen ein Fehler oder eine holprige Formulierung auffällt, [schlagen Sie eine Korrektur vor](https://github.com/PiwiTests/piwi/issues/new?template=translation.yml).
 
 Piwi Picker gibt Ihnen den Playwright-Locator für jedes Element der Seite, die Sie gerade ansehen. Jeder Kandidat wird nach seiner Stabilität bewertet und dann auf der Seite, wie sie gerade ist, ausgeführt, sodass der oberste genau ein Element findet. Klicken Sie einen Ablauf durch, und die Erweiterung schreibt den Test; reproduzieren Sie einen Bug, und sie schreibt den fehlschlagenden Test und den Bericht.
 

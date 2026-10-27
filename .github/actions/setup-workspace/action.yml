@@ -51,10 +51,10 @@ runs:
       shell: bash
       run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
 
-    - name: Cache Playwright browsers
+    - name: Restore Playwright browsers
       if: inputs.playwright == 'shell'
       id: playwright-cache
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/ms-playwright
         key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell
@@ -64,3 +64,12 @@ runs:
       if: inputs.playwright == 'full' || (inputs.playwright == 'shell' && steps.playwright-cache.outputs.cache-hit != 'true')
       shell: bash
       run: npx playwright install chromium --with-deps ${{ inputs.playwright == 'shell' && '--only-shell' || '' }}
+
+    # Saved as soon as the shell is installed, so the cache holds the shell alone, whatever a later step of the job adds
+    # to the folder (the checks job's full build).
+    - name: Save Playwright browsers
+      if: inputs.playwright == 'shell' && steps.playwright-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-shell

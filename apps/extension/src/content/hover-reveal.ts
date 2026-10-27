@@ -172,12 +172,32 @@ export class HoverTracker {
     this.lastPressAt = this.now();
   }
 
-  /** What a `MutationObserver` saw: inserted elements, and elements shown by a `style` or `hidden` change. */
+  /**
+   * What a `MutationObserver` saw: inserted elements, and elements shown by a
+   * `style` or `hidden` change. An element inserted where the batch removed an
+   * element of the same tag the pointer is over is that element swapped for
+   * another (a link re-rendered as the pointer enters it), which no hover
+   * reveals; what else the batch inserts there still counts.
+   */
   mutations(records: MutationRecord[]): void {
     const info: Added = { at: this.now(), pressAt: this.lastPressAt };
+    const swappedOut = new Map<Node, Set<string>>();
+    for (const record of records) {
+      if (record.type !== 'childList') continue;
+      for (const node of Array.from(record.removedNodes)) {
+        if (node.nodeType !== 1 || !this.entered.has(node as Element)) continue;
+        const tags = swappedOut.get(record.target) ?? new Set<string>();
+        tags.add((node as Element).tagName);
+        swappedOut.set(record.target, tags);
+      }
+    }
     for (const record of records) {
       if (record.type === 'childList') {
-        for (const node of Array.from(record.addedNodes)) if (node.nodeType === 1) this.added.set(node, info);
+        const swapped = swappedOut.get(record.target);
+        for (const node of Array.from(record.addedNodes)) {
+          if (node.nodeType !== 1 || swapped?.has((node as Element).tagName)) continue;
+          this.added.set(node, info);
+        }
       } else if (record.type === 'attributes' && record.target.nodeType === 1 && shownBy(record)) {
         this.added.set(record.target, info);
       }

@@ -24,6 +24,8 @@ import {
   type SelectionResolution,
 } from '../internal/support/selection-client.js';
 import { PIWI_SHARD_ENV } from '../internal/config/env.js';
+import { parseUnifiedDiff } from '@piwitests/core/diff-anchors';
+import { diffImpactInput, type BaseLineChange } from '@piwitests/core/suspect-lines';
 import { computeAddReporterArgs } from './add-reporter.js';
 import { spawnPlaywright } from '../internal/support/playwright-spawn.js';
 
@@ -81,6 +83,9 @@ interface SelectArgs {
 
 /** The reserved key that resolves the working-tree diff's impact, not a saved selection. */
 const IMPACT_KEY = 'impact';
+
+/** Playwright arguments that run no test and pass: no arguments at all would run the whole suite. */
+const NOTHING_TO_RUN_ARGS = ['--pass-with-no-tests', '--grep-invert', '.'];
 
 /** Flags that consume the following token as their value. */
 const VALUE_FLAGS = new Set([
@@ -235,26 +240,58 @@ function printWarnings(resolution: Resolution): void {
 
 // ── impact-from-diff ───────────────────────────────────────────────────────────
 
-/** Files changed between `base` and the working tree (committed + uncommitted). */
-function gitChangedFiles(base: string): string[] {
-  const out = execFileSync('git', ['diff', '--name-only', base], {
+function git(args: string[]): string {
+  return execFileSync('git', ['-c', 'core.quotePath=false', ...args], {
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'ignore'],
+    maxBuffer: 256 * 1024 * 1024,
   });
-  return [
-    ...new Set(
-      out
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean),
-    ),
-  ];
+}
+
+/**
+ * The change between `base` and the working tree (committed + uncommitted):
+ * every file it touches, and the changed base lines of the modified files, which
+ * let the dashboard keep only the tests that ran them. The file list stands on
+ * its own when the full diff cannot be read.
+ */
+function gitChange(base: string): { changedFiles: string[]; changes: BaseLineChange[] } {
+  const names = git(['diff', '--name-only', base])
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  let fromDiff: { changedFiles: string[]; changes: BaseLineChange[] } = { changedFiles: [], changes: [] };
+  try {
+    fromDiff = diffImpactInput(
+      parseUnifiedDiff(
+        git([
+          'diff',
+          '--full-index',
+          '--unified=0',
+          '--no-color',
+          '--no-ext-diff',
+          '--src-prefix=a/',
+          '--dst-prefix=b/',
+          base,
+          '--',
+        ]),
+      ),
+    );
+  } catch {
+    // Without the full diff, the changed files are mapped at file level.
+  }
+  return { changedFiles: [...new Set([...names, ...fromDiff.changedFiles])], changes: fromDiff.changes };
 }
 
 /** Compute the working-tree diff and ask the dashboard which tests it impacts. */
 async function loadImpact(args: SelectArgs, projectId: number): Promise<ImpactResolution> {
-  const files = gitChangedFiles(args.base!);
-  return fetchImpact(args, projectId, files);
+  const { changedFiles, changes } = gitChange(args.base!);
+  return fetchImpact(args, projectId, changedFiles, changes);
+}
+
+/** How many changed files the impact narrowed to the tests that ran their changed lines, as a suffix. */
+function lineLevelNote(impact: ImpactResolution): string {
+  const files = impact.impact.lineLevelFiles ?? 0;
+  return files > 0 ? `, ${files} file(s) narrowed by line coverage` : '';
 }
 
 // ── select ───────────────────────────────────────────────────────────────────
@@ -271,14 +308,18 @@ async function runSelectImpact(args: SelectArgs): Promise<number> {
 
   printWarnings(impact);
   console.error(
-    `piwi select: ${impact.impact.changedFiles} changed file(s) → ${impact.estimate.count} impacted test(s)${impact.impact.widened ? ' (widened to full suite)' : ''}`,
+    `piwi select: ${impact.impact.changedFiles} changed file(s) → ${impact.estimate.count} impacted test(s)${impact.impact.widened ? ' (widened to full suite)' : lineLevelNote(impact)}`,
   );
   if (args.json) {
     console.log(JSON.stringify(impact, null, 2));
     return EXIT_OK;
   }
   // Widened = run everything, which is the empty (no-filter) arg list.
-  console.log(impact.impact.widened ? '' : impact.materialization.args.join(' '));
+  if (impact.impact.widened) console.log('');
+  else if (impact.estimate.count === 0) {
+    console.error(`piwi select: no tests impacted — printing arguments that run none`);
+    console.log(NOTHING_TO_RUN_ARGS.join(' '));
+  } else console.log(impact.materialization.args.join(' '));
   return EXIT_OK;
 }
 
@@ -391,7 +432,7 @@ async function runRunImpact(args: SelectArgs, env: NodeJS.ProcessEnv): Promise<n
     PIWI_SELECTION_COUNT: String(impact.estimate.count),
     ...shardEnv(args),
   };
-  console.error(`piwi run: impact → ${impact.estimate.count} test(s)`);
+  console.error(`piwi run: impact → ${impact.estimate.count} test(s)${lineLevelNote(impact)}`);
   return spawnPlaywrightForRun(args.pkgRunner, [...impact.materialization.args, ...args.extra], runEnv);
 }
 

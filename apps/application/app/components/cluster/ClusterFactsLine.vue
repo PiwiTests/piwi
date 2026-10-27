@@ -48,6 +48,7 @@ defineExpose({ revealRawError });
         trailing-icon="i-lucide-chevron-down"
         label="Details"
         class="shrink-0"
+        data-tour="cluster-details"
       />
       <template #content>
         <div class="p-3 space-y-3 text-sm w-72">
@@ -55,7 +56,7 @@ defineExpose({ revealRawError });
             <p class="text-xs font-medium text-muted uppercase tracking-wide">Owner</p>
             <ClusterOwnerLine :owner="cluster.owner" :project-id="cluster.project?.id ?? null" />
           </div>
-          <div class="space-y-1">
+          <div class="space-y-1" data-tour="cluster-links">
             <div class="flex items-center gap-1.5 text-xs">
               <span class="text-muted uppercase tracking-wide font-medium">Links</span>
               <HelpHint topic="cluster.known-issue" />

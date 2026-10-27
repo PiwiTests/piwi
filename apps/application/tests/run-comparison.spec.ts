@@ -68,6 +68,7 @@ test.describe.serial('Run Comparison', () => {
             duration: 300,
             location: 'tests/auth.spec.ts:10:5',
             retries: 0,
+            webVitals: { navigation: { url: 'http://localhost:3000/login', ttfb: 40, loadComplete: 280 } },
           },
           {
             title: 'dashboard loads',
@@ -177,6 +178,17 @@ test.describe.serial('Run Comparison', () => {
     // "dashboard loads" passed in run 1 and failed in run 2, so it is a new failure.
     await expect(page.getByText('New failures')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('dashboard loads')).toBeVisible();
+  });
+
+  test('a test under Slower / faster opens its execution on the Performance tab', async ({ page }) => {
+    await page.goto(`/test-runs/${run2Id}?tab=changes`);
+    await waitForHydration(page);
+
+    // "login works" took 500 ms in run 1 and 300 ms in run 2.
+    await page.getByRole('link', { name: /login works/ }).click();
+    await page.waitForURL(/\/test-run-cases\/\d+\?evidence=performance$/);
+    await expect(page.getByRole('tab', { name: /^Performance/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByText('TTFB', { exact: true })).toBeVisible();
   });
 });
 

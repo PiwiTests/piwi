@@ -171,7 +171,7 @@ function confirm() {
       <span class="inline-flex items-center gap-1">Browse commits <HelpHint topic="cluster.commit-browser" /></span>
     </template>
     <template #body>
-      <div class="flex h-[72vh] overflow-hidden">
+      <div class="flex h-[72vh] overflow-hidden" data-tour="commit-browser">
         <!-- ── Left: commit list ─────────────────────────────────────── -->
         <div class="w-72 shrink-0 border-r border-default flex flex-col">
           <!-- Search + bulk actions -->

@@ -36,9 +36,10 @@ async function refresh(): Promise<void> {
   refreshBtn.disabled = true;
   content.setAttribute('aria-busy', 'true');
   const [outcome, pairing] = await Promise.all([
-    rankDevtoolsSelection().catch(
-      (err: unknown): RankOutcome => ({ kind: 'failed', message: err instanceof Error ? err.message : String(err) }),
-    ),
+    rankDevtoolsSelection().catch((err: unknown): RankOutcome => ({
+      kind: 'failed',
+      message: err instanceof Error ? err.message : String(err),
+    })),
     getEditorPairing().catch(() => null),
   ]);
   if (current !== generation) return;

@@ -16,8 +16,8 @@ export type TempDb = ReturnType<typeof drizzle<typeof schema>>;
 
 /**
  * A migrated SQLite database in a temporary file. Code that opens a transaction
- * needs one: libsql runs the transaction on its own connection and reopens a
- * fresh one for the next query, and a reopened `:memory:` database is empty.
+ * needs one: libsql gives a `:memory:` database a single connection, which an
+ * open transaction holds, so no other statement runs beside it.
  */
 export async function openTempDb(): Promise<{ db: TempDb; close: () => Promise<void> }> {
   const dir = mkdtempSync(join(tmpdir(), 'piwi-unit-db-'));

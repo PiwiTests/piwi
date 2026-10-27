@@ -6,7 +6,7 @@ description: Write polished GitHub release notes in the Piwi house style (narrat
 # Release notes
 
 Turn release-please's raw, per-commit changelog into the notes a human reads — the format of
-[v0.26.0](https://github.com/PiwiTests/platform/releases/tag/v0.26.0), which is the gold standard.
+[v0.26.0](https://github.com/PiwiTests/piwi/releases/tag/v0.26.0), which is the gold standard.
 The same drafted notes go to two places: the **GitHub release body** (by tag) and the version's
 section in **`CHANGELOG.md`**.
 
@@ -45,7 +45,7 @@ Get the compare link and previous tag from the section header:
 
 ```bash
 grep -m1 '^## \[0.29.0\]' CHANGELOG.md
-# -> ## [0.29.0](https://github.com/PiwiTests/platform/compare/v0.28.0...v0.29.0) (2026-09-13)
+# -> ## [0.29.0](https://github.com/PiwiTests/piwi/compare/v0.28.0...v0.29.0) (2026-09-13)
 ```
 
 The `compare/v0.28.0...v0.29.0` URL is the **Full diff** link for the notes.

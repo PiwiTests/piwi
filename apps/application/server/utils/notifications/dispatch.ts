@@ -34,6 +34,7 @@ import {
 import { deliveredShareUrl } from '../reports/context';
 import { teamsDigestMessage, teamsEventMessage, teamsReportMessage } from './teams';
 import { slackEscape, slackLink } from './slack';
+import { postSlackMessage, slackRetryAfterMs, storedSlackDestination } from './slack-api';
 import { emailDestinationVerified } from './email-verified';
 
 const MAX_ATTEMPTS = OUTBOX_MAX_ATTEMPTS;
@@ -88,13 +89,9 @@ async function sendToEmail(to: string, event: NotificationEvent, payload: Notifi
   await sendEmail({ to, subject: renderEventSubject(event, payload), html, text });
 }
 
-async function postToSlack(webhookUrl: string, body: Record<string, unknown>) {
-  const res = await safeFetch(webhookUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`Slack webhook returned ${res.status}`);
+/** Post to a saved Slack channel, through its webhook or the Web API. */
+async function postToSlack(config: Record<string, unknown>, body: Record<string, unknown>) {
+  await postSlackMessage(storedSlackDestination(config), body);
 }
 
 async function postToTeams(config: Record<string, unknown>, body: Record<string, unknown>) {
@@ -109,9 +106,6 @@ async function postToTeams(config: Record<string, unknown>, body: Record<string,
 }
 
 async function sendToSlack(config: Record<string, unknown>, event: NotificationEvent, payload: NotificationPayload) {
-  const webhookUrl = config.webhookUrl as string;
-  if (!webhookUrl) throw new Error('No Slack webhook URL configured');
-
   const text = slackEscape(renderEventSubject(event, payload));
   let emoji = ':bell:';
   if (event.startsWith('run.failed')) emoji = ':x:';
@@ -175,13 +169,10 @@ async function sendToSlack(config: Record<string, unknown>, event: NotificationE
     }
   }
 
-  await postToSlack(webhookUrl, { text: `${emoji} *${text}*`, blocks });
+  await postToSlack(config, { text: `${emoji} *${text}*`, blocks });
 }
 
 async function sendSlackDigest(config: Record<string, unknown>, items: DigestItem[]) {
-  const webhookUrl = config.webhookUrl as string;
-  if (!webhookUrl) throw new Error('No Slack webhook URL configured');
-
   const base = siteBase();
   const header = `:bell: Piwi digest — ${items.length} notification${items.length === 1 ? '' : 's'}`;
   const blocks: Record<string, unknown>[] = [{ type: 'section', text: { type: 'mrkdwn', text: `*${header}*` } }];
@@ -199,7 +190,7 @@ async function sendSlackDigest(config: Record<string, unknown>, items: DigestIte
     });
   }
 
-  await postToSlack(webhookUrl, { text: header, blocks });
+  await postToSlack(config, { text: header, blocks });
 }
 
 async function sendToWebhook(config: Record<string, unknown>, event: NotificationEvent, payload: NotificationPayload) {
@@ -239,9 +230,7 @@ async function sendQualityReport(db: Db, d: DeliveryRow, c: ChannelRow) {
   if (c.type === 'personal_email' || c.type === 'email') {
     await sendReportEmail(await resolveEmailAddress(db, c), bundle, payload, shareUrl);
   } else if (c.type === 'slack') {
-    const webhookUrl = config.webhookUrl as string;
-    if (!webhookUrl) throw new Error('No Slack webhook URL configured');
-    await postToSlack(webhookUrl, reportSlackMessage(bundle, snapshotUrl(payload.snapshotId), shareUrl));
+    await postToSlack(config, reportSlackMessage(bundle, snapshotUrl(payload.snapshotId), shareUrl));
   } else if (c.type === 'teams') {
     await postToTeams(config, teamsReportMessage(bundle, snapshotUrl(payload.snapshotId), shareUrl));
   } else if (c.type === 'webhook') {
@@ -299,10 +288,12 @@ async function markSent(db: Db, rows: DeliveryRow[], now: Date) {
   }
 }
 
-async function markFailed(db: Db, rows: DeliveryRow[], message: string, now: Date) {
+/** Record a failed attempt; a rate-limited one (Slack's 429) retries after the wait it asked for. */
+async function markFailed(db: Db, rows: DeliveryRow[], err: unknown, now: Date) {
+  const message = err instanceof Error ? err.message : String(err);
   for (const d of rows) {
     const attempts = (d.attempts ?? 0) + 1;
-    const next = nextAttempt(attempts, now, d.scheduledFor);
+    const next = nextAttempt(attempts, now, d.scheduledFor, slackRetryAfterMs(err));
 
     await db
       .update(notificationDeliveries)
@@ -407,7 +398,7 @@ async function sweepDue(db: Db): Promise<SweepResult> {
       await markSent(db, [d], now);
       sent++;
     } catch (err) {
-      await markFailed(db, [d], err instanceof Error ? err.message : String(err), now);
+      await markFailed(db, [d], err, now);
       failed++;
     }
   }
@@ -425,7 +416,7 @@ async function sweepDue(db: Db): Promise<SweepResult> {
       await markSent(db, rows, now);
       sent += rows.length;
     } catch (err) {
-      await markFailed(db, rows, err instanceof Error ? err.message : String(err), now);
+      await markFailed(db, rows, err, now);
       failed += rows.length;
     }
   }

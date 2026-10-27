@@ -245,13 +245,15 @@ mod tests {
         serde_json::from_value(overlay["plugins"]["updater"].clone()).unwrap()
     }
 
+    /// `/S` is the silent install. The relaunch (`/R`) is not part of the install mode: the plugin adds it to every
+    /// install that is not built with `restart_after_install(false)`, which `desktop_install_update` never asks for.
     #[test]
-    fn the_exe_channel_installs_quietly_and_relaunches() {
+    fn the_exe_channel_installs_quietly() {
         let config = overlay_updater(include_str!("../tauri.updater.nsis.conf.json"));
         let windows = config
             .windows
             .expect("the .exe overlay sets the Windows install mode");
-        assert_eq!(windows.install_mode.nsis_args(), ["/S", "/R"]);
+        assert_eq!(windows.install_mode.nsis_args(), ["/S"]);
     }
 
     #[test]

@@ -1,27 +1,25 @@
 import { getRequestURL, type H3Event } from 'h3';
-import { isAuthEnabled, getRequestAccess } from '../utils/auth';
+import { isAuthEnabled } from '../utils/auth';
 import { requireMcpAuth } from '../utils/mcp-oauth';
 import { getDatabase, type DbClient } from '../database';
-import { MCP_TOOLS, DESKTOP_MCP_TOOLS, toContent } from '../utils/mcp/tools';
+import { toContent } from '../utils/mcp/tools';
 import type { McpContext, McpTool } from '../utils/mcp/tools';
+import { mcpCatalog, requestMcpContext, toolsForCaller } from '../utils/mcp/catalog';
 import { getPrompt, isKnownPrompt } from '../utils/mcp/prompts';
-import { getProjectScope } from '../utils/project-access';
 import { publicBaseUrl } from '../utils/public-base-url';
 import { ok, rpcErr, RPC, mcpServerInfo, negotiateProtocolVersion } from '../utils/mcp/protocol';
 import type { JsonRpcRequest } from '../utils/mcp/protocol';
 import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
 import { resolveInstanceStates, getInstanceDecisions } from '#shared/handlers/setup-status';
 import { CAPABILITY_MODULES, type CapabilityModule } from '#shared/capabilities';
-import { narrowToolsByAccess, narrowToolsByModule } from '../utils/mcp/filter';
-import { serveableTools } from '../utils/mcp/served';
+import { narrowToolsByModule } from '../utils/mcp/filter';
 import { logMcpToolCall } from '../utils/mcp/write-log';
 
 // The desktop app's bundled server (launched with PIWI_DESKTOP_TOKEN) advertises
 // the shared catalog plus the desktop-only tools that read and write files on the
 // machine it runs on; a hosted/Docker/npx server serves the shared catalog only.
 const IS_DESKTOP = !!process.env.PIWI_DESKTOP_TOKEN;
-const ACTIVE_TOOLS = IS_DESKTOP ? [...MCP_TOOLS, ...DESKTOP_MCP_TOOLS] : MCP_TOOLS;
-const TOOL_BY_NAME = new Map(ACTIVE_TOOLS.map((t) => [t.name, t]));
+const TOOL_BY_NAME = new Map(mcpCatalog(IS_DESKTOP).map((t) => [t.name, t]));
 const MAX_BODY_BYTES = 1_048_576; // 1 MB — reject oversized batches early
 // Every request of a batch runs at once, and one tool call can be a heavy query.
 const MAX_BATCH_REQUESTS = 20;
@@ -72,9 +70,7 @@ export default eventHandler(async (event) => {
   // the REST API enforces.
   const user = await requireMcpAuth(event);
   const db = await getDatabase();
-  const access = await getRequestAccess(event);
-  const scope = await getProjectScope(db, user);
-  const ctx: McpContext = { user, access, scope, apiKeyId: (event.context.apiKeyId as number | undefined) ?? null };
+  const ctx = await requestMcpContext(event, db, user);
 
   const contentLength = Number(event.headers.get('content-length') ?? 0);
   if (contentLength > MAX_BODY_BYTES) {
@@ -164,10 +160,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
     // ── Tool listing ─────────────────────────────────────────────────────────
     case 'tools/list': {
       const modules = parseModules(getRequestURL(event).searchParams.get('modules'));
-      const tools = narrowToolsByModule(
-        narrowToolsByAccess(await serveableTools(db, ACTIVE_TOOLS), ctx.access),
-        modules,
-      );
+      const tools = narrowToolsByModule(await toolsForCaller(db, ctx.access, { desktop: IS_DESKTOP }), modules);
       return ok(id, {
         tools: tools.map((t) => ({
           name: t.name,

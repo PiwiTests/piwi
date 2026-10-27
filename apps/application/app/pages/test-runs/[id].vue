@@ -10,8 +10,11 @@ import type {
 } from '~~/types/api';
 import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { subscribeDemoEvents } from '~/demo/run-events';
-import { useRunStream } from '~/composables/useRunStream';
+import { useRunEvents, useRunStream } from '~/composables/useRunStream';
 import { summarizeRunCases } from '#shared/utils/test-counts';
+import { applyLiveResourcesToParts } from '#shared/live-resources';
+import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
+import type { WireLiveResources } from '#shared/types';
 
 const route = useRoute();
 const router = useRouter();
@@ -45,17 +48,6 @@ const latestRunId = computed(() => latestRunInfo.value?.id ?? testRun.value?.pro
 const latestRunStatus = computed(() => latestRunInfo.value?.status ?? testRun.value?.project?.latestRunStatus ?? null);
 const isLatestRunActive = computed(() => latestRunStatus.value === 'running' || latestRunStatus.value === 'finalizing');
 
-useHead(
-  computed(() => {
-    // The tab title names the run and its project (display label first); on
-    // the page the breadcrumb carries the project.
-    const project = testRun.value?.project?.label || testRun.value?.project?.name;
-    return {
-      title: `Test run #${runId}${project ? ` — ${project}` : ''} — Piwi Dashboard`,
-    };
-  }),
-);
-
 const { copy } = useCopy();
 const isDeleteConfirmOpen = ref(false);
 const isKeepOpen = ref(false);
@@ -70,6 +62,10 @@ const liveTestCaseKeys = new Map<string, true>();
 // events; nothing is persisted from them). Rendered inline on the matching
 // running rows in the test-case views.
 const liveSteps = ref<LiveStepsByWorker>({});
+// What the run's reporters measured so far (CPU, memory, open pages), one part
+// per reporter, from the stream's `resources` events. The workers timeline
+// draws them while the run is live, and the stored report once it ended.
+const liveResources = ref<RunResourceTimelinePart[]>([]);
 let eventSource: EventSource | null = null;
 
 // Combined test cases: from server data + live stream. Includes every attempt
@@ -124,6 +120,10 @@ function seedLiveFromPersisted(cases: TestCaseResult[]) {
   displayTestCases.value = [...liveTestCases.value];
 }
 
+// The planned suite size as the run's stream last reported it: it grows as each
+// shard of a sharded run starts, after the page loaded. Feeds the tab's progress.
+const plannedTotal = ref<number | null>(null);
+
 // Debounced batch processing of SSE events to avoid cascading re-renders
 let pendingEvents: Record<string, unknown>[] = [];
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -136,8 +136,10 @@ function flushPendingEvents() {
     const data = parsed.data as Record<string, unknown>;
     // 'init' and 'run-progress' carry the server's running counters; the header
     // and bar are derived from the de-duplicated case list instead (see
-    // displayProgress), so those snapshots are not applied here.
-    if (parsed.type === 'test-begin') {
+    // displayProgress), so only their planned suite size is kept.
+    if (parsed.type === 'init' || parsed.type === 'run-progress') {
+      if (typeof data?.totalTests === 'number') plannedTotal.value = data.totalTests;
+    } else if (parsed.type === 'test-begin') {
       const d = data as {
         title: string;
         filePath?: string;
@@ -304,6 +306,8 @@ function flushPendingEvents() {
           parentTitle: d.parentTitle ?? null,
         },
       };
+    } else if (parsed.type === 'resources') {
+      liveResources.value = applyLiveResourcesToParts(liveResources.value, data as unknown as WireLiveResources);
     } else if (parsed.type === 'run-finalizing') {
       // Tests are done, reports/traces are uploading — show progress bar
       isFinalizing.value = true;
@@ -435,25 +439,23 @@ onUnmounted(() => {
   disconnectStream();
 });
 
-// Throttled version for child components that don't need frame-perfect reactivity
+// Throttled version for child components that don't need frame-perfect reactivity.
+// It starts from the cases the page rendered with, so the server and the
+// browser render the same timeline, and each later frame takes the latest list.
 let rafId: number | null = null;
-const throttledTestCases = ref<TestCaseResult[]>([]);
+const throttledTestCases = ref<TestCaseResult[]>(displayTestCases.value);
 
-watch(
-  displayTestCases,
-  (val) => {
-    if (!import.meta.client) {
-      throttledTestCases.value = val;
-      return;
-    }
-    if (rafId !== null) return;
-    rafId = requestAnimationFrame(() => {
-      throttledTestCases.value = val;
-      rafId = null;
-    });
-  },
-  { immediate: true },
-);
+watch(displayTestCases, (val) => {
+  if (!import.meta.client) {
+    throttledTestCases.value = val;
+    return;
+  }
+  if (rafId !== null) return;
+  rafId = requestAnimationFrame(() => {
+    throttledTestCases.value = displayTestCases.value;
+    rafId = null;
+  });
+});
 
 // Display progress: the header counts, the count bar and the grouped list are
 // all derived from the same de-duplicated case list (one row per test, its
@@ -489,6 +491,46 @@ const displayProgress = computed(() => {
     flakyTests: testRun.value.flakyTests ?? 0,
   };
 });
+
+// While the run is in flight the browser tab shows its progress: a badge on the
+// favicon and the progress ahead of the title. Done and failed are the header's
+// counts; the total is the planned suite size only, so a run that has not
+// reported one shows as running without a share done.
+const tabIndicator = useTabRunIndicator(() => {
+  const run = testRun.value;
+  const p = displayProgress.value;
+  if (!run || !p) return null;
+  return {
+    live: isLive.value,
+    status: run.status,
+    done: p.passedTests + p.failedTests + p.skippedTests + p.didNotRunTests,
+    total: plannedTotal.value ?? run.totalTests ?? 0,
+    failed: p.failedTests,
+  };
+});
+
+// A cancelled run (a new run from the same reporter instance replaced it) is
+// announced on the global stream only, never on its own, so refetch on it to
+// leave the live state. The global stream is closed while the tab is hidden, so
+// a live run is also refetched when the tab comes back.
+useRunEvents((event) => {
+  if (event.type === 'run-cancelled' && event.runId === Number(runId) && isLive.value) refresh();
+});
+const visibility = useDocumentVisibility();
+watch(visibility, (state) => {
+  if (state === 'visible' && isLive.value) refresh();
+});
+
+useHead(
+  computed(() => {
+    // The tab title names the run and its project (display label first); on
+    // the page the breadcrumb carries the project.
+    const project = testRun.value?.project?.label || testRun.value?.project?.name;
+    return {
+      title: tabRunTitle(`Test run #${runId}${project ? ` — ${project}` : ''} — Piwi Dashboard`, tabIndicator.value),
+    };
+  }),
+);
 
 const runToDelete = computed(() => [{ id: Number(runId), keptAt: testRun.value?.keptAt ?? null }]);
 
@@ -526,7 +568,7 @@ function buildRunSummary(): string {
 const testCaseSearch = useViewState('run-tests:search', () => '');
 const testCaseActiveStatuses = useViewState<string[]>('run-tests:statuses', () => []);
 
-// The count-bar segments toggle into the same set the Tests list chips use, and
+// The count-bar segments toggle the status filters the Tests list applies, and
 // switch to the Tests tab so the filtered rows are on screen.
 function handleFilterStatus(status: string) {
   if (!status || status === 'all') {
@@ -678,6 +720,16 @@ const runTabValues = computed(() => tabItems.value.filter((t) => !t.disabled).ma
 if (typeof route.query.tab === 'string' && runTabValues.value.includes(route.query.tab)) {
   activeTab.value = route.query.tab;
 }
+// A link to this run from the page itself (an assistant answer, the command
+// palette) changes only the query, so the tab follows it: the tab it names,
+// the one a legacy value lands on, else the Tests tab.
+watch(
+  () => route.query.tab,
+  (raw) => {
+    const value = typeof raw === 'string' ? (LEGACY_TAB_REDIRECTS[raw] ?? raw) : '';
+    activeTab.value = runTabValues.value.includes(value) ? value : 'test-cases';
+  },
+);
 watch(runTabValues, (vals) => {
   if (!vals.includes(activeTab.value)) activeTab.value = 'test-cases';
 });
@@ -714,7 +766,14 @@ function handleSelectTestCase(id: number) {
 
 // ── Navbar More menu ────────────────────────────────────────────────────────
 const moreMenuItems = computed(() => {
-  const items: { label: string; icon: string; color?: 'error'; disabled?: boolean; onSelect: () => void }[] = [];
+  const items: {
+    label: string;
+    icon: string;
+    color?: 'error';
+    disabled?: boolean;
+    'data-tour'?: string;
+    onSelect: () => void;
+  }[] = [];
   items.push({
     label: 'Copy run summary',
     icon: 'i-lucide-clipboard',
@@ -723,7 +782,12 @@ const moreMenuItems = computed(() => {
   items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() });
   const kept = !!testRun.value?.keptAt;
   if (!kept) {
-    items.push({ label: 'Keep forever…', icon: 'i-lucide-lock', onSelect: () => (isKeepOpen.value = true) });
+    items.push({
+      label: 'Keep forever…',
+      icon: 'i-lucide-lock',
+      'data-tour': 'run-keep',
+      onSelect: () => (isKeepOpen.value = true),
+    });
   } else if (canRelease(testRun.value?.projectId)) {
     items.push({
       label: 'Release keep',
@@ -801,6 +865,7 @@ const moreMenuItems = computed(() => {
                 icon="i-lucide-ellipsis-vertical"
                 aria-label="More actions"
                 title="More actions"
+                data-tour="run-more-actions"
               />
             </UDropdownMenu>
           </div>
@@ -828,12 +893,14 @@ const moreMenuItems = computed(() => {
           <TestCasesList
             ref="testCasesListRef"
             data-shot="failure-clusters"
+            data-tour="run-tests"
             v-model:search="testCaseSearch"
             v-model:active-statuses="testCaseActiveStatuses"
             :test-cases="dedupedDisplayCases"
             :is-live="isLive"
             :total="displayProgress?.totalTests"
             :live-steps="liveSteps"
+            :live-resources="liveResources"
             :cluster-meta="clusterMeta"
             :quarantined-case-ids="quarantinedCaseIds"
             :project-key="testRun?.projectId"
@@ -845,6 +912,7 @@ const moreMenuItems = computed(() => {
 
         <template #tab-changes>
           <ChangesView
+            data-tour="run-changes"
             :test-run="testRun"
             :test-cases="displayTestCases"
             :cluster-meta="clusterMeta"
@@ -855,7 +923,7 @@ const moreMenuItems = computed(() => {
         </template>
 
         <template #tab-workers>
-          <div class="space-y-6 p-1">
+          <div class="space-y-6" data-tour="run-workers">
             <WorkersTimeline
               :test-cases="isLive ? throttledTestCases : displayTestCases"
               :setup-steps="testRun?.setupSteps ?? null"
@@ -864,6 +932,7 @@ const moreMenuItems = computed(() => {
               :wasted-patterns="testRun?.wastedWaitPatterns ?? null"
               :run-id="Number(runId)"
               :has-resources="testRun?.hasResources ?? false"
+              :live-resources="liveResources"
               @select-test-case="handleSelectTestCase"
             />
             <RunTimelineExtras
@@ -878,6 +947,7 @@ const moreMenuItems = computed(() => {
 
         <template #tab-resources>
           <RunResources
+            data-tour="run-resources"
             :run-id="Number(runId)"
             :project-key="testRun?.projectId"
             :project-name="testRun?.project?.name"

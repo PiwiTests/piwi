@@ -96,6 +96,7 @@ async function merge() {
       color="neutral"
       icon="i-lucide-merge"
       data-testid="test-case-merge"
+      data-tour="test-merge"
       @click="open = true"
     >
       Merge…

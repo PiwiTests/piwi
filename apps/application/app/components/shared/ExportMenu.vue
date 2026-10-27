@@ -132,6 +132,7 @@ async function copySteps() {
       variant="outline"
       title="Take this investigation away"
       aria-label="Export"
+      data-tour="export-menu"
     >
       <span class="hidden xl:inline">Export</span>
     </UButton>
@@ -139,7 +140,7 @@ async function copySteps() {
     <template #content>
       <div class="w-64 p-1 space-y-0.5">
         <template v-if="endpoint">
-          <div class="flex items-center justify-between px-2 pt-1 pb-1">
+          <div class="flex items-center justify-between px-2 pt-1 pb-1" data-tour="export-download">
             <p class="text-xs font-medium text-gray-500">Download</p>
             <HelpHint topic="export.offline" />
           </div>
@@ -212,7 +213,7 @@ async function copySteps() {
 
         <template v-if="replayEndpoint">
           <USeparator class="my-1" />
-          <div class="flex items-center justify-between px-2 pt-1 pb-1">
+          <div class="flex items-center justify-between px-2 pt-1 pb-1" data-tour="export-replay">
             <p class="text-xs font-medium text-gray-500">Replay in a browser</p>
             <HelpHint topic="export.replay" />
           </div>

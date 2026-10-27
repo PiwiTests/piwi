@@ -132,11 +132,19 @@ const failureSentence = computed(() => {
           color="neutral"
           variant="outline"
           data-shot="issue-line-create"
+          data-tour="create-issue"
           @click="emit('create')"
         >
           Create issue
         </UButton>
-        <UButton v-if="canLink" size="xs" color="neutral" variant="outline" @click="emit('link')">
+        <UButton
+          v-if="canLink"
+          size="xs"
+          color="neutral"
+          variant="outline"
+          data-tour="link-issue"
+          @click="emit('link')"
+        >
           Link an issue
         </UButton>
       </div>

@@ -221,10 +221,14 @@ class PiwiCoverageMarks(private val project: Project) : Disposable {
         /** The lines changed since the coverage run. */
         val CHANGED: TextAttributesKey = TextAttributesKey.createTextAttributesKey("PIWI_COVERAGE_CHANGED")
 
+        /** The lines changed since the default branch, in a file no test reaches: uncovered changes. */
+        val UNCOVERED: TextAttributesKey = TextAttributesKey.createTextAttributesKey("PIWI_UNCOVERED_CHANGE")
+
         fun keyOf(kind: Glue.CoverageKind): TextAttributesKey = when (kind) {
             Glue.CoverageKind.RUN -> RUN
             Glue.CoverageKind.NOT_RUN -> NOT_RUN
             Glue.CoverageKind.CHANGED -> CHANGED
+            Glue.CoverageKind.UNCOVERED -> UNCOVERED
         }
     }
 }

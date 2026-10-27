@@ -168,7 +168,11 @@ async function snoozeFromTriage(option: SnoozeOption | null) {
 </script>
 
 <template>
-  <div data-shot="cluster-state" class="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
+  <div
+    data-shot="cluster-state"
+    data-tour="cluster-state"
+    class="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm"
+  >
     <!-- The sentence as prose, run references linked; the dot is part of it so it stays on its first line. -->
     <span data-shot="cluster-state-sentence" class="min-w-0">
       <span class="inline-block size-2 rounded-full mr-1.5 align-middle" :class="dotClass" aria-hidden="true" />

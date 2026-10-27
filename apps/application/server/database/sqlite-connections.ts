@@ -1,19 +1,33 @@
-import type { Client, InArgs, InStatement, Transaction, TransactionMode } from '@libsql/client';
+import type { Client, Config, InArgs, InStatement, Transaction, TransactionMode } from '@libsql/client';
+
+/** How long a statement waits for a write lock held by another process. */
+const BUSY_TIMEOUT_MS = 5000;
 
 /**
- * Settings SQLite keeps per connection. libSQL's local client begins a
- * transaction on its current connection and opens a new one for every later
- * statement, so these run on each connection it opens.
+ * Connections in the pool of the server's client: one for the open
+ * transaction, one for every other statement.
+ */
+const POOL_CONNECTIONS = 2;
+
+/**
+ * Settings SQLite keeps per connection, run on each connection of the pool by
+ * `configureSqliteConnections`.
  */
 const CONNECTION_PRAGMAS = [
-  // How long a statement waits for a write lock held by another process.
-  'PRAGMA busy_timeout=5000',
   'PRAGMA synchronous=NORMAL',
   // Enforce the ON DELETE actions declared in the schema. Delete paths still
   // remove child rows explicitly (see server/utils/retention.ts) so behavior
   // does not depend on this pragma.
   'PRAGMA foreign_keys=ON',
-];
+].join('; ');
+
+/**
+ * Settings of a local libSQL client with at most `connections` connections.
+ * libSQL applies the busy timeout to every connection it opens.
+ */
+export function sqliteClientConfig(url: string, connections = POOL_CONNECTIONS): Config {
+  return { url, concurrency: connections, timeout: BUSY_TIMEOUT_MS };
+}
 
 /** How long a write waits for this process's open transaction before it fails. */
 const TRANSACTION_WAIT_MS = 30_000;
@@ -47,21 +61,37 @@ function releaseWhenClosed(tx: Transaction, release: () => void): Transaction {
 }
 
 /**
- * Give every connection of a local libSQL client the same pragmas, and queue
- * its writes behind an open transaction.
+ * Give both connections of a local libSQL client created with
+ * `sqliteClientConfig(url)` the same pragmas, and queue its writes behind an
+ * open transaction. Call it while nothing else uses the client.
  *
- * A transaction holds SQLite's write lock across awaits while the client runs
- * other statements on another connection, and the driver runs statements
+ * The client keeps a pool of connections: a transaction holds one until it
+ * ends, every other statement borrows one for its own run. An open transaction
+ * holds SQLite's write lock across awaits while the client runs other
+ * statements on the other connection, and the driver runs statements
  * synchronously: a write there cannot wait for the lock without blocking the
  * event loop the transaction needs to reach its COMMIT. Writes, batches and
- * other transactions therefore wait for the open transaction to end. Reads
- * (`select`) run beside it, as WAL allows.
+ * other transactions therefore wait for the open transaction to end, so it is
+ * the only one, and the other connection is always free. Reads (`select`) run
+ * beside it, as WAL allows.
  */
 export async function configureSqliteConnections(client: Client): Promise<void> {
   const execute = client.execute.bind(client);
   const batch = client.batch.bind(client);
   const transaction = client.transaction.bind(client);
-  const applyPragmas = () => Promise.all(CONNECTION_PRAGMAS.map((pragma) => execute(pragma)));
+
+  // The pool reuses the connection it has until a transaction holds it, so
+  // the pragmas run on that one, then on the second one, opened beside the
+  // transaction. The pool keeps both and reuses them from then on; one it
+  // opens to replace a broken connection has libSQL's defaults, which enforce
+  // foreign keys and keep synchronous=FULL.
+  await client.executeMultiple(CONNECTION_PRAGMAS);
+  const holding = await transaction('deferred');
+  try {
+    await client.executeMultiple(CONNECTION_PRAGMAS);
+  } finally {
+    holding.close();
+  }
 
   /** Settles when the open transaction ends; null while none is open. */
   let open: Promise<void> | null = null;
@@ -74,7 +104,6 @@ export async function configureSqliteConnections(client: Client): Promise<void> 
   };
   const isRead = (stmt: InStatement | string) => /^\s*select\b/i.test(typeof stmt === 'string' ? stmt : stmt.sql);
 
-  await applyPragmas();
   client.execute = async (stmt: InStatement | string, args?: InArgs) => {
     while (open && !isRead(stmt)) await transactionEnded();
     return typeof stmt === 'string' ? execute(stmt, args) : execute(stmt);
@@ -92,18 +121,11 @@ export async function configureSqliteConnections(client: Client): Promise<void> 
       if (open === ended) open = null;
       end();
     };
-    // Both start in the same tick, so the pragmas reach the connection the
-    // client moves to before any other statement does.
-    const [begun, configured] = await Promise.allSettled([transaction(mode), applyPragmas()]);
-    if (begun.status === 'rejected') {
+    try {
+      return releaseWhenClosed(await transaction(mode), release);
+    } catch (error) {
       release();
-      throw begun.reason;
+      throw error;
     }
-    if (configured.status === 'rejected') {
-      begun.value.close();
-      release();
-      throw configured.reason;
-    }
-    return releaseWhenClosed(begun.value, release);
   };
 }

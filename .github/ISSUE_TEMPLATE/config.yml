@@ -1,11 +1,11 @@
 blank_issues_enabled: true
 contact_links:
   - name: 💬 Questions & ideas (Discussions)
-    url: https://github.com/PiwiTests/platform/discussions
+    url: https://github.com/PiwiTests/piwi/discussions
     about: Ask questions, share how you use Piwi, or discuss ideas before they become issues.
   - name: 📖 Documentation
     url: https://piwitests.dev
     about: Setup guides, configuration reference, and feature docs.
   - name: 🔐 Report a security vulnerability
-    url: https://github.com/PiwiTests/platform/security/advisories/new
+    url: https://github.com/PiwiTests/piwi/security/advisories/new
     about: Please report security issues privately — not as public issues.

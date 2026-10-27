@@ -1040,6 +1040,41 @@ export function recordingPlacement(
 }
 
 /**
+ * A line a statement goes on from, at its end: an operator (`=`, `=>`, `&&`, `+`…), a comma, or a keyword that takes
+ * an expression after it (`await`, `return`…). Not `++`/`--`, which end one, nor `:`, which also ends a `case`.
+ */
+const GOES_ON =
+  /(?:=>|(?<![+])\+|(?<![-])-|[=*%&|^<>?,]|\b(?:await|return|throw|yield|new|typeof|void|delete|in|of|instanceof))\s*$/;
+
+/**
+ * Where a block written before the statement holding a line goes, the statement a test is paused before: a new line
+ * above the line that statement starts on (the line opening the brackets the line is in, and the line above it while
+ * the line goes on with `.`, a chain broken over lines, or while the line above goes on, as an assignment broken after
+ * its `=`), indented as that line is.
+ */
+export function placementBefore(text: string, line: number): RecordingPlacement {
+  const model = new FileModel(text);
+  let at = Math.max(0, Math.min(line, model.lines.length - 1));
+  for (let step = 0; step < model.lines.length; step++) {
+    const here = model.lines[at]!;
+    const outer = model.expressionAround(model.starts[at]! + (here.length - here.trimStart().length));
+    const opened = outer ? model.lineOfToken(outer.open) : at;
+    if (opened < at) {
+      at = opened;
+      continue;
+    }
+    let above = at - 1;
+    while (above >= 0 && !model.lines[above]!.trim()) above--;
+    if (above < 0) break;
+    const before = model.lines[above]!.trim();
+    const comment = /^(?:\/\/|\/\*|\*)/.test(before);
+    if (!/^(?:\?\.|\.(?!\.))/.test(here.trim()) && (comment || !GOES_ON.test(before))) break;
+    at = above;
+  }
+  return { line: at, newLine: true, indent: leadingSpace(model.lines[at]!) };
+}
+
+/**
  * Whether a call counts as made on a page, seen from offset `at`: its receiver starts with the variable the name
  * means at `at` (or with `this`, inside the class `klass`), and the method is a page's only, or the receiver looks
  * like or holds a page.

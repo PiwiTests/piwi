@@ -107,7 +107,12 @@ async function resetToDefaults() {
 </script>
 
 <template>
-  <SectionCard icon="i-lucide-scissors" title="Timeout hygiene" help="settings.timeout-hygiene">
+  <SectionCard
+    icon="i-lucide-scissors"
+    title="Timeout hygiene"
+    help="settings.timeout-hygiene"
+    data-tour="timeout-hygiene-thresholds"
+  >
     <template #subtitle>
       Tune how timeout opportunities are detected — oversized per-test timeouts and stale <code>test.slow()</code>
       marks — surfaced per project (Performance tab) and in Analytics. Opportunities are recomputed when viewed, so

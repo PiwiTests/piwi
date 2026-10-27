@@ -53,7 +53,7 @@ Notification subscriptions can filter by branch and alert only on the default br
 ## Limits
 
 - **Views read the default branch by default.** Analytics counts each project's default branch (plus runs with no branch) until you pick branches or *All branches* (see [Branch policy](./analytics#branch-policy)). The flaky leaderboard does the same unless you scope it, but only once the project's default branch is known (set on its Settings tab, or resolved from the SCM provider); until then it reads every branch.
-- **Branches are a run dimension, not yet entities.** There is no per-branch merge-readiness verdict, branch-class gate policy, or retention by branch class yet — those are the "branches as entities" work still under *Exploring* in the [roadmap](https://github.com/PiwiTests/platform/blob/main/ROADMAP.md).
+- **Branches are a run dimension, not yet entities.** There is no per-branch merge-readiness verdict, branch-class gate policy, or retention by branch class yet — those are the "branches as entities" work still under *Exploring* in the [roadmap](https://github.com/PiwiTests/piwi/blob/main/ROADMAP.md).
 - **A run needs a resolvable branch.** A purely local run with no CI variables, a detached `HEAD`, and no `PIWI_BRANCH` records no branch at all, so it will not appear under any branch filter.
 
 ## Related

@@ -18,8 +18,22 @@ fi
 
 cd "${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
-echo "[session-start] installing workspace dependencies"
-npm install --no-audit --fund=false
+# Install exactly what package-lock.json pins, as CI does, without writing it: the
+# container's npm 10 would rewrite the npm 11 lockfile under `npm install`, leaving
+# every session with a lockfile change unrelated to its task. npm ci deletes
+# node_modules first (~35s against ~5s for an up-to-date install), so a resumed or
+# compacted session skips it while the tree is the one npm ci installed from this
+# very lockfile under this Node. node_modules/.package-lock.json cannot tell: npm 10
+# writes it in its own form, so it never equals the committed lockfile.
+stamp="node_modules/.session-start-install"
+installed="$(node --version) $(sha256sum package-lock.json | cut -d ' ' -f 1)"
+if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$installed" ]; then
+  echo "[session-start] workspace dependencies match package-lock.json; skipping the install"
+else
+  echo "[session-start] installing workspace dependencies"
+  npm ci --no-audit --fund=false
+  echo "$installed" > "$stamp"
+fi
 
 echo "[session-start] building the reporter (playwright.config.ts imports it)"
 npm run reporter:build --workspace packages/reporter

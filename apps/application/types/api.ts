@@ -621,15 +621,17 @@ export interface PerformanceStep {
 
 /**
  * A hook/fixture step event with absolute timing, used by WorkersTimeline
- * to render segments alongside the test case bar.
+ * to render segments alongside the test case bar. A `pause` event is a stop at
+ * Piwi's pause bar (an editor breakpoint): the call it held as its title.
  */
 export interface TestStepEvent {
   title: string;
   /** The step's target (rendered locator or URL), carried separately by newer Playwright. */
   subtitle?: string | null;
-  category: 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait';
+  category: 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait' | 'pause';
   startedAt: number;
   duration: number;
+  /** `passed` or `failed`; `wasted` for a wait; for a stop, why it stopped: `breakpoint`, `step` or `page-pause`. */
   status: string;
   location?: string | null;
   /** The first line of the step's error, when it failed — hook and fixture events only. */
@@ -1300,29 +1302,6 @@ export interface CreateApiKeyResponse {
 }
 
 // ============================================================================
-// Access management types (users, groups, the permission grid, project members)
-// ============================================================================
-
-// The request and response shapes live in `#shared/project-access`, shared with
-// the server routes and the demo mirror.
-export type {
-  GroupListItem,
-  GroupsListResponse,
-  GroupView,
-  GroupWriteResponse,
-  ProjectAccessResponse,
-  ProjectAccessUpdateResponse,
-  ProjectMembersResponse,
-  ProjectMembersUpdateResponse,
-  ProjectMemberView,
-  UserListItem,
-  UserProjectRolesResponse,
-  UsersListResponse,
-  UserSummary,
-  UserWriteResponse,
-} from '#shared/project-access';
-
-// ============================================================================
 // Admin types
 // ============================================================================
 
@@ -1618,35 +1597,9 @@ export interface DiagnosisContextCoverage {
   notApplicable?: Record<string, string>;
 }
 
-// Coverage insights: `GET /api/test-run-cases/:id/coverage-divergence`, `GET /api/test-cases/:id/path-variation`,
-// `GET /api/projects/:id/coverage-loss` and `GET /api/test-cases/:id/coverage-reach`. The shapes live in
-// `#shared/coverage-insights`, shared with the server, the demo mirror, the MCP tools and the AI context.
-export type {
-  CoverageBaseline,
-  CoverageDivergenceAnswer,
-  CoverageDivergenceReason,
-  CoverageLossAnswer,
-  CoverageReachAnswer,
-  DivergedFile,
-  FailuresFollow,
-  LossFile,
-  LossTest,
-  NearestTest,
-  PathExplanation,
-  PathVariationAnswer,
-  VaryingCode,
-  VaryingFile,
-} from '#shared/coverage-insights';
-
 // Suspect lines: `GET /api/test-run-cases/:id/suspect-lines` and `GET /api/failure-clusters/:id/suspect-lines`.
 // The shapes live in `#shared/suspect-lines`, shared with the server, the demo mirror and the fix plan.
-export type {
-  ClusterSuspectLinesAnswer,
-  SuspectLine,
-  SuspectLinesAnswer,
-  SuspectLinesReason,
-  SuspectLinesSummary,
-} from '#shared/suspect-lines';
+export type { ClusterSuspectLinesAnswer } from '#shared/suspect-lines';
 
 /**
  * A commit as returned by the failure-cluster commit-list endpoints and rendered
@@ -1690,7 +1643,24 @@ export interface ScmChanges {
  *   bundled server shells out to `claude -p --output-format json`, so authentication is the CLI's
  *   own subscription/OAuth login and no API key is stored.
  */
-export type AiProvider = 'anthropic' | 'openai' | 'claude-cli';
+export type AiProvider = 'anthropic' | 'openai' | 'claude-cli' | 'codex-cli' | 'deepseek-cli';
+
+/** Local Codex CLI health, ChatGPT authentication and usage since server startup. */
+export interface CodexCliStatus {
+  available: boolean;
+  binaryPath: string | null;
+  version: string | null;
+  loggedIn: boolean;
+  authMethod: string | null;
+  error: string | null;
+  usage: {
+    calls: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens: number;
+    since: string | null;
+  };
+}
 
 /**
  * Health + authentication state of the local `claude` CLI, returned by
@@ -1749,8 +1719,9 @@ export interface ModelInfo {
  * - `diagnosis`  — the main model that writes the final diagnosis (required root)
  * - `research`   — optional cheaper/faster pre-analysis pass (two-stage diagnosis)
  * - `embedding`  — optional embeddings model for semantic failure clustering
+ * - `assistant`  — optional model the in-app assistant answers with; the diagnosis model when unset
  */
-export type AiModelRole = 'diagnosis' | 'research' | 'embedding';
+export type AiModelRole = 'diagnosis' | 'research' | 'embedding' | 'assistant';
 
 /** A fully-resolved provider config for a single role (server-side; holds the raw key). */
 export interface ResolvedAiRole {
@@ -1783,6 +1754,7 @@ export interface AiConfig {
     diagnosis: ResolvedAiRole;
     research: ResolvedAiRole | null;
     embedding: ResolvedAiRole | null;
+    assistant: ResolvedAiRole | null;
   };
 }
 
@@ -1820,6 +1792,7 @@ export interface AiSettings {
     diagnosis: AiRoleSettings | null;
     research: AiRoleSettings | null;
     embedding: AiRoleSettings | null;
+    assistant: AiRoleSettings | null;
   };
   autoDiagnose: boolean;
   hasScmToken: boolean;
@@ -1831,6 +1804,12 @@ export interface AiSettings {
   languageEnvManaged: boolean;
   /** False when `PIWI_SECRET_KEY` is unset, so an API key or SCM token cannot be saved. */
   canStoreSecrets: boolean;
+  /** True when this server may run the local Claude Code CLI: the desktop app, or `PIWI_CLAUDE_CLI_PATH` set. */
+  claudeCliAvailable: boolean;
+  /** Whether this server is allowed to run the local Codex CLI. */
+  codexCliAvailable: boolean;
+  /** Whether this server may run official DeepSeek Harness. */
+  deepseekCliAvailable: boolean;
 }
 
 // ============================================================================
@@ -1870,6 +1849,8 @@ export interface AiUsageModelRow {
   model: string;
   diagnoses: number;
   failed: number;
+  /** Assistant answers (turns), counted apart from diagnoses; their tokens are in `inputTokens` and `outputTokens`. */
+  assistantTurns: number;
   inputTokens: number;
   outputTokens: number;
   avgDurationMs: number | null;
@@ -1891,7 +1872,7 @@ export interface AiUsageSummary {
   days: number;
   /** The fewest ratings a helpful share is given over. */
   minRatings: number;
-  totals: { diagnoses: number; inputTokens: number; outputTokens: number };
+  totals: { diagnoses: number; assistantTurns: number; inputTokens: number; outputTokens: number };
   byModel: AiUsageModelRow[];
 }
 

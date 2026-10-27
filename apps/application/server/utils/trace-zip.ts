@@ -106,7 +106,7 @@ function crc32(buf: Buffer): number {
     0xaed16a4a, 0xd9d65adc, 0x40df0b66, 0x37d83bf0, 0xa9bcae53, 0xdebb9ec5, 0x47b2cf7f, 0x30b5ffe9,
     0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693, 0x54de5729, 0x23d967bf,
     0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d,
-  ] as const
+  ] as const;
   let c = 0xffffffff;
   for (let i = 0; i < buf.length; i++) c = CRC32_TABLE.at((c ^ buf.readUInt8(i)) & 0xff)! ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;

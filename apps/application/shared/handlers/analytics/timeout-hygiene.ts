@@ -29,23 +29,21 @@ export async function getAnalyticsTimeoutHygiene(
       const opps = await getProjectTimeoutOpportunities(db, project.id, RUNS_PER_PROJECT);
       return opps
         .filter((o) => inFilter(project.id, o.testCaseId))
-        .map(
-          (o): AnalyticsTimeoutRow => ({
-            projectId: project.id,
-            projectName: project.name,
-            projectLabel: project.label,
-            testCaseId: o.testCaseId,
-            title: o.title,
-            filePath: o.filePath,
-            kind: o.kind,
-            timeout: o.timeout,
-            p95: o.p95,
-            recommendedTimeout: o.recommendedTimeout,
-            estimatedSavingMs: o.estimatedSavingMs,
-            impact: o.impact,
-            hasSlowAnnotation: o.hasSlowAnnotation,
-          }),
-        );
+        .map((o): AnalyticsTimeoutRow => ({
+          projectId: project.id,
+          projectName: project.name,
+          projectLabel: project.label,
+          testCaseId: o.testCaseId,
+          title: o.title,
+          filePath: o.filePath,
+          kind: o.kind,
+          timeout: o.timeout,
+          p95: o.p95,
+          recommendedTimeout: o.recommendedTimeout,
+          estimatedSavingMs: o.estimatedSavingMs,
+          impact: o.impact,
+          hasSlowAnnotation: o.hasSlowAnnotation,
+        }));
     }),
   );
 

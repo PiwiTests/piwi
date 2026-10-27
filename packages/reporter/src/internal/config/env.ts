@@ -1,5 +1,8 @@
+import * as path from 'node:path';
 import type { PiwiDashboardOptions } from '../../public/options.js';
 import { defaultDesktopConfigPath, readDesktopConfig } from './desktop.js';
+import { readDotEnv } from './dotenv.js';
+import { detectCi } from '../support/ci.js';
 
 /**
  * Built-in option defaults, merged *under* any user-provided or env-derived
@@ -47,6 +50,7 @@ const DEFAULTS: PiwiDashboardOptions = {
  */
 export const PIWI_ENV_KEYS = {
   serverUrl: 'PIWI_DASHBOARD_URL',
+  desktopApp: 'PIWI_DESKTOP_APP',
   projectName: 'PIWI_PROJECT_NAME',
   verbose: 'PIWI_VERBOSE',
   apiKey: 'PIWI_API_KEY',
@@ -72,6 +76,7 @@ export const PIWI_ENV_KEYS = {
   codeReachRoots: 'PIWI_CODE_REACH_ROOTS',
   coverageBrowser: 'PIWI_COVERAGE_BROWSER',
   coverageServer: 'PIWI_COVERAGE_SERVER',
+  coverageCss: 'PIWI_COVERAGE_CSS',
   externalIdPattern: 'PIWI_EXTERNAL_ID_PATTERN',
   externalIdOnDuplicate: 'PIWI_EXTERNAL_ID_ON_DUPLICATE',
   captureServerTraces: 'PIWI_CAPTURE_SERVER_TRACES',
@@ -99,12 +104,17 @@ export const PIWI_ENV_KEYS = {
  * (`inspectOnFailure`, `pickLocatorOnFailure`) the workers read. Not options:
  * the breakpoints change with every run, so the editor writes them and the
  * capture fixtures read them directly. Headed local runs only, never under CI:
- *  - `pauseAt` lists the lines to pause at before a locator action or
- *    assertion, semicolon-separated `file:line` relative to the working directory
+ *  - `pauseAt` lists the lines to pause at before a call that acts on, reads or
+ *    checks the page (a navigation, an action, a key press, an assertion, a
+ *    read such as `textContent`),
+ *    semicolon-separated `file:line` relative to the working directory
  *    (forward slashes) or absolute: `tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`;
  *  - `editorSend` is the editor's Send to editor pairing address
  *    (`<url>#<token>`), which a locator picked while paused is posted to with
  *    the line it was picked at.
+ * Beside them, `PIWI_RECORD_CHANNEL` (`@piwitests/core/ide-recorder`) names the
+ * local socket of the editor service that built the command, over which the
+ * pause bar's Record here hands the page to the editor's recorder.
  */
 export const PIWI_LOCAL_DEBUG_ENV = {
   pauseAt: 'PIWI_PAUSE_AT',
@@ -270,7 +280,39 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'outputFile', env: PIWI_ENV_KEYS.outputFile, kind: 'string' },
 ];
 
+/**
+ * The options `resolveOptions` also reads from the `.env` file in the
+ * Playwright config's folder, the file `piwi init` writes: the connection,
+ * under the variable names the CLI commands and the editors read from the same
+ * file. Other variables in the file are not read: the workers take the rest of
+ * the `PIWI_*` variables from the environment, which the file does not reach.
+ */
+const DOTENV_OPTIONS = ['serverUrl', 'apiKey', 'projectName'] as const;
+
+/** The `.env` file a `resolveOptions` call took options from, and their variables. */
+export interface DotEnvUse {
+  file: string;
+  keys: string[];
+}
+
+type DesktopAppMode = NonNullable<PiwiDashboardOptions['desktopApp']>;
+
+const DESKTOP_APP_MODES: ReadonlyArray<DesktopAppMode> = ['prefer', 'fallback', 'off'];
+
+/**
+ * The `desktopApp` mode in force: `PIWI_DESKTOP_APP` over the option, and
+ * `'fallback'` when neither names a known mode.
+ */
+function desktopAppMode(option: unknown, envValue: string | undefined): DesktopAppMode {
+  const fromEnv = envValue?.trim().toLowerCase();
+  if (DESKTOP_APP_MODES.includes(fromEnv as DesktopAppMode)) return fromEnv as DesktopAppMode;
+  if (DESKTOP_APP_MODES.includes(option as DesktopAppMode)) return option as DesktopAppMode;
+  return 'fallback';
+}
+
 let desktopDiscovered = false;
+let desktopReplacedServerUrl: string | null = null;
+let dotEnvUse: DotEnvUse | null = null;
 
 /**
  * Whether the last `resolveOptions` call took its server URL and API key from
@@ -282,18 +324,40 @@ export function usedDesktopDiscovery(): boolean {
 }
 
 /**
+ * The configured server the last `resolveOptions` call set aside for the
+ * desktop app under `desktopApp: 'prefer'`, or `null` when it replaced none.
+ */
+export function desktopReplacedServer(): string | null {
+  return desktopReplacedServerUrl;
+}
+
+/**
+ * The `.env` file the last `resolveOptions` call took options from, and the
+ * variables it took; null when it took none. The reporter logs it in verbose mode.
+ */
+export function usedDotEnv(): DotEnvUse | null {
+  return dotEnvUse;
+}
+
+/**
  * Merge raw user options with defaults, reading from `PIWI_*` env vars when
- * options are not provided, and falling back to the running desktop app when
- * nothing points at a server at all.
+ * options are not provided, then from the `.env` file in `configDir` for the
+ * connection, and turning to the running desktop app as `desktopApp` says:
+ * by default only when nothing points at a server at all.
  *
  * Env semantics: env vars fill in values the caller didn't provide (fallback).
  * They're applied to `raw` *before* the `DEFAULTS` merge so a built-in default
  * never masks an env var (`PIWI_PROJECT_NAME` would otherwise be masked by the
  * `default-project` default).
  *
- * `PIWI_VERBOSE` wins over both the default *and* an explicit user option.
+ * `configDir` is the Playwright config's folder. The reporter and the global
+ * setup both pass it, so the two processes read the same file and resolve the
+ * same connection; without it, no `.env` file is read.
+ *
+ * `PIWI_VERBOSE` and `PIWI_DESKTOP_APP` win over both the default *and* an
+ * explicit user option.
  */
-export function resolveOptions(raw: Record<string, any>): PiwiDashboardOptions {
+export function resolveOptions(raw: Record<string, any>, configDir?: string): PiwiDashboardOptions {
   const env = process.env;
   const mergedRaw: Record<string, any> = { ...raw };
 
@@ -307,19 +371,46 @@ export function resolveOptions(raw: Record<string, any>): PiwiDashboardOptions {
     }
   }
 
-  // Last resort, below every option and env var: adopt the desktop app running
-  // on this machine. URL and token move together and only when *neither* is
-  // configured anywhere else, so an explicit config or a CI secret is never
-  // redirected at the local app, and a hosted `serverUrl` can never be paired
-  // with the desktop's local token.
+  // Below the options and the environment: the connection the config folder's
+  // `.env` records, one variable at a time, as if the file were loaded into the
+  // environment without overriding it. An empty value is ignored, as in the
+  // environment.
+  dotEnvUse = null;
+  if (configDir) {
+    const file = path.join(configDir, '.env');
+    const dotEnv = readDotEnv(file);
+    const keys: string[] = [];
+    for (const option of DOTENV_OPTIONS) {
+      const value = dotEnv[PIWI_ENV_KEYS[option]];
+      if (mergedRaw[option] !== undefined || !value) continue;
+      mergedRaw[option] = value;
+      keys.push(PIWI_ENV_KEYS[option]);
+    }
+    if (keys.length > 0) dotEnvUse = { file, keys };
+  }
+
+  // Below everything else: the desktop app running on this machine. URL and
+  // token always move together, so a hosted `serverUrl` is never paired with
+  // the desktop's local token, nor the desktop with a hosted credential.
+  // `'fallback'` adopts it only when *neither* is configured anywhere else, so
+  // an explicit config, a `.env` value or a CI secret is never redirected;
+  // `'prefer'` also sets a configured server aside for it outside CI.
   desktopDiscovered = false;
+  desktopReplacedServerUrl = null;
+  const mode = desktopAppMode(mergedRaw.desktopApp, env[PIWI_ENV_KEYS.desktopApp]);
+  mergedRaw.desktopApp = mode;
   const serverUrlUnset = mergedRaw.serverUrl === undefined;
   const apiKeyUnset = mergedRaw.apiKey === undefined || mergedRaw.apiKey === null;
-  if (serverUrlUnset && apiKeyUnset) {
+  const nothingConfigured = serverUrlUnset && apiKeyUnset;
+  const preferLocally = mode === 'prefer' && !detectCi(env);
+  if (mode !== 'off' && (nothingConfigured || preferLocally)) {
     const desktop = readDesktopConfig(env[PIWI_DESKTOP_CONFIG_ENV] || defaultDesktopConfigPath());
     if (desktop) {
+      if (!serverUrlUnset && mergedRaw.serverUrl !== desktop.url) desktopReplacedServerUrl = mergedRaw.serverUrl;
       mergedRaw.serverUrl = desktop.url;
       mergedRaw.apiKey = desktop.token;
+      mergedRaw.username = null;
+      mergedRaw.password = null;
       desktopDiscovered = true;
     }
   }
@@ -329,10 +420,14 @@ export function resolveOptions(raw: Record<string, any>): PiwiDashboardOptions {
   const coverage: CoverageOptions = { ...mergedRaw.coverage };
   const coverageBrowser = env[PIWI_ENV_KEYS.coverageBrowser];
   const coverageServer = env[PIWI_ENV_KEYS.coverageServer];
+  const coverageCss = env[PIWI_ENV_KEYS.coverageCss];
   if (coverage.browser === undefined && coverageBrowser)
     coverage.browser = coverageBrowser as CoverageOptions['browser'];
   if (coverage.server === undefined && coverageServer) coverage.server = coverageServer as CoverageOptions['server'];
-  if (coverage.browser !== undefined || coverage.server !== undefined) mergedRaw.coverage = coverage;
+  if (coverage.css === undefined && coverageCss) coverage.css = coverageCss as CoverageOptions['css'];
+  if (coverage.browser !== undefined || coverage.server !== undefined || coverage.css !== undefined) {
+    mergedRaw.coverage = coverage;
+  }
 
   // So are external IDs.
   type ExternalIdOptions = NonNullable<PiwiDashboardOptions['externalId']>;
@@ -355,12 +450,17 @@ export function resolveOptions(raw: Record<string, any>): PiwiDashboardOptions {
 /**
  * Write the options that the isolated `global-setup-module` process needs into
  * `PIWI_*` env vars. `wrapConfig` calls this so the global setup (which runs
- * `resolveOptions({})` in a separate module) picks up the same server/auth
- * config the reporter instance uses. Only writes values that are actually set.
+ * `resolveOptions` in a separate module) picks up the same server/auth
+ * config the reporter instance uses. Only writes values that are actually set:
+ * one the config leaves unset, both processes take from the environment or the
+ * config folder's `.env` on their own, at the same precedence.
  */
 export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   const env = process.env;
   if (options.serverUrl !== undefined) env[PIWI_ENV_KEYS.serverUrl] = options.serverUrl;
+  // `PIWI_DESKTOP_APP` overrides the option, so one already set is kept.
+  if (options.desktopApp !== undefined && !env[PIWI_ENV_KEYS.desktopApp])
+    env[PIWI_ENV_KEYS.desktopApp] = options.desktopApp;
   if (options.projectName !== undefined) env[PIWI_ENV_KEYS.projectName] = options.projectName!;
   if (options.verbose !== undefined) env[PIWI_ENV_KEYS.verbose] = String(options.verbose);
   if (options.apiKey) env[PIWI_ENV_KEYS.apiKey] = options.apiKey;
@@ -400,9 +500,11 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.collectPerformanceMetrics === false) {
     env[PIWI_ENV_KEYS.coverageBrowser] = 'off';
     env[PIWI_ENV_KEYS.coverageServer] = 'off';
+    env[PIWI_ENV_KEYS.coverageCss] = 'off';
   } else {
     if (options.coverage?.browser !== undefined) env[PIWI_ENV_KEYS.coverageBrowser] = options.coverage.browser;
     if (options.coverage?.server !== undefined) env[PIWI_ENV_KEYS.coverageServer] = options.coverage.server;
+    if (options.coverage?.css !== undefined) env[PIWI_ENV_KEYS.coverageCss] = options.coverage.css;
   }
   // Server-trace capture rides the same bridge: off when either flag disables
   // it, explicit true otherwise (unset keeps the fixture's default-on).

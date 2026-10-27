@@ -7,7 +7,7 @@ lang: en-US
 # License
 
 Piwi is fair source. The dashboard, the server, the desktop app and the browser extension are published under the
-[Functional Source License, Version 1.1, MIT Future License](https://github.com/PiwiTests/platform/blob/main/LICENSE)
+[Functional Source License, Version 1.1, MIT Future License](https://github.com/PiwiTests/piwi/blob/main/LICENSE)
 (FSL-1.1-MIT). The parts that run inside your own projects are MIT.
 
 ## What you can do
@@ -51,7 +51,7 @@ Releases up to v0.39.x were published under the MIT License, and stay under it.
 ## Questions
 
 Not sure whether what you have in mind is a competing use? Ask in
-[GitHub Discussions](https://github.com/PiwiTests/platform/discussions) before you build it.
+[GitHub Discussions](https://github.com/PiwiTests/piwi/discussions) before you build it.
 
 ## Related
 - [Privacy & data flow](./privacy) — what leaves your server, and what never does

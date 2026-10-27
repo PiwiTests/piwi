@@ -8,15 +8,14 @@ import { extractIdeEntries, renderHtml, renderMarkdown } from '../../../../scrip
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const script = join(repoRoot, 'scripts', 'ide-changelog.mjs');
 
-const commitUrl = (hash: string) =>
-  `https://github.com/PiwiTests/platform/commit/${hash}0000000000000000000000000000000`;
+const commitUrl = (hash: string) => `https://github.com/PiwiTests/piwi/commit/${hash}0000000000000000000000000000000`;
 const link = (hash: string) => `[${hash}](${commitUrl(hash)})`;
 const entry = (scope: string, text: string, ...hashes: string[]) =>
   `* **${scope}:** ${text} (${hashes.map(link).join(', ')})`;
 
-const HEADING_58 = '## [0.58.0](https://github.com/PiwiTests/platform/compare/v0.57.0...v0.58.0) (2026-10-21)';
-const HEADING_57 = '## [0.57.0](https://github.com/PiwiTests/platform/compare/v0.56.0...v0.57.0) (2026-10-20)';
-const HEADING_41 = '## [0.41.0](https://github.com/PiwiTests/platform/compare/v0.40.0...v0.41.0) (2026-09-28)';
+const HEADING_58 = '## [0.58.0](https://github.com/PiwiTests/piwi/compare/v0.57.0...v0.58.0) (2026-10-21)';
+const HEADING_57 = '## [0.57.0](https://github.com/PiwiTests/piwi/compare/v0.56.0...v0.57.0) (2026-10-20)';
+const HEADING_41 = '## [0.41.0](https://github.com/PiwiTests/piwi/compare/v0.40.0...v0.41.0) (2026-09-28)';
 
 // Two release-please versions and a polished one (dash bullets, `####` topics, a `<details>` tail).
 const CHANGELOG = `# Changelog

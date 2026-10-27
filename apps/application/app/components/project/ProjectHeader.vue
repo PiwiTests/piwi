@@ -63,6 +63,7 @@ const failureFigures = computed(() => {
   <div
     class="rounded-lg border border-default bg-default p-3 sm:p-4 max-sm:rounded-none max-sm:border-x-0"
     data-shot="project-header"
+    data-tour="project-header"
   >
     <div class="flex items-start justify-between gap-2">
       <h1 class="min-w-0 break-words text-lg sm:text-xl font-semibold text-highlighted">{{ title }}</h1>

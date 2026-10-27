@@ -39,6 +39,7 @@ function change(kind: AnalyticsMoverKind, m: AnalyticsMover): string {
     :title="title ?? 'Movers'"
     :subtitle="movers?.comparisonLabel ? `Against ${movers.comparisonLabel.toLowerCase()}` : undefined"
     help="analytics.movers"
+    data-tour="analytics-movers"
     data-shot="analytics-movers"
   >
     <LoadingState v-if="pending" />

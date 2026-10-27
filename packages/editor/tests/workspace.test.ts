@@ -2,7 +2,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { contextLabel, findPlaywrightRoots, playwrightConfigFile } from '../src/workspace';
+import { execFileSync } from 'node:child_process';
+import { contextLabel, findPlaywrightRoots, mergeBase, playwrightConfigFile } from '../src/workspace';
 
 let dir = '';
 
@@ -43,5 +44,39 @@ describe('the name of a Playwright config’s folder', () => {
     // The deepest workspace folder holding it.
     expect(contextLabel(path.join(shop, 'apps', 'e2e'), [shop, path.join(shop, 'apps')])).toBe('apps/e2e');
     expect(contextLabel(path.join(dir, 'elsewhere'), [shop])).toBe(path.join(dir, 'elsewhere'));
+  });
+});
+
+describe('where a branch left the default branch', () => {
+  test('is the merge base with origin’s copy of it, else with the local one, else unknown', async () => {
+    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-base-')));
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], {
+        cwd: repo,
+        encoding: 'utf-8',
+      }).trim();
+    try {
+      git('init', '-q', '-b', 'main');
+      fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n');
+      git('add', '.');
+      git('commit', '-q', '-m', 'one');
+      const forked = git('rev-parse', 'HEAD');
+      git('checkout', '-q', '-b', 'feature');
+      fs.writeFileSync(path.join(repo, 'a.txt'), 'b\n');
+      git('commit', '-q', '-am', 'two');
+      git('checkout', '-q', 'main');
+      fs.writeFileSync(path.join(repo, 'b.txt'), 'c\n');
+      git('add', '.');
+      git('commit', '-q', '-m', 'three');
+      git('checkout', '-q', 'feature');
+      expect(await mergeBase(repo, 'main')).toBe(forked);
+      expect(await mergeBase(repo, 'release')).toBeNull();
+      expect(await mergeBase(repo, '--output=x')).toBeNull();
+      // origin's copy comes first.
+      git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'feature'));
+      expect(await mergeBase(repo, 'main')).toBe(git('rev-parse', 'HEAD'));
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
   });
 });

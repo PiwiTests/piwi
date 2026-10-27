@@ -103,6 +103,7 @@ defineExpose({ reveal: () => card.value?.reveal() });
     :export-data="exportData"
     fold-key="cluster-occurrence-trend"
     data-shot="cluster-occurrence-trend"
+    data-tour="cluster-occurrence-trend"
   >
     <template #folded>{{ subtitle }}</template>
     <template #actions>

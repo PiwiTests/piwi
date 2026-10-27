@@ -3,7 +3,7 @@ import type { TourCopyShape } from './types';
 /**
  * The guided tour in English, the source language: every other copy file has
  * exactly its keys, which the compiler checks. `{count}` is filled with
- * `fillTourText`; `{{current}}` and `{{total}}` are driver.js's own progress
+ * `fillGuideText`; `{{current}}` and `{{total}}` are driver.js's own progress
  * placeholders. A dashboard label is `**bold**`, as the screen spells it.
  */
 export const EN_COPY = {

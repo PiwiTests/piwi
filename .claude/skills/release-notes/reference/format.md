@@ -1,6 +1,6 @@
 # Release-notes format
 
-The house style, distilled from [v0.26.0](https://github.com/PiwiTests/platform/releases/tag/v0.26.0)
+The house style, distilled from [v0.26.0](https://github.com/PiwiTests/piwi/releases/tag/v0.26.0)
 — the reference release. Match its shape, tone, and density.
 
 ## Structure
@@ -15,7 +15,7 @@ A release body has these parts, in order. Skip a part only when there is genuine
    > step stream live as it happens.
 
 2. **Full diff link** — one line:
-   > `**Full diff:** [v0.25.0…v0.26.0](https://github.com/PiwiTests/platform/compare/v0.25.0...v0.26.0)`
+   > `**Full diff:** [v0.25.0…v0.26.0](https://github.com/PiwiTests/piwi/compare/v0.25.0...v0.26.0)`
 
    Use the `…` (ellipsis) in the label and `...` (three dots) in the URL. The compare URL is already
    in the `CHANGELOG.md` section header — copy it from there.
@@ -96,7 +96,7 @@ Wrap code, flags, env vars and identifiers in backticks (`piwi run --fail-fast`,
 ```markdown
 <One-sentence narrative intro.>
 
-**Full diff:** [vPREV…vCUR](https://github.com/PiwiTests/platform/compare/vPREV...vCUR)
+**Full diff:** [vPREV…vCUR](https://github.com/PiwiTests/piwi/compare/vPREV...vCUR)
 
 ## ✨ Highlights
 

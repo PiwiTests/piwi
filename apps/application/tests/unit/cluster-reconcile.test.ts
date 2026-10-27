@@ -116,9 +116,8 @@ beforeEach(async () => {
   adjudicator.result = null;
   adjudicator.calls.length = 0;
 
-  // File-backed rather than :memory: — @libsql/client hands its connection to
-  // an interactive transaction (mergeFailureClusters runs one) and lazily
-  // reopens for the next query, and a reopened :memory: db would be empty.
+  // A file database: libSQL runs a transaction (mergeFailureClusters runs one)
+  // on its own connection, which an in-memory database does not share.
   tmpDir = mkdtempSync(join(tmpdir(), 'piwi-reconcile-'));
   client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
   db = drizzle(client, { schema });

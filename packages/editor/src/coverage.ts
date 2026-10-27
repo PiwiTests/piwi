@@ -10,7 +10,9 @@ import { normalizeLineRanges, type LineRange } from '@piwitests/core/coverage';
 import { itemsOfFile, sameFilePath } from '@piwitests/core/locator-break';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
-import { placeLine } from './analysis.js';
+import { filePageTarget, fileRouteTarget } from '@piwitests/core/file-routes';
+import type { LocatorIndex } from '@piwitests/core/locator-index';
+import { pageSummary, placeLine, testsReaching } from './analysis.js';
 import type { CodeIndex, CoverageFragment, FileCoverage } from './piwi-client.js';
 import type { CoverageResult, CoverageState, ExecutedSpan, LineSpan } from './protocol.js';
 import { blobText } from './workspace.js';
@@ -32,6 +34,49 @@ const BOM = '\uFEFF';
  */
 export const COVERAGE_MARKS_EXPLAINED =
   '_The bar at the left of a line: teal, a test ran it; slate, it is executable and no test runs it; dashed amber, it changed since the coverage run._';
+
+/** What the mark of an uncovered change means, as the hover on such a line ends. */
+export const UNCOVERED_EXPLAINED =
+  '_The orange bar at the left of a line: it changed since the default branch, and no test reaches this file._';
+
+/**
+ * Whether the changes of an application file are uncovered, by the rule the pull request's change coverage reads:
+ * Piwi can observe the file and no test reaches it. Observed: a page by the file-routing convention while the locator
+ * index knows the pages tests visit, a server route by the convention while the code index maps routes to tests, or
+ * executable lines a run's coverage recorded. Reached: through code reach or a route (`testsReaching`), by a test the
+ * coverage names, or by a test acting on its page. Never without a code index or with one cut short: neither can say.
+ */
+export function uncoveredFile(
+  codeIndex: CodeIndex | null,
+  index: LocatorIndex | null,
+  repoRelative: string,
+  coverage: FileCoverage | null,
+): boolean {
+  if (!codeIndex || codeIndex.truncated) return false;
+  if (testsReaching(codeIndex, repoRelative).length || coverage?.tests.length) return false;
+  if (index && pageSummary(index, repoRelative)) return false;
+  const page = !!filePageTarget(repoRelative) && !!index?.pages?.length;
+  const route = !!fileRouteTarget(repoRelative) && codeIndex.reach.some((r) => r.via === 'route');
+  return page || route || !!coverage?.executable?.length;
+}
+
+/**
+ * The lines of a file as it stands that its text at the change's base lacks (`before`; null for a file the base does
+ * not hold), as spans of 0-based lines: those its diff adds, blank ones left out.
+ */
+export function changedSince(before: string | null, after: string, path: string): LineSpan[] {
+  const added = new Set<number>();
+  if (before === null) {
+    after.split(/\r?\n/).forEach((text, i) => {
+      if (text.trim()) added.add(i + 1);
+    });
+  } else {
+    for (const hunk of diffLines(path, before, after).hunks) {
+      for (const line of hunk.added) if (line.text.trim()) added.add(line.line);
+    }
+  }
+  return spans(added, () => 0).map(({ start, end }) => ({ start, end }));
+}
 
 /**
  * The blob ids a text can have in git: its bytes as they are, and with CRLF line endings stored as LF (`core.autocrlf`,

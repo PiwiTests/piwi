@@ -49,7 +49,7 @@ is none of these, `webServer` and `globalSetup` servers alike.
   machine without a GPU. `trace: 'on-first-retry'` and `video: 'on-first-retry'` record only what a retry needs.
 - **Disk in use far above the artifacts**: traces are written and zipped in place; a green `retain-on-failure` run
   writes them all, then deletes them.
-- **A large web server share**: a development server compiles on demand; serving a production build in CI is cheaper.
+- **A large web server share**: a development server compiles on demand; serve a production build in CI.
 
 ## Platforms
 
@@ -75,18 +75,20 @@ browser processes used the most CPU.
 
 The run's **Timeline** tab draws the same samples on the tests' time axis, above the worker rows: the machine's
 **CPU** busy share, the **memory** the run's processes held, and, with the capture fixtures, the **pages** open in the
-workers. Hover a track for its values; a line down the rows marks the running tests. Each track can be turned off
-from the **Resources** menu, a choice kept per browser. A sharded run draws one set of tracks above each shard's
-workers, each on its own machine.
+workers. Hover a track for its values and the tests running then; the **Resources** menu turns each track off, a
+choice kept per browser. A sharded run draws one set of tracks per shard, each from its own machine.
+
+While someone watches a running run, the tracks fill in **live** every five seconds; leak verdicts wait for its end.
 
 The same menu draws one metric **under each worker** row, on one scale for all: its open pages, the CPU and
-memory of the worker and the browsers it started, from the panel's samples, or the share of each test its browsers
-spent waiting for a CPU (Linux). The sampler tells workers apart through the capture fixtures; for a worker it
-did not read, or a run from an older reporter, each test's own cost is drawn across its bar instead.
+memory of the worker and its browsers, or the share of each test its browsers spent waiting for a CPU (Linux). The
+sampler tells workers apart through the capture fixtures; otherwise, or from an older reporter, each test's own cost
+is drawn across its bar.
 
-With the capture fixtures, each execution also carries what its test cost, on its Performance tab: the CPU of the
-worker and of the browser processes it started, the largest of those, how busy the worker's event loop was, and the
-pages it found open and left open. A test that found pages open paid for what an earlier one left.
+With the capture fixtures, each execution's Performance tab shows what its test cost: the CPU of the worker and of
+its browser processes, the largest of those, the worker's event loop, and the pages it found and left open. A
+failed execution's **Timeline** tab draws, behind its **Resources** switch, the CPU, memory and open pages of the
+test's worker under its lanes, with the failure line across them.
 
 ## Cost
 

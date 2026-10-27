@@ -310,7 +310,7 @@ async function handleInviteUser(user: UserListItem) {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6" data-tour="users-page">
     <UAlert
       v-if="!authEnabled"
       icon="i-lucide-info"
@@ -326,6 +326,7 @@ async function handleInviteUser(user: UserListItem) {
       :count="users.length"
       help="settings.users"
       data-shot="users-table"
+      data-tour="users-list"
     >
       <template #actions>
         <UButton
@@ -333,6 +334,7 @@ async function handleInviteUser(user: UserListItem) {
           label="Add user"
           icon="i-lucide-user-plus"
           size="sm"
+          data-tour="add-user"
           @click="isAddUserModalOpen = true"
         />
       </template>
@@ -446,6 +448,7 @@ async function handleInviteUser(user: UserListItem) {
             <UserRowActions
               :user="row.original"
               :can-manage="isAdmin"
+              data-tour="user-row-actions"
               :can-manage-keys="canManageApiKeys(row.original)"
               :inviting="invitingUserId === row.original.id"
               @invite="handleInviteUser(row.original)"

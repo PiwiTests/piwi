@@ -4,6 +4,8 @@ import * as path from 'node:path';
 import {
   breakpointsNotice,
   callEndLine,
+  caseOfCall,
+  withoutComments,
   flakeLabLens,
   headedCommand,
   locatorChainOnLine,
@@ -11,6 +13,7 @@ import {
   pauseAtValue,
   pickEditOnLine,
   placeLine,
+  testCalls,
 } from '../src/analysis';
 import type { FlakeLabEntry } from '../src/piwi-client';
 
@@ -353,5 +356,75 @@ describe('where a locator chain completes', () => {
     ]) {
       expect(locatorCompletionSite('', 0, before), before).toBeNull();
     }
+  });
+});
+
+describe('testCalls', () => {
+  test('reads each test with the titled describe blocks around it, outermost first', () => {
+    const lines = [
+      "test('alone', async () => {});",
+      "test.describe('cart', () => {",
+      "  test.describe.configure({ mode: 'serial' });",
+      "  test.describe.serial('as a guest', () => {",
+      "    test.only('pays', async ({ page }) => {",
+      "      await page.goto('/cart');",
+      '    });',
+      '  });',
+      '  test.skip(`empties it`, async () => {});',
+      '});',
+      "test('after', async () => {});",
+    ];
+    expect(testCalls(lines)).toEqual([
+      { line: 0, endLine: 0, title: 'alone', suite: [] },
+      { line: 4, endLine: 6, title: 'pays', suite: ['cart', 'as a guest'] },
+      { line: 8, endLine: 8, title: 'empties it', suite: ['cart'] },
+      { line: 10, endLine: 10, title: 'after', suite: [] },
+    ]);
+  });
+
+  test('ignores test.step and a describe block without a title', () => {
+    const lines = [
+      'test.describe(() => {',
+      "  test('untitled group', async () => {",
+      "    await test.step('opens', async () => {});",
+      '  });',
+      '});',
+    ];
+    expect(testCalls(lines)).toEqual([{ line: 1, endLine: 3, title: 'untitled group', suite: [] }]);
+  });
+});
+
+describe('caseOfCall', () => {
+  const cases = [
+    { id: 1, title: 'pays', suitePath: 'cart' },
+    { id: 2, title: 'pays', suitePath: 'cart\x1fas a guest' },
+    { id: 3, title: 'refunds', suitePath: null },
+  ];
+
+  test('takes the case of the same title in the same describe blocks, else one whose blocks the catalog does not say', () => {
+    expect(caseOfCall(cases, { title: 'pays', suite: ['cart', 'as a guest'] })?.id).toBe(2);
+    expect(caseOfCall(cases, { title: 'pays', suite: ['cart'] })?.id).toBe(1);
+    // A test of that title in other describe blocks is another test: it has no case yet.
+    expect(caseOfCall(cases, { title: 'pays', suite: ['checkout'] })).toBeUndefined();
+    expect(caseOfCall(cases, { title: 'refunds', suite: [] })?.id).toBe(3);
+    expect(caseOfCall(cases, { title: 'refunds', suite: ['returns'] })?.id).toBe(3);
+    expect(caseOfCall(cases, { title: 'ships', suite: [] })).toBeUndefined();
+  });
+});
+
+describe('withoutComments', () => {
+  test('blanks line and block comments, keeping the lines, a URL and the code', () => {
+    const text = [
+      '// await page.pause();',
+      "await page.goto('https://shop.test/cart'); // to the cart",
+      '/* await page.pause();',
+      '   still a comment */ await page.pause();',
+    ].join('\n');
+    expect(withoutComments(text).split('\n')).toEqual([
+      '',
+      "await page.goto('https://shop.test/cart'); ",
+      ' '.repeat('/* await page.pause();'.length),
+      '                      await page.pause();',
+    ]);
   });
 });

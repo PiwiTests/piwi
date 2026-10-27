@@ -15,6 +15,11 @@
 // Combined with the loopback-only bind, this keeps the bundled server reachable
 // only by the app itself and by tools the user has given the token to — not by
 // other local processes or web pages open in the user's browser.
+//
+// One route takes another token instead: an assistant answer's MCP endpoint,
+// which the Claude Code CLI this server starts calls with the token minted for
+// that answer, never the desktop token (see utils/assistant/turn-token.ts).
+import { presentsAssistantTurnToken } from '../utils/assistant/turn-token';
 import { isOpenDesktopRoute, presentsDesktopToken } from '../utils/desktop-access';
 
 export default defineEventHandler((event) => {
@@ -25,6 +30,8 @@ export default defineEventHandler((event) => {
   if (!path.startsWith('/api/') && !path.startsWith('/mcp')) return;
   // The readiness probe, and Piwi Picker's pairing start and poll: see isOpenDesktopRoute.
   if (isOpenDesktopRoute(event.method, path)) return;
+  // A running answer's MCP endpoint, on that answer's token, from this machine.
+  if (presentsAssistantTurnToken(event)) return;
 
   if (presentsDesktopToken(event, token)) return;
 

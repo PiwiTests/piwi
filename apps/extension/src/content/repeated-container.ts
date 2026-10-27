@@ -205,16 +205,19 @@ export function repeatedContainers(el: Element, options: ContainerOptions): Repe
     return null;
   };
 
-  /** `repeats` for `node`: each of the others is walked up to the child of `node`'s parent holding it. */
+  /**
+   * `repeats` for `node`: each of the others inside `node`'s parent (the parent itself, which a loose locator can
+   * find too, left out) is walked up to the child of that parent holding it.
+   */
   const repeatsAmong = (node: Element, siblings: readonly Element[]) => {
     const parent = node.parentNode;
     const kin = new Set<Node>(siblings);
     return (others: readonly Element[]): boolean =>
       others.some((other) => {
-        if (!parent || node.contains(other) || !parent.contains(other)) return false;
-        let child: Node = other;
-        while (child.parentNode !== parent) child = child.parentNode!;
-        return kin.has(child);
+        if (!parent || other === parent || node.contains(other) || !parent.contains(other)) return false;
+        let child: Node | null = other;
+        while (child && child.parentNode !== parent) child = child.parentNode;
+        return !!child && kin.has(child);
       });
   };
 

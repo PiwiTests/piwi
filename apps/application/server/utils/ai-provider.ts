@@ -1,6 +1,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { getAppSetting } from './app-settings';
 import { callClaudeCli, streamClaudeCli } from './ai-claude-cli';
+import { callCodexCli, streamCodexCli } from './ai-codex-cli';
+import { callDeepseekCli, streamDeepseekCli } from './ai-deepseek-cli';
 import { decryptSecret, getEncryptionKey } from './crypto';
 import { overlayStoredRoles, rolesFromLegacy, storedRoles, type RawStoredAi, type RawStoredRole } from './ai-settings';
 import type { AiProvider, AiConfig, AiModelRole, ResolvedAiRole } from '~~/types/api';
@@ -20,7 +22,7 @@ function isValidRole(role: ResolvedAiRole, kind: RoleKind): boolean {
   if (role.provider === 'anthropic') return Boolean(role.apiKey);
   if (role.provider === 'openai') return Boolean(role.baseUrl && role.model);
   // claude-cli needs no key, base URL or model (the CLI supplies its own default model).
-  if (role.provider === 'claude-cli') return true;
+  if (role.provider === 'claude-cli' || role.provider === 'codex-cli' || role.provider === 'deepseek-cli') return true;
   return false;
 }
 
@@ -34,7 +36,8 @@ function makeRole(
   temperature?: number | null,
 ): ResolvedAiRole | null {
   const p = (provider || '') as AiProvider;
-  if (p !== 'anthropic' && p !== 'openai' && p !== 'claude-cli') return null;
+  if (p !== 'anthropic' && p !== 'openai' && p !== 'claude-cli' && p !== 'codex-cli' && p !== 'deepseek-cli')
+    return null;
   const role: ResolvedAiRole = {
     provider: p,
     apiKey: apiKey || '',
@@ -45,7 +48,7 @@ function makeRole(
   return isValidRole(role, kind) ? role : null;
 }
 
-const ROLE_ORDER: AiModelRole[] = ['diagnosis', 'research', 'embedding'];
+const ROLE_ORDER: AiModelRole[] = ['diagnosis', 'research', 'embedding', 'assistant'];
 
 /**
  * Resolve a role map, following `reuse` links. `readKey` turns each role's
@@ -55,7 +58,12 @@ function resolveRoles(
   roles: Partial<Record<AiModelRole, RawStoredRole>>,
   readKey: (key?: string) => string = (enc) => (enc ? decryptSecret(enc, getEncryptionKey()) : ''),
 ): AiConfig['roles'] {
-  const out: Record<AiModelRole, ResolvedAiRole | null> = { diagnosis: null, research: null, embedding: null };
+  const out: Record<AiModelRole, ResolvedAiRole | null> = {
+    diagnosis: null,
+    research: null,
+    embedding: null,
+    assistant: null,
+  };
 
   for (const role of ROLE_ORDER) {
     const kind: RoleKind = role === 'embedding' ? 'embedding' : 'chat';
@@ -69,20 +77,19 @@ function resolveRoles(
     }
   }
 
-  return { diagnosis: out.diagnosis!, research: out.research, embedding: out.embedding };
+  return { diagnosis: out.diagnosis!, research: out.research, embedding: out.embedding, assistant: out.assistant };
 }
 
 /**
- * Assemble the full AiConfig from a resolved diagnosis role plus optional
- * research/embedding roles. Returns null when the diagnosis role is unusable.
+ * Assemble the full AiConfig from the resolved roles. Returns null when the
+ * diagnosis role is unusable.
  */
 function assembleConfig(
-  diagnosis: ResolvedAiRole | null,
-  research: ResolvedAiRole | null,
-  embedding: ResolvedAiRole | null,
+  roles: Record<AiModelRole, ResolvedAiRole | null>,
   autoDiagnose: boolean,
   source: 'env' | 'settings',
 ): AiConfig | null {
+  const { diagnosis, research, embedding, assistant } = roles;
   if (!diagnosis) return null;
   return {
     provider: diagnosis.provider,
@@ -92,7 +99,7 @@ function assembleConfig(
     temperature: diagnosis.temperature,
     autoDiagnose,
     source,
-    roles: { diagnosis, research, embedding },
+    roles: { diagnosis, research, embedding, assistant },
   };
 }
 
@@ -111,18 +118,11 @@ export async function resolveAiConfig(db: DbClient): Promise<AiConfig | null> {
   if (envAi?.provider) {
     // Environment keys are plain text; stored ones are decrypted.
     const roles = resolveRoles(overlayStoredRoles(rolesFromLegacy(envAi), stored), (key) => key ?? '');
-    return assembleConfig(
-      roles.diagnosis,
-      roles.research,
-      roles.embedding,
-      String(envAi.autoDiagnose) === 'true',
-      'env',
-    );
+    return assembleConfig(roles, String(envAi.autoDiagnose) === 'true', 'env');
   }
 
   if (!stored) return null;
-  const roles = resolveRoles(storedRoles(stored));
-  return assembleConfig(roles.diagnosis, roles.research, roles.embedding, Boolean(stored.autoDiagnose), 'settings');
+  return assembleConfig(resolveRoles(storedRoles(stored)), Boolean(stored.autoDiagnose), 'settings');
 }
 
 const endpointOf = (baseUrl: string | null | undefined) => (baseUrl ?? '').trim().replace(/\/+$/, '').toLowerCase();
@@ -144,6 +144,11 @@ export function storedKeyFor(
 /** Resolved config for a given role, or null when that role is unconfigured. */
 export function resolveAiRole(config: AiConfig, role: AiModelRole): ResolvedAiRole | null {
   return config.roles[role];
+}
+
+/** The model the assistant answers with: its own role when set, else the diagnosis role's provider, key and model. */
+export function assistantRole(config: AiConfig): ResolvedAiRole {
+  return config.roles.assistant ?? config.roles.diagnosis;
 }
 
 export interface AiAttachedImage {
@@ -256,6 +261,8 @@ export async function callAiProvider(config: ResolvedAiRole, opts: AiCallOptions
     if (config.provider === 'anthropic') {
       return await callAnthropic(config, opts);
     }
+    if (config.provider === 'deepseek-cli') return await callDeepseekCli(config, opts);
+    if (config.provider === 'codex-cli') return await callCodexCli(config, opts);
     if (config.provider === 'claude-cli') {
       return await callClaudeCli(config, opts);
     }
@@ -269,7 +276,7 @@ export async function callAiProvider(config: ResolvedAiRole, opts: AiCallOptions
 /** The Anthropic SDK, loaded by the first Anthropic call. */
 let anthropicSdk: typeof import('@anthropic-ai/sdk') | null = null;
 
-async function anthropicClient(config: ResolvedAiRole): Promise<Anthropic> {
+export async function anthropicClient(config: ResolvedAiRole): Promise<Anthropic> {
   anthropicSdk ??= await import('@anthropic-ai/sdk');
   return new anthropicSdk.default({
     apiKey: config.apiKey,
@@ -363,12 +370,10 @@ type OAIUsage = {
 function openAiUserContent(opts: AiCallOptions, attempt: OpenAiAttempt): string | OAIPart[] {
   return attempt.withImages && opts.images?.length
     ? [
-        ...opts.images.map(
-          (img): OAIPart => ({
-            type: 'image_url',
-            image_url: { url: `data:${img.mediaType};base64,${img.data}` },
-          }),
-        ),
+        ...opts.images.map((img): OAIPart => ({
+          type: 'image_url',
+          image_url: { url: `data:${img.mediaType};base64,${img.data}` },
+        })),
         { type: 'text', text: opts.user },
       ]
     : opts.user;
@@ -443,7 +448,7 @@ function rejectsMaxTokens(status: number, body: string, attempt: OpenAiAttempt):
  * only know the older mode. Returns the last response, plus its body whenever
  * that response failed (an ok response is left unread for the caller).
  */
-async function postOpenAiWithFallbacks(
+export async function postOpenAiWithFallbacks(
   send: (attempt: OpenAiAttempt) => Promise<Response>,
   opts: AiCallOptions,
   model: string,
@@ -538,6 +543,10 @@ export async function* streamAiProvider(config: ResolvedAiRole, opts: AiCallOpti
   try {
     if (config.provider === 'anthropic') {
       yield* streamAnthropic(config, opts);
+    } else if (config.provider === 'deepseek-cli') {
+      yield* streamDeepseekCli(config, opts);
+    } else if (config.provider === 'codex-cli') {
+      yield* streamCodexCli(config, opts);
     } else if (config.provider === 'claude-cli') {
       yield* streamClaudeCli(config, opts);
     } else {

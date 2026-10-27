@@ -827,22 +827,20 @@ async function hydrateExperiments(db: DrizzleDB, rows: ExperimentRow[]): Promise
     const arms = armRows
       .filter((a) => a.experimentId === r.id)
       .sort((a, b) => a.position - b.position || a.id - b.id)
-      .map(
-        (a): FlakeArmRecord => ({
-          id: a.id,
-          key: a.armKey,
-          label: a.label,
-          suspectId: a.suspectId ?? null,
-          conditions: (Array.isArray(a.conditions) ? a.conditions : []) as PlanCondition[],
-          runs: a.runs,
-          matchingFailures: a.matchingFailures,
-          otherFailures: a.otherFailures,
-          discardedRounds: a.discardedRounds,
-          stoppedEarly: Boolean(a.stoppedEarly),
-          pValue: a.pValue ?? null,
-          verdict: (a.verdict as FlakeArmVerdictValue | null) ?? null,
-        }),
-      );
+      .map((a): FlakeArmRecord => ({
+        id: a.id,
+        key: a.armKey,
+        label: a.label,
+        suspectId: a.suspectId ?? null,
+        conditions: (Array.isArray(a.conditions) ? a.conditions : []) as PlanCondition[],
+        runs: a.runs,
+        matchingFailures: a.matchingFailures,
+        otherFailures: a.otherFailures,
+        discardedRounds: a.discardedRounds,
+        stoppedEarly: Boolean(a.stoppedEarly),
+        pValue: a.pValue ?? null,
+        verdict: (a.verdict as FlakeArmVerdictValue | null) ?? null,
+      }));
     const v = r.verifiesArmId != null ? verified.get(r.verifiesArmId) : undefined;
     return {
       id: r.id,

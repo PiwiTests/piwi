@@ -1,10 +1,12 @@
 import { getDatabase } from '../../database';
 import {
   capDiagnosisVersions,
+  DEFAULT_ASSISTANT_RETENTION_DAYS,
   DEFAULT_REPORT_RETENTION_DAYS,
   deleteRunsOlderThan,
   pruneHealActions,
   pruneIntegrationActions,
+  pruneAssistantConversations,
   pruneNotificationDeliveries,
   pruneReportSnapshots,
   reclaimSpace,
@@ -31,7 +33,7 @@ export default defineTask({
   meta: {
     name: 'retention:sweep',
     description:
-      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, report snapshots older than PIWI_RETENTION_REPORT_DAYS, excess diagnosis versions, trace blobs no execution has linked for a day, and expired MCP OAuth connections',
+      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, report snapshots older than PIWI_RETENTION_REPORT_DAYS, assistant conversations idle for PIWI_ASSISTANT_RETENTION_DAYS, excess diagnosis versions, trace blobs no execution has linked for a day, and expired MCP OAuth connections',
   },
   async run() {
     const db = await getDatabase();
@@ -85,6 +87,12 @@ export default defineTask({
     if (reportDays > 0) {
       const pruned = await pruneReportSnapshots(db, reportDays);
       if (pruned > 0) result.reportSnapshotsPruned = pruned;
+    }
+
+    const assistantDays = envInt('PIWI_ASSISTANT_RETENTION_DAYS') ?? DEFAULT_ASSISTANT_RETENTION_DAYS;
+    if (assistantDays > 0) {
+      const pruned = await pruneAssistantConversations(db, assistantDays);
+      if (pruned > 0) result.assistantConversationsPruned = pruned;
     }
 
     const keepVersions = envInt('PIWI_RETENTION_DIAGNOSIS_VERSIONS') ?? 20;

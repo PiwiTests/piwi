@@ -25,10 +25,6 @@ on:
 permissions:
   contents: read
 
-env:
-  # Match the runtime the app is built and tested against (apps/application/engines).
-  PIWI_NODE_VERSION: 24.22.0
-
 jobs:
   desktop:
     name: desktop (${{ matrix.target }}, ${{ matrix.bundles }})
@@ -111,7 +107,7 @@ jobs:
             squashfs-tools
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: apps/desktop/src-tauri
 
@@ -125,9 +121,10 @@ jobs:
           name: ${{ inputs.server-artifact }}
           path: apps/application/.output
 
+      # The root Dockerfile's Node version (scripts/node-version.mjs), the one reusable-e2e-desktop.yml tests against.
       - name: Fetch Node sidecar
         working-directory: apps/desktop
-        run: node scripts/fetch-node.mjs --target ${{ matrix.target }} --node ${{ env.PIWI_NODE_VERSION }}
+        run: node scripts/fetch-node.mjs --target ${{ matrix.target }}
 
       - name: Stage server (native modules for this OS)
         working-directory: apps/desktop

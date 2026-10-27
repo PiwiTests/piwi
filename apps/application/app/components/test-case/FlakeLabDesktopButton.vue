@@ -135,6 +135,7 @@ watch(
         :loading="running"
         :disabled="running"
         data-testid="flake-lab-desktop"
+        data-tour="flake-lab-reproduce"
       >
         {{ running ? 'Running the lab…' : 'Reproduce this flake' }}
       </UButton>

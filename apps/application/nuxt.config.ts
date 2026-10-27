@@ -167,8 +167,11 @@ export default defineNuxtConfig({
             // Every demo route serves this same shell (a prerendered copy, or the site's
             // 404 redirect), so each names the entry page as the one URL to index.
             { rel: 'canonical', href: 'https://piwitests.dev/demo/' },
-            { rel: 'icon', href: '/demo/favicon.ico', sizes: 'any' },
-            { rel: 'icon', type: 'image/svg+xml', href: '/demo/logo.svg' },
+            // The ICO for browsers without SVG icons; declared at a fixed size (not `any`), so
+            // Chrome takes the SVG. The SVG link shares app.vue's `favicon` key: the app's link
+            // replaces it, and a page watching a run swaps in its progress badge.
+            { rel: 'icon', href: '/demo/favicon.ico', sizes: '32x32' },
+            { key: 'favicon', rel: 'icon', type: 'image/svg+xml', href: '/demo/logo.svg' },
           ],
         },
       }
@@ -213,6 +216,11 @@ export default defineNuxtConfig({
       embeddingModel: process.env.PIWI_AI_EMBEDDING_MODEL || '',
       embeddingBaseUrl: process.env.PIWI_AI_EMBEDDING_BASE_URL || '',
       embeddingApiKey: process.env.PIWI_AI_EMBEDDING_API_KEY || '',
+      assistantModel: process.env.PIWI_AI_ASSISTANT_MODEL || '',
+      assistantProvider: process.env.PIWI_AI_ASSISTANT_PROVIDER || '',
+      assistantBaseUrl: process.env.PIWI_AI_ASSISTANT_BASE_URL || '',
+      assistantApiKey: process.env.PIWI_AI_ASSISTANT_API_KEY || '',
+      assistantTemperature: process.env.PIWI_AI_ASSISTANT_TEMPERATURE || '',
     },
     authSecret: (() => {
       if (process.env.PIWI_AUTH_ENABLED === 'true' && !process.env.PIWI_AUTH_SECRET) {
@@ -532,14 +540,16 @@ export default defineNuxtConfig({
         console.log('[Build] PostgreSQL migrations copied successfully');
       }
 
-      // Ensure the sql.js WASM file is present in public/demo for the browser demo build
+      // The sql.js WASM in public/demo is the installed sql.js's own: a binary built for another version fails to
+      // instantiate, and every demo API call with it.
       if (isDemo) {
-        const wasmSrc = resolve(__dirname, 'node_modules/sql.js/dist/sql-wasm-browser.wasm');
-        const wasmDst = resolve(__dirname, 'public/demo/sql-wasm-browser.wasm');
-        if (existsSync(wasmSrc) && !existsSync(wasmDst)) {
-          console.log('[Build] Copying sql-wasm-browser.wasm to public/demo...');
-          cpSync(wasmSrc, wasmDst);
-          console.log('[Build] sql-wasm-browser.wasm copied successfully');
+        for (const file of ['sql-wasm-browser.wasm', 'sql-wasm.wasm']) {
+          const wasmSrc = nodeRequire.resolve(`sql.js/dist/${file}`);
+          const wasmDst = resolve(__dirname, 'public/demo', file);
+          if (!existsSync(wasmDst) || !readFileSync(wasmSrc).equals(readFileSync(wasmDst))) {
+            console.log(`[Build] Copying ${file} to public/demo...`);
+            cpSync(wasmSrc, wasmDst);
+          }
         }
         const seedSrc = resolve(__dirname, 'public/demo/seed.sql');
         if (!existsSync(seedSrc)) {

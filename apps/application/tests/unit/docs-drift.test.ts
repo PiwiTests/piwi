@@ -139,13 +139,13 @@ describe('docs pages the app deep-links into', () => {
   // docs URLs from bare string literals that nothing else validates, so a
   // renamed heading breaks them silently in production.
 
-  // Every .vue/.ts file under app/ and shared/ — any of them may carry a
+  // Every .vue/.ts/.mjs file under app/ and shared/ — any of them may carry a
   // `doc: '…'` registry field or a static `DocLink to="…"`.
   const walkSources = (dir: string): string[] =>
     readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) return walkSources(path);
-      return /\.(vue|ts)$/.test(entry.name) ? [relative(repoRoot, path)] : [];
+      return /\.(vue|ts|mjs)$/.test(entry.name) ? [relative(repoRoot, path)] : [];
     });
   const sources = [
     ...walkSources(join(repoRoot, 'apps/application/app')),
@@ -425,6 +425,18 @@ describe('hand-written reference pages match the code', () => {
     for (const key of searchKeys) {
       expect(lists, `${page} does not list the test search key \`${key}\``).toContain(`\`${key}\``);
     }
+    // The assistant: Ctrl+I anywhere, and the keys its question field's keydown handler takes.
+    expect(read('apps/application/app/components/assistant/AssistantPanel.vue')).toContain('meta_i:');
+    expect(anywhere, `${page} does not list the Ctrl + I assistant shortcut`).toContain('`Ctrl` + `I`');
+    const input = read('apps/application/app/components/assistant/AssistantInput.vue');
+    const inputHandler = /function onKeydown[\s\S]*?\n}\n/.exec(input)?.[0] ?? '';
+    const ASSISTANT_KEYS: Record<string, string> = { ...KEY_NAMES, ArrowRight: '→' };
+    const inputKeys = [...inputHandler.matchAll(/event\.key === '(\w+)'/g)].map((m) => ASSISTANT_KEYS[m[1]!] ?? m[1]!);
+    expect(inputKeys.length, 'no keys found in the assistant input keydown handler').toBeGreaterThan(0);
+    const assistant = sectionOf(page, 'Assistant panel');
+    for (const key of inputKeys) {
+      expect(assistant, `${page} does not list the assistant input key \`${key}\``).toContain(`\`${key}\``);
+    }
   });
 
   test('every test search qualifier is on the Test search page', () => {
@@ -689,7 +701,7 @@ describe('docs site structure', () => {
       featurePageSources.some((contents) => link.test(contents)),
       `no features/ page links /${recipe}`,
     ).toBe(true);
-    expect(helpRecipes.has(recipe), `no help topic in app/utils/help-content.ts has recipe.doc '${recipe}'`).toBe(true);
+    expect(helpRecipes.has(recipe), `no help topic in shared/help-content.ts has recipe.doc '${recipe}'`).toBe(true);
   });
 });
 

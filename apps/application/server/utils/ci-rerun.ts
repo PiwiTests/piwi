@@ -129,11 +129,6 @@ export async function clusterRerunCases(db: DbClient, clusterId: number): Promis
   return [...latest.values()];
 }
 
-/** The Playwright arguments to re-run exactly a cluster's affected tests (file:line). */
-export async function clusterRerunArgs(db: DbClient, clusterId: number): Promise<string> {
-  return buildRetryArgs(await clusterRerunCases(db, clusterId));
-}
-
 /** The branch a cluster's re-run runs on: the branch of the cluster's latest run, when it has one. */
 export async function clusterRerunRef(db: DbClient, lastSeenRunId: number): Promise<string | null> {
   const [run] = await db

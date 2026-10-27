@@ -76,12 +76,22 @@ async function handleCleanup() {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6" data-tour="storage-page">
     <!-- Data location (resolved on-disk paths) -->
-    <DataLocationCard v-if="storage" :database="storage.databaseLocation" :storage="storage.storageLocation" />
+    <DataLocationCard
+      v-if="storage"
+      :database="storage.databaseLocation"
+      :storage="storage.storageLocation"
+      data-tour="storage-data-location"
+    />
 
     <!-- Storage backend (env-only reference) -->
-    <SectionCard icon="i-lucide-server" title="Storage backend" help="settings.storage-backend">
+    <SectionCard
+      icon="i-lucide-server"
+      title="Storage backend"
+      help="settings.storage-backend"
+      data-tour="storage-backend"
+    >
       <template #subtitle> Configured through environment variables. The active backend is shown read-only. </template>
 
       <div class="space-y-3">
@@ -106,7 +116,13 @@ async function handleCleanup() {
     <StorageAnalysisDashboard :analysis="storage ?? null" :pending="loading" :error="error" @refresh="refresh()" />
 
     <!-- Cleanup Section -->
-    <SectionCard icon="i-lucide-trash-2" title="Cleanup old test runs" help="settings.cleanup" data-shot="cleanup-card">
+    <SectionCard
+      icon="i-lucide-trash-2"
+      title="Cleanup old test runs"
+      help="settings.cleanup"
+      data-shot="cleanup-card"
+      data-tour="storage-cleanup"
+    >
       <p v-if="storage?.kept" class="text-xs text-muted mb-3" data-shot="kept-runs-note">
         <template v-if="storage.kept.runs > 0">
           {{ storage.kept.runs }} kept {{ storage.kept.runs === 1 ? 'run is' : 'runs are' }} never deleted — they hold
@@ -127,6 +143,7 @@ async function handleCleanup() {
           :loading="cleaning"
           label="Run cleanup"
           class="mt-4 sm:mt-5"
+          data-tour="run-storage-cleanup"
           @click="isConfirmOpen = true"
         />
       </div>

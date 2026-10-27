@@ -125,12 +125,13 @@ function renderBlock(block: ReportBlock, f: ValueFormatter): RawHtml {
     case 'stats':
       return html`<div class="tiles">
         ${block.tiles.map(
-          (t) => html`<div class="tile" title="${t.definition ?? ''}">
-            <div class="label">${t.label}</div>
-            <div class="value">${t.value}</div>
-            ${t.change ? html`<div class="change" style="color:${TONE_COLOR[t.tone]}">${t.change}</div>` : ''}
-            ${t.note ? html`<div class="extra">${t.note}</div>` : ''}
-          </div>`,
+          (t) =>
+            html`<div class="tile" title="${t.definition ?? ''}">
+              <div class="label">${t.label}</div>
+              <div class="value">${t.value}</div>
+              ${t.change ? html`<div class="change" style="color:${TONE_COLOR[t.tone]}">${t.change}</div>` : ''}
+              ${t.note ? html`<div class="extra">${t.note}</div>` : ''}
+            </div>`,
         )}
       </div>`;
     case 'series':
@@ -170,9 +171,11 @@ function renderBlock(block: ReportBlock, f: ValueFormatter): RawHtml {
         ${block.items.map(
           (item) =>
             html`<li
-              style="${item.tone && item.tone !== 'neutral'
-                ? `border-left:2px solid ${TONE_COLOR[item.tone]};padding-left:.4rem;list-style:none;margin-left:-1.1rem`
-                : ''}"
+              style="${
+                item.tone && item.tone !== 'neutral'
+                  ? `border-left:2px solid ${TONE_COLOR[item.tone]};padding-left:.4rem;list-style:none;margin-left:-1.1rem`
+                  : ''
+              }"
             >
               ${linkOrText(item.text, item.link)}${item.detail ? html`<div class="note">${item.detail}</div>` : ''}
             </li>`,
@@ -195,16 +198,18 @@ export function renderReportHtml(bundle: ReportBundle, opts: RenderReportHtmlOpt
   const L = s.labels;
 
   const bands = bundle.bands.map(
-    (band) => html`<section class="band">
-      <h2>${band.title}</h2>
-      ${band.description ? html`<p class="desc">${band.description}</p>` : ''}
-      ${band.widgets.map(
-        (w) => html`<div class="widget" data-widget="${w.key}">
-          <h3>${w.title}</h3>
-          ${w.notes.map((n) => html`<p class="note">${n}</p>`)} ${joinHtml(w.blocks.map((b) => renderBlock(b, f)))}
-        </div>`,
-      )}
-    </section>`,
+    (band) =>
+      html`<section class="band">
+        <h2>${band.title}</h2>
+        ${band.description ? html`<p class="desc">${band.description}</p>` : ''}
+        ${band.widgets.map(
+          (w) =>
+            html`<div class="widget" data-widget="${w.key}">
+              <h3>${w.title}</h3>
+              ${w.notes.map((n) => html`<p class="note">${n}</p>`)} ${joinHtml(w.blocks.map((b) => renderBlock(b, f)))}
+            </div>`,
+        )}
+      </section>`,
   );
 
   const facts: Array<[string, string]> = [
@@ -230,9 +235,11 @@ export function renderReportHtml(bundle: ReportBundle, opts: RenderReportHtmlOpt
         )}
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="generator" content="Piwi" />
-        ${opts.refreshSeconds
-          ? raw(`<meta http-equiv="refresh" content="${Math.max(15, Math.floor(opts.refreshSeconds))}">`)
-          : ''}
+        ${
+          opts.refreshSeconds
+            ? raw(`<meta http-equiv="refresh" content="${Math.max(15, Math.floor(opts.refreshSeconds))}">`)
+            : ''
+        }
         <title>${L.qualityReport}${s.colon}${bundle.title}</title>
         ${raw(`<style>${STYLES}</style>`)}
       </head>
@@ -242,18 +249,20 @@ export function renderReportHtml(bundle: ReportBundle, opts: RenderReportHtmlOpt
             <p class="meta">${L.qualityReport} · ${bundle.dashboard.name}</p>
             <h1>${bundle.title}</h1>
             <p class="meta">
-              ${bundle.period.label}${bundle.comparison
-                ? html` · ${L.comparedWith.toLowerCase()} ${bundle.comparison.label}`
-                : ''}
+              ${bundle.period.label}${
+                bundle.comparison ? html` · ${L.comparedWith.toLowerCase()} ${bundle.comparison.label}` : ''
+              }
             </p>
             ${opts.banner ? html`<p class="meta" data-banner>${opts.banner}</p>` : ''}
           </header>
-          ${hasVerdictWidget(bundle)
-            ? ''
-            : html`<div class="verdict" data-verdict="${bundle.verdict.tone}">
-                <span class="dot" style="background:${VERDICT_COLOR[bundle.verdict.tone]}"></span>
-                <p style="margin:0">${bundle.verdict.sentence}</p>
-              </div>`}
+          ${
+            hasVerdictWidget(bundle)
+              ? ''
+              : html`<div class="verdict" data-verdict="${bundle.verdict.tone}">
+                  <span class="dot" style="background:${VERDICT_COLOR[bundle.verdict.tone]}"></span>
+                  <p style="margin:0">${bundle.verdict.sentence}</p>
+                </div>`
+          }
           ${bands}
           <footer>
             <dl>
@@ -263,28 +272,34 @@ export function renderReportHtml(bundle: ReportBundle, opts: RenderReportHtmlOpt
                     <dd>${v}</dd>`,
               )}
             </dl>
-            ${bundle.targets.length
-              ? html`<h3>${L.targets}</h3>
-                  <ul class="items">
-                    ${bundle.targets.map((t) => html`<li data-target-met="${String(t.met)}">${t.text}</li>`)}
-                  </ul>`
-              : ''}
-            ${bundle.definitions.length
-              ? html`<h3>${L.definitions}</h3>
-                  <dl>
-                    ${bundle.definitions.map(
-                      (d) =>
-                        html`<dt>${d.label}</dt>
-                          <dd>${d.definition}</dd>`,
-                    )}
-                  </dl>`
-              : ''}
-            ${bundle.limits.length
-              ? html`<h3>${L.limits}</h3>
-                  <ul class="items">
-                    ${bundle.limits.map((l) => html`<li>${l}</li>`)}
-                  </ul>`
-              : ''}
+            ${
+              bundle.targets.length
+                ? html`<h3>${L.targets}</h3>
+                    <ul class="items">
+                      ${bundle.targets.map((t) => html`<li data-target-met="${String(t.met)}">${t.text}</li>`)}
+                    </ul>`
+                : ''
+            }
+            ${
+              bundle.definitions.length
+                ? html`<h3>${L.definitions}</h3>
+                    <dl>
+                      ${bundle.definitions.map(
+                        (d) =>
+                          html`<dt>${d.label}</dt>
+                            <dd>${d.definition}</dd>`,
+                      )}
+                    </dl>`
+                : ''
+            }
+            ${
+              bundle.limits.length
+                ? html`<h3>${L.limits}</h3>
+                    <ul class="items">
+                      ${bundle.limits.map((l) => html`<li>${l}</li>`)}
+                    </ul>`
+                : ''
+            }
             ${bundle.sourceUrl ? html`<p><a href="${bundle.sourceUrl}">${L.openInPiwi}</a></p>` : ''}
             ${raw(piwiCreditHtml(L.generatedBy))}
           </footer>

@@ -531,8 +531,10 @@ fn load_or_create_token(app_data_dir: &PathBuf) -> String {
 }
 
 /// Publish the loopback URL and access token to `~/.piwi/desktop.json` so the
-/// Playwright reporter can find this app with no configuration at all — it reads
-/// this file only when nothing else sets a server URL or API key.
+/// Playwright reporter can find this app with no configuration at all — when
+/// nothing else sets a server, or, with `desktopApp: 'prefer'`, for every run
+/// outside CI. The app's pid lets a reader tell a file left by a crash from a
+/// running app.
 ///
 /// Written on every launch because the port is not guaranteed (`pick_port` falls
 /// back when 3000 is taken) and removed on quit, so the file's presence means
@@ -551,7 +553,7 @@ fn write_discovery_file(
     Ok(path)
 }
 
-/// The discovery file's content: the address and token, and the projects linked
+/// The discovery file's content: the address and token, this process's id, and the projects linked
 /// to a folder on this machine, so an editor opened on one of those folders
 /// connects to its project with no setup, and the bundled server reads a
 /// project's git history from its folder. Readers ignore fields they do not know.
@@ -566,6 +568,7 @@ fn discovery_body(port: u16, token: &str, links: &HashMap<String, runner::LinkRe
     json!({
         "url": format!("http://127.0.0.1:{port}"),
         "token": token,
+        "pid": std::process::id(),
         "projects": projects.iter().map(|(id, path)| json!({ "id": id, "path": path })).collect::<Vec<_>>(),
     })
 }
@@ -1908,6 +1911,7 @@ mod tests {
             serde_json::json!({
                 "url": "http://127.0.0.1:3001",
                 "token": "pd_x",
+                "pid": std::process::id(),
                 "projects": [{ "id": 3, "path": "/work/admin" }, { "id": 12, "path": "/work/shop" }],
             })
         );

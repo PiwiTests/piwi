@@ -385,7 +385,7 @@ test.describe.serial('Failure clustering', () => {
       data: {
         entityType: 'failure_cluster',
         entityId: firstRunClusterId,
-        url: 'https://github.com/piwitests/platform/issues/123',
+        url: 'https://github.com/piwitests/piwi/issues/123',
       },
     });
     expect(create.ok(), `POST /api/links failed: ${create.status()} ${await create.text()}`).toBeTruthy();

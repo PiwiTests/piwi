@@ -4,7 +4,7 @@ import type { TestCaseResult, SetupStepEvent, PerformanceStep } from '~~/types/a
 import type { RunExecutionCost, RunResourceTimeline, RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { useTimelineModel, isHookKind, type TimelineItem } from '~/composables/useTimelineModel';
 import { useTimelineViewport } from '~/composables/useTimelineViewport';
-import { lockColorHex, TIMELINE_HOOK_COLORS, TIMELINE_LAYOUT } from '~/utils/timeline';
+import { lockColorHex, TIMELINE_HOOK_COLORS, TIMELINE_LAYOUT, TIMELINE_PAUSE_COLORS } from '~/utils/timeline';
 import {
   ALL_RESOURCE_TRACKS,
   RESOURCE_TRACK_KINDS,
@@ -33,6 +33,8 @@ const props = defineProps<{
   runId?: number | null;
   /** Whether a reporter of the run sent resources; the tracks are fetched only then, once the run ended. */
   hasResources?: boolean;
+  /** What the run's reporters measured so far, drawn while the run is live. */
+  liveResources?: RunResourceTimelinePart[] | null;
 }>();
 
 const emit = defineEmits<{
@@ -71,21 +73,25 @@ const modelInput = {
 const { timelineData, workerRows, laneCount, maxTime, origin, runLocks } = useTimelineModel(modelInput);
 
 // The resources each reporter measured over time, and what each execution
-// cost, fetched once the run ended.
-const resourceParts = ref<RunResourceTimelinePart[]>([]);
+// cost: while the run is live, what its reporters posted so far; once it
+// ended, the stored report, and what was posted live until it loads.
+const storedParts = ref<RunResourceTimelinePart[]>([]);
+const resourceParts = computed(() =>
+  props.live || storedParts.value.length === 0 ? (props.liveResources ?? []) : storedParts.value,
+);
 const executionCosts = ref<RunExecutionCost[]>([]);
 async function loadResources(): Promise<void> {
   if (!props.runId || props.live || !props.hasResources) {
-    resourceParts.value = [];
+    storedParts.value = [];
     executionCosts.value = [];
     return;
   }
   try {
     const res = await $fetch<RunResourceTimeline>(`/api/test-runs/${props.runId}/resource-timeline`);
-    resourceParts.value = res.parts ?? [];
+    storedParts.value = res.parts ?? [];
     executionCosts.value = res.executions ?? [];
   } catch {
-    resourceParts.value = [];
+    storedParts.value = [];
     executionCosts.value = [];
   }
 }
@@ -111,6 +117,22 @@ const resourceBands = computed<ResourceBand[]>(() =>
     ? []
     : buildResourceBands(resourceParts.value, workerRows.value, origin.value, sharded.value),
 );
+
+/**
+ * Where the plot ends: the last test's end, and while the run is live, the
+ * last resource point read, so what the running tests use shows too.
+ */
+const plotEnd = computed(() => {
+  let end = maxTime.value;
+  if (!props.live) return end;
+  for (const band of resourceBands.value) {
+    for (const track of Object.values(band.tracks)) end = Math.max(end, track?.points.at(-1)?.[0] ?? 0);
+    for (const tree of band.sampled) {
+      end = Math.max(end, tree.cpuCores.at(-1)?.[0] ?? 0, tree.memoryBytes.at(-1)?.[0] ?? 0);
+    }
+  }
+  return end;
+});
 
 /** The tracks the header offers: those some band has data for, with whether they are shown. */
 const resourceTrackOptions = computed(() =>
@@ -300,7 +322,7 @@ const {
   zoomToRange,
 } = useTimelineViewport({
   containerRef,
-  maxTime,
+  maxTime: plotEnd,
   rowCount,
   hasData,
   live: () => props.live,
@@ -317,6 +339,7 @@ const hookFailureCount = computed(
   () => timelineData.value.filter((d) => isHookKind(d.kind) && d.status === 'failed').length,
 );
 const waitCount = computed(() => timelineData.value.filter((d) => d.kind === 'wait').length);
+const pauseCount = computed(() => timelineData.value.filter((d) => d.kind === 'pause').length);
 const restartCount = computed(() => timelineData.value.filter((d) => d.kind === 'restart').length);
 
 // Tests and expanded step spans are always drawn (expanding a row is itself the
@@ -335,13 +358,14 @@ const visibleItems = computed(() =>
 /** A test with no hook section drawn: one shared array, so its bar keeps equal props. */
 const NO_HOOKS: TimelineItem[] = [];
 
-/** Whether an item is a test's hook section, which the test's own bar draws. */
+/** Whether an item is a test's hook section or one of its stops, which the test's own bar draws. */
 function isTestHook(item: TimelineItem): boolean {
-  return (item.kind === 'hook' || item.kind === 'fixture') && item.testCaseId != null;
+  return (item.kind === 'hook' || item.kind === 'fixture' || item.kind === 'pause') && item.testCaseId != null;
 }
 
-// Each test's visible hook sections, drawn by the test's bar rather than as
-// bars of their own, so a section costs no component when the view zooms.
+// Each test's visible hook sections and stops, drawn by the test's bar rather
+// than as bars of their own, so a section costs no component when the view
+// zooms. A stop is drawn whatever the hooks toggle says.
 const hooksByTest = computed(() => {
   const map = new Map<number, TimelineItem[]>();
   for (const item of visibleItems.value) {
@@ -432,7 +456,7 @@ watch([bandLayout, workerStrips], ([layout, strips]) => {
 });
 
 function moveResourceHover(t: number, event: MouseEvent): void {
-  resourceHover.t = Math.max(0, Math.min(maxTime.value, t));
+  resourceHover.t = Math.max(0, Math.min(plotEnd.value, t));
   resourceHover.pos = { x: event.clientX, y: event.clientY };
 }
 
@@ -464,6 +488,7 @@ function onResourceLeave(): void {
       :retry-count="retryCount"
       :hook-failure-count="hookFailureCount"
       :wait-count="waitCount"
+      :pause-count="pauseCount"
       :restart-count="restartCount"
       :has-hooks="hasHooks"
       :show-hooks="showHooks"
@@ -528,6 +553,16 @@ function onResourceLeave(): void {
             <rect width="6" height="6" :fill="colors.fill" :fill-opacity="colors.opacity" />
             <rect width="2" height="6" fill="white" fill-opacity="0.35" />
           </pattern>
+          <!-- A stop at the pause bar over its test's bar: a pale wash under upright stripes. -->
+          <pattern id="timeline-paused" patternUnits="userSpaceOnUse" width="5" height="5">
+            <rect
+              width="5"
+              height="5"
+              :fill="TIMELINE_PAUSE_COLORS.fill"
+              :fill-opacity="TIMELINE_PAUSE_COLORS.opacity"
+            />
+            <rect width="1.5" height="5" :fill="TIMELINE_PAUSE_COLORS.stripe" fill-opacity="0.35" />
+          </pattern>
           <!-- Arrowhead of the arrows joining the attempts of a retried test. -->
           <marker
             id="timeline-retry-arrow"
@@ -565,7 +600,7 @@ function onResourceLeave(): void {
           :tracks="entry.tracks"
           :y="bandTop(entry)"
           :px-per-ms="pxPerMs"
-          :plot-width="maxTime * pxPerMs"
+          :plot-width="plotEnd * pxPerMs"
           @hover="onResourceHover"
           @leave="onResourceLeave"
         />
@@ -575,7 +610,7 @@ function onResourceLeave(): void {
           :set="workerStrips"
           :strip-top="stripTop"
           :px-per-ms="pxPerMs"
-          :plot-width="maxTime * pxPerMs"
+          :plot-width="plotEnd * pxPerMs"
           @hover="onStripHover"
           @leave="onResourceLeave"
         />

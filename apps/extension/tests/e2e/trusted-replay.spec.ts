@@ -486,6 +486,38 @@ test('a key press with no element goes to the page, though focus was on the pane
   expect(state.results.map((r) => r.status)).toEqual(['done', 'done', 'done', 'passed']);
 });
 
+test('a click the tab never gets, behind a browser dialog, goes to the person rather than passing', async ({
+  context,
+  control,
+  site,
+  worker,
+}) => {
+  const url = `${site}/clicks`;
+  const doc = stepsDoc('Dialog in front', site, [
+    step('goto', '/clicks', { value: '/clicks' }),
+    step('click', '/clicks', { target: target('first', 'button', 'First') }),
+    expectText('/clicks', 'log', 'First trusted;'),
+  ]);
+  const page = await startReplay(control, context, site, doc, '/clicks', true);
+  const tabId = await tabIdOf(worker, url);
+  await expect.poll(async () => (await replayState(worker)).driver?.driver, { timeout: 30_000 }).toBe('cdp');
+  await expect.poll(async () => (await replayState(worker)).position).toBe(1);
+  await expect
+    .poll(() => page.evaluate(() => document.getElementById('piwi-replay-cursor-host') !== null).catch(() => false), {
+      timeout: 20_000,
+    })
+    .toBe(true);
+  // A tab-modal dialog in front of the tab (Chrome's warning about a leaked password) makes it ignore all input.
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Input.setIgnoreInputEvents', { ignore: true });
+  await worker.evaluate((id) => chrome.tabs.sendMessage(id, { type: 'piwi-replay-wake', wake: true }), tabId);
+  await expect.poll(async () => (await replayState(worker)).handOver?.step ?? null, { timeout: 30_000 }).toBe(1);
+  expect((await replayState(worker)).handOver?.reason).toMatch(/did not get this input/);
+  await cdp.send('Input.setIgnoreInputEvents', { ignore: false });
+  await cdp.detach();
+  await expect(page.getByTestId('log')).toHaveText('');
+});
+
 test('a drag whose two ends never fit on the screen together goes to the person', async ({
   context,
   control,

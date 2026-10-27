@@ -14,6 +14,7 @@ const lines = computed(() => (data.value ? sentencesFor('en').handbacks(data.val
     icon="i-lucide-undo-2"
     :title="title ?? 'Hand-back outcomes'"
     help="analytics.handbacks"
+    data-tour="analytics-handbacks"
     data-shot="analytics-handbacks"
   >
     <LoadingState v-if="pending" />

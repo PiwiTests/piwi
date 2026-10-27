@@ -23,6 +23,24 @@ describe('getPerformanceHints', () => {
     expect(hints[0]!.details).toContain('5.0s');
   });
 
+  test('reads a step’s own time, its time paused at a breakpoint left out', () => {
+    const T = 1_700_000_000_000;
+    const steps = [
+      { title: 'Navigate', duration: 4_200, category: 'navigation', startTime: T },
+      { title: 'Expect "toBeVisible"', duration: 7_300, category: 'assertion', startTime: T + 4_300 },
+    ];
+    const pauses = [
+      { startedAt: T + 50, duration: 4_100 },
+      { startedAt: T + 4_350, duration: 6_300 },
+    ];
+    expect(getPerformanceHints({ steps, pauses })).toEqual([]);
+    const slow = getPerformanceHints({ steps, pauses: [{ startedAt: T + 4_350, duration: 3_000 }] });
+    expect(slow.map((h) => h.details)).toEqual([
+      expect.stringMatching(/^"Navigate" took 4\.2s\. /),
+      expect.stringMatching(/^"Expect "toBeVisible"" took 4\.3s, not counting 3\.0s paused at a breakpoint\. /),
+    ]);
+  });
+
   test('flags a test with more than 20 steps', () => {
     const steps = Array.from({ length: 21 }, (_, i) => ({ title: `step ${i}`, duration: 10, category: 'action' }));
     const hints = getPerformanceHints({ steps });

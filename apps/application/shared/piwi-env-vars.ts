@@ -12,10 +12,10 @@
  *   time. The page is NOT hand-written; edit this file instead.
  * - `docs/.vitepress/components/EnvWizard.vue` — the interactive configuration
  *   generator on the docs site reads this registry directly.
- * - `app/utils/help-content.ts` — `HelpTopic.envVars` is typed as
+ * - `shared/help-content.ts` — `HelpTopic.envVars` is typed as
  *   `PiwiEnvVarName[]`, so a help tooltip can never reference an env var that
  *   does not exist here.
- * - `app/utils/settings-metadata.ts` — settings fields reference env vars by
+ * - `shared/settings-metadata.ts` — settings fields reference env vars by
  *   typed name.
  * - `app/components/shared/EnvManagedBadge.vue` / `EnvManagedAlert.vue` —
  *   tooltips/banners render the name + description.
@@ -52,6 +52,7 @@ export type PiwiEnvVarCategory =
   | 'ai'
   | 'ai-limits'
   | 'ai-steps'
+  | 'assistant'
   | 'ingest'
   | 'export'
   | 'markers'
@@ -197,6 +198,13 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     intro:
       "Bounds on the reporter's AI-step **authoring** pass (`page.piwiLocator(...)` / `page.piwiRun(...)` in `resolve`/`heal` mode), which calls the model through this server. They cap how much of the page snapshot and how many output tokens go into each authoring iteration. They never apply during normal `replay` runs, which make no model calls. Values are clamped to the min–max range.",
     note: 'Reasoning models spend output tokens on hidden chain-of-thought, so raise `PIWI_AI_STEP_MAX_OUTPUT_TOKENS` for them. See [AI steps](/features/ai-steps) for the full authoring/replay model and the reporter-side `PIWI_AI*` options.',
+  },
+  assistant: {
+    title: 'Assistant',
+    order: 8.7,
+    intro:
+      "Bounds on the in-app assistant: how many tools it may call and how long it may take for one question, how many tokens one model call may write, and how many tokens it may spend in 24 hours, per user and for the instance. A cap reached stops the turn before the next model call. Values are clamped to the min–max range; `0` turns a daily cap off. The assistant's model is the `PIWI_AI_ASSISTANT_*` role above.",
+    note: 'See [Assistant](/features/assistant) for what it reads and what leaves the instance.',
   },
   ingest: {
     title: 'Ingest limits',
@@ -369,6 +377,16 @@ export const PIWI_ENV_VARS = {
     min: 0,
     since: '0.39.0',
     docs: 'features/quality-reports#report-schedules',
+  },
+  PIWI_ASSISTANT_RETENTION_DAYS: {
+    description:
+      'Days an assistant conversation is kept after its last message before the nightly sweep deletes it (default 90; 0 keeps them forever). The assistant usage counted in Settings → AI follows the same horizon.',
+    category: 'database',
+    type: 'number',
+    default: '90',
+    min: 0,
+    since: '0.59.0',
+    docs: 'features/assistant#privacy',
   },
   PIWI_RETENTION_DIAGNOSIS_VERSIONS: {
     description:
@@ -544,10 +562,10 @@ export const PIWI_ENV_VARS = {
   // ── AI — diagnosis model ─────────────────────────────────────────────────
   PIWI_AI_PROVIDER: {
     description:
-      'AI provider for failure diagnosis: "anthropic", "openai" (OpenAI-compatible), or "claude-cli" (the local Claude Code CLI — offered in the desktop app, or wherever PIWI_CLAUDE_CLI_PATH points at it).',
+      'AI provider for failure diagnosis: "anthropic", "openai" (OpenAI-compatible), "codex-cli" (the local Codex CLI), "deepseek-cli" (official DeepSeek Harness), or "claude-cli" (the local Claude Code CLI — offered in the desktop app, or wherever PIWI_CLAUDE_CLI_PATH points at it).',
     category: 'ai',
     type: 'enum',
-    enum: ['anthropic', 'openai', 'claude-cli'],
+    enum: ['anthropic', 'openai', 'claude-cli', 'codex-cli', 'deepseek-cli'],
   },
   PIWI_AI_API_KEY: {
     description: 'API key for the diagnosis provider. Takes precedence over the DB-stored key.',
@@ -556,7 +574,7 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AI_PROVIDER: '*' },
     requiredWhen: { PIWI_AI_PROVIDER: 'anthropic' },
     notes:
-      'Optional for OpenAI-compatible providers that need no key (e.g. a local model). Unused by "claude-cli" — the CLI carries its own login.',
+      'Optional for OpenAI-compatible providers that need no key (e.g. a local model). Unused by "claude-cli", "codex-cli", and "deepseek-cli" — the CLI carries its own login.',
   },
   PIWI_AI_MODEL: {
     description:
@@ -616,7 +634,7 @@ export const PIWI_ENV_VARS = {
     description: 'Provider for the optional research (pre-analysis) stage. Falls back to PIWI_AI_PROVIDER.',
     category: 'ai',
     type: 'enum',
-    enum: ['anthropic', 'openai', 'claude-cli'],
+    enum: ['anthropic', 'openai', 'claude-cli', 'codex-cli', 'deepseek-cli'],
     relevantWhen: { PIWI_AI_RESEARCH_MODEL: '*' },
   },
   PIWI_AI_RESEARCH_MODEL: {
@@ -678,7 +696,68 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AI_EMBEDDING_MODEL: '*' },
   },
 
+  // ── AI — assistant model ─────────────────────────────────────────────────
+  PIWI_AI_ASSISTANT_PROVIDER: {
+    description: 'Provider for the assistant. Falls back to PIWI_AI_PROVIDER.',
+    category: 'ai',
+    type: 'enum',
+    enum: ['anthropic', 'openai', 'claude-cli', 'codex-cli', 'deepseek-cli'],
+    since: '0.59.0',
+    relevantWhen: { PIWI_AI_ASSISTANT_MODEL: '*' },
+  },
+  PIWI_AI_ASSISTANT_MODEL: {
+    description: 'Model the in-app assistant answers with. Empty uses the diagnosis model.',
+    category: 'ai',
+    since: '0.59.0',
+    relevantWhen: { PIWI_AI_PROVIDER: '*' },
+    docs: 'features/assistant#the-model',
+  },
+  PIWI_AI_ASSISTANT_BASE_URL: {
+    description: 'Base URL for the assistant provider. Falls back to PIWI_AI_BASE_URL.',
+    category: 'ai',
+    type: 'url',
+    since: '0.59.0',
+    relevantWhen: { PIWI_AI_ASSISTANT_MODEL: '*' },
+  },
+  PIWI_AI_ASSISTANT_API_KEY: {
+    description: 'API key for the assistant provider. Falls back to PIWI_AI_API_KEY.',
+    category: 'ai',
+    secret: true,
+    since: '0.59.0',
+    relevantWhen: { PIWI_AI_ASSISTANT_MODEL: '*' },
+  },
+  PIWI_AI_ASSISTANT_TEMPERATURE: {
+    description: 'Sampling temperature override for the assistant model (OpenAI-compatible only), range 0-2.',
+    category: 'ai',
+    type: 'number',
+    min: 0,
+    max: 2,
+    since: '0.59.0',
+    relevantWhen: { PIWI_AI_ASSISTANT_MODEL: '*' },
+    notes:
+      'Omitted from requests when unset (provider default applies). Reasoning models (o1, o3, GPT-5-class) reject any explicit value — leave this unset for them.',
+  },
+
   // ── AI — local Claude CLI ────────────────────────────────────────────────
+  PIWI_DEEPSEEK_CLI_PATH: {
+    description:
+      'Absolute path to the official DeepSeek Harness dsh launcher. Enables deepseek-cli outside the desktop app. Uses only DeepSeek credentials.',
+    category: 'ai',
+    since: '0.61.0',
+    type: 'path',
+    docs: 'guide/deepseek-cli#setup',
+    example: '/usr/local/bin/dsh',
+  },
+  PIWI_CODEX_CLI_PATH: {
+    description:
+      'Absolute path to the local Codex CLI. Enables codex-cli outside the desktop app. Uses the local file-backed ChatGPT login without an API key.',
+    category: 'ai',
+    since: '0.61.0',
+    type: 'string',
+    default: '',
+    docs: 'guide/codex-cli#setup',
+    example: '/usr/local/bin/codex',
+  },
   PIWI_CLAUDE_CLI_PATH: {
     description:
       'Absolute path to the `claude` binary for the "claude-cli" provider. Set only when the CLI is not on PATH, or to enable the provider outside the desktop app. Auto-detected otherwise.',
@@ -810,6 +889,52 @@ export const PIWI_ENV_VARS = {
     min: 0,
     max: 100,
     since: '0.24.0',
+  },
+  PIWI_AI_ASSISTANT_MAX_TOOL_CALLS: {
+    description: 'Max tool calls the assistant makes to answer one question.',
+    category: 'assistant',
+    type: 'number',
+    default: '8',
+    min: 1,
+    max: 30,
+    since: '0.59.0',
+  },
+  PIWI_AI_ASSISTANT_MAX_OUTPUT_TOKENS: {
+    description:
+      'Max output tokens of one assistant model call. Reasoning models count hidden chain-of-thought against this.',
+    category: 'assistant',
+    type: 'number',
+    default: '2048',
+    min: 256,
+    max: 16384,
+    since: '0.59.0',
+  },
+  PIWI_AI_ASSISTANT_TURN_TIMEOUT_SECONDS: {
+    description: 'Seconds the assistant may spend answering one question, model calls and tool calls together.',
+    category: 'assistant',
+    type: 'number',
+    default: '180',
+    min: 15,
+    max: 900,
+    since: '0.59.0',
+  },
+  PIWI_AI_ASSISTANT_DAILY_TOKENS_PER_USER: {
+    description: 'Tokens (input and output) one user may spend on the assistant in 24 hours. 0 sets no cap.',
+    category: 'assistant',
+    type: 'number',
+    default: '1000000',
+    min: 0,
+    max: 1000000000,
+    since: '0.59.0',
+  },
+  PIWI_AI_ASSISTANT_DAILY_TOKENS: {
+    description: 'Tokens (input and output) the whole instance may spend on the assistant in 24 hours. 0 sets no cap.',
+    category: 'assistant',
+    type: 'number',
+    default: '5000000',
+    min: 0,
+    max: 1000000000,
+    since: '0.59.0',
   },
   PIWI_AI_STEP_MAX_SNAPSHOT_CHARS: {
     description: 'Max characters of the page ARIA snapshot the reporter sends per AI-step authoring iteration.',

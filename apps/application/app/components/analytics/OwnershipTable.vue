@@ -35,6 +35,7 @@ function share(row: AnalyticsOwnershipRow): string | null {
     :count="rows.length || undefined"
     subtitle="Open failure causes by assignee; flaky tests and wasted time by test owner"
     help="analytics.ownership"
+    data-tour="analytics-ownership"
     data-shot="analytics-ownership"
   >
     <LoadingState v-if="pending" />

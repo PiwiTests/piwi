@@ -15,6 +15,7 @@ const { data, pending, error, refresh } = await useAnalyticsWidget<AnalyticsEven
     icon="i-lucide-flag"
     :title="title ?? 'Timeline markers'"
     help="analytics.markers"
+    data-tour="analytics-markers"
     data-shot="analytics-events"
   >
     <LoadingState v-if="pending" />
