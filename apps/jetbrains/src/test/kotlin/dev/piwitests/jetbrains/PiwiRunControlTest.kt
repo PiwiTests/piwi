@@ -156,12 +156,12 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         val highlighter = shown.highlighters.single()
         assertEquals(3, editor.document.getLineNumber(highlighter.startOffset))
         assertEquals(PiwiRunSessions.EXECUTION_POINT, highlighter.textAttributesKey)
-        assertTrue(highlighter.gutterIconRenderer!!.tooltipText!!.contains("⏸ Paused · Click"))
+        assertTrue(highlighter.gutterIconRenderer!!.tooltipText!!.contains("Paused · Click"))
         val inlay = shown.inlays.single()
         assertEquals(Inlay.Placement.ABOVE_LINE, inlay.placement)
         assertEquals(3, editor.document.getLineNumber(inlay.offset))
         val renderer = inlay.renderer as StopInlay
-        assertEquals("⏸ Paused · Click getByRole('button', { name: 'Pay now' }) · attempt 2", renderer.text)
+        assertEquals("Paused · Click getByRole('button', { name: 'Pay now' }) · attempt 2", renderer.text)
         // What is about to run, at the line's indentation, then the controls' links.
         val start = editor.offsetToXY(editor.document.getLineStartOffset(3) + 4).x
         assertNull(renderer.controlAt(inlay, start + 1))
@@ -295,7 +295,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             val shown = waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
             waitFor("the mark in the file found on disk") { sessions.shown().highlighters.singleOrNull() }
             assertEquals(PausedPageParams("ed-2", 0), pages.single())
-            assertEquals("⏸ Paused · Click getByRole('button', { name: 'Pay now' }) · attempt 2 · unread.page.ts:4", shown.pageCaption)
+            assertEquals("Paused · Click getByRole('button', { name: 'Pay now' }) · attempt 2 · unread.page.ts:4", shown.pageCaption)
             assertEquals(4, shown.pageImage!!.width)
             assertEquals(PiwiRunSessions.PAUSED_PAGE, window.contentManager.selectedContent?.displayName)
             hear(RunSession("ed-2", ended = true))

@@ -437,7 +437,7 @@ Every protocol change lands with both clients, per the service's rule; the reque
   the IDE's debug actions: no debug session exists.
 - **The execution point**: the paused line is highlighted with an arrow in the gutter, in the file it is in (a page
   object's line included), opened if it is not, and the inlay says what is about to run:
-  `⏸ Paused · Fill "WELCOME10" getByLabel('Coupon') · attempt 2`.
+  `Paused · Fill "WELCOME10" getByLabel('Coupon') · attempt 2`.
 - **Breakpoints during the run**: VS Code's `vscode.debug.onDidChangeBreakpoints` and JetBrains'
   `XBreakpointListener` send the new set; today's run reads them once, at its start. A breakpoint on a line whose
   calls never stop (no Playwright call, or only a call without the pause flag, such as `waitForSelector`) is marked as

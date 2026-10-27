@@ -422,7 +422,7 @@ export function registerRunControl(
               const target = [targetOf(s)];
               return [
                 new vscode.CodeLens(range, {
-                  title: pausedText(s.stop, s.test),
+                  title: `$(debug-pause) ${pausedText(s.stop, s.test)}`,
                   command: s.stop.bar ? '' : RUN_COMMANDS.showPage,
                   arguments: target,
                 }),

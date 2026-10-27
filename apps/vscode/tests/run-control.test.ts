@@ -134,11 +134,11 @@ describe('what the controls offer', () => {
 
 describe('a stop', () => {
   test('says what is about to run, and the attempt after the first', () => {
-    expect(pausedText(stopAt(spec, 5), runTest())).toBe('⏸ Paused · Fill "WELCOME10" getByLabel(\'Coupon\')');
+    expect(pausedText(stopAt(spec, 5), runTest())).toBe('Paused · Fill "WELCOME10" getByLabel(\'Coupon\')');
     expect(pausedText(stopAt(spec, 5), runTest(1))).toBe(
-      '⏸ Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · attempt 2',
+      'Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · attempt 2',
     );
-    expect(pausedText(stopAt(spec, 5), null)).toBe('⏸ Paused · Fill "WELCOME10" getByLabel(\'Coupon\')');
+    expect(pausedText(stopAt(spec, 5), null)).toBe('Paused · Fill "WELCOME10" getByLabel(\'Coupon\')');
   });
 
   test('is each stopped worker of each run, told apart by its run, worker and time', () => {
@@ -156,7 +156,7 @@ describe('a stop', () => {
     ]);
     expect(new Set(stops.map(stopKey)).size).toBe(2);
     expect(stopPick(stops[1]!)).toEqual({
-      label: '⏸ Paused · Fill "WELCOME10" getByLabel(\'Coupon\')',
+      label: '$(debug-pause) Paused · Fill "WELCOME10" getByLabel(\'Coupon\')',
       description: 'checkout › pays · checkout.page.ts:9 · worker 3',
     });
   });

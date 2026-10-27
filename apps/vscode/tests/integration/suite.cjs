@@ -381,7 +381,7 @@ const tests = {
     const sessionOf = () => api.runSessions().find((s) => s.ref === ref);
     const pausedLenses = async (uri) => {
       const lenses = (await vscode.commands.executeCommand('vscode.executeCodeLensProvider', uri)) ?? [];
-      const paused = lenses.find((l) => l.command?.title.startsWith('⏸'));
+      const paused = lenses.find((l) => l.command?.title.startsWith('$(debug-pause) Paused · '));
       return paused
         ? lenses.filter((l) => l.range.start.line === paused.range.start.line).map((l) => l.command.title)
         : [];
@@ -430,7 +430,7 @@ const tests = {
         return titles.length ? titles : null;
       }, 'the paused line’s lenses');
       for (const title of [
-        "⏸ Paused · Click getByRole('button', { name: 'Pay now' }) · attempt 2",
+        "$(debug-pause) Paused · Click getByRole('button', { name: 'Pay now' }) · attempt 2",
         'Resume',
         'Step',
         'Run to cursor',
@@ -447,7 +447,9 @@ const tests = {
       await waitFor(() => api.executionPoints(pageObject.toString()).includes(5), 'the execution point after the edit');
       await waitFor(async () => {
         const lenses = (await vscode.commands.executeCommand('vscode.executeCodeLensProvider', pageObject)) ?? [];
-        return lenses.find((l) => l.command?.title.startsWith('⏸'))?.range.start.line === 5 ? true : null;
+        return lenses.find((l) => l.command?.title.startsWith('$(debug-pause) Paused · '))?.range.start.line === 5
+          ? true
+          : null;
       }, 'the paused line’s lens after the edit');
       // Run to cursor in the edited file: the cursor's line as the run's code has it.
       pageEditor.selection = new vscode.Selection(6, 0, 6, 0);
@@ -537,7 +539,7 @@ const tests = {
       const shown = await waitFor(() => (api.pausedPage()?.image ? api.pausedPage() : null), 'the paused page');
       assert.equal(shown.image.data, '/9j/4AAQ');
       // The stop's line in the spec as it stands, two lines below the run's.
-      assert.equal(shown.caption, '⏸ Paused · Fill "one" locator(\'input\') · attempt 2 · checkout.spec.ts:5');
+      assert.equal(shown.caption, 'Paused · Fill "one" locator(\'input\') · attempt 2 · checkout.spec.ts:5');
       assert.deepEqual(api.executionPoints(spec.toString()), [4]);
       await vscode.commands.executeCommand('piwi.resumeRun');
       await heardOne('the resume', (m) => m.type === 'control' && m.action === 'resume' && m.stop === 2);

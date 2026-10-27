@@ -176,7 +176,7 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
   `DebuggerColors.EXECUTIONPOINT_ATTRIBUTES`) with `AllIcons.Debugger.NextStatement` in the gutter, whose click and
   right-click list the stop's controls (`stopActions`), and a block inlay above the line in each editor of the file
   (`StopInlay`, added again in an editor opened later: `EditorFactoryListener`), `Glue.pausedText`
-  (`⏸ Paused · <title> · attempt N`) then **Resume**, **Step**, **Run to Caret** and **Finish** as links, which an
+  (`Paused · <title> · attempt N`) then **Resume**, **Step**, **Run to Caret** and **Finish** as links, which an
   `EditorMouseListener` on the multicaster clicks in the editors of its own project (`StopInlay.controlAt`, the hand
   cursor over one). A run's lines are the documents as they stood when it started (`started`, else when first heard):
   `Glue.EditLog` keeps the edits that move lines while a run is live or starting (a `DocumentListener` on the

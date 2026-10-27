@@ -151,7 +151,8 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   `piwi.runResumed` for two seconds after an answer, `RESUMED_KEY_MS`). A stop
   opens its file at its line once (`stopKey`), drawn as the execution point (`media/execution-point.svg` in the
   gutter, `piwi.executionPointBackground`, the debugger's stack frame color by default) with a hover holding the
-  controls, and a CodeLens above it (`pausedText`: `⏸ Paused · <title> · attempt N`, then Resume, Step, Run to cursor,
+  controls, and a CodeLens above it (`pausedText`: `Paused · <title> · attempt N`, after `$(debug-pause)` there and in
+  the choice among stops, plain text in the hover and the paused page's caption; then Resume, Step, Run to cursor,
   Finish, each naming its worker and its stop: one that went on says `the test went on.`, `targetStop`); a key or a
   palette command acts on the stop at the caret's line, else the only one,
   else asks (`stopsFor`). A run's lines are the documents as they stood when it started (`started`, else when it is

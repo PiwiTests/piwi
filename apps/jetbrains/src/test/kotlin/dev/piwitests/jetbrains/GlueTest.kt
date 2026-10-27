@@ -579,8 +579,8 @@ class GlueTest {
 
     @Test
     fun `a stop says what is about to run, with the attempt after the first`() {
-        assertEquals("⏸ Paused · Fill \"WELCOME10\" getByLabel('Coupon')", Glue.pausedText(stopAt(specUri, 5), runTest()))
-        assertEquals("⏸ Paused · Fill \"WELCOME10\" getByLabel('Coupon') · attempt 2", Glue.pausedText(stopAt(specUri, 5), runTest(retry = 1)))
+        assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon')", Glue.pausedText(stopAt(specUri, 5), runTest()))
+        assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · attempt 2", Glue.pausedText(stopAt(specUri, 5), runTest(retry = 1)))
         val sessions = mapOf(
             "ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5)), RunWorker(1, 1, "running", runTest())),
             "ed-2" to session("ed-2", RunWorker(3, 3, "stopped", runTest(), stopAt(pageUri, 8))),
@@ -588,7 +588,7 @@ class GlueTest {
         val stops = Glue.stopsOf(sessions)
         assertEquals(listOf("ed-1" to 0, "ed-2" to 3), stops.map { it.ref to it.worker })
         assertEquals(2, stops.map(Glue::stopKey).toSet().size)
-        assertEquals("⏸ Paused · Fill \"WELCOME10\" getByLabel('Coupon') · checkout › pays · checkout.page.ts:9 · worker 3", Glue.stopLabel(stops[1]))
+        assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · checkout › pays · checkout.page.ts:9 · worker 3", Glue.stopLabel(stops[1]))
         assertEquals("Piwi: 2 tests paused", Glue.runControlStatus(Glue.runControls(sessions), stops))
     }
 

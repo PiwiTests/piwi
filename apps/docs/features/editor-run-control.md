@@ -53,7 +53,7 @@ editor opens the file of the call about to run, a spec or a page object, with th
 line: an arrow in the gutter, the debugger's execution point color, and above the line what is about to run, as
 Playwright names the call, with the controls:
 
-`⏸ Paused · Fill "WELCOME10" getByLabel('Coupon') · attempt 2`  Resume  Step  Run to cursor  Finish
+`Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`  Resume  Step  Run to cursor  Finish
 
 `attempt 2` shows on a retry. In VS Code the line is a CodeLens, and the hover on the paused line has the same
 controls; the color is `piwi.executionPointBackground`. In a JetBrains IDE the line is an inlay whose words are links,
