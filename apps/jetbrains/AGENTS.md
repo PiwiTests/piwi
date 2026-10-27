@@ -206,7 +206,8 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
   controls in its inlay, its gutter popup and the status bar item's menu, and under **Tools → Piwi** while some stop
   offers them (`StopCodeAction`: `Piwi.PickAtStop`, `Piwi.RecordAtStop`, `Piwi.AssertAtStop`,
   `Piwi.AssertRegionAtStop`, `Piwi.MockAtStop`, no shortcut): **Pick a Locator**, **Record Here**, **Assert** and
-  **Assert a Region** at a stop the pause bar shows, **Mock a Request** at any, each a `piwi/stopAction` on a pooled
+  **Assert a Region** at a stop the pause bar shows, **Mock a Request** at any (the inlay names them shorter,
+  `StopLink.inlayLabel`), each a `piwi/stopAction` on a pooled
   thread naming its stop, its answer a balloon. Mock a Request lists `piwi/stopRequests` in a popup, the latest first,
   filtered by URL as you type (`setNamerForFiltering`; `RequestRenderer`: the method and URL, then the status, type,
   size or `no size`, and when it finished: `Glue.requestDetails`). The code a stop makes, from here or Piwi Picker

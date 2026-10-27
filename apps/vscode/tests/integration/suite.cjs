@@ -669,7 +669,7 @@ const tests = {
         const titles = await stopLenses(spec, '$(debug-pause) Paused · ');
         return titles.length ? titles : null;
       }, 'the paused line’s lenses');
-      for (const title of ['Pick a locator', 'Record here', 'Assert', 'Assert a region', 'Mock a request']) {
+      for (const title of ['Pick', 'Record', 'Assert', 'Assert region', 'Mock']) {
         assert.ok(lenses.includes(title), lenses.join(' | '));
       }
 
@@ -817,11 +817,11 @@ const tests = {
       assert.deepEqual(failed, [
         "$(error) Failed · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' })",
         'Resume',
-        'Pick a locator',
-        'Record here',
+        'Pick',
+        'Record',
         'Assert',
-        'Assert a region',
-        'Mock a request',
+        'Assert region',
+        'Mock',
       ]);
       const from = heard.length;
       await vscode.commands.executeCommand('piwi.resumeRun');

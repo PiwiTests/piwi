@@ -1444,9 +1444,10 @@ object Glue {
         return here.ifEmpty { stops }
     }
 
-    /** A link above a stopped line: a control, or a code action. */
+    /** A link above a stopped line: a control, or a code action, by its label, or a shorter one in the inlay. */
     sealed interface StopLink {
         val label: String
+        val inlayLabel: String get() = label
     }
 
     /** The controls offered above a stop, in order. */
@@ -1467,14 +1468,21 @@ object Glue {
     /**
      * The code actions at a stop, in the order it offers them (`piwi/stopAction`): the pause bar's Pick a locator and
      * Record here, and Assert and Assert a region, in the test's window (`inPage`), so at a stop the bar shows; Mock a
-     * request at any stop. Each needs its reporter to take what `takes` names, and has its action under **Tools → Piwi**.
+     * request at any stop. Each needs its reporter to take what `takes` names, and has its action under **Tools → Piwi**;
+     * the inlay names it shorter, beside the controls.
      */
-    enum class StopAction(override val label: String, val action: String, val takes: List<String>, val inPage: Boolean, val id: String) : StopLink {
-        PICK("Pick a Locator", "pick", listOf("pick"), true, "Piwi.PickAtStop"),
-        RECORD("Record Here", "record", listOf("record"), true, "Piwi.RecordAtStop"),
-        ASSERT("Assert", "assert", listOf("assert"), true, "Piwi.AssertAtStop"),
-        ASSERT_REGION("Assert a Region", "assert-region", listOf("assert-region"), true, "Piwi.AssertRegionAtStop"),
-        MOCK("Mock a Request", "mock", listOf("requests", "mock"), false, "Piwi.MockAtStop"),
+    enum class StopAction(
+        override val label: String,
+        override val inlayLabel: String,
+        val action: String,
+        val takes: List<String>,
+        val inPage: Boolean,
+    ) : StopLink {
+        PICK("Pick a Locator", "Pick", "pick", listOf("pick"), true),
+        RECORD("Record Here", "Record", "record", listOf("record"), true),
+        ASSERT("Assert", "Assert", "assert", listOf("assert"), true),
+        ASSERT_REGION("Assert a Region", "Assert Region", "assert-region", listOf("assert-region"), true),
+        MOCK("Mock a Request", "Mock", "mock", listOf("requests", "mock"), false),
     }
 
     /** The code actions a stop offers: those its reporter takes, the ones in the test's window only where the bar shows. */

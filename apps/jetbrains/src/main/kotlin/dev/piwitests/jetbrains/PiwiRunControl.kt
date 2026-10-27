@@ -956,8 +956,8 @@ internal class StopInlay(val stop: Glue.ShownStop) : EditorCustomElementRenderer
             x += metrics.stringWidth(text)
             for (link in links) {
                 x += gap
-                add(Piece(x, metrics.stringWidth(link.label), link.label, link))
-                x += metrics.stringWidth(link.label)
+                add(Piece(x, metrics.stringWidth(link.inlayLabel), link.inlayLabel, link))
+                x += metrics.stringWidth(link.inlayLabel)
             }
         }
     }

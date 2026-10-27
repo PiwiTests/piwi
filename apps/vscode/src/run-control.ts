@@ -242,9 +242,13 @@ export function stopControls(stop: RunStop): StopControl[] {
   ];
 }
 
-/** A code action at a stop: what it starts (`piwi/stopAction`), its title, its command and its context key. */
+/**
+ * A code action at a stop: what it starts (`piwi/stopAction`), its title, the shorter one of the lens above the stopped
+ * line, which shares its row with the line's own lenses, its command and its context key.
+ */
 export interface StopAction extends StopControl {
   action: StopActionKind;
+  lens: string;
   /** The context key set while a stop offers it, which its palette entry follows. */
   key: string;
   /** The words of the choice among the actions. */
@@ -259,6 +263,7 @@ export interface StopAction extends StopControl {
 export const STOP_ACTIONS: readonly StopAction[] = [
   {
     action: 'pick',
+    lens: 'Pick',
     title: 'Pick a locator',
     command: RUN_COMMANDS.pick,
     key: 'piwi.runCanPick',
@@ -266,6 +271,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   },
   {
     action: 'record',
+    lens: 'Record',
     title: 'Record here',
     command: RUN_COMMANDS.record,
     key: 'piwi.runCanRecord',
@@ -273,6 +279,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   },
   {
     action: 'assert',
+    lens: 'Assert',
     title: 'Assert',
     command: RUN_COMMANDS.assert,
     key: 'piwi.runCanAssert',
@@ -280,6 +287,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   },
   {
     action: 'assert-region',
+    lens: 'Assert region',
     title: 'Assert a region',
     command: RUN_COMMANDS.assertRegion,
     key: 'piwi.runCanAssertRegion',
@@ -287,6 +295,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   },
   {
     action: 'mock',
+    lens: 'Mock',
     title: 'Mock a request',
     command: RUN_COMMANDS.mock,
     key: 'piwi.runCanMock',

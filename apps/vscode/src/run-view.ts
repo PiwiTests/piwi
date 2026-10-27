@@ -610,7 +610,7 @@ export function registerRunControl(
                   command: s.stop.bar ? '' : RUN_COMMANDS.showPage,
                   arguments: target,
                 }),
-                ...[...stopControls(s.stop), ...stopActions(s)].map(
+                ...[...stopControls(s.stop), ...stopActions(s).map((a) => ({ ...a, title: a.lens }))].map(
                   (c) => new vscode.CodeLens(range, { title: c.title, command: c.command, arguments: target }),
                 ),
               ];
