@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { createRequire } from 'module';
 import { resolve, dirname, relative, sep } from 'path';
 import { fileURLToPath } from 'url';
+import { DEV_SERVER_PORT } from './shared/dev-server-port.mjs';
 import { GENERATED_DOCS_PAGES } from './shared/docs-generated-pages';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -126,6 +127,11 @@ export default defineNuxtConfig({
 
   devtools: {
     enabled: false,
+  },
+
+  // `nuxt dev` only, after `--port`, `NUXT_PORT`, `NITRO_PORT` and `PORT`. The built server listens on Nitro's 3000.
+  devServer: {
+    port: DEV_SERVER_PORT,
   },
 
   // Production builds emit no server source maps: through the Vite SSR build and

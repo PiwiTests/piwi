@@ -10,7 +10,7 @@ Attach visual evidence when it saves the reviewer a checkout: a screenshot of a 
 
 ```bash
 # capture the evidence
-playwright-cli open http://localhost:3000/settings
+playwright-cli open http://localhost:7494/settings
 playwright-cli screenshot --filename=settings-after.png
 playwright-cli video-start settings-flow.webm
 playwright-cli click e5

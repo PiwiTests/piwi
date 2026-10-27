@@ -18,7 +18,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 /** The application workspace root (`scripts/lib/` sits two levels below it). */
 export const APP_DIR = join(__dirname, '..', '..');
 
-/** Default port for a booted throwaway server — off 3000 so a dev server can stay up. */
+/** Default port for a booted throwaway server — off the dev server's and the desktop app's, so both can stay up. */
 export const DEFAULT_PORT = 3050;
 
 export function resolveChromium() {

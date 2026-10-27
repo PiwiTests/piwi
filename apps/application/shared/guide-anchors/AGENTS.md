@@ -66,7 +66,7 @@ entry shape and the meaning of each field are documented in `index.d.mts`.
 ## Checking anchors in a browser
 
 - **Check new anchors on a running server**:
-  `node scripts/check-demo-runtime.mjs --url http://localhost:3000 --area <area>` (or `--anchors <id,id,…>`, or both)
+  `node scripts/check-demo-runtime.mjs --url http://localhost:7494 --area <area>` (or `--anchors <id,id,…>`, or both)
   opens each sample on the dev server instead of the built demo; `npm run app:seed:dev` gives that server the demo's
   seeded ids. It skips an anchor whose sample acts as a persona or needs the demo build, since authentication is off
   on a dev server. `--anchors-only` checks the same selection in the built demo without the tours and the other checks;

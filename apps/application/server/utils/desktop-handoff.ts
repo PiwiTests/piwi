@@ -7,6 +7,8 @@
  * forwards a page to every listener.
  */
 
+import { createHash } from 'node:crypto';
+
 type OpenPageListener = (path: string) => void;
 
 const openPageListeners = new Set<OpenPageListener>();
@@ -53,12 +55,30 @@ export function isOutsideNavigation(headers: NavigationHeaders): boolean {
   );
 }
 
+/**
+ * The script the notice runs once the page was forwarded: it closes the tab.
+ * Browsers let a page close a tab that holds no other page, which is the case
+ * for a link opened from a terminal or another app; any other tab keeps the
+ * notice.
+ */
+const CLOSE_TAB_SCRIPT = 'window.close();';
+
+/** The notice's Content-Security-Policy: its own images and styles, and no script but `CLOSE_TAB_SCRIPT`. */
+export const DESKTOP_HANDOFF_CSP = [
+  "default-src 'none'",
+  "img-src 'self'",
+  "style-src 'unsafe-inline'",
+  `script-src 'sha256-${createHash('sha256').update(CLOSE_TAB_SCRIPT).digest('base64')}'`,
+  "base-uri 'none'",
+].join('; ');
+
 /** The notice the browser tab shows once the page was forwarded (`shown`) or when no app window listens. */
 export function renderDesktopHandoffPage(shown: boolean): string {
   const heading = shown ? 'Opened in Piwi Dashboard' : 'Open this page in Piwi Dashboard';
   const body = shown
     ? 'The page is now showing in the desktop app. You can close this tab.'
     : 'This dashboard runs in the Piwi Dashboard desktop app, but its window is not ready yet. Open it from the tray icon, then open the link again.';
+  const closeTab = shown ? `\n<script>${CLOSE_TAB_SCRIPT}</script>` : '';
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -81,7 +101,7 @@ export function renderDesktopHandoffPage(shown: boolean): string {
 <img src="/logo.svg" alt="">
 <h1>${heading}</h1>
 <p>${body}</p>
-</main>
+</main>${closeTab}
 </body>
 </html>
 `;

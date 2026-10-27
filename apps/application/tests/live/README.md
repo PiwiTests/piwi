@@ -40,8 +40,8 @@ $env:OPENCODE_API_KEY='<key>'; npm run app:test:assistant:live
   set. The summary counts the tokens of each topic. The daily assistant caps are off for the run. `PIWI_ASSISTANT_LIVE_QUESTIONS` asks part of the set: question ids or topics, comma-separated
   (`PIWI_ASSISTANT_LIVE_QUESTIONS=flaky,show-me`).
 - **The server**: it seeds a throwaway SQLite database from the demo seed under `.live-temp/assistant/server/` and
-  boots its own dev server on port 3104 (build cache in `.live-temp/assistant/nuxt-build/`), so a dev server on 3000
-  can keep running.
+  boots its own dev server on port 3104 (build cache in `.live-temp/assistant/nuxt-build/`), so a dev server on its own
+  port can keep running.
 - **The report**: `.live-temp/assistant/report.json` holds every answer with its score, the tools it called, its
   blocks and anchors and the facts it missed; `.live-temp/assistant/summary.md` scores each topic and the whole run
   and lists the weakest answers. Both are rewritten after every answer, so an interrupted run leaves what it got.

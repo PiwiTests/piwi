@@ -68,7 +68,7 @@ npx playwright test --watch
 
 Tests are configured in `playwright.config.ts` at the project root. Key settings:
 
-- **baseURL**: `http://localhost:3000` (the running desktop app's loopback URL in `PIWI_DESKTOP_E2E` mode)
+- **baseURL**: `http://localhost:7494` (`shared/dev-server-port.mjs`; the running desktop app's loopback URL in `PIWI_DESKTOP_E2E` mode)
 - **webServer**: Automatically starts the dev server before tests (skipped in desktop mode — the app is already running)
 - **retries**: 2 retries on CI, 0 locally
 - **workers**: 1 (serial execution — the suite uses static project names shared across tests, requiring sequential cleanup)
@@ -137,7 +137,7 @@ npx playwright test --debug
 ### Generate Code
 
 ```bash
-npx playwright codegen http://localhost:3000
+npx playwright codegen http://localhost:7494
 ```
 
 ### View Trace
@@ -170,11 +170,16 @@ Tests are designed to run in CI environments:
 
 ### Port Already in Use
 
-If port 3000 is in use, the tests will fail to start. Stop any running dev servers:
+If port 7494 is in use, the tests will fail to start. Stop any running dev servers:
 
 ```bash
-# Find and kill process on port 3000
-lsof -ti:3000 | xargs kill
+# Find and kill the process on port 7494
+lsof -ti:7494 | xargs kill
+```
+
+```powershell
+# Find and kill the process on port 7494
+Stop-Process -Id (Get-NetTCPConnection -LocalPort 7494).OwningProcess
 ```
 
 ### Tests Timing Out

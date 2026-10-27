@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
 import { desktopPagePath } from '#shared/desktop-handoff';
 import {
+  DESKTOP_HANDOFF_CSP,
   isOutsideNavigation,
   renderDesktopHandoffPage,
   requestDesktopOpen,
@@ -101,16 +103,33 @@ describe('desktop open requests', () => {
 });
 
 describe('renderDesktopHandoffPage', () => {
+  /** Every `<script …>` tag of the page, as its opening tag and its body. */
+  const scripts = (html: string) =>
+    [...html.matchAll(/(<script\b[^>]*>)([\s\S]*?)<\/script>/gi)].map((m) => ({ tag: m[1]!, body: m[2]! }));
+  const directive = (name: string) =>
+    DESKTOP_HANDOFF_CSP.split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${name} `));
+
   it('tells the user the page is in the app', () => {
     const html = renderDesktopHandoffPage(true);
     expect(html).toContain('data-desktop-handoff="shown"');
     expect(html).toContain('Opened in Piwi Dashboard');
-    expect(html).not.toContain('<script');
   });
 
-  it('points to the tray when no window is listening', () => {
+  it('closes the tab with the one script its policy allows', () => {
+    const found = scripts(renderDesktopHandoffPage(true));
+    expect(found).toEqual([{ tag: '<script>', body: 'window.close();' }]);
+    const hash = createHash('sha256').update(found[0]!.body).digest('base64');
+    expect(directive('script-src')).toBe(`script-src 'sha256-${hash}'`);
+    expect(directive('default-src')).toBe("default-src 'none'");
+  });
+
+  it('points to the tray when no window is listening, and keeps the tab open', () => {
     const html = renderDesktopHandoffPage(false);
     expect(html).toContain('data-desktop-handoff="not-ready"');
     expect(html).toContain('tray icon');
+    expect(scripts(html)).toEqual([]);
+    expect(html).not.toMatch(/<script\b/i);
   });
 });
