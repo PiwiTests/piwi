@@ -1,6 +1,20 @@
 import { describe, expect, test } from 'vitest';
 import { RECORD_CHANNEL_ENV } from '../src/ide-recorder';
-import { RUN_CHANNEL_ENV, parseHubToRun, parseRunToHub, type HubToRun, type RunToHub } from '../src/run-channel';
+import {
+  MAX_KEPT_BODY,
+  MAX_KEPT_RESPONSES,
+  MAX_REGION_SNAPSHOT,
+  MAX_STOP_ERROR,
+  RUN_CHANNEL_ENV,
+  RUN_HOLDS,
+  RUN_TAKES,
+  parseHubToRun,
+  parseRunToHub,
+  type HubToRun,
+  type KeptRequest,
+  type KeptResponse,
+  type RunToHub,
+} from '../src/run-channel';
 
 const line = (message: unknown) => JSON.stringify(message);
 
@@ -21,7 +35,8 @@ describe('the run channel', () => {
       pid: 4242,
       playwright: '1.64.1',
       reporter: '0.60.0',
-      takes: ['pick', 'record'],
+      takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'],
+      holds: ['failure'],
     } satisfies RunToHub;
 
     test('reads its attach, and refuses one without a ref, a folder or a worker', () => {
@@ -33,8 +48,16 @@ describe('the run channel', () => {
       });
       // A reporter that predates the intents lists none; one names only those this side knows.
       expect(parseRunToHub(line({ ...attach, takes: undefined }))).toEqual({ ...attach, takes: [] });
-      expect(parseRunToHub(line({ ...attach, takes: ['assert', 'record'] }))).toMatchObject({ takes: ['record'] });
+      expect(parseRunToHub(line({ ...attach, takes: ['dance', 'record'] }))).toMatchObject({ takes: ['record'] });
+      expect(parseRunToHub(line({ ...attach, takes: ['mock', 'pick'] }))).toMatchObject({ takes: ['pick', 'mock'] });
+      expect(RUN_TAKES).toEqual(attach.takes);
       expect(parseRunToHub(line({ ...attach, takes: 'pick' }))).toMatchObject({ takes: [] });
+      // The stops it holds once the service says it shows them: none named by a reporter that predates them.
+      expect(parseRunToHub(line({ ...attach, holds: undefined }))).not.toHaveProperty('holds');
+      expect(parseRunToHub(line({ ...attach, holds: 'failure' }))).not.toHaveProperty('holds');
+      expect(parseRunToHub(line({ ...attach, holds: ['dance', 'failure'] }))).toMatchObject({ holds: ['failure'] });
+      expect(parseRunToHub(line({ ...attach, holds: [] }))).toMatchObject({ holds: [] });
+      expect(RUN_HOLDS).toEqual(attach.holds);
       for (const broken of [
         { ...attach, ref: '' },
         { ...attach, ref: 'ed 1' },
@@ -89,7 +112,8 @@ describe('the run channel', () => {
         bar: false,
       } satisfies RunToHub;
       expect(parseRunToHub(line(stopped))).toEqual(stopped);
-      expect(parseRunToHub(line({ ...stopped, reason: 'failure' }))).toMatchObject({ reason: 'other' });
+      expect(parseRunToHub(line({ ...stopped, reason: 'failure' }))).toMatchObject({ reason: 'failure' });
+      expect(parseRunToHub(line({ ...stopped, reason: 'dance' }))).toMatchObject({ reason: 'other' });
       expect(parseRunToHub(line({ ...stopped, place: { file: '../shared/a.ts', line: 2 } }))).toMatchObject({
         place: { file: '../shared/a.ts', line: 2 },
       });
@@ -107,6 +131,34 @@ describe('the run channel', () => {
       }
       expect(parseRunToHub(line({ type: 'running', stop: 3 }))).toEqual({ type: 'running', stop: 3 });
       expect(parseRunToHub(line({ type: 'running' }))).toBeNull();
+    });
+
+    test('reads the error a failure’s stop names, cut short, and no error of another stop', () => {
+      const failed = {
+        type: 'stopped',
+        stop: 4,
+        reason: 'failure',
+        title: 'Failed: expect(locator).toBeVisible() failed',
+        place: { file: 'tests/checkout.spec.ts', line: 12, column: 5 },
+        locator: "getByRole('button', { name: 'Pay' })",
+        bar: true,
+        error: "expect(locator).toBeVisible() failed\nLocator: getByRole('button', { name: 'Pay' })",
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(failed))).toEqual(failed);
+      expect(parseRunToHub(line({ ...failed, error: 'x'.repeat(MAX_STOP_ERROR + 50) }))).toMatchObject({
+        error: 'x'.repeat(MAX_STOP_ERROR),
+      });
+      // A reporter that predates it sends none; one that is no text, or no words, is left out, as is another stop's.
+      for (const without of [
+        { ...failed, error: undefined },
+        { ...failed, error: 5 },
+        { ...failed, error: ' \n ' },
+        { ...failed, reason: 'breakpoint' },
+      ]) {
+        const read = parseRunToHub(line(without));
+        expect(read, JSON.stringify(without)).toMatchObject({ type: 'stopped', stop: 4 });
+        expect(read, JSON.stringify(without)).not.toHaveProperty('error');
+      }
     });
 
     test('reads an image of the stopped page, or none, and refuses anything else', () => {
@@ -141,6 +193,127 @@ describe('the run channel', () => {
       }
     });
 
+    test('reads the responses a test kept, each field checked, and refuses a list it cannot read whole', () => {
+      const kept = {
+        id: 3,
+        method: 'POST',
+        url: 'https://shop.test/api/cart?id=4',
+        status: 201,
+        type: 'application/json',
+        size: 812,
+        time: 1450,
+      } satisfies KeptRequest;
+      const listed = {
+        type: 'answer',
+        request: 4,
+        what: 'requests',
+        value: { ok: true, message: 'The test kept 1 response.', requests: [kept] },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(listed))).toEqual(listed);
+      expect(
+        parseRunToHub(line({ ...listed, value: { ...listed.value, requests: [{ ...kept, method: 'post' }] } })),
+      ).toMatchObject({ value: { requests: [{ method: 'POST' }] } });
+      // A body that said no size is listed without one.
+      const chunked = { ...listed, value: { ...listed.value, requests: [{ ...kept, size: null }] } };
+      expect(parseRunToHub(line(chunked))).toEqual(chunked);
+      expect(parseRunToHub(line({ ...listed, value: { ok: false, message: 'gone', requests: [] } }))).toMatchObject({
+        value: { ok: false, requests: [] },
+      });
+      for (const broken of [
+        { ...kept, id: 0 },
+        { ...kept, method: 'GE T' },
+        { ...kept, url: '' },
+        { ...kept, url: 'https://a.test/\nb' },
+        { ...kept, status: 99 },
+        { ...kept, status: 600 },
+        { ...kept, type: 'application/json; charset=utf-8' },
+        { ...kept, size: MAX_KEPT_BODY + 1 },
+        { ...kept, size: -1 },
+        { ...kept, time: -1 },
+      ]) {
+        expect(
+          parseRunToHub(line({ ...listed, value: { ...listed.value, requests: [kept, broken] } })),
+          JSON.stringify(broken),
+        ).toBeNull();
+      }
+      const many = Array.from({ length: MAX_KEPT_RESPONSES + 1 }, (_, i) => ({ ...kept, id: i + 1 }));
+      expect(parseRunToHub(line({ ...listed, value: { ...listed.value, requests: many } }))).toBeNull();
+      expect(parseRunToHub(line({ ...listed, value: { ok: true, message: 'x' } }))).toBeNull();
+    });
+
+    test('reads the one response to mock with its body, or none, and refuses a body past the cap', () => {
+      const response = {
+        method: 'GET',
+        url: 'https://shop.test/api/cart',
+        status: 200,
+        type: 'application/json',
+        body: '{"items":[]}',
+      } satisfies KeptResponse;
+      const mock = {
+        type: 'answer',
+        request: 5,
+        what: 'mock',
+        value: { ok: true, message: 'The response.', response },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(mock))).toEqual(mock);
+      expect(
+        parseRunToHub(
+          line({ ...mock, value: { ok: false, message: 'The test kept no such response.', response: null } }),
+        ),
+      ).toMatchObject({ value: { ok: false, response: null } });
+      for (const broken of [
+        { ...response, body: 'x'.repeat(MAX_KEPT_BODY + 1) },
+        { ...response, body: null },
+        { ...response, status: 0 },
+        { ...response, url: 'a\rb' },
+      ]) {
+        expect(parseRunToHub(line({ ...mock, value: { ...mock.value, response: broken } }))).toBeNull();
+      }
+      expect(parseRunToHub(line({ ...mock, value: { ok: true, message: 'x' } }))).toBeNull();
+    });
+
+    test('reads a locator’s count, or none, and a region picked with its ARIA snapshot', () => {
+      const counted = {
+        type: 'answer',
+        request: 6,
+        what: 'locator',
+        value: { ok: true, message: '2 elements match.', count: 2 },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(counted))).toEqual(counted);
+      expect(
+        parseRunToHub(line({ ...counted, value: { ok: false, message: 'It does not parse.', count: null } })),
+      ).toMatchObject({ value: { count: null } });
+      expect(parseRunToHub(line({ ...counted, value: { ok: true, message: '', count: -1 } }))).toBeNull();
+      expect(parseRunToHub(line({ ...counted, value: { ok: true, message: '' } }))).toBeNull();
+
+      const region = {
+        type: 'region',
+        stop: 2,
+        locator: "getByRole('region', { name: 'Order summary' })",
+        snapshot: '- heading "Order summary" [level=2]\n- text: Total €72.00',
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(region))).toEqual(region);
+      // Why the region picked brought no snapshot.
+      const refused = { type: 'region', stop: 2, refused: "getByRole('list') finds 3 elements." } satisfies RunToHub;
+      expect(parseRunToHub(line(refused))).toEqual(refused);
+      expect(parseRunToHub(line({ ...refused, refused: 'x'.repeat(600) }))).toEqual({
+        ...refused,
+        refused: 'x'.repeat(500),
+      });
+      expect(parseRunToHub(line({ ...refused, refused: ' ' }))).toBeNull();
+      expect(parseRunToHub(line({ ...refused, stop: 0 }))).toBeNull();
+      for (const broken of [
+        { ...region, stop: 0 },
+        { ...region, locator: '' },
+        { ...region, locator: "getByRole('a')\n.click()" },
+        { ...region, locator: 'x'.repeat(1001) },
+        { ...region, snapshot: '  ' },
+        { ...region, snapshot: 'x'.repeat(MAX_REGION_SNAPSHOT + 1) },
+      ]) {
+        expect(parseRunToHub(line(broken)), JSON.stringify(broken).slice(0, 80)).toBeNull();
+      }
+    });
+
     test('reads a notice, cut short, and ignores what it does not know', () => {
       expect(parseRunToHub(line({ type: 'notice', message: 'x'.repeat(600) }))).toEqual({
         type: 'notice',
@@ -155,6 +328,20 @@ describe('the run channel', () => {
   });
 
   describe('what the editor service sends', () => {
+    test('reads the stops it shows, answering a worker that listed the ones it holds', () => {
+      expect(parseHubToRun(line({ type: 'attached', holds: ['failure'] }))).toEqual({
+        type: 'attached',
+        holds: ['failure'],
+      });
+      expect(parseHubToRun(line({ type: 'attached', holds: ['failure', 'dance'] }))).toEqual({
+        type: 'attached',
+        holds: ['failure'],
+      });
+      expect(parseHubToRun(line({ type: 'attached', holds: [] }))).toEqual({ type: 'attached', holds: [] });
+      expect(parseHubToRun(line({ type: 'attached' }))).toBeNull();
+      expect(parseHubToRun(line({ type: 'attached', holds: 'failure' }))).toBeNull();
+    });
+
     test('reads the breakpoints, all of them or none', () => {
       const breakpoints = {
         type: 'breakpoints',
@@ -195,8 +382,8 @@ describe('the run channel', () => {
       expect(parseHubToRun(line({ type: 'request', request: 0, what: 'image' }))).toBeNull();
     });
 
-    test('reads a request to pick or record at a stop, which names that stop', () => {
-      for (const what of ['pick', 'record'] as const) {
+    test('reads a request to start an intent or to answer a query at a stop, which names that stop', () => {
+      for (const what of ['pick', 'record', 'assert', 'assert-region', 'requests'] as const) {
         expect(parseHubToRun(line({ type: 'request', request: 6, what, stop: 2 }))).toEqual({
           type: 'request',
           request: 6,
@@ -206,6 +393,21 @@ describe('the run channel', () => {
         expect(parseHubToRun(line({ type: 'request', request: 6, what }))).toBeNull();
         expect(parseHubToRun(line({ type: 'request', request: 6, what, stop: 0 }))).toBeNull();
       }
+      expect(parseHubToRun(line({ type: 'request', request: 7, what: 'mock', stop: 2, id: 4 }))).toEqual({
+        type: 'request',
+        request: 7,
+        what: 'mock',
+        stop: 2,
+        id: 4,
+      });
+      expect(parseHubToRun(line({ type: 'request', request: 7, what: 'mock', stop: 2 }))).toBeNull();
+      expect(parseHubToRun(line({ type: 'request', request: 7, what: 'mock', stop: 2, id: 0 }))).toBeNull();
+      const locator = { type: 'request', request: 8, what: 'locator', stop: 2, locator: "getByText('Pay')" };
+      expect(parseHubToRun(line(locator))).toEqual(locator);
+      expect(parseHubToRun(line({ ...locator, locator: null }))).toEqual({ ...locator, locator: null });
+      expect(parseHubToRun(line({ ...locator, locator: undefined }))).toBeNull();
+      expect(parseHubToRun(line({ ...locator, locator: '' }))).toBeNull();
+      expect(parseHubToRun(line({ ...locator, locator: "getByText('a')\ngetByText('b')" }))).toBeNull();
     });
 
     test('names what a newer service sends that this version does not know, and refuses what is malformed', () => {

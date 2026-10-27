@@ -138,9 +138,12 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
         return Path.of(jar).parent.parent.resolve("server").resolve("piwi-language-server.cjs")
     }
 
-    /** The connection, and that the plugin shows where the runs it started stop and answers those stops. */
+    /**
+     * The connection, and that the plugin shows where the runs it started stop, answers those stops and writes the code
+     * made there.
+     */
     override fun createInitializationOptions(): Any =
-        mapOf("credentials" to project.service<PiwiProjectService>().credentials(), "runControl" to true)
+        mapOf("credentials" to project.service<PiwiProjectService>().credentials(), "runControl" to true, "stopCode" to true)
 
     override val lsp4jServerClass: Class<out org.eclipse.lsp4j.services.LanguageServer> = PiwiLanguageServer::class.java
 
@@ -228,6 +231,12 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     @JsonNotification("piwi/runSessionChanged")
     fun runSessionChanged(session: RunSession) {
         project.service<PiwiRunSessions>().heard(session)
+    }
+
+    /** The code made at a stop, from here or Piwi Picker: written above the stopped line. */
+    @JsonNotification("piwi/stopCode")
+    fun stopCode(code: StopCode) {
+        project.service<PiwiRunSessions>().write(code)
     }
 
     /** A sentence on a run the editor started, such as one that never reached the instance: a balloon, once. */

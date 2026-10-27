@@ -108,13 +108,15 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   ([ARCHITECTURE.md](ARCHITECTURE.md#recording-from-a-paused-test))
 - **A recorder change in `apps/extension` changes what the editor clients ship.** `build.mjs` imports `buildIdeBundle`
   from `apps/extension/scripts/build.mjs` to write `record-ide.js` and its messages, so the build needs the extension's
-  sources. ([ARCHITECTURE.md](ARCHITECTURE.md#build-output))
+  sources. So does a change to the extension's `mockCode` (`src/shared/mock-code.ts`), which `src/stop-code.ts` bundles
+  for Mock a request. ([ARCHITECTURE.md](ARCHITECTURE.md#build-output))
 
 ### Run control
 
 - **A control that answers a stop names it (`since`), and reaches no worker past it.** `piwi/runControl` answers
-  `The test went on.` for a `since` no worker stands at, and the hub refuses `step`, `resume`, `finish`, `pick` and
-  `record` without one. Checked by `tests/run-sessions.test.ts` ("names each stop apart, …").
+  `The test went on.` for a `since` no worker stands at, and the hub refuses `step`, `resume`, `finish`, an intent,
+  `requests` and `mock` without one, as `piwi/stopAction`, `piwi/stopRequests` and `piwi/locatorAtCaret` are. Checked
+  by `tests/run-sessions.test.ts` ("names each stop apart, …").
   ([ARCHITECTURE.md](ARCHITECTURE.md#controls-breakpoints-and-the-paused-page))
 - **A line a client sends for a run is a line of the run's code** (`run-to`, `piwi/setRunBreakpoints`). The client maps
   a document edited since the run started back to it, and the service refuses or leaves out a file outside the run's
@@ -140,6 +142,24 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **What the hub sends must read with `parseHubMessage`, which Piwi Picker uses.** The hub cuts the command line, the
   project and client names and the folders to its limits (`MAX_HUB_COMMAND`, `MAX_HUB_ROOTS`, …). Checked by
   `tests/run-hub.test.ts` ("what the hub sends"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
+- **A failure no pause bar shows is held only where a person can answer it.** In a run the service built to be watched,
+  or while a hub connection said `follow` with `on: true` (`followed` in `src/server.ts`), and only for a worker whose
+  `run-attach` lists `holds`, answered with `attached` (`SHOWN_HOLDS`). Checked by `tests/run-sessions.test.ts` ("holds
+  a failure no bar shows only …", "tells a worker that holds a failure …") and `tests/stop-actions.test.ts`.
+  ([ARCHITECTURE.md](ARCHITECTURE.md#stops-no-pause-bar-shows))
+- **The code from a stop goes to the client that writes it, placed where the stopped statement stands now, or is
+  refused.** `RunLines` follows the file from the run's start (a rerun's own start) through every `didChange`, and
+  `placementBefore` refuses a declaration's line, a body without braces (an arrow's expression body included) and a line
+  where no statement starts. Checked by `tests/stop-actions.test.ts`, `tests/run-lines.test.ts` and
+  `tests/page-candidates.test.ts`. ([ARCHITECTURE.md](ARCHITECTURE.md#code-from-a-stop))
+- **The hub tells what a code came to, never the code, and says it was sent to the client, not written.** The client,
+  which can still refuse the write, says itself that it wrote it (`piwi/stopCode`'s `message`). Checked by
+  `tests/stop-actions.test.ts` ("tells each follower once what each code came to, …").
+  ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
+- **No credential of a stopped test's requests leaves the service unhidden.** Each URL goes through `hideSecretsInUrl`
+  again, whatever the worker's reporter hid, and a mock through `mockCode`, by the rule `@piwitests/core/mask` writes
+  down. Checked by `tests/stop-actions.test.ts` ("lists the responses a test kept with the credentials …").
+  ([ARCHITECTURE.md](ARCHITECTURE.md#code-from-a-stop))
 - **The discovery file is this user's alone, and a reader deletes only a dead service's file of this machine.**
   `writeDiscovery` renames a 0600 file into a 0700 folder this user owns, never a link; a reader skips a folder that is
   a link, another user's or open to others, reads only files this user owns, and deletes only a file naming this
@@ -178,7 +198,7 @@ npm run editor:test         # the Vitest suites of tests/
 - [Breakpoints and picked locators](ARCHITECTURE.md#breakpoints-and-picked-locators): `PIWI_PAUSE_AT`, the reporter
   version check, `piwi/applyPick`.
 - [Run control](ARCHITECTURE.md#run-control): the run sessions, `piwi/runControl` and the paused page, the stops no
-  pause bar shows, the hub Piwi Picker connects to, and the discovery file.
+  pause bar shows, the hub Piwi Picker connects to, the code from a stop, and the discovery file.
 - [Coverage](ARCHITECTURE.md#coverage): coverage marks and uncovered changes.
 - [Analysis and completion](ARCHITECTURE.md#analysis-and-completion): the diagnostics and their quick fixes, and where
   completion offers locator chains.

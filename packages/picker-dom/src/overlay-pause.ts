@@ -10,6 +10,11 @@ export interface PauseBarArg {
   locator: string | null;
   /** Whether the editor that started the run can record from here: the bar then offers Record here. */
   record?: boolean;
+  /**
+   * The test failed here (`action` says how) and its page is held before it closes: the bar says so and offers
+   * Resume, which lets the test end as it failed, Pick a locator and Record here, without Step and Finish.
+   */
+  failure?: boolean;
 }
 
 /**
@@ -49,7 +54,7 @@ export function showPauseBar(arg: PauseBarArg): void {
 
   const where = doc.createElement('div');
   where.style.cssText = 'font-weight:600;white-space:nowrap;';
-  where.textContent = `Paused at ${arg.place}${arg.attempt ? ` · attempt ${arg.attempt}` : ''}`;
+  where.textContent = `${arg.failure ? 'Failed at' : 'Paused at'} ${arg.place}${arg.attempt ? ` · attempt ${arg.attempt}` : ''}`;
   const what = doc.createElement('code');
   what.style.cssText =
     'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#d8b4fe;' +
@@ -76,8 +81,12 @@ export function showPauseBar(arg: PauseBarArg): void {
   };
 
   const buttons: Array<[label: string, choice: string, hint: string, primary: boolean]> = [
-    ['Resume', 'resume', 'Run on to the next breakpoint (Esc)', true],
-    ['Step', 'step', 'Pause again before the next call', false],
+    arg.failure
+      ? ['Resume', 'resume', 'Let the test end as it failed (Esc)', true]
+      : ['Resume', 'resume', 'Run on to the next breakpoint (Esc)', true],
+    ...(arg.failure
+      ? []
+      : [['Step', 'step', 'Pause again before the next call', false] as [string, string, string, boolean]]),
     ['Pick a locator', 'pick', 'Pick an element on the page and confirm a locator for it', false],
     ...(arg.record
       ? [
@@ -89,7 +98,9 @@ export function showPauseBar(arg: PauseBarArg): void {
           ],
         ]
       : []),
-    ['Finish', 'finish', 'Run on and pause no more in this test', false],
+    ...(arg.failure
+      ? []
+      : [['Finish', 'finish', 'Run on and pause no more in this test', false] as [string, string, string, boolean]]),
   ];
   for (const [label, choice, hint, primary] of buttons) {
     const btn = doc.createElement('button');

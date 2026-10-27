@@ -6443,7 +6443,7 @@
     "message": "Gravar"
   },
   "runs_recordTitle": {
-    "message": "Gravar passos na janela do teste: eles são escritos acima desta linha"
+    "message": "Gravar passos na janela do teste: eles vão para o editor, que os escreve acima desta linha"
   },
   "runs_pause": {
     "message": "Pausar"
@@ -6465,5 +6465,111 @@
   },
   "runs_imageLoading": {
     "message": "Capturando uma imagem da página…"
+  },
+  "runs_assert": {
+    "message": "Verificar"
+  },
+  "runs_assertTitle": {
+    "message": "Verificar um elemento na janela do teste: a verificação vai para o editor, que a escreve acima desta linha"
+  },
+  "runs_assertRegion": {
+    "message": "Verificar uma região"
+  },
+  "runs_assertRegionTitle": {
+    "message": "Escolher uma região na janela do teste: o snapshot ARIA dela vai para o editor, que o escreve acima desta linha"
+  },
+  "runs_mock": {
+    "message": "Simular uma requisição"
+  },
+  "runs_mockTitle": {
+    "message": "Escolher uma requisição da página: um page.route() que a responde como o servidor vai para o editor, que o escreve acima desta linha"
+  },
+  "runs_codeActions": {
+    "message": "Código a partir desta parada"
+  },
+  "runs_codeWarnings": {
+    "message": "O que revisar neste código"
+  },
+  "runs_resumeFailureTitle": {
+    "message": "Deixar o teste terminar com a falha"
+  },
+  "runs_failedAt": {
+    "message": "Falhou em $place$",
+    "placeholders": {
+      "place": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      }
+    }
+  },
+  "runs_errorLabel": {
+    "message": "Erro"
+  },
+  "runs_announceFailed": {
+    "message": "$test$ falhou em $place$.",
+    "placeholders": {
+      "place": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      },
+      "test": {
+        "content": "$2",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_imageAltFailure": {
+    "message": "A página do teste onde ele falhou: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Timed out 5000ms waiting for expect(locator).toBeVisible()"
+      }
+    }
+  },
+  "runs_requestsTitle": {
+    "message": "Escolha a requisição a simular"
+  },
+  "runs_requestsClose": {
+    "message": "Fechar a lista"
+  },
+  "runs_requestsFilter": {
+    "message": "Filtrar por endereço, método ou status"
+  },
+  "runs_requestsNone": {
+    "message": "O teste ainda não guardou nenhuma resposta: o Piwi guarda as respostas de texto das requisições fetch e XHR dele."
+  },
+  "runs_requestsNoMatch": {
+    "message": "Nenhuma requisição corresponde ao filtro."
+  },
+  "runs_requestsListed_one": {
+    "message": "$count$ requisição: escolha a que simular.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_requestsListed_other": {
+    "message": "$count$ requisições: escolha a que simular.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "runs_requestAt": {
+    "message": "aos $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "0.8s"
+      }
+    }
+  },
+  "runs_requestNoSize": {
+    "message": "tamanho desconhecido"
   }
 }

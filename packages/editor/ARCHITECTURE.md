@@ -33,6 +33,7 @@ run control, coverage, the recorder, the build, and the reads and the connection
   - [Controls, breakpoints and the paused page](#controls-breakpoints-and-the-paused-page)
   - [Stops no pause bar shows](#stops-no-pause-bar-shows)
   - [The hub](#the-hub)
+  - [Code from a stop](#code-from-a-stop)
   - [The discovery file](#the-discovery-file)
 - [Coverage](#coverage)
   - [Coverage marks](#coverage-marks)
@@ -102,6 +103,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - **Pause bar**: Piwi's bar in the page of a stopped test. A headed run shows it, a headless run does not
   (`RunStop.bar`).
 - **Hub**: the WebSocket through which Piwi Picker follows and steers the runs the service built.
+- **Code from a stop**: the code an action at a stop writes above the stopped line (Assert, Assert a region, Mock a
+  request), which the client writes.
 - **Push**: a notification the service sends unasked, carrying a whole answer: `piwi/failuresChanged` carries what
   `piwi/failures` answers.
 
@@ -123,6 +126,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/desktop-jobs.ts`: the jobs passed to the desktop app.
 - `src/run-sessions.ts`: the run sessions, and the controls the client and the hub send their workers.
 - `src/run-hub.ts`: the hub's WebSocket, for Piwi Picker.
+- `src/stop-actions.ts`, `src/stop-code.ts`, `src/run-lines.ts`: the code from a stop, rendered, and placed where the
+  stopped statement stands now.
 - `src/discovery.ts`: the discovery file, `~/.piwi/editors/<pid>.json`, written and read.
 - `src/recorder/`: recording from the editor: the project's options, the launcher, the sessions, page candidates,
   imports and the record channel, whose socket also takes the workers' run connections.
@@ -154,8 +159,11 @@ What does cross versions is what the service talks to, since each is installed o
 - **The project's `@piwitests/reporter`.** It reads the environment the service puts on a test run: `PIWI_ORIGIN`,
   `PIWI_ORIGIN_REF`, `PIWI_PAUSE_AT`, `PIWI_RUN_CHANNEL`, `PIWI_RECORD_CHANNEL`, `PIWI_COVERAGE_SERVER`,
   `PIWI_COVERAGE_BROWSER`. Breakpoints need a reporter from `PAUSE_REPORTER_VERSION` on, and the service warns about an
-  older one. On the run channel (`@piwitests/core/run-channel`), a worker's `run-attach` lists the intents its reporter
-  takes (`takes`), and the service refuses any other; a control the reporter does not take comes back as a `notice`.
+  older one. On the run channel (`@piwitests/core/run-channel`), a worker's `run-attach` lists the intents and queries
+  its reporter takes (`takes`), and the service refuses any other; a control the reporter does not take comes back as a
+  `notice`. It also lists the stops it holds for an editor that shows them (`holds: ['failure']`), which the service
+  answers first with `attached` naming those it shows, sent only to a worker that listed them, since an older reporter
+  answers a message it does not know with a `notice`.
 - **Piwi Picker.** The browser extension reads the hub's messages with `parseHubMessage` of `@piwitests/core/run-hub`,
   field by field, and leaves aside a message it cannot read, so the hub sends only what fits those limits
   ([The hub](#the-hub)).
@@ -170,7 +178,7 @@ the custom messages of `src/protocol.ts`:
 - **Requests**, from the client:
   - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/selections`, `piwi/runStatus`, `piwi/refreshRun`, `piwi/runId`;
-  - run control: `piwi/runControl`, `piwi/pausedPage`;
+  - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`;
   - failures: `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/applyPick`;
   - connection: `piwi/status`, `piwi/refresh`, `piwi/desktop`, `piwi/mcp`;
   - desktop jobs: `piwi/desktopJob`, `piwi/shareDesktopJob`;
@@ -179,11 +187,11 @@ the custom messages of `src/protocol.ts`:
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
-  `piwi/recordRequested`, `piwi/runSessionChanged`.
+  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/stopCode`.
 
-The initialization options (`InitializationOptions`) carry the credentials, and `runControl` when the client shows and
-answers the stops of the runs it starts, as both clients do
-([Stops no pause bar shows](#stops-no-pause-bar-shows)).
+The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
+answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
+writes the code from a stop ([Code from a stop](#code-from-a-stop)), as both clients do.
 
 A summary line or a quick fix names a client command to run. The summary lines use those of `PiwiCommand.command`
 (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyText`,
@@ -586,8 +594,24 @@ answer it:
 - a hub connection that subscribed ([The hub](#the-hub)).
 
 `answersStops` in `src/server.ts` tells whether one of them is there. Without one, such a stop is resumed as soon as it
-is heard, with a `piwi/notice` once per run. While a subscribed hub connection follows the runs, the stop waits even
+is heard, with a `piwi/notice` once per run. While a subscribed hub connection hears the runs, the stop waits even
 when the client lacks `runControl`; when the last one goes, the stop goes on (`RunSessions.surfacesChanged`).
+
+**A held failure.** A worker's stop with the reason `failure` (a test failed while its run connection was open, its page
+held once the test ended) names the failing error's first lines (`RunStop.error`, in `piwi/runSessionChanged` and the
+hub's `session`), which a reporter that predates it leaves out. Every run the service builds has a run channel and both
+clients answer stops, so a plain Run would hold every failure. One no pause bar shows therefore waits only:
+
+- in a run started to be watched (`watched`: the service built it with the editor's breakpoints or for a
+  `page.pause()`, both headed);
+- while a Runs window follows the runs (`followed` in `src/server.ts`, `RunHub.follows`): a subscribed hub connection
+  said `follow` with `on: true`, and has not said `on: false` or closed. Piwi Picker's background, subscribed with no
+  Runs window open, and an extension that predates `follow` never count.
+
+Otherwise it goes on at once, with no notice (no client hears of it), and when the last follower stops following
+(`RunSessions.surfacesChanged`). A worker holds a failure only for a service that says it shows one: its `run-attach`
+lists `holds`, answered with `attached` (`SHOWN_HOLDS`); a service that predates it says nothing, and the worker holds
+none.
 
 A worker's `notice` (a control its reporter does not take) is a `piwi/notice` too.
 
@@ -623,12 +647,19 @@ not a boundary.
 **Commands.** Every later message is a command with an `id`, checked field by field (`parseHubCommand`):
 
 - `subscribe`;
+- `follow` (`on`): a person follows the runs there, a Runs window open
+  ([Stops no pause bar shows](#stops-no-pause-bar-shows));
 - `runControl`: `pause`, and `step`, `resume` and `finish` with the `since` they need, as `piwi/runControl` takes them
   (Run to a line stays in the editor);
 - `pausedPage`;
-- the intents `pick` and `record` (`RunSessions.intent`), with `since` too.
+- the intents `pick`, `record`, `assert` and `assert-region` (`RunSessions.intent`), with `since` too;
+- `requests` and `mock` (`request`, a kept response's id), with `since` too.
 
-Each command is answered once (`{ type: 'answer', id, ok, message }`, with `image` too for `pausedPage`). A command of
+The intents, `requests` and `mock` go through the same `StopActions` as the client's `piwi/stopAction`
+([Code from a stop](#code-from-a-stop)); the code goes to the client alone.
+
+Each command is answered once (`{ type: 'answer', id, ok, message }`, with `image` too for `pausedPage` and `requests`
+for `requests`, the sentence cut at `MAX_HUB_MESSAGE` with the cut marked). A command of
 another type, with a field it cannot take, or answering a stop without naming it
 (`The command needs the stop it answers.`) is answered `ok: false` with why. A connection has at most 16 commands
 waiting. A message that is no command (not JSON, no `id`) closes the connection (4003), as do a binary frame (1003) and
@@ -651,6 +682,14 @@ client hears, so both show the same. Each run goes as a `session` with:
 
 What the hub sends fits what `parseHubMessage` reads.
 
+**Code.** A subscribed connection also hears, once, what each action that writes code came to, whichever surface
+started it (`RunHub.code`, from `StopActions`' `outcome`): `{ type: 'code', ref, worker, since, action, ok, message,
+warnings? }`. With `ok`, the message says the code was sent to the client to write (`Piwi sent the check to <client> to
+write above checkout.spec.ts:5.`, the client's name as `initialize` gives it): the client, which can still refuse the
+write, says itself that it wrote it (`piwi/stopCode`'s `message`). The warnings (16 at most, each cut as a sentence is)
+say what to review in the code. With `ok: false`, the message says why an action was refused once it had started (the
+cases a `piwi/notice` says, a region the worker refused included). The code itself never goes.
+
 **Keepalive.** Every 20 s (`HUB_KEEPALIVE_MS`, within the 30 s Chrome keeps an MV3 worker alive after a WebSocket
 message), each connection that said hello hears `keepalive` and a WebSocket ping. One that did not answer the last
 ping is dropped, as is one with 32 MB unread.
@@ -658,7 +697,83 @@ ping is dropped, as is one with 32 MB unread.
 **Closing.** A connection the hub closes (`closeWith`) is cut a second later (`CLOSE_GRACE_MS`) when the other side has
 not answered the close. A connection being closed holds none of the places counted above.
 
-A subscribed connection is a surface that answers stops ([Stops no pause bar shows](#stops-no-pause-bar-shows)).
+A subscribed connection is a surface that answers stops, and one that said `follow` holds failures
+([Stops no pause bar shows](#stops-no-pause-bar-shows)).
+
+### Code from a stop
+
+`src/stop-actions.ts` (`StopActions`) runs what a client and Piwi Picker start at a stop of a run the service built;
+`src/stop-code.ts` is its pure half. The client asks with:
+
+- `piwi/stopAction { ref, worker?, since, action, request? }`: `pick`, `record`, `assert`, `assert-region`, `mock`;
+- `piwi/stopRequests { ref, worker?, since }`: the responses the test kept;
+- `piwi/locatorAtCaret { ref, worker?, since, uri, line }`: the count of the locator on the caret's line.
+
+Each is refused without `since`; Piwi Picker sends the hub's commands ([The hub](#the-hub)). Each action that writes
+code ends the same way: the worker does the page's part through internal calls, the service renders the code, and the
+client writes it. `piwi/stopCode` carries the run, the stop's `since`, the file's `uri` and `version`, the block, and
+`edits`: the import lines, then the block on a new line above the stopped statement, placed in the file's text as the
+service holds it, which the client applies as one edit. It goes only to a client that says it writes it
+(`InitializationOptions.stopCode`); without it, Assert, Assert a region and Mock a request are refused (`NO_CODE`) from
+both surfaces, and not offered to Piwi Picker (`intentsOf`). `pick` and `record` are the pause bar's own intents, whose
+results take their own paths (Send to editor, then `piwi/applyPick`; `piwi/recordRequested`).
+
+**Where the stopped statement stands now** (`src/run-lines.ts`, `RunLines`). The stop names a line of the run's code.
+`RunLines` keeps the file as the service held it when the run started:
+
+- when it built the run's command (`started`);
+- for a run it did not build, when its first worker connects;
+- for a rerun under the ref of a command that ended (a JetBrains IDE's Rerun, Rerun Failed and Debug start the
+  configuration again with its `PIWI_ORIGIN_REF`), when its first worker connects too: `RunSessions` says `again`.
+
+It follows every `didChange` since (read before the documents apply it; a whole new text by its line diff,
+`diffLines`), the code of an earlier action included. A file no editor held since is taken from disk while its
+modification time is older than the run, its text without the byte order mark it may start with, as a document's
+(`diskFile`). A file it cannot follow is refused with why: written on disk since, opened since with a text other than
+its disk's, held with changes not saved as the run started, more than 2,000 edits since, or a stopped line an edit
+removed or rewrote from its start.
+
+**Placement.** Each block goes where `placementBefore` puts a recording's (a chain broken over lines included), on the
+page expression `pageCandidates` gives there (`this.page` in a page object), with the config's preferred locators and
+the import of `expect` the file lacks (`blockImports`). The first code of a run adds that the stopped test goes on with
+the code it started with. `placementBefore` refuses, for Record here too:
+
+- a declaration's line: the block goes inside the body of a test or a function (`BlockPlacement.context`, where the
+  line starts);
+- the body of an `if`, `else`, `for`, `while` or `do` without braces;
+- a call in an arrow function's expression body (`const go = async () => page.click('a')`), at the stop's column
+  (`StopRef.character`, else the line's start: `FileModel.inArrowExpression`);
+- a line where no statement starts.
+
+Assert and Assert a region are refused at such a place before anything starts in the test's window. A check or a region
+refused once it started (the recorder missing, the code not written, a worker's `region` with `refused`: the region it
+picked finds several elements, or its snapshot is too long) reaches the client as a `piwi/notice`, and Piwi Picker as a
+`code` with `ok: false`; a refusal of a stop that ended, as a `piwi/notice` alone.
+
+**The actions.**
+
+- `assert` starts the check panel in the test's window through the record channel's hand-off in its `check` mode,
+  naming the stop it was started at (`RecordChannel`'s `onCheck`, `RecordingSessions.check`): the recorder loaded with
+  `check` in its settings, its first `assert` event rendered, then the hand-off stopped; no editor is asked. A check
+  whose stop ended, or that cannot be written at the stopped line, is refused at once.
+- `assert-region` has the worker pick a region and send its ARIA snapshot (`region`), written as
+  `toMatchAriaSnapshot` (`renderSpec`).
+- `mock` asks the worker for the response chosen among those `piwi/stopRequests` lists (method, URL, status, type,
+  size, time; no header, no body). Each URL has its credentials hidden again part by part, its host and ids kept
+  (`hideSecretsInUrl`), whatever the worker's reporter hid. The mock is written with the browser extension's `mockCode`
+  (`apps/extension/src/shared/mock-code.ts`, bundled in), on the page expression in scope: credentials hidden by name
+  and by shape, by the rule `@piwitests/core/mask` writes down, in a JSON body and a JSON text inside its strings, a
+  form or text body and the URL; no header written; the body inline. Its warnings say what was hidden, that a body
+  neither JSON nor a form was written as it came, and that one seems to hold an email address or a phone number.
+
+**The count at the caret.** `piwi/locatorAtCaret` reads the line's locator chain (`locatorChainOnLine`, the one
+`piwi/applyPick` replaces). The chain must start from a page expression in scope there and be the stopped page's
+(`stopPage`: the expression the code at the stop runs on, in the stopped file); another, or a chain in another file, is
+refused, the answer naming the chain read (`locator` is null only for a line holding none Piwi reads). The worker counts
+it on the stopped page and outlines its matches where the bar shows; a line without one, a refused one, or a null
+`uri` takes the outline down.
+
+A failure held at its line ([Stops no pause bar shows](#stops-no-pause-bar-shows)) takes the same actions.
 
 ### The discovery file
 
@@ -991,7 +1106,9 @@ The first three are bundled by esbuild, as CommonJS for Node 20 and later. `buil
 into the bundle (`SERVICE_VERSION` in `src/server.ts`, `0.0.0-dev` unbundled), which the discovery file and the hub's
 `welcome` name. The last two come from `buildIdeBundle`,
 which `build.mjs` imports from `apps/extension/scripts/build.mjs`: the build needs the extension's sources, and a change
-to the recorder there changes what the editor clients ship.
+to the recorder there changes what the editor clients ship. The service also bundles the extension's `mockCode`
+(`src/stop-code.ts` imports it from `apps/extension/src/shared/mock-code.ts`), so a change to it changes the mocks
+written at a stop.
 
 ## Commands
 

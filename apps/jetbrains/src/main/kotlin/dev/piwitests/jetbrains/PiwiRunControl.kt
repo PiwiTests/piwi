@@ -9,6 +9,8 @@ import com.intellij.execution.process.ProcessHandler
 import com.intellij.execution.process.ProcessListener
 import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.icons.AllIcons
+import com.intellij.notification.NotificationAction
+import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionGroup
@@ -21,6 +23,7 @@ import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.DefaultLanguageHighlighterColors
@@ -29,8 +32,13 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorCustomElementRenderer
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.Inlay
+import com.intellij.openapi.editor.LogicalPosition
+import com.intellij.openapi.editor.ReadOnlyModificationException
+import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.editor.colors.EditorFontType
 import com.intellij.openapi.editor.colors.TextAttributesKey
+import com.intellij.openapi.editor.event.CaretEvent
+import com.intellij.openapi.editor.event.CaretListener
 import com.intellij.openapi.editor.event.DocumentEvent
 import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.editor.event.EditorFactoryEvent
@@ -45,7 +53,11 @@ import com.intellij.openapi.editor.markup.HighlighterTargetArea
 import com.intellij.openapi.editor.markup.RangeHighlighter
 import com.intellij.openapi.editor.markup.TextAttributes
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.FileEditorManagerEvent
+import com.intellij.openapi.fileEditor.FileEditorManagerListener
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
@@ -56,12 +68,16 @@ import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.platform.lsp.api.LspServerManager
+import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.SimpleListCellRenderer
+import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentFactory
+import com.intellij.util.Alarm
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.JBUI
 import com.intellij.xdebugger.XDebuggerManager
@@ -72,6 +88,7 @@ import java.awt.BorderLayout
 import java.awt.Cursor
 import java.awt.Graphics
 import java.awt.Rectangle
+import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseEvent
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
@@ -94,14 +111,18 @@ import javax.swing.SwingConstants
  * The runs the IDE started, as their workers tell them (`piwi/runSessionChanged`), shown and steered with Piwi's own
  * actions, no debug session: the latest session of each run, kept until it ends. A stop opens its file at its line,
  * marked as the execution point (a range highlighter in [EXECUTION_POINT], the debugger's colors by default, with an
- * arrow in the gutter whose click offers the controls), with a block inlay above it saying what is about to run and
- * offering **Resume**, **Step**, **Run to Caret** and **Finish**; a stop no pause bar shows (a headless run's) shows an
- * image of its page in the Piwi tool window's **Paused Page** tab. The IDE's breakpoints go to each live run as they
- * change (`XBreakpointListener`, `piwi/setRunBreakpoints`), filtered as a run's start filters them. A run's lines are
- * those of the documents as they stood when it started: the edits since (`Glue.EditLog`) bring a stop to the line it
- * stands on now, and a breakpoint or the caret's line back to the run's. **Stop** ends the process of the run, which
- * Piwi started, in the console or the IDE's Playwright runner, whose reruns and debug runs it follows too. The pure
- * half is `Glue.withSession`, `Glue.runControls` and their kin.
+ * arrow in the gutter, a failure's icon at a failure, whose click offers the controls), with a block inlay above it
+ * saying what is about to run, or how the test failed, and offering **Resume**, **Step**, **Run to Caret** and
+ * **Finish**, then the code actions its worker takes there (`piwi/stopAction`: **Pick a Locator**, **Record Here**,
+ * **Assert**, **Assert a Region**, **Mock a Request**); a stop no pause bar shows (a headless run's) shows an image of
+ * its page in the Piwi tool window's **Paused Page** tab. The code a stop makes (`piwi/stopCode`) is written in one
+ * command in its document, in an editor, so the service hears it; while a test is stopped, the end of the caret's line
+ * in its file says how many elements the locator there matches on the stopped page (`piwi/locatorAtCaret`). The IDE's
+ * breakpoints go to each live run as they change (`XBreakpointListener`, `piwi/setRunBreakpoints`), filtered as a
+ * run's start filters them. A run's lines are those of the documents as they stood when it started: the edits since
+ * (`Glue.EditLog`) bring a stop to the line it stands on now, and a breakpoint or the caret's line back to the run's.
+ * **Stop** ends the process of the run, which Piwi started, in the console or the IDE's Playwright runner, whose reruns
+ * and debug runs it follows too. The pure half is `Glue.withSession`, `Glue.runControls` and their kin.
  */
 @Service(Service.Level.PROJECT)
 class PiwiRunSessions(private val project: Project) : Disposable {
@@ -158,6 +179,16 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
         override fun pausedPage(params: PausedPageParams) = server()?.pausedPage(params)?.orNull()
 
+        override fun action(params: StopActionParams) = server()?.stopAction(params)?.orNull()
+
+        override fun requests(params: StopRequestsParams) = server()?.stopRequests(params)?.orNull()
+
+        override fun locatorAtCaret(params: LocatorAtCaretParams) = server()?.locatorAtCaret(params)?.orNull()
+
+        override fun documentVersion(document: Document): Int? =
+            LspServerManager.getInstance(project).getServersForProvider(PiwiLspServerSupportProvider::class.java)
+                .firstOrNull()?.getDocumentVersion(document)
+
         override fun setBreakpoints(params: SetRunBreakpointsParams) {
             server()?.setRunBreakpoints(params)
         }
@@ -167,6 +198,34 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             if (!project.isDisposed) project.getServiceIfCreated(PiwiProjectService::class.java)?.server()?.commandEnded(params)
         }
     }
+
+    /** How Mock a Request has the response to mock chosen among those a stop lists: a popup, which the tests replace. */
+    internal var chooseRequest: (List<StopRequest>, (StopRequest) -> Unit) -> Unit = { requests, chosen ->
+        JBPopupFactory.getInstance()
+            .createPopupChooserBuilder(requests)
+            .setRenderer(RequestRenderer())
+            .setNamerForFiltering { it.url.orEmpty() }
+            .setTitle("Mock Which Response?")
+            .setItemChosenCallback(chosen)
+            .createPopup()
+            .showCenteredInCurrentWindow(project)
+    }
+
+    /** The count at the caret: its questions, its wait, the inlay at the end of the caret's line and the query it is for. */
+    private val caretAsks = Glue.CaretAsks()
+    private val caretAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
+
+    /** Asks, on the event thread, whether the service has a document the code of a stop opened. */
+    private val openAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
+    private val caretFade = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
+    private var caretInlay: Inlay<*>? = null
+    private var caretQuery: CaretQuery? = null
+
+    /** The stop the count asked about last: the caret leaving its file takes the page's outline down. */
+    private var counted: Glue.ShownStop? = null
+
+    /** A question of the count at the caret: the stop and line it asks about, its key, and the editor it shows in. */
+    private class CaretQuery(val params: LocatorAtCaretParams, val key: String, val editor: Editor?)
 
     private class DrawnStop(val highlighter: RangeHighlighter, val inlays: MutableMap<Editor, Inlay<*>> = HashMap()) {
         fun dispose() {
@@ -200,6 +259,22 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         editors.eventMulticaster.addEditorMouseListener(mouse, this)
         editors.eventMulticaster.addEditorMouseMotionListener(mouse, this)
         editors.eventMulticaster.addDocumentListener(EditsListener(), this)
+        editors.eventMulticaster.addCaretListener(
+            object : CaretListener {
+                override fun caretPositionChanged(event: CaretEvent) {
+                    if (event.editor.project == project && sessions.isNotEmpty()) caretMoved(event.editor)
+                }
+            },
+            this,
+        )
+        project.messageBus.connect(this).subscribe(
+            FileEditorManagerListener.FILE_EDITOR_MANAGER,
+            object : FileEditorManagerListener {
+                override fun selectionChanged(event: FileEditorManagerEvent) {
+                    if (sessions.isNotEmpty() || caretAsks.wanted != null) caretMoved(FileEditorManager.getInstance(project).selectedTextEditor)
+                }
+            },
+        )
         // The IDE's Playwright runner starts a configuration Piwi made again on Rerun, Rerun Failed Tests and Debug.
         project.messageBus.connect(this).subscribe(
             ExecutionManager.EXECUTION_TOPIC,
@@ -348,6 +423,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         ApplicationManager.getApplication().invokeLater({
             listeners.forEach { it() }
             draw()
+            caretMoved(FileEditorManager.getInstance(project).selectedTextEditor)
         }, gone)
     }
 
@@ -441,6 +517,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             drawn.values.flatMap { it.inlays.values }.filter { it.isValid },
             panel?.caption,
             panel?.image,
+            (caretInlay?.takeIf { it.isValid }?.renderer as? CaretCountInlay)?.text,
         )
     }
 
@@ -449,6 +526,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val inlays: List<Inlay<*>>,
         val pageCaption: String?,
         val pageImage: BufferedImage?,
+        val caretCount: String? = null,
     )
 
     /** The page of a stop in the Paused Page tab of the Piwi tool window, asked of its worker. On the event thread. */
@@ -506,10 +584,14 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         true
     } ?: false
 
-    /** Run `action` on the stop the caret of `editor` is at, else the only one, else the one chosen. On the event thread. */
-    fun atCaret(editor: Editor?, action: (Glue.ShownStop) -> Unit) {
+    /**
+     * Run `action` on the stop the caret of `editor` is at, else the only one, else the one chosen; among those `offers`
+     * keeps, when it keeps any. On the event thread.
+     */
+    fun atCaret(editor: Editor?, offers: (Glue.ShownStop) -> Boolean = { true }, action: (Glue.ShownStop) -> Unit) {
         val uri = editor?.virtualFile?.let { fileUri(it) }
-        val candidates = Glue.stopsFor(stops(), uri, editor?.caretModel?.logicalPosition?.line)
+        val all = stops()
+        val candidates = Glue.stopsFor(all.filter(offers).ifEmpty { all }, uri, editor?.caretModel?.logicalPosition?.line)
         if (candidates.size < 2) return candidates.firstOrNull()?.let(action) ?: PiwiCommands.notify(project, "No test is stopped.")
         JBPopupFactory.getInstance()
             .createPopupChooserBuilder(candidates)
@@ -535,9 +617,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         answer(stop, "run-to", EditorBreakpoint(uri, line))
     }
 
-    /** The actions offered at a stop, which act on it. */
+    /** The actions offered at a stop, which act on it: its controls, the paused page, then its code actions. */
     fun stopActions(stop: Glue.ShownStop): ActionGroup = DefaultActionGroup().apply {
-        for (control in Glue.StopControl.entries) {
+        for (control in Glue.stopControls(stop.stop)) {
             add(
                 object : DumbAwareAction(control.label, null, CONTROL_ICONS[control]) {
                     override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -553,10 +635,175 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 override fun actionPerformed(e: AnActionEvent) = showPage(stop)
             },
         )
+        val actions = Glue.stopActions(stop)
+        if (actions.isNotEmpty()) addSeparator()
+        for (action in actions) {
+            add(
+                object : DumbAwareAction(action.label) {
+                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+                    override fun actionPerformed(e: AnActionEvent) = start(stop, action)
+                },
+            )
+        }
     }
 
-    fun perform(stop: Glue.ShownStop, control: Glue.StopControl, editor: Editor?) {
-        if (control == Glue.StopControl.RUN_TO_CARET) runTo(stop, editor) else answer(stop, control.action)
+    fun perform(stop: Glue.ShownStop, link: Glue.StopLink, editor: Editor?) {
+        when (link) {
+            Glue.StopControl.RUN_TO_CARET -> runTo(stop, editor)
+            is Glue.StopControl -> answer(stop, link.action)
+            is Glue.StopAction -> start(stop, link)
+        }
+    }
+
+    /**
+     * Start a code action at a stop, off the event thread: Mock a Request lists the responses the test kept first, the
+     * latest first, to choose the one to mock. The code comes in `piwi/stopCode`, which says what it wrote; the other
+     * answers are said here.
+     */
+    fun start(stop: Glue.ShownStop, action: Glue.StopAction, request: Int? = null) {
+        val since = stop.stop.since ?: return PiwiCommands.notify(project, "The test went on.")
+        ApplicationManager.getApplication().executeOnPooledThread {
+            if (action == Glue.StopAction.MOCK && request == null) {
+                val listed = remote.requests(StopRequestsParams(stop.ref, stop.worker, since))
+                val requests = Glue.requestsToMock(listed?.requests)
+                return@executeOnPooledThread when {
+                    listed == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
+                    !listed.ok || requests.isEmpty() -> PiwiCommands.notify(project, listed.message ?: "The test kept no response.")
+                    else -> ApplicationManager.getApplication().invokeLater({ chooseRequest(requests) { start(stop, action, it.id) } }, gone)
+                }
+            }
+            val result = remote.action(StopActionParams(stop.ref, stop.worker, since, action.action, request))
+            when {
+                result == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
+                !result.ok || action != Glue.StopAction.MOCK -> PiwiCommands.notify(project, result.message ?: "The test did not take it.")
+            }
+        }
+    }
+
+    /**
+     * Write the code a stop made, on the event thread, in one command (one undo step) in its document, so the service
+     * follows it as it follows every edit: in an editor, the file opened first when no editor shows it, its code written
+     * once the IDE told the service it opened it (`whenOpened`); only into the text the service placed it in (the
+     * version it names, else the file as saved), else its code is offered to copy. The block is scrolled to without
+     * taking the focus, and the sentence and warnings said.
+     */
+    fun write(code: StopCode, opened: Boolean = false) {
+        if (!ApplicationManager.getApplication().isDispatchThread) {
+            return ApplicationManager.getApplication().invokeLater({ write(code, opened) }, gone)
+        }
+        val name = code.uri.orEmpty().substringAfterLast('/').let { runCatching { java.net.URLDecoder.decode(it, Charsets.UTF_8) }.getOrDefault(it) }
+        val file = fileOf(code.uri) ?: return notWritten(code, "$name could not be found, so the code was not written.")
+        val document = FileDocumentManager.getInstance().getDocument(file)
+            ?: return notWritten(code, "$name cannot be edited as text, so the code was not written.")
+        val editors = FileEditorManager.getInstance(project)
+        if (!opened && !editors.isFileOpen(file)) {
+            editors.openTextEditor(OpenFileDescriptor(project, file, code.line, 0), false)
+            return whenOpened(document) { write(code, true) }
+        }
+        val placed = if (code.version == null) !FileDocumentManager.getInstance().isDocumentUnsaved(document) else remote.documentVersion(document) == code.version
+        val writes = Glue.stopCodeWrites(document.immutableCharSequence, code.edits.orEmpty())
+        if (!placed || writes == null) return notWritten(code, "$name changed while the code was made, so it was not written: run the action again.")
+        var readOnly = false
+        WriteCommandAction.runWriteCommandAction(project, "Write the Code Made at the Stop", null, {
+            try {
+                writes.forEach { document.replaceString(it.start, it.end, it.text) }
+            } catch (_: ReadOnlyModificationException) {
+                readOnly = true
+            }
+        })
+        if (readOnly) return notWritten(code, "$name is read-only, so the code was not written.")
+        val lines = Glue.writtenLines(code)
+        EditorFactory.getInstance().getEditors(document, project).firstOrNull()?.scrollingModel?.scrollTo(LogicalPosition(lines.first, 0), ScrollType.MAKE_VISIBLE)
+        val notice = Glue.stopCodeNotice(code)
+        PiwiCommands.notify(project, notice.text, if (notice.warning) NotificationType.WARNING else NotificationType.INFORMATION)
+    }
+
+    /**
+     * `then`, on the event thread, once the IDE gave the service the document it opened (its version known,
+     * `RunRemote.documentVersion`), asked every `OPEN_POLL_MILLIS` by an alarm; after `OPEN_WAIT_MILLIS`, all the same,
+     * the write then checking the text as it does any other.
+     */
+    private fun whenOpened(document: Document, then: () -> Unit) {
+        val deadline = System.currentTimeMillis() + OPEN_WAIT_MILLIS
+        lateinit var check: () -> Unit
+        check = {
+            if (remote.documentVersion(document) != null || System.currentTimeMillis() >= deadline) then()
+            else openAlarm.addRequest({ check() }, OPEN_POLL_MILLIS)
+        }
+        openAlarm.addRequest({ check() }, OPEN_POLL_MILLIS)
+    }
+
+    /** Why the code a stop made was not written, with the code to copy. */
+    private fun notWritten(code: StopCode, why: String) {
+        NotificationGroupManager.getInstance().getNotificationGroup("Piwi").createNotification(why, NotificationType.WARNING)
+            .addAction(NotificationAction.createSimpleExpiring("Copy the Code") { CopyPasteManager.getInstance().setContents(StringSelection(code.code.orEmpty())) })
+            .notify(project)
+    }
+
+    /**
+     * The caret moved, or the stops or a line changed, on the event thread: the count asks about the stop in the
+     * caret's file (the one on the caret's line, else the first), for the caret's line, `CARET_WAIT_MILLIS` after the
+     * caret settled; outside the stopped files, it takes the outline of the stop it counted on down; with no stop whose
+     * reporter counts, it asks nothing.
+     */
+    private fun caretMoved(editor: Editor?) {
+        val stops = stops().filter { "locator" in it.takes }
+        val uri = editor?.virtualFile?.let { fileUri(it) }
+        val line = editor?.caretModel?.logicalPosition?.line
+        val inFile = stops.filter { Glue.stopInFile(it, uri) }
+        val stop = inFile.firstOrNull { line != null && Glue.stopIsAt(it, uri, line) } ?: inFile.firstOrNull()
+        val query = if (stop != null && editor != null && uri != null && line != null && line < editor.document.lineCount) {
+            counted = stop
+            val text = editor.document.getText(TextRange(editor.document.getLineStartOffset(line), editor.document.getLineEndOffset(line)))
+            caretQuery(LocatorAtCaretParams(stop.ref, stop.worker, stop.stop.since.orEmpty(), uri, line), text, editor)
+        } else {
+            val last = counted?.let { c -> stops.firstOrNull { Glue.stopKey(it) == Glue.stopKey(c) } }
+            if (last == null) counted = null
+            last?.let { caretQuery(LocatorAtCaretParams(it.ref, it.worker, it.stop.since.orEmpty(), null, null), "", null) }
+        }
+        if (!caretAsks.want(query?.key)) return
+        caretQuery = query
+        clearCount()
+        caretAlarm.cancelAllRequests()
+        if (query != null) caretAlarm.addRequest({ askCount(query) }, CARET_WAIT_MILLIS)
+    }
+
+    private fun caretQuery(params: LocatorAtCaretParams, text: String, editor: Editor?) = CaretQuery(
+        params,
+        listOf(params.ref, params.worker, params.since, params.uri, params.line, text).joinToString("\u0000"),
+        editor,
+    )
+
+    /** Ask the count of `query` off the event thread, unless another is on its way or it was asked already. */
+    private fun askCount(query: CaretQuery) {
+        if (!caretAsks.ask(query.key)) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val answer = remote.locatorAtCaret(query.params)
+            ApplicationManager.getApplication().invokeLater({
+                if (caretAsks.answered(query.key)) return@invokeLater showCount(query, answer)
+                // The caret moved on: the answer is dropped, and the query it stands at asked once it settled.
+                val now = caretQuery
+                if (now != null && caretAlarm.isEmpty) askCount(now)
+            }, gone)
+        }
+    }
+
+    /** The count at the end of the caret's line; a refusal for `CARET_REFUSAL_MILLIS`. On the event thread. */
+    private fun showCount(query: CaretQuery, answer: LocatorAtCaretResult?) {
+        val text = answer?.let(Glue::caretText) ?: return
+        val editor = query.editor?.takeIf { !it.isDisposed } ?: return
+        val line = query.params.line?.takeIf { it < editor.document.lineCount } ?: return
+        caretInlay = editor.inlayModel.addAfterLineEndElement(editor.document.getLineEndOffset(line), true, CaretCountInlay("Piwi: $text"))
+        if (!answer.ok || answer.count == null) {
+            caretFade.addRequest({ if (caretAsks.wanted == query.key) clearCount() }, CARET_REFUSAL_MILLIS)
+        }
+    }
+
+    private fun clearCount() {
+        caretFade.cancelAllRequests()
+        caretInlay?.let { if (it.isValid) Disposer.dispose(it) }
+        caretInlay = null
     }
 
     override fun dispose() {
@@ -565,7 +812,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         processes.clear()
         val shown = drawn.values.toList()
         drawn.clear()
-        val remove = { shown.forEach { it.dispose() } }
+        val count = caretInlay
+        caretInlay = null
+        val remove = {
+            shown.forEach { it.dispose() }
+            count?.let { if (it.isValid) Disposer.dispose(it) }
+        }
         if (ApplicationManager.getApplication().isDispatchThread) remove() else ApplicationManager.getApplication().invokeLater { remove() }
     }
 
@@ -582,6 +834,17 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
         /** How long a run started here is waited for, its edits kept, before its first worker connects. */
         private const val STARTING_MILLIS = 120_000L
+
+        /**
+         * How long the code a stop made waits at most once its file was opened, for the IDE to tell the service it opened
+         * it, and how often it asks.
+         */
+        private const val OPEN_WAIT_MILLIS = 3_000L
+        private const val OPEN_POLL_MILLIS = 50
+
+        /** How long the count at the caret waits for the caret to settle, and how long a refusal shows. */
+        private const val CARET_WAIT_MILLIS = 200
+        private const val CARET_REFUSAL_MILLIS = 3_000
 
         /** An image of a stopped page, decoded unless it is too large to hold; null for none. */
         private fun decode(bytes: ByteArray): BufferedImage? = runCatching {
@@ -608,11 +871,20 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     }
 }
 
-/** What a run's controls ask of the editor service. */
+/** What a run's controls and code actions ask of the editor service. */
 internal interface RunRemote {
     fun control(params: RunControlParams): RunControlResult?
 
     fun pausedPage(params: PausedPageParams): PausedPageResult?
+
+    fun action(params: StopActionParams): RunControlResult?
+
+    fun requests(params: StopRequestsParams): StopRequestsResult?
+
+    fun locatorAtCaret(params: LocatorAtCaretParams): LocatorAtCaretResult?
+
+    /** The version of `document` the IDE gave the service, which a stop's code names when it was placed in that text. */
+    fun documentVersion(document: Document): Int?
 
     fun setBreakpoints(params: SetRunBreakpointsParams)
 
@@ -647,7 +919,7 @@ private class PausedPagePanel : JPanel(BorderLayout()) {
 
 /** The arrow in the gutter at a stop: what is about to run, and on a click the controls, which act on that stop. */
 private class ExecutionPointGutter(private val sessions: PiwiRunSessions, private val stop: Glue.ShownStop) : GutterIconRenderer(), DumbAware {
-    override fun getIcon() = AllIcons.Debugger.NextStatement
+    override fun getIcon() = if (Glue.isFailure(stop.stop)) AllIcons.RunConfigurations.TestError else AllIcons.Debugger.NextStatement
 
     override fun getTooltipText(): String = Glue.htmlTooltip(Glue.pausedText(stop.stop, stop.test))
 
@@ -673,14 +945,17 @@ private class ExecutionPointGutter(private val sessions: PiwiRunSessions, privat
 }
 
 /**
- * The line above a stop, at its indentation: what is about to run, then **Resume**, **Step**, **Run to Caret** and
- * **Finish** as links, which [StopInlayMouse] clicks.
+ * The line above a stop, at its indentation: what is about to run, then its controls (**Resume**, **Step**, **Run to
+ * Caret** and **Finish**; **Resume** alone at a failure) and its code actions as links, which [StopInlayMouse] clicks.
  */
 internal class StopInlay(val stop: Glue.ShownStop) : EditorCustomElementRenderer {
     val text = Glue.pausedText(stop.stop, stop.test)
 
-    /** A piece of the line, from `x` in the editor's content: the text, or a control's link. */
-    private data class Piece(val x: Int, val width: Int, val text: String, val control: Glue.StopControl?)
+    /** The links after the text, in order. */
+    val links: List<Glue.StopLink> = Glue.stopControls(stop.stop) + Glue.stopActions(stop)
+
+    /** A piece of the line, from `x` in the editor's content: the text, or a link. */
+    private data class Piece(val x: Int, val width: Int, val text: String, val control: Glue.StopLink?)
 
     private fun font(editor: Editor) = editor.colorsScheme.getFont(EditorFontType.PLAIN)
 
@@ -696,10 +971,10 @@ internal class StopInlay(val stop: Glue.ShownStop) : EditorCustomElementRenderer
         return buildList {
             add(Piece(x, metrics.stringWidth(text), text, null))
             x += metrics.stringWidth(text)
-            for (control in Glue.StopControl.entries) {
+            for (link in links) {
                 x += gap
-                add(Piece(x, metrics.stringWidth(control.label), control.label, control))
-                x += metrics.stringWidth(control.label)
+                add(Piece(x, metrics.stringWidth(link.inlayLabel), link.inlayLabel, link))
+                x += metrics.stringWidth(link.inlayLabel)
             }
         }
     }
@@ -707,8 +982,8 @@ internal class StopInlay(val stop: Glue.ShownStop) : EditorCustomElementRenderer
     /** The pieces of the inlay, above the line it stands on. */
     private fun pieces(inlay: Inlay<*>): List<Piece> = pieces(inlay.editor, inlay.editor.document.getLineNumber(inlay.offset))
 
-    /** The control whose link is at `x` of the editor's content; null elsewhere. */
-    fun controlAt(inlay: Inlay<*>, x: Int): Glue.StopControl? =
+    /** The control or code action whose link is at `x` of the editor's content; null elsewhere. */
+    fun controlAt(inlay: Inlay<*>, x: Int): Glue.StopLink? =
         pieces(inlay).firstOrNull { it.control != null && x >= it.x && x < it.x + it.width }?.control
 
     /** Measured above the stop's line: the inlay asks it before it has an offset. */
@@ -733,6 +1008,33 @@ internal class StopInlay(val stop: Glue.ShownStop) : EditorCustomElementRenderer
         inlay.editor.project?.getServiceIfCreated(PiwiRunSessions::class.java)?.stopActions(stop)
 }
 
+/** The count at the end of the caret's line, in the inlay hints' color. */
+internal class CaretCountInlay(val text: String) : EditorCustomElementRenderer {
+    private fun font(editor: Editor) = editor.colorsScheme.getFont(EditorFontType.ITALIC)
+
+    private fun gap(editor: Editor) = editor.contentComponent.getFontMetrics(font(editor)).stringWidth("   ")
+
+    override fun calcWidthInPixels(inlay: Inlay<*>): Int =
+        gap(inlay.editor) + inlay.editor.contentComponent.getFontMetrics(font(inlay.editor)).stringWidth(text)
+
+    override fun paint(inlay: Inlay<*>, g: Graphics, targetRegion: Rectangle, textAttributes: TextAttributes) {
+        val editor = inlay.editor
+        g.font = font(editor)
+        g.color = editor.colorsScheme.getAttributes(DefaultLanguageHighlighterColors.INLAY_TEXT_WITHOUT_BACKGROUND)?.foregroundColor
+            ?: editor.colorsScheme.defaultForeground
+        g.drawString(text, targetRegion.x + gap(editor), targetRegion.y + editor.ascent)
+    }
+}
+
+/** A response in Mock a Request's list: its method and URL, then its status, type, size and when it finished. */
+private class RequestRenderer : ColoredListCellRenderer<StopRequest>() {
+    override fun customizeCellRenderer(list: JList<out StopRequest>, value: StopRequest?, index: Int, selected: Boolean, hasFocus: Boolean) {
+        value ?: return
+        append(Glue.requestLabel(value))
+        append("   ${Glue.requestDetails(value)}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+    }
+}
+
 /**
  * A click on a control of a stop's inlay runs it; the pointer is a hand over one. Each project's runs listen on every
  * editor: the editors of another project are its own runs'.
@@ -741,7 +1043,7 @@ private class StopInlayMouse(private val project: Project) : EditorMouseListener
     /** The editors whose pointer is over a control now. */
     private val hovering = WeakHashMap<Editor, Boolean>()
 
-    private fun controlAt(event: EditorMouseEvent): Pair<StopInlay, Glue.StopControl>? {
+    private fun controlAt(event: EditorMouseEvent): Pair<StopInlay, Glue.StopLink>? {
         if (event.editor.project != project) return null
         val inlay = event.inlay ?: return null
         val renderer = inlay.renderer as? StopInlay ?: return null
@@ -870,3 +1172,29 @@ class ShowPausedPageAction : RunControlAction() {
         sessions.atCaret(e.getData(CommonDataKeys.EDITOR)) { sessions.showPage(it) }
     }
 }
+
+/** A code action at a stop: the one at the caret's line among those offering it, else the only one, else the one chosen. */
+abstract class StopCodeAction(private val action: Glue.StopAction) : RunControlAction() {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = action in controls.actions
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val sessions = sessions(e) ?: return
+        sessions.atCaret(e.getData(CommonDataKeys.EDITOR), { action in Glue.stopActions(it) }) { sessions.start(it, action) }
+    }
+}
+
+/** **Pick a Locator**: the pause bar's pick in the test's window, the locator replacing the one on the stopped line. */
+class PickAtStopAction : StopCodeAction(Glue.StopAction.PICK)
+
+/** **Record Here**: what is done in the test's window, recorded above the stopped line. */
+class RecordAtStopAction : StopCodeAction(Glue.StopAction.RECORD)
+
+/** **Assert**: a check of an element in the test's window, written above the stopped line. */
+class AssertAtStopAction : StopCodeAction(Glue.StopAction.ASSERT)
+
+/** **Assert a Region**: the ARIA snapshot of a region picked in the test's window, written above the stopped line. */
+class AssertRegionAtStopAction : StopCodeAction(Glue.StopAction.ASSERT_REGION)
+
+/** **Mock a Request**: a response the test kept, chosen in a list, answered by a route written above the stopped line. */
+class MockAtStopAction : StopCodeAction(Glue.StopAction.MOCK)
+

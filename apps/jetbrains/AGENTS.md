@@ -102,6 +102,14 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   the stop's `since`; Run to Caret and the breakpoints map the editor's lines back through `Glue.EditLog`
   (`Glue.runPlaces` for the breakpoints). Checked by `GlueTest` and `PiwiRunControlTest`.
   ([Run control](ARCHITECTURE.md#run-control))
+- **The code a stop makes is written in one `WriteCommandAction` in an editor, once the service knows the document,
+  and only into the version the service placed it in.** A file no editor shows is opened first and written once its
+  `LspServer.getDocumentVersion` is known (`whenOpened`, an `Alarm` on the event thread, three seconds at most), so the
+  platform sends the service the change; checked by `PiwiRunControlTest` (`testTheCodeAStopMadeIsWrittenInOneCommand`).
+  ([Code from a stop](ARCHITECTURE.md#code-from-a-stop))
+- **A rerun under the ref of a run that ended maps its lines from when it is first heard**, never from the ended run's
+  start. Checked by `PiwiRunControlTest` (`testARerunUnderTheRefOfARunThatEndedMapsItsLinesFromItsOwnStart`).
+  ([Run control](ARCHITECTURE.md#run-control))
 - **Every run of a Playwright run configuration Piwi made is followed** (`PiwiRunSessions.followRunner`), its Rerun,
   Rerun Failed Tests and Debug included, so Stop ends it and the service hears its end. Checked by
   `PiwiRunControlTest`. ([Playwright runner](ARCHITECTURE.md#playwright-runner))
@@ -147,7 +155,7 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - `PiwiCommands.kt`, `PiwiActions.kt`, `PiwiPlaywrightRunner.kt`: the commands, the actions under **Tools → Piwi**, the
   IDE's Playwright runner.
 - `PiwiRunControl.kt`: the run controls (`PiwiRunSessions`: the stops, the execution point, the inlay, the paused
-  page, the actions and `PiwiRunActionPromoter`).
+  page, the actions and `PiwiRunActionPromoter`), and the code from a stop (`StopCodeAction`, `CaretCountInlay`).
 - `PiwiRecordingActions.kt`, `PiwiRecording.kt`, `PiwiRecordingViews.kt`, `RecordHereIntention.kt`: recording.
 - `PiwiSendHandler.kt`, `PiwiOpenHandler.kt`, `OpenOrigins.kt`: the built-in server's endpoints.
 - `PiwiConnect.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect and the settings pages.
@@ -166,8 +174,8 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - [Test results in the editor](ARCHITECTURE.md#test-results-in-the-editor),
   [Coverage marks](ARCHITECTURE.md#coverage-marks), [Tool window](ARCHITECTURE.md#tool-window),
   [Status bar](ARCHITECTURE.md#status-bar): before changing what one of them shows.
-- [Runs](ARCHITECTURE.md#runs): the Playwright runner, the Run tool window, the test at the caret, breakpoints, and
-  the run control (stops, their actions and shortcuts, the paused page).
+- [Runs](ARCHITECTURE.md#runs): the Playwright runner, the Run tool window, the test at the caret, breakpoints, the
+  run control (stops, their actions and shortcuts, the paused page) and the code from a stop.
 - [Finding Playwright configs](ARCHITECTURE.md#finding-playwright-configs): the search and the first-run notification.
 - [Recording](ARCHITECTURE.md#recording): starting a recording, writing the block, warnings, undo.
 - [Send to editor](ARCHITECTURE.md#send-to-editor), [Open in IDE](ARCHITECTURE.md#open-in-ide),

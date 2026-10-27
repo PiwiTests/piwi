@@ -20,6 +20,7 @@ extension does with it. It is reference material: open the section for the area 
   - [Running the test at the cursor](#running-the-test-at-the-cursor)
   - [Breakpoints](#breakpoints)
   - [Run control](#run-control)
+  - [Code from a stop](#code-from-a-stop)
 - [Status bar](#status-bar)
   - [Compare with](#compare-with)
 - [Open in IDE](#open-in-ide)
@@ -322,10 +323,11 @@ as plain text. A key or a palette command acts on the stop at the caret's line, 
 (`stopsFor`).
 
 **Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when it
-is first heard). `EditLog` keeps the edits that move lines while a run is live or starting
-(`workspace.onDidChangeTextDocument`, `lineEditOf`). They bring a stop to the line it stands on now (the mark, the lens,
-the caret's match), and the caret's line back to the run's for Run to the cursor, which is refused on a line written
-since.
+is first heard, a rerun under the ref of a run that ended included: `heardSession`). `EditLog` keeps the edits that
+move lines while a run is live or starting (`workspace.onDidChangeTextDocument`, `lineEditOf`). They bring a stop to
+the line it stands on now (the mark, the lens, the caret's match), and the caret's line back to the run's for Run to
+the cursor, which is refused on a line written since. An event of several changes (the code a stop made, its undo) is
+read change by change in the document after them all (`linesAbove`), so the mark follows it.
 
 **The paused page.** A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the
 **Piwi: paused page** webview beside the editor, again at each such stop and on **Piwi: Show the paused page**
@@ -338,9 +340,37 @@ run's code (`runPlaces`). A breakpoint the run was given, known by `vscode.Break
 moved with the edits; another is mapped back through them. They go only to a run whose places differ from those its
 command started with or was last sent (`breakpointUpdates`), and once to a run as its first worker connects.
 
+**A held failure** (`reason: 'failure'`) is `Failed · <how it failed> · attempt N` after `$(error)`, with Resume alone
+among its controls.
+
 `src/run-control.ts` is the pure half, tested without an editor (`tests/run-control.test.ts`). The API `activate`
-returns gives the sessions (`runSessions`), the lines drawn as the execution point (`executionPoints`) and what the
-paused page shows (`pausedPage`).
+returns gives the sessions (`runSessions`), the lines drawn as the execution point (`executionPoints`), what the
+paused page shows (`pausedPage`) and what the cursor's line says (`caretCount`).
+
+### Code from a stop
+
+What the service does: [Code from a stop](../../packages/editor/ARCHITECTURE.md#code-from-a-stop) in the editor
+service's reference.
+
+**The actions.** A stop's lens and hover also offer the code actions its worker takes (`RunWorker.takes`,
+`stopActions`): **Pick a locator**, **Record here**, **Assert** and **Assert a region** at a stop the pause bar shows,
+**Mock a request** at any. The lens names them shorter (`lens`), since its row is shared with the line's own lenses.
+Each is a `piwi/stopAction` naming its stop. They are in the palette while a stop offers them (`piwi.pickAtStop`,
+`piwi.recordAtStop`, `piwi.assertAtStop`, `piwi.assertRegionAtStop`, `piwi.mockAtStop`, the `piwi.runCan…` context
+keys) and in the status bar's `$(code)` item, **Piwi: Write code at the stop…** (`piwi.codeAtStop`); none has a key.
+Mock a request lists `piwi/stopRequests` in a quick pick, the latest first (`requestPicks`: the method and URL, which it
+filters on, then the status, type, size or `no size`, and when it finished).
+
+**The code a stop makes**, from here or Piwi Picker (`piwi/stopCode`, which the initialization options ask for:
+`stopCode: true`), is one workspace edit in its document, opened when it is not. It is made only in the version the
+service placed it in (else the file as saved; otherwise a warning offers **Copy the code**). The block is revealed
+without taking the focus, and its sentence said, as a warning with what its reader should check (`stopCodeNotice`).
+
+**The count at the cursor.** While a stopped worker counts locators (`takes` holds `locator`), the end of the cursor's
+line in the stopped file says how many elements the locator there matches on the stopped page
+(`piwi/locatorAtCaret`, `CaretCounts`): asked 200 ms after the cursor settles, one request at a time, an answer the
+cursor left dropped, asked again when the cursor comes back; `3 matches`, `no match`, a refusal for three seconds,
+nothing on a line holding no locator. The cursor leaving the file takes the page's outline down.
 
 ## Status bar
 
@@ -629,8 +659,11 @@ that fails leaves `vscode-<scene>-failed.png`, the window as it stood, in the te
 
 The `run-control` scenes share one run of the coupon test, started with **Run the test at the cursor**. Its task's
 `npx playwright` finds the stand-in command `scripts/lib/run-worker.mjs` writes into the fixture, which hands the
-script the run channel, and the script plays the run's worker there, as the integration suite does. The paused page is
-the fixture shop's page, rendered by Playwright's Chromium.
+script the run channel, and the script plays the run's worker there, as the integration suite does: its reporter takes
+every code action (`RUN_TAKES`), answers a count at the cursor with one match and lists three kept responses, which
+`run-control-code` shows in Mock a request's list. The paused page is the fixture shop's page, rendered by Playwright's
+Chromium. The window keeps its secrets in a file (`--password-store=basic`): without an OS keyring, `SecretStorage`
+never answers and no run starts.
 
 The JetBrains plugin's script reuses the fixture, so a change to the fixture means recapturing both sets. What was found
 about driving VS Code this way is recorded in
@@ -663,4 +696,5 @@ The integration suite (`tests/integration/`) starts a stub instance, writes a fi
   - `gutter`: the tests last drawn in a file's gutter;
   - `coverage`: a file's coverage answer, and whether its marks are shown;
   - `testExplorer`: the Testing view's tests, with the result last shown for each;
-  - `runSessions`, `executionPoints` and `pausedPage`: a run's stops, as a fake worker on the run channel plays them.
+  - `runSessions`, `executionPoints`, `pausedPage` and `caretCount`: a run's stops, as a fake worker on the run
+    channel plays them, and the code written there, a check's included, whose hand-off it plays too.

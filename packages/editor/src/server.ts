@@ -36,6 +36,7 @@ import {
   type CompletionItem,
   type Connection,
   type Diagnostic,
+  type DidChangeTextDocumentParams,
   type Hover,
   type InitializeParams,
   type TextEdit,
@@ -149,12 +150,15 @@ import {
   indentBlock,
   originOf,
   repositoryCodegen,
+  siblingSpecs,
   type LauncherFactory,
 } from './recorder/sessions.js';
-import { importInsertion } from './recorder/imports.js';
+import { expectModuleOf, importInsertion } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
+import { RunLines, type DiskFile } from './run-lines.js';
 import { RunSessions } from './run-sessions.js';
 import { RunHub } from './run-hub.js';
+import { StopActions } from './stop-actions.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
@@ -208,6 +212,16 @@ import {
   RUN_CONTROL_REQUEST,
   RUN_SESSION_NOTIFICATION,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
+  LOCATOR_AT_CARET_REQUEST,
+  STOP_ACTION_REQUEST,
+  STOP_CODE_NOTIFICATION,
+  STOP_REQUESTS_REQUEST,
+  type LocatorAtCaretParams,
+  type LocatorAtCaretResult,
+  type StopActionParams,
+  type StopActionResult,
+  type StopRequestsParams,
+  type StopRequestsResult,
   type AgentContextParams,
   type AgentContextResult,
   type ApplyPickParams,
@@ -1647,24 +1661,64 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let shutDown = false;
   /** Whether the client shows where a run stops and answers it (`InitializationOptions.runControl`). */
   let answersStops = false;
+  /** Whether the client writes the code made at a stop (`InitializationOptions.stopCode`). */
+  let writesCode = false;
+  /** The editor's display language, as `initialize` names it. */
+  let clientLocale: string | null = null;
   /** The editor running the service, as `initialize` names it. */
   let clientName: string | null = null;
   /** The hub's WebSocket, for Piwi Picker: null until it listens, and on a machine that refuses a port. */
   let runHub: RunHub | null = null;
   /** The command lines of the runs the service built, by ref, which the hub names to Piwi Picker. */
   const runCommands = new Map<string, string>();
+  /** The runs the service built to be watched (with the editor's breakpoints, or a `page.pause()`), by ref. */
+  const watchedRuns = new Set<string>();
+  /** The lines of the files the runs stop in, as each run has them and as the editor holds them now. */
+  const runLines = new RunLines();
+  /** A file as `RunLines` names it: its absolute path, in lower case on Windows, as `samePath` compares them. */
+  const lineKey = (file: string): string =>
+    process.platform === 'win32' ? path.resolve(file).toLowerCase() : path.resolve(file);
+  /**
+   * A file's text and modification time on disk; null when it cannot be read. Its text is an editor's: without the byte
+   * order mark a file saved with one starts with, which an editor's document never holds.
+   */
+  const diskFile = (file: string): DiskFile => {
+    try {
+      return { text: fs.readFileSync(file, 'utf-8').replace(/^\uFEFF/, ''), mtime: fs.statSync(file).mtimeMs };
+    } catch {
+      return null;
+    }
+  };
+  /** The files the editor holds with changes it has not saved, which a run starting now does not have. */
+  const unsavedFiles = (): string[] =>
+    documents.all().flatMap((document) => {
+      const file = uriToPath(document.uri);
+      if (!file || !contextFor(file)) return [];
+      const disk = diskFile(file);
+      return disk && disk.text !== document.getText() ? [lineKey(file)] : [];
+    });
   /** The runs the service built, as their workers tell them on the run channel. */
   const runSessions = new RunSessions({
     notify: (session) => {
       void connection.sendNotification(RUN_SESSION_NOTIFICATION, session);
       runHub?.push(session);
     },
-    // The client, or a Piwi Picker following the runs.
+    // The client, or a Piwi Picker subscribed to the hub.
     answersStops: () => answersStops || !!runHub?.answersStops(),
+    watched: (ref) => watchedRuns.has(ref),
+    // A Runs window open in Piwi Picker: its connection says it follows the runs.
+    followed: () => !!runHub?.follows(),
+    // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.
+    sessionStarted: (ref, again) => runLines.started(ref, unsavedFiles, !again),
     notice: (root, severity, message) =>
       void connection.sendNotification(NOTICE_NOTIFICATION, { root, severity, message } satisfies Notice),
     // A run runs in its config's folder as the file system spells it (`commandFolder`).
     rootOf: (cwd) => contexts.find((c) => samePath(commandFolder(c), cwd) || samePath(c.root, cwd))?.root ?? null,
+    writesCode: () => writesCode,
+    onRegion: (stop, region) =>
+      'refused' in region
+        ? stopActions.regionRefused(stop, region.refused)
+        : stopActions.region(stop, region.locator, region.snapshot),
   });
   const recordRequested = (handoff: Handoff) => {
     // The run ran in its config's folder as the file system spells it (`commandFolder`): the test names its file so,
@@ -1697,6 +1751,43 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     launch: options.launchRecorder,
     env,
     readText: (uri) => documents.get(uri)?.getText() ?? null,
+  });
+
+  /** The code made at the stops of the runs the service built, written by the client. */
+  const stopActions = new StopActions({
+    sessions: runSessions,
+    recordings,
+    writesCode: () => writesCode,
+    notify: (code) => void connection.sendNotification(STOP_CODE_NOTIFICATION, code),
+    notice: (root, message) =>
+      void connection.sendNotification(NOTICE_NOTIFICATION, {
+        root: root ?? folders[0] ?? '',
+        severity: 'warning',
+        message,
+      } satisfies Notice),
+    // Piwi Picker hears what each code from a stop came to, whichever surface started it.
+    outcome: (outcome) => runHub?.code(outcome),
+    lineNow: (stop, target) => {
+      const file = uriToPath(target.uri);
+      if (!file) return { refusal: `${target.uri} is not a file.` };
+      const open = !!openDocument(file);
+      return runLines.lineNow(stop.ref, lineKey(file), stop.line, open, open ? null : diskFile(file));
+    },
+    target: (file) => {
+      const context = contextFor(file);
+      const text = context && playwrightConfigFile(context.root) ? readText(file) : null;
+      if (text === null) return null;
+      const open = openDocument(file);
+      return {
+        uri: open?.uri ?? pathToFileURL(file).href,
+        text,
+        version: open?.version ?? null,
+        preferLocators: suiteLocators(context),
+        expectModule: expectModuleOf(text, { siblings: () => siblingSpecs(file) }),
+      };
+    },
+    language: () => clientLocale,
+    editor: () => clientName,
   });
 
   /**
@@ -2032,6 +2123,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const init = params.initializationOptions as InitializationOptions | undefined;
     credentials = init?.credentials ?? {};
     answersStops = init?.runControl === true;
+    writesCode = init?.stopCode === true;
+    clientLocale = typeof params.locale === 'string' && params.locale ? params.locale : null;
     const name = params.clientInfo?.name;
     clientName = typeof name === 'string' && name ? name.slice(0, 200) : null;
     return {
@@ -2069,10 +2162,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     void Promise.all([
       RecordChannel.open({
         onAttach: recordRequested,
+        onCheck: (handoff) => stopActions.check(handoff),
         onRun: (socket, attach) => runSessions.attach(socket, attach),
       }),
       RunHub.open({
         sessions: runSessions,
+        actions: stopActions,
         runInfo: (ref, root) => {
           const context = root ? contextOfRoot(root) : null;
           return {
@@ -2110,9 +2205,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     });
   });
 
-  documents.onDidOpen((e) => schedule(e.document, 0));
+  documents.onDidOpen((e) => {
+    const file = uriToPath(e.document.uri);
+    if (file && contextFor(file)) runLines.opened(lineKey(file), e.document.getText(), diskFile(file));
+    schedule(e.document, 0);
+  });
   documents.onDidChangeContent((e) => schedule(e.document));
   documents.onDidClose((e) => {
+    const file = uriToPath(e.document.uri);
+    if (file) runLines.closed(lineKey(file), e.document.getText());
     recordings.stopFile(e.document.uri);
     clearTimeout(timers.get(e.document.uri));
     timers.delete(e.document.uri);
@@ -2969,6 +3070,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     });
     const pauseAt = pauseAtValue(context.root, files);
     if (!pauseAt) return command;
+    if (command.ref) watchedRuns.add(command.ref);
     const notice = breakpointsNotice(context.reporterVersion);
     return {
       ...command,
@@ -3006,6 +3108,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         if (runCommands.size <= MAX_RUN_COMMANDS) break;
         runCommands.delete(oldest);
       }
+      if (pauses) watchedRuns.add(run.ref);
+      for (const ref of watchedRuns) if (!runCommands.has(ref)) watchedRuns.delete(ref);
+      runLines.started(run.ref, unsavedFiles);
     }
     return run;
   };
@@ -3350,6 +3455,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     runSessions.pausedPage(params),
   );
 
+  connection.onRequest(STOP_ACTION_REQUEST, (params: StopActionParams): Promise<StopActionResult> =>
+    stopActions.action(params),
+  );
+
+  connection.onRequest(STOP_REQUESTS_REQUEST, (params: StopRequestsParams): Promise<StopRequestsResult> =>
+    stopActions.requests(params),
+  );
+
+  connection.onRequest(LOCATOR_AT_CARET_REQUEST, (params: LocatorAtCaretParams): Promise<LocatorAtCaretResult> =>
+    stopActions.locatorAtCaret(params),
+  );
+
   connection.onRequest(DESKTOP_JOB_REQUEST, async (params: DesktopJobParams): Promise<DesktopJobResult> => {
     const found = params.executionId ? failureOf({ root: params.root, executionId: params.executionId }) : null;
     if (params.kind === 'flake-lab') {
@@ -3413,7 +3530,22 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
   connection.onExit(closeRecordChannel);
 
-  documents.listen(connection);
+  // The documents' edits, as `didChange` sends them, for the lines of the files the runs stop in: each is read before
+  // the documents apply it, with the text it changes.
+  documents.listen(
+    new Proxy(connection, {
+      get(target, property, receiver) {
+        if (property !== 'onDidChangeTextDocument') return Reflect.get(target, property, receiver);
+        return (handler: (params: DidChangeTextDocumentParams) => void) =>
+          target.onDidChangeTextDocument((params) => {
+            const file = uriToPath(params.textDocument.uri);
+            const before = documents.get(params.textDocument.uri)?.getText() ?? null;
+            if (file) runLines.changed(lineKey(file), before, params.contentChanges);
+            return handler(params);
+          });
+      },
+    }),
+  );
   connection.listen();
   return () => {
     stopped = true;

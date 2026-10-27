@@ -357,6 +357,97 @@ describe('a hub’s connection', () => {
     expect(socket.closedWith).toBeNull();
   });
 
+  it('tells each listener what a code written at a stop came to, with its hub, and never its code', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    const socket = sockets[0]!;
+    await welcome(socket, [session([STOPPED])]);
+    const heard: unknown[] = [];
+    const changes = vi.fn();
+    const unlisten = hubs.listen(changes, (code) => heard.push(code));
+    const written = {
+      type: 'code',
+      ref: 'r1',
+      worker: 1,
+      since: 's7',
+      action: 'assert',
+      ok: true,
+      message: 'Piwi sent the check to Visual Studio Code to write above cart.page.ts:13.',
+    };
+    socket.hear({ ...written, code: "await expect(page.getByTestId('total')).toHaveText('72');" });
+    socket.hear({
+      ...written,
+      action: 'mock',
+      message: 'Piwi sent the mock to Visual Studio Code to write above cart.page.ts:13.',
+      warnings: ['A value named or shaped like a credential is written as <hidden>.'],
+    });
+    // One it cannot read is left aside.
+    socket.hear({ ...written, worker: 'all' });
+    socket.hear({ ...written, warnings: 'none' });
+    expect(heard).toEqual([
+      {
+        hub: HUB.url,
+        ref: 'r1',
+        worker: 1,
+        since: 's7',
+        action: 'assert',
+        ok: true,
+        message: 'Piwi sent the check to Visual Studio Code to write above cart.page.ts:13.',
+        warnings: [],
+      },
+      {
+        hub: HUB.url,
+        ref: 'r1',
+        worker: 1,
+        since: 's7',
+        action: 'mock',
+        ok: true,
+        message: 'Piwi sent the mock to Visual Studio Code to write above cart.page.ts:13.',
+        warnings: ['A value named or shaped like a credential is written as <hidden>.'],
+      },
+    ]);
+    expect(JSON.stringify(heard)).not.toContain('toHaveText');
+    // It changes no run: the state stays as it was.
+    expect(changes).not.toHaveBeenCalled();
+    unlisten();
+    socket.hear(written);
+    expect(heard).toHaveLength(2);
+  });
+
+  it('tells each hub the runs are followed while a Runs window is open, and again after it connects anew', async () => {
+    const { hubs, sockets, answer } = setup();
+    answer(async () => Response.json({ hubs: [HUB, OTHER_HUB] }));
+    await hubs.find();
+    const [first, second] = sockets;
+    await welcome(first!);
+    await welcome(second!);
+    const follows = (socket: FakeSocket) => socket.sent.filter((m) => m.type === 'follow').map((m) => m.on);
+    // Paired, no window open: the background worker subscribes and says nothing more, so no failure waits for it.
+    expect(follows(first!)).toEqual([]);
+    const closeFirst = hubs.listen(() => {});
+    expect(follows(first!)).toEqual([true]);
+    expect(follows(second!)).toEqual([true]);
+    expect(first!.last('follow')).toMatchObject({ id: expect.any(Number) });
+    // A second window says nothing more; the last one to close says the runs are no longer followed.
+    const closeSecond = hubs.listen(() => {});
+    closeFirst();
+    closeFirst();
+    expect(follows(first!)).toEqual([true]);
+    closeSecond();
+    expect(follows(first!)).toEqual([true, false]);
+    expect(follows(second!)).toEqual([true, false]);
+    // A window open while a hub's connection is lost and made again: the new connection says so as it opens.
+    hubs.listen(() => {});
+    first!.hangUp(1006);
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => sockets.length === 3);
+    const again = sockets[2]!;
+    expect(follows(again)).toEqual([]);
+    await welcome(again);
+    expect(follows(again)).toEqual([true]);
+    expect(again.sent.map((m) => m.type)).toEqual(['hello', 'subscribe', 'follow']);
+  });
+
   it('passes each command on and hands back the answer of its id', async () => {
     const { hubs, sockets } = setup();
     await hubs.find();
@@ -388,6 +479,89 @@ describe('a hub’s connection', () => {
       image: { mime: 'image/jpeg', data: 'AAAA' },
     });
     expect(await pick).toEqual({ ok: false, message: 'Pick needs the pause bar.' });
+  });
+
+  it('passes the code a stop can write on, each naming its stop, and hands back the requests the test kept', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    const socket = sockets[0]!;
+    await welcome(socket, [session([{ ...STOPPED, intents: ['pick', 'record', 'assert', 'assert-region', 'mock'] }])]);
+    expect(hubs.state().runs[0]!.session.workers[0]!.intents).toEqual([
+      'pick',
+      'record',
+      'assert',
+      'assert-region',
+      'mock',
+    ]);
+    const at = { hub: HUB.url, ref: 'r1', worker: 1, since: 's7' };
+    const assert = hubs.command({ ...at, what: 'assert' });
+    const region = hubs.command({ ...at, what: 'assert-region' });
+    const listed = hubs.command({ ...at, what: 'requests' });
+    const mock = hubs.command({ ...at, what: 'mock', request: 2 });
+    expect(socket.sent.slice(2)).toEqual([
+      { type: 'assert', id: 2, ref: 'r1', worker: 1, since: 's7' },
+      { type: 'assert-region', id: 3, ref: 'r1', worker: 1, since: 's7' },
+      { type: 'requests', id: 4, ref: 'r1', worker: 1, since: 's7' },
+      { type: 'mock', id: 5, ref: 'r1', worker: 1, since: 's7', request: 2 },
+    ]);
+    const kept = {
+      id: 2,
+      method: 'GET',
+      url: 'http://localhost:3000/api/cart',
+      status: 200,
+      type: 'application/json',
+      size: 12,
+      time: 840,
+    };
+    socket.hear({ type: 'answer', id: 2, ok: true, message: 'Check an element in the test’s window.' });
+    socket.hear({ type: 'answer', id: 3, ok: false, message: 'The test went on.' });
+    socket.hear({ type: 'answer', id: 4, ok: true, message: 'The test kept 1 response.', requests: [kept] });
+    socket.hear({
+      type: 'answer',
+      id: 5,
+      ok: true,
+      message: 'Piwi sent the mock to Visual Studio Code to write above cart.spec.ts:5.',
+    });
+    expect(await assert).toEqual({ ok: true, message: 'Check an element in the test’s window.' });
+    expect(await region).toEqual({ ok: false, message: 'The test went on.' });
+    expect(await listed).toEqual({ ok: true, message: 'The test kept 1 response.', requests: [kept] });
+    expect(await mock).toEqual({
+      ok: true,
+      message: 'Piwi sent the mock to Visual Studio Code to write above cart.spec.ts:5.',
+    });
+  });
+
+  it('reads the requests an answer lists field by field: one it cannot read leaves the answer unread', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    const socket = sockets[0]!;
+    await welcome(socket, [session([STOPPED])]);
+    const kept = { id: 1, method: 'GET', url: 'http://x/a', status: 200, type: 'text/plain', size: 1, time: 1 };
+    const bad = [
+      [{ ...kept, url: 'x'.repeat(8193) }],
+      [{ ...kept, status: 99 }],
+      [{ ...kept, method: '<b>' }],
+      [{ ...kept, id: 0 }],
+      [{ ...kept, type: 'x'.repeat(201) }],
+      Array.from({ length: 51 }, (_, i) => ({ ...kept, id: i + 1 })),
+      'none',
+    ];
+    const asked = bad.map(() => hubs.command({ hub: HUB.url, ref: 'r1', worker: 1, since: 's7', what: 'requests' }));
+    bad.forEach((requests, i) => socket.hear({ type: 'answer', id: i + 2, ok: true, message: 'Kept.', requests }));
+    await vi.advanceTimersByTimeAsync(1000);
+    for (const answer of await Promise.all(asked))
+      expect(answer).toEqual({ ok: false, message: '', failure: 'timeout' });
+  });
+
+  it('reads a worker of an older hub, which names no intents, as one that takes none', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    const { intents: _intents, ...older } = STOPPED;
+    await welcome(sockets[0]!, [session([older as HubWorker])]);
+    expect(hubs.state().runs[0]!.session.workers[0]!.intents).toEqual([]);
+    // An action this version does not know is left out.
+    sockets[0]!.hear({ type: 'session', session: session([{ ...STOPPED, intents: ['dance', 'mock'] as never }]) });
+    expect(hubs.state().runs[0]!.session.workers[0]!.intents).toEqual(['mock']);
   });
 
   it('answers a command itself when the hub is silent, closed or not connected', async () => {

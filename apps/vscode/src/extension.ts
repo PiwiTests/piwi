@@ -32,6 +32,7 @@ import {
   PAGE_CANDIDATES_REQUEST,
   RUN_ENDED_NOTIFICATION,
   RUN_SESSION_NOTIFICATION,
+  STOP_CODE_NOTIFICATION,
   SHARE_DESKTOP_JOB_REQUEST,
   type AgentContextParams,
   type AgentContextResult,
@@ -54,6 +55,7 @@ import {
   type RunEnded,
   type RunSession,
   type ShareDesktopJobResult,
+  type StopCode,
 } from '@piwitests/editor/protocol';
 import {
   FILE_SUMMARY_REQUEST,
@@ -160,7 +162,7 @@ import {
 import { isUnder, placesOf, runBreakpoints } from './breakpoints';
 import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
-import type { PausedPageView, RunBreakpoint } from './run-control';
+import type { CaretShown, PausedPageView, RunBreakpoint } from './run-control';
 import { registerRunControl } from './run-view';
 import {
   liveHubsHere,
@@ -245,6 +247,8 @@ export interface PiwiApi {
   executionPoints(uri: string): number[];
   /** What the paused page view shows; null while it is closed. */
   pausedPage(): PausedPageView | null;
+  /** What the end of the cursor's line says of the locator there while a test is stopped; null while it says nothing. */
+  caretCount(): CaretShown | null;
 }
 
 /** A failures view node, or what a command names it by. */
@@ -369,8 +373,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: 'file', pattern: DOCUMENT_PATTERN }],
     // Read on each start of the service, the client's restarts after it stopped unexpectedly included. The extension
-    // shows where the runs it started stop, and answers those stops.
-    initializationOptions: (): InitializationOptions => ({ credentials: handed ?? undefined, runControl: true }),
+    // shows where the runs it started stop, answers those stops, and writes the code made there.
+    initializationOptions: (): InitializationOptions => ({
+      credentials: handed ?? undefined,
+      runControl: true,
+      stopCode: true,
+    }),
   };
   const lc = new LanguageClient('piwi', 'Piwi', serverOptions, clientOptions);
   client = lc;
@@ -1276,6 +1284,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     // A run started here: a worker started or ended a test, stopped or went on.
     lc.onNotification(RUN_SESSION_NOTIFICATION, (session: RunSession) => runControl.heard(session)),
+    // The code made at a stop, from here or Piwi Picker: written above the stopped line.
+    lc.onNotification(STOP_CODE_NOTIFICATION, (code: StopCode) => runControl.write(code)),
     // A service that stops closes its runs' connections: their sessions end with it.
     lc.onDidChangeState((e) => {
       if (e.newState === State.Stopped) runControl.clear();
@@ -1311,6 +1321,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     runSessions: () => runControl.sessions(),
     executionPoints: (uri) => runControl.executionPoints(uri),
     pausedPage: () => runControl.pausedPage(),
+    caretCount: () => runControl.caretCount(),
   };
 }
 

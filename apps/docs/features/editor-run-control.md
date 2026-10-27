@@ -12,7 +12,8 @@ A test run the [editor extensions](./editors) start can be paused, stepped and r
 own commands: no debug session starts, and the IDE's debugger works as usual beside it. The editor marks the line the
 test stopped at, as a debugger does, and the breakpoints you set or remove reach the run while it goes on. The
 [pause bar](./editor-breakpoints#pause-a-run) in the page answers the same stops, as does Piwi Picker's
-[Runs window](./extension#runs-from-the-editor), with a shortcut you set to pause and resume from any window.
+[Runs window](./extension#runs-from-the-editor), with a shortcut you set to pause and resume from any window. At a
+stop, the editor also writes code from the page: [Code from a pause](./editor-stop-code).
 
 ## The controls
 
@@ -25,8 +26,8 @@ test stopped at, as a debugger does, and the breakpoints you set or remove reach
 | **Finish** | Runs the test on without stopping at a breakpoint again in this attempt | `Shift+F11` | Step Out's, `Shift+F8` |
 | **Stop** | Ends the run's process | `Shift+F5` | the Run tool window's Stop |
 
-The keys are the IDE's own debugger keys (VS Code's defaults; in a JetBrains IDE, those actions' shortcuts in your
-keymap, the default keymap's shown), Piwi's only while their control applies and no debug session runs. Where a
+The keys are the IDE's own debugger keys (in a JetBrains IDE, your keymap's, the default one's shown), Piwi's only
+while their control applies and no debug session runs. Where a
 JetBrains keymap also gives one to another action (the VSCode keymap's `F5`, NetBeans' `F4`), Piwi's goes first while
 it applies. On macOS, `Cmd+F10` runs to the cursor in VS Code. **Pause** has no key in VS Code, since it applies as
 long as the test runs: bind one in **Preferences: Open Keyboard Shortcuts** (search `piwi`), where the others change
@@ -48,15 +49,16 @@ Playwright's own debugger, says why.
 
 ## Where the test stands
 
-When a test stops, at a breakpoint, after **Step** or **Pause**, on the line it was run to, or at `page.pause()`, the
-editor opens the file of the call about to run, a spec or a page object, with the cursor on its line, and marks it:
+When a test stops, at a breakpoint, after **Step** or **Pause**, on the line it was run to, at `page.pause()`, or at
+[a failure](./editor-stop-code#a-failure), the editor opens the file of the call about to run, with the cursor on its
+line, and marks it:
 an arrow in the gutter, the debugger's execution point color, and above it the call, as Playwright names it, with the
 controls:
 
 `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`  Resume  Step  Run to cursor  Finish
 
-`attempt 2` shows on a retry. In VS Code the line is a CodeLens, and the hover on the marked line has the same
-controls; the color is `piwi.executionPointBackground`. In a JetBrains IDE the line is an inlay whose words are links,
+`attempt 2` shows on a retry. In VS Code the line is a CodeLens, and the marked line's hover has the same controls;
+the color is `piwi.executionPointBackground`. In a JetBrains IDE the line is an inlay whose words are links,
 the arrow's click lists the controls, and the color is **Settings → Editor → Color Scheme → Piwi → Line a run is
 stopped at**. The mark goes when the test goes on (from the editor or the bar), ends, or closes its page.
 
@@ -67,7 +69,7 @@ stopped at**. The mark goes when the test goes on (from the editor or the bar), 
 
 With several workers stopped, each has its own mark, and the controls above a line act on its worker; a key or command
 acts on the one at the cursor's line, else asks which. A control answers the stop it was shown for: when the test went
-on meanwhile (a key pressed twice), it says so and asks nothing.
+on meanwhile, it says so and asks nothing.
 
 The run's code is your files as they stood when it started. The mark follows lines you add or remove above it, and
 **Run to cursor** in an edited file runs to the run's line for the cursor's; on a line written since, it says the test

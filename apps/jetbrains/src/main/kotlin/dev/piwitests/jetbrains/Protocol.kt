@@ -656,7 +656,8 @@ data class ShareDesktopJobResult(val ok: Boolean = false, val message: String? =
 
 /**
  * Where a worker of a run the IDE started stands stopped (`piwi/runSessionChanged`): why (`breakpoint`, `step`,
- * `pause`, `run-to`, `page-pause`, `other`), the call about to run as Playwright titles it, its file's URI and 0-based
+ * `pause`, `run-to`, `page-pause`, `failure`, `other`), the call about to run as Playwright titles it (at a failure, how
+ * the test failed: `Failed: …`, its page held until any answer lets it end as it failed), its file's URI and 0-based
  * line and character, the locator it acts on, whether Piwi's pause bar shows in the page (`bar`, false in a headless
  * run), and when it stopped.
  */
@@ -687,7 +688,8 @@ data class RunTest(
 
 /**
  * A worker of a run, by Playwright's worker index: `running` a test, `stopped` before one of its calls, or `between`
- * tests; `pausing` once a Pause reached it until it stops.
+ * tests; `pausing` once a Pause reached it until it stops; what its reporter takes at a stop (`takes`: the intents
+ * `pick`, `record`, `assert`, `assert-region` and the queries `requests`, `mock`, `locator`), none for an older one.
  */
 data class RunWorker(
     val worker: Int = 0,
@@ -696,6 +698,7 @@ data class RunWorker(
     val test: RunTest? = null,
     val stop: RunStop? = null,
     val pausing: Boolean = false,
+    val takes: List<String>? = null,
 )
 
 /**
@@ -739,6 +742,67 @@ data class PausedImage(val mime: String? = null, val data: String? = null)
 
 /** The image; null when the worker is not stopped, has no page, or did not answer within 10 seconds. */
 data class PausedPageResult(val image: PausedImage? = null)
+
+/**
+ * `piwi/stopAction`: start an action at the stop `since` names (`RunStop.since`), of the run's one stopped worker or
+ * `worker`: `pick`, `record`, `assert` and `assert-region` in the test's window (where the pause bar shows), `mock`
+ * with `request`, a response `piwi/stopRequests` lists. Answered with whether it started, or why not; the code of
+ * `assert`, `assert-region` and `mock` comes in `piwi/stopCode`.
+ */
+data class StopActionParams(val ref: String, val worker: Int? = null, val since: String, val action: String, val request: Int? = null)
+
+/** `piwi/stopRequests`: the responses the test stopped at `since` kept, for Mock a request. */
+data class StopRequestsParams(val ref: String, val worker: Int? = null, val since: String)
+
+/**
+ * A response the stopped test's pages received for a fetch or an XHR request: what `request` names it by, its method,
+ * URL (credential values hidden), status, MIME type (empty when it named none), its body's size in bytes as the
+ * response said it (null when it did not) and when it finished, in ms after the test began. No header, no body.
+ */
+data class StopRequest(
+    val id: Int = 0,
+    val method: String? = null,
+    val url: String? = null,
+    val status: Int = 0,
+    val type: String? = null,
+    val size: Long? = null,
+    val time: Double = 0.0,
+)
+
+/** The responses, oldest first; none, with `ok` false and why, when there is no stop to ask. */
+data class StopRequestsResult(val ok: Boolean = false, val message: String? = null, val requests: List<StopRequest>? = null)
+
+/**
+ * `piwi/locatorAtCaret`: count on the page of the stop `since` names the locator at the caret's 0-based `line` of the
+ * file at `uri`, outlined there where the pause bar shows; a null `uri` or `line` takes the outline down.
+ */
+data class LocatorAtCaretParams(val ref: String, val worker: Int? = null, val since: String, val uri: String?, val line: Int?)
+
+/**
+ * The chain read on the line (counted or refused; null when the line holds none Piwi reads) and how many elements it
+ * matches; why not, with `ok` false.
+ */
+data class LocatorAtCaretResult(val ok: Boolean = false, val message: String? = null, val locator: String? = null, val count: Int? = null)
+
+/**
+ * `piwi/stopCode`: code made at a stop (`assert`, `assert-region`, `mock`), from the IDE or Piwi Picker, for the IDE
+ * to write: `edits`, the import lines it needs then the block on a new line above the stopped statement, placed in the
+ * file's text at `version` (null for the file as saved), made together as one edit; the block as written (`code`),
+ * the 0-based line it goes on, the sentence to show and what its reader should check (`warnings`).
+ */
+data class StopCode(
+    val ref: String? = null,
+    val worker: Int = 0,
+    val since: String? = null,
+    val action: String? = null,
+    val uri: String? = null,
+    val version: Int? = null,
+    val line: Int = 0,
+    val code: String? = null,
+    val edits: List<FileEdit>? = null,
+    val message: String? = null,
+    val warnings: List<String>? = null,
+)
 
 /** The service's custom requests beside the language server protocol. */
 interface PiwiLanguageServer : LanguageServer {
@@ -828,6 +892,15 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/pausedPage")
     fun pausedPage(params: PausedPageParams): CompletableFuture<PausedPageResult?>
+
+    @JsonRequest("piwi/stopAction")
+    fun stopAction(params: StopActionParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/stopRequests")
+    fun stopRequests(params: StopRequestsParams): CompletableFuture<StopRequestsResult?>
+
+    @JsonRequest("piwi/locatorAtCaret")
+    fun locatorAtCaret(params: LocatorAtCaretParams): CompletableFuture<LocatorAtCaretResult?>
 
     @JsonNotification("piwi/setCredentials")
     fun setCredentials(params: EditorCredentials)

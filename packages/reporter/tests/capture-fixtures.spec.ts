@@ -10,6 +10,7 @@ import {
   probeElementAttrs,
   CAPTURED_ATTRS_ARG,
   configuredCodeReachRoots,
+  failureError,
 } from '../src/internal/capture/capture-fixtures.js';
 import {
   ATTACHMENT_NAMES,
@@ -1951,5 +1952,29 @@ describe('configuredCodeReachRoots', () => {
     expect(configuredCodeReachRoots()).toEqual({ 'http://localhost:5281': ['admin'], '*': ['app'] });
     process.env.PIWI_CODE_REACH_ROOTS = ['app', 'lib'].join(path.delimiter);
     expect(configuredCodeReachRoots()).toEqual(['app', 'lib']);
+  });
+});
+
+describe('failureError', () => {
+  it('names the failing error’s first lines as plain text, without the runner’s Error: nor the call log', () => {
+    const esc = String.fromCharCode(27);
+    const expectFailed = [
+      `Error: ${esc}[2mexpect(${esc}[22m${esc}[31mlocator${esc}[39m${esc}[2m).${esc}[22mtoBeVisible${esc}[2m()${esc}[22m failed`,
+      '',
+      "Locator: getByRole('button', { name: 'Pay' })",
+      'Expected: visible',
+    ].join('\n');
+    expect(failureError(expectFailed)).toBe('expect(locator).toBeVisible() failed');
+    expect(
+      failureError(
+        "TimeoutError: locator.click: Timeout 300ms exceeded.\nCall log:\n  - waiting for getByRole('button')",
+      ),
+    ).toBe('TimeoutError: locator.click: Timeout 300ms exceeded.');
+    // An error whose own message starts with Error: keeps it.
+    expect(failureError('Error: Error: the cart is empty')).toBe('Error: the cart is empty');
+    expect(failureError('Error: one\ntwo\nthree\nfour\nfive')).toBe('one\ntwo\nthree\nfour');
+    expect(failureError(`Error: ${'x'.repeat(5000)}`)).toHaveLength(1000);
+    expect(failureError('Test timeout of 5000ms exceeded.')).toBe('Test timeout of 5000ms exceeded.');
+    for (const none of [undefined, '', '  \n ', 'Error: ']) expect(failureError(none)).toBeNull();
   });
 });

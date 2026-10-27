@@ -1587,8 +1587,8 @@ describe('recording from a paused test', () => {
       `${JSON.stringify({
         type: 'attach',
         token: channel.token,
-        file: path.join(dir, 'tests/checkout.spec.ts'),
-        line: 3,
+        file: path.join(dir, 'tests/rows.spec.ts'),
+        line: 6,
         reason: 'pause',
         testIdAttribute: null,
         baseURL: null,
@@ -1596,14 +1596,14 @@ describe('recording from a paused test', () => {
     );
     expect(await requested).toEqual({
       handoff: expect.stringMatching(/^[0-9a-f]{24}$/),
-      uri: uri('tests/checkout.spec.ts'),
-      line: 2,
+      uri: uri('tests/rows.spec.ts'),
+      line: 5,
       reason: 'pause',
     });
     const { handoff } = await requested;
     // This service ships no recorder bundle: the editor's start is refused, and the test hears why.
     const result = (await client.sendRequest('piwi/record', {
-      uri: uri('tests/checkout.spec.ts'),
+      uri: uri('tests/rows.spec.ts'),
       line: 0,
       character: 0,
       into: 'steps',

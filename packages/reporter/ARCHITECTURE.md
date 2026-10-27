@@ -101,9 +101,11 @@ What the package does to a user's run, process by process.
   connects to it in the `piwiResources` worker fixture, before its first test (it waits
   2 seconds at most), and stays connected until the worker ends. The messages are defined
   in `@piwitests/core/run-channel`.
-- The first message, `run-attach`, lists the intents the worker takes
-  (`takes: ['pick', 'record']`). The worker then sends each test's begin and end, each
-  stop it shows, and each stop's end (`running`).
+- The first message, `run-attach`, lists what the worker takes (`takes`: the intents
+  `pick`, `record`, `assert`, `assert-region` and the queries `requests`, `mock`,
+  `locator`) and the stops it holds for an editor that shows them (`holds: ['failure']`).
+  The worker then sends each test's begin and end, each stop it shows, and each stop's
+  end (`running`).
 - The editor's controls (Pause, Step, Resume, Finish, Run to a line) and its breakpoints,
   which replace `PIWI_PAUSE_AT`, go through the same stop policy as `PIWI_PAUSE_AT`.
 - While the connection is open, a headless run stops too (never under CI or Playwright's
@@ -124,8 +126,33 @@ What the package does to a user's run, process by process.
   `PIWI_RECORD_CHANNEL`. The test's window is brought to the front, and the pick or the
   recording ends with the stop. The worker answers at once whether it started. It
   refuses at a stop that ended or is ending (its test ended, its page or context began to
-  close), at one no bar shows or whose page it cannot tell, Record here when the run has
-  no `PIWI_RECORD_CHANNEL`, and any intent while a pick or a recording runs.
+  close), at one no bar shows or whose page it cannot tell, Record here and Assert when
+  the run has no `PIWI_RECORD_CHANNEL`, and any intent while a pick, a check or a
+  recording runs.
+- **Assert** is the same hand-off in its `check` mode, naming the stop: the editor's
+  recorder opens the check panel's Check an element alone, and the editor service writes
+  the check.
+- **Assert a region** is the bar's picker, then the confirmed locator's `ariaSnapshot()`,
+  sent as `region` (`region-snapshot.ts`). The snapshot leaves out the value of a field
+  that holds a secret (a password field's, or one whose `autocomplete` asks for a
+  password, a one-time code or a card's number or code: `SECRET_AUTOCOMPLETE` of
+  `@piwitests/core/mask`, read through a locator, so in open shadow roots too) and a
+  link's URL holding a credential; a link left without a child ends without its colon,
+  so `toMatchAriaSnapshot` reads it. A region its locator does not find alone, or whose
+  snapshot is too long, is sent as `region` with `refused` instead.
+- At any stop, headless included, `requests` lists the responses the test kept and
+  `mock` hands over one of them with its body (`kept-responses.ts`). While the run
+  connection is open, the fetch and XHR answers of the test's pages whose type is text
+  or unnamed are kept: the latest 50, 256 KB each at most as their `content-length` says
+  (one that says none is listed without a size), each as its `Response` in the worker's
+  memory alone. A body is read only when `mock` asks for it, through an internal call,
+  refused when the browser no longer holds it or it is not text; it is never in an
+  attachment, and is dropped as the test ends. Every URL listed or handed over has its
+  credentials hidden part by part, its host and ids kept (`hideSecretsInUrl`).
+- `locator` counts a chain (`chain-locator.ts`, built through the chain grammar's calls
+  alone) on the stopped page, one count after the other, and, where the bar shows,
+  outlines its matches with Playwright's highlight, the one before taken down first and
+  the last before the stop ends.
 - One stop shows at a time in a worker. A stop that waits for its turn is decided again
   when its turn comes. It goes on without showing, and the editor never hears of it,
   when the test ended meanwhile (as on Finish), when its page or context began to close,
@@ -134,6 +161,27 @@ What the package does to a user's run, process by process.
   applies to the next stop.
 - Closing a context, directly or through its browser, first lets the call its debugger
   holds go on, since the close does not.
+- **A held failure** (`holdFailure` in `capture-fixtures.ts`). A test that fails while
+  the connection is open to an editor that shows a held failure (`editorShows`: the
+  editor answered the `run-attach`'s `holds` with `attached` naming `failure`; one that
+  predates it says nothing, and no failure is held) holds its page once the test
+  function, its hooks and the fixtures built on `page` are done (Piwi's `page` fixture,
+  after `use(page)`; a page the test left open, at the capture fixture's teardown). Not
+  an expected failure, never under CI nor Playwright's own debugger, never from a close
+  while the test runs. Its evidence is read first and kept as it was (`frozenAt`: no
+  request, console entry or dialog of the hold is recorded, and its context's code reach
+  ends; Playwright's own trace and video record the hold too), and the test timeout is
+  held while the stop shows.
+- It is a stop with the reason `failure` at the failing line (where the error's stack
+  enters the test's code, else the failing locator's, else the call a test timeout cut
+  short, the runner's step in progress, else the test's declaration). It names its error
+  to the editor (`error`, `failureError`: the failing error's lines up to a blank one or
+  its call log, four at most, without ANSI codes nor the `Error: ` the runner writes
+  before a plain error's message), its title and error with the credentials of the URLs
+  they name hidden (`hideSecretsInText`). The bar says `Failed at …` with Resume, Pick a
+  locator (which replaces the failing locator, and is folded into its snapshot) and
+  Record here. Any answer lets the test end as it failed, and the editor service lets
+  one go at once in a run nobody watches.
 - While each test runs, the capture fixtures take `PIWI_RUN_CHANNEL` and
   `PIWI_EDITOR_SEND` out of the worker's `process.env` (`hideRunChannel`), whether a run
   connection is open or not, so a process the test starts does not connect to the run
@@ -310,7 +358,11 @@ src/
                 PIWI_EDITOR_SEND), record-handoff (Record here:
                 the paused page relayed to the editor's recorder, PIWI_RECORD_CHANNEL),
                 run-channel (the worker's run connection to the editor,
-                PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in)
+                PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in),
+                kept-responses (the text bodies an interactive run keeps for
+                Mock a request), chain-locator (a locator chain's source built
+                against a page, for the locator at the editor's caret),
+                region-snapshot (a region's ARIA snapshot without its secrets)
     ai/         ai-fixtures, artifact, keys, params, ground, compile, resolution
                 (the authoring loop), interpreter (replay), check (`piwi ai check`)
     coverage-upload/  git-inventory, report-files (`piwi coverage upload`)

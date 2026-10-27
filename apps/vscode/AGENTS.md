@@ -36,6 +36,13 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   lines back through `EditLog` (`runPlaces` for the breakpoints). Checked by `tests/run-control.test.ts`.
   ([Run control](ARCHITECTURE.md#run-control); the service's side:
   [Controls, breakpoints and the paused page](../../packages/editor/ARCHITECTURE.md#controls-breakpoints-and-the-paused-page))
+- **The code a stop makes is one workspace edit, made only in the version of its document the service placed it in**
+  (else the file as saved; otherwise a warning offers **Copy the code**), so it never lands on a line the service did
+  not choose. Checked by `tests/run-control.test.ts` ("the code a stop makes") and the integration suite.
+  ([Code from a stop](ARCHITECTURE.md#code-from-a-stop))
+- **A rerun under the ref of a run that ended maps its lines from when it is first heard (`heardSession`)**, never
+  from the ended run's start. Checked by `tests/run-control.test.ts` ("map a rerun’s lines …").
+  ([Run control](ARCHITECTURE.md#run-control))
 
 ### Editors and workspaces
 
@@ -137,8 +144,8 @@ npm run vscode:package            # dist/piwi.vsix
 - [Walkthrough](ARCHITECTURE.md#walkthrough), [Coverage marks](ARCHITECTURE.md#coverage-marks),
   [Failures view](ARCHITECTURE.md#failures-view), [Status bar](ARCHITECTURE.md#status-bar),
   [Testing view](ARCHITECTURE.md#testing-view): before changing what one of them shows.
-- [Runs](ARCHITECTURE.md#runs): run notifications, tasks, the test at the cursor, breakpoints, and the run control
-  (stops, Pause, Resume, the paused page).
+- [Runs](ARCHITECTURE.md#runs): run notifications, tasks, the test at the cursor, breakpoints, the run control
+  (stops, Pause, Resume, the paused page) and the code from a stop.
 - [Open in IDE](ARCHITECTURE.md#open-in-ide), [Send to editor](ARCHITECTURE.md#send-to-editor) and
   [Connect](ARCHITECTURE.md#connect): the entry points from the dashboard, Piwi Picker and an instance.
 - [Recording](ARCHITECTURE.md#recording): recording a test, its quick fixes, a paused test's recording, undo.

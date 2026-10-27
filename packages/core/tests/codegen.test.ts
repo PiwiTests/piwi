@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import ts from 'typescript';
 import { isPageExpression, pageUrlPattern, renderSpec, safeLocator } from '../src/codegen';
-import { buildSession } from '../src/recording';
+import { ASSERTION_MATCHERS, buildSession } from '../src/recording';
 import type { RecordedStep, RecordedTarget } from '../src/recording';
 import type { TestFunctionEntry } from '../src/function-match';
 
@@ -817,6 +817,109 @@ describe('renderSpec — assertions', () => {
   });
 });
 
+describe('renderSpec — a region’s ARIA snapshot', () => {
+  const region = target({
+    role: 'region',
+    tagName: 'section',
+    accessibleName: 'Order summary',
+    alternatives: [{ locator: "getByRole('region', { name: 'Order summary' })", method: 'getByRole', score: 90 }],
+  });
+  const snapshotStep = (snapshot: string, negated = false) =>
+    step({
+      action: 'assert',
+      target: region,
+      assertion: { matcher: 'toMatchAriaSnapshot', expected: snapshot, actual: null, negated, note: null },
+    });
+  /** The cooked value of the one template literal in `code`, as JavaScript reads it. */
+  const literalValue = (code: string): string => {
+    const out = ts.transpileModule(
+      `const page = {}; const value = ${code.slice(code.indexOf('`'), code.lastIndexOf('`') + 1)};`,
+      {
+        compilerOptions: { target: ts.ScriptTarget.ES2022 },
+      },
+    ).outputText;
+    return new Function(`${out}; return value;`)() as string;
+  };
+
+  test('writes the snapshot as a template literal under the statement, its own indentation kept', () => {
+    const snapshot = [
+      '- heading "Order summary" [level=2]',
+      '- list:',
+      '  - listitem: Red shoes €80.00',
+      '',
+      '- text: Total €72.00',
+    ].join('\n');
+    const { code, warnings } = renderSpec(buildSession([snapshotStep(snapshot)], 0), {
+      format: 'body',
+      continuePage: true,
+    });
+    expect(warnings).toEqual([]);
+    expect(code).toBe(
+      [
+        "  await expect(page.getByRole('region', { name: 'Order summary' })).toMatchAriaSnapshot(`",
+        '    - heading "Order summary" [level=2]',
+        '    - list:',
+        '      - listitem: Red shoes €80.00',
+        '    - text: Total €72.00',
+        '  `);',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  test('takes the page expression, a negation, a snapshot indented as a whole and CRLF line ends', () => {
+    const { code } = renderSpec(buildSession([snapshotStep('    - button "Pay"\r\n      - img\r\n', true)], 0), {
+      format: 'body',
+      continuePage: true,
+      page: 'this.page',
+    });
+    expect(code).toBe(
+      [
+        "  await expect(this.page.getByRole('region', { name: 'Order summary' })).not.toMatchAriaSnapshot(`",
+        '    - button "Pay"',
+        '      - img',
+        '  `);',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  test('escapes what would end the literal or run as code, so the value read back is the page’s text', () => {
+    const hostile = [
+      '- heading "`); process.exit(1); (`" [level=1]',
+      '- text: ${process.env.SECRET} costs $5 and $${x}',
+      String.raw`- text: C:\temp\new \` \${y}`,
+      '- text: a\u2028b\u0007c',
+    ].join('\n');
+    const { code } = renderSpec(buildSession([snapshotStep(hostile)], 0), { format: 'body', continuePage: true });
+    expect(code).not.toMatch(/(?<!\\)\$\{/);
+    const out = ts.transpileModule(code, {
+      reportDiagnostics: true,
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    });
+    expect(out.diagnostics ?? []).toEqual([]);
+    // Playwright reads the literal with its common indentation and its blank lines removed.
+    const value = literalValue(code)
+      .split('\n')
+      .filter((line) => line.trim())
+      .map((line) => line.slice(4))
+      .join('\n');
+    expect(value).toBe(hostile);
+  });
+
+  test('an empty snapshot becomes a comment and a warning', () => {
+    const { code, warnings } = renderSpec(buildSession([snapshotStep(' \n ')], 0), { format: 'body' });
+    expect(code).not.toContain('toMatchAriaSnapshot(');
+    expect(warnings).toEqual([
+      expect.objectContaining({ code: 'incomplete-assertion', detail: 'toMatchAriaSnapshot' }),
+    ]);
+  });
+
+  test('neither a recording nor a steps document states it', () => {
+    expect(ASSERTION_MATCHERS).not.toContain('toMatchAriaSnapshot');
+  });
+});
+
 describe('renderSpec — only steps, never code', () => {
   test('a locator that is not a Playwright chain is never written into the spec', () => {
     const evil = { locator: `getByRole('x')); process.exit(1); ((0`, method: 'getByRole', score: 99 };
@@ -849,7 +952,7 @@ describe('renderSpec — only steps, never code', () => {
           action: 'assert',
           pageUrl: 'https://x.test/orders/9',
           target: target({ testId: 'total' }),
-          assertion: { matcher: 'toHaveText', expected: 'a b', actual: `x'y`, negated: true, note: '*/ // note' },
+          assertion: { matcher: 'toHaveText', expected: 'a\u2028b', actual: `x'y`, negated: true, note: '*/ // note' },
         }),
       ],
       0,
@@ -862,7 +965,7 @@ describe('renderSpec — only steps, never code', () => {
       urlChecks: true,
       expectFail: { reason: 'SHOP-1 */' },
       tags: ['bug'],
-      annotations: [{ type: 'piwi:link', description: 'https://x.test/a?b=1&c= ' }],
+      annotations: [{ type: 'piwi:link', description: 'https://x.test/a?b=1&c=\u2029' }],
     });
     const out = ts.transpileModule(code, {
       reportDiagnostics: true,

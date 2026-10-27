@@ -6,8 +6,9 @@
  * asks it to record from there (`attach`); the service asks the editor to take the recording (`onAttach`), whose
  * `piwi/record` names the hand-off, and the session then drives the test's page as it drives a launcher's browser:
  * `handoffLauncher` answers the recorder's calls the test relays as the launcher does (`RecorderHost`), and hands the
- * test what the session says. A hand-off the editor does not take in time is refused, with why. A worker of the run
- * keeps its run connection (`run-attach`) for its whole life, which `onRun` takes (`run-sessions.ts`).
+ * test what the session says. A hand-off the editor does not take in time is refused, with why. A hand-off in its
+ * `check` mode (Assert at a stop) is the service's own: `onCheck` takes it at once, and no editor is asked. A worker of
+ * the run keeps its run connection (`run-attach`) for its whole life, which `onRun` takes (`run-sessions.ts`).
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -19,7 +20,9 @@ import {
   formatRecordChannel,
   lineReader,
   parseHandoffToEditor,
+  type HandoffMode,
   type HandoffReason,
+  type HandoffStop,
   type HandoffToTest,
   type IdeRecorderPaused,
 } from '@piwitests/core/ide-recorder';
@@ -40,6 +43,9 @@ export interface Handoff {
   /** The test's project's `testIdAttribute` and `baseURL`. */
   testIdAttribute: string | null;
   baseURL: string | null;
+  /** A recording, or one check (`check`), and for a check the stop of the run connection it was started at. */
+  mode: HandoffMode;
+  stop: HandoffStop | null;
   socket: net.Socket;
   /** The lines the test sent before a session's launcher read them: none but `closed` is expected. */
   kept: string[];
@@ -50,6 +56,8 @@ export interface Handoff {
 export interface RecordChannelOptions {
   /** A test asked to record: the editor is asked to take it, with `take`. */
   onAttach(handoff: Handoff): void;
+  /** A test asked for one check (`mode: 'check'`): the service takes it at once. Without it, the check is refused. */
+  onCheck?(handoff: Handoff): void;
   /** A worker opened its run connection: returns where its next lines go. Without it, the connection is closed. */
   onRun?(socket: net.Socket, attach: Extract<RunToHub, { type: 'run-attach' }>): (line: string) => void;
   /** How long a hand-off waits for the editor; {@link HANDOFF_WAIT_MS} by default. */
@@ -174,10 +182,17 @@ export class RecordChannel {
           reason: message.reason,
           testIdAttribute: message.testIdAttribute,
           baseURL: message.baseURL,
+          mode: message.mode === 'check' ? 'check' : 'record',
+          stop: message.stop ?? null,
           socket,
           kept: [],
           deliver: (early) => handoff?.kept.push(early),
         };
+        if (handoff.mode === 'check') {
+          if (this.options.onCheck) this.options.onCheck(handoff);
+          else write(socket, { type: 'refused', message: 'this editor takes no check.' });
+          return;
+        }
         const id = handoff.id;
         const timer = setTimeout(
           () => this.refuse(id, 'the editor did not start the recording in time.'),

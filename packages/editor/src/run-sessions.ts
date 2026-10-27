@@ -1,14 +1,18 @@
 /**
  * The runs the editor started, as their workers tell them over the run channel (`@piwitests/core/run-channel`): a
- * session per run, by the ref of its command (`PIWI_ORIGIN_REF`), holding its workers, the test each one runs and
- * where it stands stopped. The record channel's socket (`recorder/handoff.ts`) hands each worker's run connection here.
- * The client hears each session (`piwi/runSessionChanged`) and steers it (`piwi/runControl`, `piwi/setRunBreakpoints`,
- * `piwi/pausedPage`), as Piwi Picker does through the hub (`run-hub.ts`), which can also start the pause bar's Pick a
- * locator and Record here at a stop (`intent`). A worker names places relative to the run's working directory; the
- * client, by their file's URI as the workspace names it: the session converts both ways. A stop that shows no pause
- * bar while no surface can answer stops (the client does not, and no Piwi Picker follows the runs) is resumed at once,
- * and so is one held when the last of them goes. A worker's connection that closes lets a stop no pause bar shows go
- * on; a stop the bar shows waits there for its answer.
+ * session per run, by the ref of its command (`PIWI_ORIGIN_REF`), holding its workers, the test each one runs and where
+ * it stands stopped. The record channel's socket (`recorder/handoff.ts`) hands each worker's run connection here. The
+ * client hears each session (`piwi/runSessionChanged`) and steers it (`piwi/runControl`, `piwi/setRunBreakpoints`,
+ * `piwi/pausedPage`), as Piwi Picker does through the hub (`run-hub.ts`); both can start an intent at a stop (`intent`:
+ * the pause bar's Pick a locator and Record here, the check panel's Check an element, a region's ARIA snapshot) and ask
+ * the stopped worker what it holds (`requests`, `mock`, `locator`: the responses its test kept, the one to mock, a
+ * locator's matches), which `stop-actions.ts` turns into code. A worker names places relative to the run's working
+ * directory; the client, by their file's URI as the workspace names it: the session converts both ways. A stop that
+ * shows no pause bar while no surface can answer stops (the client does not, and no Piwi Picker hears the runs) is
+ * resumed at once, and so is one held when the last of them goes. A failure no pause bar shows is held only in a run
+ * started to be watched (`watched`: with the editor's breakpoints or a `page.pause()`) or while a Runs window of Piwi
+ * Picker follows the runs, else it goes on at once and no client hears of it. A worker's connection that closes lets a
+ * stop no pause bar shows go on; a stop the bar shows waits there for its answer.
  */
 import * as path from 'node:path';
 import type * as net from 'node:net';
@@ -18,8 +22,14 @@ import {
   parseRunToHub,
   type HubToRun,
   type IntentAnswer,
+  type LocatorAnswer,
+  type MockAnswer,
   type Place,
+  type RequestsAnswer,
+  type RunHold,
   type RunIntent,
+  type RunQuery,
+  type RunTake,
   type RunToHub,
 } from '@piwitests/core/run-channel';
 import type {
@@ -33,6 +43,7 @@ import type {
   RunTest,
   SetRunBreakpointsParams,
 } from './protocol.js';
+import type { HubAction } from '@piwitests/core/run-hub';
 import { relativeTo } from './workspace.js';
 
 /** How often a session's changes are sent at most, but a stop and its end, which are sent at once. */
@@ -43,34 +54,90 @@ export const SESSION_BURST_MS = 50;
 export const SESSION_LINGER_MS = 5_000;
 /** How long `piwi/pausedPage`, and an intent, wait for the worker's answer. */
 export const PAUSED_PAGE_WAIT_MS = 10_000;
-/** The runs whose breakpoints the service keeps for workers that connect later, at most. */
-const MAX_BREAKPOINT_RUNS = 50;
+/** The runs whose breakpoints (for workers that connect later) and whose command's end the service keeps, at most. */
+const MAX_KEPT_RUNS = 50;
+/** The stops the service shows and answers among those a worker holds only then (`attached`): a held failure. */
+const SHOWN_HOLDS: readonly RunHold[] = ['failure'];
 
 type RunAttach = Extract<RunToHub, { type: 'run-attach' }>;
 
-/** What a worker's answer to a request carries: an image, or whether an intent started. */
-type Answered = PausedImage | IntentAnswer | null;
+/** What a worker's answer to a request carries: an image, whether an intent started, or a query's answer. */
+type Answered = PausedImage | IntentAnswer | RequestsAnswer | MockAnswer | LocatorAnswer | null;
 
-/** What the hub asks a stop to start from outside the page: the stop it was shown, as `piwi/runControl` names one. */
-export interface IntentParams {
+/** A stop as a client names it: the run, the one stopped worker or `worker`, and the stop it showed (`since`). */
+export interface StopParams {
   ref: string;
   worker?: number | null;
+  since?: string | null;
+}
+
+/** What a stop is asked to start from outside the page: the stop it was shown, as `piwi/runControl` names one. */
+export interface IntentParams extends StopParams {
   since: string;
   what: RunIntent;
 }
+
+/** A worker's stop, as the code made there names it. */
+export interface StopRef {
+  ref: string;
+  worker: number;
+  /** The worker's own number for the stop. */
+  stop: number;
+  since: string;
+  reason: RunStop['reason'];
+  /** The file of the stopped call, as the workspace names it, its 0-based line, and its 0-based column when known. */
+  uri: string;
+  line: number;
+  character: number | null;
+  /** The run's folder, as `piwi/status` names it. */
+  root: string | null;
+}
+
+/** Why an action that writes code is refused when the client writes none. */
+export const NO_CODE = "The editor cannot write code from a stop: update Piwi's extension in the editor.";
+
+/** What each query asks, as a refusal names it. */
+const QUERY_WORDS: Record<RunQuery, string> = {
+  requests: 'list the responses its test kept',
+  mock: 'hand over a response it kept',
+  locator: 'count a locator on the stopped page',
+};
 
 export interface RunSessionsOptions {
   /** A session changed, or ended: the client hears it. */
   notify(session: RunSession): void;
   /**
    * Whether a surface shows the stops and answers them: the client (`InitializationOptions.runControl`), or a Piwi
-   * Picker following the runs.
+   * Picker subscribed to the hub.
    */
   answersStops(): boolean;
   /** A sentence for the client to show once, about the folder `root`. */
   notice(root: string, severity: 'information' | 'warning', message: string): void;
   /** The folder of the Playwright config a run's working directory is, as the workspace names it; null for none. */
   rootOf(cwd: string): string | null;
+  /** Whether the client writes the code made at a stop (`InitializationOptions.stopCode`). */
+  writesCode?(): boolean;
+  /**
+   * A worker sent the region picked at its stop, with its ARIA snapshot, for the code it makes; or why the region
+   * brought none (`refused`).
+   */
+  onRegion?(stop: StopRef, region: { locator: string; snapshot: string } | { refused: string }): void;
+  /**
+   * Whether the run of `ref` was started to be watched: the service built its command with the editor's breakpoints,
+   * or for a spec that calls `page.pause()` (both headed). A failure no bar shows is held in such a run.
+   */
+  watched?(ref: string): boolean;
+  /**
+   * Whether a person follows the runs in Piwi Picker now (a Runs window open, its hub connection saying so): a failure
+   * no bar shows is held while one does.
+   */
+  followed?(): boolean;
+  /**
+   * A session starts: the first worker of a run connected, the run's command being one the service built or one it did
+   * not, or a run of a ref whose command ended before (`again`: a rerun of that command, its environment and ref as
+   * they were, whose code is the files as they stand now).
+   */
+  sessionStarted?(ref: string, again: boolean): void;
   paceMs?: number;
   burstMs?: number;
   lingerMs?: number;
@@ -87,11 +154,11 @@ interface Worker {
   /** Where it stands stopped, and the worker's number for that stop and its place. */
   stop: { id: number; place: Place; view: RunStop } | null;
   pausing: boolean;
-  /** The intents its reporter takes, and its version. */
-  takes: Set<RunIntent>;
+  /** What its reporter takes at a stop, and its version. */
+  takes: Set<RunTake>;
   reporter: string;
   /** The requests waiting for the worker's answer, by what they ask. */
-  requests: Map<number, { what: 'image' | RunIntent; settle(value: Answered): void }>;
+  requests: Map<number, { what: 'image' | RunTake; settle(value: Answered): void }>;
 }
 
 interface Session {
@@ -113,6 +180,25 @@ interface Session {
   resumedSaid: boolean;
 }
 
+/** The request asking a worker `what`, at the stop `stop` but for an image. */
+function requestOf(
+  request: number,
+  what: 'image' | RunTake,
+  stop: number,
+  extra: { id?: number; locator?: string | null },
+): HubToRun {
+  switch (what) {
+    case 'image':
+      return { type: 'request', request, what };
+    case 'mock':
+      return { type: 'request', request, what, stop, id: extra.id ?? 0 };
+    case 'locator':
+      return { type: 'request', request, what, stop, locator: extra.locator ?? null };
+    default:
+      return { type: 'request', request, what, stop };
+  }
+}
+
 function uriToPath(uri: string): string | null {
   try {
     return fileURLToPath(uri);
@@ -125,13 +211,16 @@ export class RunSessions {
   private readonly sessions = new Map<string, Session>();
   /** The breakpoints a client sent for each run, as files and 0-based lines, newest last. */
   private readonly breakpoints = new Map<string, Array<{ file: string; line: number }>>();
-  private requests = 0;
+  /** The refs whose command ended (`commandEnded`), the latest 50: a session of one is a rerun's. */
+  private readonly endedCommands = new Set<string>();
+  private lastRequest = 0;
 
   constructor(private readonly options: RunSessionsOptions) {}
 
   /**
-   * A worker connected with `attach`: it joins its run's session, a new one when none runs, and hears the breakpoints
-   * sent for the run since it started. Returns where its next lines go. A connection naming the index of a worker
+   * A worker connected with `attach`: it joins its run's session, a new one when none runs, hears which of the stops it
+   * holds only then the service shows (`attached`, to a worker that lists them: a failure's) and the breakpoints sent
+   * for the run since it started. Returns where its next lines go. A connection naming the index of a worker
    * connected now is closed: another process the run's environment reached (a test running Playwright itself) takes
    * no worker's place. The workers of a command that ended are let go with its session (`commandEnded`), so those of
    * a rerun start a new one.
@@ -159,6 +248,7 @@ export class RunSessions {
         resumedSaid: false,
       };
       this.sessions.set(attach.ref, session);
+      this.options.sessionStarted?.(attach.ref, this.endedCommands.delete(attach.ref));
     }
     if (session.linger) clearTimeout(session.linger);
     session.linger = null;
@@ -179,6 +269,8 @@ export class RunSessions {
     if (holder) this.closeWorker(holder);
     const own = session;
     socket.on('close', () => this.detach(own, worker));
+    if (attach.holds)
+      this.send(worker, { type: 'attached', holds: SHOWN_HOLDS.filter((h) => attach.holds!.includes(h)) });
     const breakpoints = this.breakpoints.get(attach.ref);
     if (breakpoints) this.sendBreakpoints(worker, breakpoints, session.root);
     this.changed(session);
@@ -266,23 +358,40 @@ export class RunSessions {
   }
 
   /**
-   * At the stop `since` names (of the run's one stopped worker, or the one named), start the pause bar's Pick a locator
-   * or Record here in the test's window, as its button does: refused without the stop, at a stop no bar shows, and for
-   * a reporter that predates it. Answers once the worker said whether it started, or after `PAUSED_PAGE_WAIT_MS`.
+   * The worker stopped at the stop a client names: the run's one stopped worker or `worker`, at the stop `since` names
+   * when it names one; why there is none otherwise.
    */
-  intent(params: IntentParams): Promise<RunControlResult> {
-    const refuse = (message: string): Promise<RunControlResult> => Promise.resolve({ ok: false, message });
-    if (typeof params?.since !== 'string' || !params.since) return refuse('The command needs the stop it answers.');
-    const session = typeof params.ref === 'string' ? this.sessions.get(params.ref) : undefined;
+  private stopped(params: StopParams): { session: Session; worker: Worker } | RunControlResult {
+    const refuse = (message: string): RunControlResult => ({ ok: false, message });
+    const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
     if (!session?.workers.size) return refuse('No worker of this run is connected to the editor.');
     const named = typeof params.worker === 'number' ? (session.workers.get(params.worker) ?? null) : null;
     if (typeof params.worker === 'number' && !named) {
       return refuse(`Worker ${params.worker} of this run is not connected to the editor.`);
     }
-    const worker = this.stoppedWorker(named ? [named] : [...session.workers.values()], named, params.since);
-    if ('message' in worker) return Promise.resolve(worker);
+    const since = typeof params.since === 'string' && params.since ? params.since : null;
+    const worker = this.stoppedWorker(named ? [named] : [...session.workers.values()], named, since);
+    return 'message' in worker ? worker : { session, worker };
+  }
+
+  /**
+   * At the stop `since` names (of the run's one stopped worker, or the one named), start an intent in the test's
+   * window: the pause bar's Pick a locator or Record here as its button does, the check panel's Check an element
+   * (`assert`) or the picker for a region (`assert-region`). Refused without the stop, at a stop no bar shows, for a
+   * reporter that does not take it, and, for `assert` and `assert-region`, when the client writes no code. Answers
+   * once the worker said whether it started, or after `PAUSED_PAGE_WAIT_MS`.
+   */
+  intent(params: IntentParams): Promise<RunControlResult> {
+    const refuse = (message: string): Promise<RunControlResult> => Promise.resolve({ ok: false, message });
+    if (typeof params?.since !== 'string' || !params.since) return refuse('The command needs the stop it answers.');
     const name = RUN_INTENT_NAMES[params.what];
     if (!name) return refuse(`Piwi does not know the intent ${JSON.stringify(params.what)}.`);
+    const at = this.stopped(params);
+    if ('message' in at) return Promise.resolve(at);
+    const { worker } = at;
+    if ((params.what === 'assert' || params.what === 'assert-region') && !this.options.writesCode?.()) {
+      return refuse(NO_CODE);
+    }
     if (!worker.stop!.view.bar) {
       return refuse(`${name} needs the pause bar in the test's window, and this test runs headless: run it headed.`);
     }
@@ -297,10 +406,87 @@ export class RunSessions {
     );
   }
 
-  /** The intents the reporter of a run's worker takes. */
-  intentsOf(ref: string, worker: number): RunIntent[] {
+  /** Why the worker at a stop is not asked `what`; null when it takes it. */
+  private refusesQuery(worker: Worker, what: RunQuery): string | null {
+    return worker.takes.has(what)
+      ? null
+      : `@piwitests/reporter ${worker.reporter || ''}`.trimEnd() + ` cannot ${QUERY_WORDS[what]}: update it.`;
+  }
+
+  /** The responses the test kept as it stood at the stop a client names, oldest first, without their bodies. */
+  async requests(params: StopParams): Promise<RequestsAnswer> {
+    const at = this.stopped(params);
+    if ('message' in at) return { ...at, requests: [] };
+    const refused = this.refusesQuery(at.worker, 'requests');
+    if (refused) return { ok: false, message: refused, requests: [] };
+    const answer = (await this.ask(at.worker, 'requests', at.worker.stop!.id)) as RequestsAnswer | null;
+    return answer ?? { ok: false, message: 'The test did not answer.', requests: [] };
+  }
+
+  /** The kept response `id` at the stop a client names, with its body, and that stop; why not otherwise. */
+  async mock(params: StopParams, id: number): Promise<{ stop: StopRef; answer: MockAnswer } | RunControlResult> {
+    const at = this.stopped(params);
+    if ('message' in at) return at;
+    const refused = this.refusesQuery(at.worker, 'mock');
+    if (refused) return { ok: false, message: refused };
+    const stop = this.refOf(at.session, at.worker);
+    const answer = (await this.ask(at.worker, 'mock', stop.stop, { id })) as MockAnswer | null;
+    return answer ? { stop, answer } : { ok: false, message: 'The test did not answer.' };
+  }
+
+  /**
+   * How many elements `locator` matches on the page of the stop a client names, outlined there where the bar shows;
+   * null takes the outline down.
+   */
+  async locator(params: StopParams, locator: string | null): Promise<LocatorAnswer> {
+    const at = this.stopped(params);
+    if ('message' in at) return { ...at, count: null };
+    const refused = this.refusesQuery(at.worker, 'locator');
+    if (refused) return { ok: false, message: refused, count: null };
+    const answer = (await this.ask(at.worker, 'locator', at.worker.stop!.id, { locator })) as LocatorAnswer | null;
+    return answer ?? { ok: false, message: 'The test did not answer.', count: null };
+  }
+
+  /** The stop a client names (`StopParams`), while its worker stands at it; why there is none otherwise. */
+  stopOf(params: StopParams): StopRef | RunControlResult {
+    const at = this.stopped(params);
+    return 'message' in at ? at : this.refOf(at.session, at.worker);
+  }
+
+  /** The stop `stop` of a run's worker, while the worker stands at it; null otherwise. */
+  stopAt(ref: string, workerIndex: number, stop: number): StopRef | null {
+    const session = this.sessions.get(ref);
+    const worker = session?.workers.get(workerIndex);
+    return session && worker?.stop?.id === stop ? this.refOf(session, worker) : null;
+  }
+
+  private refOf(session: Session, worker: Worker): StopRef {
+    const { id, view } = worker.stop!;
+    return {
+      ref: session.ref,
+      worker: worker.index,
+      stop: id,
+      since: view.since,
+      reason: view.reason,
+      uri: view.uri,
+      line: view.line,
+      character: view.character,
+      root: session.root,
+    };
+  }
+
+  /**
+   * What a run's worker takes from Piwi Picker: the intents, and `mock` when it lists and hands over responses; the
+   * actions that write code (`assert`, `assert-region`, `mock`) only while the client writes it.
+   */
+  intentsOf(ref: string, worker: number): HubAction[] {
     const found = this.sessions.get(ref)?.workers.get(worker);
-    return found ? [...found.takes] : [];
+    if (!found) return [];
+    const code = !!this.options.writesCode?.();
+    const intents = (['pick', 'record', 'assert', 'assert-region'] as const).filter(
+      (what) => found.takes.has(what) && (code || (what !== 'assert' && what !== 'assert-region')),
+    );
+    return code && found.takes.has('requests') && found.takes.has('mock') ? [...intents, 'mock'] : intents;
   }
 
   /**
@@ -316,12 +502,28 @@ export class RunSessions {
    * have at once.
    */
   surfacesChanged(): void {
-    if (this.options.answersStops()) return;
+    const answered = this.options.answersStops();
     for (const session of this.sessions.values()) {
       for (const worker of session.workers.values()) {
-        if (worker.stop && !worker.stop.view.bar) this.resumeUnanswered(session, worker, worker.stop.place);
+        if (!worker.stop || worker.stop.view.bar) continue;
+        if (!answered || this.unwatchedFailure(session, worker)) {
+          this.resumeUnanswered(session, worker, worker.stop.place);
+        }
       }
     }
+  }
+
+  /**
+   * Whether a worker stands at a failure nobody watches: no bar shows it, its run was not started to be watched, and
+   * no Runs window follows the runs. It goes on at once.
+   */
+  private unwatchedFailure(session: Session, worker: Worker): boolean {
+    return worker.stop?.view.reason === 'failure' && !this.watches(session);
+  }
+
+  /** Whether someone watches the run's failures: it was started to be watched, or a Runs window follows the runs. */
+  private watches(session: Session): boolean {
+    return !!this.options.watched?.(session.ref) || !!this.options.followed?.();
   }
 
   /** `piwi/setRunBreakpoints`: the run's workers stop at these lines from now on, a worker that starts later too. */
@@ -334,7 +536,7 @@ export class RunSessions {
     this.breakpoints.delete(params.ref);
     this.breakpoints.set(params.ref, files);
     for (const oldest of this.breakpoints.keys()) {
-      if (this.breakpoints.size <= MAX_BREAKPOINT_RUNS) break;
+      if (this.breakpoints.size <= MAX_KEPT_RUNS) break;
       this.breakpoints.delete(oldest);
     }
     const session = this.sessions.get(params.ref);
@@ -349,8 +551,13 @@ export class RunSessions {
   }
 
   /** Ask a worker, and settle with its answer, or null after `PAUSED_PAGE_WAIT_MS` or when it leaves. */
-  private ask(worker: Worker, what: 'image' | RunIntent, stop?: number): Promise<Answered> {
-    const request = ++this.requests;
+  private ask(
+    worker: Worker,
+    what: 'image' | RunTake,
+    stop?: number,
+    extra: { id?: number; locator?: string | null } = {},
+  ): Promise<Answered> {
+    const request = ++this.lastRequest;
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         worker.requests.delete(request);
@@ -364,10 +571,7 @@ export class RunSessions {
           resolve(value);
         },
       });
-      this.send(
-        worker,
-        what === 'image' ? { type: 'request', request, what } : { type: 'request', request, what, stop: stop! },
-      );
+      this.send(worker, requestOf(request, what, stop ?? 0, extra));
     });
   }
 
@@ -376,6 +580,12 @@ export class RunSessions {
    * is ending, are closed, which lets a stop no pause bar shows go on at once.
    */
   commandEnded(ref: string): void {
+    this.endedCommands.delete(ref);
+    this.endedCommands.add(ref);
+    for (const oldest of this.endedCommands) {
+      if (this.endedCommands.size <= MAX_KEPT_RUNS) break;
+      this.endedCommands.delete(oldest);
+    }
     const session = this.sessions.get(ref);
     if (session) this.end(session);
   }
@@ -409,6 +619,10 @@ export class RunSessions {
         if (message.cannotPause) worker.pausing = false;
         return this.changed(session);
       case 'stopped':
+        // A failure nobody watches goes on at once, unseen: no client hears of it.
+        if (message.reason === 'failure' && !message.bar && (!this.options.answersStops() || !this.watches(session))) {
+          return this.send(worker, { type: 'control', action: 'resume', stop: message.stop });
+        }
         worker.stop = {
           id: message.stop,
           place: message.place,
@@ -421,6 +635,7 @@ export class RunSessions {
             locator: message.locator,
             bar: message.bar,
             since: this.stamp(session),
+            ...(message.error === undefined ? {} : { error: message.error }),
           },
         };
         worker.pausing = false;
@@ -441,18 +656,26 @@ export class RunSessions {
         worker.requests.delete(message.request);
         return asked.settle(message.value);
       }
+      case 'region': {
+        const region = 'refused' in message ? { refused: message.refused } : message;
+        if (worker.stop?.id === message.stop) return this.options.onRegion?.(this.refOf(session, worker), region);
+        // The stop ended: a snapshot has nowhere to go, a refusal still says why.
+        if ('refused' in region) this.options.notice(session.root ?? worker.cwd, 'warning', region.refused);
+        return;
+      }
       case 'notice':
         return this.options.notice(session.root ?? worker.cwd, 'warning', message.message);
     }
   }
 
   /**
-   * A stop no one can answer: no pause bar shows it, the client shows no stop, and no Piwi Picker follows the runs. It
+   * A stop no one can answer: no pause bar shows it, the client shows no stop, and no Piwi Picker hears the runs. It
    * goes on, said once a run.
    */
   private resumeUnanswered(session: Session, worker: Worker, place: Place): void {
     this.send(worker, { type: 'control', action: 'resume', stop: worker.stop!.id });
-    if (session.resumedSaid) return;
+    // A failure held for a surface that is not there ends as it would have: nothing to say.
+    if (session.resumedSaid || worker.stop!.view.reason === 'failure') return;
     session.resumedSaid = true;
     this.options.notice(
       session.root ?? worker.cwd,
@@ -532,6 +755,7 @@ export class RunSessions {
           test: worker.test,
           stop: worker.stop?.view ?? null,
           pausing: worker.pausing,
+          takes: [...worker.takes],
         })),
       ended: session.ended,
     };

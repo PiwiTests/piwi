@@ -6,9 +6,12 @@
  * image, never as markup.
  */
 import type {
+  HubCodeAction,
+  HubCodeIntent,
   HubControlAction,
   HubImage,
   HubIntent,
+  HubKeptRequest,
   HubSession,
   HubStop,
   HubTest,
@@ -65,10 +68,26 @@ export interface RunsState {
   runs: RunsRun[];
 }
 
-/** What a command of the window asks: a control, an intent of the pause bar, or an image of the stopped page. */
-export type RunsWhat = HubControlAction | HubIntent | 'image';
+/**
+ * What a command of the window asks: a control; at a stop, an intent the test's window runs (the pause bar's Pick and
+ * Record, the check panel's Assert, a region's Assert a region), the requests its test kept or the one to mock; or an
+ * image of the stopped page.
+ */
+export type RunsWhat = HubControlAction | HubIntent | HubCodeIntent | 'requests' | 'mock' | 'image';
 
-const WHATS: readonly string[] = ['pause', 'step', 'resume', 'finish', 'pick', 'record', 'image'];
+const WHATS: readonly string[] = [
+  'pause',
+  'step',
+  'resume',
+  'finish',
+  'pick',
+  'record',
+  'assert',
+  'assert-region',
+  'requests',
+  'mock',
+  'image',
+];
 
 /** What the window sends the worker. */
 export type RunsRequest =
@@ -87,6 +106,8 @@ export type RunsRequest =
       worker: number | null;
       since: string | null;
       what: RunsWhat;
+      /** For `mock` alone: the kept response to mock, the `id` of one of those `requests` listed. */
+      request?: number;
     };
 
 /** Why the worker answered a command itself: the hub is not connected, or did not answer in time. */
@@ -99,10 +120,31 @@ export interface RunsAnswer {
   failure?: RunsFailure;
   /** For `image`: the stopped page, null when the worker has none. */
   image?: HubImage | null;
+  /** For `requests`: the responses the test kept, oldest first, as the hub listed them (`parseHubMessage`). */
+  requests?: HubKeptRequest[];
+}
+
+/**
+ * What an action that writes code at a stop came to, as a hub said, whichever surface started it: the editor wrote the
+ * code (its sentence, and what to check in the code), or refused it once it started, and why. The window shows it
+ * while the worker stands at the stop `since` names.
+ */
+export interface RunsCode {
+  hub: string;
+  ref: string;
+  worker: number;
+  since: string;
+  action: HubCodeAction;
+  ok: boolean;
+  message: string;
+  warnings: string[];
 }
 
 /** What the worker sends the window. */
-export type RunsEvent = { type: 'state'; state: RunsState } | ({ type: 'answer'; id: number } & RunsAnswer);
+export type RunsEvent =
+  | { type: 'state'; state: RunsState }
+  | ({ type: 'answer'; id: number } & RunsAnswer)
+  | ({ type: 'code' } & RunsCode);
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -131,7 +173,10 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       if (what === 'image' && worker === null) return null;
       // Every control but Pause names the stop it answers, so a click made twice does not answer the next one.
       if (what !== 'pause' && what !== 'image' && since === null) return null;
-      return { type: 'command', id, hub, ref, worker, since, what: what as RunsWhat };
+      const command = { type: 'command', id, hub, ref, worker, since, what: what as RunsWhat } as const;
+      // Mock a request names the response, and nothing else does.
+      if (what !== 'mock') return value.request === undefined ? command : null;
+      return isIndex(value.request) && value.request > 0 ? { ...command, request: value.request } : null;
     }
     default:
       return null;
@@ -195,6 +240,15 @@ export function runFile(uri: string, root: string | null): string {
 /** Where a stop stands, as text: `tests/pages/cart.page.ts:13`, with the 1-based line. */
 export function stopPlace(stop: Pick<HubStop, 'uri' | 'line'>, root: string | null): string {
   return `${runFile(stop.uri, root)}:${stop.line + 1}`;
+}
+
+/**
+ * The error a failure's stop names: its `error`, else, from a service or a reporter that predates it, read from its
+ * title, which the reporter makes of `Failed: ` and the error's first line, which Playwright starts with the error's
+ * name (`Error: expect(locator).toBeVisible() failed`).
+ */
+export function stopError(stop: Pick<HubStop, 'error' | 'title'>): string {
+  return stop.error ?? stop.title.replace(/^Failed:\s*(?:Error:\s*)?/, '');
 }
 
 /** A test's name: its `describe` blocks' titles, then its own. */

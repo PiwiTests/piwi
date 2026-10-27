@@ -51,6 +51,10 @@ action is under **Tools → Piwi**:
   an inlay above it with **Resume**, **Step**, **Run to Caret** and **Finish**; they are also first in the status bar
   item's menu and under **Tools → Piwi**, with **Pause the Run** and **Stop the Run**. A headless test's page shows in
   the Piwi tool window's **Paused Page** tab.
+- **[Code from a pause](./editor-stop-code)**: the inlay, the arrow's menu, the status bar item's menu and **Tools →
+  Piwi** also offer **Pick a Locator**, **Record Here**, **Assert**, **Assert a Region** and **Mock a Request** (the
+  inlay names them shorter), whose code goes above the stopped line in one undoable edit; the end of the caret's line
+  says how many elements its locator matches on the stopped page, and a failure held there reads `Failed · …`.
 - **The severity of a failure**: **Settings → Tools → Piwi → Runs** chooses it
   ([CI failures in the Problems panel](./editor-failures#ci-failures-in-the-problems-panel)); an information shows as a
   weak warning.

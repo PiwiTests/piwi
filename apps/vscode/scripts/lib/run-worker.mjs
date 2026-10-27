@@ -3,8 +3,8 @@
 // test`: it prints Playwright's first line, writes the run channel and the ref its environment names
 // (`PIWI_RUN_CHANNEL`, `PIWI_ORIGIN_REF`) to a file, and waits until the task is ended, so the run stays live.
 // `attachWorker` then connects to that channel as a worker of the run does (the reporter's capture fixtures, the
-// integration suite's fake worker) and sends what the scene says; `pageImage` is the JPEG it answers an image request
-// with.
+// integration suite's fake worker), sends what the scene says and answers the requests the scene gives an answer to;
+// `pageImage` is the JPEG it answers an image request with.
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as net from 'node:net';
@@ -57,11 +57,15 @@ export async function waitForRun(runFile, ms = 60_000) {
   }
 }
 
+/** What the worker's reporter takes at a stop, as a current reporter's `run-attach` lists it. */
+export const RUN_TAKES = ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'];
+
 /**
- * Worker 0 of `run`, connected to its run channel and attached: `send` writes a message, `heard` holds what the
- * editor service sent, `waitFor` waits for one of them from `from` on, and an image request is answered with `image`.
+ * Worker 0 of `run`, connected to its run channel and attached, its reporter taking `takes`: `send` writes a message,
+ * `heard` holds what the editor service sent, `waitFor` waits for one of them from `from` on, an image request is
+ * answered with `image`, and any other request with `answers[what]` when the scene set it.
  */
-export async function attachWorker({ channel, ref, cwd }) {
+export async function attachWorker({ channel, ref, cwd }, takes = RUN_TAKES) {
   const hash = channel.lastIndexOf('#');
   const socket = net.connect(channel.slice(0, hash));
   await new Promise((resolve, reject) => {
@@ -75,6 +79,8 @@ export async function attachWorker({ channel, ref, cwd }) {
     heard,
     /** The stopped page's image, as `answer` carries it; null for none. */
     image: null,
+    /** The answers to the other requests, by what they ask (`requests`, `locator`). */
+    answers: {},
     send,
     async waitFor(test, what, from = 0, ms = 30_000) {
       const start = Date.now();
@@ -96,6 +102,8 @@ export async function attachWorker({ channel, ref, cwd }) {
       heard.push(message);
       if (message.type === 'request' && message.what === 'image') {
         send({ type: 'answer', request: message.request, what: 'image', value: worker.image });
+      } else if (message.type === 'request' && message.what in worker.answers) {
+        send({ type: 'answer', request: message.request, what: message.what, value: worker.answers[message.what] });
       }
     }
   });
@@ -109,6 +117,7 @@ export async function attachWorker({ channel, ref, cwd }) {
     pid: process.pid,
     playwright: PLAYWRIGHT_VERSION,
     reporter: REPORTER_VERSION,
+    takes,
   });
   return worker;
 }

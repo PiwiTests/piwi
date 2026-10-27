@@ -28,7 +28,11 @@ export type StepAction =
   | 'assert'
   | 'manual';
 
-/** The web-first assertions an `assert` step can state. */
+/**
+ * The web-first assertions an `assert` step can state. `toMatchAriaSnapshot` compares a region with the ARIA snapshot
+ * in `expected`, which the editor service reads from a paused page: a recording and a steps document never carry it
+ * (`ASSERTION_MATCHERS`).
+ */
 export type AssertionMatcher =
   | 'toHaveText'
   | 'toHaveValue'
@@ -40,8 +44,10 @@ export type AssertionMatcher =
   | 'toHaveURL'
   | 'toContainText'
   | 'toHaveCount'
-  | 'toBeChecked';
+  | 'toBeChecked'
+  | 'toMatchAriaSnapshot';
 
+/** The matchers a recorded event and a steps document may state. */
 export const ASSERTION_MATCHERS: readonly AssertionMatcher[] = [
   'toHaveText',
   'toHaveValue',

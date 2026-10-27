@@ -1,5 +1,17 @@
 import { describe, expect, test } from 'vitest';
-import { maskUrlFragment } from '../src/mask';
+import {
+  HIDDEN_VALUE,
+  hideSecretsInText,
+  hideSecretsInUrl,
+  holdsPersonalData,
+  isSecretAutocomplete,
+  isSecretName,
+  isSecretValue,
+  maskUrlFragment,
+} from '../src/mask';
+
+/** A value in a provider's shape, built from parts so no scanner reads it as a live key. */
+const shaped = (...parts: string[]) => parts.join('');
 
 describe('maskUrlFragment', () => {
   test('masks the credentials of an OAuth implicit flow or a magic link', () => {
@@ -17,5 +29,186 @@ describe('maskUrlFragment', () => {
     expect(maskUrlFragment('#section-2')).toBe('#section-2');
     expect(maskUrlFragment('#/reset/0123456789abcdef0123456789abcdef')).toBe('#/reset/[masked-hex]');
     expect(maskUrlFragment('#/list?page=2&sort=name')).toBe('#/list?page=2&sort=name');
+  });
+});
+
+describe('the credentials a mock, a list or a snapshot hides', () => {
+  test('are named by a word of a credential, in any spelling', () => {
+    for (const name of [
+      'password',
+      'pwd',
+      'accessToken',
+      'refresh_token',
+      'api-key',
+      'apiKeys',
+      'X-Amz-Signature',
+      'sig',
+      'passcode',
+      'jsessionid',
+    ]) {
+      expect(isSecretName(name), name).toBe(true);
+    }
+    for (const name of [
+      'sessionId',
+      'Cookie',
+      'client_secret',
+      'jwt',
+      'csrfToken',
+      'code',
+      'PIN',
+      'X-Amz-Credential',
+    ]) {
+      expect(isSecretName(name), name).toBe(true);
+    }
+    for (const name of ['author', 'authorId', 'keyboard', 'monkey', 'countryCode', 'passport', 'sku', 'zip']) {
+      expect(isSecretName(name), name).toBe(false);
+    }
+  });
+
+  test('are shaped like a token, a key a service gives or a random string', () => {
+    for (const value of [
+      'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.c2lnbmF0dXJl',
+      'Bearer abcdefghijklmnop',
+      ['sk', 'test', '4eC39HqLyjWDarjtT1zdp7dc'].join('_'),
+      'AKIAIOSFODNN7EXAMPLE',
+      'AIzaSyD-abcdefghijklmnopqrstuvwxyz12345',
+      'gho_abcdefghijklmnopqrstuvwxyz0123456789',
+      'xoxp-1234-5678-abcdefghij',
+      // A random token of 40 characters or more, its letters in runs of one case as long as chance makes them.
+      'sk8Hd92jfKs0dLq3mZx7Pw1VbN4tRy6cUe5oQ2wXz9Lm',
+      'Qx7mbDKzpTrwhJnvNa3sFmqlewyR4uC8ePpGbKdA0vTTyxmQoLn2cW5hgZiUfk9RsB1JeYV6',
+      shaped('sk-proj-', 'Sh1pab2-4fRG0leYtAzKkIi0IXT6lWbbYVUyNJ_g2_6XDO6lT3BlbkFJ'),
+      shaped('glpat-', '13ArbE5nyBCIwhIbdl4c'),
+      shaped('SK', '138277218d9c8f6bca66dcc5ad1d8bab'),
+      shaped('whsec_', 'xH7SfQmcPoiKLEayfbetrIRvfBevNwCb'),
+      shaped('npm_', 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'),
+      'Basic dXNlcjpwYXNzd29yZA==',
+      '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7\n-----END PRIVATE KEY-----',
+    ]) {
+      expect(isSecretValue(value), value).toBe(true);
+    }
+    for (const value of [
+      '550e8400-e29b-41d4-a716-446655440000',
+      '8f14e45fceea167a5a36dedd4bea2543',
+      // A git SHA, a SHA-256: hashes, kept.
+      'c31cdf852a287e61fcc71852717ba5d999b8cfb3',
+      '262728b02ec7f28e57e7b9097eb399f273599b963374d4b47dee0ee5b232dff0',
+      'ThisIsAVeryLongCamelCaseIdentifierName123',
+      'Mozilla5WindowsNT10Win64x64AppleWebKit537',
+      'AbstractSingletonProxyFactoryBean2Impl123',
+      // An id shorter than a random token, as a Drive file's, and base64 that encodes text, as a cursor.
+      '1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT1uV2',
+      'sk8Hd92jfKs0dLq3mZx7Pw1VbN4tRy6cUe5o',
+      'eyJpZCI6MTIzNDUsInRzIjoxNjk1ODIwODAwfQ==',
+      'eyJjdXJzb3IiOnsiaWQiOjEyMzQ1NiwidHMiOjE2OTU4MjA4MDAsImRpciI6Im5leHQiLCJrIjoiYWJjZGVmIn19',
+      'how-to-write-better-tests-with-playwright-2024',
+      'Basic information',
+      'sk-button-primary-large-wide-rounded',
+      'hello',
+    ]) {
+      expect(isSecretValue(value), value).toBe(false);
+    }
+  });
+
+  test('find a random token of any length, its letters running in one case as chance makes them', () => {
+    // A long token holds runs of six letters of one case by chance: still a token.
+    const long = 'aB3dEfGhIjK'.repeat(4) + 'abcdefgXYZ' + 'Qr7sTuV9wXyZ'.repeat(30);
+    expect(isSecretValue(long)).toBe(true);
+    expect(hideSecretsInText(`{"x":"${long}"}`)).toBe(`{"x":"${HIDDEN_VALUE}"}`);
+  });
+
+  test('are hidden in a text: a query value named or shaped like one, a URL password, a token anywhere', () => {
+    const count = { n: 0 };
+    expect(
+      hideSecretsInText(
+        'go to https://shop.test/reset?token=abc123&lang=en or https://ada:pw@shop.test/ with Bearer abcdefghijklmnop',
+        count,
+      ),
+    ).toBe(
+      `go to https://shop.test/reset?token=${HIDDEN_VALUE}&lang=en or https://ada:${HIDDEN_VALUE}@shop.test/ with ${HIDDEN_VALUE}`,
+    );
+    expect(count.n).toBe(3);
+    expect(hideSecretsInText('/b?q=AKIAIOSFODNN7EXAMPLE&page=2')).toBe(`/b?q=${HIDDEN_VALUE}&page=2`);
+    expect(hideSecretsInText('/list?page=2&sort=name')).toBe('/list?page=2&sort=name');
+  });
+
+  test('are hidden in a text by the shape of a header, a cookie, a key block or a JSON field', () => {
+    const basic = 'Basic dXNlcjpwYXNzd29yZA==';
+    expect(hideSecretsInText(basic)).toBe(HIDDEN_VALUE);
+    expect(hideSecretsInText(`Authorization: ${basic}`)).toBe(`Authorization: ${HIDDEN_VALUE}`);
+    expect(hideSecretsInText('Basic information about the cart')).toBe('Basic information about the cart');
+    expect(
+      hideSecretsInText(
+        'key:\n-----BEGIN RSA PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcw\nggSjAgEAAoIBAQC7\n-----END RSA PRIVATE KEY-----\ndone',
+      ),
+    ).toBe(`key:\n${HIDDEN_VALUE}\ndone`);
+    expect(hideSecretsInText('-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkq\nAASCBKcw')).toBe(HIDDEN_VALUE);
+    expect(hideSecretsInText('Set-Cookie: sid=s%3Awc5WqfBGH1; Path=/; HttpOnly')).toBe(
+      `Set-Cookie: sid=${HIDDEN_VALUE}; Path=/; HttpOnly`,
+    );
+    expect(hideSecretsInText('Cookie: theme=dark; sid=abc123')).toBe(
+      `Cookie: theme=${HIDDEN_VALUE}; sid=${HIDDEN_VALUE}`,
+    );
+    // JSON written as text (behind a prefix, or nested too deep to read): a field named like a credential.
+    expect(hideSecretsInText(`)]}'\n{"password":"hunter2","user":"ada","apiKey":"k-1"}`)).toBe(
+      `)]}'\n{"password":"${HIDDEN_VALUE}","user":"ada","apiKey":"${HIDDEN_VALUE}"}`,
+    );
+    for (const value of [
+      shaped('sk-proj-', 'Sh1pab2-4fRG0leYtAzKkIi0IXT6lWbbYVUyNJ_g2_6XDO6lT3BlbkFJ'),
+      shaped('glpat-', '13ArbE5nyBCIwhIbdl4c'),
+      shaped('SK', '138277218d9c8f6bca66dcc5ad1d8bab'),
+    ]) {
+      expect(hideSecretsInText(`the key ${value} works`), value).toBe(`the key ${HIDDEN_VALUE} works`);
+    }
+  });
+
+  test('are hidden in a URL part by part, its host and its ids kept', () => {
+    const count = { n: 0 };
+    expect(hideSecretsInUrl('https://ada:pw@shop.test:8443/a?token=abc;lang=en#access_token=xyz&state=1', count)).toBe(
+      `https://ada:${HIDDEN_VALUE}@shop.test:8443/a?token=${HIDDEN_VALUE};lang=en#access_token=${HIDDEN_VALUE}&state=1`,
+    );
+    expect(count.n).toBe(3);
+    // The value after a `;` is a parameter of its own.
+    expect(hideSecretsInText('https://x.test/a?lang=en;token=s3cr3tvalue')).toBe(
+      `https://x.test/a?lang=en;token=${HIDDEN_VALUE}`,
+    );
+    expect(hideSecretsInText('https://x.test/cb#access_token=s3cr3tvalue&state=1')).toBe(
+      `https://x.test/cb#access_token=${HIDDEN_VALUE}&state=1`,
+    );
+    expect(hideSecretsInUrl('/cart;jsessionid=A1B2C3D4/items')).toBe(`/cart;jsessionid=${HIDDEN_VALUE}/items`);
+    // Ordinary ids stay, in the path and the query, and the host is never read as a token.
+    for (const url of [
+      'https://www.googleapis.com/drive/v3/files/1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT1uV2',
+      'https://api.shop.test/v2/items/Ab3x/Cd4y/Ef5z/Gh6w/Ij7v/Kl8u',
+      'https://api.shop.test/orders/550e8400-e29b-41d4-a716-446655440000/lines/42?page=2',
+      'https://git.shop.test/repo/commit/c31cdf852a287e61fcc71852717ba5d999b8cfb3',
+      'https://shop.test/blog/how-to-write-better-tests-with-playwright-2024',
+      'https://api.shop.test/graphql?after=YXJyYXljb25uZWN0aW9uOjEwMA==',
+      '#/cart/12',
+    ]) {
+      expect(hideSecretsInUrl(url), url).toBe(url);
+      expect(hideSecretsInText(`see ${url} now`), url).toBe(`see ${url} now`);
+    }
+    // A path segment shaped like a credential, alone.
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.c2lnbmF0dXJl';
+    expect(hideSecretsInUrl(`https://api.shop.test/reset/${jwt}/confirm`)).toBe(
+      `https://api.shop.test/reset/${HIDDEN_VALUE}/confirm`,
+    );
+  });
+
+  test('take the autocomplete tokens of a field that holds a secret', () => {
+    for (const value of ['current-password', 'section-a one-time-code', 'cc-number', 'billing CC-CSC']) {
+      expect(isSecretAutocomplete(value), value).toBe(true);
+    }
+    for (const value of ['email', 'cc-name', '', null, undefined]) expect(isSecretAutocomplete(value)).toBe(false);
+  });
+
+  test('tell an email address or a phone number from a date or an amount', () => {
+    for (const text of ['ada@shop.test', '+33 6 12 34 56 78', '(555) 123-4567', '{"phone": "x"}', 'email=a']) {
+      expect(holdsPersonalData(text), text).toBe(true);
+    }
+    for (const text of ['2026-10-27', '1234.5678', '{"total": 40}', 'order 12-34-56']) {
+      expect(holdsPersonalData(text), text).toBe(false);
+    }
   });
 });

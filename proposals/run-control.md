@@ -12,8 +12,9 @@ stepped it and let it pass. The same session reaches the dashboard, as a live vi
 tools that follow the run, read the stopped page as its accessibility tree and act on it.
 
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
-(Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2 and 3 are built too (below), while PRs
-4 to 9 are not. PR 1 differs from the text in four ways. A headed browser opens Playwright's Inspector at every stop of
+(Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2, 3 and 4 are built too (below), while PRs
+5 to 9 are not. PR 1 differs from the text in four ways. A headed
+browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
 does not see, then stops with neither bar nor Inspector until the test's timeout), and a run under Playwright's own
@@ -105,7 +106,71 @@ stopped pauses every run. A run that ends says so, with the tests it ran last, a
 **Runs** tile fills More tools' free cell, so the popup stays within 600 pixels in every language. Before the pairing's
 token goes to `…/live` or to Send to editor's endpoint, the program on the paired port proves it holds it
 (`editorTokenProof`, as the desktop app's pairing does), asked on `…/live`, which takes a GET in both IDEs, else it is
-sent nothing. The spikes in the
+sent nothing. PR 4's service half is the worker's part of Part 5, the editor service's code and the three
+protocols: `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/stopCode` and the hub's `assert`,
+`assert-region`, `requests` and `mock`; its extension half is the Runs window's code actions and what each came to.
+It differs from the text in eight ways. The code reaches the client in a notification of its own (`piwi/stopCode`: the run, the stop,
+the file and its version, and the edits, the import lines the block needs and the block above the stopped
+statement, which the client makes as one edit), sent only to a client that says it writes it
+(`InitializationOptions.stopCode`); without one, Assert, Assert a region and Mock a request are refused from both
+surfaces, are not offered to the Runs window, and the Runs window never receives code. The block goes above the
+stopped statement where it stands now: the run's line, followed through the edits made since the run started (the
+service reads each `didChange`; the code of an earlier action included), inside the body of a test or a function,
+never on its declaration's line nor as the body of an `if` without braces; a file the service cannot follow (written
+on disk since, or with changes not saved as the run started) is refused, and so is an Assert at such a place before
+anything starts in the test's window. Every command at a stop names it (`since`). **Assert** runs the recorder's check
+panel alone through the record channel's hand-off in a `check` mode, which names the stop and which the service takes
+itself, asking no editor to record; the check panel offers what it offers in a recording (a value, a text, a name,
+visible or hidden, enabled or disabled), which has no `toBeChecked` nor `toHaveCount` choice. **Assert a region**
+picks with the bar's picker (element, anchors, confirm), so the snapshot is read through the locator the person
+confirmed, without a password field's value nor a link whose URL holds a credential; `toMatchAriaSnapshot` is a
+matcher of `renderSpec` that neither a recording nor a steps document carries. **Mock a request** writes the body
+inline whatever its size (a kept body is 256 KB at most), hides the whole value of a field named like a credential and
+a value shaped like one anywhere in the body, matches such a query value with `**`, and warns of a text body written
+as it came and of one that seems to hold an email address or a phone number, on the page expression in scope; the list
+names no header and no body, its URLs' credentials hidden, and the worker reads one body, the one chosen, as it is
+asked for. **The locator at the caret** is one request of the IDE's, the service reading the line's chain and its page
+expression, which must be the stopped page's, as the code at the stop would run on it, in the stopped file; the hub
+has none, the caret being the IDE's. **A failure** is held in a run started to be watched (a run connection open, a
+test that can stop), at every attempt that fails, not an expected failure, once the test function, its hooks and the
+fixtures built on `page` are done, never while the test runs: headed, the bar is the viewer; headless, a stop with the
+reason `failure` waits only in a run the editor started with its breakpoints or for a `page.pause()`, or while a Runs
+window is open, and goes on at once, without a notice, otherwise (a plain Run of the Test Explorer). The extension's
+background worker, subscribed to every hub as it starts, does not count: a connection holds failures only once it
+sends `follow` (`{ type: 'follow', id, on }`, `on: true` as the first Runs window opens and again on a connection made
+while one is, `on: false` as the last closes), which an older extension never sends. A reporter holds a failure only
+for a service that says it shows one: its `run-attach` lists `holds: ['failure']`, which the service answers first with
+`{ type: 'attached', holds: ['failure'] }`; a service of PR 2 or 3, which would show the failure as an `other` stop its
+clients answer, says nothing, and no failure is held. Its
+evidence is what the test left at the failure: what the page does during the hold is not recorded, though Playwright's
+own trace and video go on through it; the stop is at the line where the error enters the test's code, or at the call a
+test timeout cut short. Step, Finish and Run to a line end it as Resume does, and Record there hands the page over
+with the reason `breakpoint`, as the record channel's `attach` names two. The pause bar has no button for
+the code actions, which start from the IDE and the Runs window; the paused call going on with its old code is said in
+the first code of each run. `run-attach.takes` lists the queries (`requests`, `mock`, `locator`) beside the intents,
+and the hub's `intents` the actions a stop takes (`mock` when the worker lists and hands over responses). The hub's
+`code` says the code was sent to the editor to write (`Piwi sent the check to Visual Studio Code to write above
+checkout.spec.ts:5.`), never that it was written: the IDE, which can still refuse the write (another version of the
+text, a read-only file), says that itself. A region the worker cannot send (its locator finds several elements, its
+snapshot is too long) comes back as `{ type: 'region', stop, refused }`, which reaches the Runs window as a `code`
+with `ok: false`. A rerun under a ref whose command ended (a JetBrains IDE's Rerun) maps its lines from its own start.
+A call in an arrow function's expression body is refused as a body without braces is. The credentials a mock, the
+list of responses or a held failure's error hide follow one written rule (`@piwitests/core/mask`): by name; by a
+strong shape (a JWT, `Bearer` and `Basic` credentials, a private key, a cookie, a service's prefixed key, a random
+token of 40 characters or more); and in a URL part by part, the host and the ids of its path kept.
+PR 4's IDE half is both clients' side of it, and differs from the text in five ways. The code actions are where
+the paused line's controls are (VS Code's CodeLens and hover, a JetBrains IDE's inlay and gutter popup), in the
+palette or under **Tools → Piwi** while a stop offers them, and in the status bar, only those the stopped worker takes,
+the ones in the test's window only where the pause bar shows, with no key; the lens and the inlay name them shorter
+(Pick, Record, Assert, Assert region, Mock), the stop's lens sharing its row with the line's own. Mock a request lists
+the responses the latest first. The code is written in one edit (one undo step) through an editor of its file, a
+JetBrains IDE opening the file first and writing once the platform told the service, and only into the version of
+the text the service placed it in, else it is offered to copy. The locator at the caret is counted 200 ms after the
+caret settles, one request at a time, at the end of its line; a line holding no locator says nothing, which the
+answer tells apart from a refusal by naming the chain it read in a refusal too. A failure reads `Failed · <how it
+failed> · attempt N`, with Resume alone among its controls, and one the service lets go at once never reaches a
+client, so a plain Run's headless failure shows nothing.
+The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of
 [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -315,8 +380,8 @@ worker draws the pause bar in a headed page (D7) and does what the session asks 
 before the call (today's `PausePoint`); the bar highlights the element as it does now.
 
 The one stop that is not the debugger's comes after a failure: no call is left to stop before, so the page is held
-before its context closes, as the failure-time picker holds it today (`maybeOpenPicker`), with the test timeout lifted
-by Piwi (Part 5).
+once the test and its hooks are done, before its context closes, as the failure-time picker holds it today
+(`maybeOpenPicker`), with the test timeout held while it shows (Part 5).
 
 ### 1.2 What changes for the developer
 
@@ -391,23 +456,41 @@ message per line, checked field by field on both sides, as the hand-off's are. A
 ```ts
 /** What a worker sends the hub on its run connection. */
 export type RunToHub =
-  | { type: 'run-attach'; token: string; ref: string; cwd: string; workerIndex: number; parallelIndex: number; pid: number; playwright: string; reporter: string }
+  | { type: 'run-attach'; token: string; ref: string; cwd: string; workerIndex: number; parallelIndex: number; pid: number; playwright: string; reporter: string; takes?: RunTake[]; holds?: RunHold[] }
   | { type: 'test-begin'; testId: string; title: string[]; file: string; line: number; project: string; retry: number; cannotPause: string | null }
   | { type: 'stopped'; stop: number; reason: StopReason | 'other'; title: string; place: Place; locator: string | null; bar: boolean }
   | { type: 'running'; stop: number }
   | { type: 'test-end'; testId: string; status: string; pausedMs: number }
   | { type: 'answer'; request: number; what: 'image'; value: PausedImage | null } // to a `request` below
+  | { type: 'answer'; request: number; what: RunIntent; value: { ok: boolean; message: string } } // PR 3, PR 4
+  | { type: 'answer'; request: number; what: 'requests'; value: { ok; message; requests: KeptRequest[] } } // PR 4
+  | { type: 'answer'; request: number; what: 'mock'; value: { ok; message; response: KeptResponse | null } } // PR 4
+  | { type: 'answer'; request: number; what: 'locator'; value: { ok; message; count: number | null } } // PR 4
+  | { type: 'region'; stop: number; locator: string; snapshot: string } // PR 4, after `assert-region`
+  | { type: 'region'; stop: number; refused: string } // PR 4, a region picked that brought no snapshot
   | { type: 'notice'; message: string };
 
 /** What the hub sends a worker on its run connection. */
 export type HubToRun =
+  | { type: 'attached'; holds: RunHold[] } // PR 4, first, to a `run-attach` listing `holds`
   | { type: 'breakpoints'; places: Place[] }
   | { type: 'control'; action: 'pause' }
   | { type: 'control'; action: 'step' | 'resume' | 'finish'; stop: number }
   | { type: 'run-to'; stop: number; place: Place }
-  | { type: 'request'; request: number; what: 'image' }; // while stopped; Part 5 adds kinds
+  | { type: 'request'; request: number; what: 'image' } // while stopped
+  | { type: 'request'; request: number; what: RunIntent | 'requests'; stop: number } // PR 3, PR 4
+  | { type: 'request'; request: number; what: 'mock'; stop: number; id: number } // PR 4
+  | { type: 'request'; request: number; what: 'locator'; stop: number; locator: string | null }; // PR 4
 
-export type StopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause'; // Part 5 adds 'failure'
+export type StopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'failure'; // 'failure': PR 4
+/** PR 4: the stops a worker holds only for a service that says it shows them (`run-attach.holds`, `attached`). */
+export type RunHold = 'failure';
+/** PR 3: `pick`, `record`; PR 4: `assert`, `assert-region`. */
+export type RunIntent = 'pick' | 'record' | 'assert' | 'assert-region';
+/** A response a test kept (PR 4): no header, no body. `KeptResponse` adds the body, without `id`, `size` and `time`. */
+export interface KeptRequest {
+  id: number; method: string; url: string; status: number; type: string; size: number; time: number;
+}
 /** A place in the user's code: a path relative to the run's working directory, 1-based line and column. */
 export interface Place { file: string; line: number; column?: number }
 /** An image of a stopped page. */
@@ -563,18 +646,25 @@ for any reason is cut a second later when the other side has not answered the cl
 count toward the 16 and the 8, so a client that never answers holds no place. Each later message is a command with an `id` (1 to
 2³¹ − 1), answered once with `{ type: 'answer', id, ok, message }` like `piwi/runControl`: `subscribe` (then a
 `{ type: 'session', session }` for each live run and for each change, the session as `piwi/runSessionChanged` gives
-it with the run's `command`, its folder's `label`, its Piwi `project` and each worker's `intents`), `runControl`
+it with the run's `command`, its folder's `label`, its Piwi `project` and each worker's `intents`), `follow` (`on`:
+whether a person follows the runs there, a Runs window open), `runControl`
 (`ref`, `worker`, `action`: `pause`, `step`, `resume`, `finish`, `since`; Run to a line stays in the editor),
 `pausedPage` (`ref`, `worker`; the answer carries `image`), and `pick` and `record` (`ref`, `worker`, `since`).
 `step`, `resume`, `finish`, `pick` and `record` need `since`, the stop they answer, and are refused without it (`The
 command needs the stop it answers.`); `pause` takes none (`piwi/runControl` keeps `since` optional, for older IDE
 clients). A subscriber is given each run as the editor's client last heard it, and hears each change after with it,
 so both show the same; the command line is cut at 20,000 characters, the cut marked, as the extension reads it. A
+failure's stop names its error (`error`, the failing error's first lines as plain text), which the Runs window shows
+under its label, and reads from the stop's title only for an older service or reporter. Each subscriber also hears,
+once, what each code from a stop (Part 5) came to, whichever surface started it: `{ type: 'code', ref, worker, since,
+action, ok, message, warnings? }`, that the code was sent to the editor to write, with its warnings, or why it was
+refused once it started, never the code; the Runs window shows it while the worker stands at that stop. A
 command of a type the hub does not know, or with a field it cannot take, is answered `ok: false` with why; one that is
 no command (not JSON, no `id`) closes the connection with 4003, a binary frame with 1003, a frame over 64 KiB with
 1009. The hub sends `{ type: 'keepalive' }` and a ping every 20 s, and drops a connection that did not answer the last
-ping or left 32 MB unread. A subscribed connection is a surface that can answer a stop (Part 2): while one follows the
-runs, a headless stop waits for it even when the IDE client cannot answer stops, and goes on when the last one leaves.
+ping or left 32 MB unread. A subscribed connection is a surface that can answer a stop (Part 2): while one hears the
+runs, a headless stop waits for it even when the IDE client cannot answer stops, and goes on when the last one leaves;
+a headless failure waits only while a connection follows the runs (`follow`).
 **Pick** and **Record** (Part 5) start, at a stop the pause bar shows, what the bar's **Pick a locator** and **Record
 here** start, in the test's window, brought to the front: the locator goes to the editor in place of the one on the
 stopped line, the steps above it, through the paths the bar's take (`PIWI_EDITOR_SEND`, the record channel). The run
@@ -622,9 +712,10 @@ place (D6). An action started where no IDE is paired (a desktop run with none) o
   [`record-from-the-ide.md`](record-from-the-ide.md) Part 8 does.
 - **The paused call still runs** when the test goes on, with the code it was started with: a pick changes the file,
   not the running test. The editor says so once.
-- **A failure** in an interactive run holds the failing page before its context closes (Part 1.1): the same actions,
-  with **Pick** replacing the failing locator, the failure-time picker's job today, and **Record** writing the steps
-  that were missing above the failing line. The run reports the failure as it happened.
+- **A failure** in a run started to be watched holds the failing page once the test and its hooks are done, before
+  its context closes (Part 1.1): the same actions, with **Pick** replacing the failing locator, the failure-time
+  picker's job today, and **Record** writing the steps that were missing above the failing line. The run reports the
+  failure as it happened.
 
 ## Part 6: Headless and remote runs
 
@@ -854,6 +945,10 @@ becomes a diagram in the docs' own style, a theme-aware SVG under `apps/docs/pub
    steers one (D8).
 6. **Stop at every failure of an interactive run**, or only with a setting? Recommendation: at every failure of a run
    with a viewer (a headed window, the Runs page or the IDE's view), since the run was started to be watched.
+   Decided in PR 4: a run is started to be watched when it is headed (the bar is the viewer), when the editor started
+   it with its breakpoints or for a `page.pause()`, or while a Runs window follows the runs as the test fails; a
+   headless run started with none of these goes on at once. Every run the editor starts has a run channel and a
+   client that answers stops, so the IDE's view alone is no sign.
 7. **The dashboard's live view as frames, or as a live trace** (Part 8.1)? A live trace gives the DOM of each call,
    which the dashboard's snapshot picker already picks from, and which a person can inspect after the fact; frames are
    lighter and need nothing from Playwright's own tracing. Recommendation: frames first.

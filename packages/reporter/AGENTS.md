@@ -39,13 +39,19 @@ responsibilities.
    - with `PIWI_RUN_CHANNEL` and `PIWI_ORIGIN_REF`, each worker's run connection to the editor
      (`internal/capture/run-channel.ts`, framed as `@piwitests/core/run-channel`), open from the `piwiResources`
      worker fixture's setup to the worker's end: it reports each test and stop, takes the editor's controls,
-     breakpoints and intents (`takes` in its `run-attach`), and makes a headless run stop too;
+     breakpoints, intents and queries (`takes` in its `run-attach`), keeps the test's text responses in memory for
+     Mock a request (`kept-responses.ts`), holds a failing test's page for an editor that answered its `holds` with
+     `attached` (`holdFailure`, `editorShows`), and makes a headless run stop too;
    - `PIWI_RUN_CHANNEL` and `PIWI_EDITOR_SEND` taken out of the worker's `process.env` while each test runs
      (`hideRunChannel`; picks still reach the editor through `editorSendAddress`), so a process the test starts gets
      neither, and put back after it, since Playwright passes a worker's environment changes to the projects that
      depend on its project.
 
-   How each of them works: [`ARCHITECTURE.md`](ARCHITECTURE.md#side-effects).
+   How each of them works: [`ARCHITECTURE.md`](ARCHITECTURE.md#side-effects). What a stopped test sends the editor
+   hides its credentials by `@piwitests/core/mask`'s rule: a region's snapshot leaves out the value of a field that
+   holds a secret (`SECRET_AUTOCOMPLETE`, read through a locator, so in shadow roots too), a kept response's URL goes
+   through `hideSecretsInUrl`, and a held failure's title and error through `hideSecretsInText`
+   (`tests/run-channel-code.spec.ts`).
 4. **The desktop discovery file.** The desktop shell writes `~/.piwi/desktop.json` (`apps/desktop/src-tauri/src/lib.rs`)
    and this package reads its `url`, `token` and `pid` (`internal/config/desktop.ts`); the shell also writes
    `projects` for other readers ([`apps/desktop/AGENTS.md`](../../apps/desktop/AGENTS.md)). The two ship on independent

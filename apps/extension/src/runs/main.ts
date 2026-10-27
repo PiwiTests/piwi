@@ -1,31 +1,36 @@
 import { LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
-import type { HubImage, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
+import type { HubImage, HubKeptRequest, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { decorateIcons, iconText, setLabel, type IconName } from '../shared/icons.js';
-import { initI18n, localizeDocument, t, tn, tNodes } from '../shared/i18n.js';
+import { formatUnit, initI18n, localizeDocument, t, tn, tNodes } from '../shared/i18n.js';
 import {
   RUNS_PING_MS,
   RUNS_PORT,
   RUN_COMMAND,
+  stopError,
   stopPlace,
   testName,
   workerKey,
   type RunsAnswer,
+  type RunsCode,
   type RunsEvent,
   type RunsRequest,
   type RunsRun,
   type RunsState,
   type RunsWhat,
 } from '../shared/runs.js';
-import { STEP_CSS, richText } from '../shared/step-view.js';
+import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
 
 /**
  * The Runs window: the runs the paired editor started, each worker's test and where it stands, an image of a stopped
- * page, and the controls. Opened from the popup's Runs tile in a small window of its own. It reads everything from
- * the background worker through its port (`RUNS_PORT`), and makes no network call: the worker holds the hubs'
- * connections and tokens. What a hub sends is shown as text, and its image as an image. Each part of the window is
- * drawn again only when what it shows changes (`part`), so a button under the pointer or the keyboard stays the same
- * element while the run goes on around it.
+ * page, and the controls, with the code a stop can write (Pick, Record, Assert, Assert a region, Mock a request) as the
+ * worker's reporter and the editor take them. Opened from the popup's Runs tile in a small window of its own. It reads
+ * everything from the background worker through its port (`RUNS_PORT`), and makes no network call: the worker holds the
+ * hubs' connections and tokens. The code itself never comes here: it goes to the editor, which writes it and says there
+ * whether it did, and the window shows what the hub answered and what each code made at the stop came to (sent to the
+ * editor to write, or refused), whoever asked for it. What a hub sends is shown as text, and its image as an image.
+ * Each part of the window is drawn again only when what it shows changes (`part`), so a button under the pointer or the
+ * keyboard stays the same element while the run goes on around it.
  */
 
 await initI18n();
@@ -48,8 +53,24 @@ const shortcutActions = document.getElementById('shortcut-actions') as HTMLEleme
 let state: RunsState | null = null;
 /** The image of each stopped worker's page, for the stop it was taken at. */
 const images = new Map<string, { since: string; loading: boolean; img: HTMLImageElement | null; note: string }>();
-/** What the last command for a worker answered, when there is something to say. */
-const answers = new Map<string, { ok: boolean; text: string }>();
+/**
+ * What the last command for a worker answered, or what the last code made at its stop came to, when there is
+ * something to say, for the stop it was sent at (null for Pause): shown while the worker stands there, and gone with
+ * that stop. `sent` when the code went to the editor to write, with what to check in it (`warnings`).
+ */
+const answers = new Map<
+  string,
+  { ok: boolean; text: string; since: string | null; sent: boolean; warnings: string[] }
+>();
+/** The requests a stopped worker's test kept, listed for Mock a request at the stop they were asked at. */
+interface RequestList {
+  since: string;
+  requests: HubKeptRequest[];
+  /** Names the list drawn, and its element's id. */
+  serial: number;
+}
+const requestLists = new Map<string, RequestList>();
+let listSerial = 0;
 /** The workers a command is on its way for: their buttons wait for it. */
 const busy = new Set<string>();
 /** Each worker's state and stop as last shown, and the runs live then, for what the live region says. */
@@ -82,6 +103,8 @@ function connect(): void {
   opened.onMessage.addListener((event: RunsEvent) => {
     if (event?.type === 'state') {
       showState(event.state);
+    } else if (event?.type === 'code') {
+      heardCode(event);
     } else if (event?.type === 'answer') {
       const { id, type: _type, ...answer } = event;
       waiting.get(id)?.(answer);
@@ -103,7 +126,13 @@ function connect(): void {
     .catch(() => undefined);
 }
 
-function command(run: RunsRun, worker: number | null, what: RunsWhat, since: string | null): Promise<RunsAnswer> {
+function command(
+  run: RunsRun,
+  worker: number | null,
+  what: RunsWhat,
+  since: string | null,
+  request?: number,
+): Promise<RunsAnswer> {
   const id = nextId++;
   return new Promise((resolve) => {
     if (!port) {
@@ -111,7 +140,8 @@ function command(run: RunsRun, worker: number | null, what: RunsWhat, since: str
       return;
     }
     waiting.set(id, resolve);
-    post({ type: 'command', id, hub: run.hub, ref: run.session.ref, worker, since, what });
+    const asked = { type: 'command', id, hub: run.hub, ref: run.session.ref, worker, since, what } as const;
+    post(request === undefined ? asked : { ...asked, request });
   });
 }
 
@@ -123,25 +153,110 @@ function failureText(answer: RunsAnswer): string {
 
 // ── Commands ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** A control of the window, for the stop its button was drawn for (`since`, null for Pause). */
-async function control(run: RunsRun, worker: number, what: RunsWhat, since: string | null): Promise<void> {
+/** The stop a worker stands at in the state shown last: its `since`, null while it is not stopped, or is gone. */
+function stopNow(run: RunsRun, worker: number): string | null {
+  const shown = state?.runs.find((r) => r.hub === run.hub && r.session.ref === run.session.ref && !r.session.ended);
+  const found = shown?.session.workers.find((w) => w.worker === worker);
+  return found?.state === 'stopped' ? (found.stop?.since ?? null) : null;
+}
+
+/**
+ * Sends a command for the stop a worker's button was drawn for (`since`, null for Pause), unless one is on its way:
+ * its answer, or null when the worker no longer stands at that stop by then, which leaves nothing to say.
+ */
+async function send(
+  run: RunsRun,
+  worker: number,
+  what: RunsWhat,
+  since: string | null,
+  request?: number,
+): Promise<RunsAnswer | null> {
   const key = workerKey(run.hub, run.session.ref, { worker });
   // A command on its way: the buttons say so (`aria-disabled`) and take no other until it is answered.
-  if (busy.has(key)) return;
+  if (busy.has(key)) return null;
   // Every control but Pause answers the stop shown.
-  if (what !== 'pause' && since === null) return;
+  if (what !== 'pause' && since === null) return null;
   busy.add(key);
   answers.delete(key);
   render();
-  const answer = await command(run, worker, what, what === 'pause' ? null : since);
+  const answer = await command(run, worker, what, since, request);
   busy.delete(key);
-  // Pick and Record say what to do in the test's window; the other controls show in the state that follows.
-  if (!answer.ok || what === 'pick' || what === 'record') {
-    const text = answer.ok ? answer.message : failureText(answer);
-    answers.set(key, { ok: answer.ok, text });
-    if (text) announce(text);
+  if (stopNow(run, worker) === since) return answer;
+  render();
+  return null;
+}
+
+/** Shows what a command answered under the test, or what a code came to, with what to check in it, and reads it out. */
+function say(key: string, answer: RunsAnswer, since: string | null, sent = false, warnings: string[] = []): void {
+  const text = answer.ok ? answer.message : failureText(answer);
+  answers.set(key, { ok: answer.ok, text, since, sent: answer.ok && sent, warnings });
+  if (text) announce([text, ...warnings].join(' '));
+}
+
+/**
+ * What a code made at a stop came to, whoever asked for it (this window, the editor): sent to the editor to write, or
+ * refused, shown under the test and read out while its worker stands at that stop; dropped otherwise.
+ */
+function heardCode(code: RunsCode): void {
+  const run = state?.runs.find((r) => r.hub === code.hub && r.session.ref === code.ref && !r.session.ended);
+  if (!run || stopNow(run, code.worker) !== code.since) return;
+  const key = workerKey(code.hub, code.ref, { worker: code.worker });
+  say(key, { ok: code.ok, message: code.message }, code.since, true, code.warnings);
+  render();
+}
+
+/** The intents a stop starts in the test's window, which say there what to do. */
+const IN_WINDOW = ['pick', 'record', 'assert', 'assert-region'] as const;
+
+/** A control of the window, for the stop its button was drawn for (`since`, null for Pause). */
+async function control(run: RunsRun, worker: number, what: Control, since: string | null): Promise<void> {
+  const asked = what === 'pause' ? null : since;
+  const answer = await send(run, worker, what, asked);
+  if (!answer) return;
+  // The intents say what to do in the test's window; the other controls show in the state that follows.
+  if (!answer.ok || (IN_WINDOW as readonly string[]).includes(what)) {
+    say(workerKey(run.hub, run.session.ref, { worker }), answer, asked);
   }
   render();
+}
+
+/** Mock a request: lists the requests the test kept at this stop, or closes the list it shows. */
+async function toggleRequests(run: RunsRun, worker: number, since: string): Promise<void> {
+  const key = workerKey(run.hub, run.session.ref, { worker });
+  if (busy.has(key)) return;
+  if (requestLists.get(key)?.since === since) {
+    closeRequests(key);
+    render();
+    return;
+  }
+  const answer = await send(run, worker, 'requests', since);
+  if (!answer) return;
+  if (answer.ok && answer.requests) {
+    const { requests } = answer;
+    requestLists.set(key, { since, requests, serial: ++listSerial });
+    announce(requests.length > 0 ? tn('runs_requestsListed', requests.length) : t('runs_requestsNone'));
+  } else {
+    say(key, answer, since);
+  }
+  render();
+}
+
+/** Mocks the request chosen in the list: the code goes to the editor to write; the list closes once it went. */
+async function mockRequest(run: RunsRun, worker: number, since: string, request: number): Promise<void> {
+  const key = workerKey(run.hub, run.session.ref, { worker });
+  const answer = await send(run, worker, 'mock', since, request);
+  if (!answer) return;
+  // The hub said what the code came to before this answer, with what to review in it: the answer says it again.
+  const shown = answers.get(key);
+  if (!(answer.ok && shown?.since === since && shown.text === answer.message)) say(key, answer, since, true);
+  if (answer.ok) closeRequests(key);
+  render();
+}
+
+/** Closes a worker's list of requests; the keyboard, when it was there, goes back to Mock a request. */
+function closeRequests(key: string): void {
+  requestLists.delete(key);
+  if (focusKey?.startsWith(`${key}|request`)) focusKey = `${key}|mock`;
 }
 
 /** Asks for the image of a stopped worker's page, once per stop. */
@@ -155,7 +270,10 @@ function wantImage(run: RunsRun, worker: HubWorker, stop: HubStop): void {
     if (answer.ok && isImage(answer.image)) {
       // One element per stop, moved into each rendering, so the image is decoded once.
       img = element('img');
-      img.alt = t('runs_imageAlt', { call: stop.title });
+      img.alt =
+        stop.reason === 'failure'
+          ? t('runs_imageAltFailure', { error: stopError(stop).split('\n')[0]! })
+          : t('runs_imageAlt', { call: stop.title });
       img.src = `data:image/jpeg;base64,${answer.image.data}`;
     }
     images.set(key, { since: stop.since, loading: false, img, note: img ? '' : failureText(answer) });
@@ -281,7 +399,10 @@ function announceChanges(next: RunsState): void {
       const test = worker.test ? testName(worker.test) : runName(run.session);
       if (!seen) continue;
       if (worker.state === 'stopped' && worker.stop && before?.since !== since) {
-        said.push(t('runs_announceStopped', { test, place: stopPlace(worker.stop, run.session.root) }));
+        const place = stopPlace(worker.stop, run.session.root);
+        said.push(
+          t(worker.stop.reason === 'failure' ? 'runs_announceFailed' : 'runs_announceStopped', { test, place }),
+        );
       } else if (before?.state === 'stopped' && worker.state !== 'stopped') {
         said.push(t('runs_announceRunning', { test }));
       }
@@ -319,19 +440,22 @@ function render(): void {
   restoreFocus();
 }
 
-/** Drops what is kept for workers no longer stopped, or gone. */
+/** Drops what is kept for a stop a worker no longer stands at: its image, its list of requests, an answer for it. */
 function forgetGone(current: RunsState): void {
-  const stopped = new Set<string>();
-  const present = new Set<string>();
+  /** Each live worker's stop, null while it is not stopped. */
+  const at = new Map<string, string | null>();
   for (const run of current.runs) {
+    if (run.session.ended) continue;
     for (const worker of run.session.workers) {
-      const key = workerKey(run.hub, run.session.ref, worker);
-      present.add(key);
-      if (!run.session.ended && worker.state === 'stopped') stopped.add(key);
+      at.set(
+        workerKey(run.hub, run.session.ref, worker),
+        worker.state === 'stopped' ? (worker.stop?.since ?? null) : null,
+      );
     }
   }
-  for (const key of images.keys()) if (!stopped.has(key)) images.delete(key);
-  for (const key of answers.keys()) if (!present.has(key)) answers.delete(key);
+  for (const key of images.keys()) if (!at.get(key)) images.delete(key);
+  for (const [key, list] of requestLists) if (at.get(key) !== list.since) requestLists.delete(key);
+  for (const [key, answer] of answers) if (!at.has(key) || at.get(key) !== answer.since) answers.delete(key);
 }
 
 function renderHubs(current: RunsState): void {
@@ -442,6 +566,7 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
   return section;
 }
 
+/** The state line of a stop, by its reason; a failure's names where it failed instead (`runs_failedAt`). */
 const STOP_WORDS = {
   breakpoint: 'runs_stoppedBreakpoint',
   step: 'runs_stoppedStep',
@@ -449,11 +574,13 @@ const STOP_WORDS = {
   'run-to': 'runs_stoppedRunTo',
   'page-pause': 'runs_stoppedPagePause',
   other: 'runs_stoppedOther',
-} as const;
+} as const satisfies Record<Exclude<HubStop['reason'], 'failure'>, string>;
 
-function stateLine(worker: HubWorker, count: number): HTMLElement {
+function stateLine(worker: HubWorker, count: number, place: string | null): HTMLElement {
   const line = element('p', 'state');
-  if (worker.state === 'stopped' && worker.stop) iconText(line, 'pause', t(STOP_WORDS[worker.stop.reason]));
+  const stop = worker.state === 'stopped' ? worker.stop : null;
+  if (stop?.reason === 'failure') iconText(line, 'x-circle', t('runs_failedAt', { place: place ?? '' }));
+  else if (stop) iconText(line, 'pause', t(STOP_WORDS[stop.reason]));
   else if (worker.pausing) iconText(line, 'clock', t('runs_statePausing'));
   else if (worker.state === 'running') iconText(line, 'play', t('runs_stateRunning'));
   else iconText(line, 'dot', t('runs_stateBetween'));
@@ -468,37 +595,188 @@ const CONTROLS = {
   finish: { label: 'runs_finish', title: 'runs_finishTitle', icon: 'next' },
   pick: { label: 'runs_pick', title: 'runs_pickTitle', icon: 'pick' },
   record: { label: 'runs_record', title: 'runs_recordTitle', icon: 'record' },
+  assert: { label: 'runs_assert', title: 'runs_assertTitle', icon: 'check-circle' },
+  'assert-region': { label: 'runs_assertRegion', title: 'runs_assertRegionTitle', icon: 'layers' },
+  mock: { label: 'runs_mock', title: 'runs_mockTitle', icon: 'network' },
   pause: { label: 'runs_pause', title: 'runs_pauseTitle', icon: 'pause' },
 } as const satisfies Record<
-  Exclude<RunsWhat, 'image'>,
+  Exclude<RunsWhat, 'image' | 'requests'>,
   { label: string; title: string; icon: IconName; tone?: 'primary' }
 >;
 
 type Control = keyof typeof CONTROLS;
 
-/** The controls a worker takes now: at a stop, Resume, Step and Finish, and Pick and Record where the bar shows. */
+/** The controls that steer the test, on a row of their own above the code a stop can write. */
+const STEERING: ReadonlySet<Control> = new Set(['resume', 'step', 'finish', 'pause']);
+
+/**
+ * The controls a worker takes now: at a stop, Resume, Step and Finish (Resume alone where the test failed, which ends
+ * it as it failed); then the actions its reporter and the editor take (`intents`): Pick, Record, Assert and Assert a
+ * region where the pause bar shows, which they start in the test's window, and Mock a request at any stop.
+ */
 function controlsOf(worker: HubWorker, stop: HubStop | null): Control[] {
   if (!stop) return worker.pausing ? [] : ['pause'];
-  const controls: Control[] = ['resume', 'step', 'finish'];
-  if (stop.bar && worker.intents.includes('pick')) controls.push('pick');
-  if (stop.bar && worker.intents.includes('record')) controls.push('record');
+  const controls: Control[] = stop.reason === 'failure' ? ['resume'] : ['resume', 'step', 'finish'];
+  if (stop.bar) controls.push(...IN_WINDOW.filter((what) => worker.intents.includes(what)));
+  if (worker.intents.includes('mock')) controls.push('mock');
   return controls;
 }
 
-function renderActions(run: RunsRun, worker: HubWorker, controls: Control[], since: string | null): HTMLElement {
+function renderActions(run: RunsRun, worker: HubWorker, controls: Control[], stop: HubStop | null): HTMLElement {
   const key = workerKey(run.hub, run.session.ref, worker);
-  const actions = element('div', 'piwi-actions');
+  const since = stop?.since ?? null;
+  const steering = element('div', 'piwi-actions');
+  const code = element('div', 'piwi-actions');
+  code.setAttribute('role', 'group');
+  code.setAttribute('aria-label', t('runs_codeActions'));
   for (const what of controls) {
     const look = CONTROLS[what];
-    const made = makeButton(t(look.label), () => void control(run, worker.worker, what, since), {
+    // Mock a request opens the list of the stop's requests; the other controls send themselves.
+    const onClick = () => {
+      if (what !== 'mock') void control(run, worker.worker, what, since);
+      else if (since !== null) void toggleRequests(run, worker.worker, since);
+    };
+    const made = makeButton(t(look.label), onClick, {
       icon: look.icon,
       tone: 'tone' in look ? look.tone : undefined,
-      title: t(look.title),
+      title: what === 'resume' && stop?.reason === 'failure' ? t('runs_resumeFailureTitle') : t(look.title),
     });
     made.dataset.focus = `${key}|${what}`;
-    actions.append(made);
+    (STEERING.has(what) ? steering : code).append(made);
   }
+  const actions = element('div', 'controls');
+  actions.append(...[steering, code].filter((row) => row.childElementCount > 0));
   return actions;
+}
+
+/** Marks the buttons of a worker that wait for a command's answer (`aria-disabled`): they keep the focus. */
+function markBusy(buttons: Iterable<Element>, waiting: boolean): void {
+  for (const button of buttons) {
+    if (waiting) button.setAttribute('aria-disabled', 'true');
+    else button.removeAttribute('aria-disabled');
+  }
+}
+
+/** A request's size: bytes, or kilobytes from a thousand bytes; null when its response did not state one. */
+function sizeText(size: number | null): string {
+  if (size === null) return t('runs_requestNoSize');
+  return size < 1000 ? formatUnit(size, 'byte') : formatUnit(size / 1000, 'kilobyte');
+}
+
+/** A request of the list, as a button that mocks it: its method and address, then its status, type, size and time. */
+function requestButton(request: HubKeptRequest, onClick: () => void): HTMLButtonElement {
+  const button = element('button', 'request');
+  button.type = 'button';
+  // The address is cut to the row's width: the whole of it is in the tooltip and the button's name.
+  button.title = `${request.method} ${request.url}`;
+  const facts = element(
+    'span',
+    'request-facts',
+    element('span', request.status >= 400 ? 'status failed' : 'status', String(request.status)),
+  );
+  const time = t('runs_requestAt', { time: formatUnit(request.time / 1000, 'second') });
+  for (const fact of [request.type, sizeText(request.size), time]) if (fact) facts.append(` · ${fact}`);
+  // The spaces between the parts are not drawn in the rows' flex boxes; they keep the words apart in the button's name.
+  button.append(
+    element(
+      'span',
+      'request-line',
+      element('span', 'method', request.method),
+      ' ',
+      element('span', 'path', urlView(request.url)),
+    ),
+    ' ',
+    facts,
+  );
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+/** From how many requests a filter box narrows the list. */
+const FILTER_FROM = 6;
+
+/** Of a list's rows, the one Tab reaches: the one the keyboard was on last, else the first shown. */
+function rove(rows: readonly HTMLElement[], to: HTMLElement | undefined): void {
+  for (const row of rows) row.tabIndex = row === to ? 0 : -1;
+}
+
+/**
+ * The requests a stopped test kept, to choose the one to mock: one button each, oldest first, which the arrow keys,
+ * Home and End move between, Escape closing the list; a filter box above them when there are many.
+ */
+function renderRequests(run: RunsRun, worker: HubWorker, list: RequestList): HTMLElement {
+  const key = workerKey(run.hub, run.session.ref, worker);
+  const box = element('div', 'requests');
+  box.id = `requests-${list.serial}`;
+  box.setAttribute('role', 'group');
+  const title = element('p', 'requests-title', t('runs_requestsTitle'));
+  title.id = `${box.id}-title`;
+  box.setAttribute('aria-labelledby', title.id);
+  const close = makeButton(
+    t('runs_requestsClose'),
+    () => {
+      closeRequests(key);
+      render();
+    },
+    { icon: 'close', iconOnly: true, tone: 'ghost', small: true },
+  );
+  close.dataset.focus = `${key}|requests-close`;
+  box.append(element('div', 'requests-head', title, close));
+  box.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    closeRequests(key);
+    render();
+  });
+  if (list.requests.length === 0) {
+    box.append(iconText(element('p', 'note'), 'info', t('runs_requestsNone')));
+    return box;
+  }
+  const rows = list.requests.map((request) => {
+    const button = requestButton(request, () => void mockRequest(run, worker.worker, list.since, request.id));
+    button.dataset.focus = `${key}|request-${request.id}`;
+    const text = `${request.method} ${request.url} ${request.status} ${request.type}`.toLowerCase();
+    return { item: element('li', undefined, button), button, text };
+  });
+  const buttons = rows.map((row) => row.button);
+  const shown = () => rows.filter((row) => !row.item.hidden).map((row) => row.button);
+  rove(buttons, buttons[0]);
+  const listed = element('ul', 'request-list', ...rows.map((row) => row.item));
+  listed.addEventListener('focusin', (event) => rove(buttons, event.target as HTMLElement));
+  listed.addEventListener('keydown', (event) => {
+    const visible = shown();
+    const at = visible.indexOf(event.target as HTMLButtonElement);
+    const moves: Record<string, number> = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: visible.length - 1 };
+    if (at < 0 || !(event.key in moves)) return;
+    event.preventDefault();
+    visible[Math.max(0, Math.min(visible.length - 1, moves[event.key]!))]?.focus();
+  });
+  const noMatch = iconText(element('p', 'note'), 'search', t('runs_requestsNoMatch'));
+  noMatch.hidden = true;
+  if (rows.length >= FILTER_FROM) {
+    const filter = element('input', 'requests-filter');
+    filter.type = 'search';
+    filter.placeholder = t('runs_requestsFilter');
+    filter.setAttribute('aria-label', t('runs_requestsFilter'));
+    filter.dataset.focus = `${key}|requests-filter`;
+    filter.addEventListener('input', () => {
+      const query = filter.value.trim().toLowerCase();
+      for (const row of rows) row.item.hidden = !!query && !row.text.includes(query);
+      const visible = shown();
+      noMatch.hidden = visible.length > 0;
+      rove(buttons, visible[0]);
+    });
+    filter.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowDown') return;
+      const first = shown()[0];
+      if (!first) return;
+      event.preventDefault();
+      first.focus();
+    });
+    box.append(filter);
+  }
+  box.append(listed, noMatch);
+  return box;
 }
 
 function renderWorker(run: RunsRun, worker: HubWorker, count: number): HTMLElement {
@@ -507,15 +785,19 @@ function renderWorker(run: RunsRun, worker: HubWorker, count: number): HTMLEleme
   const item = part(`${key}|item`, null, () => element('li', 'worker'));
   item.dataset.state = ended ? 'ended' : worker.state;
   const parts: HTMLElement[] = [];
+  const stop = !ended && worker.state === 'stopped' ? worker.stop : null;
+  const where = stop ? stopPlace(stop, run.session.root) : null;
+  item.toggleAttribute('data-failed', stop?.reason === 'failure');
   // An ended run names the tests it ran last; the hub says nothing of how they ended.
   if (!ended) {
     const shown = {
       state: worker.state,
-      reason: worker.state === 'stopped' ? (worker.stop?.reason ?? null) : null,
+      reason: stop?.reason ?? null,
+      place: stop?.reason === 'failure' ? where : null,
       pausing: worker.pausing,
       number: count > 1 ? worker.parallelIndex : null,
     };
-    parts.push(part(`${key}|state`, shown, () => stateLine(worker, count)));
+    parts.push(part(`${key}|state`, shown, () => stateLine(worker, count, where)));
   }
   const test = worker.test;
   if (test) {
@@ -531,48 +813,82 @@ function renderWorker(run: RunsRun, worker: HubWorker, count: number): HTMLEleme
     }
   }
   if (!ended) {
-    const stop = worker.state === 'stopped' ? worker.stop : null;
-    if (stop) {
-      const where = stopPlace(stop, run.session.root);
-      parts.push(
-        part(`${key}|stop`, { title: stop.title, where }, () =>
-          element(
-            'dl',
-            'stop',
-            element('dt', undefined, t('runs_nextLabel')),
-            element('dd', undefined, ...richText(stop.title)),
-            element('dt', undefined, t('runs_whereLabel')),
-            element('dd', 'place', where),
-          ),
-        ),
-      );
+    if (stop && where) {
+      const stopShown = { title: stop.title, where, reason: stop.reason, error: stop.error ?? null };
+      parts.push(part(`${key}|stop`, stopShown, () => stopView(stop, where)));
       wantImage(run, worker, stop);
       const kept = images.get(key);
       const image = kept?.since === stop.since ? { ...kept, img: !!kept.img } : { since: stop.since };
       parts.push(part(`${key}|image`, image, () => renderImage(key, stop)));
     }
+    const since = stop?.since ?? null;
+    const list = stop ? requestLists.get(key) : undefined;
+    const listed = list?.since === since ? list : undefined;
     const controls = controlsOf(worker, stop);
     if (controls.length > 0) {
       // Drawn again for another stop, so each control answers the stop shown; a command on its way leaves them be.
-      const since = stop?.since ?? null;
-      const actions = part(`${key}|actions`, { controls, since }, () => renderActions(run, worker, controls, since));
-      for (const button of actions.querySelectorAll('button')) {
-        if (busy.has(key)) button.setAttribute('aria-disabled', 'true');
-        else button.removeAttribute('aria-disabled');
-      }
+      const failure = stop?.reason === 'failure';
+      const actions = part(`${key}|actions`, { controls, since, failure }, () =>
+        renderActions(run, worker, controls, stop),
+      );
+      markBusy(actions.querySelectorAll('button'), busy.has(key));
+      const mock = actions.querySelector(`[data-focus="${CSS.escape(`${key}|mock`)}"]`);
+      mock?.setAttribute('aria-expanded', String(!!listed));
+      if (listed) mock?.setAttribute('aria-controls', `requests-${listed.serial}`);
+      else mock?.removeAttribute('aria-controls');
       parts.push(actions);
     }
     const answer = answers.get(key);
-    if (answer) {
-      parts.push(
-        part(`${key}|answer`, answer, () =>
-          iconText(element('p', answer.ok ? 'note' : 'answer'), answer.ok ? 'info' : 'alert', answer.text),
-        ),
+    if (answer && answer.since === since) {
+      const [className, icon]: [string, IconName] = !answer.ok
+        ? ['answer', 'alert']
+        : answer.sent
+          ? ['note sent', 'send']
+          : ['note', 'info'];
+      parts.push(part(`${key}|answer`, answer, () => iconText(element('p', className), icon, answer.text)));
+      if (answer.warnings.length > 0) parts.push(part(`${key}|warnings`, answer.warnings, () => warningList(answer)));
+    }
+    if (listed) {
+      const requests = part(`${key}|requests`, { since: listed.since, serial: listed.serial }, () =>
+        renderRequests(run, worker, listed),
       );
+      markBusy(requests.querySelectorAll('button.request'), busy.has(key));
+      parts.push(requests);
     }
   }
   place(item, parts);
   return item;
+}
+
+/** What to check in the code sent to the editor, as the hub said it: a line each. */
+function warningList(answer: { warnings: readonly string[] }): HTMLElement {
+  const list = element(
+    'ul',
+    'warnings',
+    ...answer.warnings.map((warning) => iconText(element('li', 'note'), 'alert', warning)),
+  );
+  list.setAttribute('aria-label', t('runs_codeWarnings'));
+  return list;
+}
+
+/** Where the test stands: the call about to run and its place; where it failed, the error alone, its place above. */
+function stopView(stop: HubStop, where: string): HTMLElement {
+  if (stop.reason === 'failure') {
+    return element(
+      'dl',
+      'stop',
+      element('dt', undefined, t('runs_errorLabel')),
+      element('dd', 'error', ...richText(stopError(stop))),
+    );
+  }
+  return element(
+    'dl',
+    'stop',
+    element('dt', undefined, t('runs_nextLabel')),
+    element('dd', undefined, ...richText(stop.title)),
+    element('dt', undefined, t('runs_whereLabel')),
+    element('dd', 'place', where),
+  );
 }
 
 function renderImage(key: string, stop: HubStop): HTMLElement {

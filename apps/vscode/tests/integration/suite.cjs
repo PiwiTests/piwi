@@ -20,6 +20,76 @@ async function waitFor(read, what, ms = 30_000) {
   }
 }
 
+/** One JSON message a line from `socket` into `heard`, as the run and record channels frame them. */
+function readLines(socket, heard, onMessage = () => {}) {
+  socket.setEncoding('utf8');
+  let buffered = '';
+  socket.on('data', (chunk) => {
+    buffered += chunk;
+    for (let end = buffered.indexOf('\n'); end >= 0; end = buffered.indexOf('\n')) {
+      const message = JSON.parse(buffered.slice(0, end));
+      buffered = buffered.slice(end + 1);
+      heard.push(message);
+      onMessage(message);
+    }
+  });
+  return (message) => socket.write(`${JSON.stringify(message)}\n`);
+}
+
+/**
+ * Worker 0 of the run `ref` on the run channel `channel` names, as the capture fixtures play it, its reporter taking
+ * `takes`: what it heard, what it sends, and the requests it answers at once (`answers`, by what they ask).
+ */
+function runWorker(channel, ref, takes) {
+  const net = require('node:net');
+  const hash = channel.lastIndexOf('#');
+  const socket = net.connect(channel.slice(0, hash));
+  const heard = [];
+  const answers = {};
+  const send = readLines(socket, heard, (m) => {
+    if (m.type === 'request' && m.what in answers) {
+      send({ type: 'answer', request: m.request, what: m.what, value: answers[m.what] });
+    }
+  });
+  send({
+    type: 'run-attach',
+    token: channel.slice(hash + 1),
+    ref,
+    cwd: workspace,
+    workerIndex: 0,
+    parallelIndex: 0,
+    pid: process.pid,
+    playwright: '1.64.1',
+    reporter: '0.60.0',
+    ...(takes ? { takes } : {}),
+  });
+  return {
+    socket,
+    heard,
+    send,
+    answers,
+    heardOne: (what, test, from = 0) => waitFor(() => heard.slice(from).find(test), what),
+  };
+}
+
+/** The test's half of a hand-off on the record channel `channel` names, opened with `attach`: what it heard and sends. */
+function handoff(channel, attach) {
+  const net = require('node:net');
+  const hash = channel.lastIndexOf('#');
+  const socket = net.connect(channel.slice(0, hash));
+  const heard = [];
+  const send = readLines(socket, heard);
+  send({ type: 'attach', token: channel.slice(hash + 1), ...attach });
+  return { socket, heard, send };
+}
+
+/** The titles of the lenses on the line whose first lens starts with `prefix` in `uri`'s file; none without one. */
+async function stopLenses(uri, prefix) {
+  const lenses = (await vscode.commands.executeCommand('vscode.executeCodeLensProvider', uri)) ?? [];
+  const first = lenses.find((l) => l.command?.title.startsWith(prefix));
+  return first ? lenses.filter((l) => l.range.start.line === first.range.start.line).map((l) => l.command.title) : [];
+}
+
 const tests = {
   async 'the extension activates on a workspace with a Playwright config'() {
     const extension = vscode.extensions.getExtension('piwitests.piwi');
@@ -337,28 +407,12 @@ const tests = {
   },
 
   async 'a test paused in a run records from there, its steps written above the paused line'() {
-    const net = require('node:net');
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const channel = api.lastRun().env.PIWI_RECORD_CHANNEL;
     assert.ok(channel, 'the run names the record channel');
-    const hash = channel.lastIndexOf('#');
     const spec = vscode.Uri.file(path.join(workspace, 'tests', 'admin.spec.ts'));
     // The test's half of the hand-off, as the capture fixtures play it: paused before line 4.
-    const socket = net.connect(channel.slice(0, hash));
-    socket.setEncoding('utf8');
-    const heard = [];
-    let buffered = '';
-    socket.on('data', (chunk) => {
-      buffered += chunk;
-      for (let end = buffered.indexOf('\n'); end >= 0; end = buffered.indexOf('\n')) {
-        heard.push(JSON.parse(buffered.slice(0, end)));
-        buffered = buffered.slice(end + 1);
-      }
-    });
-    const send = (message) => socket.write(`${JSON.stringify(message)}\n`);
-    send({
-      type: 'attach',
-      token: channel.slice(hash + 1),
+    const { socket, heard, send } = handoff(channel, {
       file: spec.fsPath,
       line: 4,
       reason: 'breakpoint',
@@ -406,46 +460,15 @@ const tests = {
   },
 
   async 'a run started here shows where it stops, its controls steer it, and its breakpoints follow the editor’s'() {
-    const net = require('node:net');
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const channel = api.lastRun().env.PIWI_RUN_CHANNEL;
     assert.ok(channel, 'the run names the run channel');
-    const hash = channel.lastIndexOf('#');
     const ref = 'ed-0000c0de';
     const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
     // A worker of the run, as the capture fixtures play it on its run connection.
-    const socket = net.connect(channel.slice(0, hash));
-    socket.setEncoding('utf8');
-    const heard = [];
-    let buffered = '';
-    socket.on('data', (chunk) => {
-      buffered += chunk;
-      for (let end = buffered.indexOf('\n'); end >= 0; end = buffered.indexOf('\n')) {
-        heard.push(JSON.parse(buffered.slice(0, end)));
-        buffered = buffered.slice(end + 1);
-      }
-    });
-    const send = (message) => socket.write(`${JSON.stringify(message)}\n`);
-    const heardOne = (what, test) => waitFor(() => heard.find(test), what);
+    const { socket, heard, send, heardOne } = runWorker(channel, ref);
     const sessionOf = () => api.runSessions().find((s) => s.ref === ref);
-    const pausedLenses = async (uri) => {
-      const lenses = (await vscode.commands.executeCommand('vscode.executeCodeLensProvider', uri)) ?? [];
-      const paused = lenses.find((l) => l.command?.title.startsWith('$(debug-pause) Paused · '));
-      return paused
-        ? lenses.filter((l) => l.range.start.line === paused.range.start.line).map((l) => l.command.title)
-        : [];
-    };
-    send({
-      type: 'run-attach',
-      token: channel.slice(hash + 1),
-      ref,
-      cwd: workspace,
-      workerIndex: 0,
-      parallelIndex: 0,
-      pid: process.pid,
-      playwright: '1.64.1',
-      reporter: '0.60.0',
-    });
+    const pausedLenses = (uri) => stopLenses(uri, '$(debug-pause) Paused · ');
     send({
       type: 'test-begin',
       testId: 't1',
@@ -608,6 +631,210 @@ const tests = {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   },
 
+  async 'code from a stop: Assert and Mock write above the stopped line, the cursor’s locator is counted, and a failure stops'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const run = api.lastRun();
+    const ref = 'ed-0000c0d3';
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'coupon.spec.ts'));
+    const takes = ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'];
+    const worker = runWorker(run.env.PIWI_RUN_CHANNEL, ref, takes);
+    const { send, heard, heardOne, answers } = worker;
+    // Every count on the stopped page finds two elements.
+    answers.locator = { ok: true, message: '2 elements match.', count: 2 };
+    const stopOf = () => api.runSessions().find((s) => s.ref === ref)?.workers[0]?.stop;
+    send({
+      type: 'test-begin',
+      testId: 't2',
+      title: ['applies a coupon'],
+      file: 'tests/coupon.spec.ts',
+      line: 3,
+      project: 'chromium',
+      retry: 0,
+      cannotPause: null,
+    });
+    send({
+      type: 'stopped',
+      stop: 1,
+      reason: 'breakpoint',
+      title: 'Fill "MORNING10" getByLabel(\'Coupon code\')',
+      place: { file: 'tests/coupon.spec.ts', line: 5, column: 34 },
+      locator: "getByLabel('Coupon code')",
+      bar: true,
+    });
+    let check = null;
+    try {
+      await waitFor(() => api.executionPoints(spec.toString()).includes(4), 'the execution point');
+      const since = stopOf().since;
+      const lenses = await waitFor(async () => {
+        const titles = await stopLenses(spec, '$(debug-pause) Paused · ');
+        return titles.length ? titles : null;
+      }, 'the paused line’s lenses');
+      for (const title of ['Pick', 'Record', 'Assert', 'Assert region', 'Mock']) {
+        assert.ok(lenses.includes(title), lenses.join(' | '));
+      }
+
+      // The cursor on the stopped line: its locator counted on the stopped page, at the line's end.
+      const asked = await heardOne('the count asked', (m) => m.type === 'request' && m.what === 'locator');
+      assert.equal(asked.locator, "getByLabel('Coupon code')");
+      const count = await waitFor(() => api.caretCount(), 'the count at the cursor');
+      assert.deepEqual(count, { uri: spec.toString(), line: 4, text: '2 matches', brief: false });
+
+      // Assert: the check made in the test's window, written above the stopped line with the import it needs.
+      const target = { ref, worker: 0, since };
+      const asserting = vscode.commands.executeCommand('piwi.assertAtStop', target);
+      const intent = await heardOne('the check asked', (m) => m.type === 'request' && m.what === 'assert');
+      send({
+        type: 'answer',
+        request: intent.request,
+        what: 'assert',
+        value: { ok: true, message: "Check an element in the test's window." },
+      });
+      await asserting;
+      check = handoff(run.env.PIWI_RECORD_CHANNEL, {
+        file: spec.fsPath,
+        line: 5,
+        reason: 'breakpoint',
+        testIdAttribute: null,
+        baseURL: 'http://localhost:3000',
+        mode: 'check',
+        stop: { ref, worker: 0, stop: 1 },
+      });
+      await waitFor(() => check.heard.find((m) => m.type === 'load'), 'the check panel loaded');
+      check.send({ type: 'loaded' });
+      const total = {
+        tagName: 'output',
+        role: 'status',
+        accessibleName: null,
+        testId: 'total',
+        text: 'Total €72.00',
+        alternatives: [{ locator: "getByTestId('total')", method: 'getByTestId', score: 90 }],
+      };
+      check.send({
+        type: 'binding',
+        call: 1,
+        outside: false,
+        payload: {
+          kind: 'message',
+          message: {
+            type: 'piwi-append-recording-event',
+            event: {
+              kind: 'assert',
+              target: total,
+              value: null,
+              checked: null,
+              inputType: null,
+              isPasswordField: false,
+              pageUrl: 'http://localhost:3000/cart',
+              timestamp: 1,
+              assertion: { matcher: 'toHaveText', expected: 'Total €72.00', actual: null, negated: false, note: null },
+            },
+          },
+        },
+      });
+      const document = await vscode.workspace.openTextDocument(spec);
+      await waitFor(() => document.getText().includes('toHaveText('), 'the check written');
+      let lines = document.getText().split('\n');
+      assert.equal(lines[1], "import { expect } from '@playwright/test';");
+      assert.equal(lines[5], "  await expect(page.getByTestId('total')).toHaveText('Total €72.00');");
+      assert.equal(lines[6], "  await page.getByLabel('Coupon code').fill('MORNING10');");
+      assert.equal(document.isDirty, true);
+      // The mark follows the stopped statement down.
+      await waitFor(() => api.executionPoints(spec.toString()).includes(6), 'the execution point below the check');
+      // One undo step: Undo takes the check and its import away, Redo writes them again.
+      await vscode.window.showTextDocument(document);
+      await vscode.commands.executeCommand('undo');
+      assert.ok(!document.getText().includes('expect'), document.getText());
+      await vscode.commands.executeCommand('redo');
+      assert.equal(document.lineAt(5).text, lines[5]);
+      await waitFor(() => api.executionPoints(spec.toString()).includes(6), 'the execution point after the redo');
+
+      // Mock a request: the responses the test kept, the one chosen written above the stopped statement, which the
+      // service follows through the check and its import.
+      const kept = {
+        id: 1,
+        method: 'GET',
+        url: 'http://localhost:3000/api/cart',
+        status: 200,
+        type: 'application/json',
+        size: 12,
+        time: 840,
+      };
+      const before = heard.length;
+      const mocking = vscode.commands.executeCommand('piwi.mockAtStop', target);
+      const listing = await heardOne(
+        'the responses asked',
+        (m) => m.type === 'request' && m.what === 'requests',
+        before,
+      );
+      send({
+        type: 'answer',
+        request: listing.request,
+        what: 'requests',
+        value: { ok: true, message: 'The test kept 1 response.', requests: [kept] },
+      });
+      // The list shows: its only response is chosen.
+      const mock = await waitFor(async () => {
+        await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
+        return heard.slice(before).find((m) => m.type === 'request' && m.what === 'mock');
+      }, 'the response chosen');
+      assert.equal(mock.id, 1);
+      send({
+        type: 'answer',
+        request: mock.request,
+        what: 'mock',
+        value: {
+          ok: true,
+          message: 'GET',
+          response: { method: 'GET', url: kept.url, status: 200, type: 'application/json', body: '{"items":[]}' },
+        },
+      });
+      await mocking;
+      await waitFor(() => document.getText().includes('page.route('), 'the mock written');
+      lines = document.getText().split('\n');
+      const route = lines.indexOf("  await page.route('**/api/cart', (route) =>");
+      assert.ok(route > 5, lines.join('\n'));
+      assert.equal(lines[route - 1], "  await expect(page.getByTestId('total')).toHaveText('Total €72.00');");
+      assert.equal(lines[route + 7], "  await page.getByLabel('Coupon code').fill('MORNING10');");
+      assert.equal(lines.filter((l) => l.startsWith('import ')).length, 2, 'the mock needs no import');
+
+      // A failure the bar holds: its own line, Resume alone among the controls, and the code actions.
+      send({ type: 'running', stop: 1 });
+      await waitFor(() => !stopOf(), 'the test going on');
+      assert.equal(api.caretCount(), null);
+      send({
+        type: 'stopped',
+        stop: 2,
+        reason: 'failure',
+        title: "Failed: Timed out 5000ms waiting for getByRole('button', { name: 'Apply' })",
+        place: { file: 'tests/coupon.spec.ts', line: 6, column: 52 },
+        locator: "getByRole('button', { name: 'Apply' })",
+        bar: true,
+      });
+      const failed = await waitFor(async () => {
+        const titles = await stopLenses(spec, '$(error) Failed · ');
+        return titles.length ? titles : null;
+      }, 'the failure’s lenses');
+      assert.deepEqual(failed, [
+        "$(error) Failed · Timed out 5000ms waiting for getByRole('button', { name: 'Apply' })",
+        'Resume',
+        'Pick',
+        'Record',
+        'Assert',
+        'Assert region',
+        'Mock',
+      ]);
+      const from = heard.length;
+      await vscode.commands.executeCommand('piwi.resumeRun');
+      await heardOne('the resume', (m) => m.type === 'control' && m.action === 'resume' && m.stop === 2, from);
+    } finally {
+      check?.socket.destroy();
+      worker.socket.destroy();
+      await vscode.window.showTextDocument(spec);
+      await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+    }
+    await waitFor(() => !api.runSessions().some((s) => s.ref === ref), 'the end of the run');
+  },
+
   async 'a C# file shows the lines its tests ran, its functions’ tests, and the marks hide and show again'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const basket = vscode.Uri.file(path.join(workspace, 'src', 'Web', 'Services', 'BasketService.cs'));
@@ -701,6 +928,12 @@ const tests = {
       'piwi.runToCursor',
       'piwi.finishRun',
       'piwi.showPausedPage',
+      'piwi.pickAtStop',
+      'piwi.recordAtStop',
+      'piwi.assertAtStop',
+      'piwi.assertRegionAtStop',
+      'piwi.mockAtStop',
+      'piwi.codeAtStop',
     ]) {
       assert.ok(commands.includes(id), id);
     }

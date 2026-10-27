@@ -17,9 +17,9 @@ import {
 import { createConnection } from 'vscode-languageserver/node';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
-import { parseHubToRun, type HubToRun, type RunIntent, type RunToHub } from '@piwitests/core/run-channel';
+import { parseHubToRun, type HubToRun, type RunHold, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
 import { startServer, type ServerOptions } from '../src/server';
-import type { Notice, RunCommand, RunSession } from '../src/protocol';
+import type { InitializationOptions, Notice, RunCommand, RunSession, StopCode } from '../src/protocol';
 
 export function last<T>(items: T[]): T | undefined {
   return items[items.length - 1];
@@ -55,6 +55,8 @@ export interface Service {
   stop: () => void;
   sessions: RunSession[];
   notices: Notice[];
+  /** The code made at stops the client was sent to write (`piwi/stopCode`). */
+  codes: StopCode[];
   /** What the service published for its discovery file, last: null once it stopped. */
   published: Array<EditorDiscovery | null>;
   /** The latest session of a ref the client heard. */
@@ -63,7 +65,12 @@ export interface Service {
   command(): Promise<{ ref: string; channel: { path: string; token: string }; command: RunCommand }>;
 }
 
-export async function service(dir: string, runControl: boolean, options: ServerOptions = {}): Promise<Service> {
+export async function service(
+  dir: string,
+  runControl: boolean,
+  options: ServerOptions = {},
+  init: InitializationOptions = {},
+): Promise<Service> {
   const toServer = new PassThrough();
   const toClient = new PassThrough();
   const published: Array<EditorDiscovery | null> = [];
@@ -75,8 +82,10 @@ export async function service(dir: string, runControl: boolean, options: ServerO
   const client = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
   const sessions: RunSession[] = [];
   const notices: Notice[] = [];
+  const codes: StopCode[] = [];
   client.onNotification('piwi/runSessionChanged', (session: RunSession) => void sessions.push(session));
   client.onNotification('piwi/notice', (notice: Notice) => void notices.push(notice));
+  client.onNotification('piwi/stopCode', (code: StopCode) => void codes.push(code));
   client.listen();
   await client.sendRequest('initialize', {
     processId: null,
@@ -84,7 +93,7 @@ export async function service(dir: string, runControl: boolean, options: ServerO
     capabilities: {},
     clientInfo: { name: 'Test Editor' },
     workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
-    initializationOptions: runControl ? { runControl: true } : {},
+    initializationOptions: { ...(runControl ? { runControl: true } : {}), ...init },
   });
   await client.sendNotification('initialized', {});
   const command = async () => {
@@ -108,6 +117,7 @@ export async function service(dir: string, runControl: boolean, options: ServerO
     },
     sessions,
     notices,
+    codes,
     published,
     latest: (ref) => last(sessions.filter((s) => s.ref === ref)),
     command,
@@ -144,7 +154,14 @@ export class FakeWorker {
     this.socket.write(`${JSON.stringify(message)}\n`);
   }
 
-  attach(token: string, ref: string, workerIndex = 0, takes: RunIntent[] = ['pick', 'record']): this {
+  /** Its `run-attach`; `holds` undefined for a reporter that predates them. */
+  attach(
+    token: string,
+    ref: string,
+    workerIndex = 0,
+    takes: RunTake[] = ['pick', 'record'],
+    holds: RunHold[] | undefined = ['failure'],
+  ): this {
     this.send({
       type: 'run-attach',
       token,
@@ -156,6 +173,7 @@ export class FakeWorker {
       playwright: '1.64.1',
       reporter: '0.60.0',
       takes,
+      ...(holds ? { holds } : {}),
     });
     return this;
   }

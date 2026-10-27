@@ -66,31 +66,32 @@ project reaches, lists those tests, and marks the buttons, links and fields no t
 ## Runs from the editor
 
 With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-recording#send-from-piwi-picker), the popup shows a
-**Runs** tile under **More tools** while the editor answers, with the number of runs it has. It opens the Runs
-window, to keep beside the test's browser. For each run the editor [started](./editor-runs), it shows the folder and
-the command, then each worker's test, project and attempt, and whether it runs or where it stopped: the file and line,
-the call about to run, and an image of the page, taken again at each stop.
+**Runs** tile under **More tools** while the editor answers. It opens the Runs window, to keep beside the test's
+browser. For each run the editor [started](./editor-runs), it shows the folder and the command, then each worker's
+test and whether it runs or where it stopped: the file and line, the call about to run, and an image of the page.
 
 **Pause** stops a running test before its next call. At a stop, **Resume**, **Step** and **Finish** do what they do
-[in the editor](./editor-run-control#the-controls); **Pick** and **Record**, when Piwi's pause bar shows in the test's
-window, start the bar's **Pick a locator** and **Record here** there, and the code lands in the editor. Run to cursor
-stays in the editor, which has the file. A control the editor refuses, because the test went on meanwhile, says why
-under the test.
+[in the editor](./editor-run-control#the-controls); Run to cursor stays in the editor. The other actions send code
+to the editor, which writes it at the stopped line, when its Piwi extension and your reporter take them. Where the
+pause bar shows, **Pick** and **Record** start its **Pick a locator** and **Record here**, **Assert** the recorder's
+**Check an element**, and **Assert a region** a pick whose ARIA snapshot becomes `toMatchAriaSnapshot`. **Mock a
+request** lists the page's fetch and XHR requests, credentials hidden: the one you choose becomes a `page.route`.
+Under the test, the window says the code went to the editor, with what to review in it, or why not.
+
+A failing test is held at its line, a headless one only while a Runs window is open: **Failed at** in red, its error
+under it. **Resume** lets it end as it failed; **Pick** replaces the failing locator.
 
 <figure>
-  <img src="/screenshots/picker-runs.png" alt="The Runs window beside a shop page stopped before a click on Checkout: the test, its file and line, the call, an image of the page, and Resume, Step, Finish, Pick and Record">
+  <img src="/screenshots/picker-runs.png" alt="The Runs window beside a shop page stopped before a click on Checkout: the test, its place, an image of the page, its controls and code actions">
   <figcaption>The Runs window, beside a test stopped at a breakpoint.</figcaption>
 </figure>
 
-The run shortcut resumes the stopped tests, or with none stopped, pauses every run. It has no key until you set one:
-**Set a shortcut**, in the Runs window, opens `chrome://extensions/shortcuts` (`edge://` in Edge), where you give it a
-key and the **Global** scope, to use it from any window, the editor's included. In Firefox, the button opens the
-add-ons manager's **Manage Extension Shortcuts**, and the key works while Firefox has the focus.
+The run shortcut resumes the stopped tests, else pauses every run. It has no key until you set one: **Set a
+shortcut** opens the browser's shortcuts page, where you give it a key and, in Chrome and Edge, the **Global** scope.
+In Firefox, it works while Firefox has the focus.
 
-The extension's background worker asks the editor for its services' addresses, once the program on the paired port
-has proved it holds the pairing's token, and keeps a WebSocket to each on `127.0.0.1`, their tokens in the
-extension's own database. A page, even one your machine serves, cannot reach them:
-[how the pieces connect](./editor-run-control#how-it-works).
+The background worker reaches the editor's services on `127.0.0.1` only once the paired port proves it holds the
+pairing's token: [how the pieces connect](./editor-run-control#how-it-works).
 
 ## Languages
 
@@ -125,8 +126,7 @@ Optional and off by default. In the settings, type your instance's address and c
 page comes from URL patterns kept on the instance and from any you keep in this browser; the popup's **Active
 project** select overrides both for the session. See [Extension connection](./extension-connection).
 
-Function catalogs refresh in the background. **A recording is never sent to your instance**, and a
-[bug report](./bug-reports) only from its preview.
+**A recording is never sent to your instance**, and a [bug report](./bug-reports) only from its preview.
 
 ## Limits
 

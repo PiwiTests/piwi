@@ -1349,12 +1349,14 @@ object Glue {
         return if (session.ended) sessions - ref else sessions + (ref to session)
     }
 
-    /** A worker stopped: its run, the worker, where it stands and the test it runs. */
-    data class ShownStop(val ref: String, val worker: Int, val stop: RunStop, val test: RunTest?)
+    /** A worker stopped: its run, the worker, where it stands, the test it runs and what its reporter takes there. */
+    data class ShownStop(val ref: String, val worker: Int, val stop: RunStop, val test: RunTest?, val takes: List<String> = emptyList())
 
     /** Every stopped worker of the sessions, in their order. */
     fun stopsOf(sessions: Map<String, RunSession>): List<ShownStop> = sessions.values.flatMap { session ->
-        session.workers.orEmpty().mapNotNull { w -> w.stop?.let { ShownStop(session.ref ?: "", w.worker, it, w.test) } }
+        session.workers.orEmpty().mapNotNull { w ->
+            w.stop?.let { ShownStop(session.ref ?: "", w.worker, it, w.test, w.takes.orEmpty()) }
+        }
     }
 
     /** What tells a stop from another: its run, its worker and when it stopped. */
@@ -1362,12 +1364,17 @@ object Glue {
 
     /**
      * The line above a stop: what is about to run, `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`,
-     * in plain text: the gutter's arrow marks the stop.
+     * or, at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in
+     * plain text: the gutter's icon marks the stop.
      */
     fun pausedText(stop: RunStop, test: RunTest?): String {
         val attempt = if (test != null && test.retry > 0) " · attempt ${test.retry + 1}" else ""
+        if (isFailure(stop)) return "Failed · ${stop.title.orEmpty().removePrefix("Failed:").trimStart()}$attempt"
         return "Paused · ${stop.title.orEmpty()}$attempt"
     }
+
+    /** Whether a stop holds a failed test's page: any answer lets the test end as it failed. */
+    fun isFailure(stop: RunStop): Boolean = stop.reason == "failure"
 
     /** A stop's place, as the choice among several and the paused page name it: `checkout.page.ts:5`. */
     fun stopPlace(stop: RunStop): String {
@@ -1383,10 +1390,16 @@ object Glue {
 
     /**
      * What the controls offer: Stop while a run is live (`active`), Pause while a worker runs a test or is between
-     * tests and no Pause reached it (`pausable`), `pausing` once one did, and Resume, Step, Run to Caret and Finish
-     * while a worker is stopped.
+     * tests and no Pause reached it (`pausable`), `pausing` once one did, Resume, Step, Run to Caret and Finish while a
+     * worker is stopped, and the code actions some stop offers (`actions`).
      */
-    data class RunControls(val active: Boolean, val pausable: Boolean, val pausing: Boolean, val stopped: Boolean)
+    data class RunControls(
+        val active: Boolean,
+        val pausable: Boolean,
+        val pausing: Boolean,
+        val stopped: Boolean,
+        val actions: Set<StopAction> = emptySet(),
+    )
 
     fun runControls(sessions: Map<String, RunSession>): RunControls {
         val workers = sessions.values.flatMap { it.workers.orEmpty() }
@@ -1395,12 +1408,13 @@ object Glue {
             pausable = workers.any { it.state != "stopped" && !it.pausing && it.test?.cannotPause == null },
             pausing = workers.any { it.pausing },
             stopped = workers.any { it.state == "stopped" },
+            actions = stopsOf(sessions).flatMap(::stopActions).toSet(),
         )
     }
 
     /** The status bar's text while a run is stopped or pausing; null otherwise, the run's progress showing. */
     fun runControlStatus(controls: RunControls, stops: List<ShownStop>): String? = when {
-        stops.size == 1 -> "Piwi: paused · ${stopPlace(stops.single().stop)}"
+        stops.size == 1 -> "Piwi: ${if (isFailure(stops.single().stop)) "failed" else "paused"} · ${stopPlace(stops.single().stop)}"
         stops.size > 1 -> "Piwi: ${stops.size} tests paused"
         controls.pausing -> "Piwi: pausing…"
         else -> null
@@ -1417,6 +1431,9 @@ object Glue {
     /** Whether a stop is at a line of the file at `uri`. */
     fun stopIsAt(stop: ShownStop, uri: String?, line: Int): Boolean = stop.stop.line == line && sameFile(stop.stop.uri, uri)
 
+    /** Whether a stop is in the file at `uri`. */
+    fun stopInFile(stop: ShownStop, uri: String?): Boolean = sameFile(stop.stop.uri, uri)
+
     /**
      * The stops a control at the caret may act on: every one when there is one or none; with several, those stopped on
      * the caret's line, else all of them, to choose from.
@@ -1427,12 +1444,177 @@ object Glue {
         return here.ifEmpty { stops }
     }
 
+    /** A link above a stopped line: a control, or a code action, by its label, or a shorter one in the inlay. */
+    sealed interface StopLink {
+        val label: String
+        val inlayLabel: String get() = label
+    }
+
     /** The controls offered above a stop, in order. */
-    enum class StopControl(val label: String, val action: String) {
+    enum class StopControl(override val label: String, val action: String) : StopLink {
         RESUME("Resume", "resume"),
         STEP("Step", "step"),
         RUN_TO_CARET("Run to Caret", "run-to"),
         FINISH("Finish", "finish"),
+    }
+
+    /**
+     * The controls a stop offers: all of them; at a failure, Resume alone, which lets the test end as it failed (Step
+     * and Finish do the same).
+     */
+    fun stopControls(stop: RunStop): List<StopControl> =
+        if (isFailure(stop)) listOf(StopControl.RESUME) else StopControl.entries
+
+    /**
+     * The code actions at a stop, in the order it offers them (`piwi/stopAction`): the pause bar's Pick a locator and
+     * Record here, and Assert and Assert a region, in the test's window (`inPage`), so at a stop the bar shows; Mock a
+     * request at any stop. Each needs its reporter to take what `takes` names, and has its action under **Tools → Piwi**;
+     * the inlay names it shorter, beside the controls.
+     */
+    enum class StopAction(
+        override val label: String,
+        override val inlayLabel: String,
+        val action: String,
+        val takes: List<String>,
+        val inPage: Boolean,
+    ) : StopLink {
+        PICK("Pick a Locator", "Pick", "pick", listOf("pick"), true),
+        RECORD("Record Here", "Record", "record", listOf("record"), true),
+        ASSERT("Assert", "Assert", "assert", listOf("assert"), true),
+        ASSERT_REGION("Assert a Region", "Assert Region", "assert-region", listOf("assert-region"), true),
+        MOCK("Mock a Request", "Mock", "mock", listOf("requests", "mock"), false),
+    }
+
+    /** The code actions a stop offers: those its reporter takes, the ones in the test's window only where the bar shows. */
+    fun stopActions(stop: ShownStop): List<StopAction> =
+        StopAction.entries.filter { (!it.inPage || stop.stop.bar) && stop.takes.containsAll(it.takes) }
+
+    /** A body's size as the list of responses names it: `no size` when the response did not say it. */
+    fun sizeText(size: Long?): String = when {
+        size == null -> "no size"
+        size < 1024 -> "$size B"
+        size < 1024 * 1024 -> String.format(java.util.Locale.ROOT, "%.1f KB", size / 1024.0)
+        else -> String.format(java.util.Locale.ROOT, "%.1f MB", size / 1024.0 / 1024.0)
+    }
+
+    /** When a response finished, after the test began: `840 ms`, `12.4 s`. */
+    fun timeText(ms: Double): String =
+        if (ms < 1000) "${Math.round(ms)} ms" else String.format(java.util.Locale.ROOT, "%.1f s", ms / 1000)
+
+    /** The responses Mock a request offers, the latest first. */
+    fun requestsToMock(requests: List<StopRequest>?): List<StopRequest> = requests.orEmpty().asReversed()
+
+    /** A response as the list names it: its method and URL, which the list filters on. */
+    fun requestLabel(request: StopRequest): String = "${request.method.orEmpty()} ${request.url.orEmpty()}"
+
+    /** What the list says of a response beside its label: its status, type, size and when it finished in the test. */
+    fun requestDetails(request: StopRequest): String =
+        listOf("${request.status}", request.type?.ifEmpty { null } ?: "no type", sizeText(request.size), "at ${timeText(request.time)}")
+            .joinToString(" · ")
+
+    /**
+     * What the end of the caret's line says of the locator there, counted on the stopped page: `3 matches`, `1 match`,
+     * `no match`, why it was not counted; null for a line holding no locator Piwi reads.
+     */
+    fun caretText(answer: LocatorAtCaretResult): String? {
+        if (answer.locator == null) return null
+        val count = answer.count
+        if (!answer.ok || count == null) return answer.message
+        return when (count) {
+            0 -> "no match"
+            1 -> "1 match"
+            else -> "$count matches"
+        }
+    }
+
+    /**
+     * The count at the caret's questions, one at a time: the caret stands at a query (`want`, by its key: the stop, the
+     * file and line, the line's text), which is asked once it settled (`ask`), unless another is on its way or it was
+     * asked already while the caret stayed there; the answer is shown only while the caret is still there (`answered`),
+     * and the query it stands at then asked once that one settled. The caret coming back to a query asks it again, its
+     * count being gone. A key of null is no stop: nothing is asked.
+     */
+    class CaretAsks {
+        var wanted: String? = null
+            private set
+        private var asked: String? = null
+        private var flying = false
+
+        /** The caret stands at `key` now; true when it moved to another query, whose count is to be cleared. */
+        fun want(key: String?): Boolean {
+            if (key == wanted) return false
+            wanted = key
+            asked = null
+            return true
+        }
+
+        /** Whether `key`, which the caret settled on, is asked now: then it is on its way. */
+        fun ask(key: String): Boolean {
+            if (flying || key != wanted || key == asked) return false
+            flying = true
+            asked = key
+            return true
+        }
+
+        /** The answer to `key` came: whether it is shown, the caret still standing at it. */
+        fun answered(key: String): Boolean {
+            flying = false
+            return key == wanted
+        }
+    }
+
+    /** `text` in place of the offsets `start` to `end` of a document. */
+    data class TextWrite(val start: Int, val end: Int, val text: String)
+
+    /**
+     * Where a stop's edits, all placed in the text they are made in, are made: each as offsets of `text`, the last in
+     * the file first, so each leaves the places of those above it as they were, and of two at one place the later one
+     * first, so it ends up after the other; null when one falls outside the text.
+     */
+    fun stopCodeWrites(text: CharSequence, edits: List<FileEdit>): List<TextWrite>? {
+        val writes = edits.map { e ->
+            val start = offsetAt(text, e.range?.start) ?: return null
+            val end = offsetAt(text, e.range?.end) ?: return null
+            if (end < start) return null
+            TextWrite(start, end, e.newText.orEmpty())
+        }
+        return writes.withIndex().sortedWith(compareByDescending<IndexedValue<TextWrite>> { it.value.start }.thenByDescending { it.index })
+            .map { it.value }
+    }
+
+    /** The offset of a position of `text`, a line and a character within it; null outside the text. */
+    private fun offsetAt(text: CharSequence, position: EditPosition?): Int? {
+        position ?: return null
+        if (position.line < 0 || position.character < 0) return null
+        var start = 0
+        repeat(position.line) {
+            val next = text.indexOf('\n', start)
+            if (next < 0) return null
+            start = next + 1
+        }
+        val end = text.indexOf('\n', start).let { if (it < 0) text.length else it }
+        return if (start + position.character <= end) start + position.character else null
+    }
+
+    /**
+     * The lines the block a stop's code writes stands on once its edits are made: its first line (`StopCode.line`, moved
+     * down by the import lines written above it) and its last.
+     */
+    fun writtenLines(code: StopCode): IntRange {
+        val above = code.edits.orEmpty().filter { (it.range?.start?.line ?: 0) < code.line }.sumOf { e ->
+            e.newText.orEmpty().count { it == '\n' } - ((e.range?.end?.line ?: 0) - (e.range?.start?.line ?: 0))
+        }
+        val start = code.line + above
+        return start..start + code.code.orEmpty().count { it == '\n' }
+    }
+
+    /** What a stop's code says once written, as a warning when its reader should check something. */
+    data class StopCodeNotice(val warning: Boolean, val text: String)
+
+    /** Its sentence, which names Piwi, then what its reader should check (values hidden as credentials, a body as it came). */
+    fun stopCodeNotice(code: StopCode): StopCodeNotice {
+        val warnings = code.warnings.orEmpty().filter { it.isNotBlank() }
+        return StopCodeNotice(warnings.isNotEmpty(), (listOfNotNull(code.message?.ifBlank { null }) + warnings).joinToString(" "))
     }
 
     /** The runs whose breakpoints the plugin remembers, at most: those it started and those it heard of. */

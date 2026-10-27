@@ -9,7 +9,7 @@ import { DIST, SHOP_ORIGIN, injectCoverage, openShop, stubCoverageChrome } from 
 import { openDevtoolsPage, selectElement } from './devtools-stub.js';
 import { stubChromeI18n } from './i18n-stub.js';
 import { stubChromeStorage } from './recording-stub.js';
-import { pairedExtension, startEditor, startRun } from './runs-fixtures.js';
+import { pairedExtension, startEditor, startRun, RUN_TAKES } from './runs-fixtures.js';
 
 /**
  * The extension's illustrations on the docs site, captured from the same shop
@@ -173,8 +173,8 @@ test('picker-pause', async ({ context }) => {
 const BAR_HIDDEN = '#__piwi-pause-bar { display: none !important; }';
 
 // The Runs window beside the test's browser, the test stopped at a breakpoint before a click on Checkout, with the
-// pause bar in its page: the real editor service's hub, a worker the spec plays, the page's image as the worker sends
-// it, without the bar.
+// pause bar in its page: the real editor service's hub, a worker the spec plays, whose reporter takes the code from a
+// stop, the page's image as the worker sends it, without the bar.
 test('picker-runs', async () => {
   const editor = await startEditor();
   const { context, extensionId } = await pairedExtension(editor, { deviceScaleFactor: 2 });
@@ -197,7 +197,7 @@ test('picker-runs', async () => {
     const runs = await context.newPage();
     await runs.setViewportSize({ width: 440, height: 700 });
     await runs.goto(`chrome-extension://${extensionId}/runs.html`);
-    const run = await startRun(editor, 'pays with a coupon');
+    const run = await startRun(editor, 'pays with a coupon', [...RUN_TAKES]);
     try {
       await expect(runs.getByText('cart › pays with a coupon')).toBeVisible();
       run.worker.send({

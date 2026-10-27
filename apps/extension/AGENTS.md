@@ -130,6 +130,11 @@ each rule below ends with the section to read there.
 - **The Runs window draws a part again only when what it shows changes (`part`, `place`); a button waiting for its
   command is `aria-disabled`, never `disabled`,** so a control keeps the focus, restored across redraws by
   `data-focus` (`runs.spec.ts`). (see "The Runs window")
+- **A paired Piwi Picker holds a failure no pause bar shows only while a Runs window is open:** `RunHubs.listen` sends
+  `follow` with `on: true` on each hub connection as the first window's port connects and on each one that opens
+  meanwhile, and `on: false` as the last leaves (`run-hubs.test.ts`, `runs.spec.ts`). (see "A connection per hub")
+- **No code from a stop comes to the Runs window:** it goes to the editor, which writes it, and the window shows the
+  hub's sentence that it was sent (`.note.sent`), never that it was written. (see "The Runs window")
 - **The hub's keepalive (`HUB_KEEPALIVE_MS`, `@piwitests/core/run-hub`) and the Runs window's ping (`RUNS_PING_MS`)
   stay within the 30 s an MV3 worker lives after a message;** that holds for a WebSocket from Chrome 116, under
   `minimum_chrome_version` 118. (see "A connection per hub")
@@ -249,7 +254,9 @@ each rule below ends with the section to read there.
 - **Colors are dark first, with the light scheme under `prefers-color-scheme: light`.** (see "Buttons, icons and
   readable steps")
 - **DevTools Network data leaves the browser only through the user's copy or download;** `mockCode` hides credentials
-  unless revealed and never writes a header. (see "Network and Mock this response")
+  unless revealed, by the rule `@piwitests/core/mask` writes down, and never writes a header. The editor service
+  bundles `mockCode` for Mock a request at a stopped test, so a change here changes what the editor writes. (see
+  "Network and Mock this response")
 - **Request conditions apply only to a tab that shows the origin they were set for.** (see "Slow down or fail a
   request")
 - **Add to session has one path, `addNamedPick`.** (see "Locators and Session")

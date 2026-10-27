@@ -3,15 +3,20 @@
  * hold them (`run-sessions.ts`), followed and steered from the developer's own browser. It listens on `127.0.0.1`
  * alone, on a free port; a handshake is taken only on `HUB_PATH`, with the hub's own `Host` and a browser extension's
  * `Origin`, and refused with a status before any WebSocket opens. The first message must be `hello` with the token,
- * compared in constant time, within `HUB_HELLO_MS`. The token is in the service's discovery file, which only this
- * user reads, and the editor's Send to editor endpoint lists it to a request carrying the pairing's token: the paired
- * Piwi Picker, and any process of this user that holds that token (the runs the editor starts name it in
+ * compared in constant time, within `HUB_HELLO_MS`. The token is in the service's discovery file, which only this user
+ * reads, and the editor's Send to editor endpoint lists it to a request carrying the pairing's token: the paired Piwi
+ * Picker, and any process of this user that holds that token (the runs the editor starts name it in
  * `PIWI_EDITOR_SEND`). Another user's processes and web pages are kept out; this user's own processes are not a
- * boundary. A command is one of a closed set, checked field by field and answered once; nothing it asks evaluates
- * code, reads a file or reaches an instance. A subscribed connection hears every run as the editor does, and counts as
- * a surface that answers stops: while one is, a stop no pause bar shows waits for it. A connection the hub closes is
- * cut a second later when the other side does not answer the close, and only the open connections count toward its
- * limits.
+ * boundary. A command is one of a closed set, checked field by field and answered once; nothing it asks evaluates code,
+ * reads a file or reaches an instance. A subscribed connection hears every run as the editor does, and counts as a
+ * surface that answers stops: while one is, a stop no pause bar shows waits for it. One that says a person follows the
+ * runs there (`follow`, a Runs window open) holds a failure no pause bar shows too, until it says otherwise or closes:
+ * a connection that never says so, such as Piwi Picker's with no Runs window, does not. The code actions it starts at a
+ * stop (Assert, Assert a region, Mock a request, `stop-actions.ts`) write their code in the editor, through its client:
+ * the answer says whether they started, never the code, and each subscribed connection hears what each one came to,
+ * whichever surface started it (`code`: that the code was sent to the client to write, with its warnings, or why it was
+ * refused once it started). A connection the hub closes is cut a second later when the other side does not answer the
+ * close, and only the open connections count toward its limits.
  */
 import { randomBytes } from 'node:crypto';
 import * as http from 'node:http';
@@ -26,13 +31,16 @@ import {
   MAX_HUB_CLIENT,
   MAX_HUB_COMMAND,
   MAX_HUB_FRAME,
+  MAX_HUB_MESSAGE,
   MAX_HUB_PENDING,
   MAX_HUB_PROJECT,
   MAX_HUB_ROOTS,
+  MAX_HUB_WARNINGS,
   isExtensionOrigin,
   isHubHost,
   parseHubCommand,
   parseHubHello,
+  type HubCodeIntent,
   type HubIntent,
   type HubMessage,
   type HubSession,
@@ -41,6 +49,7 @@ import {
 import type { RunControlResult, RunSession } from './protocol.js';
 import { sameToken } from './recorder/handoff.js';
 import type { RunSessions } from './run-sessions.js';
+import type { StopActions, StopOutcome } from './stop-actions.js';
 
 /** The connections a hub holds at once, and those among them that did not say `hello` yet. */
 const MAX_CONNECTIONS = 16;
@@ -59,11 +68,16 @@ export interface HubRunInfo {
 
 export interface RunHubOptions {
   sessions: RunSessions;
+  /** The actions a stop takes: the intents, the responses the test kept and the one to mock. */
+  actions: Pick<StopActions, 'action' | 'requests'>;
   /** What the Runs page shows of a run beside its workers. */
   runInfo(ref: string, root: string | null): HubRunInfo;
   /** What `welcome` says of the service. */
   welcome(): { pid: number; version: string; client: string | null; roots: string[] };
-  /** A subscribed connection came or went: whether a stop no pause bar shows can be answered changed. */
+  /**
+   * A subscribed connection came or went, or one began or stopped following the runs: whether a stop no pause bar
+   * shows can be answered, or a failure is held, changed.
+   */
   surfacesChanged(): void;
   keepaliveMs?: number;
   helloMs?: number;
@@ -73,6 +87,8 @@ interface Connection {
   socket: WebSocket;
   authenticated: boolean;
   subscribed: boolean;
+  /** A person follows the runs through it (`follow`): a Runs window is open. */
+  following: boolean;
   pending: number;
   /** It answered the last ping. */
   alive: boolean;
@@ -165,9 +181,15 @@ export class RunHub {
     return hub;
   }
 
-  /** Whether a connection follows the runs, and so can answer a stop. */
+  /** Whether a connection hears the runs (`subscribe`), and so can answer a stop. */
   answersStops(): boolean {
     for (const connection of this.connections) if (connection.subscribed) return true;
+    return false;
+  }
+
+  /** Whether a person follows the runs through a subscribed connection (`follow`): a failure no bar shows waits then. */
+  follows(): boolean {
+    for (const connection of this.connections) if (connection.subscribed && connection.following) return true;
     return false;
   }
 
@@ -179,6 +201,22 @@ export class RunHub {
       message ??= { type: 'session', session: this.view(session) };
       this.send(connection, message);
     }
+  }
+
+  /** What an action that writes code came to: every subscribed connection hears its sentence, never its code. */
+  code(outcome: StopOutcome): void {
+    const warnings = outcome.warnings.slice(0, MAX_HUB_WARNINGS).map((w) => cut(w, MAX_HUB_MESSAGE)!);
+    const message: HubMessage = {
+      type: 'code',
+      ref: outcome.ref,
+      worker: outcome.worker,
+      since: outcome.since,
+      action: outcome.action,
+      ok: outcome.ok,
+      message: cut(outcome.message, MAX_HUB_MESSAGE)!,
+      ...(warnings.length > 0 ? { warnings } : {}),
+    };
+    for (const connection of this.connections) if (connection.subscribed) this.send(connection, message);
   }
 
   /** The service stops: every connection is closed, saying so. */
@@ -217,6 +255,7 @@ export class RunHub {
       socket,
       authenticated: false,
       subscribed: false,
+      following: false,
       pending: 0,
       alive: true,
       cutting: false,
@@ -267,7 +306,13 @@ export class RunHub {
 
   private async answer(connection: Connection, command: ParsedHubCommand): Promise<void> {
     const reply = (result: RunControlResult, extra: Record<string, unknown> = {}) =>
-      this.send(connection, { type: 'answer', id: command.id, ok: result.ok, message: result.message, ...extra });
+      this.send(connection, {
+        type: 'answer',
+        id: command.id,
+        ok: result.ok,
+        message: cut(result.message, MAX_HUB_MESSAGE)!,
+        ...extra,
+      });
     if (command.type === 'unknown') {
       return reply({ ok: false, message: `Piwi does not know the command ${JSON.stringify(command.what)}.` });
     }
@@ -286,6 +331,18 @@ export class RunHub {
           reply({ ok: true, message: live.length === 1 ? 'Following 1 run.' : `Following ${live.length} runs.` });
           for (const session of live) this.send(connection, { type: 'session', session: this.view(session) });
           if (first) this.options.surfacesChanged();
+          return;
+        }
+        case 'follow': {
+          const changed = connection.following !== command.on;
+          connection.following = command.on;
+          reply({
+            ok: true,
+            message: command.on
+              ? 'A failure no pause bar shows waits for an answer while this connection follows the runs.'
+              : 'A failure no pause bar shows goes on unless another surface follows the runs.',
+          });
+          if (changed && connection.subscribed) this.options.surfacesChanged();
           return;
         }
         case 'runControl':
@@ -313,13 +370,31 @@ export class RunHub {
             { image },
           );
         }
-        default:
+        case 'requests': {
+          const listed = await this.options.actions.requests({
+            ref: command.ref,
+            worker: command.worker,
+            since: command.since,
+          });
+          return reply(listed, { requests: listed.requests });
+        }
+        case 'mock':
           return reply(
-            await sessions.intent({
+            await this.options.actions.action({
               ref: command.ref,
               worker: command.worker,
               since: command.since,
-              what: command.type as HubIntent,
+              action: 'mock',
+              request: command.request,
+            }),
+          );
+        default:
+          return reply(
+            await this.options.actions.action({
+              ref: command.ref,
+              worker: command.worker,
+              since: command.since,
+              action: command.type as HubIntent | HubCodeIntent,
             }),
           );
       }
@@ -337,7 +412,7 @@ export class RunHub {
       label: info.label,
       command: cut(info.command, MAX_HUB_COMMAND),
       project: cut(info.project, MAX_HUB_PROJECT),
-      workers: session.workers.map((worker) => ({
+      workers: session.workers.map(({ takes: _takes, ...worker }) => ({
         ...worker,
         intents: this.options.sessions.intentsOf(session.ref, worker.worker),
       })),

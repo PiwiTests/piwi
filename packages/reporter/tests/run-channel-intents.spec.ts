@@ -195,6 +195,8 @@ async function intent(connection: Connection, what: RunIntent, stop: number): Pr
 
 /** The editor's side of each stop: what Piwi Picker asks through the hub. */
 async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
+  // The page of the test that failed is held as a stop of its own: this editor lets it go at once.
+  if (stop.reason === 'failure') return send(connection, { type: 'control', action: 'resume', stop: stop.stop });
   const test = connection.test!;
   const said = (answered[test] ??= []);
   const barsBefore = bars.length;
@@ -256,6 +258,10 @@ beforeAll(async () => {
           }
           const message = parseRunToHub(line);
           if (!message) return;
+          // As the editor service answers a worker that holds a failure only for an editor that shows one.
+          if (message.type === 'run-attach' && message.holds) {
+            socket.write(`${JSON.stringify({ type: 'attached', holds: message.holds })}\n`);
+          }
           connection.heard.push(message);
           if (message.type === 'test-begin') connection.test = message.title[message.title.length - 1]!;
           if (message.type === 'stopped') void onStopped(connection, message);
@@ -390,7 +396,7 @@ describe('Pick and Record started from outside the page', () => {
     expect(tests.find((t) => t.title === 'ended under a pick')!.errors).toEqual([
       expect.stringContaining('the test gave up while the pick ran'),
     ]);
-    expect(connections[0]!.heard[0]).toMatchObject({ type: 'run-attach', ref: REF, takes: ['pick', 'record'] });
+    expect(connections[0]!.heard[0]).toMatchObject({ type: 'run-attach', ref: REF, takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'] });
   });
 
   it('picks in the test’s window as the bar’s Pick a locator does, the locator going to the editor', () => {
@@ -454,7 +460,8 @@ describe('Pick and Record started from outside the page', () => {
   it('ends every stop it showed once, with `running`, whoever ended it', () => {
     const stops = (connection: Connection, type: 'stopped' | 'running') =>
       connection.heard.flatMap((m) => (m.type === type ? [m.stop] : [])).sort((a, b) => a - b);
-    expect(connections.flatMap((connection) => stops(connection, 'stopped'))).toHaveLength(6);
+    // Six at a breakpoint, and the failure of the test that gave up.
+    expect(connections.flatMap((connection) => stops(connection, 'stopped'))).toHaveLength(7);
     for (const connection of connections) expect(stops(connection, 'running')).toEqual(stops(connection, 'stopped'));
   });
 

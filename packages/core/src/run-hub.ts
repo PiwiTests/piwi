@@ -6,11 +6,14 @@
  * (`127.0.0.1:<port>` or `localhost:<port>`) and an extension's `Origin` (`chrome-extension://<id>`,
  * `moz-extension://<uuid>`); the first message must be `hello` with the token, within `HUB_HELLO_MS`. Every later
  * message is a command with an `id`, answered once with that `id` (`HubAnswer`); `subscribe` has the hub push each run
- * as it changes (`HubSessionMessage`). The hub sends `keepalive` every `HUB_KEEPALIVE_MS`, and a frame longer than
- * `MAX_HUB_FRAME` closes the connection. Messages are text frames of JSON, checked field by field on both sides.
- * Nothing a command asks evaluates code, reads a file or reaches an instance.
+ * as it changes (`HubSessionMessage`), and what each action that writes code at a stop came to, whichever surface
+ * started it (`HubCodeMessage`: its sentence, never the code); `follow` says whether a person watches the runs there
+ * (a Runs window is open), which holds a failure no pause bar shows. The hub sends `keepalive` every `HUB_KEEPALIVE_MS`,
+ * and a frame longer than `MAX_HUB_FRAME` closes the connection. Messages are text frames of JSON, checked field by
+ * field on both sides. Nothing a command asks evaluates code, reads a file or reaches an instance.
  */
 import type { EditorDiscovery, HubAddress } from './editor-discovery';
+import { MAX_STOP_ERROR, type KeptRequest } from './run-channel';
 
 /** The WebSocket's path. */
 export const HUB_PATH = '/piwi/hub';
@@ -30,6 +33,10 @@ export const MAX_HUB_ROOTS = 64;
 export const MAX_HUB_PROJECT = 500;
 /** The longest client name a `welcome` carries: the hub cuts a longer one. */
 export const MAX_HUB_CLIENT = 200;
+/** The longest sentence an answer or a `code` carries: the hub cuts a longer one. */
+export const MAX_HUB_MESSAGE = 1000;
+/** The most warnings a `code` carries: the hub sends the first ones. */
+export const MAX_HUB_WARNINGS = 16;
 
 /** Why the hub closed a connection, as the WebSocket's close code. */
 export const HUB_CLOSE = {
@@ -47,8 +54,11 @@ export const HUB_CLOSE = {
   malformed: 4003,
 } as const;
 
-/** Why a test stopped (`RunStopReason` in the editor's protocol); `other` for a reason of a newer reporter. */
-export type HubStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'other';
+/**
+ * Why a test stopped (`RunStopReason` in the editor's protocol): `failure`, the test failed and its page is held at
+ * the failing line, where Resume lets it end as it failed; `other` for a reason of a newer reporter.
+ */
+export type HubStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'failure' | 'other';
 
 /** Where a worker stands stopped: before a call, which runs as soon as the stop is answered. */
 export interface HubStop {
@@ -65,6 +75,11 @@ export interface HubStop {
   bar: boolean;
   /** Names the stop: a control passes it back as `since`, and one that no worker stands at any more is refused. */
   since: string;
+  /**
+   * A failure's error: the failing error's first lines as plain text, at most `MAX_STOP_ERROR` characters. Absent for
+   * another stop, and from a service or a reporter that predates it, whose `title` alone says how the test failed.
+   */
+  error?: string;
 }
 
 /** A test a worker runs. */
@@ -84,8 +99,33 @@ export interface HubTest {
   cannotPause: string | null;
 }
 
-/** What a stop of a worker can start from outside the page: the pause bar's Pick a locator and Record here. */
+/** What a stop of a worker can start from outside the page, in the test's window: the pause bar's Pick a locator and Record here. */
 export type HubIntent = 'pick' | 'record';
+
+/**
+ * What a stop of a worker can start in the test's window for the editor to write: the check panel's Check an element
+ * (`assert`) and a region's ARIA snapshot (`assert-region`).
+ */
+export type HubCodeIntent = 'assert' | 'assert-region';
+
+/** What a stop can take from the Runs page: the intents, and Mock a request (`mock`, with the `requests` it lists). */
+export type HubAction = HubIntent | HubCodeIntent | 'mock';
+
+/** The actions that write code at a stop, in the editor. */
+export type HubCodeAction = HubCodeIntent | 'mock';
+
+const HUB_CODE_ACTIONS: readonly string[] = ['assert', 'assert-region', 'mock'];
+
+const HUB_INTENTS: readonly string[] = ['pick', 'record', 'assert', 'assert-region'];
+
+/** The actions this version knows, in the order a worker's `intents` lists them. */
+export const HUB_ACTIONS: readonly HubAction[] = ['pick', 'record', 'assert', 'assert-region', 'mock'];
+
+/**
+ * A response the stopped test's pages received for a fetch or an XHR request, whose text body the worker keeps for
+ * Mock a request: no header, no body.
+ */
+export type HubKeptRequest = KeptRequest;
 
 /** A worker of a run. */
 export interface HubWorker {
@@ -97,8 +137,8 @@ export interface HubWorker {
   stop: HubStop | null;
   /** A Pause reached it and it has not stopped yet. */
   pausing: boolean;
-  /** The intents its reporter takes: none for one that predates them, whose stops Pick and Record are refused at. */
-  intents: HubIntent[];
+  /** The actions its reporter takes: none for one that predates them, whose stops every action is refused at. */
+  intents: HubAction[];
 }
 
 /** A run the editor started, with its workers. */
@@ -139,6 +179,11 @@ export type HubCommand =
   /** Hear every run of the editor: one `session` for each live now, after the answer, then each change. */
   | { type: 'subscribe'; id: number }
   /**
+   * Whether a person watches the runs through this connection now (`on`): a Runs window is open. While one connection
+   * follows them, a failure no pause bar shows is held for it; a connection that never says so, or closes, does not.
+   */
+  | { type: 'follow'; id: number; on: boolean }
+  /**
    * Steer a run, as `piwi/runControl` does: `pause` every running worker (or `worker`), or answer the stop of the one
    * stopped (`worker`, needed when several are): `step`, `resume`, `finish`. `since` names the stop the extension
    * showed, and these three need it: one that went on is refused (`The test went on.`), so a click twice does not skip
@@ -155,12 +200,21 @@ export type HubCommand =
   /** An image of a stopped worker's page, without the pause bar: the answer's `image`. */
   | { type: 'pausedPage'; id: number; ref: string; worker: number }
   /**
-   * At the stop `since` names (of the one stopped worker, or `worker`), start what the pause bar's **Pick a locator**
-   * (`pick`) or **Record here** (`record`) starts, in the test's window: the picked locator goes to the editor in place
-   * of the locator on the stopped line, the recorded steps above that line. Refused at a stop no pause bar shows (a
-   * headless run), and at a stop the test went on from.
+   * At the stop `since` names (of the one stopped worker, or `worker`), start an intent in the test's window: the
+   * picked locator goes to the editor in place of the locator on the stopped line (`pick`), the recorded steps above
+   * that line (`record`), and so does the check the person makes with the check panel (`assert`) or the ARIA snapshot
+   * of the region they pick (`assert-region`), written by the editor, never sent here. Refused at a stop no pause bar
+   * shows (a headless run), at a stop the test went on from, and, for `assert` and `assert-region`, when the editor
+   * cannot write code from a stop.
    */
-  | { type: HubIntent; id: number; ref: string; worker: number | null; since: string };
+  | { type: HubIntent | HubCodeIntent; id: number; ref: string; worker: number | null; since: string }
+  /** The responses the test kept as it stood at the stop `since` names: the answer's `requests`. */
+  | { type: 'requests'; id: number; ref: string; worker: number | null; since: string }
+  /**
+   * At the stop `since` names, Mock a request: the kept response `request` (a `HubKeptRequest`'s `id`) becomes
+   * `await page.route(…)` written by the editor above the stopped line; the code never comes here.
+   */
+  | { type: 'mock'; id: number; ref: string; worker: number | null; since: string; request: number };
 
 /** What `parseHubCommand` reads: a command, or one answered as refused. */
 export type ParsedHubCommand =
@@ -178,6 +232,8 @@ export interface HubAnswer {
   message: string;
   /** For `pausedPage`: the image, null when there is none. */
   image?: HubImage | null;
+  /** For `requests`: the responses the test kept, oldest first; empty when it was refused. */
+  requests?: HubKeptRequest[];
 }
 
 /** Sent once `hello` was accepted: the service the connection reached. */
@@ -196,8 +252,29 @@ export interface HubSessionMessage {
   session: HubSession;
 }
 
+/**
+ * What an action that writes code at a stop came to, sent to every subscribed connection once, whichever surface
+ * started it (the editor or a Runs page): the code was sent to the editor to write (`ok`, its sentence, such as `Piwi
+ * sent the check to Visual Studio Code to write above checkout.spec.ts:5.`, and what to check in it, `warnings`; the
+ * editor, which can still refuse the write, says itself whether it wrote it), or the action was refused once it had
+ * started (`ok: false`, why: the check could not be written, the region picked brought no snapshot). The stop is the
+ * one `since` names, of the worker `worker`; a page shows it while that worker stands there. The code itself never
+ * comes.
+ */
+export interface HubCodeMessage {
+  type: 'code';
+  ref: string;
+  worker: number;
+  since: string;
+  action: HubCodeAction;
+  ok: boolean;
+  message: string;
+  /** At most `MAX_HUB_WARNINGS`; absent for none. */
+  warnings?: string[];
+}
+
 /** What the hub sends. */
-export type HubMessage = HubWelcome | HubAnswer | HubSessionMessage | { type: 'keepalive' };
+export type HubMessage = HubWelcome | HubAnswer | HubSessionMessage | HubCodeMessage | { type: 'keepalive' };
 
 /** A live hub, as the Send to editor endpoint's `GET …/live` lists it. */
 export interface LiveHub extends HubAddress {
@@ -288,7 +365,10 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
   const invalid = (message: string): ParsedHubCommand => ({ type: 'invalid', id, message });
   if (typeof value.type !== 'string' || !value.type) return invalid('A command needs a type.');
   if (value.type === 'subscribe') return { type: 'subscribe', id };
-  if (!['runControl', 'pausedPage', 'pick', 'record'].includes(value.type)) {
+  if (value.type === 'follow') {
+    return typeof value.on === 'boolean' ? { type: 'follow', id, on: value.on } : invalid('on must be true or false.');
+  }
+  if (!['runControl', 'pausedPage', 'requests', 'mock', ...HUB_INTENTS].includes(value.type)) {
     return { type: 'unknown', id, what: value.type.slice(0, 64) };
   }
   if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
@@ -311,8 +391,19 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
     }
     case 'pausedPage':
       return worker === null ? invalid('pausedPage needs the worker.') : { type: 'pausedPage', id, ref, worker };
+    case 'mock': {
+      if (since === null) return invalid(NEEDS_STOP);
+      const { request } = value;
+      return isInt(request, 1)
+        ? { type: 'mock', id, ref, worker, since, request }
+        : invalid('mock needs the response to mock: the id of one of those requests lists.');
+    }
+    case 'requests':
+      return since === null ? invalid(NEEDS_STOP) : { type: 'requests', id, ref, worker, since };
     default:
-      return since === null ? invalid(NEEDS_STOP) : { type: value.type as HubIntent, id, ref, worker, since };
+      return since === null
+        ? invalid(NEEDS_STOP)
+        : { type: value.type as HubIntent | HubCodeIntent, id, ref, worker, since };
   }
 }
 
@@ -325,8 +416,18 @@ function nullableStr(value: unknown, max: number): string | null | undefined {
   return value === null ? null : (str(value, max) ?? undefined);
 }
 
-const STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause'];
+const STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'failure'];
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/** A kept request as an answer lists it, field by field; null when it is not one. */
+function readKeptRequest(value: unknown): HubKeptRequest | null {
+  if (!isObject(value)) return null;
+  const { id, method, url, status, type, size, time } = value;
+  if (!isInt(id, 1) || typeof method !== 'string' || !/^[A-Z]{1,16}$/.test(method)) return null;
+  if (str(url, 8192) === null || !isInt(status, 100, 599) || str(type, 200) === null) return null;
+  if ((size !== null && !isInt(size, 0)) || !isInt(time, 0)) return null;
+  return { id, method, url: url as string, status, type: type as string, size, time };
+}
 
 function readImage(value: unknown): HubImage | null | undefined {
   if (value === null) return null;
@@ -343,6 +444,8 @@ function readStop(value: unknown): HubStop | null | undefined {
   if (typeof reason !== 'string' || str(title, 1000) === null || str(uri, 8192) === null) return undefined;
   if (!isInt(line, 0) || (character !== null && !isInt(character, 0)) || typeof bar !== 'boolean') return undefined;
   if ((locator !== null && str(locator, 1000) === null) || str(since, 64) === null) return undefined;
+  const { error } = value;
+  if (error !== undefined && str(error, MAX_STOP_ERROR) === null) return undefined;
   return {
     reason: STOP_REASONS.includes(reason) ? (reason as HubStopReason) : 'other',
     title: title as string,
@@ -352,7 +455,29 @@ function readStop(value: unknown): HubStop | null | undefined {
     locator: locator as string | null,
     bar,
     since: since as string,
+    ...(error === undefined ? {} : { error: error as string }),
   };
+}
+
+/** What an action that writes code came to, field by field; null when it is not one. */
+function readCode(value: Record<string, unknown>): HubCodeMessage | null {
+  const { ref, worker, since, action, ok, message, warnings } = value;
+  if (typeof ref !== 'string' || !REF.test(ref) || !isInt(worker, 0) || str(since, 64) === null || !since) return null;
+  if (typeof action !== 'string' || !HUB_CODE_ACTIONS.includes(action) || typeof ok !== 'boolean') return null;
+  if (str(message, MAX_HUB_MESSAGE) === null) return null;
+  const code: HubCodeMessage = {
+    type: 'code',
+    ref,
+    worker,
+    since: since as string,
+    action: action as HubCodeAction,
+    ok,
+    message: message as string,
+  };
+  if (warnings === undefined) return code;
+  if (!Array.isArray(warnings) || warnings.length > MAX_HUB_WARNINGS) return null;
+  if (!warnings.every((w) => str(w, MAX_HUB_MESSAGE) !== null)) return null;
+  return { ...code, warnings: warnings as string[] };
 }
 
 function readTest(value: unknown): HubTest | null | undefined {
@@ -384,7 +509,7 @@ function readWorker(value: unknown): HubWorker | null {
   const stop = readStop(value.stop);
   if (test === undefined || stop === undefined) return null;
   const intents = Array.isArray(value.intents)
-    ? (['pick', 'record'] as const).filter((intent) => (value.intents as unknown[]).includes(intent))
+    ? HUB_ACTIONS.filter((action) => (value.intents as unknown[]).includes(action))
     : [];
   return { worker, parallelIndex, state, test, stop, pausing, intents };
 }
@@ -427,8 +552,14 @@ export function parseHubMessage(text: string): HubMessage | null {
     }
     case 'answer': {
       const { id, ok, message } = value;
-      if (!isInt(id, 1) || typeof ok !== 'boolean' || str(message, 1000) === null) return null;
+      if (!isInt(id, 1) || typeof ok !== 'boolean' || str(message, MAX_HUB_MESSAGE) === null) return null;
       const answer: HubAnswer = { type: 'answer', id, ok, message: message as string };
+      if (value.requests !== undefined) {
+        if (!Array.isArray(value.requests) || value.requests.length > 50) return null;
+        const requests = value.requests.map(readKeptRequest);
+        if (!requests.every((r): r is HubKeptRequest => r !== null)) return null;
+        answer.requests = requests;
+      }
       if (value.image === undefined) return answer;
       const image = readImage(value.image);
       return image === undefined ? null : { ...answer, image };
@@ -437,6 +568,8 @@ export function parseHubMessage(text: string): HubMessage | null {
       const session = readSession(value.session);
       return session ? { type: 'session', session } : null;
     }
+    case 'code':
+      return readCode(value);
     case 'keepalive':
       return { type: 'keepalive' };
     default:

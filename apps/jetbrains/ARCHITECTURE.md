@@ -28,6 +28,7 @@ does with it. It is reference material: open the section for the area you change
   - [Running the test at the caret](#running-the-test-at-the-caret)
   - [Breakpoints](#breakpoints)
   - [Run control](#run-control)
+  - [Code from a stop](#code-from-a-stop)
 - [Finding Playwright configs](#finding-playwright-configs)
   - [First-run notification](#first-run-notification)
 - [Recording](#recording)
@@ -408,7 +409,7 @@ A stop in a file the VFS has not loaded is looked for on disk off the event thre
 (`refreshAndFindFileByNioFile`); its Paused Page shows meanwhile.
 
 **Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when
-first heard). `Glue.EditLog` keeps the edits that move lines while a run is live or starting (a `DocumentListener` on
+first heard, a rerun under the ref of a run that ended included). `Glue.EditLog` keeps the edits that move lines while a run is live or starting (a `DocumentListener` on
 the multicaster, `Glue.lineEdit`). They bring a stop to the line it stands on now (the mark, an inlay drawn later, the
 caret's match, `Glue.stopsFor`), and the caret's line back to the run's for Run to Caret, which is refused on a line
 written since.
@@ -444,7 +445,46 @@ keeps its line while it only moved with the edits (`XLineBreakpointImpl.updatePo
 one added or dragged is mapped back through them. They go only to a run whose places differ from those its command
 started with or was last sent (`Glue.breakpointUpdates`, `PiwiCommands.startRun` recording the first).
 
+**A held failure** (`reason: 'failure'`, `Glue.isFailure`) is `Failed · <how it failed> · attempt N`, with
+`AllIcons.RunConfigurations.TestError` in the gutter, **Resume** alone among its controls (`Glue.stopControls`), and
+`Piwi: failed · checkout.spec.ts:12` in the status bar.
+
 The run control's calls of the service go through `RunRemote`, which `PiwiRunControlTest` replaces.
+
+### Code from a stop
+
+What the service does: [Code from a stop](../../packages/editor/ARCHITECTURE.md#code-from-a-stop) in the editor
+service's reference.
+
+**The actions.** A stop also offers the code actions its worker takes (`RunWorker.takes`, `Glue.stopActions`): after
+the controls in its inlay, its gutter popup and the status bar item's menu, and under **Tools → Piwi** while some stop
+offers them (`StopCodeAction`: `Piwi.PickAtStop`, `Piwi.RecordAtStop`, `Piwi.AssertAtStop`, `Piwi.AssertRegionAtStop`,
+`Piwi.MockAtStop`, no shortcut). They are **Pick a Locator**, **Record Here**, **Assert** and **Assert a Region** at a
+stop the pause bar shows, **Mock a Request** at any; the inlay names them shorter (`StopLink.inlayLabel`). Each is a
+`piwi/stopAction` on a pooled thread naming its stop, its answer a balloon. Mock a Request lists `piwi/stopRequests`
+in a popup, the latest first, filtered by URL as you type (`setNamerForFiltering`; `RequestRenderer`: the method and
+URL, then the status, type, size or `no size`, and when it finished: `Glue.requestDetails`).
+
+**The code a stop makes**, from here or Piwi Picker (`piwi/stopCode`, `PiwiLsp4jClient.stopCode`; the initialization
+options say the plugin writes it, `stopCode`), is written in one `WriteCommandAction` on the file's `Document`
+(`PiwiRunSessions.write`, `Glue.stopCodeWrites`: the edits as offsets, the last in the file first), in an editor, so
+the platform sends the service the change:
+
+- a file no editor shows is opened first, and written once the platform told the service it opened it (`whenOpened`:
+  its `LspServer.getDocumentVersion` known, asked every 50 ms by an `Alarm` on the event thread, three seconds at
+  most);
+- it is written only into the version the service placed it in (`LspServer.getDocumentVersion`, else the file as
+  saved), else a warning balloon offers **Copy the Code**.
+
+The block is scrolled to without taking the focus, and its sentence is a balloon, a warning with what its reader should
+check (`Glue.stopCodeNotice`).
+
+**The count at the caret.** While a stopped worker counts locators, a `CaretListener` on the multicaster has the end of
+the caret's line in the stopped file say how many elements the locator there matches on the stopped page
+(`piwi/locatorAtCaret`, an after-line-end inlay, `CaretCountInlay`): asked 200 ms after the caret settles (an
+`Alarm`), one request at a time, an answer the caret left dropped, asked again when the caret comes back
+(`Glue.CaretAsks`); `3 matches`, `no match`, a refusal for three seconds, nothing on a line holding no locator
+(`Glue.caretText`). The caret leaving the file takes the page's outline down.
 
 ## Finding Playwright configs
 
@@ -796,9 +836,12 @@ Moving to another JDK changes both: `./gradlew updateDaemonJvm --jvm-version=<n>
 
 The platform test `testTheBundledServiceAnswersThroughTheDescriptor` (`PiwiPluginTest`) starts the bundled service with
 the descriptor's command line against a stub instance, and reads its answers with the Kotlin protocol classes, a run's
-session and controls with a fake worker on the run channel among them.
+session and controls with a fake worker on the run channel among them, and the code from a stop (`piwi/stopRequests`,
+`piwi/stopAction`, the `piwi/stopCode` it sends, `piwi/locatorAtCaret`).
 
 `PiwiRunControlTest` drives the run controls with the sessions the service would send: the execution point, the inlay,
 the actions, the edits above a stop and Run to Caret from them, the paused page of a file the VFS has not loaded, the
 breakpoint listener (a breakpoint moved as the platform moves one outside tests, which a unit test does not), the
-promoter and the runs of the IDE's Playwright runner.
+promoter, the runs of the IDE's Playwright runner (a rerun under an ended ref included), the code actions, a failure's
+stop, the code a stop made written in one command (one undo, once the service knows the document) and the count at
+the caret.

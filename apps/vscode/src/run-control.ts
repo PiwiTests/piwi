@@ -1,17 +1,25 @@
 /**
  * The runs the editor started, as the extension shows and steers them, with no VS Code API, so it is tested without
  * an editor: the sessions kept from `piwi/runSessionChanged` (the latest of each ref, one that ended dropped), where
- * each stopped worker stands, what the controls offer in each state, the line shown above a stop, the stop a control
- * acts on, the breakpoints sent to each run as they change, the page a stop shows as an image, and the edits of the
- * documents since a run started, which map a line of the run's code to the document as it stands and back.
+ * each stopped worker stands, what the controls and the code actions offer in each state, the line shown above a
+ * stop, the stop a control acts on, the breakpoints sent to each run as they change, the page a stop shows as an
+ * image, the responses Mock a request lists, the count of the locator at the cursor, the code a stop sends to write,
+ * and the edits of the documents since a run started, which map a line of the run's code to the document as it stands
+ * and back.
  */
 import type {
   EditorBreakpoint,
+  LocatorAtCaretParams,
+  LocatorAtCaretResult,
   PausedImage,
   RunSession,
   RunStop,
+  RunTake,
   RunTest,
   SetRunBreakpointsParams,
+  StopActionKind,
+  StopCode,
+  StopRequest,
 } from '@piwitests/editor/protocol';
 
 /**
@@ -53,6 +61,24 @@ export function lineEditOf(change: TextChange, lineAfter?: (line: number) => str
     first: !!lineAfter?.(start.line)?.slice(0, start.character).trim(),
     last: !!lineAfter?.(newEnd)?.slice(after).trim(),
   };
+}
+
+/**
+ * Of an event's changes, all placed in the text before it, how many lines those wholly above `change` add (fewer
+ * than none for lines removed): a line of the document after `change` alone stands that many lines lower once the
+ * event applied. Null when another change shares one of its lines, which leaves the text around it unclear.
+ */
+export function linesAbove(change: TextChange, changes: readonly TextChange[]): number | null {
+  let shift = 0;
+  for (const other of changes) {
+    if (other === change) continue;
+    if (other.range.end.line < change.range.start.line) {
+      shift += other.text.split(/\r\n|\r|\n/).length - 1 - (other.range.end.line - other.range.start.line);
+    } else if (other.range.start.line <= change.range.end.line) {
+      return null;
+    }
+  }
+  return shift;
 }
 
 function forwardLine(edit: LineEdit, line: number): number {
@@ -119,6 +145,24 @@ export class EditLog {
 /** The sessions kept, by ref: the latest of each run that has not ended. */
 export type Sessions = ReadonlyMap<string, RunSession>;
 
+/**
+ * A session heard, with what the runs were given (`runs`, by ref): the sessions kept with it (`withSession`), and
+ * whether it is new to them (`fresh`). A run new to them that was not started here, or a rerun of a command under the
+ * ref of a run that ended (VS Code's **Tasks: Rerun Last Task**), maps its lines from `now`, the edits since its start;
+ * a run that ended is forgotten.
+ */
+export function heardSession(
+  sessions: Sessions,
+  runs: Map<string, RunBreakpoints>,
+  session: RunSession,
+  now: number,
+): { sessions: Map<string, RunSession>; fresh: boolean } {
+  const fresh = !session.ended && !sessions.has(session.ref);
+  if (fresh && !runs.has(session.ref)) remember(runs, session.ref, runStarted(now, null));
+  if (session.ended) runs.delete(session.ref);
+  return { sessions: withSession(sessions, session), fresh };
+}
+
 /** `sessions` with the session heard: the latest of its ref kept, one that ended dropped. */
 export function withSession(sessions: Sessions, session: RunSession): Map<string, RunSession> {
   const next = new Map(sessions);
@@ -139,18 +183,21 @@ export function spelledSession(session: RunSession, spell: (uri: string) => stri
   };
 }
 
-/** A worker stopped: its run, the worker, where it stands and the test it runs. */
+/** A worker stopped: its run, the worker, where it stands, the test it runs and what its reporter takes there. */
 export interface ShownStop {
   ref: string;
   worker: number;
   stop: RunStop;
   test: RunTest | null;
+  takes: readonly RunTake[];
 }
 
 /** Every stopped worker of the sessions, in their order. */
 export function stopsOf(sessions: Sessions): ShownStop[] {
   return [...sessions.values()].flatMap((s) =>
-    s.workers.flatMap((w) => (w.stop ? [{ ref: s.ref, worker: w.worker, stop: w.stop, test: w.test }] : [])),
+    s.workers.flatMap((w) =>
+      w.stop ? [{ ref: s.ref, worker: w.worker, stop: w.stop, test: w.test, takes: w.takes ?? [] }] : [],
+    ),
   );
 }
 
@@ -160,12 +207,134 @@ export function stopKey(stop: ShownStop): string {
 }
 
 /**
- * The line above a stop: what is about to run, `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`, in
- * plain text. The lens and the choice among several draw `$(debug-pause)` before it.
+ * The line above a stop: what is about to run, `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`, or,
+ * at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in plain
+ * text. The lens and the choice among several draw the stop's icon before it (`stopIcon`).
  */
 export function pausedText(stop: RunStop, test: RunTest | null): string {
   const attempt = test && test.retry > 0 ? ` · attempt ${test.retry + 1}` : '';
+  if (stop.reason === 'failure') return `Failed · ${stop.title.replace(/^Failed:\s*/, '')}${attempt}`;
   return `Paused · ${stop.title}${attempt}`;
+}
+
+/** The icon before a stop's line: a failure's, else the pause's. */
+export function stopIcon(stop: RunStop): string {
+  return stop.reason === 'failure' ? '$(error)' : '$(debug-pause)';
+}
+
+/** The commands of the run controls and of the code actions at a stop, as `package.json` contributes them. */
+export const RUN_COMMANDS = {
+  pause: 'piwi.pauseRun',
+  stop: 'piwi.stopRun',
+  resume: 'piwi.resumeRun',
+  step: 'piwi.stepRun',
+  runTo: 'piwi.runToCursor',
+  finish: 'piwi.finishRun',
+  showPage: 'piwi.showPausedPage',
+  pick: 'piwi.pickAtStop',
+  record: 'piwi.recordAtStop',
+  assert: 'piwi.assertAtStop',
+  assertRegion: 'piwi.assertRegionAtStop',
+  mock: 'piwi.mockAtStop',
+  code: 'piwi.codeAtStop',
+} as const;
+
+/** A control or a code action offered at a stop: its title above the stopped line, and its command. */
+export interface StopControl {
+  title: string;
+  command: string;
+}
+
+/**
+ * The controls offered at a stop, as its lens and its hover name them: Resume, Step, Run to cursor and Finish; at a
+ * failure, Resume alone, which lets the test end as it failed (Step and Finish do the same).
+ */
+export function stopControls(stop: RunStop): StopControl[] {
+  const resume = { title: 'Resume', command: RUN_COMMANDS.resume };
+  if (stop.reason === 'failure') return [resume];
+  return [
+    resume,
+    { title: 'Step', command: RUN_COMMANDS.step },
+    { title: 'Run to cursor', command: RUN_COMMANDS.runTo },
+    { title: 'Finish', command: RUN_COMMANDS.finish },
+  ];
+}
+
+/**
+ * A code action at a stop: what it starts (`piwi/stopAction`), its title, the shorter one of the lens above the stopped
+ * line, which shares its row with the line's own lenses, its command and its context key.
+ */
+export interface StopAction extends StopControl {
+  action: StopActionKind;
+  lens: string;
+  /** The context key set while a stop offers it, which its palette entry follows. */
+  key: string;
+  /** The words of the choice among the actions. */
+  detail: string;
+}
+
+/**
+ * The code actions, in the order a stop offers them: the pause bar's Pick a locator and Record here, and Assert and
+ * Assert a region, in the test's window, so at a stop the bar shows; Mock a request at any stop. Each is offered only
+ * when the stopped worker's reporter takes it (`RunWorker.takes`).
+ */
+export const STOP_ACTIONS: readonly StopAction[] = [
+  {
+    action: 'pick',
+    lens: 'Pick',
+    title: 'Pick a locator',
+    command: RUN_COMMANDS.pick,
+    key: 'piwi.runCanPick',
+    detail: "Pick an element in the test's window: its locator replaces the one on the stopped line",
+  },
+  {
+    action: 'record',
+    lens: 'Record',
+    title: 'Record here',
+    command: RUN_COMMANDS.record,
+    key: 'piwi.runCanRecord',
+    detail: "Record what you do in the test's window above the stopped line",
+  },
+  {
+    action: 'assert',
+    lens: 'Assert',
+    title: 'Assert',
+    command: RUN_COMMANDS.assert,
+    key: 'piwi.runCanAssert',
+    detail: "Check an element in the test's window: the expect() goes above the stopped line",
+  },
+  {
+    action: 'assert-region',
+    lens: 'Assert region',
+    title: 'Assert a region',
+    command: RUN_COMMANDS.assertRegion,
+    key: 'piwi.runCanAssertRegion',
+    detail: "Pick a region in the test's window: its ARIA snapshot goes above the stopped line",
+  },
+  {
+    action: 'mock',
+    lens: 'Mock',
+    title: 'Mock a request',
+    command: RUN_COMMANDS.mock,
+    key: 'piwi.runCanMock',
+    detail: 'Answer a request the test made as the server did: page.route() goes above the stopped line',
+  },
+];
+
+/** What a reporter must take for each code action. */
+const ACTION_TAKES: Record<StopActionKind, readonly RunTake[]> = {
+  pick: ['pick'],
+  record: ['record'],
+  assert: ['assert'],
+  'assert-region': ['assert-region'],
+  mock: ['requests', 'mock'],
+};
+
+/** The code actions a stop offers: those its reporter takes, the ones in the test's window only where the bar shows. */
+export function stopActions(stop: ShownStop): StopAction[] {
+  return STOP_ACTIONS.filter(
+    (a) => (a.action === 'mock' || stop.stop.bar) && ACTION_TAKES[a.action].every((t) => stop.takes.includes(t)),
+  );
 }
 
 /** What the controls offer: Stop while a run is live, Pause while a worker runs, the others while one is stopped. */
@@ -178,28 +347,21 @@ export interface ControlState {
   pausing: boolean;
   /** A worker is stopped: Resume, Step, Run to cursor, Finish. */
   stopped: boolean;
+  /** The code actions a stop offers, any stop. */
+  actions: StopActionKind[];
 }
 
 export function controlState(sessions: Sessions): ControlState {
   const workers = [...sessions.values()].flatMap((s) => s.workers);
+  const offered = new Set(stopsOf(sessions).flatMap((s) => stopActions(s).map((a) => a.action)));
   return {
     active: sessions.size > 0,
     pausable: workers.some((w) => w.state !== 'stopped' && !w.pausing && !w.test?.cannotPause),
     pausing: workers.some((w) => w.pausing),
     stopped: workers.some((w) => w.state === 'stopped'),
+    actions: STOP_ACTIONS.filter((a) => offered.has(a.action)).map((a) => a.action),
   };
 }
-
-/** The commands of the run controls, as `package.json` contributes them. */
-export const RUN_COMMANDS = {
-  pause: 'piwi.pauseRun',
-  stop: 'piwi.stopRun',
-  resume: 'piwi.resumeRun',
-  step: 'piwi.stepRun',
-  runTo: 'piwi.runToCursor',
-  finish: 'piwi.finishRun',
-  showPage: 'piwi.showPausedPage',
-} as const;
 
 /** A status bar item of the run controls: its icon, its tooltip with its key, and its command (none while pausing). */
 export interface ControlItem {
@@ -209,13 +371,15 @@ export interface ControlItem {
 }
 
 /**
- * The status bar items beside the run's progress: Resume, Step and Finish while a worker is stopped, else Pause, or
- * `Pausing…` once asked; and Stop while a run is live. None without one.
+ * The status bar items beside the run's progress: Resume, Step and Finish while a worker is stopped, with the code
+ * actions' menu while a stop offers one, else Pause, or `Pausing…` once asked; and Stop while a run is live. None
+ * without one.
  */
 export function controlItems(state: ControlState): ControlItem[] {
   if (!state.active) return [];
   const stop = { text: '$(debug-stop)', tooltip: 'Piwi: Stop the run (Shift+F5)', command: RUN_COMMANDS.stop };
   if (state.stopped) {
+    const titles = STOP_ACTIONS.filter((a) => state.actions.includes(a.action)).map((a) => a.title);
     return [
       { text: '$(debug-continue)', tooltip: 'Piwi: Resume (F5)', command: RUN_COMMANDS.resume },
       { text: '$(debug-step-over)', tooltip: 'Piwi: Step to the next call (F10)', command: RUN_COMMANDS.step },
@@ -224,6 +388,15 @@ export function controlItems(state: ControlState): ControlItem[] {
         tooltip: 'Piwi: Finish the test without stopping again (Shift+F11)',
         command: RUN_COMMANDS.finish,
       },
+      ...(titles.length
+        ? [
+            {
+              text: '$(code)',
+              tooltip: `Piwi: Write code at the stop: ${titles.join(', ')}`,
+              command: RUN_COMMANDS.code,
+            },
+          ]
+        : []),
       stop,
     ];
   }
@@ -284,9 +457,170 @@ export function stopPick(stop: ShownStop): { label: string; description: string 
   const file = stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1);
   const test = stop.test ? `${stop.test.title.join(' › ')} · ` : '';
   return {
-    label: `$(debug-pause) ${pausedText(stop.stop, stop.test)}`,
+    label: `${stopIcon(stop.stop)} ${pausedText(stop.stop, stop.test)}`,
     description: `${test}${decodeURIComponent(file)}:${stop.stop.line + 1} · worker ${stop.worker}`,
   };
+}
+
+/** A body's size as the list of responses names it: `no size` when the response did not say it. */
+export function sizeText(size: number | null): string {
+  if (size === null) return 'no size';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** When a response finished, after the test began: `840 ms`, `12.4 s`. */
+export function timeText(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
+}
+
+/**
+ * The responses Mock a request offers, the latest first: each by its method and URL, which the list filters on, then
+ * its status, type, size and when it finished in the test.
+ */
+export function requestPicks(
+  requests: readonly StopRequest[],
+): Array<{ label: string; description: string; id: number }> {
+  return [...requests].reverse().map((r) => ({
+    label: `${r.method} ${r.url}`,
+    description: [r.status, r.type || 'no type', sizeText(r.size), `at ${timeText(r.time)}`].join(' · '),
+    id: r.id,
+  }));
+}
+
+/**
+ * What the end of the cursor's line says of the locator there, counted on the stopped page: `3 matches`, `1 match`,
+ * `no match`, why it was not counted; null for a line holding no locator Piwi reads.
+ */
+export function caretText(answer: LocatorAtCaretResult): string | null {
+  if (answer.locator === null) return null;
+  if (!answer.ok || answer.count === null) return answer.message;
+  return answer.count === 0 ? 'no match' : answer.count === 1 ? '1 match' : `${answer.count} matches`;
+}
+
+/** What the count at the cursor asks: a stop, and the cursor's line in its file; a null `uri` takes the outline down. */
+export type CaretQuery = LocatorAtCaretParams & { worker: number };
+
+/** What the count shows: the line it is at the end of and its words, or nothing. */
+export interface CaretShown {
+  uri: string;
+  line: number;
+  text: string;
+  /** A refusal goes after a moment; a count stays while the cursor does. */
+  brief: boolean;
+}
+
+/** How long the count waits for the cursor to settle, and how long a refusal shows. */
+export const CARET_WAIT_MS = 200;
+export const CARET_REFUSAL_MS = 3_000;
+
+interface Timers {
+  setTimeout(fn: () => void, ms: number): unknown;
+  clearTimeout(timer: unknown): void;
+}
+
+/**
+ * The count of the locator at the cursor while a test is stopped: asked `CARET_WAIT_MS` after the cursor settles on a
+ * line of the stopped file (`moved`, with `key` telling the line apart from another, its text included, so an edit of
+ * the line asks again), one request at a time, a query asked once while the cursor stays on it and again when it comes
+ * back; an answer to a query the cursor has left since is dropped, and the latest query asked once it comes. A refusal
+ * shows for `CARET_REFUSAL_MS`. `moved(null)` (no stop, or the stop ended) clears it at once and asks nothing; a query
+ * with a null `uri` (the cursor left the stopped file) clears it and asks too, which takes the page's outline down.
+ */
+export class CaretCounts {
+  private wanted: { query: CaretQuery; key: string } | null = null;
+  private asked: string | null = null;
+  private flying: string | null = null;
+  private wait: unknown = null;
+  private fade: unknown = null;
+
+  constructor(
+    private readonly ask: (query: CaretQuery) => Promise<LocatorAtCaretResult | null>,
+    private readonly show: (shown: CaretShown | null) => void,
+    private readonly timers: Timers = { setTimeout, clearTimeout },
+  ) {}
+
+  /** The cursor moved: `query` for where it stands now, `key` naming it; null for no stop. */
+  moved(query: CaretQuery | null, key = ''): void {
+    const full = query && `${query.ref}\0${query.worker}\0${query.since}\0${query.uri}\0${query.line}\0${key}`;
+    if (full === this.wantedKey()) return;
+    this.wanted = query && full ? { query, key: full } : null;
+    // The cursor left the query asked last: coming back to it asks it again, its count being gone.
+    this.asked = null;
+    this.timers.clearTimeout(this.wait);
+    this.wait = null;
+    this.clear();
+    if (!query) return;
+    this.wait = this.timers.setTimeout(() => {
+      this.wait = null;
+      this.next();
+    }, CARET_WAIT_MS);
+  }
+
+  dispose(): void {
+    this.timers.clearTimeout(this.wait);
+    this.timers.clearTimeout(this.fade);
+    this.wanted = null;
+  }
+
+  private wantedKey(): string | null {
+    return this.wanted?.key ?? null;
+  }
+
+  private clear(): void {
+    this.timers.clearTimeout(this.fade);
+    this.fade = null;
+    this.show(null);
+  }
+
+  /** Ask the query wanted now, unless a request is on its way or it was just asked. */
+  private next(): void {
+    const wanted = this.wanted;
+    if (!wanted || this.flying || this.asked === wanted.key) return;
+    this.flying = wanted.key;
+    this.asked = wanted.key;
+    void this.ask(wanted.query)
+      .catch(() => null)
+      .then((answer) => {
+        this.flying = null;
+        // The cursor moved on: the answer is dropped, and the query it stands at now asked once it settled.
+        if (this.wantedKey() !== wanted.key) return this.wait ? undefined : this.next();
+        const text = answer ? caretText(answer) : null;
+        const { uri, line } = wanted.query;
+        if (!text || uri === null || line === null) return;
+        const brief = !answer!.ok || answer!.count === null;
+        this.show({ uri, line, text, brief });
+        if (brief) {
+          this.fade = this.timers.setTimeout(() => {
+            this.fade = null;
+            if (this.wantedKey() === wanted.key) this.show(null);
+          }, CARET_REFUSAL_MS);
+        }
+      });
+  }
+}
+
+/**
+ * The lines the block a stop's code writes stands on once its edits are made: its first line (`StopCode.line`, moved
+ * down by the import lines written above it) and its last.
+ */
+export function writtenLines(code: StopCode): { start: number; end: number } {
+  const lines = (text: string) => text.split('\n').length - 1;
+  const above = code.edits
+    .filter((e) => e.range.start.line < code.line)
+    .reduce((sum, e) => sum + lines(e.newText) - (e.range.end.line - e.range.start.line), 0);
+  const start = code.line + above;
+  return { start, end: start + Math.max(0, lines(`${code.code}\n`) - 1) };
+}
+
+/**
+ * What a stop's code says once written: its sentence, which names Piwi, and as a warning, with what its reader should
+ * check.
+ */
+export function stopCodeNotice(code: StopCode): { severity: 'information' | 'warning'; text: string } {
+  const warnings = code.warnings.filter((w) => w.trim());
+  return { severity: warnings.length ? 'warning' : 'information', text: [code.message, ...warnings].join(' ') };
 }
 
 /** The runs whose breakpoints the extension remembers, at most: those it started and those it heard of. */

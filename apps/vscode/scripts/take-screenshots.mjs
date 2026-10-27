@@ -94,6 +94,37 @@ const APPLY_STOP = {
   bar: false,
 };
 
+/** The fetch and XHR answers the coupon test kept, which Mock a request lists. */
+const KEPT_RESPONSES = [
+  {
+    id: 1,
+    method: 'GET',
+    url: 'http://localhost:4200/api/cart',
+    status: 200,
+    type: 'application/json',
+    size: 412,
+    time: 1180,
+  },
+  {
+    id: 2,
+    method: 'POST',
+    url: 'http://localhost:4200/api/cart/items',
+    status: 201,
+    type: 'application/json',
+    size: 96,
+    time: 2410,
+  },
+  {
+    id: 3,
+    method: 'GET',
+    url: 'http://localhost:4200/api/shipping?country=FR',
+    status: 200,
+    type: 'application/json',
+    size: null,
+    time: 3050,
+  },
+];
+
 /**
  * The run the run scenes share, started by the first of them: the coupon test's, from **Run the test at the cursor** in
  * the spec, its worker played on the run channel, and the stop the last scene left it at.
@@ -124,6 +155,9 @@ async function startCouponRun(page, workspace) {
     cannotPause: null,
   });
   await page.locator('.statusbar-item .codicon-debug-pause').first().waitFor({ timeout: 30_000 });
+  // The locator at the cursor matches one element on the paused page, and the test kept three answers to mock.
+  worker.answers.locator = { ok: true, message: '1 element matches.', count: 1 };
+  worker.answers.requests = { ok: true, message: 'The test kept 3 responses.', requests: KEPT_RESPONSES };
   couponRun = { worker, stop: 0, at: null };
   return couponRun;
 }
@@ -303,6 +337,35 @@ const SCENES = {
     await shoot(page, 'run-control-hover');
     await page.mouse.move(10, 400);
     fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
+  },
+
+  /**
+   * Code from the paused line: the code actions above it, how many elements its locator matches at its end, and the
+   * responses Mock a request lists.
+   */
+  async 'run-control-code'(page, workspace) {
+    await stopAt(page, workspace, FILL_STOP);
+    // The editor across the window, wide enough for the paused line's lens.
+    await showPanel(page, false);
+    await command(page, 'View: Close Primary Side Bar');
+    await noNotifications(page);
+    await page.mouse.move(10, 400);
+    // The count of the paused line's locator, drawn after the line's end.
+    await couponRun.worker.waitFor((m) => m.type === 'request' && m.what === 'locator', 'the count asked');
+    const from = couponRun.worker.heard.length;
+    await page
+      .locator('.codelens-decoration a', { hasText: /^Mock$/ })
+      .first()
+      .click();
+    await couponRun.worker.waitFor((m) => m.type === 'request' && m.what === 'requests', 'the responses asked', from);
+    await page
+      .locator('.quick-input-widget .monaco-list-row', { hasText: '/api/shipping' })
+      .first()
+      .waitFor({ timeout: 30_000 });
+    await settle(page, 800);
+    await shoot(page, 'run-control-code');
+    await page.keyboard.press('Escape');
+    await command(page, 'View: Toggle Primary Side Bar Visibility');
   },
 
   /** A headless run's stop: the page as the test left it, beside the line it stopped at. */

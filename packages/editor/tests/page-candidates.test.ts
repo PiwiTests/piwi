@@ -677,15 +677,15 @@ describe('placementBefore', () => {
   ].join('\n');
 
   test('goes above the statement a test is paused before, as indented', () => {
-    expect(placementBefore(text, 1)).toEqual({ line: 1, newLine: true, indent: '  ' });
-    expect(placementBefore(text, 8)).toEqual({ line: 8, newLine: true, indent: '  ' });
+    expect(placementBefore(text, 1)).toEqual({ line: 1, newLine: true, indent: '  ', context: 'test' });
+    expect(placementBefore(text, 8)).toEqual({ line: 8, newLine: true, indent: '  ', context: 'test' });
   });
 
   test('goes above the first line of a statement broken over lines', () => {
     // The click of a chain broken over lines, paused at its call.
-    expect(placementBefore(text, 4)).toEqual({ line: 2, newLine: true, indent: '  ' });
+    expect(placementBefore(text, 4)).toEqual({ line: 2, newLine: true, indent: '  ', context: 'test' });
     // A line inside the brackets of a multi-line `expect(`.
-    expect(placementBefore(text, 6)).toEqual({ line: 5, newLine: true, indent: '  ' });
+    expect(placementBefore(text, 6)).toEqual({ line: 5, newLine: true, indent: '  ', context: 'test' });
   });
 
   test('goes above an assignment or an expression broken after an operator, not above the statement before', () => {
@@ -702,9 +702,120 @@ describe('placementBefore', () => {
       "  await page.getByText('Paid').waitFor();",
       '});',
     ].join('\n');
-    expect(placementBefore(broken, 3)).toEqual({ line: 2, newLine: true, indent: '  ' });
-    expect(placementBefore(broken, 5)).toEqual({ line: 4, newLine: true, indent: '  ' });
-    expect(placementBefore(broken, 7)).toEqual({ line: 7, newLine: true, indent: '  ' });
-    expect(placementBefore(broken, 9)).toEqual({ line: 9, newLine: true, indent: '  ' });
+    expect(placementBefore(broken, 3)).toEqual({ line: 2, newLine: true, indent: '  ', context: 'test' });
+    expect(placementBefore(broken, 5)).toEqual({ line: 4, newLine: true, indent: '  ', context: 'test' });
+    expect(placementBefore(broken, 7)).toEqual({ line: 7, newLine: true, indent: '  ', context: 'test' });
+    expect(placementBefore(broken, 9)).toEqual({ line: 9, newLine: true, indent: '  ', context: 'test' });
+  });
+
+  test('says where the line it goes on starts: a test’s body, or the declaration of a test or a method', () => {
+    const files = [
+      "test('pays', async ({ page }) => {",
+      "  await page.goto('/cart');",
+      '});',
+      'class Cart {',
+      '  async pay() {',
+      "    await this.page.getByRole('button').click();",
+      '  }',
+      '}',
+    ].join('\n');
+    expect(placementBefore(files, 1)).toMatchObject({ line: 1, context: 'test' });
+    // A stop line shifted onto a declaration's line puts the block outside the body: callers refuse it.
+    expect(placementBefore(files, 0)).toMatchObject({ line: 0, context: 'file' });
+    expect(placementBefore(files, 4)).toMatchObject({ line: 4, context: 'class' });
+    expect(placementBefore(files, 5)).toMatchObject({ line: 5, context: 'function' });
+  });
+
+  test('refuses the body of an if, else, for, while or do without braces, where the block would become that body', () => {
+    const braceless = [
+      "test('pays', async ({ page }) => {",
+      '  if (ready)',
+      "    await page.getByRole('button').click();",
+      '  else',
+      "    await page.getByText('Wait').waitFor();",
+      '  for (const row of rows)',
+      '    await row.click();',
+      "  while (await page.getByText('More').isVisible())",
+      "    await page.getByText('More').click();",
+      '  do',
+      '    await page.reload();',
+      '  while (false);',
+      '  if (ready) {',
+      "    await page.getByRole('link').click();",
+      '  }',
+      '});',
+    ].join('\n');
+    const refusal = (line: number, keyword: string) => ({
+      refusal: `The statement on line ${line} is the body of an \`${keyword}\` without braces: put it in braces to write code above it.`,
+    });
+    expect(placementBefore(braceless, 2)).toEqual(refusal(3, 'if'));
+    expect(placementBefore(braceless, 4)).toEqual(refusal(5, 'else'));
+    expect(placementBefore(braceless, 6)).toEqual(refusal(7, 'for'));
+    expect(placementBefore(braceless, 8)).toEqual(refusal(9, 'while'));
+    expect(placementBefore(braceless, 10)).toEqual(refusal(11, 'do'));
+    // In braces, and the `if` itself, the block goes as usual.
+    expect(placementBefore(braceless, 13)).toMatchObject({ line: 13, context: 'test' });
+    expect(placementBefore(braceless, 1)).toMatchObject({ line: 1, context: 'test' });
+  });
+
+  test('refuses a call in the expression body of an arrow function, which runs when the arrow is called', () => {
+    const arrows = [
+      "test('pays', async ({ page }) => {",
+      "  const go = async () => await page.click('a');",
+      "  await test.step('pay', async () =>",
+      "    page.click('b'));",
+      "  await page.goto('/')",
+      "    .then(() => page.click('c'));",
+      "  await page.route('**/api', (route) => route.fulfill({ json: {} }));",
+      '  const ids = rows.map((row) => row.id); await page.click(ids[0]);',
+      '  await go();',
+      '});',
+    ].join('\n');
+    const refusal = (line: number) => ({
+      refusal: `The call on line ${line} is the body of an arrow function without braces, which runs when the arrow is called: put that body in braces to write code above it.`,
+    });
+    // The click inside `go`, at its column, and without one.
+    expect(placementBefore(arrows, 1, 36)).toEqual(refusal(2));
+    expect(placementBefore(arrows, 3)).toEqual(refusal(4));
+    expect(placementBefore(arrows, 5, 21)).toEqual(refusal(6));
+    // The call the arrow is handed to, before its `=>`, and a call after the arrow's body ended, go above as usual.
+    expect(placementBefore(arrows, 6, 13)).toMatchObject({ line: 6, context: 'test' });
+    expect(placementBefore(arrows, 7, 52)).toMatchObject({ line: 7, context: 'test' });
+    // Without a column, a line that starts outside any arrow's body, and the call of the arrow itself.
+    expect(placementBefore(arrows, 1)).toMatchObject({ line: 1, context: 'test' });
+    expect(placementBefore(arrows, 8)).toMatchObject({ line: 8, context: 'test' });
+  });
+
+  test('refuses a line where no statement starts: a closing bracket, a blank line, a comment', () => {
+    const lines = ["test('pays', async ({ page }) => {", "  await page.goto('/cart');", '', '  // done', '});'].join(
+      '\n',
+    );
+    for (const line of [2, 3, 4]) {
+      expect(placementBefore(lines, line)).toEqual({
+        refusal: `Line ${line + 1} holds no statement to write code above: the file may have changed since the test stopped there.`,
+      });
+    }
+  });
+
+  test('goes above a ternary broken over lines, at the line that starts it', () => {
+    const ternary = [
+      "test('pays', async ({ page }) => {",
+      '  const label = ready',
+      "    ? await page.getByRole('button').textContent()",
+      "    : await page.getByText('Wait').textContent();",
+      '  const total = ready ?',
+      "    await page.getByTestId('a').textContent() :",
+      "    await page.getByTestId('b').textContent();",
+      '  switch (label) {',
+      "    case 'a':",
+      "      await page.getByText('A').click();",
+      '  }',
+      '});',
+    ].join('\n');
+    expect(placementBefore(ternary, 2)).toMatchObject({ line: 1 });
+    expect(placementBefore(ternary, 3)).toMatchObject({ line: 1 });
+    expect(placementBefore(ternary, 6)).toMatchObject({ line: 4 });
+    // A case's label ends with a colon, and is no part of the statement after it.
+    expect(placementBefore(ternary, 9)).toMatchObject({ line: 9, context: 'test' });
   });
 });

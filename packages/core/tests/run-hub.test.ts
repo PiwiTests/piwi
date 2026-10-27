@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { EditorDiscovery } from '../src/editor-discovery';
+import { MAX_STOP_ERROR } from '../src/run-channel';
 import {
   HUB_CLOSE,
   HUB_KEEPALIVE_MS,
@@ -7,8 +8,10 @@ import {
   MAX_HUB_CLIENT,
   MAX_HUB_COMMAND,
   MAX_HUB_FRAME,
+  MAX_HUB_MESSAGE,
   MAX_HUB_PROJECT,
   MAX_HUB_ROOTS,
+  MAX_HUB_WARNINGS,
   isExtensionOrigin,
   isHubHost,
   liveHubsOf,
@@ -54,7 +57,7 @@ const session: HubSession = {
         since: '2026-10-25T10:00:00.000Z',
       },
       pausing: false,
-      intents: ['pick', 'record'],
+      intents: ['pick', 'record', 'assert', 'assert-region', 'mock'],
     },
   ],
   ended: false,
@@ -117,6 +120,8 @@ describe('the hub’s WebSocket', () => {
 
   test('reads each command field by field', () => {
     expect(parseHubCommand(json({ type: 'subscribe', id: 1 }))).toEqual({ type: 'subscribe', id: 1 });
+    expect(parseHubCommand(json({ type: 'follow', id: 1, on: true }))).toEqual({ type: 'follow', id: 1, on: true });
+    expect(parseHubCommand(json({ type: 'follow', id: 1, on: false }))).toEqual({ type: 'follow', id: 1, on: false });
     expect(parseHubCommand(json({ type: 'runControl', id: 2, ref: 'ed-1', action: 'pause' }))).toEqual({
       type: 'runControl',
       id: 2,
@@ -134,7 +139,7 @@ describe('the hub’s WebSocket', () => {
       ref: 'ed-1',
       worker: 0,
     });
-    for (const type of ['pick', 'record'] as const) {
+    for (const type of ['pick', 'record', 'assert', 'assert-region', 'requests'] as const) {
       expect(parseHubCommand(json({ type, id: 5, ref: 'ed-1', since: 'S' }))).toEqual({
         type,
         id: 5,
@@ -143,6 +148,14 @@ describe('the hub’s WebSocket', () => {
         since: 'S',
       });
     }
+    expect(parseHubCommand(json({ type: 'mock', id: 6, ref: 'ed-1', worker: 2, since: 'S', request: 3 }))).toEqual({
+      type: 'mock',
+      id: 6,
+      ref: 'ed-1',
+      worker: 2,
+      since: 'S',
+      request: 3,
+    });
   });
 
   test('answers a command it cannot take as refused, with why, and one it does not know as unknown', () => {
@@ -161,6 +174,12 @@ describe('the hub’s WebSocket', () => {
       { type: 'runControl', ref: 'ed-1', action: 'step', since: 5 },
       { type: 'pausedPage', ref: 'ed-1' },
       { type: 'pick', ref: 'ed-1', since: '' },
+      { type: 'mock', ref: 'ed-1', since: 'S' },
+      { type: 'mock', ref: 'ed-1', since: 'S', request: 0 },
+      { type: 'mock', ref: 'ed-1', since: 'S', request: '3' },
+      { type: 'follow' },
+      { type: 'follow', on: 'true' },
+      { type: 'follow', on: 1 },
       { type: '' },
       { type: 7 },
     ]) {
@@ -178,8 +197,8 @@ describe('the hub’s WebSocket', () => {
         );
       }
     }
-    for (const type of ['pick', 'record']) {
-      expect(parseHubCommand(json({ type, id: 9, ref: 'ed-1', worker: 0 }))).toEqual(needsStop);
+    for (const type of ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock']) {
+      expect(parseHubCommand(json({ type, id: 9, ref: 'ed-1', worker: 0, request: 1 }))).toEqual(needsStop);
       expect(parseHubCommand(json({ type, id: 9, ref: 'ed-1', since: null }))).toEqual(needsStop);
     }
     expect(parseHubCommand(json({ type: 'runControl', id: 9, ref: 'ed-1', action: 'pause', since: 'S' }))).toEqual({
@@ -218,6 +237,52 @@ describe('the hub’s WebSocket', () => {
         image: { mime: 'image/jpeg', data: '/9j/4A==' },
       },
       { type: 'answer', id: 3, ok: false, message: 'No image.', image: null },
+      {
+        type: 'answer',
+        id: 4,
+        ok: true,
+        message: 'The test kept 2 responses.',
+        requests: [
+          {
+            id: 1,
+            method: 'GET',
+            url: 'https://shop.test/api/cart',
+            status: 200,
+            type: 'application/json',
+            size: 12,
+            time: 830,
+          },
+          {
+            id: 2,
+            method: 'POST',
+            url: 'https://shop.test/api/orders',
+            status: 201,
+            type: 'application/json',
+            size: null,
+            time: 900,
+          },
+        ],
+      },
+      { type: 'answer', id: 5, ok: false, message: 'The test went on.', requests: [] },
+      {
+        type: 'code',
+        ref: 'ed-0a1b2c3d',
+        worker: 0,
+        since: '2026-10-25T10:00:00.000Z',
+        action: 'mock',
+        ok: true,
+        message: 'Piwi wrote the mock above cart.spec.ts:5.',
+        warnings: ['A value named or shaped like a credential is written as <hidden>.'],
+      },
+      {
+        type: 'code',
+        ref: 'ed-0a1b2c3d',
+        worker: 0,
+        since: '2026-10-25T10:00:00.000Z',
+        action: 'assert',
+        ok: false,
+        message: 'Nothing was checked: the test went on.',
+      },
       { type: 'session', session },
       {
         type: 'session',
@@ -234,12 +299,61 @@ describe('the hub’s WebSocket', () => {
           session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, reason: 'failure' } }] },
         }),
       ),
+    ).toMatchObject({ session: { workers: [{ stop: { reason: 'failure' } }] } });
+    expect(
+      parseHubMessage(
+        json({
+          type: 'session',
+          session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, reason: 'dance' } }] },
+        }),
+      ),
     ).toMatchObject({ session: { workers: [{ stop: { reason: 'other' } }] } });
     expect(
       parseHubMessage(
-        json({ type: 'session', session: { ...session, workers: [{ ...worker, intents: ['assert', 'pick'] }] } }),
+        json({
+          type: 'session',
+          session: { ...session, workers: [{ ...worker, intents: ['dance', 'mock', 'pick'] }] },
+        }),
       ),
-    ).toMatchObject({ session: { workers: [{ intents: ['pick'] }] } });
+    ).toMatchObject({ session: { workers: [{ intents: ['pick', 'mock'] }] } });
+    // A failure's stop names its error; a hub that predates it names none.
+    const failed = { ...worker.stop!, reason: 'failure', error: 'expect(locator).toBeVisible() failed' };
+    expect(
+      parseHubMessage(json({ type: 'session', session: { ...session, workers: [{ ...worker, stop: failed }] } })),
+    ).toEqual({ type: 'session', session: { ...session, workers: [{ ...worker, stop: failed }] } });
+  });
+
+  test('has the extension read what a code from a stop came to, its warnings bounded, and never its code', () => {
+    const code = {
+      type: 'code',
+      ref: 'ed-0a1b2c3d',
+      worker: 1,
+      since: '2026-10-25T10:00:00.000Z',
+      action: 'assert-region',
+      ok: true,
+      message: "Piwi wrote the region's ARIA snapshot above cart.spec.ts:5.",
+    };
+    expect(parseHubMessage(json({ ...code, code: 'await expect(page).toMatchAriaSnapshot(``);' }))).toEqual(code);
+    expect(parseHubMessage(json({ ...code, warnings: [] }))).toEqual({ ...code, warnings: [] });
+    const most = Array.from({ length: MAX_HUB_WARNINGS }, (_, i) => `Warning ${i}.`);
+    expect(parseHubMessage(json({ ...code, warnings: most }))).toEqual({ ...code, warnings: most });
+    for (const broken of [
+      { ...code, ref: 'ed 1' },
+      { ...code, worker: -1 },
+      { ...code, worker: null },
+      { ...code, since: '' },
+      { ...code, since: 'x'.repeat(65) },
+      { ...code, action: 'pick' },
+      { ...code, ok: 'yes' },
+      { ...code, message: 5 },
+      { ...code, message: 'x'.repeat(MAX_HUB_MESSAGE + 1) },
+      { ...code, warnings: 'A warning.' },
+      { ...code, warnings: [5] },
+      { ...code, warnings: ['x'.repeat(MAX_HUB_MESSAGE + 1)] },
+      { ...code, warnings: [...most, 'One more.'] },
+    ]) {
+      expect(parseHubMessage(json(broken)), JSON.stringify(broken)).toBeNull();
+    }
   });
 
   test('has the extension refuse a message it cannot read', () => {
@@ -248,6 +362,8 @@ describe('the hub’s WebSocket', () => {
       { type: 'answer', id: 1, ok: 'yes', message: '' },
       { type: 'answer', id: 1, ok: true, message: 'x', image: { mime: 'image/svg+xml', data: 'PHN2Zz4=' } },
       { type: 'answer', id: 1, ok: true, message: 'x', image: { mime: 'image/jpeg', data: '<svg>' } },
+      { type: 'answer', id: 1, ok: true, message: 'x', requests: {} },
+      { type: 'answer', id: 1, ok: true, message: 'x', requests: [{ id: 1, method: 'GET', url: 'u', status: 9 }] },
       { type: 'welcome', pid: 0, version: '1', client: null, roots: [], keepaliveMs: 1 },
       { type: 'session', session: { ...session, ref: 'ed 1' } },
       { type: 'session', session: { ...session, command: 5 } },
@@ -256,6 +372,15 @@ describe('the hub’s WebSocket', () => {
       { type: 'session', session: { ...session, workers: [{ ...worker, test: { ...worker.test, title: [1] } }] } },
       { type: 'session', session: { ...session, command: 'x'.repeat(MAX_HUB_COMMAND + 1) } },
       { type: 'session', session: { ...session, project: 'x'.repeat(MAX_HUB_PROJECT + 1) } },
+      { type: 'session', session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, error: 5 } }] } },
+      {
+        type: 'session',
+        session: {
+          ...session,
+          workers: [{ ...worker, stop: { ...worker.stop, error: 'x'.repeat(MAX_STOP_ERROR + 1) } }],
+        },
+      },
+      { type: 'answer', id: 1, ok: true, message: 'x'.repeat(MAX_HUB_MESSAGE + 1) },
       {
         type: 'welcome',
         pid: 1,

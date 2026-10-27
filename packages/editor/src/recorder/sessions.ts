@@ -284,7 +284,7 @@ export function startUrl(
 }
 
 /** The texts of the spec files beside `file`, the first ones by name. */
-function siblingSpecs(file: string): string[] {
+export function siblingSpecs(file: string): string[] {
   const dir = path.dirname(file);
   let names: string[];
   try {
@@ -347,7 +347,7 @@ export function indentBlock(code: string, indent: string): string {
 }
 
 /** The recorded block as a client writes it: no trailing newline, and steps without the test body's indentation. */
-function blockCode(code: string, into: RecordInto): string {
+export function blockCode(code: string, into: RecordInto): string {
   const lines = code.replace(/\n+$/, '').split('\n');
   return (into === 'steps' ? lines.map((line) => (line.startsWith('  ') ? line.slice(2) : line)) : lines).join('\n');
 }
@@ -396,8 +396,22 @@ function unique<T>(items: T[]): T[] {
   return [...new Set(items)];
 }
 
+/** What a check in a test's page tells the service that asked for it. */
+export interface CheckOptions {
+  /** The file the check is written into: the recorder's panel names it. */
+  file: string;
+  /** The editor's display language, for the check panel. */
+  language: string | null;
+  /** The person made a check: the `assert` event the check panel added. */
+  onCheck(event: RawCaptureEvent): void;
+  /** The check ended: null once a check was made, else why nothing was checked. */
+  onEnd(message: string | null): void;
+}
+
 export class RecordingSessions {
   private readonly sessions = new Map<string, Session>();
+  /** The checks running in tests' pages, each ended with the service. */
+  private readonly checks = new Set<() => void>();
   private readonly launch: LauncherFactory;
   private readonly env: Record<string, string | undefined>;
   private readonly updateInterval: number;
@@ -580,15 +594,17 @@ export class RecordingSessions {
    * that statement. The test loads the recorder into its page; the session drives it as a launcher's browser.
    */
   private async attach(params: RecordParams, target: RecordTarget, handoff: Handoff): Promise<RecordResult> {
-    const placement = placementBefore(target.text, handoff.line - 1);
-    const at = pageCandidates(target.text, placement.line);
     const refuse = (message: string): RecordResult => {
       handoff.socket.end(`${JSON.stringify({ type: 'refused', message })}\n`);
       return { ok: false, message };
     };
-    if (at.context !== 'test' && at.context !== 'function') {
+    const placement = placementBefore(target.text, handoff.line - 1);
+    if ('refusal' in placement) return refuse(placement.refusal);
+    // The block goes inside a test's or a function's body, never above its declaration.
+    if (placement.context !== 'test' && placement.context !== 'function') {
       return refuse('The test is paused outside a test or a function of this file: nothing can be written there.');
     }
+    const at = pageCandidates(target.text, placement.line);
     const bundle = path.join(this.options.distDir, BUNDLE_FILE);
     const messages = this.messages(recorderLanguage(params.language));
     if (!fs.existsSync(bundle) || !messages) {
@@ -674,8 +690,63 @@ export class RecordingSessions {
         handoff.reason === 'pause'
           ? `Recording in the test's browser from page.pause() at ${where}.`
           : `Recording in the test's browser from the breakpoint at ${where}.`,
-      placement,
+      placement: { line: placement.line, newLine: placement.newLine, indent: placement.indent },
     };
+  }
+
+  /**
+   * One check in the page of a test stopped in a run the editor started (`handoff`, in its `check` mode): the
+   * recorder, loaded with `check` in its settings, opens the check panel's **Check an element** alone. The first check
+   * the person makes goes to `onCheck` and ends the hand-off, as does Stop, the page closing or the test going on,
+   * each said to `onEnd`. Answers null once the test is asked to load the recorder, else why not, which the test hears.
+   */
+  check(handoff: Handoff, options: CheckOptions): string | null {
+    const bundle = path.join(this.options.distDir, BUNDLE_FILE);
+    const messages = this.messages(recorderLanguage(options.language));
+    if (!fs.existsSync(bundle) || !messages) {
+      const message = `The recorder is missing from this installation: ${BUNDLE_FILE} or ${MESSAGES_FILE} was not found in ${this.options.distDir}.`;
+      handoff.socket.end(`${JSON.stringify({ type: 'refused', message })}\n`);
+      return message;
+    }
+    let ended = false;
+    let launcher: LauncherHandle | null = null;
+    const end = (message: string | null) => {
+      if (ended) return;
+      ended = true;
+      this.checks.delete(stop);
+      launcher?.send({ type: 'stop' });
+      options.onEnd(message);
+    };
+    const stop = () => end('The editor service stopped.');
+    launcher = handoffLauncher(handoff)('', {
+      message: (message) => {
+        if (ended) return;
+        if (message.type === 'event' && message.event.kind === 'assert') {
+          options.onCheck(message.event);
+          end(null);
+        } else if (message.type === 'stopped-in-browser') end('Nothing was checked.');
+        else if (message.type === 'closed') end('The page closed: nothing was checked.');
+      },
+      exit: () => end('The test went on: nothing was checked.'),
+    });
+    this.checks.add(stop);
+    const testIdAttribute = handoff.testIdAttribute;
+    launcher.send({
+      type: 'start',
+      request: {
+        cwd: '',
+        browserName: 'chromium',
+        launchOptions: {},
+        contextOptions: {},
+        testIdAttribute,
+        startUrl: 'about:blank',
+        bundle,
+        language: messages,
+        settings: { file: path.basename(options.file), testIdAttribute, check: true },
+        startedAt: Date.now(),
+      },
+    });
+    return null;
   }
 
   /** Pauses or resumes a session from the editor; the recorder's bar in the browser shows it too. */
@@ -717,9 +788,10 @@ export class RecordingSessions {
     }
   }
 
-  /** Stops every session. */
+  /** Stops every session, and every check. */
   dispose(): void {
     for (const session of this.sessions.values()) this.finish(session, 'stopped', 'The editor service stopped.');
+    for (const stop of this.checks) stop();
   }
 
   /** The recorder's language and catalog, merged over English; null when the catalogs cannot be read. */

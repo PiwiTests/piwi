@@ -144,6 +144,8 @@ function foundText(assertion: StepAssertion, o: Observation): string {
       return o.enabled ? t('replay_foundEnabled') : t('replay_foundDisabled');
     case 'toBeChecked':
       return o.checked ? t('replay_foundChecked') : t('replay_foundUnchecked');
+    case 'toMatchAriaSnapshot':
+      return o.visible ? t('replay_foundVisible') : t('replay_foundHidden');
   }
 }
 
@@ -200,6 +202,10 @@ export function evaluateAssertion(
       break;
     case 'toHaveURL':
       positive = o.url === absoluteUrl(expected, origin);
+      break;
+    case 'toMatchAriaSnapshot':
+      // Neither a recording nor a steps document states it (`ASSERTION_MATCHERS`): a replay compares no snapshot.
+      positive = false;
       break;
   }
   return { holds: assertion.negated ? !positive : positive, found: foundText(assertion, o) };

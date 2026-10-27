@@ -38,6 +38,25 @@ describe('the record channel', () => {
     expect(parseHandoffToEditor(JSON.stringify(attach))).toEqual({ ...attach, testIdAttribute: null });
     expect(parseHandoffToEditor(JSON.stringify({ ...attach, line: 0 }))).toBeNull();
     expect(parseHandoffToEditor(JSON.stringify({ ...attach, reason: 'other' }))).toBeNull();
+    // A check names the stop of the run connection it was started at; a stop it cannot read names none.
+    const stop = { ref: 'ed-0a1b2c3d', worker: 1, stop: 4 };
+    expect(parseHandoffToEditor(JSON.stringify({ ...attach, mode: 'check', stop }))).toEqual({
+      ...attach,
+      testIdAttribute: null,
+      mode: 'check',
+      stop,
+    });
+    for (const broken of [null, { ...stop, ref: 'ed 1' }, { ...stop, worker: -1 }, { ...stop, stop: 0 }, 'ed-1']) {
+      expect(parseHandoffToEditor(JSON.stringify({ ...attach, mode: 'check', stop: broken }))).toMatchObject({
+        mode: 'check',
+        stop: null,
+      });
+    }
+    // Any other mode is a recording, as an older test sends it.
+    expect(parseHandoffToEditor(JSON.stringify({ ...attach, mode: 'dance', stop }))).toEqual({
+      ...attach,
+      testIdAttribute: null,
+    });
     expect(parseHandoffToEditor(JSON.stringify({ type: 'binding', call: 3, payload: { kind: 'local-get' } }))).toEqual({
       type: 'binding',
       call: 3,

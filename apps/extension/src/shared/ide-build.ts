@@ -27,5 +27,9 @@ export async function getIdeSettings(): Promise<IdeRecorderSettings> {
   const stored = (await chrome.storage.local.get(IDE_SETTINGS_KEY))[IDE_SETTINGS_KEY] as
     | Partial<Record<keyof IdeRecorderSettings, unknown>>
     | undefined;
-  return { file: text(stored?.file), testIdAttribute: text(stored?.testIdAttribute) };
+  return {
+    file: text(stored?.file),
+    testIdAttribute: text(stored?.testIdAttribute),
+    ...(stored?.check === true ? { check: true } : {}),
+  };
 }
