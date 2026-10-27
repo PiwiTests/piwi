@@ -24,8 +24,8 @@ In a remote window (Remote SSH, WSL, Dev Containers, or a codespace opened in VS
 2. Paste it in Piwi Picker's settings under **Send to editor** and click **Pair**.
 
 Piwi Picker then sends locators and recordings to the remote window, and its
-[Runs window](/features/extension#runs-from-the-editor) lists the runs that window starts: when Piwi Picker asks for
-them, VS Code forwards the port of the window's run hub too, and the hub accepts a connection on that local port once
+[Runs window](/features/runs-window) lists the runs that window starts, and shows a headless test's page live: when
+Piwi Picker asks for them, VS Code forwards the port of the window's run hub too, and the hub accepts a connection on that local port once
 the window has named it. Both forwarded ports show in the **Ports** view. The pairing's token, the proof that the
 editor holds it, and the browser extension's origin are checked as on your own computer.
 

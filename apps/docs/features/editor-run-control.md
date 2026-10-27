@@ -12,7 +12,7 @@ A test run the [editor extensions](./editors) start can be paused, stepped and r
 own commands: no debug session starts, and the IDE's debugger works as usual beside it. The editor marks the line the
 test stopped at, as a debugger does, and the breakpoints you set or remove reach the run while it goes on. The
 [pause bar](./editor-breakpoints#pause-a-run) in the page answers the same stops, as does Piwi Picker's
-[Runs window](./extension#runs-from-the-editor), with a shortcut you set to pause and resume from any window. At a
+[Runs window](./runs-window), with a shortcut you set to pause and resume from any window. At a
 stop, the editor also writes code from the page: [Code from a pause](./editor-stop-code).
 
 ## The controls
@@ -117,7 +117,7 @@ IDE, closes the connections: a stop with no pause bar then goes on, and one the 
   Playwright's debugger never stops at, looks like any other and does nothing.
 - **Playwright calls, not JavaScript.** **Step** goes from one Playwright call to the next; stepping through the
   test's own code stays with the IDE's debugger.
-- **A still image.** It does not follow what you do in a headed browser.
+- **A still image.** It does not follow the page: the [Runs window](./runs-window#watch-live) shows it live.
 - **No image when the page is unknown.** A stop at a call other than a locator's (a navigation, a key press) in a
   browser context with several pages has no image, and refuses Piwi Picker's **Pick** and **Record**: the
   worker cannot tell which page the call is on. Any page of that context closing ends it.
