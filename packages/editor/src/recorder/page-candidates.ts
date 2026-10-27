@@ -1062,11 +1062,10 @@ const BRACELESS = new Set(['if', 'for', 'while', 'with']);
  * Where a block written before the statement holding a line goes, the statement a test is paused before: a new line
  * above the line that statement starts on (the line opening the brackets the line is in, and the line above it while
  * the line goes on with `.`, a ternary's `?` or `:`, `&&`, `||` or `??`, a chain or a condition broken over lines, or
- * while the line
- * above goes on, as an assignment broken after its `=`), indented as that line is, and where that line starts in the
- * file (`context`), which a caller holds to a test's or a function's body. Refused for a statement that is the body
- * of an `if`, `else`, `for`, `while` or `do` without braces, where the block would become that body, and for a line
- * where no statement starts (blank, a comment, a closing bracket).
+ * while the line above goes on, as an assignment broken after its `=`), indented as that line is, and where that line
+ * starts in the file (`context`), which a caller holds to a test's or a function's body. Refused for a statement that
+ * is the body of an `if`, `else`, `for`, `while` or `do` without braces, where the block would become that body, and
+ * for a line where no statement starts (blank, a comment, a closing bracket).
  */
 export function placementBefore(text: string, line: number): BlockPlacement | { refusal: string } {
   const model = new FileModel(text);

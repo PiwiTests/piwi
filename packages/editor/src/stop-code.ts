@@ -5,8 +5,8 @@
  * there (`this.page` in a page object), with the import lines it needs placed after the file's own. One generator for
  * each: `renderSpec` for the checks, the browser extension's `mockCode` for a mock (credentials hidden by name and by
  * shape, no header written, the body always inline, a warning for a body written as it came or one holding personal
- * data). And the locator at a caret, as `piwi/locatorAtCaret` counts it. Pure: the text of
- * the file in, the code and its edits out.
+ * data). And the locator at a caret, as `piwi/locatorAtCaret` counts it. Pure: the text of the file in, the code and
+ * its edits out.
  */
 import { isPageExpression, renderSpec, safeLocator, type CodegenResult } from '@piwitests/core/codegen';
 import { parseLeafLocatorCall } from '@piwitests/core/locator-chain';
