@@ -62,7 +62,7 @@ function openRun() {
     data-shot="sidebar-latest-run"
     class="inline-flex rounded-md hover:ring-1 hover:ring-accented focus-visible:outline-2 focus-visible:outline-primary"
     :title="title"
-    :aria-label="`Open latest run #${run.id}`"
+    :aria-label="statusFilter ? `Open latest run #${run.id} on ${statusFilter}` : `Open latest run #${run.id}`"
     @click.prevent.stop="openRun"
     @keydown.enter.prevent.stop="openRun"
   >

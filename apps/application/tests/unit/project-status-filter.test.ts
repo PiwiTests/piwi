@@ -37,7 +37,7 @@ describe('describeProjectRunScope', () => {
 
   test('names the branches, the environments and the run kind', () => {
     expect(describeProjectRunScope(scope, 'main')).toBe('the default branch (main), full runs only');
-    expect(describeProjectRunScope({ ...scope, allBranches: true, fullRunsOnly: false })).toBe('every branch');
+    expect(describeProjectRunScope({ ...scope, allBranches: true, fullRunsOnly: false })).toBe('any branch');
     expect(describeProjectRunScope({ ...scope, branches: ['main', 'release/2'], environments: ['prod'] })).toBe(
       'main, release/2 in prod, full runs only',
     );
@@ -111,5 +111,21 @@ describe('listProjects: the latest run follows the status filter', () => {
 
     await updateProject(db as never, 1, { statusFilter: null });
     expect(await latestRunIds()).toEqual({ filtered: 4, unfiltered: 6 });
+  });
+
+  test('a filter every run passes is stored as none', async () => {
+    await updateProject(db as never, 1, {
+      statusFilter: { environments: [], branches: [], allBranches: true, fullRunsOnly: false },
+    });
+    const filtered = (await listProjects(db as never)).find((p: any) => p.name === 'filtered');
+    expect(filtered.statusFilter).toBeNull();
+  });
+
+  test('names the default branch a filter reads, resolved from the runs when none is stored', async () => {
+    await updateProject(db as never, 2, { statusFilter: { fullRunsOnly: false } });
+    const unfiltered = (await listProjects(db as never)).find((p: any) => p.name === 'unfiltered');
+    expect(unfiltered.statusDefaultBranch).toBe('feature/y');
+    expect(unfiltered.latestRun.id).toBe(6);
+    await updateProject(db as never, 2, { statusFilter: null });
   });
 });

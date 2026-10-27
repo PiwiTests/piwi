@@ -37,10 +37,11 @@ The branch is an indexed column, so every project tab, Analytics and the MCP `li
 The badge beside a project in the sidebar shows the outcome of its latest run, and the **Projects** list and the MCP
 `list_projects` tool name that run. By default it is the latest run of any environment and branch, so a run on a
 work-in-progress branch or in a scratch environment turns a healthy project red. A **status filter** picks the runs
-that set the status instead: turn on **Only runs in a filter** in the **Status** section of the project's **Settings**
-tab, and pick environments, branches and **Full runs only** as in the project page's Filters. With no branch picked it
-reads the default branch and the runs that report none; **Copy the project page filters** takes the filters you picked
-on the project's pages. Hover the badge to see the filter, or which runs it is waiting for when none matches yet.
+that set the status instead. A project admin turns on **Only runs in a filter** in the **Status** section of the
+project's **Settings** tab, and picks environments, branches and **Full runs only** as in the project page's Filters.
+With no branch picked it reads the default branch and the runs that report none; **Copy the project page filters** takes
+the filters you picked on the project's pages. The badge's tooltip and accessible name carry the filter, and the
+Projects list says when no run matches it yet.
 
 The filter is saved on the project, so every user sees the same status. A project is still listed under **Active** in
 the sidebar when any of its runs started in the last ten days. Flake Lab and probe runs never set a status.

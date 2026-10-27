@@ -117,7 +117,7 @@ export function describeProjectRunScope(scope: ProjectRunScope, defaultBranch?: 
     scope.branches.length > 0
       ? scope.branches.join(', ')
       : scope.allBranches
-        ? 'every branch'
+        ? 'any branch'
         : defaultBranch
           ? `the default branch (${defaultBranch})`
           : 'the default branch';

@@ -155,8 +155,8 @@ export const MCP_TOOL_DEFS = [
     name: 'list_projects',
     module: 'core',
     description: md(
-      'List the projects you can read, with their run and test-case counts and their latest run (the latest in the project’s status filter when it has one).',
-      'Start here: most tools take a project’s `id` as `projectId`.',
+      'List the projects you can read, with their run and test-case counts and their latest run.',
+      'Start here: most tools take a project’s `id` as `projectId`. A project with a `statusFilter` reports the latest run that filter keeps.',
     ),
     inputSchema: { type: 'object', properties: {} },
   },

@@ -503,7 +503,13 @@ export const HELP_TOPICS = {
   },
   'project.status-filter': {
     title: 'Status filter',
-    text: 'The runs that set this project’s status: the badge beside it in the sidebar and its latest run in the Projects list and for agents. It reads like the project page’s Filters: environments, branches (with none picked, the default branch and the runs that report none) and full runs only. Off, the latest run of any environment and branch sets the status. Lab runs never do.',
+    text: [
+      'The runs that set this project’s status: the badge beside it in the sidebar, and its latest run in the Projects list and for agents.',
+      '',
+      '- **Off** — the latest run of any environment and branch sets the status.',
+      '- **On** — only the runs the filter keeps, read like the project page’s Filters: environments, branches (with none picked, the default branch and the runs that report none) and full runs only.',
+      '- **Lab runs** — Flake Lab and probe runs never set a status.',
+    ].join('\n'),
     doc: 'features/branches#the-project-status',
   },
   'project.url-patterns': {

@@ -200,7 +200,7 @@ function projectStatusBadgeProps({
   const filter = resolveProjectRunScope(project?.statusFilter);
   return {
     run: project?.latestRun ?? null,
-    statusFilter: filter ? describeProjectRunScope(filter, project?.defaultBranch) : undefined,
+    statusFilter: filter ? describeProjectRunScope(filter, project?.statusDefaultBranch) : undefined,
     badge: item.badge as BadgeProps,
     size: ui.linkTrailingBadgeSize() as BadgeProps['size'],
     badgeClass: ui.linkTrailingBadge(),

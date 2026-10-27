@@ -12,10 +12,15 @@ import { describeProjectRunScope, resolveProjectRunScope } from '#shared/project
 const props = defineProps<{ project: ProjectWithTestRuns }>();
 const emit = defineEmits<{ saved: [] }>();
 
-const { state, dirty } = useStoredForm(() => {
-  const stored = resolveProjectRunScope(props.project.statusFilter);
-  return { enabled: stored !== null, filter: (stored ?? defaultProjectFilters()) as FilterBarState };
-});
+const storedFilter = computed(() => resolveProjectRunScope(props.project.statusFilter));
+const { state } = useStoredForm(() => ({
+  enabled: storedFilter.value !== null,
+  filter: (storedFilter.value ?? defaultProjectFilters()) as FilterBarState,
+}));
+
+/** What Save sends: the filter while the switch is on, else none. */
+const statusFilter = computed(() => (state.value.enabled ? resolveProjectRunScope(state.value.filter) : null));
+const dirty = computed(() => JSON.stringify(statusFilter.value) !== JSON.stringify(storedFilter.value));
 
 const defaultBranch = computed(
   () => props.project.effectiveDefaultBranch || props.project.defaultBranch?.trim() || 'main',
@@ -40,18 +45,15 @@ function copyPageFilters() {
 }
 
 const summary = computed(() => {
-  const scope = resolveProjectRunScope(state.value.filter);
-  if (!state.value.enabled || !scope) return 'The latest run sets the status, whatever its environment and branch.';
-  return `The latest run on ${describeProjectRunScope(scope, defaultBranch.value)} sets the status.`;
+  const scope = statusFilter.value;
+  if (!scope) return 'The latest run sets the status, whatever its environment and branch.';
+  return `Sets the status: the latest run on ${describeProjectRunScope(scope, defaultBranch.value)}.`;
 });
 
 const { saving, save } = useProjectPatch(() => props.project.id);
 
 async function submit() {
-  const stored = await save(
-    { statusFilter: state.value.enabled ? resolveProjectRunScope(state.value.filter) : null },
-    'Status filter saved',
-  );
+  const stored = await save({ statusFilter: statusFilter.value }, 'Status filter saved');
   if (!stored) return;
   await refreshNuxtData('projects');
   emit('saved');

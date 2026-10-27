@@ -265,6 +265,8 @@ export interface ProjectWithStats {
   defaultBranch?: string | null;
   /** The runs that set the project's status, `latestRun`; null for every run. */
   statusFilter?: import('#shared/project-run-scope').ProjectRunScope | null;
+  /** The default branch the status filter reads, resolved; null when it reads none. */
+  statusDefaultBranch?: string | null;
   // Statistics added by API
   /** The latest run in the status filter, lab runs left out. */
   latestRun?: {
