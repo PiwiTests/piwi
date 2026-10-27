@@ -142,6 +142,18 @@ are independent: each can ship alone, in any order, and close its line here.
 - **Where:** `apps/docs/scripts/generate-llms.mjs` (`GENERATED`) repeats `apps/application/shared/docs-generated-pages.ts`.
 - **Fix:** read the shared list, through the same jiti alias the other generators use.
 
+### F21. An editor cache test fails when the config read takes more than a second
+
+- **What happens:** `packages/editor/tests/project-options.test.ts`, "reads a config once whatever the spelling of its
+  path, and again after five minutes", fails under load (seen while the dashboard's unit suite ran beside it, with the
+  test taking 1,625 ms), and passes alone.
+- **Where:** `readProjectOptions` (`src/recorder/project-options.ts`) sets the cache entry's expiry when the first read
+  starts. The test awaits that read, which runs the project's Playwright in a child process, and only then sets the
+  clock to the current time plus five minutes minus one second. A read longer than one second has already expired the
+  entry.
+- **Fix:** keep `Date.now()` before the first read and set the clock from it (`start + 5 * 60_000 - 1_000`, then
+  `start + 5 * 60_000 + 1_000`).
+
 ## Release tooling
 
 ### F16. `release-notes.yml` breaks the CI conventions
