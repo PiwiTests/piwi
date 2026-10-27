@@ -18,6 +18,13 @@ fi
 
 cd "${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
+# The repository pins its Node major in .node-version (CI, engines). Another Node still runs most checks, so this
+# warns rather than stops: a failure caused by the version then reads as one.
+wanted_node="$(cat .node-version)"
+if [ "$(node -p 'process.versions.node.split(".")[0]')" != "$wanted_node" ]; then
+  echo "[session-start] WARNING: Node $(node --version) runs this session; the repository pins Node $wanted_node (.node-version)"
+fi
+
 # Install exactly what package-lock.json pins, as CI does, without writing it: the
 # container's npm 10 would rewrite the npm 11 lockfile under `npm install`, leaving
 # every session with a lockfile change unrelated to its task. npm ci deletes

@@ -17,15 +17,18 @@ const CLAUDE_IMPORT = '@AGENTS.md\n';
 
 const SKIPPED_DIRS = new Set(['node_modules', 'dist', 'build', 'target', 'out', 'templates']);
 
-const guides: string[] = (function walk(dir: string): string[] {
+/** The agent guides and the architecture maps beside them, relative to the repository root. */
+const files: string[] = (function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     if (entry.isDirectory()) {
       if (SKIPPED_DIRS.has(entry.name) || (entry.name.startsWith('.') && entry.name !== '.github')) return [];
       return walk(join(dir, entry.name));
     }
-    return entry.name === 'AGENTS.md' ? [relative(repoRoot, join(dir, entry.name))] : [];
+    return ['AGENTS.md', 'ARCHITECTURE.md'].includes(entry.name) ? [relative(repoRoot, join(dir, entry.name))] : [];
   });
 })(repoRoot);
+const guides = files.filter((file) => file.endsWith('AGENTS.md'));
+const maps = files.filter((file) => file.endsWith('ARCHITECTURE.md'));
 
 const read = (path: string) => readFileSync(join(repoRoot, path), 'utf8');
 
@@ -54,6 +57,16 @@ function anchorsOf(markdown: string): Set<string> {
 function linksOf(markdown: string): string[] {
   const prose = markdown.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '');
   return [...prose.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => match[1]).filter((target) => !/^[a-z]+:/i.test(target));
+}
+
+/** The relative links of a Markdown file whose file or heading does not exist. */
+function brokenLinks(source: string): string[] {
+  return linksOf(read(source)).filter((target) => {
+    const [path, anchor] = target.split('#');
+    const file = path ? resolve(repoRoot, dirname(source), path) : join(repoRoot, source);
+    if (!existsSync(file)) return true;
+    return Boolean(anchor) && file.endsWith('.md') && !anchorsOf(readFileSync(file, 'utf8')).has(anchor);
+  });
 }
 
 test('finds the guides', () => {
@@ -91,12 +104,12 @@ describe.each(guides)('%s', (guide) => {
   });
 
   test('links only to files and headings that exist', () => {
-    const broken = linksOf(read(guide)).filter((target) => {
-      const [path, anchor] = target.split('#');
-      const file = path ? resolve(repoRoot, dirname(guide), path) : join(repoRoot, guide);
-      if (!existsSync(file)) return true;
-      return Boolean(anchor) && file.endsWith('.md') && !anchorsOf(readFileSync(file, 'utf8')).has(anchor);
-    });
-    expect(broken, `${guide} links to a missing file or heading`).toEqual([]);
+    expect(brokenLinks(guide), `${guide} links to a missing file or heading`).toEqual([]);
+  });
+});
+
+describe.each(maps)('%s', (map) => {
+  test('links only to files and headings that exist', () => {
+    expect(brokenLinks(map), `${map} links to a missing file or heading`).toEqual([]);
   });
 });
