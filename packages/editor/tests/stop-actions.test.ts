@@ -388,7 +388,7 @@ describe('code from a stop, with a client that writes it', () => {
         ok: false,
         message:
           'The test is stopped on adminPage: page may be another page, so Piwi counts a locator that starts from adminPage.',
-        locator: null,
+        locator: "getByRole('button', { name: 'Pay' })",
         count: null,
       });
       const elsewhere = caret({ uri: uri('tests/pages/checkout.page.ts'), line: 6 });
@@ -397,7 +397,7 @@ describe('code from a stop, with a client that writes it', () => {
         ok: false,
         message:
           'The test is stopped in admin.spec.ts: this.page here may be another page than the one it stopped on, so Piwi counts a locator of that file.',
-        locator: null,
+        locator: "getByRole('button', { name: 'Pay' })",
         count: null,
       });
       expect(
@@ -495,6 +495,19 @@ describe('code from a stop, with a client that writes it', () => {
         line: 6,
         code: expect.stringMatching(/^ {4}await this\.page\.route\('\*\*\/api\/cart', \(route\) =>\n/),
       });
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+
+  test('writes code above the failing line at a failure the pause bar holds', async () => {
+    const { ref, worker, since } = await stoppedWorker(svc, 'tests/checkout.spec.ts', 5, true, [...RUN_TAKES], 'failure');
+    try {
+      expect(svc.latest(ref)!.workers[0]!.stop).toMatchObject({ reason: 'failure', title: 'Failed: Timed out' });
+      const mocking = action({ ref, since, action: 'mock', request: 1 });
+      await answer(worker, 0, 'mock', { ok: true, message: 'GET', response: RESPONSE });
+      expect(await mocking).toMatchObject({ ok: true });
+      expect(last(svc.codes)).toMatchObject({ ref, since, action: 'mock', line: 4 });
     } finally {
       worker.socket.destroy();
     }
@@ -641,13 +654,25 @@ describe('code from a stop, with a client that writes none', () => {
     }
   });
 
-  test('lets a failure no surface can answer go at once, saying nothing', async () => {
+  test('lets a failure no surface can answer go at once, saying and showing nothing', async () => {
     const svc = await service(dir, false);
-    const { worker } = await stoppedWorker(svc, 'tests/checkout.spec.ts', 5, false, [...RUN_TAKES], 'failure');
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
     try {
+      worker.begin('pays');
+      worker.send({
+        type: 'stopped',
+        stop: 1,
+        reason: 'failure',
+        title: 'Failed: Timed out',
+        place: { file: 'tests/checkout.spec.ts', line: 5, column: 5 },
+        locator: null,
+        bar: false,
+      });
       expect(await worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
       await new Promise((r) => setTimeout(r, 100));
       expect(svc.notices).toEqual([]);
+      expect(svc.sessions.some((s) => s.workers.some((w) => w.stop))).toBe(false);
     } finally {
       worker.socket.destroy();
       svc.stop();

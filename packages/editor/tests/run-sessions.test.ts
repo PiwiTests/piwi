@@ -720,19 +720,21 @@ describe('RunSessions', () => {
     return { controls, fail };
   }
 
-  test('holds a failure no bar shows only in a run started to be watched, or while Piwi Picker follows the runs', () => {
+  test('holds a failure no bar shows only in a run started to be watched, or while Piwi Picker follows the runs', async () => {
     let watched = false;
     let followed = false;
     const notices: string[] = [];
-    const { sessions } = harness({
+    const { sessions, sent } = harness({
       watched: () => watched,
       followed: () => followed,
       notice: (_root, _severity, message) => void notices.push(message),
     });
     const worker = takingWorker(sessions);
-    // A plain run of a client that answers stops: the failure goes on at once, said to nobody.
+    // A plain run of a client that answers stops: the failure goes on at once, shown and said to nobody.
     worker.fail(1);
     expect(worker.controls()).toEqual([{ type: 'control', action: 'resume', stop: 1 }]);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(sent.some((s) => s.workers.some((w) => w.stop))).toBe(false);
     // One the bar shows waits for its answer there.
     worker.fail(2, true);
     expect(worker.controls()).toHaveLength(1);

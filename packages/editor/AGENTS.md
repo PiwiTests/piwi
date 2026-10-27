@@ -377,12 +377,13 @@ clients stay thin and both editors give the same answers.
   test goes on with the code it started with. `piwi/locatorAtCaret` reads the line's locator chain
   (`locatorChainOnLine`, the one `piwi/applyPick` replaces), which must start from a page expression in scope there and
   be the stopped page's (`stopPage`: the expression the code at the stop runs on, in the stopped file; another, or a
-  chain in another file, is refused), and has the worker count it on the stopped page and outline its matches where the
-  bar shows; a line without one, a refused one, or a null `uri`, takes the outline down. A worker's stop with the reason
+  chain in another file, is refused, the answer naming the chain read: `locator` is null only for a line holding none
+  Piwi reads), and has the worker count it on the stopped page and outline its matches where the bar shows; a line
+  without one, a refused one, or a null `uri`, takes the outline down. A worker's stop with the reason
   `failure` (a test failed in an interactive run, its page held once the test ended) takes the same actions. One no bar
   shows waits only in a run started to be watched (`watched`: the service built it with the editor's breakpoints or for
   a `page.pause()`, both headed) or while Piwi Picker follows the runs (`followed`), and goes on at once, with no
-  notice, otherwise and when the last Piwi Picker leaves (`RunSessions.surfacesChanged`): every run the service builds
+  notice, otherwise (no client hears of it) and when the last Piwi Picker leaves (`RunSessions.surfacesChanged`): every run the service builds
   has a run channel, and both clients answer stops, so a plain Run would hold every failure.
 - The discovery file (`src/discovery.ts`, `@piwitests/core/editor-discovery`): once the run channel and the hub listen,
   `startServer` hands `publish` what `~/.piwi/editors/<pid>.json` says (`PIWI_EDITORS_DIR` names another folder): the

@@ -139,7 +139,7 @@ export class StopActions {
    * `piwi/locatorAtCaret`: the matches on the stopped page of the locator at the caret's line, outlined there. The
    * chain must start from the page the test stopped on: the expression the code written at the stop runs on, in the
    * stopped file (`page`, `this.page`); another (`adminPage`), or one in another file, may be another page, and is
-   * refused.
+   * refused, the answer naming the chain it read.
    */
   async locatorAtCaret(params: LocatorAtCaretParams): Promise<LocatorAtCaretResult> {
     const { sessions } = this.options;
@@ -147,9 +147,9 @@ export class StopActions {
       return { ok: false, message: NEEDS_STOP, locator: null, count: null };
     }
     const stop = { ref: params.ref, worker: params.worker ?? null, since: params.since };
-    const clear = async (message: string, ok: boolean): Promise<LocatorAtCaretResult> => {
+    const clear = async (message: string, ok: boolean, locator: string | null = null): Promise<LocatorAtCaretResult> => {
       const answer = await sessions.locator(stop, null);
-      return answer.ok ? { ok, message, locator: null, count: null } : { ...answer, locator: null };
+      return answer.ok ? { ok, message, locator, count: null } : { ...answer, locator };
     };
     if (typeof params.uri !== 'string' || typeof params.line !== 'number') return clear('The outline is gone.', true);
     const file = uriToPath(params.uri);
@@ -166,16 +166,18 @@ export class StopActions {
       return clear(
         `The test is stopped in ${path.basename(stopped ?? at.uri)}: ${found.page} here may be another page than the one it stopped on, so Piwi counts a locator of that file.`,
         false,
+        found.locator,
       );
     }
     const place = this.place(at);
-    if ('refusal' in place) return clear(place.refusal, false);
+    if ('refusal' in place) return clear(place.refusal, false, found.locator);
     const page = stopPage(place.target.text, place.line);
-    if ('refusal' in page) return clear(page.refusal, false);
+    if ('refusal' in page) return clear(page.refusal, false, found.locator);
     if (page.page !== found.page) {
       return clear(
         `The test is stopped on ${page.page}: ${found.page} may be another page, so Piwi counts a locator that starts from ${page.page}.`,
         false,
+        found.locator,
       );
     }
     const answer = await sessions.locator(stop, found.locator);

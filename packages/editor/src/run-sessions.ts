@@ -11,8 +11,8 @@
  * A stop that shows no pause bar while no surface can answer stops (the client does not, and no Piwi Picker follows
  * the runs) is resumed at once, and so is one held when the last of them goes. A failure no pause bar shows is held
  * only in a run started to be watched (`watched`: with the editor's breakpoints or a `page.pause()`) or while a Piwi
- * Picker follows the runs, else it goes on at once, with no notice. A worker's connection that closes lets a stop no
- * pause bar shows go on; a stop the bar shows waits there for its answer.
+ * Picker follows the runs, else it goes on at once and no client hears of it. A worker's connection that closes lets
+ * a stop no pause bar shows go on; a stop the bar shows waits there for its answer.
  */
 import * as path from 'node:path';
 import type * as net from 'node:net';
@@ -498,8 +498,12 @@ export class RunSessions {
    * no Piwi Picker follows the runs. It goes on at once.
    */
   private unwatchedFailure(session: Session, worker: Worker): boolean {
-    if (worker.stop?.view.reason !== 'failure') return false;
-    return !this.options.watched?.(session.ref) && !this.options.followed?.();
+    return worker.stop?.view.reason === 'failure' && !this.watches(session);
+  }
+
+  /** Whether someone watches the run's failures: it was started to be watched, or a Piwi Picker follows the runs. */
+  private watches(session: Session): boolean {
+    return !!this.options.watched?.(session.ref) || !!this.options.followed?.();
   }
 
   /** `piwi/setRunBreakpoints`: the run's workers stop at these lines from now on, a worker that starts later too. */
@@ -589,6 +593,10 @@ export class RunSessions {
         if (message.cannotPause) worker.pausing = false;
         return this.changed(session);
       case 'stopped':
+        // A failure nobody watches goes on at once, unseen: no client hears of it.
+        if (message.reason === 'failure' && !message.bar && (!this.options.answersStops() || !this.watches(session))) {
+          return this.send(worker, { type: 'control', action: 'resume', stop: message.stop });
+        }
         worker.stop = {
           id: message.stop,
           place: message.place,
@@ -605,9 +613,7 @@ export class RunSessions {
         };
         worker.pausing = false;
         this.changed(session, true);
-        if (!message.bar && (!this.options.answersStops() || this.unwatchedFailure(session, worker))) {
-          this.resumeUnanswered(session, worker, message.place);
-        }
+        if (!message.bar && !this.options.answersStops()) this.resumeUnanswered(session, worker, message.place);
         return;
       case 'running':
         if (worker.stop?.id !== message.stop) return;

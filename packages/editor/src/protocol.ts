@@ -1590,7 +1590,10 @@ export interface LocatorAtCaretParams {
 export interface LocatorAtCaretResult {
   ok: boolean;
   message: string;
-  /** The chain counted, as the line holds it, without its page; null when the line held none Piwi reads. */
+  /**
+   * The chain read on the line, as the line holds it, without its page, counted or refused (another page, an older
+   * reporter); null when the line held none Piwi reads, which a client shows nothing for.
+   */
   locator: string | null;
   count: number | null;
 }
