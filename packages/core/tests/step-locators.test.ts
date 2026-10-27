@@ -7,6 +7,7 @@ import {
   isInteractionAction,
   locationRootOf,
   locatorActionLabel,
+  resolveLocationRoot,
   stepLocations,
   stripLocationRoot,
 } from '../src/step-locators';
@@ -197,6 +198,22 @@ describe('findLocationRoot and stripLocationRoot', () => {
   test('no root when no step sits in the test file', () => {
     expect(findLocationRoot(['/work/shop/pages/p.ts:1:1'], 'tests/a.spec.ts')).toBeNull();
     expect(stripLocationRoot('/work/shop/pages/p.ts:1:1', null)).toBe('/work/shop/pages/p.ts:1:1');
+  });
+
+  test('resolveLocationRoot prefers the working directory when it prefixes a step', () => {
+    const locations = ['/work/shop/pages/p.ts:1:1', '/work/shop/tests/a.spec.ts:3:1'];
+    expect(resolveLocationRoot(locations, 'tests/a.spec.ts', '/work/shop')).toBe('/work/shop/');
+    // Only helpers ran, nothing in the test file: the working directory still strips them.
+    expect(resolveLocationRoot(['/work/shop/pages/p.ts:1:1'], 'tests/a.spec.ts', '/work/shop/')).toBe('/work/shop/');
+    expect(resolveLocationRoot(['C:\\work\\shop\\pages\\p.ts:1:1'], null, 'C:\\work\\shop')).toBe('C:/work/shop/');
+  });
+
+  test('resolveLocationRoot falls back when the working directory prefixes no step', () => {
+    // A shard that ran in another workspace than the one the run recorded.
+    const locations = ['/ci/job@2/pages/p.ts:1:1', '/ci/job@2/tests/a.spec.ts:3:1'];
+    expect(resolveLocationRoot(locations, 'tests/a.spec.ts', '/ci/job')).toBe('/ci/job@2/');
+    expect(resolveLocationRoot(['/ci/job@2/pages/p.ts:1:1'], 'tests/a.spec.ts', '/ci/job')).toBeNull();
+    expect(resolveLocationRoot(locations, 'tests/a.spec.ts', null)).toBe('/ci/job@2/');
   });
 
   test('stepLocations reads every step, locator or not', () => {
