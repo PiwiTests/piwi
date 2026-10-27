@@ -11,175 +11,22 @@ paused a running test from an extension page in a second browser, held it for 4.
 stepped it and let it pass. The same session reaches the dashboard, as a live view to watch, and coding agents, as
 tools that follow the run, read the stopped page as its accessibility tree and act on it.
 
-**Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
-(Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2, 3 and 4 are built too (below), while PRs
-5 to 9 are not. PR 1 differs from the text in four ways. A headed
-browser opens Playwright's Inspector at every stop of
-`context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
-Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
-does not see, then stops with neither bar nor Inspector until the test's timeout), and a run under Playwright's own
-debugger (`--debug`, `--debug=cli`, `PWDEBUG`) ignores the breakpoints. The runner suspends the test timeout only for
-a context the running test made: at a stop in one made before it (a `beforeAll` page), the worker holds the timeout
-through the runner's own counter (`_setIgnoreTimeouts`, feature-checked). Every timestamp stays as measured: the
-reporter sends the stops of the `piwi-pauses` attachment with the test's step events (`pause` events), the
-dashboard's timelines draw each as a **Paused** band, and the step statistics leave the time paused out (1.4). The
-run is not marked interactive yet; D10's rule on notifications waits for the runs that can pause outside the
-editor. `page.pause()` is a stop of the debugger at its line (`page-pause`), taken over
-in any headed run with breakpoints as well as in one the editor started. PR 2's service half is the run
-channel (Part 2: `@piwitests/core/run-channel`, the worker's run connection, the socket that takes both kinds of
-connection) and the session in the editor service with its protocol (Part 3.1); its IDE half is both clients
-(Part 3.2). The service half differs from the text in these ways. `run-attach` names the run's `ref` and working directory
-(`cwd`, which every place is relative to); a stop is named by the worker's own number for it (`stop`) rather than its
-context, in `stopped`, `running` and every answer to it, so an answer that comes after the stop ended (the bar
-answered first) is dropped; `stopped` says whether Piwi's bar shows in the page (`bar`); `test-begin` says why a test
-never stops (`cannotPause`); the image request and its answer are typed (`what: 'image'`, a JPEG in base64, none for a
-stop whose page the worker cannot tell, a navigation or a key press in a context with several pages). A worker shows
-one stop at a time: a stop of another context waits for the one shown, and is decided again at its turn; it goes on
-unshown, as on Finish, when the test ends meanwhile, and unshown too when its page or context closes or its breakpoint
-is taken off meanwhile, and a Step, Pause or run-to it used up stays asked for the next stop. Closing a context, by its
-own close or its browser's, first lets a call its debugger holds go on: Playwright never lets a held call go as its
-context closes, and the runner keeps that context counted as paused. A stop ends through one path whoever ends it: one
-answered from the editor goes to `piwi-pauses` as one at the bar does, with its reason (`pause` and `run-to` among
-them), and one that ends unanswered (the test function ended, its page or context closed, or, for a stop whose page
-the worker cannot tell, any page of that context closed), with a bar or without, sends `running`, lets its call go at
-once and, when the test ended under it, sets the runner's count back as PR 1 does at the bar. Run to a line is a
-breakpoint of the policy used once, never `debugger.runTo`, and any stop that shows uses it up, as it uses up Step and
-Pause; Finish turns the breakpoints off and nothing else, so a later Pause, Step or run-to still stops. `end`, `stop`,
-the `failure` reason and the other kinds of request are left to the PRs that build them: a side reads a newer side's
-control or request as unknown (the worker answers it with a `notice`), and a stop reason it does not know as `other`.
-Until a client says it shows and answers stops (`InitializationOptions.runControl`), the hub resumes a stop no bar
-shows as soon as it hears it, with a `piwi/notice`, so a headless run with today's clients does not hold; the service
-still adds `--headed` to a run with breakpoints. A session ends with its command (`piwi/commandEnded`) or 5 s after
-its last worker left, since Playwright starts a new worker after a failure, and `piwi/setRunBreakpoints` is a
-notification whose breakpoints the hub also sends each worker that connects later. The worker sends no event per call,
-so the 300 ms pace applies to its tests' start and end, and a burst of stops goes out at most every 50 ms. A control
-names the stop it answers (`since`, the `RunStop.since` the client showed, unique within a run): one past it is
-answered `The test went on.` and reaches no worker, so a key pressed twice does not skip the next stop. A connection
-naming the index of a worker connected now is closed, and the worker takes `PIWI_RUN_CHANNEL` out of its environment
-while a test runs, so a process a test starts (Playwright run from a test) takes no worker's place. The IDE half
-differs from the text in four ways. The controls'
-keys are each IDE's own debugger keys, which are Piwi's only while a control applies and no debug session runs (VS
-Code: `F5` Resume, `F10` Step, `Ctrl+F10` Run to the cursor, `Shift+F11` Finish, `Shift+F5` Stop, and no key for
-Pause, which applies for as long as the test runs; `F5` does nothing for two seconds after an answer rather than
-start a debug session; JetBrains: the shortcuts of Resume Program for Pause and Resume, of Step Over, Run to Cursor
-and Step Out, in every keymap, `F9`, `F8`, `Alt+F9` and `Shift+F8` in the default one, first among the actions a
-keymap gives the same key while a run is live, through an `ActionPromoter`). A run's lines are the files as they stood
-when it started: both clients follow the edits since, so a stop's mark moves with the lines above it, a breakpoint
-that only moved with an edit keeps the line the run has (a pure move is never sent), one set in an edited file is
-sent as the run's line, and Run to the cursor maps the cursor back, refusing a line written since. In a JetBrains IDE the
-controls are not in the Run tool window's toolbar, which the platform's console for a command fixes to Rerun, Stop
-and Close (`RunContentExecutor`), but in the status bar item's menu, which also says where a test is stopped, under
-**Tools → Piwi**, in the inlay above the paused line and in its gutter arrow's popup; Stop there is the Run tool
-window's own or Piwi's action, with no key of its own. A breakpoint on a line whose calls never stop is not marked:
-the service does not say which lines hold a call Playwright's debugger stops at. Both clients say they answer stops,
-so the service resumes a headless stop at once only for an older client. A headless stop's image is shown beside the
-editor in VS Code (a webview with no script) and in a **Paused Page** tab of the Piwi tool window in a JetBrains IDE,
-taken again at each stop; with several workers stopped, a key or a command acts on the one stopped at the caret's
-line, else asks, and the controls above a line act on its worker. PR 3's hub half is the discovery files, the hub's
-WebSocket in the editor service, Pick and Record started from outside the page, and the pairing's live endpoint in
-both IDE clients (Part 4.2 and 4.3 say how they are built). It differs from the text in five ways. The origin check
-takes any extension's origin (`chrome-extension://` with an extension id, `moz-extension://` with a UUID) rather than
-the store's id or the pairing's origin, which the hub cannot keep: one IDE window's endpoint answers for the hubs of
-every service, none of which sees the pairing's request; the token, which only an extension holding the pairing's
-token can read, keeps another extension out, and the origin a web page. `Host` takes `localhost` with the port
-beside `127.0.0.1`. The first message is `hello` with the token, answered `welcome`, and each command carries an `id`
-its answer names. A subscribed connection counts as a surface that answers stops (Part 2): with it, a headless stop
-waits even when the IDE client cannot answer stops, and when the last one leaves, such a stop goes on. Pick and Record
-are intents of the run channel (a `request` naming its stop, answered at once with whether it started), which a worker
-lists in its `run-attach` (`takes`) rather than the hub reading the reporter's version; both start the pause bar's own
-pick or recording, in the test's window brought to the front, and end with the stop through PR 2's one path; one is
-refused at a stop that ended or is ending, and at one whose page the worker cannot tell, which the person outside the
-page cannot see either. Both IDE clients name their pairing in `PIWI_EDITOR_SEND` for every run that names a run
-channel, since any such run can stop with the bar, Pause included, and the worker takes it out of its environment
-while a test runs, as it does `PIWI_RUN_CHANNEL`, its picks still posted to it.
-The live endpoint lists loopback addresses: a remote window forwards them with Part 6. PR 3's extension half is the
-worker's hub connections, the Runs window, the popup's **Runs** tile and the run shortcut (Part 4.1 and 4.4). It differs
-from the text in five ways. The shortcut is assigned by the person, not at install, where the text gives it
-`Ctrl+Shift+5`: a global key is taken from every application on the computer, paired with an editor or not, and the only
-keys Chrome binds a global command to at install, `Ctrl` (`Command`) + `Shift` + a digit, are other applications'
-already (a JetBrains IDE's numbered bookmarks, VS Code's Split Terminal on `Ctrl+Shift+5`, Excel's Unhide Rows on
-`Ctrl+Shift+9`, macOS's screenshots on `Command+Shift+3` to `6`). The command is global in Chrome and Edge with no key;
-the Runs window's **Set a shortcut** opens the browser's shortcuts page, where the person picks a key and the Global
-scope, and Firefox's manifest leaves `global` out. It resumes every stopped test, each at its stop, and with none
-stopped pauses every run. A run that ends says so, with the tests it ran last, and has no verdict, **Open in editor** or
-**Open the run**, and a running worker shows its test without its last call: the session carries none of these. The
-**Runs** tile fills More tools' free cell, so the popup stays within 600 pixels in every language. Before the pairing's
-token goes to `…/live` or to Send to editor's endpoint, the program on the paired port proves it holds it
-(`editorTokenProof`, as the desktop app's pairing does), asked on `…/live`, which takes a GET in both IDEs, else it is
-sent nothing. PR 4's service half is the worker's part of Part 5, the editor service's code and the three
-protocols: `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/stopCode` and the hub's `assert`,
-`assert-region`, `requests` and `mock`; its extension half is the Runs window's code actions and what each came to.
-It differs from the text in eight ways. The code reaches the client in a notification of its own (`piwi/stopCode`: the run, the stop,
-the file and its version, and the edits, the import lines the block needs and the block above the stopped
-statement, which the client makes as one edit), sent only to a client that says it writes it
-(`InitializationOptions.stopCode`); without one, Assert, Assert a region and Mock a request are refused from both
-surfaces, are not offered to the Runs window, and the Runs window never receives code. The block goes above the
-stopped statement where it stands now: the run's line, followed through the edits made since the run started (the
-service reads each `didChange`; the code of an earlier action included), inside the body of a test or a function,
-never on its declaration's line nor as the body of an `if` without braces; a file the service cannot follow (written
-on disk since, or with changes not saved as the run started) is refused, and so is an Assert at such a place before
-anything starts in the test's window. Every command at a stop names it (`since`). **Assert** runs the recorder's check
-panel alone through the record channel's hand-off in a `check` mode, which names the stop and which the service takes
-itself, asking no editor to record; the check panel offers what it offers in a recording (a value, a text, a name,
-visible or hidden, enabled or disabled), which has no `toBeChecked` nor `toHaveCount` choice. **Assert a region**
-picks with the bar's picker (element, anchors, confirm), so the snapshot is read through the locator the person
-confirmed, without a password field's value nor a link whose URL holds a credential; `toMatchAriaSnapshot` is a
-matcher of `renderSpec` that neither a recording nor a steps document carries. **Mock a request** writes the body
-inline whatever its size (a kept body is 256 KB at most), hides the whole value of a field named like a credential and
-a value shaped like one anywhere in the body, matches such a query value with `**`, and warns of a text body written
-as it came and of one that seems to hold an email address or a phone number, on the page expression in scope; the list
-names no header and no body, its URLs' credentials hidden, and the worker reads one body, the one chosen, as it is
-asked for. **The locator at the caret** is one request of the IDE's, the service reading the line's chain and its page
-expression, which must be the stopped page's, as the code at the stop would run on it, in the stopped file; the hub
-has none, the caret being the IDE's. **A failure** is held in a run started to be watched (a run connection open, a
-test that can stop), at every attempt that fails, not an expected failure, once the test function, its hooks and the
-fixtures built on `page` are done, never while the test runs: headed, the bar is the viewer; headless, a stop with the
-reason `failure` waits only in a run the editor started with its breakpoints or for a `page.pause()`, or while a Runs
-window is open, and goes on at once, without a notice, otherwise (a plain Run of the Test Explorer). The extension's
-background worker, subscribed to every hub as it starts, does not count: a connection holds failures only once it
-sends `follow` (`{ type: 'follow', id, on }`, `on: true` as the first Runs window opens and again on a connection made
-while one is, `on: false` as the last closes), which an older extension never sends. A reporter holds a failure only
-for a service that says it shows one: its `run-attach` lists `holds: ['failure']`, which the service answers first with
-`{ type: 'attached', holds: ['failure'] }`; a service of PR 2 or 3, which would show the failure as an `other` stop its
-clients answer, says nothing, and no failure is held. Its
-evidence is what the test left at the failure: what the page does during the hold is not recorded, though Playwright's
-own trace and video go on through it; the stop is at the line where the error enters the test's code, or at the call a
-test timeout cut short. Step, Finish and Run to a line end it as Resume does, and Record there hands the page over
-with the reason `breakpoint`, as the record channel's `attach` names two. The pause bar has no button for
-the code actions, which start from the IDE and the Runs window; the paused call going on with its old code is said in
-the first code of each run. `run-attach.takes` lists the queries (`requests`, `mock`, `locator`) beside the intents,
-and the hub's `intents` the actions a stop takes (`mock` when the worker lists and hands over responses). The hub's
-`code` says the code was sent to the editor to write (`Piwi sent the check to Visual Studio Code to write above
-checkout.spec.ts:5.`), never that it was written: the IDE, which can still refuse the write (another version of the
-text, a read-only file), says that itself. A region the worker cannot send (its locator finds several elements, its
-snapshot is too long) comes back as `{ type: 'region', stop, refused }`, which reaches the Runs window as a `code`
-with `ok: false`. A rerun under a ref whose command ended (a JetBrains IDE's Rerun) maps its lines from its own start.
-A call in an arrow function's expression body is refused as a body without braces is. The credentials a mock, the
-list of responses or a held failure's error hide follow one written rule (`@piwitests/core/mask`): by name; by a
-strong shape (a JWT, `Bearer` and `Basic` credentials, a private key, a cookie, a service's prefixed key, a random
-token of 40 characters or more); and in a URL part by part, the host and the ids of its path kept.
-PR 4's IDE half is both clients' side of it, and differs from the text in five ways. The code actions are where
-the paused line's controls are (VS Code's CodeLens and hover, a JetBrains IDE's inlay and gutter popup), in the
-palette or under **Tools → Piwi** while a stop offers them, and in the status bar, only those the stopped worker takes,
-the ones in the test's window only where the pause bar shows, with no key; the lens and the inlay name them shorter
-(Pick, Record, Assert, Assert region, Mock), the stop's lens sharing its row with the line's own. Mock a request lists
-the responses the latest first. The code is written in one edit (one undo step) through an editor of its file, a
-JetBrains IDE opening the file first and writing once the platform told the service, and only into the version of
-the text the service placed it in, else it is offered to copy. The locator at the caret is counted 200 ms after the
-caret settles, one request at a time, at the end of its line; a line holding no locator says nothing, which the
-answer tells apart from a refusal by naming the chain it read in a refusal too. A failure reads `Failed · <how it
-failed> · attempt N`, with Resume alone among its controls, and one the service lets go at once never reaches a
-client, so a plain Run's headless failure shows nothing.
-The spikes in the
-[appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
-Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of
-[`1.0-stabilization.md`](1.0-stabilization.md).
+**Status.** Proposed 2026-10-24. PRs 1 to 4 of the [Delivery](#delivery) are built: the pause is Playwright's debugger
+(PR 1, #896, merged 2026-10-25); the run channel, the session in the editor service and both IDE clients' controls (PR
+2, #923); Piwi Picker's Runs window, the hubs' discovery files and WebSocket, and the run shortcut (PR 3, #929); code
+from a pause and a held failure (PR 4, #932), the last three merged 2026-10-27. Where each differs from the text is
+under [As built](#as-built). Remaining: PR 1's interactive mark on a run (1.4, D10), left until runs can pause outside
+the editor, and PRs 5 to 9: headless and remote runs with the live view (5), the desktop app's runs (6), **Debug in my
+editor**, runs started in a terminal, **End the test** and bind on request (7), the dashboard's live view (8) and the
+agent tools (9). Nothing is deferred or dropped. The spikes in the [appendix](#appendix-the-spikes) are the evidence for
+the feasibility claims; they are not part of the repository. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The
+contracts it adds are entry D60 of [`1.0-stabilization.md`](1.0-stabilization.md).
 
-**Summary.** Piwi already pauses a run the editor starts at the editor's breakpoints, with a bar in the page that picks
-a locator for that line or records the steps that come next ([`editor-local-runs.md`](../adr/editor-local-runs.md),
-[`record-from-the-ide.md`](record-from-the-ide.md)). That pause is set before the run, on locator actions only, in
-headed runs only, and only the page knows it is paused. This plan makes the pause a shared, live state every Piwi
-surface can see and change:
+**Summary.** When this plan was written, Piwi paused a run the editor started at the editor's breakpoints, with a bar in
+the page that picks a locator for that line or records the steps that come next
+([`editor-local-runs.md`](../adr/editor-local-runs.md), [`record-from-the-ide.md`](record-from-the-ide.md)). That pause
+was set before the run, on locator actions only, in headed runs only, and only the page knew it was paused. This plan
+makes the pause a shared, live state every Piwi surface can see and change:
 
 - **Pause a running test now**, before its next Playwright call that acts on or checks the page (a navigation, a
   click, a key press, an assertion), from the IDE, from Piwi Picker, or, in Chrome and Edge, with a keyboard shortcut
@@ -880,6 +727,178 @@ Each PR updates the docs it changes, in the same commit. The map in [How the pie
 becomes a diagram in the docs' own style, a theme-aware SVG under `apps/docs/public/diagrams/` like
 `piwi-ecosystem.svg`, in the PR that ships the Runs window; `piwi-ecosystem.svg` gains the run channel then.
 
+## As built
+
+Where each built pull request of the [Delivery](#delivery) differs from the text above.
+
+### PR 1
+
+PR 1 differs from the text in these ways. A headed browser opens Playwright's Inspector at every stop of
+`context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to Playwright
+runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi does not
+see, then stops with neither bar nor Inspector until the test's timeout), and a run under Playwright's own debugger
+(`--debug`, `--debug=cli`, `PWDEBUG`) ignores the breakpoints. The runner suspends the test timeout only for a context
+the running test made: at a stop in one made before it (a `beforeAll` page), the worker holds the timeout through the
+runner's own counter (`_setIgnoreTimeouts`, feature-checked). Every timestamp stays as measured: the reporter sends the
+stops of the `piwi-pauses` attachment with the test's step events (`pause` events), the dashboard's timelines draw each
+as a **Paused** band, and the step statistics leave the time paused out (1.4). The run is not marked interactive yet;
+D10's rule on notifications waits for the runs that can pause outside the editor. `page.pause()` is a stop of the
+debugger at its line (`page-pause`), taken over in any headed run with breakpoints as well as in one the editor started.
+
+### PR 2
+
+PR 2's service half is the run channel (Part 2: `@piwitests/core/run-channel`, the worker's run connection, the socket
+that takes both kinds of connection) and the session in the editor service with its protocol (Part 3.1); its IDE half is
+both clients (Part 3.2). The service half differs from the text in these ways. `run-attach` names the run's `ref` and
+working directory (`cwd`, which every place is relative to); a stop is named by the worker's own number for it (`stop`)
+rather than its context, in `stopped`, `running` and every answer to it, so an answer that comes after the stop ended
+(the bar answered first) is dropped; `stopped` says whether Piwi's bar shows in the page (`bar`); `test-begin` says why
+a test never stops (`cannotPause`); the image request and its answer are typed (`what: 'image'`, a JPEG in base64, none
+for a stop whose page the worker cannot tell, a navigation or a key press in a context with several pages). A worker
+shows one stop at a time: a stop of another context waits for the one shown, and is decided again at its turn; it goes
+on unshown, as on Finish, when the test ends meanwhile, and unshown too when its page or context closes or its
+breakpoint is taken off meanwhile, and a Step, Pause or run-to it used up stays asked for the next stop. Closing a
+context, by its own close or its browser's, first lets a call its debugger holds go on: Playwright never lets a held
+call go as its context closes, and the runner keeps that context counted as paused. A stop ends through one path whoever
+ends it: one answered from the editor goes to `piwi-pauses` as one at the bar does, with its reason (`pause` and
+`run-to` among them), and one that ends unanswered (the test function ended, its page or context closed, or, for a stop
+whose page the worker cannot tell, any page of that context closed), with a bar or without, sends `running`, lets its
+call go at once and, when the test ended under it, sets the runner's count back as PR 1 does at the bar. Run to a line
+is a breakpoint of the policy used once, never `debugger.runTo`, and any stop that shows uses it up, as it uses up Step
+and Pause; Finish turns the breakpoints off and nothing else, so a later Pause, Step or run-to still stops. `end`,
+`stop`, the `failure` reason and the other kinds of request are left to the PRs that build them: a side reads a newer
+side's control or request as unknown (the worker answers it with a `notice`), and a stop reason it does not know as
+`other`. Until a client says it shows and answers stops (`InitializationOptions.runControl`), the hub resumes a stop no
+bar shows as soon as it hears it, with a `piwi/notice`, so a headless run with today's clients does not hold; the
+service still adds `--headed` to a run with breakpoints. A session ends with its command (`piwi/commandEnded`) or 5 s
+after its last worker left, since Playwright starts a new worker after a failure, and `piwi/setRunBreakpoints` is a
+notification whose breakpoints the hub also sends each worker that connects later. The worker sends no event per call,
+so the 300 ms pace applies to its tests' start and end, and a burst of stops goes out at most every 50 ms. A control
+names the stop it answers (`since`, the `RunStop.since` the client showed, unique within a run): one past it is answered
+`The test went on.` and reaches no worker, so a key pressed twice does not skip the next stop. A connection naming the
+index of a worker connected now is closed, and the worker takes `PIWI_RUN_CHANNEL` out of its environment while a test
+runs, so a process a test starts (Playwright run from a test) takes no worker's place.
+
+The IDE half differs from the text in these ways. The controls' keys are each IDE's own debugger keys, which are Piwi's
+only while a control applies and no debug session runs (VS Code: `F5` Resume, `F10` Step, `Ctrl+F10` Run to the cursor,
+`Shift+F11` Finish, `Shift+F5` Stop, and no key for Pause, which applies for as long as the test runs; `F5` does nothing
+for two seconds after an answer rather than start a debug session; JetBrains: the shortcuts of Resume Program for Pause
+and Resume, of Step Over, Run to Cursor and Step Out, in every keymap, `F9`, `F8`, `Alt+F9` and `Shift+F8` in the
+default one, first among the actions a keymap gives the same key while a run is live, through an `ActionPromoter`). A
+run's lines are the files as they stood when it started: both clients follow the edits since, so a stop's mark moves
+with the lines above it, a breakpoint that only moved with an edit keeps the line the run has (a pure move is never
+sent), one set in an edited file is sent as the run's line, and Run to the cursor maps the cursor back, refusing a line
+written since. In a JetBrains IDE the controls are not in the Run tool window's toolbar, which the platform's console
+for a command fixes to Rerun, Stop and Close (`RunContentExecutor`), but in the status bar item's menu, which also says
+where a test is stopped, under **Tools → Piwi**, in the inlay above the paused line and in its gutter arrow's popup;
+Stop there is the Run tool window's own or Piwi's action, with no key of its own. A breakpoint on a line whose calls
+never stop is not marked: the service does not say which lines hold a call Playwright's debugger stops at. Both clients
+say they answer stops, so the service resumes a headless stop at once only for an older client. A headless stop's image
+is shown beside the editor in VS Code (a webview with no script) and in a **Paused Page** tab of the Piwi tool window in
+a JetBrains IDE, taken again at each stop; with several workers stopped, a key or a command acts on the one stopped at
+the caret's line, else asks, and the controls above a line act on its worker.
+
+### PR 3
+
+PR 3's hub half is the discovery files, the hub's WebSocket in the editor service, Pick and Record started from outside
+the page, and the pairing's live endpoint in both IDE clients (Part 4.2 and 4.3 say how they are built). It differs from
+the text in these ways. The origin check takes any extension's origin (`chrome-extension://` with an extension id,
+`moz-extension://` with a UUID) rather than the store's id or the pairing's origin, which the hub cannot keep: one IDE
+window's endpoint answers for the hubs of every service, none of which sees the pairing's request; the token, which only
+an extension holding the pairing's token can read, keeps another extension out, and the origin a web page. `Host` takes
+`localhost` with the port beside `127.0.0.1`. The first message is `hello` with the token, answered `welcome`, and each
+command carries an `id` its answer names. A subscribed connection counts as a surface that answers stops (Part 2): with
+it, a headless stop waits even when the IDE client cannot answer stops, and when the last one leaves, such a stop goes
+on. Pick and Record are intents of the run channel (a `request` naming its stop, answered at once with whether it
+started), which a worker lists in its `run-attach` (`takes`) rather than the hub reading the reporter's version; both
+start the pause bar's own pick or recording, in the test's window brought to the front, and end with the stop through PR
+2's one path; one is refused at a stop that ended or is ending, and at one whose page the worker cannot tell, which the
+person outside the page cannot see either. Both IDE clients name their pairing in `PIWI_EDITOR_SEND` for every run that
+names a run channel, since any such run can stop with the bar, Pause included, and the worker takes it out of its
+environment while a test runs, as it does `PIWI_RUN_CHANNEL`, its picks still posted to it. The live endpoint lists
+loopback addresses: a remote window forwards them with Part 6.
+
+PR 3's extension half is the worker's hub connections, the Runs window, the popup's **Runs** tile and the run shortcut
+(Part 4.1 and 4.4). It differs from the text in these ways. The shortcut is assigned by the person, not at install,
+where the text gives it `Ctrl+Shift+5`: a global key is taken from every application on the computer, paired with an
+editor or not, and the only keys Chrome binds a global command to at install, `Ctrl` (`Command`) + `Shift` + a digit,
+are other applications' already (a JetBrains IDE's numbered bookmarks, VS Code's Split Terminal on `Ctrl+Shift+5`,
+Excel's Unhide Rows on `Ctrl+Shift+9`, macOS's screenshots on `Command+Shift+3` to `6`). The command is global in Chrome
+and Edge with no key; the Runs window's **Set a shortcut** opens the browser's shortcuts page, where the person picks a
+key and the Global scope, and Firefox's manifest leaves `global` out. It resumes every stopped test, each at its stop,
+and with none stopped pauses every run. A run that ends says so, with the tests it ran last, and has no verdict, **Open
+in editor** or **Open the run**, and a running worker shows its test without its last call: the session carries none of
+these. The **Runs** tile fills More tools' free cell, so the popup stays within 600 pixels in every language. Before the
+pairing's token goes to `…/live` or to Send to editor's endpoint, the program on the paired port proves it holds it
+(`editorTokenProof`, as the desktop app's pairing does), asked on `…/live`, which takes a GET in both IDEs, else it is
+sent nothing.
+
+### PR 4
+
+PR 4's service half is the worker's part of Part 5, the editor service's code and the three protocols:
+`piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/stopCode` and the hub's `assert`, `assert-region`,
+`requests` and `mock`; its extension half is the Runs window's code actions and what each came to. It differs from the
+text in these ways. The code reaches the client in a notification of its own (`piwi/stopCode`: the run, the stop, the
+file and its version, and the edits, the import lines the block needs and the block above the stopped statement, which
+the client makes as one edit), sent only to a client that says it writes it (`InitializationOptions.stopCode`); without
+one, Assert, Assert a region and Mock a request are refused from both surfaces, are not offered to the Runs window, and
+the Runs window never receives code. The block goes above the stopped statement where it stands now: the run's line,
+followed through the edits made since the run started (the service reads each `didChange`; the code of an earlier action
+included), inside the body of a test or a function, never on its declaration's line nor as the body of an `if` without
+braces; a file the service cannot follow (written on disk since, or with changes not saved as the run started) is
+refused, and so is an Assert at such a place before anything starts in the test's window. Every command at a stop names
+it (`since`). **Assert** runs the recorder's check panel alone through the record channel's hand-off in a `check` mode,
+which names the stop and which the service takes itself, asking no editor to record; the check panel offers what it
+offers in a recording (a value, a text, a name, visible or hidden, enabled or disabled), which has no `toBeChecked` nor
+`toHaveCount` choice. **Assert a region** picks with the bar's picker (element, anchors, confirm), so the snapshot is
+read through the locator the person confirmed, without a password field's value nor a link whose URL holds a credential;
+`toMatchAriaSnapshot` is a matcher of `renderSpec` that neither a recording nor a steps document carries. **Mock a
+request** writes the body inline whatever its size (a kept body is 256 KB at most), hides the whole value of a field
+named like a credential and a value shaped like one anywhere in the body, matches such a query value with `**`, and
+warns of a text body written as it came and of one that seems to hold an email address or a phone number, on the page
+expression in scope; the list names no header and no body, its URLs' credentials hidden, and the worker reads one body,
+the one chosen, as it is asked for. **The locator at the caret** is one request of the IDE's, the service reading the
+line's chain and its page expression, which must be the stopped page's, as the code at the stop would run on it, in the
+stopped file; the hub has none, the caret being the IDE's. **A failure** is held in a run started to be watched (a run
+connection open, a test that can stop), at every attempt that fails, not an expected failure, once the test function,
+its hooks and the fixtures built on `page` are done, never while the test runs: headed, the bar is the viewer; headless,
+a stop with the reason `failure` waits only in a run the editor started with its breakpoints or for a `page.pause()`, or
+while a Runs window is open, and goes on at once, without a notice, otherwise (a plain Run of the Test Explorer). The
+extension's background worker, subscribed to every hub as it starts, does not count: a connection holds failures only
+once it sends `follow` (`{ type: 'follow', id, on }`, `on: true` as the first Runs window opens and again on a
+connection made while one is, `on: false` as the last closes), which an older extension never sends. A reporter holds a
+failure only for a service that says it shows one: its `run-attach` lists `holds: ['failure']`, which the service
+answers first with `{ type: 'attached', holds: ['failure'] }`; a service of PR 2 or 3, which would show the failure as
+an `other` stop its clients answer, says nothing, and no failure is held. Its evidence is what the test left at the
+failure: what the page does during the hold is not recorded, though Playwright's own trace and video go on through it;
+the stop is at the line where the error enters the test's code, or at the call a test timeout cut short. Step, Finish
+and Run to a line end it as Resume does, and Record there hands the page over with the reason `breakpoint`, as the
+record channel's `attach` names two. The pause bar has no button for the code actions, which start from the IDE and the
+Runs window; the paused call going on with its old code is said in the first code of each run. `run-attach.takes` lists
+the queries (`requests`, `mock`, `locator`) beside the intents, and the hub's `intents` the actions a stop takes (`mock`
+when the worker lists and hands over responses). The hub's `code` says the code was sent to the editor to write
+(`Piwi sent the check to Visual Studio Code to write above checkout.spec.ts:5.`), never that it was written: the IDE,
+which can still refuse the write (another version of the text, a read-only file), says that itself. A region the worker
+cannot send (its locator finds several elements, its snapshot is too long) comes back as
+`{ type: 'region', stop, refused }`, which reaches the Runs window as a `code` with `ok: false`. A rerun under a ref
+whose command ended (a JetBrains IDE's Rerun) maps its lines from its own start. A call in an arrow function's
+expression body is refused as a body without braces is. The credentials a mock, the list of responses or a held
+failure's error hide follow one written rule (`@piwitests/core/mask`): by name; by a strong shape (a JWT, `Bearer` and
+`Basic` credentials, a private key, a cookie, a service's prefixed key, a random token of 40 characters or more); and in
+a URL part by part, the host and the ids of its path kept.
+
+PR 4's IDE half is both clients' side of it, and differs from the text in these ways. The code actions are where the
+paused line's controls are (VS Code's CodeLens and hover, a JetBrains IDE's inlay and gutter popup), in the palette or
+under **Tools → Piwi** while a stop offers them, and in the status bar, only those the stopped worker takes, the ones in
+the test's window only where the pause bar shows, with no key; the lens and the inlay name them shorter (Pick, Record,
+Assert, Assert region, Mock), the stop's lens sharing its row with the line's own. Mock a request lists the responses
+the latest first. The code is written in one edit (one undo step) through an editor of its file, a JetBrains IDE opening
+the file first and writing once the platform told the service, and only into the version of the text the service placed
+it in, else it is offered to copy. The locator at the caret is counted 200 ms after the caret settles, one request at a
+time, at the end of its line; a line holding no locator says nothing, which the answer tells apart from a refusal by
+naming the chain it read in a refusal too. A failure reads `Failed · <how it failed> · attempt N`, with Resume alone
+among its controls, and one the service lets go at once never reaches a client, so a plain Run's headless failure shows
+nothing.
 ## Verification
 
 - **Core**: the run channel's parsing, both ways, field by field, with the refusals; the stop policy as a pure

@@ -9,10 +9,10 @@ one for quick re-films, or a maintainer's own Windows machine for the release (t
 recording, the same script is a check that the tools still work together, which no test does today.
 
 **Status.** Proposed 2026-10-27. Nothing is built. Two measurements in the [appendix](#appendix-what-was-measured)
-settle how the screen is captured and how the cut is rendered. The story needs pieces of
-[`run-control.md`](run-control.md) that are not merged yet: the editor's controls (its PR 2, beats 4 and 8), the Runs
-window (PR 3, beats 3 and 5), **Assert a region** (PR 4, beat 7), **Debug in my editor** (PR 7, beat 2) and the
-dashboard's live view (PR 8, beat 9). A first cut can be made once its PR 3 has shipped, with today's **Open in IDE**
+settle how the screen is captured and how the cut is rendered. Of the [`run-control.md`](run-control.md) pieces the
+story needs, the editor's controls (its PR 2, beats 4 and 8), the Runs window (PR 3, beats 3 and 5) and **Assert a
+region** (PR 4, beat 7) are on `main`; **Debug in my editor** (PR 7, beat 2), the dashboard's live view (PR 8, beat 9)
+and the coda's agent tools or desktop runs (PR 9 or 6, beat 10) are not. V1 can start now, with today's **Open in IDE**
 in place of **Debug in my editor** and the run page's **Live activity** in place of the live view. The release cut is
 meant to be filmed as a native take on a maintainer's Windows machine (Part 3, D11); nobody on the project films on a
 Mac. Nothing here is on [`ROADMAP.md`](../ROADMAP.md).
@@ -207,7 +207,7 @@ at time `t` it shows:
   (the master's own pixels at 2×), holding still while a line is read.
 - **The cursor**: a large pointer moving along the gesture log's path, a ring at each click, a key strip for shortcuts
   (`F5`, `Ctrl+Shift+5`) when the beat uses one.
-- **The subtitles**: the current line, bottom centre, white on a dark plate; burned into the social cut only.
+- **The subtitles**: the current line, bottom center, white on a dark plate; burned into the social cut only.
 - **The cards**: title, chapter labels in a corner (`Paused`, `The right locator`), the end card; the logos in
   `apps/docs/public/` and the docs site's fonts.
 
@@ -287,7 +287,8 @@ The script lives in `apps/showcase/` (a private workspace, never published), wit
 - **What the video shows**: a fictional shop, fictional people and addresses; no real token on screen (the pairing is
   made before filming); no real company's brand.
 - **JetBrains** needs a license or the trial on the machine that films ([`real-editor-checks.md`](real-editor-checks.md) §2).
-- **The run-control pieces may move** while they are built; the beats that need them come last (V4).
+- **The run-control pieces still to come (its PRs 6 to 9) may move** while they are built; the beats that need them
+  come last (V4).
 
 ## Open questions
 
@@ -304,6 +305,9 @@ The script lives in `apps/showcase/` (a private workspace, never published), wit
    the agent in the main cut; the desktop app in the native take, as its own clip.
 7. **The look**: dark editor and dashboard, as `demo-live-run.mp4`? Recommendation: dark, with the brand's background
    behind the windows.
+8. **Beats 3 and 8 against the Runs window as built**: run-control's PR 3 shows a running worker's test without its
+   last call, and a run that ends without a verdict. Change the beats (the test's name; VS Code's test tree for the
+   verdict), or add both to the Runs window? Recommendation: change the beats for V1, and decide for V4.
 
 ## Not in this plan
 
