@@ -95,6 +95,8 @@ each rule below ends with the section to read there.
 - **The worker never takes a project id from a page:** for a content script it resolves the project from the sending
   tab's URL (`bug-reports.ts`, `project-refresh.ts`), and records a verdict only on the stored replay's report or one
   sent to the desktop app. (see "The requests and who makes them")
+- **A content script names only its own tab's origin:** `piwi-start-replay` from a page plays on that tab's origin
+  alone, an extension page names any (`mayNameOrigin`, `src/background/senders.ts`, `senders.test.ts`).
 - **A message only the extension's own pages send is refused from anything else:** starting a recording, the viewport,
   request-condition and language messages, and the popup's Runs messages (`piwi-runs-summary`, `piwi-open-runs`),
   listed in `EXTENSION_PAGE_MESSAGES` (`src/background/index.ts`, `fromExtensionPage`). (see "What each folder holds")
