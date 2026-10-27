@@ -231,7 +231,17 @@ describe('what a stop takes from the window', () => {
 
   it('leaves a stop the window does not watch itself the input and, headless, the actions in the test’s window out', () => {
     const hub = 'ws://127.0.0.1:1/piwi/hub';
-    const watched = ['pick', 'record', 'assert', 'assert-region', 'mock', 'view', 'input', 'pick-at'] as const;
+    const watched = [
+      'pick',
+      'record',
+      'assert',
+      'assert-region',
+      'mock',
+      'view',
+      'input',
+      'input-clicks',
+      'pick-at',
+    ] as const;
     const state: RunsState = {
       discovery: 'found',
       hubs: [{ id: hub, connected: true, client: null }],

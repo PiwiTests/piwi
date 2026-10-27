@@ -287,7 +287,10 @@ export function stateForViewer(state: RunsState, watches: (view: RunsView) => bo
             return worker;
           }
           const intents = stop.intents.filter(
-            (what) => what !== 'input' && (stop.bar || !(IN_WINDOW as readonly string[]).includes(what)),
+            (what) =>
+              what !== 'input' &&
+              what !== 'input-clicks' &&
+              (stop.bar || !(IN_WINDOW as readonly string[]).includes(what)),
           );
           return { ...worker, stop: { ...stop, intents } };
         }),
