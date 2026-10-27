@@ -40,7 +40,8 @@ export type DocsGroupId = (typeof DOCS_GROUPS)[number]['id'] | 'home';
 
 /** True for a bundled file that is a docs page (not a snippet, the blog, or an agent guide). */
 export function isDocsPageFile(path: string): boolean {
-  if (!path.endsWith('.md') || path.startsWith('blog/') || path.endsWith('AGENTS.md')) return false;
+  if (!path.endsWith('.md') || path.startsWith('blog/') || path.endsWith('AGENTS.md') || path.endsWith('CLAUDE.md'))
+    return false;
   return !isGeneratedDocsPage(path.replace(/\.md$/, ''));
 }
 

@@ -3,7 +3,7 @@
  * Captures screenshots of user-facing features against a real dev server — the
  * standard closing step for UI work: every change that adds or visibly reworks
  * a screen gets a scene here, and the captured images go into the final report
- * (see the "Feature screenshots" rule in AGENTS.md).
+ * (see the "Feature screenshots" rule in app/AGENTS.md).
  *
  * Usage (from application/):
  *   node scripts/take-feature-screenshots.mjs                 # all scenes
@@ -850,7 +850,7 @@ const REPRO_SCENE_STEPS = (() => {
  * The common case is declarative — a route, an element to capture, done:
  *
  *   { name: 'locator-healing', tags: ['docs'], out: 'docs',
- *     route: '/test-run-cases/13',
+ *     route: '/test-run-cases/533',
  *     expand: ['[data-shot="alternative-locators"]'],
  *     of: '[data-shot="alternative-locators"]', pad: 12 }
  *
@@ -871,9 +871,10 @@ const REPRO_SCENE_STEPS = (() => {
  *
  * Scene options:
  *   description — one line, shown by --list
- *   mode        — 'web' (default), 'tour' or 'desktop'; picks the server the
- *                 scene runs against ('tour': the guided tour switched on), and
- *                 whether the mocked Tauri bridge is injected ('desktop')
+ *   mode        — 'web' (default), 'tour', 'desktop' or 'demo'; picks the server
+ *                 the scene runs against ('tour': the guided tour switched on;
+ *                 'demo': the built demo SPA under /demo/), and whether the
+ *                 mocked Tauri bridge is injected ('desktop')
  *   tags        — ['docs'] / ['desktop']; --tag selects on these
  *   out         — 'screens' (default) or 'docs'
  *   file        — output basename, default `<name>.png`

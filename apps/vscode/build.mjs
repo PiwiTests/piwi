@@ -31,7 +31,9 @@ const SERVICE = [
 const from = dirname(createRequire(import.meta.url).resolve('@piwitests/editor/server'));
 const missing = SERVICE.filter((name) => !existsSync(join(from, name)));
 if (missing.length) {
-  throw new Error(`The editor service's build in ${from} lacks ${missing.join(', ')}: run npm run editor:build.`);
+  throw new Error(
+    `The editor service's build in ${from} lacks ${missing.join(', ')}: run npm run editor:build -w @piwitests/editor.`,
+  );
 }
 mkdirSync('dist', { recursive: true });
 for (const name of SERVICE) copyFileSync(join(from, name), join('dist', name));

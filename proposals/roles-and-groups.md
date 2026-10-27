@@ -306,7 +306,7 @@ Administrator, Project admin, Maintainer (QA), Contributor (product owner), View
 
 `operate/authentication.md` (roles), `operate/project-access.md` (becomes "Access, roles and groups", with the matrix),
 `operate/api-keys.md`, `operate/integrations.md` (who can file an issue), and the `x-required-permission` mention in
-`apps/application/AGENTS.md`.
+`apps/application/server/api/AGENTS.md`.
 
 ---
 

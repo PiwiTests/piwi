@@ -5,7 +5,7 @@ description: Find the flakiest Playwright tests from Piwi's flaky analysis, make
 
 # Stabilize flaky tests with Piwi
 
-Piwi scores every test's flakiness over its whole run history and ranks it by impact, so you spend effort on the tests that actually cost the team — not whichever one failed most recently. For each test it also ranks **suspects** from that history (a route that is slower when it fails, a test running alongside, load), and its **Flake Lab** replays each suspect as a condition next to a control until the failure reproduces. A reproduced condition proves the cause, and the same condition later proves the fix. This skill follows that loop: rank, reproduce, fix, verify.
+Piwi scores every test's flakiness over its recent runs, with the CI time each one wastes, so you spend effort on the tests that actually cost the team — not whichever one failed most recently. For each test it also ranks **suspects** from that history (a route that is slower when it fails, a test running alongside, load), and its **Flake Lab** replays each suspect as a condition next to a control until the failure reproduces. A reproduced condition proves the cause, and the same condition later proves the fix. This skill follows that loop: rank, reproduce, fix, verify.
 
 ## How you reach Piwi
 
@@ -13,7 +13,7 @@ Prefer the **Piwi MCP server** if it is connected (`list_flaky_tests`, `get_flak
 
 ## Steps
 
-1. **Rank the flaky tests.** Call `list_flaky_tests` for the project and take the top few by impact. Do not try to fix the whole list at once.
+1. **Rank the flaky tests.** Call `list_flaky_tests` for the project (highest flakiness score first, each with its `impact` and `wastedCiMinutes`) and take the few that cost the most. Do not try to fix the whole list at once.
 
 2. **Read the suspects.** For a chosen test, call `get_flake_profile`. Each suspect carries raw counts ("slow in 7 of 8 failures and 3 of 44 passes"), the condition that would test it, and, once the lab has run, its latest result (`lab`). `experiments` lists what the lab already found; if an experiment reproduced the test, skip to step 4. Read one failing execution (`get_test_run_case` / `explain_failure`) for the error at the moment it flaked. A test whose root cause is `order` depends on state an earlier test leaves behind: `compare_coverage` with its `testCaseId` names that test and the code whose path changes, so reproduce by running that test before this one in a single worker, and fix the shared state, not the wait.
 
@@ -23,7 +23,7 @@ Prefer the **Piwi MCP server** if it is connected (`list_flaky_tests`, `get_flak
    npx @piwitests/reporter flake <testCaseId>
    ```
 
-   It runs a control, then one arm per suspect, retries off, and counts only failures with the same error as in CI. Exit code `0` means an arm reproduced the failure ("reproduced by delaying GET /api/cart to 1.8 s: 3/4 against 0/10, p = 0.011"); `1` means nothing did; `2` is an error (read its message: often the fixtures are not in use). Use `--suspect <n>` to test one suspect, `--all` to also try every condition at once. If the output warns that this checkout differs from the commit of the failures, say so in your report.
+   `<testCaseId>` can also be the test's spec file and line (`tests/checkout.spec.ts:42`). It runs a control, then one arm per suspect, retries off, and counts only failures with the same error as in CI. Exit code `0` means an arm reproduced the failure (`Verdict: reproduced by delay GET /api/cart 1.8 s (3/4 against 0/10, p = 0.011)`); `1` means nothing did; `2` is an error (read its message: often the fixtures are not in use). Use `--suspect <n>` to test one suspect, `--all` to also try every condition at once. If the output warns that this checkout differs from the commit of the failures, say so in your report.
 
    If nothing reproduces, do not guess a fix from the suspects alone. Report the arms and their counts, and fall back to reading the failure and the attempts diff.
 

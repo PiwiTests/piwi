@@ -132,7 +132,7 @@ async function setStatus(status: 'open' | 'resolved' | 'ignored') {
 }
 
 const columns = computed<TableColumn<ProjectFailureCluster>[]>(() => [
-  ...(canTriage.value ? [{ id: 'select', header: '' } as TableColumn<ProjectFailureCluster>] : []),
+  ...(canTriage.value ? [{ id: 'select', header: 'Select' } as TableColumn<ProjectFailureCluster>] : []),
   { accessorKey: 'signature', header: createSortHeader<ProjectFailureCluster>('Failure') },
   { accessorKey: 'errorType', header: createSortHeader<ProjectFailureCluster>('Type') },
   { accessorKey: 'status', header: createSortHeader<ProjectFailureCluster>('Triage') },

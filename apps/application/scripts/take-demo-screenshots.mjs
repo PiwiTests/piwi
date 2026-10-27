@@ -31,6 +31,7 @@ import {
   adminUsersPage,
   loginPage,
 } from './demo-pages.mjs';
+import { resolveChromium } from './lib/dev-server.mjs';
 
 const require = createRequire(import.meta.url);
 const pw = require('playwright');
@@ -125,7 +126,7 @@ function startServer(routes) {
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
   const browser = await chromium.launch({
-    executablePath: '/opt/pw-browsers/chromium',
+    executablePath: process.env.PIWI_DEMO_CHROMIUM || resolveChromium(),
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
 
