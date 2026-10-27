@@ -869,23 +869,58 @@ test.describe('the live view', () => {
         sendFrame(run.worker, 1, before);
         const live = card.getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' });
         await expect(live).toBeVisible();
-        const clicks = () => input.events.filter((e) => e.type === 'mouse' && e.action === 'click');
+        const buttons = () =>
+          input.events
+            .filter((e) => e.type === 'mouse' && e.action !== 'move')
+            .map((e) => ('button' in e ? [e.action, e.button, e.clickCount] : []));
 
-        // A click a quarter down the middle: the point in the page's own pixels.
+        // A click a quarter down the middle: the point in the page's own pixels, the button down and up at once.
         await live.click({ position: await at(live, 0.5, 0.25) });
-        await expect.poll(() => clicks().length).toBe(1);
-        const [click] = clicks();
-        expect(click).toMatchObject({ type: 'mouse', action: 'click', button: 'left', clickCount: 1 });
-        expect((click as { x: number }).x).toBeCloseTo(VIEWPORT.width * 0.5, -0.5);
-        expect((click as { y: number }).y).toBeCloseTo(VIEWPORT.height * 0.25, -0.5);
+        await expect.poll(buttons).toEqual([
+          ['down', 'left', 1],
+          ['up', 'left', 1],
+        ]);
+        const down = input.events.find((e) => e.type === 'mouse' && e.action === 'down') as { x: number; y: number };
+        expect(down.x).toBeCloseTo(VIEWPORT.width * 0.5, -0.5);
+        expect(down.y).toBeCloseTo(VIEWPORT.height * 0.25, -0.5);
         await expect(live).toBeFocused();
-        // A double click is one, and a right click a click of the right button.
+        // A double click as the browser counts it, a slow one included: no wait of the window's own decides it.
         await live.dblclick({ position: await at(live, 0.25, 0.5) });
-        await expect.poll(() => clicks().length).toBe(2);
-        expect(clicks()[1]).toMatchObject({ clickCount: 2, button: 'left' });
+        const box = (await live.boundingBox())!;
+        await runs.mouse.move(box.x + 30, box.y + 30);
+        await runs.mouse.down({ clickCount: 1 });
+        await runs.mouse.up({ clickCount: 1 });
+        await runs.waitForTimeout(320);
+        await runs.mouse.down({ clickCount: 2 });
+        await runs.mouse.up({ clickCount: 2 });
+        // A right click is the right button's; the middle one stays the window's, as it opens a new tab.
         await live.click({ button: 'right', position: await at(live, 0.75, 0.75) });
-        await expect.poll(() => clicks().length).toBe(3);
-        expect(clicks()[2]).toMatchObject({ clickCount: 1, button: 'right' });
+        await live.click({ button: 'middle', position: await at(live, 0.75, 0.75) });
+        await expect.poll(buttons).toEqual([
+          ['down', 'left', 1],
+          ['up', 'left', 1],
+          ['down', 'left', 1],
+          ['up', 'left', 1],
+          ['down', 'left', 2],
+          ['up', 'left', 2],
+          ['down', 'left', 1],
+          ['up', 'left', 1],
+          ['down', 'left', 2],
+          ['up', 'left', 2],
+          ['down', 'right', 1],
+          ['up', 'right', 1],
+        ]);
+        // Control held with a click: down around it, as the page's own click would have it.
+        const keysBefore = input.events.length;
+        await live.click({ position: await at(live, 0.5, 0.5), modifiers: ['Control'] });
+        await expect
+          .poll(() => input.events.slice(keysBefore).filter((e) => e.type !== 'mouse' || e.action !== 'move'))
+          .toEqual([
+            { type: 'key', action: 'down', key: 'Control' },
+            expect.objectContaining({ type: 'mouse', action: 'down', button: 'left', clickCount: 1 }),
+            expect.objectContaining({ type: 'mouse', action: 'up', button: 'left', clickCount: 1 }),
+            { type: 'key', action: 'up', key: 'Control' },
+          ]);
         // The wheel, once the view has the focus.
         await runs.mouse.wheel(0, 120);
         await expect.poll(() => input.events.find((e) => e.type === 'wheel')).toMatchObject({ deltaY: 120 });
@@ -925,6 +960,48 @@ test.describe('the live view', () => {
         await expect(live).not.toBeFocused();
         await runs.waitForTimeout(400);
         expect(input.events.length).toBe(sent);
+      } finally {
+        input.stop();
+        await endRun(run);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('a click on the view of an older reporter’s stop is held for a double click, a key held with it around it', async () => {
+    const { context, extensionId } = await pairedExtension(editor);
+    try {
+      const runs = await openRuns(context, extensionId);
+      const { before } = await shopFrames(context);
+      // A reporter that plays no click count on a button's down and up.
+      const run = await startRun(
+        editor,
+        'pays',
+        RUN_TAKES.filter((take) => take !== 'input-clicks'),
+      );
+      const input = playInput(run.worker);
+      try {
+        const card = liveRun(runs);
+        stopAtCheckout(run.worker, 1, { bar: false });
+        await answerImage(run.worker, before);
+        await card.getByRole('button', { name: 'Watch live' }).click();
+        await answerView(run.worker);
+        sendFrame(run.worker, 1, before);
+        const live = card.locator('img.live');
+        await expect(live).toBeVisible();
+        const sent = () => input.events.filter((e) => e.type !== 'mouse' || e.action !== 'move');
+        await live.dblclick({ position: await at(live, 0.25, 0.5) });
+        await expect.poll(sent).toEqual([expect.objectContaining({ action: 'click', button: 'left', clickCount: 2 })]);
+        await live.click({ position: await at(live, 0.5, 0.5), modifiers: ['Alt'] });
+        await expect
+          .poll(sent)
+          .toEqual([
+            expect.objectContaining({ action: 'click', clickCount: 2 }),
+            { type: 'key', action: 'down', key: 'Alt' },
+            expect.objectContaining({ action: 'click', button: 'left', clickCount: 1 }),
+            { type: 'key', action: 'up', key: 'Alt' },
+          ]);
       } finally {
         input.stop();
         await endRun(run);

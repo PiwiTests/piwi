@@ -197,7 +197,8 @@ client of the page's one screencast its size and quality (800 by 512 at quality 
 view stops its own client alone (the disposable `start()` returns), and a run with `video: 'on'` keeps a whole video
 through a watched stop, its duration checked with `ffprobe`. Where the screencast cannot start (the test runs its
 own), the view is an image of the page twice a second. `input { id, ref, worker, since, events }` plays `mouse`
-(`move`, `down`, `up`, `click` with `button` and a `clickCount` of 1 to 3), `wheel` and `key` events (`down`, `up`,
+(`move`, `down`, `up`, `click` with `button` and a `clickCount` of 1 to 3, which `down` and `up` carry too for a worker
+that lists `input-clicks`, played by `page.mouse.down` and `up`), `wheel` and `key` events (`down`, `up`,
 `press`: Playwright's key names or a printable ASCII character, modifiers before a pressed key) and `text` (1,000
 characters), 50 a message and 200 a second, at points in CSS pixels, as trusted input through internal calls, only
 from a connection watching the stop, and lets go of what it holds down before the test goes on; it reaches Piwi's
@@ -215,7 +216,7 @@ test in paint order (`elementsFromPoint`, into open shadow roots), Piwi's overla
 the candidates, and send the
 first that finds it alone where a pick goes (`ok`, `message`, `locator`); an image names the viewport its points are
 in (`width`, `height`), so an image at a device scale factor of 2 maps through it. The worker's `takes` and its
-`intents` on the hub gain `view`, `input` and `pick-at`. Measured headless at 1280 by 720 on a page of text, whose
+`intents` on the hub gain `view`, `input`, `input-clicks` and `pick-at`. Measured headless at 1280 by 720 on a page of text, whose
 frames are about 260 KB at quality 60 (a plain form's, about 10 KB): a still page sends one frame (Firefox paints
 about ten a second there, all alike, and sends one too), an animated one ten a second, 1.8 MB a second; the worker's
 CPU, 0.3 % while a stop waits unwatched, is 1.7 % watching the still page and 9 % the animated one in Chromium, 6.7 %
@@ -253,13 +254,17 @@ sends none gets the window as before, the actions in the test's window where the
 background worker's one connection to a hub watches a stop while any window does: each window gets the frames of the
 stops it watches alone, ten a second at most, the latest one waiting, and the state narrowed to it, so a stop another
 window watches takes from it no input and, headless, none of those actions; input goes to the hub only for a stop the
-window watches itself. The input goes in batches about every 50 ms, the moves coalesced, a drag as `down`, moves and
-`up`, and a click held 250 ms so a second one at the same place makes one `click` of `clickCount` 2: the view's `down`
-and `up` carry no click count, so only a held click plays a double click as Playwright does. The keys go to the page
+window watches itself. The input goes in batches about every 50 ms, the moves coalesced. Where the stop takes
+`input-clicks`, each button goes `down` and `up` as it does, with the browser's `detail` as its `clickCount`, so a
+double click is the one the system counts (a slow one at 320 ms included) and a single click waits for nothing;
+elsewhere, as for a worker before it, a drag goes as `down`, moves and `up`, and a click is held 250 ms so a second
+one at the same place makes one `click` of `clickCount` 2. The left and right buttons go to the page, the middle
+one, which opens a link in a new tab the view does not show, never. The keys go to the page
 while the view has the focus, as Playwright's names (Control or `⌘` as `ControlOrMeta`, with A, Y, Z, Enter and the
 editing keys alone), other characters and a paste as text; Escape gives the keyboard back to the window and never
 reaches the page, nor do the function keys and the browser's other shortcuts, and Tab moves the focus out unless a
-click into the view took the keyboard. A click carries no key held with it, and Shift+click picks: **Pick on the image** is a toggle
+click into the view took the keyboard. Control, Alt and Meta held with a click go `key` `down` before it and `up`
+after it, with no change to the protocol, and Shift+click picks: **Pick on the image** is a toggle
 and a Shift+click on a stop's image, headed or not, or its view. The docs give the window a page of its own,
 [Runs window](../apps/docs/features/runs-window.md).
 The spikes in the

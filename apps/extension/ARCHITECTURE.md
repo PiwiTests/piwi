@@ -892,10 +892,14 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   sentence shows under the stop's image in place of the view's start, and is read out, until a frame comes.
 - Where the stop takes `input` from the window (only while it watches), the view takes `tabindex=0`, a focus ring and
   the name that says keys and clicks go to the page, and plays them there (`ViewInputBatcher`,
-  `src/shared/view-input.ts`): the points in CSS pixels of the frame's viewport (`pagePoint`, the border left out), a
-  batch about every 50 ms, one on its way at a time, the moves coalesced, a click held 250 ms so the next one there
-  makes it a double click, a drag as `down`, moves and `up`, the wheel once the view has the focus, at most 50 events
-  waiting and 200 sent a second. A refusal shows once under the test.
+  `src/shared/view-input.ts`): the points in CSS pixels of the frame's viewport (`pagePoint`, the border left out, the
+  pointer event's own point, a mouse event's being whole pixels), a batch about every 50 ms, one on its way at a time,
+  the moves coalesced, the wheel once the view has the focus, at most 50 events waiting and 200 sent a second. The
+  buttons are read from `mousedown` and `mouseup`, whose `detail` counts a double click as the system does: where the
+  stop takes `input-clicks`, each goes `down` and `up` at once with that count; else a click is held 250 ms so the
+  next one there makes it a double click, and a drag goes as `down`, moves and `up`. The middle button never goes (it
+  opens a link in a new tab). Control, Alt and Meta held with a click go as `key` `down` before it and `up` after it;
+  Shift+click picks. A refusal shows once under the test.
 - The keys go to the page as `keyOnView` reads them: characters typed (printable ASCII as Playwright's key, any other
   as text), named keys pressed with Shift, Control (`⌘` on macOS) as `ControlOrMeta` with A, Y, Z, Enter and the
   editing keys, a paste as text. The browser's other shortcuts, the function keys and Escape stay the window's: Escape

@@ -102,6 +102,11 @@ export function keyOnView(press: KeyPress, options: { mac: boolean; captured: bo
   return pressed(`${shift}${key}`);
 }
 
+/** A browser's click count (`detail`) as a view's: 1 to 3, a synthetic press's 0 as 1, a fourth click as a third. */
+function countOf(detail: number | undefined): number {
+  return detail !== undefined && Number.isFinite(detail) ? Math.min(3, Math.max(1, Math.round(detail))) : 1;
+}
+
 /** The pasted text as the view's events: text of at most `MAX_VIEW_TEXT` characters each, `max` of them at most. */
 export function pastedText(text: string, max = MAX_VIEW_EVENTS): ViewInput[] {
   const chars = [...text.replace(/\0/g, '').replace(/\r\n?/g, '\n')];
@@ -112,9 +117,23 @@ export function pastedText(text: string, max = MAX_VIEW_EVENTS): ViewInput[] {
   return events;
 }
 
+/** A key held with a click, which goes down before it and up after it: Shift+click picks instead. */
+export type ViewModifier = 'Control' | 'Alt' | 'Meta';
+
+/** What a button's press carries beside its point: the browser's click count (`detail`), and the keys held with it. */
+export interface PressKeys {
+  count?: number;
+  modifiers?: readonly ViewModifier[];
+}
+
 export interface ViewInputOptions {
   /** Sends a batch, at most `MAX_VIEW_EVENTS` events; resolves once it was played (`true`) or refused. */
   send(events: ViewInput[]): Promise<boolean>;
+  /**
+   * Whether the stop plays a click count on a button's `down` and `up` (`input-clicks`): each press goes at once as
+   * the browser counted it, a double click included. Without it, a click is held for `doubleClickMs`.
+   */
+  clickCounts?: boolean;
   /** The least time between two batches. */
   intervalMs?: number;
   /** How long a click waits for the next one of a double or a triple click, at the same place. */
@@ -124,12 +143,16 @@ export interface ViewInputOptions {
   now?(): number;
 }
 
-/** A button pressed on the view and not sent yet: a click once released, a drag once the pointer goes. */
+/**
+ * A button pressed on the view: not sent yet, a click once released or a drag once the pointer goes; or sent at once
+ * (`dragging`), as `down` with its click count. The keys held with it go down before it and up after it.
+ */
 interface Press {
   button: ViewButton;
   x: number;
   y: number;
   dragging: boolean;
+  modifiers: readonly ViewModifier[];
 }
 
 /** A click sent once no next click can make it a double click: the count it has, and until when it waits. */
@@ -143,11 +166,13 @@ interface HeldClick {
 
 /**
  * The view's input in batches, one about every `intervalMs`, one on its way at a time: the pointer's moves coalesced to
- * the latest, a press sent as a click when it is released where it went down, or as a drag (`down`, the moves, `up`)
- * once the pointer leaves that place, a click held for `doubleClickMs` so that the next click there makes it a double
- * (then a triple) click, the wheel's turns added up, a text typed after a text joined to it. At most `MAX_VIEW_EVENTS`
- * events wait, and `MAX_VIEW_EVENT_RATE` go in a second; past them, a move is dropped first. Nothing is sent once
- * `dispose` was called.
+ * the latest, the wheel's turns added up, a text typed after a text joined to it. Where the stop plays click counts
+ * (`clickCounts`), a button's `down` and `up` go as they come, each with the browser's click count, so a double click
+ * is the system's own. Elsewhere a press goes as a click when it is released where it went down, or as a drag
+ * (`down`, the moves, `up`) once the pointer leaves that place, and a click is held for `doubleClickMs` so that the
+ * next click there makes it a double (then a triple) click. Control, Alt or Meta held with a press goes down before it
+ * and up after it. At most `MAX_VIEW_EVENTS` events wait, and `MAX_VIEW_EVENT_RATE` go in a second; past them, a move
+ * is dropped first. Nothing is sent once `dispose` was called.
  */
 export class ViewInputBatcher {
   private queue: ViewInput[] = [];
@@ -163,6 +188,7 @@ export class ViewInputBatcher {
   private readonly intervalMs: number;
   private readonly doubleClickMs: number;
   private readonly slop: number;
+  private readonly clickCounts: boolean;
   private readonly now: () => number;
 
   constructor(private readonly options: ViewInputOptions) {
@@ -170,6 +196,7 @@ export class ViewInputBatcher {
     this.intervalMs = options.intervalMs ?? 50;
     this.doubleClickMs = options.doubleClickMs ?? 250;
     this.slop = options.slop ?? 4;
+    this.clickCounts = options.clickCounts ?? false;
     this.rate = new RateWindow(MAX_VIEW_EVENT_RATE, this.now);
   }
 
@@ -182,6 +209,7 @@ export class ViewInputBatcher {
       // A drag: the button goes down where it was pressed, then follows the pointer.
       this.release();
       press.dragging = true;
+      this.hold(press.modifiers);
       this.add({ type: 'mouse', action: 'down', x: press.x, y: press.y, button: press.button });
     } else if (!press && this.held) {
       if (!this.far(this.held, x, y)) return;
@@ -192,23 +220,47 @@ export class ViewInputBatcher {
     else this.add({ type: 'mouse', action: 'move', x, y });
   }
 
-  /** A button went down at `x`, `y`: nothing is sent until the pointer goes or the button comes up. */
-  down(button: ViewButton, x: number, y: number): void {
+  /**
+   * A button went down at `x`, `y`: sent at once with its click count where the stop plays them; elsewhere nothing is
+   * sent until the pointer goes or the button comes up.
+   */
+  down(button: ViewButton, x: number, y: number, keys: PressKeys = {}): void {
     if (this.disposed) return;
     if (this.press) this.up(this.press.button, x, y);
+    const modifiers = [...(keys.modifiers ?? [])];
+    if (this.clickCounts) {
+      this.hold(modifiers);
+      this.add({ type: 'mouse', action: 'down', x, y, button, clickCount: countOf(keys.count) });
+      this.press = { button, x, y, dragging: true, modifiers };
+      return;
+    }
     const held = this.held;
-    if (held && (held.button !== button || this.far(held, x, y))) this.release();
-    this.press = { button, x, y, dragging: false };
+    if (held && (held.button !== button || this.far(held, x, y) || modifiers.length)) this.release();
+    this.press = { button, x, y, dragging: false, modifiers };
   }
 
-  /** A button came up at `x`, `y`: the end of a drag, or a click where it went down. */
-  up(button: ViewButton, x: number, y: number): void {
+  /** A button came up at `x`, `y`: sent at once where the stop plays click counts; the end of a drag, or a click. */
+  up(button: ViewButton, x: number, y: number, keys: PressKeys = {}): void {
     if (this.disposed) return;
     const press = this.press;
     if (!press || press.button !== button) return;
     this.press = null;
+    if (this.clickCounts) {
+      this.add({ type: 'mouse', action: 'up', x, y, button, clickCount: countOf(keys.count) });
+      this.letGo(press.modifiers);
+      return;
+    }
     if (press.dragging) {
       this.add({ type: 'mouse', action: 'up', x, y, button });
+      this.letGo(press.modifiers);
+      return;
+    }
+    if (press.modifiers.length) {
+      // A click with a key held goes at once, the key held around it.
+      this.release();
+      this.hold(press.modifiers);
+      this.add({ type: 'mouse', action: 'click', x: press.x, y: press.y, button, clickCount: 1 });
+      this.letGo(press.modifiers);
       return;
     }
     const held = this.held;
@@ -223,12 +275,14 @@ export class ViewInputBatcher {
     }
   }
 
-  /** The pointer left without its button coming up (the browser took it): a drag ends where it was. */
+  /** The pointer left without its button coming up (the browser took it): a button sent down comes up where it was. */
   cancel(x: number, y: number): void {
     if (this.disposed || !this.press) return;
     const press = this.press;
     this.press = null;
-    if (press.dragging) this.add({ type: 'mouse', action: 'up', x, y, button: press.button });
+    if (!press.dragging) return;
+    this.add({ type: 'mouse', action: 'up', x, y, button: press.button });
+    this.letGo(press.modifiers);
   }
 
   /** The wheel turned over `x`, `y`: turns in a row at the same place add up. */
@@ -272,6 +326,16 @@ export class ViewInputBatcher {
     this.held = null;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+  }
+
+  /** The keys held with a press go down, before it. */
+  private hold(modifiers: readonly ViewModifier[]): void {
+    for (const key of modifiers) this.add({ type: 'key', action: 'down', key });
+  }
+
+  /** The keys held with a press come up, after it, the last one first. */
+  private letGo(modifiers: readonly ViewModifier[]): void {
+    for (const key of [...modifiers].reverse()) this.add({ type: 'key', action: 'up', key });
   }
 
   /** Whether the point is farther than a click allows from where a press or a click was. */

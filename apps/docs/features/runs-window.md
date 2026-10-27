@@ -67,8 +67,8 @@ headed browser; their code reaches the editor the same way.
 
 While you watch, your input on the view goes to the page as a person's would, the picker and the recorder included:
 
-- **The pointer**: moves, clicks with any button, double and triple clicks, drags, and the wheel once the view has
-  the focus. A click is sent a quarter of a second after you make it, in case it is the first of a double click.
+- **The pointer**: moves, left and right clicks, double and triple clicks as your system counts them, drags, and the
+  wheel once the view has the focus. `Ctrl`, `Alt` and `⌘` held with a click are held in the page too.
 - **The keys**, while the view has the focus (a focus ring around it): characters are typed, named keys (Enter, the
   arrows, Backspace, Delete, Home, End) pressed, with Shift, and `Ctrl` (`⌘` on macOS) with A, Z, Y, Enter and the
   editing keys. A paste types the clipboard's text.
@@ -106,7 +106,8 @@ and the controls alone.
 - **A heavy page.** A frame over 384 KB (noise, large photos) gives way to a lighter image of the page, twice a
   second; when even that is too heavy, the window says so under the stop's image.
 - **The browser's keys stay its own.** A shortcut of the browser, a function key and `Esc` never reach the page.
-- **No modifier on a click.** A click is sent without the keys held with it; `Shift`+click picks instead.
+- **The middle button stays the window's.** It would open a link in a tab the view does not show; `Shift`+click picks
+  instead of clicking.
 
 ## Related
 

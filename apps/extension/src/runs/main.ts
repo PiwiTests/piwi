@@ -26,7 +26,7 @@ import {
   type RunsWhat,
 } from '../shared/runs.js';
 import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
-import { ViewInputBatcher, keyOnView, pastedText } from '../shared/view-input.js';
+import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '../shared/view-input.js';
 
 /**
  * The Runs window: the runs the paired editor started, each worker's test and where it stands, an image of a stopped
@@ -43,9 +43,10 @@ import { ViewInputBatcher, keyOnView, pastedText } from '../shared/view-input.js
  * Watch live shows the stop's frames in place of its image, while the window shows that stop: the view ends as the
  * stop does, the window hides or Watch live is turned off, and comes again at the worker's next stop while Watch live
  * stays on. Where the stop takes input from this window (`input`), the pointer and the keys on the live view go to the
- * page: Tab moves the focus on unless a click into the view took the keyboard, and Escape gives it back, as it does
- * the browser's shortcuts. Pick on the image, or a Shift+click on the image or the view, names the element under the
- * pointer.
+ * page, the left and right buttons with the click count the system gave them where the stop takes it
+ * (`input-clicks`), Control, Alt and Meta held around a click: Tab moves the focus on unless a click into the view
+ * took the keyboard, and Escape gives it back, as it does the browser's shortcuts. Pick on the image, or a Shift+click
+ * on the image or the view, names the element under the pointer.
  */
 
 await initI18n();
@@ -374,7 +375,17 @@ let hintFor: string | null = null;
 
 /** Whether the person's computer is a Mac, whose ⌘ holds the shortcuts. */
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
-const BUTTONS: Record<number, ViewButton> = { 0: 'left', 1: 'middle', 2: 'right' };
+/** The buttons that go to the page: the middle one stays the window's, as it opens what it clicks in a new tab. */
+const BUTTONS: Record<number, ViewButton> = { 0: 'left', 2: 'right' };
+
+/** The keys held with a click, which go down around it in the page (Shift+click picks instead). */
+function modifiersOf(event: MouseEvent): ViewModifier[] {
+  const held: ViewModifier[] = [];
+  if (event.ctrlKey) held.push('Control');
+  if (event.altKey) held.push('Alt');
+  if (event.metaKey) held.push('Meta');
+  return held;
+}
 
 function isLive(view: LiveView | undefined): view is LiveView {
   return !!view && (view.status === 'starting' || view.status === 'on');
@@ -463,8 +474,10 @@ function stopInput(view: LiveView): void {
 }
 
 /** The input on a view follows what its stop takes from this window: none while it takes none. */
-function syncInput(key: string, view: LiveView, on: boolean): void {
-  if (on && !view.input) view.input = new ViewInputBatcher({ send: (events) => sendInput(key, view, events) });
+function syncInput(key: string, view: LiveView, on: boolean, clickCounts: boolean): void {
+  if (on && !view.input) {
+    view.input = new ViewInputBatcher({ send: (events) => sendInput(key, view, events), clickCounts });
+  }
   if (!on) stopInput(view);
   view.inputOn = on;
   if (on && hintFor === null) hintFor = `${key}|${view.since}`;
@@ -562,41 +575,52 @@ function liveImage(key: string, view: LiveView): void {
   img.draggable = false;
   img.dataset.focus = `${key}|view`;
   const at = (event: MouseEvent) => (view.viewport ? pointOn(img, event, view.viewport) : null);
+  /** Where the pointer event before a mouse event put the pointer: a mouse event's own point is whole pixels. */
+  let pointed: { x: number; y: number } | null = null;
   img.addEventListener('pointerdown', (event) => {
     if (event.shiftKey || picking.has(key)) {
+      // No mouse event follows: the page gets nothing of it.
       event.preventDefault();
       if (view.viewport) void pickOnImage(key, view.since, img, event, view.viewport);
       return;
     }
-    const button = BUTTONS[event.button];
-    const point = at(event);
-    if (!view.input || !button || !point) return;
-    // A click into the view takes the keyboard, Tab included; the image is no picture to drag or select.
-    event.preventDefault();
+    pointed = at(event);
+    if (!view.input || !BUTTONS[event.button] || !pointed) return;
+    // A click into the view takes the keyboard, Tab included.
     img.focus({ preventScroll: true });
     view.captured = true;
     img.setPointerCapture?.(event.pointerId);
-    view.input.down(button, point.x, point.y);
+  });
+  // The buttons as the mouse events name them, which count a double click as the system does (`detail`).
+  img.addEventListener('mousedown', (event) => {
+    if (!view.input) return;
+    // The image is no picture to drag or select, and the middle button scrolls nothing here.
+    event.preventDefault();
+    const button = BUTTONS[event.button];
+    const point = pointed ?? at(event);
+    if (button && point) {
+      view.input.down(button, point.x, point.y, { count: event.detail, modifiers: modifiersOf(event) });
+    }
   });
   img.addEventListener('pointermove', (event) => {
-    const point = at(event);
-    if (view.input && point) view.input.move(point.x, point.y);
+    pointed = at(event);
+    if (view.input && pointed) view.input.move(pointed.x, pointed.y);
   });
   img.addEventListener('pointerup', (event) => {
+    pointed = at(event);
+  });
+  img.addEventListener('mouseup', (event) => {
     const button = BUTTONS[event.button];
-    const point = at(event);
-    if (view.input && button && point) view.input.up(button, point.x, point.y);
+    const point = pointed ?? at(event);
+    if (view.input && button && point) view.input.up(button, point.x, point.y, { count: event.detail });
   });
   img.addEventListener('pointercancel', (event) => {
     const point = at(event);
     if (view.input && point) view.input.cancel(point.x, point.y);
   });
-  // A right click goes to the page, not to this window's menu; a middle one does not scroll this window.
+  // A right click goes to the page, not to this window's menu.
   img.addEventListener('contextmenu', (event) => {
     if (view.input) event.preventDefault();
-  });
-  img.addEventListener('mousedown', (event) => {
-    if (view.input && event.button === 1) event.preventDefault();
   });
   // The wheel scrolls the page once the view has the focus; until then it scrolls this window.
   img.addEventListener(
@@ -1330,7 +1354,9 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop): HTMLElement
   const view = views.get(key);
   const live = isLive(view);
   const framed = live && !!view.viewport;
-  if (view) syncInput(key, view, framed && view.status === 'on' && intents.includes('input'));
+  if (view) {
+    syncInput(key, view, framed && view.status === 'on' && intents.includes('input'), intents.includes('input-clicks'));
+  }
   const pickable = intents.includes('pick-at') && (framed || !!still?.viewport);
   if (!pickable) picking.delete(key);
 

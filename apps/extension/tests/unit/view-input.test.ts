@@ -290,6 +290,33 @@ describe('the live view’s input in batches', () => {
     expect(batches).toHaveLength(1);
   });
 
+  it('sends a click with Control, Alt or Meta held at once, the keys down around it, and a drag the same', async () => {
+    batcher.down('left', 10, 10, { modifiers: ['Control', 'Alt'] });
+    batcher.up('left', 10, 10);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(batches).toEqual([
+      [
+        { type: 'key', action: 'down', key: 'Control' },
+        { type: 'key', action: 'down', key: 'Alt' },
+        { type: 'mouse', action: 'click', x: 10, y: 10, button: 'left', clickCount: 1 },
+        { type: 'key', action: 'up', key: 'Alt' },
+        { type: 'key', action: 'up', key: 'Control' },
+      ],
+    ]);
+    await played();
+    batcher.down('left', 10, 10, { modifiers: ['Meta'] });
+    batcher.move(40, 40);
+    batcher.up('left', 40, 40);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(batches[1]).toEqual([
+      { type: 'key', action: 'down', key: 'Meta' },
+      { type: 'mouse', action: 'down', x: 10, y: 10, button: 'left' },
+      { type: 'mouse', action: 'move', x: 40, y: 40 },
+      { type: 'mouse', action: 'up', x: 40, y: 40, button: 'left' },
+      { type: 'key', action: 'up', key: 'Meta' },
+    ]);
+  });
+
   it('ends a drag the browser took the pointer from where it was, and a pending click with nothing', async () => {
     batcher.down('left', 1, 1);
     batcher.cancel(1, 1);
@@ -303,6 +330,66 @@ describe('the live view’s input in batches', () => {
         { type: 'mouse', action: 'move', x: 50, y: 50 },
         { type: 'mouse', action: 'up', x: 60, y: 60, button: 'left' },
       ],
+    ]);
+  });
+});
+
+describe('the live view’s input where the stop plays click counts', () => {
+  let batches: ViewInput[][];
+  let batcher: ViewInputBatcher;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    batches = [];
+    batcher = new ViewInputBatcher({
+      send: async (events) => {
+        batches.push(events);
+        return true;
+      },
+      clickCounts: true,
+      now: () => Date.now(),
+    });
+  });
+
+  afterEach(() => {
+    batcher.dispose();
+    vi.useRealTimers();
+  });
+
+  it('sends each button down and up at once, with the count the browser gave it, a slow double click included', async () => {
+    batcher.down('left', 50, 50, { count: 1 });
+    await vi.advanceTimersByTimeAsync(0);
+    // No wait for a second click: the button goes down as it does.
+    expect(batches).toEqual([[{ type: 'mouse', action: 'down', x: 50, y: 50, button: 'left', clickCount: 1 }]]);
+    batcher.up('left', 50, 50, { count: 1 });
+    await vi.advanceTimersByTimeAsync(320);
+    // 320 ms later, which the system still counts as a double click (`detail` 2).
+    batcher.down('left', 51, 50, { count: 2 });
+    batcher.up('left', 51, 50, { count: 2 });
+    await vi.advanceTimersByTimeAsync(60);
+    expect(batches.flat()).toEqual([
+      { type: 'mouse', action: 'down', x: 50, y: 50, button: 'left', clickCount: 1 },
+      { type: 'mouse', action: 'up', x: 50, y: 50, button: 'left', clickCount: 1 },
+      { type: 'mouse', action: 'down', x: 51, y: 50, button: 'left', clickCount: 2 },
+      { type: 'mouse', action: 'up', x: 51, y: 50, button: 'left', clickCount: 2 },
+    ]);
+  });
+
+  it('keeps a count within 1 to 3, holds the keys around the press, and lets the button go as the pointer leaves', async () => {
+    batcher.down('right', 5, 5, { count: 0, modifiers: ['Control'] });
+    batcher.move(9, 9);
+    batcher.up('right', 9, 9, { count: 5 });
+    batcher.down('left', 1, 1, { count: 4 });
+    batcher.cancel(2, 2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(batches.flat()).toEqual([
+      { type: 'key', action: 'down', key: 'Control' },
+      { type: 'mouse', action: 'down', x: 5, y: 5, button: 'right', clickCount: 1 },
+      { type: 'mouse', action: 'move', x: 9, y: 9 },
+      { type: 'mouse', action: 'up', x: 9, y: 9, button: 'right', clickCount: 3 },
+      { type: 'key', action: 'up', key: 'Control' },
+      { type: 'mouse', action: 'down', x: 1, y: 1, button: 'left', clickCount: 3 },
+      { type: 'mouse', action: 'up', x: 2, y: 2, button: 'left' },
     ]);
   });
 });
