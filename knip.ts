@@ -14,9 +14,9 @@ delete process.env.CI;
 const config: KnipConfig = {
   // Report exports nothing imports; an export used only inside its own module is not flagged.
   ignoreExportsUsedInFile: true,
-  // System commands the scripts run: Windows' `tasklist`, and ImageMagick's `import` and `Xvfb` for the JetBrains
-  // screenshots.
-  ignoreBinaries: ['tasklist', 'import', 'Xvfb'],
+  // System commands the scripts run: Windows' `tasklist`, ImageMagick's `import` and `Xvfb` for the JetBrains
+  // screenshots, and `ffprobe`, which the reporter's live view spec reads a video's length with where it is installed.
+  ignoreBinaries: ['tasklist', 'import', 'Xvfb', 'ffprobe'],
   workspaces: {
     '.': {
       // The JetBrains plugin is not a workspace: its screenshot script is read from the root.

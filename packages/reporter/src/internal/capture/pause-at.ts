@@ -606,6 +606,53 @@ async function within<T>(run: Promise<T>, ms: number): Promise<T | undefined> {
   }
 }
 
+/** A signal that aborts once either of `a` and `b` does. */
+function eitherSignal(a: AbortSignal, b: AbortSignal): AbortSignal {
+  const either = new AbortController();
+  const abort = () => either.abort();
+  if (a.aborted || b.aborted) abort();
+  a.addEventListener('abort', abort, { once: true });
+  b.addEventListener('abort', abort, { once: true });
+  return either.signal;
+}
+
+/**
+ * A stop no pause bar shows, watched through its live view (a headless run): no bar and no highlight, the intents
+ * handed to `intents` alone, each run in the page as the bar runs it (the picker, the recorder, the check panel, a
+ * region's picker) and driven through the view's input. Each one ends as the stop does (`ended`) or as the view it is
+ * driven through does (`viewEnded`, asked as it starts), leaving nothing of its own in the page. Settles once `ended`
+ * aborts, never throwing. Every page call it makes must run inside an internal call.
+ */
+export async function viewHere(
+  page: Page,
+  probe: PickerProbe,
+  onPick: (pick: PickedLocator) => void | Promise<void>,
+  onRecord: ((ended?: AbortSignal) => Promise<void>) | undefined,
+  ended: AbortSignal,
+  intents: BarIntents,
+  onIntent: ((intent: CodeIntent, ended?: AbortSignal) => Promise<void>) | undefined,
+  viewEnded: () => AbortSignal,
+): Promise<void> {
+  for (;;) {
+    const intent = await unlessEnded(intents.wait(), ended);
+    intents.answered();
+    if (!intent || ended.aborted) return;
+    const signal = eitherSignal(ended, viewEnded());
+    try {
+      if (intent === 'pick') {
+        const picked = await pickLocator(page, probe, null, signal).catch(() => null);
+        if (picked && !signal.aborted) await onPick(picked);
+      } else if (intent === 'record') {
+        await onRecord?.(signal);
+      } else {
+        await onIntent?.(intent, signal);
+      }
+    } catch {
+      // The page broke under the intent: the stop holds on.
+    }
+  }
+}
+
 /**
  * Show the pause bar at a stop: highlight the element, show the bar and wait for its answer. **Pick a locator** runs
  * the picker and shows the bar again; `onPick` receives each confirmed pick. With `onRecord` (the editor that started

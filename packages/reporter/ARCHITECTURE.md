@@ -84,7 +84,13 @@ Two **external contracts** beyond the npm API:
   `Response` in memory only, the body read when the one to mock is asked for, dropped as the
   test ends, their URLs' credentials hidden), the one to mock, and a locator's count on the
   stopped page (`internal/capture/chain-locator.ts`), one at a time, its matches outlined while
-  the bar shows. One stop shows at a time in a worker: one waiting its turn goes on unshown when
+  the bar shows. A viewer outside the page watches a stop's live view (`view`: the page's screencast through
+  an internal call, frames sent ten a second at most, the latest alone while the connection is backed up,
+  never kept), plays its input there (`input`: `page.mouse` and `page.keyboard`, trusted input, only while it
+  watches, let go before the test goes on), drives Pick, Record, Assert and Assert a region in a page no bar
+  shows through that view (`viewHere`), and picks the element under a point of any image of the page
+  (`pick-at`: the ARIA snapshot's boxes, `page.getByRef`, ranked as a pick, `internal/capture/pick-at.ts`).
+  The frames go to the editor alone, and from it to the paired viewers that asked. One stop shows at a time in a worker: one waiting its turn goes on unshown when
   the test ended meanwhile, its page or context closed or its breakpoint went, and a context's
   close, its own or its browser's, lets the call its debugger holds go on first. With the
   connection open, a failing test's page is held once the test and its hooks are done
@@ -243,7 +249,9 @@ src/
                 PIWI_EDITOR_SEND), record-handoff (Record here:
                 the paused page relayed to the editor's recorder, PIWI_RECORD_CHANNEL),
                 run-channel (the worker's run connection to the editor,
-                PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in),
+                PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in,
+                a stopped page's live view and the input played on it),
+                pick-at (the element under a point of an image of a stopped page),
                 kept-responses (the text bodies an interactive run keeps for
                 Mock a request), chain-locator (a locator chain's source built
                 against a page, for the locator at the editor's caret)

@@ -150,7 +150,7 @@ describe('the worker’s run connection', () => {
         pid: process.pid,
         playwright: '1.64.1',
         reporter: expect.any(String),
-        takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'],
+        takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'pick-at'],
       });
       const answers: string[] = [];
       const held = holdStop(STOP, (answer) => void answers.push(answer));

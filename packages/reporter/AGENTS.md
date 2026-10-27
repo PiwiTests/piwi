@@ -48,18 +48,18 @@ per-directory responsibilities.
    (in place of `PIWI_PAUSE_AT`) through the same stop policy, and answers a request for an image of the stopped page
    with a JPEG screenshot taken through an internal call, none for a stop whose page it cannot tell (a navigation or a
    key press in a context with several pages). Its `run-attach` lists what it takes (`takes`: the intents `pick`,
-   `record`, `assert`, `assert-region` and the queries `requests`, `mock`, `locator`): at a stop the pause bar shows, a
-   `request` naming that stop starts the bar's own **Pick a locator** or **Record here** (`BarIntents` in
-   `pause-at.ts`, which the bar's loop races against its own buttons: the same picker, the pick posted to
-   `PIWI_EDITOR_SEND`, the same hand-off over `PIWI_RECORD_CHANNEL`), **Assert** (the same hand-off in its `check`
+   `record`, `assert`, `assert-region`, the queries `requests`, `mock`, `locator`, and, for a viewer outside the
+   page, `view`, `input` and `pick-at`): at a stop the pause bar shows, a `request` naming that stop starts the bar's
+   own **Pick a locator** or **Record here** (`BarIntents` in `pause-at.ts`, which the bar's loop races against its own
+   buttons: the same picker, the pick posted to `PIWI_EDITOR_SEND`, the same hand-off over `PIWI_RECORD_CHANNEL`), **Assert** (the same hand-off in its `check`
    mode, naming the stop: the editor's recorder opens the check panel's Check an element alone, and the editor service
    writes the check) or **Assert a region** (the bar's picker, then the confirmed locator's `ariaSnapshot()`, sent as
    `region` without a password field's value nor a link's URL holding a credential, `region-snapshot.ts`), each
    ending with the stop, the test's window brought to the front through an internal call, and is
    answered at once with whether it started: refused at a stop that ended or is ending (its test ended, its page or
-   context began to close), one no bar shows, one whose page it cannot tell, without a record channel for Record here
-   and Assert, and while a pick, a check or a recording runs. At any stop, headless included, `requests` lists the
-   responses the test kept and `mock` hands over one of them with its body (`kept-responses.ts`: while the run
+   context began to close), one no bar shows whose live view nobody watches, one whose page it cannot tell, without a
+   record channel for Record here and Assert, and while a pick, a check or a recording runs. At any stop, headless
+   included, `requests` lists the responses the test kept and `mock` hands over one of them with its body (`kept-responses.ts`: while the run
    connection is open, the fetch and XHR answers of the test's pages since it began whose type is text or unnamed,
    the latest 50, 256 KB each at most as their `content-length` says (one that says none is listed without a size),
    each kept as its `Response` in the worker's memory alone, its body read only when `mock` asks for it, through an
@@ -67,7 +67,29 @@ per-directory responsibilities.
    as the test ends; every URL listed or handed over with its credentials hidden, `hideSecretsInText` of
    `@piwitests/core/mask`), and `locator` counts a chain (`chain-locator.ts`, built through the chain grammar's calls
    alone) on the stopped page, one count after the other, and, where the bar shows, outlines its matches with
-   Playwright's highlight, the one before taken down first and the last before the stop ends. While it is open a headless run stops too, held until the
+   Playwright's highlight, the one before taken down first and the last before the stop ends. For a viewer outside the
+   page (Piwi Picker, through the editor's hub), `view` shows the stopped page's live view: the page's screencast
+   (`page.screencast.start` through an internal call, at its viewport scaled to fit 1280 by 800, JPEG quality 60,
+   unless a client that came first, the test's video or its trace's images, set its own size and quality, which every
+   later client gets; the view stops its own client alone, and the video stays whole), each frame acknowledged ten a
+   second at most so the browser paints no more, sent as `frame` with the viewport in CSS pixels, one like the frame
+   before or over 384 KB dropped, the latest alone waiting while the connection is backed up, never kept nor attached;
+   an image of the page twice a second where the screencast cannot start (the test runs its own). `input` plays a
+   viewer's mouse, wheel, key and text events (`@piwitests/core/run-view`: Playwright's key names alone, nothing
+   evaluated) with `page.mouse` and `page.keyboard` through internal calls, trusted input that reaches whatever is at
+   the point, Piwi's overlays included (the picker, the recorder, a headed stop's pause bar, whose buttons answer the
+   stop as a click in the window does), only while that stop's view is watched, 200 events a second at most, and lets
+   go of what it holds down before the test goes on. At a stop no bar shows, Pick a locator, Record here, Assert and
+   Assert a region run in the page while its view is watched (`viewHere` in `pause-at.ts`), driven through that input,
+   and end with the view or the stop, leaving nothing of theirs in the page (the picker's choice list included,
+   `__piwiChoiceCleanup`). `pick-at` reads the page's ARIA snapshot in AI mode with its boxes, takes the innermost
+   element under a point (Piwi's overlays left out, an iframe refused), ranks it as the bar's pick does, with
+   `locator.normalize()`'s locator among the candidates, and posts the first that finds it alone to
+   `PIWI_EDITOR_SEND` (`pick-at.ts`; `page.getByRef` and the boxes feature-checked, refused before Playwright 1.64);
+   an image of a stopped page names its viewport (`width`, `height`), the CSS pixels a point is in. The view stops
+   before the stop's `running`, as its page closes and as the connection does: no frame of a stop goes once it began
+   to end. A frame carries whatever the page shows: it goes to the editor service alone, which sends it to the paired,
+   authenticated viewers that asked for it. While it is open a headless run stops too, held until the
    editor answers; a headed stop shows the bar as well, and the first answer wins. Whoever answers a stop, it goes to
    `piwi-pauses` as one at the bar does, and every stop's end reaches the editor (`running`), one that ends unanswered
    (the test function ended, its page or context closed, or for a stop whose page it cannot tell any page of its

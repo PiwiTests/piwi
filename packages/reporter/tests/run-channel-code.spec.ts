@@ -486,7 +486,7 @@ describe('code from a stop, the worker’s part', () => {
     ]);
     expect(connections[0]!.heard[0]).toMatchObject({
       type: 'run-attach',
-      takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'],
+      takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'pick-at'],
     });
   });
 
