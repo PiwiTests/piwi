@@ -11,10 +11,12 @@
  * that writes code is refused when the client writes none, and before it starts when nothing can be written at the
  * stopped line; the code never goes to Piwi Picker, which hears what each one came to (`outcome`): the sentence the
  * client shows, the warnings of the code, or why it was refused once it started. Every command names the stop it
- * answers (`since`).
+ * answers (`since`). The responses a test kept are listed with the credentials of their URLs hidden, whatever the
+ * worker's reporter hid.
  */
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { hideSecretsInText } from '@piwitests/core/mask';
 import { sessionFromEvents, type RawCaptureEvent } from '@piwitests/core/recording';
 import type {
   LocatorAtCaretParams,
@@ -100,6 +102,9 @@ function refuse(message: string): RunControlResult {
 /** Why a command that names no stop is refused. */
 const NEEDS_STOP = 'The command needs the stop it answers.';
 
+/** The longest URL of a kept response, as the run channel takes it. */
+const MAX_URL = 8192;
+
 export class StopActions {
   /** The runs a code was sent for: the first code of a run says the test goes on with the code it started with. */
   private readonly told = new Set<string>();
@@ -143,7 +148,10 @@ export class StopActions {
     }
   }
 
-  /** `piwi/stopRequests`, and the hub's `requests`: the responses the stopped test kept, without their bodies. */
+  /**
+   * `piwi/stopRequests`, and the hub's `requests`: the responses the stopped test kept, without their bodies, each URL
+   * with its credentials hidden (`hideSecretsInText`, as the reporter hides them).
+   */
   async requests(params: StopRequestsParams): Promise<StopRequestsResult> {
     if (typeof params?.since !== 'string' || !params.since) return { ok: false, message: NEEDS_STOP, requests: [] };
     const answer = await this.options.sessions.requests({
@@ -151,7 +159,11 @@ export class StopActions {
       worker: params.worker ?? null,
       since: params.since,
     });
-    return { ok: answer.ok, message: answer.message, requests: answer.requests };
+    // A URL a hidden value made longer than a worker may send is left out, as the reporter leaves it out.
+    const requests = answer.requests
+      .map((request) => ({ ...request, url: hideSecretsInText(request.url) }))
+      .filter((request) => request.url.length <= MAX_URL);
+    return { ok: answer.ok, message: answer.message, requests };
   }
 
   /**

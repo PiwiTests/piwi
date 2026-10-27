@@ -817,6 +817,35 @@ describe('code from a stop, started from Piwi Picker', () => {
       svc.stop();
     }
   });
+
+  test('lists the responses a test kept with the credentials of their URLs hidden, whatever its reporter hid', async () => {
+    const svc = await service(dir, true, { distDir: dist }, { stopCode: true });
+    const published = await waitFor(() => svc.published[0] ?? undefined);
+    const follower = await hubClient(published.hub!, true);
+    const { ref, worker, since } = await stoppedWorker(svc, 'tests/checkout.spec.ts', 5, true);
+    // As a reporter that hides none of them lists them.
+    const clear = [
+      { ...KEPT, url: 'http://localhost:3000/api/chunked?token=abc123', size: null },
+      { ...KEPT, id: 2, url: 'http://localhost:3000/api/cart?page=2' },
+    ];
+    const hidden = [
+      { ...clear[0], url: 'http://localhost:3000/api/chunked?token=<hidden>' },
+      { ...clear[1], url: 'http://localhost:3000/api/cart?page=2' },
+    ];
+    try {
+      follower.send({ type: 'requests', id: 2, ref, since });
+      await answer(worker, 0, 'requests', { ok: true, message: 'The test kept 2 responses.', requests: clear });
+      expect(await follower.reply(2)).toMatchObject({ ok: true, requests: hidden });
+      const listing = svc.client.sendRequest('piwi/stopRequests', { ref, since }) as Promise<StopRequestsResult>;
+      await answer(worker, 1, 'requests', { ok: true, message: 'The test kept 2 responses.', requests: clear });
+      expect((await listing).requests).toEqual(hidden);
+      expect(JSON.stringify(follower.messages)).not.toContain('abc123');
+    } finally {
+      worker.socket.destroy();
+      follower.socket.close();
+      svc.stop();
+    }
+  });
 });
 
 /** A connection to the hub, as Piwi Picker opens one: hello, and `subscribe` when it follows the runs. */

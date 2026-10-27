@@ -373,7 +373,8 @@ clients stay thin and both editors give the same answers.
   is asked); a check whose stop ended, or that cannot be written at the stopped line, is refused at once.
   `assert-region` has the worker pick a region and send its ARIA snapshot (`region`), written as `toMatchAriaSnapshot`
   (`renderSpec`). `mock` asks the worker for the response chosen among those `piwi/stopRequests` lists (method, URL,
-  status, type, size, time; no header, no body) and writes it with the browser extension's `mockCode`
+  status, type, size, time; no header, no body; each URL with its credentials hidden again, `hideSecretsInText`,
+  whatever the worker's reporter hid) and writes it with the browser extension's `mockCode`
   (`apps/extension/src/shared/mock-code.ts`, bundled in: credentials hidden by name and by shape, in a JSON, form or
   text body and in the URL, no header written, the body inline; the warnings say what was hidden, that a body neither
   JSON nor a form was written as it came, and that one seems to hold an email address or a phone number), on the page
