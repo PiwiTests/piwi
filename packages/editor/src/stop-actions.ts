@@ -147,7 +147,11 @@ export class StopActions {
       return { ok: false, message: NEEDS_STOP, locator: null, count: null };
     }
     const stop = { ref: params.ref, worker: params.worker ?? null, since: params.since };
-    const clear = async (message: string, ok: boolean, locator: string | null = null): Promise<LocatorAtCaretResult> => {
+    const clear = async (
+      message: string,
+      ok: boolean,
+      locator: string | null = null,
+    ): Promise<LocatorAtCaretResult> => {
       const answer = await sessions.locator(stop, null);
       return answer.ok ? { ok, message, locator, count: null } : { ...answer, locator };
     };

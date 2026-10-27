@@ -501,7 +501,14 @@ describe('code from a stop, with a client that writes it', () => {
   });
 
   test('writes code above the failing line at a failure the pause bar holds', async () => {
-    const { ref, worker, since } = await stoppedWorker(svc, 'tests/checkout.spec.ts', 5, true, [...RUN_TAKES], 'failure');
+    const { ref, worker, since } = await stoppedWorker(
+      svc,
+      'tests/checkout.spec.ts',
+      5,
+      true,
+      [...RUN_TAKES],
+      'failure',
+    );
     try {
       expect(svc.latest(ref)!.workers[0]!.stop).toMatchObject({ reason: 'failure', title: 'Failed: Timed out' });
       const mocking = action({ ref, since, action: 'mock', request: 1 });
