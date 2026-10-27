@@ -172,7 +172,7 @@ describe('the worker’s run connection', () => {
         pid: process.pid,
         playwright: '1.64.1',
         reporter: expect.any(String),
-        takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'pick-at'],
+        takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', 'pick-at'],
         holds: ['failure'],
       });
       const answers: string[] = [];
