@@ -512,7 +512,12 @@ describe('in Chromium', () => {
     await page.waitForFunction("document.body.dataset.done === 'first'");
     // The page's own beforeunload listener stops the debugger too, before the mark's.
     await page.evaluate("addEventListener('beforeunload', function appGuard() {})");
-    await page.evaluate("location.href = '/second.html'");
+    // The script leaves the document once evaluate has answered: a navigation started inside it can destroy the
+    // context before the answer comes back, on a busy machine.
+    await Promise.all([
+      page.waitForURL('**/second.html'),
+      page.evaluate("setTimeout(() => { location.href = '/second.html'; })"),
+    ]);
     await page.click('body[data-ready="second"] #go');
     await page.waitForFunction("document.body.dataset.done === 'second'");
     await page.goto(url);

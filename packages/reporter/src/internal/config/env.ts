@@ -76,6 +76,7 @@ export const PIWI_ENV_KEYS = {
   codeReachRoots: 'PIWI_CODE_REACH_ROOTS',
   coverageBrowser: 'PIWI_COVERAGE_BROWSER',
   coverageServer: 'PIWI_COVERAGE_SERVER',
+  coverageCss: 'PIWI_COVERAGE_CSS',
   externalIdPattern: 'PIWI_EXTERNAL_ID_PATTERN',
   externalIdOnDuplicate: 'PIWI_EXTERNAL_ID_ON_DUPLICATE',
   captureServerTraces: 'PIWI_CAPTURE_SERVER_TRACES',
@@ -423,10 +424,14 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
   const coverage: CoverageOptions = { ...mergedRaw.coverage };
   const coverageBrowser = env[PIWI_ENV_KEYS.coverageBrowser];
   const coverageServer = env[PIWI_ENV_KEYS.coverageServer];
+  const coverageCss = env[PIWI_ENV_KEYS.coverageCss];
   if (coverage.browser === undefined && coverageBrowser)
     coverage.browser = coverageBrowser as CoverageOptions['browser'];
   if (coverage.server === undefined && coverageServer) coverage.server = coverageServer as CoverageOptions['server'];
-  if (coverage.browser !== undefined || coverage.server !== undefined) mergedRaw.coverage = coverage;
+  if (coverage.css === undefined && coverageCss) coverage.css = coverageCss as CoverageOptions['css'];
+  if (coverage.browser !== undefined || coverage.server !== undefined || coverage.css !== undefined) {
+    mergedRaw.coverage = coverage;
+  }
 
   // So are external IDs.
   type ExternalIdOptions = NonNullable<PiwiDashboardOptions['externalId']>;
@@ -499,9 +504,11 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.collectPerformanceMetrics === false) {
     env[PIWI_ENV_KEYS.coverageBrowser] = 'off';
     env[PIWI_ENV_KEYS.coverageServer] = 'off';
+    env[PIWI_ENV_KEYS.coverageCss] = 'off';
   } else {
     if (options.coverage?.browser !== undefined) env[PIWI_ENV_KEYS.coverageBrowser] = options.coverage.browser;
     if (options.coverage?.server !== undefined) env[PIWI_ENV_KEYS.coverageServer] = options.coverage.server;
+    if (options.coverage?.css !== undefined) env[PIWI_ENV_KEYS.coverageCss] = options.coverage.css;
   }
   // Server-trace capture rides the same bridge: off when either flag disables
   // it, explicit true otherwise (unset keeps the fixture's default-on).

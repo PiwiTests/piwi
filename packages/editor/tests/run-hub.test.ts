@@ -361,6 +361,43 @@ describe('the commands', () => {
     }
   });
 
+  test('end a stop the worker ended unanswered, refusing what names it, and say why a stop has no image', async () => {
+    const client = await paired();
+    client.send({ type: 'subscribe', id: 1 });
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
+    try {
+      worker.begin();
+      worker.stopAt(1, 30, true);
+      const stop = await waitFor(() => client.session(ref)?.workers[0]?.stop ?? undefined);
+      // A worker that cannot tell which page a stop is of answers no image.
+      client.send({ type: 'pausedPage', id: 2, ref, worker: 0 });
+      const asked = await worker.next('request');
+      worker.send({ type: 'answer', request: asked.request, what: 'image', value: null });
+      expect(await client.answer(2)).toEqual({
+        type: 'answer',
+        id: 2,
+        ok: false,
+        message:
+          'No image: the worker is not stopped, cannot tell which page it stopped in, or did not answer in time.',
+        image: null,
+      });
+      // The test ended under the stop, or its page closed: the worker ends it with no answer.
+      worker.send({ type: 'running', stop: 1 });
+      await waitFor(() => (client.session(ref)?.workers[0]?.state === 'running' ? true : undefined));
+      expect(client.session(ref)!.workers[0]!.stop).toBeNull();
+      client.send({ type: 'pick', id: 3, ref, since: stop.since });
+      expect(await client.answer(3)).toMatchObject({ ok: false, message: 'The test went on.' });
+      client.send({ type: 'runControl', id: 4, ref, action: 'resume', since: stop.since });
+      expect(await client.answer(4)).toMatchObject({ ok: false, message: 'The test went on.' });
+      expect(worker.heard.filter((m) => m.type === 'request')).toHaveLength(1);
+      expect(worker.heard.filter((m) => m.type === 'control')).toEqual([]);
+    } finally {
+      worker.socket.destroy();
+      client.socket.close();
+    }
+  });
+
   test('refuse Pick and Record at a stop of a reporter that predates them', async () => {
     const client = await paired();
     client.send({ type: 'subscribe', id: 1 });

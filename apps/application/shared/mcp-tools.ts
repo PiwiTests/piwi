@@ -680,8 +680,8 @@ export const MCP_TOOL_DEFS = [
       [
         '`leaked`: a browser, context, page or API context left open past the test or describe block that opened it',
         '`idle`: a page opened and never used',
-        '`piling`: pages, listeners or route handlers growing on a long-lived page',
-        '`handle`: a Node server or file watcher a test left running in its worker',
+        '`piling`: pages, listeners, route handlers or DOM elements growing on a long-lived page, or a worker process whose heap after garbage collection or open file descriptors keep growing',
+        '`handle`: a Node server, child process or file watcher a test left running in its worker',
         '`probable`: a leak counted from steps, without the capture fixtures',
       ],
       'Each finding also has `site` (the `file:line` that opened it, the line to edit), the runs it was first and last seen in, how many runs showed it, and `last`: what it held the last time (objects, tests, how long it stayed open, page CPU after its test). Its status is `open`, or `fixed` once five full runs of the default branch came without it (`cleanRuns` counts them; `reopenedRunId` is set when a fixed one came back).',

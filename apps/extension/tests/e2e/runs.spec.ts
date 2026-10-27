@@ -120,7 +120,11 @@ test('pauses, steps and resumes a run from the Runs window, with the image of th
       const again = await run.worker.next('request', 3);
       expect(again).toMatchObject({ what: 'image' });
       run.worker.send({ type: 'answer', request: again.request, what: 'image', value: null });
-      await expect(card.getByText('No image: the worker is not stopped, or did not answer in time.')).toBeVisible();
+      await expect(
+        card.getByText(
+          'No image: the worker is not stopped, cannot tell which page it stopped in, or did not answer in time.',
+        ),
+      ).toBeVisible();
 
       // Resume, with the keyboard: the worker goes on.
       await card.getByRole('button', { name: 'Resume' }).focus();

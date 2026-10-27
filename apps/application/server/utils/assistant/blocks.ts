@@ -83,6 +83,8 @@ const BLOCK_TOOL_DESCRIPTIONS: Record<AssistantBlockTool, string> = {
     "Show me: a walkthrough on the dashboard's real screens, each stop an anchor find_anchors returned, with a short title and body. For 'where is…' and 'how do I … in the dashboard'.",
   navigate:
     "Offer a link that opens a page of the dashboard: a route from the app's root with real ids from tool results.",
+  suggest_next:
+    "Suggest the question the user would most likely ask next, which your tools can answer: one line, in the user's words and language. The dashboard offers it in their empty input. Call it last, after your answer's text and blocks; it ends your answer. Not after ask or offer_options, whose answer is the user's pick.",
   propose_change: `Propose a change the user applies with a click: a card naming the action, its target and what changes, with Apply and Dismiss. Nothing changes until the user clicks Apply, and you never apply it yourself, so never say it is done. One card per target ("quarantine these three tests" is three cards). The target must be an entity a tool result of this conversation named, and the user must hold the action's permission on its project; a refusal says which permission is missing. The actions:\n${ACTION_LINES}`,
 };
 

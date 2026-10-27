@@ -425,6 +425,18 @@ describe('hand-written reference pages match the code', () => {
     for (const key of searchKeys) {
       expect(lists, `${page} does not list the test search key \`${key}\``).toContain(`\`${key}\``);
     }
+    // The assistant: Ctrl+I anywhere, and the keys its question field's keydown handler takes.
+    expect(read('apps/application/app/components/assistant/AssistantPanel.vue')).toContain('meta_i:');
+    expect(anywhere, `${page} does not list the Ctrl + I assistant shortcut`).toContain('`Ctrl` + `I`');
+    const input = read('apps/application/app/components/assistant/AssistantInput.vue');
+    const inputHandler = /function onKeydown[\s\S]*?\n}\n/.exec(input)?.[0] ?? '';
+    const ASSISTANT_KEYS: Record<string, string> = { ...KEY_NAMES, ArrowRight: '→' };
+    const inputKeys = [...inputHandler.matchAll(/event\.key === '(\w+)'/g)].map((m) => ASSISTANT_KEYS[m[1]!] ?? m[1]!);
+    expect(inputKeys.length, 'no keys found in the assistant input keydown handler').toBeGreaterThan(0);
+    const assistant = sectionOf(page, 'Assistant panel');
+    for (const key of inputKeys) {
+      expect(assistant, `${page} does not list the assistant input key \`${key}\``).toContain(`\`${key}\``);
+    }
   });
 
   test('every test search qualifier is on the Test search page', () => {

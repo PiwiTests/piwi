@@ -4,8 +4,8 @@ import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer, type FakeServer } from './_helpers.js';
-import { readPauses, withoutPausedTime } from '../src/internal/collect/paused-steps.js';
-import type { PauseRecord } from '../src/internal/capture/pause-at.js';
+import { collectStepMetrics } from '@piwitests/core/step-analysis';
+import { readPauses } from '../src/internal/collect/pause-events.js';
 
 /**
  * A real Playwright run with breakpoints, through the built package: the stops come from Playwright's debugger, the
@@ -42,8 +42,8 @@ function inspectorOpen(): boolean {
   return false;
 }
 
-/** A page of the app: it answers Piwi's pause bar with what the server says, once per bar. */
-const PAGE = (title: string) => `<!doctype html><title>${title}</title><input><button>Go</button>
+/** A page of the app: it answers Piwi's pause bar with what the server says, once per bar; its button calls `/clicked`. */
+const PAGE = (title: string) => `<!doctype html><title>${title}</title><input><button onclick="fetch('/clicked')">Go</button>
 <script>
 new MutationObserver(() => {
   const bar = document.getElementById('__piwi-pause-bar');
@@ -107,9 +107,63 @@ test.describe.serial('a page a hook opened', () => {
     await page.goto('${base}/b'); // bp
   });
 });
-test('poll', async ({ page }) => {
+test.describe('a wait that runs out under the bar', () => {
+  test.afterEach(async ({ page }, testInfo) => {
+    const left = await page.locator('#__piwi-pause-bar, #__piwi_picker_banner').count();
+    await fetch('${base}/after-each', { method: 'POST', body: JSON.stringify({ title: testInfo.title, left }) });
+  });
+  test('poll', async ({ page }) => {
+    await page.goto('${base}/a');
+    await expect.poll(() => page.locator('input').inputValue(), { timeout: 1000 }).toBe(''); // bp
+  });
+  test('poll while picking', async ({ page }) => {
+    await page.goto('${base}/a');
+    await expect.poll(() => page.locator('input').inputValue(), { timeout: 1000 }).toBe(''); // bp
+  });
+});
+test('closes a page under the bar', async ({ page, context }) => {
   await page.goto('${base}/a');
-  await expect.poll(() => page.locator('input').inputValue(), { timeout: 1000 }).toBe(''); // bp
+  const other = await context.newPage();
+  await other.goto('${base}/b');
+  const click = other.getByRole('button').click(); // bp
+  await page.waitForTimeout(1000);
+  await other.close();
+  await click.catch(() => {});
+  await page.getByRole('button').click(); // bp
+});
+test.describe.serial('a click the test does not wait for', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await page.goto('${base}/a');
+  });
+  test.afterAll(async () => {
+    await page.close();
+  });
+  test('forgets an await', async () => {
+    void page.getByRole('button').click(); // bp
+    await page.waitForTimeout(300);
+  });
+  test('after it', async () => {
+    await page.waitForTimeout(500);
+  });
+});
+test.describe.serial('a navigation the test does not wait for', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await page.goto('${base}/a');
+  });
+  test.afterAll(async () => {
+    await page.close();
+  });
+  test('forgets to await a navigation', async () => {
+    void page.goto('${base}/c'); // bp
+    await page.waitForTimeout(300);
+  });
+  test('after the navigation', async () => {
+    await page.waitForTimeout(500);
+  });
 });
 test.describe.serial('a pause in an afterAll', () => {
   let page;
@@ -151,7 +205,7 @@ module.exports = class {
       const found = result.attachments.find((a) => a.name === name);
       return found?.body?.toString('utf8') ?? (found?.path ? fs.readFileSync(found.path, 'utf8') : null);
     };
-    this.tests.push({ title: test.title, status: result.status, startTime: result.startTime.getTime(), duration: result.duration, errors: result.errors.map((e) => e.message), steps: result.steps.map(step), pauses: body('piwi-pauses'), aria: body('piwi-aria-snapshot'), errorContext: body('error-context') });
+    this.tests.push({ title: test.title, status: result.status, startTime: result.startTime.getTime(), duration: result.duration, errors: result.errors.map((e) => e.message), steps: result.steps.map(step), pauses: body('piwi-pauses'), aria: body('piwi-aria-snapshot'), errorContext: body('error-context'), network: body('piwi-network') });
   }
   onEnd() { fs.writeFileSync(this.file, JSON.stringify(this.tests)); }
 };
@@ -176,6 +230,7 @@ interface DumpedTest {
   pauses: string | null;
   aria: string | null;
   errorContext: string | null;
+  network: string | null;
 }
 
 /** The answers the page gives, in the order the bar shows. */
@@ -188,6 +243,11 @@ const ANSWERS: Array<{ answer: string; hold?: number }> = [
   { answer: 'Resume', hold: HOLD_MS }, // page.pause()
   { answer: 'Resume', hold: HOLD_MS }, // a page a hook opened: page.goto(/b)
   { answer: 'Resume', hold: HOLD_MS }, // poll: inputValue(), past the poll's own deadline
+  { answer: 'Pick a locator' }, // poll while picking: the poll's deadline passes with the picker open
+  { answer: 'Resume', hold: HOLD_MS }, // closes a page under the bar: the click on the page it closes
+  { answer: 'Resume' }, // closes a page under the bar: the click after it
+  { answer: 'Resume', hold: HOLD_MS }, // forgets an await: the click
+  { answer: 'Resume', hold: HOLD_MS }, // forgets to await a navigation: page.goto(/c)
   { answer: 'Resume' }, // arms its context: page.goto(/b)
 ];
 
@@ -196,6 +256,8 @@ let server: FakeServer;
 const stops: Array<{ where: string; what: string; inspector?: boolean }> = [];
 /** Each `page.pause()` left to Playwright: whether its Inspector opened (with windows), and how long it held. */
 const ownPauses: Record<string, { inspector?: boolean; held?: number }> = {};
+/** What each `afterEach` found left of the bar and the picker in the page, by test. */
+const afterEach: Record<string, number> = {};
 let tests: DumpedTest[] = [];
 let bp: number[] = [];
 let exitCode: number | null = null;
@@ -224,6 +286,12 @@ beforeAll(async () => {
         ownPauses[req.body] = { ...ownPauses[req.body], ...(WINDOWS ? { inspector: inspectorOpen() } : {}) };
         res.end();
       }, OWN_PAUSE_MS);
+      return;
+    }
+    if (req.url === '/after-each') {
+      const { title, left } = JSON.parse(req.body) as { title: string; left: number };
+      afterEach[title] = left;
+      res.end();
       return;
     }
     if (req.url === '/own-pause-end') {
@@ -290,6 +358,16 @@ afterAll(async () => {
   await server?.close();
 });
 
+/** How far a test's duration may pass its clock span less its stops: the runner and the stops read two clocks. */
+const CLOCK_SLACK_MS = 100;
+
+/** A test's span on the clock: from the start of its Before Hooks to the end of its After Hooks. */
+function clockSpan(result: DumpedTest): number {
+  const before = result.steps.find((s) => s.title === 'Before Hooks')!;
+  const after = result.steps.find((s) => s.title === 'After Hooks')!;
+  return after.startTime + after.duration - before.startTime;
+}
+
 /** Every step of a test, depth first. */
 function allSteps(steps: DumpedStep[]): DumpedStep[] {
   return steps.flatMap((s) => [s, ...allSteps(s.steps)]);
@@ -311,13 +389,19 @@ describe('a run with breakpoints', () => {
       ['first', 'passed'],
       ['second', 'passed'],
       ['poll', 'failed'],
+      ['poll while picking', 'failed'],
+      ['closes a page under the bar', 'passed'],
+      ['forgets an await', 'passed'],
+      ['after it', 'passed'],
+      ['forgets to await a navigation', 'passed'],
+      ['after the navigation', 'passed'],
       ['arms its context', 'passed'],
       ['runs after it', 'passed'],
     ]);
   });
 
   it('stops at a navigation and a key press on a breakpoint, at the next call after Step, and at none after Finish', () => {
-    const [goto, press, click, , ownContext, second, poll, arms] = bp;
+    const [goto, press, click, , ownContext, second, poll, picking, closing, closed, forgets, navigates, arms] = bp;
     expect(stops.map(({ where, what }) => ({ where, what }))).toEqual([
       { where: `Paused at pause.spec.cjs:${goto}`, what: expect.stringMatching(/^Navigate .*\/b$/) },
       { where: `Paused at pause.spec.cjs:${press}`, what: 'Press "Tab"' },
@@ -327,6 +411,12 @@ describe('a run with breakpoints', () => {
       { where: expect.stringMatching(/^Paused at pause\.spec\.cjs:\d+$/), what: 'Pause' },
       { where: `Paused at pause.spec.cjs:${second}`, what: expect.stringMatching(/^Navigate .*\/b$/) },
       { where: `Paused at pause.spec.cjs:${poll}`, what: `Get input value locator('input')` },
+      { where: `Paused at pause.spec.cjs:${picking}`, what: `Get input value locator('input')` },
+      { where: `Paused at pause.spec.cjs:${closing}`, what: `Click getByRole('button')` },
+      // The page closing ended the stop before it: the breakpoints still stop.
+      { where: `Paused at pause.spec.cjs:${closed}`, what: `Click getByRole('button')` },
+      { where: `Paused at pause.spec.cjs:${forgets}`, what: `Click getByRole('button')` },
+      { where: `Paused at pause.spec.cjs:${navigates}`, what: expect.stringMatching(/^Navigate .*\/c$/) },
       { where: `Paused at pause.spec.cjs:${arms}`, what: expect.stringMatching(/^Navigate .*\/b$/) },
     ]);
   });
@@ -357,6 +447,34 @@ describe('a run with breakpoints', () => {
     expect(result.errorContext ?? '').not.toContain('Piwi: test paused');
   });
 
+  it('takes the bar and the picker down as the test function ends, before the afterEach hooks', () => {
+    expect(afterEach).toEqual({ poll: 0, 'poll while picking': 0 });
+    const [stop] = readPauses(Buffer.from(test('poll while picking').pauses ?? ''));
+    // It ended with the test, at the poll's deadline, without a wait for the picker.
+    expect(stop?.duration).toBeGreaterThan(0);
+    expect(stop?.duration).toBeLessThan(TIMEOUT_MS);
+  });
+
+  it('lets a held call go at once when its page closes, and keeps the call of a test that ended under the bar in it', () => {
+    expect(test('closes a page under the bar').duration).toBeLessThan(TIMEOUT_MS);
+    const clicked = (title: string) => (test(title).network ?? '').includes('/clicked');
+    expect([clicked('forgets an await'), clicked('after it')]).toEqual([true, false]);
+  });
+
+  it('keeps a navigation the test ended under in it, with its requests', () => {
+    const navigated = (title: string) => (test(title).network ?? '').includes(`"${server.url}/c"`);
+    expect([navigated('forgets to await a navigation'), navigated('after the navigation')]).toEqual([true, false]);
+  });
+
+  it('leaves the stop out of the duration of a test that ended under the bar', () => {
+    for (const title of ['poll', 'poll while picking', 'forgets an await', 'forgets to await a navigation']) {
+      const result = test(title);
+      const paused = readPauses(Buffer.from(result.pauses ?? '')).reduce((sum, stop) => sum + stop.duration, 0);
+      expect(paused, title).toBeGreaterThan(0);
+      expect(result.duration, title).toBeLessThanOrEqual(clockSpan(result) - paused + CLOCK_SLACK_MS);
+    }
+  });
+
   it('lists each stop it showed in piwi-pauses, with its place, reason and duration', () => {
     const pauses = readPauses(Buffer.from(test('stops').pauses ?? ''));
     expect(pauses.map((p) => [p.location.replace(/:\d+$/, ''), p.reason])).toEqual([
@@ -372,28 +490,27 @@ describe('a run with breakpoints', () => {
     expect(test('first').pauses).toBeNull();
   });
 
-  it('keeps every stop out of the test duration, and out of the steps once the reporter reads piwi-pauses', () => {
+  it('keeps every stop out of the test duration, and out of the step statistics once the reporter reads piwi-pauses', () => {
     for (const title of ['stops', 'page pause', 'second']) {
       const result = test(title);
       expect(result.duration, title).toBeLessThan(TIMEOUT_MS);
-      const pauses: PauseRecord[] = readPauses(Buffer.from(result.pauses ?? ''));
-      const held = (steps: DumpedStep[]) => allSteps(steps).filter((s) => s.duration >= HOLD_MS);
-      expect(held(result.steps).length, title).toBeGreaterThan(0);
-      expect(held(withoutPausedTime(result.steps, pauses)), title).toEqual([]);
+      const pauses = readPauses(Buffer.from(result.pauses ?? ''));
+      const held = allSteps(result.steps).filter((s) => s.duration >= HOLD_MS);
+      expect(held.length, title).toBeGreaterThan(0);
+      const { slowestStep } = collectStepMetrics(result.steps, [], pauses);
+      expect(slowestStep?.duration, title).toBeLessThan(HOLD_MS);
     }
   });
 
-  it('moves the steps after a stop back by the time stopped, so the test’s body fits its duration', () => {
+  it('keeps the steps on the clock: the stops sit inside the held calls, and the steps after them start later', () => {
     const result = test('stops');
-    const pauses = readPauses(Buffer.from(result.pauses ?? ''));
-    const stopped = pauses.reduce((sum, p) => sum + p.duration, 0);
-    const hooks = (steps: DumpedStep[], title: string) => steps.find((s) => s.title === title)!;
-    const before = hooks(result.steps, 'Before Hooks');
-    const bodyStart = before.startTime + before.duration;
-    const moved = hooks(withoutPausedTime(result.steps, pauses), 'After Hooks');
-    expect(hooks(result.steps, 'After Hooks').startTime - moved.startTime).toBe(stopped);
-    expect(hooks(result.steps, 'After Hooks').startTime - bodyStart).toBeGreaterThan(result.duration);
-    expect(moved.startTime - bodyStart).toBeLessThan(result.duration);
+    const [first] = readPauses(Buffer.from(result.pauses ?? ''));
+    const goto = allSteps(result.steps).find((s) => s.duration >= HOLD_MS)!;
+    expect(first!.startedAt).toBeGreaterThanOrEqual(goto.startTime);
+    expect(first!.startedAt + first!.duration).toBeLessThanOrEqual(goto.startTime + goto.duration);
+    const before = result.steps.find((s) => s.title === 'Before Hooks')!;
+    const after = result.steps.find((s) => s.title === 'After Hooks')!;
+    expect(after.startTime - (before.startTime + before.duration)).toBeGreaterThan(result.duration);
   });
 
   it('shows none of its own calls among the test’s steps', () => {

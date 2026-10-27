@@ -59,7 +59,7 @@ export interface RunControl {
 }
 
 /**
- * The stop the editor can answer, while it holds: its page (none for a context without one), its answer, and what
+ * The stop the editor can answer, while it holds: the page its image is of (none when not known), its answer, and what
  * starts an intent in the pause bar.
  */
 interface HeldStop {
@@ -76,8 +76,9 @@ export interface StopToHold {
   title: string;
   place: Place;
   locator: string | null;
-  /** Whether the pause bar shows in `page`. */
+  /** Whether Piwi's pause bar shows the stop. */
   bar: boolean;
+  /** The page an image of the stop is taken of: none when the stop's page is not known. */
   page: Page | null;
   /** Start the bar's Pick a locator or Record here from outside the page; refused without it. */
   intent?(what: RunIntent): IntentAnswer;

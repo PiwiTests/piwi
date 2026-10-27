@@ -14,7 +14,7 @@ dashboard.
 
 ## What it does
 
-1. A **channel** is a destination: a browser tab, an email address, a Slack or Teams webhook, or your own URL.
+1. A **channel** is a destination: a browser tab, an email address, a Slack channel, a Teams webhook, or your own URL.
 2. A **subscription** links a channel to the events you care about, for every project or one, with filters and a
    delivery mode.
 3. When an event fires, Piwi matches the active subscriptions and writes each delivery to an outbox, which a scheduled
@@ -63,11 +63,20 @@ Requires SMTP to be configured (see below). Sends to a destination address. With
 
 ### Slack
 
-Paste an [incoming webhook](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks) URL
+Under **Send with**, pick an incoming webhook or a bot token; both post the same message.
+
+**Incoming webhook.** Paste an [incoming webhook](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks) URL
 (`https://hooks.slack.com/services/…`). Without one, the form's **Create a Slack app for Piwi** link opens Slack with an
 app already filled in, asking only for the `incoming-webhook` permission: create it, choose **Install to Workspace** and
-the channel, then copy the URL from **Incoming Webhooks**. Messages are posted to that channel. A Slack-compatible
-server (Mattermost, Rocket.Chat) works too.
+the channel, then copy the URL from **Incoming Webhooks**. A Slack-compatible server (Mattermost, Rocket.Chat) works too.
+
+**Bot token.** Piwi posts with the Web API's
+[`chat.postMessage`](https://docs.slack.dev/reference/methods/chat.postMessage). The same link asks for `chat:write`
+and `chat:write.public` instead: install the app, copy the **Bot User OAuth Token** (`xoxb-…`) and the channel's
+**Channel ID**, and invite the app to a private channel first. The token is encrypted at rest and never returned, so it
+needs `PIWI_SECRET_KEY`. A refusal names Slack's error code (`not_in_channel`, `invalid_auth`) with what to do.
+
+Through either, a delivery Slack rate-limits retries after its `Retry-After`, up to an hour.
 
 ### Microsoft Teams
 

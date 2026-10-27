@@ -1,8 +1,9 @@
 /**
  * One assistant turn against a scripted model: a tool call, its result and the
- * answer; blocks between the text, a question ending the answer; the tool-call
- * limit; the daily allowance; a provider error; the turn timeout; a JSON
- * action reply that cannot be read.
+ * answer; blocks between the text, a question ending the answer, the next
+ * question suggested last; the tool-call limit; the daily allowance; a
+ * provider error; the turn timeout; the user's Stop; a JSON action reply that
+ * cannot be read.
  */
 import { describe, expect, test } from 'vitest';
 import type { ResolvedAiRole } from '../../types/api';
@@ -200,6 +201,50 @@ describe('runAssistantTurn', () => {
     expect(done).toMatchObject({ status: 'completed', blocks: [{ kind: 'text', text: 'Two tests fail.' }, question] });
   });
 
+  test('the next question, suggested after the answer, ends it without another model call', async () => {
+    const next: AssistantBlock = { kind: 'next', id: 'next', question: 'How do I fix it?' };
+    const model = scripted([
+      reply({ text: 'Run 4 timed out.', toolCalls: [{ id: 'n', name: 'suggest_next', arguments: {} }, call('c1')] }),
+    ]);
+    const box = toolbox({ suggest_next: next });
+    const { result, events } = turn({ step: model.step, toolbox: box });
+    const done = await result;
+    expect(box.ran).toEqual(['suggest_next']);
+    expect(model.requests).toHaveLength(1);
+    expect(events.map((e) => e.event)).toEqual(['text', 'block', 'done']);
+    expect(done).toMatchObject({ status: 'completed', blocks: [{ kind: 'text', text: 'Run 4 timed out.' }, next] });
+  });
+
+  test('the next question is refused before the answer holds anything, and the model goes on', async () => {
+    const next: AssistantBlock = { kind: 'next', id: 'next', question: 'How do I fix it?' };
+    const model = scripted([
+      reply({ toolCalls: [{ id: 'n', name: 'suggest_next', arguments: {} }] }),
+      reply({ text: 'Run 4 timed out.' }),
+    ]);
+    const box = toolbox({ suggest_next: next });
+    const { result } = turn({ step: model.step, toolbox: box });
+    const done = await result;
+    expect(box.ran).toEqual([]);
+    expect(model.requests[1]!.messages.at(-1)).toMatchObject({ results: [{ name: 'suggest_next', isError: true }] });
+    expect(done).toMatchObject({ status: 'completed', blocks: [{ kind: 'text', text: 'Run 4 timed out.' }] });
+  });
+
+  test('the JSON action mode, where the answer ends the turn, is not offered the next question', async () => {
+    const box = toolbox({ suggest_next: { kind: 'next', id: 'next', question: 'How do I fix it?' } });
+    const definitions = box.definitions;
+    box.definitions = () => [
+      ...definitions(),
+      { name: 'suggest_next', description: 'Suggest', inputSchema: { type: 'object', properties: {} } },
+    ];
+    const model = scripted([
+      reply({ toolCalls: [call('c1')] }),
+      reply({ mode: 'json-action', toolCalls: [call('c2', 5)] }),
+      reply({ mode: 'json-action', text: 'Run 4 timed out.' }),
+    ]);
+    await turn({ step: model.step, toolbox: box }).result;
+    expect(model.requests.map((r) => r.tools.some((t) => t.name === 'suggest_next'))).toEqual([true, true, false]);
+  });
+
   test('a refused block reaches the model as a tool error and is never shown', async () => {
     const model = scripted([
       reply({ toolCalls: [{ id: 'g', name: 'show_guide', arguments: {} }] }),
@@ -317,6 +362,34 @@ describe('runAssistantTurn', () => {
     }
     const { result } = turn({ step: slow, limits: { maxToolCalls: 4, maxOutputTokens: 512, turnTimeoutMs: 20 } });
     expect(await result).toMatchObject({ status: 'failed', error: { code: 'timeout' } });
+  });
+
+  test("the user's Stop aborts the model call in flight and keeps what was written", async () => {
+    const stop = new AbortController();
+    const model = scripted([reply({ text: 'Run 4 failed', toolCalls: [call('c1')] })]);
+    async function* step(r: ResolvedAiRole, req: AiStepRequest): AsyncGenerator<AiStepChunk> {
+      if (model.requests.length === 0) {
+        yield* model.step(r, req);
+        return;
+      }
+      setTimeout(() => stop.abort(), 10);
+      await new Promise((_resolve, reject) =>
+        req.signal?.addEventListener('abort', () => reject(new Error('aborted'))),
+      );
+    }
+    const { result, events } = turn({ step, signal: stop.signal });
+    const done = await result;
+    expect(done).toMatchObject({ status: 'failed', text: 'Run 4 failed', error: { code: 'stopped' } });
+    expect(events.at(-1)).toMatchObject({ event: 'error', data: { code: 'stopped' } });
+  });
+
+  test('a turn stopped before it starts calls no model', async () => {
+    const stop = new AbortController();
+    stop.abort();
+    const model = scripted([reply({ text: 'never' })]);
+    const { result } = turn({ step: model.step, signal: stop.signal });
+    expect(await result).toMatchObject({ status: 'failed', error: { code: 'stopped' } });
+    expect(model.requests).toHaveLength(0);
   });
 
   test('an unreadable JSON action reply is asked again once, then fails', async () => {

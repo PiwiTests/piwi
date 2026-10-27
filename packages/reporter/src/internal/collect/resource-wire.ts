@@ -115,10 +115,14 @@ function openPagesByWorker(censuses: ResourceCensus[]): WireResourceReport['work
 
 /**
  * Pages open in each worker over time, from the censuses' births and closes:
- * a point at each change, and a last one at zero when the worker's last
- * census was taken, since its pages went with it.
+ * a point at each change, and, once the run ended (`live` false), a last one
+ * at zero when the worker's last census was taken, since its pages went with
+ * it. While the run goes on, a worker's last census is not its end.
  */
-function pagesOverTime(censuses: ResourceCensus[]): Array<{ worker: number; events: SeriesPoint[] }> {
+export function pagesOverTime(
+  censuses: readonly ResourceCensus[],
+  live = false,
+): Array<{ worker: number; events: SeriesPoint[] }> {
   const byWorker = new Map<number, ResourceCensus[]>();
   for (const census of censuses) {
     const list = byWorker.get(census.worker) ?? [];
@@ -152,7 +156,7 @@ function pagesOverTime(censuses: ResourceCensus[]): Array<{ worker: number; even
       if (last && last[0] === at) last[1] = open;
       else events.push([at, open]);
     }
-    if (open > 0 && lastAt >= events[events.length - 1]![0]) events.push([lastAt, 0]);
+    if (!live && open > 0 && lastAt >= events[events.length - 1]![0]) events.push([lastAt, 0]);
     out.push({ worker, events });
   }
   return out;
@@ -164,9 +168,9 @@ function pagesOverTime(censuses: ResourceCensus[]): Array<{ worker: number; even
  * process's readings when a process id came back for a later worker. A
  * process no census names is left out.
  */
-function workerTreesByIndex(
+export function workerTreesByIndex(
   samples: RunSamples,
-  censuses: ResourceCensus[],
+  censuses: readonly ResourceCensus[],
 ): Array<{ worker: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }> {
   const byPid = new Map<number, Array<{ worker: number; at: number }>>();
   for (const census of censuses) {

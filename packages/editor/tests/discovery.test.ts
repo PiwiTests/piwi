@@ -182,7 +182,10 @@ describe('the bundled service', () => {
       workspaceFolders: [{ uri: pathToFileURL(workspace).href, name: 'shop' }],
     });
     await connection.sendNotification('initialized', {});
-    const name = await waitFor(() => (fs.existsSync(editors) ? fs.readdirSync(editors)[0] : undefined));
+    // The file itself, not the temporary one it is written through.
+    const name = await waitFor(() =>
+      fs.existsSync(editors) ? fs.readdirSync(editors).find((entry) => /^\d+\.json$/.test(entry)) : undefined,
+    );
     const file = path.join(editors, name);
     const written = parseEditorDiscovery(fs.readFileSync(file, 'utf8'));
     expect(written).toMatchObject({ pid: child.pid, client: 'Bundle Test', roots: [workspace] });

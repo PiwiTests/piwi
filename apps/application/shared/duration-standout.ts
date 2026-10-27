@@ -13,7 +13,7 @@
  * durations (`buildUsualDurations`) read the same key over the test's last
  * passing executions.
  */
-import { stepLabel } from '@piwitests/core/step-analysis';
+import { pauseSpans, stepLabel, unpausedDuration } from '@piwitests/core/step-analysis';
 import type { FailureTimeline, TimelineItem } from '#shared/failure-timeline';
 import { requestRouteKey } from '#shared/utils/route';
 import { median } from './utils/stats';
@@ -119,7 +119,7 @@ export function stepMatchKey(step: MatchableStep): string {
 // ── Usual durations ─────────────────────────────────────────────────────────
 
 /** A stored step, as the usual durations read it. */
-type StepRow = MatchableStep & { duration?: unknown };
+type StepRow = MatchableStep & { duration?: unknown; startTime?: unknown };
 
 /** A stored request, as the usual durations read it. */
 export interface UsualRequestRow {
@@ -129,9 +129,11 @@ export interface UsualRequestRow {
   duration?: number | null;
 }
 
-/** One past passing execution of the test: its steps as stored, and its requests. */
+/** One past passing execution of the test: its steps and step events as stored, and its requests. */
 export interface PastExecution {
   steps?: unknown;
+  /** Its step events, whose `pause` events are the stops it made at Piwi's pause bar. */
+  stepEvents?: unknown;
   networkRequests?: UsualRequestRow[] | null;
 }
 
@@ -186,15 +188,17 @@ function medians(samples: Samples, minSamples: number): Map<string, number> {
  * `stepMatchKey`, and by its label alone for a step whose params change from
  * run to run; a request by its route (`GET /api/report/:id`), so two ids of
  * one endpoint share a usual time. A step repeated in a loop adds each of its
- * durations. A request with no response or a server error records nothing.
+ * durations, each less the time the test stood stopped at Piwi's pause bar
+ * while it ran. A request with no response or a server error records nothing.
  */
 export function buildUsualDurations(past: PastExecution[], minSamples = USUAL_MIN_SAMPLES): UsualDurations {
   const steps: Samples = new Map();
   const labels: Samples = new Map();
   const requests: Samples = new Map();
   past.forEach((execution, index) => {
+    const pauses = pauseSpans(execution.stepEvents);
     for (const step of stepRows(execution.steps)) {
-      const ms = recordedMs(step.duration);
+      const ms = recordedMs(pauses.length ? unpausedDuration(step, pauses) : step.duration);
       const label = stepLabel(step);
       if (ms == null || !label) continue;
       addSample(steps, stepMatchKey(step), ms, index);

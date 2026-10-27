@@ -1,12 +1,16 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import * as childProcess from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
+import * as http from 'node:http';
+import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { TestInfo } from '@playwright/test';
 import {
   ResourceLedger,
   activeResourceLedger,
+  commandOf,
   leakFailureMessage,
   readLeakCheck,
   recordResourceCensus,
@@ -397,6 +401,80 @@ describe('ResourceLedger', () => {
     expect(census.test).toBeNull();
     expect(census.open.map((o) => o.id)).toEqual([1, 2]);
     expect(fake.listeners).toHaveLength(0);
+  });
+});
+
+describe('servers and child processes', () => {
+  const listen = (server: net.Server) =>
+    new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const close = (server: net.Server) => new Promise<void>((resolve) => server.close(() => resolve()));
+
+  function handleLedger() {
+    let current: TestInfoLike | null = null;
+    const ledger = new ResourceLedger(fakePlaywright().playwright, 0, 'report', null, () => current, Date.now, {}, true);
+    ledger.install();
+    return {
+      ledger,
+      running: (value: TestInfoLike | null) => {
+        current = value;
+      },
+    };
+  }
+
+  it('lists a server a test left listening, at its line, and not one it closed', async () => {
+    const original = net.Server.prototype.listen;
+    const { ledger, running } = handleLedger();
+    expect(net.Server.prototype.listen).not.toBe(original);
+    running(info('t1'));
+    ledger.testStarted(info('t1'));
+    const left = http.createServer();
+    await listen(left);
+    const closed = http.createServer();
+    await listen(closed);
+    await close(closed);
+    const { census } = await ledger.testEnded(info('t1'));
+    expect(census.running).toEqual([{ type: 'TCPServerWrap', site: expect.stringMatching(/resource-ledger\.spec\.ts:\d+$/) }]);
+    // Counted one by one, servers leave the handle counts.
+    expect(census.handles?.end).not.toHaveProperty('TCPServerWrap');
+    await close(left);
+    ledger.uninstall();
+    expect(net.Server.prototype.listen).toBe(original);
+  });
+
+  it("never lists a worker-scoped fixture's server, though it starts during a test", async () => {
+    const { ledger, running } = handleLedger();
+    ledger.testStarted(info('t1'));
+    running(info('t1', { type: 'test', fixture: { title: 'mockServer', slot: {} } }));
+    const server = http.createServer();
+    await listen(server);
+    running(info('t1'));
+    const { census } = await ledger.testEnded(info('t1'));
+    expect(census.running).toEqual([]);
+    await close(server);
+    ledger.uninstall();
+  });
+
+  it('lists a child process a test left running, by its program, and not one that exited', async () => {
+    const { ledger, running } = handleLedger();
+    running(info('t1'));
+    ledger.testStarted(info('t1'));
+    const done = childProcess.spawn(process.execPath, ['-e', 'process.exit(0)']);
+    await new Promise((resolve) => done.once('exit', resolve));
+    const left = childProcess.spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']);
+    await new Promise((resolve) => left.once('spawn', resolve));
+    const { census } = await ledger.testEnded(info('t1'));
+    left.kill();
+    expect(census.running).toEqual([
+      { type: 'ChildProcess', site: expect.stringMatching(/resource-ledger\.spec\.ts:\d+$/), command: path.basename(process.execPath) },
+    ]);
+    ledger.uninstall();
+  });
+
+  it('names the program a child process runs, or the first word of a shell command', () => {
+    expect(commandOf('/usr/bin/docker', ['/usr/bin/docker', 'run', 'redis'])).toBe('docker');
+    expect(commandOf('/bin/sh', ['/bin/sh', '-c', 'npx wiremock --port 8080'])).toBe('npx');
+    expect(commandOf('C:\\Windows\\system32\\cmd.exe', ['cmd.exe', '/d', '/s', '/c', '"node server.js"'])).toBe('node');
+    expect(commandOf(undefined, undefined)).toBe('a child process');
   });
 });
 

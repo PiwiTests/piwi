@@ -99,7 +99,7 @@ export const LAYOUT_ANCHORS = [
     kind: 'action',
     pages: ['*'],
     describes:
-      'The sidebar’s Ask Piwi button, under the search, which opens the assistant’s panel to ask about your runs, failures and setup.',
+      'The sidebar’s Ask Piwi button, under the search, which opens the assistant’s panel (Ctrl+I anywhere) to ask about your runs, failures and setup.',
     requires: { capability: 'assistant' },
     doc: 'features/assistant#asking-a-question',
     sample: { route: '/projects' },
@@ -110,10 +110,10 @@ export const LAYOUT_ANCHORS = [
     pages: ['*'],
     reveal: [{ open: 'assistant-launcher' }],
     describes:
-      'The assistant panel’s question field, where Enter asks, with the line under it naming the model that answers and what is sent to it.',
+      'The assistant panel’s question field: Enter asks, Up brings back earlier questions, Right takes the suggested one; the line under it names the model.',
     shownWhen: 'When an AI model answers the assistant’s questions on this instance.',
     requires: { capability: 'assistant' },
-    doc: 'features/assistant#asking-a-question',
+    doc: 'reference/keyboard-shortcuts#assistant-panel',
     sample: { route: '/projects' },
   },
   {

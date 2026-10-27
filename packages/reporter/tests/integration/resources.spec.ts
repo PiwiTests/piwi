@@ -1,4 +1,5 @@
 import { test as base, expect, chromium, request, type BrowserContext, type Page } from '@playwright/test';
+import * as childProcess from 'node:child_process';
 import * as http from 'node:http';
 import { extendPiwiFixtures } from '../../dist/index.js';
 
@@ -15,7 +16,7 @@ import { extendPiwiFixtures } from '../../dist/index.js';
  * piling up on the shared page and the server left listening are read across
  * tests.
  */
-const test = extendPiwiFixtures(base).extend<{}, { sharedPage: Page }>({
+const test = extendPiwiFixtures(base).extend<{}, { sharedPage: Page; mockServer: string }>({
   // Worker-scoped, the "one page for the whole suite" pattern: what a test
   // opens from it, or adds to it, outlives the test.
   sharedPage: [
@@ -23,6 +24,18 @@ const test = extendPiwiFixtures(base).extend<{}, { sharedPage: Page }>({
       const context = await browser.newContext();
       await use(await context.newPage()); // site:shared-page
       await context.close();
+    },
+    { scope: 'worker' },
+  ],
+  // Worker-scoped too: a server the worker keeps for its tests, started when
+  // the first test that asks for it sets it up, inside that test's census.
+  mockServer: [
+    async ({}, use) => {
+      const server = http.createServer((_req, res) => res.end('mock'));
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const address = server.address();
+      await use(typeof address === 'object' && address ? `http://127.0.0.1:${address.port}` : '');
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     },
     { scope: 'worker' },
   ],
@@ -109,6 +122,17 @@ for (const n of [1, 2, 3]) {
   });
 }
 
+// Each adds elements the page keeps, as an app that appends a toast or a
+// dialog and never removes it does; the page is never navigated after them.
+for (const n of [1, 2, 3, 4]) {
+  test(`resources: adds elements to a worker-scoped page ${n}`, async ({ sharedPage }) => {
+    await sharedPage.evaluate(() => {
+      const doc = (globalThis as Record<string, any>).document;
+      for (let i = 0; i < 150; i++) doc.body.appendChild(doc.createElement('div'));
+    });
+  });
+}
+
 test.describe('resources: API checks under a page beforeEach', () => {
   test.beforeEach(async ({ page }) => {
     page.on('pageerror', (error) => console.error(error));
@@ -121,7 +145,23 @@ test.describe('resources: API checks under a page beforeEach', () => {
 
 test('resources: leaves a server listening', async () => {
   const leftOpen = http.createServer((_req, res) => res.end('ok'));
-  await new Promise<void>((resolve) => leftOpen.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve) => leftOpen.listen(0, '127.0.0.1', resolve)); // site:server
+});
+
+// The child process the next test leaves running, stopped once the file is done.
+let leftRunning: childProcess.ChildProcess | null = null;
+test.afterAll(() => {
+  leftRunning?.kill();
+});
+
+test('resources: leaves a child process running', async () => {
+  leftRunning = childProcess.spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']); // site:child
+  await new Promise((resolve) => leftRunning!.once('spawn', resolve));
+});
+
+test('resources: clean, waits for the child process it spawns', async () => {
+  const child = childProcess.spawn(process.execPath, ['-e', 'process.exit(0)']);
+  await new Promise((resolve) => child.once('exit', resolve));
 });
 
 test.describe('resources: a beforeAll context without afterAll', () => {
@@ -168,6 +208,12 @@ test.describe('resources: clean, a context handed on', () => {
     await expect(context.pages()[0]!.getByRole('heading')).toHaveText('Resources');
     await context.close();
   });
+});
+
+test('resources: clean, uses a server a worker fixture started', async ({ mockServer }) => {
+  const api = await request.newContext();
+  expect(await (await api.get(mockServer)).text()).toBe('mock');
+  await api.dispose();
 });
 
 test('resources: clean, evaluates on a page it never navigates', async ({ page }) => {

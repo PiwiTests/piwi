@@ -3,9 +3,12 @@
  * palette offer on a page, by its `app/pages` pattern, each answerable from the
  * assistant's read tools and the docs. The live demo, which has no model,
  * offers its prepared questions instead (`shared/demo/assistant-questions.mjs`),
- * so a suggestion always gets a real answer there.
+ * so a suggestion always gets a real answer there. Also the question the
+ * input offers next, in its placeholder.
  */
+import { assistantMessageText, type AssistantMessageView } from '#shared/assistant';
 import { demoQuestionsFor } from '#shared/demo/assistant-questions.mjs';
+import { historyKey } from './history';
 
 /** Offered on every page, after the page's own. */
 const ANY_PAGE = 'What does this page show?';
@@ -35,4 +38,33 @@ export const ASSISTANT_PAGE_SUGGESTIONS: Readonly<Record<string, readonly string
 export function assistantSuggestionsFor(page: string | null | undefined, demo = false): readonly string[] {
   if (demo) return demoQuestionsFor(page).map((q) => q.question);
   return [...((page && ASSISTANT_PAGE_SUGGESTIONS[page]) || []), ANY_PAGE];
+}
+
+/**
+ * The question the empty input offers next, in its placeholder: the `next`
+ * block of the conversation's last answer, else the first of the page's
+ * suggestions `suggestions` not asked in it yet. None after a failed answer,
+ * which offers to try again, nor while the last answer waits for a pick in a
+ * question or options block.
+ */
+export function nextAssistantQuestion(
+  messages: readonly AssistantMessageView[],
+  suggestions: readonly string[],
+): string | null {
+  const last = messages.at(-1);
+  if (last?.role === 'assistant') {
+    if (last.status === 'failed') return null;
+    const waiting = last.blocks.some(
+      (block) => (block.kind === 'question' && !block.answer) || (block.kind === 'options' && !block.picked),
+    );
+    if (waiting) return null;
+    const next = last.blocks.find((block) => block.kind === 'next');
+    if (next?.kind === 'next') return next.question;
+  }
+  const asked = new Set(
+    messages
+      .filter((message) => message.role === 'user')
+      .map((message) => historyKey(assistantMessageText(message.blocks))),
+  );
+  return suggestions.find((suggestion) => !asked.has(historyKey(suggestion))) ?? null;
 }

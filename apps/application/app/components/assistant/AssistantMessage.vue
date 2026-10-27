@@ -3,7 +3,8 @@
  * One message of a conversation: a question as the user wrote it, or an
  * answer's blocks in order, then what it read and its model. While an answer
  * is written, each tool it calls shows as a line; a failed answer keeps what
- * it wrote and says why it stopped.
+ * it wrote, says why it stopped and, when it is the last one, offers to ask
+ * its question again.
  */
 import { assistantMessageText, type AssistantMessageView } from '#shared/assistant';
 
@@ -13,8 +14,12 @@ const props = defineProps<{
   streaming?: boolean;
   /** Its `question` and `options` blocks can still be answered. */
   answerable?: boolean;
+  /** A failed answer whose question can be asked again. */
+  retryable?: boolean;
   known: ReadonlySet<string>;
 }>();
+
+const { retry } = useAssistant();
 
 const question = computed(() => (props.message.role === 'user' ? assistantMessageText(props.message.blocks) : ''));
 </script>
@@ -51,9 +56,21 @@ const question = computed(() => (props.message.role === 'user' ? assistantMessag
       <UIcon name="i-lucide-loader-2" class="size-3.5 animate-spin" aria-hidden="true" />
       {{ message.blocks.length ? 'Writing…' : 'Reading…' }}
     </p>
-    <p v-else-if="message.status === 'failed'" role="alert" class="text-sm text-error leading-relaxed">
-      {{ message.error || 'The answer stopped before it was complete.' }}
-    </p>
+    <div v-else-if="message.status === 'failed'" class="space-y-2">
+      <p role="alert" class="text-sm text-error leading-relaxed">
+        {{ message.error || 'The answer stopped before it was complete.' }}
+      </p>
+      <UButton
+        v-if="retryable"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-rotate-ccw"
+        label="Try again"
+        data-assistant-retry
+        @click="retry()"
+      />
+    </div>
     <AssistantWhatItRead
       v-if="!streaming && (message.toolCalls.length || message.model)"
       :tool-calls="message.toolCalls"

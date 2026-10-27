@@ -500,6 +500,57 @@ function recordUsage(result: ClaudeCallOutcome): void {
   usageTotals.since ??= new Date().toISOString();
 }
 
+// ── Subscription usage limit (in-memory, as the CLI last reported it) ──────
+
+/** The usage limit of the Claude subscription the CLI signs in with, as its last `rate_limit_event` line said. */
+export interface ClaudeCliRateLimit {
+  status: 'allowed' | 'allowed_warning' | 'rejected';
+  /** The window the CLI named: `five_hour`, `seven_day`, … */
+  window: string | null;
+  /** The share of the window spent, from 0 to 1, when the CLI said. */
+  utilization: number | null;
+  resetsAt: string | null;
+  reportedAt: string;
+}
+
+/** A `rate_limit_event` line: `resetsAt` in seconds since the epoch, `utilization` from 0 to 1. */
+interface RateLimitLine {
+  type?: string;
+  rate_limit_info?: { status?: string; resetsAt?: number; rateLimitType?: string; utilization?: number };
+}
+
+const RATE_LIMIT_STATUSES: ReadonlySet<string> = new Set(['allowed', 'allowed_warning', 'rejected']);
+
+let lastRateLimit: ClaudeCliRateLimit | null = null;
+
+/** The limit the last run reported, or null before any report and once its window has reset. */
+export function getClaudeCliRateLimit(now = Date.now()): ClaudeCliRateLimit | null {
+  if (!lastRateLimit) return null;
+  if (lastRateLimit.resetsAt && Date.parse(lastRateLimit.resetsAt) <= now) return null;
+  return { ...lastRateLimit };
+}
+
+/** Keep the limit a `rate_limit_event` line reports; any other line is ignored. */
+export function noteClaudeCliRateLimit(line: RateLimitLine, now = new Date()): void {
+  const info = line.type === 'rate_limit_event' ? line.rate_limit_info : undefined;
+  if (!info?.status || !RATE_LIMIT_STATUSES.has(info.status)) return;
+  const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+  lastRateLimit = {
+    status: info.status as ClaudeCliRateLimit['status'],
+    window: info.rateLimitType ?? null,
+    utilization: finite(info.utilization) ? info.utilization : null,
+    resetsAt: finite(info.resetsAt)
+      ? new Date(info.resetsAt < 1e12 ? info.resetsAt * 1000 : info.resetsAt).toISOString()
+      : null,
+    reportedAt: now.toISOString(),
+  };
+}
+
+/** Forget the last report (tests). */
+export function resetClaudeCliRateLimit(): void {
+  lastRateLimit = null;
+}
+
 // ── Generation ─────────────────────────────────────────────────────────────
 
 /** Shape of the `--output-format json` result object (fields we read). */
@@ -679,6 +730,7 @@ interface StreamJsonLine {
   total_cost_usd?: number;
   usage?: ClaudeJsonResult['usage'];
   modelUsage?: Record<string, unknown>;
+  rate_limit_info?: RateLimitLine['rate_limit_info'];
 }
 
 /**
@@ -700,6 +752,7 @@ export async function* streamClaudeCli(config: ResolvedAiRole, opts: AiCallOptio
     if (!trimmed) return;
     const obj = safeParse<StreamJsonLine>(trimmed);
     if (!obj) return;
+    noteClaudeCliRateLimit(obj);
     if (
       obj.type === 'stream_event' &&
       obj.event?.type === 'content_block_delta' &&
@@ -810,13 +863,15 @@ export interface ClaudeCliAgentRun {
   tools: readonly string[];
   maxTurns: number;
   timeoutMs: number;
+  /** Aborted when the user stops the answer: the run is killed. */
+  signal?: AbortSignal;
   /** Each piece of the answer's text, as it is written. */
   onText: (text: string) => void;
 }
 
 export interface ClaudeCliAgentResult extends ClaudeCallOutcome {
-  /** How the run ended: answered, out of turns, out of time, or failed with `error`. */
-  outcome: 'answered' | 'max-turns' | 'timeout' | 'failed';
+  /** How the run ended: answered, out of turns, out of time, stopped by the user, or failed with `error`. */
+  outcome: 'answered' | 'max-turns' | 'timeout' | 'stopped' | 'failed';
   error: string | null;
 }
 
@@ -953,6 +1008,9 @@ export async function runClaudeCliAgent(config: ResolvedAiRole, run: ClaudeCliAg
     const args = buildAgentArgs(help, config, run, configPath);
 
     const stop = new AbortController();
+    const onStop = () => stop.abort();
+    run.signal?.addEventListener('abort', onStop, { once: true });
+    if (run.signal?.aborted) onStop();
     let final: StreamJsonLine | null = null;
     let failure: string | null = null;
     let wrote = false;
@@ -967,6 +1025,7 @@ export async function runClaudeCliAgent(config: ResolvedAiRole, run: ClaudeCliAg
       const obj = safeParse<StreamJsonLine>(line.trim());
       if (!obj) return;
       streamed.read(obj);
+      noteClaudeCliRateLimit(obj);
       if (
         obj.type === 'stream_event' &&
         obj.event?.type === 'content_block_delta' &&
@@ -997,6 +1056,7 @@ export async function runClaudeCliAgent(config: ResolvedAiRole, run: ClaudeCliAg
       env: withLoopbackNoProxy(cliEnv()),
       signal: stop.signal,
     });
+    run.signal?.removeEventListener('abort', onStop);
 
     const result = final as StreamJsonLine | null;
     // The `result` line's totals and cost when the run wrote one, else what its messages reported.
@@ -1017,6 +1077,7 @@ export async function runClaudeCliAgent(config: ResolvedAiRole, run: ClaudeCliAg
       error,
     });
     if (failure) return ended('failed', failure);
+    if (run.signal?.aborted) return ended('stopped');
     if (res.timedOut) return ended('timeout', 'The Claude CLI timed out.');
     if (!result)
       return ended('failed', cleanErr(res.stderr || res.stdout) || `Claude CLI exited with code ${res.code}`);

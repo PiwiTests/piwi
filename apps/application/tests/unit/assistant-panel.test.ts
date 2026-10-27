@@ -27,7 +27,19 @@ import {
   optionReply,
   questionReply,
 } from '../../app/utils/assistant/replies';
-import { ASSISTANT_PAGE_SUGGESTIONS, assistantSuggestionsFor } from '../../app/utils/assistant/suggestions';
+import {
+  ASSISTANT_PAGE_SUGGESTIONS,
+  assistantSuggestionsFor,
+  nextAssistantQuestion,
+} from '../../app/utils/assistant/suggestions';
+import {
+  caretOnFirstLine,
+  caretOnLastLine,
+  rememberAssistantQuestion,
+  stepAssistantHistory,
+} from '../../app/utils/assistant/history';
+import { assistantTime, assistantUsageView } from '../../app/utils/assistant/usage';
+import type { AssistantStatus } from '#shared/assistant';
 import { assistantOutcome, isAppRoute } from '../../app/utils/assistant/display';
 import { inlineMarkdownHtml } from '../../app/utils/markdown-inline';
 
@@ -455,5 +467,170 @@ describe('page suggestions', () => {
       expect(questions.length).toBeLessThanOrEqual(2);
       for (const q of questions) expect(q.endsWith('?'), q).toBe(true);
     }
+  });
+});
+
+/** A message of a conversation with these blocks, completed unless it says otherwise. */
+function said(
+  role: 'user' | 'assistant',
+  blocks: AssistantBlock[],
+  status: AssistantMessageView['status'] = 'completed',
+): AssistantMessageView {
+  return {
+    id: 1,
+    role,
+    blocks,
+    context: null,
+    toolCalls: [],
+    provider: null,
+    model: null,
+    inputTokens: null,
+    outputTokens: null,
+    status,
+    error: null,
+    createdAt: '',
+  };
+}
+
+describe('the next question', () => {
+  const PAGE = ['Why did this run fail?', 'Which failures in this run are new?', 'What does this page show?'];
+  const asked = (text: string) => said('user', [{ kind: 'text', text }]);
+  const answered = (...blocks: AssistantBlock[]) => said('assistant', [{ kind: 'text', text: 'Because.' }, ...blocks]);
+
+  test("is the last answer's suggestion", () => {
+    const next: AssistantBlock = { kind: 'next', id: 'next', question: 'How do I fix it?' };
+    expect(nextAssistantQuestion([asked('Why did this run fail?'), answered(next)], PAGE)).toBe('How do I fix it?');
+  });
+
+  test("else the first of the page's suggestions not asked yet, in any case or spacing", () => {
+    expect(nextAssistantQuestion([], PAGE)).toBe('Why did this run fail?');
+    expect(nextAssistantQuestion([asked('why did  this run FAIL?'), answered()], PAGE)).toBe(
+      'Which failures in this run are new?',
+    );
+    expect(
+      nextAssistantQuestion(
+        PAGE.flatMap((q) => [asked(q), answered()]),
+        PAGE,
+      ),
+    ).toBeNull();
+  });
+
+  test('is none after a failed answer, nor while the last answer waits for a pick', () => {
+    const failed = said('assistant', [{ kind: 'text', text: 'Half' }], 'failed');
+    expect(nextAssistantQuestion([asked('Why?'), failed], PAGE)).toBeNull();
+    const question: AssistantBlock = {
+      kind: 'question',
+      id: 'which',
+      prompt: 'Which test?',
+      multiple: false,
+      choices: [{ id: 'a', label: 'A' }],
+      other: false,
+    };
+    expect(nextAssistantQuestion([asked('Why?'), answered(question)], PAGE)).toBeNull();
+    expect(nextAssistantQuestion([asked('Why?'), answered({ ...question, answer: { choiceIds: ['a'] } })], PAGE)).toBe(
+      'Why did this run fail?',
+    );
+  });
+});
+
+describe('the question history', () => {
+  test('Up recalls from the first line and Down moves on from the last, with nothing selected', () => {
+    expect(caretOnFirstLine('', 0, 0)).toBe(true);
+    expect(caretOnFirstLine('one\ntwo', 2, 2)).toBe(true);
+    expect(caretOnFirstLine('one\ntwo', 5, 5)).toBe(false);
+    expect(caretOnFirstLine('one', 0, 3)).toBe(false);
+    expect(caretOnLastLine('one\ntwo', 5, 5)).toBe(true);
+    expect(caretOnLastLine('one\ntwo', 2, 2)).toBe(false);
+  });
+
+  test('steps toward the oldest question and back to what is being typed', () => {
+    const questions = ['newest', 'older', 'oldest'];
+    expect(stepAssistantHistory(questions, -1, 'older')).toBe(0);
+    expect(stepAssistantHistory(questions, 1, 'older')).toBe(2);
+    expect(stepAssistantHistory(questions, 2, 'older')).toBeNull();
+    expect(stepAssistantHistory(questions, 0, 'newer')).toBe(-1);
+    expect(stepAssistantHistory(questions, -1, 'newer')).toBeNull();
+    expect(stepAssistantHistory([], -1, 'older')).toBeNull();
+  });
+
+  test('a question asked again moves first, once', () => {
+    expect(rememberAssistantQuestion(['b', 'Why?', 'c'], ' why? ')).toEqual(['why?', 'b', 'c']);
+    expect(rememberAssistantQuestion(['a'], '  ')).toEqual(['a']);
+  });
+});
+
+describe('the usage limits', () => {
+  const time = (iso: string) => `at ${iso.slice(11, 16)}`;
+  const status = (extra: Partial<AssistantStatus>): AssistantStatus => ({
+    available: true,
+    reason: null,
+    provider: 'claude-cli',
+    model: 'sonnet',
+    toolMode: 'native',
+    ...extra,
+  });
+
+  test('none without a cap or a subscription report', () => {
+    expect(assistantUsageView(status({}), time)).toEqual({ meters: [], peak: null, warning: null, blocked: null });
+    expect(assistantUsageView(null, time).meters).toEqual([]);
+  });
+
+  test('the allowance: what it counted, when it frees up, a warning from 80% and the input stopped once spent', () => {
+    const allowance = { scope: 'user' as const, limit: 1000, used: 300, freesAt: '2026-10-27T09:30:00.000Z' };
+    const quiet = assistantUsageView(status({ allowance }), time);
+    expect(quiet.meters).toEqual([
+      {
+        id: 'allowance',
+        label: 'Your daily allowance',
+        share: 0.3,
+        detail: '300 of 1,000 tokens in the last 24 hours',
+        resets: 'Frees up at 09:30, as earlier answers pass 24 hours',
+      },
+    ]);
+    expect(quiet).toMatchObject({ peak: 0.3, warning: null, blocked: null });
+    expect(assistantUsageView(status({ allowance: { ...allowance, used: 850 } }), time).warning).toBe(
+      '85% of your daily assistant allowance is spent. It frees up at 09:30.',
+    );
+    const spent = assistantUsageView(status({ allowance: { ...allowance, scope: 'instance', used: 1200 } }), time);
+    expect(spent).toMatchObject({ peak: 1, warning: null });
+    expect(spent.blocked).toBe('This instance reached its daily assistant allowance. It frees up at 09:30.');
+  });
+
+  test("the Claude subscription's window, warned when nearly or wholly spent, never stopping the input", () => {
+    const subscription = {
+      status: 'allowed' as const,
+      window: 'five_hour',
+      utilization: 0.4,
+      resetsAt: '2026-10-26T15:00:00.000Z',
+      reportedAt: '2026-10-26T11:00:00.000Z',
+    };
+    const quiet = assistantUsageView(status({ subscription }), time);
+    expect(quiet.meters).toEqual([
+      {
+        id: 'subscription',
+        label: 'Claude subscription · 5-hour window',
+        share: 0.4,
+        detail: '40% used',
+        resets: 'Resets at 15:00',
+      },
+    ]);
+    expect(quiet.warning).toBeNull();
+    const nearly = assistantUsageView(
+      status({ subscription: { ...subscription, status: 'allowed_warning', utilization: null } }),
+      time,
+    );
+    expect(nearly).toMatchObject({ peak: null, blocked: null });
+    expect(nearly.warning).toBe('Your Claude subscription’s 5-hour window is nearly spent. It resets at 15:00.');
+    const rejected = assistantUsageView(status({ subscription: { ...subscription, status: 'rejected' } }), time);
+    expect(rejected).toMatchObject({ peak: 1, blocked: null });
+    expect(rejected.warning).toBe(
+      'Your Claude subscription reached the limit of its 5-hour window. It resets at 15:00.',
+    );
+  });
+
+  test('a time within a day reads as its hour, a later one with its day', () => {
+    const now = Date.parse('2026-10-26T10:00:00Z');
+    expect(assistantTime('2026-10-26T15:00:00Z', now)).toMatch(/^at /);
+    expect(assistantTime('2026-10-28T15:00:00Z', now)).toMatch(/^on /);
   });
 });

@@ -1032,6 +1032,8 @@ export async function apiGetAiSettings() {
     languageEnvManaged: false,
     canStoreSecrets: true,
     claudeCliAvailable: false,
+    codexCliAvailable: false,
+    deepseekCliAvailable: false,
   };
 }
 

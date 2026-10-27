@@ -3,9 +3,11 @@ import {
   useTimelineModel,
   computeLockSummary,
   isHookKind,
+  testTimeNotes,
   type TimelineItem,
   type TimelineModelInput,
 } from '../../app/composables/useTimelineModel';
+import { pauseReasonText } from '../../app/utils/timeline';
 import type { TestCaseResult, TestStepEvent } from '../../types/api';
 
 type StepLike = Partial<TestStepEvent> & { title: string; category: string };
@@ -522,6 +524,97 @@ describe('useTimelineModel', () => {
     expect(runLocks.value).toEqual(['api', 'db']);
     expect(timelineData.value.find((d) => d.key === 't1')!.locks).toEqual(['db', 'api']);
     expect(timelineData.value.find((d) => d.key === 't3')!.locks).toBeNull();
+  });
+});
+
+describe('stops at the pause bar', () => {
+  // A test held 4 s at a breakpoint: Playwright reports 400 ms, the steps keep their clock.
+  const paused = (): CaseLike => ({
+    executionId: 1,
+    title: 'pays',
+    status: 'passed',
+    workerIndex: 0,
+    startedAt: 1000,
+    duration: 400,
+    stepEvents: [
+      { title: 'Before Hooks', category: 'hook', startedAt: 1000, duration: 100, status: 'passed' },
+      {
+        title: "Click getByRole('button')",
+        category: 'pause',
+        startedAt: 1200,
+        duration: 4000,
+        status: 'breakpoint',
+        location: 'tests/pay.spec.ts:12:5',
+      },
+      { title: 'After Hooks', category: 'hook', startedAt: 5300, duration: 100, status: 'passed' },
+    ],
+  });
+
+  test('draws each stop as a band of its test, and spans the test’s bar over it', () => {
+    const items = model([paused()]).timelineData.value;
+    const bar = items.find((d) => d.kind === 'test')!;
+    expect([bar.start, bar.duration, bar.reportedDuration, bar.pausedMs]).toEqual([0, 4400, 400, 4000]);
+    const band = items.find((d) => d.kind === 'pause')!;
+    expect(band).toMatchObject({
+      testCaseId: 1,
+      title: "Click getByRole('button')",
+      status: 'breakpoint',
+      subtitle: 'tests/pay.spec.ts:12',
+      start: 200,
+      duration: 4000,
+      parentTitle: 'pays',
+    });
+    expect(isHookKind(band.kind)).toBe(false);
+  });
+
+  test('says why each stop stopped, a Pause or a line run to from the editor included', () => {
+    expect(['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'other', null].map(pauseReasonText)).toEqual([
+      'Paused at a breakpoint',
+      'Paused after Step',
+      'Paused from the editor',
+      'Paused at the line run to',
+      'Paused at page.pause()',
+      'Paused at a breakpoint',
+      'Paused at a breakpoint',
+    ]);
+  });
+
+  test('says the rest of the bar is the time paused, with the hooks Playwright leaves out when there are any', () => {
+    const bar = model([paused()]).timelineData.value.find((d) => d.kind === 'test')!;
+    expect(testTimeNotes(bar)).toEqual([
+      "Playwright reports 400ms; the rest is the 4.0s it stood paused at Piwi's pause bar.",
+    ]);
+    expect(testTimeNotes({ duration: 5400, reportedDuration: 400, pausedMs: 4000 })).toEqual([
+      'Playwright reports 400ms; the rest is the 4.0s it stood paused and hooks it does not count (beforeAll, afterAll, worker fixtures).',
+    ]);
+    expect(testTimeNotes({ duration: 900, reportedDuration: 500, pausedMs: null })).toEqual([
+      'Playwright reports 500ms; the rest ran in hooks it does not count (beforeAll, afterAll, worker fixtures).',
+    ]);
+    expect(testTimeNotes({ duration: 500, reportedDuration: null })).toEqual([]);
+  });
+
+  test('ends the bar of a test that stood paused with its last section, whatever duration it reports', () => {
+    const bar = model([{ ...paused(), duration: 7_500 }]).timelineData.value.find((d) => d.kind === 'test')!;
+    expect([bar.start, bar.duration, bar.reportedDuration ?? null, bar.pausedMs]).toEqual([0, 4400, null, 4000]);
+  });
+
+  test('keeps the notes true for a test that ended under the bar, whose reported duration counts the stop', () => {
+    // A reported duration that counts the stop the test ended under: the bar is no longer than it...
+    expect(testTimeNotes({ duration: 5000, reportedDuration: null, pausedMs: 4000 })).toEqual([
+      "Paused 4.0s at Piwi's pause bar.",
+    ]);
+    // ...or longer only by the hooks it does not count.
+    expect(testTimeNotes({ duration: 6000, reportedDuration: 5500, pausedMs: 4000 })).toEqual([
+      'Playwright reports 5.5s; the rest ran in hooks it does not count (beforeAll, afterAll, worker fixtures).',
+      "Paused 4.0s at Piwi's pause bar.",
+    ]);
+  });
+
+  test('reads no stop from an old reporter’s run', () => {
+    const items = model([{ ...paused(), stepEvents: paused().stepEvents!.filter((e) => e.category !== 'pause') }])
+      .timelineData.value;
+    expect(items.some((d) => d.kind === 'pause')).toBe(false);
+    expect(items.find((d) => d.kind === 'test')!.pausedMs).toBeUndefined();
   });
 });
 

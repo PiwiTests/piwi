@@ -4,6 +4,7 @@
  * Both renderers read these lists, so the HTML report and the Markdown export
  * describe the same run — a field added here shows up in both.
  */
+import { pausedOverlap, type PauseSpan } from '@piwitests/core/step-analysis';
 import type { ExportBundle, ExportCase } from './types';
 
 /** A label/value pair; `null` values are dropped by the renderers. */
@@ -16,6 +17,17 @@ export function fmtDuration(ms: unknown): string {
   if (n < 60_000) return `${(n / 1000).toFixed(1)}s`;
   const m = Math.floor(n / 60_000);
   return `${m}m ${Math.round((n % 60_000) / 1000)}s`;
+}
+
+/**
+ * A step's duration as the exports write it, with the time the test stood paused at Piwi's pause bar while it ran
+ * (`pauses`, the execution's stops in epoch ms): `7.3s, 6.3s of it paused`.
+ */
+export function fmtStepDuration(step: { startTime?: unknown; duration?: unknown }, pauses: unknown): string {
+  const spans = Array.isArray(pauses) ? (pauses as PauseSpan[]) : [];
+  const paused = spans.length ? pausedOverlap(step.startTime, step.duration, spans) : 0;
+  const duration = fmtDuration(step.duration);
+  return paused > 0 ? `${duration}, ${fmtDuration(paused)} of it paused` : duration;
 }
 
 export function fmtBytes(bytes: unknown): string {

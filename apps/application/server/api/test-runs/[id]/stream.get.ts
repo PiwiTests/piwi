@@ -2,6 +2,7 @@ import { testRuns, testCases, testRunsCases } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
 import { createSSEEndpoint } from '../../../utils/sse';
+import { liveResourcesSnapshot } from '#shared/live-resources';
 import { requireResolvedProjectAccess, requireRouteId, resolveRunProjectId } from '../../../utils/project-access';
 
 defineRouteMeta({
@@ -9,7 +10,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Stream test run events via SSE',
     description:
-      'Subscribe to Server-Sent Events for a live test run. Sends an initial catch-up snapshot of current state and existing test cases, then streams real-time events (test-begin, test-completed, run-progress, run-finished) until the run completes.',
+      'Subscribe to Server-Sent Events for a live test run. Sends an initial catch-up snapshot of current state and existing test cases, then streams real-time events (test-begin, test-completed, run-progress, resources, run-finished) until the run completes. The catch-up includes what the run reporters measured so far (`resources`, one snapshot per reporter).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },
@@ -68,6 +69,14 @@ export default eventHandler(async (event) => {
       controller.enqueue(encoder.encode(`data: ${JSON.stringify(finishedData)}\n\n`));
       controller.close();
       return;
+    }
+
+    // What the run's reporters measured so far, one snapshot per reporter, so
+    // the workers timeline draws the run's resources from its start. Sent
+    // before subscribing: the live posts that follow only add to it.
+    for (const part of runEventBus.getLiveResources(id)) {
+      const resourcesEvent = { type: 'resources', data: liveResourcesSnapshot(part), seq: 0, timestamp: Date.now() };
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(resourcesEvent)}\n\n`));
     }
 
     // Also send existing test cases for catch-up (error omitted — large field, not shown in stream view)

@@ -9,10 +9,9 @@ lang: en-US
 <Needs reporter fixtures />
 
 A browser context a test never closes keeps its renderer processes, memory and CPU until the worker shuts down, and
-every later test on that worker runs next to it. Playwright closes what its own fixtures open; a context, page, browser
-or API request context a test opens by hand is the test's to close. The [capture fixtures](/guide/capture-fixtures)
-keep a ledger of every one of them, and at the end of the run the reporter lists those left open past the scope that
-opened them, with the line that did.
+every later test on that worker runs next to it. Playwright closes what its own fixtures open; what a test opens by
+hand is the test's to close. The [capture fixtures](/guide/capture-fixtures) keep a ledger of what each test opens,
+and at the end of the run the reporter lists what stayed open past the scope that opened it, with its line.
 
 ## The summary
 
@@ -24,12 +23,12 @@ The reporter prints it after the last test, before the upload, and adds it to th
 [Piwi Dashboard]   leaked   page        popup after locator.click at tests/checkout.spec.ts:30 · 2 pages · 2 tests · open 3.1 s past its test
 [Piwi Dashboard]   leaked   context     tests/admin.spec.ts:8 · beforeAll of "admin" · 1 test · open until the worker shut down (12.0 s past its describe block)
 [Piwi Dashboard]   piling   listeners   fixture "adminPage" at tests/fixtures.ts:21 · 11 → 31 listeners over 20 tests
-[Piwi Dashboard]   handle   server      left running in the worker by "mocks the payment API" (tests/pay.spec.ts)
+[Piwi Dashboard]   handle   server      tests/pay.spec.ts:14 · left running in the worker by "mocks the payment API" (tests/pay.spec.ts)
 [Piwi Dashboard]   idle     page        fixture "page" · 6 pages · 6 tests · set up with consoleCollector (tests/fixtures.ts:40)
 [Piwi Dashboard] Set leakCheck: 'fail' (PIWI_LEAK_CHECK=fail) to fail the tests that leave what they open, or 'close' to close it.
 ```
 
-Findings that share a line are grouped: the first one above is the same line leaking in four tests. A leaked context
+Findings of one line are grouped: the first above is one line leaking in four tests. A leaked context
 or browser carries the pages open in it, and a page `browser.newPage()` opened carries the context made for it. At most
 ten findings are listed; the rest are counted. In Chromium, the fixtures read each page that outlives its test over the
 DevTools protocol, so a leak also says how much CPU its pages' main threads used after their test, from half a second.
@@ -41,14 +40,14 @@ The [CPU, memory & disk](./cpu-memory-disk) panel follows, with what the whole r
 |---|---|---|
 | **leaked**, past its test | Opened by the test body or its `beforeEach`/`afterEach`, and still open when the test ended. Nothing in the same file closed it later. | `close()` or `dispose()` before the test ends, or `await using` |
 | **leaked**, past its describe block | Opened in a `beforeAll` (or an `afterAll`) and still open once the tests of its describe block ran. | Close it in `afterAll` |
-| **piling up** | A page or context that lives across tests, from a worker-scoped fixture for example, whose open pages, listeners or route handlers grew over at least three tests and never came back down | Remove the listener or route the test adds, or close the popups it opens |
-| **handle** | A server or file watcher a test started in the worker process and left running for the next test | Close it in the test or an `afterEach` |
+| **piling up** | A page or context living across tests whose open pages, listeners, route handlers or DOM elements kept growing; or a worker whose open file descriptors, or heap after V8's own full garbage collections, did | Remove what each test adds or opens; in a worker, what a module variable, cache or pool keeps |
+| **handle** | A server, child process or file watcher a test started and left running in the worker; a server or process at its line | Close or kill it in the test or an `afterEach` |
 | **idle** | A page opened and never used: no navigation, content, script or locator. The detail names the fixtures of yours that set it up. | Drop the `page` argument, or the fixture that asks for it |
 | **probable** | From a test that ran without the fixtures, counted from its steps: more browsers or contexts opened than closed in a spec file | Use the fixtures for exact findings |
 
 What is never reported:
 
-- what a **worker-scoped fixture** holds: it lives as long as the worker by design;
+- what a **worker-scoped fixture** holds, servers and processes included: it lives as long as the worker;
 - a context Playwright **reuses** on purpose (UI mode, `--reuse-context`);
 - an object **handed on** to a later test, or a `beforeAll` object an `afterAll` closes, within the same file;
 - what a **failed test** left open: Playwright shuts its worker down right after it.
@@ -85,10 +84,9 @@ reporter entry's options.
 A run whose reporter sent findings shows a **Resources** tab:
 
 - the counts of each kind of finding, the CPU the run's processes used and the machine's peak memory;
-- the findings, each with the line or fixture that opened the object, a click from your editor;
-- a pointer to each worker's open pages over the run, drawn on the run's
-  [Timeline tab](./cpu-memory-disk#in-the-dashboard) above the worker rows: a leak climbs test after test, a clean
-  worker stays flat;
+- the findings, each with the line or fixture that opened it, one click from your editor;
+- a link to each worker's open pages over the run, on the run's [Timeline tab](./cpu-memory-disk#in-the-dashboard):
+  a leak climbs test after test, a clean worker stays flat;
 - the machine each shard ran on, from the [CPU, memory & disk](./cpu-memory-disk#in-the-dashboard) panel;
 - the **costliest tests**, by the CPU of their worker and browser processes, with the pages each found already open.
 
@@ -118,8 +116,8 @@ npx @piwitests/reporter gate --max-new-leaks 0
 
 The ledger listens to the calls Playwright already reports and does its bookkeeping at the end of each test, adding
 nothing to the steps or the trace. In Chromium, a page still open at the end of a test is read over the DevTools
-protocol: about 20 ms the first time, to open a session, then a couple of milliseconds per test while it stays open. A
-test that started a server waits one timer tick more at its end, so the server's count settles.
+protocol: about 20 ms the first time, to open a session, then a couple of milliseconds per test while it stays open.
+Servers and child processes are placed by wrapping Node's `listen` and `spawn` in each worker.
 
 ## Limits
 
@@ -129,8 +127,8 @@ test that started a server waits one timer tick more at its end, so the server's
   all, and each is checked before use: without the hooks the ledger stays off.
 - An object kept in a module variable on purpose and closed by another spec file reads as leaked.
 - A page used only through calls the ledger does not count, a screenshot of a blank page for example, reads as idle.
-- Node handles are servers and file watchers only: sockets, timers and child processes move on every test, Playwright's
-  own included.
+- Sockets and timers are not reported: they move on every test, Playwright's own included. DOM elements are counted
+  in Chromium only, and a small heap leak shows only over a long run.
 
 ## Try it in the demo
 

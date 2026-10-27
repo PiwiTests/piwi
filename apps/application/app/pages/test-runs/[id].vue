@@ -12,6 +12,9 @@ import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStream } from '~/composables/useRunStream';
 import { summarizeRunCases } from '#shared/utils/test-counts';
+import { applyLiveResourcesToParts } from '#shared/live-resources';
+import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
+import type { WireLiveResources } from '#shared/types';
 
 const route = useRoute();
 const router = useRouter();
@@ -59,6 +62,10 @@ const liveTestCaseKeys = new Map<string, true>();
 // events; nothing is persisted from them). Rendered inline on the matching
 // running rows in the test-case views.
 const liveSteps = ref<LiveStepsByWorker>({});
+// What the run's reporters measured so far (CPU, memory, open pages), one part
+// per reporter, from the stream's `resources` events. The workers timeline
+// draws them while the run is live, and the stored report once it ended.
+const liveResources = ref<RunResourceTimelinePart[]>([]);
 let eventSource: EventSource | null = null;
 
 // Combined test cases: from server data + live stream. Includes every attempt
@@ -299,6 +306,8 @@ function flushPendingEvents() {
           parentTitle: d.parentTitle ?? null,
         },
       };
+    } else if (parsed.type === 'resources') {
+      liveResources.value = applyLiveResourcesToParts(liveResources.value, data as unknown as WireLiveResources);
     } else if (parsed.type === 'run-finalizing') {
       // Tests are done, reports/traces are uploading — show progress bar
       isFinalizing.value = true;
@@ -430,25 +439,23 @@ onUnmounted(() => {
   disconnectStream();
 });
 
-// Throttled version for child components that don't need frame-perfect reactivity
+// Throttled version for child components that don't need frame-perfect reactivity.
+// It starts from the cases the page rendered with, so the server and the
+// browser render the same timeline, and each later frame takes the latest list.
 let rafId: number | null = null;
-const throttledTestCases = ref<TestCaseResult[]>([]);
+const throttledTestCases = ref<TestCaseResult[]>(displayTestCases.value);
 
-watch(
-  displayTestCases,
-  (val) => {
-    if (!import.meta.client) {
-      throttledTestCases.value = val;
-      return;
-    }
-    if (rafId !== null) return;
-    rafId = requestAnimationFrame(() => {
-      throttledTestCases.value = val;
-      rafId = null;
-    });
-  },
-  { immediate: true },
-);
+watch(displayTestCases, (val) => {
+  if (!import.meta.client) {
+    throttledTestCases.value = val;
+    return;
+  }
+  if (rafId !== null) return;
+  rafId = requestAnimationFrame(() => {
+    throttledTestCases.value = displayTestCases.value;
+    rafId = null;
+  });
+});
 
 // Display progress: the header counts, the count bar and the grouped list are
 // all derived from the same de-duplicated case list (one row per test, its
@@ -893,6 +900,7 @@ const moreMenuItems = computed(() => {
             :is-live="isLive"
             :total="displayProgress?.totalTests"
             :live-steps="liveSteps"
+            :live-resources="liveResources"
             :cluster-meta="clusterMeta"
             :quarantined-case-ids="quarantinedCaseIds"
             :project-key="testRun?.projectId"
@@ -924,6 +932,7 @@ const moreMenuItems = computed(() => {
               :wasted-patterns="testRun?.wastedWaitPatterns ?? null"
               :run-id="Number(runId)"
               :has-resources="testRun?.hasResources ?? false"
+              :live-resources="liveResources"
               @select-test-case="handleSelectTestCase"
             />
             <RunTimelineExtras

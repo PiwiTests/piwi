@@ -8,7 +8,7 @@
  * owner is the signed-in user's id, or null with authentication off, when every
  * visitor is the same virtual administrator.
  */
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, sum } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, min, sum } from 'drizzle-orm';
 import { assistantConversations, assistantMessages, assistantUsage } from '../../server/database/schema';
 import {
   assistantMessageText,
@@ -120,6 +120,53 @@ export async function getAssistantConversation(
     .where(eq(assistantMessages.conversationId, id))
     .orderBy(asc(assistantMessages.id));
   return { ...toSummary(row), messages: messages.map(toMessageView) };
+}
+
+/** The most questions the history returns. */
+const QUESTION_HISTORY_LIMIT = 50;
+
+/** The newest messages the history reads to find them; replies and repeats are left out. */
+const QUESTION_HISTORY_SCAN = 400;
+
+/** Whether an answer holds a `question` or `options` block that was answered: the next question is that reply. */
+function wasReplied(message: AssistantMessageView): boolean {
+  return message.blocks.some(
+    (block) => (block.kind === 'question' && block.answer) || (block.kind === 'options' && block.picked),
+  );
+}
+
+/**
+ * The questions the owner typed, newest first, each once, across their
+ * conversations: what the panel's Up arrow brings back. A question that
+ * replied to a `question` or `options` block is left out, as the answered
+ * block it follows shows; the panel sends those from the block.
+ */
+export async function listAssistantQuestions(db: DrizzleDB, ownerId: AssistantOwner): Promise<{ items: string[] }> {
+  const rows = await db
+    .select({ message: assistantMessages })
+    .from(assistantMessages)
+    .innerJoin(assistantConversations, eq(assistantConversations.id, assistantMessages.conversationId))
+    .where(ownedBy(ownerId))
+    .orderBy(desc(assistantMessages.id))
+    .limit(QUESTION_HISTORY_SCAN);
+  const messages = rows.map((row) => ({
+    conversationId: row.message.conversationId,
+    view: toMessageView(row.message),
+  }));
+  const items: string[] = [];
+  const seen = new Set<string>();
+  for (const [index, { conversationId, view }] of messages.entries()) {
+    if (view.role !== 'user') continue;
+    const before = messages.slice(index + 1).find((m) => m.conversationId === conversationId);
+    if (before?.view.role === 'assistant' && wasReplied(before.view)) continue;
+    const text = assistantMessageText(view.blocks).trim();
+    const key = text.replace(/\s+/g, ' ').toLowerCase();
+    if (!text || seen.has(key)) continue;
+    seen.add(key);
+    items.push(text);
+    if (items.length === QUESTION_HISTORY_LIMIT) break;
+  }
+  return { items };
 }
 
 /** The messages of a conversation that is the owner's. */
@@ -444,18 +491,31 @@ export async function recordAssistantUsage(
  * answer on the instance when it is left out.
  */
 export async function assistantTokensSince(db: DrizzleDB, since: Date, ownerId?: AssistantOwner): Promise<number> {
-  const recent = gte(assistantUsage.createdAt, since);
-  const owner =
-    ownerId === undefined
-      ? undefined
-      : ownerId === null
-        ? isNull(assistantUsage.ownerId)
-        : eq(assistantUsage.ownerId, ownerId);
   const [row] = await db
     .select({ input: sum(assistantUsage.inputTokens), output: sum(assistantUsage.outputTokens) })
     .from(assistantUsage)
-    .where(owner ? and(recent, owner) : recent);
+    .where(usageSince(since, ownerId));
   return Number(row?.input ?? 0) + Number(row?.output ?? 0);
+}
+
+/** When the oldest answer counted since `since` was written, one owner's or the instance's as above; null when none was. */
+export async function oldestAssistantUsageSince(
+  db: DrizzleDB,
+  since: Date,
+  ownerId?: AssistantOwner,
+): Promise<Date | null> {
+  const [row] = await db
+    .select({ oldest: min(assistantUsage.createdAt) })
+    .from(assistantUsage)
+    .where(usageSince(since, ownerId));
+  return row?.oldest == null ? null : new Date(row.oldest);
+}
+
+/** The usage rows since `since`: one owner's when `ownerId` is given, every one when it is left out. */
+function usageSince(since: Date, ownerId?: AssistantOwner) {
+  const recent = gte(assistantUsage.createdAt, since);
+  if (ownerId === undefined) return recent;
+  return and(recent, ownerId === null ? isNull(assistantUsage.ownerId) : eq(assistantUsage.ownerId, ownerId));
 }
 
 /**

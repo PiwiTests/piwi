@@ -1,4 +1,5 @@
 import type { BugPhrases, BugState, BugStepValue, BugSubject, RoleNoun } from './bug-phrases';
+import type { ManualCheckValues } from './recording';
 import { markdownCode } from './markdown-code';
 import { keyCombo } from './key-combo';
 
@@ -150,6 +151,14 @@ const plural = (n: number, one: string, many: string): string => `${number(n)} $
 const ofTotal = (shown: number, total: number | null): string =>
   `${number(shown)}${total != null ? ` sur ${number(total)}` : ''}`;
 
+/** `; dans l’exécution, il attendait X et a reçu Y`, as much as the run says. */
+function inRun(c: ManualCheckValues): string {
+  const parts = [c.expected ? `attendait ${c.expected}` : null, c.received ? `a reçu ${c.received}` : null].filter(
+    Boolean,
+  );
+  return parts.length > 0 ? `${NNBSP}; dans l’exécution, il ${parts.join(' et ')}` : '';
+}
+
 export const FRENCH_BUG_PHRASES: BugPhrases = {
   language: 'fr',
   roles: ROLES,
@@ -173,6 +182,45 @@ export const FRENCH_BUG_PHRASES: BugPhrases = {
         : `Choisir ${files.length === 1 ? 'le fichier' : 'les fichiers'} ${files.map(quote).join(', ')} dans ${phrase(s)}`,
     dragTo: (s, target) => `Glisser ${phrase(s)} sur ${phrase(target)}`,
     manual: (description) => `À la main${NBSP}: ${description}`,
+  },
+  manualInstructions: {
+    goBack: () => 'Revenir à la page précédente dans le navigateur',
+    goForward: () => 'Aller à la page suivante dans le navigateur',
+    reload: () => 'Recharger la page',
+    gotoUnknown: () => `Ouvrir la page que le test a ouverte${NNBSP}; l’exécution ne garde pas laquelle`,
+    setContent: () => `Ouvrir la page que le test écrit lui-même (${markdownCode('page.setContent')})`,
+    keyboardType: () => `Taper au clavier ce que le test a tapé${NNBSP}; la valeur se trouve dans le code du test`,
+    mouseAt: (i) =>
+      `Faire à la souris ce que le test a fait au point (${number(i.x)}${NNBSP}; ${number(i.y)}) de la page${NBSP}: ${i.call}`,
+    mouseOrKeyboard: (i) => `Faire à la souris ou au clavier ce que le test a fait${NBSP}: ${i.call}`,
+    failedCall: (i) => `Faire ce que le test faisait quand il a échoué${NBSP}: ${i.call}`,
+    locatorCall: (i) => `Faire sur ${markdownCode(i.locator)} ce que le test a fait${NBSP}: ${i.call}`,
+    fillUnknown: (i) =>
+      `Remplir ${markdownCode(i.locator)} comme le test l’a fait${NNBSP}; l’exécution ne garde pas la valeur`,
+    fillPartial: (i) =>
+      `Remplir ${markdownCode(i.locator)} comme le test l’a fait${NNBSP}; l’exécution ne garde qu’une partie de la valeur`,
+    pressUnknown: (i) => `Appuyer dans ${markdownCode(i.locator)} sur la touche utilisée par le test`,
+    selectOptionUnknown: (i) =>
+      `Choisir dans ${markdownCode(i.locator)} l’option choisie par le test${NNBSP}; l’exécution ne garde pas laquelle`,
+    selectOptions: (i) =>
+      `Choisir dans ${markdownCode(i.locator)} ${i.options
+        .map((o) => (typeof o === 'number' ? `l’option à l’index ${number(o)}` : quote(o)))
+        .join(' et ')}`,
+    setInputFiles: (i) =>
+      `Choisir dans ${markdownCode(i.locator)} le fichier choisi par le test${NNBSP}; l’exécution ne garde pas son nom`,
+    dragTo: (i) =>
+      `Glisser ${markdownCode(i.locator)} là où le test l’a déposé${NNBSP}; l’exécution ne garde pas l’endroit`,
+    drop: (i) => `Déposer sur ${markdownCode(i.locator)} les fichiers ou les données déposés par le test`,
+    focus: (i) => `Donner le focus à ${markdownCode(i.locator)}`,
+    blur: (i) => `Retirer le focus de ${markdownCode(i.locator)}`,
+    dispatchEvent: (i) => `Faire sur ${markdownCode(i.locator)} ce qui déclenche l’événement envoyé par le test`,
+    scrollIntoViewIfNeeded: (i) => `Faire défiler la page jusqu’à ${markdownCode(i.locator)}`,
+    expectPoll: (i) => `Vérifier ce que le test vérifiait à plusieurs reprises (${i.matcher})${inRun(i)}`,
+    expectValue: (i) => `Vérifier ce que le test a vérifié${NBSP}: ${i.what}${inRun(i)}`,
+    expectLocator: (i) => `Vérifier ${markdownCode(i.locator)} avec ${i.matcher}${inRun(i)}`,
+    expectURL: (i) => `Vérifier l’adresse de la page (toHaveURL)${inRun(i)}`,
+    leadingSteps: (i) =>
+      `Faire les ${number(i.count)} premières étapes du test, jusqu’au début de l’étape ${number(i.count + 1)}${NBSP}: un fichier d’étapes en contient ${number(i.limit)} au plus`,
   },
   expectation(s, e, negated) {
     const should = negated ? 'ne devrait pas' : 'devrait';

@@ -19,25 +19,26 @@ dependency graph:
 npx @piwitests/reporter run impact --base origin/main
 ```
 
-It fails safe, widening to the full suite with a warning, when a changed file maps to no test (stylesheets too) or
-only through source frames, which miss passing tests. A docs-only change runs nothing. `piwi select impact` prints
-the Playwright arguments instead of running them, for a job that passes them to `playwright test`: nothing when the
-run widens, and `--pass-with-no-tests --grep-invert .` when no test is impacted, under which Playwright runs none and
-passes.
+It fails safe, widening to the full suite with a warning, when a changed file maps to no test (a stylesheet too,
+unless [CSS coverage](/features/css-coverage) maps it) or only through source frames, which miss passing tests. A
+docs-only change runs nothing. `piwi select impact` prints the Playwright arguments instead of running them, for a job
+that passes them to `playwright test`: nothing when the run widens, and `--pass-with-no-tests --grep-invert .` when no
+test is impacted, under which Playwright runs none and passes.
 [`piwi preflight --run`](/features/preflight) runs the same tests along with those of the locators the change breaks.
 
 ## Line level
 
-When tests record coverage ([code reach](/features/code-reach) at `functions`, or
-[server coverage](/features/server-coverage)), a modified file selects only the tests that ran the lines you changed,
-not every test that touched the file. The reporter sends each modified file's changed lines with the git blob id of
-its version before the change, and the dashboard reads them against each test's recorded coverage of that same
-version:
+When tests record coverage ([code reach](/features/code-reach) at `functions`,
+[CSS coverage](/features/css-coverage), or [server coverage](/features/server-coverage)), a modified file selects
+only the tests that ran the lines you changed, not every test that touched the file. The reporter sends each modified
+file's changed lines with the git blob id of its version before the change, and the dashboard reads them against each
+test's recorded coverage of that same version:
 
 | A changed line… | selects the tests that… |
 | --- | --- |
 | is a statement, with server coverage at `lines` | ran that line |
 | sits inside a function: any other line, an insertion, or coverage at `functions` | ran that function |
+| sits inside a style sheet rule, with CSS coverage | matched that rule |
 | sits outside every function (module code, a declaration, an attribute), or crosses from one function into the next | reach the file at all |
 
 An added line counts by the lines around it, so it selects the tests that ran the code it was added to. A test whose

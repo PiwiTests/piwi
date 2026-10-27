@@ -38,6 +38,7 @@ const KIND_LABEL: Record<WireResourceFinding['kind'], string> = {
   page: 'page',
   request: 'API context',
   handle: 'handle',
+  worker: 'worker',
 };
 
 /** Node's handle type names, as a reader knows them. */
@@ -45,9 +46,22 @@ const HANDLE_LABEL: Record<string, string> = {
   TCPServerWrap: 'server',
   FSEventWrap: 'file watcher',
   StatWatcher: 'file watcher',
+  ChildProcess: 'process',
 };
 
-const GROWTH_NOUN = { pages: 'open pages', listeners: 'listeners', routes: 'route handlers' } as const;
+const GROWTH_NOUN = {
+  pages: 'open pages',
+  listeners: 'listeners',
+  routes: 'route handlers',
+  elements: 'DOM elements',
+  heapMb: 'worker heap',
+  descriptors: 'file descriptors',
+} as const;
+
+/** What follows a growth's numbers, for those that are not a plain count. */
+const GROWTH_UNIT: Partial<Record<keyof typeof GROWTH_NOUN, string>> = {
+  heapMb: ' MB after garbage collection',
+};
 
 export interface FindingView {
   /** `Leaked context`, `Never used page`, `Piling up listeners`. */
@@ -91,7 +105,9 @@ export function findingView(finding: WireResourceFinding): FindingView {
       break;
     case 'piling': {
       const growth = finding.growth;
-      if (growth) facts.push(`${growth.from} → ${growth.to} over ${growth.tests} tests`);
+      if (growth)
+        facts.push(`${growth.from} → ${growth.to}${GROWTH_UNIT[growth.what] ?? ''} over ${growth.tests} tests`);
+      if (finding.detail) facts.push(finding.detail);
       break;
     }
     case 'handle':

@@ -5,6 +5,7 @@ playwright-report/
 bin/
 obj/
 TestResults/
+backends/nitro.tests/coverage/
 .nitro/
 .output/
 # The sample installs the published @piwitests packages: no lockfile.

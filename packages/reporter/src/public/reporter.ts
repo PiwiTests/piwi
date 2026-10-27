@@ -22,7 +22,7 @@ import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES } from '../internal/capture
 import { MetadataCollector, resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
 import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '@piwitests/core/step-analysis';
-import { readPauses, withoutPausedTime } from '../internal/collect/paused-steps.js';
+import { pauseStepEvents, readPauses } from '../internal/collect/pause-events.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
@@ -68,6 +68,7 @@ import {
 import { Logger } from '../internal/support/logger.js';
 import { emitResourceSummary } from '../internal/support/ci-output.js';
 import { RunSampler } from '../internal/collect/process-sampler.js';
+import { LiveResources } from '../internal/streaming/live-resources.js';
 import { executionResources, resourceReportWire } from '../internal/collect/resource-wire.js';
 import {
   artifactKind,
@@ -170,6 +171,8 @@ export class PiwiDashboardReporter {
   private resourcesFile: string | null = null;
   /** Samples the run's processes and the machine from `onBegin` to `onEnd`. */
   private sampler: RunSampler | null = null;
+  /** Posts what the sampler and the censuses add while someone has the run open on the dashboard. */
+  private liveResources: LiveResources | null = null;
   /** Bytes of the files the tests attached, by kind. */
   private artifactBytes: ArtifactBytes = emptyArtifacts();
   /** The run's resource report for the dashboard, built in `onEnd`. */
@@ -384,8 +387,9 @@ export class PiwiDashboardReporter {
       );
     }
     if (coverage.server !== 'off') this.lastTestWatch = new LastTestWatch(this.plannedTests.length);
-    if (coverage.browser !== 'off' || coverage.server !== 'off') {
+    if (coverage.browser !== 'off' || coverage.server !== 'off' || coverage.css === 'rules') {
       if (coverage.browser !== 'off') process.env[PIWI_ENV_KEYS.coverageBrowser] = coverage.browser;
+      if (coverage.css === 'rules') process.env[PIWI_ENV_KEYS.coverageCss] = coverage.css;
       if (coverage.server !== 'off') {
         process.env[PIWI_ENV_KEYS.coverageServer] = coverage.server;
       }
@@ -411,6 +415,22 @@ export class PiwiDashboardReporter {
       // the dashboard shows the real total from the first render.
       this.plannedTests.length,
     );
+    if (this.streamManager && this.options.captureResources !== false) {
+      const live = new LiveResources(
+        this.streamManager,
+        this.httpClient,
+        {
+          sampler: this.sampler,
+          censuses: () => this.resourceCensuses,
+          shardIndex: this.shardInfo?.current ?? null,
+          runStartedAt: Date.now(),
+        },
+        this.logger,
+      );
+      this.streamManager.onWatched = () => void live.tick();
+      live.start();
+      this.liveResources = live;
+    }
   }
 
   /**
@@ -623,13 +643,13 @@ export class PiwiDashboardReporter {
     }
 
     if (this.options.collectPerformanceMetrics && result.steps?.length > 0) {
-      // The time the test stood stopped at Piwi's pause bar is not the test's own.
+      // The stops at Piwi's pause bar: the steps keep their clock, the statistics leave the stopped time out.
       const pauses = readPauses(result.attachments?.find((a) => a.name === ATTACHMENT_NAMES.pauses)?.body);
-      const steps = withoutPausedTime(result.steps, pauses);
-      testCase.performanceMetrics = collectStepMetrics(steps, result.errors);
-      const stepEvents = extractTestStepEvents(steps, result.startTime);
-      const waitEvents = extractWaitEvents(steps);
-      const allEvents = [...stepEvents, ...waitEvents];
+      testCase.performanceMetrics = collectStepMetrics(result.steps, result.errors, pauses);
+      const stepEvents = extractTestStepEvents(result.steps, result.startTime);
+      const waitEvents = extractWaitEvents(result.steps);
+      // The stops before the waits, which can be many: the dashboard keeps the first events of a test.
+      const allEvents = [...stepEvents, ...pauseStepEvents(pauses), ...waitEvents];
       if (allEvents.length > 0) testCase.stepEvents = allEvents;
     }
 
@@ -784,6 +804,8 @@ export class PiwiDashboardReporter {
    */
   private async reportResources(): Promise<void> {
     if (this.options.captureResources === false) return;
+    await this.liveResources?.stop();
+    this.liveResources = null;
     const profile = this.sampler ? await this.sampler.stop() : null;
     const samples = this.sampler?.timedSeries() ?? null;
     this.sampler = null;

@@ -205,6 +205,14 @@ async function dirBytes(dir: string, budget: { files: number }): Promise<number>
   return bytes;
 }
 
+/** The machine's memory, and its container's limit when lower than it. */
+function memoryOf(container: ContainerReads | null): { memoryBytes: number; memoryLimitBytes: number | null } {
+  const totalMemory = os.totalmem();
+  const constrained = typeof process.constrainedMemory === 'function' ? process.constrainedMemory() : undefined;
+  const limit = container?.memoryLimitBytes ?? (constrained && constrained > 0 ? constrained : null);
+  return { memoryBytes: totalMemory, memoryLimitBytes: limit !== null && limit < totalMemory ? limit : null };
+}
+
 export class RunSampler {
   private readonly rootPid: number;
   private readonly platform: NodeJS.Platform;
@@ -247,6 +255,7 @@ export class RunSampler {
   private peakInUse: number | null = null;
   private peakInUseIsLowerBound = false;
   private lowestFree: number | null = null;
+  private capacityBytes: number | undefined;
 
   constructor(options: SamplerOptions = {}) {
     this.rootPid = options.rootPid ?? process.pid;
@@ -290,6 +299,19 @@ export class RunSampler {
       // A profile from what was read so far.
     }
     return this.profile(await this.leftoverBytes());
+  }
+
+  /**
+   * What a live run's memory is drawn against: the machine's memory, or its
+   * container's limit when lower, read once, and how the run's memory is
+   * measured so far.
+   */
+  liveMemory(): { capacityBytes: number | null; kind: 'pss' | 'rss' | null } {
+    if (this.capacityBytes === undefined) {
+      const machine = memoryOf(this.linux ? this.cgroup.read() : null);
+      this.capacityBytes = machine.memoryLimitBytes ?? machine.memoryBytes;
+    }
+    return { capacityBytes: this.capacityBytes || null, kind: this.memoryKind };
   }
 
   /** The series read so far, each point at the time it was read. */
@@ -631,9 +653,6 @@ export class RunSampler {
 
     const container = this.linux ? this.cgroup.read() : null;
     const startContainer = this.containerStart;
-    const totalMemory = os.totalmem();
-    const constrained = typeof process.constrainedMemory === 'function' ? process.constrainedMemory() : undefined;
-    const limit = container?.memoryLimitBytes ?? (constrained && constrained > 0 ? constrained : null);
     const raisedPeak =
       container?.memoryPeakBytes != null &&
       startContainer?.memoryPeakBytes != null &&
@@ -648,8 +667,7 @@ export class RunSampler {
       wallMs,
       machine: {
         cores: typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length,
-        memoryBytes: totalMemory,
-        memoryLimitBytes: limit !== null && limit < totalMemory ? limit : null,
+        ...memoryOf(container),
         cpuQuotaCores: container?.cpuQuotaCores ?? null,
       },
       cpu: {

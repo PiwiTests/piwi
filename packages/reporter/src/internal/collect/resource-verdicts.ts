@@ -51,7 +51,7 @@ interface Tracked {
   close: ResourceClose | null;
   lastOpenAt: number | null;
   used: boolean | undefined;
-  series: Array<{ pages?: number; listeners?: number; routes?: number }>;
+  series: Array<{ pages?: number; listeners?: number; routes?: number; elements?: number; test: ResourceTestRef }>;
   /** Pages: main-thread CPU read at each census, over CDP. */
   mainCpu: Array<{ at: number; cpuMs: number }>;
 }
@@ -177,7 +177,15 @@ export function buildResourceReport(input: ResourceReportInput): ResourceReport 
         if (!entry) continue;
         entry.lastOpenAt = census.at;
         if (open.used !== undefined) entry.used = open.used;
-        if (census.test) entry.series.push({ pages: open.pages, listeners: open.listeners, routes: open.routes });
+        if (census.test) {
+          entry.series.push({
+            pages: open.pages,
+            listeners: open.listeners,
+            routes: open.routes,
+            elements: open.main?.elements,
+            test: census.test,
+          });
+        }
         if (open.main) entry.mainCpu.push({ at: census.at, cpuMs: open.main.cpuMs });
       }
     }
@@ -194,6 +202,7 @@ export function buildResourceReport(input: ResourceReportInput): ResourceReport 
 
   findings.push(...groupLeaks(leaked, all));
   findings.push(...pilingFindings(all));
+  findings.push(...workerPilingFindings(byWorker));
   findings.push(...handleFindings(byWorker));
   findings.push(...groupIdle(idle, input.fixturesByTest ?? new Map()));
   findings.push(...probableFindings(input.tallies ?? []));
@@ -393,17 +402,60 @@ function groupIdle(idle: Tracked[], fixturesByTest: Map<string, string[]>): Reso
     .sort((a, b) => b.count - a.count);
 }
 
-/** An open context whose pages, or an open page whose listeners or route handlers, grew test after test. */
+type GrowthWhat = NonNullable<ResourceFinding['growth']>['what'];
+
+/**
+ * How much of each thing must pile up before it is a finding: the growth, and
+ * for the larger counts a share of where it started, over at least
+ * `minPoints` censuses. Pages, listeners and route handlers are counted
+ * exactly; attached elements too. The worker's heap is read after V8's own
+ * full garbage collections, so only a few tests carry it; descriptors are
+ * exact.
+ */
+const PILING_RULES: Record<GrowthWhat, { min: number; share: number; minPoints: number }> = {
+  pages: { min: 2, share: 0, minPoints: 3 },
+  listeners: { min: 2, share: 0, minPoints: 3 },
+  routes: { min: 2, share: 0, minPoints: 3 },
+  elements: { min: 200, share: 0.25, minPoints: 4 },
+  heapMb: { min: 32, share: 0.2, minPoints: 3 },
+  descriptors: { min: 8, share: 0.2, minPoints: 4 },
+};
+
+/**
+ * Whether a series of readings, one per census, piled up: from where to where,
+ * or null. Either it never went down and grew by the rule's amount, or what it
+ * kept grew: the floor at each census (the lowest reading from there on, which
+ * a dip back down lowers) rose by that amount by three quarters of the series
+ * and a quarter of that rise was there by its middle, so a series that only
+ * jumps at its end, or wanders, is not one.
+ */
+export function pileUp(values: number[], what: GrowthWhat): { from: number; to: number } | null {
+  const rule = PILING_RULES[what];
+  if (values.length < rule.minPoints) return null;
+  const enough = (from: number, to: number) => to - from >= Math.max(rule.min, from * rule.share);
+  const first = values[0]!;
+  const last = values[values.length - 1]!;
+  if (values.every((value, i) => i === 0 || value >= values[i - 1]!) && enough(first, last)) {
+    return { from: first, to: last };
+  }
+  if (values.length < 4) return null;
+  const floor = [...values];
+  for (let i = floor.length - 2; i >= 0; i--) floor[i] = Math.min(floor[i]!, floor[i + 1]!);
+  const start = floor[0]!;
+  const middle = floor[Math.floor((floor.length - 1) / 2)]!;
+  const late = floor[Math.floor(((floor.length - 1) * 3) / 4)]!;
+  if (!enough(start, late) || middle - start < (late - start) / 4) return null;
+  return { from: start, to: last };
+}
+
+/** An open context whose pages, or an open page whose listeners, route handlers or elements, grew test after test. */
 function pilingFindings(all: Tracked[]): ResourceFinding[] {
   const out: ResourceFinding[] = [];
   for (const entry of all) {
-    for (const what of ['pages', 'listeners', 'routes'] as const) {
+    for (const what of ['pages', 'listeners', 'routes', 'elements'] as const) {
       const values = entry.series.map((point) => point[what]).filter((v): v is number => typeof v === 'number');
-      if (values.length < 3) continue;
-      const rising = values.every((value, i) => i === 0 || value >= values[i - 1]!);
-      const from = values[0]!;
-      const to = values[values.length - 1]!;
-      if (!rising || to - from < 2) continue;
+      const growth = pileUp(values, what);
+      if (!growth) continue;
       out.push({
         verdict: 'piling',
         kind: entry.birth.kind,
@@ -411,36 +463,117 @@ function pilingFindings(all: Tracked[]): ResourceFinding[] {
         site: siteOf(entry.birth),
         tests: values.length,
         count: 1,
-        growth: { what, from, to, tests: values.length },
+        growth: { what, from: Math.round(growth.from), to: Math.round(growth.to), tests: values.length },
       });
     }
   }
   return out.sort((a, b) => b.growth!.to - b.growth!.from - (a.growth!.to - a.growth!.from));
 }
 
-/** A tracked Node handle type that grew during a test and was still there when the next test started. */
+/** A test that left an object, a server or a process open: what it added to its worker is already a finding. */
+function leftSomethingOpen(census: ResourceCensus): boolean {
+  if ((census.leftOpen ?? 0) > 0 || (census.running?.length ?? 0) > 0) return true;
+  const handles = census.handles;
+  return !!handles && Object.entries(handles.end).some(([type, n]) => n > (handles.start[type] ?? 0));
+}
+
+/**
+ * A worker process whose heap after full garbage collections, or whose open
+ * file descriptors, grew test after test: a test, a hook or a fixture keeps
+ * something in the worker. What a test that left something open added is left
+ * out of the decision, since that is a finding already. Node keeps no site for
+ * either, so when every test carries a reading (descriptors do; the heap is
+ * read only after the full collections V8 chose to run) the finding names the
+ * test during which the most of the rest was gained.
+ */
+function workerPilingFindings(byWorker: Map<number, ResourceCensus[]>): ResourceFinding[] {
+  const best = new Map<GrowthWhat, ResourceFinding & { gained: number }>();
+  for (const censuses of byWorker.values()) {
+    const measured = censuses
+      .filter((census) => census.test && !census.test.failed && census.metrics)
+      .sort((a, b) => a.at - b.at);
+    const read: Array<[GrowthWhat, (census: ResourceCensus) => number | null | undefined]> = [
+      ['heapMb', (census) => census.metrics!.worker.heapAfterGcMb],
+      ['descriptors', (census) => census.metrics!.worker.fds],
+    ];
+    for (const [what, value] of read) {
+      const points = measured
+        .map((census) => ({ census, value: value(census) }))
+        .filter((point): point is { census: ResourceCensus; value: number } => typeof point.value === 'number');
+      // The readings with what tests that left something open added taken out.
+      const unexplained: number[] = [];
+      let top: { test: ResourceTestRef; gained: number } | null = null;
+      points.forEach((point, i) => {
+        if (i === 0) return void unexplained.push(point.value);
+        const gained = point.value - points[i - 1]!.value;
+        const counted = leftSomethingOpen(point.census) && gained > 0 ? 0 : gained;
+        unexplained.push(unexplained[i - 1]! + counted);
+        if (counted > 0 && (!top || counted > top.gained)) top = { test: point.census.test!, gained: counted };
+      });
+      const growth = pileUp(unexplained, what);
+      if (!growth) continue;
+      const lead = points.length === measured.length ? (top as { test: ResourceTestRef; gained: number } | null) : null;
+      const span = measured.indexOf(points[points.length - 1]!.census) - measured.indexOf(points[0]!.census) + 1;
+      const finding: ResourceFinding & { gained: number } = {
+        verdict: 'piling',
+        kind: 'worker',
+        where: 'worker process',
+        tests: measured.length,
+        count: 1,
+        growth: {
+          what,
+          from: Math.round(Math.min(...points.map((point) => point.value))),
+          to: Math.round(points[points.length - 1]!.value),
+          tests: span,
+        },
+        ...(lead ? { detail: `most of it during "${lead.test.title ?? ''}" (${lead.test.file})` } : {}),
+        gained: growth.to - growth.from,
+      };
+      // One finding per kind of growth, from the worker where it grew most.
+      const seen = best.get(what);
+      if (!seen || finding.gained > seen.gained) best.set(what, finding);
+    }
+  }
+  return [...best.values()].map(({ gained: _gained, ...finding }) => finding);
+}
+
+/**
+ * The servers and child processes a test left running in its worker, each at
+ * the line that started it, from the censuses that track them; and, from the
+ * counts, a tracked Node handle type that grew during a test and was still
+ * there when the next test started. A census that tracks servers one by one
+ * leaves them out of its counts.
+ */
 function handleFindings(byWorker: Map<number, ResourceCensus[]>): ResourceFinding[] {
   const groups = new Map<string, ResourceFinding>();
+  const add = (test: ResourceTestRef, type: string, count: number, site: string | null = null) => {
+    const key = `${test.id}|${type}|${site ?? ''}`;
+    const group = groups.get(key) ?? {
+      verdict: 'handle' as const,
+      kind: 'handle' as const,
+      where: type,
+      ...(site ? { site } : {}),
+      tests: 1,
+      count: 0,
+      detail: `"${test.title ?? ''}" (${test.file})`,
+    };
+    group.count += count;
+    groups.set(key, group);
+  };
   for (const censuses of byWorker.values()) {
+    for (const census of censuses) {
+      if (!census.test || census.test.failed) continue;
+      for (const handle of census.running ?? []) add(census.test, handle.type, 1, handle.site);
+    }
     const ordered = censuses.filter((census) => census.test && census.handles).sort((a, b) => a.at - b.at);
     for (let i = 0; i < ordered.length - 1; i++) {
       const census = ordered[i]!;
       const next = ordered[i + 1]!;
       for (const [type, end] of Object.entries(census.handles!.end)) {
+        if (census.running && type === 'TCPServerWrap') continue;
         const grew = end - (census.handles!.start[type] ?? 0);
         if (grew <= 0 || (next.handles!.start[type] ?? 0) < end) continue;
-        const test = census.test!;
-        const key = `${test.id}|${type}`;
-        const group = groups.get(key) ?? {
-          verdict: 'handle' as const,
-          kind: 'handle' as const,
-          where: type,
-          tests: 1,
-          count: 0,
-          detail: `"${test.title ?? ''}" (${test.file})`,
-        };
-        group.count += grew;
-        groups.set(key, group);
+        add(census.test!, type, grew);
       }
     }
   }
@@ -491,6 +624,27 @@ const KIND_LABEL: Record<ResourceFinding['kind'], string> = {
   page: 'page',
   request: 'API context',
   handle: 'handle',
+  worker: 'worker',
+};
+
+/** What piled up, as the kind column names it. */
+const GROWTH_LABEL: Record<GrowthWhat, string> = {
+  pages: 'pages',
+  listeners: 'listeners',
+  routes: 'routes',
+  elements: 'elements',
+  heapMb: 'heap',
+  descriptors: 'descriptors',
+};
+
+/** What piled up, after its numbers. */
+const GROWTH_NOUN: Record<GrowthWhat, string> = {
+  pages: 'open pages',
+  listeners: 'listeners',
+  routes: 'route handlers',
+  elements: 'DOM elements',
+  heapMb: 'MB of heap after garbage collection',
+  descriptors: 'open file descriptors',
 };
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -500,6 +654,7 @@ const HANDLE_LABEL: Record<string, string> = {
   TCPServerWrap: 'server',
   FSEventWrap: 'file watcher',
   StatWatcher: 'file watcher',
+  ChildProcess: 'process',
 };
 
 /** One line per finding, most severe first. */
@@ -509,10 +664,10 @@ function findingLine(finding: ResourceFinding): string {
     finding.verdict === 'handle'
       ? (HANDLE_LABEL[finding.where] ?? finding.where)
       : finding.growth
-        ? finding.growth.what
+        ? GROWTH_LABEL[finding.growth.what]
         : KIND_LABEL[finding.kind];
   const kind = label.padEnd(11);
-  const parts: string[] = finding.verdict === 'handle' ? [] : [finding.where];
+  const parts: string[] = finding.verdict === 'handle' ? (finding.site ? [finding.site] : []) : [finding.where];
   switch (finding.verdict) {
     case 'leaked': {
       if (finding.count > 1) parts.push(`${finding.count} ${KIND_LABEL[finding.kind]}s`);
@@ -535,11 +690,12 @@ function findingLine(finding: ResourceFinding): string {
       break;
     case 'piling': {
       const growth = finding.growth!;
-      const noun = growth.what === 'pages' ? 'open pages' : growth.what === 'routes' ? 'route handlers' : 'listeners';
-      parts.push(`${growth.from} → ${growth.to} ${noun} over ${growth.tests} tests`);
+      parts.push(`${growth.from} → ${growth.to} ${GROWTH_NOUN[growth.what]} over ${growth.tests} tests`);
+      if (finding.detail) parts.push(finding.detail);
       break;
     }
     case 'handle':
+      if (finding.count > 1) parts.push(`${finding.count} ${label}${label.endsWith('s') ? 'es' : 's'}`);
       parts.push(`left running in the worker by ${finding.detail ?? 'a test'}`);
       break;
     case 'probable':

@@ -13,6 +13,8 @@ const props = defineProps<{
   /** Hook sections that failed — drawn whatever the hooks toggle says. */
   hookFailureCount: number;
   waitCount: number;
+  /** Stops at Piwi's pause bar, which their tests' bars draw. */
+  pauseCount?: number;
   /** Times a lane's worker process was replaced by a new one. */
   restartCount?: number;
   /** Whether the run has any hook sections to show. */
@@ -96,7 +98,7 @@ const resourceItems = computed<DropdownMenuItem[][]>(() => {
         <template v-if="shardTotal && shardTotal > 1">
           &middot; {{ shardTotal }} shard{{ shardTotal > 1 ? 's' : '' }}
         </template>
-        &middot; {{ testCount }} tests
+        &middot; {{ testCount }} test{{ testCount === 1 ? '' : 's' }}
         <template v-if="retryCount && retryCount > 0">
           &middot;
           <span data-testid="timeline-retries">{{ retryCount }} {{ retryCount > 1 ? 'retries' : 'retry' }}</span>
@@ -107,7 +109,10 @@ const resourceItems = computed<DropdownMenuItem[][]>(() => {
             >{{ hookFailureCount }} hook failure{{ hookFailureCount > 1 ? 's' : '' }}</span
           >
         </template>
-        <template v-if="waitCount > 0"> &middot; {{ waitCount }} waits </template>
+        <template v-if="waitCount > 0"> &middot; {{ waitCount }} wait{{ waitCount > 1 ? 's' : '' }} </template>
+        <template v-if="pauseCount && pauseCount > 0">
+          &middot; {{ pauseCount }} pause{{ pauseCount > 1 ? 's' : '' }}
+        </template>
         <template v-if="restartCount && restartCount > 0">
           &middot; {{ restartCount }} worker restart{{ restartCount > 1 ? 's' : '' }}
         </template>

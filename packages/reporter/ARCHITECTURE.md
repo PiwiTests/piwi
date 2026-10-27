@@ -45,11 +45,18 @@ Two **external contracts** beyond the npm API:
   (`internal/capture/api-requests.ts`).
   A headed local run with `PIWI_PAUSE_AT` (the editor's breakpoints) stops each context
   through `context.debugger` before every call it can stop at, with `PW_CODEGEN_NO_INSPECTOR`
-  set in the worker except while a `page.pause()` it leaves to Playwright runs (a listener on the
-  connection's client instrumentation sees those), shows the pause bar at the calls on those
-  lines and reads its answer from the `__piwiPauseState` page global, attaches the stops as
-  `piwi-pauses` (`internal/collect/paused-steps.ts` takes their time out of the steps'
-  durations and start times), and posts a locator picked meanwhile to the editor's
+  set in the worker except while a `page.pause()` it leaves to Playwright runs (it wraps
+  `Page.prototype.pause`, so every `page.pause()` of the worker's Playwright goes through it; one of a second
+  copy of Playwright does not, and stops with neither bar nor Inspector), shows the pause
+  bar at the calls on those lines and reads its answer from the `__piwiPauseState` page global,
+  takes the bar down as the test function ends, before Playwright's own failure screenshot (the
+  runner's `_onDidFinishTestFunctionCallbacks`, feature-checked; without them, as the test's page
+  or context closes, or at teardown), sets the runner's count of a test function that ended under it
+  back to what it held as the stop began (`_timeoutManager.defaultSlot()`, feature-checked), waits a
+  while for the call it let go and the requests after it, attaches the stops as
+  `piwi-pauses` (`internal/collect/pause-events.ts` sends them with the test's step events, as
+  `pause` events: the steps keep their clock, and the step statistics leave the stopped time
+  out), and posts a locator picked meanwhile to the editor's
   `PIWI_EDITOR_SEND` address (`internal/capture/pause-at.ts`). With `PIWI_RECORD_CHANNEL`,
   **Record here** and `page.pause()` connect to the editor service's local socket and relay
   the recorder's binding calls over it (`internal/capture/record-handoff.ts`). With
@@ -61,20 +68,31 @@ Two **external contracts** beyond the npm API:
   each test's begin and end and each stop it shows, and the editor's controls (Pause, Step,
   Resume, Finish, Run to a line, the run's breakpoints) go through the same stop policy as
   `PIWI_PAUSE_AT`. While it is open a headless run stops too, with no bar, until the editor
-  answers; the editor's answer takes a headed stop's bar down. At a
-  stop the bar shows, the editor can also start the bar's Pick a locator and Record here
-  (an intent, `request` with `what: 'pick' | 'record'`), which the bar takes as its own click,
-  Assert (the record hand-off in its `check` mode: the editor's check panel) and Assert a
-  region (the bar's picker, then the region's `ariaSnapshot()`, sent as `region`). At any
-  stop it asks for the responses the test kept (`internal/capture/kept-responses.ts`: while
-  the run connection is open, the text bodies of the test's fetch and XHR answers, the
-  latest 50, 256 KB each, in memory only, dropped as the test ends), the one to mock, and a
-  locator's count on the stopped page (`internal/capture/chain-locator.ts`), its matches
-  outlined while the bar shows. With the connection open, a failing test's page is held
-  as its context closes (`holdFailure`), as a stop with the reason `failure` at the failing
-  line, the bar offering Resume, Pick and Record; the test ends as it failed.
+  answers or the connection closes; the editor's answer takes a headed stop's bar down. A stop
+  answered in the editor is attached to `piwi-pauses` as one at the bar is, and a stop that ends
+  unanswered (the test function ended, its page or context closed, or for a stop whose page it
+  cannot tell any page of its context closed) ends the same way with a bar or without, the editor
+  told (`running`); the editor gets no image of such a page. At a stop the bar shows, the editor
+  can also start the bar's Pick a locator and Record here (an intent, `request` with
+  `what: 'pick' | 'record'`), which the bar takes as its own click, Assert (the record hand-off
+  in its `check` mode: the editor's check panel) and Assert a region (the bar's picker, then the
+  region's `ariaSnapshot()`, sent as `region`), each ending with the stop; an intent is refused
+  at a stop that is ending or whose page it cannot tell. At any stop it asks for the responses
+  the test kept (`internal/capture/kept-responses.ts`: while the run connection is open, the
+  text bodies of the test's fetch and XHR answers, the latest 50, 256 KB each, in memory only,
+  dropped as the test ends), the one to mock, and a locator's count on the stopped page
+  (`internal/capture/chain-locator.ts`), its matches outlined while the bar shows. One stop
+  shows at a time in a worker: one waiting its turn goes on unshown when the test ended
+  meanwhile, its page or context closed or its breakpoint went, and a context's close, its own
+  or its browser's, lets the call its debugger holds go on first. With the connection open, a
+  failing test's page is held as its context closes (`holdFailure`), as a stop with the reason
+  `failure` at the failing line, the bar offering Resume, Pick and Record; the test ends as it
+  failed.
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
-  unref'd timer (`internal/collect/process-sampler.ts`).
+  unref'd timer (`internal/collect/process-sampler.ts`). While the dashboard says
+  someone watches the run, another unref'd timer posts what the sampler and the
+  censuses added since its last post to `/live-resources`, every five seconds
+  (`internal/streaming/live-resources.ts`).
   With server coverage on (`coverage.server`), the capture fixtures keep the
   `X-Piwi-Coverage` request ids of each test's responses, its pages' and its API
   calls' (`piwi-server-coverage-requests`),
@@ -162,6 +180,12 @@ the tests still collecting, before the ladder above, and sends the run-level cov
 per file, the functions any test ran and every function V8 listed, run or not
 (`allFunctions`), which the workers name once each in `piwi-browser-functions`
 attachments, as many per test as the capture caps need.
+With `coverage.css: 'rules'`, the same per-page capture (`internal/capture/code-reach.ts`) also reads Chromium's
+CSS rule usage, at each document's `beforeunload` pause and at the end; `internal/capture/css-coverage.ts` resolves
+each sheet to its file (source map, a Vite dev server's `data-vite-dev-id`, or the served path) and its rules to
+line ranges (`@piwitests/core/css-rules`). The matched rules ride `piwi-css-coverage` as browser files' function
+ranges, whatever `coverage.browser` is, and every rule of the sheets `piwi-css-rules`, added to the run's
+`allFunctions` as the browser functions are.
 A backend's files whose source checksums (`checksums`) differ from the checkout's
 lose their line numbers (`internal/collect/source-checksums.ts`).
 Each backend answer names its process (`instance`, also the prefix of its request
@@ -182,7 +206,8 @@ src/
   internal/
     submit/     run-submitter, uploader, serializer
     transport/  http-client (+ HttpError)
-    streaming/  stream-manager, stream-buffer, crash-recovery
+    streaming/  stream-manager, stream-buffer, crash-recovery, live-resources (a
+                watched run's CPU, memory and open pages, posted as it runs)
     collect/    metadata-collector, error-text, resource-verdicts (the censuses
                 stitched into leaked, idle, piling-up and handle findings),
                 process-sampler (the run's processes and the machine, sampled
@@ -192,8 +217,9 @@ src/
                 run endpoints, batched per origin), test-coverage (each test's
                 coverage field, the wait before its result streams, the run's
                 coverage), blob-ids (the git blob of each covered file),
-                paused-steps (the time a test stood stopped at the pause bar,
-                out of its steps' durations and start times)
+                pause-events (the stops a test made, at the pause bar or in
+                the editor, as the `pause` step events the dashboard draws and
+                the step statistics leave out)
     manifest/   collect (the committed manifest, `/__piwi/manifest` per base URL or origin),
                 run-manifests (the instrumented origins the run reached beyond its base URLs,
                 fetched as each is first seen, uploaded once the run is submitted)

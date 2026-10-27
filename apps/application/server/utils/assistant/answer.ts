@@ -8,7 +8,8 @@
  *
  * Read calls past `maxToolCalls` are refused with a result telling the model
  * to answer with what it has; block tools make the answer and do not count. A
- * question or options block ends the answer: nothing is added after it.
+ * question or options block ends the answer: nothing is added after it. So
+ * does the next question, which is refused until the answer holds something.
  */
 import type {
   AssistantBlock,
@@ -56,6 +57,11 @@ export function turnTimeoutError(turnTimeoutMs: number): NonNullable<AssistantTu
   };
 }
 
+/** The error of a turn the user stopped. */
+export function turnStoppedError(): NonNullable<AssistantTurnResult['error']> {
+  return { code: 'stopped', message: 'You stopped this answer.' };
+}
+
 export function createAssistantAnswer(opts: {
   toolbox: AssistantToolbox;
   maxToolCalls: number;
@@ -68,6 +74,7 @@ export function createAssistantAnswer(opts: {
   let breakBeforeText = false;
   let reads = 0;
   let ended = false;
+  const hasContent = () => blocks.some((b) => b.kind !== 'text' || b.text.trim());
 
   const limitMessage = `This question reached the limit of ${opts.maxToolCalls} tool calls (PIWI_AI_ASSISTANT_MAX_TOOL_CALLS).`;
 
@@ -110,6 +117,9 @@ export function createAssistantAnswer(opts: {
         isError,
       });
       if (ended) return result('Not run: your answer has ended. Stop here.', true);
+      if (call.name === 'suggest_next' && !hasContent()) {
+        return result('Not shown: write your answer first, then suggest the next question last.', true);
+      }
       const isBlock = opts.toolbox.isBlockTool(call.name);
       if (!isBlock && reads >= opts.maxToolCalls) {
         return result(
@@ -141,7 +151,7 @@ export function createAssistantAnswer(opts: {
 
     /** Whether anything but blank text was written. */
     answered(): boolean {
-      return blocks.some((b) => b.kind !== 'text' || b.text.trim());
+      return hasContent();
     },
 
     /** The turn's result, with its `done` or `error` event. */

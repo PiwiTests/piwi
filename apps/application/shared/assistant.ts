@@ -177,7 +177,9 @@ export interface AssistantChecklistStep {
  * pick comes back as the next question's `reply`, and is stored on the block.
  * A `proposal` is a change the user applies with a click: the panel calls its
  * action's route (`shared/assistant-actions.ts`) and stores the outcome on the
- * block; the model never applies it.
+ * block; the model never applies it. A `next` block is the question the
+ * model expects the user to ask next: the panel offers it in the empty input
+ * rather than showing it in the answer, and it ends the answer.
  */
 export type AssistantBlock =
   | { kind: 'text'; text: string }
@@ -199,6 +201,7 @@ export type AssistantBlock =
   | { kind: 'checklist'; id: string; title: string; steps: AssistantChecklistStep[] }
   | { kind: 'guide'; id: string; guide: AssistantGuidePlan }
   | { kind: 'navigate'; id: string; route: string; label: string }
+  | { kind: 'next'; id: string; question: string }
   | {
       kind: 'proposal';
       id: string;
@@ -256,8 +259,8 @@ export interface AssistantToolCall {
 /** How the model calls tools: its provider's native tool calls, or one JSON object per reply. */
 export type AssistantToolMode = 'native' | 'json-action';
 
-/** Why a turn stopped without an answer. */
-export type AssistantErrorCode = 'limit' | 'timeout' | 'provider' | 'invalid-reply';
+/** Why a turn stopped without an answer: `stopped` when the user stopped it. */
+export type AssistantErrorCode = 'limit' | 'timeout' | 'provider' | 'invalid-reply' | 'stopped';
 
 /** What the `done` event carries: the stored answer, its model and its tokens. */
 export interface AssistantDone {
@@ -326,6 +329,35 @@ export interface AssistantConversation extends AssistantConversationSummary {
   messages: AssistantMessageView[];
 }
 
+/**
+ * What the daily token caps leave the user over the last 24 hours: the cap
+ * that binds first, the user's own or the instance's, and what was spent
+ * under it.
+ */
+export interface AssistantAllowance {
+  scope: 'user' | 'instance';
+  /** Tokens the cap allows in 24 hours. */
+  limit: number;
+  /** Tokens spent under it in the last 24 hours. */
+  used: number;
+  /** When the oldest answer counted passes 24 hours and its tokens free up; null when none is counted. */
+  freesAt: string | null;
+}
+
+/** The usage limit of the Claude subscription the Claude Code CLI signs in with, as the CLI last reported it. */
+export interface AssistantSubscriptionLimit {
+  /** `allowed_warning` once the window is nearly spent, `rejected` once it is. */
+  status: 'allowed' | 'allowed_warning' | 'rejected';
+  /** The window the CLI named: `five_hour`, `seven_day`, … */
+  window: string | null;
+  /** The share of the window spent, from 0 to 1, when the CLI said. */
+  utilization: number | null;
+  /** When the window resets, as an ISO timestamp. */
+  resetsAt: string | null;
+  /** When the CLI reported it, as an ISO timestamp. */
+  reportedAt: string;
+}
+
 /** Whether the assistant can answer here, and with what. */
 export interface AssistantStatus {
   available: boolean;
@@ -335,6 +367,10 @@ export interface AssistantStatus {
   model: string | null;
   /** How the model calls tools, once known: always for Anthropic and the Claude Code CLI, after a first answer otherwise. */
   toolMode: AssistantToolMode | null;
+  /** What the daily caps leave the user; null when no cap is set or the assistant cannot answer. */
+  allowance?: AssistantAllowance | null;
+  /** The Claude subscription's usage limit, with the Claude Code CLI as the provider once a run reported it; else null. */
+  subscription?: AssistantSubscriptionLimit | null;
 }
 
 /** A message's text: its text blocks, joined. */
