@@ -1293,6 +1293,8 @@ interface RecorderGlobals {
   __piwiRecordPanelRun?: Promise<void>;
   /** Whether this document's `chrome.runtime` stop listener is already registered. */
   __piwiRecordStopListener?: boolean;
+  /** Set once the IDE bundle's check mode ran in this document. */
+  __piwiRecordChecking?: boolean;
 }
 
 function recorderGlobals(): RecorderGlobals {
@@ -1906,6 +1908,11 @@ async function initRecordPanel(restoredAt: number | null): Promise<void> {
   recordingPaused = state.paused === true;
   recordingStartedAt = state.startedAt;
 
+  if (IDE_BUILD && ideSettings?.check) {
+    await checkOnce(state);
+    return;
+  }
+
   if (!state.active) {
     // The recording is over, however it ended. Tear the capture surfaces down
     // first — a border that outlives the capture it signals is worse than no
@@ -1959,6 +1966,24 @@ async function initRecordPanel(restoredAt: number | null): Promise<void> {
   // bundle, which has no catalog.
   if (!IDE_BUILD) void refreshCatalogForThisPage().then(() => void refreshHud());
   await refreshHud();
+}
+
+/**
+ * The IDE bundle's check mode (`IdeRecorderSettings.check`, a hand-off from a test stopped in a run the editor
+ * started): the check panel's **Check an element** at once, the check the person makes added as an `assert` event,
+ * then Stop, which ends the hand-off. Nothing else is captured and no bar shows; a document runs it once. The editor's
+ * stop (`piwi-recording-stopped`) takes the pick and the dialog down.
+ */
+async function checkOnce(state: RecordingState): Promise<void> {
+  const g = recorderGlobals();
+  if (!state.active || g.__piwiRecordChecking) return;
+  g.__piwiRecordChecking = true;
+  installStopListener();
+  try {
+    await runCheckElementFlow(bugHooks);
+  } finally {
+    await Promise.resolve(chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' })).catch(() => undefined);
+  }
 }
 
 /**

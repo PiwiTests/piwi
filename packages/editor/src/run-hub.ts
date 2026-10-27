@@ -9,9 +9,10 @@
  * `PIWI_EDITOR_SEND`). Another user's processes and web pages are kept out; this user's own processes are not a
  * boundary. A command is one of a closed set, checked field by field and answered once; nothing it asks evaluates
  * code, reads a file or reaches an instance. A subscribed connection hears every run as the editor does, and counts as
- * a surface that answers stops: while one is, a stop no pause bar shows waits for it. A connection the hub closes is
- * cut a second later when the other side does not answer the close, and only the open connections count toward its
- * limits.
+ * a surface that answers stops: while one is, a stop no pause bar shows waits for it. The code actions it starts at a
+ * stop (Assert, Assert a region, Mock a request, `stop-actions.ts`) write their code in the editor, through its
+ * client: the answer says whether they started, never the code. A connection the hub closes is cut a second later
+ * when the other side does not answer the close, and only the open connections count toward its limits.
  */
 import { randomBytes } from 'node:crypto';
 import * as http from 'node:http';
@@ -33,6 +34,7 @@ import {
   isHubHost,
   parseHubCommand,
   parseHubHello,
+  type HubCodeIntent,
   type HubIntent,
   type HubMessage,
   type HubSession,
@@ -41,6 +43,7 @@ import {
 import type { RunControlResult, RunSession } from './protocol.js';
 import { sameToken } from './recorder/handoff.js';
 import type { RunSessions } from './run-sessions.js';
+import type { StopActions } from './stop-actions.js';
 
 /** The connections a hub holds at once, and those among them that did not say `hello` yet. */
 const MAX_CONNECTIONS = 16;
@@ -59,6 +62,8 @@ export interface HubRunInfo {
 
 export interface RunHubOptions {
   sessions: RunSessions;
+  /** The actions a stop takes: the intents, the responses the test kept and the one to mock. */
+  actions: Pick<StopActions, 'action' | 'requests'>;
   /** What the Runs page shows of a run beside its workers. */
   runInfo(ref: string, root: string | null): HubRunInfo;
   /** What `welcome` says of the service. */
@@ -309,13 +314,31 @@ export class RunHub {
             { image },
           );
         }
-        default:
+        case 'requests': {
+          const listed = await this.options.actions.requests({
+            ref: command.ref,
+            worker: command.worker,
+            since: command.since,
+          });
+          return reply(listed, { requests: listed.requests });
+        }
+        case 'mock':
           return reply(
-            await sessions.intent({
+            await this.options.actions.action({
               ref: command.ref,
               worker: command.worker,
               since: command.since,
-              what: command.type as HubIntent,
+              action: 'mock',
+              request: command.request,
+            }),
+          );
+        default:
+          return reply(
+            await this.options.actions.action({
+              ref: command.ref,
+              worker: command.worker,
+              since: command.since,
+              action: command.type as HubIntent | HubCodeIntent,
             }),
           );
       }
@@ -333,7 +356,7 @@ export class RunHub {
       label: info.label,
       command: cut(info.command, MAX_HUB_COMMAND),
       project: cut(info.project, MAX_HUB_PROJECT),
-      workers: session.workers.map((worker) => ({
+      workers: session.workers.map(({ takes: _takes, ...worker }) => ({
         ...worker,
         intents: this.options.sessions.intentsOf(session.ref, worker.worker),
       })),

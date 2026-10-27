@@ -20,6 +20,12 @@ describe('mockUrlPattern', () => {
     expect(mockUrlPattern('https://shop.test/api/items?flag')).toBe('**/api/items?flag');
   });
 
+  it('matches a credential in the query with a wildcard, so it is never written', () => {
+    expect(mockUrlPattern('https://shop.test/api/cart?page=2&access_token=abc123&apiKey=k')).toBe(
+      '**/api/cart?page=2&access_token=*&apiKey=*',
+    );
+  });
+
   it('turns glob characters of the URL into wildcards', () => {
     expect(mockUrlPattern('https://shop.test/api/items?filter={a}')).toBe('**/api/items?filter=*a*');
   });
@@ -53,6 +59,13 @@ describe('mockCode', () => {
         ');',
       ].join('\n'),
     );
+  });
+
+  it('sets the route on the page expression it is given', () => {
+    expect(mockCode(cart, { page: 'this.page' }).code).toMatch(
+      /^await this\.page\.route\('\*\*\/api\/cart', \(route\) =>/,
+    );
+    expect(mockCode({ ...cart, method: 'POST' }, { page: 'adminPage' }).code).toMatch(/^await adminPage\.route\(/);
   });
 
   it('adds the status when it is not 200, and a method check when it is not GET', () => {

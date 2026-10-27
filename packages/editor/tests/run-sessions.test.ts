@@ -50,7 +50,17 @@ describe('a run’s session, with a client that answers stops', () => {
       expect(await waitFor(() => svc.latest(ref))).toEqual({
         ref,
         root: dir,
-        workers: [{ worker: 3, parallelIndex: 3, state: 'between', test: null, stop: null, pausing: false }],
+        workers: [
+          {
+            worker: 3,
+            parallelIndex: 3,
+            state: 'between',
+            test: null,
+            stop: null,
+            pausing: false,
+            takes: ['pick', 'record'],
+          },
+        ],
         ended: false,
       });
       worker.begin();

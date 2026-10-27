@@ -831,7 +831,10 @@ contents alone, into the editor's `dist/`; neither is part of `dist/` or `dist-f
   `about:blank`); Stop opens no review (capture stops, the HUD and the border go, `piwi-recording-stopped` still goes
   out); the HUD names the file from `piwiIdeSettings` (`record_hudTitleInto`); its **Pause** goes to the launcher, which
   keeps the recording's `paused` for every page and tells the editor (`piwi-recording-paused`), the editor's Pause
-  reaching the page through `__piwiIdeDispatch`; the page refreshes no catalog.
+  reaching the page through `__piwiIdeDispatch`; the page refreshes no catalog. With `check` in `piwiIdeSettings`
+  (Assert at a test stopped in a run the editor started, `IdeRecorderSettings.check`), the bundle records nothing but
+  one check: it opens **Check an element** at once (`checkOnce`, once per document, no HUD, no capture listener), adds
+  the check as an `assert` event and sends `piwi-recording-stopped`; the editor service writes the check itself.
 - **The project's test id attribute.** `rankElement`, `verifiedLocators` (its engine) and the probe take
   `testIdAttribute`: from `piwiIdeSettings` in the IDE bundle, `data-testid` in the extension. A click snaps to an
   element carrying it, as to a control.
@@ -917,8 +920,10 @@ style.
   XHR only, and never leave the browser but through the user's copy or download. The list shows the inspected page's
   origin, read again when `onNavigated` reports a page on another. A body comes through `responseBody`: Chrome's
   `getContent` calls back, Firefox's returns a promise. `mockCode` hides credential fields
-  (`HIDDEN_VALUE`) unless revealed, and never writes a header. `devtools-network.spec.ts` runs the copied code as a
-  test body against a real page.
+  (`HIDDEN_VALUE`) unless revealed, matches a query parameter named like one with `*` (`mockUrlPattern`), and never
+  writes a header. `devtools-network.spec.ts` runs the copied code as a test body against a real page. The editor
+  service bundles `mockCode` too, for Mock a request at a stopped test (`packages/editor/src/stop-code.ts`), with its
+  `page` option (`this.page` in a page object): a change here changes what the editor writes.
 - **Slow down or fail a request** (`panel-conditions.ts`, pure half `src/shared/request-conditions.ts`): the panel asks
   for the page's origin inside the click and sends `piwi-set-conditions` with the requests' conditions, the whole
   page's network (`throttle`: fast 3G, slow 3G, offline) and CPU (`cpuRate`); the background worker sets them only on

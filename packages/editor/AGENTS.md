@@ -13,10 +13,11 @@ clients stay thin and both editors give the same answers.
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
   `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/coverage`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
-  `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, `piwi/runControl`, `piwi/pausedPage`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`, `piwi/commandEnded`, `piwi/declineRecord` and `piwi/setRunBreakpoints` notifications, and the
+  `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, `piwi/runControl`, `piwi/pausedPage`, `piwi/stopAction`,
+  `piwi/stopRequests`, `piwi/locatorAtCaret`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`, `piwi/commandEnded`, `piwi/declineRecord` and `piwi/setRunBreakpoints` notifications, and the
   `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/runEnded`, `piwi/statusChanged`, `piwi/notice`,
-  `piwi/desktopJobChanged`, `piwi/recordingChanged`, `piwi/recordRequested`, `piwi/coverageChanged` and
-  `piwi/runSessionChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
+  `piwi/desktopJobChanged`, `piwi/recordingChanged`, `piwi/recordRequested`, `piwi/coverageChanged`,
+  `piwi/runSessionChanged` and `piwi/stopCode` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` as a tree in both editors (the JetBrains IDEs'
   LSP client highlights open files only): each item carries its spec relative to the config, its test, cluster,
   owner, project, duration and whether it is new, and, when one context alone has a run, runs laid over none or
@@ -315,9 +316,11 @@ clients stay thin and both editors give the same answers.
   editor's Send to editor endpoint lists it to whoever holds the pairing's token, which the runs the editor starts
   hold too (`PIWI_EDITOR_SEND`): this user's own processes are not a boundary. Every later message is a command with
   an `id` (`parseHubCommand`, field by field): `subscribe`, `runControl` (`pause`; `step`, `resume`, `finish` with the
-  `since` they need, as `piwi/runControl`; Run to a line stays in the editor), `pausedPage` and the intents `pick` and
-  `record` (`RunSessions.intent`, `since` needed too), each answered once (`{ type: 'answer', id, ok, message }`,
-  `image` too for `pausedPage`); one of another type, with a field it cannot take, or answering a stop without naming
+  `since` they need, as `piwi/runControl`; Run to a line stays in the editor), `pausedPage`, the intents `pick`,
+  `record`, `assert` and `assert-region`, `requests` and `mock` (`request`, a kept response's id), each naming the
+  stop it answers (`since`) and going through the same `StopActions` as the client's `piwi/stopAction`, the code to
+  the client alone, each answered once (`{ type: 'answer', id, ok, message }`, `image` too for `pausedPage`,
+  `requests` for `requests`); one of another type, with a field it cannot take, or answering a stop without naming
   it (`The command needs the stop it answers.`), is answered `ok: false` with why, at most 16 waiting per connection;
   a message that is no command (not JSON, no `id`) closes the connection (4003), a binary frame too (1003), a frame
   over 64 KiB (`MAX_HUB_FRAME`, 1009). `subscribe` answers, then sends each live run as the client last heard it
@@ -334,6 +337,31 @@ clients stay thin and both editors give the same answers.
   named, at the stop `since` names): refused at a stop no pause bar shows (`bar: false`) and for a reporter whose
   `run-attach` does not list it in `takes`, else sent as a `request` naming the stop, the worker's answer passed on
   (10 s at most). Nothing a command asks evaluates code, reads a file or reaches an instance.
+- Code from a stop (`src/stop-actions.ts`, `StopActions`, and `src/stop-code.ts`, pure): what a client
+  (`piwi/stopAction { ref, worker?, since, action, request? }`, `piwi/stopRequests`, `piwi/locatorAtCaret`) and Piwi
+  Picker (the hub's commands) start at a stop of a run the service built, each ending the same way: the worker does
+  the page's part through internal calls, the service renders the code, the client writes it (`piwi/stopCode`: the
+  run, the stop's `since`, the file's `uri` and `version`, the block, and `edits`, the import lines then the block on a
+  new line above the stopped statement, placed in the file's text as the service holds it, which the client applies
+  as one edit), sent only to a client that says it writes it (`InitializationOptions.stopCode`); without it, Assert,
+  Assert a region and Mock a request are refused (`NO_CODE`), from both surfaces. `pick` and `record` are the pause
+  bar's intents (their results take their own paths: Send to editor, then `piwi/applyPick`; `piwi/recordRequested`).
+  `assert` starts the check panel in the test's window through the record channel's hand-off in its `check` mode,
+  naming the stop it was started at (`RecordChannel`'s `onCheck`, `RecordingSessions.check`: the recorder loaded with
+  `check` in its settings, its first `assert` event rendered, then the hand-off stopped; no editor is asked); a check
+  whose stop ended, or that cannot be written at the stopped line, is refused at once. `assert-region` has the worker
+  pick a region and send its ARIA snapshot (`region`), written as `toMatchAriaSnapshot` (`renderSpec`). `mock` asks the
+  worker for the response chosen among those `piwi/stopRequests` lists (method, URL, status, type, size, time; no
+  header, no body) and writes it with the browser extension's `mockCode` (`apps/extension/src/shared/mock-code.ts`,
+  bundled in: credentials hidden, in a JSON or form body and in the query, no header written, the body inline), on the
+  page expression in scope. Each block goes where `placementBefore` puts a recording's (a chain broken over lines
+  included), on the page expression `pageCandidates` gives there (`this.page` in a page object), checks with the
+  config's preferred locators and the import of `expect` the file lacks (`blockImports`); the first code of a run adds
+  that the stopped test goes on with the code it started with. `piwi/locatorAtCaret` reads the line's locator chain
+  (`locatorChainOnLine`, the one `piwi/applyPick` replaces), which must start from a page expression in scope there,
+  and has the worker count it on the stopped page and outline its matches where the bar shows; a line without one, or
+  a null `uri`, takes the outline down. A worker's stop with the reason `failure` (a test failed in an interactive
+  run, its page held) takes the same actions; one no surface can answer is let go at once, with no notice.
 - The discovery file (`src/discovery.ts`, `@piwitests/core/editor-discovery`): once the run channel and the hub listen,
   `startServer` hands `publish` what `~/.piwi/editors/<pid>.json` says (`PIWI_EDITORS_DIR` names another folder): the
   service's pid, its machine (`host`, `os.hostname()`), version (written in by `build.mjs`, `0.0.0-dev` unbundled), its
@@ -364,7 +392,9 @@ JetBrains plugin in its `server/`); the service finds the others next to its own
 | `record-ide-messages.json`   | The extension's catalogs for the IDE bundle, by language.                                                          |
 
 The last two come from `buildIdeBundle`, which `build.mjs` imports from `apps/extension/scripts/build.mjs`: the build
-needs the extension's sources, and a change to the recorder there changes what the editor clients ship.
+needs the extension's sources, and a change to the recorder there changes what the editor clients ship. The service
+also bundles the extension's `mockCode` (`src/stop-code.ts` imports it from `apps/extension/src/shared/mock-code.ts`),
+so a change to it changes the mocks written at a stop.
 
 ## Rules
 

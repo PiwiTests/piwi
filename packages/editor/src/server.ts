@@ -149,12 +149,14 @@ import {
   indentBlock,
   originOf,
   repositoryCodegen,
+  siblingSpecs,
   type LauncherFactory,
 } from './recorder/sessions.js';
-import { importInsertion } from './recorder/imports.js';
+import { expectModuleOf, importInsertion } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
 import { RunSessions } from './run-sessions.js';
 import { RunHub } from './run-hub.js';
+import { StopActions } from './stop-actions.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
@@ -208,6 +210,16 @@ import {
   RUN_CONTROL_REQUEST,
   RUN_SESSION_NOTIFICATION,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
+  LOCATOR_AT_CARET_REQUEST,
+  STOP_ACTION_REQUEST,
+  STOP_CODE_NOTIFICATION,
+  STOP_REQUESTS_REQUEST,
+  type LocatorAtCaretParams,
+  type LocatorAtCaretResult,
+  type StopActionParams,
+  type StopActionResult,
+  type StopRequestsParams,
+  type StopRequestsResult,
   type AgentContextParams,
   type AgentContextResult,
   type ApplyPickParams,
@@ -1647,6 +1659,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let shutDown = false;
   /** Whether the client shows where a run stops and answers it (`InitializationOptions.runControl`). */
   let answersStops = false;
+  /** Whether the client writes the code made at a stop (`InitializationOptions.stopCode`). */
+  let writesCode = false;
+  /** The editor's display language, as `initialize` names it. */
+  let clientLocale: string | null = null;
   /** The editor running the service, as `initialize` names it. */
   let clientName: string | null = null;
   /** The hub's WebSocket, for Piwi Picker: null until it listens, and on a machine that refuses a port. */
@@ -1665,6 +1681,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       void connection.sendNotification(NOTICE_NOTIFICATION, { root, severity, message } satisfies Notice),
     // A run runs in its config's folder as the file system spells it (`commandFolder`).
     rootOf: (cwd) => contexts.find((c) => samePath(commandFolder(c), cwd) || samePath(c.root, cwd))?.root ?? null,
+    writesCode: () => writesCode,
+    onRegion: (stop, locator, snapshot) => stopActions.region(stop, locator, snapshot),
   });
   const recordRequested = (handoff: Handoff) => {
     // The run ran in its config's folder as the file system spells it (`commandFolder`): the test names its file so,
@@ -1697,6 +1715,34 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     launch: options.launchRecorder,
     env,
     readText: (uri) => documents.get(uri)?.getText() ?? null,
+  });
+
+  /** The code made at the stops of the runs the service built, written by the client. */
+  const stopActions = new StopActions({
+    sessions: runSessions,
+    recordings,
+    writesCode: () => writesCode,
+    notify: (code) => void connection.sendNotification(STOP_CODE_NOTIFICATION, code),
+    notice: (root, message) =>
+      void connection.sendNotification(NOTICE_NOTIFICATION, {
+        root: root ?? folders[0] ?? '',
+        severity: 'warning',
+        message,
+      } satisfies Notice),
+    target: (file) => {
+      const context = contextFor(file);
+      const text = context && playwrightConfigFile(context.root) ? readText(file) : null;
+      if (text === null) return null;
+      const open = openDocument(file);
+      return {
+        uri: open?.uri ?? pathToFileURL(file).href,
+        text,
+        version: open?.version ?? null,
+        preferLocators: suiteLocators(context),
+        expectModule: expectModuleOf(text, { siblings: () => siblingSpecs(file) }),
+      };
+    },
+    language: () => clientLocale,
   });
 
   /**
@@ -2032,6 +2078,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const init = params.initializationOptions as InitializationOptions | undefined;
     credentials = init?.credentials ?? {};
     answersStops = init?.runControl === true;
+    writesCode = init?.stopCode === true;
+    clientLocale = typeof params.locale === 'string' && params.locale ? params.locale : null;
     const name = params.clientInfo?.name;
     clientName = typeof name === 'string' && name ? name.slice(0, 200) : null;
     return {
@@ -2069,10 +2117,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     void Promise.all([
       RecordChannel.open({
         onAttach: recordRequested,
+        onCheck: (handoff) => stopActions.check(handoff),
         onRun: (socket, attach) => runSessions.attach(socket, attach),
       }),
       RunHub.open({
         sessions: runSessions,
+        actions: stopActions,
         runInfo: (ref, root) => {
           const context = root ? contextOfRoot(root) : null;
           return {
@@ -3348,6 +3398,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   connection.onRequest(PAUSED_PAGE_REQUEST, (params: PausedPageParams): Promise<PausedPageResult> =>
     runSessions.pausedPage(params),
+  );
+
+  connection.onRequest(STOP_ACTION_REQUEST, (params: StopActionParams): Promise<StopActionResult> =>
+    stopActions.action(params),
+  );
+
+  connection.onRequest(STOP_REQUESTS_REQUEST, (params: StopRequestsParams): Promise<StopRequestsResult> =>
+    stopActions.requests(params),
+  );
+
+  connection.onRequest(LOCATOR_AT_CARET_REQUEST, (params: LocatorAtCaretParams): Promise<LocatorAtCaretResult> =>
+    stopActions.locatorAtCaret(params),
   );
 
   connection.onRequest(DESKTOP_JOB_REQUEST, async (params: DesktopJobParams): Promise<DesktopJobResult> => {

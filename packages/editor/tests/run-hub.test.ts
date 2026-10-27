@@ -428,6 +428,10 @@ function ownHub(
   const sessions = { current: () => [session], intentsOf: () => [] } as unknown as RunSessions;
   return RunHub.open({
     sessions,
+    actions: {
+      action: async () => ({ ok: false, message: 'No action here.' }),
+      requests: async () => ({ ok: false, message: 'No request here.', requests: [] }),
+    },
     runInfo,
     welcome: () => ({
       pid: process.pid,

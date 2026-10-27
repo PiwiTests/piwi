@@ -351,6 +351,37 @@ test('Check an element and Check the address add checks of what the page shows, 
   await expect(hud(page).getByRole('button', { name: 'Check the address' })).toBeDisabled();
 });
 
+test('in its check mode, opens Check an element at once, adds the check alone and stops, with no bar', async ({
+  context,
+}) => {
+  const launcher = await launch(context, { file: 'checkout.spec.ts', testIdAttribute: 'data-test', check: true });
+  const page = await context.newPage();
+  await page.goto(`${ORIGIN}/checkout`);
+  const dialog = page.locator('#piwi-bug-dialog-host');
+  // The pick is on as the page loads: what a click lands on is the element checked, and nothing else is recorded.
+  await page.getByRole('textbox', { name: 'Coupon' }).fill('WELCOME10');
+  await page.hover('[data-test="place-order"]');
+  await page.click('[data-test="place-order"]');
+  await expect(dialog.getByRole('dialog', { name: 'Check an element' })).toBeVisible();
+  await expect(hud(page)).toHaveCount(0);
+  await expect(dialog.getByRole('textbox', { name: 'Expected' })).toHaveValue('Place order');
+  await dialog.getByRole('button', { name: 'Add the check' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => launcher.heard.messages.some((m) => m.type === 'piwi-recording-stopped')).toBe(true);
+  const steps = normalizeSteps(launcher.recording().events);
+  expect(steps).toEqual([
+    expect.objectContaining({
+      action: 'assert',
+      target: expect.objectContaining({ testId: 'place-order' }),
+      assertion: { matcher: 'toHaveText', expected: 'Place order', actual: null, negated: false, note: null },
+    }),
+  ]);
+  // A check runs once in a document: the bundle loaded again there starts none.
+  await page.addScriptTag({ path: path.join(BUNDLE_DIR, 'record-ide.js') });
+  await page.waitForTimeout(300);
+  await expect(dialog).toHaveCount(0);
+});
+
 test('loaded into a page without the launcher’s binding, the bundle does nothing', async ({ context }) => {
   await servePages(context);
   await openShadowRoots(context);

@@ -17,6 +17,8 @@ import { recordFromHere } from '../../reporter/src/internal/capture/record-hando
 import type { RecordingUpdate } from '../src/protocol';
 import { RecordChannel, handoffLauncher, type Handoff } from '../src/recorder/handoff';
 import { BUNDLE_FILE, MESSAGES_FILE, RecordingSessions } from '../src/recorder/sessions';
+import { sessionFromEvents, type RawCaptureEvent } from '@piwitests/core/recording';
+import { renderStopCode } from '../src/stop-code';
 
 const DIST = path.join(__dirname, '..', 'dist');
 const PROJECT = path.join(__dirname, 'fixtures', 'record-project');
@@ -152,6 +154,78 @@ describe('recording from a paused test', () => {
     }
   }, 60_000);
 
+  test('checks an element in the test’s page with the check panel alone, the check written above the paused line', async (ctx) => {
+    if (ready) return ctx.skip(ready);
+    const sessions = new RecordingSessions({
+      distDir: DIST,
+      notify: () => {},
+      readOptions: async (configFile) => ({ configFile, rootDir: PROJECT, projects: [] }),
+    });
+    const checks: RawCaptureEvent[] = [];
+    const ended: Array<string | null> = [];
+    let checked: Handoff | null = null;
+    const channel = await RecordChannel.open({
+      onAttach: () => {
+        throw new Error('a check asks no editor to record');
+      },
+      onCheck: (handoff) => {
+        checked = handoff;
+        sessions.check(handoff, {
+          file: SPEC_FILE,
+          language: 'en',
+          onCheck: (event) => checks.push(event),
+          onEnd: (message) => ended.push(message),
+        });
+      },
+    });
+    let browser: Browser | null = null;
+    try {
+      browser = await chromium.launch({ headless: true });
+      const context = await browser.newContext({ baseURL });
+      // The check panel's dialog is in a closed shadow root: opened here, so the person's part can be played.
+      await context.addInitScript({
+        content:
+          'const attach = Element.prototype.attachShadow;' +
+          "Element.prototype.attachShadow = function (init) { return attach.call(this, { ...init, mode: 'open' }); };",
+      });
+      const page = await context.newPage();
+      await page.goto('/cart');
+      const location = `${path.relative(process.cwd(), SPEC_FILE).split(path.sep).join('/')}:5:44`;
+      const checking = recordFromHere({
+        page,
+        testInfo: { project: { use: { baseURL, testIdAttribute: null } } } as never,
+        location,
+        reason: 'breakpoint',
+        channel: channel!.value,
+        mode: 'check',
+        stop: { ref: 'ed-0a1b2c3d', worker: 0, stop: 3 },
+      });
+      const handoff = await waitFor(() => checked ?? undefined);
+      expect(handoff).toMatchObject({ mode: 'check', stop: { ref: 'ed-0a1b2c3d', worker: 0, stop: 3 } });
+      // The check panel's pick is on at once, with no recorder bar: the person picks the Apply button.
+      await page.locator('#__piwi_picker_banner').waitFor({ state: 'attached' });
+      expect(await page.locator(RECORDER).count()).toBe(0);
+      const apply = page.getByRole('button', { name: 'Apply' });
+      await apply.hover();
+      await apply.click();
+      await page.locator('#piwi-bug-dialog-host').getByRole('button', { name: 'Add the check' }).click();
+      expect(await checking).toBeNull();
+      expect(ended).toEqual([null]);
+      expect(await page.locator(RECORDER).count()).toBe(0);
+      const rendered = renderStopCode(SPEC, 4, { action: 'assert', session: sessionFromEvents(checks, 0) });
+      expect(rendered).toMatchObject({
+        line: 4,
+        code: "  await expect(page.getByRole('button', { name: 'Apply' })).toHaveText('Apply');",
+      });
+      // The test goes on: the page is its own again.
+      await page.getByRole('button', { name: 'Pay' }).click();
+    } finally {
+      await browser?.close();
+      sessions.dispose();
+      channel?.close();
+    }
+  }, 60_000);
+
   test('refuses a test that does not name the channel’s token, and one no editor takes in time', async () => {
     let asked = 0;
     const channel = await RecordChannel.open({ onAttach: () => asked++, waitMs: 100 });
@@ -191,6 +265,8 @@ describe('recording from a paused test', () => {
       reason: 'pause',
       testIdAttribute: null,
       baseURL: null,
+      mode: 'record',
+      stop: null,
       socket,
       kept: ['{"type":"closed"}'],
       deliver: () => {},

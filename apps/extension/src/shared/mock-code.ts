@@ -5,7 +5,9 @@
  *
  * Credentials are hidden unless the caller asks otherwise: a JSON or form
  * field named like a password, a token, a secret, a key or a session gets
- * {@link HIDDEN_VALUE}. Headers never reach the code.
+ * {@link HIDDEN_VALUE}, and such a query parameter is matched by `*`. Headers
+ * never reach the code. The editor service bundles it too, for Mock a request
+ * at a stopped test.
  */
 
 import { quoteJsString } from '@piwitests/core/locator-chain';
@@ -31,6 +33,8 @@ export interface MockOptions {
   reveal?: boolean;
   /** A body longer than this, in characters, is written to a file the code reads. */
   maxInlineBody?: number;
+  /** The expression the route is set on, `page` by default: `this.page` in a page object. Written as it is. */
+  page?: string;
 }
 
 export interface MockCode {
@@ -86,8 +90,9 @@ function globSafe(text: string): string {
 
 /**
  * The glob a test routes: `**` then the path, without the origin, and the
- * query with its volatile values as `*`, so `https://shop.test/api/cart?_=1695820800000`
- * becomes `**` + `/api/cart?_=*`. `?` is literal in Playwright's globs.
+ * query with its volatile values and its credentials as `*`, so
+ * `https://shop.test/api/cart?_=1695820800000&token=abc` becomes `**` +
+ * `/api/cart?_=*&token=*`. `?` is literal in Playwright's globs.
  */
 export function mockUrlPattern(url: string): string {
   let parsed: URL;
@@ -112,7 +117,8 @@ export function mockUrlPattern(url: string): string {
       } catch {
         // Kept as written.
       }
-      const volatile = VOLATILE_PARAMS.has(decodedName.toLowerCase()) || looksVolatile(decodedValue);
+      const volatile =
+        VOLATILE_PARAMS.has(decodedName.toLowerCase()) || looksVolatile(decodedValue) || SECRET_FIELD.test(decodedName);
       return rest.length === 0 ? globSafe(name) : `${globSafe(name)}=${volatile ? '*' : globSafe(value)}`;
     });
   return `**${path}?${params.join('&')}`;
@@ -221,11 +227,12 @@ export function mockCode(source: MockSource, options: MockOptions = {}): MockCod
   const pattern = options.pattern ?? mockUrlPattern(source.url);
   const maxInline = options.maxInlineBody ?? MAX_INLINE_BODY;
   const method = source.method.toUpperCase();
+  const page = options.page ?? 'page';
   const guard =
     method === 'GET' ? '' : `if (route.request().method() !== ${quoteJsString(method)}) return route.fallback();\n`;
   const wrap = (action: string) => {
-    if (!guard) return `await page.route(${quoteJsString(pattern)}, (route) =>\n  ${indent(action, 2)},\n);`;
-    return `await page.route(${quoteJsString(pattern)}, (route) => {\n  ${guard}  return ${indent(action, 2)};\n});`;
+    if (!guard) return `await ${page}.route(${quoteJsString(pattern)}, (route) =>\n  ${indent(action, 2)},\n);`;
+    return `await ${page}.route(${quoteJsString(pattern)}, (route) => {\n  ${guard}  return ${indent(action, 2)};\n});`;
   };
 
   if (kind === 'abort') return { code: wrap('route.abort()'), file: null, hidden: 0 };

@@ -12,8 +12,9 @@ stepped it and let it pass. The same session reaches the dashboard, as a live vi
 tools that follow the run, read the stopped page as its accessibility tree and act on it.
 
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
-(Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2 and 3 are built too (below), while PRs
-4 to 9 are not. PR 1 differs from the text in four ways. A headed browser opens Playwright's Inspector at every stop of
+(Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2 and 3 are built too, and PR 4's
+service half (below), while PR 4's surfaces and PRs 5 to 9 are not. PR 1 differs from the text in four ways. A headed
+browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs, and a run under Playwright's own debugger (`--debug`, `--debug=cli`, `PWDEBUG`) ignores the
 breakpoints. The runner suspends the test timeout only for
@@ -91,7 +92,31 @@ stopped pauses every run. A run that ends says so, with the tests it ran last, a
 **Runs** tile fills More tools' free cell, so the popup stays within 600 pixels in every language. Before the pairing's
 token goes to `…/live` or to Send to editor's endpoint, the program on the paired port proves it holds it
 (`editorTokenProof`, as the desktop app's pairing does), asked on `…/live`, which takes a GET in both IDEs, else it is
-sent nothing. The spikes in the
+sent nothing. PR 4's service half is the worker's part of Part 5, the editor service's code and the three
+protocols; both IDE clients and the Runs window are to come, from `piwi/stopAction`, `piwi/stopRequests`,
+`piwi/locatorAtCaret`, `piwi/stopCode` and the hub's `assert`, `assert-region`, `requests` and `mock`. It differs from
+the text in eight ways. The code reaches the client in a notification of its own (`piwi/stopCode`: the run, the stop,
+the file and its version, and the edits, the import lines the block needs and the block above the stopped
+statement, which the client makes as one edit), sent only to a client that says it writes it
+(`InitializationOptions.stopCode`); without one, Assert, Assert a region and Mock a request are refused from both
+surfaces, and the Runs window never receives code. **Assert** runs the recorder's check panel alone through the record
+channel's hand-off in a `check` mode, which names the stop and which the service takes itself, asking no editor to
+record; the check panel offers what it offers in a recording (a value, a text, a name, visible or hidden, enabled or
+disabled), which has no `toBeChecked` nor `toHaveCount` choice. **Assert a region** picks with the bar's picker
+(element, anchors, confirm), so the snapshot is read through the locator the person confirmed; `toMatchAriaSnapshot`
+is a matcher of `renderSpec` that neither a recording nor a steps document carries. **Mock a request** writes the
+body inline whatever its size (a kept body is 256 KB at most) and matches a query parameter named like a credential
+with `*`, on the page expression in scope; the list names no header and no body, and the worker sends one body, the
+one chosen. **The locator at the caret** is one request of the IDE's, the service reading the line's chain and its
+page expression; the hub has none, the caret being the IDE's. **A failure** is held in every interactive run (a run
+connection open, a test that can stop), at every attempt that fails, not an expected failure: headed, the bar is the
+viewer; headless, a stop with the reason `failure` waits for the IDE or a Runs window and goes on at once, without a
+notice, when neither answers stops; Step, Finish and Run to a line end it as Resume does, and Record there hands the
+page over with the reason `breakpoint`, as the record channel's `attach` names two. The pause bar has no button for
+the code actions, which start from the IDE and the Runs window; the paused call going on with its old code is said in
+the first code of each run. `run-attach.takes` lists the queries (`requests`, `mock`, `locator`) beside the intents,
+and the hub's `intents` the actions a stop takes (`mock` when the worker lists and hands over responses).
+The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of
 [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -375,6 +400,11 @@ export type RunToHub =
   | { type: 'running'; stop: number }
   | { type: 'test-end'; testId: string; status: string; pausedMs: number }
   | { type: 'answer'; request: number; what: 'image'; value: PausedImage | null } // to a `request` below
+  | { type: 'answer'; request: number; what: RunIntent; value: { ok: boolean; message: string } } // PR 3, PR 4
+  | { type: 'answer'; request: number; what: 'requests'; value: { ok; message; requests: KeptRequest[] } } // PR 4
+  | { type: 'answer'; request: number; what: 'mock'; value: { ok; message; response: KeptResponse | null } } // PR 4
+  | { type: 'answer'; request: number; what: 'locator'; value: { ok; message; count: number | null } } // PR 4
+  | { type: 'region'; stop: number; locator: string; snapshot: string } // PR 4, after `assert-region`
   | { type: 'notice'; message: string };
 
 /** What the hub sends a worker on its run connection. */
@@ -383,9 +413,18 @@ export type HubToRun =
   | { type: 'control'; action: 'pause' }
   | { type: 'control'; action: 'step' | 'resume' | 'finish'; stop: number }
   | { type: 'run-to'; stop: number; place: Place }
-  | { type: 'request'; request: number; what: 'image' }; // while stopped; Part 5 adds kinds
+  | { type: 'request'; request: number; what: 'image' } // while stopped
+  | { type: 'request'; request: number; what: RunIntent | 'requests'; stop: number } // PR 3, PR 4
+  | { type: 'request'; request: number; what: 'mock'; stop: number; id: number } // PR 4
+  | { type: 'request'; request: number; what: 'locator'; stop: number; locator: string | null }; // PR 4
 
-export type StopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause'; // Part 5 adds 'failure'
+export type StopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'failure'; // 'failure': PR 4
+/** PR 3: `pick`, `record`; PR 4: `assert`, `assert-region`. */
+export type RunIntent = 'pick' | 'record' | 'assert' | 'assert-region';
+/** A response a test kept (PR 4): no header, no body. `KeptResponse` adds the body, without `id`, `size` and `time`. */
+export interface KeptRequest {
+  id: number; method: string; url: string; status: number; type: string; size: number; time: number;
+}
 /** A place in the user's code: a path relative to the run's working directory, 1-based line and column. */
 export interface Place { file: string; line: number; column?: number }
 /** An image of a stopped page. */

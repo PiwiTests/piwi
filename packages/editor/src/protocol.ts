@@ -474,6 +474,11 @@ export interface InitializationOptions {
    * headless run) as soon as it hears it, and says so once per run in a `piwi/notice`.
    */
   runControl?: boolean;
+  /**
+   * The client writes the code made at a stop (`piwi/stopCode`). Without it, Assert, Assert a region and Mock a request
+   * are refused, from the client and from Piwi Picker alike.
+   */
+  stopCode?: boolean;
 }
 
 /**
@@ -1319,9 +1324,18 @@ export type RunPlace = EditorBreakpoint;
 
 /**
  * Why a test stopped: at a breakpoint's line, at the first call after Step, for a Pause, on the line it was run to
- * (`run-to`), at `page.pause()` (`page-pause`); `other` for a reason of a newer reporter, a plain stop.
+ * (`run-to`), at `page.pause()` (`page-pause`), at a failure (`failure`: the test failed there and its page is held
+ * before it closes; `title` says how it failed, no call is about to run, and Resume, Step and Finish all let it end
+ * as it failed); `other` for a reason of a newer reporter, a plain stop.
  */
-export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'other';
+export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'failure' | 'other';
+
+/**
+ * What a worker's reporter takes at a stop, as its run connection lists it: the intents `pick`, `record`, `assert` and
+ * `assert-region` (`piwi/stopAction`), and the queries `requests` (`piwi/stopRequests`), `mock` and `locator`
+ * (`piwi/locatorAtCaret`). An older reporter lists fewer, or none: the service refuses what it does not take.
+ */
+export type RunTake = 'pick' | 'record' | 'assert' | 'assert-region' | 'requests' | 'mock' | 'locator';
 
 /** Where a worker stands stopped: before a call, which runs as soon as the stop is answered. */
 export interface RunStop {
@@ -1376,6 +1390,8 @@ export interface RunWorker {
   test: RunTest | null;
   /** Where it stands stopped; null unless `state` is `stopped`. */
   stop: RunStop | null;
+  /** What its reporter takes at a stop. */
+  takes: RunTake[];
   /**
    * A Pause reached it and it has not stopped yet: it stops before its test's next call that Playwright's debugger
    * stops at (a long call, a `waitForTimeout`, finishes first), or the next test's first one. A client shows
@@ -1483,3 +1499,124 @@ export interface PausedPageResult {
 }
 
 export const PAUSED_PAGE_REQUEST = 'piwi/pausedPage';
+
+/**
+ * What a client starts at a stop (`piwi/stopAction`): `pick` and `record` start the pause bar's Pick a locator and
+ * Record here in the test's window (the locator comes back through the client's Send to editor listener, then
+ * `piwi/applyPick`; the recording through `piwi/recordRequested`); `assert` opens the check panel's Check an element
+ * there, and `assert-region` the picker, for a region whose ARIA snapshot is read; `mock` makes `page.route(…)` from a
+ * response the test kept (`request`, an id `piwi/stopRequests` lists). The code of `assert`, `assert-region` and
+ * `mock` comes in `piwi/stopCode`. `pick`, `record`, `assert` and `assert-region` need the pause bar (a headed
+ * window); `mock` does not.
+ */
+export type StopActionKind = 'pick' | 'record' | 'assert' | 'assert-region' | 'mock';
+
+/**
+ * `piwi/stopAction`: start an action at the stop `since` names, of the run's one stopped worker or `worker`. Answered
+ * once the worker said whether it started (`pick`, `record`, `assert`, `assert-region`; the person then acts in the
+ * test's window) or once the code was sent (`mock`); `ok: false` with why otherwise: a stop the test went on from
+ * (`The test went on.`), a stop no pause bar shows, a reporter that does not take the action, a client without
+ * `InitializationOptions.stopCode` for an action that writes code.
+ */
+export interface StopActionParams {
+  ref: string;
+  worker?: number | null;
+  since: string;
+  action: StopActionKind;
+  /** For `mock`: the kept response, by the `id` `piwi/stopRequests` lists. */
+  request?: number | null;
+}
+
+export type StopActionResult = RunControlResult;
+
+export const STOP_ACTION_REQUEST = 'piwi/stopAction';
+
+/** `piwi/stopRequests`: the responses the stopped test kept, for Mock a request; `since` names the stop, optionally. */
+export interface StopRequestsParams {
+  ref: string;
+  worker?: number | null;
+  since?: string | null;
+}
+
+/**
+ * A response a stopped test's pages received for a fetch or an XHR request since the test began, whose text body the
+ * worker keeps (an interactive run keeps the latest 50, 256 KB each at most, in memory): no header, no body.
+ */
+export interface StopRequest {
+  /** What `piwi/stopAction`'s `request` names it by. */
+  id: number;
+  method: string;
+  url: string;
+  status: number;
+  /** The response's MIME type without its parameters; empty when it named none. */
+  type: string;
+  /** The body's size, in bytes. */
+  size: number;
+  /** When it finished, in ms after the test began. */
+  time: number;
+}
+
+/** The responses, oldest first (empty with `ok: false` and why when there is no stop to ask). */
+export interface StopRequestsResult {
+  ok: boolean;
+  message: string;
+  requests: StopRequest[];
+}
+
+export const STOP_REQUESTS_REQUEST = 'piwi/stopRequests';
+
+/**
+ * `piwi/locatorAtCaret`: while a test is stopped, count the matches on the stopped page of the locator at the caret's
+ * line (`uri`, a 0-based `line`): the service reads the line's locator chain from the file as the editor holds it, the
+ * one `piwi/applyPick` replaces, which must start from a page expression in scope there (`page`, `this.page`,
+ * `adminPage`). Where the pause bar shows, the worker outlines the matches until the test goes on or the next
+ * `piwi/locatorAtCaret`; a `uri` or `line` of null, or a line without a locator, takes the outline down.
+ */
+export interface LocatorAtCaretParams {
+  ref: string;
+  worker?: number | null;
+  uri: string | null;
+  line: number | null;
+}
+
+/** The locator read on the line and how many elements it matches; why not, with `ok: false`. */
+export interface LocatorAtCaretResult {
+  ok: boolean;
+  message: string;
+  /** The chain counted, as the line holds it, without its page; null when the line held none Piwi reads. */
+  locator: string | null;
+  count: number | null;
+}
+
+export const LOCATOR_AT_CARET_REQUEST = 'piwi/locatorAtCaret';
+
+/**
+ * `piwi/stopCode` (notification, server to client): code made at a stop, for the client to write, sent only to a client
+ * with `InitializationOptions.stopCode`: the check the person made (`assert`), a region's `toMatchAriaSnapshot`
+ * (`assert-region`) or a `page.route(…)` (`mock`), started from the client or from Piwi Picker. `edits` write it: the
+ * import lines it needs, then the block on a new line above the stopped statement, indented for it, on the page
+ * expression in scope there (`this.page` in a page object). Both are placed in the file's text as the service holds it
+ * (`version`, the open document's, null for the file as saved), and the client applies them together, as one edit
+ * (one undo step), opening the file when it is not open.
+ */
+export interface StopCode {
+  ref: string;
+  worker: number;
+  /** The stop the code was made at (`RunStop.since`). */
+  since: string;
+  action: 'assert' | 'assert-region' | 'mock';
+  uri: string;
+  /** The document's version the edits are placed in; null when the file is not open. */
+  version: number | null;
+  /** 0-based line the block's first line goes on: the stopped statement's, which the block pushes down. */
+  line: number;
+  /** The block as written, indented, lines joined with `\n`, without the import lines. */
+  code: string;
+  edits: FileEdit[];
+  /** One sentence to show: what was written where; the first code of a run adds that the test goes on as it started. */
+  message: string;
+  /** What the reader of the code should check (a brittle locator, values hidden as credentials). */
+  warnings: string[];
+}
+
+export const STOP_CODE_NOTIFICATION = 'piwi/stopCode';
