@@ -1,7 +1,8 @@
 /**
  * The worker's side of the Runs window: the one `RunHubs` of the worker, wired to the paired editor, the secret area
  * and the browser's WebSocket; the window's port (`RUNS_PORT`, taken from `runs.html` alone), which gets the state at
- * each change and passes the window's commands on; the popup's Runs tile; and the global shortcut.
+ * each change and what each code written at a stop came to, and passes the window's commands on; the popup's Runs
+ * tile; and the global shortcut.
  */
 import { parseLiveAnswer } from '@piwitests/core/run-hub';
 import {
@@ -52,7 +53,10 @@ function serveRunsPort(port: chrome.runtime.Port): void {
       // The window closed meanwhile.
     }
   };
-  const unlisten = runHubs.listen(() => post({ type: 'state', state: runHubs.state() }));
+  const unlisten = runHubs.listen(
+    () => post({ type: 'state', state: runHubs.state() }),
+    (code) => post({ type: 'code', ...code }),
+  );
   post({ type: 'state', state: runHubs.state() });
   if (!runHubs.connected()) void runHubs.find();
   port.onMessage.addListener((raw: unknown) => {

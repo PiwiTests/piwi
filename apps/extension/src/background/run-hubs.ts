@@ -4,13 +4,15 @@
  * token as a bearer credential), keeps a connection to each (`hub-connection.ts`) and the runs they push. The token
  * goes to the paired port only once the program there proved it holds it (`proveEditor`). The hubs' addresses and
  * tokens go to the secret area beside the editor's pairing, never to `chrome.storage.local`, and are found again
- * whenever a hub's connection fails, with a backoff. Nothing here runs in a content script or an extension page.
+ * whenever a hub's connection fails, with a backoff. What each code written at a stop came to goes to the listeners,
+ * with the hub that said it. Nothing here runs in a content script or an extension page.
  */
 import type { EditorPairing } from '@piwitests/core/editor-send';
 import { liveUrlOf, parseLiveAnswer, type HubSession, type LiveHub } from '@piwitests/core/run-hub';
 import {
   shortcutCommands,
   type RunsAnswer,
+  type RunsCode,
   type RunsDiscovery,
   type RunsRequest,
   type RunsRun,
@@ -48,6 +50,12 @@ const READY_MS = 3000;
 
 type CommandRequest = Extract<RunsRequest, { type: 'command' }>;
 
+/** Who follows the runs: it hears each change, and what each code written at a stop came to. */
+interface RunsListener {
+  changed(): void;
+  code(code: RunsCode): void;
+}
+
 /** A command that never reached a hub. */
 const OFFLINE: RunsAnswer = { ok: false, message: '', failure: 'offline' };
 
@@ -60,15 +68,19 @@ export class RunHubs {
   private findAgain = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
-  private readonly listeners = new Set<() => void>();
+  private readonly listeners = new Set<RunsListener>();
   private readonly now: () => number;
 
   constructor(private readonly deps: RunHubsDeps) {
     this.now = deps.now ?? Date.now;
   }
 
-  /** Hears every change; while a listener (a Runs window) is there, failures are retried without end. */
-  listen(listener: () => void): () => void {
+  /**
+   * Hears every change, and what each code written at a stop came to; while a listener (a Runs window) is there,
+   * failures are retried without end.
+   */
+  listen(changed: () => void, code: (code: RunsCode) => void = () => {}): () => void {
+    const listener: RunsListener = { changed, code };
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
@@ -133,14 +145,25 @@ export class RunHubs {
     const connection = this.connections.get(request.hub);
     if (!connection) return Promise.resolve(OFFLINE);
     const { ref, worker, since, what } = request;
-    if (what === 'image') {
-      return worker === null ? Promise.resolve(OFFLINE) : connection.command({ type: 'pausedPage', ref, worker });
+    switch (what) {
+      case 'image':
+        return worker === null ? Promise.resolve(OFFLINE) : connection.command({ type: 'pausedPage', ref, worker });
+      case 'pause':
+      case 'step':
+      case 'resume':
+      case 'finish':
+        return connection.command({ type: 'runControl', ref, worker, action: what, since });
+      case 'mock':
+        // `parseRunsRequest` takes none without the stop it answers and the response it mocks.
+        return since === null || request.request === undefined
+          ? Promise.resolve(OFFLINE)
+          : connection.command({ type: 'mock', ref, worker, since, request: request.request });
+      case 'requests':
+        return since === null ? Promise.resolve(OFFLINE) : connection.command({ type: 'requests', ref, worker, since });
+      default:
+        // Pick, Record, Assert and Assert a region: an intent started in the test's window, at the stop it names.
+        return since === null ? Promise.resolve(OFFLINE) : connection.command({ type: what, ref, worker, since });
     }
-    if (what === 'pick' || what === 'record') {
-      // `parseRunsRequest` takes none without the stop it answers.
-      return since === null ? Promise.resolve(OFFLINE) : connection.command({ type: what, ref, worker, since });
-    }
-    return connection.command({ type: 'runControl', ref, worker, action: what, since });
   }
 
   /** The global shortcut: resumes every stopped test, else pauses every run (`shortcutCommands`). */
@@ -219,6 +242,9 @@ export class RunHubs {
         },
         changed: () => this.changed(),
         ended: (session) => this.keepEnded(hub.url, session, connection.sessions.get(session.ref)),
+        code: ({ type: _type, warnings = [], ...code }) => {
+          for (const listener of this.listeners) listener.code({ hub: hub.url, ...code, warnings });
+        },
         lost: (why) => this.lost(hub, connection, why),
       },
       this.deps.timings,
@@ -258,6 +284,6 @@ export class RunHubs {
   }
 
   private changed(): void {
-    for (const listener of this.listeners) listener();
+    for (const listener of this.listeners) listener.changed();
   }
 }

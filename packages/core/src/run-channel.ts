@@ -80,6 +80,8 @@ export const MAX_KEPT_RESPONSES = 50;
 export const MAX_KEPT_BODY = 256 * 1024;
 /** The longest ARIA snapshot a `region` carries, in characters. */
 export const MAX_REGION_SNAPSHOT = 1024 * 1024;
+/** The longest error a failure's stop carries, in characters: a longer one is cut. */
+export const MAX_STOP_ERROR = 1000;
 
 /**
  * A response the running test's pages received for a fetch or an XHR request, whose body the worker keeps (text
@@ -161,7 +163,9 @@ export type RunToHub =
    * The test stopped before a call, until a `running` with the same `stop` (the worker's own number for it, from 1):
    * why, the call as Playwright titles it, its place, the locator it acts on (null for none), and whether Piwi's pause
    * bar shows in the page, where it can be answered too. A worker is stopped at one call at a time. `other` is a reason
-   * this side does not know, from a newer reporter: a plain stop.
+   * this side does not know, from a newer reporter: a plain stop. A failure's stop names its error (`error`): the
+   * failing error's first lines as plain text, at most `MAX_STOP_ERROR` characters; a reporter that predates it sends
+   * none, and its `title` alone says how the test failed.
    */
   | {
       type: 'stopped';
@@ -171,6 +175,7 @@ export type RunToHub =
       place: Place;
       locator: string | null;
       bar: boolean;
+      error?: string;
     }
   /** The stop ended, whoever answered it: the bar, the editor, or the test ending under it. */
   | { type: 'running'; stop: number }
@@ -375,6 +380,11 @@ export function parseRunToHub(line: string): RunToHub | null {
       const place = readPlace(value.place);
       if (!isInt(stop, 1) || typeof reason !== 'string' || !reason || typeof title !== 'string' || !place) return null;
       if ((locator !== null && typeof locator !== 'string') || typeof bar !== 'boolean') return null;
+      // A failure's error alone: another stop's, or one that is no text, is left out.
+      const error =
+        reason === 'failure' && typeof value.error === 'string' && value.error.trim()
+          ? value.error.slice(0, MAX_STOP_ERROR)
+          : null;
       return {
         type: 'stopped',
         stop,
@@ -383,6 +393,7 @@ export function parseRunToHub(line: string): RunToHub | null {
         place,
         locator: locator === null ? null : locator.slice(0, 1000),
         bar,
+        ...(error === null ? {} : { error }),
       };
     }
     case 'running':

@@ -7553,10 +7553,6 @@
     "message": "Stopped at page.pause()",
     "description": "Runs window, the state of a test stopped at a page.pause() call. page.pause() is code: keep it."
   },
-  "runs_stoppedFailure": {
-    "message": "Stopped at a failure",
-    "description": "Runs window, the state of a test stopped where it failed: its page is held so code can be written there."
-  },
   "runs_stoppedOther": {
     "message": "Stopped",
     "description": "Runs window, the state of a stopped test, for a reason this version does not know."
@@ -7676,5 +7672,133 @@
   "runs_imageLoading": {
     "message": "Taking an image of the page…",
     "description": "Runs window, while the image of a stopped page is on its way."
+  },
+  "runs_assert": {
+    "message": "Assert",
+    "description": "Runs window, button on a stopped test: starts the recorder’s Check an element in the test’s window; the editor writes the check. Short: it shares a row with Pick and Record."
+  },
+  "runs_assertTitle": {
+    "message": "Check an element in the test’s window: the check is written above this line",
+    "description": "Runs window, the Assert button’s tooltip."
+  },
+  "runs_assertRegion": {
+    "message": "Assert a region",
+    "description": "Runs window, button on a stopped test: pick a region of the page in the test’s window; the editor writes its ARIA snapshot (toMatchAriaSnapshot). Short."
+  },
+  "runs_assertRegionTitle": {
+    "message": "Pick a region in the test’s window: its ARIA snapshot is written above this line",
+    "description": "Runs window, the Assert a region button’s tooltip."
+  },
+  "runs_mock": {
+    "message": "Mock a request",
+    "description": "Runs window, button on a stopped test: lists the requests its page made, to mock one. Short."
+  },
+  "runs_mockTitle": {
+    "message": "Choose a request the page made: a page.route() answering it as the server did is written above this line",
+    "description": "Runs window, the Mock a request button’s tooltip. page.route() is code: keep it."
+  },
+  "runs_codeActions": {
+    "message": "Code from this stop",
+    "description": "Runs window, the name screen readers give the row of Pick, Record, Assert, Assert a region and Mock a request."
+  },
+  "runs_codeWarnings": {
+    "message": "What to review in this code",
+    "description": "Runs window, the name screen readers give the list of warnings under the sentence saying the editor wrote code at a stop (a value hidden as a credential, a brittle locator)."
+  },
+  "runs_resumeFailureTitle": {
+    "message": "Let the test end as it failed",
+    "description": "Runs window, the Resume button’s tooltip on a test held where it failed."
+  },
+  "runs_failedAt": {
+    "message": "Failed at $place$",
+    "description": "Runs window, the state of a test held where it failed, its page kept so code can be written there. $place$ is a file and line.",
+    "placeholders": {
+      "place": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      }
+    }
+  },
+  "runs_errorLabel": {
+    "message": "Error",
+    "description": "Runs window, label before the error a failed test stopped on."
+  },
+  "runs_announceFailed": {
+    "message": "$test$ failed at $place$.",
+    "description": "Runs window, read by a screen reader when a test fails and its page is held. $test$ is the test’s name, $place$ a file and line.",
+    "placeholders": {
+      "place": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      },
+      "test": {
+        "content": "$2",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_imageAltFailure": {
+    "message": "The test’s page where it failed: $error$",
+    "description": "Runs window, the text alternative of the image of the page a test failed on. $error$ is the error’s first line, in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Timed out 5000ms waiting for expect(locator).toBeVisible()"
+      }
+    }
+  },
+  "runs_requestsTitle": {
+    "message": "Choose the request to mock",
+    "description": "Runs window, above the list of the requests a stopped test’s page made."
+  },
+  "runs_requestsClose": {
+    "message": "Close the list",
+    "description": "Runs window, the name of the button that closes the list of requests."
+  },
+  "runs_requestsFilter": {
+    "message": "Filter by address, method or status",
+    "description": "Runs window, the name and placeholder of the box that narrows the list of requests."
+  },
+  "runs_requestsNone": {
+    "message": "The test kept no response yet: Piwi keeps the text answers of its fetch and XHR requests.",
+    "description": "Runs window, in place of the list of requests when the test kept none. fetch and XHR are code names: keep them."
+  },
+  "runs_requestsNoMatch": {
+    "message": "No request matches the filter.",
+    "description": "Runs window, under the filter when it hides every request."
+  },
+  "runs_requestsListed_one": {
+    "message": "$count$ request: choose the one to mock.",
+    "description": "Runs window, read by a screen reader when the list of requests opens.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_requestsListed_other": {
+    "message": "$count$ requests: choose the one to mock.",
+    "description": "Runs window, read by a screen reader when the list of requests opens.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "runs_requestAt": {
+    "message": "at $time$",
+    "description": "Runs window, in a request of the list: when it finished, counted from the start of the test. $time$ is a duration such as 0.8s.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "0.8s"
+      }
+    }
+  },
+  "runs_requestNoSize": {
+    "message": "size unknown",
+    "description": "Runs window, in a request of the list, in place of its size when the response did not state one (its body came in chunks). Short."
   }
 }

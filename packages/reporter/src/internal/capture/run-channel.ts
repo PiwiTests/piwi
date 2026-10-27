@@ -78,6 +78,8 @@ export interface StopToHold {
   locator: string | null;
   /** Whether Piwi's pause bar shows the stop. */
   bar: boolean;
+  /** A failure's error, as plain text: the editor shows it beside the stop. */
+  error?: string;
   /** The page an image of the stop is taken of: none when the stop's page is not known. */
   page: Page | null;
   /** Start the bar's Pick a locator or Record here from outside the page; refused without it. */
@@ -243,6 +245,7 @@ export function holdStop(
     place: stop.place,
     locator: stop.locator,
     bar: stop.bar,
+    ...(stop.error ? { error: stop.error } : {}),
   });
   if (!runChannelOpen() && !stop.bar) holding.answer('resume');
   return {

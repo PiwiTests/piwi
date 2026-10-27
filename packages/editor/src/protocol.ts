@@ -1356,6 +1356,12 @@ export interface RunStop {
    * answering it passes back (`RunControlParams.since`).
    */
   since: string;
+  /**
+   * A failure's error (`reason: 'failure'`): the failing error's first lines as plain text, without the `Error: `
+   * Playwright writes before a plain error's message, at most 1,000 characters. Absent for another stop, and from a
+   * reporter that predates it, whose `title` (`Failed: ` and the error's first line) alone says how the test failed.
+   */
+  error?: string;
 }
 
 /** A test a worker runs. */

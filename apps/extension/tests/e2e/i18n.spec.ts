@@ -6,6 +6,16 @@ import { substitutePlaceholders, type RawCatalog } from '../../src/shared/i18n.j
 import { test, expect, openOptions, optionsReady } from './fixtures.js';
 import { stubChromeI18n } from './i18n-stub.js';
 import { TRANSLATION_ISSUE_URL } from '../../src/shared/languages.js';
+import {
+  answerNext,
+  pairedExtension,
+  startEditor,
+  startRun,
+  stopAtCheckout,
+  KEPT,
+  RUN_TAKES,
+  type Editor,
+} from './runs-fixtures.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const readCatalog = (code: string): RawCatalog =>
@@ -50,11 +60,16 @@ async function untranslated(page: Page): Promise<string[]> {
   });
 }
 
-/** Elements whose content is wider than their box: a label that clips. */
+/**
+ * Elements whose content is wider than their box: a label that clips. A text cut short on purpose, with an ellipsis
+ * and its whole in a tooltip (a long address, a command line), is not one, nor a text for screen readers alone.
+ */
 async function clipped(page: Page): Promise<string[]> {
   return page.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>('body *')]
       .filter((el) => el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1)
+      .filter((el) => getComputedStyle(el).textOverflow !== 'ellipsis' || !el.closest('[title]'))
+      .filter((el) => !el.closest('.visually-hidden'))
       .map((el) => `${el.tagName.toLowerCase()}#${el.id}.${el.className}: ${el.scrollWidth} > ${el.clientWidth}`),
   );
 }
@@ -305,4 +320,49 @@ test('the Language setting reaches a panel through the stored catalog, whatever 
   const panel = page.locator('#piwi-lint-overlay-host .panel');
   await expect(panel).toHaveAttribute('lang', 'de');
   await expect(panel).toHaveAttribute('aria-label', readCatalog('de').lint_dialog!.message);
+});
+
+test.describe('the Runs window in another language', () => {
+  let editor: Editor;
+
+  test.beforeAll(async () => {
+    editor = await startEditor();
+  });
+
+  test.afterAll(async () => {
+    await editor?.close();
+  });
+
+  const LANGUAGES = [
+    { language: 'fr', heading: 'Les exécutions de votre éditeur', mock: 'Simuler une requête', failed: 'En échec à' },
+    { language: 'de', heading: 'Die Läufe Ihres Editors', mock: 'Anfrage nachbilden', failed: 'Fehlgeschlagen bei' },
+  ];
+
+  for (const { language, heading, mock, failed } of LANGUAGES) {
+    test(`is in ${language} at a stop, its actions and the requests to mock included, and nothing in it clips`, async () => {
+      const { context, extensionId } = await pairedExtension(editor, { language });
+      const run = await startRun(editor, 'pays', [...RUN_TAKES]);
+      try {
+        const runs = await context.newPage();
+        await runs.setViewportSize({ width: 440, height: 720 });
+        await runs.goto(`chrome-extension://${extensionId}/runs.html`);
+        await expect(runs.locator('html')).toHaveAttribute('lang', language);
+        await expect(runs.getByRole('heading', { level: 1 })).toHaveText(heading);
+        stopAtCheckout(run.worker, 1);
+        await runs.getByRole('button', { name: mock }).click();
+        await answerNext(run.worker, 'requests', { ok: true, message: '', requests: KEPT });
+        await expect(runs.locator('.request')).toHaveCount(KEPT.length);
+        expect(await untranslated(runs)).toEqual([]);
+        expect(await clipped(runs)).toEqual([]);
+        // A failure held at its line.
+        stopAtCheckout(run.worker, 2, { reason: 'failure' });
+        await expect(runs.locator('.state')).toHaveText(`${failed} tests/checkout.spec.ts:5`);
+        expect(await clipped(runs)).toEqual([]);
+      } finally {
+        await editor.svc.client.sendNotification('piwi/commandEnded', { ref: run.ref, exitCode: 1 });
+        run.worker.socket.destroy();
+        await context.close();
+      }
+    });
+  }
 });

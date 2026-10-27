@@ -609,6 +609,7 @@ export class RunSessions {
             locator: message.locator,
             bar: message.bar,
             since: this.stamp(session),
+            ...(message.error === undefined ? {} : { error: message.error }),
           },
         };
         worker.pausing = false;

@@ -4,6 +4,7 @@ import {
   MAX_KEPT_BODY,
   MAX_KEPT_RESPONSES,
   MAX_REGION_SNAPSHOT,
+  MAX_STOP_ERROR,
   RUN_CHANNEL_ENV,
   RUN_TAKES,
   parseHubToRun,
@@ -122,6 +123,34 @@ describe('the run channel', () => {
       }
       expect(parseRunToHub(line({ type: 'running', stop: 3 }))).toEqual({ type: 'running', stop: 3 });
       expect(parseRunToHub(line({ type: 'running' }))).toBeNull();
+    });
+
+    test('reads the error a failure’s stop names, cut short, and no error of another stop', () => {
+      const failed = {
+        type: 'stopped',
+        stop: 4,
+        reason: 'failure',
+        title: 'Failed: expect(locator).toBeVisible() failed',
+        place: { file: 'tests/checkout.spec.ts', line: 12, column: 5 },
+        locator: "getByRole('button', { name: 'Pay' })",
+        bar: true,
+        error: "expect(locator).toBeVisible() failed\nLocator: getByRole('button', { name: 'Pay' })",
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(failed))).toEqual(failed);
+      expect(parseRunToHub(line({ ...failed, error: 'x'.repeat(MAX_STOP_ERROR + 50) }))).toMatchObject({
+        error: 'x'.repeat(MAX_STOP_ERROR),
+      });
+      // A reporter that predates it sends none; one that is no text, or no words, is left out, as is another stop's.
+      for (const without of [
+        { ...failed, error: undefined },
+        { ...failed, error: 5 },
+        { ...failed, error: ' \n ' },
+        { ...failed, reason: 'breakpoint' },
+      ]) {
+        const read = parseRunToHub(line(without));
+        expect(read, JSON.stringify(without)).toMatchObject({ type: 'stopped', stop: 4 });
+        expect(read, JSON.stringify(without)).not.toHaveProperty('error');
+      }
     });
 
     test('reads an image of the stopped page, or none, and refuses anything else', () => {

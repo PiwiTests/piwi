@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
-import { parseRunsRequest, runFile, shortcutCommands, stopPlace, testName } from '../../src/shared/runs.js';
+import { parseRunsRequest, runFile, shortcutCommands, stopError, stopPlace, testName } from '../../src/shared/runs.js';
 
 const worker = (over: Partial<HubWorker>): HubWorker => ({
   worker: 0,
@@ -55,7 +55,34 @@ describe('the Runs window’s requests, as the worker reads them', () => {
       // Every control but Pause names the stop it answers.
       { ...command, since: null, what: 'resume' },
       { ...command, since: null, what: 'pick' },
+      { ...command, since: null, what: 'assert' },
+      { ...command, since: null, what: 'requests' },
       { type: 'window', windowId: 'w' },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+
+  it('takes the code a stop can write, each naming its stop, and Mock a request the response it mocks', () => {
+    const command = { type: 'command', id: 4, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: 0, since: 's2' };
+    for (const what of ['assert', 'assert-region', 'requests']) {
+      expect(parseRunsRequest({ ...command, what })).toEqual({ ...command, what });
+    }
+    expect(parseRunsRequest({ ...command, what: 'mock', request: 3 })).toEqual({
+      ...command,
+      what: 'mock',
+      request: 3,
+    });
+    for (const bad of [
+      { ...command, what: 'mock' },
+      { ...command, what: 'mock', request: 0 },
+      { ...command, what: 'mock', request: 1.5 },
+      { ...command, what: 'mock', request: '3' },
+      { ...command, what: 'mock', request: 2 ** 31 },
+      { ...command, what: 'mock', request: 3, since: null },
+      // Only Mock a request names a response.
+      { ...command, what: 'assert', request: 3 },
+      { ...command, what: 'step', request: 3 },
     ]) {
       expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
     }
@@ -112,5 +139,14 @@ describe('where a test stands, as text', () => {
 
   it('names a test by its describe blocks, then its title', () => {
     expect(testName({ title: ['cart', 'coupons', 'applies WELCOME10'] })).toBe('cart › coupons › applies WELCOME10');
+  });
+
+  it('names the error a failure stopped at, as its stop says it, else as an older one titles it', () => {
+    const title = 'Failed: Error: expect(locator).toBeVisible() failed';
+    expect(stopError({ title, error: "Error: the cart's own message\nLocator: getByTestId('cart')" })).toBe(
+      "Error: the cart's own message\nLocator: getByTestId('cart')",
+    );
+    expect(stopError({ title })).toBe('expect(locator).toBeVisible() failed');
+    expect(stopError({ title: 'Failed: Test timeout of 5000ms exceeded.' })).toBe('Test timeout of 5000ms exceeded.');
   });
 });

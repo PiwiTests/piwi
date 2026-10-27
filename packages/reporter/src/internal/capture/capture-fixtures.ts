@@ -152,6 +152,7 @@ import {
 } from './run-channel.js';
 import {
   MAX_REGION_SNAPSHOT,
+  MAX_STOP_ERROR,
   RUN_INTENT_NAMES,
   type IntentAnswer,
   type RunIntent,
@@ -1636,6 +1637,8 @@ function stopBarPage(sink: CaptureSink, context: BrowserContext, of: StopPage): 
 /** What a stop at a failure shows beside the stop's own: the failing locator a pick replaces. */
 interface FailureStop {
   failed: FailedLocatorInfo | null;
+  /** The error the stop names (`failureError`); null for an error with no text. */
+  error: string | null;
 }
 
 /**
@@ -1719,6 +1722,7 @@ async function showStop(
               : null,
           bar,
           page: guessed ? null : page,
+          ...(failure?.error ? { error: failure.error } : {}),
           intent: intents
             ? (what) =>
                 intentAt(intents, what, {
@@ -1950,7 +1954,30 @@ async function holdFailure(sink: CaptureSink, fallback?: Page): Promise<void> {
   sink.frozenAt = Date.now();
   await stopSinkCodeReach(sink, { context });
   const title = `Failed: ${said.trim().slice(0, 300)}`;
-  await showStop(sink, context, title, location, 'failure', undefined, { page }, { failed });
+  const named = failureError(error?.message ?? error?.value);
+  await showStop(sink, context, title, location, 'failure', undefined, { page }, { failed, error: named });
+}
+
+/** The most lines of a failure's error its stop names. */
+const FAILURE_ERROR_LINES = 4;
+
+/**
+ * A failure's error as its stop names it to the editor, as plain text: the failing error's message without its ANSI
+ * codes and without the `Error: ` the runner writes before a plain error's message, its lines up to the first blank
+ * one or its call log, four at most and `MAX_STOP_ERROR` characters; null for an error with no text.
+ */
+export function failureError(message: string | undefined): string | null {
+  const lines: string[] = [];
+  for (const line of stripAnsi(message ?? '')
+    .trimStart()
+    .replace(/^Error: /, '')
+    .split('\n')) {
+    if (!line.trim() || /^\s*Call log:/.test(line)) break;
+    lines.push(line.trimEnd());
+    if (lines.length === FAILURE_ERROR_LINES) break;
+  }
+  const text = lines.join('\n').slice(0, MAX_STOP_ERROR);
+  return text.trim() ? text : null;
 }
 
 /** A place in the test's code. */

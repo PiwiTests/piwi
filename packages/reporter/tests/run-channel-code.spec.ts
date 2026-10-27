@@ -633,6 +633,8 @@ describe('code from a stop, the worker’s part', () => {
         place: { file: 'tests/headed.spec.cjs', line, column: expect.any(Number) },
         locator: "getByRole('button', { name: 'Missing' })",
         bar: true,
+        // The error as plain text, without the runner's `Error: ` nor its ANSI codes.
+        error: 'expect(locator).toBeVisible() failed',
       },
     ]);
     expect(bars).toContain(`Failed at headed.spec.cjs:${line}`);
@@ -647,7 +649,12 @@ describe('code from a stop, the worker’s part', () => {
   it('holds a headless failure for the editor, which can count and list there but not check', () => {
     const line = lineOf(HEADLESS_SPEC(server.url), '// fails');
     expect(stops['fails headless']).toEqual([
-      expect.objectContaining({ reason: 'failure', place: expect.objectContaining({ line }), bar: false }),
+      expect.objectContaining({
+        reason: 'failure',
+        place: expect.objectContaining({ line }),
+        bar: false,
+        error: 'expect(locator).toBeVisible() failed',
+      }),
     ]);
     const [check, listed, counted] = heard['fails headless']!;
     expect(check).toEqual({
@@ -689,6 +696,11 @@ describe('code from a stop, the worker’s part', () => {
     expect(held.map((m) => [m.reason, m.place.line])).toEqual([
       ['failure', lineOf(LATE_SPEC(server.url), '// soft')],
       ['failure', lineOf(LATE_SPEC(server.url), '// cut short')],
+    ]);
+    // Each names the error it stopped at, the soft assertion's and the test timeout's.
+    expect(held.map((m) => m.error)).toEqual([
+      'expect(locator).toBeVisible() failed',
+      expect.stringMatching(/timeout/i),
     ]);
     // Each one held once its test ended, after its test timeout of 5 s.
     for (const stop of held) {

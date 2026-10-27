@@ -89,8 +89,9 @@ Two **external contracts** beyond the npm API:
   close, its own or its browser's, lets the call its debugger holds go on first. With the
   connection open, a failing test's page is held once the test and its hooks are done
   (`holdFailure`, from Piwi's `page` fixture), as a stop with the reason `failure` at the failing
-  line, the bar offering Resume, Pick and Record, its evidence kept as it was when the hold
-  began (Playwright's trace and video record the hold too); the test ends as it failed.
+  line that names the error's first lines (`failureError`), the bar offering Resume, Pick and
+  Record, its evidence kept as it was when the hold began (Playwright's trace and video record the
+  hold too); the test ends as it failed.
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
   unref'd timer (`internal/collect/process-sampler.ts`). While the dashboard says
   someone watches the run, another unref'd timer posts what the sampler and the

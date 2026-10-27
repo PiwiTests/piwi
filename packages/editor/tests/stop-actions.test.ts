@@ -12,7 +12,7 @@ import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { WebSocket } from 'ws';
 import { lineReader, parseHandoffToTest, type HandoffToTest } from '@piwitests/core/ide-recorder';
-import { parseHubMessage, type HubAnswer, type HubMessage } from '@piwitests/core/run-hub';
+import { parseHubMessage, type HubAnswer, type HubCodeMessage, type HubMessage } from '@piwitests/core/run-hub';
 import type { RawCaptureEvent } from '@piwitests/core/recording';
 import { RUN_TAKES, type RunTake } from '@piwitests/core/run-channel';
 import type { LocatorAtCaretResult, StopActionResult, StopCode, StopRequestsResult } from '../src/protocol';
@@ -744,4 +744,158 @@ describe('code from a stop, started from Piwi Picker', () => {
       svc.stop();
     }
   });
+
+  test('tells each follower once what each code came to, at the stop it was made at, whoever started it', async () => {
+    const svc = await service(dir, true, { distDir: dist }, { stopCode: true });
+    const published = await waitFor(() => svc.published[0] ?? undefined);
+    const follower = await hubClient(published.hub!, true);
+    // Paired, not following the runs: it hears none of it.
+    const bystander = await hubClient(published.hub!, false);
+    const { ref, channel, worker, since } = await stoppedWorker(svc, 'tests/checkout.spec.ts', 5, true);
+    const codes = () => follower.messages.filter((m): m is HubCodeMessage => m.type === 'code');
+    try {
+      // Mock a request from Piwi Picker: what it came to says what its answer says, and what to check in the code.
+      follower.send({ type: 'mock', id: 2, ref, since, request: 1 });
+      await answer(worker, 0, 'mock', {
+        ok: true,
+        message: 'GET',
+        response: { ...RESPONSE, body: '{"items":[],"token":"t0k3n-of-the-cart"}' },
+      });
+      const mocked = await follower.reply(2);
+      expect(await waitFor(() => codes()[0])).toEqual({
+        type: 'code',
+        ref,
+        worker: 0,
+        since,
+        action: 'mock',
+        ok: true,
+        message: mocked.message,
+        warnings: ['A value named or shaped like a credential is written as <hidden>.'],
+      });
+      expect(JSON.stringify(codes())).not.toContain('route');
+
+      // Assert a region from the editor's client: Piwi Picker hears what it came to as well.
+      const region = svc.client.sendRequest('piwi/stopAction', { ref, since, action: 'assert-region' });
+      await answer(worker, 1, 'assert-region', { ok: true, message: 'Pick the region.' });
+      await region;
+      worker.send({ type: 'region', stop: 1, locator: "getByTestId('summary')", snapshot: '- text: x' });
+      expect(await waitFor(() => codes()[1])).toEqual({
+        type: 'code',
+        ref,
+        worker: 0,
+        since,
+        action: 'assert-region',
+        ok: true,
+        message: "Piwi wrote the region's ARIA snapshot above checkout.spec.ts:5.",
+      });
+
+      // Assert from Piwi Picker: its answer says the check starts, and the check written comes after.
+      follower.send({ type: 'assert', id: 3, ref, since });
+      await answer(worker, 2, 'assert', { ok: true, message: 'Check an element.' });
+      expect(await follower.reply(3)).toMatchObject({ ok: true, message: 'Check an element.' });
+      const test = checkHandoff(channel, { ref, worker: 0, stop: 1 });
+      try {
+        await waitFor(() => test.heard.find((m) => m.type === 'load'));
+        test.send({ type: 'loaded' });
+        test.send({
+          type: 'binding',
+          call: 1,
+          outside: false,
+          payload: { kind: 'message', message: { type: 'piwi-append-recording-event', event: CHECK } },
+        });
+        expect(await waitFor(() => codes()[2])).toEqual({
+          type: 'code',
+          ref,
+          worker: 0,
+          since,
+          action: 'assert',
+          ok: true,
+          message: 'Piwi wrote the check above checkout.spec.ts:5.',
+        });
+      } finally {
+        test.socket.destroy();
+      }
+
+      // Refused once it started: a region whose locator Piwi cannot write; the client hears it as a notice.
+      const notices = svc.notices.length;
+      worker.send({ type: 'region', stop: 1, locator: "getByRole('x')); process.exit(1); ((0", snapshot: '- a' });
+      const refusal = "The region's locator, getByRole('x')); process.exit(1); ((0, is not one Piwi can write.";
+      expect(await waitFor(() => codes()[3])).toEqual({
+        type: 'code',
+        ref,
+        worker: 0,
+        since,
+        action: 'assert-region',
+        ok: false,
+        message: refusal,
+      });
+      expect(await waitFor(() => svc.notices[notices])).toMatchObject({ message: refusal });
+
+      // A refusal its answer carries (the response no longer kept), and the actions that write no code, push nothing.
+      follower.send({ type: 'mock', id: 4, ref, since, request: 9 });
+      await answer(worker, 3, 'mock', { ok: false, message: 'The test kept no such response.', response: null });
+      expect(await follower.reply(4)).toMatchObject({ ok: false });
+      follower.send({ type: 'pick', id: 5, ref, since });
+      await answer(worker, 4, 'pick', { ok: true, message: 'Pick an element.' });
+      await follower.reply(5);
+      await new Promise((r) => setTimeout(r, 100));
+      // Each once, to the follower alone.
+      expect(codes()).toHaveLength(4);
+      expect(bystander.messages.filter((m) => m.type === 'code')).toEqual([]);
+    } finally {
+      worker.socket.destroy();
+      follower.socket.close();
+      bystander.socket.close();
+      svc.stop();
+    }
+  });
+
+  test('lists the responses a test kept with the credentials of their URLs hidden, whatever its reporter hid', async () => {
+    const svc = await service(dir, true, { distDir: dist }, { stopCode: true });
+    const published = await waitFor(() => svc.published[0] ?? undefined);
+    const follower = await hubClient(published.hub!, true);
+    const { ref, worker, since } = await stoppedWorker(svc, 'tests/checkout.spec.ts', 5, true);
+    // As a reporter that hides none of them lists them.
+    const clear = [
+      { ...KEPT, url: 'http://localhost:3000/api/chunked?token=abc123', size: null },
+      { ...KEPT, id: 2, url: 'http://localhost:3000/api/cart?page=2' },
+    ];
+    const hidden = [
+      { ...clear[0], url: 'http://localhost:3000/api/chunked?token=<hidden>' },
+      { ...clear[1], url: 'http://localhost:3000/api/cart?page=2' },
+    ];
+    try {
+      follower.send({ type: 'requests', id: 2, ref, since });
+      await answer(worker, 0, 'requests', { ok: true, message: 'The test kept 2 responses.', requests: clear });
+      expect(await follower.reply(2)).toMatchObject({ ok: true, requests: hidden });
+      const listing = svc.client.sendRequest('piwi/stopRequests', { ref, since }) as Promise<StopRequestsResult>;
+      await answer(worker, 1, 'requests', { ok: true, message: 'The test kept 2 responses.', requests: clear });
+      expect((await listing).requests).toEqual(hidden);
+      expect(JSON.stringify(follower.messages)).not.toContain('abc123');
+    } finally {
+      worker.socket.destroy();
+      follower.socket.close();
+      svc.stop();
+    }
+  });
 });
+
+/** A connection to the hub, as Piwi Picker opens one: hello, and `subscribe` when it follows the runs. */
+async function hubClient(hub: { url: string; token: string }, subscribe: boolean) {
+  const socket = new WebSocket(hub.url, { origin: ORIGIN });
+  const messages: HubMessage[] = [];
+  socket.on('message', (data) => {
+    const message = parseHubMessage(String(data));
+    if (message) messages.push(message);
+  });
+  await new Promise((resolve) => socket.on('open', resolve));
+  const send = (message: object) => socket.send(JSON.stringify(message));
+  const reply = (id: number) => waitFor(() => messages.find((m): m is HubAnswer => m.type === 'answer' && m.id === id));
+  send({ type: 'hello', token: hub.token });
+  await waitFor(() => messages.find((m) => m.type === 'welcome'));
+  if (subscribe) {
+    send({ type: 'subscribe', id: 1 });
+    await reply(1);
+  }
+  return { socket, messages, send, reply };
+}
