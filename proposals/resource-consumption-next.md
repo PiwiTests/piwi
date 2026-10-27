@@ -226,6 +226,9 @@ artifact recorder calls `tracing` internally, so only calls with a user frame co
   more on a noisy runner?
 - Is an opt-in forced collection every N tests (for small worker heap leaks) worth its pause, or does the memory lab
   cover the need?
+- `wrapConfig` sets `trace: 'retain-on-failure'` itself (`CAPTURE_DEFAULTS` in
+  `packages/reporter/src/public/config-wrapper.ts`), the mode idea 1 flags. Does the finding name Piwi's own default,
+  or does Piwi's default move to `on-first-retry` with `screenshots: false`?
 
 ## Not in this plan
 
