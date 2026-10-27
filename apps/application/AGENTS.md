@@ -970,11 +970,13 @@ The engine is `app/composables/useGuide.ts`: `start(run)` takes a `GuideRun` (`a
 language, the stops with their copy, the words of the popover's controls) and opens each stop's route (else its
 anchor's main page when that is a fixed path), runs the anchor's reveal, scrolls the panels holding it and highlights
 it. Before each move it makes (another page, a query value, an `unfold` toggle, an `open` opener) it points at the
-control that makes it for `WAY_MS`, a ring and its label (`piwi-guide-way`): the toggle or the opener, and for a page
-or a tab the first link on the screen leading to the route (`linkMatch`), none when no such link shows. The popover's
-first line (`piwi-guide-path`) says where the stop is: the breadcrumb of the page's navbar, or its title, then the tab
-each query value selects and the control of each reveal step, the segments the move to the stop opened marked
-(`guidePath`). A stop's `points` are listed under its body (`piwi-guide-points`) and numbered on the page
+control that makes it for `WAY_MS`, a ring and its label (`piwi-guide-way`): the toggle or the opener; a link on the
+screen to the route (`linkMatch`), or to its page when the route is on another page; and when no link named the tab
+the move selected, that tab once selected (`role="tab"` with `aria-selected`, or a tab strip's item with
+`aria-current="true"`). A control that does not show gets no pointer. The popover's first line (`piwi-guide-path`)
+says where the stop is: the breadcrumb of the page's navbar without its home level, or its title, then the tab each
+query value of the anchor's reveal selects and the control of each other reveal step, the segments the move to the
+stop opened marked (`guidePath`). A stop's `points` are listed under its body (`piwi-guide-points`) and numbered on the page
 (`piwi-guide-badge`), each badge over its part inside the highlighted element; an item whose part does not render is
 `data-missing`. Its pure parts are in `app/utils/guide/` (`stopRoute`, the `**bold**` markup, `path.ts`). A stop whose anchor does not render
 shows centered, with the anchor's `shownWhen` under its body; an `absent` stop does so at once, without opening a page

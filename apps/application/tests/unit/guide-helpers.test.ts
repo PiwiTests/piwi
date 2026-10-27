@@ -189,7 +189,7 @@ describe('guidePath', () => {
   const seg = (label: string, opened = false) => ({ label, opened });
 
   test('puts the page’s crumbs first, its last one opened when the guide opened the page', () => {
-    expect(guidePath(['Home', 'Projects', 'e2e-checkout'], [seg('Flaky tests', true)], true)).toEqual([
+    expect(guidePath(['Projects', 'e2e-checkout'], [seg('Flaky tests', true)], true)).toEqual([
       seg('Projects'),
       seg('e2e-checkout', true),
       seg('Flaky tests', true),
@@ -201,16 +201,14 @@ describe('guidePath', () => {
     ]);
   });
 
-  test('keeps the Home root alone, and drops empty labels and a label repeating the one before', () => {
-    expect(guidePath(['Home'], [], false)).toEqual([seg('Home')]);
+  test('drops empty labels, and merges a label into the same one kept before it, opened when either is', () => {
     expect(guidePath(['Settings', ' '], [seg('Settings'), seg('AI')], false)).toEqual([seg('Settings'), seg('AI')]);
+    expect(guidePath(['Settings'], [seg('Settings', true)], false)).toEqual([seg('Settings', true)]);
   });
 
   test('folds the first segments into … past four', () => {
     expect(
-      guidePath(['Home', 'Projects', 'e2e-checkout', 'Run #12', 'should pay'], [seg('Source', true)], true).map(
-        (s) => s.label,
-      ),
+      guidePath(['Projects', 'e2e-checkout', 'Run #12', 'should pay'], [seg('Source', true)], true).map((s) => s.label),
     ).toEqual(['…', 'Run #12', 'should pay', 'Source']);
   });
 });

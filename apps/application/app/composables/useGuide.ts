@@ -85,6 +85,8 @@ const WAY_PADDING = 4;
 /** How long the guide points at a control before it uses it; shorter when the user asks for less motion. */
 const WAY_MS = 900;
 const WAY_MS_REDUCED = 600;
+/** A selected tab: a `role="tab"` one, or an item of a tab strip marked as the current one. */
+const SELECTED_TAB = '[role="tab"][aria-selected="true"], [aria-current="true"]';
 /** The links that lead to another page or tab: not a link to a place on the page itself, such as a skip link. */
 const PAGE_LINKS = 'a[href]:not([href^="#"])';
 /** What names a control on the path line and the way's label, the first that holds text. */
@@ -119,10 +121,11 @@ interface GuideMoves {
   clicked: Set<string>;
 }
 
-/** A point's number on the page, over its part. */
+/** A point's number on the page, over its part, and the panels scrolling the part. */
 interface PointBadge {
   part: Element;
   badge: HTMLElement;
+  panels: Element[];
 }
 
 /** A guide in progress; one at a time, in the browser only. */
@@ -264,10 +267,14 @@ async function unfold(run: RunningGuide, section: string): Promise<void> {
   if ((saved ? saved[EXPANDED_AT] : toggle.getAttribute('aria-expanded')) !== 'false') return;
   await pointAt(run, toggle);
   if (running !== run) return;
+  // The page may have drawn the section again while the guide pointed at it.
+  const current = toggle.isConnected ? toggle : document.querySelector(anchorSelector(section));
+  if (!(current instanceof HTMLElement)) return;
+  if (current !== toggle && current.getAttribute('aria-expanded') !== 'false') return;
   run.moves.clicked.add(section);
-  toggle.click();
+  current.click();
   await nextTick();
-  if (saved) saved[EXPANDED_AT] = toggle.getAttribute('aria-expanded');
+  if (saved && current === toggle) saved[EXPANDED_AT] = toggle.getAttribute('aria-expanded');
 }
 
 /**
@@ -279,9 +286,12 @@ async function open(run: RunningGuide, opener: string, target: string): Promise<
   const button = await rendered(anchorSelector(opener), REVEAL_WAIT_MS);
   if (!(button instanceof HTMLElement)) return;
   await pointAt(run, button);
-  if (running !== run) return;
+  if (running !== run || document.querySelector(anchorSelector(target))) return;
+  // The page may have drawn the opener again while the guide pointed at it.
+  const current = button.isConnected ? button : document.querySelector(anchorSelector(opener));
+  if (!(current instanceof HTMLElement)) return;
   run.moves.clicked.add(opener);
-  button.click();
+  current.click();
   await nextTick();
 }
 
@@ -357,16 +367,17 @@ function reducedMotion(): boolean {
 
 /**
  * The part of `element` the user sees, as a viewport box: its box cut by the
- * viewport and by each panel scrolling it; null when nothing of it shows, or
- * when it is hidden or fully transparent.
+ * viewport and by each panel scrolling it (`panels`, looked up when not
+ * given); null when nothing of it shows, or when it is hidden or fully
+ * transparent.
  */
-function visibleBox(element: Element): DOMRect | null {
+function visibleBox(element: Element, panels = scrollPanels(element)): DOMRect | null {
   const box = element.getBoundingClientRect();
   let top = Math.max(box.top, 0);
   let left = Math.max(box.left, 0);
   let bottom = Math.min(box.bottom, window.innerHeight);
   let right = Math.min(box.right, window.innerWidth);
-  for (const panel of scrollPanels(element)) {
+  for (const panel of panels) {
     if (panel === document.scrollingElement) continue;
     const clip = panel.getBoundingClientRect();
     top = Math.max(top, clip.top);
@@ -414,18 +425,34 @@ function screenReaderOnly(element: Element): boolean {
 
 /**
  * The link on the screen that leads to `href`, an absolute URL of the app: a
- * link to the route itself first, else one to its page; null when none shows.
+ * link to the route itself first, else, when `href` is on another page, one
+ * to that page; null when none shows. A link to the page shown would not
+ * select the tab the move selects.
  */
-function wayTo(href: string): HTMLElement | null {
+function wayTo(href: string, otherPage: boolean): { link: HTMLElement; toRoute: boolean } | null {
   let toPage: HTMLElement | null = null;
   for (const link of document.querySelectorAll<HTMLAnchorElement>(PAGE_LINKS)) {
     if (link.closest(`.${POPOVER_CLASS}`)) continue;
     const match = linkMatch(link.href, href);
     if (!match || !visibleBox(link)) continue;
-    if (match === 'route') return link;
-    toPage ??= link;
+    if (match === 'route') return { link, toRoute: true };
+    if (otherPage) toPage ??= link;
   }
-  return toPage;
+  return toPage ? { link: toPage, toRoute: false } : null;
+}
+
+/**
+ * The selected tab nearest `element`: a `role="tab"` one, or a tab strip's
+ * item marked `aria-current="true"` (the pages' `UNavigationMenu` tabs, which
+ * are buttons), looked for in the closest ancestor holding one, else the first
+ * on the page.
+ */
+function selectedTab(element: Element | null): Element | null {
+  for (let node = element?.parentElement; node; node = node.parentElement) {
+    const tab = node.querySelector(SELECTED_TAB);
+    if (tab && !tab.closest(`.${POPOVER_CLASS}`)) return tab;
+  }
+  return document.querySelector(SELECTED_TAB);
 }
 
 /**
@@ -469,13 +496,16 @@ async function pointAt(run: RunningGuide, element: Element | null): Promise<void
 /**
  * The page's breadcrumb, or its title: the navbar of the panel holding
  * `element`, else the first one of the page. A breadcrumb's levels hidden
- * on narrow screens are read too.
+ * on narrow screens are read too; its first level is left out when it links
+ * to `root`, the home page every breadcrumb starts from, and more follow.
  */
-function pageCrumbs(element: Element | null): string[] {
+function pageCrumbs(element: Element | null, root: string): string[] {
   const read = (scope: Element): string[] | null => {
     const navbar = scope.querySelector('[data-slot="left"]:has(ol[data-slot="list"], h1[data-slot="title"])');
     if (!navbar) return null;
     const items = [...navbar.querySelectorAll('ol[data-slot="list"] > li[data-slot="item"]')];
+    const home = items[0]?.querySelector<HTMLAnchorElement>('a[href]');
+    if (items.length > 1 && home && new URL(home.href).pathname === new URL(root).pathname) items.shift();
     if (items.length > 0) return items.map(controlText);
     return [navbar.querySelector('h1[data-slot="title"]')?.textContent ?? ''];
   };
@@ -488,10 +518,9 @@ function pageCrumbs(element: Element | null): string[] {
 
 /**
  * The label of the tab the query value `key=value` selects on the page of
- * `href`: a link to it (a page's tab strip), else, for a value the stop's
- * anchor reveals, the selected tab of the tab list nearest `element`.
+ * `href`: a link to it, else the selected tab nearest `element`.
  */
-function tabLabel(key: string, value: string, href: string, revealed: boolean, element: Element | null): string {
+function tabLabel(key: string, value: string, href: string, element: Element | null): string {
   const page = new URL(href).pathname;
   for (const link of document.querySelectorAll<HTMLAnchorElement>(PAGE_LINKS)) {
     const url = new URL(link.href);
@@ -499,12 +528,8 @@ function tabLabel(key: string, value: string, href: string, revealed: boolean, e
       return controlText(link);
     }
   }
-  if (!revealed) return '';
-  for (let node = element?.parentElement; node && node !== document.body; node = node.parentElement) {
-    const tab = node.querySelector('[role="tab"][aria-selected="true"]');
-    if (tab) return controlText(tab);
-  }
-  return '';
+  const tab = selectedTab(element);
+  return tab ? controlText(tab) : '';
 }
 
 /** The popover's list of a stop's points, numbered, each item naming its part. */
@@ -534,8 +559,8 @@ function clearBadges(run: RunningGuide): void {
 
 /** Puts each number of the stop's points on its part's top left corner, hidden while the part is out of view. */
 function placeBadges(run: RunningGuide): void {
-  for (const { part, badge } of run.badges) {
-    const box = part.isConnected ? visibleBox(part) : null;
+  for (const { part, badge, panels } of run.badges) {
+    const box = part.isConnected ? visibleBox(part, panels) : null;
     const corner = part.getBoundingClientRect();
     const shows = box !== null && box.top <= corner.top + 1 && box.left <= corner.left + 1;
     badge.hidden = !shows;
@@ -567,7 +592,7 @@ function showBadges(run: RunningGuide, element: Element | undefined, points: rea
     badge.setAttribute('aria-hidden', 'true');
     badge.textContent = String(i + 1);
     document.body.append(badge);
-    run.badges.push({ part, badge });
+    run.badges.push({ part, badge, panels: scrollPanels(part) });
     if (!item) return;
     const mark = (on: boolean) => {
       item.classList.toggle(ACTIVE_POINT_CLASS, on);
@@ -687,13 +712,13 @@ export function useGuide() {
    * then highlights the anchor. What it did on the way is kept in `moves`
    * for the stop's path line.
    */
-  async function goTo(run: RunningGuide, index: number): Promise<void> {
+  async function goTo(run: RunningGuide, index: number, again = false): Promise<void> {
     const guideStop = run.guide.stops[index];
     if (running !== run || run.moving || !guideStop) return;
     const anchor = run.anchors[index];
     run.moving = true;
     run.userActed = false;
-    run.moves = noMoves();
+    if (!again) run.moves = noMoves();
     clearBadges(run);
     document.body.classList.add(MOVING_CLASS);
     run.driver?.getState('popover')?.wrapper.removeAttribute(SETTLED_ATTRIBUTE);
@@ -707,9 +732,15 @@ export function useGuide() {
           run.moves.query.add(key);
         }
         if (run.driver?.isActive()) document.body.classList.add(PAGING_CLASS);
-        await pointAt(run, wayTo(new URL(target.href, window.location.origin).href));
+        const way = wayTo(new URL(target.href, window.location.origin).href, run.moves.page);
+        await pointAt(run, way?.link ?? null);
         if (running !== run) return;
         await navigate(run, route);
+        // No link named the tab the move selected: point at it now that it is selected.
+        const revealed = revealQuery(anchor);
+        if (!way?.toRoute && [...run.moves.query].some((key) => key in revealed)) {
+          await pointAt(run, selectedTab(anchor ? document.querySelector(anchorSelector(anchor.id)) : null));
+        }
       }
       if (running === run && anchor) await reveal(run, anchor);
       if (running !== run) return;
@@ -785,7 +816,7 @@ export function useGuide() {
       if (!instance?.isActive() || run.moving || run.travelling || !element) return;
       if (element.id === CENTERED_ELEMENT_ID) return;
       if (!element.isConnected) {
-        void goTo(run, instance.getActiveIndex() ?? 0);
+        void goTo(run, instance.getActiveIndex() ?? 0, true);
         return;
       }
       const { top, left, width, height, bottom } = element.getBoundingClientRect();
@@ -888,20 +919,20 @@ export function useGuide() {
 
   /**
    * The segments of the line saying where stop `index` is: the page's
-   * breadcrumb, the tab each query value of the route selects, then the
-   * section or menu each step of its anchor's reveal unfolds or opens; each
+   * breadcrumb, the tab each query value of its anchor's reveal selects, then
+   * the section or menu each other step of the reveal unfolds or opens; each
    * one the guide opened on its way there is marked.
    */
   function stopPath(run: RunningGuide, index: number, element: Element | null): GuidePathSegment[] {
     const anchor = run.anchors[index];
     const route = router.currentRoute.value;
     const href = new URL(router.resolve(route.fullPath).href, window.location.origin).href;
-    const revealed = revealQuery(anchor);
     const inner: GuidePathSegment[] = [];
-    for (const [key, raw] of Object.entries(route.query)) {
+    for (const key of Object.keys(revealQuery(anchor))) {
+      const raw = route.query[key];
       const value = Array.isArray(raw) ? raw[0] : raw;
       if (typeof value !== 'string') continue;
-      const label = tabLabel(key, value, href, key in revealed, element);
+      const label = tabLabel(key, value, href, element);
       if (label) inner.push({ label, opened: run.moves.page || run.moves.query.has(key) });
     }
     for (const step of anchor?.reveal ?? []) {
@@ -909,7 +940,8 @@ export function useGuide() {
       const found = control ? document.querySelector(anchorSelector(control)) : null;
       if (control && found) inner.push({ label: controlText(found), opened: run.moves.clicked.has(control) });
     }
-    return guidePath(pageCrumbs(element), inner, run.moves.page);
+    const root = new URL(router.resolve('/').href, window.location.origin).href;
+    return guidePath(pageCrumbs(element, root), inner, run.moves.page);
   }
 
   /** The line saying where the stop is, its segments separated by chevrons, the ones the guide opened marked. */

@@ -87,7 +87,7 @@ export const TOUR_PROFILES: readonly TourProfile[] = [
         route: '/projects/1?tab=flaky-tests',
         expect: { project: { id: 1, name: 'e2e-checkout' } },
         anchor: 'flaky-test-row',
-        points: ['wasted', 'score', 'top-suspect', 'quarantine'],
+        points: ['wasted', 'score', 'quarantine', 'top-suspect'],
         side: 'bottom',
         align: 'start',
         doc: 'features/flaky-tests',

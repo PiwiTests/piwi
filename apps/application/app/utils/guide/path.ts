@@ -9,8 +9,6 @@
 const MAX_PATH_SEGMENTS = 4;
 /** The longest a segment's label gets before it ends with `…`. */
 const MAX_LABEL_CHARS = 40;
-/** The breadcrumb's root, which every page shares, so the line leaves it out when more follows. */
-const ROOT_CRUMB = 'Home';
 
 /** One segment of the line. */
 export interface GuidePathSegment {
@@ -27,9 +25,10 @@ export function segmentLabel(text: string): string {
 
 /**
  * The line's segments: the page's crumbs, its last one opened when the guide
- * opened the page, then the tabs and sections inside it. Empty labels and a
- * label repeating the one before are dropped, and so is the `Home` root when
- * more follows; past `MAX_PATH_SEGMENTS`, the first ones fold into one `…`.
+ * opened the page, then the tabs and sections inside it. Empty labels are
+ * dropped, and a label repeating the one kept before it merges into it,
+ * opened when either is; past `MAX_PATH_SEGMENTS`, the first ones fold into
+ * one `…`.
  */
 export function guidePath(
   crumbs: readonly string[],
@@ -41,8 +40,13 @@ export function guidePath(
     ...page.map((label, i) => ({ label, opened: pageOpened && i === page.length - 1 })),
     ...inner.map((segment) => ({ ...segment, label: segmentLabel(segment.label) })),
   ];
-  const kept = all.filter((segment, i) => segment.label && segment.label !== all[i - 1]?.label);
-  if (kept.length > 1 && kept[0]!.label === ROOT_CRUMB) kept.shift();
+  const kept: GuidePathSegment[] = [];
+  for (const segment of all) {
+    const last = kept[kept.length - 1];
+    if (!segment.label) continue;
+    if (last?.label === segment.label) last.opened ||= segment.opened;
+    else kept.push({ ...segment });
+  }
   if (kept.length <= MAX_PATH_SEGMENTS) return kept;
   return [{ label: '…', opened: false }, ...kept.slice(kept.length - MAX_PATH_SEGMENTS + 1)];
 }
