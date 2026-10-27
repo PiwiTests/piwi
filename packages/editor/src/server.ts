@@ -61,7 +61,6 @@ import {
   breakpointsNotice,
   breaksByAnchor,
   breaksOfChange,
-  callEndLine,
   callsLocatorsFrom,
   filePages,
   flakeLabLens,
@@ -435,17 +434,9 @@ interface PlacerSeed {
   placed: ReadonlyMap<Placeable, Placement | null>;
 }
 
-/** The `test(…)` call spanning a 0-based line of a file's lines: the line it starts on and its title; else null. */
-function testCallAt(lines: string[], line: number): { line: number; title: string } | null {
-  for (let i = 0; i <= Math.min(line, lines.length - 1); i++) {
-    const m = TEST_CALL.exec(lines[i]!);
-    if (!m) continue;
-    const open = lines[i]!.indexOf('(', m.index);
-    const end = (open >= 0 ? callEndLine(lines, i, open) : null) ?? i;
-    if (end >= line) return { line: i, title: m[2]! };
-    i = end;
-  }
-  return null;
+/** The `test(…)` call spanning a 0-based line of a file's lines, the outermost when calls nest; else null. */
+function testCallAt(lines: string[], line: number): TestCall | null {
+  return testCalls(lines).find((call) => call.line <= line && call.endLine >= line) ?? null;
 }
 
 /** The titles of the `test(…)` calls of a file's text. */
@@ -1856,12 +1847,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (isTestCode(context, relative)) {
       appAnalyses.delete(document.uri);
       if (SPEC_FILE.test(relative!) && context.timeouts.size) {
-        const cases = new Map((await context.casesOf(relative!)).map((c) => [c.title, c]));
-        lines.forEach((text, i) => {
-          const m = TEST_CALL.exec(text);
-          const found = m ? cases.get(m[2]!) : undefined;
+        const cases = await context.casesOf(relative!);
+        for (const call of testCalls(lines)) {
+          const found = caseOfCall(cases, call);
           const advice = found ? context.timeouts.get(found.id) : undefined;
-          if (!advice) return;
+          if (!advice) continue;
+          const i = call.line;
+          const text = lines[i]!;
           const start = text.length - text.trimStart().length;
           diagnostics.push({
             range: { start: { line: i, character: start }, end: { line: i, character: text.trimEnd().length } },
@@ -1871,7 +1863,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             message: timeoutMessage(advice),
             data: { testCaseId: advice.testCaseId, line: i },
           });
-        });
+        }
       }
       for (const finding of stabilityFindings(locatorsInFile(context.index, relative!))) {
         const text = lines[finding.line - 1] ?? '';
@@ -2965,7 +2957,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!file || !context || !relative || !SPEC_FILE.test(relative)) return none;
     const call = testCallAt((readText(file) ?? '').split(/\r?\n/), params.line);
     const cases = await context.casesOf(relative);
-    const found = call ? new Map(cases.map((c) => [c.title, c])).get(call.title) : undefined;
+    const found = call ? caseOfCall(cases, call) : undefined;
     return {
       test: found ? caseToEditorTest(context, found) : null,
       spec: cases.length ? { uri: params.uri, testIds: cases.map((c) => c.id) } : null,
