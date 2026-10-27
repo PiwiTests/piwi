@@ -467,6 +467,7 @@ describe('hand-written reference pages match the code', () => {
     codegen: '`codegen`',
     preflight: '`preflight`',
     coverage: '`coverage`',
+    bug: '`bug`',
   };
 
   test.each(Object.entries(CLI_COMMANDS))('every flag of %s --help is in the Piwi CLI reference', (source, heading) => {

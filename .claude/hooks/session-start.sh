@@ -32,8 +32,8 @@ quietly() {
 
 # The repository pins its Node major in .node-version (CI, engines). Another Node still runs most checks, so this
 # warns rather than stops: a failure caused by the version then reads as one.
-wanted_node="$(cat .node-version)"
-if [ "$(node -p 'process.versions.node.split(".")[0]')" != "$wanted_node" ]; then
+wanted_node="$(cut -d . -f 1 .node-version 2>/dev/null | tr -d 'v \r' || true)"
+if [ -n "$wanted_node" ] && [ "$(node -p 'process.versions.node.split(".")[0]')" != "$wanted_node" ]; then
   echo "[session-start] WARNING: Node $(node --version) runs this session; the repository pins Node $wanted_node (.node-version)"
 fi
 
@@ -54,19 +54,23 @@ else
   echo "$installed" > "$stamp"
 fi
 
-# The build takes ~10s, mostly the type declarations, so a resumed session skips it while no input of the bundle
-# (the reporter, the core and picker-dom sources it inlines, the tsconfig it extends, the installed dependencies)
-# changed since the last one.
-# tsup cleans dist/ first, so a build that failed leaves no stamp and runs again.
-build_stamp="packages/reporter/dist/.session-start-build"
-if [ -f "$build_stamp" ] && [ -z "$(find packages/reporter/src packages/reporter/package.json \
-  packages/reporter/tsconfig.json packages/reporter/tsup.config.ts tsconfig.json packages/core/src packages/picker-dom/src \
-  "$stamp" -newer "$build_stamp" -print -quit)" ]; then
+# The build takes ~10s, mostly the type declarations, so a resumed session skips it while its output is there and no
+# input of the bundle changed since the last one: the reporter, the core and picker-dom sources and manifests it
+# inlines, the tsconfig it extends, the installed dependencies. The stamp lives outside dist/ (tsup's clean leaves dot
+# files, and dist/ is what npm packs), is taken before the build so an edit made during it still counts, and is kept
+# only once the build succeeded.
+build_stamp="node_modules/.cache/piwi-session-start/reporter-build"
+if [ -f "$build_stamp" ] && [ -f packages/reporter/dist/index.js ] && [ -f packages/reporter/dist/index.d.ts ] &&
+  [ -z "$(find packages/reporter/src packages/reporter/package.json packages/reporter/tsconfig.json \
+    packages/reporter/tsup.config.ts tsconfig.json packages/core/src packages/core/package.json \
+    packages/picker-dom/src packages/picker-dom/package.json "$stamp" -newer "$build_stamp" -print -quit)" ]; then
   echo "[session-start] the reporter build is up to date; skipping it"
 else
   echo "[session-start] building the reporter (playwright.config.ts imports it)"
+  mkdir -p "$(dirname "$build_stamp")"
+  touch "$build_stamp.next"
   quietly npm run reporter:build --workspace packages/reporter
-  touch "$build_stamp"
+  mv "$build_stamp.next" "$build_stamp"
 fi
 
 # Prefer the browser Playwright pins: the full Chromium as well as the headless

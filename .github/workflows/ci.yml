@@ -58,6 +58,7 @@ jobs:
       jetbrains: ${{ steps.filter.outputs.jetbrains == 'true' || steps.filter.outputs.ci == 'true' }}
       desktop: ${{ steps.filter.outputs.desktop == 'true' || steps.filter.outputs.ci == 'true' }}
       docs: ${{ steps.filter.outputs.docs == 'true' || steps.filter.outputs.ci == 'true' }}
+      guides: ${{ steps.filter.outputs.guides == 'true' || steps.filter.outputs.ci == 'true' }}
       dotnet: ${{ steps.filter.outputs.dotnet == 'true' || steps.filter.outputs.ci == 'true' }}
       nitro: ${{ steps.filter.outputs.nitro == 'true' || steps.filter.outputs.ci == 'true' }}
       container: ${{ steps.filter.outputs.app == 'true' || steps.filter.outputs.container == 'true' || steps.filter.outputs.ci == 'true' }}
@@ -80,6 +81,13 @@ jobs:
               - '.github/workflows/**'
               - '.github/actions/**'
               - '.node-version'
+            # The agent guides and the design records they link to, which the checks job's paths leave out.
+            guides:
+              - '**/AGENTS.md'
+              - '**/ARCHITECTURE.md'
+              - '**/CLAUDE.md'
+              - 'adr/**'
+              - 'proposals/**'
             app:
               - 'apps/application/**'
               - 'apps/docs/**'
@@ -757,6 +765,26 @@ jobs:
         working-directory: apps/docs
         run: npm run docs:build
 
+  # The checks job runs the agent guides' test with every unit test; a change to the guides alone runs it here.
+  guides:
+    name: Agent guides
+    needs: changes
+    if: needs.changes.outputs.guides == 'true' && needs.changes.outputs.js != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The install runs nuxt prepare, which writes the .nuxt/ tsconfigs the dashboard's Vitest config extends.
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Check the agent guides
+        working-directory: apps/application
+        run: npx vitest run tests/unit/agent-guides.test.ts
+
   extension:
     name: Extension E2E
     needs: changes
@@ -855,7 +883,7 @@ jobs:
   ci-result:
     name: CI result
     if: ${{ !cancelled() }}
-    needs: [versions, changes, build, checks, e2e, measure, package-smoke, demo, aspnet, nitro, container, docs, extension, vscode, jetbrains, desktop, perf-base, perf]
+    needs: [versions, changes, build, checks, e2e, measure, package-smoke, demo, aspnet, nitro, container, docs, guides, extension, vscode, jetbrains, desktop, perf-base, perf]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 

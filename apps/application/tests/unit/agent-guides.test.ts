@@ -1,7 +1,9 @@
 import { describe, test, expect } from 'vitest';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, posix } from 'node:path';
+import { lexer, walkTokens, type Token, type Tokens } from 'marked';
 
 // The agent guides (`AGENTS.md`) are read before every edit in their directory,
 // so their size is paid on every task. The rules for them are in the root
@@ -15,57 +17,80 @@ const GUIDE_LIMIT = 30_000;
 /** The file Claude Code loads, which imports the guide beside it. */
 const CLAUDE_IMPORT = '@AGENTS.md\n';
 
-const SKIPPED_DIRS = new Set(['node_modules', 'dist', 'build', 'target', 'out', 'templates']);
+/** Every file git tracks or would add, as CI's checkout holds them: gitignored and generated files are left out. */
+const repoFiles: string[] = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {
+  cwd: repoRoot,
+  encoding: 'utf8',
+  maxBuffer: 64 * 1024 * 1024,
+})
+  .split('\0')
+  .filter(Boolean);
+const fileSet = new Set(repoFiles);
+const dirSet = new Set(
+  repoFiles.flatMap((file) =>
+    file
+      .split('/')
+      .slice(0, -1)
+      .map((_, i, parts) => parts.slice(0, i + 1).join('/')),
+  ),
+);
 
-/** The agent guides and the architecture maps beside them, relative to the repository root. */
-const files: string[] = (function walk(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    if (entry.isDirectory()) {
-      if (SKIPPED_DIRS.has(entry.name) || (entry.name.startsWith('.') && entry.name !== '.github')) return [];
-      return walk(join(dir, entry.name));
-    }
-    return ['AGENTS.md', 'ARCHITECTURE.md'].includes(entry.name) ? [relative(repoRoot, join(dir, entry.name))] : [];
-  });
-})(repoRoot);
-const guides = files.filter((file) => file.endsWith('AGENTS.md'));
-const maps = files.filter((file) => file.endsWith('ARCHITECTURE.md'));
+const named = (name: string) => repoFiles.filter((file) => posix.basename(file) === name);
+const guides = named('AGENTS.md');
+const maps = named('ARCHITECTURE.md');
+const claudeFiles = named('CLAUDE.md');
 
 const read = (path: string) => readFileSync(join(repoRoot, path), 'utf8');
 
-/** GitHub's heading anchor: lower case, punctuation dropped, spaces as hyphens, `-1` on a repeat. */
+/** The text a heading renders, without its Markdown. */
+function plainText(tokens: Token[] = []): string {
+  return tokens
+    .map((token) => ('tokens' in token && token.tokens ? plainText(token.tokens) : 'text' in token ? token.text : ''))
+    .join('');
+}
+
+/** GitHub's heading anchors: lower case, punctuation dropped, spaces as hyphens, `-1` on a repeat. */
 function anchorsOf(markdown: string): Set<string> {
   const anchors = new Set<string>();
   const seen = new Map<string, number>();
-  let fenced = false;
-  for (const line of markdown.split('\n')) {
-    if (line.startsWith('```')) fenced = !fenced;
-    const heading = !fenced && /^#{1,6} (.+)$/.exec(line);
-    if (!heading) continue;
-    const base = heading[1]
+  walkTokens(lexer(markdown), (token) => {
+    if (token.type !== 'heading') return;
+    const base = plainText((token as Tokens.Heading).tokens)
       .trim()
       .toLowerCase()
-      .replace(/[^\p{L}\p{N}\s_-]/gu, '')
+      .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, '')
       .replace(/ /g, '-');
     const count = seen.get(base) ?? 0;
     seen.set(base, count + 1);
     anchors.add(count ? `${base}-${count}` : base);
-  }
+  });
   return anchors;
 }
 
-/** Relative Markdown links outside code blocks and code spans: `[text](target)`. */
+/** The relative links of a Markdown file, inline or by reference, outside code. */
 function linksOf(markdown: string): string[] {
-  const prose = markdown.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '');
-  return [...prose.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => match[1]).filter((target) => !/^[a-z]+:/i.test(target));
+  const links: string[] = [];
+  walkTokens(lexer(markdown), (token) => {
+    if (token.type === 'link' && !/^[a-z][a-z0-9+.-]*:/i.test(token.href)) links.push(token.href);
+  });
+  return links;
 }
 
-/** The relative links of a Markdown file whose file or heading does not exist. */
+/** A link's target as a path from the repository root: `/x` is the root's, anything else is the source's. */
+function targetOf(source: string, link: string): { path: string; anchor: string | undefined } {
+  const [rawPath = '', anchor] = link.split('#');
+  const path = decodeURIComponent(rawPath);
+  if (!path) return { path: source, anchor };
+  const joined = path.startsWith('/') ? path.slice(1) : posix.join(posix.dirname(source), path);
+  return { path: posix.normalize(joined).replace(/\/$/, ''), anchor };
+}
+
+/** The relative links of a Markdown file whose file, folder or heading does not exist in the repository. */
 function brokenLinks(source: string): string[] {
-  return linksOf(read(source)).filter((target) => {
-    const [path, anchor] = target.split('#');
-    const file = path ? resolve(repoRoot, dirname(source), path) : join(repoRoot, source);
-    if (!existsSync(file)) return true;
-    return Boolean(anchor) && file.endsWith('.md') && !anchorsOf(readFileSync(file, 'utf8')).has(anchor);
+  return linksOf(read(source)).filter((link) => {
+    const { path, anchor } = targetOf(source, link);
+    if (!fileSet.has(path) && !dirSet.has(path)) return true;
+    return anchor !== undefined && path.endsWith('.md') && !anchorsOf(read(path)).has(anchor);
   });
 }
 
@@ -84,22 +109,17 @@ describe.each(guides)('%s', (guide) => {
     ).toBeLessThanOrEqual(limit);
   });
 
-  test('has a CLAUDE.md beside it that imports it', () => {
-    const claude = join(dirname(guide), 'CLAUDE.md');
-    expect(existsSync(join(repoRoot, claude)), `${claude} is missing: Claude Code reads CLAUDE.md, not AGENTS.md`).toBe(
-      true,
-    );
-    expect(read(claude), `${claude} must contain only the import of its AGENTS.md`).toBe(CLAUDE_IMPORT);
+  test('has a CLAUDE.md beside it', () => {
+    const claude = posix.join(posix.dirname(guide), 'CLAUDE.md');
+    expect(fileSet.has(claude), `${claude} is missing: Claude Code reads CLAUDE.md, not AGENTS.md`).toBe(true);
   });
 
   test('is linked from the guide of the nearest directory above it', () => {
     if (guide === 'AGENTS.md') return;
-    let parent = dirname(dirname(guide));
-    while (parent !== '.' && !existsSync(join(repoRoot, parent, 'AGENTS.md'))) parent = dirname(parent);
-    const parentGuide = join(parent, 'AGENTS.md');
-    const linked = linksOf(read(parentGuide)).some(
-      (target) => resolve(repoRoot, parent, target.split('#')[0]) === resolve(repoRoot, guide),
-    );
+    let parent = posix.dirname(posix.dirname(guide));
+    while (parent !== '.' && !fileSet.has(posix.join(parent, 'AGENTS.md'))) parent = posix.dirname(parent);
+    const parentGuide = posix.join(parent, 'AGENTS.md');
+    const linked = linksOf(read(parentGuide)).some((link) => targetOf(parentGuide, link).path === guide);
     expect(linked, `${parentGuide} lists no link to ${guide}`).toBe(true);
   });
 
@@ -111,5 +131,13 @@ describe.each(guides)('%s', (guide) => {
 describe.each(maps)('%s', (map) => {
   test('links only to files and headings that exist', () => {
     expect(brokenLinks(map), `${map} links to a missing file or heading`).toEqual([]);
+  });
+});
+
+describe.each(claudeFiles)('%s', (claude) => {
+  test('only imports the guide beside it', () => {
+    expect(read(claude), `${claude} must contain only the import of its AGENTS.md`).toBe(CLAUDE_IMPORT);
+    const guide = posix.join(posix.dirname(claude), 'AGENTS.md');
+    expect(fileSet.has(guide), `${claude} imports ${guide}, which does not exist`).toBe(true);
   });
 });

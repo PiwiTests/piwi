@@ -29,7 +29,7 @@ export default defineConfig({
   // that loads it for Claude Code; neither is a page of the site: the guide
   // links to sibling guides outside the docs root, so building it as a page
   // both publishes the wrong thing and fails the dead-link check.
-  srcExclude: ['AGENTS.md', 'CLAUDE.md'],
+  srcExclude: ['**/AGENTS.md', '**/CLAUDE.md'],
   // Example values in the generated configuration reference (PIWI_SITE_URL,
   // Ollama base URLs) are intentionally unreachable localhost URLs.
   ignoreDeadLinks: [/^https?:\/\/localhost/],
