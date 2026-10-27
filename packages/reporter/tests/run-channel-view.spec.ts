@@ -14,7 +14,7 @@ import {
   type HandoffToTest,
 } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
-import { MAX_VIEW_FPS, type ViewInput } from '@piwitests/core/run-view';
+import { MAX_VIEW_FPS, MAX_VIEW_FRAME, type ViewInput } from '@piwitests/core/run-view';
 import { jsonRes, startServer, type FakeServer } from './_helpers.js';
 
 /**
@@ -154,6 +154,33 @@ test('picked on a sharper image', async ({ page }) => {
 });
 `;
 
+/**
+ * A page of noise, which no JPEG makes small: at 1280 by 720 its frames are over the view's limit, a lighter image
+ * of it not; at 1920 by 1080, with a video recorded at that size, the lighter image is over it too.
+ */
+const NOISY = (width: number, height: number) => `<!doctype html><style>body { margin: 0 }</style>
+<button id="go" style="position:absolute;left:10px;top:10px">Go</button><canvas id="c" width="${width}" height="${height}"></canvas>
+<script>
+const context = document.getElementById('c').getContext('2d');
+const noise = context.createImageData(${width}, ${height});
+for (let i = 0; i < noise.data.length; i++) noise.data[i] = i % 4 === 3 ? 255 : Math.random() * 255;
+context.putImageData(noise, 0, 0);
+</script>`;
+
+const HEAVY_SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
+test('watched on a page too heavy for its frames', async ({ page }) => {
+  await page.goto('${base}/noisy');
+  await expect(page.locator('#go')).toBeVisible(); // bp
+});
+`;
+
+const HEAVIER_SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
+test('watched on a page too heavy for a lighter image', async ({ page }) => {
+  await page.goto('${base}/noisier');
+  await expect(page.locator('#go')).toBeVisible(); // bp
+});
+`;
+
 const FIREFOX_SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
 test('watched in Firefox', async ({ page }) => {
   await page.goto('${base}/animated');
@@ -240,6 +267,8 @@ const images: Record<string, { width?: number; height?: number; data: string } |
 /** Where a client showing the image of a page with a device scale factor of 2 clicked, and the point it sent. */
 const sharp: { natural?: { width: number; height: number } | null; clicked?: Point; sent?: Point } = {};
 const watched: Record<string, { frames: number; bytes: number; ms: number; firstJpeg: Buffer | null }> = {};
+/** What the view of a page too heavy for a lighter image said, each time. */
+const heavy: { refusals?: string[] } = {};
 interface DumpedStep {
   title: string;
   steps: DumpedStep[];
@@ -281,11 +310,17 @@ async function ask(connection: Connection, message: Record<string, unknown> & { 
   return (answer.message as { value: Answered }).value;
 }
 
+type FrameHeard = Extract<RunToHub, { type: 'frame'; data: string }>;
+
 const frames = (connection: Connection, stop: number) =>
-  connection.heard.filter(({ message: m }) => m.type === 'frame' && m.stop === stop) as Array<{
+  connection.heard.filter(({ message: m }) => m.type === 'frame' && m.stop === stop && 'data' in m) as Array<{
     at: number;
-    message: Extract<RunToHub, { type: 'frame' }>;
+    message: FrameHeard;
   }>;
+
+/** Why the view of a stop sent no frame, each time it said so. */
+const refusals = (connection: Connection, stop: number) =>
+  connection.heard.flatMap(({ message: m }) => (m.type === 'frame' && m.stop === stop && 'refused' in m ? [m] : []));
 
 const click = (at: Point): ViewInput[] => [
   { type: 'mouse', action: 'move', x: at.x, y: at.y },
@@ -380,6 +415,17 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
     } else if (test === 'recorded on video while watched') {
       answers.push(await view(true));
       await watch(WATCH_MS);
+    } else if (test === 'watched on a page too heavy for its frames') {
+      answers.push(await view(true));
+      await waitFor(() => frames(connection, stop.stop).length > 0, 5000);
+      await watch(500);
+    } else if (test === 'watched on a page too heavy for a lighter image') {
+      answers.push(await view(true));
+      await waitFor(() => refusals(connection, stop.stop).length > 0, 5000);
+      // The page paints again: it is said once.
+      answers.push(await play([{ type: 'mouse', action: 'move', x: 600, y: 300 }]));
+      await watch(1000);
+      heavy.refusals = refusals(connection, stop.stop).map((m) => m.refused);
     }
   } catch (error) {
     answers.push({ ok: false, message: `the editor gave up: ${String(error)}` });
@@ -483,6 +529,8 @@ beforeAll(async () => {
       return jsonRes(res, 200, { inserted: true, file: null });
     }
     res.writeHead(200, { 'content-type': 'text/html' });
+    if (url.pathname === '/noisy') return res.end(NOISY(1280, 720));
+    if (url.pathname === '/noisier') return res.end(NOISY(1920, 1080));
     res.end(PAGE(url.pathname === '/animated'));
   });
 
@@ -490,6 +538,8 @@ beforeAll(async () => {
   write('tests/headed.spec.cjs', HEADED_SPEC(server.url));
   write('tests/video.spec.cjs', VIDEO_SPEC(server.url));
   write('tests/sharp.spec.cjs', SHARP_SPEC(server.url));
+  write('tests/heavy.spec.cjs', HEAVY_SPEC(server.url));
+  write('tests/heavier.spec.cjs', HEAVIER_SPEC(server.url));
   write('tests/firefox.spec.cjs', FIREFOX_SPEC(server.url));
   write(
     'fixture.cjs',
@@ -516,7 +566,9 @@ module.exports = defineConfig({
     { name: 'headed', testMatch: 'headed.spec.cjs', use: ${headed}, dependencies: ['headless'] },
     { name: 'video', testMatch: 'video.spec.cjs', use: { headless: true, video: 'on' }, dependencies: ['headed'] },
     { name: 'sharp', testMatch: 'sharp.spec.cjs', use: { headless: true, deviceScaleFactor: 2 }, dependencies: ['video'] },
-    ${FIREFOX ? "{ name: 'firefox', testMatch: 'firefox.spec.cjs', use: { browserName: 'firefox', headless: true }, dependencies: ['sharp'] }," : ''}
+    { name: 'heavy', testMatch: 'heavy.spec.cjs', use: { headless: true, viewport: { width: 1280, height: 720 } }, dependencies: ['sharp'] },
+    { name: 'heavier', testMatch: 'heavier.spec.cjs', use: { headless: true, viewport: { width: 1920, height: 1080 }, video: { mode: 'on', size: { width: 1920, height: 1080 } } }, dependencies: ['heavy'] },
+    ${FIREFOX ? "{ name: 'firefox', testMatch: 'firefox.spec.cjs', use: { browserName: 'firefox', headless: true }, dependencies: ['heavier'] }," : ''}
   ],
 });
 `,
@@ -539,6 +591,8 @@ module.exports = defineConfig({
       breakpoints('headed.spec.cjs', HEADED_SPEC(server.url)),
       breakpoints('video.spec.cjs', VIDEO_SPEC(server.url)),
       breakpoints('sharp.spec.cjs', SHARP_SPEC(server.url)),
+      breakpoints('heavy.spec.cjs', HEAVY_SPEC(server.url)),
+      breakpoints('heavier.spec.cjs', HEAVIER_SPEC(server.url)),
       breakpoints('firefox.spec.cjs', FIREFOX_SPEC(server.url)),
     ].join(';'),
   };
@@ -591,6 +645,8 @@ describe('the live view of a stopped page', () => {
       ['watched at a headed stop', 'passed', []],
       ['recorded on video while watched', 'passed', []],
       ['picked on a sharper image', 'passed', []],
+      ['watched on a page too heavy for its frames', 'passed', []],
+      ['watched on a page too heavy for a lighter image', 'passed', []],
       ...(FIREFOX ? [['watched in Firefox', 'passed', []]] : []),
     ]);
     expect(connections[0]!.heard[0]!.message).toMatchObject({
@@ -611,6 +667,11 @@ describe('the live view of a stopped page', () => {
   });
 
   it('sends frames of the stop it watches alone, at most the view’s pace, and none once the stop ended', () => {
+    // Each frame names the viewport of its page: the noisy pages' own, else the config's.
+    const viewports: Record<string, { width: number; height: number }> = {
+      'watched on a page too heavy for its frames': { width: 1280, height: 720 },
+      'watched on a page too heavy for a lighter image': { width: 1920, height: 1080 },
+    };
     for (const connection of connections) {
       const running = new Map(
         connection.heard.flatMap(({ at, message }) => (message.type === 'running' ? [[message.stop, at]] : [])),
@@ -618,8 +679,10 @@ describe('the live view of a stopped page', () => {
       for (const { at, message } of connection.heard) {
         if (message.type !== 'frame') continue;
         expect(running.get(message.stop) ?? Infinity, `a frame of stop ${message.stop}`).toBeGreaterThanOrEqual(at);
-        expect(message.width).toBe(1000);
-        expect(message.height).toBe(640);
+        if (!('data' in message)) continue;
+        expect({ width: message.width, height: message.height }).toEqual(
+          viewports[connection.test!] ?? { width: 1000, height: 640 },
+        );
       }
     }
     const held = watched['held past its timeout while watched']!;
@@ -739,6 +802,18 @@ describe('the live view of a stopped page', () => {
     // The view names the same viewport, whatever its frames' own size.
     const seen = watched['picked on a sharper image']!;
     expect(seen.firstJpeg && jpegSize(seen.firstJpeg)).toEqual({ width: 1000, height: 640 });
+  });
+
+  it('shows a lighter image of a page whose frames are too long, and says once why none goes when it is too', () => {
+    expect(said['watched on a page too heavy for its frames']).toEqual([ON]);
+    const lighter = watched['watched on a page too heavy for its frames']!;
+    expect(lighter.firstJpeg!.length).toBeLessThanOrEqual(MAX_VIEW_FRAME);
+    expect(jpegSize(lighter.firstJpeg!)).toEqual({ width: 1280, height: 720 });
+    expect(said['watched on a page too heavy for a lighter image']).toEqual([ON, { ok: true, message: 'Played 1 event.' }]);
+    expect(heavy.refusals).toEqual([
+      'This page is too heavy for the live view: each image of it is over 384 KB, a lighter one included. The image of the stop still shows it.',
+    ]);
+    expect(watched['watched on a page too heavy for a lighter image']!.frames).toBe(0);
   });
 
   it.skipIf(!FIREFOX)('shows a page in Firefox, its frames at the view’s pace', () => {

@@ -245,6 +245,12 @@ export type RunToHub =
    */
   | { type: 'frame'; stop: number; width: number; height: number; data: string }
   /**
+   * The live view of the stop `stop` sends no frame now, and why (`refused`, at most 500 characters): each image of the
+   * page is longer than `MAX_VIEW_FRAME`, a lighter one included. Sent once until a frame goes again; a side that
+   * predates it reads none, and its viewers wait for a frame.
+   */
+  | { type: 'frame'; stop: number; refused: string }
+  /**
    * At the stop `stop`, after `assert-region`: the region picked in the test's window, as the locator the person
    * confirmed, and its ARIA snapshot (`locator.ariaSnapshot()`), at most `MAX_REGION_SNAPSHOT` characters; or why no
    * snapshot came of the region picked (`refused`: its locator finds several elements, its snapshot is too long).
@@ -543,7 +549,10 @@ export function parseRunToHub(line: string): RunToHub | null {
       return { type: 'answer', request, what, value: image };
     }
     case 'frame': {
-      const { stop, width, height, data } = value;
+      const { stop, width, height, data, refused } = value;
+      if (isInt(stop, 1) && typeof refused === 'string' && refused.trim()) {
+        return { type: 'frame', stop, refused: refused.slice(0, 500) };
+      }
       if (!isInt(stop, 1) || !isViewSize(width, height) || !isViewFrameData(data)) return null;
       return { type: 'frame', stop, width: width as number, height: height as number, data };
     }

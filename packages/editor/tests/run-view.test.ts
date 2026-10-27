@@ -11,7 +11,14 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { WebSocket } from 'ws';
 import { RUN_TAKES, type HubToRun, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
-import { parseHubMessage, type HubAnswer, type HubMessage, type HubSession } from '@piwitests/core/run-hub';
+import {
+  parseHubMessage,
+  type HubAnswer,
+  type HubFrameMessage,
+  type HubFrameRefusal,
+  type HubMessage,
+  type HubSession,
+} from '@piwitests/core/run-hub';
 import { MAX_VIEW_EVENT_RATE, MAX_VIEW_FRAME_BASE64 } from '@piwitests/core/run-view';
 import type { PickAtResult, RunSession } from '../src/protocol';
 import { RunSessions, type ViewFrame, type Viewer } from '../src/run-sessions';
@@ -347,7 +354,8 @@ describe('the live view on the hub', () => {
     send(message: object): void;
     answer(id: number): Promise<HubAnswer>;
     session(ref: string): HubSession | undefined;
-    frames(): Extract<HubMessage, { type: 'frame' }>[];
+    frames(): HubFrameMessage[];
+    refusals(): HubFrameRefusal[];
   }
 
   async function paired(): Promise<Client> {
@@ -367,7 +375,8 @@ describe('the live view on the hub', () => {
         messages
           .filter((m): m is Extract<HubMessage, { type: 'session' }> => m.type === 'session' && m.session.ref === ref)
           .pop()?.session,
-      frames: () => messages.filter((m): m is Extract<HubMessage, { type: 'frame' }> => m.type === 'frame'),
+      frames: () => messages.filter((m): m is HubFrameMessage => m.type === 'frame' && 'data' in m),
+      refusals: () => messages.filter((m): m is HubFrameRefusal => m.type === 'frame' && 'refused' in m),
     };
     client.send({ type: 'hello', token: hub.token });
     await waitFor(() => messages.find((m) => m.type === 'welcome'));
@@ -440,6 +449,29 @@ describe('the live view on the hub', () => {
       await new Promise((r) => setTimeout(r, 250));
       expect(a.frames().map((f) => f.data)).not.toContain('/9j/31A==');
       expect(a.frames().map((f) => f.data)).not.toContain('/9j/30A==');
+    } finally {
+      worker.socket.destroy();
+      a.socket.close();
+      b.socket.close();
+    }
+  });
+
+  test('tells the connections that watch a stop why its view sends no frame, as a frame goes', async () => {
+    const [a, b] = [await paired(), await paired()];
+    const { ref, worker, since } = await stopped(a);
+    try {
+      a.send({ type: 'view', id: 2, ref, since, on: true });
+      await answerLatest(worker, 'view', { ok: true, message: 'The live view is on.' });
+      await a.answer(2);
+      const refused = 'This page is too heavy for the live view.';
+      worker.send({ type: 'frame', stop: 1, refused });
+      expect(await waitFor(() => a.refusals()[0])).toEqual({ type: 'frame', ref, worker: 0, since, refused });
+      // Then a frame takes its place.
+      worker.send({ type: 'frame', stop: 1, width: 1280, height: 720, data: '/9j/AA==' });
+      await waitFor(() => a.frames()[0]);
+      await new Promise((r) => setTimeout(r, 150));
+      expect(b.refusals()).toEqual([]);
+      expect(b.frames()).toEqual([]);
     } finally {
       worker.socket.destroy();
       a.socket.close();

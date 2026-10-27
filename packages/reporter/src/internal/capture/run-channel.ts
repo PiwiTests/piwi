@@ -76,6 +76,12 @@ const WENT_ON = 'The test went on.';
 const MAX_FRAME_BACKLOG = 1024 * 1024;
 /** How often a view that cannot use the page's screencast takes an image of the page instead. */
 const SHOT_MS = 500;
+/** The JPEG quality of the image a view sends in place of a frame longer than `MAX_VIEW_FRAME`, `SHOT_MS` apart. */
+const LIGHT_QUALITY = 30;
+/** Why a view sends no frame: each image of the page is too long, the lighter one included. */
+const TOO_HEAVY =
+  `This page is too heavy for the live view: each image of it is over ${MAX_VIEW_FRAME / 1024} KB, a lighter one ` +
+  'included. The image of the stop still shows it.';
 /** How long ending a view, and the input it plays, may take before its stop ends without waiting for them. */
 const VIEW_END_MS = 1000;
 /** How long starting a view, and a pick on an image, may take before the editor hears that the page did not answer. */
@@ -484,26 +490,57 @@ interface Frame {
  * later one gets; its own end leaves that client as it is. Its frames are acknowledged at the view's pace
  * (`FrameAcks`), one held at a time. Where the screencast cannot start (the test runs one
  * itself), an image of the page every `SHOT_MS`. Each frame goes to the editor as `frame`: a frame the same as the one
- * before, or longer than `MAX_VIEW_FRAME`, is dropped, and the others go at most `MAX_VIEW_FPS` a second, the latest
- * one when the connection is backed up. Null when the page cannot be read.
+ * before is dropped; one longer than `MAX_VIEW_FRAME` is too, an image of the page at `LIGHT_QUALITY` taken in its
+ * place, one at a time and `SHOT_MS` apart, and when that one is too long as well, the viewers hear once why no frame
+ * goes (`frame` with `refused`), until a frame goes again. They go at most `MAX_VIEW_FPS` a second, the latest one
+ * when the connection is backed up. Null when the page cannot be read.
  */
 async function openView(page: Page, stop: number): Promise<View | null> {
   const viewport = await viewportOf(page);
   if (!viewport) return null;
   let closed = false;
   let last: Buffer | null = null;
+  /** Whether the viewers heard that no frame goes, since the last frame that went. */
+  let refused = false;
   const pacer = new LatestPacer<Frame>({
     intervalMs: 1000 / MAX_VIEW_FPS,
     busy: () => !!socket && socket.writableLength > MAX_FRAME_BACKLOG,
     send: (frame) => {
       // Once its stop began to end, no frame of it goes.
       if (held?.stop !== stop) return;
+      refused = false;
       tellHub({ type: 'frame', stop, width: frame.width, height: frame.height, data: frame.data.toString('base64') });
     },
   });
+  /** The lighter image on its way, and when the last one was asked. */
+  let lighter: Promise<void> | null = null;
+  let lighterAt = -Infinity;
+  /** A frame too long to send: an image of the page at a lower quality goes in its place, or the viewers hear why not. */
+  const lighten = (): void => {
+    const now = Date.now();
+    if (lighter || now - lighterAt < SHOT_MS) return;
+    lighterAt = now;
+    lighter = internalCall(page, () =>
+      page.screenshot({ type: 'jpeg', quality: LIGHT_QUALITY, scale: 'css', caret: 'initial', timeout: 5000 }),
+    )
+      .then(
+        (shot) => {
+          if (closed) return;
+          if (shot.length <= MAX_VIEW_FRAME) return pacer.offer({ data: shot, ...viewport });
+          if (refused || held?.stop !== stop) return;
+          refused = true;
+          tellHub({ type: 'frame', stop, refused: TOO_HEAVY });
+        },
+        () => undefined,
+      )
+      .finally(() => {
+        lighter = null;
+      });
+  };
   const onFrame = (data: Buffer, width: number, height: number): void => {
-    if (closed || data.length > MAX_VIEW_FRAME || last?.equals(data)) return;
+    if (closed || last?.equals(data)) return;
     last = data;
+    if (data.length > MAX_VIEW_FRAME) return lighten();
     const named = isViewSize(width, height);
     pacer.offer({ data, width: named ? width : viewport.width, height: named ? height : viewport.height });
   };

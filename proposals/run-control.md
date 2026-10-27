@@ -178,7 +178,10 @@ sent `view { id, ref, worker, since, on }`, which is apart from PR 4's `follow`:
 following the runs watches no stop. The worker starts the stopped page's screencast through an internal call
 with the stop's first viewer and stops its own client with the last, as the stop ends (before its `running`), and as
 its page or the connection closes. Each frame (`frame { ref, worker, since, width, height, data }`: a JPEG in base64,
-the viewport scaled to fit 1280 by 800, quality 60, 384 KB at most, `width` and `height` the viewport in CSS pixels)
+the viewport scaled to fit 1280 by 800, quality 60, 384 KB at most, `width` and `height` the viewport in CSS pixels;
+in place of a longer one, an image of the page at quality 30, two a second at most, and when that is longer too, once
+until a frame goes again, `frame { ref, worker, since, refused }`, the sentence the Runs window shows in place of the
+view, as a page of noise at 1920 by 1080 with a video of that size gives)
 goes to that stop's viewers alone, ten a second at most at each step: the worker holds one frame's acknowledgment at
 a time, an interval at most, so Chromium and Firefox paint no more while the view is the page's one screencast client;
 a test's video or its trace's images acknowledge each frame at once, and the browser then paints at its own pace,

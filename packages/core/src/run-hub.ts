@@ -345,6 +345,19 @@ export interface HubFrameMessage {
   data: string;
 }
 
+/**
+ * The live view of the stop `since` names, of the worker `worker`, sends no frame now, and why (`refused`, at most
+ * `MAX_HUB_MESSAGE` characters): each image of the page is too long, a lighter one included. It goes as a frame does,
+ * to a connection that watches the stop, once until a frame comes again; a side that predates it reads none.
+ */
+export interface HubFrameRefusal {
+  type: 'frame';
+  ref: string;
+  worker: number;
+  since: string;
+  refused: string;
+}
+
 /** What the hub sends. */
 export type HubMessage =
   | HubWelcome
@@ -352,6 +365,7 @@ export type HubMessage =
   | HubSessionMessage
   | HubCodeMessage
   | HubFrameMessage
+  | HubFrameRefusal
   | { type: 'keepalive' };
 
 /** A live hub, as the Send to editor endpoint's `GET …/live` lists it. */
@@ -562,10 +576,15 @@ function readImage(value: unknown): HubImage | null | undefined {
     : { mime: 'image/jpeg', data: value.data };
 }
 
-/** A frame of a live view, field by field; null when it is not one. */
-function readFrame(value: Record<string, unknown>): HubFrameMessage | null {
-  const { ref, worker, since, width, height, data } = value;
+/** A frame of a live view, or why none comes, field by field; null when it is neither. */
+function readFrame(value: Record<string, unknown>): HubFrameMessage | HubFrameRefusal | null {
+  const { ref, worker, since, width, height, data, refused } = value;
   if (typeof ref !== 'string' || !REF.test(ref) || !isInt(worker, 0) || str(since, 64) === null || !since) return null;
+  if (refused !== undefined) {
+    return typeof refused === 'string' && refused.trim() && refused.length <= MAX_HUB_MESSAGE
+      ? { type: 'frame', ref, worker, since: since as string, refused }
+      : null;
+  }
   if (!isViewSize(width, height) || !isViewFrameData(data)) return null;
   return {
     type: 'frame',

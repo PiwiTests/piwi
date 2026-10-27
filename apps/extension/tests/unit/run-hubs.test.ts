@@ -838,11 +838,25 @@ describe('a stop’s live view', () => {
     answerLast(socket, 'view');
     await on;
     for (let i = 0; i < 30; i++) socket.hear(frame(`AA${String(i).padStart(2, '0')}`));
-    expect(a.frames.map((f) => f.data)).toEqual(['AA00']);
+    const data = () => a.frames.map((f) => ('data' in f ? f.data : f.refused));
+    expect(data()).toEqual(['AA00']);
     await vi.advanceTimersByTimeAsync(100);
-    expect(a.frames.map((f) => f.data)).toEqual(['AA00', 'AA29']);
+    expect(data()).toEqual(['AA00', 'AA29']);
     await vi.advanceTimersByTimeAsync(500);
     expect(a.frames).toHaveLength(2);
+  });
+
+  it('passes on why a view sends no frame, as a frame of it goes', async () => {
+    const { hubs, socket } = await watched();
+    const a = viewer();
+    const on = hubs.command({ ...AT, what: 'view', on: true }, a);
+    answerLast(socket, 'view');
+    await on;
+    const refused = 'This page is too heavy for the live view.';
+    socket.hear({ type: 'frame', ref: 'r1', worker: 1, since: 's7', refused });
+    // One without its sentence is no refusal, nor a frame.
+    socket.hear({ type: 'frame', ref: 'r1', worker: 1, since: 's7', refused: '' });
+    expect(a.frames).toEqual([{ ...AT, refused }]);
   });
 
   it('stops the view as the last window stops watching or closes, and refuses input from one that does not watch', async () => {

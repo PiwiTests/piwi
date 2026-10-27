@@ -502,6 +502,15 @@ describe('the live view on the hub', () => {
     ]) {
       expect(parseHubMessage(json(broken))).toBeNull();
     }
+    // Why the view sends no frame, as a frame goes: its sentence alone.
+    const refused: HubMessage = { type: 'frame', ref: 'ed-1', worker: 0, since: frame.since, refused: 'Too heavy.' };
+    expect(parseHubMessage(json(refused))).toEqual(refused);
+    for (const broken of [
+      { ...refused, refused: '' },
+      { ...refused, refused: 'x'.repeat(MAX_HUB_MESSAGE + 1) },
+    ]) {
+      expect(parseHubMessage(json(broken))).toBeNull();
+    }
     const picked: HubMessage = { type: 'answer', id: 7, ok: true, message: 'Sent.', locator: "getByText('Go')" };
     expect(parseHubMessage(json(picked))).toEqual(picked);
     expect(parseHubMessage(json({ ...picked, locator: null }))).toEqual({ ...picked, locator: null });
@@ -578,7 +587,10 @@ describe('the live view on the hub', () => {
       const command = parseHubCommand(json(message));
       if (command?.type === 'input') expect(command.events.length).toBeLessThanOrEqual(MAX_VIEW_EVENTS);
       const heard = parseHubMessage(json(message));
-      if (heard?.type === 'frame') expect(heard.data.length).toBeLessThanOrEqual(MAX_VIEW_FRAME_BASE64);
+      if (heard?.type === 'frame') {
+        if ('data' in heard) expect(heard.data.length).toBeLessThanOrEqual(MAX_VIEW_FRAME_BASE64);
+        else expect(heard.refused.length).toBeLessThanOrEqual(MAX_HUB_MESSAGE);
+      }
     }
   });
 });

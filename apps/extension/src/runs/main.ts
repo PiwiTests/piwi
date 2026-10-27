@@ -339,6 +339,9 @@ function isImage(image: HubImage | null | undefined): image is HubImage {
 
 // ── The live view ───────────────────────────────────────────────────────────────────────────────────────────────────
 
+/** A frame of a live view that is an image. */
+type ImageFrame = Extract<RunsFrame, { data: string }>;
+
 /** A stopped worker's live view, for the stop it watches: what the window shows of it, and the input it sends. */
 interface LiveView extends RunsView {
   /** Asked of the hub and not answered yet; on; ended as the hub's connection was lost; or refused. */
@@ -349,8 +352,10 @@ interface LiveView extends RunsView {
   img: HTMLImageElement;
   viewport: { width: number; height: number } | null;
   /** The latest frame not drawn yet, while another one decodes: the others are dropped. */
-  next: RunsFrame | null;
+  next: ImageFrame | null;
   decoding: boolean;
+  /** The hub's sentence saying why no frame comes now (the page is too heavy for the view), until one does. */
+  heavy: string;
   /** Whether the stop takes this window's input now (`input` among its intents), and what sends it. */
   inputOn: boolean;
   input: ViewInputBatcher | null;
@@ -416,6 +421,7 @@ function startView(run: RunsRun, worker: number, stop: HubStop): void {
     viewport: null,
     next: null,
     decoding: false,
+    heavy: '',
     inputOn: false,
     input: null,
     captured: false,
@@ -476,12 +482,23 @@ async function sendInput(key: string, view: LiveView, events: ViewInput[]): Prom
   return false;
 }
 
-/** A frame of a view this window watches: drawn once decoded, the latest one alone waiting meanwhile. */
+/**
+ * A frame of a view this window watches: drawn once decoded, the latest one alone waiting meanwhile. Why no frame
+ * comes, when the hub says so, is shown under the view until one does.
+ */
 function heardFrame(frame: RunsFrame): void {
   const key = workerKey(frame.hub, frame.ref, frame);
   const view = views.get(key);
   // A frame of a stop the window no longer watches, or no longer shows, goes nowhere.
-  if (!isLive(view) || view.since !== frame.since || !isViewFrameData(frame.data)) return;
+  if (!isLive(view) || view.since !== frame.since) return;
+  if ('refused' in frame) {
+    if (view.heavy === frame.refused) return;
+    view.heavy = frame.refused;
+    announce(view.heavy);
+    render();
+    return;
+  }
+  if (!isViewFrameData(frame.data)) return;
   view.next = frame;
   if (!view.decoding) void drawFrames(key, view);
 }
@@ -501,10 +518,11 @@ async function drawFrames(key: string, view: LiveView): Promise<void> {
       continue;
     }
     if (views.get(key) !== view || !isLive(view)) break;
-    const first = !view.viewport;
+    const changed = !view.viewport || !!view.heavy;
     view.img.src = src;
     view.viewport = { width: frame.width, height: frame.height };
-    if (first) render();
+    view.heavy = '';
+    if (changed) render();
   }
   view.decoding = false;
 }
@@ -1354,8 +1372,8 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop): HTMLElement
 }
 
 /**
- * What the page's part says under it: why a view ended or was refused, or that it starts (with an icon), else why
- * there is no image, or that it is on its way.
+ * What the page's part says under it: why a view ended or was refused, why it sends no frame now, or that it starts
+ * (with an icon), else why there is no image, or that it is on its way.
  */
 function pageNote(
   view: LiveView | undefined,
@@ -1365,6 +1383,7 @@ function pageNote(
   still: { loading: boolean; note: string } | undefined,
 ): { icon?: IconName; text: string } | null {
   if (view && !live) return { icon: 'alert', text: view.note };
+  if (live && view?.heavy) return { icon: 'alert', text: view.heavy };
   if (live && !framed) return { icon: 'clock', text: t('runs_liveStarting') };
   if (shown) return null;
   if (still && !still.loading) return { text: still.note || t('runs_imageNone') };

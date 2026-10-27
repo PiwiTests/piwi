@@ -103,6 +103,8 @@ and the controls alone.
 - **The top frame.** Pick on the image refuses an element inside an iframe.
 - **A test's own screencast.** When the test records its own (a video, a trace with screenshots), the view takes its
   size and quality; when none can start, it is an image of the page twice a second.
+- **A heavy page.** A frame over 384 KB (noise, large photos) gives way to a lighter image of the page, twice a
+  second; when even that is too heavy, the window says so under the stop's image.
 - **The browser's keys stay its own.** A shortcut of the browser, a function key and `Esc` never reach the page.
 - **No modifier on a click.** A click is sent without the keys held with it; `Shift`+click picks instead.
 

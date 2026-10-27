@@ -448,6 +448,26 @@ describe('the run channel', () => {
       }
     });
 
+    test('reads why a view sends no frame of a stop, its sentence cut short', () => {
+      const refused = {
+        type: 'frame',
+        stop: 2,
+        refused: 'This page is too heavy for the live view.',
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(refused))).toEqual(refused);
+      expect(parseRunToHub(line({ ...refused, refused: 'x'.repeat(600) }))).toEqual({
+        ...refused,
+        refused: 'x'.repeat(500),
+      });
+      for (const broken of [
+        { ...refused, stop: 0 },
+        { ...refused, refused: ' ' },
+        { ...refused, refused: 4 },
+      ]) {
+        expect(parseRunToHub(line(broken)), JSON.stringify(broken)).toBeNull();
+      }
+    });
+
     test('reads the answers to a view, an input and a pick on an image', () => {
       for (const what of ['view', 'input'] as const) {
         const answer = { type: 'answer', request: 3, what, value: { ok: true, message: 'The live view is on.' } };
@@ -581,7 +601,10 @@ describe('the run channel', () => {
             next() < 0.5 ? { ok: pick(), message: pick(), locator: pick(), mime: 'image/jpeg', data: pick() } : pick(),
         };
         const toHub = parseRunToHub(line(message));
-        if (toHub?.type === 'frame') expect(toHub.data.length).toBeLessThanOrEqual(MAX_VIEW_FRAME_BASE64);
+        if (toHub?.type === 'frame') {
+          if ('data' in toHub) expect(toHub.data.length).toBeLessThanOrEqual(MAX_VIEW_FRAME_BASE64);
+          else expect(toHub.refused.length).toBeLessThanOrEqual(500);
+        }
         const toRun = parseHubToRun(line(message));
         if (toRun?.type === 'request' && toRun.what === 'input') {
           expect(toRun.events.length).toBeGreaterThan(0);

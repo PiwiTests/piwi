@@ -13,6 +13,7 @@ import {
   type HubCodeMessage,
   type HubCommand,
   type HubFrameMessage,
+  type HubFrameRefusal,
   type HubSession,
   type HubWelcome,
   type LiveHub,
@@ -67,8 +68,8 @@ export interface HubConnectionEvents {
   ended(session: HubSession): void;
   /** What an action that writes code at a stop came to, as the hub said. */
   code(code: HubCodeMessage): void;
-  /** A frame of a stop's live view the connection watches; it keeps none. */
-  frame(frame: HubFrameMessage): void;
+  /** A frame of a stop's live view the connection watches, or why none comes; it keeps none. */
+  frame(frame: HubFrameMessage | HubFrameRefusal): void;
   /** The connection closed by itself. */
   lost(why: HubLoss): void;
 }

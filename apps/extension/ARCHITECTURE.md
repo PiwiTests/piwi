@@ -885,7 +885,8 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   view's name says it is live. The view ends with its stop, as the window hides (`visibilitychange`) or closes, and
   when the person turns it off. While it stays on (`watchLive`), each next stop of the worker is watched too, and the
   window watches again as it shows. A view whose hub's connection was lost shows as ended, with why, and is not asked
-  again at that stop.
+  again at that stop. When the hub says why the view sends no frame (`refused`: the page is too heavy for it), its
+  sentence shows under the stop's image in place of the view's start, and is read out, until a frame comes.
 - Where the stop takes `input` from the window (only while it watches), the view takes `tabindex=0`, a focus ring and
   the name that says keys and clicks go to the page, and plays them there (`ViewInputBatcher`,
   `src/shared/view-input.ts`): the points in CSS pixels of the frame's viewport (`pagePoint`, the border left out), a

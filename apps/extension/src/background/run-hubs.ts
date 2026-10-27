@@ -20,6 +20,7 @@ import {
   liveUrlOf,
   parseLiveAnswer,
   type HubFrameMessage,
+  type HubFrameRefusal,
   type HubSession,
   type LiveHub,
 } from '@piwitests/core/run-hub';
@@ -294,8 +295,12 @@ export class RunHubs {
     for (const key of this.watches.keys()) void this.leave(key, viewer);
   }
 
-  /** A frame of a view some window watches goes to those that watch it, while its stop holds. */
-  private frame(hub: string, connection: HubConnection, { type: _type, ...frame }: HubFrameMessage): void {
+  /** A frame of a view some window watches, or why none comes, goes to those that watch it, while its stop holds. */
+  private frame(
+    hub: string,
+    connection: HubConnection,
+    { type: _type, ...frame }: HubFrameMessage | HubFrameRefusal,
+  ): void {
     const view: RunsView = { hub, ref: frame.ref, worker: frame.worker, since: frame.since };
     const watch = this.watches.get(viewKey(view));
     if (!watch || !stopsAt(connection, view)) return;

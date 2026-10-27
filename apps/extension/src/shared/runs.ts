@@ -181,13 +181,10 @@ export interface RunsView {
 /**
  * A frame of the live view of a stop the window watches: a JPEG as the page painted it, base64, its size checked by
  * `parseHubMessage`, and the page's viewport in CSS pixels (`width`, `height`), which input and `pick-at` name their
- * points in.
+ * points in; or the hub's sentence saying why the view sends none now (`refused`: the page is too heavy for it), until
+ * a frame comes again.
  */
-export interface RunsFrame extends RunsView {
-  width: number;
-  height: number;
-  data: string;
-}
+export type RunsFrame = RunsView & ({ width: number; height: number; data: string } | { refused: string });
 
 /** What the worker sends the window. */
 export type RunsEvent =

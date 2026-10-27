@@ -1000,6 +1000,38 @@ test.describe('the live view', () => {
     }
   });
 
+  test('says why a view sends no frame in place of its start, until a frame comes', async () => {
+    const { context, extensionId } = await pairedExtension(editor);
+    try {
+      const runs = await openRuns(context, extensionId);
+      const { before } = await shopFrames(context);
+      const run = await startRun(editor, 'pays', [...RUN_TAKES]);
+      try {
+        const card = liveRun(runs);
+        stopAtCheckout(run.worker, 1, { bar: false });
+        await answerImage(run.worker, before);
+        await card.getByRole('button', { name: 'Watch live' }).click();
+        await answerView(run.worker);
+        await expect(card.getByText('Starting the live view…')).toBeVisible();
+        const refused = 'This page is too heavy for the live view: each image of it is over 384 KB.';
+        run.worker.send({ type: 'frame', stop: 1, refused });
+        await expect(card.locator('.view-note')).toHaveText(refused);
+        await expect(card.getByText('Starting the live view…')).toHaveCount(0);
+        await expect(runs.locator('#announce')).toHaveText(refused);
+        // The stop's image stays, and Watch live stays on.
+        await expect(card.getByRole('img', { name: /^The test’s page, stopped before/ })).toBeVisible();
+        await expect(card.getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+        sendFrame(run.worker, 1, before);
+        await expect(card.locator('img.live')).toBeVisible();
+        await expect(card.getByText(refused)).toHaveCount(0);
+      } finally {
+        await endRun(run);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
   test('a new stop needs a new view, asked again while Watch live stays on, and none while the window is hidden or gone', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {

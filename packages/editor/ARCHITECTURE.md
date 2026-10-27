@@ -726,7 +726,8 @@ connection closes goes, `unwatchAll`); a reporter that does not take `view` is r
 - **Frames.** Each `frame` of the stop the worker stands at goes to that stop's viewers alone, none of an older stop:
   a view ends as its stop does. The hub sends a connection ten a second at most for each worker
   (`MAX_VIEW_FPS`), the latest one waiting while its socket holds more than 1 MB unread (`LatestPacer`), and none of a
-  stop it no longer watches (`RunSessions.viewing`). It keeps none.
+  stop it no longer watches (`RunSessions.viewing`). It keeps none. Why a view sends no frame (`frame` with
+  `refused`: each image of the page is over 384 KB) goes the same way, as a frame does.
 - **Input.** `input` plays the connection's events (`@piwitests/core/run-view`: mouse, wheel, key and text, checked
   field by field, Playwright's key names alone) on the page of the stop it watches, 200 events a second at most for
   each connection (`MAX_VIEW_EVENT_RATE`), and is refused to any other.

@@ -138,7 +138,10 @@ describe('pick on the image, on a page', () => {
       const atChoice = await pickAtPoint(page, PROBE, choice!.x + 5, choice!.y + 5);
       expect('picked' in atChoice && atChoice.picked.picked.locator).toBe("getByRole('button', { name: 'Page' })");
       await page.evaluate(() => (globalThis as any).__piwiChoiceCleanup?.());
-      await page.evaluate(() => ((globalThis as any).__piwiPickedElement = document.getElementById('page')));
+      await page.evaluate(() => {
+        const g = globalThis as any;
+        g.__piwiPickedElement = g.document.getElementById('page');
+      });
       await page.evaluate(showAnchorPicker, {
         tagRoles: { button: 'button', form: 'form' },
         inputRoles: {},

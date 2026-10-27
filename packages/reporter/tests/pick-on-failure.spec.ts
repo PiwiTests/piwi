@@ -245,7 +245,7 @@ describe('a pick that ends unanswered', () => {
       const piwi = () =>
         page.evaluate(() => [
           ...Object.keys(globalThis).filter((key) => key.startsWith('__piwi')),
-          ...[...document.querySelectorAll('[id^="__piwi"]')].map((el) => el.id),
+          ...[...(globalThis as any).document.querySelectorAll('[id^="__piwi"]')].map((el: { id: string }) => el.id),
         ]);
       await expect.poll(piwi, { timeout: 3000 }).toEqual([]);
     } finally {

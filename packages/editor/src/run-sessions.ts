@@ -72,17 +72,20 @@ type RunAttach = Extract<RunToHub, { type: 'run-attach' }>;
 /** What a worker's answer to a request carries: an image, whether an intent started, or a query's answer. */
 type Answered = PausedImage | IntentAnswer | RequestsAnswer | MockAnswer | LocatorAnswer | PickAtAnswer | null;
 
-/** A frame of a stopped page's live view, as a viewer gets it: the stop it shows, named by `since`. */
-export interface ViewFrame {
-  ref: string;
-  worker: number;
-  since: string;
-  /** The page's viewport, in CSS pixels. */
-  width: number;
-  height: number;
-  /** A JPEG, base64. */
-  data: string;
-}
+/**
+ * A frame of a stopped page's live view, as a viewer gets it: the stop it shows, named by `since`; or why the view
+ * sends none now (`refused`: each image of the page is too long), until a frame comes again.
+ */
+export type ViewFrame = { ref: string; worker: number; since: string } & (
+  | {
+      /** The page's viewport, in CSS pixels. */
+      width: number;
+      height: number;
+      /** A JPEG, base64. */
+      data: string;
+    }
+  | { refused: string }
+);
 
 /** Who watches the live view of a stop: each frame of it goes to `frame`, while it watches. */
 export interface Viewer {
@@ -823,17 +826,14 @@ export class RunSessions {
         worker.view = null;
         return this.changed(session);
       case 'frame': {
-        // A frame of the stop the worker stands at, for its viewers alone.
+        // A frame of the stop the worker stands at, for its viewers alone, or why none comes.
         const view = worker.view;
         if (!view || !worker.stop || worker.stop.id !== message.stop || view.stop !== message.stop) return;
-        const frame: ViewFrame = {
-          ref: session.ref,
-          worker: worker.index,
-          since: worker.stop.view.since,
-          width: message.width,
-          height: message.height,
-          data: message.data,
-        };
+        const at = { ref: session.ref, worker: worker.index, since: worker.stop.view.since };
+        const frame: ViewFrame =
+          'refused' in message
+            ? { ...at, refused: message.refused }
+            : { ...at, width: message.width, height: message.height, data: message.data };
         for (const viewer of view.viewers) viewer.frame(frame);
         return;
       }
