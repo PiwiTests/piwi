@@ -268,5 +268,22 @@ test.describe('showPickerChoices', () => {
     });
     await page.getByText('Skip — keep the failure as-is').click();
     expect(await page.evaluate(() => (globalThis as any).__piwiPickChoice)).toBe(-1);
+    expect(await page.evaluate(() => typeof (globalThis as any).__piwiChoiceCleanup)).toBe('undefined');
+  });
+
+  test('leaves the page unanswered through its cleanup, its keys with it', async ({ page }) => {
+    await page.setContent('<!doctype html><html><body><p>The page</p></body></html>');
+    await page.evaluate(showPickerChoices, {
+      failing: null,
+      choices: [{ locator: `getByTestId('x')`, score: 100 }],
+    });
+    await expect(page.locator('button')).toHaveCount(2);
+    await page.evaluate(() => (globalThis as any).__piwiChoiceCleanup());
+    await expect(page.locator('button')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    expect(
+      await page.evaluate(() => [(globalThis as any).__piwiPickChoice, typeof (globalThis as any).__piwiChoiceCleanup]),
+    ).toEqual([undefined, 'undefined']);
+    await expect(page.locator('body')).toHaveText('The page');
   });
 });

@@ -144,8 +144,10 @@ async function cleanupPicker(page: Page, ended = false): Promise<void> {
         const g = globalThis as any;
         if (typeof g.__piwiPickCleanup === 'function') g.__piwiPickCleanup();
         if (typeof g.__piwiAnchorCleanup === 'function') g.__piwiAnchorCleanup();
+        if (typeof g.__piwiChoiceCleanup === 'function') g.__piwiChoiceCleanup();
         delete g.__piwiPickCleanup;
         delete g.__piwiAnchorCleanup;
+        delete g.__piwiChoiceCleanup;
         delete g.__piwiPickState;
         delete g.__piwiPickChoice;
         delete g.__piwiPickedElement;

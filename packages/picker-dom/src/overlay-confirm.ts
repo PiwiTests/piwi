@@ -7,8 +7,9 @@ export interface PickerChoicesArg {
 /**
  * Runs inside the browser via `evaluate()` — replaces the pick overlay with a
  * confirmation panel listing the ranked replacement locators. The chosen index
- * lands in `__piwiPickChoice` (-1 = skipped), polled from Node. Must stay
- * fully self-contained.
+ * lands in `__piwiPickChoice` (-1 = skipped), polled from Node. While it shows,
+ * `__piwiChoiceCleanup` takes it out of the page unanswered (a pick that ended
+ * under it). Must stay fully self-contained.
  */
 export function showPickerChoices(arg: PickerChoicesArg): void {
   const g = globalThis as any;
@@ -61,10 +62,14 @@ export function showPickerChoices(arg: PickerChoicesArg): void {
   panel.appendChild(title);
   panel.appendChild(sub);
 
-  const done = (choice: number) => {
-    g.__piwiPickChoice = choice;
+  const cleanup = () => {
     doc.removeEventListener('keydown', onKey, true);
     wrap.remove();
+    if (g.__piwiChoiceCleanup === cleanup) delete g.__piwiChoiceCleanup;
+  };
+  const done = (choice: number) => {
+    g.__piwiPickChoice = choice;
+    cleanup();
   };
   const onKey = (e: any) => {
     if (e.key !== 'Escape') return;
@@ -107,6 +112,7 @@ export function showPickerChoices(arg: PickerChoicesArg): void {
   panel.appendChild(skip);
 
   doc.addEventListener('keydown', onKey, true);
+  g.__piwiChoiceCleanup = cleanup;
   wrap.appendChild(panel);
   doc.body.appendChild(wrap);
 }
