@@ -28,9 +28,12 @@ buster) into `*`; edit it before copying. A status other than 200 is kept, and a
 **Answer with** switches to a server error (500) or a network failure (`route.abort()`), for testing the page's
 error state. A body over 100 kB goes to a file the route reads, such as `mocks/cart.json`, downloaded beside the code.
 
-Fields named like a password, a token, a key or a session are written as `<hidden>` until you tick **Show hidden
-values**; headers, cookies included, are never written. Nothing is sent anywhere: the code reaches your clipboard
-when you copy it.
+A field named like a password, a token, a key, a signature or a session is written as `<hidden>`, whatever it holds,
+and so is a value shaped like a token anywhere in the body (a JWT, a bearer token, an AWS, Google, Stripe, GitHub or
+Slack key), until you tick **Show hidden values**; such a query value becomes `**` in the URL pattern. Headers,
+cookies included, are never written. A body that is neither JSON nor a form is written as the server sent it but for
+those values: read it before you commit it. Nothing is sent anywhere: the code reaches your clipboard when you copy
+it.
 
 ## Slow down or fail a request
 
