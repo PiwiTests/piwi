@@ -25,10 +25,11 @@ export default defineConfig({
   description:
     'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.',
   base: '/',
-  // AGENTS.md is the agent guide for this directory, not a page of the site:
-  // it links to sibling guides outside the docs root, so building it as a page
+  // AGENTS.md is the agent guide for this directory, and CLAUDE.md the file
+  // that loads it for Claude Code; neither is a page of the site: the guide
+  // links to sibling guides outside the docs root, so building it as a page
   // both publishes the wrong thing and fails the dead-link check.
-  srcExclude: ['AGENTS.md'],
+  srcExclude: ['AGENTS.md', 'CLAUDE.md'],
   // Example values in the generated configuration reference (PIWI_SITE_URL,
   // Ollama base URLs) are intentionally unreachable localhost URLs.
   ignoreDeadLinks: [/^https?:\/\/localhost/],

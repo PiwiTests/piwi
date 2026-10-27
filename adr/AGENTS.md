@@ -1,4 +1,4 @@
-﻿# ADRs — agent guide
+# ADRs — agent guide
 
 Rules for the `adr/` directory: the architecture decision records for programs that have shipped. Read
 [`../AGENTS.md`](../AGENTS.md) first for repo-wide conventions.

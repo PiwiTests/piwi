@@ -12,33 +12,28 @@ per-directory responsibilities.
 2. **Wire types** (`src/types/wire.ts`) — the JSON exchanged with the server. A change here is a server-contract change
    and must land with the matching dashboard change; `apps/application/tests/unit/wire-shared-drift.test.ts` pins the two
    together.
-3. **Side effects** — `PIWI_*` env vars (`internal/config/env.ts`; `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and
-   `PIWI_PROJECT_NAME` also from the `.env` in the Playwright config's folder, below the environment), `piwi-*`
-   attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`, `[Piwi Dashboard]`-prefixed log
-   output, the `__piwiProbeElement` global the capture fixtures install into every instrumented page
-   (`internal/capture/capture-fixtures.ts`), the `beforeunload` listener code reach adds to each document of a covered
-   page in its own isolated world, where the debugger stops to read the coverage as the document is left
-   (`internal/capture/code-reach.ts`), the boxed stack prefix `internal/capture/quiet-capture.ts` registers
-   for this package's `dist/` in each worker, the proxy every API request context is handed out behind
-   (`internal/capture/api-requests.ts`: the `request` fixture's, any `playwright.request.newContext()`'s and
-   `page.request`), and the editor's breakpoints (`internal/capture/pause-at.ts`): a headed local run with
-   `PIWI_PAUSE_AT` steers each context's `context.debugger` to stop before every call it can stop at, shows the pause
-   bar at a call on those lines, sets `PW_CODEGEN_NO_INSPECTOR` in the worker so Playwright's Inspector stays closed
-   at those stops, and clears it while a `page.pause()` it leaves to Playwright runs (it wraps `Page.prototype.pause`,
-   so a page of a browser the test launched itself goes through it too, unless it came from a second copy of
-   Playwright, whose `page.pause()` then stops with neither bar nor Inspector), takes the bar down as the test function
-   ends, ahead of the runner's other callbacks there (`_onDidFinishTestFunctionCallbacks`), setting the runner's count
-   of a test function that ended under it back to what it held as the stop began (`_timeoutManager.defaultSlot()`,
-   feature-checked) and waiting a while for the call it let go and its requests, attaches a test's stops as
-   `piwi-pauses` (the reporter sends them as `pause` step events, and leaves their time out of the step statistics,
-   the steps keeping their measured times), and posts a locator picked meanwhile to the editor's `PIWI_EDITOR_SEND`
-   address with the line, as `@piwitests/core/editor-send` reads it; with `PIWI_RECORD_CHANNEL`, the pause bar's
-   **Record here** (and `page.pause()` in a headed run, patched by the capture fixtures) hands the page to the
-   editor's recorder (`internal/capture/record-handoff.ts`): it relays each call of the recorder's binding over that
-   local socket, as `@piwitests/core/ide-recorder` frames it, and loads the bundle the editor names. The recorder's host
-   stays in the editor service: this package carries the relay alone.
-4. **The desktop discovery file** — `~/.piwi/desktop.json` and its `{ url, token }` shape
-   (`internal/config/desktop.ts`). The desktop shell writes it (`apps/desktop/src-tauri/src/lib.rs`) and this package reads
+3. **Side effects** — what a user's suite can observe, each changed only on purpose:
+   - `PIWI_*` env vars (`internal/config/env.ts`; `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also from
+     the `.env` in the Playwright config's folder, below the environment);
+   - `piwi-*` attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`, and
+     `[Piwi Dashboard]`-prefixed log output;
+   - the `__piwiProbeElement` global the capture fixtures install into every instrumented page
+     (`internal/capture/capture-fixtures.ts`), and the `beforeunload` listener code reach adds to each document of a
+     covered page, in its own isolated world (`internal/capture/code-reach.ts`);
+   - the boxed stack prefix `internal/capture/quiet-capture.ts` registers for this package's `dist/` in each worker;
+   - the proxy every API request context is handed out behind (`internal/capture/api-requests.ts`: the `request`
+     fixture's, any `playwright.request.newContext()`'s and `page.request`);
+   - the editor's breakpoints (`internal/capture/pause-at.ts`, with `PIWI_PAUSE_AT` in a headed local run): the pause
+     bar, `PW_CODEGEN_NO_INSPECTOR`, the wrapped `Page.prototype.pause`, the runner internals it reads
+     (`_onDidFinishTestFunctionCallbacks`, `_timeoutManager.defaultSlot()`, both feature-checked), the `piwi-pauses`
+     attachment and the locator posted to `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`);
+   - with `PIWI_RECORD_CHANNEL`, **Record here** handing the page to the editor's recorder
+     (`internal/capture/record-handoff.ts`, framed as `@piwitests/core/ide-recorder`): this package carries the relay
+     alone, the recorder's host stays in the editor service.
+
+   How each of them works: [`ARCHITECTURE.md`](ARCHITECTURE.md), "Public vs internal".
+4. **The desktop discovery file** — `~/.piwi/desktop.json` and the `{ url, token }` this package reads from it
+   (`internal/config/desktop.ts`; the shell also writes `pid` and `projects`, see `apps/desktop/AGENTS.md`). The desktop shell writes it (`apps/desktop/src-tauri/src/lib.rs`) and this package reads
    it, on independent release cycles, so path and shape changes must land in both.
 5. **Invisible capture.** Nothing the capture fixtures do may show up as the test's own: a Playwright method a
    wrapper forwards is called on its receiver (`callMethod` — never `fn.apply`, which renames the call
@@ -80,4 +75,4 @@ Source is TypeScript in `src/`; `dist/` is generated — never edit it. To try t
 `npm link` here and in the target project.
 
 Adding a field that flows from Playwright to the dashboard touches both repos' halves — follow the ordered checklist in
-[`apps/application/AGENTS.md`](../../apps/application/AGENTS.md#adding-a-field-to-test-run-data).
+[`apps/application/server/api/test-runs/AGENTS.md`](../../apps/application/server/api/test-runs/AGENTS.md#adding-a-field-to-test-run-data).

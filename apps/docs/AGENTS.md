@@ -1,7 +1,7 @@
 # Documentation site — agent guide
 
 Rules for working inside `apps/docs/` (the VitePress site published to GitHub Pages). Read [`../../AGENTS.md`](../../AGENTS.md)
-first — in particular the **cross-platform shell commands** rule, which applies to every snippet on this site.
+first. Every command on this site follows the [cross-platform shell commands](#cross-platform-shell-commands) rule below.
 
 ```bash
 npm run docs:dev      # local preview (runs docs:gen first)
@@ -55,7 +55,7 @@ When documenting a feature here, link to the live demo reference
 `/docs` is a route on the running app, not a page on this docs site, so VitePress's dead-link check fails the
 build. Endpoint documentation is
 authored in the handler's `defineRouteMeta({ openAPI: … })` block — see
-[`../application/AGENTS.md`](../application/AGENTS.md#openapi-annotations).
+[`../application/server/api/AGENTS.md`](../application/server/api/AGENTS.md#openapi-annotations).
 
 ## The docs ship inside the server
 
@@ -76,7 +76,7 @@ What that means for a page:
   links, and `<<< @/snippets/…` includes the snippet's code. A new component needs a text rendering in
   `docs-corpus.ts`.
 
-## Site structure (MUST follow)
+## Site structure
 
 ### One grouping: the feature catalog
 
@@ -178,6 +178,8 @@ exists for the long-tail searches that never contain the word "Piwi", so:
 - Recipes reuse **existing committed screenshots**; add a scene to the feature-screenshot harness only
   if a recipe genuinely needs a screen no page shows yet.
 
+### Pages and sources with a special role
+
 - **`concepts.md` is the vocabulary source of truth** — project / test run / **test case** (a test's identity across
   time) / **execution** (one attempt, one browser — the `test_runs_cases` row) / failure cluster / fingerprint /
   baseline. Use those words consistently in docs *and* UI copy; link the anchor instead of redefining a term.
@@ -230,17 +232,29 @@ when you move a section, keep its heading text or update every link the test nam
   else the page's first prose paragraph (clipped to whole sentences, ~200 characters). Every page but the home page
   sets a frontmatter `description` (see "Every page" above), so the fallbacks only catch a page that lacks one, and
   `docs-page-meta.test.ts` fails when a page's description is under 50 characters.
-- American English, sentence-case headings, and the shell-portability rule from the root guide: VitePress uses
-  `::: code-group` with ```bash [Linux / macOS] + ```powershell [Windows (PowerShell)] tabs when a command has no
-  portable single form.
+- American English, sentence-case headings, and the [cross-platform shell commands](#cross-platform-shell-commands) rule.
 - Diagrams are theme-aware SVG assets under `apps/docs/public/` — commit the asset rather than embedding a large inline
   `<svg>` in prose.
+
+### Cross-platform shell commands
+
+Any command shown to a **user** (docs, `*.md`, in-app `CodeBlock` snippets) must work on Windows too. Prefer a portable
+single command — `npm`/`npx`/`docker`/`git` behave the same everywhere, and
+`node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` replaces `openssl rand -hex 32`. Avoid
+bash `\` line continuations; write one line.
+
+When no portable form exists, show both: on this site use `::: code-group` with `bash [Linux / macOS]` and
+`powershell [Windows (PowerShell)]` tabs; in GitHub-rendered `*.md` use two consecutive labeled fenced blocks.
+Mappings: `$(pwd)` → `${PWD}`; `VAR=val cmd` → `$env:VAR='val'; cmd`; `rm -rf X` → `Remove-Item -Recurse -Force X`;
+`\` → backtick. Linux-only Docker host operations (`chmod`/`chown` on bind mounts) need no PowerShell form — just note
+they apply to Linux hosts. Convert first-touch `curl` examples (submit, auth setup/login) to an `Invoke-RestMethod` tab;
+other `curl` examples may stay bash-only. `.env` file contents are not shell commands — leave them as-is.
 
 ### Voice
 
 Informative, specific, honest — never promotional. Piwi is not a product being sold. The canonical positioning line
 and the eight surfaces that must carry it are in the
-[root guide](../../AGENTS.md#one-canonical-positioning-line-must-follow).
+[root guide](../../AGENTS.md#one-canonical-positioning-line).
 
 - **Banned**: conversion CTA blocks ("Stop losing your…" + buttons), `for-the-badge` call-to-action badges, "try it
   now" / pointing-hand CTAs, competitor feature tables with a **Price** row in the README (honest prose comparison
@@ -295,7 +309,7 @@ finishes, and writes both files. It needs an ffmpeg with libx264 (`--ffmpeg <pat
 demo unless `--url` points it at a local demo build (`npm run app:generate:demo`, served under `/demo/`).
 
 Demo *evidence* media (the screenshots, traces and videos shown inside the product) is a different pipeline — see
-[`../application/AGENTS.md`](../application/AGENTS.md#demo-evidence-media-committed-binaries).
+[`../application/scripts/AGENTS.md`](../application/scripts/AGENTS.md#demo-evidence-media).
 
 **Feature illustrations** (a docs page showing a specific screen, including desktop-only UI the live demo cannot
 render) come from the feature-screenshot harness instead. Every one of them has a scene that writes it, and the scene

@@ -19,6 +19,9 @@ import { QUOTED_DOCS_SECTIONS } from '#shared/piwi-ecosystem';
 import { buildDocsCorpus } from '#shared/docs-corpus';
 import { GENERATED_DOCS_PAGES } from '#shared/docs-generated-pages';
 
+// The agent guide of a directory and the file that loads it for Claude Code: not docs pages.
+const AGENT_GUIDES = ['AGENTS.md', 'CLAUDE.md'];
+
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const read = (relative: string) => readFileSync(join(repoRoot, relative), 'utf8');
 
@@ -59,7 +62,7 @@ const docsPages = (function walk(dir: string): string[] {
     if (entry.name === 'node_modules' || entry.name.startsWith('.')) return [];
     const path = join(dir, entry.name);
     if (entry.isDirectory()) return walk(path);
-    return entry.name.endsWith('.md') && entry.name !== 'AGENTS.md' ? [relative(repoRoot, path)] : [];
+    return entry.name.endsWith('.md') && !AGENT_GUIDES.includes(entry.name) ? [relative(repoRoot, path)] : [];
   });
 })(join(repoRoot, 'apps/docs'));
 
@@ -279,7 +282,7 @@ describe('no leaked version history or planned work', () => {
       if (entry.name === 'node_modules' || entry.name === 'blog' || entry.name.startsWith('.')) return [];
       const path = join(dir, entry.name);
       if (entry.isDirectory()) return walk(path);
-      return entry.name.endsWith('.md') && entry.name !== 'AGENTS.md' ? [relative(repoRoot, path)] : [];
+      return entry.name.endsWith('.md') && !AGENT_GUIDES.includes(entry.name) ? [relative(repoRoot, path)] : [];
     });
   })(join(repoRoot, 'apps/docs')).filter((p) => ![...GENERATED_PAGES].some((gen) => p === `apps/docs/${gen}.md`));
 

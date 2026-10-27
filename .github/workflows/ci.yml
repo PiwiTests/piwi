@@ -558,8 +558,8 @@ jobs:
           path: apps/application/blob-report
           retention-days: 3
 
-  # The execution and failure-cluster pages against their legibility budgets (apps/application/AGENTS.md, "Measure
-  # it."), on this build and a database seeded from the demo seed.
+  # The execution and failure-cluster pages against their legibility budgets (apps/application/app/AGENTS.md,
+  # "Measure it."), on this build and a database seeded from the demo seed.
   measure:
     name: Failure page budgets
     needs: [changes, build]

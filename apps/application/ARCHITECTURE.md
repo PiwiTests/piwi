@@ -1,7 +1,7 @@
 # Dashboard app — architecture map
 
 Reference for `apps/application/`: what exists and where. The **rules** for changing it live in
-[`AGENTS.md`](AGENTS.md) — read that before editing.
+[`AGENTS.md`](AGENTS.md) and the topic guides it lists — read those before editing.
 
 This map describes structure and intent, not every file. Directory listings and the auto-generated
 [`/_openapi.json`](#backend) are the authority on exact names.
@@ -67,7 +67,7 @@ Non-obvious ones:
 
 - **`case_payloads`** — content-addressed storage for large per-execution text (`aria_snapshot`, `test_source`,
   `test_source_frames`): one row per unique content per project (SHA-256 `hash`, unique `(project_id, hash)`),
-  referenced from `test_runs_cases.*_payload_id`. See the rule in `AGENTS.md`.
+  referenced from `test_runs_cases.*_payload_id`. See the rule in `server/database/AGENTS.md`.
 - **`locator_snapshots`** — one row per locator call site (`test_case_id` + `location`), upserted each run with the
   latest element attributes and pre-computed ranked alternatives. Unique index on `(test_case_id, location)`;
   `last_seen_run_id` FK is `ON DELETE set null`.
@@ -248,7 +248,7 @@ Domain subfolders, all auto-imported **without a folder prefix** (`pathPrefix: f
 | `assistant/`                                                            | The assistant's panel (`AssistantPanel`, docked or over the page; `AssistantPanelBody`), its input (`AssistantInput`, `AssistantUsage`), messages and blocks, on `useAssistant`; a page's nudge, `AssistantNudge`               |
 | `home/`, `layout/`, `settings/`, `apps/desktop/`, `apps/docs/`, `demo/` | Home filters; app shell/nav; settings surfaces; desktop-only cards; in-app API reference; demo-only banner, simulator and guided tour                                                                                           |
 
-Shared building blocks worth knowing before writing new markup (`AGENTS.md` makes reuse a rule):
+Shared building blocks worth knowing before writing new markup (`app/AGENTS.md` makes reuse a rule):
 
 - **Structure** — `SectionCard` (standard icon/title/count/subtitle header, `actions` + `footer` slots),
   `CollapsibleSectionCard` (same contract + required `storageKey`, cookie-persisted fold state via `useFoldedState`,
@@ -374,7 +374,22 @@ on a guide anchor of each, `useDemoTour` handing the role's tour to the guide en
 registry in `shared/guide-anchors/`: every element a guide can point at, by its `data-tour` attribute, with the pages
 it renders on, how to reveal it and a seeded sample where it renders. With no model, the demo's assistant answers the
 prepared questions of `shared/demo/assistant-questions.mjs`, matched by `app/demo/api/assistant-match.ts` and computed
-from the seed by `app/demo/api/assistant-answers.ts`. Rules and invariants: see `AGENTS.md`.
+from the seed by `app/demo/api/assistant-answers.ts`. Rules and invariants: see `app/demo/AGENTS.md`.
+
+## Extension points
+
+Where to add things in subsystems whose wiring spans several files:
+
+- **Flaky root-cause category**: `classifyFlakyRootCause()` + keyword arrays in `shared/flaky-classify.ts`; persistence and triggers in `shared/handlers/flaky-classify.ts` (`classifyRunFlakyTests`, called from `runFinalizeSideEffects`; `withFlakyRootCauses`, called by the flaky-tests read on the server and in the demo); `rootCause` on `FlakyTest` (`types/api.ts`); `FlakyTestsList.vue` colour map
+- **Flaky impact scoring**: `getProjectFlakyTests` (`shared/handlers/projects.ts`) — sorts by impact desc; `impact`, `wastedCiMinutes`, `avgFailedDurationMs` on `FlakyTest`
+- **Regression signals**: `computeRegressionSignals()` (`server/utils/compute-regression-signals.ts`), fired by the shared finalize helper `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`); surfaced by `getTestRun` / `getTestRunCase` mappers
+- **A computed AI-context section**: Update the `SectionId` union (`ai-context.types.ts`), `DIAGNOSIS_SECTIONS` (`diagnosis-sections.ts`) and `DiagnosisContextCoverage` (`types/api.ts`) **in one batch** before writing the section builder
+- **Blob-report import**: `server/utils/blob-report.ts` (parse) + `import-evidence.ts` (recovered evidence); everything after parsing in `shared/handlers/import-runs.ts`; endpoints `test-runs/import[.post]` and `import/check.post.ts`; page `projects/[id]/import.vue` + `useBlobReportImport`
+- **Trace-file import**: `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`
+- **Quality report language**: Its code in `shared/reports/languages.ts`, the `lang` enum of `server/api/reports/preview.get.ts` (a literal the test checks) and a `shared/reports/sentences.<code>.ts` implementing `ReportSentences` (copy `sentences.fr.ts`), registered in `REPORT_SENTENCES`; validation, the MCP tool, the pickers and the CLI follow. `tests/unit/report-languages.test.ts` names the labels, metrics and gap titles the file lacks, and a new gap detector needs a sample in `tests/unit/gap-title-samples.ts`. The PDF's standard fonts write Windows-1252 only
+- **Issue automation criterion**: The rule field and its check in `shared/integrations/automation.ts` (`AutoCreateRule`, `resolveAutoCreateRule`, `evaluateAutoCreate`, `describeAutoCreateRule`); the fact it reads in `gatherAutoCreateFacts` (`shared/handlers/tracker-automation.ts`, shared with the demo preview); the form in `app/utils/tracker-binding-form.ts` and `AutoCreateRulesEditor.vue`; the table on `apps/docs/features/issue-automation.md`. The run trigger (`server/utils/integrations/automation.ts`) and the write-back scope (`policies.ts`, `tracker-run.ts`) read the rules, never re-implement them
+- **Finish-time side effects**: `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`): the order and the rules are in [`server/api/test-runs/AGENTS.md`](server/api/test-runs/AGENTS.md#finish-time-side-effects)
+- **Guide anchor, guided tour stop, role or language**: [`shared/guide-anchors/AGENTS.md`](shared/guide-anchors/AGENTS.md), [`app/utils/demo-tour/AGENTS.md`](app/utils/demo-tour/AGENTS.md)
 
 ## Key features
 

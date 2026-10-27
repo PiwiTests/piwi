@@ -35,8 +35,19 @@ else
   echo "$installed" > "$stamp"
 fi
 
-echo "[session-start] building the reporter (playwright.config.ts imports it)"
-npm run reporter:build --workspace packages/reporter
+# The build takes ~10s, mostly the type declarations, so a resumed session skips it while no input of the bundle
+# (the reporter, the core and picker-dom sources it inlines, the installed dependencies) changed since the last one.
+# tsup cleans dist/ first, so a build that failed leaves no stamp and runs again.
+build_stamp="packages/reporter/dist/.session-start-build"
+if [ -f "$build_stamp" ] && [ -z "$(find packages/reporter/src packages/reporter/package.json \
+  packages/reporter/tsconfig.json packages/reporter/tsup.config.ts packages/core/src packages/picker-dom/src \
+  "$stamp" -newer "$build_stamp" -print -quit)" ]; then
+  echo "[session-start] the reporter build is up to date; skipping it"
+else
+  echo "[session-start] building the reporter (playwright.config.ts imports it)"
+  npm run reporter:build --workspace packages/reporter
+  touch "$build_stamp"
+fi
 
 # Prefer the browser Playwright pins: the full Chromium as well as the headless
 # shell, because the extension's specs load an unpacked extension, which only a

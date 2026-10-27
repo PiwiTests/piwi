@@ -45,7 +45,10 @@ npm run app:dev:bg          # dev server on http://localhost:3000, detached, wai
 ```
 
 - Nuxt HMR picks up edits; there is no need to restart per change. Compile errors show up in
-  `.data/dev-server.log`, not in the browser.
+  `.data/dev-server.log`, not in the browser. Restart only when the server crashes or you touch
+  `nuxt.config` or a server plugin.
+- `app:seed:dev` is idempotent (`INSERT OR IGNORE`): to refresh stale rows, stop the server, delete `.data` and run it
+  again.
 - `app:seed:dev` also moves each seeded `demo/…` media row under its project's folder
   (`project-<id>/demo/…`, the only paths `/api/files/` serves) and copies the committed evidence media
   (`public/demo/{screenshots,traces,videos}`) there, so the failure pages serve the real screenshot,
@@ -58,13 +61,20 @@ npm run app:dev:bg          # dev server on http://localhost:3000, detached, wai
 
 ## Check an API or find an id
 
+Every seeded run carries its cases, and each of the ten failure clusters has failing executions; project #2
+(`api-integration`) owns clusters 3 and 4. Query a real id rather than guessing one:
+
 ```bash
 curl -s localhost:3000/api/health
 curl -s "localhost:3000/api/test-run-cases/37" | head -c 800
 node scripts/db-query.mjs "select id, status from test_runs_cases where status='failed' order by id desc limit 5" --json
 ```
 
-Authentication is off on a plain dev server, so no key is needed.
+Authentication is off on a plain dev server, so no key is needed. To report a run by hand:
+
+```bash
+curl -X POST http://localhost:3000/api/test-runs/submit -H "Content-Type: application/json" -d '{"projectName":"my-project","status":"passed","startTime":"2024-01-01T12:00:00Z","duration":120000,"totalTests":10,"passedTests":9,"failedTests":1,"skippedTests":0,"testCases":[{"title":"should login","status":"passed","duration":1500,"location":"tests/login.spec.ts:10:5"}]}'
+```
 
 ## Measure the failure pages' legibility
 
@@ -136,11 +146,13 @@ clusters without a stored title fall back to the deterministic one.
 
 - **Do not wait for `networkidle` without a timeout.** The run, execution and notification surfaces
   hold a Server-Sent Events stream open, so the network never goes idle. The screens script waits for
-  `domcontentloaded`, Nuxt hydration and a bounded settle instead; copy that if you script Playwright
-  yourself.
+  `domcontentloaded`, Nuxt hydration and a bounded settle instead (`waitForHydration` and `settlePage` in
+  `scripts/lib/page-waits.mjs`); reuse them if you script Playwright yourself.
 - **`fullPage: true` does nothing useful here.** The document does not scroll; the panel does. Use a
   tall viewport or screenshot the panel element.
-- **A route compiles on its first hit** in dev mode — allow a 90 s navigation timeout the first time.
+- **A route compiles on its first hit** in dev mode — allow a 90 s navigation timeout the first time. A spec whose
+  first test times out on a page that renders is that compile: rerun it against the warm server before reading it as
+  a regression.
 - **A throwaway server needs its port free.** `app:screens` boots on 3050 and `app:measure` on 3060;
   both refuse a port something already listens on, since `nuxt dev` would quietly bind another one and
   the script would then drive the server that was already there. Stop it, or give `app:measure` a

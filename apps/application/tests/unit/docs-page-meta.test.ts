@@ -10,6 +10,9 @@ import {
   toPlainText,
 } from '../../../docs/.vitepress/page-meta.mts';
 
+// The agent guide of a directory and the file that loads it for Claude Code: not docs pages.
+const AGENT_GUIDES = ['AGENTS.md', 'CLAUDE.md'];
+
 const docsRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'docs');
 
 describe('openingParagraph', () => {
@@ -110,7 +113,7 @@ describe('every docs page', () => {
       if (entry.name === 'node_modules' || entry.name.startsWith('.')) return [];
       const path = join(dir, entry.name);
       if (entry.isDirectory()) return walk(path);
-      return entry.name.endsWith('.md') && entry.name !== 'AGENTS.md' ? [path] : [];
+      return entry.name.endsWith('.md') && !AGENT_GUIDES.includes(entry.name) ? [path] : [];
     });
   })(docsRoot);
 

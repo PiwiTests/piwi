@@ -3,7 +3,7 @@
  * Captures screenshots of user-facing features against a real dev server — the
  * standard closing step for UI work: every change that adds or visibly reworks
  * a screen gets a scene here, and the captured images go into the final report
- * (see the "Feature screenshots" rule in AGENTS.md).
+ * (see the "Feature screenshots" rule in app/AGENTS.md).
  *
  * Usage (from application/):
  *   node scripts/take-feature-screenshots.mjs                 # all scenes

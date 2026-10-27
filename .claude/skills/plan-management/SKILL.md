@@ -1,6 +1,6 @@
 ---
 name: plan-management
-description: Update, archive, and track implementation plans and the roadmap. Use when the user asks to update a plan, check plan progress, archive a completed plan, or sync the roadmap with shipped/planned work.
+description: Update, archive, and track implementation plans and the roadmap in the maintainer's local, gitignored plans/ folder, and keep proposals/ and adr/ in step with them. Use when the user asks to update a plan, check plan progress, archive a completed plan, or sync the roadmap with shipped/planned work. Without a local plans/ folder (a fresh clone), only the proposals/ and adr/ steps apply.
 ---
 
 # Plan Management
@@ -43,14 +43,12 @@ too. If the plan has a "File-by-file checklist" or numbered checklist sections, 
 For each checklist item, search the codebase to determine whether it's been implemented:
 
 ```bash
-# Check if specified files exist
-Test-Path "<path>"
 # Search for key symbols introduced by the plan
-rg "<symbol>" --include "*.ts" --include "*.vue" apps/application/ packages/reporter/
+rg "<symbol>" -g "*.ts" -g "*.vue" apps/application/ packages/reporter/
 # Check type definitions, schema, API handlers, UI components, demo mirror, tests
 ```
 
-Do NOT use `Get-ChildItem` for file existence — use `Test-Path` or `glob`/`grep` tools. Also read `CHANGELOG.md` for
+Check that a file exists with the Glob tool (or `Test-Path` in PowerShell, `test -e` in bash), not by listing folders. Also read `CHANGELOG.md` for
 the releases since the plan's last dated status — features often land from a proposal or a fix without a plan edit.
 
 ### 2. Determine plan status
