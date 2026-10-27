@@ -372,13 +372,13 @@ describe('a hub’s connection', () => {
       since: 's7',
       action: 'assert',
       ok: true,
-      message: 'Piwi wrote the check above cart.page.ts:13.',
+      message: 'Piwi sent the check to Visual Studio Code to write above cart.page.ts:13.',
     };
     socket.hear({ ...written, code: "await expect(page.getByTestId('total')).toHaveText('72');" });
     socket.hear({
       ...written,
       action: 'mock',
-      message: 'Piwi wrote the mock above cart.page.ts:13.',
+      message: 'Piwi sent the mock to Visual Studio Code to write above cart.page.ts:13.',
       warnings: ['A value named or shaped like a credential is written as <hidden>.'],
     });
     // One it cannot read is left aside.
@@ -392,7 +392,7 @@ describe('a hub’s connection', () => {
         since: 's7',
         action: 'assert',
         ok: true,
-        message: 'Piwi wrote the check above cart.page.ts:13.',
+        message: 'Piwi sent the check to Visual Studio Code to write above cart.page.ts:13.',
         warnings: [],
       },
       {
@@ -402,7 +402,7 @@ describe('a hub’s connection', () => {
         since: 's7',
         action: 'mock',
         ok: true,
-        message: 'Piwi wrote the mock above cart.page.ts:13.',
+        message: 'Piwi sent the mock to Visual Studio Code to write above cart.page.ts:13.',
         warnings: ['A value named or shaped like a credential is written as <hidden>.'],
       },
     ]);
@@ -412,6 +412,40 @@ describe('a hub’s connection', () => {
     unlisten();
     socket.hear(written);
     expect(heard).toHaveLength(2);
+  });
+
+  it('tells each hub the runs are followed while a Runs window is open, and again after it connects anew', async () => {
+    const { hubs, sockets, answer } = setup();
+    answer(async () => Response.json({ hubs: [HUB, OTHER_HUB] }));
+    await hubs.find();
+    const [first, second] = sockets;
+    await welcome(first!);
+    await welcome(second!);
+    const follows = (socket: FakeSocket) => socket.sent.filter((m) => m.type === 'follow').map((m) => m.on);
+    // Paired, no window open: the background worker subscribes and says nothing more, so no failure waits for it.
+    expect(follows(first!)).toEqual([]);
+    const closeFirst = hubs.listen(() => {});
+    expect(follows(first!)).toEqual([true]);
+    expect(follows(second!)).toEqual([true]);
+    expect(first!.last('follow')).toMatchObject({ id: expect.any(Number) });
+    // A second window says nothing more; the last one to close says the runs are no longer followed.
+    const closeSecond = hubs.listen(() => {});
+    closeFirst();
+    closeFirst();
+    expect(follows(first!)).toEqual([true]);
+    closeSecond();
+    expect(follows(first!)).toEqual([true, false]);
+    expect(follows(second!)).toEqual([true, false]);
+    // A window open while a hub's connection is lost and made again: the new connection says so as it opens.
+    hubs.listen(() => {});
+    first!.hangUp(1006);
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => sockets.length === 3);
+    const again = sockets[2]!;
+    expect(follows(again)).toEqual([]);
+    await welcome(again);
+    expect(follows(again)).toEqual([true]);
+    expect(again.sent.map((m) => m.type)).toEqual(['hello', 'subscribe', 'follow']);
   });
 
   it('passes each command on and hands back the answer of its id', async () => {
@@ -482,11 +516,19 @@ describe('a hub’s connection', () => {
     socket.hear({ type: 'answer', id: 2, ok: true, message: 'Check an element in the test’s window.' });
     socket.hear({ type: 'answer', id: 3, ok: false, message: 'The test went on.' });
     socket.hear({ type: 'answer', id: 4, ok: true, message: 'The test kept 1 response.', requests: [kept] });
-    socket.hear({ type: 'answer', id: 5, ok: true, message: 'Piwi wrote the mock above cart.spec.ts:5.' });
+    socket.hear({
+      type: 'answer',
+      id: 5,
+      ok: true,
+      message: 'Piwi sent the mock to Visual Studio Code to write above cart.spec.ts:5.',
+    });
     expect(await assert).toEqual({ ok: true, message: 'Check an element in the test’s window.' });
     expect(await region).toEqual({ ok: false, message: 'The test went on.' });
     expect(await listed).toEqual({ ok: true, message: 'The test kept 1 response.', requests: [kept] });
-    expect(await mock).toEqual({ ok: true, message: 'Piwi wrote the mock above cart.spec.ts:5.' });
+    expect(await mock).toEqual({
+      ok: true,
+      message: 'Piwi sent the mock to Visual Studio Code to write above cart.spec.ts:5.',
+    });
   });
 
   it('reads the requests an answer lists field by field: one it cannot read leaves the answer unread', async () => {

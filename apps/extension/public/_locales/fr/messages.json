@@ -6443,7 +6443,7 @@
     "message": "Enregistrer"
   },
   "runs_recordTitle": {
-    "message": "Enregistrer des étapes dans la fenêtre du test : elles sont écrites au-dessus de cette ligne"
+    "message": "Enregistrer des étapes dans la fenêtre du test : elles vont à l’éditeur, qui les écrit au-dessus de cette ligne"
   },
   "runs_pause": {
     "message": "Pause"
@@ -6470,19 +6470,19 @@
     "message": "Vérifier"
   },
   "runs_assertTitle": {
-    "message": "Vérifier un élément dans la fenêtre du test : la vérification est écrite au-dessus de cette ligne"
+    "message": "Vérifier un élément dans la fenêtre du test : la vérification va à l’éditeur, qui l’écrit au-dessus de cette ligne"
   },
   "runs_assertRegion": {
     "message": "Vérifier une zone"
   },
   "runs_assertRegionTitle": {
-    "message": "Choisir une zone dans la fenêtre du test : son instantané ARIA est écrit au-dessus de cette ligne"
+    "message": "Choisir une zone dans la fenêtre du test : son instantané ARIA va à l’éditeur, qui l’écrit au-dessus de cette ligne"
   },
   "runs_mock": {
     "message": "Simuler une requête"
   },
   "runs_mockTitle": {
-    "message": "Choisir une requête de la page : un page.route() qui y répond comme le serveur est écrit au-dessus de cette ligne"
+    "message": "Choisir une requête de la page : un page.route() qui y répond comme le serveur va à l’éditeur, qui l’écrit au-dessus de cette ligne"
   },
   "runs_codeActions": {
     "message": "Du code depuis cet arrêt"
