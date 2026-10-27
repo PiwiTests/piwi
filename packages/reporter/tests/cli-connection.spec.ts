@@ -61,6 +61,53 @@ describe('resolveCliConnection', () => {
     expect(resolveCliConnection({}, { ...env, CI: 'true' }, [folder])?.serverUrl).toBe('https://env.example');
   });
 
+  it('never sends the environment PIWI_API_KEY to the desktop app with PIWI_DESKTOP_APP=prefer', () => {
+    const env = {
+      PIWI_DESKTOP_CONFIG: desktopFile,
+      PIWI_DESKTOP_APP: 'prefer',
+      PIWI_DASHBOARD_URL: 'https://env.example',
+      PIWI_API_KEY: 'pd_env',
+    };
+    expect(resolveCliConnection({}, env, [])).toEqual({
+      serverUrl: 'http://127.0.0.1:3917',
+      apiKey: 'pd_desktop',
+      project: '',
+    });
+    expect(resolveCliConnection({}, { ...env, PIWI_DASHBOARD_URL: undefined }, [])?.apiKey).toBe('pd_desktop');
+  });
+
+  it('skips the desktop app with PIWI_DESKTOP_APP=fallback when an API key is set and no URL', () => {
+    const keyOnly = dotEnvFolder('key-only', 'PIWI_API_KEY=pd_dotenv\n');
+    const desktopEnv = { PIWI_DESKTOP_CONFIG: desktopFile };
+    expect(resolveCliConnection({}, { ...desktopEnv, PIWI_API_KEY: 'pd_env' }, [])).toBeNull();
+    expect(resolveCliConnection({ apiKey: 'pd_flag' }, desktopEnv, [])).toBeNull();
+    expect(resolveCliConnection({}, desktopEnv, [keyOnly])).toBeNull();
+    const preferOnCi = { ...desktopEnv, PIWI_DESKTOP_APP: 'prefer', CI: 'true', PIWI_API_KEY: 'pd_env' };
+    expect(resolveCliConnection({}, preferOnCi, [])).toBeNull();
+  });
+
+  it('takes the URL and its key from the same .env file', () => {
+    const near = dotEnvFolder('e2e', 'PIWI_DASHBOARD_URL=https://b.test\n');
+    const root = dotEnvFolder(
+      'root',
+      'PIWI_DASHBOARD_URL=https://a.test\nPIWI_API_KEY=key-for-a\nPIWI_PROJECT_NAME=shop\n',
+    );
+    const noDesktop = { PIWI_DESKTOP_CONFIG: '/nonexistent/desktop.json' };
+    expect(resolveCliConnection({}, noDesktop, [near, root])).toEqual({
+      serverUrl: 'https://b.test',
+      apiKey: null,
+      project: 'shop',
+    });
+
+    const keyOnly = dotEnvFolder('key-only', 'PIWI_API_KEY=pd_near\n');
+    expect(resolveCliConnection({}, noDesktop, [keyOnly, near])?.apiKey).toBeNull();
+    expect(resolveCliConnection({}, noDesktop, [keyOnly, root])).toEqual({
+      serverUrl: 'https://a.test',
+      apiKey: 'key-for-a',
+      project: 'shop',
+    });
+  });
+
   it('treats an empty PIWI_DASHBOARD_URL as unset, in the environment and in a .env', () => {
     const near = dotEnvFolder('near', 'PIWI_DASHBOARD_URL=\n');
     const root = dotEnvFolder('root', 'PIWI_DASHBOARD_URL=https://root.example\nPIWI_API_KEY=pd_root\n');
@@ -82,9 +129,8 @@ describe('resolveCliConnection', () => {
     );
 
     error.mockClear();
-    expect(
-      resolveCliConnection({ apiKey: 'pd_flag' }, { PIWI_DESKTOP_CONFIG: desktopFile }, [], 'piwi bug')?.apiKey,
-    ).toBe('pd_desktop');
+    const prefer = { PIWI_DESKTOP_CONFIG: desktopFile, PIWI_DESKTOP_APP: 'prefer' };
+    expect(resolveCliConnection({ apiKey: 'pd_flag' }, prefer, [], 'piwi bug')?.apiKey).toBe('pd_desktop');
     expect(String(error.mock.calls[0]?.[0])).toMatch(/^piwi bug: .*comes from the desktop app/);
 
     error.mockClear();
@@ -111,6 +157,20 @@ describe('connectionFolders', () => {
       expect(connectionFolders(repo)).toEqual([repo]);
     } finally {
       fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it('looks for the Playwright config no higher than the repository root', () => {
+    const outer = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-cli-outer-')));
+    try {
+      fs.writeFileSync(path.join(outer, 'playwright.config.ts'), 'export default {};\n');
+      const repo = path.join(outer, 'repo');
+      const below = path.join(repo, 'src');
+      fs.mkdirSync(below, { recursive: true });
+      execFileSync('git', ['init', '-q'], { cwd: repo });
+      expect(connectionFolders(below)).toEqual([below, repo]);
+    } finally {
+      fs.rmSync(outer, { recursive: true, force: true });
     }
   });
 });

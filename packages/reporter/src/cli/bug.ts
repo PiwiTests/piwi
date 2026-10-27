@@ -174,7 +174,8 @@ export async function runBug(
   }
   let args: BugArgs;
   try {
-    args = parseBugArgs(argv, env, connectionFolders(cwd));
+    // With --server-url the connection takes nothing from a .env, so the folders are not looked up.
+    args = parseBugArgs(argv, env, readOption(argv, '--server-url') ? [] : connectionFolders(cwd));
   } catch (e) {
     console.error(`piwi bug: ${(e as Error).message}\n\n${USAGE}`);
     return EXIT_ERROR;

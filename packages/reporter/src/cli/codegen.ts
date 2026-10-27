@@ -231,7 +231,9 @@ export async function runCodegen(
   }
   let args: CodegenArgs;
   try {
-    args = parseCodegenArgs(argv, env, connectionFolders(cwd));
+    // With --server-url and a project the connection takes nothing from a .env, so the folders are not looked up.
+    const given = readOption(argv, '--server-url') && (readOption(argv, '--project') || env.PIWI_PROJECT_NAME);
+    args = parseCodegenArgs(argv, env, given ? [] : connectionFolders(cwd));
   } catch (e) {
     console.error(`piwi codegen: ${(e as Error).message}\n\n${USAGE}`);
     return EXIT_ERROR;

@@ -513,7 +513,7 @@ export async function runPreflight(
     console.error('piwi preflight: not inside a git repository');
     return EXIT_ERROR;
   }
-  const testRoot = path.resolve(cwd, args.testRoot ?? findPlaywrightRoot(cwd) ?? cwd);
+  const testRoot = path.resolve(cwd, args.testRoot ?? findPlaywrightRoot(cwd, repoRoot) ?? cwd);
 
   let files: DiffFile[];
   try {
