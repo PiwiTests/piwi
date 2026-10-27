@@ -69,6 +69,7 @@ import {
   type UserPickResult,
 } from '../../../packages/reporter/dist/internal/capture/pick-on-failure.js';
 import {
+  ARIA_SNAPSHOT_CONTENT_TYPE,
   ATTACHMENT_NAMES,
   FAILURE_SCREENSHOT_ATTACHMENT,
   LOCATOR_SUGGESTION_ANNOTATION,
@@ -665,7 +666,7 @@ export const test = base.extend<{ page: Page; piwiResourceCensus: void }, { piwi
         const snapshot = await internalCall(page, () => ariaSnapshotBestEffort(page.locator(':root') as any));
         if (snapshot) {
           await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
-            contentType: 'text/plain',
+            contentType: ARIA_SNAPSHOT_CONTENT_TYPE,
             body: snapshot,
           });
 

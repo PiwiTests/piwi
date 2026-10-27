@@ -618,6 +618,34 @@ describe('CoverageCollection', () => {
     }
   });
 
+  it('leaves out a text/plain piwi-browser-functions attachment, as a browser server header makes', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-browser-header-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'src'));
+      fs.writeFileSync(path.join(dir, 'src', 'pay.ts'), 'export function pay() {}\nexport function refund() {}\n');
+      const collection = new CoverageCollection({
+        settings: { browser: 'functions', server: 'off' },
+        baseUrls: [],
+        configDir: dir,
+      });
+      const part = (allFunctions: number[][], contentType: string) => ({
+        name: ATTACHMENT_NAMES.browserFunctions,
+        contentType,
+        body: Buffer.from(JSON.stringify({ v: 1, files: [{ path: 'src/pay.ts', allFunctions }] })),
+      });
+      collection.apply(testCase(['src/pay.ts']), [part([[2, 2]], 'text/plain'), part([[1, 1]], 'application/json')]);
+      await collection.settle();
+      const sent: Array<[string, { files: Array<{ allFunctions?: unknown }> }]> = [];
+      const client = {
+        putJSON: async (url: string, body: { files: Array<{ allFunctions?: unknown }> }) => void sent.push([url, body]),
+      };
+      await collection.sendRunCoverage(client as never, 7, null);
+      expect(sent[0]![1].files.map((file) => file.allFunctions)).toEqual([[[1, 1]]]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('falls back to the code reach paths when the browser coverage attachment is corrupt', () => {
     const collection = new CoverageCollection({
       settings: { browser: 'functions', server: 'off' },

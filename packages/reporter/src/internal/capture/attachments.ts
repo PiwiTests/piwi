@@ -36,24 +36,28 @@ export const INTERNAL_ATTACHMENT_NAMES: ReadonlySet<string> = new Set(Object.val
 /** A name of `ATTACHMENT_NAMES`. */
 export type AttachmentName = (typeof ATTACHMENT_NAMES)[keyof typeof ATTACHMENT_NAMES];
 
-/** The content type the capture fixtures write an attachment with: `text/plain` for the ARIA snapshot, JSON otherwise. */
+/**
+ * The content type the capture fixtures write `piwi-aria-snapshot` with, and
+ * the only one the reporter reads it with. An attachment made from a browser
+ * server's `x-playwright-attachment` header has the content type `text/plain`.
+ */
+export const ARIA_SNAPSHOT_CONTENT_TYPE = 'text/plain; charset=utf-8';
+
+/** The content type the capture fixtures write an attachment with: `ARIA_SNAPSHOT_CONTENT_TYPE` for the ARIA snapshot, JSON otherwise. */
 function contentTypeOf(name: AttachmentName): string {
-  return name === ATTACHMENT_NAMES.ariaSnapshot ? 'text/plain' : 'application/json';
+  return name === ATTACHMENT_NAMES.ariaSnapshot ? ARIA_SNAPSHOT_CONTENT_TYPE : 'application/json';
 }
 
-/**
- * Whether `attachment` is the capture fixtures' `name` attachment: that name
- * with the content type they write it with. A browser server's
- * `x-playwright-attachment` headers make `text/plain` attachments of any name.
- */
+/** Whether `attachment` has the name `name` and the content type the capture fixtures write it with. */
 export function isPiwiAttachment(attachment: { name: string; contentType?: string }, name: AttachmentName): boolean {
   return attachment.name === name && attachment.contentType === contentTypeOf(name);
 }
 
 /**
- * The capture fixtures' `name` attachment of a test result. The fixtures write
- * each at most once, as the test ends, so the last match is theirs: a
- * header-made attachment arrives at context creation, before it.
+ * The last of `attachments` that `isPiwiAttachment` accepts for `name`. A
+ * reader of an attachment the fixtures write more than once
+ * (`piwi-browser-functions`, `piwi-css-rules`) goes through every match with
+ * `isPiwiAttachment` instead.
  */
 export function findPiwiAttachment<T extends { name: string; contentType?: string }>(
   attachments: readonly T[] | undefined,
