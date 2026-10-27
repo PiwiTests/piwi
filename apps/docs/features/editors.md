@@ -126,8 +126,8 @@ your API keys. The desktop app keeps its own token.
 | Piwi: Open the log | Show the editor service's log; the `piwi.trace.server` setting adds its traffic |
 | Piwi: Get started | Open the walkthrough |
 
-Three commands have a shortcut, the same in VS Code and the JetBrains IDEs and free in their default keymaps on
-Windows, Linux and macOS: `Ctrl+Shift+Alt+K` runs the test at the cursor, `Ctrl+Shift+Alt+F` re-runs the failing
+Three commands have a shortcut, the same in VS Code and the JetBrains IDEs (where some keymaps and plugins already
+use these chords): `Ctrl+Shift+Alt+K` runs the test at the cursor, `Ctrl+Shift+Alt+F` re-runs the failing
 tests, and `Ctrl+Shift+Alt+R` records at the cursor, then stops the recording; on macOS, `Cmd` takes the place of
 `Ctrl`. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`), **Settings → Keymap** in a
 JetBrains IDE (search `Piwi`).

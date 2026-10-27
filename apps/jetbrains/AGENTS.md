@@ -65,8 +65,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   ([Settings and secrets](ARCHITECTURE.md#settings-and-secrets))
 - **Choices made on this machine live in `.idea/workspace.xml`** (`PiwiLocalSettings`). Choosing the desktop app never
   changes the instance, its project or its key.
-- **Open in IDE answers only a page of a known origin**: the Piwi instance an open project is connected to, or the
-  desktop app. Every other request gets a 403 from `PiwiOpenHandler` itself (`OpenOrigins.kt`, `OpenOriginsTest`,
+- **Open in IDE answers only a page of a known origin**: the Piwi instance an open project is connected to, the
+  desktop app, or the `PIWI_DASHBOARD_URL` of the IDE's environment (which reaches every open project). An instance's
+  page finds files only in the projects connected to it. Every other request gets a 403 from `PiwiOpenHandler` itself (`OpenOrigins.kt`, `OpenOriginsTest`,
   `PiwiOpenHandlerTest`); a change to its query or answer changes the dashboard's `useOpenInIde` and `ide-links.ts` in
   `apps/application` too. ([Open in IDE](ARCHITECTURE.md#open-in-ide))
 - **An instance on this machine is never reached through the IDE's proxy.** Connect tries every loopback address

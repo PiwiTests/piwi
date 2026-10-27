@@ -311,7 +311,7 @@ object Glue {
             if (live != null) return StatusView(liveText(live), tooltip, null, StatusAction.REFRESH, StatusIcon.RUNNING, liveFailing)
             return StatusView("Piwi: no run", tooltip, null, StatusAction.REFRESH)
         }
-        // The tests still failing once the later runs are laid over the run; the run's own count from an older service.
+        // The tests still failing once the later runs are laid over the run; the run's own count when the answer has none.
         val failing = run.failingTests ?: r.failedTests
         val fixed = run.resolved ?: 0
         val local = if (overlays > 0) "\n${plural(overlays, "local run")} since · ${plural(fixed, "test")} fixed locally" else ""

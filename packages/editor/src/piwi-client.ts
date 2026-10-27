@@ -1,7 +1,8 @@
 /**
  * The requests the editor service makes to a Piwi instance. Every read is a
  * GET with the `pd_` key in `X-API-Key`; what goes out of the workspace is file
- * paths and branch names, never a file's content.
+ * paths, branch names, this machine's name for a Flake Lab plan and a shared
+ * bisect's commit (SHA, subject, author, date), never a file's content.
  */
 import * as fs from 'node:fs';
 import { Readable } from 'node:stream';

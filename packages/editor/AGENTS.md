@@ -14,15 +14,17 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **Never re-implement a core function.** Import it from `@piwitests/core`.
 - **A protocol change updates both clients in the same change, with no compatibility path.** Each client bundles the
   service built from its own commit, and `@piwitests/editor` is private, so no client of another version talks to it.
-  This covers every request, field and command id (`PiwiCommand.command`) of `src/protocol.ts`, which VS Code imports
-  and the JetBrains plugin mirrors in `Protocol.kt`. ([ARCHITECTURE.md](ARCHITECTURE.md#clients-and-versions))
+  This covers every request and field of `src/protocol.ts`, which VS Code imports and the JetBrains plugin mirrors in
+  `Protocol.kt`. ([ARCHITECTURE.md](ARCHITECTURE.md#clients-and-versions))
+- **Renaming a command id (`PiwiCommand.command`) is a breaking change for users**, whatever the clients do: their
+  keybindings and settings name the ids, which `proposals/1.0-stabilization.md` freezes at 1.0.
 - **The instance, the project's reporter and the desktop app may be older than the service: keep reading them.** Each
   is installed on its own, so a route or a field an older one lacks has a fallback, and the variables a test run passes
   the reporter (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`, `PIWI_PAUSE_AT`, `PIWI_RECORD_CHANNEL`, `PIWI_COVERAGE_SERVER`,
   `PIWI_COVERAGE_BROWSER`) keep their names and formats. ([ARCHITECTURE.md](ARCHITECTURE.md#clients-and-versions))
 - **A change is pushed only when it differs from what the client holds.** `piwi/statusChanged`, `piwi/runStatusChanged`,
-  `piwi/failuresChanged` and `piwi/coverageChanged` compare with the last answer sent or answered, so a client never
-  reads an answer again on a push. Checked by `tests/lsp.test.ts` ("a change pushed to the client").
+  `piwi/failuresChanged` and `piwi/coverageChanged` compare with the last answer sent or answered, and carry the whole
+  new answer, so a client can keep it without reading it again. Checked by `tests/lsp.test.ts` ("a change pushed to the client").
   ([ARCHITECTURE.md](ARCHITECTURE.md#pushed-changes))
 - **Completion scans the file only after a member chain and `.`, or after `expect(`.** `(` is a trigger character, and
   completion after any other `(` is empty (`locatorCompletionSite`). ([ARCHITECTURE.md](ARCHITECTURE.md#completion))
@@ -37,8 +39,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   handed to a client uses it, never the folder as the editor spelled it (on Windows, possibly with a lower-case drive
   letter). Checked by `tests/lsp.test.ts` ("the folder a command runs in").
 - **A commit, a branch or a blob id reaches git only when it matches its pattern, never as an option** (`COMMIT`,
-  `BRANCH`, `BLOB` in `src/workspace.ts`). Checked by `tests/lsp.test.ts` ("a file is read at a commit by its object
-  name only") and `tests/workspace.test.ts` ("where a branch left the default branch").
+  `BRANCH`, `BLOB` in `src/workspace.ts`). The commit and branch checks are tested by `tests/lsp.test.ts` ("a file is
+  read at a commit by its object name only") and `tests/workspace.test.ts` ("where a branch left the default branch");
+  the blob check has no test yet.
 
 ### Reads and caching
 
@@ -68,8 +71,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **`src/piwi-client.ts` is the only file that talks to an instance.** Its requests go through `src/http.ts`, which
   follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (`tests/http.test.ts`).
   ([ARCHITECTURE.md](ARCHITECTURE.md#instance-client-and-proxy))
-- **An instance receives file paths and branch names from the workspace, never a file's content.** A request names a
-  spec, a test file or an application file by its path, and the checked-out branch.
+- **An instance receives paths, branch names and commit metadata from the workspace, never a file's content.** A
+  request names a spec, a test file or an application file by its path, the checked-out branch, the machine a Flake
+  Lab plan is for (`flakePlan`), and for a shared bisect the commit's SHA, subject, author and date (`recordBisect`).
 - **The API key leaves the process only in `X-API-Key` and in the MCP server definition.** `piwi/mcp` includes it only
   while the credentials' `mcpAuthorization` is `key`; with `sign-in`, the agent signs in through the instance's OAuth.
   Checked by `tests/lsp.test.ts` ("Piwi’s MCP server for the agent").

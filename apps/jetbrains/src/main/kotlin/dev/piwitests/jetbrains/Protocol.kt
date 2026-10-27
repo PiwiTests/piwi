@@ -249,8 +249,7 @@ data class LiveTest(val testCaseId: Int = 0, val status: String? = null)
  * event stream is connected or `polling`, `updatedAt` when the latest run was last read (ISO 8601), and `liveTests` the
  * tests `live` began or ended until the latest run is read once it ended, `reporterVersion` the version of
  * `@piwitests/reporter` the project installs (null when none is found), `baseline` the baseline chosen and what it
- * found, `branches` the branches a baseline can be chosen from, the default branch first. The fields after
- * `checkedOut` may be null.
+ * found, `branches` the branches a baseline can be chosen from, the default branch first.
  */
 data class RunStatus(
     val root: String? = null,
@@ -319,7 +318,7 @@ data class RepeatVerdict(val verdict: String? = null, val failed: Boolean = fals
  * failed at changed since) or `fixed-locally`, `browserName` the Playwright project. `file` is the test's spec relative
  * to the Playwright config's folder, `status` `failed` or `timedOut`, `clusterId` and `clusterTitle` its failure
  * cluster, `owner` the test's owner, `isNew` whether it did not fail on this project in the latest complete run,
- * `duration` in milliseconds. The fields after `hasTrace` may be null. `piwi/failuresChanged`
+ * `duration` in milliseconds. `piwi/failuresChanged`
  * carries the list again when a line or a state changes.
  */
 data class WorkspaceFailure(

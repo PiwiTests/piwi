@@ -125,7 +125,8 @@ The protocol of `src/protocol.ts` has two clients, and each bundles its own copy
 
 `@piwitests/editor` is private (`"private": true`): it is never published, and nothing else starts the service. A client
 therefore always talks to the service of its own commit. The protocol changes in one step, with both clients, and keeps
-no compatibility path.
+no compatibility path. The command ids of `PiwiCommand.command` are the exception: users' keybindings and settings name
+them, so renaming one is a breaking change for users (`proposals/1.0-stabilization.md` freezes them at 1.0).
 
 What does cross versions is what the service talks to, since each is installed on its own:
 
@@ -850,7 +851,8 @@ A change is pushed against what the client holds:
 - `piwi/coverageChanged` is sent when a document's marks differ from the last ones sent, or answered to `piwi/coverage`
   for it.
 
-A client therefore keeps the pushed answers and never reads one again on a push. An answer counts as held as soon as it
+A client can therefore keep the pushed answers without reading them again (the VS Code extension still reads the
+status and what depends on it again after `piwi/statusChanged`). An answer counts as held as soon as it
 is given, so a client that read the state midway through a refresh still hears where the refresh ends.
 
 ### Response cache

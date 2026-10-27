@@ -76,8 +76,8 @@
 
     <!--
       The shortcuts go in the default keymap, which every bundled keymap descends from: the macOS keymaps turn their
-      ctrl into the command key. Each is a ctrl alt shift chord the default keymap leaves free; some bundled plugins and
-      keymaps bind the same chords to context-limited actions (the list is in apps/jetbrains/ARCHITECTURE.md).
+      ctrl into the command key. Each is a ctrl alt shift chord; some bundled plugins and keymaps bind the same chords
+      (the list is in apps/vscode/ARCHITECTURE.md, Keybindings).
     -->
     <actions>
         <group id="Piwi.Actions" text="Piwi" popup="true">

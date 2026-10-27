@@ -603,6 +603,9 @@ Marketplace's Plugin Verifier counts every use. The replacements in use:
 | `SimpleListCellRenderer.create`     | a `SimpleListCellRenderer` subclass                                                |
 | `CredentialAttributes(…)` in Kotlin | `PiwiCredentials.attributes`, in Java, so it binds to the one-argument constructor |
 
+To invoke an action from code, use `ActionManager.tryToExecute`, not `ActionUtil.invokeAction` (no code does either
+today).
+
 What stays has no replacement in 2024.1:
 
 - the LSP API, renamed in 2026.3 (`LspServer` → `LspClient`, `LspServerSupportProvider` → `LspIntegrationProvider`,

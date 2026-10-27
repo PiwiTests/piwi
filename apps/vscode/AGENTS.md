@@ -15,14 +15,18 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   from the service; this extension draws them, and a new feature starts as a service request.
 - **The command ids the service names are part of the protocol.** They are the ids of `PiwiCommand.command` in
   `packages/editor/src/protocol.ts`, and `piwi.copyAgentContext` in a quick fix: renaming one changes the service and
-  both clients in the same change ([Clients and versions](../../packages/editor/ARCHITECTURE.md#clients-and-versions)).
+  both clients in the same change ([Clients and versions](../../packages/editor/ARCHITECTURE.md#clients-and-versions)),
+  and is a breaking change for users, whose keybindings and settings name the ids (`proposals/1.0-stabilization.md`
+  freezes them, with the extension's own command ids, settings and MCP provider id).
   `tests/walkthrough.test.ts` also fails when a walkthrough step names a command, view or context key that no longer
   exists.
 - **Credentials are handed to the service only when they differ from the ones last handed** (`handChangedCredentials`,
   250 ms after the last change of a burst). Each handing makes the service read everything again.
   ([Service, lenses and credentials](ARCHITECTURE.md#service-lenses-and-credentials))
-- **A push from the service is never answered with a read.** The failures view keeps what `piwi/failuresChanged`
-  pushes, and an edit asks for no coverage: the service pushes `piwi/coverageChanged`.
+- **The failures view and the coverage marks keep what the service pushes.** The failures view keeps the answer
+  `piwi/failuresChanged` carries, and an edit asks for no coverage: the service pushes `piwi/coverageChanged`.
+  (`piwi/statusChanged` still makes the extension read the status, the failures, the coverage and the MCP servers
+  again.)
   ([Failures view](ARCHITECTURE.md#failures-view))
 - **`src/glue.ts`, `src/connect.ts`, `src/breakpoints.ts` and `src/send-listener.ts` use no VS Code API.** Put logic
   that needs no editor there, so the unit tests (`npm run vscode:test`) cover it.
@@ -77,7 +81,7 @@ npm run vscode:package            # dist/piwi.vsix
 ```
 
 - **`node build.mjs` alone fails when a file of the editor service is missing from `packages/editor/dist/`**: run
-  `npm run editor:build`, or `npm run vscode:build`, which builds the service first.
+  `npm run editor:build -w @piwitests/editor`, or `npm run vscode:build`, which builds the service first.
 - **Changelog**: the Marketplace's Changelog tab is written at publish time from the `ide` entries of the root
   `CHANGELOG.md`, so a commit with the `ide` scope is what puts a line in it.
   ([Changelog](ARCHITECTURE.md#changelog))
