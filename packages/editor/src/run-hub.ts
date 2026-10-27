@@ -1,9 +1,10 @@
 /**
  * The hub's WebSocket, for Piwi Picker (`@piwitests/core/run-hub`): the runs the editor started, as the run sessions
  * hold them (`run-sessions.ts`), followed and steered from the developer's own browser. It listens on `127.0.0.1`
- * alone, on a free port; a handshake is taken only on `HUB_PATH`, with the hub's own `Host` and a browser extension's
- * `Origin`, and refused with a status before any WebSocket opens. The first message must be `hello` with the token,
- * compared in constant time, within `HUB_HELLO_MS`. The token is in the service's discovery file, which only this
+ * alone, on a free port; a handshake is taken only on `HUB_PATH`, with the hub's own `Host` (its port, or one the
+ * editor forwards to it from the browser's machine: `forwarded`) and a browser extension's `Origin`, and refused with
+ * a status before any WebSocket opens. The first message must be `hello` with the token, compared in constant time,
+ * within `HUB_HELLO_MS`. The token is in the service's discovery file, which only this
  * user reads, and the editor's Send to editor endpoint lists it to a request carrying the pairing's token: the paired
  * Piwi Picker, and any process of this user that holds that token (the runs the editor starts name it in
  * `PIWI_EDITOR_SEND`). Another user's processes and web pages are kept out; this user's own processes are not a
@@ -84,6 +85,8 @@ export interface RunHubOptions {
   welcome(): { pid: number; version: string; client: string | null; roots: string[] };
   /** A subscribed connection came or went: whether a stop no pause bar shows can be answered changed. */
   surfacesChanged(): void;
+  /** The loopback ports the client forwards to the hub (`piwi/hub`), read at each handshake. */
+  forwarded?(): readonly number[];
   keepaliveMs?: number;
   helloMs?: number;
 }
@@ -288,7 +291,8 @@ export class RunHub {
     socket.on('error', () => socket.destroy());
     if (req.url !== HUB_PATH) return refuse(socket, 404, 'Not Found');
     // Another name for this machine (a page's DNS rebinding) or a page's origin never opens a WebSocket.
-    if (!isHubHost(req.headers.host, this.port) || !isExtensionOrigin(req.headers.origin)) {
+    const forwarded = this.options.forwarded?.() ?? [];
+    if (!isHubHost(req.headers.host, this.port, forwarded) || !isExtensionOrigin(req.headers.origin)) {
       return refuse(socket, 403, 'Forbidden');
     }
     // A connection being closed, however its close began (the other side's, a frame the library refused), holds no

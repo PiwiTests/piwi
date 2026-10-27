@@ -804,6 +804,22 @@ class GlueTest {
     }
 
     @Test
+    fun `pairing names the ports a JetBrains Gateway backend's person forwards, at the same numbers`() {
+        assertEquals(
+            "With JetBrains Gateway, forward port 63342 under Ports in the JetBrains Client first, and 51234 for the runs, at the same numbers.",
+            Glue.forwardingHint(63342, listOf(51234)),
+        )
+        assertEquals(
+            "With JetBrains Gateway, forward port 63342 under Ports in the JetBrains Client first, and 51234 and 51240 for the runs, at the same numbers.",
+            Glue.forwardingHint(63342, listOf(51240, 51234, 51240)),
+        )
+        assertEquals(
+            "With JetBrains Gateway, forward port 63342 under Ports in the JetBrains Client first, at the same number.",
+            Glue.forwardingHint(63342, emptyList()),
+        )
+    }
+
+    @Test
     fun `the tooltip names the reporter the project installs`() {
         val withReporter = RunStatusResult(listOf(RunStatus(root = "/w", branch = "feature/pay", run = passed, reporterVersion = "0.47.0")))
         assertEquals(

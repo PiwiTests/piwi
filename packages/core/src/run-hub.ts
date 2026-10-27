@@ -388,11 +388,35 @@ export function isExtensionOrigin(origin: string | null | undefined): boolean {
   return typeof origin === 'string' && (CHROME_EXTENSION.test(origin) || FIREFOX_EXTENSION.test(origin));
 }
 
-/** Whether a handshake's `Host` names the hub itself, listening on `port`: a page under another name is refused. */
-export function isHubHost(host: string | null | undefined, port: number): boolean {
-  if (typeof host !== 'string') return false;
-  const lower = host.toLowerCase();
-  return lower === `127.0.0.1:${port}` || lower === `localhost:${port}`;
+/** The most ports an editor names as forwarded to one listener: a remote window forwards it once. */
+export const MAX_FORWARDED_PORTS = 8;
+
+/**
+ * The port a request's `Host` names the listener at: `127.0.0.1` or `localhost` with the port it listens on, or with
+ * one of the ports the editor forwards to it (`forwarded`: a remote window's, where the browser's machine reaches it);
+ * null for any other name, a page under another name (DNS rebinding) included.
+ */
+export function hubHostPort(
+  host: string | null | undefined,
+  port: number,
+  forwarded: readonly number[] = [],
+): number | null {
+  if (typeof host !== 'string') return null;
+  const match = /^(?:127\.0\.0\.1|localhost):([1-9]\d{0,4})$/.exec(host.toLowerCase());
+  const named = match ? Number(match[1]) : null;
+  return named !== null && (named === port || forwarded.includes(named)) ? named : null;
+}
+
+/** Whether a handshake's `Host` names the hub itself, at its port or one forwarded to it (`hubHostPort`). */
+export function isHubHost(host: string | null | undefined, port: number, forwarded: readonly number[] = []): boolean {
+  return hubHostPort(host, port, forwarded) !== null;
+}
+
+/** The ports a client names as forwarded to a listener, those that are ports, at most `MAX_FORWARDED_PORTS`. */
+export function forwardedPorts(ports: unknown): number[] {
+  if (!Array.isArray(ports)) return [];
+  const valid = ports.filter((p): p is number => isInt(p, 1, 65_535));
+  return [...new Set(valid)].slice(0, MAX_FORWARDED_PORTS);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

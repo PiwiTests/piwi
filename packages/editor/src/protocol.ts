@@ -1553,6 +1553,26 @@ export interface PickAtResult {
 export const PICK_AT_REQUEST = 'piwi/pickAt';
 
 /**
+ * `piwi/hub`: the address of the service's hub, Piwi Picker's WebSocket, and, with `forwarded`, the loopback ports of
+ * the browser's machine that the client forwards to it, in place of those it named before (a remote window: VS Code's
+ * `asExternalUri`). The hub then takes a handshake whose `Host` is `127.0.0.1` or `localhost` at one of those ports,
+ * beside its own; the extension's `Origin` and the token are required all the same. Ports that are not ports are left
+ * out, and 8 are kept at most. Answered once the hub takes them, so a client lists a forwarded address only after.
+ */
+export interface HubParams {
+  forwarded?: number[];
+}
+
+export interface HubResult {
+  /** `ws://127.0.0.1:<port>/piwi/hub`; null while the hub does not listen. */
+  url: string | null;
+  /** The forwarded ports the hub takes now. */
+  forwarded: number[];
+}
+
+export const HUB_REQUEST = 'piwi/hub';
+
+/**
  * What a client starts at a stop (`piwi/stopAction`): `pick` and `record` start the pause bar's Pick a locator and
  * Record here in the test's window (the locator comes back through the client's Send to editor listener, then
  * `piwi/applyPick`; the recording through `piwi/recordRequested`); `assert` opens the check panel's Check an element

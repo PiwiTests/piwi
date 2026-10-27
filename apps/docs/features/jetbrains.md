@@ -51,6 +51,8 @@ action is under **Tools → Piwi**:
   an inlay above it with **Resume**, **Step**, **Run to Caret** and **Finish**; they are also first in the status bar
   item's menu and under **Tools → Piwi**, with **Pause the Run** and **Stop the Run**. A headless test's page shows in
   the Piwi tool window's **Paused Page** tab, where a click on the image picks the locator of the element under it.
+  On a JetBrains Gateway backend, forward the ports **Pair with Piwi Picker** names:
+  [Remote development](/guide/remote-development#jetbrains-gateway).
 - **[Code from a pause](./editor-stop-code)**: the inlay, the arrow's menu, the status bar item's menu and **Tools →
   Piwi** also offer **Pick a Locator**, **Record Here**, **Assert**, **Assert a Region** and **Mock a Request** (the
   inlay names them shorter), whose code goes above the stopped line in one undoable edit; the end of the caret's line

@@ -20,7 +20,7 @@ brings that into VS Code, Cursor and VSCodium.
   that line, and the editor marks the paused line, then steps the run, runs it to the cursor or resumes it with the
   debugger's keys. From the paused line, it writes an assertion or a mock of a request the page made, and counts the
   matches of the locator at the cursor on the paused page; a headless test's page shows beside the editor, where a
-  click picks the locator.
+  click picks the locator. In a remote window, Piwi Picker follows the runs through a port VS Code forwards.
 - **The tests behind each line.** Each test's latest result in the gutter, a failing test's body tinted, its history
   on hover; above each locator line, the tests that use it; above an application file, the tests that reach it.
 - **Coverage marks.** With coverage recorded, the lines your tests ran, in TypeScript, JavaScript and C# alike, the

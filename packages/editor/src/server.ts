@@ -47,6 +47,7 @@ import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
 import { RUN_CHANNEL_ENV } from '@piwitests/core/run-channel';
+import { forwardedPorts } from '@piwitests/core/run-hub';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
@@ -210,6 +211,7 @@ import {
   TEST_ITEMS_REQUEST,
   PAUSED_PAGE_REQUEST,
   PICK_AT_REQUEST,
+  HUB_REQUEST,
   RUN_CONTROL_REQUEST,
   RUN_SESSION_NOTIFICATION,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
@@ -249,6 +251,8 @@ import {
   type PausedPageResult,
   type PickAtParams,
   type PickAtResult,
+  type HubParams,
+  type HubResult,
   type RunControlParams,
   type RunControlResult,
   type SetRunBreakpointsParams,
@@ -1672,6 +1676,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let clientName: string | null = null;
   /** The hub's WebSocket, for Piwi Picker: null until it listens, and on a machine that refuses a port. */
   let runHub: RunHub | null = null;
+  /** The loopback ports the client forwards to the hub from the browser's machine (`piwi/hub`). */
+  let hubForwarded: number[] = [];
   /** The command lines of the runs the service built, by ref, which the hub names to Piwi Picker. */
   const runCommands = new Map<string, string>();
   /** The runs the service built to be watched (with the editor's breakpoints, or a `page.pause()`), by ref. */
@@ -2172,6 +2178,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         },
         welcome: () => ({ pid: process.pid, version: SERVICE_VERSION, client: clientName, roots: folders }),
         surfacesChanged: () => runSessions.surfacesChanged(),
+        forwarded: () => hubForwarded,
         keepaliveMs: options.hubKeepaliveMs,
         helloMs: options.hubHelloMs,
       }),
@@ -3450,6 +3457,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   );
 
   connection.onRequest(PICK_AT_REQUEST, (params: PickAtParams): Promise<PickAtResult> => runSessions.pickAt(params));
+
+  connection.onRequest(HUB_REQUEST, (params: HubParams | null): HubResult => {
+    if (params?.forwarded !== undefined) hubForwarded = forwardedPorts(params.forwarded);
+    return { url: runHub?.url ?? null, forwarded: hubForwarded };
+  });
 
   connection.onRequest(STOP_ACTION_REQUEST, (params: StopActionParams): Promise<StopActionResult> =>
     stopActions.action(params),

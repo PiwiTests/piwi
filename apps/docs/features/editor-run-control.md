@@ -127,3 +127,4 @@ IDE, closes the connections: a stop with no pause bar then goes on, and one the 
 - [Breakpoints in the browser](./editor-breakpoints): the breakpoints a run starts with, and the pause bar.
 - [Runs from the editor](./editor-runs): the commands that start a run, and how the editor follows it.
 - [Editor extensions](./editors): what the editor shows from your suite, in both editors.
+- [Remote development](/guide/remote-development): remote windows and JetBrains Gateway.

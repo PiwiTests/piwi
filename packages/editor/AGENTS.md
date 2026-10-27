@@ -13,7 +13,7 @@ clients stay thin and both editors give the same answers.
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
   `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/coverage`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
-  `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, `piwi/runControl`, `piwi/pausedPage`, `piwi/pickAt`, `piwi/stopAction`,
+  `piwi/pageCandidates`, `piwi/applyPick`, `piwi/runId`, `piwi/runControl`, `piwi/pausedPage`, `piwi/pickAt`, `piwi/hub`, `piwi/stopAction`,
   `piwi/stopRequests`, `piwi/locatorAtCaret`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`, `piwi/commandEnded`, `piwi/declineRecord` and `piwi/setRunBreakpoints` notifications, and the
   `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/runEnded`, `piwi/statusChanged`, `piwi/notice`,
   `piwi/desktopJobChanged`, `piwi/recordingChanged`, `piwi/recordRequested`, `piwi/coverageChanged`,
@@ -310,10 +310,10 @@ clients stay thin and both editors give the same answers.
 - Piwi Picker follows and steers the same runs through the hub's WebSocket (`src/run-hub.ts`, `RunHub`, framed by
   `@piwitests/core/run-hub`), which the service opens beside the record channel once initialized: on `127.0.0.1`
   alone, a free port, `ws://127.0.0.1:<port>/piwi/hub` (`HUB_PATH`; any other path is a 404, a plain HTTP request a
-  426). A handshake whose `Host` is not `127.0.0.1:<port>` or `localhost:<port>` (`isHubHost`: a page reached under
-  another name, DNS rebinding) or whose `Origin` is not a browser extension's (`isExtensionOrigin`:
-  `chrome-extension://` and 32 letters `a` to `p`, `moz-extension://` and a UUID; never `http(s)`, `null`, `file` or
-  none) is refused with a 403 before any WebSocket opens; past 16 open connections, or 8 open that did not say hello,
+  426). A handshake whose `Host` is not `127.0.0.1` or `localhost` at its port or at one the client forwards to it
+  (`piwi/hub`; `isHubHost`: a page reached under another name, DNS rebinding) or whose `Origin` is not a browser
+  extension's (`isExtensionOrigin`: `chrome-extension://` and 32 letters `a` to `p`, `moz-extension://` and a UUID;
+  never `http(s)`, `null`, `file` or none) is refused with a 403 before any WebSocket opens; past 16 open connections, or 8 open that did not say hello,
   with a 503; a handshake's headers must arrive within 5 s and fit in 8 KiB. The first message must be
   `{ type: 'hello', token }` with the hub's token (random per start, compared in constant time: `sameToken` in
   `recorder/handoff.ts`) within 5 s (`HUB_HELLO_MS`), else the connection closes (4001, 4002); the hub answers

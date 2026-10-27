@@ -6,10 +6,11 @@
  * machine (`@piwitests/core/run-hub`'s `LiveAnswer`, from the services'
  * discovery files), so the one pairing reaches the runs of every editor window.
  * It answers only a request naming it as `127.0.0.1:<port>` or
- * `localhost:<port>` (a page reached under another name gets a 403), and every
- * answer to a request carrying a challenge carries the proof that it holds the
- * token (`@piwitests/core/editor-send`), so Piwi Picker sends the token only to
- * this listener.
+ * `localhost:<port>`, its own port or the one a remote window forwards to it
+ * from the browser's machine (a page reached under another name gets a 403),
+ * and every answer to a request carrying a challenge carries the proof that it
+ * holds the token (`@piwitests/core/editor-send`) for the port the request
+ * named, so Piwi Picker sends the token only to this listener.
  */
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -24,7 +25,7 @@ import {
   type EditorPairing,
   type EditorSendPayload,
 } from '@piwitests/core/editor-send';
-import { isHubHost, type LiveAnswer, type LiveHub } from '@piwitests/core/run-hub';
+import { HUB_PATH, hubHostPort, type LiveAnswer, type LiveHub } from '@piwitests/core/run-hub';
 
 export const SEND_PATH = '/piwi/send';
 export const LIVE_PATH = '/piwi/live';
@@ -60,12 +61,11 @@ function answer(res: http.ServerResponse, status: number, body: unknown): void {
 }
 
 /**
- * The proof, for a request carrying a challenge, that this listener holds the pairing's token, bound to the port the
- * request reached; null without a challenge or a token.
+ * The proof, for a request carrying a challenge, that this listener holds the pairing's token, bound to `port`: the
+ * port the request reached, or the forwarded one its `Host` names; null without a challenge or a token.
  */
-async function proofFor(req: http.IncomingMessage, token: string): Promise<string | null> {
+async function proofFor(req: http.IncomingMessage, token: string, port: number): Promise<string | null> {
   const challenge = req.headers[EDITOR_CHALLENGE_HEADER];
-  const port = req.socket.localPort;
   if (!token || !port || !isEditorChallenge(challenge)) return null;
   return editorTokenProof(token, port, challenge);
 }
@@ -79,15 +79,19 @@ export function startSendListener(options: {
   token: () => string;
   onPayload: (payload: EditorSendPayload) => Promise<SendResult>;
   /** The live hubs, read from the discovery files at each request. */
-  live: () => LiveHub[];
+  live: () => LiveHub[] | Promise<LiveHub[]>;
+  /** The port of the browser's machine a remote window forwards to the listener, read at each request. */
+  forwarded?: () => readonly number[];
 }): Promise<SendListener> {
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     const token = options.token();
-    const proof = await proofFor(req, token);
+    const reached = req.socket.localPort ?? 0;
+    const named = hubHostPort(req.headers.host, reached, options.forwarded?.() ?? []);
+    const proof = await proofFor(req, token, named ?? reached);
     if (proof) res.setHeader(EDITOR_PROOF_HEADER, proof);
     cors(req, res);
     // Another name for this machine (a page's DNS rebinding) is not this listener's.
-    if (!isHubHost(req.headers.host, req.socket.localPort ?? 0)) return answer(res, 403, { error: 'forbidden' });
+    if (named === null) return answer(res, 403, { error: 'forbidden' });
     if (req.method === 'OPTIONS') {
       res.statusCode = 204;
       res.end();
@@ -97,9 +101,9 @@ export function startSendListener(options: {
       if (!sendAuthorized(req.headers.authorization, token)) return answer(res, 401, { error: 'not paired' });
       let hubs: LiveHub[] = [];
       try {
-        hubs = options.live();
+        hubs = await options.live();
       } catch {
-        // No folder to read: no hub.
+        // No folder to read, or no service to ask: no hub.
       }
       return answer(res, 200, { hubs } satisfies LiveAnswer);
     }
@@ -189,10 +193,47 @@ export function sendPairing(options: {
   };
 }
 
+/** The port of an `http:` address on `127.0.0.1` or `localhost`; null for any other address. */
+export function loopbackPort(address: string): number | null {
+  try {
+    const url = new URL(address);
+    const loopback = url.hostname === '127.0.0.1' || url.hostname === 'localhost';
+    return url.protocol === 'http:' && loopback && url.port ? Number(url.port) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** What a remote window asks to list its service's hub where the browser's machine reaches it. */
+export interface RemoteHub {
+  /** The address of this window's service's hub (`piwi/hub`); null while it does not listen. */
+  own(): Promise<string | null>;
+  /** The address the browser's machine reaches an address of this one at (`vscode.env.asExternalUri`). */
+  external(address: string): Promise<string>;
+  /** Has the service's hub take the forwarded port in `Host` (`piwi/hub` with `forwarded`), answered once it does. */
+  forward(port: number): Promise<void>;
+}
+
 /**
- * The live hubs `GET /piwi/live` lists: none in a remote window, whose services' loopback addresses are the remote
- * machine's, which the browser's machine does not reach.
+ * The live hubs `GET /piwi/live` lists. In a local window, those of every editor service on the machine. In a remote
+ * window, whose services listen on the remote machine's loopback interface, this window's own alone, at the loopback
+ * port of the browser's machine VS Code forwards to it, once its service takes that port; the other windows' services
+ * take none this window forwards. None when the forward is not a loopback `http:` address (Codespaces in the browser
+ * forwards to an `https` one) or the service does not answer.
  */
-export function liveHubsHere(remoteName: string | undefined, read: () => LiveHub[]): LiveHub[] {
-  return remoteName ? [] : read();
+export async function liveHubsHere(
+  remoteName: string | undefined,
+  read: () => LiveHub[],
+  remote: RemoteHub,
+): Promise<LiveHub[]> {
+  if (!remoteName) return read();
+  const own = await remote.own();
+  const hub = own ? read().find((h) => h.url === own) : undefined;
+  if (!hub) return [];
+  const { port, pathname } = new URL(hub.url);
+  const external = new URL(await remote.external(`http://127.0.0.1:${port}${pathname}`));
+  const forwarded = loopbackPort(external.href);
+  if (forwarded === null || pathname !== HUB_PATH) return [];
+  await remote.forward(forwarded);
+  return [{ ...hub, url: `ws://${external.hostname}:${forwarded}${HUB_PATH}` }];
 }

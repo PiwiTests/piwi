@@ -1715,6 +1715,21 @@ object Glue {
         return pageX to pageY
     }
 
+    /**
+     * What **Pair with Piwi Picker** adds for remote development: the platform gives no public way to forward a port of
+     * a JetBrains Gateway backend, so the person forwards the IDE's port (`pairing`) and the run hubs' (`hubs`) under
+     * **Ports** in the JetBrains Client, at the same numbers, which the pairing's proof and the hubs' `Host` check name.
+     */
+    fun forwardingHint(pairing: Int, hubs: List<Int>): String {
+        val runs = hubs.distinct().sorted()
+        val first = "With JetBrains Gateway, forward port $pairing under Ports in the JetBrains Client first"
+        return when (runs.size) {
+            0 -> "$first, at the same number."
+            1 -> "$first, and ${runs.single()} for the runs, at the same numbers."
+            else -> "$first, and ${runs.dropLast(1).joinToString(", ")} and ${runs.last()} for the runs, at the same numbers."
+        }
+    }
+
     /** The request header carrying Piwi Picker's challenge (`@piwitests/core/editor-send`). */
     const val EDITOR_CHALLENGE_HEADER = "x-piwi-editor-challenge"
 

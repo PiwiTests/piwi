@@ -11,7 +11,10 @@ import {
   MAX_HUB_MESSAGE,
   MAX_HUB_PROJECT,
   MAX_HUB_ROOTS,
+  MAX_FORWARDED_PORTS,
   MAX_HUB_WARNINGS,
+  forwardedPorts,
+  hubHostPort,
   isExtensionOrigin,
   isHubHost,
   liveHubsOf,
@@ -109,6 +112,23 @@ describe('the hub’s WebSocket', () => {
     ]) {
       expect(isHubHost(host, 43123), String(host)).toBe(false);
     }
+  });
+
+  test('takes a loopback Host at a port the editor forwards to it, and no other name or port', () => {
+    expect(hubHostPort('127.0.0.1:43123', 43123, [55001])).toBe(43123);
+    expect(hubHostPort('127.0.0.1:55001', 43123, [55001])).toBe(55001);
+    expect(hubHostPort('localhost:55001', 43123, [55001])).toBe(55001);
+    expect(isHubHost('localhost:55001', 43123)).toBe(false);
+    for (const host of ['evil.test:55001', '127.0.0.1:55002', '127.0.0.1:055001', '[::1]:55001', '10.0.0.2:55001']) {
+      expect(hubHostPort(host, 43123, [55001]), host).toBeNull();
+    }
+  });
+
+  test('reads the forwarded ports a client names: ports alone, each once, eight at most', () => {
+    expect(forwardedPorts([55001, 55001, 0, 65_536, 1.5, '55002', 55003])).toEqual([55001, 55003]);
+    expect(forwardedPorts(Array.from({ length: 12 }, (_, i) => 50_000 + i))).toHaveLength(MAX_FORWARDED_PORTS);
+    expect(forwardedPorts('55001')).toEqual([]);
+    expect(forwardedPorts(undefined)).toEqual([]);
   });
 
   test('reads the token of hello, and nothing else as one', () => {

@@ -13,8 +13,8 @@ tools that follow the run, read the stopped page as its accessibility tree and a
 
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
 (Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2 and 3 are built too, and PR 4's
-service half and IDE clients (below), and PR 5's first half (below), while PR 4's Runs window, PR 5's Runs window,
-IDE clients and forwarded addresses, and PRs 6 to 9 are not. PR 1 differs from the text in four ways. A headed
+service half and IDE clients (below), and PR 5's first half and its IDE half with the forwarded addresses (below),
+while PR 4's Runs window, PR 5's Runs window, and PRs 6 to 9 are not. PR 1 differs from the text in four ways. A headed
 browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
@@ -93,7 +93,7 @@ refused at a stop that ended or is ending, and at one whose page the worker cann
 page cannot see either. Both IDE clients name their pairing in `PIWI_EDITOR_SEND` for every run that names a run
 channel, since any such run can stop with the bar, Pause included, and the worker takes it out of its environment
 while a test runs, as it does `PIWI_RUN_CHANNEL`, its picks still posted to it.
-The live endpoint lists loopback addresses: a remote window forwards them with Part 6. PR 3's extension half is the
+The live endpoint lists loopback addresses, which a remote window forwards (Part 6). PR 3's extension half is the
 worker's hub connections, the Runs window, the popup's **Runs** tile and the run shortcut (Part 4.1 and 4.4). It differs
 from the text in five ways. The shortcut is assigned by the person, not at install, where the text gives it
 `Ctrl+Shift+5`: a global key is taken from every application on the computer, paired with an editor or not, and the only
@@ -191,6 +191,26 @@ about ten a second there, all alike, and sends one too), an animated one ten a s
 CPU, 0.3 % while a stop waits unwatched, is 1.7 % watching the still page and 9 % the animated one in Chromium, 6.7 %
 and 8.7 % in Firefox (acknowledging every frame at once costs 31 % in Chromium); a view starts in 4 to 11 ms and stops
 in 2 to 5 ms, two input events play in 10 to 43 ms, and a pick on the image takes 150 to 260 ms.
+PR 5's IDE half is Pick on the image in both clients and the forwarded addresses of remote development; the IDE shows
+an image at each stop, with no live view, which stays the Runs window's. It differs from the text in five ways. A click
+on a headless stop's image picks only where its worker takes `pick-at` and the image names its viewport, with **Click
+the image to pick a locator** above it and a crosshair over it; the answer shows under the caption, and the locator
+comes back through Send to editor as the bar's pick does. VS Code's paused page view, script-free until then, runs one
+script by the style's nonce (`default-src 'none'`), only where a click picks, which posts the click's offset, the size
+the image is shown at and which image it was on: the image is scaled to fit, so its natural size alone does not map a
+click. A remote VS Code window (Remote SSH, WSL, Dev Containers, a codespace in VS Code desktop) lists its own
+service's hub alone, at the local port `asExternalUri` forwards to it, once the service takes that port in `Host`
+(`piwi/hub { forwarded }`, answered once it does, 8 ports at most, loopback names alone, the token and the extension's
+origin still required); the other windows' services on that machine take no port this window forwards, so one
+pairing reaches one remote window's runs. The Send to editor listener takes the port its own pairing is forwarded to
+too, and proves the token for the port the request named: VS Code forwards to another local port when the remote's is
+taken on the browser's machine, as it is while a local window holds the saved pairing port. A codespace in the browser
+forwards to an `https` address behind GitHub's sign-in, which Piwi Picker never pairs with, so it lists nothing there.
+The JetBrains platform has no public API to forward a port of a Gateway backend, nor to tell one from a local IDE:
+`GlobalPortForwardingManager` of the bundled Code With Me plugin is experimental in 2024.1 and 2026.2, with its
+parent's methods scheduled for removal in 2026.2, and `ClientSessionsManager` and `AppMode` are internal. **Pair with
+Piwi Picker** names the IDE's port and its runs' hub ports, to forward under **Ports** in the JetBrains Client at the
+same numbers, which the proof and the `Host` check take unchanged; a hub's port changes as its service starts again.
 The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of
@@ -618,9 +638,10 @@ Every protocol change lands with both clients, per the service's rule; the reque
   case) naming the process its name names: another machine's file, in a home folder several machines share, and any
   other file are skipped and left. `GET …/live` answers `{ hubs: [{ url, token, pid, version, client, roots,
   startedAt }] }`, never the run channel's token, and a 401 without the pairing's token; the URL is the pairing's with
-  `send` replaced by `live` (`liveUrlOf`). Its addresses are loopback ones: a remote window forwards them with Part 6,
-  and until then a remote VS Code window lists none (`vscode.env.remoteName`), its services listening on the remote
-  machine; the JetBrains IDEs' public API does not tell a Gateway backend from a local IDE, and it lists them there.
+  `send` replaced by `live` (`liveUrlOf`). Its addresses are loopback ones: a remote VS Code window lists its own
+  service's hub at the local port VS Code forwards to it (Part 6), its services listening on the remote machine; the
+  JetBrains IDEs' public API does not tell a Gateway backend from a local IDE, and it lists them there, at the ports
+  the person forwards at the same numbers.
 
   Before Piwi Picker sends the pairing's token to either endpoint, the program there proves it holds it
   (`@piwitests/core/editor-send`, as the desktop app proves its own): a request with a challenge in

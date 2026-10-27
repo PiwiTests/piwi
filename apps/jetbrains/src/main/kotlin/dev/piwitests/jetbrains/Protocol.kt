@@ -759,6 +759,15 @@ data class PickAtParams(val ref: String, val worker: Int? = null, val since: Str
 data class PickAtResult(val ok: Boolean = false, val message: String? = null, val locator: String? = null)
 
 /**
+ * `piwi/hub`: the address of the service's hub, and, with `forwarded`, the loopback ports of the browser's machine a
+ * client forwards to it, which it then takes in `Host` beside its own. The plugin names none: the platform has no
+ * public API for Gateway's port forwarding.
+ */
+data class HubParams(val forwarded: List<Int>? = null)
+
+data class HubResult(val url: String? = null, val forwarded: List<Int>? = null)
+
+/**
  * `piwi/stopAction`: start an action at the stop `since` names (`RunStop.since`), of the run's one stopped worker or
  * `worker`: `pick`, `record`, `assert` and `assert-region` in the test's window (where the pause bar shows), `mock`
  * with `request`, a response `piwi/stopRequests` lists. Answered with whether it started, or why not; the code of
@@ -910,6 +919,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/pickAt")
     fun pickAt(params: PickAtParams): CompletableFuture<PickAtResult?>
+
+    @JsonRequest("piwi/hub")
+    fun hub(params: HubParams): CompletableFuture<HubResult?>
 
     @JsonRequest("piwi/stopAction")
     fun stopAction(params: StopActionParams): CompletableFuture<RunControlResult?>
