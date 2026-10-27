@@ -1,6 +1,7 @@
 import * as net from 'node:net';
 import type { Page, WorkerInfo } from '@playwright/test';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
+import { hideSecretsInText } from '@piwitests/core/mask';
 import {
   RUN_CHANNEL_ENV,
   RUN_HOLDS,
@@ -602,7 +603,11 @@ function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer
         try {
           await internalCall(page, () => playEvent(page, event, own));
         } catch (error) {
-          return { ok: false, message: `Event ${i + 1} could not be played: ${errorMessage(error)}` };
+          // A page's error may name the address it was at: its credentials stay in the worker.
+          return {
+            ok: false,
+            message: hideSecretsInText(`Event ${i + 1} could not be played: ${errorMessage(error)}`),
+          };
         }
       }
       return { ok: true, message: events.length === 1 ? 'Played 1 event.' : `Played ${events.length} events.` };

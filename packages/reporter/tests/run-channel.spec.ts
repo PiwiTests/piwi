@@ -339,6 +339,45 @@ describe('the worker’s run connection', () => {
     }
   });
 
+  it('says why a viewer’s input could not be played without the credentials of the address the page names', async () => {
+    const hub = await startHub();
+    try {
+      expect(await openRunChannel(WORKER, handlers().control, hub.env)).toBe(true);
+      const secret = ['s3cr3t', 'value', 'here'].join('-');
+      const page = {
+        viewportSize: () => ({ width: 800, height: 600 }),
+        once: () => {},
+        off: () => {},
+        isClosed: () => false,
+        screencast: { start: async () => ({ dispose: async () => {} }) },
+        mouse: {
+          click: async () => {
+            throw new Error(`Navigation to https://shop.test/cart?token=${secret} was interrupted`);
+          },
+        },
+      };
+      const held = holdStop({ ...STOP, page: page as never }, () => {});
+      const { stop } = (await until(() => hub.heard.find((m) => m.type === 'stopped'))) as { stop: number };
+      const answers = () => hub.heard.filter((m) => m.type === 'answer');
+      hub.send({ type: 'request', request: 1, what: 'view', stop, on: true });
+      expect(await until(() => answers()[0])).toMatchObject({ what: 'view', value: { ok: true } });
+      hub.send({
+        type: 'request',
+        request: 2,
+        what: 'input',
+        stop,
+        events: [{ type: 'mouse', action: 'click', x: 10, y: 20, button: 'left', clickCount: 1 }],
+      });
+      const played = (await until(() => answers()[1])) as { value: { ok: boolean; message: string } };
+      expect(played.value.ok).toBe(false);
+      expect(played.value.message).toMatch(/^Event 1 could not be played: .*https:\/\/shop\.test\/cart\?token=/);
+      expect(played.value.message).not.toContain(secret);
+      held.release();
+    } finally {
+      await hub.close();
+    }
+  });
+
   it('lets a stop no bar shows go on when the connection closes, and leaves one the bar shows to the bar', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const hub = await startHub();

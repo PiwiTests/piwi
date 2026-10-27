@@ -1739,7 +1739,9 @@ async function showStop(
               locator,
             };
           } catch (error) {
-            return { ok: false, message: `The stopped page could not be read: ${errorMessage(error)}`, locator: null };
+            // A page's error may name the address it was at: its credentials stay in the worker.
+            const message = hideSecretsInText(`The stopped page could not be read: ${errorMessage(error)}`);
+            return { ok: false, message, locator: null };
           }
         }
       : undefined;
