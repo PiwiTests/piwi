@@ -1466,6 +1466,37 @@ function setupConnectScene(width, suffix) {
   };
 }
 
+/** The seed's run from the editor whose one test stood paused at two breakpoints, and that test's execution. */
+const PAUSED_SCENE_RUN = 74;
+const PAUSED_SCENE_EXECUTION = 833;
+
+/**
+ * A test that stood paused at editor breakpoints: its Timeline tab, with a Paused band over the lanes for each stop,
+ * the steps the stops held and a request the page made during one, then its run's workers timeline with the stops on
+ * the test's bar, at `width` px in `colorScheme`.
+ */
+function pausedTestScene(width, colorScheme, suffix) {
+  const name = `paused-test${suffix}`;
+  return {
+    name,
+    description: `A test paused at two editor breakpoints: its Timeline tab with the Paused bands, then its run's workers timeline, at ${width} px (${colorScheme})`,
+    route: `/test-run-cases/${PAUSED_SCENE_EXECUTION}`,
+    viewport: { width, height: width < 640 ? 2600 : 1500 },
+    colorScheme,
+    outputs: [`${name}.png`, `${name}-workers.png`],
+    async run({ page, goto, openTab, settle, shoot }) {
+      await openTab('Timeline');
+      await page.locator('[data-shot="evidence-card"] [data-timeline-paused]').first().waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="evidence-card"]', pad: 12 });
+      await goto(`/test-runs/${PAUSED_SCENE_RUN}?tab=workers`);
+      await page.locator('[data-shot="run-timeline"] [data-timeline-paused]').first().waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot('workers', { of: '[data-shot="run-timeline"]', pad: 12 });
+    },
+  };
+}
+
 function quarantineDismissScene(width, suffix) {
   return {
     name: `quarantine-dismiss${suffix}`,
@@ -3289,6 +3320,10 @@ const SCENES = [
       await shoot();
     },
   },
+  pausedTestScene(1280, 'light', ''),
+  pausedTestScene(1280, 'dark', '-dark'),
+  pausedTestScene(390, 'light', '-phone'),
+  pausedTestScene(390, 'dark', '-phone-dark'),
   {
     name: 'run-timeline-retries',
     description:

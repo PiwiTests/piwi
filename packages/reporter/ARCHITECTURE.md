@@ -45,11 +45,18 @@ Two **external contracts** beyond the npm API:
   (`internal/capture/api-requests.ts`).
   A headed local run with `PIWI_PAUSE_AT` (the editor's breakpoints) stops each context
   through `context.debugger` before every call it can stop at, with `PW_CODEGEN_NO_INSPECTOR`
-  set in the worker except while a `page.pause()` it leaves to Playwright runs (a listener on the
-  connection's client instrumentation sees those), shows the pause bar at the calls on those
-  lines and reads its answer from the `__piwiPauseState` page global, attaches the stops as
-  `piwi-pauses` (`internal/collect/paused-steps.ts` takes their time out of the steps'
-  durations and start times), and posts a locator picked meanwhile to the editor's
+  set in the worker except while a `page.pause()` it leaves to Playwright runs (it wraps
+  `Page.prototype.pause`, so every `page.pause()` of the worker's Playwright goes through it; one of a second
+  copy of Playwright does not, and stops with neither bar nor Inspector), shows the pause
+  bar at the calls on those lines and reads its answer from the `__piwiPauseState` page global,
+  takes the bar down as the test function ends, before Playwright's own failure screenshot (the
+  runner's `_onDidFinishTestFunctionCallbacks`, feature-checked; without them, as the test's page
+  or context closes, or at teardown), sets the runner's count of a test function that ended under it
+  back to what it held as the stop began (`_timeoutManager.defaultSlot()`, feature-checked), waits a
+  while for the call it let go and the requests after it, attaches the stops as
+  `piwi-pauses` (`internal/collect/pause-events.ts` sends them with the test's step events, as
+  `pause` events: the steps keep their clock, and the step statistics leave the stopped time
+  out), and posts a locator picked meanwhile to the editor's
   `PIWI_EDITOR_SEND` address (`internal/capture/pause-at.ts`). With `PIWI_RECORD_CHANNEL`,
   **Record here** and `page.pause()` connect to the editor service's local socket and relay
   the recorder's binding calls over it (`internal/capture/record-handoff.ts`). With
@@ -59,7 +66,10 @@ Two **external contracts** beyond the npm API:
   each test's begin and end and each stop it shows, and the editor's controls (Pause, Step,
   Resume, Finish, Run to a line, the run's breakpoints) go through the same stop policy as
   `PIWI_PAUSE_AT`. While it is open a headless run stops too, with no bar, until the editor
-  answers or the connection closes; the editor's answer takes a headed stop's bar down.
+  answers or the connection closes; the editor's answer takes a headed stop's bar down. A stop
+  answered in the editor is attached to `piwi-pauses` as one at the bar is, and a stop that ends
+  unanswered (the test function ended, its page or context closed) ends the same way with a bar
+  or without, the editor told (`running`).
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
   unref'd timer (`internal/collect/process-sampler.ts`).
   With server coverage on (`coverage.server`), the capture fixtures keep the
@@ -179,8 +189,9 @@ src/
                 run endpoints, batched per origin), test-coverage (each test's
                 coverage field, the wait before its result streams, the run's
                 coverage), blob-ids (the git blob of each covered file),
-                paused-steps (the time a test stood stopped at the pause bar,
-                out of its steps' durations and start times)
+                pause-events (the stops a test made, at the pause bar or in
+                the editor, as the `pause` step events the dashboard draws and
+                the step statistics leave out)
     manifest/   collect (the committed manifest, `/__piwi/manifest` per base URL or origin),
                 run-manifests (the instrumented origins the run reached beyond its base URLs,
                 fetched as each is first seen, uploaded once the run is submitted)

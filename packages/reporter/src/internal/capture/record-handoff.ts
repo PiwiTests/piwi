@@ -12,6 +12,7 @@ import {
   type HandoffReason,
   type HandoffToEditor,
 } from '@piwitests/core/ide-recorder';
+import { internalCall } from './quiet-capture.js';
 
 /**
  * Record from a paused test: the page the test left is handed to the recorder of the editor that started the run,
@@ -19,8 +20,8 @@ import {
  * editor service asks the person's editor to take the recording, then has the recorder's IDE bundle (a file of the
  * editor's) loaded into the page: each call of its binding goes to the editor service, which answers it, and what the
  * editor says (a pause, the stop) is handed to the recorder in the page. The steps are written in the editor, before
- * the paused line. It ends when the recording stops, the page closes, or the editor does not take it; the test then
- * goes on from where it paused.
+ * the paused line. It ends when the recording stops, the page closes, the test ends, or the editor does not take it;
+ * the test then goes on from where it paused.
  */
 
 /** How long the editor may take to start the recording before the test goes on without it. */
@@ -66,6 +67,8 @@ export interface RecordFromHereOptions {
   reason: HandoffReason;
   /** The record channel; `PIWI_RECORD_CHANNEL` by default. */
   channel?: string;
+  /** Aborts when the test ends under the pause: the recording stops, and the recorder leaves the page. */
+  ended?: AbortSignal;
 }
 
 /** Whether the editor that started the run can record from a pause: the run names its record channel. */
@@ -89,7 +92,8 @@ export async function recordFromHere(options: RecordFromHereOptions): Promise<st
   const channel = parseRecordChannel(options.channel ?? process.env[RECORD_CHANNEL_ENV]);
   const place = handoffPlace(options.location);
   if (!channel || !place) return 'this run names no editor to record into.';
-  const { page, testInfo } = options;
+  const { page, testInfo, ended } = options;
+  if (ended?.aborted) return 'the test ended.';
   const use = (testInfo.project?.use ?? {}) as { testIdAttribute?: unknown; baseURL?: unknown };
   const context = page.context();
   return new Promise<string | null>((resolve) => {
@@ -111,8 +115,29 @@ export async function recordFromHere(options: RecordFromHereOptions): Promise<st
       if (attached) send({ type: 'closed' });
       finish('the page closed.');
     };
+    /** The test ended under the pause: the recorder in the page stops, as when the editor stops it. */
+    const onEnded = () => {
+      try {
+        if (recording) {
+          void internalCall(page, () =>
+            page.evaluate(
+              ([name, value]) => {
+                const dispatch = (globalThis as unknown as Record<string, unknown>)[name];
+                if (typeof dispatch === 'function') dispatch(value);
+              },
+              [IDE_DISPATCH_GLOBAL, { type: 'piwi-recording-stopped' }] as const,
+            ),
+          ).catch(() => undefined);
+        }
+        if (attached) send({ type: 'closed' });
+        finish('the test ended.');
+      } catch {
+        // The channel is gone already; the pause does not wait for it.
+      }
+    };
     page.once('close', onGone);
     page.once('crash', onGone);
+    ended?.addEventListener('abort', onEnded, { once: true });
     const startWait = setTimeout(() => finish('the editor did not start the recording.'), START_WAIT_MS);
     /** The context relays to no recording of this one's, and the documents it loads from now on are its own again. */
     const release = () => {
@@ -135,6 +160,7 @@ export async function recordFromHere(options: RecordFromHereOptions): Promise<st
       context.off('page', onPage);
       page.off('close', onGone);
       page.off('crash', onGone);
+      ended?.removeEventListener('abort', onEnded);
       socket.end();
       resolve(recording ? null : said);
     };

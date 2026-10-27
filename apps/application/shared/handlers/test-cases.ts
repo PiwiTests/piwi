@@ -55,7 +55,7 @@ import { getPageDiff } from '../../server/utils/page-diff';
 import type { PageStateLike } from '../page-state';
 import type { TestStepEvent } from '../types';
 import type { TestMetadata } from '@piwitests/core/test-meta';
-import type { FlatStep } from '@piwitests/core/step-analysis';
+import { pauseSpans, unpausedDuration, type FlatStep } from '@piwitests/core/step-analysis';
 import type { RunMetadata } from '../../server/utils/run-json-types';
 
 import type { DrizzleDB } from './db';
@@ -775,6 +775,8 @@ export async function getTestRunCase(
     startedAt: trc.startedAt,
     slowestStep: trc.slowestStep,
     slowestStepDuration: trc.slowestStepDuration,
+    // The stops the test made at Piwi's pause bar, from its step events.
+    pauses: pauseSpans(trc.stepEvents).map(({ startedAt, duration }) => ({ startedAt, duration })),
     wastedTimeMs: wastedPatterns
       ? trc.stepEvents != null
         ? computeWastedMs(trc.stepEvents as TestStepEvent[], wastedPatterns)
@@ -931,8 +933,8 @@ export async function getUsualDurations(
     eligibleRunSql('baseline'),
   ];
   if (opts.browserName) conds.push(eq(testRunsCases.browserName, opts.browserName));
-  const past: Array<{ id: number; steps: unknown }> = await db
-    .select({ id: testRunsCases.id, steps: testRunsCases.steps })
+  const past: Array<{ id: number; steps: unknown; stepEvents: unknown }> = await db
+    .select({ id: testRunsCases.id, steps: testRunsCases.steps, stepEvents: testRunsCases.stepEvents })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(and(...conds))
@@ -962,7 +964,11 @@ export async function getUsualDurations(
     requestsByExecution.set(row.testRunsCaseId, list);
   }
   return buildUsualDurations(
-    past.map((row) => ({ steps: row.steps, networkRequests: requestsByExecution.get(row.id) ?? [] })),
+    past.map((row) => ({
+      steps: row.steps,
+      stepEvents: row.stepEvents,
+      networkRequests: requestsByExecution.get(row.id) ?? [],
+    })),
   );
 }
 
@@ -1317,6 +1323,19 @@ function isFailingStatus(status: string | null | undefined): boolean {
   return status === 'failed' || status === 'timedOut' || status === 'timedout';
 }
 
+/**
+ * An attempt's steps as the diff compares their durations: each less the time the test stood stopped at Piwi's pause
+ * bar while it ran (its `pause` step events).
+ */
+export function attemptSteps(steps: unknown, stepEvents: unknown): AttemptEvidence['steps'] {
+  if (!Array.isArray(steps)) return null;
+  const pauses = pauseSpans(stepEvents);
+  if (pauses.length === 0) return steps as AttemptEvidence['steps'];
+  return (steps as Array<NonNullable<AttemptEvidence['steps']>[number] & { startTime?: unknown }>).map((step) =>
+    typeof step?.duration === 'number' ? { ...step, duration: unpausedDuration(step, pauses) } : step,
+  );
+}
+
 /** Load one attempt's evidence from its execution row and network rows. */
 async function loadAttemptEvidence(
   db: DrizzleDB,
@@ -1324,6 +1343,7 @@ async function loadAttemptEvidence(
     id: number;
     error: string | null;
     steps: unknown;
+    stepEvents: unknown;
     consoleLogs: unknown;
     pageState: unknown;
     duration: number | null;
@@ -1343,7 +1363,7 @@ async function loadAttemptEvidence(
           ),
         })
       : null,
-    steps: (row.steps as AttemptEvidence['steps']) ?? null,
+    steps: attemptSteps(row.steps, row.stepEvents),
     networkRequests: networkRequestRows.map((nr) => ({
       method: nr.method,
       url: nr.url,

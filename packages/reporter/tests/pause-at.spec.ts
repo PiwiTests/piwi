@@ -12,6 +12,8 @@ import {
   callSitePlace,
   currentPauseSet,
   goOn,
+  inFlightCallSite,
+  markPausesWrapped,
   parsePauseAt,
   pauseState,
   placeLine,
@@ -23,9 +25,13 @@ import {
   pauseSkipReason,
   pickPayload,
   postPickToEditor,
+  resetInspectorSwitch,
   resetPauseLogs,
+  restoreTestTime,
   stopCallSite,
+  testTimeSlot,
   watchStops,
+  withInspector,
   withTestTimeoutHeld,
   type PausePoint,
   type PauseRecord,
@@ -100,6 +106,13 @@ describe('stopCallSite', () => {
     expect(parsePauseAt('tests/login.spec.ts:42', cwd).matches(at)).toBe(true);
     expect(parsePauseAt(`${path.join(cwd, 'tests', 'login.spec.ts')}:42`, cwd).matches(at)).toBe(true);
     expect(stopCallSite({ file: path.resolve('/work/shared/c.ts'), line: 5 }, cwd)).toBe('../shared/c.ts:5:0');
+  });
+
+  it('names the line of the locator calls in flight, and none when they are on several lines', () => {
+    expect(inFlightCallSite([])).toBeNull();
+    expect(inFlightCallSite(['tests/a.spec.ts:4:10'])).toBe('tests/a.spec.ts:4:10');
+    expect(inFlightCallSite(['tests/a.spec.ts:4:10', 'tests/a.spec.ts:4:30'])).toBe('tests/a.spec.ts:4:10');
+    expect(inFlightCallSite(['tests/a.spec.ts:4:10', 'tests/a.spec.ts:5:3'])).toBeNull();
   });
 
   it('has none for a place outside the user’s code', () => {
@@ -255,6 +268,43 @@ describe('withTestTimeoutHeld', () => {
   });
 });
 
+describe('the test time the runner counted', () => {
+  function runner(elapsed: number) {
+    const slot = { timeout: 3000, elapsed };
+    return { slot, testInfo: { _timeoutManager: { defaultSlot: () => slot } } as never };
+  }
+
+  it('reads the runner’s default slot, and nothing on a runner without one', () => {
+    expect(testTimeSlot(runner(420).testInfo)?.elapsed).toBe(420);
+    expect(testTimeSlot({} as never)).toBeNull();
+    expect(testTimeSlot({ _timeoutManager: { defaultSlot: () => ({}) } } as never)).toBeNull();
+    expect(
+      testTimeSlot({
+        _timeoutManager: {
+          defaultSlot: () => {
+            throw new Error('gone');
+          },
+        },
+      } as never),
+    ).toBeNull();
+  });
+
+  it('brings the count of a test function that ended under the bar back to what it held as the stop began', () => {
+    const { slot, testInfo } = runner(7517);
+    restoreTestTime(testInfo, 2610);
+    expect(slot.elapsed).toBe(2610);
+  });
+
+  it('never raises the count, and leaves a runner it cannot read alone', () => {
+    const { slot, testInfo } = runner(900);
+    restoreTestTime(testInfo, 1200);
+    restoreTestTime(testInfo, Number.NaN);
+    restoreTestTime(testInfo, -5);
+    expect(slot.elapsed).toBe(900);
+    expect(() => restoreTestTime({} as never, 10)).not.toThrow();
+  });
+});
+
 describe('what the pause says', () => {
   it('names the place and the pick’s line', () => {
     expect(pausePlace('tests/login.spec.ts:42:5')).toBe('login.spec.ts:42');
@@ -337,7 +387,14 @@ describe('postPickToEditor', () => {
  */
 function fakePausePage(
   answers: Array<string | null>,
-  opts: { breakAt?: number; navigateAt?: number; pick?: Record<string, unknown>; holdBar?: boolean } = {},
+  opts: {
+    breakAt?: number;
+    navigateAt?: number;
+    pick?: Record<string, unknown>;
+    holdBar?: boolean;
+    /** The picker waits for a pick that never comes. */
+    hangPick?: boolean;
+  } = {},
 ) {
   const shown: unknown[] = [];
   let takes = 0;
@@ -359,15 +416,18 @@ function fakePausePage(
           throw new Error('page.evaluate: Execution context was destroyed, most likely because of a navigation');
         }
         return takes < answers.length ? answers[takes++] : 'resume';
-      } else if (fn === installPickerOverlay) g.__piwiPickState = opts.pick ? 'picked' : 'skipped';
+      } else if (fn === installPickerOverlay) {
+        if (!opts.hangPick) g.__piwiPickState = opts.pick ? 'picked' : 'skipped';
+      }
       else if (fn === showPickerChoices) g.__piwiPickChoice = 0;
       else if (typeof fn === 'function' && String(fn).includes('__piwi')) return (fn as (a: unknown) => unknown)(arg);
       return null;
     }),
     evaluateHandle: vi.fn(async () => ({ evaluate: async () => opts.pick, dispose: async () => {} })),
-    waitForFunction: vi.fn((_predicate: unknown) =>
-      opts.holdBar ? new Promise<void>((resolve) => (takeDown = resolve)) : Promise.resolve(),
-    ),
+    waitForFunction: vi.fn((predicate: unknown) => {
+      if (opts.hangPick && predicate !== pauseAnswered) return new Promise<void>(() => {});
+      return opts.holdBar ? new Promise<void>((resolve) => (takeDown = resolve)) : Promise.resolve();
+    }),
     waitForLoadState: vi.fn(async () => {}),
     isClosed: () => opts.breakAt !== undefined && takes >= opts.breakAt,
   };
@@ -425,6 +485,34 @@ describe('pauseHere', () => {
     expect(page.waitForLoadState).toHaveBeenCalledOnce();
     const closed = fakePausePage(['step'], { breakAt: 0 });
     expect(await pauseHere(closed.page as never, POINT, PROBE, () => {})).toBe('resume');
+  });
+
+  it('ends Pick a locator and Record here with the stop, the picker taken out of the page', async () => {
+    const g = globalThis as Record<string, unknown>;
+    const picking = fakePausePage(['pick'], { hangPick: true });
+    const ended = new AbortController();
+    const picked = pauseHere(picking.page as never, POINT, PROBE, () => {}, undefined, ended.signal);
+    await vi.waitFor(() => expect(picking.page.evaluate.mock.calls.map((c) => c[0])).toContain(installPickerOverlay));
+    ended.abort('ended');
+    try {
+      expect(await picked).toBe('resume');
+      // The picker's overlay is gone, marked as ended so that the waits still polling in the page stop.
+      expect(g.__piwiPickEnded).toBe(true);
+      const evaluated = picking.page.evaluate.mock.calls.map((c) => c[0]);
+      expect(evaluated[evaluated.length - 1]).toBe(takePauseState);
+    } finally {
+      delete g.__piwiPickEnded;
+    }
+
+    const recording = fakePausePage(['record']);
+    const stopped = new AbortController();
+    const record = vi.fn((_ended?: AbortSignal) => new Promise<void>(() => {}));
+    const recorded = pauseHere(recording.page as never, POINT, PROBE, () => {}, record, stopped.signal);
+    await vi.waitFor(() => expect(record).toHaveBeenCalledOnce());
+    stopped.abort('ended');
+    expect(await recorded).toBe('resume');
+    // The recording got the stop's signal, to end itself and leave the page.
+    expect(record.mock.calls[0]![0]).toBe(stopped.signal);
   });
 
   it('offers Record here when the editor can record, and shows the bar again once the recording ended', async () => {
@@ -535,7 +623,14 @@ describe('breakpoints in the capture fixtures', () => {
     body: (page: Record<string, (...a: unknown[]) => any>) => Promise<void>,
     headless: unknown = false,
     pick?: Record<string, unknown>,
-    more: { holdBar?: boolean; clickPlacedAt?: ReturnType<typeof callerPlace> } = {},
+    more: {
+      holdBar?: boolean;
+      clickPlacedAt?: ReturnType<typeof callerPlace>;
+      /** The runner's callbacks for the end of the test function, run after the body as Playwright runs them. */
+      finishCallbacks?: Set<() => Promise<void> | void>;
+      /** The pages' `pause` comes from their prototype, as on Playwright's `Page`. */
+      protoPause?: boolean;
+    } = {},
   ) {
     const { page: pausePage, shown } = fakePausePage(answers, { pick, holdBar: more.holdBar });
     const stops = fakeDebuggerContext();
@@ -560,7 +655,17 @@ describe('breakpoints in the capture fixtures', () => {
       }),
     };
     const factory = () => fakeLocator;
-    const fakePage: Record<string, unknown> = {
+    const pause = vi.fn(async function (this: unknown, options?: unknown) {
+      // Another page with the same prototype: one the fixtures never instrumented.
+      if (this !== fakePage) {
+        calls.push(`own pause, the switch ${process.env.PW_CODEGEN_NO_INSPECTOR ?? 'off'}`);
+        return;
+      }
+      calls.push(`pause ${JSON.stringify(options ?? null)}`);
+      await stops.call('Pause', true);
+    });
+    const pageProto: Record<string, unknown> = more.protoPause ? { pause } : {};
+    const fakePage: Record<string, unknown> = Object.assign(Object.create(pageProto) as Record<string, unknown>, {
       getByRole: factory,
       getByTestId: factory,
       getByText: factory,
@@ -574,15 +679,13 @@ describe('breakpoints in the capture fixtures', () => {
         await stops.call('Navigate');
         calls.push('goto');
       },
-      pause: vi.fn(async (options?: unknown) => {
-        calls.push(`pause ${JSON.stringify(options ?? null)}`);
-        await stops.call('Pause', true);
-      }),
+      ...(more.protoPause ? {} : { pause }),
+      close: vi.fn(async () => {}),
       evaluate: pausePage.evaluate,
       evaluateHandle: pausePage.evaluateHandle,
       waitForFunction: pausePage.waitForFunction,
       isClosed: () => false,
-    };
+    });
     const fakeContext = {
       debugger: stops.debuggerApi,
       newPage: async () => fakePage,
@@ -604,6 +707,7 @@ describe('breakpoints in the capture fixtures', () => {
         callsAtAttach[name] = [...calls];
       }),
       annotations: [],
+      ...(more.finishCallbacks ? { _onDidFinishTestFunctionCallbacks: more.finishCallbacks } : {}),
     };
     const pageFixture = piwiFixtures.page as unknown as (
       args: { page: unknown },
@@ -613,7 +717,14 @@ describe('breakpoints in the capture fixtures', () => {
       (args: object, use: () => Promise<void>, info: unknown) => Promise<void>,
     ];
     process.env.PIWI_PAUSE_AT = pauseAt;
-    await captureFixture({}, () => pageFixture({ page: fakePage }, (page) => body(page as never)), testInfo);
+    const testFunction = async (page: typeof fakePage) => {
+      try {
+        await body(page as never);
+      } finally {
+        for (const callback of more.finishCallbacks ?? []) await callback();
+      }
+    };
+    await captureFixture({}, () => pageFixture({ page: fakePage }, testFunction), testInfo);
     return {
       shown,
       calls,
@@ -625,6 +736,8 @@ describe('breakpoints in the capture fixtures', () => {
       callsAtAttach,
       locators: (attached[ATTACHMENT_NAMES.locators] ?? []) as LocatorSnapshot[],
       pauses: (attached[ATTACHMENT_NAMES.pauses] ?? []) as PauseRecord[],
+      pageProto,
+      fakeContext,
     };
   }
 
@@ -836,6 +949,33 @@ describe('breakpoints in the capture fixtures', () => {
     await pausing;
   });
 
+  it('leaves a page.pause() on a page it never instrumented to Playwright, its Inspector free to open', async () => {
+    resetInspectorSwitch();
+    delete process.env.PW_CODEGEN_NO_INSPECTOR;
+    const start = thisLine();
+    const switchAt: Array<string | undefined> = [];
+    const run = await runWithBreakpoints(
+      `${here}:${start + 12}`,
+      ['resume'],
+      async (page) => {
+        switchAt.push(process.env.PW_CODEGEN_NO_INSPECTOR);
+        // A page of a browser the test launched itself has Playwright's Page prototype, and no fixture wrapper.
+        const other = Object.assign(Object.create(Object.getPrototypeOf(page)) as { pause: () => Promise<void> }, {
+          context: () => ({}),
+        });
+        await other.pause();
+        await page.goto!('/cart');
+      },
+      false,
+      undefined,
+      { protoPause: true },
+    );
+    expect(switchAt).toEqual(['1']);
+    expect(run.calls).toEqual(['own pause, the switch off', 'goto']);
+    expect(run.shown.map(place)).toEqual([`pause-at.spec.ts:${start + 12}`]);
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
+  });
+
   it('finds the test’s line of a locator call Playwright places in this package’s own files', async () => {
     const start = thisLine();
     const run = await runWithBreakpoints(
@@ -856,7 +996,7 @@ describe('breakpoints in the capture fixtures', () => {
     ]);
   });
 
-  it('takes the bar down when the test ends under it, and keeps the stop', async () => {
+  it('takes the bar down when the test ends under it, lets its call go at once, and waits for it before the data', async () => {
     const start = thisLine();
     let click: Promise<unknown> | null = null;
     const run = await runWithBreakpoints(
@@ -880,22 +1020,75 @@ describe('breakpoints in the capture fixtures', () => {
     expect(run.pauses).toEqual([
       expect.objectContaining({ location: expect.stringMatching(`^${here}:${start + 8}:`), reason: 'breakpoint' }),
     ]);
-    // The click was held through teardown, and goes on with nothing to stop it.
-    expect(run.callsAtAttach[ATTACHMENT_NAMES.pauses]).toEqual([]);
-    await click;
-    expect(run.calls).toEqual(['click']);
+    expect(run.pauses[0]!.duration).toBeGreaterThan(0);
+    // The click went on as the bar came down, with nothing to stop it, and was over before the data was attached.
+    expect(run.callsAtAttach[ATTACHMENT_NAMES.pauses]).toEqual(['click']);
     expect(run.steered).toEqual(['pause', 'resume']);
+    await click;
+  });
+
+  it('takes the bar down as the test function ends, ahead of the runner’s own callbacks there', async () => {
+    const start = thisLine();
+    let evaluated: () => unknown[] = () => [];
+    const screenshot: string[] = [];
+    // Playwright's failure screenshot is registered before the capture fixture sets up.
+    const finishCallbacks = new Set<() => void>([
+      () => void screenshot.push(evaluated().includes(takePauseState) ? 'without the bar' : 'with the bar'),
+    ]);
+    const run = await runWithBreakpoints(
+      `${here}:${start + 13}`,
+      [],
+      async (page) => {
+        const evaluate = page.evaluate as unknown as { mock: { calls: unknown[][] } };
+        evaluated = () => evaluate.mock.calls.map((c) => c[0]);
+        void page.getByText!('Pay').click();
+        await vi.waitFor(() => expect(evaluated()).toContain(showPauseBar));
+      },
+      false,
+      undefined,
+      { holdBar: true, finishCallbacks },
+    );
+    expect(finishCallbacks.size).toBe(2);
+    expect(screenshot).toEqual(['without the bar']);
+    expect(run.callsAtAttach[ATTACHMENT_NAMES.pauses]).toEqual(['click']);
+    expect(run.steered).toEqual(['pause', 'resume']);
+  });
+
+  it('lets a held call go at once when its page closes under the bar, and keeps stopping at the breakpoints', async () => {
+    const start = thisLine();
+    const run = await runWithBreakpoints(
+      `${here}:${start + 6}`,
+      [],
+      async (page) => {
+        const evaluate = page.evaluate as unknown as { mock: { calls: unknown[][] } };
+        const click = page.getByText!('Pay').click();
+        await vi.waitFor(() => expect(evaluate.mock.calls.map((c) => c[0])).toContain(showPauseBar));
+        await page.close!();
+        await click;
+      },
+      false,
+      undefined,
+      { holdBar: true },
+    );
+    expect(run.calls).toEqual(['click']);
+    expect(run.steered).toEqual(['pause', 'next']);
+    expect(run.pauses[0]!.duration).toBeGreaterThan(0);
   });
 });
 
 describe('the Inspector switch', () => {
   const env = { ...process.env };
+  beforeEach(() => {
+    resetInspectorSwitch();
+    delete process.env.PW_CODEGEN_NO_INSPECTOR;
+  });
   afterEach(() => {
+    resetInspectorSwitch();
     process.env = { ...env };
   });
 
-  /** A context of a connection whose client instrumentation is `instrumentation`. */
-  function watchedContext(instrumentation: object) {
+  /** A context whose stops Piwi answers. */
+  function watchedContext() {
     const dbg = {
       on: () => {},
       pausedDetails: () => null,
@@ -903,44 +1096,44 @@ describe('the Inspector switch', () => {
       next: async () => {},
       resume: async () => {},
     };
-    return { debugger: dbg, _instrumentation: instrumentation };
+    return { debugger: dbg };
   }
 
-  it('keeps Playwright’s Inspector closed at the stops Piwi answers, and open while its own page.pause() runs', () => {
-    delete process.env.PW_CODEGEN_NO_INSPECTOR;
-    const listeners: Array<Record<string, (...a: unknown[]) => void>> = [];
-    const instrumentation = { addListener: (l: Record<string, (...a: unknown[]) => void>) => listeners.push(l) };
-    expect(watchStops(watchedContext(instrumentation) as never, () => {})).toBe(true);
-    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
-    const [listener] = listeners;
-    // Piwi's own page.pause() passes the test hook: the Inspector stays closed.
-    listener!.onWillPause!({ keepTestTimeout: true });
-    listener!.onApiCallBegin!({}, { type: 'BrowserContext', method: 'pause' });
-    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
-    // Playwright's own: open from the call until it ends.
-    listener!.onWillPause!({ keepTestTimeout: false });
+  it('closes Playwright’s Inspector once every page.pause() goes through Piwi, and opens it while one left to Playwright runs', async () => {
+    expect(watchStops(watchedContext() as never, () => {})).toBe(true);
+    // A page.pause() Piwi could not see would stop with no Inspector to end it: the switch waits for the wrapper.
     expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBeUndefined();
-    const pause = {};
-    listener!.onApiCallBegin!(pause, { type: 'BrowserContext', method: 'pause' });
-    listener!.onApiCallBegin!({}, { type: 'Frame', method: 'click' });
-    listener!.onApiCallEnd!({});
-    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBeUndefined();
-    listener!.onApiCallEnd!(pause);
+    markPausesWrapped();
     expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
-    // Another context of the same connection: one listener.
-    watchStops(watchedContext(instrumentation) as never, () => {});
-    expect(listeners).toHaveLength(1);
+    const seen: Array<string | undefined> = [];
+    let endFirst = () => {};
+    const first = withInspector(
+      () =>
+        new Promise<void>((resolve) => {
+          seen.push(process.env.PW_CODEGEN_NO_INSPECTOR);
+          endFirst = resolve;
+        }),
+    );
+    await withInspector(async () => void seen.push(process.env.PW_CODEGEN_NO_INSPECTOR));
+    // Still off: the first one runs.
+    seen.push(process.env.PW_CODEGEN_NO_INSPECTOR);
+    endFirst();
+    await first;
+    expect(seen).toEqual([undefined, undefined, undefined]);
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
+    await expect(
+      withInspector(async () => {
+        throw new Error('Target page, context or browser has been closed');
+      }),
+    ).rejects.toThrow('closed');
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
   });
 
-  it('leaves a switch set outside Piwi as it is, and never sets one without the instrumentation', () => {
+  it('leaves a switch set outside Piwi as it is', async () => {
     process.env.PW_CODEGEN_NO_INSPECTOR = 'yes';
-    const listeners: Array<Record<string, (...a: unknown[]) => void>> = [];
-    watchStops(watchedContext({ addListener: (l: never) => listeners.push(l) }) as never, () => {});
-    listeners[0]!.onWillPause!({ keepTestTimeout: false });
-    listeners[0]!.onApiCallBegin!({}, { type: 'BrowserContext', method: 'pause' });
+    watchStops(watchedContext() as never, () => {});
+    markPausesWrapped();
+    await withInspector(async () => expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('yes'));
     expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('yes');
-    delete process.env.PW_CODEGEN_NO_INSPECTOR;
-    expect(watchStops(watchedContext({}) as never, () => {})).toBe(true);
-    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBeUndefined();
   });
 });

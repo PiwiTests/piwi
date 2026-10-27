@@ -6,6 +6,9 @@
  * (`durationStandout`): in the test, or against its usual time, which then
  * shows under it (`usually 600ms`). It says why on hover. Otherwise it stays
  * neutral, the bar of a failed step or request in the failed outcome color.
+ * The time the test stood paused at a breakpoint during it is said under it
+ * (`paused 4.0s`) and left out of the share and the rule: the number and the
+ * bar keep the clock time.
  */
 import { durationStandout, shareOfTestLabel, standoutReasonText } from '#shared/duration-standout';
 
@@ -22,14 +25,18 @@ const props = defineProps<{
   group?: boolean;
   /** The step or request failed: its bar keeps the failed outcome color unless the duration stands out. */
   failed?: boolean;
+  /** How much of `ms` the test stood paused at Piwi's pause bar, in ms. */
+  pausedMs?: number | null;
 }>();
 
+/** The time of its own: the duration less the time paused, which the share and the rule read. */
+const ownMs = computed(() => Math.max(0, props.ms - (props.pausedMs ?? 0)));
 const standout = computed(() =>
-  props.group ? null : durationStandout({ ms: props.ms, testMs: props.testMs, usualMs: props.usualMs }),
+  props.group ? null : durationStandout({ ms: ownMs.value, testMs: props.testMs, usualMs: props.usualMs }),
 );
-const share = computed(() => shareOfTestLabel(props.ms, props.testMs));
+const share = computed(() => shareOfTestLabel(ownMs.value, props.testMs));
 const title = computed(() =>
-  standout.value ? `${formatDuration(props.ms)}, ${standoutReasonText(standout.value, formatDuration)}` : undefined,
+  standout.value ? `${formatDuration(ownMs.value)}, ${standoutReasonText(standout.value, formatDuration)}` : undefined,
 );
 const barClass = computed(() =>
   standout.value ? STANDOUT_BAR_CLASS : props.failed ? STATUS_PALETTE.failed.bg : DURATION_BAR_CLASS,
@@ -49,6 +56,9 @@ const barClass = computed(() =>
     </div>
     <p v-if="standout?.reason === 'usual'" class="text-xs text-muted" data-testid="usual-duration">
       usually <DurationValue :ms="standout.usual" unit-class="opacity-60" no-title />
+    </p>
+    <p v-if="pausedMs" class="text-xs text-muted" data-testid="paused-duration">
+      paused <DurationValue :ms="pausedMs" unit-class="opacity-60" no-title />
     </p>
     <div v-if="bar" class="relative mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
       <div

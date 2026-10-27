@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import {
   buildFailureTimeline,
+  leadStart,
   TIMELINE_WINDOW_LEAD_MS,
   TIMELINE_WINDOW_TRAIL_MS,
   type FailureTimelineInput,
@@ -65,6 +66,7 @@ describe('buildFailureTimeline', () => {
   test('identifies the failed step (error set) and puts failureAt at its end', () => {
     const tl = buildFailureTimeline(realTimestampInput());
     expect(tl.failedStep).toEqual({
+      paused: 0,
       index: 2,
       label: "click getByRole('button', { name: 'Pay' })",
       at: 1_500,
@@ -369,6 +371,92 @@ describe('buildFailureTimeline', () => {
       expect(tl.lanes.steps[0]!.origin).toBeNull();
       expect(tl.lanes.steps[0]!.group).toBeNull();
     });
+  });
+});
+
+describe('stops at the pause bar', () => {
+  /** A test held 4 s at a breakpoint before its click, which failed after the stop. */
+  function pausedInput(): FailureTimelineInput {
+    return {
+      startedAt: T0,
+      duration: 1_600,
+      status: 'failed',
+      steps: [
+        { title: 'navigate', category: 'navigation', duration: 500, startTime: T0 },
+        { title: 'click Pay', category: 'action', duration: 4_100, startTime: T0 + 500, error: 'not enabled' },
+      ],
+      stepEvents: [
+        { title: 'Before Hooks', category: 'hook', startedAt: T0, duration: 0, status: 'passed' },
+        {
+          title: "Click getByRole('button')",
+          category: 'pause',
+          startedAt: T0 + 520,
+          duration: 4_000,
+          status: 'breakpoint',
+          location: 'tests/pay.spec.ts:12:5',
+        },
+      ],
+      networkRequests: [{ method: 'GET', url: '/api/quote', status: 200, duration: 100, startTime: T0 + 4_550 }],
+    };
+  }
+
+  test('keeps every timestamp on its clock, and places each stop as a band', () => {
+    const tl = buildFailureTimeline(pausedInput());
+    expect(tl.pauses).toEqual([
+      {
+        id: 'pause-1',
+        at: 520,
+        duration: 4_000,
+        label: "Click getByRole('button')",
+        reason: 'breakpoint',
+        location: 'tests/pay.spec.ts:12:5',
+      },
+    ]);
+    expect(tl.lanes.steps.map((step) => [step.at, step.duration])).toEqual([
+      [0, 500],
+      [500, 4_100],
+    ]);
+    expect(tl.lanes.network[0]!.at).toBe(4_550);
+    expect(tl.failureAt).toBe(4_600);
+  });
+
+  test('says how long each step stood paused, and nothing for the steps that ran outside a stop', () => {
+    const [navigate, click] = buildFailureTimeline(pausedInput()).lanes.steps;
+    expect(navigate!.paused).toBeUndefined();
+    expect(click!.paused).toBe(4_000);
+  });
+
+  test('says how long the failed step stood paused, and reaches the window back past a stop before it', () => {
+    const input = pausedInput();
+    expect(buildFailureTimeline(input).failedStep).toMatchObject({ at: 500, duration: 4_100, paused: 4_000 });
+    // A failed step 20 s in, after a 15 s stop: its 10 s lead of the test's own time starts before the stop.
+    input.steps = [
+      { title: 'navigate', category: 'navigation', duration: 15_500, startTime: T0 },
+      { title: 'click Pay', category: 'action', duration: 1_000, startTime: T0 + 20_000, error: 'not enabled' },
+    ];
+    input.stepEvents = [{ title: 'Navigate', category: 'pause', startedAt: T0 + 100, duration: 15_000 }];
+    const tl = buildFailureTimeline(input);
+    expect(tl.failedStep!.paused).toBe(0);
+    expect(tl.window.start).toBe(0);
+    expect(leadStart(20_000, 10_000, [{ startedAt: 100, duration: 15_000 }])).toBe(-5_000);
+    expect(leadStart(20_000, 10_000, [])).toBe(10_000);
+    // Overlapping stops count once; one after the end, or one entirely before the lead, changes nothing.
+    const overlapping = [
+      { startedAt: 12_000, duration: 4_000 },
+      { startedAt: 14_000, duration: 4_000 },
+      { startedAt: 21_000, duration: 1_000 },
+    ];
+    expect(leadStart(20_000, 10_000, overlapping)).toBe(4_000);
+    expect(leadStart(20_000, 1_000, overlapping)).toBe(19_000);
+    expect(leadStart(20_000, 3_000, overlapping)).toBe(11_000);
+  });
+
+  test('has no band for a test that never stood paused, nor for an old reporter’s run', () => {
+    expect(buildFailureTimeline(realTimestampInput()).pauses).toEqual([]);
+    const input = pausedInput();
+    input.stepEvents = [{ title: 'broken', category: 'pause', startedAt: 'soon', duration: 1 }];
+    expect(buildFailureTimeline(input).pauses).toEqual([]);
+    expect(buildFailureTimeline({}).pauses).toEqual([]);
   });
 });
 

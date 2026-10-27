@@ -31,6 +31,13 @@
  * A passing execution has no failure moment: the axis is hidden and the table
  * lists every step without offsets.
  *
+ * A test that stood paused at an editor breakpoint keeps its clock: each stop
+ * is a Paused band on the axis, a row of its own above the lanes and a hatched
+ * shade across them, the bars read on the test's whole clock span, and a step
+ * that ran across a stop says how long it stood paused, which its share and
+ * its rule leave out. A request that ran during a stop keeps its clock time,
+ * and its share reads against the test's clock span.
+ *
  * The axis data comes pre-built from `/timeline` (the pure `buildFailureTimeline`);
  * step detail (error, params, duration) comes from the `steps` prop. Times
  * shown are relative to the failure moment (`t+0`), so the axis and the table read
@@ -58,6 +65,7 @@ import StepParams from './StepParams.vue';
 import TimelineDuration from './TimelineDuration.vue';
 import TimelineTypeFilter from './TimelineTypeFilter.vue';
 import { findLocationRoot, stepLocations, stripLocationRoot } from '#shared/locator-chain';
+import { timelinePauseSpans, type TimelinePause } from '#shared/failure-timeline';
 import type { StepFailureRole, StepPhase } from '#shared/step-tree';
 import {
   barPlace,
@@ -65,6 +73,7 @@ import {
   citedItemIds,
   groupRowsBySection,
   sectionSummaryText,
+  stepsTrack,
   testTrack,
   windowCutText,
   windowCuts,
@@ -74,7 +83,8 @@ import {
   type WindowCuts,
 } from '~/utils/timeline-rows';
 import type { LightboxSubject } from '~/utils/lightbox';
-import { orderedStepParams, stepLabel } from '@piwitests/core/step-analysis';
+import { orderedStepParams, pausedOverlap, stepLabel } from '@piwitests/core/step-analysis';
+import { formatTimelineTime, pauseReasonText } from '~/utils/timeline';
 
 const props = defineProps<{
   testRunsCaseId: number;
@@ -103,6 +113,8 @@ const props = defineProps<{
   subject?: LightboxSubject | null;
   /** What the Most likely line cites: the rows it names are marked. */
   cited?: TimelineCitation[] | null;
+  /** The execution's stops at Piwi's pause bar, in epoch ms: the steps that ran across one say how long. */
+  pauses?: Array<{ startedAt: number; duration: number }> | null;
 }>();
 
 // The axis only exists for a failure; a passing execution reads its steps off the
@@ -226,6 +238,7 @@ const LANE_H = 22;
 const AXIS_H = 18;
 
 const CALL_BAND_H = 16;
+const PAUSE_BAND_H = 16;
 
 const wrapper = ref<HTMLElement | null>(null);
 const { width } = useElementSize(wrapper);
@@ -233,9 +246,15 @@ const svgWidth = computed(() => Math.max(0, width.value));
 const plotLeft = LABEL_W;
 const plotRight = computed(() => Math.max(plotLeft + 1, svgWidth.value - PAD_R));
 const plotWidth = computed(() => plotRight.value - plotLeft);
-// The "Calls" band sits above the lanes when at least one shown step has a call site.
+// The "Calls" band sits above the lanes when at least one shown step has a call site, and the "Paused" band under it
+// when a stop is in the window.
 const hasCallBand = computed(() => shownLanes.value.steps.some((s) => s.origin != null || s.group != null));
-const bandH = computed(() => (hasCallBand.value ? CALL_BAND_H : 0));
+const shownPauses = computed<TimelinePause[]>(() =>
+  (data.value?.pauses ?? []).filter((p) => p.at + p.duration >= domain.value.start && p.at <= domain.value.end),
+);
+const hasPauseBand = computed(() => shownPauses.value.length > 0);
+const pauseBandTop = computed(() => TOP + (hasCallBand.value ? CALL_BAND_H : 0));
+const bandH = computed(() => (hasCallBand.value ? CALL_BAND_H : 0) + (hasPauseBand.value ? PAUSE_BAND_H : 0));
 const lanesTop = computed(() => TOP + bandH.value);
 const lanesHeight = computed(() => visibleLanes.value.length * LANE_H);
 const marksBottom = computed(() => lanesTop.value + lanesHeight.value);
@@ -335,9 +354,12 @@ function networkClass(item: TimelineItem): string {
 
 const WARNING_COLOR = 'var(--ui-warning)';
 
+const PAUSED_COLOR = 'rgb(107, 114, 128)';
+
 const legendItems = computed(() => {
   const items: { color: string; label: string }[] = [];
   if (hasCallBand.value) items.push({ color: 'rgb(129, 140, 248)', label: 'Calls' });
+  if (hasPauseBand.value) items.push({ color: PAUSED_COLOR, label: 'Paused' });
   if (visibleLanes.value.includes('steps')) {
     items.push({ color: STATUS_PALETTE.failed.color, label: 'Failed step' });
     items.push({ color: 'rgb(156, 163, 175)', label: 'Step' });
@@ -423,6 +445,15 @@ function bandTitle(span: { label: string; origin: TimelineItem['origin'] }): str
   return `${span.label}${where}`;
 }
 
+// ── Stops at the pause bar ───────────────────────────────────────────────────
+const pausedPatternId = `failure-timeline-paused-${useId()}`;
+
+/** A stop's band, named on hover: why it stopped, the call it held, where, and how long. */
+function pauseTitle(pause: TimelinePause): string {
+  const where = pause.location ? ` · ${displayLocation(pause.location.replace(/:\d+$/, ''))}` : '';
+  return `${pauseReasonText(pause.reason)} · ${pause.label}${where} · ${formatDuration(pause.duration)}`;
+}
+
 // ── The merged steps table ───────────────────────────────────────────────────
 // One row per step, with network / console / backend items interleaved in time
 // order. A failing execution reads the rows off the axis window and the type
@@ -431,6 +462,12 @@ function bandTitle(span: { label: string; origin: TimelineItem['origin'] }): str
 // The rows then fold into sections: the setup and teardown hooks around the
 // test body.
 const tree = computed(() => buildStepTreeView(props.steps, props.error));
+
+/** How long the test stood paused while a step ran: from its timeline item, else from the execution's stops. */
+function stepPausedMs(row: StepRow): number {
+  if (row.item) return row.item.paused ?? 0;
+  return pausedOverlap(row.step.startTime, row.step.duration, props.pauses ?? []);
+}
 
 type StepRow = {
   kind: 'step';
@@ -596,17 +633,26 @@ const bodyLeafIndices = computed(() =>
 const bodyNeverRan = computed(() => bodyLeafIndices.value.length === 0 && Boolean(tree.value.sections.setup?.failed));
 
 // Per-category rollup for the summary line above the table, over the test
-// body's steps; setup and teardown follow as one figure each.
+// body's steps, each without the time the test stood paused while it ran;
+// setup and teardown follow as one figure each, then the time paused.
 const stepSummary = computed(() => {
+  const pauses = props.pauses ?? [];
   const byCat = new Map<string, { count: number; duration: number }>();
   for (const i of bodyLeafIndices.value) {
     const s = props.steps[i]!;
     const entry = byCat.get(s.category) ?? { count: 0, duration: 0 };
     entry.count += 1;
-    entry.duration += s.duration || 0;
+    entry.duration += (s.duration || 0) - pausedOverlap(s.startTime, s.duration, pauses);
     byCat.set(s.category, entry);
   }
   return Array.from(byCat, ([category, v]) => ({ category, ...v })).sort((a, b) => b.duration - a.duration);
+});
+const pausedTotal = computed(() => {
+  const pauses = props.pauses ?? [];
+  if (pauses.length === 0) return 0;
+  const start = Math.min(...pauses.map((p) => p.startedAt));
+  const end = Math.max(...pauses.map((p) => p.startedAt + p.duration));
+  return pausedOverlap(start, end - start, pauses);
 });
 const sectionTimes = computed(() =>
   (['setup', 'teardown'] as const).flatMap((section) => {
@@ -636,30 +682,26 @@ function stepBar(row: StepRow): BarPlace {
   return row.item ? itemBar(row.item) : stepBarStyle(row.step);
 }
 
+const timelinePauses = computed(() => timelinePauseSpans(data.value));
+
+/**
+ * The test time a request's share reads: the test's duration, or for a request that ran while the test stood paused
+ * at Piwi's pause bar, the test's span on the clock, which holds the stops as the request's own time does.
+ */
+function requestTestMs(item: TimelineItem): number | null {
+  const pauses = timelinePauses.value;
+  if (pauses.length > 0 && pausedOverlap(item.at, item.duration, pauses) > 0) return track.value.length;
+  return props.durationMs;
+}
+
 // Without an axis, a true waterfall needs a startTime on every step (only a
 // recent reporter records them); otherwise the bars fall back to left-aligned
 // magnitude.
-const hasStepTimings = computed(
-  () => props.steps.length > 0 && props.steps.every((s) => typeof s.startTime === 'number'),
-);
-const timelineStart = computed(() =>
-  hasStepTimings.value ? Math.min(...props.steps.map((s) => s.startTime as number)) : 0,
-);
-const stepsSpan = computed(() => {
-  const total = props.durationMs ?? 0;
-  if (total > 0) return total;
-  if (hasStepTimings.value) {
-    const end = Math.max(...props.steps.map((s) => (s.startTime as number) + (s.duration || 0)));
-    return Math.max(1, end - timelineStart.value);
-  }
-  return 0;
-});
+const ownTrack = computed(() => stepsTrack(props.steps, props.durationMs, props.pauses ?? []));
 
 /** Bar place for a step: a real waterfall when timings exist, else magnitude. */
 function stepBarStyle(step: PerformanceStep): BarPlace {
-  if (hasStepTimings.value && stepsSpan.value > 0) {
-    return barPlace(step.startTime as number, step.duration, { start: timelineStart.value, length: stepsSpan.value });
-  }
+  if (ownTrack.value) return barPlace(step.startTime as number, step.duration, ownTrack.value);
   const width = maxStepDuration.value > 0 ? Math.max(2, ((step.duration || 0) / maxStepDuration.value) * 100) : 0;
   return { left: 0, width };
 }
@@ -764,7 +806,7 @@ function revealItem(item: TimelineItem) {
                 :width="barRect(span.start, span.end - span.start).w"
                 :height="CALL_BAND_H - 4"
                 rx="2"
-                class="fill-indigo-400/70 dark:fill-indigo-500/60"
+                class="fill-indigo-600 dark:fill-indigo-500/60"
               >
                 <title>{{ bandTitle(span) }}</title>
               </rect>
@@ -784,6 +826,58 @@ function revealItem(item: TimelineItem) {
                       ) + '…'
                     : span.label
                 }}
+              </text>
+            </g>
+          </g>
+
+          <!-- Stops at the pause bar: a row of their own, and a hatched shade across the lanes -->
+          <g v-if="hasPauseBand" data-timeline-paused>
+            <defs>
+              <pattern
+                :id="pausedPatternId"
+                patternUnits="userSpaceOnUse"
+                width="6"
+                height="6"
+                patternTransform="rotate(45)"
+              >
+                <rect width="2" height="6" class="fill-gray-400/40 dark:fill-gray-500/40" />
+              </pattern>
+            </defs>
+            <text
+              :x="0"
+              :y="pauseBandTop + PAUSE_BAND_H / 2"
+              dominant-baseline="middle"
+              class="fill-gray-500 dark:fill-gray-400 text-[10px]"
+            >
+              Paused
+            </text>
+            <g v-for="pause in shownPauses" :key="pause.id">
+              <rect
+                :x="barRect(pause.at, pause.duration).x"
+                :y="lanesTop"
+                :width="barRect(pause.at, pause.duration).w"
+                :height="lanesHeight"
+                :fill="`url(#${pausedPatternId})`"
+                class="pointer-events-none"
+              />
+              <rect
+                :x="barRect(pause.at, pause.duration).x"
+                :y="pauseBandTop + 2"
+                :width="barRect(pause.at, pause.duration).w"
+                :height="PAUSE_BAND_H - 4"
+                rx="2"
+                class="fill-gray-600 dark:fill-gray-400/60"
+              >
+                <title>{{ pauseTitle(pause) }}</title>
+              </rect>
+              <text
+                v-if="barRect(pause.at, pause.duration).w > 44"
+                :x="barRect(pause.at, pause.duration).x + 4"
+                :y="pauseBandTop + PAUSE_BAND_H / 2"
+                dominant-baseline="middle"
+                class="fill-white text-[9px] pointer-events-none"
+              >
+                {{ formatTimelineTime(pause.duration) }}
               </text>
             </g>
           </g>
@@ -963,6 +1057,9 @@ function revealItem(item: TimelineItem) {
           <template v-for="t in sectionTimes" :key="t.label"
             ><span aria-hidden="true"> · </span>{{ t.label }} <DurationValue :ms="t.ms"
           /></template>
+          <template v-if="pausedTotal > 0"
+            ><span aria-hidden="true"> · </span>paused <DurationValue :ms="pausedTotal"
+          /></template>
         </p>
 
         <!-- Phone layout (below `md`): one stacked card per row, so the Step and
@@ -1064,6 +1161,7 @@ function revealItem(item: TimelineItem) {
                 :bar="stepBar(entry)"
                 :group="tree.groups.has(entry.index)"
                 :failed="entry.failing"
+                :paused-ms="stepPausedMs(entry)"
                 class="mt-1.5"
               />
               <FailingStepSnapshot
@@ -1114,7 +1212,7 @@ function revealItem(item: TimelineItem) {
               <TimelineDuration
                 v-if="entry.item.duration != null"
                 :ms="entry.item.duration"
-                :test-ms="durationMs"
+                :test-ms="requestTestMs(entry.item)"
                 :usual-ms="entry.item.usual ?? null"
                 :bar="itemBar(entry.item)"
                 :failed="entry.item.failed"
@@ -1271,6 +1369,7 @@ function revealItem(item: TimelineItem) {
                         :bar="stepBar(entry)"
                         :group="tree.groups.has(entry.index)"
                         :failed="entry.failing"
+                        :paused-ms="stepPausedMs(entry)"
                         class="min-w-[6rem]"
                       />
                     </td>
@@ -1316,7 +1415,7 @@ function revealItem(item: TimelineItem) {
                     <TimelineDuration
                       v-if="entry.item.duration != null"
                       :ms="entry.item.duration"
-                      :test-ms="durationMs"
+                      :test-ms="requestTestMs(entry.item)"
                       :usual-ms="entry.item.usual ?? null"
                       :bar="itemBar(entry.item)"
                       :failed="entry.item.failed"
@@ -1341,12 +1440,9 @@ function revealItem(item: TimelineItem) {
           }}<template v-if="hovered.duration != null"> · <DurationValue :ms="hovered.duration" no-title /></template>
         </p>
         <p v-else-if="hovered.kind === 'step' && hovered.duration != null" class="text-gray-500">
-          <DurationValue :ms="hovered.duration" no-title /><span
-            v-if="hovered.failed"
-            :class="STATUS_PALETTE.failed.text"
-          >
-            · failed</span
-          >
+          <DurationValue :ms="hovered.duration" no-title /><template v-if="hovered.paused">
+            · paused <DurationValue :ms="hovered.paused" no-title /></template
+          ><span v-if="hovered.failed" :class="STATUS_PALETTE.failed.text"> · failed</span>
         </p>
         <p v-else-if="hovered.status" class="text-gray-500">{{ hovered.status }}</p>
         <p v-if="hoveredCutText" class="text-gray-500">{{ hoveredCutText }}</p>

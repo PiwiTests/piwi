@@ -365,7 +365,8 @@ jobs:
       - name: Knip
         run: npm run knip
 
-      # The breakpoint run (tests/pause-run.spec.ts) opens Chromium's windows, under a display: the full build.
+      # The breakpoint run (tests/pause-run.spec.ts) opens Chromium's windows, under a display: the full build, beside
+      # the headless shell the setup action already saved to its cache.
       - name: Install the full Chromium build
         run: npx playwright install chromium --no-shell
 

@@ -479,6 +479,27 @@ describe('a run’s session, with a client that answers stops', () => {
     }
   });
 
+  test('ends a stop the worker ended unanswered, the test ending or its page closing, and refuses a control naming it', async () => {
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path).attach(channel.token, ref, 0);
+    try {
+      worker.begin();
+      worker.stopAt(1, 30, true);
+      const stop = await waitFor(() => svc.latest(ref)?.workers[0]?.stop ?? undefined);
+      worker.send({ type: 'running', stop: 1 });
+      await waitFor(() => (svc.latest(ref)?.workers[0]?.state === 'running' ? true : undefined));
+      expect(svc.latest(ref)!.workers[0]!.stop).toBeNull();
+      expect(await control({ ref, action: 'step', since: stop.since })).toEqual({
+        ok: false,
+        message: 'The test went on.',
+      });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(worker.heard.filter((m) => m.type === 'control' || m.type === 'run-to')).toEqual([]);
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+
   test('sends a burst of stops and goings-on as a few notifications, the last one as it stands', async () => {
     const { ref, channel } = await svc.command();
     const worker = new FakeWorker(channel.path).attach(channel.token, ref, 0);

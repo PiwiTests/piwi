@@ -24,12 +24,18 @@ per-directory responsibilities.
    `page.request`), and the editor's breakpoints (`internal/capture/pause-at.ts`): a headed local run with
    `PIWI_PAUSE_AT` steers each context's `context.debugger` to stop before every call it can stop at, shows the pause
    bar at a call on those lines, sets `PW_CODEGEN_NO_INSPECTOR` in the worker so Playwright's Inspector stays closed
-   at those stops, and clears it while a `page.pause()` it leaves to Playwright runs (a listener on the Playwright
-   connection's client instrumentation tells them apart), attaches a test's stops as `piwi-pauses` (the reporter takes
-   their time out of the steps' durations and start times), and posts a locator picked meanwhile to the editor's
-   `PIWI_EDITOR_SEND` address with the line, as `@piwitests/core/editor-send` reads it; with `PIWI_RECORD_CHANNEL`, the
-   pause bar's **Record here** (and `page.pause()` in a headed run, patched by the capture fixtures) hands the page to
-   the editor's recorder (`internal/capture/record-handoff.ts`): it relays each call of the recorder's binding over that
+   at those stops, and clears it while a `page.pause()` it leaves to Playwright runs (it wraps `Page.prototype.pause`,
+   so a page of a browser the test launched itself goes through it too, unless it came from a second copy of
+   Playwright, whose `page.pause()` then stops with neither bar nor Inspector), ends the stops shown (the bar's, and
+   those the run connection holds) as the test function ends, ahead of the runner's other callbacks there
+   (`_onDidFinishTestFunctionCallbacks`), setting the runner's count of a test function that ended under one back to
+   what it held as the stop began (`_timeoutManager.defaultSlot()`, feature-checked) and waiting a while for the call
+   it let go and its requests, attaches a test's stops as
+   `piwi-pauses` (the reporter sends them as `pause` step events, and leaves their time out of the step statistics,
+   the steps keeping their measured times), and posts a locator picked meanwhile to the editor's `PIWI_EDITOR_SEND`
+   address with the line, as `@piwitests/core/editor-send` reads it; with `PIWI_RECORD_CHANNEL`, the pause bar's
+   **Record here** (and `page.pause()` in a headed run, patched by the capture fixtures) hands the page to the
+   editor's recorder (`internal/capture/record-handoff.ts`): it relays each call of the recorder's binding over that
    local socket, as `@piwitests/core/ide-recorder` frames it, and loads the bundle the editor names. The recorder's host
    stays in the editor service: this package carries the relay alone. With `PIWI_RUN_CHANNEL` (the same socket) and
    `PIWI_ORIGIN_REF`, each worker keeps a run connection to the editor from its worker fixture's setup to its end
@@ -39,8 +45,11 @@ per-directory responsibilities.
    which test it runs and where it stops, takes the editor's Pause, Step, Resume, Finish, Run to a line and breakpoints
    (in place of `PIWI_PAUSE_AT`) through the same stop policy, and answers a request for an image of the stopped page
    with a JPEG screenshot taken through an internal call. While it is open a headless run stops too, held until the
-   editor answers; a headed stop shows the bar as well, and the first answer wins. A stop no bar shows goes on when the
-   connection closes, and one stop shows at a time in a worker.
+   editor answers; a headed stop shows the bar as well, and the first answer wins. Whoever answers a stop, it goes to
+   `piwi-pauses` as one at the bar does, and every stop's end reaches the editor (`running`), one that ends unanswered
+   (the test function ended, its page or context closed) included, through the same end as at the bar. A stop no bar
+   shows goes on when the connection closes, and one stop shows at a time in a worker: one waiting its turn as the
+   test ends goes on unshown, as on Finish.
 4. **The desktop discovery file** — `~/.piwi/desktop.json` and its `{ url, token }` shape
    (`internal/config/desktop.ts`). The desktop shell writes it (`apps/desktop/src-tauri/src/lib.rs`) and this package reads
    it, on independent release cycles, so path and shape changes must land in both.

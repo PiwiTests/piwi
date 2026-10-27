@@ -7,16 +7,17 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type PausedImage, type RunToHub } from '@piwitests/core/run-channel';
+import { collectStepMetrics, unpausedDuration } from '@piwitests/core/step-analysis';
 import { startServer, type FakeServer } from './_helpers.js';
-import { readPauses, withoutPausedTime } from '../src/internal/collect/paused-steps.js';
+import { pauseStepEvents, readPauses } from '../src/internal/collect/pause-events.js';
 
 /**
  * A real Playwright run steered over the run channel, through the built package: a fake editor service listens on
  * the socket the run's environment names (`PIWI_RUN_CHANNEL`), hears each worker's tests and stops, and answers them
  * as a person would from the editor: Pause, Step, Run to a line, Resume, Finish, new breakpoints, an image of the
- * stopped page, and its connection closed under a stop. One project is headed, where Piwi's pause bar shows and races
- * the editor (without a display, Chromium runs it without a window, `--headless=new`); the other is headless, where
- * only the editor can answer.
+ * stopped page, and its connection closed under a stop; some stops it leaves unanswered, for the test to end or close
+ * its page under them. One project is headed, where Piwi's pause bar shows and races the editor (without a display,
+ * Chromium runs it without a window, `--headless=new`); the other is headless, where only the editor can answer.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -28,6 +29,10 @@ const TIMEOUT_MS = 3000;
 const HOLD_MS = 4000;
 /** How long the editor takes to answer a stop the bar shows: the bar is up by then. */
 const LOOK_MS = 400;
+/** How long a test that does not wait for a stopped call goes on before it ends. */
+const ENDS_MS = 300;
+/** How far a test's duration may pass its clock span less its stops: the runner and the stops read two clocks. */
+const CLOCK_SLACK_MS = 100;
 const REF = 'ed-0badc0de';
 const TOKEN = 'run-channel-token-0123456789';
 const WINDOWS = process.platform === 'linux' && !!process.env.DISPLAY;
@@ -73,6 +78,16 @@ test('finish', async ({ page }) => {
 test('next first call', async ({ page }) => {
   await page.goto('${base}/b'); // first-call
 });
+test.describe('the bar and the editor left unanswered', () => {
+  test.afterEach(async ({}, testInfo) => {
+    await fetch('${base}/after-each?title=' + encodeURIComponent(testInfo.title));
+  });
+  test('ends under the bar', async ({ page }) => {
+    await page.goto('${base}/a');
+    void page.locator('input').fill('e'); // bp
+    await page.waitForTimeout(${ENDS_MS});
+  });
+});
 test('moved breakpoints', async ({ page }) => {
   await page.goto('${base}/a');
   await fetch('${base}/ready?for=breakpoints');
@@ -86,6 +101,25 @@ test('headless', async ({ page }) => {
   await page.goto('${base}/b');
   await page.locator('input').fill('h'); // bp
   await expect(page.locator('input')).toHaveValue('h');
+});
+test.describe('the editor left unanswered', () => {
+  test.afterEach(async ({}, testInfo) => {
+    await fetch('${base}/after-each?title=' + encodeURIComponent(testInfo.title));
+  });
+  test('ends under a stop', async ({ page }) => {
+    await page.goto('${base}/b');
+    void page.getByRole('button').click(); // bp
+    await page.waitForTimeout(${ENDS_MS});
+  });
+});
+test('closes its page under a stop', async ({ page, context }) => {
+  await page.goto('${base}/b');
+  const other = await context.newPage();
+  await other.goto('${base}/b');
+  const click = other.getByRole('button').click(); // bp
+  await page.waitForTimeout(${ENDS_MS});
+  await other.close();
+  await click.catch(() => {});
 });
 test('connection closes', async ({ page }) => {
   await page.goto('${base}/b');
@@ -107,7 +141,7 @@ module.exports = class {
     const step = (s) => ({ title: s.title, category: s.category, startTime: s.startTime.getTime(), duration: s.duration, steps: s.steps.map(step) });
     const found = result.attachments.find((a) => a.name === 'piwi-pauses');
     const pauses = found?.body?.toString('utf8') ?? null;
-    this.tests.push({ title: test.title, project: test.parent.project().name, status: result.status, duration: result.duration, errors: result.errors.map((e) => e.message), steps: result.steps.map(step), pauses });
+    this.tests.push({ title: test.title, project: test.parent.project().name, status: result.status, startTime: result.startTime.getTime(), duration: result.duration, errors: result.errors.map((e) => e.message), steps: result.steps.map(step), pauses });
   }
   onStdOut(chunk) { process.stdout.write(chunk); }
   onEnd() { fs.writeFileSync(this.file, JSON.stringify(this.tests)); }
@@ -126,6 +160,7 @@ interface DumpedTest {
   title: string;
   project: string;
   status: string;
+  startTime: number;
   duration: number;
   errors: string[];
   steps: DumpedStep[];
@@ -152,6 +187,8 @@ const connections: Connection[] = [];
 const images: Record<string, PausedImage | null> = {};
 /** What the pause bar said each time it showed, in order. */
 const bars: string[] = [];
+/** Whether the editor had heard the stop end by the time each test's `afterEach` ran, by test. */
+const endedBeforeAfterEach: Record<string, boolean> = {};
 let tests: DumpedTest[] = [];
 /** The lines of each marker, by spec and marker: `headed bp`. */
 const lines: Record<string, number[]> = {};
@@ -242,6 +279,20 @@ beforeAll(async () => {
     if (url.pathname === '/bar') {
       bars.push(req.body);
       return res.end();
+    }
+    if (url.pathname === '/after-each') {
+      // Held a while: the test's teardown, which would end the stop too, waits for the hook.
+      const title = url.searchParams.get('title')!;
+      const started = Date.now();
+      const check = () => {
+        const heard = connections.find((c) => c.test === title)?.heard ?? [];
+        const stop = [...heard].reverse().find((m): m is Stopped => m.type === 'stopped');
+        const ended = !!stop && heard.some((m) => m.type === 'running' && m.stop === stop.stop);
+        if (!ended && Date.now() - started < 1000) return void setTimeout(check, 20);
+        endedBeforeAfterEach[title] = ended;
+        res.end();
+      };
+      return check();
     }
     if (url.pathname === '/ready') {
       const connection = connections.find(
@@ -335,6 +386,13 @@ afterAll(async () => {
   await server?.close();
 });
 
+/** A test's span on the clock: from the start of its Before Hooks to the end of its After Hooks. */
+function clockSpan(result: DumpedTest): number {
+  const before = result.steps.find((s) => s.title === 'Before Hooks')!;
+  const after = result.steps.find((s) => s.title === 'After Hooks')!;
+  return after.startTime + after.duration - before.startTime;
+}
+
 /** Every step of a test, depth first. */
 function allSteps(steps: DumpedStep[]): DumpedStep[] {
   return steps.flatMap((s) => [s, ...allSteps(s.steps)]);
@@ -372,8 +430,11 @@ describe('a run steered over the run channel', () => {
       ['bar first', 'headed', 'passed'],
       ['finish', 'headed', 'passed'],
       ['next first call', 'headed', 'passed'],
+      ['ends under the bar', 'headed', 'passed'],
       ['moved breakpoints', 'headed', 'passed'],
       ['headless', 'headless', 'passed'],
+      ['ends under a stop', 'headless', 'passed'],
+      ['closes its page under a stop', 'headless', 'passed'],
       ['connection closes', 'headless', 'passed'],
       ['a process it starts', 'headless', 'passed'],
     ]);
@@ -453,20 +514,65 @@ describe('a run steered over the run channel', () => {
     expect(result.duration).toBeLessThan(TIMEOUT_MS);
     const pauses = readPauses(Buffer.from(result.pauses ?? ''));
     expect(pauses).toEqual([expect.objectContaining({ reason: 'breakpoint', title: `Fill "h" locator('input')` })]);
-    const held = (steps: DumpedStep[]) => allSteps(steps).filter((s) => s.duration >= HOLD_MS - 50);
-    expect(held(result.steps).length).toBeGreaterThan(0);
-    expect(held(withoutPausedTime(result.steps, pauses))).toEqual([]);
+    // The held call keeps its clock; the step statistics leave the stop out of it.
+    const fill = allSteps(result.steps).find((s) => s.title === 'Fill "h"')!;
+    expect(fill.duration).toBeGreaterThanOrEqual(HOLD_MS - 50);
+    expect(unpausedDuration(fill, pauses)).toBeLessThan(HOLD_MS - 50);
+    const { slowestStep } = collectStepMetrics(result.steps, [], pauses);
+    expect(slowestStep?.title === 'Fill "h"' ? slowestStep.duration : 0).toBeLessThan(HOLD_MS - 50);
   });
 
-  it('goes on when its connection closes under a stop no bar shows', () => {
-    expect(stopsIn('connection closes').map(where)).toEqual([['breakpoint', mark('headless', 'bp', 1), false]]);
+  it('ends a stop the test ended under as the test function ends, bar or not, and tells the editor', () => {
+    for (const title of ['ends under the bar', 'ends under a stop']) {
+      const stops = stopsIn(title);
+      expect(
+        stops.map((s) => [s.reason, s.bar]),
+        title,
+      ).toEqual([['breakpoint', title === 'ends under the bar']]);
+      const heard = heardIn(title);
+      const ended = heard.findIndex((m) => m.type === 'running' && m.stop === stops[0]!.stop);
+      expect(ended, title).toBeGreaterThan(0);
+      expect(ended, title).toBeLessThan(heard.length - 1);
+      // Before the afterEach hooks.
+      expect(endedBeforeAfterEach[title], title).toBe(true);
+      const result = test(title);
+      const pauses = readPauses(Buffer.from(result.pauses ?? ''));
+      expect(pauses, title).toEqual([expect.objectContaining({ reason: 'breakpoint' })]);
+      const paused = pauses[0]!.duration;
+      expect(paused, title).toBeGreaterThanOrEqual(ENDS_MS - 50);
+      expect(paused, title).toBeLessThan(TIMEOUT_MS);
+      expect((heard[heard.length - 1] as { pausedMs: number }).pausedMs, title).toBe(paused);
+      // The test's duration leaves the stop out.
+      expect(result.duration, title).toBeLessThanOrEqual(clockSpan(result) - paused + CLOCK_SLACK_MS);
+    }
+  });
+
+  it('ends a stop the editor holds when its page closes, and tells the editor', () => {
+    const stops = stopsIn('closes its page under a stop');
+    expect(stops.map(where)).toEqual([['breakpoint', mark('headless', 'bp', 2), false]]);
+    expect(heardIn('closes its page under a stop')).toContainEqual({ type: 'running', stop: stops[0]!.stop });
+    const result = test('closes its page under a stop');
+    expect(result.duration).toBeLessThan(TIMEOUT_MS);
+    expect(readPauses(Buffer.from(result.pauses ?? ''))).toEqual([
+      expect.objectContaining({ reason: 'breakpoint', duration: expect.any(Number) }),
+    ]);
+  });
+
+  it('goes on when its connection closes under a stop no bar shows, and keeps the stop', () => {
+    expect(stopsIn('connection closes').map(where)).toEqual([['breakpoint', mark('headless', 'bp', 3), false]]);
     expect(output).toContain('[piwi] The connection to the editor closed: the test goes on.');
+    expect(readPauses(Buffer.from(test('connection closes').pauses ?? ''))).toEqual([
+      expect.objectContaining({ reason: 'breakpoint', title: `Fill "z" locator('input')` }),
+    ]);
   });
 
-  it('lists the stops the editor answered in piwi-pauses, with their reasons', () => {
+  it('lists the stops the editor answered in piwi-pauses, and as pause step events, with their reasons', () => {
     const pauses = readPauses(Buffer.from(test('steered').pauses ?? ''));
     expect(pauses.map((p) => p.reason)).toEqual(['pause', 'step', 'run-to']);
     expect(pauses.every((p) => p.duration >= LOOK_MS - 50)).toBe(true);
+    expect(pauseStepEvents(pauses).map((e) => [e.category, e.status, e.duration])).toEqual(
+      pauses.map((p) => ['pause', p.reason, p.duration]),
+    );
   });
 
   it('shows none of its own calls among the test’s steps', () => {

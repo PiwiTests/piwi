@@ -4,7 +4,7 @@ import { isInsidePath, parsePairing, type EditorSendPayload } from '@piwitests/c
 import type { Place, StopReason } from '@piwitests/core/run-channel';
 import { pauseAnswered, showPauseBar, takePauseState, type PauseBarArg, type PauseChoice } from '@piwitests/picker-dom';
 import { isCi } from './inspect-on-failure.js';
-import { pickLocator, type PickedLocator, type PickerProbe } from './pick-on-failure.js';
+import { pickLocator, unlessEnded, type PickedLocator, type PickerProbe } from './pick-on-failure.js';
 import { internalCall } from './quiet-capture.js';
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 
@@ -70,6 +70,18 @@ export function stopCallSite(
 export function callSiteLine(callSite: string): string {
   const col = callSite.lastIndexOf(':');
   return col > 0 ? callSite.slice(0, col) : callSite;
+}
+
+/**
+ * The call site of a stop on a locator call, from the sites of the locator calls in flight (`file:line:col`): the
+ * line they are all on; null when none is in flight, or when they are on several lines, which the stop cannot tell
+ * apart.
+ */
+export function inFlightCallSite(inFlight: readonly string[]): string | null {
+  const [first] = inFlight;
+  if (first === undefined) return null;
+  const line = callSiteLine(first);
+  return inFlight.every((site) => callSiteLine(site) === line) ? first : null;
 }
 
 const ignoredLogged = new Set<string>();
@@ -247,7 +259,7 @@ export function goOn(state: PauseState, answer?: PauseAnswer): GoOn {
   return wantsStops(state) ? 'next' : 'resume';
 }
 
-/** One stop the bar showed, as the `piwi-pauses` attachment lists it. */
+/** One stop shown, with the bar or in the editor, as the `piwi-pauses` attachment lists it. */
 export interface PauseRecord {
   /** The call the stop held, as Playwright titles it: `Click getByRole('button', { name: 'Pay' })`. */
   title: string;
@@ -279,82 +291,80 @@ const WATCHED = new WeakSet<BrowserContext>();
 
 /**
  * Hand each stop of a context's debugger to `onStop`, once per context, with Playwright's Inspector kept closed at the
- * stops Piwi answers (`keepInspectorClosed`). False on a Playwright without a debugger.
+ * stops Piwi answers (`syncInspectorSwitch`). False on a Playwright without a debugger.
  */
 export function watchStops(context: BrowserContext, onStop: (context: BrowserContext) => void): boolean {
   const dbg = contextDebugger(context);
   if (!dbg) return false;
   if (WATCHED.has(context)) return true;
   WATCHED.add(context);
-  keepInspectorClosed(context);
+  inspectorSwitch.watching = true;
+  syncInspectorSwitch();
   dbg.on('pausedstatechanged', () => onStop(context));
   return true;
 }
 
-/** The switch Playwright reads at each stop of a headed context's debugger: set, its Inspector stays closed. */
+/** The switch Playwright reads as each stop of a headed context's debugger begins: set, its Inspector stays closed. */
 const NO_INSPECTOR_ENV = 'PW_CODEGEN_NO_INSPECTOR';
-
-/** The listener side of a Playwright connection's client instrumentation (an internal, feature-checked). */
-interface ClientInstrumentation {
-  addListener(listener: object): void;
-}
-
-/** A Playwright object, as it reaches its connection's instrumentation. */
-type ChannelOwner = { _instrumentation?: Partial<ClientInstrumentation> };
 
 const inspectorSwitch = {
   /** Set by Piwi, so Piwi's to clear. */
   set: false,
-  /** A `page.pause()` Piwi does not take over is about to reach Playwright. */
-  pauseStarting: false,
-  /** The API calls of those `page.pause()` that are running. */
-  pauses: new Set<object>(),
-  /** The instrumentations listened to. */
-  listened: new WeakSet<object>(),
+  /** Piwi answers the stops of a context in this worker. */
+  watching: false,
+  /** Every `page.pause()` of the worker's Playwright reaches it through Piwi (`markPausesWrapped`). */
+  wrapped: false,
+  /** The `page.pause()` calls left to Playwright that are running (`withInspector`). */
+  open: 0,
 };
 
+/**
+ * Set `PW_CODEGEN_NO_INSPECTOR` while Piwi answers stops in this worker, every `page.pause()` of the worker's Playwright
+ * goes through Piwi and none left to Playwright runs; clear it otherwise. A value set outside Piwi is left as it is.
+ * The switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi does not see,
+ * stops with no Inspector while it is set.
+ */
 function syncInspectorSwitch(): void {
-  const open = inspectorSwitch.pauseStarting || inspectorSwitch.pauses.size > 0;
-  if (!open && process.env[NO_INSPECTOR_ENV] === undefined) {
+  const closed = inspectorSwitch.watching && inspectorSwitch.wrapped && inspectorSwitch.open === 0;
+  if (closed && process.env[NO_INSPECTOR_ENV] === undefined) {
     process.env[NO_INSPECTOR_ENV] = '1';
     inspectorSwitch.set = true;
-  } else if (open && inspectorSwitch.set) {
+  } else if (!closed && inspectorSwitch.set) {
     if (process.env[NO_INSPECTOR_ENV] === '1') delete process.env[NO_INSPECTOR_ENV];
     inspectorSwitch.set = false;
   }
 }
 
 /**
- * Keep Playwright's Inspector closed in this worker at the debugger stops Piwi answers, and open while a `page.pause()`
- * Piwi does not take over runs: Playwright reads `PW_CODEGEN_NO_INSPECTOR` at each stop, and opens its Inspector at a
- * stop of a headed context without it. Piwi's own `page.pause()` passes Playwright's `__testHookKeepTestTimeout`, which
- * tells the two apart in the connection's client instrumentation. Without that instrumentation the switch stays off,
- * and the Inspector opens beside the bar.
+ * Every `page.pause()` of the worker's Playwright now reaches it through Piwi, which runs the ones it leaves to
+ * Playwright in `withInspector`: the switch may close the Inspector at Piwi's own stops. Until then it stays off, and
+ * the Inspector opens beside the bar.
  */
-function keepInspectorClosed(context: BrowserContext): void {
-  const instrumentation = (context as unknown as ChannelOwner)._instrumentation;
-  if (!instrumentation || typeof instrumentation.addListener !== 'function') return;
-  if (!inspectorSwitch.listened.has(instrumentation)) {
-    inspectorSwitch.listened.add(instrumentation);
-    instrumentation.addListener({
-      onWillPause: (options?: { keepTestTimeout?: boolean }) => {
-        if (options?.keepTestTimeout) return;
-        inspectorSwitch.pauseStarting = true;
-        syncInspectorSwitch();
-      },
-      // The pause call begins right after `onWillPause`, in the same turn.
-      onApiCallBegin: (call: object, channel?: { type?: string; method?: string }) => {
-        if (!inspectorSwitch.pauseStarting) return;
-        inspectorSwitch.pauseStarting = false;
-        if (channel?.type === 'BrowserContext' && channel.method === 'pause') inspectorSwitch.pauses.add(call);
-        else syncInspectorSwitch();
-      },
-      onApiCallEnd: (call: object) => {
-        if (inspectorSwitch.pauses.delete(call)) syncInspectorSwitch();
-      },
-    });
-  }
+export function markPausesWrapped(): void {
+  inspectorSwitch.wrapped = true;
   syncInspectorSwitch();
+}
+
+/**
+ * Run Playwright's own `page.pause()` with its Inspector free to open: the switch is off from before the call until it
+ * returns, so Playwright reads it off as the stop begins. Process-wide: a stop Piwi answers meanwhile, in another
+ * context, opens an Inspector too.
+ */
+export async function withInspector<T>(run: () => Promise<T>): Promise<T> {
+  inspectorSwitch.open++;
+  syncInspectorSwitch();
+  try {
+    return await run();
+  } finally {
+    inspectorSwitch.open--;
+    syncInspectorSwitch();
+  }
+}
+
+/** Test-only: the switch as a fresh worker has it. */
+export function resetInspectorSwitch(): void {
+  if (inspectorSwitch.set && process.env[NO_INSPECTOR_ENV] === '1') delete process.env[NO_INSPECTOR_ENV];
+  Object.assign(inspectorSwitch, { set: false, watching: false, wrapped: false, open: 0 });
 }
 
 /**
@@ -389,6 +399,33 @@ export async function withTestTimeoutHeld<T>(testInfo: TestInfo, run: () => Prom
   } finally {
     set.call(testInfo, false);
   }
+}
+
+type TestTimeSlot = { elapsed: number };
+type TimeoutManagerHolder = { _timeoutManager?: { defaultSlot?: () => unknown } };
+
+/**
+ * The test time the runner has counted so far, which `testInfo.duration` is read from: its default timeout slot
+ * (`_timeoutManager.defaultSlot()`, a Playwright internal, feature-checked). Null where it cannot be read.
+ */
+export function testTimeSlot(testInfo: TestInfo): TestTimeSlot | null {
+  try {
+    const slot = (testInfo as unknown as TimeoutManagerHolder)._timeoutManager?.defaultSlot?.();
+    return slot && typeof (slot as TestTimeSlot).elapsed === 'number' ? (slot as TestTimeSlot) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Bring the runner's count of a test function that ended under the bar back to `heldAt`, what it counted as the
+ * stop's hold began. The runner counts a runnable's time again when it ends while the test timeout is held, from where
+ * it last started counting, so that count holds the time before the stop twice and the stop on top. Never raises the
+ * count; a runner whose slot cannot be read is left as it is.
+ */
+export function restoreTestTime(testInfo: TestInfo, heldAt: number): void {
+  const slot = testTimeSlot(testInfo);
+  if (slot && Number.isFinite(heldAt) && heldAt >= 0 && heldAt < slot.elapsed) slot.elapsed = heldAt;
 }
 
 /** Where the bar says a test is paused: the file's name and the line, `login.spec.ts:42`. */
@@ -488,32 +525,21 @@ const MAX_NAVIGATED = 10;
 /** How long the highlight may take before the bar shows without it. */
 const HIGHLIGHT_MS = 2000;
 
-/** `run`, or undefined as soon as `ended` aborts. */
-function unlessEnded<T>(run: Promise<T>, ended: AbortSignal | undefined): Promise<T | undefined> {
-  if (!ended) return run;
-  return Promise.race([
-    run,
-    new Promise<undefined>((resolve) => {
-      if (ended.aborted) resolve(undefined);
-      else ended.addEventListener('abort', () => resolve(undefined), { once: true });
-    }),
-  ]);
-}
-
 /**
  * Show the pause bar at a stop: highlight the element, show the bar and wait for its answer. **Pick a locator** runs
  * the picker and shows the bar again; `onPick` receives each confirmed pick. With `onRecord` (the editor that started
  * the run can record), **Record here** hands the page to it and shows the bar again once the recording ended. Returns
  * the answer that ends the stop: `resume`, `step` or `finish`; `resume` when the page breaks or `ended` aborts (the
- * test ended under the bar), never throwing. The bar and the highlight are gone once it returns. Every page call it
- * makes must run inside an internal call.
+ * test ended under the bar, its page closed, the editor answered the stop), never throwing: the bar, the picker and
+ * the recording then end at once, leaving nothing of theirs in the page. The bar and the highlight are gone once it
+ * returns. Every page call it makes must run inside an internal call.
  */
 export async function pauseHere(
   page: Page,
   point: PausePoint,
   probe: PickerProbe,
   onPick: (pick: PickedLocator) => void | Promise<void>,
-  onRecord?: () => Promise<void>,
+  onRecord?: (ended?: AbortSignal) => Promise<void>,
   ended?: AbortSignal,
 ): Promise<PauseAnswer> {
   let shown: unknown = null;
@@ -555,12 +581,15 @@ export async function pauseHere(
         navigated = 0;
         if (choice === 'resume' || choice === 'step' || choice === 'finish') return choice;
         if (choice === 'record' && onRecord) {
-          await onRecord().catch(() => undefined);
+          await unlessEnded(
+            onRecord(ended).catch(() => undefined),
+            ended,
+          );
           continue;
         }
         if (choice !== 'pick') continue;
-        const picked = await pickLocator(page, probe, null).catch(() => null);
-        if (picked) await onPick(picked);
+        const picked = await pickLocator(page, probe, null, ended).catch(() => null);
+        if (picked && !ended?.aborted) await onPick(picked);
       } catch (error) {
         if (page.isClosed() || !NAVIGATED.test(String(error)) || ++navigated > MAX_NAVIGATED) throw error;
         await page.waitForLoadState('domcontentloaded').catch(() => undefined);
@@ -570,7 +599,7 @@ export async function pauseHere(
     return 'resume';
   } finally {
     try {
-      // The bar a test ended under is taken down here, unanswered.
+      // A bar the stop ended under without its answer is taken down here.
       if (ended?.aborted) await page.evaluate(takePauseState);
       const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
       // Feature-detected: an older Playwright has neither a disposable highlight nor `page.hideHighlight`.

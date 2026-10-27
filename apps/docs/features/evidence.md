@@ -34,7 +34,8 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
   duration, colored only when it lasts at least 1 s and a third of the test, or twice its time in recent passing
   runs and 1 s more. **Around the failure** / **Whole test** and one chip per item type filter both. Hooks and fixtures fold into
   **Setup** and **Teardown** rows, open when the failure is there; a `test.step` holds its steps; the failing step
-  shows its error and its page's Screenshot, DOM and Accessibility tree; a caught error is greyed out.
+  shows its error and its page's Screenshot, DOM and Accessibility tree; a caught error is greyed out; a
+  [breakpoint](./editor-breakpoints)'s stop is a **Paused** band.
 - **Attempts**: shown when a test ran more than once, see [below](#attempts).
 - **Screen**: the page at the failure as views (**Screenshot**, **DOM**, **Accessibility tree**, **Visual diff**,
   [**Page diff**](#page-diff), **Video**) over the trace and attachments. **DOM** renders it as recorded: field values
@@ -120,7 +121,7 @@ step. The [in-execution page diff](#page-diff) reads the same snapshots.
 ### Recovered from the trace without the fixtures
 
 With the reporter alone and a trace uploaded, the dashboard recovers the **console** entries, the **network requests**
-(including failed and aborted ones) and the failure-time **ARIA snapshot** from the trace at ingest. Cards showing
+(failed and aborted included) and the failure-time **ARIA snapshot** at ingest. Cards showing
 it carry a **derived from the trace** chip; fixture-captured data is never replaced.
 
 ### Why a card is empty
@@ -135,7 +136,7 @@ block uses the same words.
 
 **Open trace**, atop the evidence card on every tab, opens the Playwright trace viewer; the Screen tab lists each trace with **Open trace** and **Download**. The dashboard serves the viewer at `/trace-viewer/`, so traces stay on your
 server, with or without [authentication](/operate/authentication). The hosted
-`trace.playwright.dev` can't send your session cookie, so it only works with authentication off.
+`trace.playwright.dev` can't send your session cookie, so it needs authentication off.
 
 ## The test case page
 

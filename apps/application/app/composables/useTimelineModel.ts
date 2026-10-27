@@ -3,15 +3,18 @@ import type { TestCaseResult, TestStepEvent, SetupStepEvent, PerformanceStep } f
 import { isWastedWait, DEFAULT_WASTED_WAIT_PATTERNS } from '#shared/utils/wasted-waits';
 import { buildStepSpans } from '~/utils/step-spans';
 import { stepPhases } from '#shared/step-tree';
+import { pauseSpans, pausedOverlap } from '#shared/step-analysis';
+import { formatTimelineTime } from '~/utils/timeline';
 import type { TestStepEventHook } from '#shared/types';
 import { testAttemptKey } from '~/utils/test-attempts';
 
 /**
  * What a timeline bar represents; drives rendering, filtering and header counts.
  * `idle` and `restart` are the empty stretches of a worker's lane: time no test
- * ran, and the start-up of a new worker process.
+ * ran, and the start-up of a new worker process. `pause` is a stop at Piwi's
+ * pause bar, which its test's bar draws as a Paused band.
  */
-export type TimelineItemKind = 'test' | 'setup' | 'hook' | 'fixture' | 'wait' | 'step' | 'idle' | 'restart';
+export type TimelineItemKind = 'test' | 'setup' | 'hook' | 'fixture' | 'wait' | 'step' | 'idle' | 'restart' | 'pause';
 
 /** Whether a bar is hook time: a test's hook or fixture section, or a suite-level setup step. */
 export function isHookKind(kind: TimelineItemKind): boolean {
@@ -63,9 +66,12 @@ export interface TimelineItem {
   /**
    * The duration Playwright reported, when the bar is noticeably longer — test
    * bars only. Playwright leaves `beforeAll` / `afterAll` hooks and worker
-   * fixtures out of a test's duration, so the bar spans its hooks instead.
+   * fixtures out of a test's duration, and the time it stood paused at a
+   * breakpoint, so the bar spans them instead.
    */
   reportedDuration?: number | null;
+  /** How long the test stood paused at Piwi's pause bar, in ms — test bars of a test that paused only. */
+  pausedMs?: number | null;
   /** Reporter step category (`action`, `assertion`, `hook`, …) — step items only. */
   category?: string;
   /** Nesting depth within the expanded test (1 = top level) — step items only. */
@@ -227,18 +233,21 @@ interface WorkerLane {
 
 /**
  * A case's wall-clock span in epoch ms: its reported duration, stretched over
- * any hook section that ran past it (Playwright leaves `beforeAll` / `afterAll`
- * and worker fixtures out of the duration). Null when the case has no start.
+ * any hook section or stop at the pause bar that ran past it (Playwright leaves
+ * `beforeAll` / `afterAll`, worker fixtures and the time paused out of the
+ * duration). A case that stood paused ends with its last section: its duration
+ * is no measure of its clock. Null when the case has no start.
  */
 function caseSpan(tc: TestCaseResult): { start: number; end: number } | null {
   const start = toMs(tc.startedAt);
   if (start == null) return null;
-  let end = start + (tc.duration ?? 1000);
-  for (const event of (tc.stepEvents ?? []) as TestStepEvent[]) {
+  const events = (tc.stepEvents ?? []) as TestStepEvent[];
+  let end = events.some((event) => event.category === 'pause') ? start : start + (tc.duration ?? 1000);
+  for (const event of events) {
     const eventStart = toMs(event.startedAt);
     if (eventStart != null) end = Math.max(end, eventStart + (event.duration || 0));
   }
-  return { start, end };
+  return { start, end: end > start ? end : start + (tc.duration ?? 1000) };
 }
 
 /**
@@ -345,14 +354,39 @@ function toMs(v: unknown): number | null {
  * test bar, and other categories (test.step/expect) are never rendered as
  * segments.
  */
-function stepKind(step: TestStepEvent, patterns: readonly string[]): 'hook' | 'fixture' | 'wait' | null {
+function stepKind(step: TestStepEvent, patterns: readonly string[]): 'hook' | 'fixture' | 'wait' | 'pause' | null {
   if (step.category === 'wait') return isWastedWait(step, patterns) ? 'wait' : null;
-  if (step.category === 'hook' || step.category === 'fixture') return step.category;
+  if (step.category === 'hook' || step.category === 'fixture' || step.category === 'pause') return step.category;
   return null;
 }
 
 /** Hook time past a test's reported duration from which its bar notes the duration Playwright reported. */
 const UNCOUNTED_HOOK_TIME_MS = 100;
+
+const UNCOUNTED_HOOKS = 'hooks it does not count (beforeAll, afterAll, worker fixtures)';
+
+/**
+ * What a test bar's tooltip says about its time: the duration Playwright reported when the bar is longer, and what
+ * the rest was (the hooks Playwright does not count, the time the test stood paused at Piwi's pause bar, or both), by
+ * how much longer the bar is than the reported duration; and the time paused, when that sentence does not say it. A
+ * reported duration that counts a stop (a test that ended under the pause bar where the reporter could not correct the
+ * runner's count) leaves the hooks as the rest.
+ */
+export function testTimeNotes(item: Pick<TimelineItem, 'duration' | 'reportedDuration' | 'pausedMs'>): string[] {
+  const paused = item.pausedMs ?? 0;
+  const pausedNote = `Paused ${formatTimelineTime(paused)} at Piwi's pause bar.`;
+  if (item.reportedDuration == null) return paused > 0 ? [pausedNote] : [];
+  const reported = `Playwright reports ${formatTimelineTime(item.reportedDuration)}`;
+  const hooks = item.duration - item.reportedDuration - paused;
+  if (paused >= UNCOUNTED_HOOK_TIME_MS && hooks >= UNCOUNTED_HOOK_TIME_MS) {
+    return [`${reported}; the rest is the ${formatTimelineTime(paused)} it stood paused and ${UNCOUNTED_HOOKS}.`];
+  }
+  if (paused >= UNCOUNTED_HOOK_TIME_MS && hooks > -UNCOUNTED_HOOK_TIME_MS) {
+    return [`${reported}; the rest is the ${formatTimelineTime(paused)} it stood paused at Piwi's pause bar.`];
+  }
+  const rest = `${reported}; the rest ran in ${UNCOUNTED_HOOKS}.`;
+  return paused > 0 ? [rest, pausedNote] : [rest];
+}
 
 /** The side of the test body a top-level hook step ran on: `Before Hooks` is setup, `After Hooks` teardown. */
 function hookSection(step: TestStepEvent): 'setup' | 'teardown' | null {
@@ -558,6 +592,12 @@ export function useTimelineModel(props: TimelineModelInput): {
           const span = absolute ? caseSpan(tc) : null;
           const start = absolute ? absoluteStart(tc.startedAt) : cursor;
           const duration = span ? span.end - span.start : reported;
+          const pauses = pauseSpans(stepEvents);
+          const pausedMs = pauses.length
+            ? span
+              ? pausedOverlap(span.start, span.end - span.start, pauses)
+              : pauses.reduce((sum, pause) => sum + pause.duration, 0)
+            : 0;
           const testItem: TimelineItem = {
             key: `t${tc.executionId}`,
             kind: 'test',
@@ -572,6 +612,7 @@ export function useTimelineModel(props: TimelineModelInput): {
             locks: tc.locks ?? null,
             retries: tc.retries ?? null,
             reportedDuration: duration - reported >= UNCOUNTED_HOOK_TIME_MS ? reported : null,
+            ...(pausedMs > 0 ? { pausedMs } : {}),
             expanded: expanded?.has(tc.executionId) ?? false,
           };
           rowItems.push(testItem);
@@ -599,7 +640,10 @@ export function useTimelineModel(props: TimelineModelInput): {
               rowIndex: baseLane,
               parentTitle: tc.title,
             };
-            if (kind !== 'wait') {
+            if (kind === 'pause') {
+              // The stop's call site, without its column.
+              item.subtitle = step.location ? step.location.replace(/:\d+$/, '') : null;
+            } else if (kind !== 'wait') {
               item.section = hookSection(step);
               item.hooks = step.hooks?.length ? step.hooks : null;
               item.error = step.error ?? null;

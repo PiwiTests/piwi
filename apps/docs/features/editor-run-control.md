@@ -58,7 +58,8 @@ Playwright names the call, with the controls:
 `attempt 2` shows on a retry. In VS Code the line is a CodeLens, and the hover on the paused line has the same
 controls; the color is `piwi.executionPointBackground`. In a JetBrains IDE the line is an inlay whose words are links,
 the arrow's click lists the controls, and the color is **Settings → Editor → Color Scheme → Piwi → Line a run is
-stopped at**. The mark goes as soon as the test goes on, from the editor or from the pause bar.
+stopped at**. The mark goes as soon as the test goes on, from the editor or from the pause bar, or when the test ends
+under the stop or closes its page.
 
 With several workers stopped, each has its own mark, and the controls above a line act on its worker; a key or a
 command acts on the one stopped at the cursor's line, else asks which. A control answers the stop it was shown for:
@@ -75,6 +76,9 @@ config says, headless by default: when you pause it, or it reaches a breakpoint 
 editor shows an image of the page instead, as it stood when the test stopped: in VS Code in a **Piwi: paused page**
 tab beside the editor, in a JetBrains IDE in the **Paused Page** tab of the Piwi tool window. It is taken again at each
 such stop; **Piwi: Show the paused page** (**Tools → Piwi → Show the Paused Page**) asks for it at any stop.
+
+Whoever answers it, a stop counts as one at the bar: the test's duration leaves it out, and the dashboard's timelines
+draw it as a **Paused** band, with why it stopped ([Breakpoints in the browser](./editor-breakpoints#pause-a-run)).
 
 ## Breakpoints while the run goes on
 
