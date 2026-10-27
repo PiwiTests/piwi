@@ -146,9 +146,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   the client, an instance or a file, none of a stop that ended, and the hub keeps none (`RunSessions.watch`,
   `RunHub.frame`). Checked by `tests/run-view.test.ts`. ([ARCHITECTURE.md](ARCHITECTURE.md#the-live-view))
 - **At a stop no pause bar shows, input and the actions in the test's window come only from a connection watching its
-  view.** `stopIntentsOf` offers them so and `intent`/`input` refuse anyone else, while `following` (a Runs window)
-  holds failures apart. Checked by `tests/run-view.test.ts` ("takes Pick and Record … from a viewer of its view
-  alone", "plays a viewer's input …"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-live-view))
+  view.** `stopIntentsOf` offers them so, and `intent` and `input` refuse anyone else; following the runs (`follow`)
+  grants neither. Checked by `tests/run-view.test.ts` ("takes Pick and Record … from a viewer of its view alone",
+  "plays a viewer’s input …"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-live-view))
 - **A failure no pause bar shows is held only where a person can answer it.** In a run the service built to be watched,
   or while a hub connection said `follow` with `on: true` (`followed` in `src/server.ts`), and only for a worker whose
   `run-attach` lists `holds`, answered with `attached` (`SHOWN_HOLDS`). Checked by `tests/run-sessions.test.ts` ("holds

@@ -83,14 +83,15 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **`GET /piwi/live` lists hubs only, never a run channel's token; a remote window lists its own service's hub alone,
   at the loopback port `asExternalUri` forwards, once `piwi/hub` made the hub take it** (`liveHubsHere`). Checked by
-  `tests/send-listener.test.ts` ("… none of the run channels", "lists a remote window's own hub …").
+  `tests/send-listener.test.ts` ("… none of the run channels", "lists a remote window’s own hub …").
   ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **Only the pairing Piwi Picker is given saves the listener's port** (`sendPairing`): a run's pairing takes any free
   port while another window holds the saved one, and leaves it saved. Checked by `tests/send-listener.test.ts` ("keeps
   the port Piwi Picker was given …"). ([Breakpoints](ARCHITECTURE.md#breakpoints))
 - **The paused page webview runs a script only where a click on the image picks, by the style's nonce.** Its document
   takes images from `data:` only, and the script posts a click's offset alone (`pausedPageHtml`, `imageClickOf` in
-  `src/run-control.ts`). Checked by `tests/run-control.test.ts` ("runs one script …"). ([Run control](ARCHITECTURE.md#run-control))
+  `src/run-control.ts`). Checked by `tests/run-control.test.ts` ("runs one script …").
+  ([Run control](ARCHITECTURE.md#run-control))
 
 ## Workflow
 
