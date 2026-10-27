@@ -169,8 +169,8 @@ export class RunLines {
   }
 
   /**
-   * Where the 0-based `line` of `file` in the run `ref` stands now, in the text the editor holds (`open`)
-   * or, for a file no editor holds, on `disk`; why it cannot be told otherwise.
+   * Where the 0-based `line` of `file` in the run `ref` stands now, in the text the editor holds (`open`) or, for a
+   * file no editor holds, on `disk`; why it cannot be told otherwise.
    */
   lineNow(ref: string, file: string, line: number, open: boolean, disk: DiskFile): LineNow {
     const run = this.runs.get(ref);
@@ -214,13 +214,13 @@ export class RunLines {
 
   /** Drop the documents past `MAX_DOCUMENTS`, the closed ones first, then the oldest. */
   private trim(): void {
-    for (const [uri, followed] of this.documents) {
+    for (const [file, followed] of this.documents) {
       if (this.documents.size <= MAX_DOCUMENTS) return;
-      if (followed.closed) this.documents.delete(uri);
+      if (followed.closed) this.documents.delete(file);
     }
-    for (const uri of this.documents.keys()) {
+    for (const file of this.documents.keys()) {
       if (this.documents.size <= MAX_DOCUMENTS) return;
-      this.documents.delete(uri);
+      this.documents.delete(file);
     }
   }
 }
