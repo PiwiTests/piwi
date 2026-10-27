@@ -791,7 +791,7 @@ describe('RunSessions', () => {
     let writes = false;
     const { sessions } = harness({ writesCode: () => writes });
     takingWorker(sessions);
-    expect(sessions.intentsOf('ed-1', 0)).toEqual(['pick', 'record', 'view', 'input', 'pick-at']);
+    expect(sessions.intentsOf('ed-1', 0)).toEqual(['pick', 'record', 'view', 'input', 'input-clicks', 'pick-at']);
     writes = true;
     expect(sessions.intentsOf('ed-1', 0)).toEqual([
       'pick',
@@ -801,6 +801,7 @@ describe('RunSessions', () => {
       'mock',
       'view',
       'input',
+      'input-clicks',
       'pick-at',
     ]);
     sessions.dispose();

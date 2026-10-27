@@ -121,9 +121,11 @@ export type HubCodeIntent = 'assert' | 'assert-region';
 
 /**
  * What a stop can do for a viewer outside the page: show its live view (`view`), play the viewer's input on it
- * (`input`), and send the locator of the element under a point of an image of it where a pick goes (`pick-at`).
+ * (`input`), the click count of a button's `down` and `up` included (`input-clicks`: a double click goes as the
+ * browser counted it, at once, where a stop without it takes a held `click` of `clickCount` 2), and send the locator of
+ * the element under a point of an image of it where a pick goes (`pick-at`).
  */
-export type HubViewAction = 'view' | 'input' | 'pick-at';
+export type HubViewAction = 'view' | 'input' | 'input-clicks' | 'pick-at';
 
 /**
  * What a stop can take from the Runs page: the intents, Mock a request (`mock`, with the `requests` it lists), and the
@@ -147,6 +149,7 @@ export const HUB_ACTIONS: readonly HubAction[] = [
   'mock',
   'view',
   'input',
+  'input-clicks',
   'pick-at',
 ];
 

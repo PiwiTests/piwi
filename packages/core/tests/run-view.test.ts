@@ -114,6 +114,25 @@ describe('a viewer’s input', () => {
     ] satisfies ViewInput[]);
   });
 
+  test('reads the click count a button’s down and up carry, as a viewer’s browser counted them, or none', () => {
+    expect(
+      readViewInput([
+        { type: 'mouse', action: 'down', x: 1, y: 2, clickCount: 2 },
+        { type: 'mouse', action: 'up', x: 1, y: 2, button: 'right', clickCount: 3 },
+        { type: 'mouse', action: 'down', x: 1, y: 2, clickCount: null },
+      ]),
+    ).toEqual([
+      { type: 'mouse', action: 'down', x: 1, y: 2, button: 'left', clickCount: 2 },
+      { type: 'mouse', action: 'up', x: 1, y: 2, button: 'right', clickCount: 3 },
+      { type: 'mouse', action: 'down', x: 1, y: 2, button: 'left', clickCount: 1 },
+    ] satisfies ViewInput[]);
+    for (const clickCount of [0, 4, 1.5, '2']) {
+      expect(readViewInput([{ type: 'mouse', action: 'up', x: 1, y: 2, clickCount }])).toBe(
+        'Event 1 needs a clickCount from 1 to 3.',
+      );
+    }
+  });
+
   test('drops what an event carries beyond its fields', () => {
     expect(readViewInput([{ type: 'text', text: 'a', script: 'alert(1)', x: 4 }])).toEqual([
       { type: 'text', text: 'a' },

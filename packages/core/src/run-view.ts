@@ -39,8 +39,11 @@ export type ViewButton = 'left' | 'right' | 'middle';
 export type ViewInput =
   /** The pointer moves to `x`, `y`. */
   | { type: 'mouse'; action: 'move'; x: number; y: number }
-  /** The pointer moves to `x`, `y`, and a button goes down or up there. */
-  | { type: 'mouse'; action: 'down' | 'up'; x: number; y: number; button: ViewButton }
+  /**
+   * The pointer moves to `x`, `y`, and a button goes down or up there: the `clickCount`th of a double or a triple click
+   * when it says so (1 to 3, as the browser's `detail` counts them), which a worker that takes `input-clicks` plays.
+   */
+  | { type: 'mouse'; action: 'down' | 'up'; x: number; y: number; button: ViewButton; clickCount?: number }
   /** A click at `x`, `y`: 1 to 3 in a row (a double click is 2). */
   | { type: 'mouse'; action: 'click'; x: number; y: number; button: ViewButton; clickCount: number }
   /** The pointer moves to `x`, `y`, and the wheel scrolls there. */
@@ -247,10 +250,14 @@ function readEvent(value: unknown): ViewInput | string {
     const button = value.button === undefined ? 'left' : value.button;
     if (typeof button !== 'string' || !BUTTONS.includes(button))
       return 'names a button other than left, right or middle.';
-    if (action !== 'click') return { type, action, ...at, button: button as ViewButton };
-    const clickCount = value.clickCount === undefined ? 1 : value.clickCount;
-    if (!isNumber(clickCount, 1, 3) || !Number.isInteger(clickCount)) return 'needs a clickCount from 1 to 3.';
-    return { type, action, ...at, button: button as ViewButton, clickCount };
+    const clickCount = value.clickCount === undefined && action !== 'click' ? undefined : (value.clickCount ?? 1);
+    if (clickCount !== undefined && (!isNumber(clickCount, 1, 3) || !Number.isInteger(clickCount))) {
+      return 'needs a clickCount from 1 to 3.';
+    }
+    if (action !== 'click') {
+      return { type, action, ...at, button: button as ViewButton, ...(clickCount === undefined ? {} : { clickCount }) };
+    }
+    return { type, action, ...at, button: button as ViewButton, clickCount: clickCount! };
   }
   if (type === 'key') {
     if (action !== 'down' && action !== 'up' && action !== 'press') {

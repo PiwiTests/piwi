@@ -690,7 +690,7 @@ data class RunTest(
  * A worker of a run, by Playwright's worker index: `running` a test, `stopped` before one of its calls, or `between`
  * tests; `pausing` once a Pause reached it until it stops; what its reporter takes at a stop (`takes`: the intents
  * `pick`, `record`, `assert`, `assert-region`, the queries `requests`, `mock`, `locator`, and for a viewer outside the
- * page `view`, `input` and `pick-at`, `piwi/pickAt`), none for an older one.
+ * page `view`, `input`, `input-clicks` and `pick-at`, `piwi/pickAt`), none for an older one.
  */
 data class RunWorker(
     val worker: Int = 0,

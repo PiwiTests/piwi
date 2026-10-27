@@ -809,6 +809,7 @@ describe('code from a stop, started from Piwi Picker', () => {
         'mock',
         'view',
         'input',
+        'input-clicks',
         'pick-at',
       ]);
 

@@ -681,12 +681,17 @@ async function playEvent(page: Page, event: ViewInput, own: InputState): Promise
         return page.mouse.click(event.x, event.y, { button: event.button, clickCount: event.clickCount });
       }
       await page.mouse.move(event.x, event.y);
+      // The click count a viewer's browser counted, so a second down and up there is a double click.
+      const pressed = {
+        button: event.button,
+        ...(event.clickCount === undefined ? {} : { clickCount: event.clickCount }),
+      };
       if (event.action === 'down') {
         own.buttons.add(event.button);
-        return page.mouse.down({ button: event.button });
+        return page.mouse.down(pressed);
       }
       own.buttons.delete(event.button);
-      return page.mouse.up({ button: event.button });
+      return page.mouse.up(pressed);
     case 'wheel':
       await page.mouse.move(event.x, event.y);
       return page.mouse.wheel(event.deltaX, event.deltaY);

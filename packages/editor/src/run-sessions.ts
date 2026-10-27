@@ -227,8 +227,11 @@ interface Session {
   resumedSaid: boolean;
 }
 
+/** What a request asks a worker: an image, or what it takes but the click counts its input carries. */
+type Asked = 'image' | Exclude<RunTake, 'input-clicks'>;
+
 /** The request asking a worker `what`, at the stop `stop` but for an image. */
-function requestOf(request: number, what: 'image' | RunTake, stop: number, extra: RequestExtra): HubToRun {
+function requestOf(request: number, what: Asked, stop: number, extra: RequestExtra): HubToRun {
   switch (what) {
     case 'image':
       return { type: 'request', request, what };
@@ -653,13 +656,16 @@ export class RunSessions {
       (what) => found.takes.has(what) && (code || (what !== 'assert' && what !== 'assert-region')),
     );
     if (code && found.takes.has('requests') && found.takes.has('mock')) intents.push('mock');
-    return [...intents, ...(['view', 'input', 'pick-at'] as const).filter((what) => found.takes.has(what))];
+    return [
+      ...intents,
+      ...(['view', 'input', 'input-clicks', 'pick-at'] as const).filter((what) => found.takes.has(what)),
+    ];
   }
 
   /**
-   * What the stop of a run's worker takes from `viewer` now, of `intentsOf`: the input only while `viewer` watches its
-   * live view, and, at a stop no pause bar shows, the actions in the test's window (Pick, Record, Assert, Assert a
-   * region) only then too, driven through that view.
+   * What the stop of a run's worker takes from `viewer` now, of `intentsOf`: the input (and the click counts it carries,
+   * `input-clicks`) only while `viewer` watches its live view, and, at a stop no pause bar shows, the actions in the
+   * test's window (Pick, Record, Assert, Assert a region) only then too, driven through that view.
    */
   stopIntentsOf(ref: string, worker: number, viewer: Viewer | null): HubAction[] {
     const found = this.sessions.get(ref)?.workers.get(worker);
@@ -667,7 +673,9 @@ export class RunSessions {
     const watching = this.watching(found, viewer);
     const inWindow = found.stop.view.bar || watching;
     return this.intentsOf(ref, worker).filter((what) =>
-      what === 'input' ? watching : what === 'mock' || what === 'view' || what === 'pick-at' || inWindow,
+      what === 'input' || what === 'input-clicks'
+        ? watching
+        : what === 'mock' || what === 'view' || what === 'pick-at' || inWindow,
     );
   }
 
@@ -733,7 +741,7 @@ export class RunSessions {
   }
 
   /** Ask a worker, and settle with its answer, or null after `PAUSED_PAGE_WAIT_MS` or when it leaves. */
-  private ask(worker: Worker, what: 'image' | RunTake, stop?: number, extra: RequestExtra = {}): Promise<Answered> {
+  private ask(worker: Worker, what: Asked, stop?: number, extra: RequestExtra = {}): Promise<Answered> {
     const request = ++this.lastRequest;
     return new Promise((resolve) => {
       const timer = setTimeout(() => {

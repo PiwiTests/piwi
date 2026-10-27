@@ -62,6 +62,10 @@ const PAGE = (animated: boolean) => `<!doctype html><meta charset="utf-8"><title
 <p id="note">A note to click on.</p><input id="field">${animated ? '<div id="spin"></div>' : ''}
 <script>
 const center = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; };
+let dblclicked = false;
+let ctrlClicked = false;
+document.getElementById('note').addEventListener('dblclick', () => { dblclicked = true; });
+document.getElementById('note').addEventListener('click', (e) => { if (e.ctrlKey) ctrlClicked = true; });
 setInterval(() => {
   const buttons = [...document.querySelectorAll('button')];
   fetch('/where', { method: 'POST', body: JSON.stringify({
@@ -72,6 +76,8 @@ setInterval(() => {
     choice: center(buttons.find((b) => /^getBy|^locator\\(/.test(b.textContent))),
     recorder: !!document.getElementById('piwi-record-hud-host'),
     heading: document.querySelector('h1').textContent,
+    dblclicked,
+    ctrlClicked,
   }) }).catch(() => {});
 }, 100);
 </script>`;
@@ -237,6 +243,8 @@ interface Where {
   choice: Point | null;
   recorder: boolean;
   heading: string;
+  dblclicked: boolean;
+  ctrlClicked: boolean;
 }
 
 /** A worker's run connection, as the fake editor service holds it: what it heard, when, and its test. */
@@ -372,6 +380,26 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       const at = await waitFor(() => where?.go ?? undefined);
       answers.push(await play(click(at)));
       await waitFor(() => where?.heading === 'Clicked');
+      if (test === 'clicked through the view') {
+        // A double click as a viewer's browser counted it, 320 ms apart, and a click with Control held.
+        const note = await waitFor(() => where?.note ?? undefined);
+        const press = (clickCount: number): ViewInput[] => [
+          { type: 'mouse', action: 'down', ...note, button: 'left', clickCount },
+          { type: 'mouse', action: 'up', ...note, button: 'left', clickCount },
+        ];
+        answers.push(await play(press(1)));
+        await sleep(320);
+        answers.push(await play(press(2)));
+        await waitFor(() => where?.dblclicked);
+        answers.push(
+          await play([
+            { type: 'key', action: 'down', key: 'Control' },
+            ...click(note).slice(1),
+            { type: 'key', action: 'up', key: 'Control' },
+          ]),
+        );
+        await waitFor(() => where?.ctrlClicked);
+      }
       answers.push(await ask(connection, { what: 'pick-at', stop: stop.stop, x: at.x, y: at.y }));
       const image = await ask(connection, { what: 'image' });
       images[test] = image as unknown as { width?: number; height?: number; data: string } | null;
@@ -671,6 +699,10 @@ describe('the live view of a stopped page', () => {
       ON,
       ON,
       PLAYED_2,
+      // The double click, its clicks 320 ms apart, and the click with Control: the page heard both as a person's.
+      PLAYED_2,
+      PLAYED_2,
+      { ok: true, message: 'Played 3 events.' },
       PICKED_AT,
       OFF,
     ]);

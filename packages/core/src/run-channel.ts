@@ -72,9 +72,11 @@ export type RunQuery = 'requests' | 'mock' | 'locator';
 
 /**
  * What a stopped worker does for a viewer outside the page: start and stop the stopped page's live view (`view`), play
- * a viewer's input on it (`input`), and find the locator of the element under a point of an image of it (`pick-at`).
+ * a viewer's input on it (`input`), with the click count a button's `down` and `up` carry (`input-clicks`, so a double
+ * click is sent as the browser counted it, at once), and find the locator of the element under a point of an image of
+ * it (`pick-at`).
  */
-export type RunViewTake = 'view' | 'input' | 'pick-at';
+export type RunViewTake = 'view' | 'input' | 'input-clicks' | 'pick-at';
 
 /** What a worker's `run-attach` lists in `takes`. */
 export type RunTake = RunIntent | RunQuery | RunViewTake;
@@ -90,6 +92,7 @@ export const RUN_TAKES: readonly RunTake[] = [
   'locator',
   'view',
   'input',
+  'input-clicks',
   'pick-at',
 ];
 

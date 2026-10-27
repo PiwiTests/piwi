@@ -36,7 +36,19 @@ describe('the run channel', () => {
       pid: 4242,
       playwright: '1.64.1',
       reporter: '0.60.0',
-      takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'pick-at'],
+      takes: [
+        'pick',
+        'record',
+        'assert',
+        'assert-region',
+        'requests',
+        'mock',
+        'locator',
+        'view',
+        'input',
+        'input-clicks',
+        'pick-at',
+      ],
       holds: ['failure'],
     } satisfies RunToHub;
 

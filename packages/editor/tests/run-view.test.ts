@@ -252,7 +252,14 @@ describe('a stopped page’s live view, in the run sessions', () => {
     const watched = sessions.watch({ ref: 'ed-1', since, on: true }, a);
     answer(requests('view')[0]!.request, 'view', { ok: true, message: 'The live view is on.' });
     await watched;
-    expect(sessions.stopIntentsOf('ed-1', 0, a)).toEqual(['pick', 'record', 'view', 'input', 'pick-at']);
+    expect(sessions.stopIntentsOf('ed-1', 0, a)).toEqual([
+      'pick',
+      'record',
+      'view',
+      'input',
+      'input-clicks',
+      'pick-at',
+    ]);
     expect(sessions.stopIntentsOf('ed-1', 0, b)).toEqual(['view', 'pick-at']);
     expect(sessions.stopIntentsOf('ed-1', 0, null)).toEqual(['view', 'pick-at']);
     // Someone who does not watch is refused, as without a view.
@@ -442,7 +449,7 @@ describe('the live view on the hub', () => {
           const stop = client.session(ref)?.workers[0]?.stop;
           return stop?.intents?.includes('input') || client === b ? stop?.intents : undefined;
         });
-      expect(await intentsOf(a)).toEqual(['pick', 'record', 'view', 'input', 'pick-at']);
+      expect(await intentsOf(a)).toEqual(['pick', 'record', 'view', 'input', 'input-clicks', 'pick-at']);
       expect(await intentsOf(b)).toEqual(['view', 'pick-at']);
 
       const started = Date.now();

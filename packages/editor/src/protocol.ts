@@ -1334,8 +1334,9 @@ export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-p
  * What a worker's reporter takes at a stop, as its run connection lists it: the intents `pick`, `record`, `assert` and
  * `assert-region` (`piwi/stopAction`), the queries `requests` (`piwi/stopRequests`), `mock` and `locator`
  * (`piwi/locatorAtCaret`), and, for a viewer outside the page, the stopped page's live view (`view`), the input played
- * on it (`input`) and the element under a point of an image of it (`pick-at`, `piwi/pickAt`). An older reporter lists
- * fewer, or none: the service refuses what it does not take.
+ * on it (`input`, with the click count of a button's `down` and `up`: `input-clicks`) and the element under a point of
+ * an image of it (`pick-at`, `piwi/pickAt`). An older reporter lists fewer, or none: the service refuses what it does
+ * not take.
  */
 export type RunTake =
   | 'pick'
@@ -1347,6 +1348,7 @@ export type RunTake =
   | 'locator'
   | 'view'
   | 'input'
+  | 'input-clicks'
   | 'pick-at';
 
 /** Where a worker stands stopped: before a call, which runs as soon as the stop is answered. */
