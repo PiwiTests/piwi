@@ -5,7 +5,12 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { compressDirectory } from './compression.js';
 import { Logger } from '../support/logger.js';
-import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES } from '../capture/attachments.js';
+import {
+  ATTACHMENT_NAMES,
+  INTERNAL_ATTACHMENT_NAMES,
+  findPiwiAttachment,
+  type AttachmentName,
+} from '../capture/attachments.js';
 import type { CollectedTestCase, RawAttachment, TraceHashInfo } from '../../types.js';
 
 /**
@@ -195,7 +200,7 @@ export class FileHandler {
 
   /** Parse Piwi-internal attachment bodies (`piwi-network`, `piwi-web-vitals`, `piwi-console`, `piwi-aria-snapshot`, `piwi-aria-snapshot-json`) into structured fields on the test case */
   parsePerformanceAttachments(testCase: CollectedTestCase, attachments: RawAttachment[]): void {
-    const find = (name: string) => attachments.find((a) => a.name === name);
+    const find = (name: AttachmentName) => findPiwiAttachment(attachments, name);
 
     const net = find(ATTACHMENT_NAMES.network);
     if (net?.body) {

@@ -422,6 +422,7 @@ describe('CoverageCollection', () => {
 
   const requestsAttachment = (origin: string, ids: string[]) => ({
     name: ATTACHMENT_NAMES.serverCoverageRequests,
+    contentType: 'application/json',
     body: Buffer.from(JSON.stringify({ [origin]: ids })),
   });
 
@@ -456,7 +457,7 @@ describe('CoverageCollection', () => {
       const tc = testCase(['src/pay.ts']);
       const body = { v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions: [[1, 1]] }] };
       const ready = collection.apply(tc, [
-        { name: ATTACHMENT_NAMES.browserCoverage, body: Buffer.from(JSON.stringify(body)) },
+        { name: ATTACHMENT_NAMES.browserCoverage, contentType: 'application/json', body: Buffer.from(JSON.stringify(body)) },
       ]);
       expect(ready).not.toBeNull();
       await collection.settle();
@@ -490,8 +491,8 @@ describe('CoverageCollection', () => {
       const rules = { v: 1, files: [{ path: 'web/app.css', runtime: 'browser', functions: [[1, 1]] }] };
       const known = { v: 1, files: [{ path: 'web/app.css', allFunctions: [[1, 1], [2, 2]] }] };
       collection.apply(tc, [
-        { name: ATTACHMENT_NAMES.cssCoverage, body: Buffer.from(JSON.stringify(rules)) },
-        { name: ATTACHMENT_NAMES.cssRules, body: Buffer.from(JSON.stringify(known)) },
+        { name: ATTACHMENT_NAMES.cssCoverage, contentType: 'application/json', body: Buffer.from(JSON.stringify(rules)) },
+        { name: ATTACHMENT_NAMES.cssRules, contentType: 'application/json', body: Buffer.from(JSON.stringify(known)) },
       ]);
       await collection.settle();
       const blob = gitBlobId(fs.readFileSync(path.join(dir, 'web', 'app.css')));
@@ -529,9 +530,10 @@ describe('CoverageCollection', () => {
       const attach = (functions: number[][], known: Array<{ path: string; allFunctions: number[][] }>) => [
         {
           name: ATTACHMENT_NAMES.browserCoverage,
+          contentType: 'application/json',
           body: Buffer.from(JSON.stringify({ v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions }] })),
         },
-        { name: ATTACHMENT_NAMES.browserFunctions, body: Buffer.from(JSON.stringify({ v: 1, files: known })) },
+        { name: ATTACHMENT_NAMES.browserFunctions, contentType: 'application/json', body: Buffer.from(JSON.stringify({ v: 1, files: known })) },
       ];
       collection.apply(
         testCase(['src/pay.ts']),
@@ -592,6 +594,7 @@ describe('CoverageCollection', () => {
       });
       const part = (allFunctions: number[][]) => ({
         name: ATTACHMENT_NAMES.browserFunctions,
+        contentType: 'application/json',
         body: Buffer.from(JSON.stringify({ v: 1, files: [{ path: 'src/pay.ts', allFunctions }] })),
       });
       collection.apply(testCase(['src/pay.ts']), [part([[1, 1]]), part([[2, 2]])]);
@@ -622,7 +625,7 @@ describe('CoverageCollection', () => {
       configDir: os.tmpdir(),
     });
     const tc = testCase(['src/pay.ts']);
-    const ready = collection.apply(tc, [{ name: ATTACHMENT_NAMES.browserCoverage, body: Buffer.from('{"v":1,"fil') }]);
+    const ready = collection.apply(tc, [{ name: ATTACHMENT_NAMES.browserCoverage, contentType: 'application/json', body: Buffer.from('{"v":1,"fil') }]);
     expect(ready).toBeNull();
     expect(tc.coverage).toEqual({ v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser' }] });
   });
@@ -643,7 +646,7 @@ describe('CoverageCollection', () => {
       const body = { v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions: [[1, 1]] }] };
       const ready = collection.apply(tc, [
         requestsAttachment(server.url, ['a.1']),
-        { name: ATTACHMENT_NAMES.browserCoverage, body: Buffer.from(JSON.stringify(body)) },
+        { name: ATTACHMENT_NAMES.browserCoverage, contentType: 'application/json', body: Buffer.from(JSON.stringify(body)) },
       ]);
       expect(ready).not.toBeNull();
       await ready;
@@ -782,7 +785,7 @@ describe('CoverageCollection', () => {
     const tc = testCase(['src/pay.ts']);
     const body = { v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions: [[1, 1]] }] };
     expect(
-      collection.apply(tc, [{ name: ATTACHMENT_NAMES.browserCoverage, body: Buffer.from(JSON.stringify(body)) }]),
+      collection.apply(tc, [{ name: ATTACHMENT_NAMES.browserCoverage, contentType: 'application/json', body: Buffer.from(JSON.stringify(body)) }]),
     ).not.toBeNull();
     const started = Date.now();
     await collection.settle(100);
