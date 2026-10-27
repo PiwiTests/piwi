@@ -1516,7 +1516,11 @@ export type StopActionKind = 'pick' | 'record' | 'assert' | 'assert-region' | 'm
  * once the worker said whether it started (`pick`, `record`, `assert`, `assert-region`; the person then acts in the
  * test's window) or once the code was sent (`mock`); `ok: false` with why otherwise: a stop the test went on from
  * (`The test went on.`), a stop no pause bar shows, a reporter that does not take the action, a client without
- * `InitializationOptions.stopCode` for an action that writes code.
+ * `InitializationOptions.stopCode` for an action that writes code, and, before `assert` or `assert-region` starts in
+ * the test's window, a stopped line no code can be written above: outside a test's or a function's body, on its
+ * declaration's line, the body of an `if` without braces, or a file changed since the run started in a way the
+ * service cannot follow. A refusal that comes once an `assert` started (the check could not be written) is a
+ * `piwi/notice`.
  */
 export interface StopActionParams {
   ref: string;
@@ -1531,11 +1535,11 @@ export type StopActionResult = RunControlResult;
 
 export const STOP_ACTION_REQUEST = 'piwi/stopAction';
 
-/** `piwi/stopRequests`: the responses the stopped test kept, for Mock a request; `since` names the stop, optionally. */
+/** `piwi/stopRequests`: the responses the stopped test kept at the stop `since` names, for Mock a request. */
 export interface StopRequestsParams {
   ref: string;
   worker?: number | null;
-  since?: string | null;
+  since: string;
 }
 
 /**
@@ -1569,12 +1573,15 @@ export const STOP_REQUESTS_REQUEST = 'piwi/stopRequests';
  * `piwi/locatorAtCaret`: while a test is stopped, count the matches on the stopped page of the locator at the caret's
  * line (`uri`, a 0-based `line`): the service reads the line's locator chain from the file as the editor holds it, the
  * one `piwi/applyPick` replaces, which must start from a page expression in scope there (`page`, `this.page`,
- * `adminPage`). Where the pause bar shows, the worker outlines the matches until the test goes on or the next
- * `piwi/locatorAtCaret`; a `uri` or `line` of null, or a line without a locator, takes the outline down.
+ * `adminPage`), and be the page the test stopped on: the expression the code written at the stop runs on, in the
+ * stopped file; another (`adminPage` at a stop on `page`), or a chain in another file, is refused. Where the pause bar
+ * shows, the worker outlines the matches until the test goes on or the next `piwi/locatorAtCaret`; a `uri` or `line`
+ * of null, or a line without a locator, takes the outline down. `since` names the stop, as for `piwi/stopAction`.
  */
 export interface LocatorAtCaretParams {
   ref: string;
   worker?: number | null;
+  since: string;
   uri: string | null;
   line: number | null;
 }

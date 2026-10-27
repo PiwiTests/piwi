@@ -340,32 +340,49 @@ clients stay thin and both editors give the same answers.
   `run-attach` does not list it in `takes`, else sent as a `request` naming the stop, the worker's answer passed on
   (10 s at most): the worker refuses one at a stop that is ending, or whose page it cannot tell, which also has no
   image. Nothing a command asks evaluates code, reads a file or reaches an instance.
-- Code from a stop (`src/stop-actions.ts`, `StopActions`, and `src/stop-code.ts`, pure): what a client
-  (`piwi/stopAction { ref, worker?, since, action, request? }`, `piwi/stopRequests`, `piwi/locatorAtCaret`) and Piwi
-  Picker (the hub's commands) start at a stop of a run the service built, each ending the same way: the worker does
-  the page's part through internal calls, the service renders the code, the client writes it (`piwi/stopCode`: the
-  run, the stop's `since`, the file's `uri` and `version`, the block, and `edits`, the import lines then the block on a
-  new line above the stopped statement, placed in the file's text as the service holds it, which the client applies
-  as one edit), sent only to a client that says it writes it (`InitializationOptions.stopCode`); without it, Assert,
-  Assert a region and Mock a request are refused (`NO_CODE`), from both surfaces. `pick` and `record` are the pause
-  bar's intents (their results take their own paths: Send to editor, then `piwi/applyPick`; `piwi/recordRequested`).
-  `assert` starts the check panel in the test's window through the record channel's hand-off in its `check` mode,
-  naming the stop it was started at (`RecordChannel`'s `onCheck`, `RecordingSessions.check`: the recorder loaded with
-  `check` in its settings, its first `assert` event rendered, then the hand-off stopped; no editor is asked); a check
-  whose stop ended, or that cannot be written at the stopped line, is refused at once. `assert-region` has the worker
-  pick a region and send its ARIA snapshot (`region`), written as `toMatchAriaSnapshot` (`renderSpec`). `mock` asks the
-  worker for the response chosen among those `piwi/stopRequests` lists (method, URL, status, type, size, time; no
-  header, no body) and writes it with the browser extension's `mockCode` (`apps/extension/src/shared/mock-code.ts`,
-  bundled in: credentials hidden by name and by shape, in a JSON, form or text body and in the URL, no header written,
-  the body inline; the warnings say what was hidden, that a body neither JSON nor a form was written as it came, and
-  that one seems to hold an email address or a phone number), on the page expression in scope. Each block goes where `placementBefore` puts a recording's (a chain broken over lines
-  included), on the page expression `pageCandidates` gives there (`this.page` in a page object), checks with the
-  config's preferred locators and the import of `expect` the file lacks (`blockImports`); the first code of a run adds
-  that the stopped test goes on with the code it started with. `piwi/locatorAtCaret` reads the line's locator chain
-  (`locatorChainOnLine`, the one `piwi/applyPick` replaces), which must start from a page expression in scope there,
-  and has the worker count it on the stopped page and outline its matches where the bar shows; a line without one, or
-  a null `uri`, takes the outline down. A worker's stop with the reason `failure` (a test failed in an interactive
-  run, its page held) takes the same actions; one no surface can answer is let go at once, with no notice.
+- Code from a stop (`src/stop-actions.ts`, `StopActions`, and `src/stop-code.ts`, pure): what a client (`piwi/stopAction
+  { ref, worker?, since, action, request? }`, `piwi/stopRequests { ref, worker?, since }`, `piwi/locatorAtCaret { ref,
+  worker?, since, uri, line }`, each refused without `since`) and Piwi Picker (the hub's commands) start at a stop of a
+  run the service built, each ending the same way: the worker does the page's part through internal calls, the service
+  renders the code, the client writes it (`piwi/stopCode`: the run, the stop's `since`, the file's `uri` and `version`,
+  the block, and `edits`, the import lines then the block on a new line above the stopped statement, placed in the
+  file's text as the service holds it, which the client applies as one edit), sent only to a client that says it writes
+  it (`InitializationOptions.stopCode`); without it, Assert, Assert a region and Mock a request are refused (`NO_CODE`),
+  from both surfaces, and not offered to Piwi Picker (`intentsOf`). The stopped statement is where it stands now
+  (`src/run-lines.ts`, `RunLines`): the run's line, the file as the service held it when it built the run's command
+  (`started`, the first worker's connection for a run it did not build), followed through every `didChange` since (read
+  before the documents apply it; a whole new text by its line diff, `diffLines`), the code of an earlier action
+  included; a file no editor held since is taken from disk while its modification time is older than the run. A file it
+  cannot follow is refused with why: written on disk since, opened since with a text other than its disk's, held with
+  changes not saved as the run started, more than 2,000 edits since, or a stopped line an edit removed or rewrote from
+  its start. The block goes inside the body of a test or a function, never on its declaration's line
+  (`BlockPlacement.context`, where the line starts), nor as the body of an `if`, `else`, `for`, `while` or `do` without
+  braces (`placementBefore` refuses it, for Record here too); Assert and Assert a region are refused at such a place
+  before anything starts in the test's window, and a check refused once it started (the recorder missing, the code not
+  written) reaches the client as a `piwi/notice`. `pick` and `record` are the pause bar's intents (their results take
+  their own paths: Send to editor, then `piwi/applyPick`; `piwi/recordRequested`). `assert` starts the check panel in
+  the test's window through the record channel's hand-off in its `check` mode, naming the stop it was started at
+  (`RecordChannel`'s `onCheck`, `RecordingSessions.check`: the recorder loaded with `check` in its settings, its first
+  `assert` event rendered, then the hand-off stopped; no editor is asked); a check whose stop ended, or that cannot be
+  written at the stopped line, is refused at once. `assert-region` has the worker pick a region and send its ARIA
+  snapshot (`region`), written as `toMatchAriaSnapshot` (`renderSpec`). `mock` asks the worker for the response chosen
+  among those `piwi/stopRequests` lists (method, URL, status, type, size, time; no header, no body) and writes it with
+  the browser extension's `mockCode` (`apps/extension/src/shared/mock-code.ts`, bundled in: credentials hidden by name
+  and by shape, in a JSON, form or text body and in the URL, no header written, the body inline; the warnings say what
+  was hidden, that a body neither JSON nor a form was written as it came, and that one seems to hold an email address or
+  a phone number), on the page expression in scope. Each block goes where `placementBefore` puts a recording's (a chain
+  broken over lines included), on the page expression `pageCandidates` gives there (`this.page` in a page object),
+  checks with the config's preferred locators and the import of `expect` the file lacks (`blockImports`); the first code
+  of a run adds that the stopped test goes on with the code it started with. `piwi/locatorAtCaret` reads the line's
+  locator chain (`locatorChainOnLine`, the one `piwi/applyPick` replaces), which must start from a page expression in
+  scope there and be the stopped page's (`stopPage`: the expression the code at the stop runs on, in the stopped file;
+  another, or a chain in another file, is refused), and has the worker count it on the stopped page and outline its
+  matches where the bar shows; a line without one, a refused one, or a null `uri`, takes the outline down. A worker's
+  stop with the reason `failure` (a test failed in an interactive run, its page held once the test ended) takes the same
+  actions. One no bar shows waits only in a run started to be watched (`watched`: the service built it with the editor's
+  breakpoints or for a `page.pause()`, both headed) or while Piwi Picker follows the runs (`followed`), and goes on at
+  once, with no notice, otherwise and when the last Piwi Picker leaves (`RunSessions.surfacesChanged`): every run the
+  service builds has a run channel, and both clients answer stops, so a plain Run would hold every failure.
 - The discovery file (`src/discovery.ts`, `@piwitests/core/editor-discovery`): once the run channel and the hub listen,
   `startServer` hands `publish` what `~/.piwi/editors/<pid>.json` says (`PIWI_EDITORS_DIR` names another folder): the
   service's pid, its machine (`host`, `os.hostname()`), version (written in by `build.mjs`, `0.0.0-dev` unbundled), its

@@ -16,7 +16,7 @@ import { mockCode } from '../../../apps/extension/src/shared/mock-code.js';
 import { locatorChainOnLine } from './analysis.js';
 import type { FileEdit } from './protocol.js';
 import { importBindings, importInsertion } from './recorder/imports.js';
-import { declaredNamesAt, pageCandidates, placementBefore } from './recorder/page-candidates.js';
+import { declaredNamesAt, pageCandidates, placementBefore, type BlockPlacement } from './recorder/page-candidates.js';
 import { blockCode, blockImports } from './recorder/sessions.js';
 
 /** What is written: the check's steps, a region and its snapshot, or the response to mock. */
@@ -64,19 +64,26 @@ function regionSession(locator: string, snapshot: string): RecordedSession {
   return { steps: [step], startedAt: 0, startUrl: '' };
 }
 
-/** Where the code for a stop at the 0-based `line` goes, and the page expression in scope there; why none can. */
-function stopPlace(
-  text: string,
-  line: number,
-): { placement: ReturnType<typeof placementBefore>; page: string } | { refusal: string } {
+/**
+ * Where the code for a stop at the 0-based `line` goes, inside the body of a test or a function, never on its
+ * declaration's line, and the page expression in scope there; why none can.
+ */
+function stopPlace(text: string, line: number): { placement: BlockPlacement; page: string } | { refusal: string } {
   const placement = placementBefore(text, line);
-  const at = pageCandidates(text, placement.line);
-  if (at.context !== 'test' && at.context !== 'function') {
+  if ('refusal' in placement) return placement;
+  if (placement.context !== 'test' && placement.context !== 'function') {
     return { refusal: 'The test is stopped outside a test or a function of this file: nothing can be written there.' };
   }
+  const at = pageCandidates(text, placement.line);
   return isPageExpression(at.default)
     ? { placement, page: at.default }
     : { refusal: `${at.default} is not an expression the code can run on.` };
+}
+
+/** The page expression the code for a stop at the 0-based `line` runs on (`stopPlace`); why there is none. */
+export function stopPage(text: string, line: number): { page: string } | { refusal: string } {
+  const place = stopPlace(text, line);
+  return 'refusal' in place ? place : { page: place.page };
 }
 
 /** Why no code can go above the 0-based `line` of a file whose text is `text`; null when some can. */

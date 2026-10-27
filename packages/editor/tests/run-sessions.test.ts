@@ -10,9 +10,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import type { RunToHub } from '@piwitests/core/run-channel';
+import { RUN_TAKES, type RunToHub } from '@piwitests/core/run-channel';
 import { RunSessions } from '../src/run-sessions';
-import type { PausedPageResult, RecordRequested, RunControlResult, RunSession } from '../src/protocol';
+import { parseRecordChannel } from '@piwitests/core/ide-recorder';
+import type { PausedPageResult, RecordRequested, RunCommand, RunControlResult, RunSession } from '../src/protocol';
 import { FakeWorker, last, service as startService, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
 let dir = '';
@@ -36,6 +37,43 @@ describe('a run’s session, with a client that answers stops', () => {
   afterAll(() => svc.stop());
 
   const control = (params: object) => svc.client.sendRequest('piwi/runControl', params) as Promise<RunControlResult>;
+
+  test('holds a headless failure in a run started with the editor’s breakpoints, and lets one of a plain run go', async () => {
+    const failed = (worker: FakeWorker) =>
+      worker.send({
+        type: 'stopped',
+        stop: 1,
+        reason: 'failure',
+        title: 'Failed: Timed out',
+        place: { file: 'tests/cart.spec.ts', line: 3, column: 1 },
+        locator: null,
+        bar: false,
+      });
+    const plain = await svc.command();
+    const quiet = new FakeWorker(plain.channel.path, dir).attach(plain.channel.token, plain.ref, 0);
+    const debugged = (await svc.client.sendRequest('piwi/runArgs', {
+      uri: uri('tests/cart.spec.ts'),
+      testIds: [],
+      locations: ['tests/cart.spec.ts:3'],
+      breakpoints: [{ uri: uri('tests/cart.spec.ts'), line: 2 }],
+    })) as RunCommand;
+    const channel = parseRecordChannel(debugged.env?.PIWI_RUN_CHANNEL)!;
+    const watched = new FakeWorker(channel.path, dir).attach(channel.token, debugged.ref!, 0);
+    try {
+      expect(debugged.args).toContain('--headed');
+      quiet.begin();
+      failed(quiet);
+      expect(await quiet.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
+      watched.begin();
+      failed(watched);
+      await waitFor(() => svc.latest(debugged.ref!)?.workers[0]?.stop ?? undefined);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(watched.heard.filter((m) => m.type === 'control')).toEqual([]);
+    } finally {
+      quiet.socket.destroy();
+      watched.socket.destroy();
+    }
+  });
 
   test('names the run channel beside the record channel, the same socket', async () => {
     const { command } = await svc.command();
@@ -648,6 +686,81 @@ describe('RunSessions', () => {
     const rerun = attach(0).socket;
     await waitFor(() => (last(sent)?.ended === false ? true : undefined));
     expect(rerun.destroyed).toBe(false);
+    sessions.dispose();
+  });
+
+  /** A worker of `ed-1` that takes every action, and the controls it was sent. */
+  function takingWorker(sessions: RunSessions) {
+    const socket = fakeSocket();
+    const read = sessions.attach(socket as unknown as net.Socket, {
+      type: 'run-attach',
+      token: 't',
+      ref: 'ed-1',
+      cwd: '/work/shop',
+      workerIndex: 0,
+      parallelIndex: 0,
+      pid: 1,
+      playwright: '',
+      reporter: '',
+      takes: [...RUN_TAKES],
+    });
+    const controls = () => socket.written.map((line) => JSON.parse(line)).filter((m) => m.type === 'control');
+    const fail = (stop: number, bar = false) =>
+      read(
+        JSON.stringify({
+          type: 'stopped',
+          stop,
+          reason: 'failure',
+          title: 'Failed: Timed out',
+          place: { file: 'tests/a.spec.ts', line: 4, column: 5 },
+          locator: null,
+          bar,
+        } satisfies RunToHub),
+      );
+    return { controls, fail };
+  }
+
+  test('holds a failure no bar shows only in a run started to be watched, or while Piwi Picker follows the runs', () => {
+    let watched = false;
+    let followed = false;
+    const notices: string[] = [];
+    const { sessions } = harness({
+      watched: () => watched,
+      followed: () => followed,
+      notice: (_root, _severity, message) => void notices.push(message),
+    });
+    const worker = takingWorker(sessions);
+    // A plain run of a client that answers stops: the failure goes on at once, said to nobody.
+    worker.fail(1);
+    expect(worker.controls()).toEqual([{ type: 'control', action: 'resume', stop: 1 }]);
+    // One the bar shows waits for its answer there.
+    worker.fail(2, true);
+    expect(worker.controls()).toHaveLength(1);
+    // A run started with breakpoints, or followed in Piwi Picker, holds it.
+    watched = true;
+    worker.fail(3);
+    watched = false;
+    followed = true;
+    worker.fail(4);
+    expect(worker.controls()).toHaveLength(1);
+    // The last Piwi Picker leaves: the failure it held goes on.
+    followed = false;
+    sessions.surfacesChanged();
+    expect(worker.controls()).toEqual([
+      { type: 'control', action: 'resume', stop: 1 },
+      { type: 'control', action: 'resume', stop: 4 },
+    ]);
+    expect(notices).toEqual([]);
+    sessions.dispose();
+  });
+
+  test('offers Piwi Picker the actions that write code only while the client writes it', () => {
+    let writes = false;
+    const { sessions } = harness({ writesCode: () => writes });
+    takingWorker(sessions);
+    expect(sessions.intentsOf('ed-1', 0)).toEqual(['pick', 'record']);
+    writes = true;
+    expect(sessions.intentsOf('ed-1', 0)).toEqual(['pick', 'record', 'assert', 'assert-region', 'mock']);
     sessions.dispose();
   });
 });

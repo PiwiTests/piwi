@@ -1046,13 +1046,25 @@ export function recordingPlacement(
 const GOES_ON =
   /(?:=>|(?<![+])\+|(?<![-])-|[=*%&|^<>?,]|\b(?:await|return|throw|yield|new|typeof|void|delete|in|of|instanceof))\s*$/;
 
+/** Where a block written before a statement goes, and where that is in the file (`FileModel.contextAt`). */
+export interface BlockPlacement extends RecordingPlacement {
+  /** Where the block's first line starts: a test's body, a function's, a class body or elsewhere in the file. */
+  context: CursorContext;
+}
+
+/** The keywords whose statement takes one statement after them, without braces: `if (…)`, `else`, `for (…)`. */
+const BRACELESS = new Set(['if', 'for', 'while', 'with']);
+
 /**
  * Where a block written before the statement holding a line goes, the statement a test is paused before: a new line
  * above the line that statement starts on (the line opening the brackets the line is in, and the line above it while
- * the line goes on with `.`, a chain broken over lines, or while the line above goes on, as an assignment broken after
- * its `=`), indented as that line is.
+ * the line goes on with `.`, a ternary's `?` or `:`, `&&`, `||` or `??`, a chain or a condition broken over lines, or
+ * while the line
+ * above goes on, as an assignment broken after its `=`), indented as that line is, and where that line starts in the
+ * file (`context`), which a caller holds to a test's or a function's body. Refused for a statement that is the body
+ * of an `if`, `else`, `for`, `while` or `do` without braces, where the block would become that body.
  */
-export function placementBefore(text: string, line: number): RecordingPlacement {
+export function placementBefore(text: string, line: number): BlockPlacement | { refusal: string } {
   const model = new FileModel(text);
   let at = Math.max(0, Math.min(line, model.lines.length - 1));
   for (let step = 0; step < model.lines.length; step++) {
@@ -1068,10 +1080,32 @@ export function placementBefore(text: string, line: number): RecordingPlacement 
     if (above < 0) break;
     const before = model.lines[above]!.trim();
     const comment = /^(?:\/\/|\/\*|\*)/.test(before);
-    if (!/^(?:\?\.|\.(?!\.))/.test(here.trim()) && (comment || !GOES_ON.test(before))) break;
+    const continues = /^(?:\?\.|\.(?!\.)|\?\?|\?|:(?!:)|&&|\|\|)/.test(here.trim());
+    const label = /^(?:case\b.*|default\s*):$/.test(before);
+    if (!continues && (comment || label || (!GOES_ON.test(before) && !before.endsWith(':')))) break;
     at = above;
   }
-  return { line: at, newLine: true, indent: leadingSpace(model.lines[at]!) };
+  const first = model.tokens.findIndex((t) => t.start >= model.starts[at]!);
+  const previous = first > 0 ? model.tokens[first - 1] : undefined;
+  const header =
+    previous?.kind === 'name' && (previous.text === 'else' || previous.text === 'do')
+      ? previous.text
+      : previous?.kind === 'punct' && previous.text === ')'
+        ? model.tokens[(model.closers.get(first - 1)?.open ?? 0) - 1]
+        : undefined;
+  const keyword =
+    typeof header === 'string' ? header : header?.kind === 'name' && BRACELESS.has(header.text) ? header.text : null;
+  if (keyword) {
+    return {
+      refusal: `The statement on line ${at + 1} is the body of an \`${keyword}\` without braces: put it in braces to write code above it.`,
+    };
+  }
+  return {
+    line: at,
+    newLine: true,
+    indent: leadingSpace(model.lines[at]!),
+    context: model.contextAt(model.starts[at]!),
+  };
 }
 
 /**

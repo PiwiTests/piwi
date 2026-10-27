@@ -9,8 +9,10 @@
  * one to mock, a locator's matches), which `stop-actions.ts` turns into code. A worker names places relative to the
  * run's working directory; the client, by their file's URI as the workspace names it: the session converts both ways.
  * A stop that shows no pause bar while no surface can answer stops (the client does not, and no Piwi Picker follows
- * the runs) is resumed at once, and so is one held when the last of them goes. A worker's connection that closes lets
- * a stop no pause bar shows go on; a stop the bar shows waits there for its answer.
+ * the runs) is resumed at once, and so is one held when the last of them goes. A failure no pause bar shows is held
+ * only in a run started to be watched (`watched`: with the editor's breakpoints or a `page.pause()`) or while a Piwi
+ * Picker follows the runs, else it goes on at once, with no notice. A worker's connection that closes lets a stop no
+ * pause bar shows go on; a stop the bar shows waits there for its answer.
  */
 import * as path from 'node:path';
 import type * as net from 'node:net';
@@ -113,6 +115,15 @@ export interface RunSessionsOptions {
   writesCode?(): boolean;
   /** A worker sent the region picked at its stop, with its ARIA snapshot, for the code it makes. */
   onRegion?(stop: StopRef, locator: string, snapshot: string): void;
+  /**
+   * Whether the run of `ref` was started to be watched: the service built its command with the editor's breakpoints,
+   * or for a spec that calls `page.pause()` (both headed). A failure no bar shows is held in such a run.
+   */
+  watched?(ref: string): boolean;
+  /** Whether a Piwi Picker follows the runs now: a failure no bar shows is held while one does. */
+  followed?(): boolean;
+  /** A run the service did not hear of before: its first worker connected. */
+  sessionStarted?(ref: string): void;
   paceMs?: number;
   burstMs?: number;
   lingerMs?: number;
@@ -220,6 +231,7 @@ export class RunSessions {
         resumedSaid: false,
       };
       this.sessions.set(attach.ref, session);
+      this.options.sessionStarted?.(attach.ref);
     }
     if (session.linger) clearTimeout(session.linger);
     session.linger = null;
@@ -416,6 +428,12 @@ export class RunSessions {
     return answer ?? { ok: false, message: 'The test did not answer.', count: null };
   }
 
+  /** The stop a client names (`StopParams`), while its worker stands at it; why there is none otherwise. */
+  stopOf(params: StopParams): StopRef | RunControlResult {
+    const at = this.stopped(params);
+    return 'message' in at ? at : this.refOf(at.session, at.worker);
+  }
+
   /** The stop `stop` of a run's worker, while the worker stands at it; null otherwise. */
   stopAt(ref: string, workerIndex: number, stop: number): StopRef | null {
     const session = this.sessions.get(ref);
@@ -437,12 +455,18 @@ export class RunSessions {
     };
   }
 
-  /** What a run's worker takes from Piwi Picker: the intents, and `mock` when it lists and hands over responses. */
+  /**
+   * What a run's worker takes from Piwi Picker: the intents, and `mock` when it lists and hands over responses; the
+   * actions that write code (`assert`, `assert-region`, `mock`) only while the client writes it.
+   */
   intentsOf(ref: string, worker: number): HubAction[] {
     const found = this.sessions.get(ref)?.workers.get(worker);
     if (!found) return [];
-    const intents = (['pick', 'record', 'assert', 'assert-region'] as const).filter((what) => found.takes.has(what));
-    return found.takes.has('requests') && found.takes.has('mock') ? [...intents, 'mock'] : intents;
+    const code = !!this.options.writesCode?.();
+    const intents = (['pick', 'record', 'assert', 'assert-region'] as const).filter(
+      (what) => found.takes.has(what) && (code || (what !== 'assert' && what !== 'assert-region')),
+    );
+    return code && found.takes.has('requests') && found.takes.has('mock') ? [...intents, 'mock'] : intents;
   }
 
   /**
@@ -458,12 +482,24 @@ export class RunSessions {
    * have at once.
    */
   surfacesChanged(): void {
-    if (this.options.answersStops()) return;
+    const answered = this.options.answersStops();
     for (const session of this.sessions.values()) {
       for (const worker of session.workers.values()) {
-        if (worker.stop && !worker.stop.view.bar) this.resumeUnanswered(session, worker, worker.stop.place);
+        if (!worker.stop || worker.stop.view.bar) continue;
+        if (!answered || this.unwatchedFailure(session, worker)) {
+          this.resumeUnanswered(session, worker, worker.stop.place);
+        }
       }
     }
+  }
+
+  /**
+   * Whether a worker stands at a failure nobody watches: no bar shows it, its run was not started to be watched, and
+   * no Piwi Picker follows the runs. It goes on at once.
+   */
+  private unwatchedFailure(session: Session, worker: Worker): boolean {
+    if (worker.stop?.view.reason !== 'failure') return false;
+    return !this.options.watched?.(session.ref) && !this.options.followed?.();
   }
 
   /** `piwi/setRunBreakpoints`: the run's workers stop at these lines from now on, a worker that starts later too. */
@@ -569,7 +605,9 @@ export class RunSessions {
         };
         worker.pausing = false;
         this.changed(session, true);
-        if (!message.bar && !this.options.answersStops()) this.resumeUnanswered(session, worker, message.place);
+        if (!message.bar && (!this.options.answersStops() || this.unwatchedFailure(session, worker))) {
+          this.resumeUnanswered(session, worker, message.place);
+        }
         return;
       case 'running':
         if (worker.stop?.id !== message.stop) return;

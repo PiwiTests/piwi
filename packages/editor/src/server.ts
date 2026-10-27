@@ -36,6 +36,7 @@ import {
   type CompletionItem,
   type Connection,
   type Diagnostic,
+  type DidChangeTextDocumentParams,
   type Hover,
   type InitializeParams,
   type TextEdit,
@@ -154,6 +155,7 @@ import {
 } from './recorder/sessions.js';
 import { expectModuleOf, importInsertion } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
+import { RunLines, type DiskFile } from './run-lines.js';
 import { RunSessions } from './run-sessions.js';
 import { RunHub } from './run-hub.js';
 import { StopActions } from './stop-actions.js';
@@ -1669,6 +1671,29 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let runHub: RunHub | null = null;
   /** The command lines of the runs the service built, by ref, which the hub names to Piwi Picker. */
   const runCommands = new Map<string, string>();
+  /** The runs the service built to be watched (with the editor's breakpoints, or a `page.pause()`), by ref. */
+  const watchedRuns = new Set<string>();
+  /** The lines of the files the runs stop in, as each run has them and as the editor holds them now. */
+  const runLines = new RunLines();
+  /** A file as `RunLines` names it: its absolute path, in lower case on Windows, as `samePath` compares them. */
+  const lineKey = (file: string): string =>
+    process.platform === 'win32' ? path.resolve(file).toLowerCase() : path.resolve(file);
+  /** A file's text and modification time on disk; null when it cannot be read. */
+  const diskFile = (file: string): DiskFile => {
+    try {
+      return { text: fs.readFileSync(file, 'utf-8'), mtime: fs.statSync(file).mtimeMs };
+    } catch {
+      return null;
+    }
+  };
+  /** The files the editor holds with changes it has not saved, which a run starting now does not have. */
+  const unsavedFiles = (): string[] =>
+    documents.all().flatMap((document) => {
+      const file = uriToPath(document.uri);
+      if (!file || !contextFor(file)) return [];
+      const disk = diskFile(file);
+      return disk && disk.text !== document.getText() ? [lineKey(file)] : [];
+    });
   /** The runs the service built, as their workers tell them on the run channel. */
   const runSessions = new RunSessions({
     notify: (session) => {
@@ -1677,6 +1702,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     },
     // The client, or a Piwi Picker following the runs.
     answersStops: () => answersStops || !!runHub?.answersStops(),
+    watched: (ref) => watchedRuns.has(ref),
+    followed: () => !!runHub?.answersStops(),
+    sessionStarted: (ref) => runLines.started(ref, unsavedFiles, true),
     notice: (root, severity, message) =>
       void connection.sendNotification(NOTICE_NOTIFICATION, { root, severity, message } satisfies Notice),
     // A run runs in its config's folder as the file system spells it (`commandFolder`).
@@ -1729,6 +1757,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         severity: 'warning',
         message,
       } satisfies Notice),
+    lineNow: (stop, target) => {
+      const file = uriToPath(target.uri);
+      if (!file) return { refusal: `${target.uri} is not a file.` };
+      const open = !!openDocument(file);
+      return runLines.lineNow(stop.ref, lineKey(file), stop.line, open, open ? null : diskFile(file));
+    },
     target: (file) => {
       const context = contextFor(file);
       const text = context && playwrightConfigFile(context.root) ? readText(file) : null;
@@ -2160,9 +2194,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     });
   });
 
-  documents.onDidOpen((e) => schedule(e.document, 0));
+  documents.onDidOpen((e) => {
+    const file = uriToPath(e.document.uri);
+    if (file && contextFor(file)) runLines.opened(lineKey(file), e.document.getText(), diskFile(file));
+    schedule(e.document, 0);
+  });
   documents.onDidChangeContent((e) => schedule(e.document));
   documents.onDidClose((e) => {
+    const file = uriToPath(e.document.uri);
+    if (file) runLines.closed(lineKey(file), e.document.getText());
     recordings.stopFile(e.document.uri);
     clearTimeout(timers.get(e.document.uri));
     timers.delete(e.document.uri);
@@ -3019,6 +3059,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     });
     const pauseAt = pauseAtValue(context.root, files);
     if (!pauseAt) return command;
+    if (command.ref) watchedRuns.add(command.ref);
     const notice = breakpointsNotice(context.reporterVersion);
     return {
       ...command,
@@ -3056,6 +3097,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         if (runCommands.size <= MAX_RUN_COMMANDS) break;
         runCommands.delete(oldest);
       }
+      if (pauses) watchedRuns.add(run.ref);
+      for (const ref of watchedRuns) if (!runCommands.has(ref)) watchedRuns.delete(ref);
+      runLines.started(run.ref, unsavedFiles);
     }
     return run;
   };
@@ -3475,7 +3519,22 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
   connection.onExit(closeRecordChannel);
 
-  documents.listen(connection);
+  // The documents' edits, as `didChange` sends them, for the lines of the files the runs stop in: each is read before
+  // the documents apply it, with the text it changes.
+  documents.listen(
+    new Proxy(connection, {
+      get(target, property, receiver) {
+        if (property !== 'onDidChangeTextDocument') return Reflect.get(target, property, receiver);
+        return (handler: (params: DidChangeTextDocumentParams) => void) =>
+          target.onDidChangeTextDocument((params) => {
+            const file = uriToPath(params.textDocument.uri);
+            const before = documents.get(params.textDocument.uri)?.getText() ?? null;
+            if (file) runLines.changed(lineKey(file), before, params.contentChanges);
+            return handler(params);
+          });
+      },
+    }),
+  );
   connection.listen();
   return () => {
     stopped = true;

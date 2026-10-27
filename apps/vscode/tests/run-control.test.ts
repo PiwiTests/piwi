@@ -56,6 +56,7 @@ const worker = (index: number, state: RunWorker['state'], extra: Partial<RunWork
   test: state === 'between' ? null : runTest(),
   stop: null,
   pausing: false,
+  takes: [],
   ...extra,
 });
 

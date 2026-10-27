@@ -15,7 +15,7 @@ import { lineReader, parseHandoffToTest, type HandoffToTest } from '@piwitests/c
 import { parseHubMessage, type HubAnswer, type HubMessage } from '@piwitests/core/run-hub';
 import type { RawCaptureEvent } from '@piwitests/core/recording';
 import { RUN_TAKES, type RunTake } from '@piwitests/core/run-channel';
-import type { LocatorAtCaretResult, StopActionResult, StopRequestsResult } from '../src/protocol';
+import type { LocatorAtCaretResult, StopActionResult, StopCode, StopRequestsResult } from '../src/protocol';
 import { FakeWorker, last, service, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
 const SPEC = [
@@ -38,6 +38,26 @@ const PAGE_OBJECT = [
   "    await this.page.getByRole('button', { name: 'Pay' }).click();",
   '  }',
   '}',
+  '',
+].join('\n');
+
+/** A spec whose test stops at its first statement, and one with a second page. */
+const FIRST = [
+  "import { test } from '@playwright/test';",
+  '',
+  "test('pays', async ({ page }) => {",
+  "  await page.goto('/cart');",
+  '});',
+  '',
+].join('\n');
+const ADMIN = [
+  "import { test } from './fixtures';",
+  '',
+  "test('refunds', async ({ page, adminPage }) => {",
+  "  await page.goto('/cart');",
+  "  await adminPage.getByRole('button', { name: 'Refund' }).click();",
+  "  await page.getByRole('button', { name: 'Pay' }).click();",
+  '});',
   '',
 ].join('\n');
 
@@ -67,6 +87,9 @@ beforeAll(() => {
   writeRunWorkspace(dir);
   write('tests/checkout.spec.ts', SPEC);
   write('tests/pages/checkout.page.ts', PAGE_OBJECT);
+  write('tests/first.spec.ts', FIRST);
+  write('tests/disk.spec.ts', FIRST);
+  write('tests/admin.spec.ts', ADMIN);
   // What a check needs from the service's dist: the recorder's bundle and its catalogs.
   dist = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-stop-dist-'));
   fs.writeFileSync(path.join(dist, 'record-ide.js'), '// the recorder\n');
@@ -112,6 +135,16 @@ async function answer(worker: FakeWorker, after: number, what: string, value: un
 }
 
 /** The test's half of a hand-off in its `check` mode: what it heard, and what it sends. */
+/** A text once the edits are made, as a client makes them: against the text they were placed in. */
+function applyEdits(text: string, edits: StopCode['edits']): string {
+  const lines = text.split('\n');
+  const offset = (p: { line: number; character: number }) =>
+    lines.slice(0, p.line).reduce((sum, line) => sum + line.length + 1, 0) + p.character;
+  return [...edits]
+    .sort((a, b) => offset(b.range.start) - offset(a.range.start))
+    .reduce((out, e) => out.slice(0, offset(e.range.start)) + e.newText + out.slice(offset(e.range.end)), text);
+}
+
 function checkHandoff(channel: { path: string; token: string }, stop: { ref: string; worker: number; stop: number }) {
   const socket = net.connect(channel.path);
   socket.setEncoding('utf8');
@@ -302,12 +335,12 @@ describe('code from a stop, with a client that writes it', () => {
   });
 
   test('counts the locator at the caret on the stopped page, and takes its outline down', async () => {
-    const { ref, worker } = await stoppedWorker(svc, 'tests/checkout.spec.ts', 5, true);
+    const { ref, worker, since } = await stoppedWorker(svc, 'tests/checkout.spec.ts', 5, true);
     const caret = (params: object) =>
-      svc.client.sendRequest('piwi/locatorAtCaret', { ref, ...params }) as Promise<LocatorAtCaretResult>;
+      svc.client.sendRequest('piwi/locatorAtCaret', { ref, since, ...params }) as Promise<LocatorAtCaretResult>;
     try {
-      // In the page object, off `this.page`.
-      const counting = caret({ uri: uri('tests/pages/checkout.page.ts'), line: 6 });
+      // In the stopped file, off the page the code there runs on.
+      const counting = caret({ uri: uri('tests/checkout.spec.ts'), line: 4 });
       const asked = await answer(worker, 0, 'locator', { ok: true, message: '1 element matches.', count: 1 });
       expect(asked).toEqual({
         type: 'request',
@@ -336,6 +369,118 @@ describe('code from a stop, with a client that writes it', () => {
       expect(await left).toEqual({ ok: true, message: 'The outline is gone.', locator: null, count: null });
     } finally {
       worker.socket.destroy();
+    }
+  });
+
+  test('counts no locator of a page the test may not have stopped on, and none for a command naming no stop', async () => {
+    const { ref, worker, since } = await stoppedWorker(svc, 'tests/admin.spec.ts', 5, true);
+    const caret = (params: object) =>
+      svc.client.sendRequest('piwi/locatorAtCaret', { ref, since, ...params }) as Promise<LocatorAtCaretResult>;
+    try {
+      // Stopped on `adminPage`: its own locator counts.
+      const own = caret({ uri: uri('tests/admin.spec.ts'), line: 4 });
+      await answer(worker, 0, 'locator', { ok: true, message: '1 element matches.', count: 1 });
+      expect(await own).toMatchObject({ ok: true, locator: "getByRole('button', { name: 'Refund' })" });
+      // `page` may be another page, and so may `this.page` of another file: refused, the outline taken down.
+      const other = caret({ uri: uri('tests/admin.spec.ts'), line: 5 });
+      await answer(worker, 1, 'locator', { ok: true, message: 'The outline is gone.', count: null });
+      expect(await other).toEqual({
+        ok: false,
+        message:
+          'The test is stopped on adminPage: page may be another page, so Piwi counts a locator that starts from adminPage.',
+        locator: null,
+        count: null,
+      });
+      const elsewhere = caret({ uri: uri('tests/pages/checkout.page.ts'), line: 6 });
+      await answer(worker, 2, 'locator', { ok: true, message: 'The outline is gone.', count: null });
+      expect(await elsewhere).toEqual({
+        ok: false,
+        message:
+          'The test is stopped in admin.spec.ts: this.page here may be another page than the one it stopped on, so Piwi counts a locator of that file.',
+        locator: null,
+        count: null,
+      });
+      expect(
+        await svc.client.sendRequest('piwi/locatorAtCaret', { ref, uri: uri('tests/admin.spec.ts'), line: 4 }),
+      ).toEqual({ ok: false, message: 'The command needs the stop it answers.', locator: null, count: null });
+      expect(await svc.client.sendRequest('piwi/stopRequests', { ref })).toEqual({
+        ok: false,
+        message: 'The command needs the stop it answers.',
+        requests: [],
+      });
+      expect(worker.heard.filter((m) => m.type === 'request')).toHaveLength(3);
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+
+  test('writes the code of a second action above the stopped statement, where the first one moved it', async () => {
+    const { ref, worker, since } = await stoppedWorker(svc, 'tests/first.spec.ts', 4, true);
+    const file = uri('tests/first.spec.ts');
+    try {
+      const region = action({ ref, since, action: 'assert-region' });
+      await answer(worker, 0, 'assert-region', { ok: true, message: 'Pick the region.' });
+      await region;
+      worker.send({ type: 'region', stop: 1, locator: "getByTestId('summary')", snapshot: '- text: x' });
+      const first = await waitFor(() => (last(svc.codes)?.uri === file ? last(svc.codes) : undefined));
+      expect(first.line).toBe(3);
+      // The client writes it as an editor does: the file opened as it is on disk, then one change per edit.
+      const opened = FIRST;
+      await svc.client.sendNotification('textDocument/didOpen', {
+        textDocument: { uri: file, languageId: 'typescript', version: 1, text: opened },
+      });
+      await svc.client.sendNotification('textDocument/didChange', {
+        textDocument: { uri: file, version: 2 },
+        contentChanges: [...first.edits].reverse().map((e) => ({ range: e.range, text: e.newText })),
+      });
+      const written = applyEdits(opened, first.edits);
+
+      const mocking = action({ ref, since, action: 'mock', request: 1 });
+      await answer(worker, 1, 'mock', { ok: true, message: 'GET', response: RESPONSE });
+      expect(await mocking).toMatchObject({ ok: true, message: 'Piwi wrote the mock above first.spec.ts:8.' });
+      const second = last(svc.codes)!;
+      // The import the first one added and its three lines are above the stopped statement now.
+      expect(second.line).toBe(7);
+      const lines = applyEdits(written, second.edits).split('\n');
+      expect(lines.findIndex((l) => l.includes('page.route('))).toBeGreaterThan(
+        lines.findIndex((l) => l.startsWith('test(')),
+      );
+      expect(lines[second.line + second.code.split('\n').length]).toBe("  await page.goto('/cart');");
+    } finally {
+      await svc.client.sendNotification('textDocument/didClose', { textDocument: { uri: file } });
+      worker.socket.destroy();
+    }
+  });
+
+  test('refuses to write in a file written on disk since the run started, and above a declaration', async () => {
+    const { ref, worker, since } = await stoppedWorker(svc, 'tests/disk.spec.ts', 4, true);
+    try {
+      const later = new Date(Date.now() + 2000);
+      fs.writeFileSync(path.join(dir, 'tests/disk.spec.ts'), `// a line added\n${FIRST}`);
+      fs.utimesSync(path.join(dir, 'tests/disk.spec.ts'), later, later);
+      const mocking = action({ ref, since, action: 'mock', request: 1 });
+      await answer(worker, 0, 'mock', { ok: true, message: 'GET', response: RESPONSE });
+      expect(await mocking).toEqual({
+        ok: false,
+        message:
+          'disk.spec.ts was written on disk since the run started, which Piwi cannot follow: run the test again to write code at its stop.',
+      });
+      // Nothing starts in the test's window for a check that could not be written.
+      expect(await action({ ref, since, action: 'assert' })).toMatchObject({ ok: false, message: /written on disk/ });
+      expect(worker.heard.filter((m) => m.type === 'request')).toHaveLength(1);
+    } finally {
+      worker.socket.destroy();
+    }
+    // A stop on a test's declaration (a test timeout that names no call) writes nothing above it.
+    const declared = await stoppedWorker(svc, 'tests/checkout.spec.ts', 3, true);
+    try {
+      expect(await action({ ref: declared.ref, since: declared.since, action: 'assert-region' })).toEqual({
+        ok: false,
+        message: 'The test is stopped outside a test or a function of this file: nothing can be written there.',
+      });
+      expect(declared.worker.heard.filter((m) => m.type === 'request')).toEqual([]);
+    } finally {
+      declared.worker.socket.destroy();
     }
   });
 
@@ -404,7 +549,12 @@ describe('code from a stop, with a client that writes it', () => {
         requests: [],
       });
       expect(
-        await svc.client.sendRequest('piwi/locatorAtCaret', { ref, uri: uri('tests/checkout.spec.ts'), line: 4 }),
+        await svc.client.sendRequest('piwi/locatorAtCaret', {
+          ref,
+          since,
+          uri: uri('tests/checkout.spec.ts'),
+          line: 4,
+        }),
       ).toEqual({
         ok: false,
         message: '@piwitests/reporter 0.60.0 cannot count a locator on the stopped page: update it.',
@@ -461,6 +611,33 @@ describe('code from a stop, with a client that writes none', () => {
     } finally {
       worker.socket.destroy();
       svc.stop();
+    }
+  });
+
+  test('tells the client why a check it started was not made: the recorder missing from the installation', async () => {
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-stop-empty-'));
+    const svc = await service(dir, true, { distDir: empty }, { stopCode: true });
+    const { ref, channel, worker, since } = await stoppedWorker(svc, 'tests/checkout.spec.ts', 5, true);
+    const notices = svc.notices.length;
+    try {
+      const asserting = svc.client.sendRequest('piwi/stopAction', { ref, since, action: 'assert' });
+      await answer(worker, 0, 'assert', { ok: true, message: 'Check an element.' });
+      expect(await asserting).toEqual({ ok: true, message: 'Check an element.' });
+      const test = checkHandoff(channel, { ref, worker: 0, stop: 1 });
+      const refused = await waitFor(() => test.heard.find((m) => m.type === 'refused'));
+      expect(refused).toMatchObject({
+        message: expect.stringMatching(/^The recorder is missing from this installation/),
+      });
+      expect(await waitFor(() => svc.notices[notices])).toEqual({
+        root: dir,
+        severity: 'warning',
+        message: `Nothing was checked: ${(refused as { message: string }).message}`,
+      });
+      test.socket.destroy();
+    } finally {
+      worker.socket.destroy();
+      svc.stop();
+      fs.rmSync(empty, { recursive: true, force: true });
     }
   });
 

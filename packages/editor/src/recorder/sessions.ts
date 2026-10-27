@@ -594,15 +594,17 @@ export class RecordingSessions {
    * that statement. The test loads the recorder into its page; the session drives it as a launcher's browser.
    */
   private async attach(params: RecordParams, target: RecordTarget, handoff: Handoff): Promise<RecordResult> {
-    const placement = placementBefore(target.text, handoff.line - 1);
-    const at = pageCandidates(target.text, placement.line);
     const refuse = (message: string): RecordResult => {
       handoff.socket.end(`${JSON.stringify({ type: 'refused', message })}\n`);
       return { ok: false, message };
     };
-    if (at.context !== 'test' && at.context !== 'function') {
+    const placement = placementBefore(target.text, handoff.line - 1);
+    if ('refusal' in placement) return refuse(placement.refusal);
+    // The block goes inside a test's or a function's body, never above its declaration.
+    if (placement.context !== 'test' && placement.context !== 'function') {
       return refuse('The test is paused outside a test or a function of this file: nothing can be written there.');
     }
+    const at = pageCandidates(target.text, placement.line);
     const bundle = path.join(this.options.distDir, BUNDLE_FILE);
     const messages = this.messages(recorderLanguage(params.language));
     if (!fs.existsSync(bundle) || !messages) {
@@ -688,7 +690,7 @@ export class RecordingSessions {
         handoff.reason === 'pause'
           ? `Recording in the test's browser from page.pause() at ${where}.`
           : `Recording in the test's browser from the breakpoint at ${where}.`,
-      placement,
+      placement: { line: placement.line, newLine: placement.newLine, indent: placement.indent },
     };
   }
 

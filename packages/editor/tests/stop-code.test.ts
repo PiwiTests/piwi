@@ -178,7 +178,10 @@ describe('the code made at a stop', () => {
       'The body is neither JSON nor a form: it is written as the server sent it, but for its token-shaped values, and may hold other secrets. Read it before you commit it.',
       'The body looks like it holds an email address or a phone number: replace it with made-up data.',
     ]);
-    const json = renderStopCode(SPEC, 4, { action: 'mock', response: { ...CART, url: 'http://a.test/c', body: '{"a":1}' } });
+    const json = renderStopCode(SPEC, 4, {
+      action: 'mock',
+      response: { ...CART, url: 'http://a.test/c', body: '{"a":1}' },
+    });
     if ('refusal' in json) throw new Error(json.refusal);
     expect(json.warnings).toEqual([]);
   });
@@ -188,6 +191,17 @@ describe('the code made at a stop', () => {
       'The test is stopped outside a test or a function of this file: nothing can be written there.',
     );
     expect(stopCodeRefusal(SPEC, 4)).toBeNull();
+    // The line of the test's declaration, and of a method's: the block would go outside their bodies.
+    expect(stopCodeRefusal(SPEC, 2)).toBe(
+      'The test is stopped outside a test or a function of this file: nothing can be written there.',
+    );
+    expect(stopCodeRefusal(PAGE_OBJECT, 5)).toBe(
+      'The test is stopped outside a test or a function of this file: nothing can be written there.',
+    );
+    expect(stopCodeRefusal(PAGE_OBJECT, 6)).toBeNull();
+    expect(
+      stopCodeRefusal(SPEC.replace("  await page.goto('/cart');", "  if (ready)\n    await page.goto('/cart');"), 4),
+    ).toBe('The statement on line 5 is the body of an `if` without braces: put it in braces to write code above it.');
     expect(
       renderStopCode(SPEC, 4, {
         action: 'assert-region',

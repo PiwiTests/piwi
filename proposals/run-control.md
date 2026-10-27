@@ -113,20 +113,33 @@ the text in eight ways. The code reaches the client in a notification of its own
 the file and its version, and the edits, the import lines the block needs and the block above the stopped
 statement, which the client makes as one edit), sent only to a client that says it writes it
 (`InitializationOptions.stopCode`); without one, Assert, Assert a region and Mock a request are refused from both
-surfaces, and the Runs window never receives code. **Assert** runs the recorder's check panel alone through the record
-channel's hand-off in a `check` mode, which names the stop and which the service takes itself, asking no editor to
-record; the check panel offers what it offers in a recording (a value, a text, a name, visible or hidden, enabled or
-disabled), which has no `toBeChecked` nor `toHaveCount` choice. **Assert a region** picks with the bar's picker
-(element, anchors, confirm), so the snapshot is read through the locator the person confirmed; `toMatchAriaSnapshot`
-is a matcher of `renderSpec` that neither a recording nor a steps document carries. **Mock a request** writes the
-body inline whatever its size (a kept body is 256 KB at most) and matches a query parameter named like a credential
-with `*`, on the page expression in scope; the list names no header and no body, and the worker sends one body, the
-one chosen. **The locator at the caret** is one request of the IDE's, the service reading the line's chain and its
-page expression; the hub has none, the caret being the IDE's. **A failure** is held in every interactive run (a run
-connection open, a test that can stop), at every attempt that fails, not an expected failure: headed, the bar is the
-viewer; headless, a stop with the reason `failure` waits for the IDE or a Runs window and goes on at once, without a
-notice, when neither answers stops; Step, Finish and Run to a line end it as Resume does, and Record there hands the
-page over with the reason `breakpoint`, as the record channel's `attach` names two. The pause bar has no button for
+surfaces, are not offered to the Runs window, and the Runs window never receives code. The block goes above the
+stopped statement where it stands now: the run's line, followed through the edits made since the run started (the
+service reads each `didChange`; the code of an earlier action included), inside the body of a test or a function,
+never on its declaration's line nor as the body of an `if` without braces; a file the service cannot follow (written
+on disk since, or with changes not saved as the run started) is refused, and so is an Assert at such a place before
+anything starts in the test's window. Every command at a stop names it (`since`). **Assert** runs the recorder's check
+panel alone through the record channel's hand-off in a `check` mode, which names the stop and which the service takes
+itself, asking no editor to record; the check panel offers what it offers in a recording (a value, a text, a name,
+visible or hidden, enabled or disabled), which has no `toBeChecked` nor `toHaveCount` choice. **Assert a region**
+picks with the bar's picker (element, anchors, confirm), so the snapshot is read through the locator the person
+confirmed, without a password field's value nor a link whose URL holds a credential; `toMatchAriaSnapshot` is a
+matcher of `renderSpec` that neither a recording nor a steps document carries. **Mock a request** writes the body
+inline whatever its size (a kept body is 256 KB at most), hides the whole value of a field named like a credential and
+a value shaped like one anywhere in the body, matches such a query value with `**`, and warns of a text body written
+as it came and of one that seems to hold an email address or a phone number, on the page expression in scope; the list
+names no header and no body, its URLs' credentials hidden, and the worker reads one body, the one chosen, as it is
+asked for. **The locator at the caret** is one request of the IDE's, the service reading the line's chain and its page
+expression, which must be the stopped page's, as the code at the stop would run on it, in the stopped file; the hub
+has none, the caret being the IDE's. **A failure** is held in a run started to be watched (a run connection open, a
+test that can stop), at every attempt that fails, not an expected failure, once the test function, its hooks and the
+fixtures built on `page` are done, never while the test runs: headed, the bar is the viewer; headless, a stop with the
+reason `failure` waits only in a run the editor started with its breakpoints or for a `page.pause()`, or while a Runs
+window follows the runs, and goes on at once, without a notice, otherwise (a plain Run of the Test Explorer). Its
+evidence is what the test left at the failure: what the page does during the hold is not recorded, though Playwright's
+own trace and video go on through it; the stop is at the line where the error enters the test's code, or at the call a
+test timeout cut short. Step, Finish and Run to a line end it as Resume does, and Record there hands the page over
+with the reason `breakpoint`, as the record channel's `attach` names two. The pause bar has no button for
 the code actions, which start from the IDE and the Runs window; the paused call going on with its old code is said in
 the first code of each run. `run-attach.takes` lists the queries (`requests`, `mock`, `locator`) beside the intents,
 and the hub's `intents` the actions a stop takes (`mock` when the worker lists and hands over responses).
@@ -340,8 +353,8 @@ worker draws the pause bar in a headed page (D7) and does what the session asks 
 before the call (today's `PausePoint`); the bar highlights the element as it does now.
 
 The one stop that is not the debugger's comes after a failure: no call is left to stop before, so the page is held
-before its context closes, as the failure-time picker holds it today (`maybeOpenPicker`), with the test timeout lifted
-by Piwi (Part 5).
+once the test and its hooks are done, before its context closes, as the failure-time picker holds it today
+(`maybeOpenPicker`), with the test timeout held while it shows (Part 5).
 
 ### 1.2 What changes for the developer
 
@@ -661,9 +674,10 @@ place (D6). An action started where no IDE is paired (a desktop run with none) o
   [`record-from-the-ide.md`](record-from-the-ide.md) Part 8 does.
 - **The paused call still runs** when the test goes on, with the code it was started with: a pick changes the file,
   not the running test. The editor says so once.
-- **A failure** in an interactive run holds the failing page before its context closes (Part 1.1): the same actions,
-  with **Pick** replacing the failing locator, the failure-time picker's job today, and **Record** writing the steps
-  that were missing above the failing line. The run reports the failure as it happened.
+- **A failure** in a run started to be watched holds the failing page once the test and its hooks are done, before
+  its context closes (Part 1.1): the same actions, with **Pick** replacing the failing locator, the failure-time
+  picker's job today, and **Record** writing the steps that were missing above the failing line. The run reports the
+  failure as it happened.
 
 ## Part 6: Headless and remote runs
 
@@ -893,6 +907,10 @@ becomes a diagram in the docs' own style, a theme-aware SVG under `apps/docs/pub
    steers one (D8).
 6. **Stop at every failure of an interactive run**, or only with a setting? Recommendation: at every failure of a run
    with a viewer (a headed window, the Runs page or the IDE's view), since the run was started to be watched.
+   Decided in PR 4: a run is started to be watched when it is headed (the bar is the viewer), when the editor started
+   it with its breakpoints or for a `page.pause()`, or while a Runs window follows the runs as the test fails; a
+   headless run started with none of these goes on at once. Every run the editor starts has a run channel and a
+   client that answers stops, so the IDE's view alone is no sign.
 7. **The dashboard's live view as frames, or as a live trace** (Part 8.1)? A live trace gives the DOM of each call,
    which the dashboard's snapshot picker already picks from, and which a person can inspect after the fact; frames are
    lighter and need nothing from Playwright's own tracing. Recommendation: frames first.
