@@ -103,7 +103,13 @@ describe('desktop open requests', () => {
 });
 
 describe('renderDesktopHandoffPage', () => {
-  const scripts = (html: string) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]!);
+  /** Every `<script …>` tag of the page, as its opening tag and its body. */
+  const scripts = (html: string) =>
+    [...html.matchAll(/(<script\b[^>]*>)([\s\S]*?)<\/script>/gi)].map((m) => ({ tag: m[1]!, body: m[2]! }));
+  const directive = (name: string) =>
+    DESKTOP_HANDOFF_CSP.split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${name} `));
 
   it('tells the user the page is in the app', () => {
     const html = renderDesktopHandoffPage(true);
@@ -112,18 +118,18 @@ describe('renderDesktopHandoffPage', () => {
   });
 
   it('closes the tab with the one script its policy allows', () => {
-    const [script, ...others] = scripts(renderDesktopHandoffPage(true));
-    expect(script).toBe('window.close();');
-    expect(others).toEqual([]);
-    const hash = createHash('sha256').update(script!).digest('base64');
-    expect(DESKTOP_HANDOFF_CSP).toContain(`script-src 'sha256-${hash}'`);
-    expect(DESKTOP_HANDOFF_CSP).toContain("default-src 'none'");
+    const found = scripts(renderDesktopHandoffPage(true));
+    expect(found).toEqual([{ tag: '<script>', body: 'window.close();' }]);
+    const hash = createHash('sha256').update(found[0]!.body).digest('base64');
+    expect(directive('script-src')).toBe(`script-src 'sha256-${hash}'`);
+    expect(directive('default-src')).toBe("default-src 'none'");
   });
 
   it('points to the tray when no window is listening, and keeps the tab open', () => {
     const html = renderDesktopHandoffPage(false);
     expect(html).toContain('data-desktop-handoff="not-ready"');
     expect(html).toContain('tray icon');
-    expect(html).not.toContain('<script');
+    expect(scripts(html)).toEqual([]);
+    expect(html).not.toMatch(/<script\b/i);
   });
 });
