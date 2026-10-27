@@ -1,25 +1,25 @@
-# Piwi — Agent Instructions
+# Piwi: agent instructions
 
 > **Note:** Piwi is **not affiliated with, endorsed by, or connected to Microsoft Corporation**. The project was
 > originally called "Playwright Dashboard" and was renamed to avoid confusion with Microsoft's Playwright.
 
 Root guide for any AI agent (Claude Code, opencode, Copilot, Cursor, …): what lives where, how to verify a change, and
-the conventions that apply everywhere. Each area has its own guide, next to its code; Claude Code loads it by itself
-(through the `CLAUDE.md` beside it) when you open a file there, other agents read it before editing.
+the conventions that apply everywhere. Each area has its own guide next to its code: Claude Code loads it through the
+`CLAUDE.md` beside it when you open a file there, and other agents read it before editing.
 
-| Editing…                                                          | Read first                                                   |
-| ----------------------------------------------------------------- | ------------------------------------------------------------ |
-| `apps/application/` — the Nuxt dashboard (app, server, demo, MCP) | [`apps/application/AGENTS.md`](apps/application/AGENTS.md)   |
-| `packages/reporter/` — the Playwright reporter package            | [`packages/reporter/AGENTS.md`](packages/reporter/AGENTS.md) |
-| `apps/desktop/` — the Tauri desktop shell                         | [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md)           |
-| `apps/extension/` — the browser extension (Manifest V3)           | [`apps/extension/AGENTS.md`](apps/extension/AGENTS.md)       |
-| `packages/editor/` — the editor service (language server)         | [`packages/editor/AGENTS.md`](packages/editor/AGENTS.md)     |
-| `apps/vscode/` — the VS Code extension                            | [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md)             |
-| `apps/jetbrains/` — the JetBrains plugin (Gradle, Kotlin)         | [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md)       |
-| `apps/docs/` — the VitePress documentation site                   | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md)                 |
-| `.github/` — the CI workflows and the action they share           | [`.github/AGENTS.md`](.github/AGENTS.md)                     |
-| `proposals/` — design records for work proposed or being built    | [`proposals/AGENTS.md`](proposals/AGENTS.md)                 |
-| `adr/` — architecture decision records for shipped work           | [`adr/AGENTS.md`](adr/AGENTS.md)                             |
+| Editing…                                                         | Read first                                                   |
+| ---------------------------------------------------------------- | ------------------------------------------------------------ |
+| `apps/application/`: the Nuxt dashboard (app, server, demo, MCP) | [`apps/application/AGENTS.md`](apps/application/AGENTS.md)   |
+| `packages/reporter/`: the Playwright reporter package            | [`packages/reporter/AGENTS.md`](packages/reporter/AGENTS.md) |
+| `apps/desktop/`: the Tauri desktop shell                         | [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md)           |
+| `apps/extension/`: the browser extension (Manifest V3)           | [`apps/extension/AGENTS.md`](apps/extension/AGENTS.md)       |
+| `packages/editor/`: the editor service (language server)         | [`packages/editor/AGENTS.md`](packages/editor/AGENTS.md)     |
+| `apps/vscode/`: the VS Code extension                            | [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md)             |
+| `apps/jetbrains/`: the JetBrains plugin (Gradle, Kotlin)         | [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md)       |
+| `apps/docs/`: the VitePress documentation site                   | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md)                 |
+| `.github/`: the CI workflows and the actions they share          | [`.github/AGENTS.md`](.github/AGENTS.md)                     |
+| `proposals/`: design records for work proposed or being built    | [`proposals/AGENTS.md`](proposals/AGENTS.md)                 |
+| `adr/`: architecture decision records for shipped work           | [`adr/AGENTS.md`](adr/AGENTS.md)                             |
 
 The dashboard's guide lists the topic guides of its subsystems. An `ARCHITECTURE.md` beside a guide is the map of
 that area (what exists and how it works): open it when you need to understand the code, not before every edit.
@@ -28,7 +28,7 @@ that area (what exists and how it works): open it when you need to understand th
 
 A test results dashboard for **Playwright**, built with **Nuxt 4** and **Nuxt UI**. It ingests test results from a custom
 reporter, stores them (SQLite or PostgreSQL), and adds analysis on top: flaky detection, failure clustering, AI diagnosis,
-locator healing, notifications and an MCP server for AI agents. Self-hosted only — no SaaS, no other test frameworks
+locator healing, notifications and an MCP server for AI agents. Self-hosted only: no SaaS, no other test frameworks
 (see [`ROADMAP.md`](ROADMAP.md) for direction and non-goals).
 
 ## Repository layout
@@ -76,7 +76,7 @@ configuration: the SQLite database and `.data/` are created on the first API cal
   a new project and reports a run through them (the script header shows how to pack them); CI's `package-smoke` job.
 - From `integrations/aspnetcore/`: `dotnet test PiwiTests.Instrumentation.slnx` (needs the .NET 10 SDK).
 
-Run typecheck, lint, format check and the relevant tests **once at the end**, before the final commit — not after every
+Run typecheck, lint, format check and the relevant tests **once at the end**, before the final commit, not after every
 edit.
 
 ## Conventions that apply everywhere
@@ -88,7 +88,7 @@ edit.
 - **American English** spelling throughout ("initialize", "organize", "color").
 - **Extract a shared component/helper** when the same block exceeds ~10 lines and appears more than once.
 - **One locator parser.** Playwright locator expressions (`getByRole('form').getByLabel('Country')`) are parsed
-  only by `@piwitests/core/locator-chain` — the app, the reporter and the extension all build on it. Adapt its output
+  only by `@piwitests/core/locator-chain`: the app, the reporter and the extension all build on it. Adapt its output
   to a local shape; never hand-write another parser. Two exceptions, both in `core/src/error-parse.ts`: `extractSelector`
   keeps its own scan because failure fingerprints hash its output (a change regroups existing failures), and the
   error-text readers fall back to a lenient scan for a chain cut short, which no parser can read.
@@ -107,22 +107,22 @@ integration gets its own `LICENSE` file and a `license` field that match the sid
 - **Never write before/after comparisons.** No "was X, now Y", "used to", "previously", "no longer", "replaced A with
   B", "better than the old approach". Comments describe the current state only. Git holds the history.
 - **Never justify a change.** No "deliberately not X, because X caused Y", no bug-report retelling. State the rule the
-  code follows ("Piwi options only — the Playwright config goes in `defineConfig`"), not the story behind it. The
+  code follows ("Piwi options only: the Playwright config goes in `defineConfig`"), not the story behind it. The
   reasoning belongs in the commit message and the PR.
 - These rules apply to **every** comment: doc/JSDoc comments, inline comments and comments inside tests.
 
-### Commits & PR titles (MUST follow — CI lints every commit)
+### Commits & PR titles (MUST follow: CI lints every commit)
 
 `commitlint.config.js` is the source of truth; [`CONTRIBUTING.md`](CONTRIBUTING.md) has the full guide and the type →
 release-bump table. release-please reads PR titles (squash-merge subjects) to compute version bumps.
 
 Format `type(scope): subject`:
 
-- **type** — `feat` `fix` `perf` `docs` `chore` `ci` `refactor` `test` `build` `style` `revert`
-- **scope** — closed list, anything else fails: `app` `reporter` `db` `ui` `demo` `desktop` `extension` `ide` `ci` `docs`
+- **type**: `feat` `fix` `perf` `docs` `chore` `ci` `refactor` `test` `build` `style` `revert`
+- **scope**: closed list, anything else fails: `app` `reporter` `db` `ui` `demo` `desktop` `extension` `ide` `ci` `docs`
   `deps` `auth` `ai` `notifications` `release` (`main` is reserved for release-please). Optional but include the best
   fit; never invent one (a timeline component change is `fix(ui)`, not `fix(timeline)`).
-- **subject** — lower-case start, imperative, no trailing period, full header ≤ 100 chars.
+- **subject**: lower-case start, imperative, no trailing period, full header ≤ 100 chars.
 
 The `commitlint` CI check lints **every commit in the PR range**, so one bad message turns the PR red. Self-check with
 `npx commitlint --from HEAD~<n> --to HEAD` from the repo root, and never bypass the husky `commit-msg` hook with
@@ -157,7 +157,7 @@ form exists show a bash and a PowerShell version. The mappings and the VitePress
 
 #### One canonical positioning line
 
-Piwi is not a product being sold. Copy is informative, specific and honest — never promotional (voice rules:
+Piwi is not a product being sold. Copy is informative, specific and honest, never promotional (voice rules:
 [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md#voice)). The project describes itself the same way everywhere:
 
 > **Your Playwright results, kept and explained.** CI throws away every report it makes. Piwi keeps them, then groups
@@ -191,8 +191,8 @@ and `tagline`), `apps/docs/.vitepress/config.mts` (`description` and the `og:` t
   | `render.yaml`, `fly.toml`, `railway.json`, `deploy/**`      | `npm run app:generate:deploy` (`apps/application/`)                                                |
   | Drizzle migrations, `_journal.json`, `meta/*_snapshot.json` | the procedure in [`server/database/AGENTS.md`](apps/application/server/database/AGENTS.md)         |
 
-- A branch's migrations follow extra rules through a merge — keep them unless the base branch added migrations, never
-  edit a committed one: see [`apps/application/server/database/AGENTS.md`](apps/application/server/database/AGENTS.md).
+- A branch's migrations follow extra rules through a merge (keep them unless the base branch added migrations, never
+  edit a committed one): see [`apps/application/server/database/AGENTS.md`](apps/application/server/database/AGENTS.md).
 - Run typecheck, lint and the unit tests on the merged tree before pushing.
 
 ### Working with the user's requests
@@ -221,12 +221,12 @@ Every guide is read by agents before they edit, so its size is paid on every tas
   code when none fits (with a `CLAUDE.md` holding `@AGENTS.md` next to it, and a row in its area guide's table), this
   root file only when it applies everywhere.
 - **Size limits**, checked by `apps/application/tests/unit/agent-guides.test.ts`: 20,000 characters for this file and
-  30,000 for any other guide (Claude Code cuts an automatically loaded guide past 40,000). Over the limit, move detail
-  to `ARCHITECTURE.md` or a topic guide; never raise the limit.
+  30,000 for any other guide (Claude Code keeps only the first 40,000 characters of a guide it loads on its own). Over
+  the limit, move detail to `ARCHITECTURE.md` or a topic guide; never raise the limit.
 
 ## Troubleshooting
 
 - **Command appears frozen?** It probably opened an interactive pager. Use `git --no-pager <cmd>` for `diff`/`log`/`show`
-  and avoid anything that waits for input — non-interactive shells hang on them.
+  and avoid anything that waits for input: non-interactive shells hang on them.
 - **Never start a dev server in the foreground of a tool call**: it blocks until the call times out. Use the background
   form (`npm run app:dev:bg` for the dashboard); Playwright starts its own server via `webServer`.

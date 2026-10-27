@@ -5,8 +5,8 @@
 # class of verification impossible:
 #   1. node_modules — nothing runs at all.
 #   2. packages/reporter/dist — playwright.config.ts imports the built reporter, so the
-#      E2E suite cannot even load its config, and a unit test that compares the
-#      app against the reporter's build fails.
+#      E2E suite cannot even load its config (nor knip, which reads it), and the
+#      reporter's own specs that load its build (build-output, flake-run) fail.
 #   3. A Chromium matching the pinned Playwright — without it every
 #      browser-driven spec dies on a missing binary, which reads like an
 #      unrelated failure and tempts you to skip UI verification entirely.
@@ -17,6 +17,18 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
 fi
 
 cd "${CLAUDE_PROJECT_DIR:-$(pwd)}"
+
+# Each step writes its output to a log rather than to the session, which reads everything this hook prints; a step
+# that fails prints the end of the log.
+log="${TMPDIR:-/tmp}/piwi-session-start.log"
+: >"$log"
+quietly() {
+  if ! "$@" >>"$log" 2>&1; then
+    echo "[session-start] '$*' failed; the end of $log:" >&2
+    tail -n 40 "$log" >&2
+    return 1
+  fi
+}
 
 # The repository pins its Node major in .node-version (CI, engines). Another Node still runs most checks, so this
 # warns rather than stops: a failure caused by the version then reads as one.
@@ -38,21 +50,22 @@ if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$installed" ]; then
   echo "[session-start] workspace dependencies match package-lock.json; skipping the install"
 else
   echo "[session-start] installing workspace dependencies"
-  npm ci --no-audit --fund=false
+  quietly npm ci --no-audit --fund=false
   echo "$installed" > "$stamp"
 fi
 
 # The build takes ~10s, mostly the type declarations, so a resumed session skips it while no input of the bundle
-# (the reporter, the core and picker-dom sources it inlines, the installed dependencies) changed since the last one.
+# (the reporter, the core and picker-dom sources it inlines, the tsconfig it extends, the installed dependencies)
+# changed since the last one.
 # tsup cleans dist/ first, so a build that failed leaves no stamp and runs again.
 build_stamp="packages/reporter/dist/.session-start-build"
 if [ -f "$build_stamp" ] && [ -z "$(find packages/reporter/src packages/reporter/package.json \
-  packages/reporter/tsconfig.json packages/reporter/tsup.config.ts packages/core/src packages/picker-dom/src \
+  packages/reporter/tsconfig.json packages/reporter/tsup.config.ts tsconfig.json packages/core/src packages/picker-dom/src \
   "$stamp" -newer "$build_stamp" -print -quit)" ]; then
   echo "[session-start] the reporter build is up to date; skipping it"
 else
   echo "[session-start] building the reporter (playwright.config.ts imports it)"
-  npm run reporter:build --workspace packages/reporter
+  quietly npm run reporter:build --workspace packages/reporter
   touch "$build_stamp"
 fi
 
@@ -62,7 +75,7 @@ fi
 # Chromium the image already provides and tell Playwright about it via the
 # repo's PLAYWRIGHT_CHROMIUM_EXECUTABLE hook.
 echo "[session-start] resolving a Chromium for Playwright"
-if npx --yes playwright install chromium >/dev/null 2>&1; then
+if quietly npx --yes playwright install chromium; then
   echo "[session-start] using the pinned Playwright Chromium"
 else
   found=""
