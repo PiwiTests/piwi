@@ -52,7 +52,7 @@ const NO_PROJECT_IN_REQUEST: Record<string, string> = {
 
 /** The calls that check a permission on one project, or narrow to the projects where it is held. */
 const PROJECT_CHECK =
-  /\b(requireProjectAccess|requireResolvedProjectAccess|getProjectScope|canAccessProject|scopeAllows|can)\(/;
+  /\b(requireProjectAccess|requireResolvedProjectAccess|requireProjectPermission|getProjectScope|canAccessProject|scopeAllows|can)\(/;
 
 /** Scope helpers and the position of their permission argument (1-based). */
 const SCOPE_HELPERS = { getProjectScope: 3, canAccessProject: 4 } as const;
@@ -222,6 +222,21 @@ describe('route permissions', () => {
         );
       }
     }
+    expect(problems).toEqual([]);
+  });
+
+  test('a route that loads its row itself authenticates before the lookup', () => {
+    const problems = routes
+      .filter((r) => r.src.includes('requireProjectPermission('))
+      .filter((r) => {
+        const auth = r.src.indexOf('requireAuth(');
+        const lookup = r.src.indexOf('getDatabase(');
+        return auth < 0 || (lookup >= 0 && lookup < auth);
+      })
+      .map(
+        (r) =>
+          `${r.path}: calls requireProjectPermission without requireAuth before getDatabase — authenticate first, so a caller without credentials gets 401 whether the id exists or not`,
+      );
     expect(problems).toEqual([]);
   });
 

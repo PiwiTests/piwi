@@ -11,6 +11,7 @@
  *   2  no report (bad arguments, unreachable dashboard)
  */
 import * as fs from 'node:fs';
+import { resolveCliConnection } from '../internal/support/connection.js';
 import { resolveProjectId } from '../internal/support/selection-client.js';
 
 const EXIT_OK = 0;
@@ -28,8 +29,8 @@ Usage:
   npx @piwitests/reporter report [options]
 
 Connection:
-  --server-url <url>     Dashboard URL                 (env PIWI_DASHBOARD_URL)
-  --api-key <key>        API key                       (env PIWI_API_KEY)
+  --server-url <url>     Dashboard URL                 (env PIWI_DASHBOARD_URL, .env, the desktop app)
+  --api-key <key>        API key                       (env PIWI_API_KEY, .env)
 
 What to report:
   --project <names|ids>  Comma-separated projects (default: every project you can see)
@@ -83,9 +84,16 @@ export function normalizePeriod(raw: string): string {
   return days ? `last-${days[1]}d` : raw.trim();
 }
 
-export function parseReportArgs(argv: string[], env: NodeJS.ProcessEnv): ReportArgs {
-  const serverUrl = (readOption(argv, '--server-url') ?? env.PIWI_DASHBOARD_URL ?? '').replace(/\/$/, '');
-  if (!serverUrl) throw new Error('No dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL');
+/** Parse the arguments; the connection falls back to the `.env` of `dirs`, then the desktop app. */
+export function parseReportArgs(argv: string[], env: NodeJS.ProcessEnv, dirs: string[] = []): ReportArgs {
+  const connection = resolveCliConnection(
+    { serverUrl: readOption(argv, '--server-url'), apiKey: readOption(argv, '--api-key') },
+    env,
+    dirs,
+    'piwi report',
+  );
+  if (!connection)
+    throw new Error('No dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL (environment or .env)');
 
   const format = (readOption(argv, '--format') ?? 'md').toLowerCase();
   if (!(FORMATS as readonly string[]).includes(format)) {
@@ -108,8 +116,8 @@ export function parseReportArgs(argv: string[], env: NodeJS.ProcessEnv): ReportA
   if (format === 'pdf' && !output) throw new Error('A PDF needs --output <file>');
 
   return {
-    serverUrl,
-    apiKey: readOption(argv, '--api-key') ?? env.PIWI_API_KEY ?? null,
+    serverUrl: connection.serverUrl,
+    apiKey: connection.apiKey,
     projects: (readOption(argv, '--project') ?? '')
       .split(',')
       .map((p) => p.trim())
@@ -162,7 +170,7 @@ export async function runQualityReport(argv: string[]): Promise<number> {
     return EXIT_OK;
   }
   try {
-    const args = parseReportArgs(argv, process.env);
+    const args = parseReportArgs(argv, process.env, [process.cwd()]);
     const projectIds: number[] = [];
     for (const project of args.projects) {
       projectIds.push(await resolveProjectId({ serverUrl: args.serverUrl, apiKey: args.apiKey, project, key: '' }));

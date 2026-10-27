@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { parseCodegenArgs, renderStepsFile, runCodegen } from '../src/cli/codegen.js';
 
+/** No desktop app, whatever runs on this machine. */
+const NO_DESKTOP = { PIWI_DESKTOP_CONFIG: '/nonexistent/desktop.json' };
+
 const STEPS: PiwiSteps = {
   v: 1,
   title: 'Coupon not applied',
@@ -54,7 +57,7 @@ describe('parseCodegenArgs', () => {
   it('reads the file, the flags and the env fallbacks', () => {
     const args = parseCodegenArgs(
       ['steps.json', '--out', 'tests/bugs/a.spec.ts', '--tag', 'bug', '--tag', '@checkout', '--fail-reason', 'SHOP-1'],
-      { PIWI_DASHBOARD_URL: 'https://dash.example/', PIWI_PROJECT_NAME: 'web', PIWI_API_KEY: 'k' },
+      { ...NO_DESKTOP, PIWI_DASHBOARD_URL: 'https://dash.example/', PIWI_PROJECT_NAME: 'web', PIWI_API_KEY: 'k' },
     );
     expect(args).toMatchObject({
       file: 'steps.json',
@@ -71,17 +74,17 @@ describe('parseCodegenArgs', () => {
   });
 
   it('finds the file after value flags', () => {
-    expect(parseCodegenArgs(['--title', 'x', 'steps.json'], {}).file).toBe('steps.json');
+    expect(parseCodegenArgs(['--title', 'x', 'steps.json'], NO_DESKTOP).file).toBe('steps.json');
   });
 
   it('requires a file and a value for each value flag', () => {
-    expect(() => parseCodegenArgs([], {})).toThrow(/No steps file/);
-    expect(() => parseCodegenArgs(['steps.json', '--out'], {})).toThrow(/--out expects a value/);
+    expect(() => parseCodegenArgs([], NO_DESKTOP)).toThrow(/No steps file/);
+    expect(() => parseCodegenArgs(['steps.json', '--out'], NO_DESKTOP)).toThrow(/--out expects a value/);
   });
 });
 
 describe('renderStepsFile', () => {
-  const args = parseCodegenArgs(['steps.json'], {});
+  const args = parseCodegenArgs(['steps.json'], NO_DESKTOP);
 
   it('renders paths, stable locators and a URL check after a navigation', () => {
     const { code } = renderStepsFile(JSON.stringify(STEPS), args, null);
@@ -126,17 +129,17 @@ describe('runCodegen', () => {
 
   it('writes the spec, and replaces an existing one only with --force', async () => {
     const out = path.join(dir, 'tests', 'bugs', 'coupon.spec.ts');
-    expect(await runCodegen([stepsFile, '--out', out], {})).toBe(0);
+    expect(await runCodegen([stepsFile, '--out', out], NO_DESKTOP, dir)).toBe(0);
     expect(fs.readFileSync(out, 'utf-8')).toContain(`test('Coupon not applied'`);
     fs.writeFileSync(out, 'mine');
-    expect(await runCodegen([stepsFile, '--out', out], {})).toBe(2);
+    expect(await runCodegen([stepsFile, '--out', out], NO_DESKTOP, dir)).toBe(2);
     expect(fs.readFileSync(out, 'utf-8')).toBe('mine');
-    expect(await runCodegen([stepsFile, '--out', out, '--force', '--fail'], {})).toBe(0);
+    expect(await runCodegen([stepsFile, '--out', out, '--force', '--fail'], NO_DESKTOP, dir)).toBe(0);
     expect(fs.readFileSync(out, 'utf-8')).toContain('test.fail();');
   });
 
   it('fails on a missing file', async () => {
-    expect(await runCodegen([path.join(dir, 'nope.json')], {})).toBe(2);
+    expect(await runCodegen([path.join(dir, 'nope.json')], NO_DESKTOP, dir)).toBe(2);
   });
 
   it('uses the project catalog and suite locators when a dashboard is configured', async () => {
@@ -150,8 +153,8 @@ describe('runCodegen', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     const out = path.join(dir, 'a.spec.ts');
-    const env = { PIWI_DASHBOARD_URL: 'https://dash.example', PIWI_PROJECT_NAME: 'web' };
-    expect(await runCodegen([stepsFile, '--out', out], env)).toBe(0);
+    const env = { ...NO_DESKTOP, PIWI_DASHBOARD_URL: 'https://dash.example', PIWI_PROJECT_NAME: 'web' };
+    expect(await runCodegen([stepsFile, '--out', out], env, dir)).toBe(0);
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       'https://dash.example/api/projects/menu',
       'https://dash.example/api/projects/7/test-functions',
@@ -164,11 +167,11 @@ describe('runCodegen', () => {
       throw new Error('connect ECONNREFUSED');
     });
     vi.stubGlobal('fetch', fetchMock);
-    const env = { PIWI_DASHBOARD_URL: 'https://dash.example', PIWI_PROJECT_NAME: 'web' };
-    expect(await runCodegen([stepsFile, '--out', path.join(dir, 'a.spec.ts')], env)).toBe(0);
+    const env = { ...NO_DESKTOP, PIWI_DASHBOARD_URL: 'https://dash.example', PIWI_PROJECT_NAME: 'web' };
+    expect(await runCodegen([stepsFile, '--out', path.join(dir, 'a.spec.ts')], env, dir)).toBe(0);
     expect(console.error).toHaveBeenCalledWith(expect.stringMatching(/warning: no catalog or suite locators/));
     fetchMock.mockClear();
-    expect(await runCodegen([stepsFile, '--out', path.join(dir, 'b.spec.ts'), '--offline'], env)).toBe(0);
+    expect(await runCodegen([stepsFile, '--out', path.join(dir, 'b.spec.ts'), '--offline'], env, dir)).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -685,13 +685,15 @@ export function functionSnippet(entry: TestFunctionEntry): string {
 
 /**
  * The 0-based line where the call whose `(` is at `line`/`column` ends: brackets are
- * matched, skipping strings, template literals and comments. Null when it does not end
- * within `maxLines` lines.
+ * matched, skipping strings, template literals, regular expression literals and comments.
+ * Null when it does not end within `maxLines` lines.
  */
 export function callEndLine(lines: string[], line: number, column: number, maxLines = 2000): number | null {
   // Open brackets, `` ` `` for a template literal, `$` for an expression inside one.
   const stack: string[] = [];
   let blockComment = false;
+  // The last character of code read: a `/` after one of `REGEX_BEFORE`, or first, starts a regular expression.
+  let previous = '';
   for (let l = line; l < Math.min(lines.length, line + maxLines); l++) {
     const text = lines[l]!;
     let i = l === line ? column : 0;
@@ -715,6 +717,8 @@ export function callEndLine(lines: string[], line: number, column: number, maxLi
       } else if (c === '/' && text[i + 1] === '*') {
         blockComment = true;
         i++;
+      } else if (c === '/' && (!previous || REGEX_BEFORE.includes(previous)) && regexEnd(text, i) > 0) {
+        i = regexEnd(text, i);
       } else if (c === "'" || c === '"') {
         i++;
         while (i < text.length && text[i] !== c) i += text[i] === '\\' ? 2 : 1;
@@ -726,10 +730,27 @@ export function callEndLine(lines: string[], line: number, column: number, maxLi
         stack.pop();
         if (!stack.length) return l;
       }
+      if (!blockComment && c.trim()) previous = c;
       i++;
     }
   }
   return null;
+}
+
+/** The characters after which a `/` starts a regular expression literal rather than a division. */
+const REGEX_BEFORE = '(,=:[!&|?{};';
+
+/** Where the regular expression literal whose `/` is at `from` closes (its last `/`), or -1 when not on its line. */
+function regexEnd(text: string, from: number): number {
+  let inClass = false;
+  for (let j = from + 1; j < text.length; j++) {
+    const c = text[j]!;
+    if (c === '\\') j++;
+    else if (inClass) inClass = c !== ']';
+    else if (c === '[') inClass = true;
+    else if (c === '/') return j;
+  }
+  return -1;
 }
 
 /** A `test(…)` call on a line (`test.only(…)`, `test.skip(…)` and the other modifiers too), its title in group 2. */
@@ -738,6 +759,9 @@ export const TEST_CALL =
 /** A `test.describe(…)` call with a title (`test.describe.serial(…)` and the other modifiers too), its title in group 2. */
 const DESCRIBE_CALL =
   /(?<![\w$.])test\.describe(?:\.(?:only|skip|fixme|serial|parallel))*\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/;
+/** A `test.describe(…)` call whose first argument is neither a string literal nor the function of an untitled block. */
+const DESCRIBE_CALL_UNREAD =
+  /(?<![\w$.])test\.describe(?:\.(?:only|skip|fixme|serial|parallel))*\s*\((?!\s*(?:['"`(]|async\b|function\b))/;
 
 /** A test of a spec's text: where its `test(…)` call starts and ends, its title and its describe blocks. */
 export interface TestCall {
@@ -747,28 +771,55 @@ export interface TestCall {
   title: string;
   /** The titles of the `test.describe(…)` blocks around it, outermost first. */
   suite: string[];
+  /**
+   * Whether a block around it has a title the text does not spell: a template literal holding `${`, or a variable or
+   * an expression, whose source text then stands in `suite`.
+   */
+  suiteUnread: boolean;
+}
+
+/** A title as a string literal spells it, with its escaped quotes, backticks and backslashes read as those characters. */
+function unescapedTitle(title: string): string {
+  return title.replace(/\\(['"`\\])/g, '$1');
 }
 
 /**
  * The `test(…)` calls of a spec's lines, as the summary lines read them (each line holding one is a test), with the
- * titled `test.describe(…)` blocks each sits in.
+ * `test.describe(…)` blocks each sits in, untitled ones left out. A line whose code starts with `//` is read as blank,
+ * and a line opening a describe block can hold a test after it, inside that block.
  */
 export function testCalls(lines: string[]): TestCall[] {
-  const blocks: Array<{ title: string; endLine: number }> = [];
+  const code = lines.map((text) => (/^\s*\/\//.test(text) ? '' : text));
+  const blocks: Array<{ title: string; unread: boolean; endLine: number }> = [];
   const calls: TestCall[] = [];
-  lines.forEach((text, i) => {
+  code.forEach((text, i) => {
     while (blocks.length && blocks[blocks.length - 1]!.endLine < i) blocks.pop();
     const describe = DESCRIBE_CALL.exec(text);
-    if (describe) {
-      const open = text.indexOf('(', describe.index);
-      blocks.push({ title: describe[2]!, endLine: callEndLine(lines, i, open) ?? lines.length - 1 });
-      return;
+    const unread = describe ? null : DESCRIBE_CALL_UNREAD.exec(text);
+    let from = 0;
+    if (describe || unread) {
+      const match = (describe ?? unread)!;
+      const open = text.indexOf('(', match.index);
+      const endLine = callEndLine(code, i, open) ?? code.length - 1;
+      from = match.index + match[0].length;
+      if (describe) {
+        const title = unescapedTitle(describe[2]!);
+        blocks.push({ title, unread: describe[1] === '`' && title.includes('${'), endLine });
+      } else {
+        blocks.push({ title: text.slice(from).split(',')[0]!.trim() || match[0], unread: true, endLine });
+      }
     }
-    const test = TEST_CALL.exec(text);
+    const test = TEST_CALL.exec(text.slice(from));
     if (!test) return;
-    const open = text.indexOf('(', test.index);
-    const endLine = (open >= 0 ? callEndLine(lines, i, open) : null) ?? i;
-    calls.push({ line: i, endLine, title: test[2]!, suite: blocks.map((b) => b.title) });
+    const open = text.indexOf('(', from + test.index);
+    const endLine = (open >= 0 ? callEndLine(code, i, open) : null) ?? i;
+    calls.push({
+      line: i,
+      endLine,
+      title: unescapedTitle(test[2]!),
+      suite: blocks.map((b) => b.title),
+      suiteUnread: blocks.some((b) => b.unread),
+    });
   });
   return calls;
 }
@@ -785,6 +836,21 @@ export function caseOfCall<T extends { title: string; suitePath?: string | null 
   const suite = call.suite.join('\x1f');
   const titled = cases.filter((c) => c.title === call.title);
   return titled.find((c) => (c.suitePath ?? '') === suite) ?? titled.find((c) => typeof c.suitePath !== 'string');
+}
+
+/**
+ * The catalog's case of a test call as the editor's own requests take it: `caseOfCall`, else, for a call whose
+ * describe blocks have a title the text does not spell (`suiteUnread`), the only case of the call's title. With two or
+ * more cases of that title and none in its describe blocks, none.
+ */
+export function caseOfCallOrTitle<T extends { title: string; suitePath?: string | null }>(
+  cases: readonly T[],
+  call: Pick<TestCall, 'title' | 'suite' | 'suiteUnread'>,
+): T | undefined {
+  const found = caseOfCall(cases, call);
+  if (found || !call.suiteUnread) return found;
+  const titled = cases.filter((c) => c.title === call.title);
+  return titled.length === 1 ? titled[0] : undefined;
 }
 
 /** A source text with its comments blanked out, line breaks kept; strings are left as they are. */

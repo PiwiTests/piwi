@@ -5,6 +5,7 @@ import {
   breakpointsNotice,
   callEndLine,
   caseOfCall,
+  caseOfCallOrTitle,
   withoutComments,
   flakeLabLens,
   headedCommand,
@@ -129,6 +130,18 @@ describe('callEndLine', () => {
       ].join('\n'),
     );
     expect(callEndLine(spec, 0, 4)).toBe(6);
+  });
+
+  test('skips a regular expression literal, and reads a division as code', () => {
+    const spec = lines(
+      [
+        "test('a regex', async () => {",
+        "  expect(url).toMatch(/[)/*'](\\/x)/);",
+        '  if (a / 2) { b(); } c / 3;',
+        '});',
+      ].join('\n'),
+    );
+    expect(callEndLine(spec, 0, 4)).toBe(3);
   });
 
   test('gives up on a call that never closes', () => {
@@ -375,10 +388,10 @@ describe('testCalls', () => {
       "test('after', async () => {});",
     ];
     expect(testCalls(lines)).toEqual([
-      { line: 0, endLine: 0, title: 'alone', suite: [] },
-      { line: 4, endLine: 6, title: 'pays', suite: ['cart', 'as a guest'] },
-      { line: 8, endLine: 8, title: 'empties it', suite: ['cart'] },
-      { line: 10, endLine: 10, title: 'after', suite: [] },
+      { line: 0, endLine: 0, title: 'alone', suite: [], suiteUnread: false },
+      { line: 4, endLine: 6, title: 'pays', suite: ['cart', 'as a guest'], suiteUnread: false },
+      { line: 8, endLine: 8, title: 'empties it', suite: ['cart'], suiteUnread: false },
+      { line: 10, endLine: 10, title: 'after', suite: [], suiteUnread: false },
     ]);
   });
 
@@ -390,7 +403,79 @@ describe('testCalls', () => {
       '  });',
       '});',
     ];
-    expect(testCalls(lines)).toEqual([{ line: 1, endLine: 3, title: 'untitled group', suite: [] }]);
+    expect(testCalls(lines)).toEqual([{ line: 1, endLine: 3, title: 'untitled group', suite: [], suiteUnread: false }]);
+  });
+
+  test('reads past code commented out with //, keeping its lines', () => {
+    const lines = [
+      "import { test } from '@playwright/test';",
+      "// test.describe('old', () => {",
+      "//   test('pays', async () => {});",
+      '// });',
+      "test('pays', async () => {",
+      '  // });',
+      '});',
+      "test('ships', async () => {});",
+    ];
+    expect(testCalls(lines)).toEqual([
+      { line: 4, endLine: 6, title: 'pays', suite: [], suiteUnread: false },
+      { line: 7, endLine: 7, title: 'ships', suite: [], suiteUnread: false },
+    ]);
+  });
+
+  test('reads a test on the line that opens its describe block', () => {
+    const lines = ["test.describe('cart', () => { test('pays', async () => {}); });", "test('after', async () => {});"];
+    expect(testCalls(lines)).toEqual([
+      { line: 0, endLine: 0, title: 'pays', suite: ['cart'], suiteUnread: false },
+      { line: 1, endLine: 1, title: 'after', suite: [], suiteUnread: false },
+    ]);
+  });
+
+  test('reads escaped quotes and backslashes of a title as the characters they escape', () => {
+    const lines = [
+      "test.describe('the user\\'s cart', () => {",
+      '  test("says \\"hi\\" in C:\\\\shop", async () => {});',
+      '});',
+    ];
+    expect(testCalls(lines)).toEqual([
+      { line: 1, endLine: 1, title: 'says "hi" in C:\\shop', suite: ["the user's cart"], suiteUnread: false },
+    ]);
+  });
+  test('reads a nested template literal, and a regex literal holding comment marks or quotes, as code', () => {
+    const lines = [
+      "test.describe('cart', () => {",
+      "  test('opens', async ({ page }) => {",
+      "    await page.goto(`${secure ? `https://${host}` : ''}/cart`);",
+      '    await expect(page).toHaveURL(/[/*]x/);',
+      '    await expect(page).toHaveURL(/[//]x/);',
+      '    await expect(page).toHaveURL(/\'x"`/);',
+      '  });',
+      '});',
+      "test('after', async ({ page }) => {",
+      '  await page.pause();',
+      '});',
+    ];
+    expect(testCalls(lines)).toEqual([
+      { line: 1, endLine: 6, title: 'opens', suite: ['cart'], suiteUnread: false },
+      { line: 8, endLine: 10, title: 'after', suite: [], suiteUnread: false },
+    ]);
+  });
+
+  test('marks the tests of a describe block titled by a template with ${} or by a variable', () => {
+    const lines = [
+      'test.describe(`by ${method}`, () => {',
+      "  test('pays', async () => {});",
+      '});',
+      'test.describe(title, () => {',
+      "  test('refunds', async () => {});",
+      '});',
+      "test('ships', async () => {});",
+    ];
+    expect(testCalls(lines)).toEqual([
+      { line: 1, endLine: 1, title: 'pays', suite: ['by ${method}'], suiteUnread: true },
+      { line: 4, endLine: 4, title: 'refunds', suite: ['title'], suiteUnread: true },
+      { line: 6, endLine: 6, title: 'ships', suite: [], suiteUnread: false },
+    ]);
   });
 });
 
@@ -409,6 +494,39 @@ describe('caseOfCall', () => {
     expect(caseOfCall(cases, { title: 'refunds', suite: [] })?.id).toBe(3);
     expect(caseOfCall(cases, { title: 'refunds', suite: ['returns'] })?.id).toBe(3);
     expect(caseOfCall(cases, { title: 'ships', suite: [] })).toBeUndefined();
+  });
+});
+
+describe('caseOfCallOrTitle', () => {
+  const cases = [
+    { id: 1, title: 'pays', suitePath: 'by card' },
+    { id: 2, title: 'refunds', suitePath: 'by card' },
+    { id: 3, title: 'refunds', suitePath: 'by cash' },
+  ];
+
+  test('takes the only case of a title for a call in describe blocks the text does not spell, none among several', () => {
+    const at = (spec: string[], line: number) =>
+      caseOfCallOrTitle(
+        cases,
+        testCalls(spec).find((c) => c.line === line)!,
+      );
+    const templated = ['test.describe(`by ${method}`, () => {', "  test('pays', async () => {});", '});'];
+    const named = ['test.describe(method, () => {', "  test('pays', async () => {});", '});'];
+    expect(at(templated, 1)?.id).toBe(1);
+    expect(at(named, 1)?.id).toBe(1);
+    expect(caseOfCallOrTitle(cases, { title: 'refunds', suite: ['by cash'], suiteUnread: false })?.id).toBe(3);
+    expect(caseOfCallOrTitle(cases, { title: 'refunds', suite: ['by ${method}'], suiteUnread: true })).toBeUndefined();
+  });
+
+  test('takes no case for a call in describe blocks the text spells, or at the top level, without that case', () => {
+    const spec = [
+      "test('pays', async () => {});",
+      "test.describe('by cash', () => {",
+      "  test('pays', async () => {});",
+      '});',
+    ];
+    expect(caseOfCallOrTitle(cases, testCalls(spec)[0]!)).toBeUndefined();
+    expect(caseOfCallOrTitle(cases, testCalls(spec)[1]!)).toBeUndefined();
   });
 });
 

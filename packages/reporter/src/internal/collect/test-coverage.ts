@@ -8,7 +8,7 @@ import {
   type CoverageFile,
   type LineRange,
 } from '@piwitests/core/coverage';
-import { ATTACHMENT_NAMES } from '../capture/attachments.js';
+import { ATTACHMENT_NAMES, findPiwiAttachment, isPiwiAttachment, type AttachmentName } from '../capture/attachments.js';
 import { repositoryRoot } from '../capture/code-reach.js';
 import { Logger } from '../support/logger.js';
 import { errorMessage } from '../support/errors.js';
@@ -116,6 +116,9 @@ interface BrowserSide {
   files?: ReadonlyArray<string | CoverageFile>;
   css?: CoverageFile[];
 }
+
+/** A test result's attachment, as the coverage reads it. */
+type CoverageAttachment = { name: string; contentType?: string; body?: Buffer };
 
 /** Function ranges by file, each range once. */
 type RangesByFile = Map<string, Map<string, LineRange>>;
@@ -245,14 +248,15 @@ export class CoverageCollection {
    */
   private browserCoverage(
     testCase: CollectedTestCase,
-    attachments: ReadonlyArray<{ name: string; body?: Buffer }> | undefined,
+    attachments: ReadonlyArray<CoverageAttachment> | undefined,
   ): BrowserSide | Promise<BrowserSide> {
     const { browser, css } = this.options.settings;
     if (browser === 'off' && css !== 'rules') return {};
     const paths = browser === 'off' ? undefined : testCase.codeReach;
     for (const known of attachments ?? []) {
-      if (browser === 'functions' && known.name === ATTACHMENT_NAMES.browserFunctions) this.addKnownFunctions(known);
-      if (css === 'rules' && known.name === ATTACHMENT_NAMES.cssRules) this.addKnownFunctions(known);
+      if (browser === 'functions' && isPiwiAttachment(known, ATTACHMENT_NAMES.browserFunctions))
+        this.addKnownFunctions(known);
+      if (css === 'rules' && isPiwiAttachment(known, ATTACHMENT_NAMES.cssRules)) this.addKnownFunctions(known);
     }
     const scripts = browser === 'functions' ? this.rangedFiles(attachments, ATTACHMENT_NAMES.browserCoverage) : [];
     const sheets = css === 'rules' ? this.rangedFiles(attachments, ATTACHMENT_NAMES.cssCoverage) : [];
@@ -267,10 +271,10 @@ export class CoverageCollection {
 
   /** The browser files of a test's attachment holding line ranges, added to the run's. */
   private rangedFiles(
-    attachments: ReadonlyArray<{ name: string; body?: Buffer }> | undefined,
-    name: string,
+    attachments: ReadonlyArray<CoverageAttachment> | undefined,
+    name: AttachmentName,
   ): CoverageFile[] {
-    const attachment = attachments?.find((a) => a.name === name);
+    const attachment = findPiwiAttachment(attachments, name);
     if (!attachment?.body) return [];
     let files: CoverageFile[] = [];
     try {
@@ -332,13 +336,10 @@ export class CoverageCollection {
    * its browser files, and the promise resolves once it is set, within the wait
    * bound. Never rejects.
    */
-  apply(
-    testCase: CollectedTestCase,
-    attachments: ReadonlyArray<{ name: string; body?: Buffer }> | undefined,
-  ): Promise<void> | null {
+  apply(testCase: CollectedTestCase, attachments: ReadonlyArray<CoverageAttachment> | undefined): Promise<void> | null {
     const browser = this.browserCoverage(testCase, attachments);
     const attachment = this.collector
-      ? attachments?.find((a) => a.name === ATTACHMENT_NAMES.serverCoverageRequests)
+      ? findPiwiAttachment(attachments, ATTACHMENT_NAMES.serverCoverageRequests)
       : undefined;
     const requests = attachment?.body ? parseServerCoverageRequests(attachment.body) : null;
     if (!this.collector || !requests) {

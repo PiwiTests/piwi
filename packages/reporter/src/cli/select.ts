@@ -28,6 +28,7 @@ import { parseUnifiedDiff } from '@piwitests/core/diff-anchors';
 import { diffImpactInput, type BaseLineChange } from '@piwitests/core/suspect-lines';
 import { computeAddReporterArgs } from './add-reporter.js';
 import { spawnPlaywright } from '../internal/support/playwright-spawn.js';
+import { resolveCliConnection } from '../internal/support/connection.js';
 
 const EXIT_OK = 0;
 const EXIT_ERROR = 2;
@@ -43,9 +44,9 @@ Usage:
   npx @piwitests/reporter run impact --base <ref>    run the tests your diff impacts
 
 Connection:
-  --server-url <url>    Dashboard URL         (env PIWI_DASHBOARD_URL)
-  --api-key <key>       API key               (env PIWI_API_KEY)
-  --project <name|id>   Project               (env PIWI_PROJECT_NAME)
+  --server-url <url>    Dashboard URL         (env PIWI_DASHBOARD_URL, .env, the desktop app)
+  --api-key <key>       API key               (env PIWI_API_KEY, .env)
+  --project <name|id>   Project               (env PIWI_PROJECT_NAME, .env)
 
 Selection:
   --format <fmt>        args (file:line, default) | grep | files | json
@@ -133,13 +134,29 @@ export function parseDuration(raw: string): number | null {
   return ms > 0 ? ms : null;
 }
 
-export function parseSelectArgs(argv: string[], env: NodeJS.ProcessEnv): SelectArgs {
+/** Parse the arguments; the connection falls back to the `.env` of `dirs`, then the desktop app. */
+export function parseSelectArgs(
+  argv: string[],
+  env: NodeJS.ProcessEnv,
+  dirs: string[] = [],
+  command = 'piwi select',
+): SelectArgs {
   const dashIndex = argv.indexOf('--');
   const own = dashIndex === -1 ? argv : argv.slice(0, dashIndex);
   const extra = dashIndex === -1 ? [] : argv.slice(dashIndex + 1);
 
-  const serverUrl = (readOption(own, '--server-url') ?? env.PIWI_DASHBOARD_URL ?? '').replace(/\/$/, '');
-  if (!serverUrl) throw new Error('No dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL');
+  const connection = resolveCliConnection(
+    {
+      serverUrl: readOption(own, '--server-url'),
+      apiKey: readOption(own, '--api-key'),
+      project: readOption(own, '--project'),
+    },
+    env,
+    dirs,
+    command,
+  );
+  if (!connection)
+    throw new Error('No dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL (environment or .env)');
 
   const key = findKey(own);
   if (!key) throw new Error('No selection key — usage: piwi select <key>');
@@ -157,9 +174,9 @@ export function parseSelectArgs(argv: string[], env: NodeJS.ProcessEnv): SelectA
   }
 
   return {
-    serverUrl,
-    apiKey: readOption(own, '--api-key') ?? env.PIWI_API_KEY ?? null,
-    project: readOption(own, '--project') ?? env.PIWI_PROJECT_NAME ?? '',
+    serverUrl: connection.serverUrl,
+    apiKey: connection.apiKey,
+    project: connection.project,
     key,
     format: readOption(own, '--format') ?? 'args',
     budgetMs,
@@ -331,7 +348,7 @@ export async function runSelect(argv: string[], env: NodeJS.ProcessEnv = process
 
   let args: SelectArgs;
   try {
-    args = parseSelectArgs(argv, env);
+    args = parseSelectArgs(argv, env, [process.cwd()]);
   } catch (e) {
     console.error(`piwi select: ${(e as Error).message}\n`);
     console.error(USAGE);
@@ -444,7 +461,7 @@ export async function runRun(argv: string[], env: NodeJS.ProcessEnv = process.en
 
   let args: SelectArgs;
   try {
-    args = parseSelectArgs(argv, env);
+    args = parseSelectArgs(argv, env, [process.cwd()], 'piwi run');
   } catch (e) {
     console.error(`piwi run: ${(e as Error).message}\n`);
     console.error(USAGE);

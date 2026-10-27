@@ -1,5 +1,4 @@
-import { requireProjectAccess, resolveLinkEntityProjectId } from '../../utils/project-access';
-import { getDatabase } from '../../database';
+import { requireResolvedProjectAccess, resolveLinkEntityProjectId } from '../../utils/project-access';
 import { listLinks, LINK_ENTITY_TYPES, type LinkEntityType } from '#shared/handlers/links';
 import { requireIntQuery } from '../../utils/query-params';
 
@@ -29,10 +28,12 @@ export default eventHandler(async (event) => {
   }
   const entityId = requireIntQuery(event, 'entityId', { min: 1 });
 
-  const db = await getDatabase();
-  const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
-  if (!projectId) throw apiError({ statusCode: 404, message: 'Entity not found' });
-  await requireProjectAccess(event, projectId);
+  const { db } = await requireResolvedProjectAccess(
+    event,
+    entityId,
+    (database, id) => resolveLinkEntityProjectId(database, entityType, id),
+    'Entity',
+  );
 
   return { items: (await listLinks(db, entityType as LinkEntityType, entityId)).links };
 });
