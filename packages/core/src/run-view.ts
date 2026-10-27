@@ -25,6 +25,8 @@ export const MAX_VIEW_EVENTS = 50;
 export const MAX_VIEW_EVENT_RATE = 200;
 /** The longest text one event inserts, in characters. */
 export const MAX_VIEW_TEXT = 1000;
+/** The control characters a text never carries: the C0 ones but a tab and a line break, and DEL. */
+export const VIEW_TEXT_CONTROL = /[\0-\x08\x0b-\x1f\x7f]/g;
 /** The largest coordinate an event or a pick names, in CSS pixels, and the largest viewport a frame names. */
 export const MAX_VIEW_COORD = 10_000;
 /** The largest scroll of one wheel event, in pixels each way. */
@@ -54,7 +56,10 @@ export type ViewInput =
    * `ControlOrMeta+a`).
    */
   | { type: 'key'; action: 'down' | 'up' | 'press'; key: string }
-  /** Text typed as one insertion, without key events: what no key name writes (`é`, an emoji, a paste). */
+  /**
+   * Text typed as one insertion, without key events: what no key name writes (`é`, an emoji, a paste). No control
+   * character but a tab and a line break (`VIEW_TEXT_CONTROL`).
+   */
   | { type: 'text'; text: string };
 
 /**
@@ -271,8 +276,8 @@ function readEvent(value: unknown): ViewInput | string {
   }
   if (type === 'text') {
     const { text } = value;
-    if (typeof text !== 'string' || !text || text.length > MAX_VIEW_TEXT || text.includes('\0')) {
-      return `needs a text of 1 to ${MAX_VIEW_TEXT} characters.`;
+    if (typeof text !== 'string' || !text || text.length > MAX_VIEW_TEXT || text.search(VIEW_TEXT_CONTROL) >= 0) {
+      return `needs a text of 1 to ${MAX_VIEW_TEXT} characters, with no control character but a tab or a line break.`;
     }
     return { type, text };
   }

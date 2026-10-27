@@ -200,7 +200,7 @@ own), the view is an image of the page twice a second. `input { id, ref, worker,
 (`move`, `down`, `up`, `click` with `button` and a `clickCount` of 1 to 3, which `down` and `up` carry too for a worker
 that lists `input-clicks`, played by `page.mouse.down` and `up`), `wheel` and `key` events (`down`, `up`,
 `press`: Playwright's key names or a printable ASCII character, modifiers before a pressed key) and `text` (1,000
-characters), 50 a message and 200 a second, at points in CSS pixels, as trusted input through internal calls, only
+characters, no control character but a tab and a line break), 50 a message and 200 a second, at points in CSS pixels, as trusted input through internal calls, only
 from a connection watching the stop, and lets go of what it holds down before the test goes on; it reaches Piwi's
 overlays as a person's input does, the picker, the recorder and a headed stop's pause bar included. At a headless
 stop, Pick a locator, Record here, Assert and Assert a region start for a connection watching its view, in the page

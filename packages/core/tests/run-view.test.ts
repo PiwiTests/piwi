@@ -133,6 +133,10 @@ describe('a viewer’s input', () => {
     }
   });
 
+  test('takes a tab and a line break in a text', () => {
+    expect(readViewInput([{ type: 'text', text: 'a\tb\nc' }])).toEqual([{ type: 'text', text: 'a\tb\nc' }]);
+  });
+
   test('drops what an event carries beyond its fields', () => {
     expect(readViewInput([{ type: 'text', text: 'a', script: 'alert(1)', x: 4 }])).toEqual([
       { type: 'text', text: 'a' },
@@ -164,9 +168,14 @@ describe('a viewer’s input', () => {
       [{ type: 'key', action: 'type', key: 'a' }, 'whose action is not down, up or press'],
       [{ type: 'key', action: 'down', key: 'Shift+Tab' }, 'names a key Playwright does not play: "Shift+Tab".'],
       [{ type: 'key', action: 'press', key: 'Ctrl+a' }, 'names a key Playwright does not play'],
-      [{ type: 'text', text: '' }, `needs a text of 1 to ${MAX_VIEW_TEXT} characters.`],
+      [{ type: 'text', text: '' }, `needs a text of 1 to ${MAX_VIEW_TEXT} characters`],
       [{ type: 'text', text: 'x'.repeat(MAX_VIEW_TEXT + 1) }, 'needs a text'],
       [{ type: 'text', text: 'a\0b' }, 'needs a text'],
+      // A control character a terminal or a field would act on: escape, bell, DEL, a carriage return.
+      [{ type: 'text', text: 'a\x1b[2Jb' }, 'with no control character but a tab or a line break.'],
+      [{ type: 'text', text: 'a\x07' }, 'needs a text'],
+      [{ type: 'text', text: '\x7f' }, 'needs a text'],
+      [{ type: 'text', text: 'a\rb' }, 'needs a text'],
       [{ type: 'evaluate', code: 'document.cookie' }, 'is of a type other than mouse, wheel, key or text.'],
       ['click', 'is not an event.'],
     ];
