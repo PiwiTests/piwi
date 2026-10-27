@@ -260,10 +260,54 @@ function normalizeSlashes(path: string): string {
   return path.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
-/** A `file:line` key for matching a step's call site to a trace action (column ignored). */
-function fileLineKey(location: string | null | undefined): string | null {
+type CallsiteFrames = TimelineCallsite['frames'];
+type CallsiteIndex = Map<string, Array<{ file: string; frames: CallsiteFrames }>>;
+
+/** A call site's file and line, slashes normalized, the `…/` of a shortened path dropped (column ignored). */
+function callsiteFileLine(location: string | null | undefined): { file: string; line: number } | null {
   const parsed = parseCallsiteLocation(location);
-  return parsed ? `${normalizeSlashes(parsed.file)}:${parsed.line}` : null;
+  return parsed ? { file: normalizeSlashes(parsed.file).replace(/^…\//, ''), line: parsed.line } : null;
+}
+
+/** The `basename:line` bucket a call site sits in. */
+function bucketKey(file: string, line: number): string {
+  return `${file.slice(file.lastIndexOf('/') + 1)}:${line}`;
+}
+
+/** The trace actions' frames, bucketed by `basename:line`; the first action at a call site wins. */
+function indexCallsites(callsites: TimelineCallsite[]): CallsiteIndex {
+  const index: CallsiteIndex = new Map();
+  for (const cs of callsites) {
+    const at = callsiteFileLine(cs?.location);
+    if (!at || !Array.isArray(cs.frames)) continue;
+    const key = bucketKey(at.file, at.line);
+    const bucket = index.get(key) ?? [];
+    if (!bucket.some((c) => c.file === at.file)) bucket.push({ file: at.file, frames: cs.frames });
+    index.set(key, bucket);
+  }
+  return index;
+}
+
+/** Whether one path ends with the other on a folder boundary (or they are equal). */
+function sameFileTail(a: string, b: string): boolean {
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+}
+
+/**
+ * The trace frames for a step's call site, on the same line. The two sides
+ * rarely read alike: a live run's step carries the machine path and an imported
+ * one a project-relative path, while the trace's call site is project-relative
+ * or shortened to its last folders. So a call site matches when either path
+ * ends with the other; the longest call-site path wins.
+ */
+function framesForStep(location: string | null, index: CallsiteIndex): CallsiteFrames | null {
+  const at = callsiteFileLine(location);
+  if (!at) return null;
+  let best: { file: string; frames: CallsiteFrames } | null = null;
+  for (const c of index.get(bucketKey(at.file, at.line)) ?? []) {
+    if (sameFileTail(at.file, c.file) && (!best || c.file.length > best.file.length)) best = c;
+  }
+  return best?.frames ?? null;
 }
 
 /**
@@ -394,11 +438,7 @@ export function buildFailureTimeline(input: FailureTimelineInput): FailureTimeli
   };
 
   // Match each step to a trace action's frames by call-site file:line.
-  const callsiteByKey = new Map<string, TimelineCallsite['frames']>();
-  for (const cs of asArray(input.traceCallsites) as TimelineCallsite[]) {
-    const key = fileLineKey(cs?.location);
-    if (key && Array.isArray(cs.frames) && !callsiteByKey.has(key)) callsiteByKey.set(key, cs.frames);
-  }
+  const callsites = indexCallsites(asArray(input.traceCallsites) as TimelineCallsite[]);
   const specFile = typeof input.specFile === 'string' ? input.specFile : null;
 
   let failedStep: FailureTimeline['failedStep'] = null;
@@ -411,7 +451,7 @@ export function buildFailureTimeline(input: FailureTimelineInput): FailureTimeli
     const failed = index === failedStepIndex;
     const label = clampLabel(stepLabel(step) || `Step ${index + 1}`);
     const location = typeof step.location === 'string' ? step.location : null;
-    const frames = (location && callsiteByKey.get(fileLineKey(location) ?? '')) || null;
+    const frames = framesForStep(location, callsites);
     const stepOrigin = deriveOrigin(location, frames, specFile);
     const group = groupTitleFor(at, dur) ?? stepOrigin?.function ?? null;
     const subtitle = typeof step.subtitle === 'string' && step.subtitle.trim().length > 0 ? step.subtitle.trim() : null;

@@ -57,7 +57,7 @@ import StepStatusMark from './StepStatusMark.vue';
 import StepParams from './StepParams.vue';
 import TimelineDuration from './TimelineDuration.vue';
 import TimelineTypeFilter from './TimelineTypeFilter.vue';
-import { findLocationRoot, stepLocations, stripLocationRoot } from '#shared/locator-chain';
+import { resolveLocationRoot, stepLocations, stripLocationRoot } from '#shared/locator-chain';
 import type { StepFailureRole, StepPhase } from '#shared/step-tree';
 import {
   barPlace,
@@ -90,6 +90,8 @@ const props = defineProps<{
   status?: string | null;
   /** The test's project-relative file — step locations read relative to the project it shows. */
   testFilePath?: string | null;
+  /** The run's working directory (the Playwright config's folder) — the root step locations read relative to. */
+  workingDir?: string | null;
   /** Piwi project id/name — passed to the open-in-IDE links for call sites. */
   projectKey?: string | number | null;
   projectName?: string | null;
@@ -419,7 +421,7 @@ const callSpans = computed(() => {
 });
 
 function bandTitle(span: { label: string; origin: TimelineItem['origin'] }): string {
-  const where = span.origin ? ` · ${span.origin.file}:${span.origin.line}` : '';
+  const where = span.origin ? ` · ${displayLocation(`${span.origin.file}:${span.origin.line}`)}` : '';
   return `${span.label}${where}`;
 }
 
@@ -577,8 +579,11 @@ function stepIndent(row: StepRow & { nested: boolean }): Record<string, string> 
   return level > 0 ? { paddingInlineStart: `${level * 1.25}rem` } : {};
 }
 
-// Step locations read relative to the project, found from the test's own file.
-const locationRoot = computed(() => findLocationRoot(stepLocations(props.steps), props.testFilePath ?? null));
+// Step locations read relative to the project: the run's working directory,
+// else the root found from the test's own file.
+const locationRoot = computed(() =>
+  resolveLocationRoot(stepLocations(props.steps), props.testFilePath ?? null, props.workingDir),
+);
 function displayLocation(location: string): string {
   return stripLocationRoot(location, locationRoot.value);
 }
