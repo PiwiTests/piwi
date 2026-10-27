@@ -81,13 +81,16 @@ jobs:
               - '.github/workflows/**'
               - '.github/actions/**'
               - '.node-version'
-            # The agent guides and the design records they link to, which the checks job's paths leave out.
+            # The agent guides, and the files outside the checks job's paths that they link to.
             guides:
               - '**/AGENTS.md'
               - '**/ARCHITECTURE.md'
               - '**/CLAUDE.md'
               - 'adr/**'
               - 'proposals/**'
+              - '*.md'
+              - 'release-please-config.json'
+              - 'apps/desktop/README.md'
             app:
               - 'apps/application/**'
               - 'apps/docs/**'

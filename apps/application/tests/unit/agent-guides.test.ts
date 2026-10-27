@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, posix } from 'node:path';
 import { lexer, walkTokens, type Token, type Tokens } from 'marked';
@@ -17,14 +17,17 @@ const GUIDE_LIMIT = 30_000;
 /** The file Claude Code loads, which imports the guide beside it. */
 const CLAUDE_IMPORT = '@AGENTS.md\n';
 
-/** Every file git tracks or would add, as CI's checkout holds them: gitignored and generated files are left out. */
+/**
+ * Every file git tracks or would add, as CI's checkout holds them: gitignored and generated files are left out, and so
+ * is a tracked file deleted from the working tree.
+ */
 const repoFiles: string[] = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {
   cwd: repoRoot,
   encoding: 'utf8',
   maxBuffer: 64 * 1024 * 1024,
 })
   .split('\0')
-  .filter(Boolean);
+  .filter((file) => file && existsSync(join(repoRoot, file)));
 const fileSet = new Set(repoFiles);
 const dirSet = new Set(
   repoFiles.flatMap((file) =>
