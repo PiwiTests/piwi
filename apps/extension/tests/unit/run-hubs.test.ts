@@ -390,6 +390,81 @@ describe('a hub’s connection', () => {
     expect(await pick).toEqual({ ok: false, message: 'Pick needs the pause bar.' });
   });
 
+  it('passes the code a stop can write on, each naming its stop, and hands back the requests the test kept', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    const socket = sockets[0]!;
+    await welcome(socket, [session([{ ...STOPPED, intents: ['pick', 'record', 'assert', 'assert-region', 'mock'] }])]);
+    expect(hubs.state().runs[0]!.session.workers[0]!.intents).toEqual([
+      'pick',
+      'record',
+      'assert',
+      'assert-region',
+      'mock',
+    ]);
+    const at = { hub: HUB.url, ref: 'r1', worker: 1, since: 's7' };
+    const assert = hubs.command({ ...at, what: 'assert' });
+    const region = hubs.command({ ...at, what: 'assert-region' });
+    const listed = hubs.command({ ...at, what: 'requests' });
+    const mock = hubs.command({ ...at, what: 'mock', request: 2 });
+    expect(socket.sent.slice(2)).toEqual([
+      { type: 'assert', id: 2, ref: 'r1', worker: 1, since: 's7' },
+      { type: 'assert-region', id: 3, ref: 'r1', worker: 1, since: 's7' },
+      { type: 'requests', id: 4, ref: 'r1', worker: 1, since: 's7' },
+      { type: 'mock', id: 5, ref: 'r1', worker: 1, since: 's7', request: 2 },
+    ]);
+    const kept = {
+      id: 2,
+      method: 'GET',
+      url: 'http://localhost:3000/api/cart',
+      status: 200,
+      type: 'application/json',
+      size: 12,
+      time: 840,
+    };
+    socket.hear({ type: 'answer', id: 2, ok: true, message: 'Check an element in the test’s window.' });
+    socket.hear({ type: 'answer', id: 3, ok: false, message: 'The test went on.' });
+    socket.hear({ type: 'answer', id: 4, ok: true, message: 'The test kept 1 response.', requests: [kept] });
+    socket.hear({ type: 'answer', id: 5, ok: true, message: 'Piwi wrote the mock above cart.spec.ts:5.' });
+    expect(await assert).toEqual({ ok: true, message: 'Check an element in the test’s window.' });
+    expect(await region).toEqual({ ok: false, message: 'The test went on.' });
+    expect(await listed).toEqual({ ok: true, message: 'The test kept 1 response.', requests: [kept] });
+    expect(await mock).toEqual({ ok: true, message: 'Piwi wrote the mock above cart.spec.ts:5.' });
+  });
+
+  it('reads the requests an answer lists field by field: one it cannot read leaves the answer unread', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    const socket = sockets[0]!;
+    await welcome(socket, [session([STOPPED])]);
+    const kept = { id: 1, method: 'GET', url: 'http://x/a', status: 200, type: 'text/plain', size: 1, time: 1 };
+    const bad = [
+      [{ ...kept, url: 'x'.repeat(8193) }],
+      [{ ...kept, status: 99 }],
+      [{ ...kept, method: '<b>' }],
+      [{ ...kept, id: 0 }],
+      [{ ...kept, type: 'x'.repeat(201) }],
+      Array.from({ length: 51 }, (_, i) => ({ ...kept, id: i + 1 })),
+      'none',
+    ];
+    const asked = bad.map(() => hubs.command({ hub: HUB.url, ref: 'r1', worker: 1, since: 's7', what: 'requests' }));
+    bad.forEach((requests, i) => socket.hear({ type: 'answer', id: i + 2, ok: true, message: 'Kept.', requests }));
+    await vi.advanceTimersByTimeAsync(1000);
+    for (const answer of await Promise.all(asked))
+      expect(answer).toEqual({ ok: false, message: '', failure: 'timeout' });
+  });
+
+  it('reads a worker of an older hub, which names no intents, as one that takes none', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    const { intents: _intents, ...older } = STOPPED;
+    await welcome(sockets[0]!, [session([older as HubWorker])]);
+    expect(hubs.state().runs[0]!.session.workers[0]!.intents).toEqual([]);
+    // An action this version does not know is left out.
+    sockets[0]!.hear({ type: 'session', session: session([{ ...STOPPED, intents: ['dance', 'mock'] as never }]) });
+    expect(hubs.state().runs[0]!.session.workers[0]!.intents).toEqual(['mock']);
+  });
+
   it('answers a command itself when the hub is silent, closed or not connected', async () => {
     const { hubs, sockets } = setup();
     await hubs.find();

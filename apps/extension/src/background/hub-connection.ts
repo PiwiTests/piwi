@@ -202,8 +202,14 @@ export class HubConnection {
       setTimeout(() => waiting.resolve(answer), 50);
       return;
     }
-    const { ok, message, image } = answer;
-    waiting.resolve(image === undefined ? { ok, message } : { ok, message, image });
+    // What the window reads of an answer, each part read field by field by `parseHubMessage`; the hub's id stays here.
+    const { ok, message, image, requests } = answer;
+    waiting.resolve({
+      ok,
+      message,
+      ...(image === undefined ? {} : { image }),
+      ...(requests === undefined ? {} : { requests }),
+    });
   }
 
   /** Hears the hub: the silence timer starts again. */

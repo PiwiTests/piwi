@@ -6,9 +6,11 @@
  * image, never as markup.
  */
 import type {
+  HubCodeIntent,
   HubControlAction,
   HubImage,
   HubIntent,
+  HubKeptRequest,
   HubSession,
   HubStop,
   HubTest,
@@ -65,10 +67,26 @@ export interface RunsState {
   runs: RunsRun[];
 }
 
-/** What a command of the window asks: a control, an intent of the pause bar, or an image of the stopped page. */
-export type RunsWhat = HubControlAction | HubIntent | 'image';
+/**
+ * What a command of the window asks: a control; at a stop, an intent the test's window runs (the pause bar's Pick and
+ * Record, the check panel's Assert, a region's Assert a region), the requests its test kept or the one to mock; or an
+ * image of the stopped page.
+ */
+export type RunsWhat = HubControlAction | HubIntent | HubCodeIntent | 'requests' | 'mock' | 'image';
 
-const WHATS: readonly string[] = ['pause', 'step', 'resume', 'finish', 'pick', 'record', 'image'];
+const WHATS: readonly string[] = [
+  'pause',
+  'step',
+  'resume',
+  'finish',
+  'pick',
+  'record',
+  'assert',
+  'assert-region',
+  'requests',
+  'mock',
+  'image',
+];
 
 /** What the window sends the worker. */
 export type RunsRequest =
@@ -87,6 +105,8 @@ export type RunsRequest =
       worker: number | null;
       since: string | null;
       what: RunsWhat;
+      /** For `mock` alone: the kept response to mock, the `id` of one of those `requests` listed. */
+      request?: number;
     };
 
 /** Why the worker answered a command itself: the hub is not connected, or did not answer in time. */
@@ -99,6 +119,8 @@ export interface RunsAnswer {
   failure?: RunsFailure;
   /** For `image`: the stopped page, null when the worker has none. */
   image?: HubImage | null;
+  /** For `requests`: the responses the test kept, oldest first, as the hub listed them (`parseHubMessage`). */
+  requests?: HubKeptRequest[];
 }
 
 /** What the worker sends the window. */
@@ -131,7 +153,10 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       if (what === 'image' && worker === null) return null;
       // Every control but Pause names the stop it answers, so a click made twice does not answer the next one.
       if (what !== 'pause' && what !== 'image' && since === null) return null;
-      return { type: 'command', id, hub, ref, worker, since, what: what as RunsWhat };
+      const command = { type: 'command', id, hub, ref, worker, since, what: what as RunsWhat } as const;
+      // Mock a request names the response, and nothing else does.
+      if (what !== 'mock') return value.request === undefined ? command : null;
+      return isIndex(value.request) && value.request > 0 ? { ...command, request: value.request } : null;
     }
     default:
       return null;

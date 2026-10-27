@@ -133,14 +133,25 @@ export class RunHubs {
     const connection = this.connections.get(request.hub);
     if (!connection) return Promise.resolve(OFFLINE);
     const { ref, worker, since, what } = request;
-    if (what === 'image') {
-      return worker === null ? Promise.resolve(OFFLINE) : connection.command({ type: 'pausedPage', ref, worker });
+    switch (what) {
+      case 'image':
+        return worker === null ? Promise.resolve(OFFLINE) : connection.command({ type: 'pausedPage', ref, worker });
+      case 'pause':
+      case 'step':
+      case 'resume':
+      case 'finish':
+        return connection.command({ type: 'runControl', ref, worker, action: what, since });
+      case 'mock':
+        // `parseRunsRequest` takes none without the stop it answers and the response it mocks.
+        return since === null || request.request === undefined
+          ? Promise.resolve(OFFLINE)
+          : connection.command({ type: 'mock', ref, worker, since, request: request.request });
+      case 'requests':
+        return since === null ? Promise.resolve(OFFLINE) : connection.command({ type: 'requests', ref, worker, since });
+      default:
+        // Pick, Record, Assert and Assert a region: an intent started in the test's window, at the stop it names.
+        return since === null ? Promise.resolve(OFFLINE) : connection.command({ type: what, ref, worker, since });
     }
-    if (what === 'pick' || what === 'record') {
-      // `parseRunsRequest` takes none without the stop it answers.
-      return since === null ? Promise.resolve(OFFLINE) : connection.command({ type: what, ref, worker, since });
-    }
-    return connection.command({ type: 'runControl', ref, worker, action: what, since });
   }
 
   /** The global shortcut: resumes every stopped test, else pauses every run (`shortcutCommands`). */

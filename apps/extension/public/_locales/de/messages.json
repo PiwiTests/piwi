@@ -6370,9 +6370,6 @@
   "runs_stoppedPagePause": {
     "message": "Bei page.pause() angehalten"
   },
-  "runs_stoppedFailure": {
-    "message": "Bei einem Fehler angehalten"
-  },
   "runs_stoppedOther": {
     "message": "Angehalten"
   },
@@ -6468,5 +6465,108 @@
   },
   "runs_imageLoading": {
     "message": "Ein Bild der Seite wird aufgenommen…"
+  },
+  "runs_assert": {
+    "message": "Prüfen"
+  },
+  "runs_assertTitle": {
+    "message": "Ein Element im Fenster des Tests prüfen: Die Prüfung wird über dieser Zeile eingefügt"
+  },
+  "runs_assertRegion": {
+    "message": "Bereich prüfen"
+  },
+  "runs_assertRegionTitle": {
+    "message": "Einen Bereich im Fenster des Tests wählen: Sein ARIA-Snapshot wird über dieser Zeile eingefügt"
+  },
+  "runs_mock": {
+    "message": "Anfrage nachbilden"
+  },
+  "runs_mockTitle": {
+    "message": "Eine Anfrage der Seite wählen: Ein page.route(), das sie wie der Server beantwortet, wird über dieser Zeile eingefügt"
+  },
+  "runs_codeActions": {
+    "message": "Code an dieser Stelle"
+  },
+  "runs_resumeFailureTitle": {
+    "message": "Den Test als fehlgeschlagen enden lassen"
+  },
+  "runs_failedAt": {
+    "message": "Fehlgeschlagen bei $place$",
+    "placeholders": {
+      "place": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      }
+    }
+  },
+  "runs_errorLabel": {
+    "message": "Fehler"
+  },
+  "runs_announceFailed": {
+    "message": "$test$ ist bei $place$ fehlgeschlagen.",
+    "placeholders": {
+      "place": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      },
+      "test": {
+        "content": "$2",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_imageAltFailure": {
+    "message": "Die Seite des Tests, wo er fehlschlug: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Timed out 5000ms waiting for expect(locator).toBeVisible()"
+      }
+    }
+  },
+  "runs_requestsTitle": {
+    "message": "Wählen Sie die nachzubildende Anfrage"
+  },
+  "runs_requestsClose": {
+    "message": "Liste schließen"
+  },
+  "runs_requestsFilter": {
+    "message": "Nach Adresse, Methode oder Status filtern"
+  },
+  "runs_requestsNone": {
+    "message": "Der Test hat noch keine Antwort behalten: Piwi behält die Textantworten seiner fetch- und XHR-Anfragen."
+  },
+  "runs_requestsNoMatch": {
+    "message": "Keine Anfrage passt zum Filter."
+  },
+  "runs_requestsListed_one": {
+    "message": "$count$ Anfrage: Wählen Sie die nachzubildende.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_requestsListed_other": {
+    "message": "$count$ Anfragen: Wählen Sie die nachzubildende.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "runs_requestAt": {
+    "message": "bei $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "0.8s"
+      }
+    }
+  },
+  "runs_requestNoSize": {
+    "message": "Größe unbekannt"
   }
 }

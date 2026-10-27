@@ -6370,9 +6370,6 @@
   "runs_stoppedPagePause": {
     "message": "Detenido en page.pause()"
   },
-  "runs_stoppedFailure": {
-    "message": "Detenido en un fallo"
-  },
   "runs_stoppedOther": {
     "message": "Detenido"
   },
@@ -6468,5 +6465,108 @@
   },
   "runs_imageLoading": {
     "message": "Tomando una imagen de la página…"
+  },
+  "runs_assert": {
+    "message": "Comprobar"
+  },
+  "runs_assertTitle": {
+    "message": "Comprobar un elemento en la ventana del test: la comprobación se escribe encima de esta línea"
+  },
+  "runs_assertRegion": {
+    "message": "Comprobar una región"
+  },
+  "runs_assertRegionTitle": {
+    "message": "Elegir una región en la ventana del test: su snapshot ARIA se escribe encima de esta línea"
+  },
+  "runs_mock": {
+    "message": "Simular una petición"
+  },
+  "runs_mockTitle": {
+    "message": "Elegir una petición de la página: un page.route() que la responde como el servidor se escribe encima de esta línea"
+  },
+  "runs_codeActions": {
+    "message": "Código desde esta parada"
+  },
+  "runs_resumeFailureTitle": {
+    "message": "Dejar que el test termine con el fallo"
+  },
+  "runs_failedAt": {
+    "message": "Falló en $place$",
+    "placeholders": {
+      "place": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      }
+    }
+  },
+  "runs_errorLabel": {
+    "message": "Error"
+  },
+  "runs_announceFailed": {
+    "message": "$test$ falló en $place$.",
+    "placeholders": {
+      "place": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      },
+      "test": {
+        "content": "$2",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_imageAltFailure": {
+    "message": "La página del test donde falló: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "Timed out 5000ms waiting for expect(locator).toBeVisible()"
+      }
+    }
+  },
+  "runs_requestsTitle": {
+    "message": "Elige la petición que simular"
+  },
+  "runs_requestsClose": {
+    "message": "Cerrar la lista"
+  },
+  "runs_requestsFilter": {
+    "message": "Filtrar por dirección, método o estado"
+  },
+  "runs_requestsNone": {
+    "message": "El test aún no guardó ninguna respuesta: Piwi guarda las respuestas de texto de sus peticiones fetch y XHR."
+  },
+  "runs_requestsNoMatch": {
+    "message": "Ninguna petición coincide con el filtro."
+  },
+  "runs_requestsListed_one": {
+    "message": "$count$ petición: elige la que simular.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_requestsListed_other": {
+    "message": "$count$ peticiones: elige la que simular.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "runs_requestAt": {
+    "message": "a los $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "0.8s"
+      }
+    }
+  },
+  "runs_requestNoSize": {
+    "message": "tamaño desconocido"
   }
 }
