@@ -269,6 +269,22 @@ export function locationRootOf(dir: unknown): string | null {
   return `${dir.trim().replace(/\\/g, '/').replace(/\/+$/, '')}/`;
 }
 
+/**
+ * The root to strip from an execution's step locations: the run's working
+ * directory when it prefixes one of them, else the root found from the test's
+ * own file. A working directory that prefixes none (a shard that ran in another
+ * agent's workspace, a drive letter in another case) would strip nothing.
+ */
+export function resolveLocationRoot(
+  locations: string[],
+  testFilePath: string | null,
+  workingDir: unknown,
+): string | null {
+  const dir = locationRootOf(workingDir);
+  if (dir && locations.some((loc) => loc.replace(/\\/g, '/').startsWith(dir))) return dir;
+  return findLocationRoot(locations, testFilePath);
+}
+
 /** Whether a location is a machine path (`/home/…`, `C:/…`) rather than project-relative. */
 export function isAbsoluteLocation(location: string): boolean {
   return /^(?:[A-Za-z]:)?[\\/]/.test(location);

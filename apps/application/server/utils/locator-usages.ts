@@ -37,11 +37,11 @@ import { parseStoredLocatorPages } from './locator-pages';
 import { collectOwnOrigins, projectRouteOrigins, runBaseUrls } from '#shared/graph';
 import {
   extractStepLocatorUses,
-  findLocationRoot,
   isAbsoluteLocation,
   locationRootOf,
   locatorScopes,
   locatorTarget,
+  resolveLocationRoot,
   stepLocations,
   stripLocationRoot,
 } from '#shared/locator-chain';
@@ -169,7 +169,7 @@ async function loadRunFacts(db: DrizzleDB, runIds: number[]): Promise<Map<number
  * revealed (one run comes from one checkout).
  */
 function locationRoots(cases: LocatorUsageCase[], runs: Map<number, RunFacts>): Array<string | null> {
-  const own = cases.map((c) => runs.get(c.runId)?.root ?? findLocationRoot(stepLocations(c.steps), c.filePath));
+  const own = cases.map((c) => resolveLocationRoot(stepLocations(c.steps), c.filePath, runs.get(c.runId)?.root));
   const byRun = new Map<number, string>();
   cases.forEach((c, i) => {
     const root = own[i];
@@ -658,7 +658,7 @@ export async function getExecutionLocators(db: DrizzleDB, runCaseId: number): Pr
 
   const found = extractStepLocatorUses(row.steps);
   const metadata = row.runMetadata as Record<string, unknown> | null;
-  const root = locationRootOf(metadata?.workingDir) ?? findLocationRoot(stepLocations(row.steps), row.filePath);
+  const root = resolveLocationRoot(stepLocations(row.steps), row.filePath, metadata?.workingDir);
   const storedPages =
     row.locatorPagesPayloadId != null
       ? parseStoredLocatorPages(

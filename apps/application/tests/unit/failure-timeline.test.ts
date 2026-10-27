@@ -321,6 +321,36 @@ describe('buildFailureTimeline', () => {
       expect(step.group).toBe('CheckoutPage.pay');
     });
 
+    test('matches an absolute step location to a project-relative or shortened trace call site', () => {
+      const frames = (fn: string) => [{ file: 'pages/checkout.ts', line: 42, function: fn, inProject: true }];
+      const build = (location: string, callsite: string) =>
+        buildFailureTimeline({
+          startedAt: T0,
+          duration: 1_000,
+          status: 'failed',
+          specFile: 'tests/checkout.spec.ts',
+          steps: [{ title: 'click Pay', category: 'action', duration: 1_000, startTime: T0, location, error: 'x' }],
+          traceCallsites: [{ location: callsite, frames: frames('CheckoutPage.pay') }],
+        }).lanes.steps[0]!;
+
+      // The reporter records the machine path; the trace reads relative to the project.
+      expect(build('/srv/ci/workspace/e2e/pages/checkout.ts:42:10', 'pages/checkout.ts:42').group).toBe(
+        'CheckoutPage.pay',
+      );
+      expect(build('C:\\ci\\e2e\\pages\\checkout.ts:42:10', 'pages/checkout.ts:42').group).toBe('CheckoutPage.pay');
+      // With no project root, the trace shortens the path to its last folders.
+      expect(build('/srv/ci/workspace/e2e/pages/checkout.ts:42:10', '…/workspace/e2e/pages/checkout.ts:42').group).toBe(
+        'CheckoutPage.pay',
+      );
+      // An imported run's step is project-relative; the trace may keep more folders.
+      expect(build('pages/checkout.ts:42:10', '…/workspace/e2e/pages/checkout.ts:42').group).toBe('CheckoutPage.pay');
+      expect(build('pages/checkout.ts:42:10', '…/workspace/e2e/subpages/checkout.ts:42').group).toBeNull();
+      // A suffix that does not end on a folder boundary is another file.
+      expect(build('/srv/e2e/subpages/checkout.ts:42:10', 'pages/checkout.ts:42').group).toBeNull();
+      // Another line is another call site.
+      expect(build('/srv/e2e/pages/checkout.ts:43:10', 'pages/checkout.ts:42').group).toBeNull();
+    });
+
     test('falls back to the reporter call-site location when there is no trace', () => {
       const tl = buildFailureTimeline({
         startedAt: T0,

@@ -14,7 +14,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Read the latest release
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: echo "tag=$(gh api "repos/$REPO/releases/latest" --jq .tag_name 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
+
       - name: Open or update the release PR, and tag a merged one
+        id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           # A tag/commit/PR made with the default GITHUB_TOKEN does not trigger
@@ -25,3 +33,17 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # A new release becomes GitHub's latest, which the desktop updater and the download links read, before any
+      # installer is attached to it: the previous release stays the latest until reusable-publish-desktop.yml has
+      # attached every installer to the new one.
+      - name: Keep the previous release the latest until the installers are attached
+        if: steps.release.outputs.release_created == 'true' && steps.previous.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          REPO: ${{ github.repository }}
+          PREVIOUS: ${{ steps.previous.outputs.tag }}
+        run: |
+          id=$(gh api "repos/$REPO/releases/tags/$PREVIOUS" --jq .id)
+          gh api --method PATCH "repos/$REPO/releases/$id" -f make_latest=true --silent
+          echo "$PREVIOUS stays the latest release"
