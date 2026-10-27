@@ -72,7 +72,7 @@ API · Acme Mugs · main · 37 endpoints the suite calls
   `request` fixture's among them, and each browser context's own `page.request`. Each call is a `piwi-network` entry
   without a `resourceType`, with its response's `X-Piwi-Logs`, `X-Piwi-Trace` and `X-Piwi-Coverage` read.
 - **Per-execution payloads.** Large per-execution data goes through `case_payloads` (content-addressed per project),
-  with a payload column on `test_runs_cases`; `apps/application/AGENTS.md` has the checklist, and `piwi-page-inventory`
+  with a payload column on `test_runs_cases`; `apps/application/server/api/test-runs/AGENTS.md` has the checklist, and `piwi-page-inventory`
   and `piwi-locator-pages` follow it.
 - **Reporter options.** An option is declared with JSDoc in `public/options.ts`, given a default, an env key and a
   fallback row in `internal/config/env.ts`, and bridged into the worker's environment; `capturePageInventory` is forced

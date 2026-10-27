@@ -789,8 +789,9 @@ Where to add things in subsystems whose wiring spans several files:
   The run trigger (`server/utils/integrations/automation.ts`) and the write-back scope (`policies.ts`,
   `tracker-run.ts`) read the rules and never re-implement them.
 
-- **Finish-time side effects**: `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`). The order and
-  the rules are in [`server/api/test-runs/AGENTS.md`](server/api/test-runs/AGENTS.md#finish-time-side-effects).
+- **Finish-time side effects**: `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`). Its comment
+  gives the order of the steps; the rules are in
+  [`server/api/test-runs/AGENTS.md`](server/api/test-runs/AGENTS.md#finish-time-side-effects).
 - **Guide anchor, guided tour stop, role or language**:
   [`shared/guide-anchors/AGENTS.md`](shared/guide-anchors/AGENTS.md),
   [`app/utils/demo-tour/AGENTS.md`](app/utils/demo-tour/AGENTS.md).

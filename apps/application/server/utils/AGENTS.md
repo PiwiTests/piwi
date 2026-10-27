@@ -174,7 +174,8 @@ A local AI CLI (Claude Code, Codex, DeepSeek) can be a role's provider. The prom
 message, a page's text), which must never make it run a command, read a file or reach a service.
 
 - **Claude Code generates with every tool off**: `--tools ""`, no MCP server (`--strict-mcp-config`) and one turn
-  (`--max-turns 1`), read from `claude --help`; a CLI without those options is refused (`ai-claude-cli.ts`). An
+  (`--max-turns 1`). Only `--tools` and `--strict-mcp-config` are probed in `claude --help` (`REQUIRED_FLAGS`,
+  `ai-claude-cli.ts`): a CLI without them is refused; `--max-turns` is a print-mode option `--help` does not list. An
   assistant turn adds only the turn's MCP endpoint (in an `--mcp-config` file, so its token stays off the command line)
   and its tools.
 - **Codex runs isolated** (`ai-codex-cli.ts`): every invocation has a private home and working directory, a file-backed
@@ -194,5 +195,5 @@ message, a page's text), which must never make it run a command, read a file or 
   `DIAGNOSIS_SECTIONS` (`shared/diagnosis-sections.ts`) and `DiagnosisContextCoverage` (`types/api.ts`), before the section's
   builder is written. The files of the other subsystems: [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md#extension-points).
 - **Issue automation decides from `shared/integrations/automation.ts` alone**: the run trigger
-  (`server/utils/integrations/automation.ts`) and the write-back scope (`policies.ts`, `tracker-run.ts`) call its rule
-  functions (`resolveAutoCreateRule`, `evaluateAutoCreate`), never a copy of them.
+  (`server/utils/integrations/automation.ts`) and the write-back scope (`policies.ts`, `tracker-run.ts`) read the rules
+  through its functions, never re-implement them.

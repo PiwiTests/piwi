@@ -1,9 +1,9 @@
 /**
  * Booting, seeding and tearing down a throwaway dev server, shared by the
  * scripts that drive the running app with Playwright (the feature-screenshot
- * harness and the detail-page measurement). Everything here is server/process
- * plumbing — no browser — so a script that reuses a server it already has
- * (`--url`) never imports it.
+ * harness and the detail-page measurement), and the Chromium those scripts
+ * and the demo media scripts launch (`resolveChromium`). It launches no
+ * browser itself.
  */
 import { spawn, execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';

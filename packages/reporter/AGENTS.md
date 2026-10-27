@@ -76,8 +76,9 @@ responsibilities.
   published `.d.ts`.
 - **A wire field is projected in one place per body**: a per-case field in `toWireTestCase` and a field of the batch
   run body in `serializeRun` (`internal/submit/serializer.ts`, used by `uploadJSON` and `uploadWithFiles`). The
-  streaming routes build their own run bodies: `/finish` in `internal/submit/run-submitter.ts`, `/start` and `/begin`
-  in `internal/streaming/stream-manager.ts`, so a run-level field the server reads while streaming is added there too.
+  streaming routes build their own run bodies: `/setup` in `public/global-setup.ts`, `/finish` in
+  `internal/submit/run-submitter.ts`, `/start` and `/begin` in `internal/streaming/stream-manager.ts`, so a run-level
+  field the server reads while streaming is added there too.
 
 ## Workflow
 

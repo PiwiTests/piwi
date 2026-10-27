@@ -11,8 +11,9 @@ Rules for the routes that write runs (the reporter's `setup`, `start`, `begin`, 
   (`finalizeShardedRun`), and `settleFinalizingRun` (`server/utils/finalizing-runs.ts`) for a `finalizing` run, from
   its report upload or the stale-run sweep. A new side effect goes in that helper, never in a route.
 - **That helper decides which runs get which side effect.** A probe or flake-lab run gets none (the `run-health` use of
-  `isEligibleRun`, `shared/run-eligibility.ts`), as an import gets none. The environment-incident check
-  (`recordRunHealth`, `shared/handlers/run-health.ts`) runs first and is awaited: a run it flags sends one
+  `isEligibleRun`, `shared/run-eligibility.ts`), as an import gets none. After the project's repository is pinned
+  (`pinProjectRepository`), the environment-incident check (`recordRunHealth`, `shared/handlers/run-health.ts`) runs
+  before every verdict and is awaited: a run it flags sends one
   `environment.incident` event in place of its verdicts (regression signals, analysis, AI diagnosis, notifications,
   pull-request feedback, auto-heal). The comment on the helper lists the order of the rest and the use each step
   follows.
@@ -93,8 +94,9 @@ The full chain, in order:
 6. **Reporter** (`packages/reporter/src/`): `CollectedTestCase` (`types/collected.ts`) and `WireTestCase`
    (`types/wire.ts`); collected in `public/reporter.ts` (`onTestBegin` / `onTestEnd`); projected in
    `internal/submit/serializer.ts`, by `toWireTestCase` per case and by `serializeRun` for the run body of `uploadJSON`
-   and `uploadWithFiles`. A run-level field the streaming path sends also goes in the `/start` and `/begin` bodies
-   (`internal/streaming/stream-manager.ts`) or the `/finish` body (`internal/submit/run-submitter.ts`).
+   and `uploadWithFiles`. A run-level field the streaming path sends also goes in the `/setup` body
+   (`public/global-setup.ts`), the `/start` and `/begin` bodies (`internal/streaming/stream-manager.ts`) or the
+   `/finish` body (`internal/submit/run-submitter.ts`).
 7. **Demo**: `scripts/generate-demo-seed.mjs` (seed it), `app/demo/api/reporter.ts` (the demo's ingest),
    `app/demo/simulator.ts` (stream it).
 8. The UI components that show it.

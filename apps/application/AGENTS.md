@@ -27,6 +27,7 @@ is read by hand when you edit one of them. A change that spans several rows read
 | `server/utils/`: SCM, fingerprints, locator healing, traces, DOM snapshots, AI CLIs                                    | [`server/utils/AGENTS.md`](server/utils/AGENTS.md)                     |
 | `server/utils/mcp/`, `shared/mcp-tools.ts`: the MCP tools                                                              | [`server/utils/mcp/AGENTS.md`](server/utils/mcp/AGENTS.md)             |
 | The in-app assistant and its nudges                                                                                    | [`server/utils/assistant/AGENTS.md`](server/utils/assistant/AGENTS.md) |
+| `shared/`: which guide owns each shared module                                                                         | [`shared/AGENTS.md`](shared/AGENTS.md)                                 |
 | `shared/env-format*.ts`, `shared/deploy/`, the deploy manifests                                                        | [`shared/deploy/AGENTS.md`](shared/deploy/AGENTS.md)                   |
 | `scripts/`: feature screenshots, page measurements, performance suite, demo media, brand assets                        | [`scripts/AGENTS.md`](scripts/AGENTS.md)                               |
 
@@ -75,8 +76,9 @@ the offline export are written once in `shared/` and differ only in the port eac
   generator, the demo handlers (`app/demo/api/`), the simulator, the docs and, when a tour stop shows the screen, the
   tour; then run `npm run app:seed:demo`. The five places and their checks:
   [`app/demo/AGENTS.md`](app/demo/AGENTS.md#demo-data-requirements).
-- **No dynamic `import()` in code the demo's service worker bundles** (`shared/`, `server/utils/`, `app/demo/`). The
-  worker is a classic script: Vite's preload wrapper for a dynamic import is a syntax error there, and the worker never
+- **No dynamic `import()` in a module the demo's service worker bundles**: `app/demo/` and every module of `shared/` and
+  `server/utils/` it imports (`server/utils/` keeps lazy imports elsewhere, such as `sharp` or `nodemailer`). The worker
+  is a classic script: Vite's preload wrapper for a dynamic import is a syntax error there, and the worker never
   installs. Import statically; `npm run app:check:demo:runtime` catches it.
 - **A change to what a page loads or renders is measured** with the performance suite (`npm run app:perf`); CI posts
   the comparison on every pull request. How to run it: [`scripts/AGENTS.md`](scripts/AGENTS.md#performance).

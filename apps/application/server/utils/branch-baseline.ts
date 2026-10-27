@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, isNotNull, lt } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { testRuns } from '../database/schema';
 import type { TestRun } from '../database/schema';
-import type { DrizzleDB } from '../../shared/handlers/db';
+import type { DrizzleDB } from '#shared/handlers/db';
 import type { RunBaselineMatch } from '#shared/run-baseline';
 import { notLabRun } from '#shared/handlers/probes';
 

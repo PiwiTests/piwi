@@ -5,7 +5,11 @@ Rules for the Vue front end (`app/`: pages, components, composables, utils, `app
 ([`components/run/AGENTS.md`](components/run/AGENTS.md)), the demo ([`demo/AGENTS.md`](demo/AGENTS.md)) and the
 guided tour ([`utils/demo-tour/AGENTS.md`](utils/demo-tour/AGENTS.md)). The guide engine (`composables/useGuide.ts`,
 `composables/useAuthoredGuides.ts`, `utils/guide/`, `utils/guides/`, `assets/css/guide.css`) follows
-[`../shared/guide-anchors/AGENTS.md`](../shared/guide-anchors/AGENTS.md): read it before changing one of them.
+[`../shared/guide-anchors/AGENTS.md`](../shared/guide-anchors/AGENTS.md), the locator healing panel
+(`components/shared/LocatorHealingPanel.vue`) [`../server/utils/AGENTS.md`](../server/utils/AGENTS.md#locator-healing),
+and the assistant's panel and nudges (`components/assistant/`, `utils/assistant/`, `utils/nudges/`)
+[`../server/utils/assistant/AGENTS.md`](../server/utils/assistant/AGENTS.md): read the guide before changing one of
+them.
 
 ## Page layout
 

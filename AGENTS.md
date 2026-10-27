@@ -5,7 +5,8 @@
 
 Root guide for any AI agent (Claude Code, opencode, Copilot, Cursor, …): what lives where, how to verify a change, and
 the conventions that apply everywhere. Each area has its own guide next to its code: Claude Code loads it through the
-`CLAUDE.md` beside it when you open a file there, and other agents read it before editing.
+`CLAUDE.md` beside it when you open a file there, and other agents read it before editing. A guide's table may send a
+file outside its directory to another guide: read that one yourself, whatever the agent.
 
 | Editing…                                                         | Read first                                                   |
 | ---------------------------------------------------------------- | ------------------------------------------------------------ |

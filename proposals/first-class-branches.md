@@ -121,7 +121,7 @@ All of this is additive `metadata` content — no wire-format break (see "1.0 ti
   `0033_backfill_browser_name.sql`, which is the in-repo precedent for promoting a JSON field to a scalar. Rows whose
   metadata says `HEAD` backfill as null rather than as a fake branch.
 - Migrations generated via `npm run db:generate` / `db:generate:pg`, never hand-written, per
-  [apps/application/AGENTS.md](../apps/application/AGENTS.md).
+  [apps/application/server/database/AGENTS.md](../apps/application/server/database/AGENTS.md).
 
 The JSON field stays; the column is a queryable projection of it, exactly as `browser_name` projects `browser`.
 
