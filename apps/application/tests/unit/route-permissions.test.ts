@@ -225,6 +225,21 @@ describe('route permissions', () => {
     expect(problems).toEqual([]);
   });
 
+  test('a route that loads its row itself authenticates before the lookup', () => {
+    const problems = routes
+      .filter((r) => r.src.includes('requireProjectPermission('))
+      .filter((r) => {
+        const auth = r.src.indexOf('requireAuth(');
+        const lookup = r.src.indexOf('getDatabase(');
+        return auth < 0 || (lookup >= 0 && lookup < auth);
+      })
+      .map(
+        (r) =>
+          `${r.path}: calls requireProjectPermission without requireAuth before getDatabase — authenticate first, so a caller without credentials gets 401 whether the id exists or not`,
+      );
+    expect(problems).toEqual([]);
+  });
+
   test('a write route narrows its project scope to the permission it needs', () => {
     const problems: string[] = [];
     for (const r of routes) {

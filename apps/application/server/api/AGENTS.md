@@ -97,7 +97,7 @@ The early check only proves the user holds the permission _somewhere_. The proje
   answers 404 for a missing entity, then authorizes, and returns `{ db, projectId, user }`.
 - **Authenticate before any lookup by a request's id**, so a caller without credentials gets 401 whether the id exists
   or not. A handler that loads the row itself calls `requireAuth(event)`, then `requireProjectPermission(event,
-  projectId)` (`tests/unit/request-access.test.ts`).
+  projectId)` (`tests/unit/request-access.test.ts`, `tests/unit/route-permissions.test.ts`).
 - Both refuse with 403: "No access to this project" when the user cannot read the project, "Insufficient permissions"
   when they read it without the route's permission.
 - **A list handler takes the user's project scope**: `getProjectScope(db, user, permission = 'project:read')` returns
