@@ -15,12 +15,12 @@ record these follow, with its measurements, is [`adr/ci-workflows.md`](../adr/ci
 | `workflows/reusable-perf.yml`              | called by `ci.yml`              | the performance suite on the pull request's build and its base commit's, its pages split across 2 machines, as a PR comment |
 | `workflows/pr-lint.yml`                    | pull requests                   | `commitlint`, `title` (the PR title) and `actionlint`                                    |
 | `workflows/docs.yml`                       | pushes to `main`                | builds and deploys the docs and the demo                                                 |
-| `workflows/release-please.yml`             | pushes to `main`                | the release PR, and the tag once it merges                                               |
+| `workflows/release-please.yml`             | pushes to `main`                | the release PR, and the tag once it merges; the previous release stays GitHub's latest   |
 | `workflows/release.yml`                    | release tags, on demand, PRs    | every publication, through the `reusable-publish-*.yml` below; a PR run publishes none   |
 | `workflows/reusable-publish-npm.yml`       | called by `release.yml`         | `@piwitests/reporter`, `@piwitests/server` (from the shared build), `instrumentation-nitro` |
 | `workflows/reusable-publish-container.yml` | called by `release.yml`, `edge.yml` | the multi-arch image: version tags on a tag (minor, major and `latest` for the newest release of each line only), `edge` on main, a build only elsewhere; the amd64 image answers `/api/health` before a tag moves |
 | `workflows/reusable-publish-nuget.yml`     | called by `release.yml`         | the instrumentation NuGet packages                                                       |
-| `workflows/reusable-publish-desktop.yml`   | called by `release.yml`         | the desktop installers, from the shared build, attached to the GitHub release            |
+| `workflows/reusable-publish-desktop.yml`   | called by `release.yml`         | the desktop installers, from the shared build, attached to the GitHub release, which then becomes the latest |
 | `workflows/reusable-publish-vscode.yml`    | called by `release.yml`         | the VS Code extension (Marketplace, Open VSX)                                            |
 | `workflows/reusable-publish-jetbrains.yml` | called by `release.yml`         | the JetBrains plugin (JetBrains Marketplace)                                             |
 | `workflows/reusable-publish-extension.yml` | called by `release.yml`         | the browser extension (Chrome, Edge, Firefox)                                            |
@@ -75,6 +75,11 @@ every comparison is made on one machine; a `report` job joins their results into
   `release` environment (`environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}`), whose
   protection rules and secrets are set in the repository settings. `id-token: write` only where a step uses it (npm
   provenance). `.github/` is owned by its maintainer (`CODEOWNERS`).
+- **A release becomes GitHub's latest once its installers are attached.** The desktop updater reads its manifests from
+  `releases/latest/download/`, and the download links open `releases/latest`. `release-please.yml` marks the previous
+  release the latest again as soon as it creates a release, and the `latest` job of `reusable-publish-desktop.yml`
+  marks the new one once every leg has uploaded, when its tag is the newest. tauri-action gets the release's id, never
+  its tag: given a tag, it rewrites the release's name and body, and the body to an empty one.
 - **The bundled server fits Windows' MAX_PATH.** The installers fail on a file whose installed path passes 259
   characters, so the `build` job runs `apps/desktop/scripts/check-path-lengths.mjs` on the server it builds. A
   dependency installed in two versions, one nested under the other, is the usual cause.
