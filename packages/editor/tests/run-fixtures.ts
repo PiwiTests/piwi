@@ -17,7 +17,7 @@ import {
 import { createConnection } from 'vscode-languageserver/node';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
-import { parseHubToRun, type HubToRun, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
+import { parseHubToRun, type HubToRun, type RunHold, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
 import { startServer, type ServerOptions } from '../src/server';
 import type { InitializationOptions, Notice, RunCommand, RunSession, StopCode } from '../src/protocol';
 
@@ -154,7 +154,14 @@ export class FakeWorker {
     this.socket.write(`${JSON.stringify(message)}\n`);
   }
 
-  attach(token: string, ref: string, workerIndex = 0, takes: RunTake[] = ['pick', 'record']): this {
+  /** Its `run-attach`; `holds` undefined for a reporter that predates them. */
+  attach(
+    token: string,
+    ref: string,
+    workerIndex = 0,
+    takes: RunTake[] = ['pick', 'record'],
+    holds: RunHold[] | undefined = ['failure'],
+  ): this {
     this.send({
       type: 'run-attach',
       token,
@@ -166,6 +173,7 @@ export class FakeWorker {
       playwright: '1.64.1',
       reporter: '0.60.0',
       takes,
+      ...(holds ? { holds } : {}),
     });
     return this;
   }

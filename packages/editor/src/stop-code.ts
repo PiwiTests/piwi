@@ -30,6 +30,8 @@ export interface StopCodeOptions {
   preferLocators?: ReadonlySet<string>;
   /** The module `expect` is imported from when the file lacks it; what the file's text says by default. */
   expectModule?: string;
+  /** The 0-based column of the stopped call on its line, when it is known. */
+  character?: number | null;
 }
 
 /** The code, where it goes, and the edits that write it. */
@@ -65,11 +67,16 @@ function regionSession(locator: string, snapshot: string): RecordedSession {
 }
 
 /**
- * Where the code for a stop at the 0-based `line` goes, inside the body of a test or a function, never on its
- * declaration's line, and the page expression in scope there; why none can.
+ * Where the code for a stop at the 0-based `line` (its call at the 0-based `character`, when known) goes, inside the
+ * body of a test or a function, never on its declaration's line nor where the call runs inside an arrow function's
+ * expression body, and the page expression in scope there; why none can.
  */
-function stopPlace(text: string, line: number): { placement: BlockPlacement; page: string } | { refusal: string } {
-  const placement = placementBefore(text, line);
+function stopPlace(
+  text: string,
+  line: number,
+  character: number | null = null,
+): { placement: BlockPlacement; page: string } | { refusal: string } {
+  const placement = placementBefore(text, line, character);
   if ('refusal' in placement) return placement;
   if (placement.context !== 'test' && placement.context !== 'function') {
     return { refusal: 'The test is stopped outside a test or a function of this file: nothing can be written there.' };
@@ -81,14 +88,21 @@ function stopPlace(text: string, line: number): { placement: BlockPlacement; pag
 }
 
 /** The page expression the code for a stop at the 0-based `line` runs on (`stopPlace`); why there is none. */
-export function stopPage(text: string, line: number): { page: string } | { refusal: string } {
-  const place = stopPlace(text, line);
+export function stopPage(
+  text: string,
+  line: number,
+  character: number | null = null,
+): { page: string } | { refusal: string } {
+  const place = stopPlace(text, line, character);
   return 'refusal' in place ? place : { page: place.page };
 }
 
-/** Why no code can go above the 0-based `line` of a file whose text is `text`; null when some can. */
-export function stopCodeRefusal(text: string, line: number): string | null {
-  const place = stopPlace(text, line);
+/**
+ * Why no code can go above the 0-based `line` of a file whose text is `text`, the call at its 0-based `character` when
+ * known; null when some can.
+ */
+export function stopCodeRefusal(text: string, line: number, character: number | null = null): string | null {
+  const place = stopPlace(text, line, character);
   return 'refusal' in place ? place.refusal : null;
 }
 
@@ -102,7 +116,7 @@ export function renderStopCode(
   input: StopCodeInput,
   options: StopCodeOptions = {},
 ): RenderedStopCode | { refusal: string } {
-  const place = stopPlace(text, line);
+  const place = stopPlace(text, line, options.character ?? null);
   if ('refusal' in place) return place;
   const { placement, page } = place;
   let body: string;

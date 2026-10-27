@@ -213,6 +213,17 @@ describe('the code made at a stop', () => {
       refusal: 'Nothing was checked.',
     });
   });
+
+  test('refuses a call in an arrow function’s expression body, at the column the test stopped at', () => {
+    const helper = SPEC.replace("  await page.goto('/cart');", "  const go = async () => await page.goto('/cart');");
+    const refusal =
+      'The call on line 4 is the body of an arrow function without braces, which runs when the arrow is called: put that body in braces to write code above it.';
+    expect(stopCodeRefusal(helper, 3, 36)).toBe(refusal);
+    expect(renderStopCode(helper, 3, { action: 'mock', response: CART }, { character: 36 })).toEqual({ refusal });
+    // The statement after it, and the line without a column, take code as usual.
+    expect(stopCodeRefusal(helper, 4, 8)).toBeNull();
+    expect(stopCodeRefusal(helper, 3)).toBeNull();
+  });
 });
 
 describe('the locator at a caret', () => {

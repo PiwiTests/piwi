@@ -599,7 +599,7 @@ describe('RunSessions', () => {
       lingerMs: 5_000,
       ...options,
     });
-    const attach = (workerIndex: number) => {
+    const attach = (workerIndex: number, extra: Partial<Extract<RunToHub, { type: 'run-attach' }>> = {}) => {
       const socket = fakeSocket();
       const read = sessions.attach(socket as unknown as net.Socket, {
         type: 'run-attach',
@@ -612,6 +612,7 @@ describe('RunSessions', () => {
         playwright: '',
         reporter: '',
         takes: [],
+        ...extra,
       });
       return { socket, read: (message: RunToHub) => read(JSON.stringify(message)) };
     };
@@ -689,6 +690,36 @@ describe('RunSessions', () => {
     sessions.dispose();
   });
 
+  test('tells a worker that holds a failure only for a service that shows it that this one does, and an older one nothing', async () => {
+    const { sessions, attach } = harness();
+    const heard = (socket: ReturnType<typeof fakeSocket>) => socket.written.map((line) => JSON.parse(line));
+    expect(heard(attach(0, { holds: ['failure'] }).socket)).toEqual([{ type: 'attached', holds: ['failure'] }]);
+    expect(heard(attach(1, { holds: [] }).socket)).toEqual([{ type: 'attached', holds: [] }]);
+    // A reporter that predates the capability lists none, and hears no message it would not know.
+    expect(heard(attach(2).socket)).toEqual([]);
+    sessions.dispose();
+  });
+
+  test('starts a rerun’s code from the files as they stand: a session of a ref whose command ended before', async () => {
+    const started: Array<{ ref: string; again: boolean }> = [];
+    const { sent, sessions, attach } = harness({ sessionStarted: (ref, again) => void started.push({ ref, again }) });
+    const first = attach(0).socket;
+    await waitFor(() => sent[0]);
+    expect(started).toEqual([{ ref: 'ed-1', again: false }]);
+    // A worker leaving and another joining within the run is the same session.
+    first.destroy();
+    attach(1);
+    expect(started).toHaveLength(1);
+    // The command ended; its rerun, under the same ref, starts a session of its own.
+    sessions.commandEnded('ed-1');
+    attach(0);
+    expect(started).toEqual([
+      { ref: 'ed-1', again: false },
+      { ref: 'ed-1', again: true },
+    ]);
+    sessions.dispose();
+  });
+
   /** A worker of `ed-1` that takes every action, and the controls it was sent. */
   function takingWorker(sessions: RunSessions) {
     const socket = fakeSocket();
@@ -720,7 +751,7 @@ describe('RunSessions', () => {
     return { controls, fail };
   }
 
-  test('holds a failure no bar shows only in a run started to be watched, or while Piwi Picker follows the runs', async () => {
+  test('holds a failure no bar shows only in a run started to be watched, or while a Runs window follows the runs', async () => {
     let watched = false;
     let followed = false;
     const notices: string[] = [];
@@ -738,14 +769,14 @@ describe('RunSessions', () => {
     // One the bar shows waits for its answer there.
     worker.fail(2, true);
     expect(worker.controls()).toHaveLength(1);
-    // A run started with breakpoints, or followed in Piwi Picker, holds it.
+    // A run started with breakpoints, or followed in a Runs window, holds it.
     watched = true;
     worker.fail(3);
     watched = false;
     followed = true;
     worker.fail(4);
     expect(worker.controls()).toHaveLength(1);
-    // The last Piwi Picker leaves: the failure it held goes on.
+    // The last Runs window closes: the failure it held goes on.
     followed = false;
     sessions.surfacesChanged();
     expect(worker.controls()).toEqual([

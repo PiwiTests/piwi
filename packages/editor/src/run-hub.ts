@@ -3,16 +3,18 @@
  * hold them (`run-sessions.ts`), followed and steered from the developer's own browser. It listens on `127.0.0.1`
  * alone, on a free port; a handshake is taken only on `HUB_PATH`, with the hub's own `Host` and a browser extension's
  * `Origin`, and refused with a status before any WebSocket opens. The first message must be `hello` with the token,
- * compared in constant time, within `HUB_HELLO_MS`. The token is in the service's discovery file, which only this
- * user reads, and the editor's Send to editor endpoint lists it to a request carrying the pairing's token: the paired
- * Piwi Picker, and any process of this user that holds that token (the runs the editor starts name it in
+ * compared in constant time, within `HUB_HELLO_MS`. The token is in the service's discovery file, which only this user
+ * reads, and the editor's Send to editor endpoint lists it to a request carrying the pairing's token: the paired Piwi
+ * Picker, and any process of this user that holds that token (the runs the editor starts name it in
  * `PIWI_EDITOR_SEND`). Another user's processes and web pages are kept out; this user's own processes are not a
- * boundary. A command is one of a closed set, checked field by field and answered once; nothing it asks evaluates
- * code, reads a file or reaches an instance. A subscribed connection hears every run as the editor does, and counts as
- * a surface that answers stops: while one is, a stop no pause bar shows waits for it. The code actions it starts at a
- * stop (Assert, Assert a region, Mock a request, `stop-actions.ts`) write their code in the editor, through its
- * client: the answer says whether they started, never the code, and each subscribed connection hears what each one came
- * to, whichever surface started it (`code`: the sentence the client shows and the code's warnings, or why it was
+ * boundary. A command is one of a closed set, checked field by field and answered once; nothing it asks evaluates code,
+ * reads a file or reaches an instance. A subscribed connection hears every run as the editor does, and counts as a
+ * surface that answers stops: while one is, a stop no pause bar shows waits for it. One that says a person follows the
+ * runs there (`follow`, a Runs window open) holds a failure no pause bar shows too, until it says otherwise or closes:
+ * a connection that never says so, such as Piwi Picker's with no Runs window, does not. The code actions it starts at a
+ * stop (Assert, Assert a region, Mock a request, `stop-actions.ts`) write their code in the editor, through its client:
+ * the answer says whether they started, never the code, and each subscribed connection hears what each one came to,
+ * whichever surface started it (`code`: that the code was sent to the client to write, with its warnings, or why it was
  * refused once it started). A connection the hub closes is cut a second later when the other side does not answer the
  * close, and only the open connections count toward its limits.
  */
@@ -72,7 +74,10 @@ export interface RunHubOptions {
   runInfo(ref: string, root: string | null): HubRunInfo;
   /** What `welcome` says of the service. */
   welcome(): { pid: number; version: string; client: string | null; roots: string[] };
-  /** A subscribed connection came or went: whether a stop no pause bar shows can be answered changed. */
+  /**
+   * A subscribed connection came or went, or one began or stopped following the runs: whether a stop no pause bar
+   * shows can be answered, or a failure is held, changed.
+   */
   surfacesChanged(): void;
   keepaliveMs?: number;
   helloMs?: number;
@@ -82,6 +87,8 @@ interface Connection {
   socket: WebSocket;
   authenticated: boolean;
   subscribed: boolean;
+  /** A person follows the runs through it (`follow`): a Runs window is open. */
+  following: boolean;
   pending: number;
   /** It answered the last ping. */
   alive: boolean;
@@ -174,9 +181,15 @@ export class RunHub {
     return hub;
   }
 
-  /** Whether a connection follows the runs, and so can answer a stop. */
+  /** Whether a connection hears the runs (`subscribe`), and so can answer a stop. */
   answersStops(): boolean {
     for (const connection of this.connections) if (connection.subscribed) return true;
+    return false;
+  }
+
+  /** Whether a person follows the runs through a subscribed connection (`follow`): a failure no bar shows waits then. */
+  follows(): boolean {
+    for (const connection of this.connections) if (connection.subscribed && connection.following) return true;
     return false;
   }
 
@@ -242,6 +255,7 @@ export class RunHub {
       socket,
       authenticated: false,
       subscribed: false,
+      following: false,
       pending: 0,
       alive: true,
       cutting: false,
@@ -317,6 +331,18 @@ export class RunHub {
           reply({ ok: true, message: live.length === 1 ? 'Following 1 run.' : `Following ${live.length} runs.` });
           for (const session of live) this.send(connection, { type: 'session', session: this.view(session) });
           if (first) this.options.surfacesChanged();
+          return;
+        }
+        case 'follow': {
+          const changed = connection.following !== command.on;
+          connection.following = command.on;
+          reply({
+            ok: true,
+            message: command.on
+              ? 'A failure no pause bar shows waits for an answer while this connection follows the runs.'
+              : 'A failure no pause bar shows goes on unless another surface follows the runs.',
+          });
+          if (changed && connection.subscribed) this.options.surfacesChanged();
           return;
         }
         case 'runControl':

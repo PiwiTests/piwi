@@ -930,6 +930,37 @@ class FileModel {
     return this.text.startsWith('//', offset) || this.text.startsWith('/*', offset);
   }
 
+  /**
+   * Whether an offset is in the expression body of an arrow function whose `=>` is at or after `from`: `go` in `const
+   * go = async () => page.click('a')`, `page.click('a')` in `.then(() => page.click('a'))`. The body ends where the
+   * bracket around the arrow closes, at a `,` or a `;` beside it, or at a line that starts another statement.
+   */
+  inArrowExpression(offset: number, from: number): boolean {
+    for (let k = 0; k < this.tokens.length && this.tokens[k]!.start < offset; k++) {
+      const t = this.tokens[k]!;
+      if (t.start < from || t.kind !== 'punct' || t.text !== '=>' || this.is(k + 1, '{')) continue;
+      if (offset < this.expressionEnd(k)) return true;
+    }
+    return false;
+  }
+
+  /** Where the expression body of the arrow whose `=>` is the token `arrow` ends, as an offset. */
+  private expressionEnd(arrow: number): number {
+    const around = this.owner[arrow] ?? null;
+    for (let j = arrow + 1; j < this.tokens.length; j++) {
+      const t = this.tokens[j]!;
+      if (around && this.closers.get(j) === around) return t.start;
+      if (this.owner[j] !== around) continue;
+      if (t.kind === 'punct' && (t.text === ',' || t.text === ';')) return t.start;
+      const line = this.lineOfToken(j);
+      if (j > arrow + 1 && line > this.lineOfToken(j - 1)) {
+        const before = this.lines[this.lineOfToken(j - 1)]!.trim();
+        if (!GOES_ON.test(before) && !CONTINUES.test(this.lines[line]!.trim())) return t.start;
+      }
+    }
+    return this.text.length;
+  }
+
   /** The page fixtures a test destructures, as declared in its callback. */
   fixturesOf(test: TestCall): Declaration[] {
     return this.declarations.filter((d) => d.scope === test.body && d.fixture !== undefined && d.page === 'page');
@@ -1046,6 +1077,9 @@ export function recordingPlacement(
 const GOES_ON =
   /(?:=>|(?<![+])\+|(?<![-])-|[=*%&|^<>?,]|\b(?:await|return|throw|yield|new|typeof|void|delete|in|of|instanceof))\s*$/;
 
+/** A line that goes on with the statement above it: a chain's `.`, a ternary's `?` or `:`, `&&`, `||` or `??`. */
+const CONTINUES = /^(?:\?\.|\.(?!\.)|\?\?|\?|:(?!:)|&&|\|\|)/;
+
 /** Where a block written before a statement goes, and where that is in the file (`FileModel.contextAt`). */
 export interface BlockPlacement extends RecordingPlacement {
   /** Where the block's first line starts: a test's body, a function's, a class body or elsewhere in the file. */
@@ -1064,12 +1098,20 @@ const BRACELESS = new Set(['if', 'for', 'while', 'with']);
  * the line goes on with `.`, a ternary's `?` or `:`, `&&`, `||` or `??`, a chain or a condition broken over lines, or
  * while the line above goes on, as an assignment broken after its `=`), indented as that line is, and where that line
  * starts in the file (`context`), which a caller holds to a test's or a function's body. Refused for a statement that
- * is the body of an `if`, `else`, `for`, `while` or `do` without braces, where the block would become that body, and
- * for a line where no statement starts (blank, a comment, a closing bracket).
+ * is the body of an `if`, `else`, `for`, `while` or `do` without braces, where the block would become that body, for a
+ * call in the expression body of an arrow function (`const go = async () => page.click('a')`), which runs when the
+ * arrow is called rather than where the statement stands, and for a line where no statement starts (blank, a comment,
+ * a closing bracket). The call is at `column` (0-based) of the line when it is known, else at the line's first
+ * character.
  */
-export function placementBefore(text: string, line: number): BlockPlacement | { refusal: string } {
+export function placementBefore(
+  text: string,
+  line: number,
+  column: number | null = null,
+): BlockPlacement | { refusal: string } {
   const model = new FileModel(text);
-  let at = Math.max(0, Math.min(line, model.lines.length - 1));
+  const stopped = Math.max(0, Math.min(line, model.lines.length - 1));
+  let at = stopped;
   for (let step = 0; step < model.lines.length; step++) {
     const here = model.lines[at]!;
     const outer = model.expressionAround(model.starts[at]! + (here.length - here.trimStart().length));
@@ -1083,7 +1125,7 @@ export function placementBefore(text: string, line: number): BlockPlacement | { 
     if (above < 0) break;
     const before = model.lines[above]!.trim();
     const comment = /^(?:\/\/|\/\*|\*)/.test(before);
-    const continues = /^(?:\?\.|\.(?!\.)|\?\?|\?|:(?!:)|&&|\|\|)/.test(here.trim());
+    const continues = CONTINUES.test(here.trim());
     const label = /^(?:case\b.*|default\s*):$/.test(before);
     if (!continues && (comment || label || (!GOES_ON.test(before) && !before.endsWith(':')))) break;
     at = above;
@@ -1108,6 +1150,17 @@ export function placementBefore(text: string, line: number): BlockPlacement | { 
   if (keyword) {
     return {
       refusal: `The statement on line ${at + 1} is the body of an \`${keyword}\` without braces: put it in braces to write code above it.`,
+    };
+  }
+  const stoppedText = model.lines[stopped]!;
+  const call =
+    model.starts[stopped]! +
+    (column !== null && column >= 0 && column <= stoppedText.length
+      ? column
+      : stoppedText.length - stoppedText.trimStart().length);
+  if (model.inArrowExpression(call, model.starts[at]!)) {
+    return {
+      refusal: `The call on line ${stopped + 1} is the body of an arrow function without braces, which runs when the arrow is called: put that body in braces to write code above it.`,
     };
   }
   return {

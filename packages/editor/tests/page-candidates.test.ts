@@ -758,6 +758,34 @@ describe('placementBefore', () => {
     expect(placementBefore(braceless, 1)).toMatchObject({ line: 1, context: 'test' });
   });
 
+  test('refuses a call in the expression body of an arrow function, which runs when the arrow is called', () => {
+    const arrows = [
+      "test('pays', async ({ page }) => {",
+      "  const go = async () => await page.click('a');",
+      "  await test.step('pay', async () =>",
+      "    page.click('b'));",
+      "  await page.goto('/')",
+      "    .then(() => page.click('c'));",
+      "  await page.route('**/api', (route) => route.fulfill({ json: {} }));",
+      '  const ids = rows.map((row) => row.id); await page.click(ids[0]);',
+      '  await go();',
+      '});',
+    ].join('\n');
+    const refusal = (line: number) => ({
+      refusal: `The call on line ${line} is the body of an arrow function without braces, which runs when the arrow is called: put that body in braces to write code above it.`,
+    });
+    // The click inside `go`, at its column, and without one.
+    expect(placementBefore(arrows, 1, 36)).toEqual(refusal(2));
+    expect(placementBefore(arrows, 3)).toEqual(refusal(4));
+    expect(placementBefore(arrows, 5, 21)).toEqual(refusal(6));
+    // The call the arrow is handed to, before its `=>`, and a call after the arrow's body ended, go above as usual.
+    expect(placementBefore(arrows, 6, 13)).toMatchObject({ line: 6, context: 'test' });
+    expect(placementBefore(arrows, 7, 52)).toMatchObject({ line: 7, context: 'test' });
+    // Without a column, a line that starts outside any arrow's body, and the call of the arrow itself.
+    expect(placementBefore(arrows, 1)).toMatchObject({ line: 1, context: 'test' });
+    expect(placementBefore(arrows, 8)).toMatchObject({ line: 8, context: 'test' });
+  });
+
   test('refuses a line where no statement starts: a closing bracket, a blank line, a comment', () => {
     const lines = ["test('pays', async ({ page }) => {", "  await page.goto('/cart');", '', '  // done', '});'].join(
       '\n',

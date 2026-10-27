@@ -7,7 +7,9 @@
  * steers it: pause, step, resume, finish, run to a line, the breakpoints, an image of the stopped page, and, at a stop
  * the pause bar shows, the bar's own **Pick a locator** and **Record here**, the check panel's **Check an element** and
  * a region's ARIA snapshot, started from outside the page; at any stop, the responses the test kept (an interactive
- * run keeps the text bodies of its pages' fetch and XHR answers), one of them to mock, and a locator's matches. Each
+ * run keeps the text bodies of its pages' fetch and XHR answers), one of them to mock, and a locator's matches. A
+ * worker holds a failure for the editor only once the service said it shows and answers one (`holds` in its
+ * `run-attach`, answered by `attached`): a service that predates it says nothing, and the failure goes on. Each
  * message is one line of JSON, at most `MAX_HANDOFF_LINE` long (`lineReader`), checked field by field on both sides. A
  * side ignores a message it cannot read.
  */
@@ -29,6 +31,15 @@ export interface Place {
  * and any answer lets the test end as it failed.
  */
 export type StopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'failure';
+
+/**
+ * A stop a worker holds only when the service says it shows and answers it (`attached`): `failure`, a failed test's
+ * page held at its failing line.
+ */
+export type RunHold = 'failure';
+
+/** The stops this version holds when the service says it shows them. */
+export const RUN_HOLDS: readonly RunHold[] = ['failure'];
 
 /** An image of a stopped page: a JPEG, base64. */
 export interface PausedImage {
@@ -130,8 +141,9 @@ export type RunToHub =
   /**
    * The first line: the channel's token, the ref of the command that started the run (`PIWI_ORIGIN_REF`), the run's
    * working directory, which every `Place` is relative to, the worker (Playwright's `workerIndex` and
-   * `parallelIndex`, its process), the versions of Playwright and of the reporter, and the intents and queries it
-   * takes (`takes`), none for a worker of a reporter that predates them.
+   * `parallelIndex`, its process), the versions of Playwright and of the reporter, the intents and queries it
+   * takes (`takes`), none for a worker of a reporter that predates them, and the stops it holds only once the service
+   * says it shows them (`holds`), which the service answers with `attached`; absent from a reporter that predates them.
    */
   | {
       type: 'run-attach';
@@ -144,6 +156,7 @@ export type RunToHub =
       playwright: string;
       reporter: string;
       takes?: RunTake[];
+      holds?: RunHold[];
     }
   /**
    * A test starts: Playwright's id, its describe blocks' titles and its own, its file and 1-based line, its project,
@@ -193,14 +206,21 @@ export type RunToHub =
   | { type: 'answer'; request: number; what: 'locator'; value: LocatorAnswer }
   /**
    * At the stop `stop`, after `assert-region`: the region picked in the test's window, as the locator the person
-   * confirmed, and its ARIA snapshot (`locator.ariaSnapshot()`), at most `MAX_REGION_SNAPSHOT` characters.
+   * confirmed, and its ARIA snapshot (`locator.ariaSnapshot()`), at most `MAX_REGION_SNAPSHOT` characters; or why no
+   * snapshot came of the region picked (`refused`: its locator finds several elements, its snapshot is too long).
    */
   | { type: 'region'; stop: number; locator: string; snapshot: string }
+  | { type: 'region'; stop: number; refused: string }
   /** Something the person should know: a message of the editor's this worker did not apply, and why. */
   | { type: 'notice'; message: string };
 
 /** What the editor service sends a worker on its run connection. */
 export type HubToRun =
+  /**
+   * The answer to a `run-attach` that lists `holds`: of those stops, the ones the service shows and answers (`holds`),
+   * which the worker holds from then on. Sent once, before any other message, and only to a worker that listed them.
+   */
+  | { type: 'attached'; holds: RunHold[] }
   /** The run's breakpoints from now on, in place of `PIWI_PAUSE_AT` and of the ones sent before. */
   | { type: 'breakpoints'; places: Place[] }
   /** Stop before the next call of the running test, or of the next test. */
@@ -282,6 +302,12 @@ function readTakes(value: unknown): RunTake[] {
   return RUN_TAKES.filter((take) => value.includes(take));
 }
 
+/** The stops a message lists in `holds`, those this side knows; none for a list too long, undefined for no list. */
+function readHolds(value: unknown): RunHold[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.length > 16 ? [] : RUN_HOLDS.filter((hold) => value.includes(hold));
+}
+
 /** An answer's `ok` and `message`, the message cut short; null when it lacks either. */
 function readAnswer(value: unknown): IntentAnswer | null {
   if (!isObject(value) || typeof value.ok !== 'boolean' || typeof value.message !== 'string') return null;
@@ -342,6 +368,7 @@ export function parseRunToHub(line: string): RunToHub | null {
   switch (value.type) {
     case 'run-attach': {
       const { token, ref, cwd, workerIndex, parallelIndex, pid } = value;
+      const holds = readHolds(value.holds);
       if (typeof token !== 'string' || typeof ref !== 'string' || !/^[\w-]{1,64}$/.test(ref)) return null;
       if (!filePath(cwd) || !isInt(workerIndex, 0) || !isInt(parallelIndex, 0) || !isInt(pid, 0)) return null;
       return {
@@ -355,6 +382,7 @@ export function parseRunToHub(line: string): RunToHub | null {
         playwright: text(value.playwright, 64) ?? '',
         reporter: text(value.reporter, 64) ?? '',
         takes: readTakes(value.takes),
+        ...(holds === undefined ? {} : { holds }),
       };
     }
     case 'test-begin': {
@@ -441,7 +469,10 @@ export function parseRunToHub(line: string): RunToHub | null {
       return { type: 'answer', request, what, value: { mime: 'image/jpeg', data: answered.data } };
     }
     case 'region': {
-      const { stop, locator, snapshot } = value;
+      const { stop, locator, snapshot, refused } = value;
+      if (isInt(stop, 1) && typeof refused === 'string' && refused.trim()) {
+        return { type: 'region', stop, refused: refused.slice(0, 500) };
+      }
       if (!isInt(stop, 1) || !isLocatorText(locator)) return null;
       if (typeof snapshot !== 'string' || !snapshot.trim() || snapshot.length > MAX_REGION_SNAPSHOT) return null;
       return { type: 'region', stop, locator, snapshot };
@@ -462,6 +493,10 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
   if (!value) return null;
   const unknown = (what: string): UnknownMessage => ({ type: 'unknown', what: what.slice(0, 64) });
   switch (value.type) {
+    case 'attached': {
+      const holds = readHolds(value.holds);
+      return holds ? { type: 'attached', holds } : null;
+    }
     case 'breakpoints': {
       if (!Array.isArray(value.places) || value.places.length > MAX_PLACES) return null;
       const places = value.places.map(readPlace);

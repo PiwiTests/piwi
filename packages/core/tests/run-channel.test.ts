@@ -6,6 +6,7 @@ import {
   MAX_REGION_SNAPSHOT,
   MAX_STOP_ERROR,
   RUN_CHANNEL_ENV,
+  RUN_HOLDS,
   RUN_TAKES,
   parseHubToRun,
   parseRunToHub,
@@ -35,6 +36,7 @@ describe('the run channel', () => {
       playwright: '1.64.1',
       reporter: '0.60.0',
       takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'],
+      holds: ['failure'],
     } satisfies RunToHub;
 
     test('reads its attach, and refuses one without a ref, a folder or a worker', () => {
@@ -50,6 +52,12 @@ describe('the run channel', () => {
       expect(parseRunToHub(line({ ...attach, takes: ['mock', 'pick'] }))).toMatchObject({ takes: ['pick', 'mock'] });
       expect(RUN_TAKES).toEqual(attach.takes);
       expect(parseRunToHub(line({ ...attach, takes: 'pick' }))).toMatchObject({ takes: [] });
+      // The stops it holds once the service says it shows them: none named by a reporter that predates them.
+      expect(parseRunToHub(line({ ...attach, holds: undefined }))).not.toHaveProperty('holds');
+      expect(parseRunToHub(line({ ...attach, holds: 'failure' }))).not.toHaveProperty('holds');
+      expect(parseRunToHub(line({ ...attach, holds: ['dance', 'failure'] }))).toMatchObject({ holds: ['failure'] });
+      expect(parseRunToHub(line({ ...attach, holds: [] }))).toMatchObject({ holds: [] });
+      expect(RUN_HOLDS).toEqual(attach.holds);
       for (const broken of [
         { ...attach, ref: '' },
         { ...attach, ref: 'ed 1' },
@@ -285,6 +293,15 @@ describe('the run channel', () => {
         snapshot: '- heading "Order summary" [level=2]\n- text: Total €72.00',
       } satisfies RunToHub;
       expect(parseRunToHub(line(region))).toEqual(region);
+      // Why the region picked brought no snapshot.
+      const refused = { type: 'region', stop: 2, refused: "getByRole('list') finds 3 elements." } satisfies RunToHub;
+      expect(parseRunToHub(line(refused))).toEqual(refused);
+      expect(parseRunToHub(line({ ...refused, refused: 'x'.repeat(600) }))).toEqual({
+        ...refused,
+        refused: 'x'.repeat(500),
+      });
+      expect(parseRunToHub(line({ ...refused, refused: ' ' }))).toBeNull();
+      expect(parseRunToHub(line({ ...refused, stop: 0 }))).toBeNull();
       for (const broken of [
         { ...region, stop: 0 },
         { ...region, locator: '' },
@@ -311,6 +328,20 @@ describe('the run channel', () => {
   });
 
   describe('what the editor service sends', () => {
+    test('reads the stops it shows, answering a worker that listed the ones it holds', () => {
+      expect(parseHubToRun(line({ type: 'attached', holds: ['failure'] }))).toEqual({
+        type: 'attached',
+        holds: ['failure'],
+      });
+      expect(parseHubToRun(line({ type: 'attached', holds: ['failure', 'dance'] }))).toEqual({
+        type: 'attached',
+        holds: ['failure'],
+      });
+      expect(parseHubToRun(line({ type: 'attached', holds: [] }))).toEqual({ type: 'attached', holds: [] });
+      expect(parseHubToRun(line({ type: 'attached' }))).toBeNull();
+      expect(parseHubToRun(line({ type: 'attached', holds: 'failure' }))).toBeNull();
+    });
+
     test('reads the breakpoints, all of them or none', () => {
       const breakpoints = {
         type: 'breakpoints',
