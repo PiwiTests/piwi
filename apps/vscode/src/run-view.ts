@@ -48,6 +48,7 @@ import {
   breakpointUpdates,
   controlItems,
   controlState,
+  heardSession,
   lineEditOf,
   linesAbove,
   pausedPageHtml,
@@ -66,7 +67,6 @@ import {
   stopsFor,
   stopsOf,
   targetStop,
-  withSession,
   writtenLines,
   type CaretShown,
   type PausedPageView,
@@ -671,19 +671,14 @@ export function registerRunControl(
 
   return {
     heard(session) {
-      const fresh = !session.ended && !sessions.has(session.ref);
       clearTimeout(starting.get(session.ref));
       starting.delete(session.ref);
-      // A run not started here maps its lines from when it is first heard.
-      if (fresh && !runs.has(session.ref)) remember(runs, session.ref, runStarted(edits.now(), null));
-      sessions = withSession(
-        sessions,
-        spelledSession(session, (uri) => vscode.Uri.parse(uri).toString()),
-      );
-      if (session.ended) {
-        runs.delete(session.ref);
-        forgetEdits();
-      }
+      // A run not started here, or a rerun under the ref of one that ended, maps its lines from when it is first heard.
+      const spelled = spelledSession(session, (uri) => vscode.Uri.parse(uri).toString());
+      const heardNow = heardSession(sessions, runs, spelled, edits.now());
+      const { fresh } = heardNow;
+      sessions = heardNow.sessions;
+      if (session.ended) forgetEdits();
       changed();
       // Breakpoints changed between the run's start and its first worker.
       if (fresh) sendBreakpoints();

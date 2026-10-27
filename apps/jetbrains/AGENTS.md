@@ -179,7 +179,8 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
   (`StopInlay`, added again in an editor opened later: `EditorFactoryListener`), `Glue.pausedText`
   (`Paused · <title> · attempt N`) then **Resume**, **Step**, **Run to Caret** and **Finish** as links, which an
   `EditorMouseListener` on the multicaster clicks in the editors of its own project (`StopInlay.controlAt`, the hand
-  cursor over one). A run's lines are the documents as they stood when it started (`started`, else when first heard):
+  cursor over one). A run's lines are the documents as they stood when it started (`started`, else when first heard, a
+  rerun under the ref of a run that ended included):
   `Glue.EditLog` keeps the edits that move lines while a run is live or starting (a `DocumentListener` on the
   multicaster, `Glue.lineEdit`), which bring a stop to the line it stands on now (the mark, an inlay drawn later, the
   caret's match, `Glue.stopsFor`) and the caret's line back to the run's for Run to Caret, refused on a line written
@@ -214,14 +215,15 @@ problem; three times in five minutes at most (`PiwiLspServerDescriptor.startServ
   (`piwi/stopCode`, `PiwiLsp4jClient.stopCode`; the initialization options say the plugin writes it, `stopCode`), is
   written in one `WriteCommandAction` on the file's `Document` (`PiwiRunSessions.write`, `Glue.stopCodeWrites`: the
   edits as offsets, the last in the file first), in an editor, so the platform sends the service the change: a file no
-  editor shows is opened first, and written half a second later, once the platform told the service it opened it; only
+  editor shows is opened first, and written once the platform told the service it opened it (`whenOpened`: its
+  `LspServer.getDocumentVersion` known, asked every 50 ms by an `Alarm` on the event thread, three seconds at most); only
   into the version the service placed it in (`LspServer.getDocumentVersion`, else the file as saved), else a warning
   balloon offers **Copy the Code**. The block is scrolled to without taking the focus, and its sentence is a balloon, a
   warning with what its reader should check (`Glue.stopCodeNotice`). While a stopped worker counts locators, a
   `CaretListener` on the multicaster has the end of the caret's line in the stopped file say how many elements the
   locator there matches on the stopped page (`piwi/locatorAtCaret`, an after-line-end inlay, `CaretCountInlay`): asked
-  200 ms after the caret settles (an `Alarm`), one request at a time, an answer the caret left dropped
-  (`Glue.CaretAsks`); `3 matches`, `no match`, a refusal for three seconds, nothing on a line holding no locator
+  200 ms after the caret settles (an `Alarm`), one request at a time, an answer the caret left dropped, asked again
+  when the caret comes back (`Glue.CaretAsks`); `3 matches`, `no match`, a refusal for three seconds, nothing on a line holding no locator
   (`Glue.caretText`), and the caret leaving the file takes the page's outline down. A failure held for the IDE
   (`reason: 'failure'`, `Glue.isFailure`) is `Failed · <how it failed> · attempt N`, with
   `AllIcons.RunConfigurations.TestError` in the gutter, **Resume** alone among its controls (`Glue.stopControls`), and

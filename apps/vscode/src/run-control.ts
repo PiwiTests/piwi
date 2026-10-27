@@ -145,6 +145,24 @@ export class EditLog {
 /** The sessions kept, by ref: the latest of each run that has not ended. */
 export type Sessions = ReadonlyMap<string, RunSession>;
 
+/**
+ * A session heard, with what the runs were given (`runs`, by ref): the sessions kept with it (`withSession`), and
+ * whether it is new to them (`fresh`). A run new to them that was not started here, or a rerun of a command under the
+ * ref of a run that ended (VS Code's **Tasks: Rerun Last Task**), maps its lines from `now`, the edits since its start;
+ * a run that ended is forgotten.
+ */
+export function heardSession(
+  sessions: Sessions,
+  runs: Map<string, RunBreakpoints>,
+  session: RunSession,
+  now: number,
+): { sessions: Map<string, RunSession>; fresh: boolean } {
+  const fresh = !session.ended && !sessions.has(session.ref);
+  if (fresh && !runs.has(session.ref)) remember(runs, session.ref, runStarted(now, null));
+  if (session.ended) runs.delete(session.ref);
+  return { sessions: withSession(sessions, session), fresh };
+}
+
 /** `sessions` with the session heard: the latest of its ref kept, one that ended dropped. */
 export function withSession(sessions: Sessions, session: RunSession): Map<string, RunSession> {
   const next = new Map(sessions);
@@ -505,10 +523,10 @@ interface Timers {
 /**
  * The count of the locator at the cursor while a test is stopped: asked `CARET_WAIT_MS` after the cursor settles on a
  * line of the stopped file (`moved`, with `key` telling the line apart from another, its text included, so an edit of
- * the line asks again), one request at a time, a query asked once until the cursor leaves it; an answer to a query
- * the cursor has left since is dropped, and the latest query asked once it comes. A refusal shows for
- * `CARET_REFUSAL_MS`. `moved(null)` (no stop, or the stop ended) clears it at once and asks nothing; a query with a
- * null `uri` (the cursor left the stopped file) clears it and asks too, which takes the page's outline down.
+ * the line asks again), one request at a time, a query asked once while the cursor stays on it and again when it comes
+ * back; an answer to a query the cursor has left since is dropped, and the latest query asked once it comes. A refusal
+ * shows for `CARET_REFUSAL_MS`. `moved(null)` (no stop, or the stop ended) clears it at once and asks nothing; a query
+ * with a null `uri` (the cursor left the stopped file) clears it and asks too, which takes the page's outline down.
  */
 export class CaretCounts {
   private wanted: { query: CaretQuery; key: string } | null = null;
@@ -528,13 +546,12 @@ export class CaretCounts {
     const full = query && `${query.ref}\0${query.worker}\0${query.since}\0${query.uri}\0${query.line}\0${key}`;
     if (full === this.wantedKey()) return;
     this.wanted = query && full ? { query, key: full } : null;
+    // The cursor left the query asked last: coming back to it asks it again, its count being gone.
+    this.asked = null;
     this.timers.clearTimeout(this.wait);
     this.wait = null;
     this.clear();
-    if (!query) {
-      this.asked = null;
-      return;
-    }
+    if (!query) return;
     this.wait = this.timers.setTimeout(() => {
       this.wait = null;
       this.next();

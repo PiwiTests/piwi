@@ -159,7 +159,7 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   Finish, each naming its worker and its stop: one that went on says `the test went on.`, `targetStop`); a key or a
   palette command acts on the stop at the caret's line, else the only one,
   else asks (`stopsFor`). A run's lines are the documents as they stood when it started (`started`, else when it is
-  first heard): `EditLog` keeps the edits that move lines while a run is live or starting
+  first heard, a rerun under the ref of a run that ended included: `heardSession`): `EditLog` keeps the edits that move lines while a run is live or starting
   (`workspace.onDidChangeTextDocument`, `lineEditOf`), which bring a stop to the line it stands on now (the mark, the
   lens, the caret's match) and the caret's line back to the run's for Run to the cursor, refused on a line written
   since. A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the
@@ -185,7 +185,7 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   them all (`linesAbove`), so the mark follows it. While a stopped worker counts locators (`takes` holds `locator`),
   the end of the cursor's line in the stopped file says how many elements the locator there matches on the stopped
   page (`piwi/locatorAtCaret`, `CaretCounts`: asked 200 ms after the cursor settles, one request at a time, an answer
-  the cursor left dropped; `3 matches`, `no match`, a refusal for three seconds, nothing on a line holding no locator),
+  the cursor left dropped, asked again when the cursor comes back; `3 matches`, `no match`, a refusal for three seconds, nothing on a line holding no locator),
   and the cursor leaving the file takes the page's outline down. A failure held for the editor (`reason: 'failure'`)
   is `Failed · <how it failed> · attempt N` after `$(error)`, with Resume alone among its controls.
   `src/run-control.ts` is its pure half, tested without an editor; the API `activate` returns gives the sessions

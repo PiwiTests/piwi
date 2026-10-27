@@ -665,6 +665,11 @@ class GlueTest {
         assertEquals(true, asks.want(null))
         assertEquals(true, asks.want("b"))
         assertEquals(true, asks.ask("b"))
+        assertEquals(true, asks.answered("b"))
+        // Down a line and back before the count settled: the line it came back to is asked again, its count gone.
+        assertEquals(true, asks.want("c"))
+        assertEquals(true, asks.want("b"))
+        assertEquals(true, asks.ask("b"))
     }
 
     @Test
