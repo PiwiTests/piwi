@@ -109,6 +109,9 @@ answer.
   test's own code stays with the IDE's debugger.
 - **One image a stop.** The paused page is a still image, not a live view: it does not follow what you do in a
   headed browser.
+- **No image when the page is unknown.** A stop at a call other than a locator's, such as a navigation or a key
+  press, in a browser context with several pages has no image: the worker cannot tell which of them the call is on.
+  Such a stop also ends when any page of that context closes.
 
 ## Related
 

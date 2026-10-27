@@ -218,6 +218,11 @@ export function wantsStops(state: PauseState): boolean {
   return state.step || state.pause || state.runTo !== null || (!state.finished && state.set.size > 0);
 }
 
+/** Whether a stop on `callSite` is at one of the attempt's breakpoints: on one of its lines, before Finish. */
+export function atBreakpoint(state: PauseState, callSite: string | null): boolean {
+  return !state.finished && state.set.matches(callSite);
+}
+
 /**
  * What the worker does at a debugger stop on `callSite` (null outside the user's code): show the stop, at the first
  * stop after Step or Pause, on the line it runs to, or on a breakpoint's line while the attempt did not finish, or let
@@ -231,7 +236,7 @@ export function atStop(state: PauseState, callSite: string | null): { show: Stop
         ? 'pause'
         : state.runTo !== null && callSiteLine(callSite) === state.runTo
           ? 'run-to'
-          : !state.finished && state.set.matches(callSite)
+          : atBreakpoint(state, callSite)
             ? 'breakpoint'
             : null;
     if (reason) {
@@ -247,6 +252,23 @@ export function stopShown(state: PauseState): void {
   state.step = false;
   state.pause = false;
   state.runTo = null;
+}
+
+/** The stops asked once (Step, Pause, the line run to), as a stop that may use them up finds them. */
+export type AskedOnce = Pick<PauseState, 'step' | 'pause' | 'runTo'>;
+
+export function askedOnce(state: PauseState): AskedOnce {
+  return { step: state.step, pause: state.pause, runTo: state.runTo };
+}
+
+/**
+ * A stop that used up the stops asked once (`asked`, as it found them) goes on unshown: they are asked again, with
+ * those asked since it came, and a line asked since wins over the one it used up.
+ */
+export function askAgain(state: PauseState, asked: AskedOnce): void {
+  state.step ||= asked.step;
+  state.pause ||= asked.pause;
+  state.runTo ??= asked.runTo;
 }
 
 /**
@@ -525,6 +547,22 @@ const MAX_NAVIGATED = 10;
 /** How long the highlight may take before the bar shows without it. */
 const HIGHLIGHT_MS = 2000;
 
+/** How long taking the bar and the highlight down may take: a page that does not answer keeps them. */
+const TAKE_DOWN_MS = 1000;
+
+/** `run`, for `ms` at most: undefined once they passed, `run` itself left to settle on its own. */
+async function within<T>(run: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      run,
+      new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), ms))),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Show the pause bar at a stop: highlight the element, show the bar and wait for its answer. **Pick a locator** runs
  * the picker and shows the bar again; `onPick` receives each confirmed pick. With `onRecord` (the editor that started
@@ -532,7 +570,8 @@ const HIGHLIGHT_MS = 2000;
  * the answer that ends the stop: `resume`, `step` or `finish`; `resume` when the page breaks or `ended` aborts (the
  * test ended under the bar, its page closed, the editor answered the stop), never throwing: the bar, the picker and
  * the recording then end at once, leaving nothing of theirs in the page. The bar and the highlight are gone once it
- * returns. Every page call it makes must run inside an internal call.
+ * returns, unless the page stops answering: no page call holds it past `ended` but taking them down, for
+ * `TAKE_DOWN_MS` at most. Every page call it makes must run inside an internal call.
  */
 export async function pauseHere(
   page: Page,
@@ -546,16 +585,10 @@ export async function pauseHere(
   try {
     const highlight = point.target?.highlight;
     if (typeof highlight === 'function') {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      shown = await Promise.race([
-        Promise.resolve()
-          .then(() => highlight.call(point.target))
-          .catch(() => null),
-        new Promise((resolve) => {
-          timer = setTimeout(() => resolve(null), HIGHLIGHT_MS);
-        }),
-      ]);
-      clearTimeout(timer);
+      const highlighted = Promise.resolve()
+        .then(() => highlight.call(point.target))
+        .catch(() => null);
+      shown = (await within(highlighted, HIGHLIGHT_MS)) ?? null;
     }
     const arg: PauseBarArg = {
       place: pausePlace(point.location),
@@ -574,10 +607,11 @@ export async function pauseHere(
     for (;;) {
       try {
         if (ended?.aborted) return 'resume';
-        await page.evaluate(showPauseBar, arg);
+        await unlessEnded(page.evaluate(showPauseBar, arg), ended);
         await unlessEnded(page.waitForFunction(pauseAnswered, undefined, { timeout: 0, polling: 250 }), ended);
         if (ended?.aborted) return 'resume';
-        const choice = (await page.evaluate(takePauseState)) as PauseChoice | null;
+        const choice = (await unlessEnded(page.evaluate(takePauseState), ended)) as PauseChoice | null | undefined;
+        if (ended?.aborted) return 'resume';
         navigated = 0;
         if (choice === 'resume' || choice === 'step' || choice === 'finish') return choice;
         if (choice === 'record' && onRecord) {
@@ -592,22 +626,28 @@ export async function pauseHere(
         if (picked && !ended?.aborted) await onPick(picked);
       } catch (error) {
         if (page.isClosed() || !NAVIGATED.test(String(error)) || ++navigated > MAX_NAVIGATED) throw error;
-        await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+        await unlessEnded(
+          page.waitForLoadState('domcontentloaded').catch(() => undefined),
+          ended,
+        );
       }
     }
   } catch {
     return 'resume';
   } finally {
-    try {
-      // A bar the stop ended under without its answer is taken down here.
-      if (ended?.aborted) await page.evaluate(takePauseState);
-      const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
-      // Feature-detected: an older Playwright has neither a disposable highlight nor `page.hideHighlight`.
-      const hide = (page as unknown as { hideHighlight?: () => Promise<void> }).hideHighlight;
-      if (typeof dispose === 'function') await dispose.call(shown);
-      else if (typeof hide === 'function') await hide.call(page);
-    } catch {
-      // The page may be gone.
-    }
+    const takeDown = async (): Promise<void> => {
+      try {
+        // A bar the stop ended under without its answer is taken down here.
+        if (ended?.aborted) await page.evaluate(takePauseState);
+        const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
+        // Feature-detected: an older Playwright has neither a disposable highlight nor `page.hideHighlight`.
+        const hide = (page as unknown as { hideHighlight?: () => Promise<void> }).hideHighlight;
+        if (typeof dispose === 'function') await dispose.call(shown);
+        else if (typeof hide === 'function') await hide.call(page);
+      } catch {
+        // The page may be gone.
+      }
+    };
+    await within(takeDown(), TAKE_DOWN_MS);
   }
 }

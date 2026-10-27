@@ -41,7 +41,7 @@ export interface RunControl {
   runTo(place: Place): void;
 }
 
-/** The stop the editor can answer, while it holds: its page (none for a context without one), and its answer. */
+/** The stop the editor can answer, while it holds: the page its image is of (none when not known), and its answer. */
 interface HeldStop {
   stop: number;
   page: Page | null;
@@ -55,8 +55,9 @@ export interface StopToHold {
   title: string;
   place: Place;
   locator: string | null;
-  /** Whether the pause bar shows in `page`. */
+  /** Whether Piwi's pause bar shows the stop. */
   bar: boolean;
+  /** The page an image of the stop is taken of: none when the stop's page is not known. */
   page: Page | null;
 }
 

@@ -8,6 +8,9 @@ import {
   takePauseState,
 } from '@piwitests/picker-dom';
 import {
+  askAgain,
+  askedOnce,
+  atBreakpoint,
   atStop,
   callSitePlace,
   currentPauseSet,
@@ -247,6 +250,33 @@ describe('the stop policy', () => {
     expect(atStop(s, 'tests/a.spec.ts:5:3')).toEqual({ go: 'resume' });
     expect(goOn(s, 'resume')).toBe('resume');
     expect(goOn(s, 'step')).toBe('next');
+  });
+
+  it('asks again what a stop used up when it does not show, a line asked since winning', () => {
+    const s = state('tests/a.spec.ts:5');
+    s.pause = true;
+    s.runTo = 'tests/a.spec.ts:9';
+    const asked = askedOnce(s);
+    expect(atStop(s, 'tests/a.spec.ts:4:3')).toEqual({ show: 'pause' });
+    expect(s).toMatchObject({ step: false, pause: false, runTo: null });
+    askAgain(s, asked);
+    expect(s).toMatchObject({ step: false, pause: true, runTo: 'tests/a.spec.ts:9' });
+    expect(atStop(s, 'tests/a.spec.ts:4:3')).toEqual({ show: 'pause' });
+    s.step = true;
+    s.runTo = 'tests/a.spec.ts:12';
+    askAgain(s, asked);
+    expect(s).toMatchObject({ step: true, pause: true, runTo: 'tests/a.spec.ts:12' });
+  });
+
+  it('is at a breakpoint while its line is one of the set and the attempt did not finish', () => {
+    const s = state('tests/a.spec.ts:5');
+    expect(atBreakpoint(s, 'tests/a.spec.ts:5:3')).toBe(true);
+    expect(atBreakpoint(s, null)).toBe(false);
+    s.set = parsePauseAt('tests/a.spec.ts:6', path.resolve('/work/shop'));
+    expect(atBreakpoint(s, 'tests/a.spec.ts:5:3')).toBe(false);
+    expect(atBreakpoint(s, 'tests/a.spec.ts:6:3')).toBe(true);
+    goOn(s, 'finish');
+    expect(atBreakpoint(s, 'tests/a.spec.ts:6:3')).toBe(false);
   });
 });
 
@@ -513,6 +543,31 @@ describe('pauseHere', () => {
     expect(await recorded).toBe('resume');
     // The recording got the stop's signal, to end itself and leave the page.
     expect(record.mock.calls[0]![0]).toBe(stopped.signal);
+  });
+
+  it('ends with its stop on a page that stops answering, taking the bar down a second at most', async () => {
+    vi.useFakeTimers();
+    try {
+      const page = {
+        evaluate: vi.fn((_fn: unknown, _arg?: unknown) => new Promise<never>(() => {})),
+        waitForFunction: vi.fn(() => new Promise<never>(() => {})),
+        waitForLoadState: vi.fn(async () => {}),
+        isClosed: () => false,
+      };
+      const ended = new AbortController();
+      let answer: string | undefined;
+      void pauseHere(page as never, POINT, PROBE, () => {}, undefined, ended.signal).then((a) => (answer = a));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(page.evaluate).toHaveBeenCalledWith(showPauseBar, expect.anything());
+      ended.abort('ended');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(page.evaluate.mock.calls.map((c) => c[0])).toEqual([showPauseBar, takePauseState]);
+      expect(answer).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(answer).toBe('resume');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('offers Record here when the editor can record, and shows the bar again once the recording ended', async () => {

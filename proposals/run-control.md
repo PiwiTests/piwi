@@ -31,11 +31,16 @@ connection) and the session in the editor service with its protocol (Part 3.1); 
 (`cwd`, which every place is relative to); a stop is named by the worker's own number for it (`stop`) rather than its
 context, in `stopped`, `running` and every answer to it, so an answer that comes after the stop ended (the bar
 answered first) is dropped; `stopped` says whether Piwi's bar shows in the page (`bar`); `test-begin` says why a test
-never stops (`cannotPause`); the image request and its answer are typed (`what: 'image'`, a JPEG in base64). A worker
-shows one stop at a time: a stop of another context waits for the one shown, and goes on unshown, as on Finish, when
-the test ends meanwhile. A stop ends through one path whoever ends it: one answered from the editor goes to
-`piwi-pauses` as one at the bar does, with its reason (`pause` and `run-to` among them), and one that ends unanswered
-(the test function ended, its page or context closed), with a bar or without, sends `running`, lets its call go at
+never stops (`cannotPause`); the image request and its answer are typed (`what: 'image'`, a JPEG in base64, none for a
+stop whose page the worker cannot tell, a navigation or a key press in a context with several pages). A worker shows
+one stop at a time: a stop of another context waits for the one shown, and is decided again at its turn; it goes on
+unshown, as on Finish, when the test ends meanwhile, and unshown too when its page or context closes or its breakpoint
+is taken off meanwhile, and a Step, Pause or run-to it used up stays asked for the next stop. Closing a context, by its
+own close or its browser's, first lets a call its debugger holds go on: Playwright never lets a held call go as its
+context closes, and the runner keeps that context counted as paused. A stop ends through one path whoever ends it: one
+answered from the editor goes to `piwi-pauses` as one at the bar does, with its reason (`pause` and `run-to` among
+them), and one that ends unanswered (the test function ended, its page or context closed, or, for a stop whose page
+the worker cannot tell, any page of that context closed), with a bar or without, sends `running`, lets its call go at
 once and, when the test ended under it, sets the runner's count back as PR 1 does at the bar. Run to a line is a
 breakpoint of the policy used once, never `debugger.runTo`, and any stop that shows uses it up, as it uses up Step and
 Pause; Finish turns the breakpoints off and nothing else, so a later Pause, Step or run-to still stops. `end`, `stop`,

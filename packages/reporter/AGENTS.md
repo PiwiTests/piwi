@@ -44,12 +44,16 @@ per-directory responsibilities.
    back after it, since Playwright hands what a worker's environment lost to the projects depending on its own): it says
    which test it runs and where it stops, takes the editor's Pause, Step, Resume, Finish, Run to a line and breakpoints
    (in place of `PIWI_PAUSE_AT`) through the same stop policy, and answers a request for an image of the stopped page
-   with a JPEG screenshot taken through an internal call. While it is open a headless run stops too, held until the
-   editor answers; a headed stop shows the bar as well, and the first answer wins. Whoever answers a stop, it goes to
-   `piwi-pauses` as one at the bar does, and every stop's end reaches the editor (`running`), one that ends unanswered
-   (the test function ended, its page or context closed) included, through the same end as at the bar. A stop no bar
-   shows goes on when the connection closes, and one stop shows at a time in a worker: one waiting its turn as the
-   test ends goes on unshown, as on Finish.
+   with a JPEG screenshot taken through an internal call, none for a stop whose page it cannot tell (a navigation or a
+   key press in a context with several pages). While it is open a headless run stops too, held until the editor answers;
+   a headed stop shows the bar as well, and the first answer wins. Whoever answers a stop, it goes to `piwi-pauses` as
+   one at the bar does, and every stop's end reaches the editor (`running`), one that ends unanswered (the test function
+   ended, its page or context closed, or for a stop whose page it cannot tell any page of its context closed) included,
+   through the same end as at the bar. A stop no bar shows goes on when the connection closes, and one stop shows at a
+   time in a worker: one waiting its turn is decided again as it comes, and goes on unshown, the editor never hearing
+   of it, when the test ended meanwhile (as on Finish), its page or context closed or its breakpoint went, leaving the
+   Step, Pause or line run to it used up for the next stop. Closing a context, itself or with its browser, lets the
+   call its debugger holds go on first, since the close never lets it go.
 4. **The desktop discovery file** — `~/.piwi/desktop.json` and its `{ url, token }` shape
    (`internal/config/desktop.ts`). The desktop shell writes it (`apps/desktop/src-tauri/src/lib.rs`) and this package reads
    it, on independent release cycles, so path and shape changes must land in both.

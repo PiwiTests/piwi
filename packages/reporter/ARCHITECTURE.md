@@ -68,8 +68,12 @@ Two **external contracts** beyond the npm API:
   `PIWI_PAUSE_AT`. While it is open a headless run stops too, with no bar, until the editor
   answers or the connection closes; the editor's answer takes a headed stop's bar down. A stop
   answered in the editor is attached to `piwi-pauses` as one at the bar is, and a stop that ends
-  unanswered (the test function ended, its page or context closed) ends the same way with a bar
-  or without, the editor told (`running`).
+  unanswered (the test function ended, its page or context closed, or for a stop whose page it
+  cannot tell any page of its context closed) ends the same way with a bar or without, the editor
+  told (`running`); the editor gets no image of such a page. One stop shows at a time in a worker:
+  one waiting its turn goes on unshown when the test ended meanwhile, its page or context closed
+  or its breakpoint went, and a context's close, its own or its browser's, lets the call its
+  debugger holds go on first.
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
   unref'd timer (`internal/collect/process-sampler.ts`). While the dashboard says
   someone watches the run, another unref'd timer posts what the sampler and the
