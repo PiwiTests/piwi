@@ -35,7 +35,9 @@ import io.netty.handler.codec.http.HttpVersion
 import io.netty.handler.codec.http.QueryStringDecoder
 import org.jetbrains.ide.BuiltInServerManager
 import org.jetbrains.ide.HttpRequestHandler
+import org.jetbrains.ide.HttpRequestHandler.OriginCheckResult
 import java.awt.datatransfer.StringSelection
+import java.net.InetSocketAddress
 import java.net.URI
 import java.nio.file.Path
 import java.security.SecureRandom
@@ -71,7 +73,10 @@ object PiwiSendToken {
  * reads nothing from the password safe or the disk, and only the write runs on the event thread.
  * With the same token, `GET /api/piwi/live` lists the hubs of every editor service running on
  * the machine, read from their discovery files (`Glue.liveHubs`), so the one pairing reaches the
- * runs of every IDE window and project.
+ * runs of every IDE window and project. The platform's own check of the `Host` header applies to
+ * both (a page reached under another name is refused), and every answer to a request carrying a
+ * challenge carries the proof that this IDE holds the token (`Glue.editorTokenProof`), paired or
+ * not, so Piwi Picker sends the token only here.
  */
 class PiwiSendHandler : HttpRequestHandler() {
     override fun isSupported(request: FullHttpRequest): Boolean {
@@ -81,49 +86,69 @@ class PiwiSendHandler : HttpRequestHandler() {
             (path == LIVE_PATH && (method == HttpMethod.GET || method == HttpMethod.OPTIONS))
     }
 
-    // The token authenticates each request; the extension's origin is not a local one.
-    override fun isAccessible(request: HttpRequest): Boolean = QueryStringDecoder(request.uri()).path() in setOf(PATH, LIVE_PATH)
+    /**
+     * A browser extension's origin is allowed on these paths, which the token authenticates; another origin is as the
+     * platform rules. The platform's `isAccessible` keeps its check of the `Host` header.
+     */
+    override fun isOriginAllowed(request: HttpRequest): OriginCheckResult {
+        val origin = request.headers().get(HttpHeaderNames.ORIGIN)
+        val ours = QueryStringDecoder(request.uri()).path() in setOf(PATH, LIVE_PATH)
+        return if (ours && origin != null && EXTENSION_ORIGIN.matches(origin)) OriginCheckResult.ALLOW else super.isOriginAllowed(request)
+    }
 
     override fun process(urlDecoder: QueryStringDecoder, request: FullHttpRequest, context: ChannelHandlerContext): Boolean {
         val origin = request.headers().get(HttpHeaderNames.ORIGIN)
-        if (request.method() == HttpMethod.OPTIONS) {
-            respond(context, origin, HttpResponseStatus.NO_CONTENT, null)
+        val challenge = request.headers().get(Glue.EDITOR_CHALLENGE_HEADER)?.takeIf { Glue.isEditorChallenge(it) }
+        val port = (context.channel().localAddress() as? InetSocketAddress)?.port
+        val preflight = request.method() == HttpMethod.OPTIONS
+        // A preflight carries no challenge, and needs no token: it is answered here, on the server's thread.
+        if (preflight && challenge == null) {
+            respond(context, origin, HttpResponseStatus.NO_CONTENT, null, null)
             return true
         }
         val authorization = request.headers().get(HttpHeaderNames.AUTHORIZATION)
-        if (urlDecoder.path() == LIVE_PATH) {
-            ApplicationManager.getApplication().executeOnPooledThread {
-                val (status, answer) = live(authorization)
-                respond(context, origin, status, answer)
-            }
-            return true
-        }
+        val live = urlDecoder.path() == LIVE_PATH
         // The request is released once this returns: its body is taken here, and checked on the pooled thread.
-        val body = if (request.content().readableBytes() > Glue.MAX_SEND_BYTES) null else request.content().toString(Charsets.UTF_8)
+        val body = when {
+            preflight || live -> ""
+            request.content().readableBytes() > Glue.MAX_SEND_BYTES -> null
+            else -> request.content().toString(Charsets.UTF_8)
+        }
         ApplicationManager.getApplication().executeOnPooledThread {
-            val (status, answer) = try {
-                answer(authorization, body)
-            } catch (e: Exception) {
-                HttpResponseStatus.UNPROCESSABLE_ENTITY to mapOf("error" to (e.message ?: e.javaClass.simpleName))
+            val token = runCatching { PiwiSendToken.current() }.getOrNull()
+            val proof = if (token.isNullOrEmpty() || challenge == null || port == null) null else Glue.editorTokenProof(token, port, challenge)
+            val (status, answer) = when {
+                token == null -> HttpResponseStatus.INTERNAL_SERVER_ERROR to mapOf("error" to "the pairing's token could not be read")
+                preflight -> HttpResponseStatus.NO_CONTENT to null
+                live -> try {
+                    live(authorization, token)
+                } catch (e: Exception) {
+                    HttpResponseStatus.INTERNAL_SERVER_ERROR to mapOf("error" to "the live hubs could not be read")
+                }
+                else -> try {
+                    answer(authorization, token, body)
+                } catch (e: Exception) {
+                    HttpResponseStatus.UNPROCESSABLE_ENTITY to mapOf("error" to (e.message ?: e.javaClass.simpleName))
+                }
             }
-            respond(context, origin, status, answer)
+            respond(context, origin, status, answer, proof)
         }
         return true
     }
 
     /** The live hubs, with the pairing's token: those of the services whose discovery file names a running process. */
-    private fun live(authorization: String?): Pair<HttpResponseStatus, Map<String, Any?>> {
-        if (!Glue.sendAuthorized(authorization, PiwiSendToken.current())) {
+    private fun live(authorization: String?, token: String): Pair<HttpResponseStatus, Map<String, Any?>> {
+        if (!Glue.sendAuthorized(authorization, token)) {
             return HttpResponseStatus.UNAUTHORIZED to mapOf("error" to "not paired")
         }
         val dir = Glue.editorsDir(System.getenv(), System.getProperty("user.home"))
-        val hubs = Glue.liveHubs(dir) { pid -> ProcessHandle.of(pid).map { it.isAlive }.orElse(false) }
+        val hubs = Glue.liveHubs(dir, Glue.machineName) { pid -> ProcessHandle.of(pid).map { it.isAlive }.orElse(false) }
         return HttpResponseStatus.OK to mapOf("hubs" to hubs)
     }
 
     /** The answer to a request: the token first, then the body's size and shape, then the insertion. */
-    private fun answer(authorization: String?, body: String?): Pair<HttpResponseStatus, Map<String, Any?>> {
-        if (!Glue.sendAuthorized(authorization, PiwiSendToken.current())) {
+    private fun answer(authorization: String?, token: String, body: String?): Pair<HttpResponseStatus, Map<String, Any?>> {
+        if (!Glue.sendAuthorized(authorization, token)) {
             return HttpResponseStatus.UNAUTHORIZED to mapOf("error" to "not paired")
         }
         if (body == null) return HttpResponseStatus.REQUEST_ENTITY_TOO_LARGE to mapOf("error" to "too large")
@@ -309,16 +334,24 @@ class PiwiSendHandler : HttpRequestHandler() {
         return null
     }
 
-    private fun respond(context: ChannelHandlerContext, origin: String?, status: HttpResponseStatus, body: Map<String, Any?>?) {
+    private fun respond(
+        context: ChannelHandlerContext,
+        origin: String?,
+        status: HttpResponseStatus,
+        body: Map<String, Any?>?,
+        proof: String?,
+    ) {
         val bytes = body?.let { JSON.toJson(it).toByteArray() } ?: ByteArray(0)
         val response = DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, Unpooled.wrappedBuffer(bytes))
         val headers = response.headers()
         if (body != null) headers.set(HttpHeaderNames.CONTENT_TYPE, "application/json")
         headers.set(HttpHeaderNames.CONTENT_LENGTH, bytes.size)
+        if (proof != null) headers.set(Glue.EDITOR_PROOF_HEADER, proof)
         if (origin != null && EXTENSION_ORIGIN.matches(origin)) {
             headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, origin)
             headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, OPTIONS")
-            headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "Authorization, Content-Type")
+            headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "Authorization, Content-Type, ${Glue.EDITOR_CHALLENGE_HEADER}")
+            headers.set(HttpHeaderNames.ACCESS_CONTROL_EXPOSE_HEADERS, Glue.EDITOR_PROOF_HEADER)
             headers.set(HttpHeaderNames.VARY, "Origin")
         }
         context.channel().writeAndFlush(response).addListener(ChannelFutureListener.CLOSE)

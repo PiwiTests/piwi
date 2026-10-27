@@ -471,15 +471,31 @@ Every protocol change lands with both clients, per the service's rule; the reque
   its workspace (D5).
 
   As built (`@piwitests/core/editor-discovery`, `packages/editor/src/discovery.ts`): the file is
-  `{ pid, version, client, startedAt, roots, hub: { url, token } | null, runChannel: { path, token } | null,
-  recorderBundle }`, in a folder only its user reads (0700) as a file only its user reads (0600, written through a
-  temporary file renamed over it; on Windows the profile folder's ACLs, as for `~/.piwi/desktop.json`), and
-  `PIWI_EDITORS_DIR` names another folder. The service's entry writes it once the run channel and the hub listen,
-  and removes it on the client's shutdown and exit, the process's exit and `SIGINT`, `SIGTERM`, `SIGHUP`; a killed
-  service's file is skipped, and deleted, by the next reader (the process is gone). `GET …/live` answers
-  `{ hubs: [{ url, token, pid, version, client, roots, startedAt }] }`, never the run channel's token, and a 401
-  without the pairing's token; the URL is the pairing's with `send` replaced by `live` (`liveUrlOf`). Its addresses
-  are loopback ones: a remote window forwards them with Part 6.
+  `{ pid, host, version, client, startedAt, roots, hub: { url, token } | null, runChannel: { path, token } | null,
+  recorderBundle }` (`host` the machine's name, `os.hostname()`), in a folder only its user reads (0700) as a file
+  only its user reads (0600, written through a temporary file renamed over it; on Windows the profile folder's ACLs, as
+  for `~/.piwi/desktop.json`), and `PIWI_EDITORS_DIR` names another folder. The service's entry writes it once the run
+  channel and the hub listen, and removes it on the client's shutdown and exit, the process's exit and `SIGINT`,
+  `SIGTERM`, `SIGHUP`; a killed service's file is skipped, and deleted, by the next reader (the process is gone). A
+  reader reads nothing from a folder that is a link, another user's or one other users can enter, reads only the files
+  its user owns (not links), and deletes only a file that reads as a discovery file of its own machine (`host`, in any
+  case) naming the process its name names: another machine's file, in a home folder several machines share, and any
+  other file are skipped and left. `GET …/live` answers `{ hubs: [{ url, token, pid, version, client, roots,
+  startedAt }] }`, never the run channel's token, and a 401 without the pairing's token; the URL is the pairing's with
+  `send` replaced by `live` (`liveUrlOf`). Its addresses are loopback ones: a remote window forwards them with Part 6,
+  and until then a remote VS Code window lists none (`vscode.env.remoteName`), its services listening on the remote
+  machine; the JetBrains IDEs' public API does not tell a Gateway backend from a local IDE, and it lists them there.
+
+  Before Piwi Picker sends the pairing's token to either endpoint, the program there proves it holds it
+  (`@piwitests/core/editor-send`, as the desktop app proves its own): a request with a challenge in
+  `x-piwi-editor-challenge` (32 to 128 lowercase hex characters, `newEditorChallenge`) is answered, on `send` and
+  `live`, whatever its status (a 401 without the token, a preflight, a 404 included), with `x-piwi-editor-proof`:
+  HMAC-SHA256 keyed by the token over `piwi-editor-proof:<port>:<challenge>`, hex, for the port the endpoint answers
+  on (`editorTokenProof`). Another program that took the port holds no token; one that relays the challenge to the
+  editor on another port gets a proof for that port. The CORS rules allow the challenge header and expose the proof's.
+  Both endpoints answer only a request naming them as `127.0.0.1` or `localhost` at their port: VS Code's listener
+  checks `Host` itself (a 403), and the JetBrains handler allows an extension's origin while leaving the built-in
+  server its own check of `Host`.
 - **The desktop app**: through its pairing (the address and the token Piwi Picker keeps, the challenge first). Its
   server answers the same WebSocket for its own runs (Part 7).
 
@@ -492,9 +508,12 @@ Every protocol change lands with both clients, per the service's rule; the reque
   letters `a` to `p`) or `moz-extension://` with a Firefox install's UUID; never `http(s)`, `null`, `file` or none. In
   spike C, a page served from `127.0.0.1` reached the hub's WebSocket and only the origin check refused it; a page on a
   public origin never reached it in Chromium 156, most likely through its local network access checks, which this plan
-  does not rely on. Another extension is kept out by the token, which only the paired extension gets: the hub cannot
-  keep the pairing's own origin, since one IDE window's endpoint answers for the hubs of every service, none of which
-  sees the pairing's request.
+  does not rely on. Another extension is kept out by the token, which the hub's discovery file holds, readable by its
+  user alone, and which the editor's endpoint lists only to a request carrying the pairing's token: the paired
+  extension, and any process of the user's that holds that token, which reaches the runs the editor starts
+  (`PIWI_EDITOR_SEND`). The user's own processes are not a boundary; another user's processes and web pages are kept
+  out. The hub cannot keep the pairing's own origin, since one IDE window's endpoint answers for the hubs of every
+  service, none of which sees the pairing's request.
 - **The token is the first message**, as the browser's WebSocket sends no header of the page's choosing.
 - **The commands are the session's** (`runControl`, the intents of Part 5, the view's input of Part 6), each checked
   field by field. There is no way to evaluate code, read a file or reach the instance.
@@ -503,12 +522,18 @@ As built (`@piwitests/core/run-hub`, `packages/editor/src/run-hub.ts`): the WebS
 a handshake with another `Host` or `Origin` is refused with a 403 before any WebSocket opens, another path with a
 404, and past 16 connections (8 not past `hello`) with a 503. The first message is `{ type: 'hello', token }` within
 5 s, compared in constant time, else the connection closes with 4001 (or 4002 for none in time); the hub answers
-`{ type: 'welcome', pid, version, client, roots, keepaliveMs }`. Each later message is a command with an `id` (1 to
+`{ type: 'welcome', pid, version, client, roots, keepaliveMs }`, its first 64 folders. A connection the hub closes
+for any reason is cut a second later when the other side has not answered the close, and only the open connections
+count toward the 16 and the 8, so a client that never answers holds no place. Each later message is a command with an `id` (1 to
 2³¹ − 1), answered once with `{ type: 'answer', id, ok, message }` like `piwi/runControl`: `subscribe` (then a
 `{ type: 'session', session }` for each live run and for each change, the session as `piwi/runSessionChanged` gives
 it with the run's `command`, its folder's `label`, its Piwi `project` and each worker's `intents`), `runControl`
 (`ref`, `worker`, `action`: `pause`, `step`, `resume`, `finish`, `since`; Run to a line stays in the editor),
-`pausedPage` (`ref`, `worker`; the answer carries `image`), and `pick` and `record` (`ref`, `worker`, `since`). A
+`pausedPage` (`ref`, `worker`; the answer carries `image`), and `pick` and `record` (`ref`, `worker`, `since`).
+`step`, `resume`, `finish`, `pick` and `record` need `since`, the stop they answer, and are refused without it (`The
+command needs the stop it answers.`); `pause` takes none (`piwi/runControl` keeps `since` optional, for older IDE
+clients). A subscriber is given each run as the editor's client last heard it, and hears each change after with it,
+so both show the same; the command line is cut at 20,000 characters, the cut marked, as the extension reads it. A
 command of a type the hub does not know, or with a field it cannot take, is answered `ok: false` with why; one that is
 no command (not JSON, no `id`) closes the connection with 4003, a binary frame with 1003, a frame over 64 KiB with
 1009. The hub sends `{ type: 'keepalive' }` and a ping every 20 s, and drops a connection that did not answer the last
@@ -521,7 +546,11 @@ channel carries them as a `request` (`what: 'pick' | 'record'`, the `stop` it is
 it started; a worker lists the intents it takes in its `run-attach` (`takes`), and the hub refuses one at a stop no
 bar shows (a headless run, Part 6 brings them to the image) and for a worker that does not list it. Both IDE clients
 name their pairing in `PIWI_EDITOR_SEND` for every run that names a run channel, since any such run can stop with the
-bar.
+bar: every run the editor starts thus starts its Send to editor listener when it is not running, minting the
+pairing's token when there is none yet, whether Piwi Picker was paired or not, and the token is in the run's
+environment. The capture fixtures take it out while each test runs, as `PIWI_RUN_CHANNEL`, and the test's picks still
+go to it, so a process a test starts does not get it; the Playwright runner and what it starts (a `webServer`) do.
+A run's pairing takes another port when another window holds the one Pair with Piwi Picker saved, and saves none.
 
 ### 4.4 What the page shows
 

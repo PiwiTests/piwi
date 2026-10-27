@@ -162,7 +162,14 @@ import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
 import type { PausedPageView, RunBreakpoint } from './run-control';
 import { registerRunControl } from './run-view';
-import { startSendListener, type SendListener, type SendResult } from './send-listener';
+import {
+  liveHubsHere,
+  sendPairing,
+  startSendListener,
+  type PairingStore,
+  type SendListener,
+  type SendResult,
+} from './send-listener';
 import { TestExplorer, type ShownTest } from './test-explorer';
 
 /** How often the status bar item's tooltip is written again, for the time since the latest run was read. */
@@ -769,40 +776,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   );
 
   // Send to editor: the token lives in the secret store, the port in global state, so a pairing survives restarts.
-  let sendToken = (await context.secrets.get(SEND_TOKEN)) ?? '';
+  const sendStore: PairingStore = {
+    token: (await context.secrets.get(SEND_TOKEN)) ?? '',
+    port: context.globalState.get<number>(SEND_PORT),
+    saveToken: (token) => context.secrets.store(SEND_TOKEN, token),
+    savePort: (port) => context.globalState.update(SEND_PORT, port),
+  };
   const listen = async (port: number) => {
     sendListener = await startSendListener({
       port,
-      token: () => sendToken,
+      token: () => sendStore.token,
       onPayload: (payload) => insertFromPicker(lc, payload),
-      live: () => readLiveHubs(editorsDir()),
+      // A remote window's services listen on the remote machine's loopback interface.
+      live: () => liveHubsHere(vscode.env.remoteName, () => readLiveHubs(editorsDir())),
     });
     return sendListener;
   };
-  const pairedPort = context.globalState.get<number>(SEND_PORT);
   // Another window may hold the port: that window keeps the pairing.
-  if (pairedPort && sendToken) await listen(pairedPort).catch(() => null);
-  /** The listener's loopback address and the token, the listener started and the token minted when they are not. */
-  const pairing = async (): Promise<{ url: string; token: string }> => {
-    if (!sendToken) {
-      sendToken = randomBytes(24).toString('base64url');
-      await context.secrets.store(SEND_TOKEN, sendToken);
-    }
-    const listener = sendListener ?? (await listen(pairedPort ?? 0).catch(() => listen(0)));
-    await context.globalState.update(SEND_PORT, listener.port);
-    return { url: listener.url, token: sendToken };
-  };
+  if (sendStore.port && sendStore.token) await listen(sendStore.port).catch(() => null);
+  const pairing = sendPairing({
+    store: sendStore,
+    listener: () => sendListener,
+    listen,
+    mint: () => randomBytes(24).toString('base64url'),
+  });
   /**
    * The pairing address Piwi Picker pastes: the listener's address as the browser's machine reaches it, which a
-   * remote window (SSH, WSL, a dev container) forwards to the local machine.
+   * remote window (SSH, WSL, a dev container) forwards to the local machine. Its port is saved for the next start.
    */
   const pickerPairing = async (): Promise<string> => {
-    const { url, token } = await pairing();
+    const { url, token } = await pairing(true);
     const external = await vscode.env.asExternalUri(vscode.Uri.parse(url));
     return formatPairing({ url: external.toString(true), token });
   };
-  /** The pairing address a run's reporter posts a pick to: the loopback address of the machine the run is on. */
-  const runPairing = async (): Promise<string> => formatPairing(await pairing());
+  /**
+   * The pairing address a run's reporter posts a pick to: the loopback address of the machine the run is on, on a
+   * port of the run's time when another window holds the saved one, which stays saved.
+   */
+  const runPairing = async (): Promise<string> => formatPairing(await pairing(false));
 
   /** The enabled breakpoints a run pauses at, as `piwi.breakpoints` allows; none outside the Playwright configs. */
   const breakpointsForRun = () =>

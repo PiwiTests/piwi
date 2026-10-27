@@ -10,8 +10,11 @@ import {
   type EditorDiscovery,
 } from '../src/editor-discovery';
 
+const HOST = 'dev-laptop';
+
 const discovery: EditorDiscovery = {
   pid: 4242,
+  host: HOST,
   version: '0.60.0',
   client: 'Visual Studio Code',
   startedAt: '2026-10-25T10:00:00.000Z',
@@ -21,13 +24,20 @@ const discovery: EditorDiscovery = {
   recorderBundle: '/ext/dist/record-ide.js',
 };
 
-/** A folder in memory: its files, which processes run, and what was removed. */
-function folder(files: Record<string, string>, alive: number[]) {
+/** A folder in memory: its files, which processes run, the files another user owns, and what was read and removed. */
+function folder(files: Record<string, string>, alive: number[], others: string[] = []) {
   const removed: string[] = [];
+  const opened: string[] = [];
   return {
     removed,
+    opened,
+    host: HOST,
     names: () => Object.keys(files),
-    read: (name: string) => files[name] ?? null,
+    owned: (name: string) => !others.includes(name),
+    read: (name: string) => {
+      opened.push(name);
+      return files[name] ?? null;
+    },
     alive: (pid: number) => alive.includes(pid),
     remove: (name: string) => {
       removed.push(name);
@@ -67,6 +77,7 @@ describe('the editors’ discovery files', () => {
     for (const broken of ['{', '[]', text({ pid: 0 }), text({ pid: '4242' }), 'null']) {
       expect(parseEditorDiscovery(broken), broken).toBeNull();
     }
+    expect(parseEditorDiscovery(text({ host: undefined }))).toMatchObject({ host: '' });
   });
 
   test('list the live services oldest first, deleting the files of processes that are gone', () => {
@@ -74,7 +85,7 @@ describe('the editors’ discovery files', () => {
     const files = folder(
       {
         '4242.json': formatEditorDiscovery(discovery),
-        '7.json': formatEditorDiscovery(newer),
+        '7.json': formatEditorDiscovery({ ...newer, host: HOST.toUpperCase() }),
         '99.json': formatEditorDiscovery({ ...discovery, pid: 99 }),
         '8.json': '{ half',
         '9.json': formatEditorDiscovery({ ...discovery, pid: 10 }),
@@ -83,8 +94,32 @@ describe('the editors’ discovery files', () => {
       },
       [4242, 7, 8, 9, 11],
     );
-    expect(readLiveEditors(files)).toEqual([discovery, newer]);
+    expect(readLiveEditors(files)).toEqual([discovery, { ...newer, host: HOST.toUpperCase() }]);
     // A dead process's file goes; an unreadable file, or one naming another process, of a live one stays.
     expect(files.removed).toEqual(['99.json']);
+  });
+
+  test('delete only a service’s file of this machine, and never read another user’s', () => {
+    const files = folder(
+      {
+        // A folder PIWI_EDITORS_DIR names may hold a person's own numbered files: no process runs with their number.
+        '2024.json': '{"my":"report"}',
+        '31.json': formatEditorDiscovery({ ...discovery, pid: 32 }),
+        '12.json': '{ half',
+        // Another machine sharing the home folder: its process is not this machine's to look for.
+        '13.json': formatEditorDiscovery({ ...discovery, pid: 13, host: 'build-agent' }),
+        '14.json': formatEditorDiscovery({ ...discovery, pid: 14, host: 'build-agent' }),
+        '15.json': formatEditorDiscovery({ ...discovery, pid: 15, host: undefined as unknown as string }),
+        // Another user's file: neither read nor deleted.
+        '16.json': formatEditorDiscovery({ ...discovery, pid: 16 }),
+        '17.json': formatEditorDiscovery({ ...discovery, pid: 17 }),
+      },
+      [14, 17],
+      ['16.json', '17.json'],
+    );
+    expect(readLiveEditors(files)).toEqual([]);
+    expect(files.removed).toEqual([]);
+    expect(files.opened).not.toContain('16.json');
+    expect(files.opened).not.toContain('17.json');
   });
 });

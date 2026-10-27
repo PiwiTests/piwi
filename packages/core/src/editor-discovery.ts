@@ -1,11 +1,13 @@
 /**
  * The editors' discovery files: each editor service writes `~/.piwi/editors/<pid>.json` (`%USERPROFILE%\.piwi\editors`
  * on Windows; `PIWI_EDITORS_DIR` names another folder) once it listens, readable by its user only, and removes it as
- * it stops. A file names the service's process, its version and its client, the workspace's folders, the hub's
- * WebSocket with its token (`@piwitests/core/run-hub`), the run channel's socket with its token
- * (`@piwitests/core/run-channel`) and the recorder's bundle. A reader lists the folder (`readLiveEditors`): it skips,
- * and deletes, a file whose process is gone (a service that was killed), and skips one it cannot read. Readers ignore
- * fields they do not know. Pure: the reader takes the folder's operations from its caller.
+ * it stops. A file names the service's process and machine, its version and its client, the workspace's folders, the
+ * hub's WebSocket with its token (`@piwitests/core/run-hub`), the run channel's socket with its token
+ * (`@piwitests/core/run-channel`) and the recorder's bundle. A reader lists the folder (`readLiveEditors`): it takes
+ * only a file this user owns that reads as a service's file of this machine naming the process its name names, and
+ * deletes such a file when its process is gone (a service that was killed); it neither reads nor deletes another
+ * user's file, and skips, never deleting, any other file and another machine's (a home folder several machines share).
+ * Readers ignore fields they do not know. Pure: the reader takes the folder's operations from its caller.
  */
 
 /** The environment variable naming another folder than `~/.piwi/editors`. */
@@ -31,6 +33,8 @@ export interface ChannelAddress {
 export interface EditorDiscovery {
   /** The editor service's process, which the file is named after. */
   pid: number;
+  /** The machine it runs on, as the system names it (`os.hostname()`): the process is that machine's. */
+  host: string;
   /** The service's version. */
   version: string;
   /** The editor running it, as it names itself (`Visual Studio Code`, `WebStorm`); null when it does not say. */
@@ -49,8 +53,12 @@ export interface EditorDiscovery {
 
 /** The operations `readLiveEditors` takes from its caller. */
 export interface DiscoveryFolder {
-  /** The names of the folder's entries; none when it does not exist. */
+  /** This machine's name, as a service writes it in `host`, in any case. */
+  host: string;
+  /** The names of the folder's entries; none when it does not exist or is not this user's alone. */
   names(): string[];
+  /** Whether an entry is a file this user owns, where the platform tells; a link is not. */
+  owned(name: string): boolean;
   /** A file's text; null when it cannot be read. */
   read(name: string): string | null;
   /** Whether a process with this id runs. */
@@ -121,6 +129,7 @@ export function parseEditorDiscovery(content: string): EditorDiscovery | null {
     : [];
   return {
     pid,
+    host: text(value.host, 255) ?? '',
     version: text(value.version, 64) ?? '',
     client: text(value.client, 200),
     startedAt: text(value.startedAt, 64) ?? '',
@@ -132,21 +141,20 @@ export function parseEditorDiscovery(content: string): EditorDiscovery | null {
 }
 
 /**
- * The services whose files the folder holds and whose process runs, oldest first. A file whose process is gone is
- * deleted; one that cannot be read, or names another process than its name, is skipped.
+ * The services whose files the folder holds and whose process runs, oldest first. Only a file this user owns is read;
+ * one that reads as a service's file of this machine naming the process its name names is deleted when that process
+ * is gone. Any other file, another machine's included, is skipped and left as it is.
  */
 export function readLiveEditors(folder: DiscoveryFolder): EditorDiscovery[] {
   const found: EditorDiscovery[] = [];
   for (const name of folder.names()) {
     const pid = pidOfDiscoveryName(name);
-    if (pid === null) continue;
-    if (!folder.alive(pid)) {
-      folder.remove(name);
-      continue;
-    }
+    if (pid === null || !folder.owned(name)) continue;
     const content = folder.read(name);
     const discovery = content === null ? null : parseEditorDiscovery(content);
-    if (discovery?.pid === pid) found.push(discovery);
+    if (discovery?.pid !== pid || discovery.host.toLowerCase() !== folder.host.toLowerCase()) continue;
+    if (folder.alive(pid)) found.push(discovery);
+    else folder.remove(name);
   }
   return found.sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.pid - b.pid);
 }

@@ -4,7 +4,11 @@ import {
   HUB_CLOSE,
   HUB_KEEPALIVE_MS,
   HUB_PATH,
+  MAX_HUB_CLIENT,
+  MAX_HUB_COMMAND,
   MAX_HUB_FRAME,
+  MAX_HUB_PROJECT,
+  MAX_HUB_ROOTS,
   isExtensionOrigin,
   isHubHost,
   liveHubsOf,
@@ -165,6 +169,29 @@ describe('the hub’s WebSocket', () => {
     expect(invalid({ type: 'evaluate', code: 'alert(1)' })).toEqual({ type: 'unknown', id: 9, what: 'evaluate' });
   });
 
+  test('refuses a command that answers a stop without naming it, and takes a pause without one', () => {
+    const needsStop = { type: 'invalid', id: 9, message: 'The command needs the stop it answers.' };
+    for (const action of ['step', 'resume', 'finish']) {
+      for (const since of [undefined, null]) {
+        expect(parseHubCommand(json({ type: 'runControl', id: 9, ref: 'ed-1', worker: 0, action, since }))).toEqual(
+          needsStop,
+        );
+      }
+    }
+    for (const type of ['pick', 'record']) {
+      expect(parseHubCommand(json({ type, id: 9, ref: 'ed-1', worker: 0 }))).toEqual(needsStop);
+      expect(parseHubCommand(json({ type, id: 9, ref: 'ed-1', since: null }))).toEqual(needsStop);
+    }
+    expect(parseHubCommand(json({ type: 'runControl', id: 9, ref: 'ed-1', action: 'pause', since: 'S' }))).toEqual({
+      type: 'runControl',
+      id: 9,
+      ref: 'ed-1',
+      worker: null,
+      action: 'pause',
+      since: 'S',
+    });
+  });
+
   test('reads no command without an id it can answer', () => {
     for (const text of [
       json({ type: 'subscribe' }),
@@ -227,6 +254,17 @@ describe('the hub’s WebSocket', () => {
       { type: 'session', session: { ...session, workers: [{ ...worker, state: 'gone' }] } },
       { type: 'session', session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, line: -1 } }] } },
       { type: 'session', session: { ...session, workers: [{ ...worker, test: { ...worker.test, title: [1] } }] } },
+      { type: 'session', session: { ...session, command: 'x'.repeat(MAX_HUB_COMMAND + 1) } },
+      { type: 'session', session: { ...session, project: 'x'.repeat(MAX_HUB_PROJECT + 1) } },
+      {
+        type: 'welcome',
+        pid: 1,
+        version: '1',
+        client: null,
+        roots: Array.from({ length: MAX_HUB_ROOTS + 1 }, (_, i) => `/w/${i}`),
+        keepaliveMs: 1,
+      },
+      { type: 'welcome', pid: 1, version: '1', client: 'x'.repeat(MAX_HUB_CLIENT + 1), roots: [], keepaliveMs: 1 },
       { type: 'frame', data: 'x' },
     ]) {
       expect(parseHubMessage(json(broken)), JSON.stringify(broken)).toBeNull();
@@ -245,6 +283,7 @@ describe('the live endpoint', () => {
   test('lists the hub of each live service’s file, and none for a service whose hub did not listen', () => {
     const editor: EditorDiscovery = {
       pid: 4242,
+      host: 'dev-laptop',
       version: '0.60.0',
       client: 'Visual Studio Code',
       startedAt: '2026-10-25T10:00:00.000Z',

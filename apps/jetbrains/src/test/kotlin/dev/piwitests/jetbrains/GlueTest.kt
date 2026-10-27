@@ -858,9 +858,16 @@ class GlueTest {
     }
 
     /** An editor service's discovery file, as `writeDiscovery` in the service writes it. */
-    private fun discoveryFile(pid: Long, port: Int, startedAt: String, hubToken: String = "hub-token-$port-0123456789") = """
+    private fun discoveryFile(
+        pid: Long,
+        port: Int,
+        startedAt: String,
+        hubToken: String = "hub-token-$port-0123456789",
+        host: String = "dev-laptop",
+    ) = """
         {
           "pid": $pid,
+          "host": "$host",
           "version": "0.60.0",
           "client": "WebStorm",
           "startedAt": "$startedAt",
@@ -886,6 +893,11 @@ class GlueTest {
         assertEquals("a token too short", null, Glue.parseLiveHub(discoveryFile(42, 43123, "x", hubToken = "short"), 42))
         assertEquals(null, Glue.parseLiveHub("""{"pid":42,"hub":null}""", 42))
         assertEquals(null, Glue.parseLiveHub("{ half", 42))
+        assertEquals(Glue.EditorDiscovery(42, "", null), Glue.parseEditorDiscovery("""{"pid":42,"hub":null}"""))
+        assertEquals("dev-laptop", Glue.parseEditorDiscovery(discoveryFile(42, 43123, "x"))?.host)
+        for (broken in listOf("""{"pid":0}""", """{"pid":"42"}""", """{"pid":1.5}""", "[]", "{ half")) {
+            assertEquals(broken, null, Glue.parseEditorDiscovery(broken))
+        }
         assertEquals(Path.of("/tmp/e"), Glue.editorsDir(mapOf("PIWI_EDITORS_DIR" to "/tmp/e"), "/home/me"))
         assertEquals(Path.of("/home/me", ".piwi", "editors"), Glue.editorsDir(emptyMap(), "/home/me"))
     }
@@ -893,18 +905,72 @@ class GlueTest {
     @Test
     fun `lists the hubs of the running editor services oldest first, and deletes the files of those gone`() {
         val dir = Files.createTempDirectory("piwi-editors")
-        Files.writeString(dir.resolve("12.json"), discoveryFile(12, 43002, "2026-10-25T10:00:02.000Z"))
+        Files.writeString(dir.resolve("12.json"), discoveryFile(12, 43002, "2026-10-25T10:00:02.000Z", host = "DEV-LAPTOP"))
         Files.writeString(dir.resolve("11.json"), discoveryFile(11, 43001, "2026-10-25T10:00:01.000Z"))
         Files.writeString(dir.resolve("13.json"), discoveryFile(13, 43003, "2026-10-25T10:00:03.000Z"))
         Files.writeString(dir.resolve(".14.json.1a2b.tmp"), discoveryFile(14, 43004, "x"))
         Files.writeString(dir.resolve("15.json"), "{ half")
-        val hubs = Glue.liveHubs(dir) { it != 13L }
+        val hubs = Glue.liveHubs(dir, "dev-laptop") { it != 13L }
         assertEquals(listOf(11L, 12L), hubs.map { it.pid })
         assertEquals(false, Files.exists(dir.resolve("13.json")))
         assertEquals("an unreadable file of a running process stays", true, Files.exists(dir.resolve("15.json")))
         assertEquals("the run channel's token is never listed", false, Gson().toJson(hubs).contains("channel-token"))
-        assertEquals(emptyList<Glue.LiveHub>(), Glue.liveHubs(dir.resolve("missing")) { true })
-        assertEquals(emptyList<Glue.LiveHub>(), Glue.liveHubs(null) { true })
+        assertEquals(emptyList<Glue.LiveHub>(), Glue.liveHubs(dir.resolve("missing"), "dev-laptop") { true })
+        assertEquals(emptyList<Glue.LiveHub>(), Glue.liveHubs(null, "dev-laptop") { true })
+    }
+
+    @Test
+    fun `deletes no file but a service's of this machine, and skips another machine's`() {
+        val dir = Files.createTempDirectory("piwi-editors")
+        val files = mapOf(
+            // A person's own numbered files, in a folder PIWI_EDITORS_DIR names.
+            "2024.json" to """{"my":"report"}""",
+            "21.json" to "{ half",
+            "22.json" to discoveryFile(23, 43023, "x"),
+            // A service of another machine sharing the home folder: its process is that machine's.
+            "24.json" to discoveryFile(24, 43024, "x", host = "build-agent"),
+            "25.json" to discoveryFile(25, 43025, "x", host = "build-agent"),
+            "26.json" to discoveryFile(26, 43026, "x").replace("\"host\": \"dev-laptop\",", ""),
+        )
+        for ((name, text) in files) Files.writeString(dir.resolve(name), text)
+        assertEquals(emptyList<Glue.LiveHub>(), Glue.liveHubs(dir, "dev-laptop") { it == 25L })
+        assertEquals(files.keys.sorted(), Files.list(dir).use { it.map { p -> p.fileName.toString() }.toList() }.sorted())
+    }
+
+    @Test
+    fun `reads nothing from a folder others can enter, a link, nor through a file that is a link`() {
+        val base = Files.createTempDirectory("piwi-editors")
+        if (Files.getFileStore(base).supportsFileAttributeView("posix").not()) return
+        val dir = Files.createDirectory(base.resolve("editors"), java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rwx------")))
+        Files.writeString(dir.resolve("31.json"), discoveryFile(31, 43031, "x"))
+        assertEquals(listOf(31L), Glue.liveHubs(dir, "dev-laptop") { true }.map { it.pid })
+        Files.setPosixFilePermissions(dir, java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"))
+        assertEquals(emptyList<Glue.LiveHub>(), Glue.liveHubs(dir, "dev-laptop") { true })
+        Files.setPosixFilePermissions(dir, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"))
+        val link = Files.createSymbolicLink(base.resolve("link"), dir)
+        assertEquals(emptyList<Glue.LiveHub>(), Glue.liveHubs(link, "dev-laptop") { true })
+        val elsewhere = Files.writeString(base.resolve("elsewhere.json"), discoveryFile(32, 43032, "x"))
+        Files.createSymbolicLink(dir.resolve("32.json"), elsewhere)
+        assertEquals("a file that is a link is neither read nor deleted", listOf(31L), Glue.liveHubs(dir, "dev-laptop") { it == 31L }.map { it.pid })
+        assertEquals(true, Files.isSymbolicLink(dir.resolve("32.json")))
+    }
+
+    @Test
+    fun `proves the pairing's token for the port it answers on, as the editor service's core does`() {
+        // The proof `editorTokenProof` in `@piwitests/core/editor-send` makes of the same token, port and challenge.
+        val challenge = "cd".repeat(32)
+        assertEquals(
+            "ddda276ac84f6fa82231775360760e06e80f4acb757fa5146d48a71945f6af77",
+            Glue.editorTokenProof("abcdefghijklmnop_1234", 63342, challenge),
+        )
+        assertEquals(false, Glue.editorTokenProof("abcdefghijklmnop_1234", 63343, challenge) == Glue.editorTokenProof("abcdefghijklmnop_1234", 63342, challenge))
+        assertEquals(true, Glue.isEditorChallenge(challenge))
+        assertEquals(true, Glue.isEditorChallenge("a".repeat(128)))
+        for (value in listOf(null, "ab".repeat(15), "AB".repeat(16), "g".repeat(32), "a".repeat(129), " " + "a".repeat(32))) {
+            assertEquals(value.toString(), false, Glue.isEditorChallenge(value))
+        }
+        assertEquals("x-piwi-editor-challenge", Glue.EDITOR_CHALLENGE_HEADER)
+        assertEquals("x-piwi-editor-proof", Glue.EDITOR_PROOF_HEADER)
     }
 
     private fun tree(vararg files: String): Path {

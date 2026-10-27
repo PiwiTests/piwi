@@ -7,6 +7,7 @@
  * answers on. Another program on that port holds no token, and one that relays
  * the challenge to the app on another port gets a proof for that other port.
  */
+import { hmacSha256Hex, randomHex } from './hmac';
 
 /** The request header carrying the challenge. */
 export const DESKTOP_CHALLENGE_HEADER = 'x-piwi-desktop-challenge';
@@ -21,19 +22,10 @@ export function isDesktopChallenge(value: unknown): value is string {
 
 /** A new challenge: 32 random bytes, hex. */
 export function newDesktopChallenge(): string {
-  return hex(crypto.getRandomValues(new Uint8Array(32)));
+  return randomHex(32);
 }
 
 /** The proof, hex: HMAC-SHA256 keyed by `token` over `piwi-desktop-proof:<port>:<challenge>`. */
-export async function desktopTokenProof(token: string, port: number, challenge: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey('raw', encoder.encode(token), { name: 'HMAC', hash: 'SHA-256' }, false, [
-    'sign',
-  ]);
-  const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(`piwi-desktop-proof:${port}:${challenge}`));
-  return hex(new Uint8Array(mac));
-}
-
-function hex(bytes: Uint8Array): string {
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+export function desktopTokenProof(token: string, port: number, challenge: string): Promise<string> {
+  return hmacSha256Hex(token, `piwi-desktop-proof:${port}:${challenge}`);
 }

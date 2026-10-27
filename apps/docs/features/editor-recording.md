@@ -97,10 +97,20 @@ recorded, lands at the editor's cursor too:
    locator is inserted in the copy form you chose; a recording is rendered as the body of a test, like
    [`piwi codegen --body`](/reference/cli#codegen).
 
-The editor listens on the loopback interface only, and accepts a request only with the token. With several VS Code
-windows open, the one that paired receives. With no editor open, a JetBrains IDE puts it in a new scratch file. In a remote window (Remote SSH, WSL, Dev Containers), the pairing address
-is the local end of a port VS Code forwards to the listener, listed in the Ports view, so Piwi Picker in your browser
-reaches it from your machine.
+The editor listens on the loopback interface only, answers only a request addressed to `127.0.0.1` or `localhost` at
+its port, and accepts one only with the token. Before Piwi Picker sends the token, the editor proves it holds it: the
+extension sends a random challenge, and the editor answers with a value only the token's holder can compute for that
+port, so another program that took the port is sent nothing. With several VS Code windows open, the one that paired
+receives. With no editor open, a JetBrains IDE puts it in a new scratch file. In a remote window (Remote SSH, WSL, Dev
+Containers), the pairing address is the local end of a port VS Code forwards to the listener, listed in the Ports
+view, so Piwi Picker in your browser reaches it from your machine; Piwi Picker's Runs window lists no run of a remote
+window yet, since its editor service listens on the remote machine.
+
+Every test run Piwi starts gets the pairing address, token included, in its environment as `PIWI_EDITOR_SEND`, so a
+locator picked at one of its stops reaches the editor: starting such a run starts the editor's listener, and creates
+the token when there is none yet, whether you paired Piwi Picker or not. The capture fixtures take it out of the
+environment while each test runs, so a process your test starts does not get it; the Playwright runner and what it
+starts, such as a `webServer`, still have it. Programs running as your user on your machine are not kept out.
 
 ## Limits
 

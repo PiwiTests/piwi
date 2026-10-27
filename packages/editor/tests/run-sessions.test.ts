@@ -325,7 +325,8 @@ describe('a run’s session, with a client that answers stops', () => {
         worker.send({ type: 'running', stop });
       }
       worker.stopAt(501, 33);
-      expect(await waitFor(() => svc.latest(ref)?.workers[0]?.stop?.line)).toBe(32);
+      // The burst's stops at line 30 may be heard on the way: the last one, at line 33, is heard last.
+      await waitFor(() => (svc.latest(ref)?.workers[0]?.stop?.line === 32 ? true : undefined));
       await new Promise((r) => setTimeout(r, 150));
       expect(svc.sessions.length - before).toBeLessThan(20);
       expect(svc.latest(ref)!.workers[0]!.state).toBe('stopped');
@@ -531,7 +532,7 @@ describe('RunSessions', () => {
     });
     const attach = (workerIndex: number) => {
       const socket = fakeSocket();
-      sessions.attach(socket as unknown as net.Socket, {
+      const read = sessions.attach(socket as unknown as net.Socket, {
         type: 'run-attach',
         token: 't',
         ref: 'ed-1',
@@ -543,17 +544,68 @@ describe('RunSessions', () => {
         reporter: '',
         takes: [],
       });
-      return socket;
+      return { socket, read: (message: RunToHub) => read(JSON.stringify(message)) };
     };
     return { sent, sessions, attach };
   }
 
+  test('gives a new follower each run as the client last heard it, so both hear the changes after it alike', async () => {
+    const { sent, sessions, attach } = harness({ burstMs: 200 });
+    const worker = attach(0);
+    const state = (session: RunSession | undefined) => session?.workers[0]?.state;
+    worker.read({
+      type: 'test-begin',
+      testId: 'a',
+      title: ['a'],
+      file: 'tests/a.spec.ts',
+      line: 1,
+      project: '',
+      retry: 0,
+      cannotPause: null,
+    });
+    await waitFor(() => (state(last(sent)) === 'running' ? true : undefined));
+    const stopped = (stop: number) =>
+      worker.read({
+        type: 'stopped',
+        stop,
+        reason: 'breakpoint',
+        title: 'Click',
+        place: { file: 'tests/a.spec.ts', line: stop + 1 },
+        locator: null,
+        bar: true,
+      });
+    stopped(1);
+    await waitFor(() => (state(last(sent)) === 'stopped' ? true : undefined));
+    worker.read({ type: 'running', stop: 1 });
+    // The client heard the test run again; the next stop waits for the next burst.
+    await waitFor(() => (state(last(sent)) === 'running' ? true : undefined));
+    const heard = sent.length;
+    stopped(2);
+    // Piwi Picker subscribes now: it is given the run as the client heard it, not the stop on its way.
+    const followed = sessions.current();
+    expect(followed).toEqual([last(sent)]);
+    worker.read({ type: 'running', stop: 2 });
+    await new Promise((r) => setTimeout(r, 300));
+    // The stop and its end came within one burst: neither the client nor the follower hears either.
+    expect(sent).toHaveLength(heard);
+    expect(sessions.current()).toEqual(followed);
+    expect(state(followed[0])).toBe('running');
+    sessions.dispose();
+  });
+
+  test('gives no follower a run the client has not heard of yet', () => {
+    const { sessions, attach } = harness({ paceMs: 1000 });
+    attach(0);
+    expect(sessions.current()).toEqual([]);
+    sessions.dispose();
+  });
+
   test('refuses a second process naming a worker connected now, and lets a rerun’s worker start a session', async () => {
     const { sent, sessions, attach } = harness();
-    const live = attach(0);
+    const live = attach(0).socket;
     await waitFor(() => sent[0]);
     // A test running Playwright itself, in the run's environment.
-    const nested = attach(0);
+    const nested = attach(0).socket;
     await new Promise((r) => setTimeout(r, 20));
     expect(nested.destroyed).toBe(true);
     expect(live.destroyed).toBe(false);
@@ -562,7 +614,7 @@ describe('RunSessions', () => {
     sessions.commandEnded('ed-1');
     expect(live.destroyed).toBe(true);
     expect(last(sent)?.ended).toBe(true);
-    const rerun = attach(0);
+    const rerun = attach(0).socket;
     await waitFor(() => (last(sent)?.ended === false ? true : undefined));
     expect(rerun.destroyed).toBe(false);
     sessions.dispose();

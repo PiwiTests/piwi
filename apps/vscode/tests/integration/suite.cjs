@@ -214,7 +214,15 @@ const tests = {
   async 'Piwi Picker finds the hub of the window’s editor service through the pairing'() {
     const [url, token] = (await vscode.env.clipboard.readText()).split('#');
     const live = url.replace(/\/send$/, '/live');
-    assert.equal((await fetch(live)).status, 401);
+    // Before it sends the token, Piwi Picker has the listener prove it holds it, for the port it answers on.
+    const challenge = require('node:crypto').randomBytes(32).toString('hex');
+    const unpaired = await fetch(live, { headers: { 'x-piwi-editor-challenge': challenge } });
+    assert.equal(unpaired.status, 401);
+    const proof = require('node:crypto')
+      .createHmac('sha256', token)
+      .update(`piwi-editor-proof:${new URL(url).port}:${challenge}`)
+      .digest('hex');
+    assert.equal(unpaired.headers.get('x-piwi-editor-proof'), proof);
     const hubs = await waitFor(async () => {
       const res = await fetch(live, { headers: { Authorization: `Bearer ${token}` } });
       const body = await res.json();

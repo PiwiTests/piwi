@@ -22,6 +22,7 @@
  *   function that ran, and the tests behind a line on hover.
  */
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
@@ -2097,6 +2098,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const bundle = path.join(distDir, 'record-ide.js');
       options.publish?.({
         pid: process.pid,
+        host: os.hostname(),
         version: SERVICE_VERSION,
         client: clientName,
         startedAt: new Date().toISOString(),

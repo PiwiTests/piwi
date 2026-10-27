@@ -4,12 +4,23 @@
  * them), and a fake worker on the run channel.
  */
 import * as fs from 'node:fs';
+import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { WebSocket } from 'ws';
-import { parseHubMessage, type HubAnswer, type HubMessage, type HubSession } from '@piwitests/core/run-hub';
+import {
+  MAX_HUB_COMMAND,
+  MAX_HUB_ROOTS,
+  parseHubMessage,
+  type HubAnswer,
+  type HubMessage,
+  type HubSession,
+} from '@piwitests/core/run-hub';
+import type { RunSession } from '../src/protocol';
+import { RunHub } from '../src/run-hub';
+import type { RunSessions } from '../src/run-sessions';
 import { FakeWorker, service, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
 const ORIGIN = `chrome-extension://${'a'.repeat(32)}`;
@@ -88,6 +99,7 @@ describe('the hub’s address', () => {
     expect(svc.published).toEqual([
       {
         pid: process.pid,
+        host: os.hostname(),
         version: '0.0.0-dev',
         client: 'Test Editor',
         startedAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
@@ -148,6 +160,38 @@ describe('the handshake', () => {
     expect(command.messages).toEqual([]);
     const silent = (await open()) as Client;
     expect(await silent.closed).toMatchObject({ code: 4002 });
+  });
+
+  test('cuts a connection that does not answer the close, and keeps no place for one being closed', async () => {
+    // Raw handshakes that never read, so never answer the close the hub sends when no hello comes.
+    const silent = Array.from({ length: 8 }, () => {
+      const socket = net.connect(hub.port, '127.0.0.1');
+      socket.on('error', () => {});
+      socket.write(
+        `GET /piwi/hub HTTP/1.1\r\nHost: 127.0.0.1:${hub.port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
+          `Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nOrigin: ${ORIGIN}\r\n\r\n`,
+      );
+      return socket;
+    });
+    try {
+      await new Promise((r) => setTimeout(r, 100));
+      // Eight connections that did not say hello hold every place for one that has not.
+      expect(await open()).toBe(503);
+      const started = Date.now();
+      let client: Client | number = 503;
+      while (typeof client === 'number' && Date.now() - started < 5000) {
+        await new Promise((r) => setTimeout(r, 100));
+        client = await open();
+      }
+      // Their hello's 300 ms, then the second they have to answer the close.
+      expect(typeof client).toBe('object');
+      expect(Date.now() - started).toBeLessThan(2500);
+      (client as Client).send({ type: 'hello', token: hub.token });
+      await waitFor(() => (client as Client).messages.find((m) => m.type === 'welcome'));
+      (client as Client).socket.close();
+    } finally {
+      for (const socket of silent) socket.destroy();
+    }
   });
 
   test('closes a connection on a frame too long, a binary frame or a message that is no command', async () => {
@@ -260,7 +304,7 @@ describe('the commands', () => {
         value: { ok: true, message: "Pick an element in the test's window." },
       });
       expect(await client.answer(4)).toMatchObject({ ok: true, message: "Pick an element in the test's window." });
-      client.send({ type: 'record', id: 5, ref });
+      client.send({ type: 'record', id: 5, ref, since: stop.since });
       const record = await worker.next('request', 2);
       expect(record).toMatchObject({ what: 'record', stop: 1 });
       worker.send({
@@ -277,21 +321,34 @@ describe('the commands', () => {
       expect(await worker.next('control', 1)).toEqual({ type: 'control', action: 'step', stop: 1 });
       worker.send({ type: 'running', stop: 1 });
       worker.stopAt(2, 31, false);
-      await waitFor(() => (client.session(ref)?.workers[0]?.stop?.line === 30 ? true : undefined));
+      const headless = await waitFor(() => {
+        const next = client.session(ref)?.workers[0]?.stop;
+        return next?.line === 30 ? next : undefined;
+      });
       client.send({ type: 'runControl', id: 7, ref, action: 'step', since: stop.since });
       expect(await client.answer(7)).toMatchObject({ ok: false, message: 'The test went on.' });
       client.send({ type: 'pick', id: 8, ref, since: stop.since });
       expect(await client.answer(8)).toMatchObject({ ok: false, message: 'The test went on.' });
 
       // A headless stop has no window to pick or record in: refused without asking the worker.
-      client.send({ type: 'pick', id: 9, ref });
+      client.send({ type: 'pick', id: 9, ref, since: headless.since });
       expect(await client.answer(9)).toMatchObject({
         ok: false,
         message: "Pick a locator needs the pause bar in the test's window, and this test runs headless: run it headed.",
       });
-      client.send({ type: 'runControl', id: 10, ref, action: 'resume' });
+      // A control or an intent that answers a stop names it; a pause needs none.
+      for (const [id, command] of [
+        [11, { type: 'runControl', action: 'resume' }],
+        [12, { type: 'runControl', action: 'finish', since: null }],
+        [13, { type: 'record' }],
+      ] as const) {
+        client.send({ ...command, id, ref, worker: 0 });
+        expect(await client.answer(id)).toMatchObject({ ok: false, message: 'The command needs the stop it answers.' });
+      }
+      client.send({ type: 'runControl', id: 10, ref, action: 'resume', since: headless.since });
       expect(await client.answer(10)).toMatchObject({ ok: true, message: 'Resuming.' });
       expect(worker.heard.filter((m) => m.type === 'request')).toHaveLength(3);
+      expect(worker.heard.filter((m) => m.type === 'control')).toHaveLength(3);
 
       await svc.client.sendNotification('piwi/commandEnded', { ref, exitCode: 0 });
       expect(await waitFor(() => (client.session(ref)?.ended ? client.session(ref) : undefined))).toMatchObject({
@@ -314,7 +371,7 @@ describe('the commands', () => {
       worker.stopAt(1, 30, true);
       await waitFor(() => client.session(ref)?.workers[0]?.stop ?? undefined);
       expect(client.session(ref)!.workers[0]!.intents).toEqual([]);
-      client.send({ type: 'record', id: 2, ref });
+      client.send({ type: 'record', id: 2, ref, since: client.session(ref)!.workers[0]!.stop!.since });
       expect(await client.answer(2)).toMatchObject({
         ok: false,
         message: "@piwitests/reporter 0.60.0 cannot start Record here from outside the test's window: update it.",
@@ -355,6 +412,106 @@ describe('a stop nobody else can answer, with the editor’s client unable to', 
       expect(await worker.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 2 });
     } finally {
       worker.socket.destroy();
+    }
+  });
+});
+
+/** A hub of its own, its sessions faked, with the keepalive and hello limits it ships with. */
+function ownHub(
+  runInfo: () => { command: string | null; label: string | null; project: string | null },
+  welcome?: {
+    client: string | null;
+    roots: string[];
+  },
+): Promise<RunHub | null> {
+  const session: RunSession = { ref: 'ed-1', root: '/work/shop', workers: [], ended: false };
+  const sessions = { current: () => [session], intentsOf: () => [] } as unknown as RunSessions;
+  return RunHub.open({
+    sessions,
+    runInfo,
+    welcome: () => ({
+      pid: process.pid,
+      version: '0.60.0',
+      client: welcome?.client ?? null,
+      roots: welcome?.roots ?? [],
+    }),
+    surfacesChanged: () => {},
+  });
+}
+
+describe('a connection the hub lets go', () => {
+  test('is cut when the library closed it, a frame too long, and the other side does not answer the close', async () => {
+    const own = (await ownHub(() => ({ command: null, label: null, project: null })))!;
+    // A paired client that reads what the hub sends, and never closes its side nor answers a ping.
+    const socket = net.connect({ port: own.port, host: '127.0.0.1', allowHalfOpen: true });
+    let cut = false;
+    socket.on('error', () => {
+      cut = true;
+    });
+    socket.on('data', () => {});
+    const ended = new Promise((resolve) => socket.once('end', resolve));
+    try {
+      socket.write(
+        `GET /piwi/hub HTTP/1.1\r\nHost: 127.0.0.1:${own.port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
+          `Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nOrigin: ${ORIGIN}\r\n\r\n`,
+      );
+      await new Promise((r) => setTimeout(r, 100));
+      // Its hello, a masked text frame, so the hello's time limit does not end it.
+      const hello = Buffer.from(JSON.stringify({ type: 'hello', token: own.token }));
+      const mask = Buffer.from([1, 2, 3, 4]);
+      const masked = hello.map((byte, i) => byte ^ mask[i % 4]!);
+      socket.write(
+        Buffer.concat([Buffer.from([0x81, 0x80 | 126, hello.length >> 8, hello.length & 0xff]), mask, masked]),
+      );
+      await new Promise((r) => setTimeout(r, 200));
+      // The head of a masked text frame of 70,000 bytes: over `MAX_HUB_FRAME`, refused as its length is read.
+      const length = Buffer.alloc(8);
+      length.writeBigUInt64BE(70_000n);
+      socket.write(Buffer.concat([Buffer.from([0x81, 0xff]), length, mask]));
+      await ended;
+      // Past the grace, the hub no longer holds the connection: what is sent to it is refused.
+      await new Promise((r) => setTimeout(r, 1500));
+      for (let i = 0; i < 10 && !cut; i++) {
+        socket.write('x');
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(cut).toBe(true);
+    } finally {
+      socket.destroy();
+      own.close();
+    }
+  });
+});
+
+describe('what the hub sends', () => {
+  test('fits what the extension reads: a command line cut, marked, and the first of many folders', async () => {
+    const long = `npx playwright test ${'tests/cart.spec.ts:3 '.repeat(2000)}`;
+    const roots = Array.from({ length: 100 }, (_, i) => `/work/shop-${i}`);
+    const small = (await ownHub(() => ({ command: long, label: 'shop', project: 'P'.repeat(600) }), {
+      client: 'C'.repeat(300),
+      roots,
+    }))!;
+    try {
+      const socket = new WebSocket(small.url, { origin: ORIGIN });
+      const heard: HubMessage[] = [];
+      socket.on('message', (data) => {
+        const message = parseHubMessage(String(data));
+        heard.push(message ?? ({ type: 'unreadable' } as unknown as HubMessage));
+      });
+      await new Promise((resolve) => socket.on('open', resolve));
+      socket.send(JSON.stringify({ type: 'hello', token: small.token }));
+      const welcome = await waitFor(() => heard.find((m) => m.type === 'welcome'));
+      expect(welcome).toMatchObject({ roots: roots.slice(0, MAX_HUB_ROOTS), client: `${'C'.repeat(199)}…` });
+      socket.send(JSON.stringify({ type: 'subscribe', id: 1 }));
+      const sent = await waitFor(() => heard.find((m) => m.type === 'session'));
+      const { command, project } = (sent as Extract<HubMessage, { type: 'session' }>).session;
+      expect(command).toHaveLength(MAX_HUB_COMMAND);
+      expect(command).toBe(`${long.slice(0, MAX_HUB_COMMAND - 1)}…`);
+      expect(project).toBe(`${'P'.repeat(499)}…`);
+      expect(heard.map((m) => m.type)).not.toContain('unreadable');
+      socket.close();
+    } finally {
+      small.close();
     }
   });
 });

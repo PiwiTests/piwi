@@ -26,8 +26,9 @@ afterEach(() => {
   for (const dir of folders.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-const discovery = (pid: number): EditorDiscovery => ({
+const discovery = (pid: number, host = os.hostname()): EditorDiscovery => ({
   pid,
+  host,
   version: '0.60.0',
   client: 'Visual Studio Code',
   startedAt: '2026-10-25T10:00:00.000Z',
@@ -104,6 +105,56 @@ describe('the discovery file', () => {
       },
     ]);
     expect(readLiveHubs(path.join(dir, 'missing'))).toEqual([]);
+  });
+
+  test('deletes no file but a service’s of this machine, and skips another machine’s', async () => {
+    const dir = tempDir();
+    const dead = await deadPid();
+    const files: Record<string, string> = {
+      // A person's own numbered files, in a folder PIWI_EDITORS_DIR names.
+      '2024.json': '{"my":"report"}',
+      [`${dead}.json`]: '{ half',
+      // A service of another machine sharing the home folder: its process is that machine's.
+      [`${dead + 1}.json`]: formatEditorDiscovery(discovery(dead + 1, 'build-agent')),
+      [`${process.pid}.json`]: formatEditorDiscovery(discovery(process.pid, 'build-agent')),
+    };
+    for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), text);
+    expect(readLiveEditorsIn(dir)).toEqual([]);
+    writeDiscovery(dir, discovery(process.ppid));
+    expect(fs.readdirSync(dir).sort()).toEqual([...Object.keys(files), `${process.ppid}.json`].sort());
+    expect(readLiveEditorsIn(dir).map((d) => d.pid)).toEqual([process.ppid]);
+  });
+
+  test.runIf(UNIX)('reads nothing from a folder others can enter, a link, nor through a file that is a link', () => {
+    const base = tempDir();
+    const dir = path.join(base, 'editors');
+    writeDiscovery(dir, discovery(process.pid));
+    expect(readLiveEditorsIn(dir).map((d) => d.pid)).toEqual([process.pid]);
+    fs.chmodSync(dir, 0o755);
+    expect(readLiveEditorsIn(dir)).toEqual([]);
+    fs.chmodSync(dir, 0o700);
+    const link = path.join(base, 'link');
+    fs.symlinkSync(dir, link);
+    expect(readLiveEditorsIn(link)).toEqual([]);
+    // A file that links elsewhere is not this user's discovery file, nor deleted.
+    const elsewhere = path.join(base, 'elsewhere.json');
+    fs.writeFileSync(elsewhere, formatEditorDiscovery(discovery(process.ppid)));
+    fs.symlinkSync(elsewhere, path.join(dir, `${process.ppid}.json`));
+    expect(readLiveEditorsIn(dir).map((d) => d.pid)).toEqual([process.pid]);
+    expect(fs.lstatSync(path.join(dir, `${process.ppid}.json`)).isSymbolicLink()).toBe(true);
+  });
+
+  test.runIf(UNIX && process.getuid?.() === 0)('reads no folder and no file another user owns', async () => {
+    const dir = tempDir();
+    const dead = await deadPid();
+    const theirs = path.join(dir, `${dead}.json`);
+    fs.writeFileSync(theirs, formatEditorDiscovery(discovery(dead)), { mode: 0o600 });
+    fs.chownSync(theirs, 65534, 65534);
+    fs.writeFileSync(path.join(dir, `${process.pid}.json`), formatEditorDiscovery(discovery(process.pid)));
+    expect(readLiveEditorsIn(dir).map((d) => d.pid)).toEqual([process.pid]);
+    expect(fs.existsSync(theirs)).toBe(true);
+    fs.chownSync(dir, 65534, 65534);
+    expect(readLiveEditorsIn(dir)).toEqual([]);
   });
 });
 

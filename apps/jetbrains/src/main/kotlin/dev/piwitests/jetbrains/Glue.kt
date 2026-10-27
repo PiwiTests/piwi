@@ -4,11 +4,16 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.io.IOException
+import java.nio.file.FileSystems
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.PosixFileAttributes
+import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.attribute.UserPrincipal
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
@@ -888,25 +893,31 @@ object Glue {
     private val HUB_URL = Regex("^ws://127\\.0\\.0\\.1:\\d{1,5}/[\\w/-]{0,64}$")
     private val HUB_TOKEN = Regex("^[A-Za-z0-9_-]{16,256}$")
 
+    /** An editor service's discovery file: the process and the machine it names, and its hub, null when it names none. */
+    data class EditorDiscovery(val pid: Long, val host: String, val hub: LiveHub?)
+
     /**
-     * The hub of an editor service's discovery file (`<pid>.json`), as `parseEditorDiscovery` in
-     * `@piwitests/core/editor-discovery` reads it; null when the file names no hub, or another process than `pid`.
+     * An editor service's discovery file (`<pid>.json`), as `parseEditorDiscovery` in `@piwitests/core/editor-discovery`
+     * reads it; null when it is not one. Its hub is null when it names none this machine serves.
      */
-    fun parseLiveHub(text: String?, pid: Long): LiveHub? {
+    fun parseEditorDiscovery(text: String?): EditorDiscovery? {
         val json = runCatching { JsonParser.parseString(text ?: return null) as? JsonObject }.getOrNull() ?: return null
         fun string(o: JsonObject?, key: String, max: Int) = o?.get(key)
             ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
             ?.takeIf { it.isNotEmpty() && it.length <= max && !it.contains('\u0000') }
-        val named = json.get("pid")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asDouble
-        if (named != pid.toDouble()) return null
+        val named = json.get("pid")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asDouble ?: return null
+        if (named < 1 || named > Long.MAX_VALUE.toDouble() || named != Math.floor(named)) return null
+        val pid = named.toLong()
+        val host = string(json, "host", 255) ?: ""
         val hub = json.get("hub") as? JsonObject
-        val url = string(hub, "url", 200)?.takeIf { HUB_URL.matches(it) } ?: return null
-        val token = string(hub, "token", 256)?.takeIf { HUB_TOKEN.matches(it) } ?: return null
+        val url = string(hub, "url", 200)?.takeIf { HUB_URL.matches(it) }
+        val token = string(hub, "token", 256)?.takeIf { HUB_TOKEN.matches(it) }
+        if (url == null || token == null) return EditorDiscovery(pid, host, null)
         val roots = (json.get("roots") as? JsonArray)?.take(64)?.mapNotNull { root ->
             root.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
                 ?.takeIf { it.isNotEmpty() && it.length <= 4096 && !it.contains('\u0000') }
         }.orEmpty()
-        return LiveHub(
+        val live = LiveHub(
             url = url,
             token = token,
             pid = pid,
@@ -915,26 +926,81 @@ object Glue {
             roots = roots,
             startedAt = string(json, "startedAt", 64) ?: "",
         )
+        return EditorDiscovery(pid, host, live)
+    }
+
+    /** The hub of an editor service's discovery file; null when the file names no hub, or another process than `pid`. */
+    fun parseLiveHub(text: String?, pid: Long): LiveHub? = parseEditorDiscovery(text)?.takeIf { it.pid == pid }?.hub
+
+    private val OTHERS_ACCESS = setOf(
+        PosixFilePermission.GROUP_READ, PosixFilePermission.GROUP_WRITE, PosixFilePermission.GROUP_EXECUTE,
+        PosixFilePermission.OTHERS_READ, PosixFilePermission.OTHERS_WRITE, PosixFilePermission.OTHERS_EXECUTE,
+    )
+
+    /** The user this process runs as, where the file system names owners (POSIX); null elsewhere. */
+    private val currentUser: UserPrincipal? by lazy {
+        runCatching {
+            FileSystems.getDefault().userPrincipalLookupService.lookupPrincipalByName(System.getProperty("user.name"))
+        }.getOrNull()
+    }
+
+    /**
+     * Whether `path` is, not through a link, a folder (`folder`) this user owns that no other user can enter, or a
+     * file this user owns. Where the file system names no owners (Windows), whether it is such a folder or file.
+     */
+    private fun ownEntry(path: Path, folder: Boolean): Boolean {
+        val posix = runCatching {
+            Files.readAttributes(path, PosixFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        }.getOrNull()
+        if (posix == null) {
+            val basic = runCatching {
+                Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            }.getOrNull() ?: return false
+            return if (folder) basic.isDirectory else basic.isRegularFile
+        }
+        if (if (folder) !posix.isDirectory else !posix.isRegularFile) return false
+        if (posix.owner() != (currentUser ?: return false)) return false
+        return !folder || posix.permissions().none { it in OTHERS_ACCESS }
     }
 
     /**
      * The hubs of the editor services whose discovery files `dir` holds and whose process runs, oldest first, as
-     * `readLiveEditors` in `@piwitests/core/editor-discovery` lists them: the file of a process that is gone is
-     * deleted, one that cannot be read skipped.
+     * `readLiveEditors` in `@piwitests/core/editor-discovery` lists them: nothing from a folder that is a link,
+     * another user's or one other users can enter; only the files this user owns are read; a file that reads as a
+     * service's file of `host` (this machine, in any case) naming the process its name names is deleted when that
+     * process is gone; any other file, another machine's included, is skipped and left as it is.
      */
-    fun liveHubs(dir: Path?, alive: (Long) -> Boolean): List<LiveHub> {
-        val names = dir?.let { folder ->
-            runCatching { Files.list(folder).use { entries -> entries.map { it.fileName.toString() }.toList() } }.getOrNull()
-        }.orEmpty()
+    fun liveHubs(dir: Path?, host: String, alive: (Long) -> Boolean): List<LiveHub> {
+        if (dir == null || !ownEntry(dir, folder = true)) return emptyList()
+        val names = runCatching { Files.list(dir).use { entries -> entries.map { it.fileName.toString() }.toList() } }
+            .getOrNull().orEmpty()
         return names.mapNotNull { name ->
             val pid = DISCOVERY_NAME.find(name)?.groupValues?.get(1)?.toLongOrNull() ?: return@mapNotNull null
-            val file = dir!!.resolve(name)
+            val file = dir.resolve(name)
+            if (!ownEntry(file, folder = false)) return@mapNotNull null
+            val discovery = parseEditorDiscovery(runCatching { Files.readString(file) }.getOrNull())
+            if (discovery?.pid != pid || !discovery.host.equals(host, ignoreCase = true)) return@mapNotNull null
             if (!alive(pid)) {
                 runCatching { Files.deleteIfExists(file) }
                 return@mapNotNull null
             }
-            parseLiveHub(runCatching { Files.readString(file) }.getOrNull(), pid)
+            discovery.hub
         }.sortedWith(compareBy<LiveHub>({ it.startedAt }, { it.pid }))
+    }
+
+    /**
+     * This machine's name, as the editor service writes it in its discovery file (Node's `os.hostname()`, the
+     * system's `gethostname`): the kernel's on Linux, else what `hostname` prints. Read once, off the event thread.
+     */
+    val machineName: String by lazy {
+        runCatching { Files.readString(Path.of("/proc/sys/kernel/hostname")).trim() }.getOrNull()?.ifEmpty { null }
+            ?: runCatching {
+                val process = ProcessBuilder("hostname").redirectErrorStream(true).start()
+                val out = process.inputStream.bufferedReader().readText().trim()
+                if (process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS) && process.exitValue() == 0) out else null
+            }.getOrNull()?.ifEmpty { null }
+            ?: runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrNull()
+            ?: ""
     }
 
     /** The running desktop app, from its discovery file's text; null when it is not one. */
@@ -1443,6 +1509,29 @@ object Glue {
     /** Whether an image this wide and tall is drawn: decoding one larger holds too much memory. */
     fun decodableImage(width: Int, height: Int): Boolean =
         width in 1..MAX_IMAGE_SIDE && height in 1..MAX_IMAGE_SIDE && width.toLong() * height <= MAX_IMAGE_PIXELS
+
+    /** The request header carrying Piwi Picker's challenge (`@piwitests/core/editor-send`). */
+    const val EDITOR_CHALLENGE_HEADER = "x-piwi-editor-challenge"
+
+    /** The response header carrying the proof that answers it. */
+    const val EDITOR_PROOF_HEADER = "x-piwi-editor-proof"
+
+    private val EDITOR_CHALLENGE = Regex("^[0-9a-f]{32,128}$")
+
+    /** Whether `value` is a challenge: 32 to 128 lowercase hex characters. */
+    fun isEditorChallenge(value: String?): Boolean = value != null && EDITOR_CHALLENGE.matches(value)
+
+    /**
+     * The proof that this IDE holds the pairing's `token`, for the loopback `port` it answers on, as
+     * `editorTokenProof` in `@piwitests/core/editor-send` makes it: HMAC-SHA256 keyed by the token over
+     * `piwi-editor-proof:<port>:<challenge>`, lowercase hex.
+     */
+    fun editorTokenProof(token: String, port: Int, challenge: String): String {
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(token.toByteArray(Charsets.UTF_8), "HmacSHA256"))
+        return mac.doFinal("piwi-editor-proof:$port:$challenge".toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
 
     /** Whether an `Authorization` header carries the token, compared in constant time. */
     fun sendAuthorized(header: String?, token: String): Boolean {

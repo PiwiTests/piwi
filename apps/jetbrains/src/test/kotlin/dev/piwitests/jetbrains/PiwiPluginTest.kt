@@ -622,14 +622,14 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /** Posts `body` to the Send to editor endpoint as Piwi Picker does, and waits for the answer, pumping the event queue meanwhile. */
-    private fun sendFromPicker(body: String, bearer: String): java.net.http.HttpResponse<String> {
+    private fun sendFromPicker(body: String, bearer: String, challenge: String? = null): java.net.http.HttpResponse<String> {
         val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        val request = java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiSendHandler.PATH}"))
+            .header("Authorization", "Bearer $bearer")
+            .header("Origin", "chrome-extension://abc")
+        if (challenge != null) request.header(Glue.EDITOR_CHALLENGE_HEADER, challenge)
         val future = java.net.http.HttpClient.newHttpClient().sendAsync(
-            java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiSendHandler.PATH}"))
-                .header("Authorization", "Bearer $bearer")
-                .header("Origin", "chrome-extension://abc")
-                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(body))
-                .build(),
+            request.POST(java.net.http.HttpRequest.BodyPublishers.ofString(body)).build(),
             java.net.http.HttpResponse.BodyHandlers.ofString(),
         )
         val deadline = System.currentTimeMillis() + 20_000
@@ -657,13 +657,17 @@ class PiwiPluginTest : BasePlatformTestCase() {
         )
     }
 
-    /** Asks the live endpoint as Piwi Picker does, with `bearer` (none without), and waits, pumping the event queue meanwhile. */
-    private fun liveFromPicker(bearer: String?): java.net.http.HttpResponse<String> {
+    /**
+     * Asks the live endpoint as Piwi Picker does, with `bearer` (none without) and a `challenge`, and waits, pumping the
+     * event queue meanwhile.
+     */
+    private fun liveFromPicker(bearer: String?, challenge: String? = null, method: String = "GET"): java.net.http.HttpResponse<String> {
         val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
         val request = java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiSendHandler.LIVE_PATH}"))
             .header("Origin", "chrome-extension://abc")
-            .GET()
+            .method(method, java.net.http.HttpRequest.BodyPublishers.noBody())
         if (bearer != null) request.header("Authorization", "Bearer $bearer")
+        if (challenge != null) request.header(Glue.EDITOR_CHALLENGE_HEADER, challenge)
         val future = java.net.http.HttpClient.newHttpClient().sendAsync(request.build(), java.net.http.HttpResponse.BodyHandlers.ofString())
         val deadline = System.currentTimeMillis() + 20_000
         while (!future.isDone && System.currentTimeMillis() < deadline) {
@@ -679,10 +683,18 @@ class PiwiPluginTest : BasePlatformTestCase() {
         if (!System.getenv("PIWI_EDITORS_DIR").isNullOrBlank()) return
         val token = PiwiSendToken.ensure()
         val home = FileUtil.createTempDirectory("piwi-home", null)
+        // The folder the editor services write, readable by this user alone.
         val editors = File(home, ".piwi/editors").apply { mkdirs() }
+        editors.setReadable(false, false)
+        editors.setWritable(false, false)
+        editors.setExecutable(false, false)
+        editors.setReadable(true, true)
+        editors.setWritable(true, true)
+        editors.setExecutable(true, true)
         fun file(pid: Long) = File(editors, "$pid.json").apply {
             writeText(
-                """{"pid":$pid,"version":"0.60.0","client":"WebStorm","startedAt":"2026-10-25T10:00:00.000Z","roots":["/work/shop"],""" +
+                """{"pid":$pid,"host":"${Glue.machineName}","version":"0.60.0","client":"WebStorm",""" +
+                    """"startedAt":"2026-10-25T10:00:00.000Z","roots":["/work/shop"],""" +
                     """"hub":{"url":"ws://127.0.0.1:43123/piwi/hub","token":"hub-token-0123456789"},""" +
                     """"runChannel":{"path":"/tmp/s.sock","token":"channel-token-0123456789"}}""",
             )
@@ -713,6 +725,56 @@ class PiwiPluginTest : BasePlatformTestCase() {
         } finally {
             System.setProperty("user.home", saved)
         }
+    }
+
+    /** Every answer to Piwi Picker's challenge proves this IDE holds the pairing's token, paired or not, for its port. */
+    fun testTheEndpointProvesItHoldsTheTokenBeforePiwiPickerSendsIt() {
+        val token = PiwiSendToken.ensure()
+        val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        val challenge = "ab".repeat(32)
+        val proof = Glue.editorTokenProof(token, port, challenge)
+        for ((bearer, method, status) in listOf(Triple(null, "GET", 401), Triple(token, "GET", 200), Triple(null, "OPTIONS", 204))) {
+            val res = liveFromPicker(bearer, challenge, method)
+            assertEquals("$method with ${bearer != null}", status, res.statusCode())
+            assertEquals("$method with ${bearer != null}", proof, res.headers().firstValue(Glue.EDITOR_PROOF_HEADER).orElse(null))
+        }
+        val refused = sendFromPicker("""{"kind":"locator","text":"x"}""", "wrong-token-wrong-token", challenge)
+        assertEquals(401, refused.statusCode())
+        assertEquals(proof, refused.headers().firstValue(Glue.EDITOR_PROOF_HEADER).orElse(null))
+        val ok = liveFromPicker(token, challenge)
+        assertEquals(Glue.EDITOR_PROOF_HEADER, ok.headers().firstValue("Access-Control-Expose-Headers").orElse(null))
+        assertEquals(null, liveFromPicker(token).headers().firstValue(Glue.EDITOR_PROOF_HEADER).orElse(null))
+        assertEquals(null, liveFromPicker(token, "AB".repeat(32)).headers().firstValue(Glue.EDITOR_PROOF_HEADER).orElse(null))
+        // A preflight names the challenge header among those it asks to send.
+        val preflight = liveFromPicker(null, null, "OPTIONS")
+        assertTrue(preflight.headers().firstValue("Access-Control-Allow-Headers").orElse("").contains(Glue.EDITOR_CHALLENGE_HEADER))
+    }
+
+    /** A page reached under another name than this machine's (DNS rebinding) gets nothing from the endpoint. */
+    fun testTheEndpointAnswersNoOtherHost() {
+        val token = PiwiSendToken.ensure()
+        val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        fun statusFor(host: String): String {
+            val answer = com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread<String> {
+                java.net.Socket("127.0.0.1", port).use { socket ->
+                    socket.soTimeout = 10_000
+                    socket.getOutputStream().write(
+                        ("GET ${PiwiSendHandler.LIVE_PATH} HTTP/1.1\r\nHost: $host\r\nAuthorization: Bearer $token\r\n" +
+                            "Origin: chrome-extension://abc\r\nConnection: close\r\n\r\n").toByteArray(),
+                    )
+                    socket.getInputStream().bufferedReader().readLine() ?: ""
+                }
+            }
+            val deadline = System.currentTimeMillis() + 20_000
+            while (!answer.isDone && System.currentTimeMillis() < deadline) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(20)
+            }
+            return answer.get(1, TimeUnit.SECONDS)
+        }
+        assertTrue(statusFor("127.0.0.1:$port"), statusFor("127.0.0.1:$port").contains(" 200 "))
+        val rebound = statusFor("evil.test:$port")
+        assertFalse(rebound, rebound.contains(" 200 "))
     }
 
     /** Without an editor open, Piwi Picker's text goes into a new scratch file, and the answer names no file. */

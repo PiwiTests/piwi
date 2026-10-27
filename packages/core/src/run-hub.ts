@@ -22,6 +22,14 @@ export const HUB_HELLO_MS = 5_000;
 export const MAX_HUB_FRAME = 64 * 1024;
 /** The commands a connection may have waiting for their answer at once: one more is refused. */
 export const MAX_HUB_PENDING = 16;
+/** The longest command line a `session` carries: the hub cuts a longer one, marking the cut. */
+export const MAX_HUB_COMMAND = 20_000;
+/** The most workspace folders a `welcome` names: the hub names the first ones. */
+export const MAX_HUB_ROOTS = 64;
+/** The longest Piwi project name a `session` carries: the hub cuts a longer one. */
+export const MAX_HUB_PROJECT = 500;
+/** The longest client name a `welcome` carries: the hub cuts a longer one. */
+export const MAX_HUB_CLIENT = 200;
 
 /** Why the hub closed a connection, as the WebSocket's close code. */
 export const HUB_CLOSE = {
@@ -133,7 +141,8 @@ export type HubCommand =
   /**
    * Steer a run, as `piwi/runControl` does: `pause` every running worker (or `worker`), or answer the stop of the one
    * stopped (`worker`, needed when several are): `step`, `resume`, `finish`. `since` names the stop the extension
-   * showed: one that went on is refused (`The test went on.`), so a click twice does not skip the next stop.
+   * showed, and these three need it: one that went on is refused (`The test went on.`), so a click twice does not skip
+   * the next stop. `pause` takes none.
    */
   | {
       type: 'runControl';
@@ -146,12 +155,12 @@ export type HubCommand =
   /** An image of a stopped worker's page, without the pause bar: the answer's `image`. */
   | { type: 'pausedPage'; id: number; ref: string; worker: number }
   /**
-   * At the stop of the one stopped worker (or `worker`), start what the pause bar's **Pick a locator** (`pick`) or
-   * **Record here** (`record`) starts, in the test's window: the picked locator goes to the editor in place of the
-   * locator on the stopped line, the recorded steps above that line. Refused at a stop no pause bar shows (a headless
-   * run).
+   * At the stop `since` names (of the one stopped worker, or `worker`), start what the pause bar's **Pick a locator**
+   * (`pick`) or **Record here** (`record`) starts, in the test's window: the picked locator goes to the editor in place
+   * of the locator on the stopped line, the recorded steps above that line. Refused at a stop no pause bar shows (a
+   * headless run), and at a stop the test went on from.
    */
-  | { type: HubIntent; id: number; ref: string; worker: number | null; since: string | null };
+  | { type: HubIntent; id: number; ref: string; worker: number | null; since: string };
 
 /** What `parseHubCommand` reads: a command, or one answered as refused. */
 export type ParsedHubCommand =
@@ -262,6 +271,8 @@ function isInt(value: unknown, min: number, max = 2_147_483_647): value is numbe
 
 const REF = /^[\w-]{1,64}$/;
 const ACTIONS: readonly string[] = ['pause', 'step', 'resume', 'finish'];
+/** Why a command that answers a stop and names none is refused. */
+const NEEDS_STOP = 'The command needs the stop it answers.';
 
 /** The token of a `hello`; null for any other message. */
 export function parseHubHello(text: string): string | null {
@@ -295,12 +306,13 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
       if (typeof action !== 'string' || !ACTIONS.includes(action)) {
         return invalid('action must be pause, step, resume or finish.');
       }
+      if (action !== 'pause' && since === null) return invalid(NEEDS_STOP);
       return { type: 'runControl', id, ref, worker, action: action as HubControlAction, since };
     }
     case 'pausedPage':
       return worker === null ? invalid('pausedPage needs the worker.') : { type: 'pausedPage', id, ref, worker };
     default:
-      return { type: value.type as HubIntent, id, ref, worker, since };
+      return since === null ? invalid(NEEDS_STOP) : { type: value.type as HubIntent, id, ref, worker, since };
   }
 }
 
@@ -383,8 +395,8 @@ function readSession(value: unknown): HubSession | null {
   }
   const root = nullableStr(value.root, 4096);
   const label = nullableStr(value.label, 4096);
-  const command = nullableStr(value.command, 20_000);
-  const project = nullableStr(value.project, 500);
+  const command = nullableStr(value.command, MAX_HUB_COMMAND);
+  const project = nullableStr(value.project, MAX_HUB_PROJECT);
   if (root === undefined || label === undefined || command === undefined || project === undefined) return null;
   if (!Array.isArray(value.workers) || value.workers.length > 1000) return null;
   const workers = value.workers.map(readWorker);
@@ -400,8 +412,10 @@ export function parseHubMessage(text: string): HubMessage | null {
     case 'welcome': {
       const { pid, version, client, roots, keepaliveMs } = value;
       if (!isInt(pid, 1) || str(version, 64) === null || !isInt(keepaliveMs, 1)) return null;
-      if (client !== null && str(client, 200) === null) return null;
-      if (!Array.isArray(roots) || roots.length > 64 || !roots.every((r) => str(r, 4096) !== null)) return null;
+      if (client !== null && str(client, MAX_HUB_CLIENT) === null) return null;
+      if (!Array.isArray(roots) || roots.length > MAX_HUB_ROOTS || !roots.every((r) => str(r, 4096) !== null)) {
+        return null;
+      }
       return {
         type: 'welcome',
         pid,

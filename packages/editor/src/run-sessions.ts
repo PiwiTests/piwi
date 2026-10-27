@@ -51,11 +51,11 @@ type RunAttach = Extract<RunToHub, { type: 'run-attach' }>;
 /** What a worker's answer to a request carries: an image, or whether an intent started. */
 type Answered = PausedImage | IntentAnswer | null;
 
-/** What the hub asks a stop to start from outside the page: as `piwi/runControl` names a stop, and the intent. */
+/** What the hub asks a stop to start from outside the page: the stop it was shown, as `piwi/runControl` names one. */
 export interface IntentParams {
   ref: string;
   worker?: number | null;
-  since?: string | null;
+  since: string;
   what: RunIntent;
 }
 
@@ -99,7 +99,8 @@ interface Session {
   root: string | null;
   workers: Map<number, Worker>;
   ended: boolean;
-  /** What the client last heard of it, and when. */
+  /** What the client last heard of it, as sent and as text, and when; null before it heard anything. */
+  heard: RunSession | null;
   sent: string;
   sentAt: number;
   /** The notification on its way, and when it goes. */
@@ -148,6 +149,7 @@ export class RunSessions {
         root: this.options.rootOf(attach.cwd),
         workers: new Map(),
         ended: false,
+        heard: null,
         sent: '',
         sentAt: 0,
         paced: null,
@@ -264,13 +266,14 @@ export class RunSessions {
   }
 
   /**
-   * At the stop of a run's one stopped worker (or the one named), start the pause bar's Pick a locator or Record here
-   * in the test's window, as its button does: refused at a stop no bar shows, and for a reporter that predates it.
-   * Answers once the worker said whether it started, or after `PAUSED_PAGE_WAIT_MS`.
+   * At the stop `since` names (of the run's one stopped worker, or the one named), start the pause bar's Pick a locator
+   * or Record here in the test's window, as its button does: refused without the stop, at a stop no bar shows, and for
+   * a reporter that predates it. Answers once the worker said whether it started, or after `PAUSED_PAGE_WAIT_MS`.
    */
   intent(params: IntentParams): Promise<RunControlResult> {
     const refuse = (message: string): Promise<RunControlResult> => Promise.resolve({ ok: false, message });
-    const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
+    if (typeof params?.since !== 'string' || !params.since) return refuse('The command needs the stop it answers.');
+    const session = typeof params.ref === 'string' ? this.sessions.get(params.ref) : undefined;
     if (!session?.workers.size) return refuse('No worker of this run is connected to the editor.');
     const named = typeof params.worker === 'number' ? (session.workers.get(params.worker) ?? null) : null;
     if (typeof params.worker === 'number' && !named) {
@@ -300,9 +303,12 @@ export class RunSessions {
     return found ? [...found.takes] : [];
   }
 
-  /** The runs live now, as the client last heard them or is about to. */
+  /**
+   * The runs live now, as the client last heard them: a change it has not heard yet goes to everyone who follows the
+   * runs together, in the notification that brings it. A run the client heard nothing of yet is left out until then.
+   */
   current(): RunSession[] {
-    return [...this.sessions.values()].map((session) => this.view(session));
+    return [...this.sessions.values()].flatMap((session) => (session.heard ? [session.heard] : []));
   }
 
   /**
@@ -537,6 +543,7 @@ export class RunSessions {
     const view = this.view(session);
     const text = JSON.stringify(view);
     if (text === session.sent) return;
+    session.heard = view;
     session.sent = text;
     session.sentAt = Date.now();
     this.options.notify(view);

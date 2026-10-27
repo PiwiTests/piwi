@@ -2,7 +2,9 @@
  * The service's discovery file, `~/.piwi/editors/<pid>.json` (`@piwitests/core/editor-discovery`): written once the
  * service listens, in a folder only this user reads (0700), as a file only this user reads (0600), never into a folder
  * another user owns or a link; removed as the service stops. On Windows the user's profile folder already keeps other
- * users out, as for `~/.piwi/desktop.json`. The editors' clients list the folder with `readLiveHubs` for Piwi Picker.
+ * users out, as for `~/.piwi/desktop.json`. The editors' clients list the folder with `readLiveHubs` for Piwi Picker:
+ * nothing from a folder that is a link, another user's, or one other users can enter (where the platform tells), and
+ * only the files this user owns in it.
  */
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -34,14 +36,43 @@ function processAlive(pid: number): boolean {
   }
 }
 
-/** The folder's operations, on the disk. */
+/**
+ * Whether `dir` is a folder this user owns, not a link, that no other user can enter; one only too open is closed to
+ * them when `tighten`. Where the platform has no user ids (Windows), a folder that is not a link.
+ */
+function privateFolder(dir: string, tighten: boolean): boolean {
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(dir);
+  } catch {
+    return false;
+  }
+  if (!stat.isDirectory()) return false;
+  if (typeof process.getuid !== 'function') return true;
+  if (stat.uid !== process.getuid()) return false;
+  if ((stat.mode & 0o077) === 0) return true;
+  if (!tighten) return false;
+  fs.chmodSync(dir, 0o700);
+  return true;
+}
+
+/** The folder's operations, on the disk: none of its entries when it is not this user's alone. */
 function folderOnDisk(dir: string): DiscoveryFolder {
   return {
+    host: os.hostname(),
     names: () => {
       try {
-        return fs.readdirSync(dir);
+        return privateFolder(dir, false) ? fs.readdirSync(dir) : [];
       } catch {
         return [];
+      }
+    },
+    owned: (name) => {
+      try {
+        const stat = fs.lstatSync(path.join(dir, name));
+        return stat.isFile() && (typeof process.getuid !== 'function' || stat.uid === process.getuid());
+      } catch {
+        return false;
       }
     },
     read: (name) => {
@@ -62,7 +93,10 @@ function folderOnDisk(dir: string): DiscoveryFolder {
   };
 }
 
-/** The services whose discovery files the folder holds and whose process runs; the files of those gone are deleted. */
+/**
+ * The services whose discovery files the folder holds and whose process runs; the files this machine's services that
+ * are gone left are deleted.
+ */
 export function readLiveEditorsIn(dir: string): EditorDiscovery[] {
   return readLiveEditors(folderOnDisk(dir));
 }
@@ -72,17 +106,6 @@ export function readLiveHubs(dir: string = editorsDir()): LiveHub[] {
   return liveHubsOf(readLiveEditorsIn(dir));
 }
 
-/** Creates `dir` for this user only, and answers whether it is a folder this user owns, not a link. */
-function privateDir(dir: string): boolean {
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const stat = fs.lstatSync(dir);
-  if (!stat.isDirectory()) return false;
-  if (typeof process.getuid !== 'function') return true;
-  if (stat.uid !== process.getuid()) return false;
-  if ((stat.mode & 0o077) !== 0) fs.chmodSync(dir, 0o700);
-  return true;
-}
-
 /**
  * Write the service's file in `dir`, readable by this user only, through a temporary file renamed over it, so a reader
  * never reads half of it; the files of services gone are deleted first. Returns its path; null when it could not be
@@ -90,7 +113,8 @@ function privateDir(dir: string): boolean {
  */
 export function writeDiscovery(dir: string, discovery: EditorDiscovery): string | null {
   try {
-    if (!privateDir(dir)) return null;
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    if (!privateFolder(dir, true)) return null;
     readLiveEditorsIn(dir);
     const file = path.join(dir, editorDiscoveryName(discovery.pid));
     const temporary = path.join(dir, `.${editorDiscoveryName(discovery.pid)}.${randomBytes(6).toString('hex')}.tmp`);
