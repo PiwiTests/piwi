@@ -1,8 +1,8 @@
 /**
  * The worker's side of the Runs window: the one `RunHubs` of the worker, wired to the paired editor, the secret area
  * and the browser's WebSocket; the window's port (`RUNS_PORT`, taken from `runs.html` alone), which gets the state at
- * each change and what each code written at a stop came to, and passes the window's commands on; the popup's Runs
- * tile; and the global shortcut.
+ * each change, what each code written at a stop came to and the frames of the live views it watches, and passes the
+ * window's commands on, its views stopped as it closes; the popup's Runs tile; and the global shortcut.
  */
 import { parseLiveAnswer } from '@piwitests/core/run-hub';
 import {
@@ -14,7 +14,7 @@ import {
 import { secretArea } from '../shared/secret-store.js';
 import { RUNS_PAGE, RUNS_PORT, liveRuns, parseRunsRequest, type RunsEvent } from '../shared/runs.js';
 import { browserSocket } from './hub-connection.js';
-import { RunHubs } from './run-hubs.js';
+import { RunHubs, type RunsViewer } from './run-hubs.js';
 
 /** The Runs window's size: beside the test's window, the width of a phone. */
 const RUNS_WINDOW = { width: 440, height: 720 };
@@ -53,11 +53,16 @@ function serveRunsPort(port: chrome.runtime.Port): void {
       // The window closed meanwhile.
     }
   };
+  // The window as a viewer of the live views it watches: their frames, and the word that one ended.
+  const viewer: RunsViewer = {
+    frame: (frame) => post({ type: 'frame', ...frame }),
+    ended: (view) => post({ type: 'view-ended', ...view }),
+  };
   const unlisten = runHubs.listen(
-    () => post({ type: 'state', state: runHubs.state() }),
+    () => post({ type: 'state', state: runHubs.state(viewer) }),
     (code) => post({ type: 'code', ...code }),
   );
-  post({ type: 'state', state: runHubs.state() });
+  post({ type: 'state', state: runHubs.state(viewer) });
   if (!runHubs.connected()) void runHubs.find();
   port.onMessage.addListener((raw: unknown) => {
     const request = parseRunsRequest(raw);
@@ -66,11 +71,12 @@ function serveRunsPort(port: chrome.runtime.Port): void {
     else if (request.type === 'find') void runHubs.find();
     else if (request.type === 'command') {
       const { id, ...command } = request;
-      void runHubs.command(command).then((answer) => post({ type: 'answer', id, ...answer }));
+      void runHubs.command(command, viewer).then((answer) => post({ type: 'answer', id, ...answer }));
     }
   });
   port.onDisconnect.addListener(() => {
     unlisten();
+    runHubs.unwatchAll(viewer);
     runsWindows.delete(port);
   });
 }

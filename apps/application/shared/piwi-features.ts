@@ -560,6 +560,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/mock-requests',
       },
       {
+        title: 'Runs window',
+        summary:
+          "A window beside the test's browser that pauses, steps and resumes the tests your editor runs, writes code from a stop through the editor, and shows a headless test's page live, to click, type and pick a locator on.",
+        needs: ['fixtures', 'extension'],
+        where: 'Browser extension → More tools → Runs',
+        doc: 'features/runs-window',
+      },
+      {
         title: 'Test functions catalog',
         summary: 'The reusable helpers and page-object methods your suite calls, catalogued with their parameters.',
         needs: [],

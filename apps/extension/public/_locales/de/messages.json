@@ -6571,5 +6571,41 @@
   },
   "runs_requestNoSize": {
     "message": "Größe unbekannt"
+  },
+  "runs_live": {
+    "message": "Live ansehen"
+  },
+  "runs_liveTitle": {
+    "message": "Die Seite des Tests so zeigen, wie sie gezeichnet wird, statt ihres Bildes: Ihre Klicks und Tasten darauf gehen an die Seite"
+  },
+  "runs_liveBadge": {
+    "message": "Live"
+  },
+  "runs_liveAlt": {
+    "message": "Live-Ansicht der Seite des Tests"
+  },
+  "runs_liveAltInput": {
+    "message": "Live-Ansicht der Seite des Tests: Tasten und Klicks gehen an die Seite"
+  },
+  "runs_liveStarting": {
+    "message": "Die Live-Ansicht startet…"
+  },
+  "runs_liveLost": {
+    "message": "Die Live-Ansicht ist beendet: Die Verbindung zum Editor ging verloren. Wählen Sie wieder „Live ansehen“, sobald sie zurück ist."
+  },
+  "runs_liveHint": {
+    "message": "Ihre Klicks, das Mausrad und Ihre Tasten auf der Ansicht gehen an die Seite des Tests. Esc gibt die Tasten diesem Fenster zurück; Umschalt+Klick wählt einen Locator."
+  },
+  "runs_pickAt": {
+    "message": "Im Bild wählen"
+  },
+  "runs_pickAtTitle": {
+    "message": "Ein Element im Bild anklicken, um seinen Locator zu wählen, ohne die Seite zu berühren: Er ersetzt den in dieser Zeile. Umschalt+Klick wählt ebenfalls"
+  },
+  "runs_pickAtOn": {
+    "message": "Klicken Sie im Bild auf das Element, um seinen Locator zu wählen. Esc bricht ab."
+  },
+  "runs_failUnwatched": {
+    "message": "Sehen Sie die Seite zuerst live an: Erst dann gehen Tasten und Klicks an sie."
   }
 }

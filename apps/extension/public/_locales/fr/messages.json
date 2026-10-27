@@ -6571,5 +6571,41 @@
   },
   "runs_requestNoSize": {
     "message": "taille inconnue"
+  },
+  "runs_live": {
+    "message": "Voir en direct"
+  },
+  "runs_liveTitle": {
+    "message": "Afficher la page du test telle qu’elle se dessine, à la place de son image : vos clics et vos touches y vont"
+  },
+  "runs_liveBadge": {
+    "message": "En direct"
+  },
+  "runs_liveAlt": {
+    "message": "Vue en direct de la page du test"
+  },
+  "runs_liveAltInput": {
+    "message": "Vue en direct de la page du test : les touches et les clics vont à la page"
+  },
+  "runs_liveStarting": {
+    "message": "Démarrage de la vue en direct…"
+  },
+  "runs_liveLost": {
+    "message": "La vue en direct s’est arrêtée : la connexion à l’éditeur a été perdue. Activez de nouveau Voir en direct une fois la connexion revenue."
+  },
+  "runs_liveHint": {
+    "message": "Vos clics, la molette et vos touches sur la vue vont à la page du test. Échap rend les touches à cette fenêtre ; Maj+clic choisit un locator."
+  },
+  "runs_pickAt": {
+    "message": "Choisir sur l’image"
+  },
+  "runs_pickAtTitle": {
+    "message": "Cliquer sur un élément de l’image pour choisir son locator sans toucher à la page : il remplace celui de cette ligne. Maj+clic le choisit aussi"
+  },
+  "runs_pickAtOn": {
+    "message": "Cliquez sur l’élément de l’image pour choisir son locator. Échap arrête."
+  },
+  "runs_failUnwatched": {
+    "message": "Regardez d’abord la page en direct : les touches et les clics n’y vont qu’alors."
   }
 }

@@ -15,7 +15,8 @@ each rule below ends with the section to read there.
   editor's run hubs in `run-hubs.ts` and `hub-connection.ts`).
 - `src/content/`: content scripts injected on demand, the in-page engine (`engine-*.ts`, `locator-engine.ts`).
 - `src/popup/`, `src/options/`, `src/login/` (Save login for tests), `src/devtools/` (Elements pane, Piwi panel).
-- `src/runs/` and `runs.html`: the Runs window, which follows and steers the paired editor's runs.
+- `src/runs/` and `runs.html`: the Runs window, which follows and steers the paired editor's runs, and shows a stop's
+  live view.
 - `src/ide/`: the recorder built for the editor service (`record-ide.js`). The extension never loads it.
 - `src/shared/`: storage, translations, the instance client, buttons and icons, used by all of the above.
 - `public/_locales/`: the catalogs; `i18n/`: the translation rules and glossaries. `store/`: the Firefox listing.
@@ -133,6 +134,12 @@ each rule below ends with the section to read there.
 - **A paired Piwi Picker holds a failure no pause bar shows only while a Runs window is open:** `RunHubs.listen` sends
   `follow` with `on: true` on each hub connection as the first window's port connects and on each one that opens
   meanwhile, and `on: false` as the last leaves (`run-hubs.test.ts`, `runs.spec.ts`). (see "A connection per hub")
+- **A stop's buttons follow what it takes from this window (`stopIntents`: `stop.intents`, else, from an older service,
+  the worker's where the bar shows and no live view); a frame is kept in memory, the latest one alone, never stored;
+  input goes to the hub only for a stop the window watches itself** (`RunHubs.view`, `stateForViewer`,
+  `run-hubs.test.ts`, `runs.spec.ts`). (see "The Runs window" and "A connection per hub")
+- **Escape, the function keys and the browser's shortcuts never reach a stopped page through the live view, and Tab
+  leaves it unless a click took the keyboard** (`keyOnView`, `view-input.test.ts`). (see "The Runs window")
 - **No code from a stop comes to the Runs window:** it goes to the editor, which writes it, and the window shows the
   hub's sentence that it was sent (`.note.sent`), never that it was written. (see "The Runs window")
 - **The hub's keepalive (`HUB_KEEPALIVE_MS`, `@piwitests/core/run-hub`) and the Runs window's ping (`RUNS_PING_MS`)

@@ -7800,5 +7800,53 @@
   "runs_requestNoSize": {
     "message": "size unknown",
     "description": "Runs window, in a request of the list, in place of its size when the response did not state one (its body came in chunks). Short."
+  },
+  "runs_live": {
+    "message": "Watch live",
+    "description": "Runs window, the toggle button over a stopped page’s image that shows the page’s live view in its place. A small button: keep it short."
+  },
+  "runs_liveTitle": {
+    "message": "Show the test’s page as it paints, in place of its image: your clicks and keys on it go to the page",
+    "description": "Runs window, the Watch live button’s tooltip."
+  },
+  "runs_liveBadge": {
+    "message": "Live",
+    "description": "Runs window, the badge on a live view, beside a dot. One short word."
+  },
+  "runs_liveAlt": {
+    "message": "Live view of the test’s page",
+    "description": "Runs window, the name of a stopped page’s live view, which shows the page as it paints."
+  },
+  "runs_liveAltInput": {
+    "message": "Live view of the test’s page: keys and clicks go to the page",
+    "description": "Runs window, the name of a stopped page’s live view while the clicks and keys on it go to the page."
+  },
+  "runs_liveStarting": {
+    "message": "Starting the live view…",
+    "description": "Runs window, under the image while the live view starts."
+  },
+  "runs_liveLost": {
+    "message": "The live view ended: the connection to the editor was lost. Watch live again once it is back.",
+    "description": "Runs window, under the image when the live view ended because the connection to the editor was lost. Watch live is the button’s name (runs_live)."
+  },
+  "runs_liveHint": {
+    "message": "Your clicks, the wheel and your keys on the view go to the test’s page. Esc gives the keys back to this window; Shift+click picks a locator.",
+    "description": "Runs window, a hint under the live view the first time the clicks and keys on it go to the page. Esc is the Escape key; Shift+click a click with Shift held."
+  },
+  "runs_pickAt": {
+    "message": "Pick on the image",
+    "description": "Runs window, the toggle button over a stopped page’s image: the next click on the image picks the element under it."
+  },
+  "runs_pickAtTitle": {
+    "message": "Click an element on the image to pick its locator without touching the page: it replaces the one on this line. Shift+click picks too",
+    "description": "Runs window, the Pick on the image button’s tooltip."
+  },
+  "runs_pickAtOn": {
+    "message": "Click the element on the image to pick its locator. Esc stops.",
+    "description": "Runs window, read by a screen reader when Pick on the image waits for a click. Esc is the Escape key."
+  },
+  "runs_failUnwatched": {
+    "message": "Watch the page live first: keys and clicks go to it only then.",
+    "description": "Runs window, why the input sent to a stopped page through its live view was refused: the window does not watch that stop."
   }
 }

@@ -13,8 +13,8 @@ tools that follow the run, read the stopped page as its accessibility tree and a
 
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
 (Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2, 3 and 4 are built too (below; PR 4 is
-open as #932), and PR 5's first half and its IDE half with the forwarded addresses (below), while PR 5's Runs window
-and PRs 6 to 9 are not. PR 1 differs from the text in four ways. A headed
+merged as #932), and so are PR 5's three halves, the service's, the IDE's with the forwarded addresses, and the Runs
+window's (below), while PRs 6 to 9 are not. PR 1 differs from the text in four ways. A headed
 browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
@@ -173,7 +173,7 @@ failed> · attempt N`, with Resume alone among its controls, and one the service
 client, so a plain Run's headless failure shows nothing.
 PR 5's first half is the worker's, the run channel's, the editor service's and the hub's side of the live view, the
 input on it, Pick on the image, and Pick and Record through the view on a headless page (Part 6), built in
-`@piwitests/core/run-view`; the Runs window builds on it next. A viewer is a hub connection that
+`@piwitests/core/run-view`, which the Runs window's half builds on (below). A viewer is a hub connection that
 sent `view { id, ref, worker, since, on }`, which is apart from PR 4's `follow`: watching a stop holds no failure, and
 following the runs watches no stop. The worker starts the stopped page's screencast through an internal call
 with the stop's first viewer and stops its own client with the last, as the stop ends (before its `running`), and as
@@ -228,6 +228,25 @@ The JetBrains platform has no public API to forward a port of a Gateway backend,
 parent's methods scheduled for removal in 2026.2, and `ClientSessionsManager` and `AppMode` are internal. **Pair with
 Piwi Picker** names the IDE's port and its runs' hub ports, to forward under **Ports** in the JetBrains Client at the
 same numbers, which the proof and the `Host` check take unchanged; a hub's port changes as its service starts again.
+PR 5's extension half is the Runs window's live view, the input on it, Pick on the image, and Pick, Record, Assert and
+Assert a region through the view at a headless stop, and differs from the text in six ways. The view is not shown
+whenever the window shows a stop: **Watch live**, a toggle above the image of a stop that takes `view`, asks for it,
+and it ends with the stop, as the window hides or closes, or when it is turned off; left on, it is asked again at the
+worker's next stop and as the window shows again, and a view whose hub connection was lost shows as ended, not asked
+again at that stop. Every button of a stop follows what it takes from this window (`stop.intents`), and a service that
+sends none gets the window as before, the actions in the test's window where the bar shows and no view. The
+background worker's one connection to a hub watches a stop while any window does: each window gets the frames of the
+stops it watches alone, ten a second at most, the latest one waiting, and the state narrowed to it, so a stop another
+window watches takes from it no input and, headless, none of those actions; input goes to the hub only for a stop the
+window watches itself. The input goes in batches about every 50 ms, the moves coalesced, a drag as `down`, moves and
+`up`, and a click held 250 ms so a second one at the same place makes one `click` of `clickCount` 2: the view's `down`
+and `up` carry no click count, so only a held click plays a double click as Playwright does. The keys go to the page
+while the view has the focus, as Playwright's names (Control or `⌘` as `ControlOrMeta`, with A, Y, Z, Enter and the
+editing keys alone), other characters and a paste as text; Escape gives the keyboard back to the window and never
+reaches the page, nor do the function keys and the browser's other shortcuts, and Tab moves the focus out unless a
+click into the view took the keyboard. A click carries no key held with it, and Shift+click picks: **Pick on the image** is a toggle
+and a Shift+click on a stop's image, headed or not, or its view. The docs give the window a page of its own,
+[Runs window](../apps/docs/features/runs-window.md).
 The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of

@@ -9,7 +9,14 @@ import { DIST, SHOP_ORIGIN, injectCoverage, openShop, stubCoverageChrome } from 
 import { openDevtoolsPage, selectElement } from './devtools-stub.js';
 import { stubChromeI18n } from './i18n-stub.js';
 import { stubChromeStorage } from './recording-stub.js';
-import { pairedExtension, startEditor, startRun, RUN_TAKES } from './runs-fixtures.js';
+import {
+  answerNext,
+  pairedExtension,
+  startEditor,
+  startRun,
+  RUN_TAKES,
+  VIEWPORT as STOP_VIEWPORT,
+} from './runs-fixtures.js';
 
 /**
  * The extension's illustrations on the docs site, captured from the same shop
@@ -22,7 +29,8 @@ import { pairedExtension, startEditor, startRun, RUN_TAKES } from './runs-fixtur
  * 1280 px wide, the size the stores take; the overlay and the DevTools pane
  * are the docs' alone, at their own sizes. `picker-pause` is the docs' too:
  * the reporter's pause bar, at the stores' size, and so is `picker-runs`, the Runs window beside a test stopped there,
- * against the real editor service's hub. The harness in
+ * against the real editor service's hub. `picker-runs-live` is the Runs window alone, at 2×, watching a headless stop
+ * live. The harness in
  * `apps/application/scripts/take-feature-screenshots.mjs` lists them all as
  * external so `--check` leaves them alone.
  */
@@ -97,6 +105,42 @@ async function framedOver(
     .toBuffer();
   await sharp(composed)
     .resize({ width: VIEWPORT.width })
+    .png()
+    .toFile(path.join(SCREENSHOTS, `${name}.png`));
+}
+
+/**
+ * Writes `name`: `panel`, a page rendered at 2× whose CSS size is `box`, framed with its shadow on a plain backdrop
+ * just larger than it, at 2×: a window of its own with nothing beside it.
+ */
+async function framedAlone(panel: Buffer, box: { width: number; height: number }, name: string): Promise<void> {
+  const margin = 48;
+  const { width, height } = { width: Math.round(box.width * 2), height: Math.round(box.height * 2) };
+  const canvas = { width: width + margin * 2, height: height + margin * 2 };
+  const backdrop = { r: 226, g: 232, b: 240, alpha: 1 };
+  const rectangle = await sharp({
+    create: { width, height, channels: 4, background: { r: 15, g: 23, b: 42, alpha: 0.3 } },
+  })
+    .png()
+    .toBuffer();
+  const shadow = await sharp(
+    await sharp({ create: { ...canvas, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .composite([{ input: rectangle, left: margin, top: margin + 8 }])
+      .png()
+      .toBuffer(),
+  )
+    .blur(24)
+    .png()
+    .toBuffer();
+  const framed = await sharp(panel)
+    .extend({ top: 2, bottom: 2, left: 2, right: 2, background: { r: 203, g: 213, b: 225, alpha: 1 } })
+    .png()
+    .toBuffer();
+  await sharp({ create: { ...canvas, channels: 4, background: backdrop } })
+    .composite([
+      { input: shadow, left: 0, top: 0 },
+      { input: framed, left: margin - 2, top: margin - 2 },
+    ])
     .png()
     .toFile(path.join(SCREENSHOTS, `${name}.png`));
 }
@@ -229,6 +273,64 @@ test('picker-runs', async () => {
     }
   } finally {
     await context.close();
+    await editor.close();
+  }
+});
+
+// The Runs window at a headless stop, watched live: the frames of a page nobody else sees, the picker its Pick started
+// there, driven through the view, with the keys and clicks going to the page; the real editor service's hub, a worker
+// the spec plays, whose frames are the shop page as the reporter's view paints it.
+test('picker-runs-live', async ({ context }) => {
+  await stubChromeI18n(context);
+  const shop = await shopPage(context);
+  const jpeg = async () => (await shop.screenshot({ type: 'jpeg', quality: 60, scale: 'css' })).toString('base64');
+  const image = await jpeg();
+  await shop.addScriptTag({ path: path.join(DIST, 'pick.js') });
+  await expect(shop.getByText('click any element to generate locators')).toBeVisible();
+  await shop.getByRole('button', { name: 'Checkout' }).hover();
+  await shop.waitForTimeout(800);
+  const frame = await jpeg();
+
+  const editor = await startEditor();
+  const { context: picker, extensionId } = await pairedExtension(editor, { deviceScaleFactor: 2 });
+  try {
+    const runs = await picker.newPage();
+    await runs.setViewportSize({ width: 440, height: 900 });
+    await runs.goto(`chrome-extension://${extensionId}/runs.html`);
+    const run = await startRun(editor, 'pays with a coupon', [...RUN_TAKES]);
+    try {
+      await expect(runs.getByText('cart › pays with a coupon')).toBeVisible();
+      run.worker.send({
+        type: 'stopped',
+        stop: 1,
+        reason: 'breakpoint',
+        title: "Click getByRole('button', { name: 'Checkout' })",
+        place: { file: 'tests/cart.spec.ts', line: 12, column: 5 },
+        locator: "getByRole('button', { name: 'Checkout' })",
+        bar: false,
+      });
+      await answerNext(run.worker, 'image', { mime: 'image/jpeg', data: image, ...STOP_VIEWPORT });
+      await runs.getByRole('button', { name: 'Watch live' }).click();
+      await answerNext(run.worker, 'view', { ok: true, message: 'The live view is on.' });
+      run.worker.send({ type: 'frame', stop: 1, ...STOP_VIEWPORT, data: frame });
+      await expect(runs.locator('img.live')).toBeVisible();
+      await runs.getByRole('button', { name: 'Pick', exact: true }).click();
+      await answerNext(run.worker, 'pick', {
+        ok: true,
+        message: "Pick an element in the test's window: the locator goes to the editor.",
+      });
+      await expect(runs.locator('.worker .note')).toBeVisible();
+      await runs.locator('.client').evaluate((client) => (client.textContent = 'Visual Studio Code'));
+      await runs.mouse.move(0, 0);
+      await runs.locator('h1').click();
+      await runs.waitForTimeout(300);
+      const body = runs.locator('body');
+      await framedAlone(await body.screenshot(), (await body.boundingBox())!, 'picker-runs-live');
+    } finally {
+      run.worker.socket.destroy();
+    }
+  } finally {
+    await picker.close();
     await editor.close();
   }
 });

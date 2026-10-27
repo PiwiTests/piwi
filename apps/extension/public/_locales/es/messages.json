@@ -6571,5 +6571,41 @@
   },
   "runs_requestNoSize": {
     "message": "tamaño desconocido"
+  },
+  "runs_live": {
+    "message": "Ver en directo"
+  },
+  "runs_liveTitle": {
+    "message": "Mostrar la página del test tal como se dibuja, en lugar de su imagen: tus clics y teclas sobre ella van a la página"
+  },
+  "runs_liveBadge": {
+    "message": "En directo"
+  },
+  "runs_liveAlt": {
+    "message": "Vista en directo de la página del test"
+  },
+  "runs_liveAltInput": {
+    "message": "Vista en directo de la página del test: las teclas y los clics van a la página"
+  },
+  "runs_liveStarting": {
+    "message": "Iniciando la vista en directo…"
+  },
+  "runs_liveLost": {
+    "message": "La vista en directo terminó: se perdió la conexión con el editor. Vuelve a usar Ver en directo cuando regrese."
+  },
+  "runs_liveHint": {
+    "message": "Tus clics, la rueda y tus teclas sobre la vista van a la página del test. Esc devuelve las teclas a esta ventana; Mayús+clic elige un locator."
+  },
+  "runs_pickAt": {
+    "message": "Elegir en la imagen"
+  },
+  "runs_pickAtTitle": {
+    "message": "Haz clic en un elemento de la imagen para elegir su locator sin tocar la página: reemplaza el de esta línea. Mayús+clic también lo elige"
+  },
+  "runs_pickAtOn": {
+    "message": "Haz clic en el elemento de la imagen para elegir su locator. Esc lo cancela."
+  },
+  "runs_failUnwatched": {
+    "message": "Mira primero la página en directo: solo entonces las teclas y los clics van a ella."
   }
 }
