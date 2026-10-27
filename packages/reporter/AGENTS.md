@@ -84,7 +84,9 @@ per-directory responsibilities.
    trace and video go on recording through the hold), and the test timeout is held while the stop shows. It is a stop
    with the reason `failure` at the failing line (where the error's stack enters the test's code, else the failing
    locator's, else the call a test timeout cut short, the runner's step in progress, else the test's declaration),
-   the bar saying `Failed at …` with Resume, Pick a locator (which replaces the failing locator, and is folded into
+   naming its error to the editor (`error`: the failing error's lines up to a blank one or its call log, four at most,
+   without ANSI codes nor the `Error: ` the runner writes before a plain error's message, `failureError`), the bar
+   saying `Failed at …` with Resume, Pick a locator (which replaces the failing locator, and is folded into
    its snapshot) and Record here; any answer lets the test end as it failed, and the editor service lets one go at
    once in a run nobody watches. Without a run connection nothing of it runs.
 4. **The desktop discovery file** — `~/.piwi/desktop.json` and its `{ url, token }` shape
