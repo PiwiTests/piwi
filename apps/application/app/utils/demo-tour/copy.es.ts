@@ -23,6 +23,7 @@ export const ES_COPY = {
     progress: '{{current}} de {{total}}',
     close: 'Salir de la visita',
     docs: 'Documentación (en inglés)',
+    path: 'Estás aquí',
     finishedTitle: 'Fin de la visita',
     finishedBody: 'Las visitas de los demás roles están en «Visita guiada», en la barra superior.',
   },
@@ -33,7 +34,12 @@ export const ES_COPY = {
       stops: {
         failure: {
           title: 'Un fallo, leído de arriba abajo',
-          body: 'Cada ejecución fallida se abre en este bloque. El titular dice qué falló, **Most likely** da la causa que señalan las evidencias y **Next**, el único paso a seguir: aquí, aplicar el parche que escribió el diagnóstico de IA del grupo de fallos.',
+          body: 'Cada ejecución fallida se abre en este bloque, que se lee de arriba abajo: qué falló, por qué y qué hacer.',
+          points: {
+            headline: 'El titular dice qué falló.',
+            'most-likely': '**Most likely** da la causa que señalan las evidencias.',
+            next: '**Next** es el único paso a seguir: aquí, aplicar el parche que escribió el diagnóstico de IA del grupo de fallos.',
+          },
         },
         evidence: {
           title: 'Las evidencias, guardadas tras la CI',
@@ -71,7 +77,14 @@ export const ES_COPY = {
         },
         flaky: {
           title: 'Pruebas inestables, ordenadas por lo que cuestan',
-          body: 'Las pruebas que fallan y luego pasan, ordenadas por el tiempo de CI que desperdician sus reintentos, cada una con una puntuación de 0 a 100 según sus reintentos y alternancias, y su principal sospechoso. **Quarantine** mantiene una prueba en ejecución y con resultados, pero el control de la CI la ignora.',
+          body: 'Las pruebas que fallan y luego pasan, ordenadas por el tiempo de CI que desperdician sus reintentos. Cada fila dice lo que cuesta la prueba, cuán inestable es y qué hacer con ella.',
+          points: {
+            wasted: 'Los minutos de CI que desperdiciaron sus reintentos, que fijan el orden.',
+            score: 'Su puntuación de inestabilidad, de 0 a 100, según sus reintentos y alternancias.',
+            'top-suspect': 'Su principal sospechoso: la condición que más comparten sus fallos.',
+            quarantine:
+              '**Quarantine** mantiene la prueba en ejecución y con resultados, pero el control de la CI la ignora.',
+          },
         },
         suspects: {
           title: 'Qué la vuelve inestable',

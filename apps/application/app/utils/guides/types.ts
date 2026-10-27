@@ -1,4 +1,5 @@
 import type { CapabilityId } from '#shared/capabilities';
+import type { GuidePoint } from '~/utils/guide/types';
 import type { Permission } from '#shared/permissions';
 import type { GuideResolverId } from './resolvers';
 
@@ -24,6 +25,8 @@ export interface AuthoredGuideStop {
   title: string;
   /** Plain text, at most 360 characters; a dashboard label is `**bold**`, spelled as the screen shows it. */
   body: string;
+  /** Parts of the anchor the body explains one by one, numbered on the page: 2 to 5, each at most 160 characters. */
+  points?: readonly GuidePoint[];
   /** Where the popover sits against the anchor from `sm` up. */
   side?: 'top' | 'right' | 'bottom' | 'left';
   align?: 'start' | 'center' | 'end';

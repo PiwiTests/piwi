@@ -6374,6 +6374,25 @@ const SCENES = [
     },
   })),
   {
+    name: 'demo-tour-way',
+    description:
+      'Guided tour: the QA tour pointing at the sidebar link it takes to its next stop, then that stop with the line saying where it is and its numbered points, at 1280 px',
+    mode: 'tour',
+    route: '/',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle }) {
+      await startTourFromPrompt(page, { profile: 'qa' });
+      await page.locator('.driver-popover.piwi-guide[data-guide-settled] .driver-popover-next-btn').click();
+      await page.locator('.piwi-guide-way').waitFor({ timeout: 30_000 });
+      await shoot('pointing');
+      await page
+        .locator('.driver-popover.piwi-guide[data-guide-settled][data-guide-stop="flaky"]')
+        .waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('points');
+    },
+  },
+  {
     name: 'demo-tour-walk',
     description:
       'Guided tour: every stop of every role’s tour at 1280 px, one image per stop; the demo banner’s stops, which a dev server has no banner for, are left out',

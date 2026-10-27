@@ -23,6 +23,7 @@ export const DE_COPY = {
     progress: '{{current}} von {{total}}',
     close: 'Tour beenden',
     docs: 'Dokumentation (auf Englisch)',
+    path: 'Sie sind hier',
     finishedTitle: 'Ende der Tour',
     finishedBody: 'Die Touren der anderen Rollen finden Sie unter „Geführte Tour“ in der Leiste oben.',
   },
@@ -33,7 +34,12 @@ export const DE_COPY = {
       stops: {
         failure: {
           title: 'Ein Fehlschlag, von oben nach unten gelesen',
-          body: 'Jede fehlgeschlagene Ausführung beginnt mit diesem Block. Die Überschrift sagt, was fehlschlug, **Most likely** nennt die Ursache, auf die die Belege zeigen, und **Next** den einen nächsten Schritt: hier den Patch anwenden, den die KI-Diagnose des Fehlerclusters geschrieben hat.',
+          body: 'Jede fehlgeschlagene Ausführung beginnt mit diesem Block, der sich von oben nach unten liest: was fehlschlug, warum und was zu tun ist.',
+          points: {
+            headline: 'Die Überschrift sagt, was fehlschlug.',
+            'most-likely': '**Most likely** nennt die Ursache, auf die die Belege zeigen.',
+            next: '**Next** ist der eine nächste Schritt: hier den Patch anwenden, den die KI-Diagnose des Fehlerclusters geschrieben hat.',
+          },
         },
         evidence: {
           title: 'Die Belege, über die CI hinaus aufbewahrt',
@@ -71,7 +77,13 @@ export const DE_COPY = {
         },
         flaky: {
           title: 'Instabile Tests, nach Kosten sortiert',
-          body: 'Tests, die fehlschlagen und dann bestehen, sortiert nach der CI-Zeit, die ihre Wiederholungen kosten, jeder mit einem Score von 0 bis 100 aus Wiederholungen und Statuswechseln und mit seinem Hauptverdacht. **Quarantine** lässt einen Test weiterlaufen und berichten, aber das CI-Gate ignoriert ihn.',
+          body: 'Tests, die fehlschlagen und dann bestehen, sortiert nach der CI-Zeit, die ihre Wiederholungen kosten. Jede Zeile sagt, was der Test kostet, wie instabil er ist und was zu tun ist.',
+          points: {
+            wasted: 'Die CI-Minuten, die seine Wiederholungen gekostet haben; sie bestimmen die Reihenfolge.',
+            score: 'Sein Instabilitäts-Score von 0 bis 100, aus Wiederholungen und Statuswechseln.',
+            'top-suspect': 'Sein Hauptverdacht: die Bedingung, die seine Fehlschläge am häufigsten teilen.',
+            quarantine: '**Quarantine** lässt den Test weiterlaufen und berichten, aber das CI-Gate ignoriert ihn.',
+          },
         },
         suspects: {
           title: 'Was ihn instabil macht',

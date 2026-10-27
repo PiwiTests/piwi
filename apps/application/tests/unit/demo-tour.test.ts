@@ -5,7 +5,7 @@ import { TOUR_COPY, stopCopy } from '~/utils/demo-tour/copy';
 import { TOUR_LANGUAGES, type TourLanguage } from '~/utils/demo-tour/languages';
 import { boldLabels, plainGuideText } from '~/utils/guide/markup';
 import { routeOnPage } from '~/utils/guide/stops';
-import type { TourProfileId } from '~/utils/demo-tour/types';
+import type { TourProfileId, TourStopCopy } from '~/utils/demo-tour/types';
 
 /**
  * The guided tour's registry against its copy and the guide anchors: every role
@@ -26,6 +26,9 @@ const MIN_STOPS = 4;
 const MAX_STOPS = 7;
 const MAX_TITLE = 60;
 const MAX_BODY = 360;
+const MIN_POINTS = 2;
+const MAX_POINTS = 5;
+const MAX_POINT = 160;
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /** One piece of copy, named for a failure message. */
@@ -50,11 +53,15 @@ function entriesOf(language: TourLanguage): CopyEntry[] {
     const source = english.profiles[id];
     entries.push({ name: `${id}.label`, english: source.label, text: profile.label });
     entries.push({ name: `${id}.hint`, english: source.hint, text: profile.hint });
-    const stops: Record<string, { title: string; body: string }> = profile.stops;
-    const sourceStops: Record<string, { title: string; body: string }> = source.stops;
+    const stops: Record<string, TourStopCopy> = profile.stops;
+    const sourceStops: Record<string, TourStopCopy> = source.stops;
     for (const [stopId, stop] of Object.entries(stops)) {
       entries.push({ name: `${id}/${stopId}.title`, english: sourceStops[stopId]?.title ?? '', text: stop.title });
       entries.push({ name: `${id}/${stopId}.body`, english: sourceStops[stopId]?.body ?? '', text: stop.body });
+      for (const [part, text] of Object.entries(stop.points ?? {})) {
+        const english = sourceStops[stopId]?.points?.[part] ?? '';
+        entries.push({ name: `${id}/${stopId}.points.${part}`, english, text });
+      }
     }
   }
   return entries.map((entry) => ({ ...entry, name: `${language} ${entry.name}` }));
@@ -130,8 +137,8 @@ describe('tour copy', () => {
     expect(broken).toEqual([]);
   });
 
-  test('a stop’s body is translated, not copied from the English', () => {
-    const copied = ALL_ENTRIES.filter((e) => !e.name.startsWith('en ') && e.name.endsWith('.body'))
+  test('a stop’s body and points are translated, not copied from the English', () => {
+    const copied = ALL_ENTRIES.filter((e) => !e.name.startsWith('en ') && /\.(body|points\.[\w-]+)$/.test(e.name))
       .filter((e) => e.text === e.english)
       .map((e) => e.name);
     expect(copied).toEqual([]);
@@ -145,9 +152,15 @@ describe('tour copy', () => {
     expect(broken).toEqual([]);
   });
 
-  test(`a title fits in ${MAX_TITLE} characters and a body in ${MAX_BODY}`, () => {
+  test(`a title fits in ${MAX_TITLE} characters, a body in ${MAX_BODY} and a point in ${MAX_POINT}`, () => {
     const tooLong = ALL_ENTRIES.flatMap((e) => {
-      const max = e.name.endsWith('.title') ? MAX_TITLE : e.name.endsWith('.body') ? MAX_BODY : null;
+      const max = e.name.endsWith('.title')
+        ? MAX_TITLE
+        : e.name.endsWith('.body')
+          ? MAX_BODY
+          : e.name.includes('.points.')
+            ? MAX_POINT
+            : null;
       const length = plainGuideText(e.text).length;
       return max !== null && length > max ? [`${e.name}: ${length} characters`] : [];
     });
@@ -171,6 +184,43 @@ describe('tour anchors', () => {
         .map(({ name, stop }) => `${name}: "${stop.anchor}"`),
       'stops whose anchor is not in shared/guide-anchors/',
     ).toEqual([]);
+  });
+
+  test(`a stop numbers ${MIN_POINTS} to ${MAX_POINTS} parts of its anchor, each once, with copy in every language`, () => {
+    const problems = stops.flatMap(({ name, stop }) => {
+      if (!stop.points) return [];
+      const parts = (stop.anchor ? findGuideAnchor(stop.anchor)?.parts : undefined)?.map((part) => part.id) ?? [];
+      const [profileId, stopId] = name.split('/') as [TourProfileId, string];
+      return [
+        ...(stop.points.length < MIN_POINTS || stop.points.length > MAX_POINTS
+          ? [`${name}: ${stop.points.length} points`]
+          : []),
+        ...stop.points
+          .filter((part) => !parts.includes(part))
+          .map((part) => `${name}: ${stop.anchor} has no part "${part}"`),
+        ...stop.points.filter((part, i) => stop.points!.indexOf(part) !== i).map((part) => `${name}: "${part}" twice`),
+        ...TOUR_LANGUAGES.flatMap((language) => {
+          const written = Object.keys(stopCopy(language, profileId, stopId)?.points ?? {}).sort();
+          const wanted = [...stop.points!].sort();
+          return JSON.stringify(written) === JSON.stringify(wanted)
+            ? []
+            : [`${language} ${name}: copy for points ${written.join(', ')}, the stop numbers ${wanted.join(', ')}`];
+        }),
+      ];
+    });
+    expect(problems).toEqual([]);
+  });
+
+  test('a stop with no points has no copy for any', () => {
+    const problems = stops.flatMap(({ name, stop }) => {
+      const [profileId, stopId] = name.split('/') as [TourProfileId, string];
+      return stop.points
+        ? []
+        : TOUR_LANGUAGES.filter((language) => stopCopy(language, profileId, stopId)?.points).map(
+            (language) => `${language} ${name}`,
+          );
+    });
+    expect(problems).toEqual([]);
   });
 
   test('a stop with a route opens one of its anchor’s pages', () => {

@@ -247,11 +247,12 @@ function flakyBadges(test: FlakyTest) {
           <span
             class="inline-flex items-center gap-1 tabular-nums"
             :title="`${Math.round(test.wastedCiMinutes)} CI minutes wasted`"
+            data-tour-part="wasted"
           >
             <span class="inline-block size-2 rounded-full shrink-0" :class="impactDotClass(test.wastedCiMinutes)" />
             {{ Math.round(test.wastedCiMinutes) }} min
           </span>
-          <UBadge :color="scoreColor(test.score)" variant="subtle" size="xs" title="Flaky score">
+          <UBadge :color="scoreColor(test.score)" variant="subtle" size="xs" title="Flaky score" data-tour-part="score">
             {{ test.score }}
           </UBadge>
           <NuxtLink
@@ -285,6 +286,7 @@ function flakyBadges(test: FlakyTest) {
               icon="i-lucide-shield-alert"
               :loading="quarantiningId === test.testCaseId"
               data-tour="flaky-test-quarantine"
+              data-tour-part="quarantine"
               @click="quarantineTest(test)"
             >
               Quarantine
@@ -307,6 +309,7 @@ function flakyBadges(test: FlakyTest) {
               class="min-w-0 break-words underline decoration-dotted underline-offset-2 hover:decoration-solid"
               :title="topSuspects.get(test.testCaseId)!.suspect!.sentence"
               data-testid="flaky-top-suspect"
+              data-tour-part="top-suspect"
               @click.stop
             >
               Top suspect: {{ topSuspects.get(test.testCaseId)!.suspect!.label }} ·

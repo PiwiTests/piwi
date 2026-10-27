@@ -26,6 +26,9 @@ const MIN_STOPS = 3;
 const MAX_STOPS = 7;
 const MAX_TITLE = 60;
 const MAX_BODY = 360;
+const MIN_POINTS = 2;
+const MAX_POINTS = 5;
+const MAX_POINT = 160;
 const MAX_SUMMARY = 80;
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -171,17 +174,34 @@ describe('authored guide stops', () => {
     expect(problems).toEqual([]);
   });
 
-  test(`a title fits in ${MAX_TITLE} characters and a body in ${MAX_BODY}`, () => {
+  test(`a title fits in ${MAX_TITLE} characters, a body in ${MAX_BODY} and a point in ${MAX_POINT}`, () => {
     const tooLong = STOPS.flatMap(({ name, stop }) => [
       ...(plainGuideText(stop.title).length > MAX_TITLE ? [`${name}: title ${plainGuideText(stop.title).length}`] : []),
       ...(plainGuideText(stop.body).length > MAX_BODY ? [`${name}: body ${plainGuideText(stop.body).length}`] : []),
+      ...(stop.points ?? [])
+        .filter((point) => plainGuideText(point.text).length > MAX_POINT)
+        .map((point) => `${name}: point ${point.part} ${plainGuideText(point.text).length}`),
     ]);
     expect(tooLong).toEqual([]);
   });
 
+  test(`a stop numbers ${MIN_POINTS} to ${MAX_POINTS} parts of its anchor, each once`, () => {
+    const problems = STOPS.flatMap(({ name, stop }) => {
+      if (!stop.points) return [];
+      const parts = findGuideAnchor(stop.anchor)?.parts?.map((part) => part.id) ?? [];
+      const named = stop.points.map((point) => point.part);
+      return [
+        ...(named.length < MIN_POINTS || named.length > MAX_POINTS ? [`${name}: ${named.length} points`] : []),
+        ...named.filter((part) => !parts.includes(part)).map((part) => `${name}: ${stop.anchor} has no part "${part}"`),
+        ...named.filter((part, i) => named.indexOf(part) !== i).map((part) => `${name}: "${part}" numbered twice`),
+      ];
+    });
+    expect(problems).toEqual([]);
+  });
+
   test('**bold** is the only markup', () => {
     const marked = STOPS.flatMap(({ name, stop }) =>
-      [stop.title, stop.body]
+      [stop.title, stop.body, ...(stop.points ?? []).map((point) => point.text)]
         .map((text) => text.replace(/\*\*(.+?)\*\*/g, '$1'))
         .filter((text) => /[*<>`[\]]/.test(text))
         .map((text) => `${name}: ${text}`),
@@ -192,7 +212,7 @@ describe('authored guide stops', () => {
   test('every bold label is spelled as the source of the stop’s component or page spells it', () => {
     const missing = STOPS.flatMap(({ name, stop }) => {
       const sources = labelSources(stop);
-      return boldLabels(`${stop.title} ${stop.body}`)
+      return boldLabels([stop.title, stop.body, ...(stop.points ?? []).map((point) => point.text)].join(' '))
         .filter((label) => !sources.some((source) => source.includes(label)))
         .map((label) => `${name}: "${label}"`);
     });

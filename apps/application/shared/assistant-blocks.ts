@@ -41,6 +41,10 @@ export const ASSISTANT_BLOCK_LIMITS = {
   codeChars: 8000,
   maxGuideStops: 7,
   guideBodyChars: 360,
+  /** The numbered points of a guide stop, and the text of each. */
+  minGuidePoints: 2,
+  maxGuidePoints: 5,
+  guidePointChars: 160,
   /** Blocks of other kinds than text in one answer. */
   maxBlocks: 12,
 } as const;
@@ -99,6 +103,24 @@ const guideInput = {
           .max(L.guideBodyChars)
           .describe(
             'What to look at or do there, at most 360 characters; **bold** (a dashboard label) is the only markup',
+          ),
+        points: z
+          .array(
+            z.object({
+              part: z.string().max(100).describe('A part id of the anchor, from its parts in find_anchors'),
+              text: z
+                .string()
+                .trim()
+                .min(1)
+                .max(L.guidePointChars)
+                .describe('What this part shows or does, one sentence; **bold** is the only markup'),
+            }),
+          )
+          .min(L.minGuidePoints)
+          .max(L.maxGuidePoints)
+          .optional()
+          .describe(
+            'When the body explains several parts of the anchor: each one numbered on the screen, in the order the user reads them; the body then introduces them',
           ),
       }),
     )

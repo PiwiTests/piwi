@@ -215,6 +215,23 @@ export const PROJECTS_ANCHORS = [
     kind: 'row',
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'flaky-tests' } }],
+    parts: [
+      { id: 'wasted', describes: 'The CI minutes the test’s retries wasted, which rank the rows.' },
+      {
+        id: 'score',
+        describes: 'The test’s 0–100 flaky score, from its retries and its flips between passing and failing.',
+      },
+      {
+        id: 'quarantine',
+        describes: 'Quarantine: keeps the test running and reporting while the CI gate leaves it out.',
+        shownWhen: 'When the user can quarantine the project’s tests.',
+      },
+      {
+        id: 'top-suspect',
+        describes: 'The top suspect: the condition the test’s failures share most, linking to its suspects.',
+        shownWhen: 'When the test has a suspect.',
+      },
+    ],
     describes:
       'A row of the project’s flaky tests, ranked by the CI time their retries waste, with its 0–100 flaky score and its top suspect.',
     shownWhen: 'When a test of the project flaked in its recent runs.',

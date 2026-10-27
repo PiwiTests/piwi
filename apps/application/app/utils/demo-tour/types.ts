@@ -30,6 +30,11 @@ export interface TourStop {
    * the page.
    */
   anchor?: string;
+  /**
+   * The parts of the anchor (`parts` in the registry) the stop numbers, in
+   * order; what it says about each is in the copy files, under the part's id.
+   */
+  points?: readonly string[];
   /** Where the popover sits against the target from `sm` up; below it, the popover goes where it fits. */
   side?: 'top' | 'right' | 'bottom' | 'left';
   align?: 'start' | 'center' | 'end';
@@ -49,6 +54,8 @@ export interface TourStopCopy {
   title: string;
   /** One to three sentences. A dashboard label is `**bold**` and stays in English, as the screen shows it. */
   body: string;
+  /** What the stop says about each of its points, by part id: one sentence each. */
+  points?: Readonly<Record<string, string>>;
 }
 
 /** A role's words: its name, the line under it in the prompt, and each stop's popover by stop id. */

@@ -22,6 +22,16 @@ when its conversation is empty, and when no AI model is configured; starting one
 does going to another page yourself. While a stop shows, the part it points at cannot be clicked: a guide shows the
 dashboard and changes nothing.
 
+## Following the way
+
+A guide takes the way you would take yourself, and shows it. Before it opens another page, a tab, a folded section or
+a menu, it points for a moment at the link or the button that does it, when that link is on the screen: an entry of
+the sidebar, a row of a list, a tab. The line at the top of each popover says where the stop is: the page's
+breadcrumb, then the tab and the section it sits in, the ones the guide just opened in color.
+
+When a stop explains several parts of the screen, it numbers them: each number on the page matches one line of the
+popover, and pointing at a line enlarges its number on the page.
+
 ## The guides
 
 | Guide | What it shows | Listed for |

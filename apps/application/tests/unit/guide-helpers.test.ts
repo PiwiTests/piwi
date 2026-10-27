@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { GUIDE_ANCHOR_BY_ID, type GuideAnchor } from '#shared/guide-anchors/index.mjs';
 import { boldLabels, escapeGuideHtml, fillGuideText, guideMarkup, plainGuideText } from '../../app/utils/guide/markup';
+import { changedQuery, guidePath, linkMatch, segmentLabel } from '../../app/utils/guide/path';
 import { anchorSelector, opensLayer, revealQuery, routeOnPage, stopRoute } from '../../app/utils/guide/stops';
 
 describe('escapeGuideHtml', () => {
@@ -169,5 +170,76 @@ describe('routeOnPage', () => {
 
   test('matches every route on every page', () => {
     expect(routeOnPage('/test-runs/14', '*')).toBe(true);
+  });
+});
+
+describe('segmentLabel', () => {
+  test('keeps one line of text', () => {
+    expect(segmentLabel('  Flaky tests\n  12 ')).toBe('Flaky tests 12');
+  });
+
+  test('cuts a long label with an ellipsis', () => {
+    const label = segmentLabel('should complete checkout with credit card and a gift voucher');
+    expect(label).toHaveLength(40);
+    expect(label.endsWith('…')).toBe(true);
+  });
+});
+
+describe('guidePath', () => {
+  const seg = (label: string, opened = false) => ({ label, opened });
+
+  test('puts the page’s crumbs first, its last one opened when the guide opened the page', () => {
+    expect(guidePath(['Projects', 'e2e-checkout'], [seg('Flaky tests', true)], true)).toEqual([
+      seg('Projects'),
+      seg('e2e-checkout', true),
+      seg('Flaky tests', true),
+    ]);
+    expect(guidePath(['Projects', 'e2e-checkout'], [seg('Flaky tests')], false)).toEqual([
+      seg('Projects'),
+      seg('e2e-checkout'),
+      seg('Flaky tests'),
+    ]);
+  });
+
+  test('drops empty labels, and merges a label into the same one kept before it, opened when either is', () => {
+    expect(guidePath(['Settings', ' '], [seg('Settings'), seg('AI')], false)).toEqual([seg('Settings'), seg('AI')]);
+    expect(guidePath(['Settings'], [seg('Settings', true)], false)).toEqual([seg('Settings', true)]);
+  });
+
+  test('folds the first segments into … past four', () => {
+    expect(
+      guidePath(['Projects', 'e2e-checkout', 'Run #12', 'should pay'], [seg('Source', true)], true).map((s) => s.label),
+    ).toEqual(['…', 'Run #12', 'should pay', 'Source']);
+  });
+});
+
+describe('linkMatch', () => {
+  const at = (path: string) => `http://localhost:3000${path}`;
+
+  test('leads to the route when the path and every query value match', () => {
+    expect(linkMatch(at('/projects/1?tab=flaky-tests'), at('/projects/1?tab=flaky-tests'))).toBe('route');
+    expect(linkMatch(at('/settings/ai/'), at('/settings/ai'))).toBe('route');
+  });
+
+  test('leads to the page when the link names no query value, or only some of them', () => {
+    expect(linkMatch(at('/projects/1'), at('/projects/1?tab=flaky-tests'))).toBe('page');
+    expect(linkMatch(at('/projects/1?tab=runs'), at('/projects/1?tab=runs&page=2'))).toBe('page');
+  });
+
+  test('leads elsewhere with another path, another value, or another origin', () => {
+    expect(linkMatch(at('/projects/2'), at('/projects/1'))).toBeNull();
+    expect(linkMatch(at('/projects/1?tab=runs'), at('/projects/1?tab=flaky-tests'))).toBeNull();
+    expect(linkMatch('https://docs.example.com/projects/1', at('/projects/1'))).toBeNull();
+  });
+});
+
+describe('changedQuery', () => {
+  test('lists the values the move selects', () => {
+    expect(changedQuery('/projects/1?tab=runs', '/projects/1?tab=flaky-tests')).toEqual([['tab', 'flaky-tests']]);
+    expect(changedQuery('/projects/1?tab=runs&q=x', '/projects/1?tab=runs&q=x')).toEqual([]);
+  });
+
+  test('lists every value of a page the guide opens', () => {
+    expect(changedQuery(null, '/test-run-cases/711?evidence=source')).toEqual([['evidence', 'source']]);
   });
 });
