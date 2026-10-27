@@ -127,6 +127,7 @@ import {
 import { canRecordFromHere, recordFromHere } from './record-handoff.js';
 import {
   closeRunChannel,
+  editorSendAddress,
   hideRunChannel,
   holdStop,
   openRunChannel,
@@ -135,7 +136,6 @@ import {
   type RunControl,
 } from './run-channel.js';
 import { RUN_INTENT_NAMES, type IntentAnswer, type RunIntent, type RunToHub } from '@piwitests/core/run-channel';
-import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 import {
   browserCoverageInWorker,
   browserFunctionCoverage,
@@ -1485,7 +1485,7 @@ async function showStop(
       sink.probedLocations.add(call.location);
     }
     console.log(`[piwi] Locator picked at ${callSiteLine(location)}: ${picked.picked.locator}`);
-    await postPickToEditor(process.env[PIWI_LOCAL_DEBUG_ENV.editorSend], pickPayload(picked.picked.locator, location));
+    await postPickToEditor(editorSendAddress(), pickPayload(picked.picked.locator, location));
   };
   const onRecord =
     bar && page ? recorderAt(page, testInfo, location, reason === 'page-pause' ? 'pause' : 'breakpoint') : undefined;

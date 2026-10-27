@@ -7,6 +7,7 @@ import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type Place, type RunToHub } from '@piwitests/core/run-channel';
 import {
   closeRunChannel,
+  editorSendAddress,
   hideRunChannel,
   holdStop,
   openRunChannel,
@@ -103,15 +104,20 @@ describe('the worker’s run connection', () => {
     expect(runChannelOpen()).toBe(false);
   });
 
-  it('takes the channel out of the environment while a test runs, puts it back after, and leaves the record channel', () => {
-    const env: NodeJS.ProcessEnv = { PIWI_RUN_CHANNEL: 'a#b', PIWI_RECORD_CHANNEL: 'a#b' };
+  it('takes the channel and the editor’s pairing out of the environment while a test runs, and puts them back after', () => {
+    const pairing = 'http://127.0.0.1:47211/piwi/send#abcdefghijklmnop_1234';
+    const env: NodeJS.ProcessEnv = { PIWI_RUN_CHANNEL: 'a#b', PIWI_RECORD_CHANNEL: 'a#b', PIWI_EDITOR_SEND: pairing };
     const show = hideRunChannel(env);
     expect(env).toEqual({ PIWI_RECORD_CHANNEL: 'a#b' });
+    // The test's picks still go to the pairing.
+    expect(editorSendAddress(env)).toBe(pairing);
     show();
-    expect(env).toEqual({ PIWI_RUN_CHANNEL: 'a#b', PIWI_RECORD_CHANNEL: 'a#b' });
+    expect(env).toEqual({ PIWI_RUN_CHANNEL: 'a#b', PIWI_RECORD_CHANNEL: 'a#b', PIWI_EDITOR_SEND: pairing });
+    expect(editorSendAddress(env)).toBe(pairing);
     const none: NodeJS.ProcessEnv = {};
     hideRunChannel(none)();
     expect(none).toEqual({});
+    expect(editorSendAddress(none)).toBeUndefined();
   });
 
   it('attaches first, holds a stop until the editor answers it, once, and says when it ended', async () => {

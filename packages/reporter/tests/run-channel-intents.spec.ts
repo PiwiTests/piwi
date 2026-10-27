@@ -69,6 +69,12 @@ test('headless', async ({ page }) => {
   await page.goto('${base}/a');
   await page.locator('input').fill('three'); // bp
 });
+test('a process it starts', async () => {
+  const { execFileSync } = require('node:child_process');
+  const script = 'process.stdout.write(JSON.stringify([process.env.PIWI_RUN_CHANNEL, process.env.PIWI_EDITOR_SEND]))';
+  const seen = execFileSync(process.execPath, ['-e', script]).toString();
+  if (seen !== '[null,null]') throw new Error('the process saw ' + seen);
+});
 `;
 
 /** Each test's steps, as the run's own reporter writes them. */
@@ -303,6 +309,8 @@ describe('Pick and Record started from outside the page', () => {
       ['picked from outside', 'passed'],
       ['recorded from outside', 'passed'],
       ['headless', 'passed'],
+      // Neither the run's channel nor the editor's pairing reaches a process a test starts.
+      ['a process it starts', 'passed'],
     ]);
     expect(connections[0]!.heard[0]).toMatchObject({ type: 'run-attach', ref: REF, takes: ['pick', 'record'] });
   });

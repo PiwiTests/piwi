@@ -15,7 +15,7 @@ import {
   type StopReason,
   type UnknownMessage,
 } from '@piwitests/core/run-channel';
-import { PIWI_ORIGIN_ENV } from '../config/env.js';
+import { PIWI_LOCAL_DEBUG_ENV, PIWI_ORIGIN_ENV } from '../config/env.js';
 import { getReporterVersion } from '../support/reporter-version.js';
 import type { PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
@@ -138,19 +138,35 @@ export async function openRunChannel(
   return true;
 }
 
+/** What a test runs without: the run's channel, and the editor's Send to editor pairing with its token. */
+const HIDDEN_ENV = [RUN_CHANNEL_ENV, PIWI_LOCAL_DEBUG_ENV.editorSend] as const;
+
+/** `PIWI_EDITOR_SEND` while a test runs without it: where the test's picks go. */
+let hiddenEditorSend: string | undefined;
+
 /**
- * Take the run's channel out of the worker's environment while a test runs, so a process the test starts (Playwright
- * run from a test) opens no connection on this run; returns what puts it back once the test ended. Playwright compares
- * a worker's environment as it stops with the one it started with, and hands what changed to the projects that depend
- * on its own: between tests, the channel is there. `PIWI_RECORD_CHANNEL` stays, for **Record here**.
+ * Take the run's channel and the editor's pairing out of the worker's environment while a test runs, so a process the
+ * test starts (Playwright run from a test) opens no connection on this run and is not handed the pairing's token;
+ * returns what puts them back once the test ended. The test's picks still go to the pairing (`editorSendAddress`).
+ * Playwright compares a worker's environment as it stops with the one it started with, and hands what changed to the
+ * projects that depend on its own: between tests, both are there. `PIWI_RECORD_CHANNEL` stays, for **Record here**.
  */
 export function hideRunChannel(env: NodeJS.ProcessEnv = process.env): () => void {
-  const value = env[RUN_CHANNEL_ENV];
-  if (value === undefined) return () => {};
-  delete env[RUN_CHANNEL_ENV];
+  const hidden = HIDDEN_ENV.flatMap((name) => {
+    const value = env[name];
+    return value === undefined ? [] : [{ name, value }];
+  });
+  for (const { name } of hidden) delete env[name];
+  hiddenEditorSend = hidden.find(({ name }) => name === PIWI_LOCAL_DEBUG_ENV.editorSend)?.value;
   return () => {
-    env[RUN_CHANNEL_ENV] = value;
+    for (const { name, value } of hidden) env[name] = value;
+    hiddenEditorSend = undefined;
   };
+}
+
+/** The editor's Send to editor pairing a pick goes to: `PIWI_EDITOR_SEND`, also while a test runs without it. */
+export function editorSendAddress(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env[PIWI_LOCAL_DEBUG_ENV.editorSend] ?? hiddenEditorSend;
 }
 
 /** Close the worker's run connection, as the worker ends. */

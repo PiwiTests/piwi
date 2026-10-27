@@ -33,9 +33,11 @@ per-directory responsibilities.
    local socket, as `@piwitests/core/ide-recorder` frames it, and loads the bundle the editor names. The recorder's host
    stays in the editor service: this package carries the relay alone. With `PIWI_RUN_CHANNEL` (the same socket) and
    `PIWI_ORIGIN_REF`, each worker keeps a run connection to the editor from its worker fixture's setup to its end
-   (`internal/capture/run-channel.ts`, framed by `@piwitests/core/run-channel`; `PIWI_RUN_CHANNEL` is taken out of the
-   worker's `process.env` while a test runs, `hideRunChannel`, so a process a test starts opens none on the run, and put
-   back after it, since Playwright hands what a worker's environment lost to the projects depending on its own): it says
+   (`internal/capture/run-channel.ts`, framed by `@piwitests/core/run-channel`; `PIWI_RUN_CHANNEL` and the pairing's
+   `PIWI_EDITOR_SEND` are taken out of the worker's `process.env` while a test runs, `hideRunChannel`, so a process a
+   test starts opens none on the run and is not handed the pairing's token, the test's picks still posted to it
+   (`editorSendAddress`), and put back after it, since Playwright hands what a worker's environment lost to the
+   projects depending on its own): it says
    which test it runs and where it stops, takes the editor's Pause, Step, Resume, Finish, Run to a line and breakpoints
    (in place of `PIWI_PAUSE_AT`) through the same stop policy, and answers a request for an image of the stopped page
    with a JPEG screenshot taken through an internal call. Its `run-attach` lists the intents it takes (`takes: ['pick',

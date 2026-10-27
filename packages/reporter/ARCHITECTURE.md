@@ -55,7 +55,9 @@ Two **external contracts** beyond the npm API:
   the recorder's binding calls over it (`internal/capture/record-handoff.ts`). With
   `PIWI_RUN_CHANNEL` and `PIWI_ORIGIN_REF`, each worker holds a connection to that socket
   for its whole life, opened in the `piwiResources` worker fixture
-  (`internal/capture/run-channel.ts`, messages from `@piwitests/core/run-channel`): it sends
+  (`internal/capture/run-channel.ts`, messages from `@piwitests/core/run-channel`), and
+  `PIWI_RUN_CHANNEL` and `PIWI_EDITOR_SEND` are out of `process.env` while each test runs
+  (`hideRunChannel`; a pick still goes to the pairing, `editorSendAddress`): it sends
   each test's begin and end and each stop it shows, and the editor's controls (Pause, Step,
   Resume, Finish, Run to a line, the run's breakpoints) go through the same stop policy as
   `PIWI_PAUSE_AT`. While it is open a headless run stops too, with no bar, until the editor
