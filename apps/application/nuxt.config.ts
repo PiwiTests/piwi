@@ -129,7 +129,7 @@ export default defineNuxtConfig({
     enabled: false,
   },
 
-  // `nuxt dev` only; `PORT`, `NITRO_PORT` or `--port` still win. The built server keeps Nitro's 3000.
+  // `nuxt dev` only, after `--port`, `NUXT_PORT`, `NITRO_PORT` and `PORT`. The built server listens on Nitro's 3000.
   devServer: {
     port: DEV_SERVER_PORT,
   },

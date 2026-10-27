@@ -173,8 +173,13 @@ Tests are designed to run in CI environments:
 If port 7494 is in use, the tests will fail to start. Stop any running dev servers:
 
 ```bash
-# Find and kill process on port 7494
+# Find and kill the process on port 7494
 lsof -ti:7494 | xargs kill
+```
+
+```powershell
+# Find and kill the process on port 7494
+Stop-Process -Id (Get-NetTCPConnection -LocalPort 7494).OwningProcess
 ```
 
 ### Tests Timing Out

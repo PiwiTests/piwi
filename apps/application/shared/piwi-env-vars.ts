@@ -1370,7 +1370,7 @@ export const PIWI_ENV_VARS = {
 
   // ── Test harness only (not user settings) ────────────────────────────────
   PIWI_BASE_URL: {
-    description: 'Base URL the metadata test spec targets (defaults to http://localhost:3000).',
+    description: 'Base URL of the server the E2E suite targets (defaults to http://localhost:7494, the dev server).',
     category: 'test',
     runtimeOnly: true,
   },
