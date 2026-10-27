@@ -86,9 +86,15 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
             .withEnvironment(proxyEnvironment())
     }
 
-    /** The service's process, which [PiwiProjectService.watchServer] starts again when it ends while starting. */
+    /**
+     * The service's process, which [PiwiProjectService.watchServer] starts again when it ends while starting, and whose
+     * end ends the sessions of its runs ([PiwiRunSessions.watch]).
+     */
     override fun startServerProcess(): OSProcessHandler =
-        super.startServerProcess().also { project.service<PiwiProjectService>().watchServer(it) }
+        super.startServerProcess().also {
+            project.service<PiwiProjectService>().watchServer(it)
+            project.service<PiwiRunSessions>().watch(it)
+        }
 
     /**
      * The IDE's HTTP proxy for the instance the project names ([REPRESENTATIVE_INSTANCE] stands in while none is saved),
@@ -132,8 +138,9 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
         return Path.of(jar).parent.parent.resolve("server").resolve("piwi-language-server.cjs")
     }
 
+    /** The connection, and that the plugin shows where the runs it started stop and answers those stops. */
     override fun createInitializationOptions(): Any =
-        mapOf("credentials" to project.service<PiwiProjectService>().credentials())
+        mapOf("credentials" to project.service<PiwiProjectService>().credentials(), "runControl" to true)
 
     override val lsp4jServerClass: Class<out org.eclipse.lsp4j.services.LanguageServer> = PiwiLanguageServer::class.java
 
@@ -215,6 +222,12 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     @JsonNotification("piwi/runEnded")
     fun runEnded(ended: RunEnded) {
         PiwiCommands.runEnded(project, ended)
+    }
+
+    /** A run the IDE started: a worker started or ended a test, stopped or went on, or the run ended. */
+    @JsonNotification("piwi/runSessionChanged")
+    fun runSessionChanged(session: RunSession) {
+        project.service<PiwiRunSessions>().heard(session)
     }
 
     /** A sentence on a run the editor started, such as one that never reached the instance: a balloon, once. */

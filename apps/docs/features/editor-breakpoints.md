@@ -67,28 +67,28 @@ nothing is copied to the clipboard.
 are written into the file on a new line above the paused statement (the first line of a statement broken over lines),
 on the page expression in scope there, as **Record here** in the editor writes them, but with no `page.goto`: the page
 is where the test left it, signed in and filled in as the test made it. The editor opens the file at that line and
-starts recording without asking anything. Pause and Stop are in the recorder's bar in the page and in the editor; once
-you stop, the pause bar comes back, and **Resume** runs the rest of the test from the page as you left it, which checks
-at once that the new steps fit what follows.
+starts recording. Pause and Stop are in the recorder's bar in the page and in the editor; once you stop, the pause bar
+comes back, and **Resume** runs the rest of the test from the page as you left it, which checks that the new steps fit
+what follows.
 
 `await page.pause()` in a test does the same without a breakpoint: in a run Piwi starts, or any headed run with
 breakpoints, it shows Piwi's pause bar there in place of Playwright's Inspector, with **Record here** among its
 buttons in a run Piwi starts, and Piwi adds `--headed` to a run whose spec holds a `page.pause()` call. The
 `page.pause()` line stays, so the next run can record from there again; remove it when the test is done. In a run
 without breakpoints Piwi did not start, outside a test (a `beforeAll` or `afterAll`) and on a page of a browser the
-test launched itself, `page.pause()` is Playwright's own, with its Inspector; in a headless run it returns at once.
+test launched itself, `page.pause()` is Playwright's own, with its Inspector; in a headless browser it returns at
+once.
 **Record here** records http(s) pages: on a page the test made with `setContent`, or a `file:` page, the editor says
 so and nothing is recorded.
 
-The test reaches the editor through a socket on your machine that the editor service opens, readable by you only,
-named in the run's environment as `PIWI_RECORD_CHANNEL`. A recording the editor does not start within 30 seconds is
-refused, and the test goes on.
+The test reaches the editor through `PIWI_RECORD_CHANNEL`, the socket of
+[the run's connection](./editor-run-control#how-it-works); a recording not started within 30 seconds is refused, and
+the test goes on.
 
 ## The setting
 
 Breakpoints are on by default. Turn them off with the `piwi.breakpoints` setting in VS Code, or **Pause the runs Piwi
 starts at the editor's breakpoints** under **Settings → Tools → Piwi** in a JetBrains IDE, kept on your machine only.
-With the setting off, a run started from Piwi ignores the editor's breakpoints.
 
 ## What it needs
 
@@ -103,9 +103,10 @@ With the setting off, a run started from Piwi ignores the editor's breakpoints.
 
 ## Limits
 
-- **Headed and local only.** Under CI (`CI` set to anything but empty or `false`), in a headless browser, or under
-  Playwright's own debugger (`--debug`, `--debug=cli`, `PWDEBUG`), the run ignores the breakpoints and says why
-  once.
+- **Headed and local only.** Under CI (`CI` set to anything but empty or `false`), or under Playwright's own debugger
+  (`--debug`, `--debug=cli`, `PWDEBUG`), the run ignores the breakpoints and says why once; so does a headless run
+  you start yourself. One Piwi starts stops with no bar, and the editor shows its page
+  ([A headless run](./editor-run-control#a-headless-run)).
 - **Only the calls Playwright's debugger stops at pause**: navigations, actions, key presses and mouse moves,
   assertions, `evaluate`, `waitForFunction`, screenshots and an element's reads (`textContent`, `inputValue`,
   `getAttribute`, `isVisible`, `count`). `waitForTimeout`, `waitForSelector`, `waitForURL`, `waitForEvent`, `title()`
@@ -129,5 +130,6 @@ With the setting off, a run started from Piwi ignores the editor's breakpoints.
 ## Related
 
 - [Runs from the editor](./editor-runs): the commands that start a run, and how the editor follows it.
+- [Pause and step from the editor](./editor-run-control): the same stops, answered from the editor.
 - [Locator healing](/features/locator-healing): the picker, and the panel a pick shows in.
 - [Editor extensions](./editors): the failures, lenses and quick fixes the editor shows from your suite.

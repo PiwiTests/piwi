@@ -59,7 +59,21 @@ Two **external contracts** beyond the npm API:
   out), and posts a locator picked meanwhile to the editor's
   `PIWI_EDITOR_SEND` address (`internal/capture/pause-at.ts`). With `PIWI_RECORD_CHANNEL`,
   **Record here** and `page.pause()` connect to the editor service's local socket and relay
-  the recorder's binding calls over it (`internal/capture/record-handoff.ts`).
+  the recorder's binding calls over it (`internal/capture/record-handoff.ts`). With
+  `PIWI_RUN_CHANNEL` and `PIWI_ORIGIN_REF`, each worker holds a connection to that socket
+  for its whole life, opened in the `piwiResources` worker fixture
+  (`internal/capture/run-channel.ts`, messages from `@piwitests/core/run-channel`): it sends
+  each test's begin and end and each stop it shows, and the editor's controls (Pause, Step,
+  Resume, Finish, Run to a line, the run's breakpoints) go through the same stop policy as
+  `PIWI_PAUSE_AT`. While it is open a headless run stops too, with no bar, until the editor
+  answers or the connection closes; the editor's answer takes a headed stop's bar down. A stop
+  answered in the editor is attached to `piwi-pauses` as one at the bar is, and a stop that ends
+  unanswered (the test function ended, its page or context closed, or for a stop whose page it
+  cannot tell any page of its context closed) ends the same way with a bar or without, the editor
+  told (`running`); the editor gets no image of such a page. One stop shows at a time in a worker:
+  one waiting its turn goes on unshown when the test ended meanwhile, its page or context closed
+  or its breakpoint went, and a context's close, its own or its browser's, lets the call its
+  debugger holds go on first.
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
   unref'd timer (`internal/collect/process-sampler.ts`). While the dashboard says
   someone watches the run, another unref'd timer posts what the sampler and the
@@ -189,9 +203,9 @@ src/
                 run endpoints, batched per origin), test-coverage (each test's
                 coverage field, the wait before its result streams, the run's
                 coverage), blob-ids (the git blob of each covered file),
-                pause-events (the stops a test made at the pause bar, as the
-                `pause` step events the dashboard draws and the step
-                statistics leave out)
+                pause-events (the stops a test made, at the pause bar or in
+                the editor, as the `pause` step events the dashboard draws and
+                the step statistics leave out)
     manifest/   collect (the committed manifest, `/__piwi/manifest` per base URL or origin),
                 run-manifests (the instrumented origins the run reached beyond its base URLs,
                 fetched as each is first seen, uploaded once the run is submitted)
@@ -209,7 +223,9 @@ src/
                 pause-at (the editor's breakpoints: PIWI_PAUSE_AT, the stop policy
                 over Playwright's debugger, the pause bar, a pick posted to
                 PIWI_EDITOR_SEND), record-handoff (Record here:
-                the paused page relayed to the editor's recorder, PIWI_RECORD_CHANNEL)
+                the paused page relayed to the editor's recorder, PIWI_RECORD_CHANNEL),
+                run-channel (the worker's run connection to the editor,
+                PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in)
     config/     env (PIWI_* ↔ options, and the probe and flake-lab variables),
                 desktop (the desktop app's discovery file), dotenv (the `.env` reader)
     probe/      probe mode: plan matching, faults, the shared route interception

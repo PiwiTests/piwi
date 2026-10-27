@@ -47,6 +47,10 @@ action is under **Tools → Piwi**:
   **Run This Spec**.
 - **[Recording](./editor-recording)** starts from **Record Here**, Alt+Enter or Alt+Insert, and **File → New → Record
   a New Test File…**; its controls are in a banner above the editor.
+- **[A paused run](./editor-run-control)**: the line a run Piwi started is stopped at has an arrow in the gutter and
+  an inlay above it with **Resume**, **Step**, **Run to Caret** and **Finish**; they are also first in the status bar
+  item's menu and under **Tools → Piwi**, with **Pause the Run** and **Stop the Run**. A headless test's page shows in
+  the Piwi tool window's **Paused Page** tab.
 - **The severity of a failure**: **Settings → Tools → Piwi → Runs** chooses it
   ([CI failures in the Problems panel](./editor-failures#ci-failures-in-the-problems-panel)); an information shows as a
   weak warning.
@@ -56,8 +60,9 @@ action is under **Tools → Piwi**:
 - **[Open in IDE](./ide-integration#jetbrains-ides-the-piwi-plugin)**: a path clicked in the dashboard or the desktop
   app opens at its line, with nothing to set up.
 
-The shortcuts are those of VS Code ([Commands](./editors#commands)); **Settings → Keymap** changes them (search
-`Piwi`).
+The shortcuts are those of VS Code ([Commands](./editors#commands)), but a run's controls, which use the debugger's
+shortcuts of your keymap while they apply: in the default keymap `F9` pauses and resumes, `F8` steps, `Alt+F9` runs
+to the caret and `Shift+F8` finishes. **Settings → Keymap** changes them (search `Piwi`).
 
 ## Related
 

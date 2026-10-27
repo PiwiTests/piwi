@@ -38,7 +38,7 @@ import javax.swing.JComponent
 /**
  * The latest run on the checked-out branch, or the run in progress, of the Playwright config the selected file belongs
  * to, in the status bar: an icon and the text, in the error color while its tests fail, and a click opens a popup of
- * Piwi's actions. While a recording runs, its state and step count.
+ * Piwi's actions. While a recording runs, its state and step count; while a run started here is stopped, where.
  */
 class PiwiStatusBarWidgetFactory : StatusBarWidgetFactory {
     override fun getId() = ID
@@ -60,8 +60,8 @@ class PiwiStatusBarWidgetFactory : StatusBarWidgetFactory {
 
 /**
  * The status bar item: a label with the icon and the text of `Glue.statusView` for the context of the selected
- * editor's file (`Glue.statusContext`), drawn again when the service's answers, a recording or the selected editor
- * change. A click opens the popup of [actions] above it.
+ * editor's file (`Glue.statusContext`), drawn again when the service's answers, a recording, a run's stops or the
+ * selected editor change. A click opens the popup of [actions] above it.
  */
 class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget {
     private val label = StatusLabel()
@@ -87,6 +87,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         }
         service.refreshStatus()
         project.service<PiwiRecordings>().onChange(this) { update() }
+        project.service<PiwiRunSessions>().onChange(this) { update() }
         project.messageBus.connect(this).subscribe(
             FileEditorManagerListener.FILE_EDITOR_MANAGER,
             object : FileEditorManagerListener {
@@ -104,27 +105,35 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
 
     private fun recording() = project.getServiceIfCreated(PiwiRecordings::class.java)?.current()
 
+    private fun runs() = project.getServiceIfCreated(PiwiRunSessions::class.java)
+
     /**
-     * Draws the item again: the recording in progress, `Piwi: refreshing…` while the latest run is read again, else the
-     * view of the selected file's context, with its icon and, while its tests fail, the error color. On the event thread.
+     * Draws the item again: the recording in progress, where a run started here is stopped or that it is pausing,
+     * `Piwi: refreshing…` while the latest run is read again, else the view of the selected file's context, with its icon
+     * and, while its tests fail, the error color. On the event thread.
      */
     fun update() {
         val recording = recording()
+        val stopped = runs()?.let { Glue.runControlStatus(it.controls(), it.stops()) }
         val refreshing = service().refreshing
         val view = view()
         label.text = when {
             recording != null -> Glue.recordingStatus(recording.state, recording.steps, recording.edited, recording.stopping)
+            stopped != null -> stopped
             refreshing -> Glue.REFRESHING
             else -> view.text
         }
         label.icon = when {
             recording != null -> PIWI_ICON
+            stopped != null -> AllIcons.Actions.Pause
             refreshing -> AnimatedIcon.Default.INSTANCE
             else -> icon(view.icon)
         }
-        label.error = recording == null && !refreshing && view.error
+        label.error = recording == null && stopped == null && !refreshing && view.error
         label.toolTipText = Glue.htmlTooltip(
-            recording?.let { "${it.view.text}\nClick to go to the recorded lines or to control the recording." } ?: view.tooltip,
+            recording?.let { "${it.view.text}\nClick to go to the recorded lines or to control the recording." }
+                ?: stopped?.let { "$it\nClick for the run's controls." }
+                ?: view.tooltip,
         )
     }
 
@@ -139,10 +148,10 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     }
 
     /**
-     * The popup's actions: what the item's state calls for first (going to the recorded lines while a recording runs,
-     * with its controls), then the failing tests, the failures, the dashboard and the baseline, the test at the caret
-     * and Record Here, then Refresh, Connect and the settings. The registered actions keep their own logic, and the
-     * popup leaves out those that do not apply.
+     * The popup's actions: the controls of a run started here while one is live, then what the item's state calls for
+     * (going to the recorded lines while a recording runs, with its controls), then the failing tests, the failures, the
+     * dashboard and the baseline, the test at the caret and Record Here, then Refresh, Connect and the settings. The
+     * registered actions keep their own logic, and the popup leaves out those that do not apply.
      */
     fun actions(): ActionGroup {
         val manager = ActionManager.getInstance()
@@ -160,6 +169,10 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         }
         fun registered(vararg ids: String) = ids.mapNotNull { manager.getAction(it) }.filter { it !== first }
         return DefaultActionGroup().apply {
+            if (runs()?.controls()?.active == true) {
+                addAll(registered(*RUN_ACTIONS))
+                addSeparator()
+            }
             if (first != null) {
                 add(first)
                 addAll(registered("Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording"))
@@ -218,6 +231,12 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     }
 
     companion object {
+        /** The controls of a run started here, as the popup lists them while one is live. */
+        val RUN_ACTIONS = arrayOf(
+            "Piwi.ResumeRun", "Piwi.StepRun", "Piwi.RunToCaret", "Piwi.FinishRun", "Piwi.ShowPausedPage", "Piwi.PauseRun",
+            "Piwi.StopRun",
+        )
+
         /** The path of the selected editor's file, whose Playwright config the item speaks for; null with none open. */
         fun shownFile(project: Project): String? = FileEditorManager.getInstance(project).selectedFiles.firstOrNull()?.path
     }

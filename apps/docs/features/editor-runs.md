@@ -33,7 +33,8 @@ folder: as a task in VS Code, in a terminal of its own (**Tasks: Rerun Last Task
 window in a JetBrains IDE (**Rerun** starts it again), or in the IDE's Playwright runner (test tree, Debug, **Rerun
 Failed Tests**), a choice of **Settings → Tools → Piwi**. It sets `PIWI_ORIGIN=editor` and its own `PIWI_ORIGIN_REF`
 ([run origin](/reference/test-metadata#run-origin)), by which the editor finds its run. Breakpoints pause it in the
-browser, with Piwi's picker one click away: [Breakpoints in the browser](./editor-breakpoints).
+browser, with Piwi's picker one click away: [Breakpoints in the browser](./editor-breakpoints); the editor pauses,
+steps and resumes it too: [Pause and step from the editor](./editor-run-control).
 
 ## The Testing view (VS Code)
 

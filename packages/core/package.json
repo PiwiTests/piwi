@@ -23,6 +23,7 @@
     "./wire": "./src/wire.ts",
     "./recording": "./src/recording.ts",
     "./ide-recorder": "./src/ide-recorder.ts",
+    "./run-channel": "./src/run-channel.ts",
     "./function-match": "./src/function-match.ts",
     "./codegen": "./src/codegen.ts",
     "./piwi-config": "./src/piwi-config.ts",

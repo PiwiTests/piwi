@@ -8,11 +8,20 @@ import {
   takePauseState,
 } from '@piwitests/picker-dom';
 import {
+  askAgain,
+  askedOnce,
+  atBreakpoint,
   atStop,
+  callSitePlace,
+  currentPauseSet,
   goOn,
   inFlightCallSite,
   markPausesWrapped,
   parsePauseAt,
+  pauseState,
+  placeLine,
+  replacePauseSet,
+  wantsStops,
   pauseHere,
   pauseGateFromTestInfo,
   pausePlace,
@@ -127,6 +136,15 @@ describe('the pause gate', () => {
     }
   });
 
+  it('pauses a headless run too while the run connection to the editor is open, never under CI or a debugger', () => {
+    expect(pauseSkipReason({ ci: undefined, headless: true, channel: true })).toBeNull();
+    expect(pauseSkipReason({ ci: undefined, headless: undefined, channel: true })).toBeNull();
+    expect(pauseSkipReason({ ci: undefined, headless: true, channel: false })).toMatch(/headless/);
+    expect(pauseSkipReason({ ci: '1', headless: true, channel: true })).toMatch(/running under CI/);
+    expect(pauseSkipReason({ ci: undefined, headless: true, channel: true, pwdebug: '1' })).toMatch(/PWDEBUG/);
+    expect(pauseSkipReason({ ci: undefined, headless: true, channel: true, debug: 'cli' })).toMatch(/--debug=cli/);
+  });
+
   it('never pauses under --debug, --debug=cli included, which sets no PWDEBUG', () => {
     expect(pauseSkipReason({ ci: undefined, headless: false, debug: 'cli' })).toBe(
       "Playwright's debugger runs the test (--debug=cli) — run without --debug",
@@ -143,11 +161,7 @@ describe('the pause gate', () => {
 });
 
 describe('the stop policy', () => {
-  const state = (lines: string, finished = false): PauseState => ({
-    set: parsePauseAt(lines, path.resolve('/work/shop')),
-    step: false,
-    finished,
-  });
+  const state = (lines: string): PauseState => pauseState(parsePauseAt(lines, path.resolve('/work/shop')));
 
   it('shows a breakpoint’s line and lets every other call go on, stopping again before the next', () => {
     const s = state('tests/a.spec.ts:5;tests/pages/cart.page.ts:9');
@@ -167,12 +181,68 @@ describe('the stop policy', () => {
     expect(atStop(s, 'tests/a.spec.ts:7:3')).toEqual({ go: 'next' });
   });
 
-  it('shows nothing more after Finish, and runs on freely', () => {
+  it('shows no breakpoint more after Finish, and runs on freely, but for a stop asked once', () => {
     const s = state('tests/a.spec.ts:5');
     expect(atStop(s, 'tests/a.spec.ts:5:3')).toEqual({ show: 'breakpoint' });
     expect(goOn(s, 'finish')).toBe('resume');
     expect(atStop(s, 'tests/a.spec.ts:5:3')).toEqual({ go: 'resume' });
-    expect(goOn(s, 'step')).toBe('resume');
+    expect(wantsStops(s)).toBe(false);
+    s.pause = true;
+    expect(atStop(s, 'tests/a.spec.ts:5:3')).toEqual({ show: 'pause' });
+    expect(goOn(s, 'step')).toBe('next');
+    expect(atStop(s, 'tests/a.spec.ts:6:3')).toEqual({ show: 'step' });
+  });
+
+  it('shows the first stop in the user’s code after a Pause, and resumes a stale one on another context at once', () => {
+    const s = state('');
+    expect(wantsStops(s)).toBe(false);
+    s.pause = true;
+    expect(wantsStops(s)).toBe(true);
+    // A stop outside the user's code keeps the pause asked.
+    expect(atStop(s, null)).toEqual({ go: 'next' });
+    expect(atStop(s, 'tests/a.spec.ts:4:3')).toEqual({ show: 'pause' });
+    expect(goOn(s, 'resume')).toBe('resume');
+    // The other context, armed by the same Pause, stops at its next call.
+    expect(atStop(s, 'tests/a.spec.ts:9:3')).toEqual({ go: 'resume' });
+  });
+
+  it('runs to a line as a breakpoint used once, and a stop before it uses it up', () => {
+    const s = state('tests/a.spec.ts:7');
+    s.runTo = 'tests/a.spec.ts:9';
+    expect(atStop(s, 'tests/a.spec.ts:5:3')).toEqual({ go: 'next' });
+    expect(atStop(s, 'tests/a.spec.ts:9:12')).toEqual({ show: 'run-to' });
+    expect(s.runTo).toBeNull();
+    expect(goOn(s, 'resume')).toBe('next');
+    s.runTo = 'tests/a.spec.ts:9';
+    expect(atStop(s, 'tests/a.spec.ts:7:3')).toEqual({ show: 'breakpoint' });
+    expect(atStop(s, 'tests/a.spec.ts:9:12')).toEqual({ go: 'next' });
+    const free = state('');
+    free.runTo = 'tests/a.spec.ts:9';
+    expect(goOn(free)).toBe('next');
+    expect(atStop(free, 'tests/a.spec.ts:9:1')).toEqual({ show: 'run-to' });
+    expect(goOn(free, 'resume')).toBe('resume');
+  });
+
+  it('reads the editor’s places as call sites, and takes its breakpoints in place of PIWI_PAUSE_AT', () => {
+    const cwd = path.resolve('/work/shop');
+    expect(callSitePlace('tests/a.spec.ts:9:12')).toEqual({ file: 'tests/a.spec.ts', line: 9, column: 12 });
+    expect(callSitePlace('../shared/b.ts:3:0')).toEqual({ file: '../shared/b.ts', line: 3 });
+    expect(callSitePlace('tests/a.spec.ts')).toBeNull();
+    expect(placeLine({ file: './tests/a.spec.ts', line: 9 }, cwd)).toBe('tests/a.spec.ts:9');
+    process.env.PIWI_PAUSE_AT = 'tests/a.spec.ts:5';
+    try {
+      expect(currentPauseSet().matches('tests/a.spec.ts:5:1')).toBe(true);
+      const set = replacePauseSet([{ file: 'tests/a.spec.ts', line: 6 }]);
+      expect(currentPauseSet()).toBe(set);
+      expect(set.matches('tests/a.spec.ts:6:1')).toBe(true);
+      expect(set.matches('tests/a.spec.ts:5:1')).toBe(false);
+      expect(replacePauseSet([]).size).toBe(0);
+      expect(currentPauseSet().size).toBe(0);
+    } finally {
+      replacePauseSet(null);
+      delete process.env.PIWI_PAUSE_AT;
+    }
+    expect(currentPauseSet().size).toBe(0);
   });
 
   it('runs on freely from a stop with no breakpoint and no Step waiting', () => {
@@ -180,6 +250,33 @@ describe('the stop policy', () => {
     expect(atStop(s, 'tests/a.spec.ts:5:3')).toEqual({ go: 'resume' });
     expect(goOn(s, 'resume')).toBe('resume');
     expect(goOn(s, 'step')).toBe('next');
+  });
+
+  it('asks again what a stop used up when it does not show, a line asked since winning', () => {
+    const s = state('tests/a.spec.ts:5');
+    s.pause = true;
+    s.runTo = 'tests/a.spec.ts:9';
+    const asked = askedOnce(s);
+    expect(atStop(s, 'tests/a.spec.ts:4:3')).toEqual({ show: 'pause' });
+    expect(s).toMatchObject({ step: false, pause: false, runTo: null });
+    askAgain(s, asked);
+    expect(s).toMatchObject({ step: false, pause: true, runTo: 'tests/a.spec.ts:9' });
+    expect(atStop(s, 'tests/a.spec.ts:4:3')).toEqual({ show: 'pause' });
+    s.step = true;
+    s.runTo = 'tests/a.spec.ts:12';
+    askAgain(s, asked);
+    expect(s).toMatchObject({ step: true, pause: true, runTo: 'tests/a.spec.ts:12' });
+  });
+
+  it('is at a breakpoint while its line is one of the set and the attempt did not finish', () => {
+    const s = state('tests/a.spec.ts:5');
+    expect(atBreakpoint(s, 'tests/a.spec.ts:5:3')).toBe(true);
+    expect(atBreakpoint(s, null)).toBe(false);
+    s.set = parsePauseAt('tests/a.spec.ts:6', path.resolve('/work/shop'));
+    expect(atBreakpoint(s, 'tests/a.spec.ts:5:3')).toBe(false);
+    expect(atBreakpoint(s, 'tests/a.spec.ts:6:3')).toBe(true);
+    goOn(s, 'finish');
+    expect(atBreakpoint(s, 'tests/a.spec.ts:6:3')).toBe(false);
   });
 });
 
@@ -446,6 +543,31 @@ describe('pauseHere', () => {
     expect(await recorded).toBe('resume');
     // The recording got the stop's signal, to end itself and leave the page.
     expect(record.mock.calls[0]![0]).toBe(stopped.signal);
+  });
+
+  it('ends with its stop on a page that stops answering, taking the bar down a second at most', async () => {
+    vi.useFakeTimers();
+    try {
+      const page = {
+        evaluate: vi.fn((_fn: unknown, _arg?: unknown) => new Promise<never>(() => {})),
+        waitForFunction: vi.fn(() => new Promise<never>(() => {})),
+        waitForLoadState: vi.fn(async () => {}),
+        isClosed: () => false,
+      };
+      const ended = new AbortController();
+      let answer: string | undefined;
+      void pauseHere(page as never, POINT, PROBE, () => {}, undefined, ended.signal).then((a) => (answer = a));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(page.evaluate).toHaveBeenCalledWith(showPauseBar, expect.anything());
+      ended.abort('ended');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(page.evaluate.mock.calls.map((c) => c[0])).toEqual([showPauseBar, takePauseState]);
+      expect(answer).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(answer).toBe('resume');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('offers Record here when the editor can record, and shows the bar again once the recording ended', async () => {
