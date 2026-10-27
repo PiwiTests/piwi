@@ -204,6 +204,18 @@ export function loopbackPort(address: string): number | null {
   }
 }
 
+/**
+ * A loopback `http:` address on `127.0.0.1`, where VS Code forwards it, whatever name it gave (`localhost`): the
+ * address Piwi Picker pairs with, and the one it sends a token to. `localhost` may resolve to `[::1]`, where another
+ * program could listen on the same port. Any other address as it is.
+ */
+export function onLoopback(address: string): string {
+  const port = loopbackPort(address);
+  if (port === null) return address;
+  const url = new URL(address);
+  return `http://127.0.0.1:${port}${url.pathname}${url.search}${url.hash}`;
+}
+
 /** What a remote window asks to list its service's hub where the browser's machine reaches it. */
 export interface RemoteHub {
   /** The address of this window's service's hub (`piwi/hub`); null while it does not listen. */
@@ -217,9 +229,10 @@ export interface RemoteHub {
 /**
  * The live hubs `GET /piwi/live` lists. In a local window, those of every editor service on the machine. In a remote
  * window, whose services listen on the remote machine's loopback interface, this window's own alone, at the loopback
- * port of the browser's machine VS Code forwards to it, once its service takes that port; the other windows' services
- * take none this window forwards. None when the forward is not a loopback `http:` address (Codespaces in the browser
- * forwards to an `https` one) or the service does not answer.
+ * port of the browser's machine VS Code forwards to it, on `127.0.0.1` whatever name VS Code gives it, once its
+ * service takes that port; the other windows' services take none this window forwards. None when the
+ * forward is not a loopback `http:` address (Codespaces in the browser forwards to an `https` one) or the service
+ * does not answer.
  */
 export async function liveHubsHere(
   remoteName: string | undefined,
@@ -235,5 +248,5 @@ export async function liveHubsHere(
   const forwarded = loopbackPort(external.href);
   if (forwarded === null || pathname !== HUB_PATH) return [];
   await remote.forward(forwarded);
-  return [{ ...hub, url: `ws://${external.hostname}:${forwarded}${HUB_PATH}` }];
+  return [{ ...hub, url: `ws://127.0.0.1:${forwarded}${HUB_PATH}` }];
 }

@@ -18,6 +18,7 @@ import { readLiveHubs } from '@piwitests/editor/discovery';
 import {
   liveHubsHere,
   loopbackPort,
+  onLoopback,
   sendPairing,
   startSendListener,
   type PairingStore,
@@ -362,9 +363,10 @@ describe('the live hubs of a window', () => {
       expect(side.asked).toEqual(['http://127.0.0.1:43200/piwi/hub']);
       expect(side.forwarded).toEqual([55_002]);
     }
-    // The same port when it was free on the browser's machine, as `localhost` when VS Code names it so.
+    // The same port when it was free on the browser's machine, on 127.0.0.1 when VS Code names it `localhost`, which
+    // may resolve to [::1], where another program could take the token `hello` sends.
     const same = remote((address) => address.replace('127.0.0.1', 'localhost'));
-    expect((await liveHubsHere('ssh-remote', () => [own], same.hub))[0]?.url).toBe('ws://localhost:43200/piwi/hub');
+    expect((await liveHubsHere('ssh-remote', () => [own], same.hub))[0]?.url).toBe('ws://127.0.0.1:43200/piwi/hub');
   });
 
   test('lists none in a remote window whose forward is not a loopback address, or whose service has no hub', async () => {
@@ -375,6 +377,13 @@ describe('the live hubs of a window', () => {
     expect(await liveHubsHere('ssh-remote', () => [own], remote(() => 'http://10.0.0.5:55002/').hub)).toEqual([]);
     expect(await liveHubsHere('ssh-remote', () => [other], remote((a) => a).hub)).toEqual([]);
     expect(await liveHubsHere('ssh-remote', () => [own], remote((a) => a, null).hub)).toEqual([]);
+  });
+
+  test('puts a loopback http address on 127.0.0.1, whatever name VS Code gave it, and leaves any other one', () => {
+    expect(onLoopback('http://localhost:55002/piwi/send')).toBe('http://127.0.0.1:55002/piwi/send');
+    expect(onLoopback('http://127.0.0.1:55002/piwi/send')).toBe('http://127.0.0.1:55002/piwi/send');
+    expect(onLoopback('https://shop-1.app.github.dev/piwi/send')).toBe('https://shop-1.app.github.dev/piwi/send');
+    expect(onLoopback('http://10.0.0.5:1/')).toBe('http://10.0.0.5:1/');
   });
 
   test('reads the port of a loopback http address alone', () => {

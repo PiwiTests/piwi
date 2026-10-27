@@ -392,6 +392,9 @@ export function liveUrlOf(sendUrl: string): string | null {
   return sendUrl.endsWith('/send') ? `${sendUrl.slice(0, -'/send'.length)}/live` : null;
 }
 
+/** A hub's address as `GET …/live` lists it: a loopback name, the port, the path. */
+const HUB_URL = /^ws:\/\/(?:127\.0\.0\.1|localhost):(\d{1,5})(\/[\w/-]{0,64})$/;
+
 const CHROME_EXTENSION = /^chrome-extension:\/\/[a-p]{32}$/;
 const FIREFOX_EXTENSION = /^moz-extension:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -724,13 +727,19 @@ export function parseHubMessage(text: string): HubMessage | null {
   }
 }
 
-/** The hubs of a `GET …/live` answer, checked field by field: an entry it cannot read is left out; null for no answer. */
+/**
+ * The hubs of a `GET …/live` answer, checked field by field: an entry it cannot read is left out; null for no answer.
+ * Every hub is on `127.0.0.1`, as a service listens: one named under `localhost` is read there, since `localhost` may
+ * resolve to `[::1]`, where another program could listen on the same port and take the token `hello` sends.
+ */
 export function parseLiveAnswer(body: unknown): LiveHub[] | null {
   if (!isObject(body) || !Array.isArray(body.hubs)) return null;
   return body.hubs.flatMap((hub): LiveHub[] => {
     if (!isObject(hub)) return [];
-    const { url, token, pid, version, client, roots, startedAt } = hub;
-    if (typeof url !== 'string' || !/^ws:\/\/(127\.0\.0\.1|localhost):\d{1,5}\/[\w/-]{0,64}$/.test(url)) return [];
+    const { token, pid, version, client, roots, startedAt } = hub;
+    const named = typeof hub.url === 'string' ? HUB_URL.exec(hub.url) : null;
+    if (!named) return [];
+    const url = `ws://127.0.0.1:${named[1]}${named[2]}`;
     if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{16,256}$/.test(token) || !isInt(pid, 1)) return [];
     if (str(version, 64) === null || str(startedAt, 64) === null) return [];
     if (client !== null && str(client, 200) === null) return [];

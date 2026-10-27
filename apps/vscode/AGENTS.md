@@ -82,8 +82,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   status, carries `x-piwi-editor-proof` for the port the `Host` named. Checked by `tests/send-listener.test.ts`.
   ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **`GET /piwi/live` lists hubs only, never a run channel's token; a remote window lists its own service's hub alone,
-  at the loopback port `asExternalUri` forwards, once `piwi/hub` made the hub take it** (`liveHubsHere`). Checked by
-  `tests/send-listener.test.ts` ("… none of the run channels", "lists a remote window’s own hub …").
+  at the loopback port `asExternalUri` forwards, on `127.0.0.1` as the pairing address is (`onLoopback`), once
+  `piwi/hub` made the hub take it** (`liveHubsHere`). Checked by `tests/send-listener.test.ts` ("… none of the run
+  channels", "lists a remote window’s own hub …").
   ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **Only the pairing Piwi Picker is given saves the listener's port** (`sendPairing`): a run's pairing takes any free
   port while another window holds the saved one, and leaves it saved. Checked by `tests/send-listener.test.ts` ("keeps

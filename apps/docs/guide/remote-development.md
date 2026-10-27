@@ -19,14 +19,14 @@ which in remote development is the local end of a forwarded port.
 In a remote window (Remote SSH, WSL, Dev Containers, or a codespace opened in VS Code desktop):
 
 1. Run **Piwi: Pair with Piwi Picker** in that window. VS Code forwards the window's Send to editor port to your
-   computer, on the same number when it is free there, and copies the local end:
-   `http://127.0.0.1:<port>/piwi/send#<token>`.
+   computer, on the same number when it is free there, and copies the local end on `127.0.0.1`, whatever name VS
+   Code gives it: `http://127.0.0.1:<port>/piwi/send#<token>`.
 2. Paste it in Piwi Picker's settings under **Send to editor** and click **Pair**.
 
 Piwi Picker then sends locators and recordings to the remote window, and its
 [Runs window](/features/runs-window) lists the runs that window starts, and shows a headless test's page live: when
 Piwi Picker asks for them, VS Code forwards the port of the window's run hub too, and the hub accepts a connection on that local port once
-the window has named it. Both forwarded ports show in the **Ports** view. The pairing's token, the proof that the
+the window has named it, which Piwi Picker reaches on `127.0.0.1` too. Both forwarded ports show in the **Ports** view. The pairing's token, the proof that the
 editor holds it, and the browser extension's origin are checked as on your own computer.
 
 One pairing reaches the runs of one window when it is remote, and of every local window when it is local: pair from

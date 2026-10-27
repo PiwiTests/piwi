@@ -433,7 +433,8 @@ such file, a warning says so: VS Code hands the link to the window focused last.
 state (`piwi.sendPort`), with the token from `SecretStorage` (`piwi.sendToken`).
 
 - **Piwi: Pair with Piwi Picker** starts it and copies the pairing address as the browser's machine reaches it
-  (`pickerPairing`: `vscode.env.asExternalUri`, which a remote window forwards).
+  (`pickerPairing`: `vscode.env.asExternalUri`, which a remote window forwards), on `127.0.0.1` whatever name VS
+  Code gives it (`onLoopback`): `localhost` may resolve to `[::1]`, where another program could listen.
 - A run's `PIWI_EDITOR_SEND` keeps the loopback address (`runPairing`), since the reporter runs where the extension
   does. Which port it takes: [Breakpoints](#breakpoints).
 
@@ -453,7 +454,7 @@ Each hub carries the WebSocket's address and token, the pid, version, client, wo
 channel's token. So the one pairing reaches the runs of every window, the other windows' included. A request without
 the token is a 401. The addresses are loopback ones: a remote window (`vscode.env.remoteName` set) lists its own
 service's hub alone (`piwi/hub` names its address), at the loopback port of the browser's machine `asExternalUri`
-forwards to it, once `piwi/hub` with `forwarded` made the hub take that port in `Host` (`liveHubsHere`); none when
+forwards to it, on `127.0.0.1`, once `piwi/hub` with `forwarded` made the hub take that port in `Host` (`liveHubsHere`); none when
 the forward is not a loopback `http:` address (Codespaces in the browser) or the service does not answer, and the
 other windows' hubs never. How the files are read:
 [The discovery file](../../packages/editor/ARCHITECTURE.md#the-discovery-file) in the editor service's reference.

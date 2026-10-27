@@ -786,7 +786,9 @@ and the popup's Runs tile only ask the worker, and the worker handles the run sh
    - One answering 404 without it predates the proof (`outdated`). Send to editor then asks to update the editor's
      Piwi extension or plugin (`common_editorOutdated`).
 4. Then `GET …/live` with the pairing's token as a bearer token. `parseLiveAnswer` reads the answer: each hub's
-   address and token.
+   address and token, the address on 127.0.0.1 whatever loopback name the editor gave it (a remote VS Code window
+   lists its hub at the port it forwards). The token goes in `hello` before the hub proves anything, so a hub named
+   under `localhost` could reach another program on `[::1]`.
 5. The hubs go to the secret area under `hubs`, never to `chrome.storage.local`. Unpair removes them
    (`setEditorPairing(null)`).
 

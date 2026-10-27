@@ -170,6 +170,7 @@ import { registerRunControl } from './run-view';
 import {
   liveHubsHere,
   loopbackPort,
+  onLoopback,
   sendPairing,
   startSendListener,
   type PairingStore,
@@ -802,7 +803,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   /** The port of the browser's machine a remote window forwards to the listener, which it then takes in `Host`. */
   let pairingForwarded: number[] = [];
   const forwardListener = async (url: string) => {
-    const address = await external(url);
+    const address = onLoopback(await external(url));
     const port = loopbackPort(address);
     pairingForwarded = port !== null && port !== loopbackPort(url) ? [port] : [];
     return address;
@@ -837,7 +838,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   });
   /**
    * The pairing address Piwi Picker pastes: the listener's address as the browser's machine reaches it, which a
-   * remote window (SSH, WSL, a dev container) forwards to the local machine. Its port is saved for the next start.
+   * remote window (SSH, WSL, a dev container) forwards to the local machine, on `127.0.0.1`. Its port is saved for the
+   * next start.
    */
   const pickerPairing = async (): Promise<string> => {
     const { url, token } = await pairing(true);

@@ -623,5 +623,16 @@ describe('the live endpoint', () => {
       }),
     ).toEqual(hubs);
     expect(parseLiveAnswer({ error: 'not paired' })).toBeNull();
+    // A hub named under `localhost` is read on 127.0.0.1: `localhost` may resolve to [::1], another program's.
+    expect(parseLiveAnswer({ hubs: [{ ...hubs[0], url: 'ws://localhost:43123/piwi/hub' }] })).toEqual(hubs);
+    expect(
+      parseLiveAnswer({
+        hubs: [
+          'ws://[::1]:43123/piwi/hub',
+          'ws://127.0.0.1.evil.test:43123/piwi/hub',
+          'wss://127.0.0.1:43123/piwi/hub',
+        ].map((url) => ({ ...hubs[0], url })),
+      }),
+    ).toEqual([]);
   });
 });

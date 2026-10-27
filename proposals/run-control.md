@@ -226,7 +226,9 @@ the image is shown at and which image it was on: the image is scaled to fit, so 
 click. A remote VS Code window (Remote SSH, WSL, Dev Containers, a codespace in VS Code desktop) lists its own
 service's hub alone, at the local port `asExternalUri` forwards to it, once the service takes that port in `Host`
 (`piwi/hub { forwarded }`, answered once it does, 8 ports at most, loopback names alone, the token and the extension's
-origin still required); the other windows' services on that machine take no port this window forwards, so one
+origin still required), on `127.0.0.1` as the pairing address is, whatever name VS Code gives the forward, and Piwi
+Picker reads any hub named under `localhost` on `127.0.0.1` too: `hello` sends the token before the hub proves
+anything, and `localhost` may resolve to `[::1]`, where another program could listen; the other windows' services on that machine take no port this window forwards, so one
 pairing reaches one remote window's runs. The Send to editor listener takes the port its own pairing is forwarded to
 too, and proves the token for the port the request named: VS Code forwards to another local port when the remote's is
 taken on the browser's machine, as it is while a local window holds the saved pairing port. A codespace in the browser
