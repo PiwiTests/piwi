@@ -39,9 +39,9 @@ const ROLES: ReadonlySet<string> = new Set<ProcessRole>([
   'other',
 ]);
 const VERDICTS: ReadonlySet<string> = new Set(['leaked', 'idle', 'piling', 'handle', 'probable']);
-const KINDS: ReadonlySet<string> = new Set(['browser', 'context', 'page', 'request', 'handle']);
+const KINDS: ReadonlySet<string> = new Set(['browser', 'context', 'page', 'request', 'handle', 'worker']);
 const ARTIFACT_KINDS = ['trace', 'video', 'screenshot', 'other'] as const;
-const GROWTH: ReadonlySet<string> = new Set(['pages', 'listeners', 'routes']);
+const GROWTH: ReadonlySet<string> = new Set(['pages', 'listeners', 'routes', 'elements', 'heapMb', 'descriptors']);
 
 const FINDINGS_CAP = 100;
 const SERIES_CAP = 240;
@@ -152,7 +152,7 @@ function finding(value: unknown): WireResourceFinding | null {
   const growth = obj(raw.growth);
   if (growth && GROWTH.has(String(growth.what))) {
     out.growth = {
-      what: growth.what as 'pages' | 'listeners' | 'routes',
+      what: growth.what as NonNullable<WireResourceFinding['growth']>['what'],
       from: int(growth.from) ?? 0,
       to: int(growth.to) ?? 0,
       tests: int(growth.tests) ?? 0,

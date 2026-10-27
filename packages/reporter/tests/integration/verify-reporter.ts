@@ -579,11 +579,28 @@ export default class VerifyCaptureReporter implements Reporter {
           f.growth.to - f.growth.from === 3,
       ],
       [
-        'a server left listening',
+        'elements piling up on the shared page',
+        (f) =>
+          f.verdict === 'piling' &&
+          f.where.endsWith(at('shared-page')) &&
+          f.growth?.what === 'elements' &&
+          f.growth.to - f.growth.from === 600,
+      ],
+      [
+        'a server left listening, at its line',
         (f) =>
           f.verdict === 'handle' &&
           f.where === 'TCPServerWrap' &&
+          !!f.site?.endsWith(at('server')) &&
           !!f.detail?.includes('resources: leaves a server listening'),
+      ],
+      [
+        'a child process left running, at its line',
+        (f) =>
+          f.verdict === 'handle' &&
+          f.where === 'ChildProcess' &&
+          !!f.site?.endsWith(at('child')) &&
+          !!f.detail?.includes('resources: leaves a child process running'),
       ],
       ['the unused page fixture', (f) => f.verdict === 'idle' && f.where === 'fixture "page"' && f.count === 1],
     ];

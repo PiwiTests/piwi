@@ -31,6 +31,12 @@
  * A passing execution has no failure moment: the axis is hidden and the table
  * lists every step without offsets.
  *
+ * With the run's resource report, a **Resources** switch (off until the viewer
+ * turns it on, the choice kept per browser) adds rows under the lanes on the
+ * same clock: the CPU and memory of the worker that ran the test with the
+ * browsers it started, and the pages open in that worker; the failure line
+ * crosses them, and a readout under the axis gives their values at the pointer.
+ *
  * A test that stood paused at an editor breakpoint keeps its clock: each stop
  * is a Paused band on the axis, a row of its own above the lanes and a hatched
  * shade across them, the bars read on the test's whole clock span, and a step
@@ -85,6 +91,8 @@ import {
 import type { LightboxSubject } from '~/utils/lightbox';
 import { orderedStepParams, pausedOverlap, stepLabel } from '@piwitests/core/step-analysis';
 import { formatTimelineTime, pauseReasonText } from '~/utils/timeline';
+import { seriesPaths } from '~/utils/resource-tracks';
+import { resourceFacts, resourceReadout, timelineResourceRows } from '~/utils/timeline-resource-rows';
 
 const props = defineProps<{
   testRunsCaseId: number;
@@ -257,7 +265,40 @@ const pauseBandTop = computed(() => TOP + (hasCallBand.value ? CALL_BAND_H : 0))
 const bandH = computed(() => (hasCallBand.value ? CALL_BAND_H : 0) + (hasPauseBand.value ? PAUSE_BAND_H : 0));
 const lanesTop = computed(() => TOP + bandH.value);
 const lanesHeight = computed(() => visibleLanes.value.length * LANE_H);
-const marksBottom = computed(() => lanesTop.value + lanesHeight.value);
+
+// ── Resources rows ───────────────────────────────────────────────────────────
+// Off until the viewer turns them on: what the test's worker and its browsers
+// used while it ran, and the pages open in that worker, under the lanes.
+const RESOURCE_ROW_H = 20;
+const showResources = useLocalStorage('piwi-failure-timeline-resources', false, { initOnMounted: true });
+const resourceRows = computed(() => timelineResourceRows(data.value?.resources));
+const resourcesOn = computed(() => showResources.value && resourceRows.value.length > 0);
+const resourcesTop = computed(() => lanesTop.value + lanesHeight.value);
+const resourcesHeight = computed(() => (resourcesOn.value ? resourceRows.value.length * RESOURCE_ROW_H : 0));
+const resourcePaths = computed(() =>
+  resourceRows.value.map((row) => seriesPaths(row.points, row.yMax, row.step, RESOURCE_ROW_H - 4)),
+);
+const resourceFactsText = computed(() => resourceFacts(data.value?.resources).join(' · '));
+const resourcesClipId = `failure-timeline-resources-${useId()}`;
+/** The rows' paths are built in ms; this places them on the window at the current width. */
+function resourceTransform(index: number): string {
+  const { start, end } = domain.value;
+  const k = end > start ? plotWidth.value / (end - start) : 0;
+  return `translate(${plotLeft - start * k}, ${resourcesTop.value + index * RESOURCE_ROW_H + 2}) scale(${k}, 1)`;
+}
+const resourceHover = ref<{ x: number; at: number } | null>(null);
+function onResourceMove(event: MouseEvent): void {
+  const svg = (event.currentTarget as SVGElement).ownerSVGElement;
+  if (!svg) return;
+  const x = Math.max(plotLeft, Math.min(plotRight.value, event.clientX - svg.getBoundingClientRect().left));
+  const { start, end } = domain.value;
+  resourceHover.value = { x, at: start + ((x - plotLeft) / plotWidth.value) * (end - start) };
+}
+const resourceReadoutText = computed(() =>
+  resourceHover.value ? resourceReadout(resourceRows.value, resourceHover.value.at) : '',
+);
+
+const marksBottom = computed(() => resourcesTop.value + resourcesHeight.value);
 const svgHeight = computed(() => marksBottom.value + AXIS_H);
 
 function xOf(at: number): number {
@@ -773,6 +814,27 @@ function revealItem(item: TimelineItem) {
           @only="onlyType"
           @show-all="showAllTypes"
         />
+        <button
+          v-if="resourceRows.length > 0"
+          type="button"
+          data-testid="timeline-resources-toggle"
+          :aria-pressed="showResources ? 'true' : 'false'"
+          :title="
+            showResources
+              ? 'Hide the CPU, memory and open pages of the worker that ran the test'
+              : 'Show the CPU, memory and open pages of the worker that ran the test'
+          "
+          class="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium select-none outline-none transition-colors focus-visible:outline-2 focus-visible:outline-primary"
+          :class="
+            showResources
+              ? 'border-default bg-default text-default hover:bg-elevated/60'
+              : 'border-dashed border-accented text-muted hover:bg-elevated/60'
+          "
+          @click="showResources = !showResources"
+        >
+          <UIcon name="i-lucide-cpu" class="size-3.5 shrink-0" />
+          Resources
+        </button>
         <ChartLegend :items="showTypeFilter ? markKeyItems : legendItems" class="ml-auto" />
       </div>
 
@@ -997,6 +1059,64 @@ function revealItem(item: TimelineItem) {
             />
           </template>
 
+          <!-- Resources: the worker's CPU and memory, the pages open in it -->
+          <g v-if="resourcesOn" data-timeline-resources>
+            <defs>
+              <clipPath :id="resourcesClipId">
+                <rect :x="plotLeft" :y="resourcesTop" :width="plotWidth" :height="resourcesHeight" />
+              </clipPath>
+            </defs>
+            <g v-for="(row, i) in resourceRows" :key="row.kind" :data-timeline-resource="row.kind">
+              <text
+                :x="0"
+                :y="resourcesTop + i * RESOURCE_ROW_H + RESOURCE_ROW_H / 2"
+                dominant-baseline="middle"
+                class="fill-gray-500 dark:fill-gray-400 text-[10px]"
+              >
+                {{ row.label }}
+                <title>{{ row.scaleLabel }}</title>
+              </text>
+              <line
+                :x1="plotLeft"
+                :x2="plotRight"
+                :y1="resourcesTop + (i + 1) * RESOURCE_ROW_H"
+                :y2="resourcesTop + (i + 1) * RESOURCE_ROW_H"
+                class="stroke-gray-100 dark:stroke-gray-800"
+              />
+              <g :clip-path="`url(#${resourcesClipId})`">
+                <g :transform="resourceTransform(i)">
+                  <path :d="resourcePaths[i]?.area" class="fill-gray-400/20 dark:fill-gray-400/15" />
+                  <path
+                    :d="resourcePaths[i]?.line"
+                    fill="none"
+                    stroke-width="1.5"
+                    stroke-linejoin="round"
+                    vector-effect="non-scaling-stroke"
+                    class="stroke-gray-500 dark:stroke-gray-400"
+                  />
+                </g>
+              </g>
+            </g>
+            <line
+              v-if="resourceHover"
+              :x1="resourceHover.x"
+              :x2="resourceHover.x"
+              :y1="resourcesTop"
+              :y2="resourcesTop + resourcesHeight"
+              class="stroke-gray-400 dark:stroke-gray-500 pointer-events-none"
+            />
+            <rect
+              :x="plotLeft"
+              :y="resourcesTop"
+              :width="plotWidth"
+              :height="resourcesHeight"
+              fill="transparent"
+              @mousemove="onResourceMove"
+              @mouseenter="onResourceMove"
+              @mouseleave="resourceHover = null"
+            />
+          </g>
+
           <!-- Failure marker line -->
           <line
             :x1="failureX"
@@ -1023,6 +1143,18 @@ function revealItem(item: TimelineItem) {
           </g>
         </svg>
       </div>
+
+      <!-- What the resources rows read at the pointer, and what the test measured itself. -->
+      <p
+        v-if="showAxis && resourcesOn && (resourceReadoutText || resourceFactsText)"
+        data-testid="timeline-resources-readout"
+        class="text-xs text-muted tabular-nums"
+      >
+        <template v-if="resourceHover && resourceReadoutText"
+          >{{ formatRel(resourceHover.at) }} · {{ resourceReadoutText }}</template
+        >
+        <template v-else>{{ resourceFactsText }}</template>
+      </p>
 
       <!-- Filmstrip: the page before each step, from this run's trace screen snapshots. -->
       <TraceFilmstrip :test-runs-case-id="testRunsCaseId" :error="error" :subject="subject" />

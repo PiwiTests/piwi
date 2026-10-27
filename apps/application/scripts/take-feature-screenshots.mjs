@@ -1575,6 +1575,37 @@ function pausedTestScene(width, colorScheme, suffix) {
   };
 }
 
+/** A failed execution of a run that left pages open in its workers: one earlier test's page was open when it started. */
+const RESOURCES_TIMELINE_EXECUTION = 705;
+
+/**
+ * The Timeline tab of a failed execution with its Resources rows switched on: the CPU and memory of the worker that
+ * ran it with the browsers it started, and the pages open in that worker, under the lanes, the pointer over them so
+ * the readout gives their values, at `width` px in `colorScheme`.
+ */
+function timelineResourcesScene(width, colorScheme, suffix) {
+  return {
+    name: `failure-timeline-resources${suffix}`,
+    description: `A failed execution's Timeline tab with the Resources rows on and the pointer over them, at ${width} px (${colorScheme})`,
+    route: `/test-run-cases/${RESOURCES_TIMELINE_EXECUTION}`,
+    viewport: { width, height: width < 640 ? 2600 : 1500 },
+    colorScheme,
+    async run({ page, openTab, settle, shoot }) {
+      await openTab('Timeline');
+      const toggle = page.getByTestId('timeline-resources-toggle');
+      await toggle.waitFor({ timeout: 30_000 });
+      if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
+      const rows = page.locator('[data-shot="evidence-card"] [data-timeline-resources]');
+      await rows.waitFor({ timeout: 30_000 });
+      await settle();
+      const box = await rows.boundingBox();
+      if (box) await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2);
+      await page.getByTestId('timeline-resources-readout').waitFor({ timeout: 10_000 });
+      await shoot(undefined, { of: '[data-shot="evidence-card"]', pad: 12 });
+    },
+  };
+}
+
 function quarantineDismissScene(width, suffix) {
   return {
     name: `quarantine-dismiss${suffix}`,
@@ -3498,6 +3529,9 @@ const SCENES = [
   pausedTestScene(1280, 'dark', '-dark'),
   pausedTestScene(390, 'light', '-phone'),
   pausedTestScene(390, 'dark', '-phone-dark'),
+  timelineResourcesScene(1280, 'light', ''),
+  timelineResourcesScene(1280, 'dark', '-dark'),
+  timelineResourcesScene(390, 'light', '-phone'),
   {
     name: 'run-timeline-retries',
     description:

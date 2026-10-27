@@ -31,6 +31,8 @@ import { isPassiveCapabilityDeclined } from './capabilities';
 import { sanitizeExecutionResources } from '../resource-report';
 import { FAILED_STATUS_KEYS, finalAttempts, isFailedStatus } from '../utils/test-counts';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
+import { timelineResources, type TimelineResources } from '../timeline-resources';
+import { readResourceReport } from './resource-reports';
 import {
   attachUsualDurations,
   buildUsualDurations,
@@ -902,6 +904,7 @@ export async function getFailureTimeline(
     traceCallsites: opts.traceCallsites ?? null,
     networkRequests: requests,
   });
+  timeline.resources = await executionTimelineResources(db, trc, timeline);
   if (timeline.lanes.steps.length === 0 && timeline.lanes.network.length === 0) return timeline;
 
   const usual = await getUsualDurations(db, {
@@ -910,6 +913,32 @@ export async function getFailureTimeline(
     excludeId: id,
   });
   return attachUsualDurations(timeline, { steps: trc.steps, networkRequests: requests }, usual);
+}
+
+/**
+ * What the execution's worker and its browsers used while it ran, sliced from
+ * the run's resource report onto the failure timeline's clock, with what the
+ * execution measured itself. Null without a report or a cost, or when the
+ * project declined the resources capability.
+ */
+async function executionTimelineResources(
+  db: DrizzleDB,
+  trc: typeof testRunsCases.$inferSelect,
+  timeline: FailureTimeline,
+): Promise<TimelineResources | null> {
+  const cost = sanitizeExecutionResources(trc.resources);
+  const [run] = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, trc.testRunId));
+  if (!run || (await isPassiveCapabilityDeclined(db, run.projectId, 'resources'))) return null;
+  const { parts } = await readResourceReport(db, trc.testRunId);
+  if (parts.length === 0 && !cost) return null;
+  return timelineResources({
+    parts,
+    shardIndex: trc.shardIndex ?? null,
+    workerIndex: trc.workerIndex ?? null,
+    origin: timeline.origin,
+    end: timeline.end,
+    cost,
+  });
 }
 
 /** How many of a test's last passing executions its usual durations read. */
