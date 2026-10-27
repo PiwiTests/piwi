@@ -10,8 +10,8 @@ import {
   MAX_VIEW_TEXT,
   MAX_VIEW_WHEEL,
   RateWindow,
-  VIEW_TEXT_CONTROL,
   isViewKeyCombo,
+  isViewTextControl,
   type ViewButton,
   type ViewInput,
 } from '@piwitests/core/run-view';
@@ -88,7 +88,7 @@ export function keyOnView(press: KeyPress, options: { mac: boolean; captured: bo
   const other = !press.altGraph && ((options.mac ? press.ctrlKey : press.metaKey) || (!options.mac && press.altKey));
   const character = [...key].length === 1;
   // A control character is no text to type.
-  if (character && VIEW_TEXT_CONTROL.test(key)) return 'none';
+  if (character && isViewTextControl(key)) return 'none';
   if (character && (press.altGraph || (!primary && !other))) {
     return { send: key >= ' ' && key <= '~' ? { type: 'key', action: 'press', key } : { type: 'text', text: key } };
   }
@@ -115,7 +115,7 @@ function countOf(detail: number | undefined): number {
  * line breaks as `\n` and its other control characters but a tab left out.
  */
 export function pastedText(text: string, max = MAX_VIEW_EVENTS): ViewInput[] {
-  const chars = [...text.replace(/\r\n?/g, '\n').replace(new RegExp(VIEW_TEXT_CONTROL, 'g'), '')];
+  const chars = [...text.replace(/\r\n?/g, '\n')].filter((char) => !isViewTextControl(char));
   const events: ViewInput[] = [];
   for (let at = 0; at < chars.length && events.length < max; at += MAX_VIEW_TEXT) {
     events.push({ type: 'text', text: chars.slice(at, at + MAX_VIEW_TEXT).join('') });

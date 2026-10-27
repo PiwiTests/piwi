@@ -25,8 +25,6 @@ export const MAX_VIEW_EVENTS = 50;
 export const MAX_VIEW_EVENT_RATE = 200;
 /** The longest text one event inserts, in characters. */
 export const MAX_VIEW_TEXT = 1000;
-/** A control character a text never carries: a C0 one but a tab and a line break, or DEL. */
-export const VIEW_TEXT_CONTROL = /[\0-\x08\x0b-\x1f\x7f]/;
 /** The largest coordinate an event or a pick names, in CSS pixels, and the largest viewport a frame names. */
 export const MAX_VIEW_COORD = 10_000;
 /** The largest scroll of one wheel event, in pixels each way. */
@@ -58,7 +56,7 @@ export type ViewInput =
   | { type: 'key'; action: 'down' | 'up' | 'press'; key: string }
   /**
    * Text typed as one insertion, without key events: what no key name writes (`é`, an emoji, a paste). No control
-   * character but a tab and a line break (`VIEW_TEXT_CONTROL`).
+   * character but a tab and a line break (`isViewTextControl`).
    */
   | { type: 'text'; text: string };
 
@@ -188,6 +186,12 @@ const KEY_NAMES: ReadonlySet<string> = new Set([
 /** The keys a press may hold before its key. */
 const MODIFIERS: ReadonlySet<string> = new Set(['Alt', 'Control', 'Meta', 'Shift', 'ControlOrMeta']);
 
+/** Whether `char` is a control character a text never carries: a C0 one but a tab and a line break, or DEL. */
+export function isViewTextControl(char: string): boolean {
+  const code = char.charCodeAt(0);
+  return (code < 0x20 && code !== 0x09 && code !== 0x0a) || code === 0x7f;
+}
+
 /** Whether `key` is one key Playwright plays: one of its key names, or a printable ASCII character. */
 export function isViewKey(key: unknown): key is string {
   if (typeof key !== 'string') return false;
@@ -276,7 +280,7 @@ function readEvent(value: unknown): ViewInput | string {
   }
   if (type === 'text') {
     const { text } = value;
-    if (typeof text !== 'string' || !text || text.length > MAX_VIEW_TEXT || VIEW_TEXT_CONTROL.test(text)) {
+    if (typeof text !== 'string' || !text || text.length > MAX_VIEW_TEXT || [...text].some(isViewTextControl)) {
       return `needs a text of 1 to ${MAX_VIEW_TEXT} characters, with no control character but a tab or a line break.`;
     }
     return { type, text };

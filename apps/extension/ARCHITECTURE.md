@@ -903,7 +903,7 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
 - The keys go to the page as `keyOnView` reads them: characters typed (printable ASCII as Playwright's key, any other
   as text), named keys pressed with Shift, Control (`⌘` on macOS) as `ControlOrMeta` with A, Y, Z, Enter and the
   editing keys, a paste as text, its control characters but a tab and its line breaks left out, as the hub and the
-  worker refuse them (`VIEW_TEXT_CONTROL`). The browser's other shortcuts, the function keys and Escape stay the window's: Escape
+  worker refuse them (`isViewTextControl`). The browser's other shortcuts, the function keys and Escape stay the window's: Escape
   gives the keyboard back, on Watch live. Tab moves the focus on unless a click into the view took the keyboard
   (`captured`), until Escape: a keyboard user never has the focus held there. A hint says so under the first view that
   takes input.
