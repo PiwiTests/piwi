@@ -27,7 +27,21 @@ describe('the manifests the build writes', () => {
       ...firefox,
       permissions: manifest.permissions,
       minimum_chrome_version: manifest.minimum_chrome_version,
+      commands: manifest.commands,
     }).toEqual(manifest);
+  });
+
+  it('lets the run shortcut be global in Chrome and Edge, and suggests no key for it, which the person sets', () => {
+    const command = chromiumManifest(manifest).commands['run-pause-resume'];
+    expect(command.global).toBe(true);
+    // No key at install: the person picks one, and its scope, on the browser's page of extension shortcuts.
+    expect(command).not.toHaveProperty('suggested_key');
+  });
+
+  it('leaves `global` out of Firefox’s manifest, whose commands work while Firefox has the focus', () => {
+    const firefox = firefoxManifest(manifest);
+    expect(firefox.commands['run-pause-resume']).toEqual({ description: '__MSG_runs_command__' });
+    expect(firefox.commands['pick-element']).toEqual(manifest.commands['pick-element']);
   });
 
   it('asks for Chrome or Edge 118 or later, which keep the worker running while a debugging session is attached', () => {

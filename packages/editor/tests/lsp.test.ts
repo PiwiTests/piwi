@@ -1200,7 +1200,12 @@ describe('the Piwi language server', () => {
       cwd: dir,
       command: 'npx playwright test tests/checkout.spec.ts:3',
       args: ['tests/checkout.spec.ts:3'],
-      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: selection.ref, PIWI_RECORD_CHANNEL: RECORD_CHANNEL },
+      env: {
+        PIWI_ORIGIN: 'editor',
+        PIWI_ORIGIN_REF: selection.ref,
+        PIWI_RUN_CHANNEL: RECORD_CHANNEL,
+        PIWI_RECORD_CHANNEL: RECORD_CHANNEL,
+      },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
   });
@@ -1356,7 +1361,12 @@ describe('the Piwi language server', () => {
       cwd: dir,
       args: ['tests/checkout.spec.ts:3'],
       command: 'npx playwright test tests/checkout.spec.ts:3',
-      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command.ref, PIWI_RECORD_CHANNEL: RECORD_CHANNEL },
+      env: {
+        PIWI_ORIGIN: 'editor',
+        PIWI_ORIGIN_REF: command.ref,
+        PIWI_RUN_CHANNEL: RECORD_CHANNEL,
+        PIWI_RECORD_CHANNEL: RECORD_CHANNEL,
+      },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
   });
@@ -1644,6 +1654,7 @@ describe('breakpoints', () => {
         PIWI_ORIGIN: 'editor',
         PIWI_ORIGIN_REF: command.ref,
         PIWI_PAUSE_AT: 'tests/checkout.spec.ts:3;tests/pages/checkout.page.ts:4',
+        PIWI_RUN_CHANNEL: RECORD_CHANNEL,
         PIWI_RECORD_CHANNEL: RECORD_CHANNEL,
       },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
@@ -1681,6 +1692,7 @@ describe('breakpoints', () => {
     expect(outside.env).toEqual({
       PIWI_ORIGIN: 'editor',
       PIWI_ORIGIN_REF: outside.ref,
+      PIWI_RUN_CHANNEL: RECORD_CHANNEL,
       PIWI_RECORD_CHANNEL: RECORD_CHANNEL,
     });
   });
@@ -2263,6 +2275,7 @@ describe('runs as they happen', () => {
     expect(command.env).toEqual({
       PIWI_ORIGIN: 'editor',
       PIWI_ORIGIN_REF: command.ref,
+      PIWI_RUN_CHANNEL: RECORD_CHANNEL,
       PIWI_RECORD_CHANNEL: RECORD_CHANNEL,
     });
 
@@ -4141,7 +4154,12 @@ describe('a test the instance does not know yet', () => {
       cwd: repo,
       args: ['tests/checkout.spec.ts:5'],
       command: 'npx playwright test tests/checkout.spec.ts:5',
-      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: run?.ref, PIWI_RECORD_CHANNEL: RECORD_CHANNEL },
+      env: {
+        PIWI_ORIGIN: 'editor',
+        PIWI_ORIGIN_REF: run?.ref,
+        PIWI_RUN_CHANNEL: RECORD_CHANNEL,
+        PIWI_RECORD_CHANNEL: RECORD_CHANNEL,
+      },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
     // Without a location, a test is run by its id, which needs an instance.

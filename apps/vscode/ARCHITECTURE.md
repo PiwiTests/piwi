@@ -19,6 +19,7 @@ extension does with it. It is reference material: open the section for the area 
   - [Test runs as tasks](#test-runs-as-tasks)
   - [Running the test at the cursor](#running-the-test-at-the-cursor)
   - [Breakpoints](#breakpoints)
+  - [Run control](#run-control)
 - [Status bar](#status-bar)
   - [Compare with](#compare-with)
 - [Open in IDE](#open-in-ide)
@@ -138,7 +139,8 @@ What the extension stores:
   (`piwi.recordStartUrl`, `piwi.recordPage`, `piwi.recordProject`).
 
 The context keys the extension sets, which `package.json` reads in `when` clauses: `piwi.active`, `piwi.failuresView`,
-`piwi.followEditor`, `piwi.hasCoverage`, `piwi.recording` and `piwi.recordingPaused`.
+`piwi.followEditor`, `piwi.hasCoverage`, `piwi.recording`, `piwi.recordingPaused`, and the run control's
+`piwi.runActive`, `piwi.runPausable`, `piwi.runStopped` and `piwi.runResumed` ([Run control](#run-control)).
 
 ## Walkthrough
 
@@ -279,13 +281,66 @@ Every test run passes the editor's breakpoints to the service (`breakpoints`), a
 tests**) and **Run selection…**. The breakpoints passed are the enabled `vscode.SourceBreakpoint`s in script files under
 a Playwright config's folder (`runBreakpoints` in `src/breakpoints.ts`).
 
-When the answer's environment carries `PIWI_PAUSE_AT`, or the command says the run pauses at a `page.pause()`
-(`RunCommand.pauses`), `startRun` adds the pairing address as `PIWI_EDITOR_SEND`. It starts the send listener when it is
-not running, minting its token as **Pair with Piwi Picker** does, but copies nothing. A `RunCommand.notice` (a reporter
-too old for breakpoints) shows as a warning, once per notice. The API `activate` returns gives the latest run's command
-(`lastRun`). What the service does with the breakpoints:
-[Breakpoints and picked locators](../../packages/editor/ARCHITECTURE.md#breakpoints-and-picked-locators) in the editor
-service's reference.
+When the answer's environment carries `PIWI_PAUSE_AT` or `PIWI_RUN_CHANNEL` (a run the editor or Piwi Picker can
+pause), or the command says the run pauses at a `page.pause()` (`RunCommand.pauses`), `startRun` adds the pairing
+address as `PIWI_EDITOR_SEND`. It starts the send listener when it is not running, minting its token as **Pair with
+Piwi Picker** does, but copies nothing. The listener takes the port Pair with Piwi Picker saved, else, while another
+window holds it, any free one, which it does not save (`sendPairing` in `src/send-listener.ts`: only the pairing Piwi
+Picker is given saves its port). A `RunCommand.notice` (a reporter too old for breakpoints) shows as a warning, once
+per notice. The API `activate` returns gives the latest run's command (`lastRun`). What the service does with the
+breakpoints: [Breakpoints and picked locators](../../packages/editor/ARCHITECTURE.md#breakpoints-and-picked-locators)
+in the editor service's reference.
+
+### Run control
+
+`src/run-view.ts` shows and steers the runs started here (`registerRunControl`), with Piwi's own commands and no debug
+session. The initialization options say so (`runControl: true`). What the service does:
+[Run control](../../packages/editor/ARCHITECTURE.md#run-control) in the editor service's reference.
+
+**Sessions.** The extension keeps the latest `piwi/runSessionChanged` of each ref until one says `ended`, or the service
+stops (`onDidChangeState`).
+
+**Commands.**
+
+- **Pause** (`piwi.pauseRun`: the running workers of every run of the window) and **Stop** (`piwi.stopRun`, which
+  terminates the ref's task), while a run is live;
+- **Resume**, **Step**, **Run to the cursor** (`run-to` the caret's line) and **Finish** (`piwi.resumeRun`,
+  `piwi.stepRun`, `piwi.runToCursor`, `piwi.finishRun`), while a worker is stopped.
+
+All but Stop send `piwi/runControl`, the four that answer a stop naming it (`since`); an answer with `ok: false` shows
+as an information message. The commands show in the status bar beside the run's progress (`controlItems`), and in the
+palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped`, and
+`piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The keys: [Keybindings](#keybindings).
+
+**A stop.** A stop opens its file at its line once (`stopKey`). It is drawn as the execution point:
+`media/execution-point.svg` in the gutter, and the line's background in `piwi.executionPointBackground` (the debugger's
+stack frame color by default), with a hover that holds the controls. A CodeLens above it reads `pausedText`
+(`Paused · <title> · attempt N`, the attempt on a retry only) after `$(debug-pause)`, then Resume, Step, Run to cursor
+and Finish, each naming its worker and its stop; one whose stop went on says `the test went on.` (`targetStop`). The
+choice among several stops shows the same text after `$(debug-pause)`; the hover and the paused page's caption show it
+as plain text. A key or a palette command acts on the stop at the caret's line, else the only one, else asks
+(`stopsFor`).
+
+**Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when it
+is first heard). `EditLog` keeps the edits that move lines while a run is live or starting
+(`workspace.onDidChangeTextDocument`, `lineEditOf`). They bring a stop to the line it stands on now (the mark, the lens,
+the caret's match), and the caret's line back to the run's for Run to the cursor, which is refused on a line written
+since.
+
+**The paused page.** A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the
+**Piwi: paused page** webview beside the editor, again at each such stop and on **Piwi: Show the paused page**
+(`piwi.showPausedPage`). The webview runs no script: it takes images from `data:` only (`img-src data:`) and its one
+style by nonce (`pausedPageHtml`).
+
+**Breakpoints during a run.** The breakpoints `breakpointsForRun` gives go to each live run as they change
+(`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the
+run's code (`runPlaces`). A breakpoint the run was given, known by `vscode.Breakpoint.id`, keeps its line while it only
+moved with the edits; another is mapped back through them. They go only to a run whose places differ from those its
+command started with or was last sent (`breakpointUpdates`), and once to a run as its first worker connects.
+
+`src/run-control.ts` is the pure half, tested without an editor (`tests/run-control.test.ts`). The API `activate`
+returns gives the sessions (`runSessions`), the lines drawn as the execution point (`executionPoints`) and what the
+paused page shows (`pausedPage`).
 
 ## Status bar
 
@@ -346,7 +401,23 @@ state (`piwi.sendPort`), with the token from `SecretStorage` (`piwi.sendToken`).
 - **Piwi: Pair with Piwi Picker** starts it and copies the pairing address as the browser's machine reaches it
   (`pickerPairing`: `vscode.env.asExternalUri`, which a remote window forwards).
 - A run's `PIWI_EDITOR_SEND` keeps the loopback address (`runPairing`), since the reporter runs where the extension
-  does.
+  does. Which port it takes: [Breakpoints](#breakpoints).
+
+**Who gets an answer.** The listener answers only a request whose `Host` is `127.0.0.1:<port>` or `localhost:<port>`
+(a 403 otherwise: a page reached under another name). Every answer to a request carrying `x-piwi-editor-challenge`
+(`isEditorChallenge`), whatever its route and status, the 401, the 403, the preflight and a failure's 500 included,
+carries `x-piwi-editor-proof` (`editorTokenProof` of `@piwitests/core/editor-send`, for the port the request reached).
+So Piwi Picker sends the token only to a listener that holds it. The CORS headers allow the challenge header and expose
+the proof's.
+
+**The live hubs.** With the same token and the same CORS rules (an extension's origin alone is named),
+`GET /piwi/live` answers `{ hubs }`: the hub of every editor service running on the machine, read at each request from
+their discovery files (`readLiveHubs` of `@piwitests/editor/discovery`, in `PIWI_EDITORS_DIR` or `~/.piwi/editors`).
+Each hub carries the WebSocket's address and token, the pid, version, client, workspace folders and start, never a run
+channel's token. So the one pairing reaches the runs of every window, the other windows' included. A request without
+the token is a 401. The addresses are loopback ones, which a remote window does not forward: there, the listener
+answers no hubs (`liveHubsHere`, while `vscode.env.remoteName` is set). How the files are read:
+[The discovery file](../../packages/editor/ARCHITECTURE.md#the-discovery-file) in the editor service's reference.
 
 What it inserts:
 
@@ -487,7 +558,8 @@ editor service's reference.
 - what runs the test at a line (`testAtRun`);
 - the Testing view's tree and results (`testTree`, `testOutcome`, `testRunsOf`).
 
-`src/connect.ts`, `src/breakpoints.ts` and `src/send-listener.ts` use no VS Code API either, each with its unit test.
+`src/connect.ts`, `src/breakpoints.ts`, `src/send-listener.ts` and `src/run-control.ts` use no VS Code API either, each
+with its unit test.
 
 ## Keybindings
 
@@ -519,6 +591,20 @@ The default keybindings (`contributes.keybindings`) are the JetBrains plugin's c
 So the Piwi chords are free in VS Code and in the platform's own `$default` keymap, but meet the bindings above in
 IntelliJ IDEA with Kotlin, on macOS and in those keymaps. Check a new chord against these lists.
 
+**A run's controls** ([Run control](#run-control)) take the debugger's keys instead, only while they apply and no debug
+session runs (`!inDebugMode`):
+
+| Key                             | Command                                                                                                                    |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `shift+f5`                      | `piwi.stopRun`                                                                                                             |
+| `f5`                            | `piwi.resumeRun`, which does nothing for two seconds after an answer (`piwi.runResumed`) rather than start a debug session |
+| `f10`                           | `piwi.stepRun`                                                                                                             |
+| `shift+f11`                     | `piwi.finishRun`                                                                                                           |
+| `ctrl+f10` (`cmd+f10` on macOS) | `piwi.runToCursor`, in a focused editor                                                                                    |
+
+**Pause** has no default key: it applies for as long as a test runs, and a key bound that long takes one from the
+workbench (`f6` moves the focus between parts).
+
 ## Changelog
 
 The Marketplace's Changelog tab shows the package's `CHANGELOG.md`. `reusable-publish-vscode.yml` writes it before
@@ -540,6 +626,11 @@ by the docs, the README and the Marketplace README. It:
 On Linux, run it under Xvfb at twice the window size for 2× images:
 `xvfb-run -a -s "-screen 0 2880x1800x24" node scripts/take-screenshots.mjs`. A scene is a function of `SCENES`. A scene
 that fails leaves `vscode-<scene>-failed.png`, the window as it stood, in the temporary directory.
+
+The `run-control` scenes share one run of the coupon test, started with **Run the test at the cursor**. Its task's
+`npx playwright` finds the stand-in command `scripts/lib/run-worker.mjs` writes into the fixture, which hands the
+script the run channel, and the script plays the run's worker there, as the integration suite does. The paused page is
+the fixture shop's page, rendered by Playwright's Chromium.
 
 The JetBrains plugin's script reuses the fixture, so a change to the fixture means recapturing both sets. What was found
 about driving VS Code this way is recorded in
@@ -571,4 +662,5 @@ The integration suite (`tests/integration/`) starts a stub instance, writes a fi
   - `lastRun`: the command a breakpoint's run was given;
   - `gutter`: the tests last drawn in a file's gutter;
   - `coverage`: a file's coverage answer, and whether its marks are shown;
-  - `testExplorer`: the Testing view's tests, with the result last shown for each.
+  - `testExplorer`: the Testing view's tests, with the result last shown for each;
+  - `runSessions`, `executionPoints` and `pausedPage`: a run's stops, as a fake worker on the run channel plays them.

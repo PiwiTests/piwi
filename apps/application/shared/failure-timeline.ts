@@ -109,7 +109,7 @@ export interface TimelinePause {
   duration: number;
   /** The call the stop held, as Playwright titles it: `Click getByRole('button')`. */
   label: string;
-  /** Why it stopped: `breakpoint`, `step` or `page-pause`. */
+  /** Why it stopped: `breakpoint`, `step`, `pause`, `run-to` or `page-pause`. */
   reason: string;
   /** Its call site, `file:line:col`, or null. */
   location: string | null;

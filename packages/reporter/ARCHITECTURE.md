@@ -79,19 +79,68 @@ What the package does to a user's run, process by process.
   leaves to Playwright runs. It wraps `Page.prototype.pause`, so every `page.pause()`
   of the worker's Playwright goes through it; one of a second copy of Playwright does
   not, and stops with neither bar nor Inspector.
-- The bar comes down as the test function ends, before Playwright's own failure
-  screenshot: through the runner's `_onDidFinishTestFunctionCallbacks` (feature-checked),
-  else as the test's page or context closes, or at teardown.
+- The stops shown (the bar's, and those the run connection holds) end as the test
+  function ends, before Playwright's own failure screenshot: through the runner's
+  `_onDidFinishTestFunctionCallbacks` (feature-checked), else as the test's page or
+  context closes, or at teardown.
 - The runner's count of a test function that ended under a stop is set back to what it
-  held as the stop began (`_timeoutManager.defaultSlot()`, feature-checked). After a
-  stop, it waits a while for the call it let go and the requests after it.
-- The stops are attached as `piwi-pauses`. `internal/collect/pause-events.ts` sends them
-  with the test's step events, as `pause` events: the steps keep their clock, and the
-  step statistics leave the stopped time out.
+  held as the stop began (`_timeoutManager.defaultSlot()`, feature-checked). The call
+  the stop let go, and the requests after it, are then waited for, 2 seconds at most:
+  before a page or context of the test closes, and at the test's teardown.
+- The stops shown, at the bar or in the editor, are attached as `piwi-pauses`.
+  `internal/collect/pause-events.ts` sends them with the test's step events, as `pause`
+  events: the steps keep their clock, and the step statistics leave the stopped time out.
 - A locator picked at the bar is posted to the editor's `PIWI_EDITOR_SEND` address.
 - With `PIWI_RECORD_CHANNEL`, **Record here** and `page.pause()` connect to the editor
   service's local socket and relay the recorder's binding calls over it
   (`internal/capture/record-handoff.ts`).
+
+**The editor's run connection** (`internal/capture/run-channel.ts`, with `PIWI_RUN_CHANNEL` and `PIWI_ORIGIN_REF`)
+
+- `PIWI_RUN_CHANNEL` names the same local socket as `PIWI_RECORD_CHANNEL`. Each worker
+  connects to it in the `piwiResources` worker fixture, before its first test (it waits
+  2 seconds at most), and stays connected until the worker ends. The messages are defined
+  in `@piwitests/core/run-channel`.
+- The first message, `run-attach`, lists the intents the worker takes
+  (`takes: ['pick', 'record']`). The worker then sends each test's begin and end, each
+  stop it shows, and each stop's end (`running`).
+- The editor's controls (Pause, Step, Resume, Finish, Run to a line) and its breakpoints,
+  which replace `PIWI_PAUSE_AT`, go through the same stop policy as `PIWI_PAUSE_AT`.
+- While the connection is open, a headless run stops too (never under CI or Playwright's
+  own debugger): the stop waits for the editor's answer, and goes on if the connection
+  closes. In a headed run the pause bar shows as well, and the first answer wins: the
+  editor's answer takes the bar down.
+- A stop answered in the editor is attached to `piwi-pauses` like one answered at the
+  bar. A stop that ends unanswered (the test function ended, its page or context closed,
+  or, for a stop whose page the worker cannot tell, any page of its context closed) ends
+  the same way with or without a bar, and the editor gets `running`.
+- The editor can ask for an image of the stopped page: a JPEG screenshot without the
+  pause bar, taken through an internal call. It gets none for a stop whose page the
+  worker cannot tell (a navigation or a key press in a context with several pages).
+- At a stop the bar shows, the editor can start the bar's **Pick a locator** or **Record
+  here** (an intent: a `request` with `what: 'pick' | 'record'` that names the stop).
+  `BarIntents` (`pause-at.ts`) hands it to the bar, which takes it as a click on its own
+  button: the same picker, the pick posted to `PIWI_EDITOR_SEND`, the same hand-off over
+  `PIWI_RECORD_CHANNEL`. The test's window is brought to the front, and the pick or the
+  recording ends with the stop. The worker answers at once whether it started. It
+  refuses at a stop that ended or is ending (its test ended, its page or context began to
+  close), at one no bar shows or whose page it cannot tell, Record here when the run has
+  no `PIWI_RECORD_CHANNEL`, and any intent while a pick or a recording runs.
+- One stop shows at a time in a worker. A stop that waits for its turn is decided again
+  when its turn comes. It goes on without showing, and the editor never hears of it,
+  when the test ended meanwhile (as on Finish), when its page or context began to close,
+  or when it is a breakpoint's stop and that breakpoint was removed or the stop before
+  was answered with Finish. The Step, Pause or Run to a line it would have used then
+  applies to the next stop.
+- Closing a context, directly or through its browser, first lets the call its debugger
+  holds go on, since the close does not.
+- While each test runs, the capture fixtures take `PIWI_RUN_CHANNEL` and
+  `PIWI_EDITOR_SEND` out of the worker's `process.env` (`hideRunChannel`), whether a run
+  connection is open or not, so a process the test starts does not connect to the run
+  and does not get the pairing's token. Picks still go to the pairing
+  (`editorSendAddress`). Both are put back after the test, since Playwright passes a
+  worker's environment changes to the projects that depend on its project.
+  `PIWI_RECORD_CHANNEL` stays, for **Record here**.
 
 **In the reporter process**
 
@@ -237,9 +286,9 @@ src/
                 batched per origin), test-coverage (each test's coverage field,
                 the wait before its result streams, the run's coverage),
                 blob-ids (the git blob of each covered file), source-checksums,
-                pause-events (the stops a test made at the pause bar, as the
-                `pause` step events the dashboard draws and the step
-                statistics leave out)
+                pause-events (the stops a test made, at the pause bar or in
+                the editor, as the `pause` step events the dashboard draws and
+                the step statistics leave out)
     manifest/   collect (the committed manifest, `/__piwi/manifest` per base URL or origin),
                 run-manifests (the instrumented origins the run reached beyond its base URLs,
                 fetched as each is first seen, uploaded once the run is submitted)
@@ -259,7 +308,9 @@ src/
                 pause-at (the editor's breakpoints: PIWI_PAUSE_AT, the stop policy
                 over Playwright's debugger, the pause bar, a pick posted to
                 PIWI_EDITOR_SEND), record-handoff (Record here:
-                the paused page relayed to the editor's recorder, PIWI_RECORD_CHANNEL)
+                the paused page relayed to the editor's recorder, PIWI_RECORD_CHANNEL),
+                run-channel (the worker's run connection to the editor,
+                PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in)
     ai/         ai-fixtures, artifact, keys, params, ground, compile, resolution
                 (the authoring loop), interpreter (replay), check (`piwi ai check`)
     coverage-upload/  git-inventory, report-files (`piwi coverage upload`)

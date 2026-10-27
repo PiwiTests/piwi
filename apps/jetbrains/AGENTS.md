@@ -35,6 +35,12 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A change to `protocol.ts` updates `Protocol.kt` in the same change.** `Protocol.kt` mirrors
   `packages/editor/src/protocol.ts` for lsp4j; `testTheBundledServiceAnswersThroughTheDescriptor` (`PiwiPluginTest`)
   reads the bundled service's answers with it.
+- **A change to `@piwitests/core/editor-send` or `@piwitests/core/editor-discovery` updates `Glue.kt` in the same
+  change.** `Glue.parseSendPayload`, `Glue.sendAuthorized` and `Glue.editorTokenProof` mirror the first,
+  `Glue.parseEditorDiscovery` and `Glue.liveHubs` the second; `GlueTest` checks them.
+  ([Send to editor](ARCHITECTURE.md#send-to-editor))
+- **The run controls reach the service only through `RunRemote`**, which `PiwiRunControlTest` replaces.
+  ([Run control](ARCHITECTURE.md#run-control))
 - **The plugin's own requests go through `Lsp4jAccess`, never `getLsp4jServer()`** (deprecated, then removed by
   2026.2). `Lsp4jAccess` takes the lsp4j proxy from a `sendRequestSync` that sends nothing; `Lsp4jAccessTest` checks
   it. ([LSP integration](ARCHITECTURE.md#lsp-integration))
@@ -53,9 +59,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **Nothing blocks the event thread, and nothing in a read action waits on the service without giving way.** The daemon
   waits with `awaitCancellably`, which a write action cancels, and reads of the disk and of the password safe run on a
   pooled thread. ([Threading](ARCHITECTURE.md#threading))
-- **The built-in server's I/O thread touches neither the password safe nor the disk.** `PiwiSendHandler` serves each
-  request on a pooled thread, and `PiwiOpenHandler` reads the addresses each project last read
-  (`PiwiProjectService.knownAddresses`, filled by `readKnownAddresses`); only the writes run on the event thread.
+- **The built-in server's I/O thread touches neither the password safe nor the disk.** `PiwiSendHandler` answers only a
+  preflight without a challenge there and serves every other request, `GET /api/piwi/live` included, on a pooled
+  thread; `PiwiOpenHandler` reads the addresses each project last read (`PiwiProjectService.knownAddresses`, filled by
+  `readKnownAddresses`), and only the writes run on the event thread.
+  ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **Every action and view stays available while the IDE indexes** (`DumbAware`).
 
 ### Settings and security
@@ -70,6 +78,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   page finds files only in the projects connected to it. Every other request gets a 403 from `PiwiOpenHandler` itself (`OpenOrigins.kt`, `OpenOriginsTest`,
   `PiwiOpenHandlerTest`); a change to its query or answer changes the dashboard's `useOpenInIde` and `ide-links.ts` in
   `apps/application` too. ([Open in IDE](ARCHITECTURE.md#open-in-ide))
+- **The Send to editor endpoint proves it holds the token on every answer to a challenge, and `GET /api/piwi/live`
+  lists hubs only, never a run channel's token.** `isOriginAllowed` allows an extension's origin on `/api/piwi/send`
+  and `/api/piwi/live` alone, and leaves the platform's `isAccessible` its check of `Host`. Checked by `PiwiPluginTest`
+  (`testPiwiPickersChallengeAloneIsAnsweredWithTheProofOnTheLiveEndpoint`,
+  `testPiwiPickerListsTheLiveHubsThroughThePairing`). ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **An instance on this machine is never reached through the IDE's proxy.** Connect tries every loopback address
   (`Glue.loopbackAlternatives`) and saves the one that answered. ([Connect](ARCHITECTURE.md#connect))
 
@@ -82,6 +95,19 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   recording, `Ctrl+Alt+Shift+F` re-runs the failing tests and `Ctrl+Alt+Shift+K` runs the test at the caret.
   `PiwiPluginTest` checks the R and F bindings; the platform's own keymaps leave them free except on macOS, and some
   plugins and keymaps use them ([`apps/vscode/ARCHITECTURE.md`](../vscode/ARCHITECTURE.md#keybindings)).
+- **The run controls use the debugger actions' shortcuts (`use-shortcut-of`), and give way to a debug session.** From
+  the keyboard they are enabled only while no debug session runs, and `PiwiRunActionPromoter` puts them first only
+  while a run is live. Checked by `PiwiRunControlTest`. ([Run control](ARCHITECTURE.md#run-control))
+- **A control names the stop it answers, and a line sent for a run is a line of the run's code.** Each control passes
+  the stop's `since`; Run to Caret and the breakpoints map the editor's lines back through `Glue.EditLog`
+  (`Glue.runPlaces` for the breakpoints). Checked by `GlueTest` and `PiwiRunControlTest`.
+  ([Run control](ARCHITECTURE.md#run-control))
+- **Every run of a Playwright run configuration Piwi made is followed** (`PiwiRunSessions.followRunner`), its Rerun,
+  Rerun Failed Tests and Debug included, so Stop ends it and the service hears its end. Checked by
+  `PiwiRunControlTest`. ([Playwright runner](ARCHITECTURE.md#playwright-runner))
+- **The Run tool window's Rerun starts the command again only once the service heard its end** (`PiwiCommands.run`),
+  so the rerun's workers start a session of their own.
+  ([Commands and notifications](ARCHITECTURE.md#commands-and-notifications))
 - **One undo step per recording.** A `StartMarkAction` in a command of its own just before the first write, and a
   `FinishMarkAction` at the end, so one Undo after Stop goes back to before the recording; `PiwiRecordingTest` checks
   it. ([Pause, Stop and undo](ARCHITECTURE.md#pause-stop-and-undo))
@@ -120,13 +146,15 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - `PiwiFailuresToolWindow.kt`, `PiwiStatusBar.kt`: the **Piwi** tool window and the status bar item.
 - `PiwiCommands.kt`, `PiwiActions.kt`, `PiwiPlaywrightRunner.kt`: the commands, the actions under **Tools → Piwi**, the
   IDE's Playwright runner.
+- `PiwiRunControl.kt`: the run controls (`PiwiRunSessions`: the stops, the execution point, the inlay, the paused
+  page, the actions and `PiwiRunActionPromoter`).
 - `PiwiRecordingActions.kt`, `PiwiRecording.kt`, `PiwiRecordingViews.kt`, `RecordHereIntention.kt`: recording.
 - `PiwiSendHandler.kt`, `PiwiOpenHandler.kt`, `OpenOrigins.kt`: the built-in server's endpoints.
 - `PiwiConnect.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect and the settings pages.
 - `src/main/java/…/PiwiCredentials.java`: credential attributes built from Java. `src/main/resources/`: `plugin.xml`,
   color schemes, icons.
 - `src/test/kotlin/…`: the unit tests (`GlueTest`, `OpenOriginsTest`, `Lsp4jAccessTest`) and the platform tests
-  (`PiwiPluginTest`, `PiwiRecordingTest`, `PiwiOpenHandlerTest`).
+  (`PiwiPluginTest`, `PiwiRecordingTest`, `PiwiOpenHandlerTest`, `PiwiRunControlTest`).
 - `scripts/`: the screenshots script and `xinput.py`.
 
 ## ARCHITECTURE.md sections
@@ -138,7 +166,8 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - [Test results in the editor](ARCHITECTURE.md#test-results-in-the-editor),
   [Coverage marks](ARCHITECTURE.md#coverage-marks), [Tool window](ARCHITECTURE.md#tool-window),
   [Status bar](ARCHITECTURE.md#status-bar): before changing what one of them shows.
-- [Runs](ARCHITECTURE.md#runs): the Playwright runner, the Run tool window, the test at the caret, breakpoints.
+- [Runs](ARCHITECTURE.md#runs): the Playwright runner, the Run tool window, the test at the caret, breakpoints, and
+  the run control (stops, their actions and shortcuts, the paused page).
 - [Finding Playwright configs](ARCHITECTURE.md#finding-playwright-configs): the search and the first-run notification.
 - [Recording](ARCHITECTURE.md#recording): starting a recording, writing the block, warnings, undo.
 - [Send to editor](ARCHITECTURE.md#send-to-editor), [Open in IDE](ARCHITECTURE.md#open-in-ide),

@@ -408,7 +408,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
      * run started from Piwi pauses at; none when **Settings → Tools → Piwi** turns them off. Reads the breakpoints in a
      * read action: call it off the event thread.
      */
-    fun breakpoints(): List<EditorBreakpoint> {
+    fun breakpoints(): List<Glue.RunBreakpoint> {
         if (!local().breakpoints) return emptyList()
         val roots = status?.contexts.orEmpty().mapNotNull { it.root }
         if (roots.isEmpty()) return emptyList()
@@ -417,7 +417,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
                 XDebuggerManager.getInstance(project).breakpointManager.allBreakpoints.mapNotNull { breakpoint ->
                     val line = breakpoint as? XLineBreakpoint<*> ?: return@mapNotNull null
                     val url = line.fileUrl
-                    if (!line.isEnabled || !url.startsWith("file://")) null else Glue.BreakpointAt(VfsUtilCore.urlToPath(url), line.line)
+                    if (!line.isEnabled || !url.startsWith("file://")) null else Glue.BreakpointAt(VfsUtilCore.urlToPath(url), line.line, line)
                 }
             },
         )

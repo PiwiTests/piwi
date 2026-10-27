@@ -64,6 +64,10 @@
         "mac": "Command+Shift+E"
       },
       "description": "__MSG_pickElementCommand__"
+    },
+    "run-pause-resume": {
+      "description": "__MSG_runs_command__",
+      "global": true
     }
   }
 }

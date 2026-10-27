@@ -11,9 +11,11 @@ each rule below ends with the section to read there.
 ## Map
 
 - `manifest.json`: the manifest. `scripts/build.mjs` writes `dist/` (Chrome, Edge) and `dist-firefox/`.
-- `src/background/`: the service worker (messages, script registration, `debugger.ts` and `cdp-*.ts`, requests).
+- `src/background/`: the service worker (messages, script registration, `debugger.ts` and `cdp-*.ts`, requests, the
+  editor's run hubs in `run-hubs.ts` and `hub-connection.ts`).
 - `src/content/`: content scripts injected on demand, the in-page engine (`engine-*.ts`, `locator-engine.ts`).
 - `src/popup/`, `src/options/`, `src/login/` (Save login for tests), `src/devtools/` (Elements pane, Piwi panel).
+- `src/runs/` and `runs.html`: the Runs window, which follows and steers the paired editor's runs.
 - `src/ide/`: the recorder built for the editor service (`record-ide.js`). The extension never loads it.
 - `src/shared/`: storage, translations, the instance client, buttons and icons, used by all of the above.
 - `public/_locales/`: the catalogs; `i18n/`: the translation rules and glossaries. `store/`: the Firefox listing.
@@ -27,6 +29,8 @@ each rule below ends with the section to read there.
 - "The debugging protocol" and its subsections: before changing the replay or anything using `chrome.debugger`.
 - "Connected mode": before changing the settings page's connection, requests, secrets, project mappings or the desktop
   app.
+- "The editor's runs": before changing the Runs window, the run shortcut, the run hubs or the editor's proof
+  (`editor-proof.ts`).
 - "Tested elements", "Naming and ranking an element": before changing the engine, naming or narrowing.
 - "Checks in a test recording", "Files, double clicks and drags", "The recording bar's corner", "What a click lands
   on, and pages reached without one", "Hovers a click depends on": before changing what the recorder captures.
@@ -61,22 +65,29 @@ each rule below ends with the section to read there.
   `scripts/build.mjs`, `build-manifests.test.ts`). `background.js` stays both `service_worker` and `scripts`; `dist/`
   drops `scripts`. (see "The manifest and its permissions")
 - **`gecko.data_collection_permissions` is `{ "required": ["none"] }`: nothing may go anywhere but the user's instance,
-  the paired editor and the desktop app paired on loopback.** A feature that sends data elsewhere changes this key and
-  the store disclosures (`PUBLISHING.md` §4). (see "The manifest and its permissions")
-- **The manifest's `description` and shortcut label are `__MSG_*__` strings.** The description stays within 132
+  the paired editor (Send to editor and its run hubs) and the desktop app paired on loopback.** A feature that sends
+  data elsewhere changes this key and the store disclosures (`PUBLISHING.md` §4). (see "The manifest and its
+  permissions")
+- **The run shortcut (`run-pause-resume`) stays `"global": true` with no `suggested_key`, and `firefoxManifest` leaves
+  `global` out** (`build-manifests.test.ts`). A global key is taken from every application on the computer, and the
+  only keys Chrome binds a global command to at install (`Ctrl+Shift+[0-9]`) are JetBrains' numbered bookmarks and
+  macOS screenshots. (see "The manifest and its permissions")
+- **The manifest's `description` and shortcut labels are `__MSG_*__` strings.** The description stays within 132
   characters in every language, and a new language needs `public/_locales/` and `store/` (`store-listing.test.ts`).
   (see "The manifest and its permissions")
 
 ### Network, secrets and connected mode
 
-- **No network call from a content script, ever.** Only `piwi-client.ts` sends requests, from `src/options/` and the
-  worker; content scripts read caches and ask the worker. `piwi-client.test.ts` fails on a file of `src/content/`
-  importing it. (see "The requests and who makes them")
+- **No network call from a content script, ever, nor from an extension page but the settings page.** Requests go from
+  `src/options/` and the worker only (`piwi-client.ts`, and `run-hubs.ts` and `hub-connection.ts` for the editor's
+  runs); content scripts and the Runs window ask the worker. `piwi-client.test.ts` fails on a file of `src/content/`
+  importing `piwi-client.ts`. (see "The requests and who makes them")
 - **Connected mode is opt-in, off by default, and never sends a recording or anything read from a page on its own.** A bug report, a replay
   verdict or steps for the desktop app go only from a preview the user confirms; a new feature that sends recorded data
   needs the same opt-in, separation and preview. (see "What is read and what is sent")
-- **No secret in `chrome.storage.local`, which content scripts read.** The API key and the desktop and editor tokens
-  live in the extension's IndexedDB (`src/shared/secret-store.ts`). (see "Where secrets are kept")
+- **No secret in `chrome.storage.local`, which content scripts read.** The API key, the desktop and editor tokens and
+  the run hubs' addresses and tokens (`hubs`) live in the extension's IndexedDB (`src/shared/secret-store.ts`). (see
+  "Where secrets are kept")
 - **The API key goes only to its own origin (`getInstanceApiKey`), and no request follows a redirect**
   (`redirect: 'error'`). `isConnected` never reads the key. (see "Where secrets are kept")
 - **The desktop app's token goes only to 127.0.0.1, after the app proves it holds it** (`proveDesktop`,
@@ -85,7 +96,8 @@ each rule below ends with the section to read there.
   tab's URL (`bug-reports.ts`, `project-refresh.ts`), and records a verdict only on the stored replay's report or one
   sent to the desktop app. (see "The requests and who makes them")
 - **A message only the extension's own pages send is refused from anything else:** starting a recording, the viewport,
-  request-condition and language messages, listed in `EXTENSION_PAGE_MESSAGES` (`src/background/index.ts`, `fromExtensionPage`). (see "What each folder holds")
+  request-condition and language messages, and the popup's Runs messages (`piwi-runs-summary`, `piwi-open-runs`),
+  listed in `EXTENSION_PAGE_MESSAGES` (`src/background/index.ts`, `fromExtensionPage`). (see "What each folder holds")
 - **A new request to the instance goes through `withConnectionHealth`**, so the popup and the settings page show
   whether the instance answers. (see "Connection health")
 - **Never add a fetch to `refreshHud`: it runs on every captured step.** (see "Cache freshness")
@@ -98,6 +110,29 @@ each rule below ends with the section to read there.
   written through `writeConnection`.** (see "Buttons that start a request")
 - **Connect and a desktop pairing send only the browser and OS names (`describeClient`); the instance marker reads
   nothing from the page and sends nothing.** (see "Connect", "The instance marker")
+
+### The editor's runs
+
+- **The pairing's token goes to the editor only once the program on the paired port proves it holds it**
+  (`proveEditor`, `src/shared/editor-proof.ts`): before Send to editor's post (`postToEditor`) and before the run
+  hubs' `GET …/live`. Without the proof no hub kept is connected (`editor-pairing.test.ts`, `run-hubs.test.ts`). (see
+  "Finding the hubs")
+- **An editor's address is kept on 127.0.0.1 whatever loopback name it was typed with, as it is stored and as it is
+  read** (`canonicalEditorUrl`, `editor-pairing.ts`). The proof names the port alone, so `localhost` could reach
+  another program on `[::1]`. (see "Finding the hubs")
+- **The Runs window talks only to the worker, through the port `RUNS_PORT`:** the worker takes the port from
+  `runs.html` alone (`fromRunsPage`) and reads its messages with `parseRunsRequest`. The state the worker posts
+  (`RunsState`) carries no token. (see "The Runs window")
+- **Every Runs window control but Pause names the stop shown (`since`),** so a click made twice never answers the next
+  stop; `parseRunsRequest` refuses one without it (`runs.test.ts`). (see "The Runs window")
+- **What a hub sends is shown as text (a call's title through `richText`), and its image only as a `data:` JPEG whose
+  base64 is checked again.** (see "The Runs window")
+- **The Runs window draws a part again only when what it shows changes (`part`, `place`); a button waiting for its
+  command is `aria-disabled`, never `disabled`,** so a control keeps the focus, restored across redraws by
+  `data-focus` (`runs.spec.ts`). (see "The Runs window")
+- **The hub's keepalive (`HUB_KEEPALIVE_MS`, `@piwitests/core/run-hub`) and the Runs window's ping (`RUNS_PING_MS`)
+  stay within the 30 s an MV3 worker lives after a message;** that holds for a WebSocket from Chrome 116, under
+  `minimum_chrome_version` 118. (see "A connection per hub")
 
 ### Content scripts and the page
 
@@ -197,7 +232,8 @@ each rule below ends with the section to read there.
 
 - **The popup and the settings page stay plain TypeScript and DOM, no UI framework.** (see "The popup")
 - **The popup must fit Chrome's 600-pixel popup height in every language** (`popup.spec.ts`): a new tile goes under
-  More tools or into DevTools, with its hint under its label, never only a tooltip. (see "The popup")
+  More tools or into DevTools, with its hint under its label, never only a tooltip. Runs takes More tools' free cell,
+  so it adds no height. (see "The popup")
 - **A panel with a backdrop is modal through `holdFocus`; one that leaves the page usable is `role="region"`, never a
   dialog.** A bar on the page stops animating under `prefers-reduced-motion: reduce`. (see "Content-script
   structure")
@@ -240,6 +276,8 @@ each rule below ends with the section to read there.
   viewport")
 - **Cancel a debugging session in a spec with the worker's `__piwiCancelDebugging(tabId)`.** (see "The debugging
   protocol")
+- **Trigger the run shortcut in a spec through the worker's `__piwiRunShortcut()`:** the e2e suite cannot press a
+  shortcut the browser holds. (see "The run shortcut")
 
 ## Commands
 
@@ -279,4 +317,5 @@ click reload on the `chrome://extensions` card (MV3 gives no way to trigger it f
   (see "Loading it locally")
 
 Disable the Chrome Web Store copy while a local build is loaded: two installs both claim the
-`Ctrl+Shift+E` command, and only one of them gets it, which reads as "my change didn't apply".
+`Ctrl+Shift+E` command, and the run shortcut's key once one is set, and only one of them gets each, which reads as "my
+change didn't apply".

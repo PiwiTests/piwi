@@ -211,6 +211,55 @@ const tests = {
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
   },
 
+  async 'Piwi Picker finds the hub of the window’s editor service through the pairing'() {
+    const [url, token] = (await vscode.env.clipboard.readText()).split('#');
+    const live = url.replace(/\/send$/, '/live');
+    // Before it sends the token, Piwi Picker has the listener prove it holds it, for the port it answers on.
+    const challenge = require('node:crypto').randomBytes(32).toString('hex');
+    const unpaired = await fetch(live, { headers: { 'x-piwi-editor-challenge': challenge } });
+    assert.equal(unpaired.status, 401);
+    const proof = require('node:crypto')
+      .createHmac('sha256', token)
+      .update(`piwi-editor-proof:${new URL(url).port}:${challenge}`)
+      .digest('hex');
+    assert.equal(unpaired.headers.get('x-piwi-editor-proof'), proof);
+    const hubs = await waitFor(async () => {
+      const res = await fetch(live, { headers: { Authorization: `Bearer ${token}` } });
+      const body = await res.json();
+      return body.hubs.find((h) => h.roots.includes(workspace)) && body.hubs;
+    }, 'the window’s hub');
+    const hub = hubs.find((h) => h.roots.includes(workspace));
+    assert.match(hub.url, /^ws:\/\/127\.0\.0\.1:\d+\/piwi\/hub$/);
+    // Its own discovery file, in the folder the run names, readable by this user alone.
+    const file = path.join(process.env.PIWI_EDITORS_DIR, `${hub.pid}.json`);
+    if (process.platform !== 'win32') assert.equal(require('node:fs').statSync(file).mode & 0o777, 0o600);
+    // The hub takes an extension's handshake at that address, and refuses a page's.
+    const handshake = (origin) =>
+      new Promise((resolve, reject) => {
+        const request = require('node:http').request(hub.url.replace(/^ws:/, 'http:'), {
+          headers: {
+            Connection: 'Upgrade',
+            Upgrade: 'websocket',
+            'Sec-WebSocket-Version': '13',
+            'Sec-WebSocket-Key': require('node:crypto').randomBytes(16).toString('base64'),
+            Origin: origin,
+          },
+        });
+        request.on('upgrade', (res, socket) => {
+          socket.destroy();
+          resolve(res.statusCode);
+        });
+        request.on('response', (res) => {
+          res.resume();
+          resolve(res.statusCode);
+        });
+        request.on('error', reject);
+        request.end();
+      });
+    assert.equal(await handshake(`chrome-extension://${'a'.repeat(32)}`), 101);
+    assert.equal(await handshake(new URL(url).origin), 403);
+  },
+
   async 'the page recorded steps run on is offered from the code around the cursor'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const spec = vscode.Uri.file(path.join(workspace, 'tests', 'admin.spec.ts'));
@@ -356,6 +405,209 @@ const tests = {
     }
   },
 
+  async 'a run started here shows where it stops, its controls steer it, and its breakpoints follow the editor’s'() {
+    const net = require('node:net');
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const channel = api.lastRun().env.PIWI_RUN_CHANNEL;
+    assert.ok(channel, 'the run names the run channel');
+    const hash = channel.lastIndexOf('#');
+    const ref = 'ed-0000c0de';
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
+    // A worker of the run, as the capture fixtures play it on its run connection.
+    const socket = net.connect(channel.slice(0, hash));
+    socket.setEncoding('utf8');
+    const heard = [];
+    let buffered = '';
+    socket.on('data', (chunk) => {
+      buffered += chunk;
+      for (let end = buffered.indexOf('\n'); end >= 0; end = buffered.indexOf('\n')) {
+        heard.push(JSON.parse(buffered.slice(0, end)));
+        buffered = buffered.slice(end + 1);
+      }
+    });
+    const send = (message) => socket.write(`${JSON.stringify(message)}\n`);
+    const heardOne = (what, test) => waitFor(() => heard.find(test), what);
+    const sessionOf = () => api.runSessions().find((s) => s.ref === ref);
+    const pausedLenses = async (uri) => {
+      const lenses = (await vscode.commands.executeCommand('vscode.executeCodeLensProvider', uri)) ?? [];
+      const paused = lenses.find((l) => l.command?.title.startsWith('$(debug-pause) Paused · '));
+      return paused
+        ? lenses.filter((l) => l.range.start.line === paused.range.start.line).map((l) => l.command.title)
+        : [];
+    };
+    send({
+      type: 'run-attach',
+      token: channel.slice(hash + 1),
+      ref,
+      cwd: workspace,
+      workerIndex: 0,
+      parallelIndex: 0,
+      pid: process.pid,
+      playwright: '1.64.1',
+      reporter: '0.60.0',
+    });
+    send({
+      type: 'test-begin',
+      testId: 't1',
+      title: ['pays'],
+      file: 'tests/checkout.spec.ts',
+      line: 3,
+      project: 'chromium',
+      retry: 1,
+      cannotPause: null,
+    });
+    try {
+      await waitFor(() => sessionOf()?.workers[0]?.state === 'running', 'the running test');
+      await vscode.commands.executeCommand('piwi.pauseRun');
+      await heardOne('the pause', (m) => m.type === 'control' && m.action === 'pause');
+      send({
+        type: 'stopped',
+        stop: 1,
+        reason: 'pause',
+        title: "Click getByRole('button', { name: 'Pay now' })",
+        place: { file: 'tests/pages/checkout.page.ts', line: 4, column: 23 },
+        locator: "getByRole('button', { name: 'Pay now' })",
+        bar: true,
+      });
+      // The file opens at the paused line, marked, with what is about to run and the controls above it.
+      await waitFor(() => api.executionPoints(pageObject.toString()).includes(3), 'the execution point');
+      const editor = vscode.window.activeTextEditor;
+      assert.equal(editor?.document.uri.toString(), pageObject.toString());
+      assert.equal(editor.selection.active.line, 3);
+      const lenses = await waitFor(async () => {
+        const titles = await pausedLenses(pageObject);
+        return titles.length ? titles : null;
+      }, 'the paused line’s lenses');
+      for (const title of [
+        "$(debug-pause) Paused · Click getByRole('button', { name: 'Pay now' }) · attempt 2",
+        'Resume',
+        'Step',
+        'Run to cursor',
+        'Finish',
+      ]) {
+        assert.ok(lenses.includes(title), lenses.join(' | '));
+      }
+      await vscode.commands.executeCommand('piwi.stepRun');
+      await heardOne('the step', (m) => m.type === 'control' && m.action === 'step' && m.stop === 1);
+
+      // Two lines written above the stop: the mark and its lenses follow the line, the run's code did not move.
+      const pageEditor = await vscode.window.showTextDocument(pageObject);
+      await pageEditor.edit((b) => b.insert(new vscode.Position(0, 0), '// one\n// two\n'));
+      await waitFor(() => api.executionPoints(pageObject.toString()).includes(5), 'the execution point after the edit');
+      await waitFor(async () => {
+        const lenses = (await vscode.commands.executeCommand('vscode.executeCodeLensProvider', pageObject)) ?? [];
+        return lenses.find((l) => l.command?.title.startsWith('$(debug-pause) Paused · '))?.range.start.line === 5
+          ? true
+          : null;
+      }, 'the paused line’s lens after the edit');
+      // Run to cursor in the edited file: the cursor's line as the run's code has it.
+      pageEditor.selection = new vscode.Selection(6, 0, 6, 0);
+      await vscode.commands.executeCommand('piwi.runToCursor');
+      await heardOne(
+        'the run to a line of the edited file',
+        (m) => m.type === 'run-to' && m.place.file === 'tests/pages/checkout.page.ts' && m.place.line === 5,
+      );
+      await vscode.commands.executeCommand('workbench.action.files.revert');
+      await waitFor(
+        () => api.executionPoints(pageObject.toString()).includes(3),
+        'the execution point after the revert',
+      );
+
+      // A breakpoint set while the run goes on reaches its worker, and so does its removal.
+      const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(spec, new vscode.Position(2, 0)));
+      vscode.debug.addBreakpoints([breakpoint]);
+      try {
+        await heardOne(
+          'the breakpoint',
+          (m) => m.type === 'breakpoints' && m.places.some((p) => p.file === 'tests/checkout.spec.ts' && p.line === 3),
+        );
+      } finally {
+        const before = heard.length;
+        vscode.debug.removeBreakpoints([breakpoint]);
+        await waitFor(
+          () => heard.slice(before).some((m) => m.type === 'breakpoints' && !m.places.length),
+          'the breakpoint removed',
+        );
+      }
+
+      // A breakpoint that only moves with an edit keeps the line the run has: the editor sends nothing.
+      const specEditor = await vscode.window.showTextDocument(spec);
+      const kept = new vscode.SourceBreakpoint(new vscode.Location(spec, new vscode.Position(2, 0)));
+      let before = heard.length;
+      vscode.debug.addBreakpoints([kept]);
+      await waitFor(
+        () => heard.slice(before).some((m) => m.type === 'breakpoints' && m.places.some((p) => p.line === 3)),
+        'the breakpoint to keep',
+      );
+      before = heard.length;
+      await specEditor.edit((b) => b.insert(new vscode.Position(0, 0), '// one\n// two\n'));
+      await waitFor(
+        () => vscode.debug.breakpoints.find((b) => b.id === kept.id)?.location.range.start.line === 4,
+        'the breakpoint moved with the edit',
+      );
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      assert.deepEqual(
+        heard.slice(before).filter((m) => m.type === 'breakpoints'),
+        [],
+        'a breakpoint that only moved is not sent again',
+      );
+      vscode.debug.removeBreakpoints([kept]);
+      await waitFor(
+        () => heard.slice(before).some((m) => m.type === 'breakpoints' && !m.places.length),
+        'the kept breakpoint removed',
+      );
+
+      // Run to cursor: the caret's line of the edited spec, the line the run's code has.
+      specEditor.selection = new vscode.Selection(4, 0, 4, 0);
+      await vscode.commands.executeCommand('piwi.runToCursor');
+      await heardOne(
+        'the run to the cursor',
+        (m) => m.type === 'run-to' && m.stop === 1 && m.place.file === 'tests/checkout.spec.ts' && m.place.line === 3,
+      );
+      send({ type: 'running', stop: 1 });
+      await waitFor(() => sessionOf()?.workers[0]?.state === 'running', 'the test going on');
+      assert.deepEqual(await pausedLenses(pageObject), []);
+
+      // A stop no pause bar shows: an image of its page beside the editor.
+      send({
+        type: 'stopped',
+        stop: 2,
+        reason: 'breakpoint',
+        title: 'Fill "one" locator(\'input\')',
+        place: { file: 'tests/checkout.spec.ts', line: 3 },
+        locator: "locator('input')",
+        bar: false,
+      });
+      const request = await heardOne('the image asked', (m) => m.type === 'request' && m.what === 'image');
+      send({
+        type: 'answer',
+        request: request.request,
+        what: 'image',
+        value: { mime: 'image/jpeg', data: '/9j/4AAQ' },
+      });
+      const shown = await waitFor(() => (api.pausedPage()?.image ? api.pausedPage() : null), 'the paused page');
+      assert.equal(shown.image.data, '/9j/4AAQ');
+      // The stop's line in the spec as it stands, two lines below the run's.
+      assert.equal(shown.caption, 'Paused · Fill "one" locator(\'input\') · attempt 2 · checkout.spec.ts:5');
+      assert.deepEqual(api.executionPoints(spec.toString()), [4]);
+      await vscode.commands.executeCommand('piwi.resumeRun');
+      await heardOne('the resume', (m) => m.type === 'control' && m.action === 'resume' && m.stop === 2);
+      // A second Resume for the stop that went on reaches nothing.
+      await vscode.commands.executeCommand('piwi.resumeRun', { ref, worker: 0, since: 'gone' });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      assert.equal(heard.filter((m) => m.type === 'control' && m.action === 'resume').length, 1);
+    } finally {
+      socket.destroy();
+      await vscode.window.showTextDocument(spec);
+      await vscode.commands.executeCommand('workbench.action.files.revert');
+    }
+    // The worker left: the run ends a few seconds later, and its execution point and page go with it.
+    await waitFor(() => !sessionOf(), 'the end of the run');
+    assert.deepEqual(api.executionPoints(spec.toString()), []);
+    assert.equal(api.pausedPage()?.caption, 'The run ended.');
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  },
+
   async 'a C# file shows the lines its tests ran, its functions’ tests, and the marks hide and show again'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const basket = vscode.Uri.file(path.join(workspace, 'src', 'Web', 'Services', 'BasketService.cs'));
@@ -442,6 +694,13 @@ const tests = {
       'piwi.stopRecording',
       'piwi.pauseRecording',
       'piwi.resumeRecording',
+      'piwi.pauseRun',
+      'piwi.stopRun',
+      'piwi.resumeRun',
+      'piwi.stepRun',
+      'piwi.runToCursor',
+      'piwi.finishRun',
+      'piwi.showPausedPage',
     ]) {
       assert.ok(commands.includes(id), id);
     }

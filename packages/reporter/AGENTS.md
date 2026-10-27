@@ -35,7 +35,15 @@ responsibilities.
      attachment and the locator posted to `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`);
    - with `PIWI_RECORD_CHANNEL`, **Record here** handing the page to the editor's recorder
      (`internal/capture/record-handoff.ts`, framed as `@piwitests/core/ide-recorder`): this package carries the relay
-     alone, the recorder's host stays in the editor service.
+     alone, the recorder's host stays in the editor service;
+   - with `PIWI_RUN_CHANNEL` and `PIWI_ORIGIN_REF`, each worker's run connection to the editor
+     (`internal/capture/run-channel.ts`, framed as `@piwitests/core/run-channel`), open from the `piwiResources`
+     worker fixture's setup to the worker's end: it reports each test and stop, takes the editor's controls,
+     breakpoints and intents (`takes` in its `run-attach`), and makes a headless run stop too;
+   - `PIWI_RUN_CHANNEL` and `PIWI_EDITOR_SEND` taken out of the worker's `process.env` while each test runs
+     (`hideRunChannel`; picks still reach the editor through `editorSendAddress`), so a process the test starts gets
+     neither, and put back after it, since Playwright passes a worker's environment changes to the projects that
+     depend on its project.
 
    How each of them works: [`ARCHITECTURE.md`](ARCHITECTURE.md#side-effects).
 4. **The desktop discovery file.** The desktop shell writes `~/.piwi/desktop.json` (`apps/desktop/src-tauri/src/lib.rs`)

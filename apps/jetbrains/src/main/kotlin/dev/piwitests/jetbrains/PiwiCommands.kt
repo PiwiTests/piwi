@@ -32,6 +32,7 @@ import org.jetbrains.ide.BuiltInServerManager
 import java.awt.datatransfer.StringSelection
 import java.net.URI
 import java.nio.file.Path
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -166,12 +167,12 @@ object PiwiCommands {
         background(project, "Piwi: resolving the tests") {
             val service = project.service<PiwiProjectService>()
             val breakpoints = service.breakpoints()
-            val withBreakpoints = if (breakpoints.isEmpty()) args else args.copy(breakpoints = breakpoints)
+            val withBreakpoints = if (breakpoints.isEmpty()) args else args.copy(breakpoints = breakpoints.map { it.place })
             val command = service.server()?.runArgs(withBreakpoints)?.orNull()
             if (command?.command.isNullOrBlank() || command?.cwd == null) {
                 notify(project, "No command to run these tests (not connected?).", NotificationType.WARNING)
             } else {
-                startRun(project, command)
+                startRun(project, command, breakpoints)
             }
         }
     }
@@ -215,17 +216,20 @@ object PiwiCommands {
     }
 
     /**
-     * Run a test command of the service: its notice shown once, and, when it can pause in the browser (breakpoints,
-     * `PIWI_PAUSE_AT`, or a `page.pause()`, `RunCommand.pauses`), the Send to editor pairing a locator picked while
-     * paused is posted to (`PIWI_EDITOR_SEND`). Call it off the event thread.
+     * Run a test command of the service, built with the IDE's `breakpoints`: its notice shown once, and, when it can
+     * pause in the browser (breakpoints, `PIWI_PAUSE_AT`, a `page.pause()`, `RunCommand.pauses`, or a Pause on its run
+     * channel, `PIWI_RUN_CHANNEL`), the Send to editor pairing a locator picked while paused is posted to
+     * (`PIWI_EDITOR_SEND`). Call it off the event thread.
      */
-    fun startRun(project: Project, command: RunCommand) {
+    fun startRun(project: Project, command: RunCommand, breakpoints: List<Glue.RunBreakpoint>) {
         val cwd = command.cwd ?: return
         val line = command.command?.takeIf { it.isNotBlank() } ?: return
         if (!project.service<PiwiProjectService>().trusted()) return notify(project, Glue.UNTRUSTED, NotificationType.WARNING)
         command.notice?.let { if (noticesShown.add(it)) notify(project, it, NotificationType.WARNING) }
+        command.ref?.let { project.service<PiwiRunSessions>().started(it, breakpoints) }
         val base = command.env
-        val address = if (base != null && (base.containsKey("PIWI_PAUSE_AT") || command.pauses == true)) {
+        val pauses = base != null && (base.containsKey("PIWI_PAUSE_AT") || base.containsKey("PIWI_RUN_CHANNEL") || command.pauses == true)
+        val address = if (pauses) {
             runCatching {
                 val port = BuiltInServerManager.getInstance().waitForStart().port
                 "http://127.0.0.1:$port${PiwiSendHandler.PATH}#${PiwiSendToken.ensure()}"
@@ -238,12 +242,9 @@ object PiwiCommands {
         if (args != null && project.service<PiwiProjectService>().local().playwrightRunner && PlaywrightRunnerGate.available()) {
             val ref = command.ref
             ApplicationManager.getApplication().invokeLater({
-                // The console runs what the IDE's runner does not take.
-                val started = runCatching {
-                    PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty()) { exitCode ->
-                        if (ref != null) commandEnded(project, CommandEndedParams(ref, exitCode))
-                    }
-                }.getOrDefault(false)
+                // The console runs what the IDE's runner does not take. The runner's runs of the configuration, its
+                // reruns and debug runs included, are followed by their ref (`PiwiRunSessions.followRunner`).
+                val started = runCatching { PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty(), ref) }.getOrDefault(false)
                 if (!started) run(project, cwd, line, env, ref)
             }, project.disposed)
             return
@@ -251,11 +252,15 @@ object PiwiCommands {
         run(project, cwd, line, env, command.ref)
     }
 
-    /** Tell the service a command it gave ended (`piwi/commandEnded`), off the event thread. */
-    private fun commandEnded(project: Project, ended: CommandEndedParams) {
+    /** Tell the service a command it gave ended (`piwi/commandEnded`), off the event thread, then run `then`. */
+    private fun commandEnded(project: Project, ended: CommandEndedParams, then: () -> Unit = {}) {
         ApplicationManager.getApplication().executeOnPooledThread {
-            // The plugin may have been unloaded since the run started: its service is then gone.
-            if (!project.isDisposed) project.getServiceIfCreated(PiwiProjectService::class.java)?.server()?.commandEnded(ended)
+            try {
+                // The plugin may have been unloaded since the run started: its service is then gone.
+                if (!project.isDisposed) project.getServiceIfCreated(PiwiProjectService::class.java)?.server()?.commandEnded(ended)
+            } finally {
+                then()
+            }
         }
     }
 
@@ -293,7 +298,8 @@ object PiwiCommands {
     /**
      * Run a command line in the Run tool window, in `cwd`, with `env` added to its environment: the process starts off
      * the event thread. With `ref`, the ref of the run it starts, the service hears when it ends
-     * (`piwi/commandEnded`). The tool window's Rerun stops it if it runs, and starts the same command, ref included.
+     * (`piwi/commandEnded`). The tool window's Rerun stops it if it runs, and starts the same command, ref included,
+     * once the process ended and the service heard so: the rerun's workers start a session of their own.
      */
     fun run(project: Project, cwd: String, command: String, env: Map<String, String>? = null, ref: String? = null) {
         val parts = Glue.splitCommand(command).toMutableList()
@@ -311,11 +317,15 @@ object PiwiCommands {
                 notify(project, "Could not run ${parts[0]}: ${e.message}", NotificationType.ERROR)
                 return@executeOnPooledThread
             }
-            if (ref != null) {
-                handler.addProcessListener(object : ProcessListener {
-                    override fun processTerminated(event: ProcessEvent) = commandEnded(project, CommandEndedParams(ref, event.exitCode))
-                })
-            }
+            // Done once the process ended, and the service heard it: what Rerun waits for.
+            val ended = CompletableFuture<Unit>()
+            handler.addProcessListener(object : ProcessListener {
+                override fun processTerminated(event: ProcessEvent) {
+                    if (ref == null) ended.complete(Unit) else commandEnded(project, CommandEndedParams(ref, event.exitCode)) { ended.complete(Unit) }
+                }
+            })
+            // Stop, among the run's controls, ends it.
+            if (ref != null && !project.isDisposed) project.service<PiwiRunSessions>().track(ref, handler)
             ApplicationManager.getApplication().invokeLater {
                 if (project.isDisposed) {
                     handler.destroyProcess()
@@ -325,8 +335,8 @@ object PiwiCommands {
                         .withFilter(RunOutputLinks(project, cwd))
                         .withActivateToolWindow(true)
                         .withRerun {
+                            ended.thenRun { if (!project.isDisposed) run(project, cwd, command, env, ref) }
                             handler.destroyProcess()
-                            run(project, cwd, command, env, ref)
                         }
                         .run()
                 }

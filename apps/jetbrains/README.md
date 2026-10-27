@@ -28,7 +28,9 @@ in any JetBrains IDE with the LSP API and JavaScript support, from 2024.1, with 
   change that renames a string your tests find elements by, each with a quick fix.
 - **Tests recorded at the caret.** **Tools → Piwi → Record Here** opens a browser through your project's own
   Playwright and writes what you do there into the test, calling your page objects when connected. No instance needed.
-- **The status bar.** The latest run, the run you started as it runs, and what it changed once it ended.
+- **The status bar.** The latest run, the run you started as it runs, and what it changed once it ended. That run
+  pauses at your breakpoints, its paused line marked in the editor, and steps, runs to the caret or resumes with the
+  debugger's keys.
 
 ![The Piwi tool window below the editor: the latest run's failures as a tree, a local run laid over them, the failing tests tinted in the spec](https://piwitests.dev/screenshots/jetbrains-failures.png)
 

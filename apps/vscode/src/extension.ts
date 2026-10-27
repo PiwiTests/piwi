@@ -12,6 +12,7 @@ import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import {
   LanguageClient,
+  State,
   TransportKind,
   type LanguageClientOptions,
   type NodeModule,
@@ -30,6 +31,7 @@ import {
   NOTICE_NOTIFICATION,
   PAGE_CANDIDATES_REQUEST,
   RUN_ENDED_NOTIFICATION,
+  RUN_SESSION_NOTIFICATION,
   SHARE_DESKTOP_JOB_REQUEST,
   type AgentContextParams,
   type AgentContextResult,
@@ -44,11 +46,13 @@ import {
   type DesktopJobUpdate,
   type FailuresResult,
   type FileEdit,
+  type InitializationOptions,
   type Notice,
   type PageCandidatesParams,
   type PageCandidatesResult,
   type RenderStepsParams,
   type RunEnded,
+  type RunSession,
   type ShareDesktopJobResult,
 } from '@piwitests/editor/protocol';
 import {
@@ -97,6 +101,7 @@ import {
   type TraceParams,
   type TraceResult,
 } from '@piwitests/editor/protocol';
+import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
 import type { EditorSendPayload } from '@piwitests/core/editor-send';
 import { formatPairing } from '@piwitests/core/editor-send';
 import {
@@ -152,10 +157,19 @@ import {
   type FailureNode,
   type ProxySettings,
 } from './glue';
-import { isUnder, runBreakpoints } from './breakpoints';
+import { isUnder, placesOf, runBreakpoints } from './breakpoints';
 import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
-import { startSendListener, type SendListener, type SendResult } from './send-listener';
+import type { PausedPageView, RunBreakpoint } from './run-control';
+import { registerRunControl } from './run-view';
+import {
+  liveHubsHere,
+  sendPairing,
+  startSendListener,
+  type PairingStore,
+  type SendListener,
+  type SendResult,
+} from './send-listener';
 import { TestExplorer, type ShownTest } from './test-explorer';
 
 /** How often the status bar item's tooltip is written again, for the time since the latest run was read. */
@@ -225,6 +239,12 @@ export interface PiwiApi {
   coverage(uri: string): { result: CoverageResult; shown: boolean } | null;
   /** The tests the Testing view lists with the result last shown for each; null while `piwi.testExplorer` is off. */
   testExplorer(): ShownTest[] | null;
+  /** The runs started from the editor whose workers the service follows, as last heard. */
+  runSessions(): RunSession[];
+  /** The lines of a file drawn as where a run is stopped, by its URI. */
+  executionPoints(uri: string): number[];
+  /** What the paused page view shows; null while it is closed. */
+  pausedPage(): PausedPageView | null;
 }
 
 /** A failures view node, or what a command names it by. */
@@ -348,8 +368,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push({ dispose: () => proxyTimer && clearTimeout(proxyTimer) });
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: 'file', pattern: DOCUMENT_PATTERN }],
-    // Read on each start of the service, the client's restarts after it stopped unexpectedly included.
-    initializationOptions: () => ({ credentials: handed }),
+    // Read on each start of the service, the client's restarts after it stopped unexpectedly included. The extension
+    // shows where the runs it started stop, and answers those stops.
+    initializationOptions: (): InitializationOptions => ({ credentials: handed ?? undefined, runControl: true }),
   };
   const lc = new LanguageClient('piwi', 'Piwi', serverOptions, clientOptions);
   client = lc;
@@ -755,39 +776,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   );
 
   // Send to editor: the token lives in the secret store, the port in global state, so a pairing survives restarts.
-  let sendToken = (await context.secrets.get(SEND_TOKEN)) ?? '';
+  const sendStore: PairingStore = {
+    token: (await context.secrets.get(SEND_TOKEN)) ?? '',
+    port: context.globalState.get<number>(SEND_PORT),
+    saveToken: (token) => context.secrets.store(SEND_TOKEN, token),
+    savePort: (port) => context.globalState.update(SEND_PORT, port),
+  };
   const listen = async (port: number) => {
     sendListener = await startSendListener({
       port,
-      token: () => sendToken,
+      token: () => sendStore.token,
       onPayload: (payload) => insertFromPicker(lc, payload),
+      // A remote window's services listen on the remote machine's loopback interface.
+      live: () => liveHubsHere(vscode.env.remoteName, () => readLiveHubs(editorsDir())),
     });
     return sendListener;
   };
-  const pairedPort = context.globalState.get<number>(SEND_PORT);
   // Another window may hold the port: that window keeps the pairing.
-  if (pairedPort && sendToken) await listen(pairedPort).catch(() => null);
-  /** The listener's loopback address and the token, the listener started and the token minted when they are not. */
-  const pairing = async (): Promise<{ url: string; token: string }> => {
-    if (!sendToken) {
-      sendToken = randomBytes(24).toString('base64url');
-      await context.secrets.store(SEND_TOKEN, sendToken);
-    }
-    const listener = sendListener ?? (await listen(pairedPort ?? 0).catch(() => listen(0)));
-    await context.globalState.update(SEND_PORT, listener.port);
-    return { url: listener.url, token: sendToken };
-  };
+  if (sendStore.port && sendStore.token) await listen(sendStore.port).catch(() => null);
+  const pairing = sendPairing({
+    store: sendStore,
+    listener: () => sendListener,
+    listen,
+    mint: () => randomBytes(24).toString('base64url'),
+  });
   /**
    * The pairing address Piwi Picker pastes: the listener's address as the browser's machine reaches it, which a
-   * remote window (SSH, WSL, a dev container) forwards to the local machine.
+   * remote window (SSH, WSL, a dev container) forwards to the local machine. Its port is saved for the next start.
    */
   const pickerPairing = async (): Promise<string> => {
-    const { url, token } = await pairing();
+    const { url, token } = await pairing(true);
     const external = await vscode.env.asExternalUri(vscode.Uri.parse(url));
     return formatPairing({ url: external.toString(true), token });
   };
-  /** The pairing address a run's reporter posts a pick to: the loopback address of the machine the run is on. */
-  const runPairing = async (): Promise<string> => formatPairing(await pairing());
+  /**
+   * The pairing address a run's reporter posts a pick to: the loopback address of the machine the run is on, on a
+   * port of the run's time when another window holds the saved one, which stays saved.
+   */
+  const runPairing = async (): Promise<string> => formatPairing(await pairing(false));
 
   /** The enabled breakpoints a run pauses at, as `piwi.breakpoints` allows; none outside the Playwright configs. */
   const breakpointsForRun = () =>
@@ -795,27 +821,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       ? runBreakpoints(vscode.debug.breakpoints, status?.contexts.map((c) => c.root) ?? [])
       : [];
 
+  /** Where the runs started here stop, and their controls. */
+  const runControl = registerRunControl(context, lc, {
+    breakpoints: breakpointsForRun,
+    terminate: (ref) => {
+      const execution = vscode.tasks.taskExecutions.find((e) => taskRef(e) === ref);
+      execution?.terminate();
+      return !!execution;
+    },
+  });
+  context.subscriptions.push(runControl);
+
   /** The notices of `RunCommand.notice` already shown: each is shown once. */
   const noticesShown = new Set<string>();
   let lastRun: RunCommand | null = null;
 
   /**
-   * Run a test command: its notice shown once, and, when it can pause in the browser (breakpoints, `PIWI_PAUSE_AT`, or
-   * a `page.pause()`, `RunCommand.pauses`), the Send to editor pairing the picker posts a pick to (`PIWI_EDITOR_SEND`).
+   * Run a test command started with `breakpoints`: its notice shown once, and, when it can pause in the browser
+   * (breakpoints, `PIWI_PAUSE_AT`, a `page.pause()`, `RunCommand.pauses`, or a Pause on its run channel,
+   * `PIWI_RUN_CHANNEL`), the Send to editor pairing the picker posts a pick to (`PIWI_EDITOR_SEND`).
    */
-  const startRun = async (command: RunCommand) => {
+  const startRun = async (command: RunCommand, breakpoints: readonly RunBreakpoint[]) => {
     if (command.notice && !noticesShown.has(command.notice)) {
       noticesShown.add(command.notice);
       void vscode.window.showWarningMessage(`Piwi: ${command.notice}`);
     }
     let env = command.env;
-    if (env?.PIWI_PAUSE_AT || command.pauses) {
+    if (env?.PIWI_PAUSE_AT || command.pauses || env?.PIWI_RUN_CHANNEL) {
       const address = await runPairing().catch(() => null);
       if (address) env = { ...env, PIWI_EDITOR_SEND: address };
     }
     lastRun = { ...command, env };
-    if (command.ref) await runAsTask({ ...command, ref: command.ref }, env);
-    else runInTerminal(command.cwd, command.command, env);
+    if (command.ref) {
+      runControl.started(command.ref, breakpoints);
+      await runAsTask({ ...command, ref: command.ref }, env);
+    } else {
+      runInTerminal(command.cwd, command.command, env);
+    }
   };
 
   /** Run tests as the service's command for them says; the command started, or null when there is none. */
@@ -823,13 +865,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const breakpoints = breakpointsForRun();
     const command = await lc.sendRequest<RunCommand | null>(
       RUN_ARGS_REQUEST,
-      breakpoints.length ? { ...args, breakpoints } : args,
+      breakpoints.length ? { ...args, breakpoints: placesOf(breakpoints) } : args,
     );
     if (!command) {
       void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
       return null;
     }
-    await startRun(command);
+    await startRun(command, breakpoints);
     return command;
   };
 
@@ -1097,9 +1139,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       const command = await lc.sendRequest<RunCommand | null>(RUN_SELECTION_REQUEST, {
         uri,
         key: picked.key,
-        ...(breakpoints.length ? { breakpoints } : {}),
+        ...(breakpoints.length ? { breakpoints: placesOf(breakpoints) } : {}),
       });
-      if (command) await startRun(command);
+      if (command) await startRun(command, breakpoints);
     }),
     vscode.commands.registerCommand('piwi.openRun', async () => {
       if (statusUrl) await vscode.env.openExternal(vscode.Uri.parse(statusUrl));
@@ -1232,6 +1274,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       else if (picked === VERDICT_ACTIONS.dashboard) await vscode.env.openExternal(vscode.Uri.parse(ended.url));
       else if (picked === VERDICT_ACTIONS.rerun) await vscode.commands.executeCommand('piwi.rerunFailing');
     }),
+    // A run started here: a worker started or ended a test, stopped or went on.
+    lc.onNotification(RUN_SESSION_NOTIFICATION, (session: RunSession) => runControl.heard(session)),
+    // A service that stops closes its runs' connections: their sessions end with it.
+    lc.onDidChangeState((e) => {
+      if (e.newState === State.Stopped) runControl.clear();
+    }),
     lc.onNotification(NOTICE_NOTIFICATION, (notice: Notice) => {
       const text = `Piwi: ${notice.message}`;
       void (notice.severity === 'warning'
@@ -1260,6 +1308,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       return result ? { result, shown: coverageShown } : null;
     },
     testExplorer: () => explorer?.shown() ?? null,
+    runSessions: () => runControl.sessions(),
+    executionPoints: (uri) => runControl.executionPoints(uri),
+    pausedPage: () => runControl.pausedPage(),
   };
 }
 

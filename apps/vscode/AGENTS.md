@@ -28,9 +28,14 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   (`piwi/statusChanged` still makes the extension read the status, the failures, the coverage and the MCP servers
   again.)
   ([Failures view](ARCHITECTURE.md#failures-view))
-- **`src/glue.ts`, `src/connect.ts`, `src/breakpoints.ts` and `src/send-listener.ts` use no VS Code API.** Put logic
-  that needs no editor there, so the unit tests (`npm run vscode:test`) cover it.
+- **`src/glue.ts`, `src/connect.ts`, `src/breakpoints.ts`, `src/send-listener.ts` and `src/run-control.ts` use no
+  VS Code API.** Put logic that needs no editor there, so the unit tests (`npm run vscode:test`) cover it.
   ([The pure half](ARCHITECTURE.md#the-pure-half))
+- **A run control names the stop it answers, and a line sent for a run is a line of the run's code.** Resume, Step,
+  Run to the cursor and Finish pass the stop's `since`; Run to the cursor and `piwi/setRunBreakpoints` map the editor's
+  lines back through `EditLog` (`runPlaces` for the breakpoints). Checked by `tests/run-control.test.ts`.
+  ([Run control](ARCHITECTURE.md#run-control); the service's side:
+  [Controls, breakpoints and the paused page](../../packages/editor/ARCHITECTURE.md#controls-breakpoints-and-the-paused-page))
 
 ### Editors and workspaces
 
@@ -45,6 +50,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A default keybinding uses a chord that VS Code's default keymap leaves free, and the JetBrains plugin binds the
   same chord.** Today: `ctrl+shift+alt` (`cmd` on macOS) with `r`, `f` and `k`. The letters each editor's keymaps
   already take, and the JetBrains conflicts, are in [Keybindings](ARCHITECTURE.md#keybindings).
+- **A run's controls are the exception: they take the debugger's keys, only while they apply and no debug session
+  runs** (`!inDebugMode` in `contributes.keybindings`). **Pause** has no default key: a key bound for as long as a
+  test runs takes one from the workbench. ([Keybindings](ARCHITECTURE.md#keybindings))
 - **One undo step per recording.** The first write of the block opens an undo stop and the later ones join it
   (`undoStopBefore: false`), so one Undo after Stop removes the block and its imports.
   ([Undo during a recording](ARCHITECTURE.md#undo-during-a-recording))
@@ -62,8 +70,18 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **Open in IDE never opens a file outside the workspace folders** (`resolveOpenFile` in `src/glue.ts`).
   ([Open in IDE](ARCHITECTURE.md#open-in-ide))
 - **The Send to editor endpoint listens on `127.0.0.1` only, with its token in `SecretStorage`** (`piwi.sendToken`,
-  `src/send-listener.ts`). Checked by `tests/send-listener.test.ts`.
+  `src/send-listener.ts`). It answers only a `Host` of `127.0.0.1:<port>` or `localhost:<port>`, and every answer to a
+  request carrying `x-piwi-editor-challenge`, whatever its route and status, carries `x-piwi-editor-proof`. Checked by
+  `tests/send-listener.test.ts`. ([Send to editor](ARCHITECTURE.md#send-to-editor))
+- **`GET /piwi/live` lists hubs only, never a run channel's token, and none in a remote window** (`liveHubsHere`).
+  Checked by `tests/send-listener.test.ts` ("… none of the run channels", "lists no hub in a remote window …").
   ([Send to editor](ARCHITECTURE.md#send-to-editor))
+  ([Send to editor](ARCHITECTURE.md#send-to-editor))
+- **Only the pairing Piwi Picker is given saves the listener's port** (`sendPairing`): a run's pairing takes any free
+  port while another window holds the saved one, and leaves it saved. Checked by `tests/send-listener.test.ts` ("keeps
+  the port Piwi Picker was given …"). ([Breakpoints](ARCHITECTURE.md#breakpoints))
+- **The paused page webview runs no script.** Its document takes images from `data:` only and its one style by nonce
+  (`pausedPageHtml` in `src/run-control.ts`). ([Run control](ARCHITECTURE.md#run-control))
 
 ## Workflow
 
@@ -105,7 +123,9 @@ npm run vscode:package            # dist/piwi.vsix
 - `src/recording.ts`: recording a test from the editor.
 - `src/send-listener.ts`: the Send to editor endpoint.
 - `src/breakpoints.ts`: the breakpoints a test run passes to the service.
-- `walkthrough/`, `media/`: the walkthrough's steps and the gutter icons.
+- `src/run-view.ts`: the run controls (the stops, their commands, the paused page); `src/run-control.ts`: their pure
+  half.
+- `walkthrough/`, `media/`: the walkthrough's steps, and the gutter icons and the execution point's arrow.
 - `scripts/`: the screenshots script, and the fixture project it shares with the JetBrains plugin.
 - `tests/`: the unit tests, `tests/integration/` and `tests/e2e/`.
 
@@ -117,7 +137,8 @@ npm run vscode:package            # dist/piwi.vsix
 - [Walkthrough](ARCHITECTURE.md#walkthrough), [Coverage marks](ARCHITECTURE.md#coverage-marks),
   [Failures view](ARCHITECTURE.md#failures-view), [Status bar](ARCHITECTURE.md#status-bar),
   [Testing view](ARCHITECTURE.md#testing-view): before changing what one of them shows.
-- [Runs](ARCHITECTURE.md#runs): run notifications, tasks, the test at the cursor, breakpoints.
+- [Runs](ARCHITECTURE.md#runs): run notifications, tasks, the test at the cursor, breakpoints, and the run control
+  (stops, Pause, Resume, the paused page).
 - [Open in IDE](ARCHITECTURE.md#open-in-ide), [Send to editor](ARCHITECTURE.md#send-to-editor) and
   [Connect](ARCHITECTURE.md#connect): the entry points from the dashboard, Piwi Picker and an instance.
 - [Recording](ARCHITECTURE.md#recording): recording a test, its quick fixes, a paused test's recording, undo.

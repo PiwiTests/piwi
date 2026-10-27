@@ -41,6 +41,8 @@ const bugLabel = document.getElementById('report-bug-label')!;
 const bugHint = document.getElementById('report-bug-hint')!;
 const replayBtn = document.getElementById('replay-bug') as HTMLButtonElement;
 const healthLine = document.getElementById('connection-health') as HTMLElement;
+const runsButton = document.getElementById('runs') as HTMLButtonElement;
+const runsHint = document.getElementById('runs-hint')!;
 /** The status line, filled only when a tool cannot run here: why, after a warning icon. */
 function showStatus(text: string): void {
   iconText(statusEl, 'alert', text);
@@ -103,6 +105,7 @@ const KEY_TO_ACTION_ID: Record<string, string> = {
   t: 'coverage-overlay',
   b: 'report-bug',
   r: 'replay-bug',
+  u: 'runs',
 };
 
 /**
@@ -180,9 +183,10 @@ document.addEventListener('keydown', (e) => {
   const target = e.target as HTMLElement | null;
   if (target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return;
   const id = KEY_TO_ACTION_ID[e.key.toLowerCase()];
-  if (!id) return;
+  const tile = id ? document.getElementById(id) : null;
+  if (!tile || tile.hidden) return;
   e.preventDefault();
-  document.getElementById(id)?.click();
+  tile.click();
 });
 
 const AUTO_OPTION_VALUE = '';
@@ -535,6 +539,29 @@ async function replayInOtherTab(tabId: number): Promise<boolean> {
   return bound?.replayId === state.id && bound.tabId !== tabId;
 }
 
+/**
+ * The Runs tile: shown, with the number of runs, while a hub of the paired editor answers. The worker finds the hubs
+ * through the pairing and keeps their connections (`background/run-hubs.ts`); the popup only asks it.
+ */
+async function showRunsTile(): Promise<void> {
+  const summary = (await chrome.runtime.sendMessage({ type: 'piwi-runs-summary' }).catch(() => null)) as {
+    connected?: boolean;
+    runs?: number;
+  } | null;
+  if (!summary?.connected) return;
+  const runs = summary.runs ?? 0;
+  runsHint.textContent = runs > 0 ? tn('popup_runsHint', runs) : t('popup_runsHintNone');
+  runsButton.hidden = false;
+}
+
+runsButton.addEventListener('click', () => {
+  // The worker brings the Runs window to the front, or opens it in a small window beside the test's.
+  void chrome.runtime
+    .sendMessage({ type: 'piwi-open-runs' })
+    .catch(() => undefined)
+    .then(() => window.close());
+});
+
 /** Offer a reload when the background worker predates this popup's build (see `shared/build-id.ts`). */
 async function showOutdatedWorkerNotice(): Promise<void> {
   if ((await workerState()) !== 'outdated') return;
@@ -569,3 +596,4 @@ void renderPickShortcutHint();
 void renderConnectionHealth().catch(() => undefined);
 void highlightActiveTool();
 void showOutdatedWorkerNotice();
+void showRunsTile();

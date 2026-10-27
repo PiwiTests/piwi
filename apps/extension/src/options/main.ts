@@ -1,5 +1,9 @@
-import { parsePairing } from '@piwitests/core/editor-send';
-import { editorOriginPattern, getEditorPairing, setEditorPairing } from '../shared/editor-pairing.js';
+import {
+  editorOriginPattern,
+  getEditorPairing,
+  parseEditorPairing,
+  setEditorPairing,
+} from '../shared/editor-pairing.js';
 import {
   CONNECTION_KEY,
   getConnectionSettings,
@@ -1209,7 +1213,8 @@ async function renderEditorPairing(): Promise<void> {
 }
 
 editorPairBtn.addEventListener('click', () => {
-  const pairing = parsePairing(editorAddressEl.value);
+  // On 127.0.0.1 whatever loopback name it was typed with: the origin granted is the one kept.
+  const pairing = parseEditorPairing(editorAddressEl.value);
   if (!pairing) {
     writeStatus(editorStatusEl, t('options_editorInvalid'), 'error');
     return;

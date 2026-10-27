@@ -4,11 +4,16 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.io.IOException
+import java.nio.file.FileSystems
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.PosixFileAttributes
+import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.attribute.UserPrincipal
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
@@ -865,6 +870,139 @@ object Glue {
         env["PIWI_DESKTOP_CONFIG"]?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
             ?: home?.let { Path.of(it, ".piwi", "desktop.json") }
 
+    /**
+     * A live editor service's hub for Piwi Picker, as `GET /api/piwi/live` lists it: the WebSocket's address and token,
+     * and the service (`LiveHub` in `@piwitests/core/run-hub`). The run channel its file also names is never listed.
+     */
+    data class LiveHub(
+        val url: String,
+        val token: String,
+        val pid: Long,
+        val version: String,
+        val client: String?,
+        val roots: List<String>,
+        val startedAt: String,
+    )
+
+    /** Where the editor services publish their discovery files: `PIWI_EDITORS_DIR`, else `~/.piwi/editors`. */
+    fun editorsDir(env: Map<String, String>, home: String?): Path? =
+        env["PIWI_EDITORS_DIR"]?.takeIf { it.isNotBlank() }?.let { runCatching { Path.of(it) }.getOrNull() }
+            ?: home?.let { Path.of(it, ".piwi", "editors") }
+
+    private val DISCOVERY_NAME = Regex("^([1-9]\\d{0,9})\\.json$")
+    private val HUB_URL = Regex("^ws://127\\.0\\.0\\.1:\\d{1,5}/[\\w/-]{0,64}$")
+    private val HUB_TOKEN = Regex("^[A-Za-z0-9_-]{16,256}$")
+
+    /** An editor service's discovery file: the process and the machine it names, and its hub, null when it names none. */
+    data class EditorDiscovery(val pid: Long, val host: String, val hub: LiveHub?)
+
+    /**
+     * An editor service's discovery file (`<pid>.json`), as `parseEditorDiscovery` in `@piwitests/core/editor-discovery`
+     * reads it; null when it is not one. Its hub is null when it names none this machine serves.
+     */
+    fun parseEditorDiscovery(text: String?): EditorDiscovery? {
+        val json = runCatching { JsonParser.parseString(text ?: return null) as? JsonObject }.getOrNull() ?: return null
+        fun string(o: JsonObject?, key: String, max: Int) = o?.get(key)
+            ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+            ?.takeIf { it.isNotEmpty() && it.length <= max && !it.contains('\u0000') }
+        val named = json.get("pid")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asDouble ?: return null
+        if (named < 1 || named > Long.MAX_VALUE.toDouble() || named != Math.floor(named)) return null
+        val pid = named.toLong()
+        val host = string(json, "host", 255) ?: ""
+        val hub = json.get("hub") as? JsonObject
+        val url = string(hub, "url", 200)?.takeIf { HUB_URL.matches(it) }
+        val token = string(hub, "token", 256)?.takeIf { HUB_TOKEN.matches(it) }
+        if (url == null || token == null) return EditorDiscovery(pid, host, null)
+        val roots = (json.get("roots") as? JsonArray)?.take(64)?.mapNotNull { root ->
+            root.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+                ?.takeIf { it.isNotEmpty() && it.length <= 4096 && !it.contains('\u0000') }
+        }.orEmpty()
+        val live = LiveHub(
+            url = url,
+            token = token,
+            pid = pid,
+            version = string(json, "version", 64) ?: "",
+            client = string(json, "client", 200),
+            roots = roots,
+            startedAt = string(json, "startedAt", 64) ?: "",
+        )
+        return EditorDiscovery(pid, host, live)
+    }
+
+    /** The hub of an editor service's discovery file; null when the file names no hub, or another process than `pid`. */
+    fun parseLiveHub(text: String?, pid: Long): LiveHub? = parseEditorDiscovery(text)?.takeIf { it.pid == pid }?.hub
+
+    private val OTHERS_ACCESS = setOf(
+        PosixFilePermission.GROUP_READ, PosixFilePermission.GROUP_WRITE, PosixFilePermission.GROUP_EXECUTE,
+        PosixFilePermission.OTHERS_READ, PosixFilePermission.OTHERS_WRITE, PosixFilePermission.OTHERS_EXECUTE,
+    )
+
+    /** The user this process runs as, where the file system names owners (POSIX); null elsewhere. */
+    private val currentUser: UserPrincipal? by lazy {
+        runCatching {
+            FileSystems.getDefault().userPrincipalLookupService.lookupPrincipalByName(System.getProperty("user.name"))
+        }.getOrNull()
+    }
+
+    /**
+     * Whether `path` is, not through a link, a folder (`folder`) this user owns that no other user can enter, or a
+     * file this user owns. Where the file system names no owners (Windows), whether it is such a folder or file.
+     */
+    private fun ownEntry(path: Path, folder: Boolean): Boolean {
+        val posix = runCatching {
+            Files.readAttributes(path, PosixFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        }.getOrNull()
+        if (posix == null) {
+            val basic = runCatching {
+                Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            }.getOrNull() ?: return false
+            return if (folder) basic.isDirectory else basic.isRegularFile
+        }
+        if (if (folder) !posix.isDirectory else !posix.isRegularFile) return false
+        if (posix.owner() != (currentUser ?: return false)) return false
+        return !folder || posix.permissions().none { it in OTHERS_ACCESS }
+    }
+
+    /**
+     * The hubs of the editor services whose discovery files `dir` holds and whose process runs, oldest first, as
+     * `readLiveEditors` in `@piwitests/core/editor-discovery` lists them: nothing from a folder that is a link,
+     * another user's or one other users can enter; only the files this user owns are read; a file that reads as a
+     * service's file of `host` (this machine, in any case) naming the process its name names is deleted when that
+     * process is gone; any other file, another machine's included, is skipped and left as it is.
+     */
+    fun liveHubs(dir: Path?, host: String, alive: (Long) -> Boolean): List<LiveHub> {
+        if (dir == null || !ownEntry(dir, folder = true)) return emptyList()
+        val names = runCatching { Files.list(dir).use { entries -> entries.map { it.fileName.toString() }.toList() } }
+            .getOrNull().orEmpty()
+        return names.mapNotNull { name ->
+            val pid = DISCOVERY_NAME.find(name)?.groupValues?.get(1)?.toLongOrNull() ?: return@mapNotNull null
+            val file = dir.resolve(name)
+            if (!ownEntry(file, folder = false)) return@mapNotNull null
+            val discovery = parseEditorDiscovery(runCatching { Files.readString(file) }.getOrNull())
+            if (discovery?.pid != pid || !discovery.host.equals(host, ignoreCase = true)) return@mapNotNull null
+            if (!alive(pid)) {
+                runCatching { Files.deleteIfExists(file) }
+                return@mapNotNull null
+            }
+            discovery.hub
+        }.sortedWith(compareBy<LiveHub>({ it.startedAt }, { it.pid }))
+    }
+
+    /**
+     * This machine's name, as the editor service writes it in its discovery file (Node's `os.hostname()`, the
+     * system's `gethostname`): the kernel's on Linux, else what `hostname` prints. Read once, off the event thread.
+     */
+    val machineName: String by lazy {
+        runCatching { Files.readString(Path.of("/proc/sys/kernel/hostname")).trim() }.getOrNull()?.ifEmpty { null }
+            ?: runCatching {
+                val process = ProcessBuilder("hostname").redirectErrorStream(true).start()
+                val out = process.inputStream.bufferedReader().readText().trim()
+                if (process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS) && process.exitValue() == 0) out else null
+            }.getOrNull()?.ifEmpty { null }
+            ?: runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrNull()
+            ?: ""
+    }
+
     /** The running desktop app, from its discovery file's text; null when it is not one. */
     fun parseDesktopDiscovery(text: String?): DesktopDiscovery? {
         val json = runCatching { JsonParser.parseString(text ?: return null) as? JsonObject }.getOrNull() ?: return null
@@ -1100,8 +1238,11 @@ object Glue {
         )
     }
 
-    /** A line breakpoint of the IDE: its file's path on disk and its 0-based line. */
-    data class BreakpointAt(val path: String, val line: Int)
+    /** A line breakpoint of the IDE: its file's path on disk, its 0-based line and the breakpoint, which a move keeps. */
+    data class BreakpointAt(val path: String, val line: Int, val key: Any? = null)
+
+    /** One of the IDE's breakpoints a run pauses at: its place as the service takes it, and the IDE's breakpoint. */
+    data class RunBreakpoint(val place: EditorBreakpoint, val key: Any? = null)
 
     private val SCRIPT_FILE = Regex("\\.[cm]?[jt]sx?$", RegexOption.IGNORE_CASE)
 
@@ -1109,14 +1250,290 @@ object Glue {
      * The breakpoints a run started from Piwi pauses at: those in JavaScript or TypeScript files under one of `roots`
      * (the Playwright configs' folders), as the service takes them.
      */
-    fun runBreakpoints(breakpoints: List<BreakpointAt>, roots: List<String>): List<EditorBreakpoint> {
+    fun runBreakpoints(breakpoints: List<BreakpointAt>, roots: List<String>): List<RunBreakpoint> {
         val rootPaths = roots.mapNotNull { runCatching { Path.of(it).toAbsolutePath().normalize() }.getOrNull() }
         return breakpoints.mapNotNull { b ->
             val file = runCatching { Path.of(b.path).toAbsolutePath().normalize() }.getOrNull() ?: return@mapNotNull null
             val under = rootPaths.any { root -> file != root && file.startsWith(root) }
             if (b.line < 0 || !SCRIPT_FILE.containsMatchIn(file.fileName?.toString() ?: "") || !under) null
-            else EditorBreakpoint(file.toUri().toString(), b.line)
+            else RunBreakpoint(EditorBreakpoint(file.toUri().toString(), b.line), b.key)
         }
+    }
+
+    /**
+     * A change of a document's lines: its old lines `start` to `oldEnd` became the lines `start` to `newEnd`. `first`
+     * says the new first line goes on the old first one (text before the change stayed on it), `last` that the new last
+     * line goes on the old last one (text after the change stayed on it).
+     */
+    data class LineEdit(val start: Int, val oldEnd: Int, val newEnd: Int, val first: Boolean, val last: Boolean)
+
+    /**
+     * The lines a change moves, from where it started (`startLine`, `startColumn`) to the line it ended on (`endLine`)
+     * in the text before, putting `text` there; null for a change within one line. `lineAfter` reads a line of the
+     * document after the change: the text that stayed around it tells which old lines go on.
+     */
+    fun lineEdit(startLine: Int, startColumn: Int, endLine: Int, text: CharSequence, lineAfter: (Int) -> String?): LineEdit? {
+        val added = text.count { it == '\n' }
+        if (added == 0 && startLine == endLine) return null
+        val newEnd = startLine + added
+        // Where the text after the change starts on the new last line.
+        val after = if (added > 0) text.length - text.lastIndexOf('\n') - 1 else startColumn + text.length
+        return LineEdit(
+            startLine,
+            endLine,
+            newEnd,
+            first = lineAfter(startLine)?.take(startColumn)?.isNotBlank() == true,
+            last = lineAfter(newEnd)?.let { if (after < it.length) it.substring(after) else "" }?.isNotBlank() == true,
+        )
+    }
+
+    private fun forwardLine(edit: LineEdit, line: Int): Int = when {
+        line < edit.start -> line
+        line > edit.oldEnd -> line + edit.newEnd - edit.oldEnd
+        line == edit.start && edit.first -> edit.start
+        line == edit.oldEnd && edit.last -> edit.newEnd
+        else -> edit.start
+    }
+
+    private fun backLine(edit: LineEdit, line: Int): Int? = when {
+        line < edit.start -> line
+        line > edit.newEnd -> line - edit.newEnd + edit.oldEnd
+        line == edit.start && edit.first -> edit.start
+        line == edit.newEnd && edit.last -> edit.oldEnd
+        else -> null
+    }
+
+    /** What names a file in the edits: its normalized path, which two spellings of its URI share. */
+    fun fileKey(uri: String?): String? = uri?.let { runCatching { Path.of(java.net.URI(it)).normalize().toString() }.getOrNull() ?: it }
+
+    /**
+     * The edits that moved the documents' lines, in order, while a run is live: a run's code is the documents as they
+     * stood when it started (`now`), and a line goes between it and a document as it stands through the edits since.
+     * Not thread-safe: its owner guards it.
+     */
+    class EditLog {
+        private var at = 0
+        private val edits = HashMap<String, MutableList<Pair<Int, LineEdit>>>()
+
+        /** Where the log stands: a run that starts now maps its lines from here. */
+        fun now(): Int = at
+
+        fun add(file: String, edit: LineEdit) {
+            edits.getOrPut(file) { mutableListOf() } += ++at to edit
+        }
+
+        /** A line of the file as it stood at `since`, as it stands now: where its text went, when it was removed. */
+        fun forward(file: String?, line: Int, since: Int): Int =
+            file?.let { edits[it] }.orEmpty().fold(line) { moved, (at, edit) -> if (at > since) forwardLine(edit, moved) else moved }
+
+        /** A line of the file as it stands, as it stood at `since`; null for a line made since or an edit leaves unclear. */
+        fun back(file: String?, line: Int, since: Int): Int? {
+            var found = line
+            for ((at, edit) in file?.let { edits[it] }.orEmpty().asReversed()) {
+                if (at <= since) break
+                found = backLine(edit, found) ?: return null
+            }
+            return found
+        }
+
+        /** Drop the edits made before `since`, the start of the oldest run kept; all of them with no run. */
+        fun forget(since: Int) {
+            edits.values.forEach { list -> list.removeAll { it.first <= since } }
+            edits.values.removeAll { it.isEmpty() }
+        }
+    }
+
+    /** The sessions kept, by ref, once `session` is heard: the latest of each run, one that ended dropped. */
+    fun withSession(sessions: Map<String, RunSession>, session: RunSession): Map<String, RunSession> {
+        val ref = session.ref ?: return sessions
+        return if (session.ended) sessions - ref else sessions + (ref to session)
+    }
+
+    /** A worker stopped: its run, the worker, where it stands and the test it runs. */
+    data class ShownStop(val ref: String, val worker: Int, val stop: RunStop, val test: RunTest?)
+
+    /** Every stopped worker of the sessions, in their order. */
+    fun stopsOf(sessions: Map<String, RunSession>): List<ShownStop> = sessions.values.flatMap { session ->
+        session.workers.orEmpty().mapNotNull { w -> w.stop?.let { ShownStop(session.ref ?: "", w.worker, it, w.test) } }
+    }
+
+    /** What tells a stop from another: its run, its worker and when it stopped. */
+    fun stopKey(stop: ShownStop): String = "${stop.ref}\u0000${stop.worker}\u0000${stop.stop.since}"
+
+    /**
+     * The line above a stop: what is about to run, `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`,
+     * in plain text: the gutter's arrow marks the stop.
+     */
+    fun pausedText(stop: RunStop, test: RunTest?): String {
+        val attempt = if (test != null && test.retry > 0) " · attempt ${test.retry + 1}" else ""
+        return "Paused · ${stop.title.orEmpty()}$attempt"
+    }
+
+    /** A stop's place, as the choice among several and the paused page name it: `checkout.page.ts:5`. */
+    fun stopPlace(stop: RunStop): String {
+        val path = runCatching { Path.of(java.net.URI(stop.uri ?: "")) }.getOrNull()
+        return "${path?.fileName ?: stop.uri.orEmpty().substringAfterLast('/')}:${stop.line + 1}"
+    }
+
+    /** A stop as the choice among several names it: what it runs, its test, its place and its worker. */
+    fun stopLabel(stop: ShownStop): String {
+        val test = stop.test?.title?.joinToString(" › ")?.let { "$it · " }.orEmpty()
+        return "${pausedText(stop.stop, stop.test)} · $test${stopPlace(stop.stop)} · worker ${stop.worker}"
+    }
+
+    /**
+     * What the controls offer: Stop while a run is live (`active`), Pause while a worker runs a test or is between
+     * tests and no Pause reached it (`pausable`), `pausing` once one did, and Resume, Step, Run to Caret and Finish
+     * while a worker is stopped.
+     */
+    data class RunControls(val active: Boolean, val pausable: Boolean, val pausing: Boolean, val stopped: Boolean)
+
+    fun runControls(sessions: Map<String, RunSession>): RunControls {
+        val workers = sessions.values.flatMap { it.workers.orEmpty() }
+        return RunControls(
+            active = sessions.isNotEmpty(),
+            pausable = workers.any { it.state != "stopped" && !it.pausing && it.test?.cannotPause == null },
+            pausing = workers.any { it.pausing },
+            stopped = workers.any { it.state == "stopped" },
+        )
+    }
+
+    /** The status bar's text while a run is stopped or pausing; null otherwise, the run's progress showing. */
+    fun runControlStatus(controls: RunControls, stops: List<ShownStop>): String? = when {
+        stops.size == 1 -> "Piwi: paused · ${stopPlace(stops.single().stop)}"
+        stops.size > 1 -> "Piwi: ${stops.size} tests paused"
+        controls.pausing -> "Piwi: pausing…"
+        else -> null
+    }
+
+    /** Whether two URIs name the same file. */
+    private fun sameFile(a: String?, b: String?): Boolean {
+        if (a == null || b == null) return false
+        if (a == b) return true
+        val paths = runCatching { Path.of(java.net.URI(a)).normalize() to Path.of(java.net.URI(b)).normalize() }.getOrNull()
+        return paths != null && paths.first == paths.second
+    }
+
+    /** Whether a stop is at a line of the file at `uri`. */
+    fun stopIsAt(stop: ShownStop, uri: String?, line: Int): Boolean = stop.stop.line == line && sameFile(stop.stop.uri, uri)
+
+    /**
+     * The stops a control at the caret may act on: every one when there is one or none; with several, those stopped on
+     * the caret's line, else all of them, to choose from.
+     */
+    fun stopsFor(stops: List<ShownStop>, uri: String?, line: Int?): List<ShownStop> {
+        if (stops.size < 2) return stops
+        val here = if (line == null) emptyList() else stops.filter { stopIsAt(it, uri, line) }
+        return here.ifEmpty { stops }
+    }
+
+    /** The controls offered above a stop, in order. */
+    enum class StopControl(val label: String, val action: String) {
+        RESUME("Resume", "resume"),
+        STEP("Step", "step"),
+        RUN_TO_CARET("Run to Caret", "run-to"),
+        FINISH("Finish", "finish"),
+    }
+
+    /** The runs whose breakpoints the plugin remembers, at most: those it started and those it heard of. */
+    private const val MAX_BREAKPOINT_RUNS = 50
+
+    /**
+     * What a run was given of the IDE's breakpoints: where the edit log stood when it started (`since`), the line of
+     * each breakpoint in its code by the IDE's breakpoint, and the places last sent (null before any).
+     */
+    class RunBreakpoints(val since: Int, val lines: MutableMap<Any, EditorBreakpoint>, var sent: String?)
+
+    /** A run started at `since` with `breakpoints`; one heard of but not started here was given none Piwi knows. */
+    fun runStarted(since: Int, breakpoints: List<RunBreakpoint>?): RunBreakpoints = RunBreakpoints(
+        since,
+        breakpoints.orEmpty().mapNotNull { b -> b.key?.let { it to b.place } }.toMap(HashMap()),
+        breakpoints?.let { list -> breakpointsText(list.map { it.place }) },
+    )
+
+    /** Keep what a run was given, the oldest of more than [MAX_BREAKPOINT_RUNS] runs forgotten. */
+    fun <T> remember(runs: LinkedHashMap<String, T>, ref: String, value: T) {
+        runs.remove(ref)
+        runs[ref] = value
+        while (runs.size > MAX_BREAKPOINT_RUNS) runs.remove(runs.keys.first())
+    }
+
+    private fun breakpointsText(places: List<EditorBreakpoint>) = places.joinToString("\n") { "${it.line} ${it.uri}" }
+
+    /**
+     * The IDE's breakpoints as lines of a run's code: one the run was given keeps its line while it only moved with the
+     * edits since (`forward` brings that line to where it stands); another, or one moved otherwise (dragged), is its line
+     * mapped back through the edits, left out on a line made since, which the run's code lacks.
+     */
+    fun runPlaces(run: RunBreakpoints, breakpoints: List<RunBreakpoint>, edits: EditLog): List<EditorBreakpoint> =
+        breakpoints.mapNotNull { b ->
+            val given = b.key?.let { run.lines[it] }
+            if (given != null && given.uri == b.place.uri && edits.forward(fileKey(given.uri), given.line, run.since) == b.place.line) {
+                return@mapNotNull given
+            }
+            val line = edits.back(fileKey(b.place.uri), b.place.line, run.since) ?: return@mapNotNull null
+            EditorBreakpoint(b.place.uri, line).also { place -> b.key?.let { run.lines[it] = place } }
+        }
+
+    /**
+     * The `piwi/setRunBreakpoints` the live runs need for the IDE's `breakpoints`: one per run whose places
+     * ([runPlaces]) differ from those it has (`runs`, by ref: those its command started with, else the last sent), which
+     * `runs` then records. A run heard of without its start maps from now.
+     */
+    fun breakpointUpdates(
+        sessions: Map<String, RunSession>,
+        breakpoints: List<RunBreakpoint>,
+        runs: LinkedHashMap<String, RunBreakpoints>,
+        edits: EditLog,
+    ): List<SetRunBreakpointsParams> = sessions.keys.mapNotNull { ref ->
+        val run = runs[ref] ?: runStarted(edits.now(), null).also { remember(runs, ref, it) }
+        val places = runPlaces(run, breakpoints, edits)
+        val text = breakpointsText(places)
+        if (run.sent == text) return@mapNotNull null
+        run.sent = text
+        SetRunBreakpointsParams(ref, places)
+    }
+
+    /** The longest paused page the plugin decodes, in base64 characters: 12 MB of JPEG. */
+    const val MAX_IMAGE_DATA = 16 * 1024 * 1024
+
+    /** The widest and tallest paused page shown, and the most pixels: a full-page image of a long page is refused. */
+    private const val MAX_IMAGE_SIDE = 16_384
+    private const val MAX_IMAGE_PIXELS = 40_000_000L
+
+    /** A JPEG of a stopped page, decoded from base64, of [MAX_IMAGE_DATA] at most; null for anything else. */
+    fun pausedImageBytes(image: PausedImage?): ByteArray? {
+        if (image?.mime != "image/jpeg") return null
+        val data = image.data ?: return null
+        if (data.length > MAX_IMAGE_DATA) return null
+        return runCatching { java.util.Base64.getDecoder().decode(data) }.getOrNull()?.takeIf { it.isNotEmpty() }
+    }
+
+    /** Whether an image this wide and tall is drawn: decoding one larger holds too much memory. */
+    fun decodableImage(width: Int, height: Int): Boolean =
+        width in 1..MAX_IMAGE_SIDE && height in 1..MAX_IMAGE_SIDE && width.toLong() * height <= MAX_IMAGE_PIXELS
+
+    /** The request header carrying Piwi Picker's challenge (`@piwitests/core/editor-send`). */
+    const val EDITOR_CHALLENGE_HEADER = "x-piwi-editor-challenge"
+
+    /** The response header carrying the proof that answers it. */
+    const val EDITOR_PROOF_HEADER = "x-piwi-editor-proof"
+
+    private val EDITOR_CHALLENGE = Regex("^[0-9a-f]{32,128}$")
+
+    /** Whether `value` is a challenge: 32 to 128 lowercase hex characters. */
+    fun isEditorChallenge(value: String?): Boolean = value != null && EDITOR_CHALLENGE.matches(value)
+
+    /**
+     * The proof that this IDE holds the pairing's `token`, for the loopback `port` it answers on, as
+     * `editorTokenProof` in `@piwitests/core/editor-send` makes it: HMAC-SHA256 keyed by the token over
+     * `piwi-editor-proof:<port>:<challenge>`, lowercase hex.
+     */
+    fun editorTokenProof(token: String, port: Int, challenge: String): String {
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(token.toByteArray(Charsets.UTF_8), "HmacSHA256"))
+        return mac.doFinal("piwi-editor-proof:$port:$challenge".toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
     /** Whether an `Authorization` header carries the token, compared in constant time. */

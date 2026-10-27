@@ -149,9 +149,11 @@ export function timelineHookColors(status: string): (typeof TIMELINE_HOOK_COLORS
   return status === 'failed' ? TIMELINE_HOOK_COLORS.failed : TIMELINE_HOOK_COLORS.passed;
 }
 
-/** What a stop at Piwi's pause bar was, by its reason: `Paused at a breakpoint`. */
+/** What a stop at Piwi's pause bar or in the editor was, by its reason: `Paused at a breakpoint`. */
 export function pauseReasonText(reason: string | null | undefined): string {
   if (reason === 'step') return 'Paused after Step';
+  if (reason === 'pause') return 'Paused from the editor';
+  if (reason === 'run-to') return 'Paused at the line run to';
   if (reason === 'page-pause') return 'Paused at page.pause()';
   return 'Paused at a breakpoint';
 }

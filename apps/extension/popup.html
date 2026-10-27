@@ -238,6 +238,23 @@
       .tile.bug:focus-visible {
         border-color: var(--bug);
       }
+      /* The editor's runs: shown while the paired editor shares them. */
+      .tile.runs {
+        border-color: rgb(3 105 161 / 0.5);
+        background: linear-gradient(120deg, rgb(3 105 161 / 0.1), rgb(124 58 237 / 0.08));
+      }
+      .tile.runs svg {
+        color: #0369a1;
+      }
+      @media (prefers-color-scheme: dark) {
+        .tile.runs svg {
+          color: #7dd3fc;
+        }
+      }
+      .tile.runs:hover,
+      .tile.runs:focus-visible {
+        border-color: #0369a1;
+      }
       /* Tested elements needs a Piwi instance: set apart from the standalone tools. */
       .tile.feature {
         margin-bottom: 6px;
@@ -493,6 +510,7 @@
       <!-- Whether the connected instance answered its last request, and when: filled from chrome.storage.local. -->
       <p id="connection-health" class="connection-health" role="status" hidden></p>
 
+
       <div class="grid actions">
         <button id="record" class="tile" type="button" aria-keyshortcuts="1">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -613,6 +631,18 @@
             <span class="hint" data-i18n="popup_testFunctionsHint">Check the catalog here</span>
           </span>
           <kbd class="key" aria-hidden="true">7</kbd>
+        </button>
+        <!-- The editor's runs, in a window of their own: shown, in the grid's free cell, while a hub of the paired
+             editor answers. -->
+        <button id="runs" class="tile compact runs" type="button" aria-keyshortcuts="U" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M8.5 5.5v13M15.5 5.5v13" />
+          </svg>
+          <span class="text">
+            <span class="label" data-i18n="popup_runs">Runs</span>
+            <span class="hint" id="runs-hint" data-i18n="popup_runsHintNone">Pause, step, resume</span>
+          </span>
+          <kbd class="key" aria-hidden="true">U</kbd>
         </button>
       </div>
 

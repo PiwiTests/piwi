@@ -27,6 +27,7 @@ does with it. It is reference material: open the section for the area you change
   - [Commands and notifications](#commands-and-notifications)
   - [Running the test at the caret](#running-the-test-at-the-caret)
   - [Breakpoints](#breakpoints)
+  - [Run control](#run-control)
 - [Finding Playwright configs](#finding-playwright-configs)
   - [First-run notification](#first-run-notification)
 - [Recording](#recording)
@@ -117,7 +118,7 @@ run or believe what the repository holds. A supported file opened meanwhile says
   (deprecated, then removed by 2026.2). Every status, Code Vision, gutter and tool-window answer depends on it.
 - **Notifications.** `PiwiLsp4jClient` receives the service's own notifications (`piwi/statusChanged`,
   `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/coverageChanged`, `piwi/recordingChanged`,
-  `piwi/recordRequested`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`).
+  `piwi/recordRequested`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/runSessionChanged`).
 - **The Language Services widget.** `createLspServerWidgetItem` gives the service's entry Piwi's icon and the gear that
   opens the settings.
 
@@ -290,7 +291,9 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 - not connected: **Connect**;
 - the service cannot start: the Node.js settings;
 - the service has not started yet: **Settings**;
-- while a recording runs: going to its block, and its controls.
+- while a recording runs: going to its block, and its controls;
+- while a run is live: its controls ([Run control](#run-control)). The item reads `Piwi: paused · checkout.page.ts:12`
+  while a test is stopped (`Glue.runControlStatus`).
 
 Then come the registered actions, by id: Re-run the Failing Tests, Open the Failures (the tool window), Open the Latest
 Run in the Dashboard, Open in Dashboard, Compare With…, Run the Test at the Caret, Record Here, Refresh, Connect and
@@ -312,7 +315,9 @@ Playwright run configuration instead of a console (`PiwiPlaywrightRunner.kt`):
 
 - its arguments go in `cliOptions`, with the command's environment and the config's folder;
 - the IDE gives it the test tree, Debug and Rerun Failed Tests;
-- its end is sent as `piwi/commandEnded`.
+- each run of the configuration is followed (`PiwiRunSessions.followRunner`, `ExecutionManager.EXECUTION_TOPIC`), its
+  Rerun, Rerun Failed Tests (a `WrappingRunConfiguration` of it) and Debug included: Stop ends its process, and its end
+  is sent as `piwi/commandEnded`.
 
 The IDE adds its own reporter with `PW_TEST_REPORTER`, which Playwright runs beside the config's, so the Piwi reporter
 still reports.
@@ -325,8 +330,9 @@ other command, an IDE without the runner, or a run the runner does not take, run
 
 `PiwiCommands.run` runs a command in the Run tool window:
 
-- its **Rerun** (`RunContentExecutor.withRerun`) stops the command if it runs and starts it again with the same
-  environment;
+- its **Rerun** (`RunContentExecutor.withRerun`) stops the command if it runs, and starts it again with the same
+  environment once its process ended and the service heard it (`piwi/commandEnded`), so the rerun's workers start a
+  session of their own;
 - `RunOutputLinks` (`Glue.fileLinks`) links the script paths the output names relative to the command's folder to their
   line; the IDE's console links the absolute ones;
 - for a test run (`RunCommand.ref`), a `ProcessListener` sends `piwi/commandEnded` with the exit code when the process
@@ -369,12 +375,76 @@ and **Run Selection…**. The breakpoints come from `PiwiProjectService.breakpoi
 
 The checkbox under **Settings → Tools → Piwi** (`PiwiLocalSettings.breakpoints`, on this machine only) turns them off.
 
-When the command carries `PIWI_PAUSE_AT`, or says the run pauses at a `page.pause()` (`RunCommand.pauses`),
-`PiwiCommands.startRun` adds `PIWI_EDITOR_SEND`: the pairing address `PiwiSendHandler` serves, with its token from
-`PasswordSafe` (created when missing). `startRun` also shows `RunCommand.notice` (a reporter too old for breakpoints)
-once, as a warning balloon. What the service does with the breakpoints:
-[Breakpoints and picked locators](../../packages/editor/ARCHITECTURE.md#breakpoints-and-picked-locators) in the editor
-service's reference.
+When the command carries `PIWI_PAUSE_AT` or `PIWI_RUN_CHANNEL` (a run the IDE or Piwi Picker can pause), or says the
+run pauses at a `page.pause()` (`RunCommand.pauses`), `PiwiCommands.startRun` adds `PIWI_EDITOR_SEND`: the pairing
+address `PiwiSendHandler` serves, with its token from `PasswordSafe` (created when missing). `startRun` also shows
+`RunCommand.notice` (a reporter too old for breakpoints) once, as a warning balloon. What the service does with the
+breakpoints: [Breakpoints and picked locators](../../packages/editor/ARCHITECTURE.md#breakpoints-and-picked-locators)
+in the editor service's reference.
+
+### Run control
+
+`PiwiRunControl.kt` shows and steers the runs started here (`PiwiRunSessions`), with Piwi's own actions and no debug
+session. The initialization options say so (`runControl`). What the service does:
+[Run control](../../packages/editor/ARCHITECTURE.md#run-control) in the editor service's reference.
+
+**Sessions.** The plugin keeps the latest `piwi/runSessionChanged` of each ref (`PiwiLsp4jClient.runSessionChanged`,
+`Glue.withSession`) until one says `ended`, or the service's process ends (`watch`, from
+`PiwiLspServerDescriptor.startServerProcess`).
+
+**A stop.** A stop opens its file at its line once (`Glue.stopKey`), at the line it stands on now. It is drawn as the
+execution point:
+
+- a range highlighter on the document's markup model in `PIWI_EXECUTION_POINT` (**Line a run is stopped at** in
+  `PiwiColorSettingsPage.kt`, falling back on `DebuggerColors.EXECUTIONPOINT_ATTRIBUTES`), with
+  `AllIcons.Debugger.NextStatement` in the gutter, whose click and right-click list the stop's controls
+  (`stopActions`);
+- a block inlay above the line in each editor of the file (`StopInlay`, added again in an editor opened later:
+  `EditorFactoryListener`): `Glue.pausedText` (`Paused · <title> · attempt N`, the attempt on a retry only), then
+  **Resume**, **Step**, **Run to Caret** and **Finish** as links. An `EditorMouseListener` on the multicaster clicks
+  them in the editors of its own project (`StopInlay.controlAt`, the hand cursor over one).
+
+A stop in a file the VFS has not loaded is looked for on disk off the event thread, once
+(`refreshAndFindFileByNioFile`); its Paused Page shows meanwhile.
+
+**Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when
+first heard). `Glue.EditLog` keeps the edits that move lines while a run is live or starting (a `DocumentListener` on
+the multicaster, `Glue.lineEdit`). They bring a stop to the line it stands on now (the mark, an inlay drawn later, the
+caret's match, `Glue.stopsFor`), and the caret's line back to the run's for Run to Caret, which is refused on a line
+written since.
+
+**The actions** (`RunControlAction`): `Piwi.PauseRun`, `Piwi.ResumeRun`, `Piwi.StepRun`, `Piwi.RunToCaret`,
+`Piwi.FinishRun`, `Piwi.ShowPausedPage` and `Piwi.StopRun`.
+
+- They are under **Tools → Piwi**, and first in the status bar item's menu while a run is live; the item reads
+  `Piwi: paused · checkout.page.ts:12` while one is stopped (`Glue.runControlStatus`).
+- They are enabled only while they apply (`Glue.runControls`), and act on the stop at the caret's line, else the only
+  one, else one chosen in a popup (`Glue.stopsFor`).
+- They send `piwi/runControl` on a pooled thread, naming the stop they answer (`since`); an answer with `ok: false` is a
+  balloon.
+- **Pause the Run** pauses every run of the project. **Stop the Run** ends the process of the ref (`track`, from
+  `PiwiCommands.run` and the IDE's Playwright runner). The Run tool window's own toolbar (`RunContentExecutor`'s Rerun,
+  Stop and Close) takes no other action.
+
+**Shortcuts.** The actions use the debugger actions' shortcuts, in every keymap (`use-shortcut-of`): Pause and Resume
+`Resume`'s (`F9` in the default keymap), Step `StepOver`'s, Run to Caret `RunToCursor`'s, Finish `StepOut`'s. They are
+enabled only while they apply, and from the keyboard only while no debug session runs (`ActionPlaces.KEYBOARD_SHORTCUT`,
+`XDebuggerManager.debugSessions`), so the debugger keeps its keys. While a run is live, `PiwiRunActionPromoter` (an
+`ActionPromoter`) puts them first among the actions a key runs: a keymap that gives the key to another action too (the
+VSCode keymaps' `F5`, `Debug`; NetBeans' `F4`, `EditSource`) runs Piwi's while it applies, the other once it does not.
+
+**The paused page.** A stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`, at
+most `Glue.MAX_IMAGE_DATA`, decoded only within `Glue.decodableImage`) in the **Paused Page** tab of the Piwi tool
+window, again at each such stop.
+
+**Breakpoints during a run.** An `XBreakpointListener` sends the breakpoints `PiwiProjectService.breakpoints` gives to
+each live run 100 ms after a burst of changes, and the settings page does when the breakpoints checkbox changes. They go
+as lines of the run's code (`Glue.runPlaces`): a breakpoint the run was given, known by the `XLineBreakpoint` itself,
+keeps its line while it only moved with the edits (`XLineBreakpointImpl.updatePosition` firing `breakpointChanged`);
+one added or dragged is mapped back through them. They go only to a run whose places differ from those its command
+started with or was last sent (`Glue.breakpointUpdates`, `PiwiCommands.startRun` recording the first).
+
+The run control's calls of the service go through `RunRemote`, which `PiwiRunControlTest` replaces.
 
 ## Finding Playwright configs
 
@@ -496,8 +566,33 @@ meanwhile included. `PiwiRecordingTest` drives it with synthetic updates, the ca
 from `PasswordSafe`. **Pair with Piwi Picker** copies the pairing address. The handler mirrors
 `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`).
 
-**Threads.** Each request is served on a pooled thread, where the token, the file and its document are read: the
-built-in server's I/O thread touches neither the password safe nor the disk. Only the writes run on the event thread.
+**Threads.** A preflight without a challenge is answered on the I/O thread. Every other request is served on a pooled
+thread, where the token, the file and its document are read: the built-in server's I/O thread touches neither the
+password safe nor the disk. Only the writes run on the event thread.
+
+**Who gets an answer.** `isOriginAllowed` allows an extension's origin on `/api/piwi/send` and `/api/piwi/live`, which
+the token authenticates, and leaves the platform's `isAccessible` its check of `Host`, so a page reached under another
+name than this machine's is refused. Every answer to a request carrying `x-piwi-editor-challenge`
+(`Glue.isEditorChallenge`), whatever its path and status, the preflight and the 401 included, carries
+`x-piwi-editor-proof` (`Glue.editorTokenProof`, mirroring `@piwitests/core/editor-send`, for the port the request
+reached). So Piwi Picker sends the token only to an IDE that holds it. The CORS headers allow the challenge header and
+expose the proof's.
+
+**The live hubs.** With the same token and CORS rules (an extension's origin alone is named), `GET /api/piwi/live`
+answers `{ hubs }` on a pooled thread: the hub of every editor service running on the machine, every IDE's and
+project's, read at each request from their discovery files (`Glue.liveHubs`, in `PIWI_EDITORS_DIR` or
+`~/.piwi/editors`: `Glue.editorsDir`). `Glue.liveHubs` reads as the service's own reader does:
+
+- nothing from a folder that is a link, another user's, or one other users can enter, and only the files this user
+  owns, not links;
+- a file that reads as a discovery file of this machine (`Glue.machineName`, in any case) naming the process its file
+  name names is deleted when `ProcessHandle` finds that process gone; any other file is skipped and left;
+- `Glue.parseEditorDiscovery` mirrors `@piwitests/core/editor-discovery`, and keeps the WebSocket's address and token,
+  the pid, version, client, workspace folders and start, never the run channel's token.
+
+A request without the token is a 401; one whose token cannot be read, or whose folder cannot be read, a 500. How the
+service writes the files: [The discovery file](../../packages/editor/ARCHITECTURE.md#the-discovery-file) in the editor
+service's reference.
 
 **What it inserts.**
 
@@ -696,7 +791,14 @@ Moving to another JDK changes both: `./gradlew updateDaemonJvm --jvm-version=<n>
 
 - **Unit tests**, with no IDE: `GlueTest` (the pure half), `OpenOriginsTest` (who may use Open in IDE) and
   `Lsp4jAccessTest` (the lsp4j proxy taken from a request's sender).
-- **Platform tests** on WebStorm 2024.1: `PiwiPluginTest`, `PiwiRecordingTest` and `PiwiOpenHandlerTest`.
+- **Platform tests** on WebStorm 2024.1: `PiwiPluginTest`, `PiwiRecordingTest`, `PiwiOpenHandlerTest` and
+  `PiwiRunControlTest`.
 
 The platform test `testTheBundledServiceAnswersThroughTheDescriptor` (`PiwiPluginTest`) starts the bundled service with
-the descriptor's command line against a stub instance, and reads its answers with the Kotlin protocol classes.
+the descriptor's command line against a stub instance, and reads its answers with the Kotlin protocol classes, a run's
+session and controls with a fake worker on the run channel among them.
+
+`PiwiRunControlTest` drives the run controls with the sessions the service would send: the execution point, the inlay,
+the actions, the edits above a stop and Run to Caret from them, the paused page of a file the VFS has not loaded, the
+breakpoint listener (a breakpoint moved as the platform moves one outside tests, which a unit test does not), the
+promoter and the runs of the IDE's Playwright runner.

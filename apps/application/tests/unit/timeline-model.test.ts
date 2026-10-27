@@ -7,6 +7,7 @@ import {
   type TimelineItem,
   type TimelineModelInput,
 } from '../../app/composables/useTimelineModel';
+import { pauseReasonText } from '../../app/utils/timeline';
 import type { TestCaseResult, TestStepEvent } from '../../types/api';
 
 type StepLike = Partial<TestStepEvent> & { title: string; category: string };
@@ -564,6 +565,18 @@ describe('stops at the pause bar', () => {
       parentTitle: 'pays',
     });
     expect(isHookKind(band.kind)).toBe(false);
+  });
+
+  test('says why each stop stopped, a Pause or a line run to from the editor included', () => {
+    expect(['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'other', null].map(pauseReasonText)).toEqual([
+      'Paused at a breakpoint',
+      'Paused after Step',
+      'Paused from the editor',
+      'Paused at the line run to',
+      'Paused at page.pause()',
+      'Paused at a breakpoint',
+      'Paused at a breakpoint',
+    ]);
   });
 
   test('says the rest of the bar is the time paused, with the hooks Playwright leaves out when there are any', () => {

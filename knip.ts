@@ -64,6 +64,7 @@ const config: KnipConfig = {
         'src/login/main.ts',
         'src/options/main.ts',
         'src/popup/main.ts',
+        'src/runs/main.ts',
         'scripts/*.mjs',
         'tests/e2e/engine-entry.ts',
         'tests/lab/*.{ts,mjs}',

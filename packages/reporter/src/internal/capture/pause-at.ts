@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import type { BrowserContext, Page, TestInfo } from '@playwright/test';
 import { isInsidePath, parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
+import type { Place, RunIntent, StopReason } from '@piwitests/core/run-channel';
 import { pauseAnswered, showPauseBar, takePauseState, type PauseBarArg, type PauseChoice } from '@piwitests/picker-dom';
 import { isCi } from './inspect-on-failure.js';
 import { pickLocator, unlessEnded, type PickedLocator, type PickerProbe } from './pick-on-failure.js';
@@ -19,8 +20,9 @@ import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
  * the line it was picked at.
  *
  * Local-only, like the failure-time overlay (`inspect-on-failure.ts`): a
- * headed browser, never under CI, never under Playwright's own debugger
- * (`PWDEBUG`, `--debug`). Every attempt pauses.
+ * headed browser, or any browser while the worker's run connection to the
+ * editor is open (`run-channel.ts`), never under CI, never under Playwright's
+ * own debugger (`PWDEBUG`, `--debug`). Every attempt pauses.
  */
 
 /** The lines a run pauses at, keyed the way `captureCallerLocation` writes a call site, without its column. */
@@ -109,12 +111,42 @@ export function parsePauseAt(value: string | undefined, cwd: string = process.cw
 }
 
 let parsed: { value: string | undefined; set: PauseSet } | null = null;
+/** The breakpoints the editor sent on the run connection, in place of `PIWI_PAUSE_AT`; null until it sends some. */
+let sent: PauseSet | null = null;
 
-/** The lines this process pauses at, read again only when `PIWI_PAUSE_AT` changes. */
+/** The lines this process pauses at: the editor's latest, else `PIWI_PAUSE_AT`, read again only when it changes. */
 export function currentPauseSet(): PauseSet {
+  if (sent) return sent;
   const value = process.env[PIWI_LOCAL_DEBUG_ENV.pauseAt];
   if (!parsed || parsed.value !== value) parsed = { value, set: parsePauseAt(value) };
   return parsed.set;
+}
+
+/**
+ * The breakpoints of the editor's places (relative to `cwd`), the lines this process pauses at from now on; null
+ * goes back to `PIWI_PAUSE_AT`.
+ */
+export function replacePauseSet(places: readonly Place[] | null, cwd: string = process.cwd()): PauseSet {
+  if (!places) {
+    sent = null;
+    return currentPauseSet();
+  }
+  const lines = new Set(places.map((place) => placeLine(place, cwd)));
+  sent = lines.size ? new PauseSet(lines) : NO_BREAKPOINTS;
+  return sent;
+}
+
+/** A call site (`file:line:col`, relative to the working directory) as a place of the run channel. */
+export function callSitePlace(callSite: string): Place | null {
+  const m = /^(.+):(\d+):(\d+)$/.exec(callSite);
+  if (!m || Number(m[2]) < 1) return null;
+  const column = Number(m[3]);
+  return column > 0 ? { file: m[1]!, line: Number(m[2]), column } : { file: m[1]!, line: Number(m[2]) };
+}
+
+/** A place of the run channel (relative to `cwd`) as the key a call site's line matches: `file:line`. */
+export function placeLine(place: Place, cwd: string = process.cwd()): string {
+  return `${callSiteFile(place.file, cwd)}:${place.line}`;
 }
 
 /** Everything the pause gate reads, as plain values. */
@@ -127,6 +159,8 @@ export interface PauseGate {
   pwdebug?: string | undefined;
   /** The run's `--debug` mode (`inspector`, `cli`), as the runner hands it to the worker; unset without `--debug`. */
   debug?: unknown;
+  /** The worker's run connection to the editor is open: a headless stop is shown there. */
+  channel?: boolean;
 }
 
 type ConfigInternal = { _configInternal?: { configCLIOverrides?: { debug?: unknown } } };
@@ -141,7 +175,7 @@ export function pauseGateFromTestInfo(testInfo: TestInfo): PauseGate {
 /** Why a run with breakpoints does not pause; null when it does. */
 export function pauseSkipReason(gate: PauseGate): string | null {
   if (isCi(gate.ci)) return 'running under CI — breakpoints pause local runs only';
-  if (gate.headless !== false)
+  if (gate.headless !== false && !gate.channel)
     return 'the browser is headless — re-run with --headed (or set use: { headless: false })';
   if (gate.pwdebug && !['0', 'false', 'console'].includes(gate.pwdebug))
     return "Playwright's Inspector runs the test (PWDEBUG) — run without --debug";
@@ -150,8 +184,7 @@ export function pauseSkipReason(gate: PauseGate): string | null {
   return null;
 }
 
-/** Why the pause bar shows at a stop: a breakpoint's line, the first call after Step, or `page.pause()`. */
-export type StopReason = 'breakpoint' | 'step' | 'page-pause';
+export type { StopReason };
 
 /** How the debugger goes on from a stop: `next` stops again before the next call, `resume` runs on freely. */
 export type GoOn = 'next' | 'resume';
@@ -159,41 +192,96 @@ export type GoOn = 'next' | 'resume';
 /** The answers that end a stop. */
 export type PauseAnswer = Exclude<PauseChoice, 'pick' | 'record'>;
 
-/** What an attempt pauses at: the run's breakpoints, a Step asked at the last stop, and Finish. */
+/**
+ * What an attempt stops at: the run's breakpoints, Finish (no breakpoint more), and the stops asked once: Step at the
+ * last stop, Pause from the editor, and the line the editor runs the test to (`file:line`, as `callSiteLine` keys it).
+ */
 export interface PauseState {
   set: PauseSet;
   /** The next stop in the user's code shows, whatever its line. */
   step: boolean;
-  /** No stop shows any more in this attempt, but at `page.pause()`. */
+  /** No breakpoint shows any more in this attempt. */
   finished: boolean;
+  /** The next stop in the user's code shows: a pause asked from outside. */
+  pause: boolean;
+  /** The first stop on this line shows. */
+  runTo: string | null;
+}
+
+/** A fresh attempt's state, with `set` as its breakpoints. */
+export function pauseState(set: PauseSet, pause = false): PauseState {
+  return { set, step: false, finished: false, pause, runTo: null };
+}
+
+/** Whether the attempt's contexts stop before every call: for a breakpoint, or a stop asked once. */
+export function wantsStops(state: PauseState): boolean {
+  return state.step || state.pause || state.runTo !== null || (!state.finished && state.set.size > 0);
+}
+
+/** Whether a stop on `callSite` is at one of the attempt's breakpoints: on one of its lines, before Finish. */
+export function atBreakpoint(state: PauseState, callSite: string | null): boolean {
+  return !state.finished && state.set.matches(callSite);
 }
 
 /**
- * What the worker does at a debugger stop on `callSite` (null outside the user's code): show the bar, at a
- * breakpoint's line or the first stop after Step (which that stop uses up), or let the call go on at once.
+ * What the worker does at a debugger stop on `callSite` (null outside the user's code): show the stop, at the first
+ * stop after Step or Pause, on the line it runs to, or on a breakpoint's line while the attempt did not finish, or let
+ * the call go on at once. A stop that shows uses up every stop asked once.
  */
 export function atStop(state: PauseState, callSite: string | null): { show: StopReason } | { go: GoOn } {
-  if (callSite && !state.finished) {
-    if (state.step) {
-      state.step = false;
-      return { show: 'step' };
+  if (callSite) {
+    const reason: StopReason | null = state.step
+      ? 'step'
+      : state.pause
+        ? 'pause'
+        : state.runTo !== null && callSiteLine(callSite) === state.runTo
+          ? 'run-to'
+          : atBreakpoint(state, callSite)
+            ? 'breakpoint'
+            : null;
+    if (reason) {
+      stopShown(state);
+      return { show: reason };
     }
-    if (state.set.matches(callSite)) return { show: 'breakpoint' };
   }
   return { go: goOn(state) };
 }
 
+/** A stop shows: it uses up Step, Pause and the line run to. */
+export function stopShown(state: PauseState): void {
+  state.step = false;
+  state.pause = false;
+  state.runTo = null;
+}
+
+/** The stops asked once (Step, Pause, the line run to), as a stop that may use them up finds them. */
+export type AskedOnce = Pick<PauseState, 'step' | 'pause' | 'runTo'>;
+
+export function askedOnce(state: PauseState): AskedOnce {
+  return { step: state.step, pause: state.pause, runTo: state.runTo };
+}
+
 /**
- * How the debugger goes on from a stop, once the bar's `answer` applies: it keeps stopping before every call while
- * breakpoints remain or a Step waits, so the next breakpoint's line is seen; it runs on freely otherwise.
+ * A stop that used up the stops asked once (`asked`, as it found them) goes on unshown: they are asked again, with
+ * those asked since it came, and a line asked since wins over the one it used up.
+ */
+export function askAgain(state: PauseState, asked: AskedOnce): void {
+  state.step ||= asked.step;
+  state.pause ||= asked.pause;
+  state.runTo ??= asked.runTo;
+}
+
+/**
+ * How the debugger goes on from a stop, once its `answer` applies: it keeps stopping before every call while
+ * breakpoints remain or a stop is asked, so the next one is seen; it runs on freely otherwise.
  */
 export function goOn(state: PauseState, answer?: PauseAnswer): GoOn {
   if (answer === 'step') state.step = true;
   else if (answer === 'finish') state.finished = true;
-  return !state.finished && (state.step || state.set.size > 0) ? 'next' : 'resume';
+  return wantsStops(state) ? 'next' : 'resume';
 }
 
-/** One stop the bar showed, as the `piwi-pauses` attachment lists it. */
+/** One stop shown, with the bar or in the editor, as the `piwi-pauses` attachment lists it. */
 export interface PauseRecord {
   /** The call the stop held, as Playwright titles it: `Click getByRole('button', { name: 'Pay' })`. */
   title: string;
@@ -460,13 +548,70 @@ const MAX_NAVIGATED = 10;
 const HIGHLIGHT_MS = 2000;
 
 /**
+ * The pause bar's Pick a locator and Record here, started from outside the page (the editor's hub, for Piwi Picker):
+ * the bar takes an intent while it waits for its answer, and one handed to it while it is about to (its highlight
+ * still drawing) waits for it; while a pick or a recording runs, none is taken.
+ */
+export class BarIntents {
+  private take: ((intent: RunIntent) => void) | null = null;
+  private queued: RunIntent | null = null;
+  private busy = false;
+
+  /** Hand the bar an intent; false while it runs one, or holds one already. */
+  offer(intent: RunIntent): boolean {
+    if (this.busy || this.queued) return false;
+    const take = this.take;
+    this.take = null;
+    if (take) take(intent);
+    else this.queued = intent;
+    return true;
+  }
+
+  /** The bar waits for its answer: settles with the next intent handed to it. */
+  wait(): Promise<RunIntent> {
+    this.busy = false;
+    const queued = this.queued;
+    this.queued = null;
+    if (queued) return Promise.resolve(queued);
+    return new Promise((resolve) => {
+      this.take = resolve;
+    });
+  }
+
+  /** The bar got its answer: it takes no intent until it waits again. */
+  answered(): void {
+    this.take = null;
+    this.busy = true;
+  }
+}
+
+/** How long taking the bar and the highlight down may take: a page that does not answer keeps them. */
+const TAKE_DOWN_MS = 1000;
+
+/** `run`, for `ms` at most: undefined once they passed, `run` itself left to settle on its own. */
+async function within<T>(run: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      run,
+      new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), ms))),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Show the pause bar at a stop: highlight the element, show the bar and wait for its answer. **Pick a locator** runs
  * the picker and shows the bar again; `onPick` receives each confirmed pick. With `onRecord` (the editor that started
- * the run can record), **Record here** hands the page to it and shows the bar again once the recording ended. Returns
- * the answer that ends the stop: `resume`, `step` or `finish`; `resume` when the page breaks or `ended` aborts (the
- * test ended under the bar, its page closed), never throwing: the bar, the picker and the recording then end at once,
- * leaving nothing of theirs in the page. The bar and the highlight are gone once it returns. Every page call it makes
- * must run inside an internal call.
+ * the run can record), **Record here** hands the page to it and shows the bar again once the recording ended. An
+ * intent handed to `intents` while the bar waits is taken as its own button's click, the bar's own answer first, with
+ * the test's window brought to the front. Returns the answer that ends the stop: `resume`, `step` or `finish`;
+ * `resume` when the page breaks or `ended` aborts (the test ended under the bar, its page closed, the editor answered
+ * the stop), never throwing: the bar, the picker and the recording then end at once, whether the bar or an intent
+ * started them, leaving nothing of theirs in the page. The bar and the highlight are gone once it returns, unless the
+ * page stops answering: no page call holds it past `ended` but taking them down, for `TAKE_DOWN_MS` at most. Every
+ * page call it makes must run inside an internal call.
  */
 export async function pauseHere(
   page: Page,
@@ -475,21 +620,16 @@ export async function pauseHere(
   onPick: (pick: PickedLocator) => void | Promise<void>,
   onRecord?: (ended?: AbortSignal) => Promise<void>,
   ended?: AbortSignal,
+  intents?: BarIntents,
 ): Promise<PauseAnswer> {
   let shown: unknown = null;
   try {
     const highlight = point.target?.highlight;
     if (typeof highlight === 'function') {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      shown = await Promise.race([
-        Promise.resolve()
-          .then(() => highlight.call(point.target))
-          .catch(() => null),
-        new Promise((resolve) => {
-          timer = setTimeout(() => resolve(null), HIGHLIGHT_MS);
-        }),
-      ]);
-      clearTimeout(timer);
+      const highlighted = Promise.resolve()
+        .then(() => highlight.call(point.target))
+        .catch(() => null);
+      shown = (await within(highlighted, HIGHLIGHT_MS)) ?? null;
     }
     const arg: PauseBarArg = {
       place: pausePlace(point.location),
@@ -508,10 +648,18 @@ export async function pauseHere(
     for (;;) {
       try {
         if (ended?.aborted) return 'resume';
-        await page.evaluate(showPauseBar, arg);
-        await unlessEnded(page.waitForFunction(pauseAnswered, undefined, { timeout: 0, polling: 250 }), ended);
+        await unlessEnded(page.evaluate(showPauseBar, arg), ended);
+        const answered = page.waitForFunction(pauseAnswered, undefined, { timeout: 0, polling: 250 }).then(() => null);
+        const intent = await unlessEnded(intents ? Promise.race([answered, intents.wait()]) : answered, ended);
+        intents?.answered();
         if (ended?.aborted) return 'resume';
-        const choice = (await page.evaluate(takePauseState)) as PauseChoice | null;
+        const taken = (await unlessEnded(page.evaluate(takePauseState), ended)) as PauseChoice | null | undefined;
+        if (ended?.aborted) return 'resume';
+        const choice = taken ?? intent ?? null;
+        // An intent's pick or recording runs in the test's window: it comes to the front first.
+        const raised = intent && choice === intent ? page.bringToFront().catch(() => undefined) : null;
+        if (raised) await unlessEnded(raised, ended);
+        if (ended?.aborted) return 'resume';
         navigated = 0;
         if (choice === 'resume' || choice === 'step' || choice === 'finish') return choice;
         if (choice === 'record' && onRecord) {
@@ -526,22 +674,28 @@ export async function pauseHere(
         if (picked && !ended?.aborted) await onPick(picked);
       } catch (error) {
         if (page.isClosed() || !NAVIGATED.test(String(error)) || ++navigated > MAX_NAVIGATED) throw error;
-        await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+        await unlessEnded(
+          page.waitForLoadState('domcontentloaded').catch(() => undefined),
+          ended,
+        );
       }
     }
   } catch {
     return 'resume';
   } finally {
-    try {
-      // The bar a test ended under is taken down here, unanswered.
-      if (ended?.aborted) await page.evaluate(takePauseState);
-      const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
-      // Feature-detected: an older Playwright has neither a disposable highlight nor `page.hideHighlight`.
-      const hide = (page as unknown as { hideHighlight?: () => Promise<void> }).hideHighlight;
-      if (typeof dispose === 'function') await dispose.call(shown);
-      else if (typeof hide === 'function') await hide.call(page);
-    } catch {
-      // The page may be gone.
-    }
+    const takeDown = async (): Promise<void> => {
+      try {
+        // A bar the stop ended under without its answer is taken down here.
+        if (ended?.aborted) await page.evaluate(takePauseState);
+        const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
+        // Feature-detected: an older Playwright has neither a disposable highlight nor `page.hideHighlight`.
+        const hide = (page as unknown as { hideHighlight?: () => Promise<void> }).hideHighlight;
+        if (typeof dispose === 'function') await dispose.call(shown);
+        else if (typeof hide === 'function') await hide.call(page);
+      } catch {
+        // The page may be gone.
+      }
+    };
+    await within(takeDown(), TAKE_DOWN_MS);
   }
 }

@@ -48,6 +48,18 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(listOf(record), strokes("Piwi.RecordHere"))
         assertEquals("the same chord stops the recording", listOf(record), strokes("Piwi.StopRecording"))
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift F")), strokes("Piwi.RerunFailing"))
+        // A run's controls use the debugger's shortcuts, in this keymap as in every other.
+        for ((control, debugger) in listOf(
+            "Piwi.PauseRun" to "Resume", "Piwi.ResumeRun" to "Resume", "Piwi.StepRun" to "StepOver",
+            "Piwi.RunToCaret" to "RunToCursor", "Piwi.FinishRun" to "StepOut",
+        )) {
+            assertEquals(control, strokes(debugger), strokes(control))
+        }
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("F9")), strokes("Piwi.ResumeRun"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("F8")), strokes("Piwi.StepRun"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("alt F9")), strokes("Piwi.RunToCaret"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("shift F8")), strokes("Piwi.FinishRun"))
+        for (id in PiwiStatusBarWidget.RUN_ACTIONS) assertNotNull(id, ActionManager.getInstance().getAction(id))
     }
 
     /** The service's process gets the IDE's HTTP proxy, as the variables the service reads; nothing when the IDE reaches the instance directly. */
@@ -610,14 +622,14 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /** Posts `body` to the Send to editor endpoint as Piwi Picker does, and waits for the answer, pumping the event queue meanwhile. */
-    private fun sendFromPicker(body: String, bearer: String): java.net.http.HttpResponse<String> {
+    private fun sendFromPicker(body: String, bearer: String, challenge: String? = null): java.net.http.HttpResponse<String> {
         val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        val request = java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiSendHandler.PATH}"))
+            .header("Authorization", "Bearer $bearer")
+            .header("Origin", "chrome-extension://abc")
+        if (challenge != null) request.header(Glue.EDITOR_CHALLENGE_HEADER, challenge)
         val future = java.net.http.HttpClient.newHttpClient().sendAsync(
-            java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiSendHandler.PATH}"))
-                .header("Authorization", "Bearer $bearer")
-                .header("Origin", "chrome-extension://abc")
-                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(body))
-                .build(),
+            request.POST(java.net.http.HttpRequest.BodyPublishers.ofString(body)).build(),
             java.net.http.HttpResponse.BodyHandlers.ofString(),
         )
         val deadline = System.currentTimeMillis() + 20_000
@@ -643,6 +655,150 @@ class PiwiPluginTest : BasePlatformTestCase() {
             "test('pays', async ({ page }) => {\n  page.getByRole('button', { name: 'Pay now' })\n});\n",
             myFixture.editor.document.text,
         )
+    }
+
+    /**
+     * Asks the live endpoint as Piwi Picker does, with `bearer` (none without) and a `challenge`, from `origin`, and
+     * waits, pumping the event queue meanwhile.
+     */
+    private fun liveFromPicker(
+        bearer: String?,
+        challenge: String? = null,
+        method: String = "GET",
+        origin: String = "chrome-extension://abc",
+    ): java.net.http.HttpResponse<String> {
+        val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        val request = java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port${PiwiSendHandler.LIVE_PATH}"))
+            .header("Origin", origin)
+            .method(method, java.net.http.HttpRequest.BodyPublishers.noBody())
+        if (bearer != null) request.header("Authorization", "Bearer $bearer")
+        if (challenge != null) request.header(Glue.EDITOR_CHALLENGE_HEADER, challenge)
+        val future = java.net.http.HttpClient.newHttpClient().sendAsync(request.build(), java.net.http.HttpResponse.BodyHandlers.ofString())
+        val deadline = System.currentTimeMillis() + 20_000
+        while (!future.isDone && System.currentTimeMillis() < deadline) {
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            Thread.sleep(20)
+        }
+        return future.get(1, TimeUnit.SECONDS)
+    }
+
+    /** Piwi Picker reads, through the pairing, the hubs of the running editor services' discovery files, every IDE window's. */
+    fun testPiwiPickerListsTheLiveHubsThroughThePairing() {
+        // PIWI_EDITORS_DIR names another folder than the home folder's.
+        if (!System.getenv("PIWI_EDITORS_DIR").isNullOrBlank()) return
+        val token = PiwiSendToken.ensure()
+        val home = FileUtil.createTempDirectory("piwi-home", null)
+        // The folder the editor services write, readable by this user alone.
+        val editors = File(home, ".piwi/editors").apply { mkdirs() }
+        editors.setReadable(false, false)
+        editors.setWritable(false, false)
+        editors.setExecutable(false, false)
+        editors.setReadable(true, true)
+        editors.setWritable(true, true)
+        editors.setExecutable(true, true)
+        fun file(pid: Long) = File(editors, "$pid.json").apply {
+            writeText(
+                """{"pid":$pid,"host":"${Glue.machineName}","version":"0.60.0","client":"WebStorm",""" +
+                    """"startedAt":"2026-10-25T10:00:00.000Z","roots":["/work/shop"],""" +
+                    """"hub":{"url":"ws://127.0.0.1:43123/piwi/hub","token":"hub-token-0123456789"},""" +
+                    """"runChannel":{"path":"/tmp/s.sock","token":"channel-token-0123456789"}}""",
+            )
+        }
+        val pid = ProcessHandle.current().pid()
+        file(pid)
+        val ended = ProcessBuilder(ProcessHandle.current().info().command().orElse("java"), "-version").redirectErrorStream(true).start()
+        ended.inputStream.readAllBytes()
+        ended.waitFor()
+        val dead = file(ended.pid())
+        val saved = System.getProperty("user.home")
+        System.setProperty("user.home", home.path)
+        try {
+            assertEquals(401, liveFromPicker(null).statusCode())
+            assertEquals(401, liveFromPicker("wrong-token-wrong-token").statusCode())
+            val ok = liveFromPicker(token)
+            assertEquals(ok.body(), 200, ok.statusCode())
+            assertEquals("chrome-extension://abc", ok.headers().firstValue("Access-Control-Allow-Origin").orElse(null))
+            val hubs = com.google.gson.JsonParser.parseString(ok.body()).asJsonObject.getAsJsonArray("hubs")
+            assertEquals(1, hubs.size())
+            val hub = hubs[0].asJsonObject
+            assertEquals(pid, hub.get("pid").asLong)
+            assertEquals("ws://127.0.0.1:43123/piwi/hub", hub.get("url").asString)
+            assertEquals("hub-token-0123456789", hub.get("token").asString)
+            assertEquals("/work/shop", hub.getAsJsonArray("roots")[0].asString)
+            assertFalse("the run channel's token is never listed", ok.body().contains("channel-token"))
+            assertFalse("a killed service's file is deleted", dead.exists())
+        } finally {
+            System.setProperty("user.home", saved)
+        }
+    }
+
+    /** Every answer to Piwi Picker's challenge proves this IDE holds the pairing's token, paired or not, for its port. */
+    fun testTheEndpointProvesItHoldsTheTokenBeforePiwiPickerSendsIt() {
+        val token = PiwiSendToken.ensure()
+        val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        val challenge = "ab".repeat(32)
+        val proof = Glue.editorTokenProof(token, port, challenge)
+        for ((bearer, method, status) in listOf(Triple(null, "GET", 401), Triple(token, "GET", 200), Triple(null, "OPTIONS", 204))) {
+            val res = liveFromPicker(bearer, challenge, method)
+            assertEquals("$method with ${bearer != null}", status, res.statusCode())
+            assertEquals("$method with ${bearer != null}", proof, res.headers().firstValue(Glue.EDITOR_PROOF_HEADER).orElse(null))
+        }
+        val refused = sendFromPicker("""{"kind":"locator","text":"x"}""", "wrong-token-wrong-token", challenge)
+        assertEquals(401, refused.statusCode())
+        assertEquals(proof, refused.headers().firstValue(Glue.EDITOR_PROOF_HEADER).orElse(null))
+        val ok = liveFromPicker(token, challenge)
+        assertEquals(Glue.EDITOR_PROOF_HEADER, ok.headers().firstValue("Access-Control-Expose-Headers").orElse(null))
+        assertEquals(null, liveFromPicker(token).headers().firstValue(Glue.EDITOR_PROOF_HEADER).orElse(null))
+        assertEquals(null, liveFromPicker(token, "AB".repeat(32)).headers().firstValue(Glue.EDITOR_PROOF_HEADER).orElse(null))
+        // A preflight names the challenge header among those it asks to send.
+        val preflight = liveFromPicker(null, null, "OPTIONS")
+        assertTrue(preflight.headers().firstValue("Access-Control-Allow-Headers").orElse("").contains(Glue.EDITOR_CHALLENGE_HEADER))
+    }
+
+    /**
+     * The request Piwi Picker's worker sends before the pairing's token goes anywhere, Send to editor's post included:
+     * a GET of the live endpoint carrying a challenge alone, from the extension's origin in Chrome and Edge, or in
+     * Firefox. It is answered 401 with the proof, which the worker can read; the send endpoint takes a POST alone.
+     */
+    fun testPiwiPickersChallengeAloneIsAnsweredWithTheProofOnTheLiveEndpoint() {
+        val token = PiwiSendToken.ensure()
+        val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        val challenge = "0123456789abcdef".repeat(4)
+        val proof = Glue.editorTokenProof(token, port, challenge)
+        for (origin in listOf("chrome-extension://pakhnokpjboejcghgcmkjlpnogfjihhe", "moz-extension://4b7a2f0e-91c3-4d5e-8f6a-0123456789ab")) {
+            val res = liveFromPicker(null, challenge, origin = origin)
+            assertEquals(origin, 401, res.statusCode())
+            assertEquals(origin, proof, res.headers().firstValue(Glue.EDITOR_PROOF_HEADER).orElse(null))
+            assertEquals(origin, origin, res.headers().firstValue("Access-Control-Allow-Origin").orElse(null))
+            assertEquals(origin, Glue.EDITOR_PROOF_HEADER, res.headers().firstValue("Access-Control-Expose-Headers").orElse(null))
+        }
+    }
+
+    /** A page reached under another name than this machine's (DNS rebinding) gets nothing from the endpoint. */
+    fun testTheEndpointAnswersNoOtherHost() {
+        val token = PiwiSendToken.ensure()
+        val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        fun statusFor(host: String): String {
+            val answer = com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread<String> {
+                java.net.Socket("127.0.0.1", port).use { socket ->
+                    socket.soTimeout = 10_000
+                    socket.getOutputStream().write(
+                        ("GET ${PiwiSendHandler.LIVE_PATH} HTTP/1.1\r\nHost: $host\r\nAuthorization: Bearer $token\r\n" +
+                            "Origin: chrome-extension://abc\r\nConnection: close\r\n\r\n").toByteArray(),
+                    )
+                    socket.getInputStream().bufferedReader().readLine() ?: ""
+                }
+            }
+            val deadline = System.currentTimeMillis() + 20_000
+            while (!answer.isDone && System.currentTimeMillis() < deadline) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(20)
+            }
+            return answer.get(1, TimeUnit.SECONDS)
+        }
+        assertTrue(statusFor("127.0.0.1:$port"), statusFor("127.0.0.1:$port").contains(" 200 "))
+        val rebound = statusFor("evil.test:$port")
+        assertFalse(rebound, rebound.contains(" 200 "))
     }
 
     /** Without an editor open, Piwi Picker's text goes into a new scratch file, and the answer names no file. */
@@ -773,6 +929,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     InitializeParams().apply {
                         capabilities = ClientCapabilities()
                         workspaceFolders = listOf(WorkspaceFolder(dir.toURI().toString(), "shop"))
+                        initializationOptions = PiwiLspServerDescriptor(project).createInitializationOptions()
                     },
                 ).get(20, TimeUnit.SECONDS)
                 server.initialized(InitializedParams())
@@ -855,11 +1012,90 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 val run = server.runArgs(args).get(10, TimeUnit.SECONDS)
                 assertEquals("lines", run?.env?.get("PIWI_COVERAGE_SERVER"))
                 assertTrue(client.runStatusChanges > 0)
+
+                runChannel(server, client, run!!, spec, pageObject)
             } finally {
                 process.destroy()
             }
         } finally {
             stub.stop()
+        }
+    }
+
+    /**
+     * A worker of the run on the channel its command names, as the capture fixtures play it: the session the client
+     * hears, and the controls, breakpoints and image request it sends, read with the Kotlin protocol classes.
+     */
+    private fun runChannel(server: PiwiLanguageServer, client: TestClient, run: RunCommand, spec: String, pageObject: String) {
+        val channel = run.env?.get("PIWI_RUN_CHANNEL")
+        assertNotNull("the run names the run channel", channel)
+        val (path, token) = channel!!.substringBeforeLast('#') to channel.substringAfterLast('#')
+        val ref = run.ref!!
+        val socket = java.nio.channels.SocketChannel.open(java.net.UnixDomainSocketAddress.of(path))
+        val heard = java.util.concurrent.CopyOnWriteArrayList<com.google.gson.JsonObject>()
+        // One line of JSON a message, read and written on the channel itself: a reader thread and the test's writes.
+        val reader = Thread {
+            val buffer = java.nio.ByteBuffer.allocate(1 shl 16)
+            val line = java.io.ByteArrayOutputStream()
+            runCatching {
+                while (socket.read(buffer.clear()) >= 0) {
+                    buffer.flip()
+                    while (buffer.hasRemaining()) {
+                        val byte = buffer.get()
+                        if (byte != '\n'.code.toByte()) {
+                            line.write(byte.toInt())
+                            continue
+                        }
+                        heard += com.google.gson.JsonParser.parseString(line.toString(Charsets.UTF_8)).asJsonObject
+                        line.reset()
+                    }
+                }
+            }
+        }.apply { isDaemon = true; start() }
+        fun send(json: String) {
+            val bytes = java.nio.ByteBuffer.wrap("$json\n".toByteArray())
+            while (bytes.hasRemaining()) socket.write(bytes)
+        }
+        fun <T> waitFor(what: String, read: () -> T?): T {
+            val deadline = System.currentTimeMillis() + 10_000
+            while (System.currentTimeMillis() < deadline) {
+                read()?.let { return it }
+                Thread.sleep(20)
+            }
+            throw AssertionError("timed out waiting for $what")
+        }
+        try {
+            val cwd = com.google.gson.Gson().toJson(run.cwd)
+            send("""{"type":"run-attach","token":"$token","ref":"$ref","cwd":$cwd,"workerIndex":0,"parallelIndex":0,"pid":1,"playwright":"1.64.1","reporter":"0.60.0"}""")
+            send("""{"type":"test-begin","testId":"t1","title":["removes a row"],"file":"tests/checkout.spec.ts","line":4,"project":"chromium","retry":1,"cannotPause":null}""")
+            send("""{"type":"stopped","stop":1,"reason":"breakpoint","title":"Click locator('.cart-row').nth(2)","place":{"file":"tests/pages/checkout.page.ts","line":5,"column":21},"locator":"locator('.cart-row').nth(2)","bar":false}""")
+            val session = waitFor("the stopped session") { client.sessions.lastOrNull { it.ref == ref && it.workers?.firstOrNull()?.stop != null } }
+            val worker = session.workers!!.single()
+            assertEquals("stopped", worker.state)
+            assertEquals(RunTest("t1", listOf("removes a row"), spec, 3, "chromium", 1, null), worker.test)
+            val stop = worker.stop!!
+            assertEquals(listOf("breakpoint", "Click locator('.cart-row').nth(2)", pageObject, "4", "20", "false"), listOf(stop.reason, stop.title, stop.uri, "${stop.line}", "${stop.character}", "${stop.bar}"))
+            assertEquals("Paused · Click locator('.cart-row').nth(2) · attempt 2", Glue.pausedText(stop, worker.test))
+
+            assertEquals(RunControlResult(true, "Stepping to the next call."), server.runControl(RunControlParams(ref, action = "step")).get(5, TimeUnit.SECONDS))
+            waitFor("the step") { heard.firstOrNull { it["type"].asString == "control" && it["action"].asString == "step" && it["stop"].asInt == 1 } }
+            val refused = server.runControl(RunControlParams(ref, 7, "resume")).get(5, TimeUnit.SECONDS)
+            assertEquals(RunControlResult(false, "Worker 7 of this run is not connected to the editor."), refused)
+
+            server.setRunBreakpoints(SetRunBreakpointsParams(ref, listOf(EditorBreakpoint(spec, 4))))
+            val places = waitFor("the breakpoints") { heard.firstOrNull { it["type"].asString == "breakpoints" } }["places"].asJsonArray
+            assertEquals("tests/checkout.spec.ts" to 5, places.single().asJsonObject.let { it["file"].asString to it["line"].asInt })
+
+            val page = server.pausedPage(PausedPageParams(ref, 0))
+            val request = waitFor("the image asked") { heard.firstOrNull { it["type"].asString == "request" } }
+            send("""{"type":"answer","request":${request["request"].asInt},"what":"image","value":{"mime":"image/jpeg","data":"/9j/"}}""")
+            assertEquals(PausedImage("image/jpeg", "/9j/"), page.get(5, TimeUnit.SECONDS)?.image)
+
+            server.commandEnded(CommandEndedParams(ref, 0))
+            waitFor("the end of the run") { client.sessions.lastOrNull { it.ref == ref }?.takeIf { it.ended } }
+        } finally {
+            socket.close()
+            reader.join(1_000)
         }
     }
 
@@ -920,6 +1156,13 @@ class PiwiPluginTest : BasePlatformTestCase() {
 
     class TestClient : LanguageClient {
         @Volatile var runStatusChanges = 0
+
+        val sessions = java.util.concurrent.CopyOnWriteArrayList<RunSession>()
+
+        @JsonNotification("piwi/runSessionChanged")
+        fun runSessionChanged(session: RunSession) {
+            sessions += session
+        }
 
         @JsonNotification("piwi/runStatusChanged")
         fun runStatusChanged(@Suppress("UNUSED_PARAMETER") status: RunStatusResult) {

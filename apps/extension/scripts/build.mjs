@@ -37,12 +37,21 @@ export function chromiumManifest(manifest) {
 /**
  * The manifest Firefox loads: `manifest.json` without `debugger`, which Firefox
  * does not have (every feature that uses it falls back to what works without
- * it), and without `minimum_chrome_version`, a Chromium key Firefox does not
- * know: its floor is `browser_specific_settings.gecko.strict_min_version`.
+ * it), without `minimum_chrome_version`, a Chromium key Firefox does not
+ * know: its floor is `browser_specific_settings.gecko.strict_min_version`, and
+ * without a command's `global`, which Firefox does not have either: its
+ * commands work while Firefox has the focus.
  */
 export function firefoxManifest(manifest) {
   const { minimum_chrome_version: _chromiumOnly, ...rest } = manifest;
-  return { ...rest, permissions: (manifest.permissions ?? []).filter((p) => p !== 'debugger') };
+  const commands = Object.fromEntries(
+    Object.entries(manifest.commands ?? {}).map(([name, { global: _chromiumGlobal, ...command }]) => [name, command]),
+  );
+  return {
+    ...rest,
+    commands,
+    permissions: (manifest.permissions ?? []).filter((p) => p !== 'debugger'),
+  };
 }
 
 /** Every standalone content script / service worker entry, as [output name, source entry]. */
@@ -154,6 +163,7 @@ export async function buildExtension({ release = false, pseudo = false } = {}) {
           'devtools-sidebar': path.join(root, 'devtools-sidebar.html'),
           'devtools-panel': path.join(root, 'devtools-panel.html'),
           login: path.join(root, 'login.html'),
+          runs: path.join(root, 'runs.html'),
         },
       },
     },

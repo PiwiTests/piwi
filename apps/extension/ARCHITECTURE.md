@@ -32,7 +32,7 @@ Terms used in this file:
 - **The worker**: the background service worker (`src/background/`). In Firefox, which has no extension service
   workers, the same bundle runs as a background script.
 - **An extension page**: a page served from the extension's own origin: the popup, the settings page, Save login, the
-  DevTools pages.
+  DevTools pages, the Runs window.
 - **A content script**: a script the extension runs in a web page, in the extension's _isolated world_ (its own
   JavaScript context beside the page's). A **main-world script** runs in the page's own JavaScript context instead.
 - **Session storage**: `chrome.storage.session`, emptied when the browser closes.
@@ -55,6 +55,15 @@ Terms used in this file:
 - [Connected mode](#connected-mode): connecting to an instance, where secrets are kept, the instance marker, project
   mappings and the active project, what is read and what is sent, the desktop app, Share result, the requests and who
   makes them, connection health, cache freshness, host permissions for the instance, and the Test functions panel.
+- [The editor's runs](#the-editors-runs): following and steering the runs the paired editor starts.
+  - [Finding the hubs](#finding-the-hubs): the live endpoint beside Send to editor, the editor's proof, and when the
+    hubs are found again.
+  - [A connection per hub](#a-connection-per-hub): the WebSocket, its messages and commands, silence, and what keeps
+    the worker running.
+  - [The Runs window](#the-runs-window): how it is opened, its port to the worker, its controls, images, redraws,
+    focus and announcements.
+  - [The run shortcut](#the-run-shortcut): what it does, and how the person gives it a key.
+  - [How the runs are tested](#how-the-runs-are-tested): the unit tests and the specs on the real editor service.
 - [Tested elements](#tested-elements): the locator index evaluated on the page, the in-page locator engine, and the At
   risk list.
 - [Naming and ranking an element](#naming-and-ranking-an-element): accessible names, ranking, checking and narrowing
@@ -111,9 +120,18 @@ Terms used in this file:
   extension service workers; AMO rejects the manifest without it). The build writes `dist/` without `scripts`, which
   Edge lists as an error, and `dist-firefox/` with it.
 - **`gecko.data_collection_permissions`** is `{ "required": ["none"] }`. That holds only while nothing goes anywhere but
-  the user's own instance, the editor paired on the same computer (Send to editor) and the desktop app paired on the
-  loopback address (Run with Playwright). See `PUBLISHING.md` §4.
-- **The manifest's `description` and the shortcut's label** are `__MSG_*__` strings, translated in `public/_locales/`:
+  the user's own instance, the editor paired on the same computer (Send to editor, and its run hubs: see "The editor's
+  runs") and the desktop app paired on the loopback address (Run with Playwright). See `PUBLISHING.md` §4.
+- **`commands`** holds two shortcuts: the pick shortcut (`pick-element`, `Ctrl+Shift+E`) and the run shortcut
+  (`run-pause-resume`, see "The run shortcut"). The run shortcut is `"global": true` with no `suggested_key`:
+  - a global key is taken from every application on the computer, paired with an editor or not;
+  - the only keys Chrome binds a global command to at install (`Ctrl+Shift+[0-9]`) are JetBrains' numbered bookmarks
+    and, on macOS, the screenshots;
+  - so the person gives it a key, and its scope, on the browser's shortcuts page.
+
+  `firefoxManifest` leaves `global` out, which Firefox does not have (`build-manifests.test.ts`).
+
+- **The manifest's `description` and the shortcuts' labels** are `__MSG_*__` strings, translated in `public/_locales/`:
   English (the default), French, and German, Spanish and Brazilian Portuguese as drafts. The description doubles as the
   store listings' summary, so it stays within 132 characters in every language (`store-listing.test.ts`). The rest of
   the Firefox listing lives in `store/` (`PUBLISHING.md` §4 c): a new language needs both.
@@ -133,8 +151,9 @@ DevTools panel's toolbar for the inspected tab:
 - `src/content/`: the content scripts. Each one is a standalone entry, injected on demand (see "How content scripts are
   injected").
 - `src/background/`: the worker. It handles:
-  - the `chrome.commands` keyboard shortcut (the toolbar icon opens the popup instead, which injects content scripts
-    itself);
+  - the `chrome.commands` keyboard shortcuts: pick, and the run shortcut (see "The run shortcut"). The toolbar icon
+    opens the popup instead, which injects content scripts itself;
+  - the editor's run hubs (see "The editor's runs");
   - the recorder's start and stop messages (`piwi-start-recording`, `piwi-recording-stopped`), and the
     `chrome.permissions.onAdded` fallback that starts a recording when the grant prompt closed the popup (see "Rules,
     with their reasons");
@@ -144,13 +163,15 @@ DevTools panel's toolbar for the inspected tab:
     (see "The debugging protocol").
 
   Some messages name a tab or an address for the worker to act on, and only the extension's own pages send them:
-  starting a recording, the viewport messages, setting request conditions, and the language (`EXTENSION_PAGE_MESSAGES`
-  in `index.ts`). The worker refuses them from anything else (`fromExtensionPage`, `senders.ts`).
+  starting a recording, the viewport messages, setting request conditions, the language, and the popup's two Runs
+  messages (`piwi-runs-summary`, `piwi-open-runs`), all listed in `EXTENSION_PAGE_MESSAGES` in `index.ts`. The worker
+  refuses them from anything else (`fromExtensionPage`, `senders.ts`).
 
 - `src/popup/`: the toolbar popup (see "The popup").
 - `src/options/` and `options.html`: the settings page (see "The settings page").
 - `src/login/` and `login.html`: Save login for tests (above).
 - `src/devtools/`: the Elements pane and the Piwi panel (see "DevTools").
+- `src/runs/` and `runs.html`: the Runs window (see "The Runs window").
 - `src/shared/`: code shared by all of the above.
 - `src/ide/`: the entry and the host of the IDE bundle, the recorder built for the editor service (see "The IDE
   bundle"). Nothing in the extension loads it.
@@ -198,6 +219,8 @@ own complexity genuinely outgrows it.
   tiles).
 - The developer tools that have a home in DevTools are there, not here (see "DevTools"). Pick, Lint and Tested elements
   are also in the Piwi panel's toolbar. The popup ends with a line saying so.
+- **Runs** fills More tools' free cell, shown only while a hub of the paired editor answers (see "The Runs window"), so
+  it adds no height.
 - A gear button opens the settings (`chrome.runtime.openOptionsPage()`).
 - Once connected, an **Active project** select shows which mapped project applies to the current tab's site, and
   overrides it. The connection's line sits under it (`#connection-health`, see "Connection health").
@@ -498,15 +521,17 @@ is sent. A desktop app pairing sends the same names.
 ### Where secrets are kept
 
 **No secret is kept in `chrome.storage.local`.** Content scripts read and write that area (the panels read
-`ConnectionSettings` from it). So the API key, the desktop app's pairing and the editor's token live in the IndexedDB
-of the extension's origin (`src/shared/secret-store.ts`). A content script cannot open it, since its IndexedDB is the
-page's. Only the worker and the extension pages read them.
+`ConnectionSettings` from it). So the API key, the desktop app's pairing, the editor's token and the tokens of its run
+hubs live in the IndexedDB of the extension's origin (`src/shared/secret-store.ts`). A content script cannot open it,
+since its IndexedDB is the page's. Only the worker and the extension pages read them.
 
 - The key is kept with the origin of the instance it was given for. `getInstanceApiKey` hands it out for that origin
   only, so an `instanceUrl` rewritten in storage gets requests without it.
 - No request to the instance or the desktop app follows a redirect (`redirect: 'error'`).
 - `isConnected` never looks at the key.
 - The editor's address stays in `chrome.storage.local`, which tells a content script that an editor is paired.
+- The run hubs' addresses and tokens are kept under `hubs`, and Unpair removes them with the editor's pairing (see
+  "Finding the hubs").
 - Older versions kept these secrets in `chrome.storage.local`. A secret found there is moved as the worker starts, as
   the settings page opens, and by each read of it (`legacy-secrets.ts`): written to IndexedDB first, removed after. One
   already kept in IndexedDB wins.
@@ -588,7 +613,8 @@ Sent, each only from a user's action:
 - a replay's verdict, through **Share result**, after its preview (see "Share result");
 - a report's steps, to the paired desktop app, through **Run with Playwright**, after its preview (see "The desktop
   app");
-- a locator or steps, to the paired editor, through **Send to editor**.
+- a locator or steps, to the paired editor, through **Send to editor**;
+- a control of the Runs window or the run shortcut, to the paired editor's hubs (see "The editor's runs").
 
 ### The desktop app
 
@@ -652,7 +678,7 @@ from, after a preview: `POST /api/bug-reports/:id/reproductions`.
 
 ### The requests and who makes them
 
-Only `piwi-client.ts` makes requests to the instance, the desktop app and the editor, from exactly two contexts:
+Only `piwi-client.ts` makes requests to the instance, the desktop app and Send to editor, from exactly two contexts:
 
 - `src/options/`: connecting, saving, reading and adding URL patterns, pairing the desktop app;
 - the worker:
@@ -663,9 +689,14 @@ Only `piwi-client.ts` makes requests to the instance, the desktop app and the ed
     take one from the page; `piwi-share-reproduction` records a verdict as "Share result" says;
   - `piwi-replay-step-view`, for the stored replay's report (`step-views.ts`);
   - the desktop app's messages: `piwi-desktop-repro`, `piwi-desktop-repro-status` (`desktop-repro.ts`);
-  - `piwi-send-to-editor`, which posts to the paired editor (`postToEditor`).
+  - `piwi-send-to-editor`, which posts to the paired editor (`postToEditor`) once it proved it holds the token (see
+    "Finding the hubs").
 
-**Never from a content script**, so the API key never reaches a page's JavaScript context. `record-panel.ts`,
+The editor's runs are the one exception to `piwi-client.ts`, in the worker too: `run-hubs.ts` asks the editor's
+`…/live` (through `proveEditor`), and `hub-connection.ts` keeps a WebSocket to each hub (see "The editor's runs").
+
+**Never from a content script, nor from an extension page but the settings page.** So the API key never reaches a
+page's JavaScript context, and the Runs window reads the editor's runs from the worker. `record-panel.ts`,
 `test-function-panel.ts` and `coverage-overlay.ts` read the cache. When they need fresher data, they ask the worker
 through `catalog-refresh.ts` / `locator-index-refresh.ts` rather than fetching themselves. They build their links into
 the dashboard with `instance-links.ts`, which fetches nothing. `piwi-client.test.ts` fails on a file of `src/content/`
@@ -725,6 +756,127 @@ ready, partial or not found.
 - It counts what Playwright finds, open shadow roots included (`createPageEngine`). For a test id target that is every
   element carrying it, hidden ones too, as `getByTestId` does. For a role or name target it is none hidden from the
   accessibility tree, as `getByRole` does.
+
+## The editor's runs
+
+The paired editor (VS Code or a JetBrains IDE, the one Send to editor reaches) starts Playwright runs whose tests can
+stop at a breakpoint. Each of its windows runs an editor service, which shares its runs through a **hub**: a WebSocket
+server on 127.0.0.1 that pushes each run as it changes and takes commands. The protocol is `@piwitests/core/run-hub`,
+the editor's side `packages/editor/src/run-hub.ts`, and the design `proposals/run-control.md` Part 4.
+
+The extension follows and steers these runs from the background worker alone, beside Send to editor. The Runs window
+and the popup's Runs tile only ask the worker, and the worker handles the run shortcut.
+
+### Finding the hubs
+
+`RunHubs` (`background/run-hubs.ts`) asks the paired editor for its hubs:
+
+1. The address is the Send to editor pairing's, with `send` replaced by `live` (`liveUrlOf`). It needs the grant the
+   pairing holds for the editor's origin.
+2. The address is kept on 127.0.0.1 whatever loopback name it was typed with, as it is stored and as it is read
+   (`canonicalEditorUrl`, `editor-pairing.ts`). The proof below names the port alone, so `localhost` could reach
+   another program on `[::1]` at that port, which would relay the challenge to the editor.
+3. Before the pairing's token goes to the editor, the program on the port proves it holds the token (`proveEditor`,
+   `src/shared/editor-proof.ts`). Send to editor's post (`postToEditor`) asks the same proof first. A request carrying
+   a challenge alone (`EDITOR_CHALLENGE_HEADER`) goes to `…/live`, which answers a GET in both editors (a JetBrains
+   IDE's `…/send` takes a POST alone). The answer must carry `editorTokenProof` for the port the request was sent to,
+   compared in constant time.
+   - An endpoint without the proof, or with a wrong one, gets nothing, and no hub kept is connected (`unproven`,
+     asked again later).
+   - One answering 404 without it predates the proof (`outdated`). Send to editor then asks to update the editor's
+     Piwi extension or plugin (`common_editorOutdated`).
+4. Then `GET …/live` with the pairing's token as a bearer token. `parseLiveAnswer` reads the answer: each hub's
+   address and token.
+5. The hubs go to the secret area under `hubs`, never to `chrome.storage.local`. Unpair removes them
+   (`setEditorPairing(null)`).
+
+The hubs are found again:
+
+- as the worker starts;
+- when the pairing changes, or a grant does. `piwiEditorPairing` carries `at`, the time of the pairing, so pairing
+  again at the same address with another token is a change too;
+- when a hub's connection fails, after a wait of 1 s that doubles up to 30 s. The count of failures starts again only
+  once a connection opens, never because another hub's runs change. With no Runs window open the worker tries four
+  times in a row, then waits to be asked; while a Runs window is open it tries without end;
+- when the popup, the Runs window or the run shortcut asks.
+
+An unreachable editor leaves the hubs found last to try.
+
+### A connection per hub
+
+`HubConnection` (`background/hub-connection.ts`) is the worker's connection to one hub:
+
+- It uses the browser's WebSocket (`browserSocket`), which sends the extension's origin.
+- It sends `hello` with the hub's token, then `subscribe` once the hub welcomed it. Each `session` the hub pushes is
+  kept by its ref. `RunHubs` keeps an ended run ten minutes with its last workers (`keepEnded`, five at most), so the
+  window still names its tests.
+- Every message goes through `parseHubMessage`; one it cannot read is ignored.
+- A command gets the next `id` and waits for the answer of that `id`. When the connection is closed, or the answer
+  does not come in time, the connection answers the command itself (`offline` or `timeout`). The hub's own `id` never
+  leaves the connection.
+- Silence past two keepalives and 10 s closes the connection (`silent`). A close with code 4001 (the hub refused the
+  token) drops the hub from the secret area.
+- Chrome keeps the worker running while a WebSocket hears a message within 30 s, which the hub's keepalive gives
+  (every `HUB_KEEPALIVE_MS`, 20 s). That holds from Chrome 116, under the manifest's `minimum_chrome_version` of 118.
+  Firefox's background page connects again when it is asked.
+
+### The Runs window
+
+The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `src/shared/runs.ts`. The worker's side is
+`background/runs-window.ts`.
+
+- The popup's **Runs** tile opens it (`piwi-open-runs`). An open one is brought to the front, found from its port or
+  `runtime.getContexts`. Otherwise the worker opens it in a small window of its own
+  (`windows.create({ type: 'popup' })`).
+- The tile asks `piwi-runs-summary`, and shows only while a hub answers. Both messages are the extension pages' alone
+  (`EXTENSION_PAGE_MESSAGES`).
+- The window talks only to the worker, through the port `RUNS_PORT`. The worker takes that port from `runs.html` alone
+  (`fromRunsPage`: the extension's id and the page's address), and reads its messages with `parseRunsRequest`. The
+  state the worker posts (`RunsState`) carries no token, and the window makes no network call.
+- Every control but Pause names the stop shown (`since`), so a click made twice never answers the next stop.
+- The image of a stopped page is asked once per stop. It is shown as a `data:` JPEG, after its base64 is checked again.
+- A hub's sentences are shown as text; a call's title goes through `richText`.
+- Each part of the window (a run's heading, a worker's state, its test, its stop, its image, its buttons, an answer)
+  is kept by key and drawn again only when what it shows changes (`part`, `place`). So a button under the pointer
+  stays the same element while the run goes on. A worker's buttons are drawn again for each stop, each naming its
+  own.
+- While a command is on its way, the worker's buttons are `aria-disabled` and take no press. They are never
+  `disabled`, so they keep the focus.
+- The focus is kept across redraws by `data-focus`. A control a redraw took away gets the focus back when it is drawn
+  again (Step, at the next stop); meanwhile another control of the same worker holds it.
+- `#announce` (a polite live region) says when a test stops, goes on, or a run ends, and what a command answered
+  under the test.
+- The line under the heading says the window follows the editor while any of its hubs is connected.
+- The window pings the worker every 20 s (`RUNS_PING_MS`), which keeps the worker alive while the window is open.
+
+### The run shortcut
+
+The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared/runs.ts`), handled by the worker.
+
+- What it does comes from `shortcutCommands`: it resumes every stopped test at its stop; with no test stopped, it
+  pauses every run with a worker.
+- It has no key at install (see "The manifest and its permissions"). The Runs window's footer shows the key it was
+  given (`chrome.commands.getAll`, read again when the window gets the focus back), or says it has none.
+- The footer's **Set a shortcut** opens the browser's shortcuts page: Firefox's Manage Extension Shortcuts through
+  `commands.openShortcutSettings`, else `chrome://extensions/shortcuts` (`edge://extensions/shortcuts` in Edge)
+  through `chrome.tabs.create`, and the docs when neither opens.
+- The e2e suite cannot press a shortcut the browser holds: the worker's `__piwiRunShortcut()` does what the shortcut
+  does.
+
+### How the runs are tested
+
+- `run-hubs.test.ts` plays the editor's endpoint and each hub's socket: the proof, discovery, hello, subscribe,
+  answers, keepalive, backoff and the shortcut.
+- `editor-pairing.test.ts` checks Send to editor's proof against a JetBrains IDE's routes, and the pairing's address
+  and `at`.
+- `runs.test.ts` covers the pure half (`src/shared/runs.ts`).
+- `runs.spec.ts` runs the real extension against the real editor service, started in-process
+  (`tests/e2e/runs-fixtures.ts`, on `packages/editor/tests/run-fixtures.ts`). A stub stands in for the Send to editor
+  endpoint, and a fake worker plays a run on the run channel. It covers the popup's tile; the window's Pause, Step
+  (the focus kept), Resume, image, Pick and Record; a press held while the run changes; the shortcut and its Set a
+  shortcut; and a page served from `127.0.0.1`, which the hub refuses.
+- `docs-screenshots.spec.ts` captures `picker-runs.png` the same way: the page's image without the pause bar, as the
+  reporter takes it.
 
 ## Tested elements
 
@@ -1552,7 +1704,8 @@ found by its icon and its color before its words are read, and a step reads at a
     `chrome.permissions` access) can't provide on its own either.
 - **Every text the extension shows comes from the catalogs** (`public/_locales/<code>/messages.json`) through `t()` /
   `tn()` / `tNodes()` in `src/shared/i18n.ts`.
-  - The HTML pages (`popup.html`, `options.html`, `login.html`, `devtools-panel.html`, `devtools-sidebar.html`) name
+  - The HTML pages (`popup.html`, `options.html`, `login.html`, `devtools-panel.html`, `devtools-sidebar.html`,
+    `runs.html`) name
     their keys in `data-i18n*` attributes, which `localizeDocument()` fills.
   - A page or script calls `await initI18n()` once before its first text, for the Language setting's override.
   - A new message goes into every catalog in the same change, English with a `description`. See `i18n/README.md` for

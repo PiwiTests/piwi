@@ -20,11 +20,13 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   keybindings and settings name the ids, which `proposals/1.0-stabilization.md` freezes at 1.0.
 - **The instance, the project's reporter and the desktop app may be older than the service: keep reading them.** Each
   is installed on its own, so a route or a field an older one lacks has a fallback, and the variables a test run passes
-  the reporter (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`, `PIWI_PAUSE_AT`, `PIWI_RECORD_CHANNEL`, `PIWI_COVERAGE_SERVER`,
-  `PIWI_COVERAGE_BROWSER`) keep their names and formats. ([ARCHITECTURE.md](ARCHITECTURE.md#clients-and-versions))
+  the reporter (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`, `PIWI_PAUSE_AT`, `PIWI_RUN_CHANNEL`, `PIWI_RECORD_CHANNEL`,
+  `PIWI_COVERAGE_SERVER`, `PIWI_COVERAGE_BROWSER`) keep their names and formats. On the run channel, an intent a
+  worker's `run-attach` does not list in `takes` is refused. ([ARCHITECTURE.md](ARCHITECTURE.md#clients-and-versions))
 - **A change is pushed only when it differs from what the client holds.** `piwi/statusChanged`, `piwi/runStatusChanged`,
-  `piwi/failuresChanged` and `piwi/coverageChanged` compare with the last answer sent or answered, and carry the whole
-  new answer, so a client can keep it without reading it again. Checked by `tests/lsp.test.ts` ("a change pushed to the client").
+  `piwi/failuresChanged` and `piwi/coverageChanged` compare with the last answer sent or answered,
+  `piwi/runSessionChanged` with the last session sent, and each carries the whole new answer, so a client can keep it
+  without reading it again. Checked by `tests/lsp.test.ts` ("a change pushed to the client").
   ([ARCHITECTURE.md](ARCHITECTURE.md#pushed-changes))
 - **Completion scans the file only after a member chain and `.`, or after `expect(`.** `(` is a trigger character, and
   completion after any other `(` is empty (`locatorCompletionSite`). ([ARCHITECTURE.md](ARCHITECTURE.md#completion))
@@ -100,12 +102,53 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **Only the main frame of the page a recording opened first records.** Every other frame and page (a popup, a
   cross-origin iframe) is answered as outside a recording (`src/recorder/host-state.ts`).
 - **The record channel is private to this user.** Its Unix socket lives in a new owner-only folder of the temporary
-  directory (a named pipe on Windows), and a paused test attaches only with the channel's token
-  (`src/recorder/handoff.ts`). Checked by `tests/handoff.test.ts`.
+  directory (a named pipe on Windows), and a paused test attaches, or a worker opens its run connection (`run-attach`),
+  only with the channel's token, compared in constant time (`sameToken` in `src/recorder/handoff.ts`). Checked by
+  `tests/handoff.test.ts` and `tests/run-sessions.test.ts` ("… refuses a wrong token").
   ([ARCHITECTURE.md](ARCHITECTURE.md#recording-from-a-paused-test))
 - **A recorder change in `apps/extension` changes what the editor clients ship.** `build.mjs` imports `buildIdeBundle`
   from `apps/extension/scripts/build.mjs` to write `record-ide.js` and its messages, so the build needs the extension's
   sources. ([ARCHITECTURE.md](ARCHITECTURE.md#build-output))
+
+### Run control
+
+- **A control that answers a stop names it (`since`), and reaches no worker past it.** `piwi/runControl` answers
+  `The test went on.` for a `since` no worker stands at, and the hub refuses `step`, `resume`, `finish`, `pick` and
+  `record` without one. Checked by `tests/run-sessions.test.ts` ("names each stop apart, …").
+  ([ARCHITECTURE.md](ARCHITECTURE.md#controls-breakpoints-and-the-paused-page))
+- **A line a client sends for a run is a line of the run's code** (`run-to`, `piwi/setRunBreakpoints`). The client maps
+  a document edited since the run started back to it, and the service refuses or leaves out a file outside the run's
+  folder, as `PIWI_PAUSE_AT` does. ([ARCHITECTURE.md](ARCHITECTURE.md#controls-breakpoints-and-the-paused-page))
+- **A stop no pause bar shows goes on unless a surface answers stops.** The surfaces are a client that sent
+  `InitializationOptions.runControl` and a subscribed hub connection (`answersStops` in `src/server.ts`). Checked by
+  `tests/run-sessions.test.ts` ("… a client that does not answer stops") and `tests/run-hub.test.ts` ("a stop nobody
+  else can answer …"). ([ARCHITECTURE.md](ARCHITECTURE.md#stops-no-pause-bar-shows))
+- **One connection per worker of a run.** A run connection naming the index of a worker connected now is closed, so
+  another process the run's environment reached takes no worker's place. Checked by `tests/run-sessions.test.ts`
+  ("refuses a second process …"). ([ARCHITECTURE.md](ARCHITECTURE.md#run-sessions))
+- **The hub listens on `127.0.0.1` alone, and opens a WebSocket only for a browser extension that names it as this
+  machine.** A `Host` other than `127.0.0.1:<port>` or `localhost:<port>` (`isHubHost`) or an `Origin` that is not an
+  extension's (`isExtensionOrigin`) gets a 403 first, and commands are read only after `hello` with the hub's token
+  (`sameToken`) within `HUB_HELLO_MS`. Checked by `tests/run-hub.test.ts` ("the handshake").
+  ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
+- **A hub command is one of a closed set, checked field by field (`parseHubCommand`), and nothing it asks evaluates
+  code, reads a file or reaches an instance.** Checked by `tests/run-hub.test.ts` ("the commands").
+  ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
+- **The hub keeps out other users and web pages, not this user's own processes.** Its token is in the discovery file
+  and in the clients' `GET …/live`, which any holder of the pairing's token reads, the runs the editor starts included
+  (`PIWI_EDITOR_SEND`). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
+- **What the hub sends must read with `parseHubMessage`, which Piwi Picker uses.** The hub cuts the command line, the
+  project and client names and the folders to its limits (`MAX_HUB_COMMAND`, `MAX_HUB_ROOTS`, …). Checked by
+  `tests/run-hub.test.ts` ("what the hub sends"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
+- **The discovery file is this user's alone, and a reader deletes only a dead service's file of this machine.**
+  `writeDiscovery` renames a 0600 file into a 0700 folder this user owns, never a link; a reader skips a folder that is
+  a link, another user's or open to others, reads only files this user owns, and deletes only a file naming this
+  machine (`host`) and a process that is gone. Checked by `tests/discovery.test.ts`.
+  ([ARCHITECTURE.md](ARCHITECTURE.md#the-discovery-file))
+- **Every way the service stops removes its discovery file**: `shutdown`, `exit` and the function `startServer`
+  returns, and in `src/main.ts` the process's `exit`, `SIGINT`, `SIGTERM` and `SIGHUP`. Checked by
+  `tests/discovery.test.ts` ("the bundled service") and `tests/run-hub.test.ts` ("goes as the service stops").
+  ([ARCHITECTURE.md](ARCHITECTURE.md#the-discovery-file))
 
 ## Workflow
 
@@ -119,9 +162,10 @@ npm run editor:format       # :check to verify only
 npm run editor:test         # the Vitest suites of tests/
 ```
 
-- `tests/launcher.test.ts`, the first test of `tests/handoff.test.ts` and the stdio test of `tests/lsp.test.ts` need
-  `npm run editor:build` first; the first two also need `npx playwright install chromium` once. Each skips when what it
-  needs is missing. ([ARCHITECTURE.md](ARCHITECTURE.md#tests))
+- `tests/launcher.test.ts`, the first test of `tests/handoff.test.ts`, the stdio test of `tests/lsp.test.ts` and the
+  bundled service's tests of `tests/discovery.test.ts` need `npm run editor:build` first; the first two also need
+  `npx playwright install chromium` once. Each skips when what it needs is missing.
+  ([ARCHITECTURE.md](ARCHITECTURE.md#tests))
 - The scope for commits here and in the editor clients is `ide`.
 
 ## ARCHITECTURE.md sections
@@ -133,6 +177,8 @@ npm run editor:test         # the Vitest suites of tests/
   summary, test items, run streams, runs in progress and the editor's own run.
 - [Breakpoints and picked locators](ARCHITECTURE.md#breakpoints-and-picked-locators): `PIWI_PAUSE_AT`, the reporter
   version check, `piwi/applyPick`.
+- [Run control](ARCHITECTURE.md#run-control): the run sessions, `piwi/runControl` and the paused page, the stops no
+  pause bar shows, the hub Piwi Picker connects to, and the discovery file.
 - [Coverage](ARCHITECTURE.md#coverage): coverage marks and uncovered changes.
 - [Analysis and completion](ARCHITECTURE.md#analysis-and-completion): the diagnostics and their quick fixes, and where
   completion offers locator chains.

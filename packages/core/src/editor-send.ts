@@ -6,7 +6,37 @@
  * request carries the token as a bearer credential. A test run the editor
  * starts gets the same address, and a locator picked while it is paused at a
  * breakpoint names that line (`at`), for the editor to replace the locator there.
+ *
+ * Before it sends the token, the extension checks that the program at the
+ * address holds it: a request carrying a random challenge in
+ * {@link EDITOR_CHALLENGE_HEADER} is answered, authorized or not, with
+ * {@link editorTokenProof} in {@link EDITOR_PROOF_HEADER}, an HMAC of the
+ * challenge keyed by the token for the loopback port the editor answers on.
+ * Another program that took the port holds no token, and one that relays the
+ * challenge to the editor on another port gets a proof for that other port.
  */
+import { hmacSha256Hex, randomHex } from './hmac';
+
+/** The request header carrying the challenge. */
+export const EDITOR_CHALLENGE_HEADER = 'x-piwi-editor-challenge';
+
+/** The response header carrying the proof. */
+export const EDITOR_PROOF_HEADER = 'x-piwi-editor-proof';
+
+/** Whether `value` is a challenge: 32 to 128 lowercase hex characters. */
+export function isEditorChallenge(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{32,128}$/.test(value);
+}
+
+/** A new challenge: 32 random bytes, hex. */
+export function newEditorChallenge(): string {
+  return randomHex(32);
+}
+
+/** The proof, hex: HMAC-SHA256 keyed by the pairing's `token` over `piwi-editor-proof:<port>:<challenge>`. */
+export function editorTokenProof(token: string, port: number, challenge: string): Promise<string> {
+  return hmacSha256Hex(token, `piwi-editor-proof:${port}:${challenge}`);
+}
 
 /** Where a picked locator belongs: a file relative to the run's working directory, and its 1-based line. */
 export interface EditorSendPlace {

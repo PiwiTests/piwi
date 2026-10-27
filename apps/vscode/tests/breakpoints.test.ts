@@ -1,7 +1,8 @@
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, test } from 'vitest';
-import { runBreakpoints, type BreakpointLike } from '../src/breakpoints';
+import { placesOf, runBreakpoints, type BreakpointLike } from '../src/breakpoints';
+import type { RunBreakpoint } from '../src/run-control';
 
 const root = path.resolve('/work/shop');
 
@@ -9,6 +10,7 @@ const root = path.resolve('/work/shop');
 function at(file: string, line: number, enabled = true, scheme = 'file'): BreakpointLike {
   const href = pathToFileURL(file).href;
   return {
+    id: `${file}:${line}`,
     enabled,
     location: { uri: { scheme, fsPath: file, toString: () => href }, range: { start: { line } } },
   };
@@ -27,14 +29,19 @@ describe('the breakpoints a run pauses at', () => {
           at(path.join(root, 'README.md'), 3),
           at(path.resolve('/work/other/a.spec.ts'), 1),
           at(spec, 2, true, 'untitled'),
-          { enabled: true },
+          { id: 'function', enabled: true },
         ],
         [root],
       ),
     ).toEqual([
-      { uri: pathToFileURL(spec).href, line: 41 },
-      { uri: pathToFileURL(page).href, line: 8 },
+      { id: `${spec}:41`, uri: pathToFileURL(spec).href, line: 41 },
+      { id: `${page}:8`, uri: pathToFileURL(page).href, line: 8 },
     ]);
+  });
+
+  test('go to the service without their ids', () => {
+    const breakpoint: RunBreakpoint = { id: 'b1', uri: 'file:///work/shop/a.spec.ts', line: 3 };
+    expect(placesOf([breakpoint])).toEqual([{ uri: 'file:///work/shop/a.spec.ts', line: 3 }]);
   });
 
   test('are none without a Playwright config', () => {
