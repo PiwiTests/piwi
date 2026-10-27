@@ -222,7 +222,10 @@ async function waitFor<T>(read: () => T | undefined | Promise<T | undefined>, ms
   }
 }
 
-/** A service on the fixture repository, ready once it read the latest run on the checked-out branch and the code index. */
+/**
+ * A service on the fixture repository, ready once it read the latest run on the checked-out branch and the code index,
+ * and no refresh runs.
+ */
 async function startService(apiKey?: string): Promise<{ client: MessageConnection; stop: () => void }> {
   const toServer = new PassThrough();
   const toClient = new PassThrough();
@@ -253,6 +256,9 @@ async function startService(apiKey?: string): Promise<{ client: MessageConnectio
     const context = status.contexts[0];
     return context?.connected && context.reachedFiles > 0 && run.contexts[0]?.checkedOut === 'main' ? true : undefined;
   });
+  // The refresh `initialized` started may still be reading the other indexes: `piwi/refresh` answers once it, and the
+  // refresh asked for after it, have ended.
+  await connection.sendRequest('piwi/refresh');
   return { client: connection, stop: stopService };
 }
 
