@@ -8,6 +8,7 @@ import {
   citedItemIds,
   groupRowsBySection,
   sectionSummaryText,
+  stepsTrack,
   testTrack,
   windowCutText,
   windowCuts,
@@ -257,6 +258,35 @@ describe('duration bars on the test clock', () => {
   test('without a test duration, the track runs from the test start to the timeline end', () => {
     const tl = timeline({ consoleAt: -3_000 });
     expect(testTrack(tl, null)).toEqual({ start: 3_000, length: tl.end - tl.origin - 3_000 });
+  });
+
+  test('a test that stood paused has its track run to its last step or stop, not to its duration', () => {
+    const tl = buildFailureTimeline({
+      startedAt: T0,
+      duration: 1_600,
+      status: 'failed',
+      steps: [
+        { title: 'goto /checkout', category: 'pw:api', duration: 500, startTime: T0 },
+        { title: 'click Pay', category: 'pw:api', duration: 5_100, startTime: T0 + 500, error: 'timed out' },
+      ],
+      stepEvents: [{ title: 'Click', category: 'pause', startedAt: T0 + 520, duration: 4_000, status: 'breakpoint' }],
+    });
+    expect(testTrack(tl, 1_600)).toEqual({ start: 0, length: 5_600 });
+    const [, click] = tl.lanes.steps.map((step) => barPlace(step.at, step.duration, testTrack(tl, 1_600)));
+    expect(click!.left + click!.width).toBe(100);
+    expect(click!.left).toBeCloseTo((500 / 5_600) * 100, 6);
+  });
+
+  test('a passing test’s own track spans its steps, and its stops when it stood paused', () => {
+    const steps = [
+      { startTime: T0, duration: 500 },
+      { startTime: T0 + 500, duration: 4_100 },
+    ];
+    expect(stepsTrack(steps, 600)).toEqual({ start: T0, length: 600 });
+    expect(stepsTrack(steps, null)).toEqual({ start: T0, length: 4_600 });
+    expect(stepsTrack(steps, 600, [{ startedAt: T0 + 520, duration: 4_000 }])).toEqual({ start: T0, length: 4_600 });
+    expect(stepsTrack([{ duration: 500 }], 600)).toBeNull();
+    expect(stepsTrack([], 600)).toBeNull();
   });
 
   test('a short bar keeps its minimum width, even at the end of the track', () => {

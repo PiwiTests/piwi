@@ -26,7 +26,7 @@ export const ASSISTANT_BLOCK_LIMITS = {
   titleChars: 60,
   /** A question's or an options block's prompt, a checklist step's text. */
   promptChars: 300,
-  /** A choice's label and detail, an option's summary and trade-off, an entity card's detail, a page link's label. */
+  /** A choice's label and detail, an option's summary and trade-off, an entity card's detail, a page link's label, a next question. */
   labelChars: 120,
   minOptions: 2,
   maxOptions: 4,
@@ -188,6 +188,12 @@ export const ASSISTANT_BLOCK_INPUTS = {
     route: z.string().trim().min(1).max(500).describe("A dashboard route from the app's root, with real ids"),
     label: label.describe('What the link opens, in a few words'),
   }),
+  suggest_next: z.object({
+    id: blockId.default('next'),
+    question: label.describe(
+      'The question the user would most likely ask next, in their words and language, at most 120 characters: "How do I fix it?"',
+    ),
+  }),
   propose_change: z.object({
     id: blockId,
     action: z.enum(ASSISTANT_ACTION_IDS).describe('One of the actions this tool lists'),
@@ -207,9 +213,12 @@ export const ASSISTANT_BLOCK_INPUTS = {
 
 export type AssistantBlockTool = keyof typeof ASSISTANT_BLOCK_INPUTS;
 
-/** Whether a block ends its answer: a question or options, whose pick comes back as the next question's reply. */
+/**
+ * Whether a block ends its answer: a question or options, whose pick comes
+ * back as the next question's reply, and the next question, suggested last.
+ */
 export function endsAssistantAnswer(block: AssistantBlock): boolean {
-  return block.kind === 'question' || block.kind === 'options';
+  return block.kind === 'question' || block.kind === 'options' || block.kind === 'next';
 }
 
 export function isAssistantBlockTool(name: string): name is AssistantBlockTool {
@@ -308,6 +317,7 @@ const BUILDERS: {
   },
   show_guide: (i) => ({ ok: true, block: { kind: 'guide', id: i.id, guide: { title: i.title, stops: i.stops } } }),
   navigate: (i) => ({ ok: true, block: { kind: 'navigate', id: i.id, route: i.route, label: i.label } }),
+  suggest_next: (i) => ({ ok: true, block: { kind: 'next', id: i.id, question: i.question } }),
   propose_change: (i, env, unknownEntity) => {
     const action = ASSISTANT_ACTIONS[i.action];
     const params = action.params.safeParse(i.params);

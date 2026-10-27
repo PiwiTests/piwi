@@ -1,4 +1,11 @@
-import { monitorEventLoopDelay, performance, type EventLoopUtilization, type ELDHistogram } from 'node:perf_hooks';
+import {
+  PerformanceObserver,
+  constants as perfConstants,
+  monitorEventLoopDelay,
+  performance,
+  type EventLoopUtilization,
+  type ELDHistogram,
+} from 'node:perf_hooks';
 import type { RoleCost } from '@piwitests/core/wire';
 import { ProcFs, descendantsOf, roleOf, type ProcessRole } from '../support/system-readers.js';
 
@@ -23,6 +30,12 @@ export interface TestMetrics {
     loopDelayP99Ms: number;
     loopDelayMaxMs: number;
     heapUsedMb: number;
+    /**
+     * The heap right after the lowest full garbage collection V8 ran during
+     * the test, or null when it ran none: what the worker really holds, without
+     * the garbage `heapUsedMb` counts until it is collected.
+     */
+    heapAfterGcMb?: number | null;
     /** Open file descriptors at the test's end (Linux). */
     fds: number | null;
   };
@@ -35,8 +48,11 @@ export interface PageMain {
   /** Main-thread CPU since Piwi first read the page. */
   cpuMs: number;
   heapMb: number;
+  /** DOM nodes alive in the renderer, detached ones not yet collected included. */
   nodes: number;
   listeners: number;
+  /** Elements attached to the main frame's document: exact, with no garbage in it. */
+  elements?: number;
 }
 
 const MB = 1024 * 1024;
@@ -47,6 +63,9 @@ function round1(value: number): number {
 
 export class WorkerMetrics {
   private readonly histogram: ELDHistogram | null;
+  private readonly gcObserver: PerformanceObserver | null;
+  /** The lowest heap read right after a full garbage collection in the current window. */
+  private heapAfterGc: number | null = null;
   private readonly linux: boolean;
   private loop: EventLoopUtilization | null = null;
   private usage: NodeJS.ResourceUsage | null = null;
@@ -68,6 +87,29 @@ export class WorkerMetrics {
       histogram = null;
     }
     this.histogram = histogram;
+    this.gcObserver = this.observeFullCollections();
+  }
+
+  /**
+   * Read the heap after each full (major) garbage collection V8 runs on its
+   * own: nothing is forced, so a test that triggers none reads null.
+   */
+  private observeFullCollections(): PerformanceObserver | null {
+    try {
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          const detail = (entry as { detail?: { kind?: number } }).detail;
+          const kind = detail?.kind ?? (entry as { kind?: number }).kind;
+          if (kind !== perfConstants.NODE_PERFORMANCE_GC_MAJOR) continue;
+          const heap = process.memoryUsage().heapUsed;
+          this.heapAfterGc = Math.min(this.heapAfterGc ?? Infinity, heap);
+        }
+      });
+      observer.observe({ entryTypes: ['gc'] });
+      return observer;
+    } catch {
+      return null;
+    }
   }
 
   /** The worker's processes under it, keyed by pid and start time. */
@@ -104,6 +146,7 @@ export class WorkerMetrics {
   start(processes = true): void {
     try {
       this.histogram?.reset();
+      this.heapAfterGc = null;
       this.loop = performance.eventLoopUtilization();
       this.usage = process.resourceUsage();
       if (this.linux && processes && !this.subtree) this.snapshot();
@@ -128,6 +171,7 @@ export class WorkerMetrics {
           loopDelayP99Ms: this.histogram ? round1(this.histogram.percentile(99) / 1e6) : 0,
           loopDelayMaxMs: this.histogram ? round1(this.histogram.max / 1e6) : 0,
           heapUsedMb: round1(process.memoryUsage().heapUsed / MB),
+          heapAfterGcMb: this.heapAfterGc === null ? null : round1(this.heapAfterGc / MB),
           fds: this.linux ? this.proc.fdCount(this.pid) : null,
         },
       };
@@ -165,6 +209,7 @@ export class WorkerMetrics {
 
   dispose(): void {
     this.histogram?.disable();
+    this.gcObserver?.disconnect();
   }
 }
 
@@ -201,12 +246,36 @@ export class PageReader {
         metrics?: Array<{ name: string; value: number }>;
       };
       const values = new Map((result.metrics ?? []).map((metric) => [metric.name, metric.value]));
-      return {
+      const main: PageMain = {
         cpuMs: Math.round((values.get('TaskDuration') ?? 0) * 1000),
         heapMb: round1((values.get('JSHeapUsedSize') ?? 0) / MB),
         nodes: values.get('Nodes') ?? 0,
         listeners: values.get('JSEventListeners') ?? 0,
       };
+      const elements = await this.countElements(page, opened);
+      if (elements !== null) main.elements = elements;
+      return main;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The elements attached to the page's main document, through the page's own
+   * DevTools session: no Playwright call, so no step and no trace action. The
+   * count runs in the page's main world and changes nothing in it.
+   */
+  private async countElements(page: object, session: CdpSessionLike): Promise<number | null> {
+    try {
+      const result = (await internalCall(page, () =>
+        session.send('Runtime.evaluate', {
+          expression: "document.getElementsByTagName('*').length",
+          returnByValue: true,
+          silent: true,
+        }),
+      )) as { result?: { value?: unknown } };
+      const value = result.result?.value;
+      return typeof value === 'number' && Number.isFinite(value) ? value : null;
     } catch {
       return null;
     }

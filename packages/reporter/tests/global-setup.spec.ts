@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import { createGlobalSetup } from '../src/public/global-setup.js';
@@ -373,6 +373,22 @@ describe('createGlobalSetup', () => {
         expect(requests.map((r) => r.url)).toContain('/api/test-runs/setup');
         expect(requests[0]!.url).toBe('/');
       } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('says so when a remote browser reaches the base URL from its own network', async () => {
+      const { server, url } = await startServer((_req, res) => jsonRes(res, 200, { runId: 6, setupToken: 't' }));
+      cleanupNames.push('base-url-remote');
+      const logs: string[] = [];
+      const spy = vi.spyOn(console, 'log').mockImplementation((msg: string) => void logs.push(msg));
+      try {
+        const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'base-url-remote', checkBaseUrl: true });
+        const connectOptions = { wsEndpoint: 'ws://grid.example.test/' };
+        await setupFn({ reporter: [PIWI_REPORTER_ENTRY], projects: [{ name: 'grid', use: { baseURL: `${url}/`, connectOptions } }] });
+        expect(logs.some((l) => l.startsWith(`[Piwi Dashboard] Base URL answered: ${url}/. The check ran from`))).toBe(true);
+      } finally {
+        spy.mockRestore();
         await new Promise<void>((r) => server.close(() => r()));
       }
     });

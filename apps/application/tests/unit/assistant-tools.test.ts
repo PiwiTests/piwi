@@ -123,6 +123,7 @@ describe('the toolbox', () => {
       'checklist',
       'show_guide',
       'navigate',
+      'suggest_next',
       'propose_change',
     ]);
     expect(names).toContain('list_projects');

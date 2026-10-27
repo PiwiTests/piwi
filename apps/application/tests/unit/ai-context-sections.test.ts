@@ -89,6 +89,20 @@ describe('representativeExecutionSections — id alignment (Tier 0.2)', () => {
     expect(byId.get('console')).toContain('boom');
   });
 
+  test('a step the test stood paused in says how much of its time that was', () => {
+    const T = 1_700_000_000_000;
+    const rep = makeRep({
+      steps: [
+        { category: 'navigation', title: 'Navigate', duration: 106, startTime: T },
+        { category: 'assertion', title: 'Expect "toBeVisible"', duration: 7300, startTime: T + 200, failed: true },
+      ],
+      stepEvents: [{ title: 'Expect', category: 'pause', startedAt: T + 300, duration: 6300, status: 'breakpoint' }],
+    });
+    const steps = representativeExecutionSections(rep, null, limits).find((s) => s.id === 'steps')!.markdown;
+    expect(steps).toContain('Navigate (106ms)');
+    expect(steps).toContain('Expect "toBeVisible" (7300ms, 6300ms of it paused) ← FAILED');
+  });
+
   test('execution error is included when there is no cluster to dedupe against', () => {
     const rep = makeRep({ error: 'Error: something failed' });
     const sections = representativeExecutionSections(rep, null, limits);

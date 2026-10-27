@@ -1,6 +1,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { getAppSetting } from './app-settings';
 import { callClaudeCli, streamClaudeCli } from './ai-claude-cli';
+import { callCodexCli, streamCodexCli } from './ai-codex-cli';
+import { callDeepseekCli, streamDeepseekCli } from './ai-deepseek-cli';
 import { decryptSecret, getEncryptionKey } from './crypto';
 import { overlayStoredRoles, rolesFromLegacy, storedRoles, type RawStoredAi, type RawStoredRole } from './ai-settings';
 import type { AiProvider, AiConfig, AiModelRole, ResolvedAiRole } from '~~/types/api';
@@ -20,7 +22,7 @@ function isValidRole(role: ResolvedAiRole, kind: RoleKind): boolean {
   if (role.provider === 'anthropic') return Boolean(role.apiKey);
   if (role.provider === 'openai') return Boolean(role.baseUrl && role.model);
   // claude-cli needs no key, base URL or model (the CLI supplies its own default model).
-  if (role.provider === 'claude-cli') return true;
+  if (role.provider === 'claude-cli' || role.provider === 'codex-cli' || role.provider === 'deepseek-cli') return true;
   return false;
 }
 
@@ -34,7 +36,8 @@ function makeRole(
   temperature?: number | null,
 ): ResolvedAiRole | null {
   const p = (provider || '') as AiProvider;
-  if (p !== 'anthropic' && p !== 'openai' && p !== 'claude-cli') return null;
+  if (p !== 'anthropic' && p !== 'openai' && p !== 'claude-cli' && p !== 'codex-cli' && p !== 'deepseek-cli')
+    return null;
   const role: ResolvedAiRole = {
     provider: p,
     apiKey: apiKey || '',
@@ -258,6 +261,8 @@ export async function callAiProvider(config: ResolvedAiRole, opts: AiCallOptions
     if (config.provider === 'anthropic') {
       return await callAnthropic(config, opts);
     }
+    if (config.provider === 'deepseek-cli') return await callDeepseekCli(config, opts);
+    if (config.provider === 'codex-cli') return await callCodexCli(config, opts);
     if (config.provider === 'claude-cli') {
       return await callClaudeCli(config, opts);
     }
@@ -538,6 +543,10 @@ export async function* streamAiProvider(config: ResolvedAiRole, opts: AiCallOpti
   try {
     if (config.provider === 'anthropic') {
       yield* streamAnthropic(config, opts);
+    } else if (config.provider === 'deepseek-cli') {
+      yield* streamDeepseekCli(config, opts);
+    } else if (config.provider === 'codex-cli') {
+      yield* streamCodexCli(config, opts);
     } else if (config.provider === 'claude-cli') {
       yield* streamClaudeCli(config, opts);
     } else {

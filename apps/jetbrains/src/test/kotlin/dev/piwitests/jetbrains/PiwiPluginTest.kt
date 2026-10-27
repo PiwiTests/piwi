@@ -1075,7 +1075,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals(RunTest("t1", listOf("removes a row"), spec, 3, "chromium", 1, null), worker.test)
             val stop = worker.stop!!
             assertEquals(listOf("breakpoint", "Click locator('.cart-row').nth(2)", pageObject, "4", "20", "false"), listOf(stop.reason, stop.title, stop.uri, "${stop.line}", "${stop.character}", "${stop.bar}"))
-            assertEquals("⏸ Paused · Click locator('.cart-row').nth(2) · attempt 2", Glue.pausedText(stop, worker.test))
+            assertEquals("Paused · Click locator('.cart-row').nth(2) · attempt 2", Glue.pausedText(stop, worker.test))
 
             assertEquals(RunControlResult(true, "Stepping to the next call."), server.runControl(RunControlParams(ref, action = "step")).get(5, TimeUnit.SECONDS))
             waitFor("the step") { heard.firstOrNull { it["type"].asString == "control" && it["action"].asString == "step" && it["stop"].asInt == 1 } }

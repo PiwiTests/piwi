@@ -158,11 +158,27 @@ const usesClaudeCli = computed(() =>
 );
 const showClaudeCli = computed(() => isDesktop || Boolean(settings.value?.claudeCliAvailable) || usesClaudeCli.value);
 
+const showCodexCli = computed(
+  () =>
+    isDesktop ||
+    Boolean(settings.value?.codexCliAvailable) ||
+    Object.values(settings.value?.roles ?? {}).some((r) => r?.provider === 'codex-cli'),
+);
+
+const showDeepseekCli = computed(
+  () =>
+    isDesktop ||
+    Boolean(settings.value?.deepseekCliAvailable) ||
+    Object.values(settings.value?.roles ?? {}).some((r) => r?.provider === 'deepseek-cli'),
+);
+
 const providerOptions = computed(() => {
   const opts = [
     { label: 'Anthropic API', value: 'anthropic' },
     { label: 'OpenAI-compatible', value: 'openai' },
   ];
+  if (showDeepseekCli.value) opts.unshift({ label: 'DeepSeek Harness (local)', value: 'deepseek-cli' });
+  if (showCodexCli.value) opts.unshift({ label: 'Codex (local)', value: 'codex-cli' });
   if (showClaudeCli.value) opts.unshift({ label: 'Claude Code (local)', value: 'claude-cli' });
   return opts;
 });
@@ -426,6 +442,8 @@ function resetLimits() {
 
         <div class="space-y-5" data-shot="ai-model-providers">
           <ClaudeCliStatusCard v-if="showClaudeCli" />
+          <LocalCliStatusCard v-if="showCodexCli" provider="codex-cli" help="settings.ai-provider" />
+          <LocalCliStatusCard v-if="showDeepseekCli" provider="deepseek-cli" help="settings.ai-provider" />
 
           <AiRoleConfigForm
             v-for="meta in ROLE_META"

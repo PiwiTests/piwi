@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
+import { slackDelivery } from '#shared/notifications/channel-setup';
 import {
   describeSubscriptionFilters,
   notificationEventLabel,
@@ -325,6 +326,9 @@ PIWI_SMTP_PASS=secret"
                 <template v-if="ch.type === 'personal_email' || ch.type === 'email'">{{
                   ch.config.address as string
                 }}</template>
+                <template v-else-if="ch.type === 'slack' && slackDelivery(ch.config) === 'api'"
+                  >Slack Web API, channel {{ ch.config.channelId as string }}</template
+                >
                 <template v-else-if="ch.type === 'slack'">Slack webhook</template>
                 <template v-else-if="ch.type === 'teams'">Microsoft Teams webhook</template>
                 <template v-else-if="ch.type === 'browser'">Dashboard tabs (OS notifications)</template>

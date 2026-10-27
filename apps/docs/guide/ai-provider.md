@@ -1,6 +1,6 @@
 ---
 title: AI provider
-description: "Connect an LLM to the dashboard: Anthropic, OpenAI, a local OpenAI-compatible model or the Claude Code CLI, with model roles, response language and token limits."
+description: "Connect an LLM to the dashboard: Anthropic, OpenAI, a local OpenAI-compatible model or a local Claude Code or Codex CLI, with model roles, response language and token limits."
 lang: en-US
 ---
 
@@ -22,7 +22,7 @@ are not read.
 
 | Variable | Description |
 |----------|-------------|
-| `PIWI_AI_PROVIDER` | `anthropic`, `openai`, or `claude-cli` |
+| `PIWI_AI_PROVIDER` | `anthropic`, `openai`, `claude-cli`, `codex-cli`, or `deepseek-cli` |
 | `PIWI_AI_API_KEY` | Provider API key (stored encrypted when set via the UI; never returned by the API) |
 | `PIWI_AI_MODEL` | Model name (default: `claude-opus-4-8` for Anthropic) |
 | `PIWI_AI_BASE_URL` | Base URL of the provider API: required for `openai`, OpenAI itself (`https://api.openai.com/v1`) included; optional for `anthropic` (a gateway or proxy) |
@@ -31,8 +31,7 @@ are not read.
 | `PIWI_AI_RESEARCH_MODEL` / `_PROVIDER` / `_BASE_URL` / `_API_KEY` | Optional **research** model for two-stage diagnosis; provider/base URL/key default to the main ones |
 | `PIWI_AI_EMBEDDING_PROVIDER` / `_MODEL` / `_BASE_URL` / `_API_KEY` | Optional **embedding** model for semantic failure clustering (OpenAI-compatible only: Anthropic has no embeddings API) |
 
-A saved key is sent only to the provider and base URL it was saved for: pointing a role at another base URL in
-**Settings → AI**, or testing one there, needs the key entered again.
+Saved keys are bound to their provider and base URL. Enter the key again when changing either.
 
 The [Configuration reference](/reference/configuration#ai-diagnosis) lists every AI variable.
 
@@ -46,6 +45,10 @@ into the result card when it completes. The [API docs](https://piwitests.dev/dem
 protocol (the in-app reference at `/docs` shows the same spec).
 
 To be told when a diagnosis finishes without watching the panel, turn on **Settings → AI → Diagnosis notifications**: a per-browser preference (stored on that device only) that shows a browser notification on completion once you grant the permission.
+
+### Local Codex CLI
+
+Use [Codex CLI](/guide/codex-cli) with a ChatGPT login, or [official DeepSeek Harness](/guide/deepseek-cli) with DeepSeek credentials.
 
 ## Model roles
 

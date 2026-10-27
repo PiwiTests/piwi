@@ -1,4 +1,5 @@
 import type { BugPhrases, BugState, BugStepValue, BugSubject, RoleNoun } from './bug-phrases';
+import type { ManualCheckValues } from './recording';
 import { markdownCode } from './markdown-code';
 import { keyCombo } from './key-combo';
 
@@ -149,6 +150,14 @@ const STATES: Record<BugState, [masculine: string, feminine: string]> = {
 };
 
 const number = (n: number): string => new Intl.NumberFormat('pt-BR').format(n);
+
+/** `; na execução, esperava X e recebeu Y`, as much as the run says. */
+function inRun(c: ManualCheckValues): string {
+  const parts = [c.expected ? `esperava ${c.expected}` : null, c.received ? `recebeu ${c.received}` : null].filter(
+    Boolean,
+  );
+  return parts.length > 0 ? `; na execução, ${parts.join(' e ')}` : '';
+}
 /** Brazilian Portuguese puts 0 and 1 in the singular. */
 /** A zoom factor as a percentage, such as `125%`. */
 const percent = (zoom: number): string => `${Math.round(zoom * 100)}%`;
@@ -179,6 +188,43 @@ export const PORTUGUESE_BUG_PHRASES: BugPhrases = {
         : `Escolher ${files.length === 1 ? 'o arquivo' : 'os arquivos'} ${files.map(quote).join(', ')} ${inside(subject(s))}`,
     dragTo: (s, target) => `Arrastar ${bare(subject(s))} até ${bare(subject(target))}`,
     manual: (description) => `Manualmente: ${description}`,
+  },
+  manualInstructions: {
+    goBack: () => 'Voltar à página anterior no navegador',
+    goForward: () => 'Avançar para a próxima página no navegador',
+    reload: () => 'Recarregar a página',
+    gotoUnknown: () => 'Abrir a página que o teste abriu; a execução não guarda qual',
+    setContent: () => `Abrir a página que o próprio teste escreve (${markdownCode('page.setContent')})`,
+    keyboardType: () => 'Digitar no teclado o que o teste digitou; o valor está no código do teste',
+    mouseAt: (i) =>
+      `Fazer com o mouse o que o teste fez no ponto (${number(i.x)}, ${number(i.y)}) da página: ${i.call}`,
+    mouseOrKeyboard: (i) => `Fazer com o mouse ou o teclado o que o teste fez: ${i.call}`,
+    failedCall: (i) => `Fazer o que o teste fazia quando falhou: ${i.call}`,
+    locatorCall: (i) => `Fazer em ${markdownCode(i.locator)} o que o teste fez: ${i.call}`,
+    fillUnknown: (i) => `Preencher ${markdownCode(i.locator)} como o teste fez; a execução não guarda o valor`,
+    fillPartial: (i) =>
+      `Preencher ${markdownCode(i.locator)} como o teste fez; a execução guarda só uma parte do valor`,
+    pressUnknown: (i) => `Pressionar em ${markdownCode(i.locator)} a tecla que o teste pressionou`,
+    selectOptionUnknown: (i) =>
+      `Escolher em ${markdownCode(i.locator)} a opção que o teste escolheu; a execução não guarda qual`,
+    selectOptions: (i) =>
+      `Escolher em ${markdownCode(i.locator)} ${i.options
+        .map((o) => (typeof o === 'number' ? `a opção no índice ${number(o)}` : quote(o)))
+        .join(' e ')}`,
+    setInputFiles: (i) =>
+      `Escolher em ${markdownCode(i.locator)} o arquivo que o teste escolheu; a execução não guarda o nome dele`,
+    dragTo: (i) => `Arrastar ${markdownCode(i.locator)} até onde o teste o soltou; a execução não guarda onde`,
+    drop: (i) => `Soltar sobre ${markdownCode(i.locator)} os arquivos ou dados que o teste soltou`,
+    focus: (i) => `Colocar o foco em ${markdownCode(i.locator)}`,
+    blur: (i) => `Tirar o foco de ${markdownCode(i.locator)}`,
+    dispatchEvent: (i) => `Fazer em ${markdownCode(i.locator)} o que dispara o evento que o teste enviou`,
+    scrollIntoViewIfNeeded: (i) => `Rolar a página até ${markdownCode(i.locator)}`,
+    expectPoll: (i) => `Verificar o que o teste verificava repetidamente (${i.matcher})${inRun(i)}`,
+    expectValue: (i) => `Verificar o que o teste verificou: ${i.what}${inRun(i)}`,
+    expectLocator: (i) => `Verificar ${markdownCode(i.locator)} com ${i.matcher}${inRun(i)}`,
+    expectURL: (i) => `Verificar o endereço da página (toHaveURL)${inRun(i)}`,
+    leadingSteps: (i) =>
+      `Fazer os primeiros ${number(i.count)} passos do teste, até onde começa o passo ${number(i.count + 1)}: um arquivo de passos contém no máximo ${number(i.limit)} passos`,
   },
   expectation(s, e, negated) {
     const should = negated ? 'não deveria' : 'deveria';

@@ -159,10 +159,13 @@ export function stopKey(stop: ShownStop): string {
   return `${stop.ref}\0${stop.worker}\0${stop.stop.since}`;
 }
 
-/** The line above a stop: what is about to run, `⏸ Paused · Fill "WELCOME10" getByLabel('Coupon') · attempt 2`. */
+/**
+ * The line above a stop: what is about to run, `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`, in
+ * plain text. The lens and the choice among several draw `$(debug-pause)` before it.
+ */
 export function pausedText(stop: RunStop, test: RunTest | null): string {
   const attempt = test && test.retry > 0 ? ` · attempt ${test.retry + 1}` : '';
-  return `⏸ Paused · ${stop.title}${attempt}`;
+  return `Paused · ${stop.title}${attempt}`;
 }
 
 /** What the controls offer: Stop while a run is live, Pause while a worker runs, the others while one is stopped. */
@@ -281,7 +284,7 @@ export function stopPick(stop: ShownStop): { label: string; description: string 
   const file = stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1);
   const test = stop.test ? `${stop.test.title.join(' › ')} · ` : '';
   return {
-    label: pausedText(stop.stop, stop.test),
+    label: `$(debug-pause) ${pausedText(stop.stop, stop.test)}`,
     description: `${test}${decodeURIComponent(file)}:${stop.stop.line + 1} · worker ${stop.worker}`,
   };
 }

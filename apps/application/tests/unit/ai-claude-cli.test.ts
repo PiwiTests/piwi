@@ -8,11 +8,14 @@ import {
   cliCommand,
   cliEnv,
   cmdShimTarget,
+  getClaudeCliRateLimit,
   getClaudeCliStatus,
   claudeCliRunsAgents,
+  noteClaudeCliRateLimit,
   getUsageTotals,
   isDesktopRuntime,
   resetClaudeCliCache,
+  resetClaudeCliRateLimit,
   resolveClaudeBinary,
   resolveClaudeBinaryDeep,
   runClaudeCliAgent,
@@ -60,6 +63,10 @@ process.stdin.on('end', () => {
     const config = JSON.parse(require('node:fs').readFileSync(configPath, 'utf8'));
     const status = process.env.CLAUDE_STUB_MCP_STATUS || 'connected';
     line({ type: 'system', subtype: 'init', mcp_servers: [{ name: 'piwi', status }] });
+    // CLAUDE_STUB_RATE_LIMIT is the rate_limit_info of a rate_limit_event line, as a subscription's run reports it.
+    if (process.env.CLAUDE_STUB_RATE_LIMIT) {
+      line({ type: 'rate_limit_event', rate_limit_info: JSON.parse(process.env.CLAUDE_STUB_RATE_LIMIT), uuid: 'u', session_id: 's' });
+    }
     if (status !== 'connected') { setTimeout(() => process.exit(0), 20000); return; }
     const seen = JSON.stringify({ args, config, configPath, prompt: input, noProxy: process.env.NO_PROXY });
     if (process.env.CLAUDE_STUB_HANG) {
@@ -138,6 +145,7 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
     delete process.env.CLAUDE_STUB_NO_PARTIAL;
     delete process.env.CLAUDE_STUB_SUBTYPE;
     delete process.env.CLAUDE_STUB_HANG;
+    delete process.env.CLAUDE_STUB_RATE_LIMIT;
     delete process.env.PIWI_DESKTOP_TOKEN;
     delete process.env.NUXT_PUBLIC_DESKTOP;
     resetClaudeCliCache();
@@ -434,9 +442,77 @@ describe.skipIf(process.platform === 'win32')('ai-claude-cli', () => {
       });
     });
 
+    it('a run the user stops is killed and reports what its messages spent', async () => {
+      process.env.CLAUDE_STUB_AGENT = '1';
+      process.env.CLAUDE_STUB_HANG = '1';
+      const stop = new AbortController();
+      setTimeout(() => stop.abort(), 1000);
+      const started = Date.now();
+      const result = await runClaudeCliAgent(role, { ...agentRun([]), signal: stop.signal });
+      expect(result).toMatchObject({ outcome: 'stopped', model: 'claude-sonnet-5', outputTokens: 52 });
+      expect(Date.now() - started).toBeLessThan(10_000);
+    });
+
+    it("keeps the subscription's usage limit a run reported", async () => {
+      process.env.CLAUDE_STUB_AGENT = '1';
+      const resetsAt = Math.floor(Date.now() / 1000) + 3600;
+      process.env.CLAUDE_STUB_RATE_LIMIT = JSON.stringify({
+        status: 'allowed_warning',
+        resetsAt,
+        rateLimitType: 'five_hour',
+        utilization: 0.92,
+      });
+      resetClaudeCliRateLimit();
+      await runClaudeCliAgent(role, agentRun([]));
+      const reported = getClaudeCliRateLimit();
+      resetClaudeCliRateLimit();
+      expect(reported).toMatchObject({
+        status: 'allowed_warning',
+        window: 'five_hour',
+        utilization: 0.92,
+        resetsAt: new Date(resetsAt * 1000).toISOString(),
+      });
+    });
+
     it('refuses a CLI that cannot attach only the turn server', async () => {
       await expect(runClaudeCliAgent(role, agentRun([]))).rejects.toThrow(/Update Claude Code/);
     });
+  });
+});
+
+describe("the subscription's usage limit", () => {
+  beforeEach(() => resetClaudeCliRateLimit());
+  afterEach(() => resetClaudeCliRateLimit());
+
+  it('reads a rate_limit_event line, its reset in seconds or milliseconds, and ignores any other line', () => {
+    const now = new Date('2026-10-26T10:00:00Z');
+    noteClaudeCliRateLimit({ type: 'result' }, now);
+    expect(getClaudeCliRateLimit(now.getTime())).toBeNull();
+    noteClaudeCliRateLimit({ type: 'rate_limit_event', rate_limit_info: { status: 'weird' } }, now);
+    expect(getClaudeCliRateLimit(now.getTime())).toBeNull();
+    noteClaudeCliRateLimit({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed' } }, now);
+    expect(getClaudeCliRateLimit(now.getTime())).toEqual({
+      status: 'allowed',
+      window: null,
+      utilization: null,
+      resetsAt: null,
+      reportedAt: now.toISOString(),
+    });
+    const reset = Date.parse('2026-10-26T12:00:00Z');
+    noteClaudeCliRateLimit(
+      {
+        type: 'rate_limit_event',
+        rate_limit_info: { status: 'rejected', resetsAt: reset, rateLimitType: 'seven_day' },
+      },
+      now,
+    );
+    expect(getClaudeCliRateLimit(now.getTime())).toMatchObject({
+      status: 'rejected',
+      window: 'seven_day',
+      resetsAt: '2026-10-26T12:00:00.000Z',
+    });
+    // Once its window has reset, the report says nothing.
+    expect(getClaudeCliRateLimit(reset)).toBeNull();
   });
 });
 

@@ -621,15 +621,20 @@ export interface PerformanceStep {
 
 /**
  * A hook/fixture step event with absolute timing, used by WorkersTimeline
- * to render segments alongside the test case bar.
+ * to render segments alongside the test case bar. A `pause` event is a stop at
+ * Piwi's pause bar or in the editor: the call it held as its title.
  */
 export interface TestStepEvent {
   title: string;
   /** The step's target (rendered locator or URL), carried separately by newer Playwright. */
   subtitle?: string | null;
-  category: 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait';
+  category: 'hook' | 'fixture' | 'test.step' | 'expect' | 'wait' | 'pause';
   startedAt: number;
   duration: number;
+  /**
+   * `passed` or `failed`; `wasted` for a wait; for a stop, why it stopped: `breakpoint`, `step`, `pause` (asked from
+   * the editor), `run-to` or `page-pause`.
+   */
   status: string;
   location?: string | null;
   /** The first line of the step's error, when it failed — hook and fixture events only. */
@@ -1641,7 +1646,24 @@ export interface ScmChanges {
  *   bundled server shells out to `claude -p --output-format json`, so authentication is the CLI's
  *   own subscription/OAuth login and no API key is stored.
  */
-export type AiProvider = 'anthropic' | 'openai' | 'claude-cli';
+export type AiProvider = 'anthropic' | 'openai' | 'claude-cli' | 'codex-cli' | 'deepseek-cli';
+
+/** Local Codex CLI health, ChatGPT authentication and usage since server startup. */
+export interface CodexCliStatus {
+  available: boolean;
+  binaryPath: string | null;
+  version: string | null;
+  loggedIn: boolean;
+  authMethod: string | null;
+  error: string | null;
+  usage: {
+    calls: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens: number;
+    since: string | null;
+  };
+}
 
 /**
  * Health + authentication state of the local `claude` CLI, returned by
@@ -1787,6 +1809,10 @@ export interface AiSettings {
   canStoreSecrets: boolean;
   /** True when this server may run the local Claude Code CLI: the desktop app, or `PIWI_CLAUDE_CLI_PATH` set. */
   claudeCliAvailable: boolean;
+  /** Whether this server is allowed to run the local Codex CLI. */
+  codexCliAvailable: boolean;
+  /** Whether this server may run official DeepSeek Harness. */
+  deepseekCliAvailable: boolean;
 }
 
 // ============================================================================

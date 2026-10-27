@@ -1,4 +1,6 @@
+import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
+import * as net from 'node:net';
 import * as path from 'node:path';
 import { createRequire } from 'node:module';
 import type { APIRequestContext, Browser, BrowserContext, Page, TestInfo } from '@playwright/test';
@@ -6,6 +8,7 @@ import { PIWI_ENV_KEYS, PIWI_RESOURCES_RESULTS_ENV } from '../config/env.js';
 import { ATTACHMENT_NAMES } from './attachments.js';
 import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
 import { PageReader, WorkerMetrics, type PageMain, type TestMetrics } from './worker-metrics.js';
+import { roleOf } from '../support/system-readers.js';
 
 /**
  * The resource ledger: every browser, context, page and API request context a
@@ -109,7 +112,26 @@ export interface ResourceCensus {
   openAtStart?: { contexts: number; pages: number };
   /** Objects the test opened itself and left open (what `PIWI_LEAK_CHECK` judges). */
   leftOpen?: number;
+  /**
+   * The servers and child processes the test started (its body, its
+   * each-hooks or a test-scoped fixture) and left running in the worker, with
+   * the line that started each. Present when the ledger tracks them; the
+   * `handles` counts then leave servers out.
+   */
+  running?: RunningHandle[];
 }
+
+/** A server or a child process a test left running in the worker. */
+export interface RunningHandle {
+  type: NodeHandleType;
+  /** The line that started it, `file:line`. */
+  site: string | null;
+  /** A child process: the program it runs, without its arguments. */
+  command?: string;
+}
+
+/** The Node handles the ledger tracks one by one, by Node's own type names. */
+export type NodeHandleType = 'TCPServerWrap' | 'ChildProcess';
 
 /** An object a test opened itself and left open: what `PIWI_LEAK_CHECK` fails or closes. */
 export interface LeakedResource {
@@ -126,9 +148,17 @@ export interface LeakedResource {
 /**
  * Node handle types a test can leave in the worker: a server left listening, a
  * file watcher. Sockets, timers and child processes are not counted: Playwright's
- * own connections and timers make them move on every test.
+ * own connections and timers make them move on every test. A ledger that
+ * tracks servers one by one (`RunningHandle`) counts the file watchers alone.
  */
 export const TRACKED_HANDLE_TYPES: readonly string[] = ['TCPServerWrap', 'FSEventWrap', 'StatWatcher'];
+const COUNTED_WITH_RUNNING: readonly string[] = ['FSEventWrap', 'StatWatcher'];
+
+/** Process roles Playwright starts itself: a child process with one of them is never the test's. */
+const PLAYWRIGHT_ROLES = new Set(['worker', 'runner', 'browser', 'renderer', 'gpu', 'utility', 'ffmpeg']);
+
+/** Frames a call through a library can take before it reaches the test's line. */
+const HANDLE_STACK_LIMIT = 40;
 
 /** Page methods that count as using the page even when it never navigated. */
 const USE_METHODS = ['evaluate', 'evaluateHandle', '$eval', '$$eval', 'waitForFunction', 'addScriptTag', 'addStyleTag'];
@@ -183,6 +213,19 @@ interface Entry {
   object: object | null;
   closed: ResourceClose | null;
   used: boolean;
+}
+
+/** A server or child process the worker started, where and while what it was started, and whether it still runs. */
+interface HandleEntry {
+  type: NodeHandleType;
+  phase: ResourcePhase;
+  fixture: ResourceBirth['fixture'];
+  test: ResourceTestRef | null;
+  site: string | null;
+  command?: string;
+  running: () => boolean;
+  /** A server whose `listen` has not bound yet: read again a tick later. */
+  pending?: () => boolean;
 }
 
 const HOOK_PHASES = new Set(['beforeAll', 'afterAll', 'beforeEach', 'afterEach']);
@@ -298,27 +341,59 @@ export function readLeakCheck(value = process.env[PIWI_ENV_KEYS.leakCheck]): Lea
   return value === 'fail' || value === 'close' ? value : 'report';
 }
 
-/** Counts of the tracked Node handle types in this process. */
-function countHandles(): Record<string, number> {
+/** Counts of the given Node handle types in this process. */
+function countHandles(types: readonly string[] = TRACKED_HANDLE_TYPES): Record<string, number> {
   const counts: Record<string, number> = {};
   const read = (process as { getActiveResourcesInfo?: () => string[] }).getActiveResourcesInfo;
   if (typeof read !== 'function') return counts;
   for (const type of read.call(process)) {
-    if (TRACKED_HANDLE_TYPES.includes(type)) counts[type] = (counts[type] ?? 0) + 1;
+    if (types.includes(type)) counts[type] = (counts[type] ?? 0) + 1;
   }
   return counts;
 }
 
 /**
- * The tracked handle counts at a test's end. A server reports a second handle
- * until a timer tick after it starts listening, so a count above the start is
- * read again one tick later; most tests open none and pay nothing.
+ * The handle counts at a test's end. A server reports a second handle until a
+ * timer tick after it starts listening, so a count above the start is read
+ * again one tick later; most tests open none and pay nothing.
  */
-async function settledHandles(start: Record<string, number>): Promise<Record<string, number>> {
-  const end = countHandles();
+async function settledHandles(
+  start: Record<string, number>,
+  types: readonly string[] = TRACKED_HANDLE_TYPES,
+): Promise<Record<string, number>> {
+  const end = countHandles(types);
   if (!Object.entries(end).some(([type, n]) => n > (start[type] ?? 0))) return end;
   await new Promise((resolve) => setTimeout(resolve, 0));
-  return countHandles();
+  return countHandles(types);
+}
+
+/** The line of the test code that made the current call, read through a deeper stack than Node's default. */
+function deepUserSite(): string | null {
+  const limit = Error.stackTraceLimit;
+  Error.stackTraceLimit = HANDLE_STACK_LIMIT;
+  try {
+    return userSite(new Error().stack);
+  } finally {
+    Error.stackTraceLimit = limit;
+  }
+}
+
+const SHELLS = /^(?:sh|bash|dash|zsh|cmd|cmd\.exe|powershell|powershell\.exe|pwsh)$/i;
+
+/**
+ * The program a child process runs, its file name alone; for a command a
+ * shell runs (`exec`, `shell: true`), the command's first word.
+ */
+export function commandOf(spawnfile: unknown, spawnargs: unknown): string {
+  const name = (file: string) => path.basename(file.replace(/\\/g, '/').replace(/^["']|["']$/g, ''));
+  const program = typeof spawnfile === 'string' ? name(spawnfile) : '';
+  const args = Array.isArray(spawnargs) ? spawnargs.map(String) : [];
+  const script = args.findIndex((arg) => arg === '-c' || /^\/c$/i.test(arg));
+  if (SHELLS.test(program) && script >= 0 && args[script + 1]) {
+    const first = args[script + 1]!.trim().split(/\s+/)[0];
+    if (first) return name(first);
+  }
+  return program || 'a child process';
 }
 
 /** Resolve with `undefined` after `ms` when the promise has not settled. */
@@ -349,6 +424,11 @@ export class ResourceLedger {
   private listener: object | null = null;
   /** A browser or a context was opened in this worker: there are browser processes for the metrics to read. */
   private sawBrowser = false;
+  /** The servers and child processes still running, while the ledger tracks them. */
+  private readonly handles = new Set<HandleEntry>();
+  private readonly byHandle = new WeakMap<object, HandleEntry>();
+  private trackingHandles = false;
+  private readonly restores: Array<() => void> = [];
 
   constructor(
     private readonly playwright: PlaywrightLike,
@@ -358,6 +438,8 @@ export class ResourceLedger {
     private readonly testInfoSource: () => TestInfoLike | null = playwrightTestInfoSource(),
     private readonly now: () => number = Date.now,
     private readonly readers: { metrics?: WorkerMetrics | null; pages?: PageReader | null } = {},
+    /** Track the servers and child processes the worker starts, by wrapping Node's `listen` and `spawn`. */
+    private readonly nodeHandles = false,
   ) {}
 
   /** Listen to the worker's Playwright and wrap its browser types. False when the instrumentation is missing. */
@@ -392,14 +474,121 @@ export class ResourceLedger {
     for (const type of [this.playwright.chromium, this.playwright.firefox, this.playwright.webkit]) {
       if (type) this.wrapBrowserType(type);
     }
+    if (this.nodeHandles) this.guard(() => this.wrapNodeHandles());
     return true;
   }
 
-  /** Stop listening; the objects already tracked stay in the ledger. */
+  /** Stop listening, and put Node's `listen` and `spawn` back; the objects already tracked stay in the ledger. */
   uninstall(): void {
     const remove = this.playwright?._instrumentation?.removeListener;
     if (this.listener && typeof remove === 'function') remove.call(this.playwright._instrumentation, this.listener);
     this.listener = null;
+    for (const restore of this.restores.splice(0)) restore();
+    this.trackingHandles = false;
+  }
+
+  /**
+   * Wrap `net.Server.prototype.listen` (every HTTP, HTTPS and TCP server) and
+   * `ChildProcess.prototype.spawn` (`spawn`, `exec`, `execFile` and `fork`), so
+   * each server and child process the worker starts carries the line and the
+   * runnable that started it, as a context does. A worker-scoped fixture's
+   * server is then the worker's, never the first test's. Each wrapper calls the
+   * original on its receiver and only records; it never throws.
+   */
+  private wrapNodeHandles(): void {
+    const onServer = (server: net.Server, site: string | null) => this.guard(() => this.onServer(server, site));
+    const onChild = (child: childProcess.ChildProcess, site: string | null) =>
+      this.guard(() => this.onChild(child, site));
+    const server = net.Server.prototype as unknown as Record<string, unknown>;
+    const listen = server.listen as (this: net.Server, ...args: unknown[]) => net.Server;
+    if (typeof listen === 'function') {
+      const wrapped = function (this: net.Server, ...args: unknown[]): net.Server {
+        onServer(this, deepUserSite());
+        return listen.apply(this, args);
+      };
+      server.listen = wrapped;
+      this.restores.push(() => {
+        if (server.listen === wrapped) server.listen = listen;
+      });
+    }
+    const child = childProcess.ChildProcess?.prototype as unknown as Record<string, unknown> | undefined;
+    const spawn = child?.spawn as ((this: childProcess.ChildProcess, ...args: unknown[]) => unknown) | undefined;
+    if (child && typeof spawn === 'function') {
+      const wrapped = function (this: childProcess.ChildProcess, ...args: unknown[]): unknown {
+        const site = deepUserSite();
+        const result = spawn.apply(this, args);
+        onChild(this, site);
+        return result;
+      };
+      child.spawn = wrapped;
+      this.restores.push(() => {
+        if (child.spawn === wrapped) child.spawn = spawn;
+      });
+    }
+    this.trackingHandles = true;
+  }
+
+  private trackHandle(object: object, entry: Omit<HandleEntry, 'phase' | 'fixture' | 'test'>): HandleEntry {
+    const info = this.testInfoSource();
+    const { phase, fixture } = info ? runnableOf(info) : fallbackRunnable(this.window);
+    const tracked: HandleEntry = { ...entry, phase, fixture, test: testRef(info) ?? this.window };
+    this.handles.add(tracked);
+    this.byHandle.set(object, tracked);
+    return tracked;
+  }
+
+  private onServer(server: net.Server, site: string | null): void {
+    const known = this.byHandle.get(server);
+    if (known && this.handles.has(known)) return;
+    let bound = false;
+    let closed = false;
+    const entry = this.trackHandle(server, {
+      type: 'TCPServerWrap',
+      site,
+      // `close()` unbinds at once, while its 'close' event waits for open connections.
+      running: () => server.listening,
+      pending: () => !bound && !closed && !server.listening,
+    });
+    server.once('listening', () => {
+      bound = true;
+    });
+    server.once('close', () => {
+      closed = true;
+      this.handles.delete(entry);
+    });
+  }
+
+  private onChild(child: childProcess.ChildProcess, site: string | null): void {
+    // Playwright's own browsers and ffmpeg are tracked as browsers, or are the browser's.
+    const command = commandOf(child.spawnfile, child.spawnargs);
+    const role = roleOf(command, (child.spawnargs ?? []).join(' '));
+    if ((role && PLAYWRIGHT_ROLES.has(role)) || child.pid === undefined) return;
+    const entry = this.trackHandle(child, {
+      type: 'ChildProcess',
+      site,
+      command,
+      running: () => child.exitCode === null && child.signalCode === null,
+    });
+    child.once('exit', () => this.handles.delete(entry));
+  }
+
+  /**
+   * The servers and child processes a test started (its body, its each-hooks
+   * or a test-scoped fixture) that still run. A server whose `listen` has not
+   * bound yet is read again one tick later.
+   */
+  private async runningOf(testId: string): Promise<RunningHandle[]> {
+    const own = () =>
+      [...this.handles].filter(
+        (entry) =>
+          entry.test?.id === testId &&
+          !entry.fixture?.worker &&
+          (entry.phase === 'test' || entry.phase === 'beforeEach' || entry.phase === 'afterEach'),
+      );
+    if (own().some((entry) => entry.pending?.())) await new Promise((resolve) => setTimeout(resolve, 0));
+    return own()
+      .filter((entry) => entry.running())
+      .map((entry) => ({ type: entry.type, site: entry.site, ...(entry.command ? { command: entry.command } : {}) }));
   }
 
   /** Mark a page used: a locator was built on it. */
@@ -411,7 +600,7 @@ export class ResourceLedger {
   /** Open the census window of a test. */
   testStarted(info: TestInfoLike): void {
     this.window = testRef(info);
-    this.handlesAtStart = countHandles();
+    this.handlesAtStart = countHandles(this.countedHandleTypes());
     this.openAtStart = { contexts: 0, pages: 0 };
     for (const entry of this.openEntries()) {
       if (entry.birth.kind === 'page') this.openAtStart.pages++;
@@ -437,9 +626,14 @@ export class ResourceLedger {
       ? { ...test, title: typeof info.title === 'string' ? info.title : '', ...(failed ? { failed: true } : {}) }
       : null;
     const metrics = this.readers.metrics?.end(this.sawBrowser) ?? null;
-    const handles = { start: this.handlesAtStart, end: await settledHandles(this.handlesAtStart) };
+    const handles = {
+      start: this.handlesAtStart,
+      end: await settledHandles(this.handlesAtStart, this.countedHandleTypes()),
+    };
+    const running = this.trackingHandles && test ? await this.runningOf(test.id) : null;
     const census = this.census(ref, handles, await this.readPages());
     if (metrics) census.metrics = metrics;
+    if (running) census.running = running;
     if (test) {
       census.openAtStart = this.openAtStart;
       if (!failed) census.leftOpen = leaks.length;
@@ -481,6 +675,11 @@ export class ResourceLedger {
     this.readers.metrics?.dispose();
     this.uninstall();
     return census;
+  }
+
+  /** The handle types counted at each boundary: servers leave the count once they are tracked one by one. */
+  private countedHandleTypes(): readonly string[] {
+    return this.trackingHandles ? COUNTED_WITH_RUNNING : TRACKED_HANDLE_TYPES;
   }
 
   private guard(run: () => void): void {
@@ -739,6 +938,8 @@ export class ResourceLedger {
       open,
     };
     if (handles) census.handles = handles;
+    // A closed object is in this census for good: the worker needs only what is open.
+    for (const close of this.closed) this.entries.delete(close.id);
     this.born = [];
     this.closed = [];
     return census;
@@ -789,6 +990,7 @@ export function startResourceLedger(playwright: unknown, workerIndex: number): R
     playwrightTestInfoSource(),
     Date.now,
     { metrics, pages: new PageReader() },
+    true,
   );
   if (!ledger.install()) {
     metrics.dispose();

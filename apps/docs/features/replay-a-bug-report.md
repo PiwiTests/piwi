@@ -75,7 +75,8 @@ Under the answer, the panel lists the steps played by hand.
 A `.piwibug` exported from a failed execution holds the test's steps up to the failure, setup hooks included, and its
 failing assertion with what it expected and what the run received. What the run did not keep enough of to play
 becomes a **manual step**, which Replay hands to you as above, with the line of the test it stands for: a click at a
-point of the page, a value the run kept only in part, a file choice, a check with a regular expression. API requests,
+point of the page, a value the run kept only in part, a file choice, an option chosen by its index or several options
+chosen at once, a check with a regular expression. Replay writes it in Piwi Picker's language. API requests,
 scripts run in the page, route mocks and checks on values are not steps at all: the report's Markdown lists them under
 **Not replayed**, with why.
 

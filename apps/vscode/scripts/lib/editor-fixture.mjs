@@ -16,6 +16,10 @@ export const PAGE_OBJECT_FILE = 'tests/pages/checkout.page.ts';
 export const SPEC_FILE = 'tests/checkout.spec.ts';
 /** The line of the page object the latest run failed at. */
 export const FAILING_LINE = 15;
+/** The line of the spec's coupon test. */
+export const COUPON_TEST_LINE = 14;
+/** The line of the page object that types the coupon; the click on Apply is the next one. */
+export const COUPON_LINE = 10;
 
 // ── The fixture project ─────────────────────────────────────────────────────
 
@@ -259,6 +263,46 @@ export const FILES = {
   [UNCOVERED_ROUTE_FILE]: GIFT_CARDS_ROUTE,
   ...TYPE_STUBS,
 };
+
+/**
+ * The shop's checkout page as the coupon test's browser shows it, `coupon` typed in its field: the page a stopped
+ * test's image shows.
+ */
+export function checkoutPage({ coupon = '' } = {}) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  body { margin: 0; background: #f4f4f5; color: #18181b; font: 15px/1.4 Inter, system-ui, sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 28px; background: #1e3a8a; color: #fff; }
+  header strong { font-size: 18px; letter-spacing: 0.2px; }
+  header span { font-size: 14px; opacity: 0.9; }
+  main { max-width: 420px; margin: 24px auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px #0000001a; }
+  h1 { margin: 0 0 16px; font-size: 22px; }
+  .row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e4e4e7; }
+  label { display: block; margin: 18px 0 6px; font-size: 13px; color: #52525b; }
+  .coupon { display: flex; gap: 8px; }
+  input { flex: 1; padding: 9px 11px; border: 1px solid #d4d4d8; border-radius: 8px; font: inherit; }
+  button { padding: 9px 16px; border: 1px solid #d4d4d8; border-radius: 8px; background: #fff; font: inherit; font-weight: 600; }
+  .total { display: flex; justify-content: space-between; margin-top: 18px; font-weight: 700; font-size: 17px; }
+  .btn-primary { width: 100%; margin-top: 20px; padding: 12px; border: 0; background: #2563eb; color: #fff; }
+</style>
+</head>
+<body>
+<header><strong>Acme Mugs</strong><span>Cart, 1 item</span></header>
+<main>
+  <h1>Your cart</h1>
+  <div class="row"><span>Blue mug × 1</span><span>12.00 €</span></div>
+  <label for="coupon">Coupon code</label>
+  <div class="coupon"><input id="coupon" value="${coupon}"><button>Apply</button></div>
+  <div class="total"><span>Total</span><span data-testid="order-total">12.00 €</span></div>
+  <button class="btn-primary">Place order</button>
+</main>
+</body>
+</html>
+`;
+}
 
 /**
  * Writes the project as `acme-mugs` under `parent` and commits it, so the run's commit names files the editor can

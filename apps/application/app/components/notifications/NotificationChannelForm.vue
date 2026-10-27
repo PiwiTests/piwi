@@ -1,13 +1,14 @@
 <script setup lang="ts">
 /**
  * The new-channel form. Each type shows how to get its destination — a Slack
- * app pre-filled for Piwi, the Teams Workflows template, a generated webhook
- * secret — checks a pasted URL against the type (offering the right type when
- * it belongs to another), and sends a test before saving: a channel whose test
- * went through is saved verified.
+ * app pre-filled for Piwi (for an incoming webhook or a bot token), the Teams
+ * Workflows template, a generated webhook secret — checks a pasted URL against
+ * the type (offering the right type when it belongs to another), and sends a
+ * test before saving: a channel whose test went through is saved verified.
  */
 import {
   SLACK_INCOMING_WEBHOOKS_GUIDE_URL,
+  SLACK_POST_MESSAGE_GUIDE_URL,
   TEAMS_WORKFLOWS_GUIDE_URL,
   channelConfigProblem,
   generateWebhookSecret,
@@ -15,6 +16,7 @@ import {
   slackCreateAppUrl,
   suggestChannelName,
   type ChannelType,
+  type SlackDelivery,
 } from '#shared/notifications/channel-setup';
 
 const props = defineProps<{
@@ -23,7 +25,7 @@ const props = defineProps<{
   canSeeAdmin: boolean;
   /** Whether SMTP is set up, so an email channel can send. */
   smtpConfigured: boolean;
-  /** False when the server has no `PIWI_SECRET_KEY`, so a webhook secret cannot be stored. */
+  /** False when the server has no `PIWI_SECRET_KEY`, so a webhook secret or a Slack bot token cannot be stored. */
   canStoreSecrets: boolean;
 }>();
 const emit = defineEmits<{ saved: []; cancel: [] }>();
@@ -36,6 +38,9 @@ const form = reactive({
   name: '',
   address: '',
   webhookUrl: '',
+  slackDelivery: 'webhook' as SlackDelivery,
+  token: '',
+  channelId: '',
   url: '',
   secret: '',
   global: false,
@@ -45,16 +50,24 @@ const form = reactive({
 // bell's per-browser preferences cover that role instead.
 const typeItems = computed(() => [
   { label: 'Email', value: 'email' },
-  { label: 'Slack webhook', value: 'slack' },
+  { label: 'Slack', value: 'slack' },
   { label: 'Microsoft Teams webhook', value: 'teams' },
   { label: 'Webhook', value: 'webhook' },
   ...(props.authEnabled ? [{ label: 'Browser', value: 'browser' }] : []),
 ]);
 
-const slackAppUrl = slackCreateAppUrl();
+const slackDeliveryItems = [
+  { label: 'Incoming webhook', value: 'webhook' },
+  { label: 'Bot token (Web API)', value: 'api' },
+];
+const slackAppUrl = computed(() => slackCreateAppUrl(undefined, form.slackDelivery));
+const slackApi = computed(() => form.type === 'slack' && form.slackDelivery === 'api');
+/** A bot token is stored encrypted, which needs `PIWI_SECRET_KEY` on the server. */
+const tokenNotStorable = computed(() => slackApi.value && !props.canStoreSecrets);
 
 const config = computed<Record<string, unknown>>(() => {
   if (form.type === 'email') return { address: form.address.trim() };
+  if (slackApi.value) return { token: form.token.trim(), channelId: form.channelId.trim() };
   if (form.type === 'slack' || form.type === 'teams') return { webhookUrl: form.webhookUrl.trim() };
   if (form.type === 'webhook') {
     return form.secret && props.canStoreSecrets
@@ -66,11 +79,12 @@ const config = computed<Record<string, unknown>>(() => {
 const destination = computed(() => {
   if (form.type === 'email') return form.address;
   if (form.type === 'webhook') return form.url;
+  if (slackApi.value) return form.channelId || form.token;
   return form.type === 'browser' ? '' : form.webhookUrl;
 });
 const problem = computed(() => channelConfigProblem(form.type, config.value));
 const verdict = computed(() =>
-  form.type === 'slack' || form.type === 'teams' || form.type === 'webhook'
+  (form.type === 'slack' && !slackApi.value) || form.type === 'teams' || form.type === 'webhook'
     ? inspectChannelUrl(form.type, destination.value)
     : null,
 );
@@ -82,6 +96,7 @@ const TYPE_LABELS: Record<'slack' | 'teams', string> = { slack: 'Slack', teams: 
 function switchType(type: 'slack' | 'teams') {
   if (form.type === 'webhook') form.webhookUrl = form.url;
   form.type = type;
+  form.slackDelivery = 'webhook';
 }
 
 function generateSecret() {
@@ -122,7 +137,7 @@ async function sendTest() {
 const saving = ref(false);
 
 async function save() {
-  if (problem.value) return;
+  if (problem.value || tokenNotStorable.value) return;
   saving.value = true;
   try {
     await $fetch('/api/channels', {
@@ -187,29 +202,90 @@ async function requestPermission() {
 
     <!-- Slack -->
     <template v-else-if="form.type === 'slack'">
-      <ol class="list-decimal space-y-1.5 ps-5 text-sm leading-relaxed text-highlighted" data-testid="slack-steps">
-        <li>
-          <OutboundLink :href="slackAppUrl">Create a Slack app for Piwi</OutboundLink>. The link fills in the app, with
-          the one permission it needs to post.
-        </li>
-        <li>
-          Pick the workspace, create the app, then choose <span class="font-semibold">Install to Workspace</span> and
-          the channel to post to.
-        </li>
-        <li>Open <span class="font-semibold">Incoming Webhooks</span>, copy the webhook URL and paste it below.</li>
-      </ol>
-      <p class="text-xs text-muted">
-        Already have an incoming webhook? Paste its URL.
-        <OutboundLink :href="SLACK_INCOMING_WEBHOOKS_GUIDE_URL">Slack’s guide</OutboundLink>
-      </p>
-      <UFormField label="Slack webhook URL">
-        <UInput
-          v-model="form.webhookUrl"
-          placeholder="https://hooks.slack.com/services/…"
-          class="w-full"
-          data-testid="slack-webhook-url"
+      <UFormField label="Send with">
+        <URadioGroup
+          v-model="form.slackDelivery"
+          :items="slackDeliveryItems"
+          value-key="value"
+          orientation="horizontal"
+          data-testid="slack-delivery"
         />
       </UFormField>
+
+      <!-- Web API -->
+      <template v-if="slackApi">
+        <ol
+          class="list-decimal space-y-1.5 ps-5 text-sm leading-relaxed text-highlighted"
+          data-testid="slack-api-steps"
+        >
+          <li>
+            <OutboundLink :href="slackAppUrl">Create a Slack app for Piwi</OutboundLink>. The link fills in the app,
+            with the permissions it needs to post: <code>chat:write</code>, and <code>chat:write.public</code> for
+            public channels it is not invited to.
+          </li>
+          <li>
+            Choose <span class="font-semibold">Install to Workspace</span>, then copy the
+            <span class="font-semibold">Bot User OAuth Token</span> from
+            <span class="font-semibold">OAuth &amp; Permissions</span>.
+          </li>
+          <li>
+            In Slack, open the channel’s details and copy the <span class="font-semibold">Channel ID</span> at the
+            bottom. For a private channel, invite the app first with <code>/invite @Piwi</code>.
+          </li>
+        </ol>
+        <p class="text-xs text-muted">
+          Piwi posts with <OutboundLink :href="SLACK_POST_MESSAGE_GUIDE_URL">chat.postMessage</OutboundLink>, the same
+          message the webhook sends.
+        </p>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <UFormField label="Bot token">
+            <UInput
+              v-model="form.token"
+              type="password"
+              autocomplete="off"
+              placeholder="xoxb-…"
+              class="w-full"
+              data-testid="slack-bot-token"
+            />
+          </UFormField>
+          <UFormField label="Channel ID">
+            <UInput v-model="form.channelId" placeholder="C0123456789" class="w-full" data-testid="slack-channel-id" />
+          </UFormField>
+        </div>
+        <CheckResultLine
+          v-if="tokenNotStorable"
+          state="warning"
+          text="Storing a bot token needs PIWI_SECRET_KEY set on the server, so this channel cannot be saved yet."
+          hint="Piwi encrypts the token with that key. Use an incoming webhook meanwhile."
+        />
+      </template>
+
+      <!-- Incoming webhook -->
+      <template v-else>
+        <ol class="list-decimal space-y-1.5 ps-5 text-sm leading-relaxed text-highlighted" data-testid="slack-steps">
+          <li>
+            <OutboundLink :href="slackAppUrl">Create a Slack app for Piwi</OutboundLink>. The link fills in the app,
+            with the one permission it needs to post.
+          </li>
+          <li>
+            Pick the workspace, create the app, then choose <span class="font-semibold">Install to Workspace</span> and
+            the channel to post to.
+          </li>
+          <li>Open <span class="font-semibold">Incoming Webhooks</span>, copy the webhook URL and paste it below.</li>
+        </ol>
+        <p class="text-xs text-muted">
+          Already have an incoming webhook? Paste its URL.
+          <OutboundLink :href="SLACK_INCOMING_WEBHOOKS_GUIDE_URL">Slack’s guide</OutboundLink>
+        </p>
+        <UFormField label="Slack webhook URL">
+          <UInput
+            v-model="form.webhookUrl"
+            placeholder="https://hooks.slack.com/services/…"
+            class="w-full"
+            data-testid="slack-webhook-url"
+          />
+        </UFormField>
+      </template>
     </template>
 
     <!-- Microsoft Teams -->
@@ -382,7 +458,14 @@ async function requestPermission() {
       <span v-if="problem && destination.trim()" class="text-xs text-muted">{{ problem }}</span>
       <div class="flex-1" />
       <UButton type="button" color="neutral" variant="ghost" size="sm" label="Cancel" @click="emit('cancel')" />
-      <UButton type="submit" color="primary" size="sm" label="Save channel" :loading="saving" :disabled="!!problem" />
+      <UButton
+        type="submit"
+        color="primary"
+        size="sm"
+        label="Save channel"
+        :loading="saving"
+        :disabled="!!problem || tokenNotStorable"
+      />
     </div>
   </form>
 </template>

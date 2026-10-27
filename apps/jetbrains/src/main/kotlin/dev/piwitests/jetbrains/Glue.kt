@@ -1360,10 +1360,13 @@ object Glue {
     /** What tells a stop from another: its run, its worker and when it stopped. */
     fun stopKey(stop: ShownStop): String = "${stop.ref}\u0000${stop.worker}\u0000${stop.stop.since}"
 
-    /** The line above a stop: what is about to run, `⏸ Paused · Fill "WELCOME10" getByLabel('Coupon') · attempt 2`. */
+    /**
+     * The line above a stop: what is about to run, `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`,
+     * in plain text: the gutter's arrow marks the stop.
+     */
     fun pausedText(stop: RunStop, test: RunTest?): String {
         val attempt = if (test != null && test.retry > 0) " · attempt ${test.retry + 1}" else ""
-        return "⏸ Paused · ${stop.title.orEmpty()}$attempt"
+        return "Paused · ${stop.title.orEmpty()}$attempt"
     }
 
     /** A stop's place, as the choice among several and the paused page name it: `checkout.page.ts:5`. */

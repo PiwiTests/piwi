@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { bugReportFromFiles, renderBugMarkdown, renderBugSpec, type BugReport } from '../src/bug-report';
 import { bugReportFromExecution, type ExecutionElementSnapshot } from '../src/execution-steps';
+import { flattenSteps } from '../src/step-analysis';
 import { parseSteps } from '../src/steps';
 import {
   afterAllFailure,
@@ -348,6 +349,36 @@ describe('bugReportFromExecution', () => {
       "manual: Fill `getByLabel('Notes')` as the test did; the run keeps only part of the value",
       "manual: Fill `getByLabel('Token')` as the test did; the run keeps only part of the value",
     ]);
+  });
+
+  test('chooses the option a select step kept in its options, and names the ones Replay cannot choose', () => {
+    const locator = "getByLabel('Country')";
+    /** A `Select option` step as the reporter stores the params Playwright renders. */
+    const select = (options: unknown[]) => {
+      const [stored] = flattenSteps([{ title: 'Select option', subtitle: locator, params: { locator, options } }]);
+      return body({ title: 'Select option', subtitle: locator, category: 'input', params: stored!.params });
+    };
+    const steps = [
+      select([{ valueOrLabel: 'fr' }]),
+      select([{ label: 'Germany' }]),
+      select([{ value: 'es' }]),
+      select([{ index: 2 }]),
+      select([{ valueOrLabel: 'fr' }, { valueOrLabel: 'de' }]),
+      select([{ valueOrLabel: 'x'.repeat(300) }]),
+      body({ title: 'Select option', subtitle: locator, category: 'input', params: { locator } }),
+    ];
+    const { report, manualSteps } = convert(steps, null);
+    expect(outline(report)).toEqual([
+      `selectOption ${locator} fr`,
+      `selectOption ${locator} Germany`,
+      `selectOption ${locator} es`,
+      `manual: Choose in \`${locator}\` the option at index 2`,
+      `manual: Choose in \`${locator}\` "fr" and "de"`,
+      `manual: Choose in \`${locator}\` the option the test chose; the run does not keep which`,
+      `manual: Choose in \`${locator}\` the option the test chose; the run does not keep which`,
+    ]);
+    expect(manualSteps).toBe(4);
+    expect(parseSteps(report.steps).ok).toBe(true);
   });
 
   test('turns the mouse, the keyboard and unplayable actions into manual steps, and setup calls into notes', () => {

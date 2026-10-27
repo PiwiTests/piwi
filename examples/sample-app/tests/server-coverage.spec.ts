@@ -19,7 +19,8 @@ test(
     await checkoutPage.placeOrder(shopper);
     const response = await order;
     expect(response.status()).toBe(201);
-    expect(response.headers()['x-piwi-coverage']).toMatch(/^[\w-]+\.\d+$/);
+    // `<process key>.<sequence>.<secret>`: only a client that received the id can collect its coverage.
+    expect(response.headers()['x-piwi-coverage']).toMatch(/^[\w-]+\.\d+\.[0-9a-f]+$/);
     await expect(page.locator('#summary')).toHaveText(`1 item(s) on their way to ${shopper.city}, France.`);
   },
 );

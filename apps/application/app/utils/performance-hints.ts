@@ -1,3 +1,4 @@
+import { pausedOverlap, type PauseSpan } from '@piwitests/core/step-analysis';
 import { hasSlowMark } from '#shared/analytics/timeout-hygiene';
 
 interface PerformanceHint {
@@ -10,7 +11,9 @@ interface TestCaseData {
   duration?: number | null;
   retries?: number | null;
   status?: string;
-  steps?: Array<{ title: string; duration: number; category: string }> | null;
+  steps?: Array<{ title: string; duration: number; category: string; startTime?: number | null }> | null;
+  /** The test's stops at Piwi's pause bar, in epoch ms: a step's time stopped is left out of its hint. */
+  pauses?: PauseSpan[] | null;
   slowestStep?: string | null;
   slowestStepDuration?: number | null;
   /** Effective per-test timeout in ms (`TestCase.timeout`); `0`/null = unbounded/unknown. */
@@ -18,25 +21,36 @@ interface TestCaseData {
   testAnnotations?: Array<{ type?: string; description?: string }> | null;
 }
 
+/** `"Navigate" took 3.5s`, and the time it stood paused at a breakpoint beside it. */
+function tookText(step: { title: string; own: number; paused: number }): string {
+  const paused = step.paused > 0 ? `, not counting ${(step.paused / 1000).toFixed(1)}s paused at a breakpoint` : '';
+  return `"${step.title}" took ${(step.own / 1000).toFixed(1)}s${paused}`;
+}
+
 /**
- * Generate performance hints based on test case data
+ * Generate performance hints based on test case data. A step's time is its own: the time the test stood paused at
+ * Piwi's pause bar while it ran is left out.
  */
 export function getPerformanceHints(testCase: TestCaseData): PerformanceHint[] {
   const hints: PerformanceHint[] = [];
 
   if (!testCase) return hints;
 
-  const steps = testCase.steps || [];
+  const pauses = testCase.pauses ?? [];
+  const steps = (testCase.steps || []).map((s) => {
+    const paused = pauses.length ? pausedOverlap(s.startTime, s.duration, pauses) : 0;
+    return { ...s, paused, own: s.duration - paused };
+  });
 
   // Slow navigation hint
   const navigationSteps = steps.filter((s) => s.category === 'navigation');
-  const slowNavigations = navigationSteps.filter((s) => s.duration > 3000);
+  const slowNavigations = navigationSteps.filter((s) => s.own > 3000);
   if (slowNavigations.length > 0) {
-    const slowest = slowNavigations.sort((a, b) => b.duration - a.duration)[0]!;
+    const slowest = slowNavigations.sort((a, b) => b.own - a.own)[0]!;
     hints.push({
       type: 'warning',
       message: 'Slow navigation detected',
-      details: `"${slowest.title}" took ${(slowest.duration / 1000).toFixed(1)}s. The tested page may have performance issues (slow server response, heavy JS bundles, etc.).`,
+      details: `${tookText(slowest)}. The tested page may have performance issues (slow server response, heavy JS bundles, etc.).`,
     });
   }
 
@@ -59,13 +73,13 @@ export function getPerformanceHints(testCase: TestCaseData): PerformanceHint[] {
   }
 
   // Slow assertions
-  const slowAssertions = steps.filter((s) => s.category === 'assertion' && s.duration > 2000);
+  const slowAssertions = steps.filter((s) => s.category === 'assertion' && s.own > 2000);
   if (slowAssertions.length > 0) {
-    const slowest = slowAssertions.sort((a, b) => b.duration - a.duration)[0]!;
+    const slowest = slowAssertions.sort((a, b) => b.own - a.own)[0]!;
     hints.push({
       type: 'info',
       message: 'Slow assertions detected',
-      details: `"${slowest.title}" took ${(slowest.duration / 1000).toFixed(1)}s. The UI may be slow to render or the assertion timeout may need tuning.`,
+      details: `${tookText(slowest)}. The UI may be slow to render or the assertion timeout may need tuning.`,
     });
   }
 

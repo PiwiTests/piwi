@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/desktop",
-  "version": "0.59.0",
+  "version": "0.61.0",
   "private": true,
   "description": "Piwi Dashboard desktop application (Tauri) — bundles the server and runs it locally.",
   "type": "module",
@@ -15,7 +15,7 @@
   "devDependencies": {
     "@playwright/test": "^1.64.1",
     "@srsholmes/tauri-playwright": "^0.4.1",
-    "@tauri-apps/cli": "^2.12.3",
+    "@tauri-apps/cli": "^2.12.4",
     "@types/node": "^24.13.3"
   }
 }

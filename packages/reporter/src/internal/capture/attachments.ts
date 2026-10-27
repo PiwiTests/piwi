@@ -17,6 +17,8 @@ export const ATTACHMENT_NAMES = {
   codeReach: 'piwi-code-reach',
   browserCoverage: 'piwi-browser-coverage',
   browserFunctions: 'piwi-browser-functions',
+  cssCoverage: 'piwi-css-coverage',
+  cssRules: 'piwi-css-rules',
   serverCoverageRequests: 'piwi-server-coverage-requests',
   webVitals: 'piwi-web-vitals',
   locatorSuggestion: 'piwi-locator-suggestion',

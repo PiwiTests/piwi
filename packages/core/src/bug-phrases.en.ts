@@ -1,4 +1,5 @@
 import type { BugPhrases, BugState, BugStepValue, BugSubject, RoleNoun } from './bug-phrases';
+import type { ManualCheckValues } from './recording';
 import { keyCombo } from './key-combo';
 import { markdownCode } from './markdown-code';
 
@@ -104,6 +105,14 @@ const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n =
 
 const ofTotal = (shown: number, total: number | null): string => `${shown}${total != null ? ` of ${total}` : ''}`;
 
+/** `; in the run it expected X and received Y`, as much as the run says. */
+function inRun(c: ManualCheckValues): string {
+  const parts = [c.expected ? `expected ${c.expected}` : null, c.received ? `received ${c.received}` : null].filter(
+    Boolean,
+  );
+  return parts.length > 0 ? `; in the run it ${parts.join(' and ')}` : '';
+}
+
 export const ENGLISH_BUG_PHRASES: BugPhrases = {
   language: 'en',
   roles: ROLES,
@@ -127,6 +136,41 @@ export const ENGLISH_BUG_PHRASES: BugPhrases = {
         : `Choose the ${files.length === 1 ? 'file' : 'files'} ${files.map(quote).join(', ')} in ${subject(s)}`,
     dragTo: (s, target) => `Drag ${subject(s)} onto ${subject(target)}`,
     manual: (description) => `By hand: ${description}`,
+  },
+  manualInstructions: {
+    goBack: () => 'Go back to the previous page in the browser',
+    goForward: () => 'Go forward to the next page in the browser',
+    reload: () => 'Reload the page',
+    gotoUnknown: () => 'Open the page the test opened; the run does not keep which',
+    setContent: () => `Open the page the test writes itself (${markdownCode('page.setContent')})`,
+    keyboardType: () => 'Type on the keyboard what the test typed; the run keeps it in the test’s source',
+    mouseAt: (i) => `Do with the mouse what the test did at the point (${i.x}, ${i.y}) of the page: ${i.call}`,
+    mouseOrKeyboard: (i) => `Do what the test did with the mouse or the keyboard: ${i.call}`,
+    failedCall: (i) => `Do what the test did when it failed: ${i.call}`,
+    locatorCall: (i) => `Do what the test did on ${markdownCode(i.locator)}: ${i.call}`,
+    fillUnknown: (i) => `Fill ${markdownCode(i.locator)} as the test did; the run does not keep the value`,
+    fillPartial: (i) => `Fill ${markdownCode(i.locator)} as the test did; the run keeps only part of the value`,
+    pressUnknown: (i) => `Press in ${markdownCode(i.locator)} the key the test pressed`,
+    selectOptionUnknown: (i) =>
+      `Choose in ${markdownCode(i.locator)} the option the test chose; the run does not keep which`,
+    selectOptions: (i) =>
+      `Choose in ${markdownCode(i.locator)} ${i.options
+        .map((o) => (typeof o === 'number' ? `the option at index ${o}` : quote(o)))
+        .join(' and ')}`,
+    setInputFiles: (i) =>
+      `Choose in ${markdownCode(i.locator)} the file the test chose; the run does not keep its name`,
+    dragTo: (i) => `Drag ${markdownCode(i.locator)} to where the test dropped it; the run does not keep where`,
+    drop: (i) => `Drop onto ${markdownCode(i.locator)} the files or data the test dropped`,
+    focus: (i) => `Put the focus on ${markdownCode(i.locator)}`,
+    blur: (i) => `Move the focus away from ${markdownCode(i.locator)}`,
+    dispatchEvent: (i) => `Do on ${markdownCode(i.locator)} what fires the event the test dispatched`,
+    scrollIntoViewIfNeeded: (i) => `Scroll ${markdownCode(i.locator)} into view`,
+    expectPoll: (i) => `Check what the test checked again and again (${i.matcher})${inRun(i)}`,
+    expectValue: (i) => `Check what the test checked: ${i.what}${inRun(i)}`,
+    expectLocator: (i) => `Check ${markdownCode(i.locator)} with ${i.matcher}${inRun(i)}`,
+    expectURL: (i) => `Check the page’s address (toHaveURL)${inRun(i)}`,
+    leadingSteps: (i) =>
+      `Do the first ${i.count} steps of the test by hand, up to where step ${i.count + 1} starts: a steps file holds ${i.limit} steps`,
   },
   expectation(s, e, negated) {
     const should = negated ? 'should not' : 'should';

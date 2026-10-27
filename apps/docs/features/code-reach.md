@@ -152,7 +152,8 @@ The [API](https://piwitests.dev/demo/docs) (`/docs` on your instance) serves the
 
 ## Related
 
-- [Server coverage](./server-coverage): the code each test ran in an ASP.NET Core backend
+- [CSS coverage](./css-coverage): the style sheet rules each test's pages matched, in the same capture
+- [Server coverage](./server-coverage): the code each test ran in an ASP.NET Core or Nitro backend
 - [Coverage cost](/reference/coverage-cost): what each mode costs
 - [Capture fixtures](/guide/capture-fixtures): what else the fixtures record
 - [Impact from a diff](./change-impact): the tests a change affects

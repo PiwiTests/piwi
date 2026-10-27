@@ -71,6 +71,11 @@ Server coverage, on a prototype of the coverage package: under 2% of test durati
 CPU goes to the framework; up to 26% more backend CPU on an application written to spend its CPU in business logic, and
 6% in its run-level mode. Functions cost about what lines cost: the cost is the recorder's call on every method call.
 
+Server coverage on a Nitro backend, on the sample application's suite against production builds: no measurable
+change in test duration (72.8 s of tests without coverage, 72.2 s with, medians of 5 runs), 5.6% more server CPU, and
+a server bundle 7.8% larger. On the same suite, the ASP.NET Core coverage build costs 12.5% more server CPU, and no
+measurable test time either. Per call, the Nitro recorder costs 5 to 13 ns, about what the .NET one costs.
+
 ## Choosing
 
 - **Server coverage** can stay on in every run: against a backend that is not a coverage build, it collects nothing

@@ -287,7 +287,9 @@ clients stay thin and both editors give the same answers.
   running.`, `2 workers are stopped: choose one.`, a test's `cannotPause`): `pause` goes to the workers that run or are
   between tests (each stops at its next call, or the next test's first), `step`, `resume`, `finish` and `run-to` to the
   one stopped, naming its stop, which a worker past it ignores; with `since` (the stop the client showed), only to the
-  worker stopped there, else `The test went on.` A place a client sends (`run-to`, the breakpoints) is a line of the
+  worker stopped there, else `The test went on.` A worker's stop ends with its `running`, whoever ended it: the bar,
+  the editor, or the test ending under it or closing its page, which the worker sends unanswered; a control naming it
+  after that is refused the same way. A place a client sends (`run-to`, the breakpoints) is a line of the
   run's code, which the client maps back from a document edited since the run started. `piwi/setRunBreakpoints` replaces the run's breakpoints
   in each worker and in each one that connects later (the 50 latest runs' are kept), and `piwi/pausedPage` asks a
   stopped worker for a JPEG of its page, null after 10 s (`PAUSED_PAGE_WAIT_MS`), when it leaves or is not stopped. A

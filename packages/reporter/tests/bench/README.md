@@ -37,6 +37,7 @@ npm run reporter:bench                                          # defaults below
 node tests/bench/run.mjs --rounds 5 --rows 800 --actions 20      # heavier page, more actions
 node tests/bench/run.mjs --only baseline,full --target roleless  # isolate the ARIA snapshot
 node tests/bench/run.mjs --json results.json                     # machine-readable
+node tests/bench/run.mjs --only baseline,resources --remote 10   # a remote browser 10 ms away
 ```
 
 | Flag | Default | Meaning |
@@ -48,6 +49,7 @@ node tests/bench/run.mjs --json results.json                     # machine-reada
 | `--target` | `role` | `role` (buttons) or `roleless` (plain spans) |
 | `--sites` | `distinct` | `distinct` (one line per operation) or `shared` (one line, run repeatedly) |
 | `--only` | all | comma-separated variant keys |
+| `--remote` | — | run against a browser server through a proxy adding this many ms (even) to each round trip; `0` is the proxy alone |
 | `--json` | — | write the aggregated rows to a file |
 
 ### Three things worth knowing before reading the output
@@ -70,6 +72,19 @@ the `distinct` shape and 2× apart on `shared` — the locator layer there is a 
 baseline, so a per-capture change of 1–2 ms disappears into it. Before believing a small win, measure the mechanism
 directly: drive the two code paths against one page, alternating between them so warm-up and drift hit both, and
 compare medians over tens of samples. Reach for this harness to size a layer, not to A/B a micro-optimization.
+
+### A remote browser (`--remote`)
+
+`--remote <ms>` starts a browser server (`chromium.launchServer`) and `latency-proxy.mjs` in front of it, and points
+every variant at the proxy through `PW_TEST_CONNECT_WS_ENDPOINT`, as a suite on a browser grid is. The proxy holds each
+protocol message for half the given time in each direction, so every round trip costs that much more, and counts the
+messages the client sends. The output then adds the messages per test, by method: each run's messages divided by its
+tests, so the browser's connection and the hooks are shared out among them. The value is an even whole number, since
+half of it is added each way and Node's timers run in whole milliseconds.
+
+Each test notes its body's own time (`bench-body-ms`), so every run also splits a test's time into its body and what
+the fixtures' setup and teardown add around it. On a remote browser the two move apart: the capture's reads during the
+body run beside the test, while the ones at its end hold it up, one round trip each.
 
 ## Micro (`hot-path.bench.ts`)
 
