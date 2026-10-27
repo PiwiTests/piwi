@@ -26,7 +26,7 @@ entry shape and the meaning of each field are documented in `index.d.mts`.
   `{ unfold: <anchor> }` clicks a folded section's toggle while it reads `aria-expanded="false"`; `{ open: <anchor> }`
   clicks the opener of a menu, drawer or modal when the anchor is not rendered, one step per level (as for the user
   menu's Open in IDE settings).
-- **`describes` and `shownWhen` are one sentence each**, in the docs' voice. `sample` is a seeded demo route where it
+- **`describes` and `shownWhen` are one sentence each, of 160 characters at most**, in the docs' voice. `sample` is a seeded demo route where it
   renders, with every `query` its reveal needs, the persona to act as and the `expect` the seed must hold there.
 - **Four checks hold every anchor, and a new anchor ships with its sample and passes all four**:
   - `tests/unit/guide-anchors.test.ts`: the registry against the source (one element per id, every `data-tour` an

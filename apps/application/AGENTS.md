@@ -11,24 +11,24 @@ code.
 ## Topic guides
 
 Claude Code loads a topic guide by itself when you open a file in its directory; other agents read the matching row
-before editing. A change that spans several rows reads each of them.
+before editing. A row that also names files outside its guide's directory (the guide engine, the demo seed generator)
+is read by hand when you edit one of them. A change that spans several rows reads each of them.
 
-| Editing…                                                                                        | Read                                                                   |
-| ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `app/`: pages, components, composables, utils (UI conventions)                                  | [`app/AGENTS.md`](app/AGENTS.md)                                       |
-| `app/pages/`: page layout (gutter, tab strips, settings menus)                                  | [`app/pages/AGENTS.md`](app/pages/AGENTS.md)                           |
-| `app/components/run/`: the run page, its workers timeline                                       | [`app/components/run/AGENTS.md`](app/components/run/AGENTS.md)         |
-| `app/demo/`, `shared/demo/`, the demo seed, or any change the demo must mirror                  | [`app/demo/AGENTS.md`](app/demo/AGENTS.md)                             |
-| `app/utils/demo-tour/`: the live demo's guided tour                                             | [`app/utils/demo-tour/AGENTS.md`](app/utils/demo-tour/AGENTS.md)       |
-| `shared/guide-anchors/`, `app/utils/guide/`, `app/utils/guides/`, a `data-tour` element         | [`shared/guide-anchors/AGENTS.md`](shared/guide-anchors/AGENTS.md)     |
-| `server/api/`, `server/routes/`, authentication and permissions                                 | [`server/api/AGENTS.md`](server/api/AGENTS.md)                         |
-| The reporter's routes (`server/api/test-runs/`), a new field on run data, sharding              | [`server/api/test-runs/AGENTS.md`](server/api/test-runs/AGENTS.md)     |
-| `server/database/`: schema, migrations, queries                                                 | [`server/database/AGENTS.md`](server/database/AGENTS.md)               |
-| `server/utils/`: SCM, fingerprints, locator healing, traces, DOM snapshots, AI CLIs             | [`server/utils/AGENTS.md`](server/utils/AGENTS.md)                     |
-| `server/utils/mcp/`, `shared/mcp-tools.ts`: the MCP tools                                       | [`server/utils/mcp/AGENTS.md`](server/utils/mcp/AGENTS.md)             |
-| The in-app assistant and its nudges                                                             | [`server/utils/assistant/AGENTS.md`](server/utils/assistant/AGENTS.md) |
-| `shared/env-format*.ts`, `shared/deploy/`, the deploy manifests                                 | [`shared/deploy/AGENTS.md`](shared/deploy/AGENTS.md)                   |
-| `scripts/`: feature screenshots, page measurements, performance suite, demo media, brand assets | [`scripts/AGENTS.md`](scripts/AGENTS.md)                               |
+| Editing…                                                                                                               | Read                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `app/`: pages, components, composables, utils (UI conventions)                                                         | [`app/AGENTS.md`](app/AGENTS.md)                                       |
+| `app/components/run/`: the run page, its workers timeline                                                              | [`app/components/run/AGENTS.md`](app/components/run/AGENTS.md)         |
+| `app/demo/`, `shared/demo/`, the demo seed, or any change the demo must mirror                                         | [`app/demo/AGENTS.md`](app/demo/AGENTS.md)                             |
+| `app/utils/demo-tour/`: the live demo's guided tour                                                                    | [`app/utils/demo-tour/AGENTS.md`](app/utils/demo-tour/AGENTS.md)       |
+| `shared/guide-anchors/`, the guide engine (`useGuide`, `app/utils/guide/`, `app/utils/guides/`), a `data-tour` element | [`shared/guide-anchors/AGENTS.md`](shared/guide-anchors/AGENTS.md)     |
+| `server/api/`, `server/routes/`, authentication and permissions                                                        | [`server/api/AGENTS.md`](server/api/AGENTS.md)                         |
+| The reporter's routes (`server/api/test-runs/`), a new field on run data, sharding                                     | [`server/api/test-runs/AGENTS.md`](server/api/test-runs/AGENTS.md)     |
+| `server/database/`: schema, migrations, queries                                                                        | [`server/database/AGENTS.md`](server/database/AGENTS.md)               |
+| `server/utils/`: SCM, fingerprints, locator healing, traces, DOM snapshots, AI CLIs                                    | [`server/utils/AGENTS.md`](server/utils/AGENTS.md)                     |
+| `server/utils/mcp/`, `shared/mcp-tools.ts`: the MCP tools                                                              | [`server/utils/mcp/AGENTS.md`](server/utils/mcp/AGENTS.md)             |
+| The in-app assistant and its nudges                                                                                    | [`server/utils/assistant/AGENTS.md`](server/utils/assistant/AGENTS.md) |
+| `shared/env-format*.ts`, `shared/deploy/`, the deploy manifests                                                        | [`shared/deploy/AGENTS.md`](shared/deploy/AGENTS.md)                   |
+| `scripts/`: feature screenshots, page measurements, performance suite, demo media, brand assets                        | [`scripts/AGENTS.md`](scripts/AGENTS.md)                               |
 
 Where to add things in a subsystem whose wiring spans several files (a flaky root-cause category, a regression signal,
 an AI context section, an import path, a quality report language, an issue automation criterion): the _Extension

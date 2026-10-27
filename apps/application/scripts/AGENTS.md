@@ -5,11 +5,14 @@ measurements, the performance suite, the demo's evidence media and the brand ass
 first. The `run-app` skill (`.claude/skills/run-app/SKILL.md`) is the recipe for running the app and screenshotting a
 route.
 
+Changing `generate-demo-seed.mjs` or anything it seeds? The seed's rules (determinism, what is committed, the checks)
+are in [`../app/demo/AGENTS.md`](../app/demo/AGENTS.md#the-seed).
+
 ## Feature screenshots
 
 The rule (screenshots for every visible UI change, sent to the user) is in
 [`../app/AGENTS.md`](../app/AGENTS.md#feature-screenshots). `scripts/take-feature-screenshots.mjs` boots its own dev
-server, or drives one you already have with `--url`. Its header documents every option, and the comment above `SCENES`
+server, or drives one you already have with `--url`. Its header documents every option, and the `Scenes:` comment (about a thousand lines above `const SCENES`)
 every scene option.
 
 | Command                          | Purpose                                                            |
