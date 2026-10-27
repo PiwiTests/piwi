@@ -335,7 +335,8 @@ clients stay thin and both editors give the same answers.
   goes, such a stop goes on (`RunSessions.surfacesChanged`). An intent is asked of the one stopped worker (or the one
   named, at the stop `since` names): refused at a stop no pause bar shows (`bar: false`) and for a reporter whose
   `run-attach` does not list it in `takes`, else sent as a `request` naming the stop, the worker's answer passed on
-  (10 s at most). Nothing a command asks evaluates code, reads a file or reaches an instance.
+  (10 s at most): the worker refuses one at a stop that is ending, or whose page it cannot tell, which also has no
+  image. Nothing a command asks evaluates code, reads a file or reaches an instance.
 - The discovery file (`src/discovery.ts`, `@piwitests/core/editor-discovery`): once the run channel and the hub listen,
   `startServer` hands `publish` what `~/.piwi/editors/<pid>.json` says (`PIWI_EDITORS_DIR` names another folder): the
   service's pid, its machine (`host`, `os.hostname()`), version (written in by `build.mjs`, `0.0.0-dev` unbundled), its

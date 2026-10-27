@@ -74,10 +74,11 @@ Two **external contracts** beyond the npm API:
   cannot tell any page of its context closed) ends the same way with a bar or without, the editor
   told (`running`); the editor gets no image of such a page. At a stop the bar shows, the editor
   can also start the bar's Pick a locator and Record here (an intent, `request` with
-  `what: 'pick' | 'record'`), which the bar takes as its own click and which ends with the stop.
-  One stop shows at a time in a worker: one waiting its turn goes on unshown when the test
-  ended meanwhile, its page or context closed or its breakpoint went, and a context's close,
-  its own or its browser's, lets the call its debugger holds go on first.
+  `what: 'pick' | 'record'`), which the bar takes as its own click and which ends with the stop;
+  it is refused at a stop that is ending or whose page it cannot tell. One stop shows at a time
+  in a worker: one waiting its turn goes on unshown when the test ended meanwhile, its page or
+  context closed or its breakpoint went, and a context's close, its own or its browser's, lets
+  the call its debugger holds go on first.
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
   unref'd timer (`internal/collect/process-sampler.ts`). While the dashboard says
   someone watches the run, another unref'd timer posts what the sampler and the

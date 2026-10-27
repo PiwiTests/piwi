@@ -41,7 +41,13 @@ import {
   type PauseRecord,
   type PauseState,
 } from '../src/internal/capture/pause-at.js';
-import { piwiFixtures, probeElementAttrs, CAPTURED_ATTRS_ARG } from '../src/internal/capture/capture-fixtures.js';
+import {
+  intentAt,
+  piwiFixtures,
+  probeElementAttrs,
+  CAPTURED_ATTRS_ARG,
+  type IntentStop,
+} from '../src/internal/capture/capture-fixtures.js';
 import { ATTACHMENT_NAMES } from '../src/internal/capture/attachments.js';
 import type { LocatorSnapshot } from '../src/internal/capture/locator-healing.js';
 import { jsonRes, startServer } from './_helpers.js';
@@ -599,6 +605,39 @@ describe('pauseHere', () => {
     ended.abort();
     expect(await done).toBe('resume');
   });
+  it('ends a pick or a recording an intent started with the stop, as the bar’s own, the window’s raise included', async () => {
+    const g = globalThis as Record<string, unknown>;
+    const picking = fakePausePage([], { holdBar: true, hangPick: true });
+    const pickIntents = new BarIntents();
+    const ended = new AbortController();
+    const picked = pauseHere(picking.page as never, POINT, PROBE, () => {}, undefined, ended.signal, pickIntents);
+    await vi.waitFor(() => expect(picking.shown).toHaveLength(1));
+    expect(pickIntents.offer('pick')).toBe(true);
+    await vi.waitFor(() => expect(picking.page.evaluate.mock.calls.map((c) => c[0])).toContain(installPickerOverlay));
+    ended.abort('ended');
+    try {
+      expect(await picked).toBe('resume');
+      expect(g.__piwiPickEnded).toBe(true);
+      const evaluated = picking.page.evaluate.mock.calls.map((c) => c[0]);
+      expect(evaluated[evaluated.length - 1]).toBe(takePauseState);
+    } finally {
+      delete g.__piwiPickEnded;
+    }
+
+    // A window that does not come to the front holds nothing past the stop's end, and no recording starts then.
+    const recording = fakePausePage([], { holdBar: true });
+    recording.page.bringToFront = vi.fn(() => new Promise<void>(() => {}));
+    const recordIntents = new BarIntents();
+    const stopped = new AbortController();
+    const record = vi.fn(async (_ended?: AbortSignal) => {});
+    const recorded = pauseHere(recording.page as never, POINT, PROBE, () => {}, record, stopped.signal, recordIntents);
+    await vi.waitFor(() => expect(recording.shown).toHaveLength(1));
+    expect(recordIntents.offer('record')).toBe(true);
+    await vi.waitFor(() => expect(recording.page.bringToFront).toHaveBeenCalledOnce());
+    stopped.abort('closed');
+    expect(await recorded).toBe('resume');
+    expect(record).not.toHaveBeenCalled();
+  });
 });
 
 describe('BarIntents', () => {
@@ -612,6 +651,44 @@ describe('BarIntents', () => {
     const next = intents.wait();
     expect(intents.offer('record')).toBe(true);
     expect(await next).toBe('record');
+  });
+});
+
+describe('an intent from outside the page', () => {
+  const HOLDS: IntentStop = { record: true, guessed: false, holds: () => true };
+
+  it('reaches the bar at a stop that holds, and is refused at one that is over or ending, or whose page is a guess', async () => {
+    const intents = new BarIntents();
+    // Answered, or ending: the test ended under it, or its page or context began to close.
+    expect(intentAt(intents, 'pick', { ...HOLDS, holds: () => false })).toEqual({
+      ok: false,
+      message: 'The test went on.',
+    });
+    expect(intentAt(intents, 'record', { ...HOLDS, guessed: true, holds: () => false })).toEqual({
+      ok: false,
+      message: 'The test went on.',
+    });
+    // Its page is a guess among its context's pages: neither Pick nor Record could tell they are in the right one.
+    for (const [what, name] of [
+      ['pick', 'Pick a locator'],
+      ['record', 'Record here'],
+    ] as const) {
+      expect(intentAt(intents, what, { ...HOLDS, guessed: true })).toEqual({
+        ok: false,
+        message: `${name} needs the page the test stopped in, which this call does not name among its context's pages: use the pause bar in the test's window.`,
+      });
+    }
+    expect(intentAt(intents, 'record', { ...HOLDS, record: false })).toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/^Record here needs the editor that started the run/),
+    });
+    // None of those reached the bar: the first one taken is the one that holds.
+    expect(intentAt(intents, 'pick', HOLDS)).toEqual({
+      ok: true,
+      message: "Pick an element in the test's window: the locator goes to the editor.",
+    });
+    expect(intentAt(intents, 'record', HOLDS)).toMatchObject({ ok: false, message: expect.stringMatching(/ waits: /) });
+    expect(await intents.wait()).toBe('pick');
   });
 });
 

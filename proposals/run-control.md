@@ -86,8 +86,9 @@ its answer names. A subscribed connection counts as a surface that answers stops
 waits even when the IDE client cannot answer stops, and when the last one leaves, such a stop goes on. Pick and Record
 are intents of the run channel (a `request` naming its stop, answered at once with whether it started), which a worker
 lists in its `run-attach` (`takes`) rather than the hub reading the reporter's version; both start the pause bar's own
-pick or recording, in the test's window brought to the front, and end with the stop through PR 2's one path. Both
-IDE clients name their pairing in `PIWI_EDITOR_SEND` for every run that names a run
+pick or recording, in the test's window brought to the front, and end with the stop through PR 2's one path; one is
+refused at a stop that ended or is ending, and at one whose page the worker cannot tell, which the person outside the
+page cannot see either. Both IDE clients name their pairing in `PIWI_EDITOR_SEND` for every run that names a run
 channel, since any such run can stop with the bar, Pause included, and the worker takes it out of its environment
 while a test runs, as it does `PIWI_RUN_CHANNEL`, its picks still posted to it.
 The live endpoint lists loopback addresses: a remote window forwards them with Part 6. PR 3's extension half is the

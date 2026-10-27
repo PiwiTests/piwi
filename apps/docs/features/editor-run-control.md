@@ -116,8 +116,8 @@ IDE, closes the connections: a stop with no pause bar then goes on, and one the 
   test's own code stays with the IDE's debugger.
 - **One image a stop.** The paused page is a still image: it does not follow what you do in a headed browser.
 - **No image when the page is unknown.** A stop at a call other than a locator's (a navigation, a key press) in a
-  browser context with several pages has no image: the worker cannot tell which page the call is on. Any page of
-  that context closing ends it.
+  browser context with several pages has no image, and refuses Piwi Picker's **Pick** and **Record**: the
+  worker cannot tell which page the call is on. Any page of that context closing ends it.
 
 ## Related
 

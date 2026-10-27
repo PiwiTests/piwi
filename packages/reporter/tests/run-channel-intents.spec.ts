@@ -14,8 +14,9 @@ import { jsonRes, startServer, type FakeServer } from './_helpers.js';
  * a real Playwright run through the built package, a fake editor service on the socket the run names (the run channel
  * and the record channel, as the editor names both), and a fake Send to editor endpoint. At a stop the pause bar shows,
  * the editor asks the worker to pick, then to record; the page plays the person's clicks in the picker, and the fake
- * editor refuses the recording. A headless stop refuses both. Without a display, Chromium runs the headed project
- * without a window (`--headless=new`); under `xvfb-run -a` it opens one.
+ * editor refuses the recording. A headless stop refuses both, and so does a stop whose page the worker cannot tell. A
+ * pick an intent started ends with its stop, whether the editor answers it or the test ends under it. Without a
+ * display, Chromium runs the headed projects without a window (`--headless=new`); under `xvfb-run -a` it opens one.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -53,6 +54,23 @@ setInterval(() => {
 }, 100);
 </script>`;
 
+/** A page of the app that says when the pause bar shows and when the element picker does, and picks nothing. */
+const PAGE_B = `<!doctype html><meta charset="utf-8"><title>b</title><input><button>Go</button>
+<script>
+new MutationObserver(() => {
+  const bar = document.getElementById('__piwi-pause-bar');
+  if (bar && !bar.dataset.seen) {
+    bar.dataset.seen = '1';
+    fetch('/bar', { method: 'POST', body: bar.children[0].textContent });
+  }
+  const banner = document.getElementById('__piwi_picker_banner');
+  if (banner && !banner.dataset.seen) {
+    banner.dataset.seen = '1';
+    fetch('/picking', { method: 'POST', body: location.search });
+  }
+}).observe(document.documentElement, { childList: true, subtree: true });
+</script>`;
+
 const HEADED_SPEC = (base: string) => `const { test } = require('../fixture.cjs');
 test('picked from outside', async ({ page }) => {
   await page.goto('${base}/a');
@@ -61,6 +79,33 @@ test('picked from outside', async ({ page }) => {
 test('recorded from outside', async ({ page }) => {
   await page.goto('${base}/a');
   await page.locator('input').fill('two'); // bp
+});
+test('a call on one of two pages', async ({ page, context }) => {
+  await page.goto('${base}/a');
+  const other = await context.newPage();
+  await other.goto('${base}/a');
+  await page.keyboard.press('Tab'); // bp
+});
+test('a pick the editor resumed under', async ({ page }) => {
+  await page.goto('${base}/b?for=resumed');
+  await page.locator('input').fill('five'); // bp
+  const left = [];
+  for (const id of ['__piwi_picker_banner', '__piwi-pause-bar']) {
+    if (await page.locator('#' + id).count()) left.push(id);
+  }
+  if (left.length) throw new Error('left in the page: ' + left.join(', '));
+});
+`;
+
+/** A test that ends under a pick started from outside the page: it gives up once the picker shows. */
+const ENDS_SPEC = (base: string) => `const { test } = require('../fixture.cjs');
+test('ended under a pick', async ({ page }) => {
+  await page.goto('${base}/b?for=ended');
+  const gaveUp = (async () => {
+    while ((await (await fetch('${base}/picking?for=ended')).text()) !== 'yes') await new Promise((r) => setTimeout(r, 50));
+    throw new Error('the test gave up while the pick ran');
+  })();
+  await Promise.all([page.locator('input').fill('six'), gaveUp]); // bp
 });
 `;
 
@@ -112,8 +157,9 @@ const connections: Connection[] = [];
 /** The record channel's hand-offs the editor heard, and the picks posted to its Send to editor endpoint. */
 const handoffs: unknown[] = [];
 const picks: unknown[] = [];
-/** What the pause bar said each time it showed. */
+/** What the pause bar said each time it showed, and the pages the element picker showed in (`?for=…`). */
 const bars: string[] = [];
+const picking: string[] = [];
 /** What the worker answered each intent, by test. */
 const answered: Record<string, IntentAnswered[]> = {};
 let tests: Array<{ title: string; status: string; errors: string[]; steps: DumpedStep[] }> = [];
@@ -163,6 +209,15 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
   } else if (test === 'recorded from outside') {
     said.push(await intent(connection, 'record', stop.stop));
     await waitFor(() => (bars.length > barsBefore + 1 ? true : undefined));
+  } else if (test === 'a pick the editor resumed under') {
+    said.push(await intent(connection, 'pick', stop.stop));
+    await waitFor(() => (picking.includes('?for=resumed') ? true : undefined));
+  } else if (test === 'ended under a pick') {
+    said.push(await intent(connection, 'pick', stop.stop));
+    // The test ends under the pick: the worker ends the stop, and an intent naming it is refused.
+    await waitFor(() => connection.heard.find((m) => m.type === 'running' && m.stop === stop.stop));
+    said.push(await intent(connection, 'pick', stop.stop));
+    return;
   } else {
     said.push(await intent(connection, 'pick', stop.stop));
     said.push(await intent(connection, 'record', stop.stop));
@@ -217,6 +272,14 @@ beforeAll(async () => {
       bars.push(req.body);
       return res.end();
     }
+    if (url.pathname === '/picking') {
+      if (req.method === 'POST') picking.push(req.body);
+      return res.end(picking.includes(url.search) ? 'yes' : 'no');
+    }
+    if (url.pathname === '/b') {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(PAGE_B);
+    }
     if (url.pathname === '/piwi/send') {
       picks.push({ authorization: req.headers.authorization, body: JSON.parse(req.body) });
       return jsonRes(res, 200, { inserted: true, file: null });
@@ -227,6 +290,7 @@ beforeAll(async () => {
 
   write('tests/headed.spec.cjs', HEADED_SPEC(server.url));
   write('tests/headless.spec.cjs', HEADLESS_SPEC(server.url));
+  write('tests/ends.spec.cjs', ENDS_SPEC(server.url));
   write(
     'fixture.cjs',
     `const { test: base } = require('@playwright/test');
@@ -251,6 +315,12 @@ module.exports = defineConfig({
       use: { headless: false, launchOptions: { args: ${WINDOWS ? '[]' : "['--headless=new']"} } },
     },
     { name: 'headless', testMatch: 'headless.spec.cjs', use: { headless: true }, dependencies: ['headed'] },
+    {
+      name: 'ends',
+      testMatch: 'ends.spec.cjs',
+      use: { headless: false, launchOptions: { args: ${WINDOWS ? '[]' : "['--headless=new']"} } },
+      dependencies: ['headless'],
+    },
   ],
 });
 `,
@@ -271,6 +341,7 @@ module.exports = defineConfig({
     PIWI_PAUSE_AT: [
       breakpoints('headed.spec.cjs', HEADED_SPEC(server.url)),
       breakpoints('headless.spec.cjs', HEADLESS_SPEC(server.url)),
+      breakpoints('ends.spec.cjs', ENDS_SPEC(server.url)),
     ].join(';'),
   };
   for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL']) delete env[name];
@@ -303,14 +374,21 @@ function allSteps(steps: DumpedStep[]): DumpedStep[] {
 }
 
 describe('Pick and Record started from outside the page', () => {
-  it('lets every test pass, and says which intents the worker takes as it attaches', () => {
-    expect(exitCode, output).toBe(0);
+  it('lets every test pass but the one that gives up, and says which intents the worker takes as it attaches', () => {
+    expect(exitCode, output).toBe(1);
     expect(tests.map((t) => [t.title, t.status])).toEqual([
       ['picked from outside', 'passed'],
       ['recorded from outside', 'passed'],
+      ['a call on one of two pages', 'passed'],
+      // Nothing of the pick or the bar is left in the page once the editor answered the stop.
+      ['a pick the editor resumed under', 'passed'],
       ['headless', 'passed'],
       // Neither the run's channel nor the editor's pairing reaches a process a test starts.
       ['a process it starts', 'passed'],
+      ['ended under a pick', 'failed'],
+    ]);
+    expect(tests.find((t) => t.title === 'ended under a pick')!.errors).toEqual([
+      expect.stringContaining('the test gave up while the pick ran'),
     ]);
     expect(connections[0]!.heard[0]).toMatchObject({ type: 'run-attach', ref: REF, takes: ['pick', 'record'] });
   });
@@ -353,6 +431,31 @@ describe('Pick and Record started from outside the page', () => {
       { ok: false, message: refusal('Pick a locator') },
       { ok: false, message: refusal('Record here') },
     ]);
+  });
+
+  it('refuses both at a stop whose page it cannot tell, a key press in a context with two pages', () => {
+    const refusal = (name: string) =>
+      `${name} needs the page the test stopped in, which this call does not name among its context's pages: use the pause bar in the test's window.`;
+    expect(answered['a call on one of two pages']).toEqual([
+      { ok: false, message: refusal('Pick a locator') },
+      { ok: false, message: refusal('Record here') },
+    ]);
+  });
+
+  it('ends a pick it started with the stop, whether the editor answers it or the test ends under it', () => {
+    const started = { ok: true, message: "Pick an element in the test's window: the locator goes to the editor." };
+    expect(picking).toEqual(['?for=resumed', '?for=ended']);
+    expect(answered['a pick the editor resumed under']).toEqual([started]);
+    expect(answered['ended under a pick']).toEqual([started, { ok: false, message: 'The test went on.' }]);
+    // Neither pick reached the editor.
+    expect(picks).toHaveLength(1);
+  });
+
+  it('ends every stop it showed once, with `running`, whoever ended it', () => {
+    const stops = (connection: Connection, type: 'stopped' | 'running') =>
+      connection.heard.flatMap((m) => (m.type === type ? [m.stop] : [])).sort((a, b) => a - b);
+    expect(connections.flatMap((connection) => stops(connection, 'stopped'))).toHaveLength(6);
+    for (const connection of connections) expect(stops(connection, 'running')).toEqual(stops(connection, 'stopped'));
   });
 
   it('shows none of its own calls among the test’s steps', () => {

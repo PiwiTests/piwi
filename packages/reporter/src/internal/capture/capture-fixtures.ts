@@ -1677,7 +1677,14 @@ async function showStop(
           locator: call ? locatorSource(call.target, call.origin.method, call.origin.args) : null,
           bar,
           page: guessed ? null : page,
-          intent: intents ? (what) => intentAt(intents, what, !!onRecord) : undefined,
+          intent: intents
+            ? (what) =>
+                intentAt(intents, what, {
+                  record: !!onRecord,
+                  guessed,
+                  holds: () => !over.signal.aborted && !sink.ending && stopCanShow(context, of),
+                })
+            : undefined,
         },
         (answer) => {
           fromEditor = answer;
@@ -1726,12 +1733,29 @@ async function showStop(
   return 'resume';
 }
 
+/** What a stop the bar shows says to an intent: whether it can record, whether its page is a guess, whether it holds. */
+export interface IntentStop {
+  record: boolean;
+  guessed: boolean;
+  /** Neither answered nor ending: its test goes on, and neither its page nor its context began to close. */
+  holds(): boolean;
+}
+
 /**
  * Start the pause bar's Pick a locator or Record here from outside the page, at a stop the bar shows: answered at
- * once, the pick or the recording then running in the test's window as from the bar.
+ * once, the pick or the recording then running in the test's window as from the bar, and ending with the stop.
+ * Refused at a stop that is over or ending, and at one whose page is a guess (`StopPage`), which the person outside
+ * the page cannot see.
  */
-function intentAt(intents: BarIntents, what: RunIntent, canRecord: boolean): IntentAnswer {
-  if (what === 'record' && !canRecord) {
+export function intentAt(intents: BarIntents, what: RunIntent, stop: IntentStop): IntentAnswer {
+  if (!stop.holds()) return { ok: false, message: 'The test went on.' };
+  if (stop.guessed) {
+    return {
+      ok: false,
+      message: `${RUN_INTENT_NAMES[what]} needs the page the test stopped in, which this call does not name among its context's pages: use the pause bar in the test's window.`,
+    };
+  }
+  if (what === 'record' && !stop.record) {
     return {
       ok: false,
       message: 'Record here needs the editor that started the run: this run names no record channel.',
