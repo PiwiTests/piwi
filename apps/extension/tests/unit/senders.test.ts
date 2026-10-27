@@ -41,6 +41,14 @@ describe('the origin a sender may name', () => {
     expect(mayNameOrigin(frame, 'https://ads.test')).toBe(false);
   });
 
+  it("refuses a frame of another origin naming its tab's origin", () => {
+    const frame = {
+      url: 'https://ads.test/frame',
+      tab: { id: 1, url: `${SHOP}/cart` },
+    } as chrome.runtime.MessageSender;
+    expect(mayNameOrigin(frame, SHOP)).toBe(false);
+  });
+
   it('lets an extension page name any origin', () => {
     expect(mayNameOrigin(extensionTab, SHOP)).toBe(true);
     expect(mayNameOrigin(extensionTab, 'https://bank.test')).toBe(true);

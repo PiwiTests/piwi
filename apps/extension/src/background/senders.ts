@@ -7,9 +7,9 @@ export function fromExtensionPage(sender: chrome.runtime.MessageSender): boolean
 
 /**
  * Whether a sender may name `origin` as the site to act on: an extension page
- * names any origin, a content script only the origin of its own tab.
+ * names any origin, a content script only the origin of its own frame and tab.
  */
 export function mayNameOrigin(sender: chrome.runtime.MessageSender, origin: string): boolean {
   if (fromExtensionPage(sender)) return true;
-  return webOrigin(sender.tab?.url) === origin;
+  return webOrigin(sender.url) === origin && webOrigin(sender.tab?.url) === origin;
 }
