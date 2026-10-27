@@ -74,6 +74,11 @@ describe('a key press on the live view', () => {
     expect(keyOnView(key({ key: 'Tab', shiftKey: true }), { ...pc, captured: true })).toEqual(press('Shift+Tab'));
   });
 
+  it('sends nothing for a control character a key names', () => {
+    expect(keyOnView(key({ key: '\x1b' }), pc)).toBe('none');
+    expect(keyOnView(key({ key: '\x7f' }), pc)).toBe('none');
+  });
+
   it('sends nothing for a modifier alone, a dead key or an input method’s keys', () => {
     for (const pressed of [
       key({ key: 'Shift', shiftKey: true }),
@@ -91,6 +96,9 @@ describe('a key press on the live view', () => {
 describe('a paste on the live view', () => {
   it('is text, cut into the longest texts an event carries, nulls left out and lines kept', () => {
     expect(pastedText('a\r\nb\0c')).toEqual([{ type: 'text', text: 'a\nbc' }]);
+    // The other control characters go too, a tab kept: none would reach the page as typed text.
+    expect(pastedText('tab\there\x1b[31m\x07red\x7f\rend')).toEqual([{ type: 'text', text: 'tab\there[31mred\nend' }]);
+    expect(pastedText('\x1b\x07')).toEqual([]);
     const long = 'x'.repeat(MAX_VIEW_TEXT * 2 + 5);
     expect(pastedText(long).map((e) => (e as { text: string }).text.length)).toEqual([MAX_VIEW_TEXT, MAX_VIEW_TEXT, 5]);
     expect(pastedText(long, 2)).toHaveLength(2);
