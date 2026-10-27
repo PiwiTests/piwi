@@ -290,7 +290,7 @@ Both sections appear in This page only, above Brittle.
   - the `piwi-locator-pages` attachment shape;
   - the `locatorPages` wire field;
   - the index fields `LocatorIndex.pages`, and `LocatorIndexUse.pages`, `.arrival` and `.pagesTruncated`.
-- `apps/application/ARCHITECTURE.md` (the locator index), `apps/extension/AGENTS.md` (Tested elements) and the
+- `apps/application/ARCHITECTURE.md` (the locator index), `apps/extension/ARCHITECTURE.md` (Tested elements) and the
   reporter's attachment list in `packages/reporter/ARCHITECTURE.md` describe the new pieces.
 
 ## Delivery
