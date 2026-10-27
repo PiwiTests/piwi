@@ -758,6 +758,17 @@ describe('placementBefore', () => {
     expect(placementBefore(braceless, 1)).toMatchObject({ line: 1, context: 'test' });
   });
 
+  test('refuses a line where no statement starts: a closing bracket, a blank line, a comment', () => {
+    const lines = ["test('pays', async ({ page }) => {", "  await page.goto('/cart');", '', '  // done', '});'].join(
+      '\n',
+    );
+    for (const line of [2, 3, 4]) {
+      expect(placementBefore(lines, line)).toEqual({
+        refusal: `Line ${line + 1} holds no statement to write code above: the file may have changed since the test stopped there.`,
+      });
+    }
+  });
+
   test('goes above a ternary broken over lines, at the line that starts it', () => {
     const ternary = [
       "test('pays', async ({ page }) => {",

@@ -1052,6 +1052,9 @@ export interface BlockPlacement extends RecordingPlacement {
   context: CursorContext;
 }
 
+/** The brackets that close: a line starting with one starts no statement. */
+const CLOSERS = new Set([')', ']', '}']);
+
 /** The keywords whose statement takes one statement after them, without braces: `if (…)`, `else`, `for (…)`. */
 const BRACELESS = new Set(['if', 'for', 'while', 'with']);
 
@@ -1062,7 +1065,8 @@ const BRACELESS = new Set(['if', 'for', 'while', 'with']);
  * while the line
  * above goes on, as an assignment broken after its `=`), indented as that line is, and where that line starts in the
  * file (`context`), which a caller holds to a test's or a function's body. Refused for a statement that is the body
- * of an `if`, `else`, `for`, `while` or `do` without braces, where the block would become that body.
+ * of an `if`, `else`, `for`, `while` or `do` without braces, where the block would become that body, and for a line
+ * where no statement starts (blank, a comment, a closing bracket).
  */
 export function placementBefore(text: string, line: number): BlockPlacement | { refusal: string } {
   const model = new FileModel(text);
@@ -1086,6 +1090,13 @@ export function placementBefore(text: string, line: number): BlockPlacement | { 
     at = above;
   }
   const first = model.tokens.findIndex((t) => t.start >= model.starts[at]!);
+  const opening = model.tokens[first];
+  // A blank line, a comment or a closing bracket: no statement starts there.
+  if (!opening || model.lineOf(opening.start) !== at || (opening.kind === 'punct' && CLOSERS.has(opening.text))) {
+    return {
+      refusal: `Line ${at + 1} holds no statement to write code above: the file may have changed since the test stopped there.`,
+    };
+  }
   const previous = first > 0 ? model.tokens[first - 1] : undefined;
   const header =
     previous?.kind === 'name' && (previous.text === 'else' || previous.text === 'do')
