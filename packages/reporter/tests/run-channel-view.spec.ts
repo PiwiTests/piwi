@@ -267,6 +267,8 @@ const images: Record<string, { width?: number; height?: number; data: string } |
 /** Where a client showing the image of a page with a device scale factor of 2 clicked, and the point it sent. */
 const sharp: { natural?: { width: number; height: number } | null; clicked?: Point; sent?: Point } = {};
 const watched: Record<string, { frames: number; bytes: number; ms: number; firstJpeg: Buffer | null }> = {};
+/** Whether the frame a view sent again, asked again, was the one it sent last. */
+const resent: boolean[] = [];
 /** What the view of a page too heavy for a lighter image said, each time. */
 const heavy: { refusals?: string[] } = {};
 interface DumpedStep {
@@ -359,6 +361,13 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       }
       answers.push(await view(true));
       await waitFor(() => frames(connection, stop.stop).length > 0);
+      if (test === 'clicked through the view') {
+        // The view asked again, for a viewer that comes: the page paints nothing, the frame sent last comes again.
+        const seen = frames(connection, stop.stop);
+        answers.push(await view(true));
+        const again = await waitFor(() => frames(connection, stop.stop)[seen.length], 3000);
+        resent.push(again.message.data === seen[seen.length - 1]!.message.data);
+      }
       if (test === 'watched in Firefox') await watch(WATCH_MS);
       const at = await waitFor(() => where?.go ?? undefined);
       answers.push(await play(click(at)));
@@ -660,10 +669,15 @@ describe('the live view of a stopped page', () => {
       { ok: false, message: NEEDS_BAR },
       { ok: false, message: 'The input needs the live view of this stop: watch it first.' },
       ON,
+      ON,
       PLAYED_2,
       PICKED_AT,
       OFF,
     ]);
+  });
+
+  it('sends the frame it sent last again as the view is asked again, for a viewer that comes to a still page', () => {
+    expect(resent).toEqual([true]);
   });
 
   it('sends frames of the stop it watches alone, at most the view’s pace, and none once the stop ended', () => {

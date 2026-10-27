@@ -721,7 +721,8 @@ A subscribed connection is a surface that answers stops, and one that said `foll
 
 A hub connection watches a stop's live view (`view`, with `since` and `on`; `RunSessions.watch`, the connection being a
 `Viewer`). The worker starts the view as the stop's first viewer comes and stops it as the last goes (a viewer whose
-connection closes goes, `unwatchAll`); a reporter that does not take `view` is refused.
+connection closes goes, `unwatchAll`); a reporter that does not take `view` is refused. A viewer that comes once the
+view is on asks the worker again, which sends the frame it sent last again: a still page paints no other.
 
 - **Frames.** Each `frame` of the stop the worker stands at goes to that stop's viewers alone, none of an older stop:
   a view ends as its stop does. The hub sends a connection ten a second at most for each worker

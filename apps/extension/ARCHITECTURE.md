@@ -825,7 +825,8 @@ An unreachable editor leaves the hubs found last to try.
   page sends one alone); a refusal takes it off.
 - Each `frame` goes to the windows that watch its stop (`RunsFrame`), while the connection's runs have the worker
   stopped there: a `LatestPacer` per window and stop sends at most `MAX_VIEW_FPS` a second, the latest one waiting, no
-  other. Nothing keeps a frame.
+  other. The latest frame of each view is kept in memory alone, while the view lasts, and goes at once to a window
+  that comes to it: the hub sends this connection none for it, and a still page paints no other. None is stored.
 - A connection lost, or closed as the hubs change, ends the views it carried: each window that watched one hears
   `view-ended` (`RunsViewer.ended`).
 - A window's `input` goes on only for a stop it watches itself, else the worker answers `unwatched`; `pick-at` from

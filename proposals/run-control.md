@@ -189,8 +189,10 @@ up to 60 a second, the worker acknowledging at once each frame that comes while 
 not send (measured with `video: 'on'` and `trace: 'on'` on an animated page, the worker's `arrayBuffers` stays under
 25 MB in both browsers over 30 s; an acknowledgment for every frame, each an interval after the one before, would hold
 them all, 5 MB more each second). It drops a frame like the one before, keeps the latest alone while its connection holds 1 MB unsent,
-as the hub does for each WebSocket holding 1 MB unread, and sends none of a stop that began to end; nobody keeps
-one. A test's video, or its trace's images, starting first gives every later
+as the hub does for each WebSocket holding 1 MB unread, and sends none of a stop that began to end; nobody stores
+one, and the worker keeps the latest it sent in memory until the view ends, sent again as `view` asks again for a
+viewer that comes later (a still page paints no other), as the extension's worker keeps the latest of each view it
+relays for a second Runs window. A test's video, or its trace's images, starting first gives every later
 client of the page's one screencast its size and quality (800 by 512 at quality 90 for a 1000 by 640 viewport); the
 view stops its own client alone (the disposable `start()` returns), and a run with `video: 'on'` keeps a whole video
 through a watched stop, its duration checked with `ffprobe`. Where the screencast cannot start (the test runs its

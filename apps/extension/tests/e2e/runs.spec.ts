@@ -1000,6 +1000,32 @@ test.describe('the live view', () => {
     }
   });
 
+  test('a second window watching a stop shows its latest frame at once, a still page painting no other', async () => {
+    const { context, extensionId } = await pairedExtension(editor);
+    try {
+      const first = await openRuns(context, extensionId);
+      const { before } = await shopFrames(context);
+      const run = await startRun(editor, 'pays', [...RUN_TAKES]);
+      try {
+        stopAtCheckout(run.worker, 1, { bar: false });
+        await answerImage(run.worker, before);
+        await liveRun(first).getByRole('button', { name: 'Watch live' }).click();
+        await answerView(run.worker);
+        sendFrame(run.worker, 1, before);
+        await expect(liveRun(first).locator('img.live')).toHaveAttribute('src', `data:image/jpeg;base64,${before}`);
+        const second = await openRuns(context, extensionId);
+        await liveRun(second).getByRole('button', { name: 'Watch live' }).click();
+        await expect(liveRun(second).locator('img.live')).toHaveAttribute('src', `data:image/jpeg;base64,${before}`);
+        // One connection to the hub watches for both: the worker was asked once.
+        expect(heardRequests(run.worker, 'view').map((r) => [r.stop, r.on])).toEqual([[1, true]]);
+      } finally {
+        await endRun(run);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
   test('says why a view sends no frame in place of its start, until a frame comes', async () => {
     const { context, extensionId } = await pairedExtension(editor);
     try {

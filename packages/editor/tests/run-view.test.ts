@@ -156,6 +156,28 @@ describe('a stopped page’s live view, in the run sessions', () => {
     sessions.dispose();
   });
 
+  test('has the worker send its latest frame again for a viewer that comes to a view on', async () => {
+    const { sessions, read, requests, answer, stopAt } = harness();
+    const since = await stopAt(1);
+    const [a, b] = [viewer(), viewer()];
+    const watchedA = sessions.watch({ ref: 'ed-1', since, on: true }, a);
+    answer(requests('view')[0]!.request, 'view', { ok: true, message: 'The live view is on.' });
+    await watchedA;
+    read(frameOf(1));
+    // A still page paints no other frame: the second viewer has the worker send the one it sent last again.
+    const watchedB = sessions.watch({ ref: 'ed-1', since, on: true }, b);
+    expect(requests('view')).toHaveLength(2);
+    expect(requests('view')[1]).toMatchObject({ what: 'view', stop: 1, on: true });
+    answer(requests('view')[1]!.request, 'view', { ok: true, message: 'The live view is on.' });
+    read(frameOf(1));
+    expect(await watchedB).toEqual({ ok: true, message: 'The live view is on.' });
+    expect(b.frames.map((f) => 'data' in f && f.data)).toEqual(['/9j/AA==']);
+    // A viewer that watches already asks nothing more.
+    await sessions.watch({ ref: 'ed-1', since, on: true }, b);
+    expect(requests('view')).toHaveLength(2);
+    sessions.dispose();
+  });
+
   test('ends with its stop: no frame of the stop before, and the next stop needs its own view', async () => {
     const { sessions, read, requests, answer, stopAt } = harness();
     const first = await stopAt(1);

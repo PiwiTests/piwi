@@ -11,8 +11,9 @@
  *
  * A window watches a stop's live view through the hub's `view`: the worker's one connection to the hub watches a
  * stop while any window does, and stops as the last one stops, closes or the stop ends. Each frame goes to the windows
- * that watch its stop alone, at most `MAX_VIEW_FPS` a second to each, the latest one waiting, no other; nothing keeps
- * one. A window's input goes on only for a stop it watches itself. A connection lost ends the views it carried, and
+ * that watch its stop alone, at most `MAX_VIEW_FPS` a second to each, the latest one waiting, no other; the latest one
+ * is kept, in memory alone, while the view lasts, for a window that comes to it later. A window's input goes on only
+ * for a stop it watches itself. A connection lost ends the views it carried, and
  * each window watching one hears so. Nothing here runs in a content script or an extension page.
  */
 import type { EditorPairing } from '@piwitests/core/editor-send';
@@ -90,10 +91,14 @@ export interface RunsViewer {
   ended(view: RunsView): void;
 }
 
-/** A stop's live view some window watches: each window that does, with the pace of its frames. */
+/**
+ * A stop's live view some window watches: each window that does, with the pace of its frames, and the latest frame,
+ * in memory alone, which a window that comes later gets at once.
+ */
 interface Watch {
   view: RunsView;
   viewers: Map<RunsViewer, LatestPacer<RunsFrame>>;
+  latest: RunsFrame | null;
 }
 
 export class RunHubs {
@@ -261,11 +266,14 @@ export class RunHubs {
     if (!on) return (await this.leave(key, viewer)) ?? { ok: true, message: '' };
     let watch = this.watches.get(key);
     if (!watch) {
-      watch = { view, viewers: new Map() };
+      watch = { view, viewers: new Map(), latest: null };
       this.watches.set(key, watch);
     }
     if (!watch.viewers.has(viewer)) {
-      watch.viewers.set(viewer, new LatestPacer({ intervalMs: FRAME_MS, send: (frame) => viewer.frame(frame) }));
+      const pacer = new LatestPacer<RunsFrame>({ intervalMs: FRAME_MS, send: (frame) => viewer.frame(frame) });
+      watch.viewers.set(viewer, pacer);
+      // The hub sends this connection no frame for it: a still page paints no other.
+      if (watch.latest) pacer.offer(watch.latest);
     }
     const answer = await connection.command({ type: 'view', ref, worker, since, on: true });
     if (!answer.ok && this.watches.get(key) === watch) {
@@ -304,7 +312,8 @@ export class RunHubs {
     const view: RunsView = { hub, ref: frame.ref, worker: frame.worker, since: frame.since };
     const watch = this.watches.get(viewKey(view));
     if (!watch || !stopsAt(connection, view)) return;
-    for (const pacer of watch.viewers.values()) pacer.offer({ hub, ...frame });
+    watch.latest = { hub, ...frame };
+    for (const pacer of watch.viewers.values()) pacer.offer(watch.latest);
   }
 
   /** The views of a hub whose stop ended: the hub ended them with it. */

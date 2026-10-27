@@ -168,7 +168,9 @@ What the package does to a user's run, process by process.
   the frame before is dropped. One over 384 KB is dropped too, and an image of the page at
   quality 30 goes in its place, two a second at most; when that one is over 384 KB as well,
   the viewers hear once why no frame goes (`frame` with `refused`), until one goes again.
-  The latest alone waits while the connection is backed up, and none is kept nor attached. Where the screencast cannot start (the test
+  The latest alone waits while the connection is backed up; the latest sent is kept in
+  memory until the view ends, and sent again as the view is asked again (a viewer that
+  comes later, which a still page paints no other frame for); none is stored nor attached. Where the screencast cannot start (the test
   runs its own), an image of the page goes twice a second.
 - `input` plays a viewer's mouse, wheel, key and text events (`@piwitests/core/run-view`:
   Playwright's key names alone, nothing evaluated) with `page.mouse` and `page.keyboard`

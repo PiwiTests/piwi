@@ -241,7 +241,8 @@ export type RunToHub =
   /**
    * A frame of the live view of the stop `stop`, while a `view` asked for it: a JPEG as the page painted it, base64, at
    * most `MAX_VIEW_FRAME` bytes, and the page's viewport in CSS pixels (`width`, `height`), which input and `pick-at`
-   * name their points in. Sent at most `MAX_VIEW_FPS` a second, only while that stop holds, never kept.
+   * name their points in. Sent at most `MAX_VIEW_FPS` a second, only while that stop holds, never stored; the latest
+   * one is sent again as `view` asks again for a view on (a viewer that comes later).
    */
   | { type: 'frame'; stop: number; width: number; height: number; data: string }
   /**

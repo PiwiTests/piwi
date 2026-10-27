@@ -202,10 +202,10 @@ interface Worker {
   /** The requests waiting for the worker's answer, by what they ask. */
   requests: Map<number, { what: 'image' | RunTake; settle(value: Answered): void }>;
   /**
-   * The live view of its stop while viewers watch it: the stop, its viewers, and the worker's answer to starting it.
-   * Null when nobody watches, and as the stop ends.
+   * The live view of its stop while viewers watch it: the stop, its viewers, the worker's answer to starting it, and
+   * whether it started. Null when nobody watches, and as the stop ends.
    */
-  view: { stop: number; viewers: Set<Viewer>; started: Promise<IntentAnswer> } | null;
+  view: { stop: number; viewers: Set<Viewer>; started: Promise<IntentAnswer>; on: boolean } | null;
 }
 
 interface Session {
@@ -480,7 +480,8 @@ export class RunSessions {
   /**
    * Start or stop watching the live view of the stop a viewer names: the worker starts it as the first viewer of the
    * stop comes and stops it as the last one goes, and its frames go to that stop's viewers alone until then or until
-   * the stop ends. Answers once the worker said whether it started.
+   * the stop ends; a viewer that comes once it is on is sent its latest frame again. Answers once the worker said
+   * whether it started.
    */
   async watch(params: ViewParams, viewer: Viewer): Promise<RunControlResult> {
     if (typeof params?.since !== 'string' || !params.since) {
@@ -502,12 +503,17 @@ export class RunSessions {
       const started = this.ask(worker, 'view', stop, { on: true }).then(
         (answer) => (answer as IntentAnswer | null) ?? { ok: false, message: 'The test did not answer.' },
       );
-      view = { stop, viewers: new Set(), started };
+      view = { stop, viewers: new Set(), started, on: false };
       const own = view;
       worker.view = own;
       void started.then((answer) => {
+        own.on = answer.ok;
         if (!answer.ok && worker.view === own) worker.view = null;
       });
+    } else if (view.on && !view.viewers.has(viewer)) {
+      // A viewer that comes to a view on: the worker sends the frame it sent last again, which a still page repaints
+      // no other of.
+      void this.ask(worker, 'view', stop, { on: true });
     }
     view.viewers.add(viewer);
     const answer = await view.started;

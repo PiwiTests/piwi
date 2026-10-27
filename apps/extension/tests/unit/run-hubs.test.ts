@@ -800,7 +800,7 @@ describe('a stop’s live view', () => {
     socket.hear({ type: 'answer', id: sent.id, ok: true, message: 'Done.', ...answer });
   }
 
-  it('asks the hub for a view as the first window watches, and sends its frames to the windows that watch alone', async () => {
+  it('asks the hub for a view as the first window watches, sends its frames to the windows that watch alone, the latest at once to one that comes', async () => {
     const { hubs, socket } = await watched();
     const [a, b, c] = [viewer(), viewer(), viewer()];
     const onA = hubs.command({ ...AT, what: 'view', on: true }, a);
@@ -827,7 +827,8 @@ describe('a stop’s live view', () => {
       data,
     });
     expect(a.frames).toEqual([expected('AAAA'), expected('BBBB')]);
-    expect(b.frames).toEqual([expected('BBBB')]);
+    // The second window got the frame before it at once: a still page sends no other.
+    expect(b.frames).toEqual([expected('AAAA'), expected('BBBB')]);
     expect(c.frames).toEqual([]);
   });
 

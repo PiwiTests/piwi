@@ -52,7 +52,8 @@ import { internalCall } from './quiet-capture.js';
  * attach). Its attach also lists the stops it holds only once the editor says it shows them (`holds`: a failure), which
  * the editor answers with `attached`; an editor that predates it says nothing, and no failure is held for it. For a
  * viewer outside the page, it shows the stopped page's live view (`view`: the page's screencast, its frames sent at
- * most `MAX_VIEW_FPS` a second, the latest one when the connection is backed up, never kept), plays the viewer's input
+ * most `MAX_VIEW_FPS` a second, the latest one when the connection is backed up, the latest sent kept in memory for a
+ * viewer that comes later until the view ends, never stored), plays the viewer's input
  * on it as trusted input (`input`: `page.mouse`, `page.keyboard`, at most `MAX_VIEW_EVENT_RATE` events a second, what
  * it holds down let go before the test goes on), and sends the locator of the element under a point of an image of
  * the page where a pick goes (`pick-at`, `pick-at.ts`). The view ends with its stop, before the test goes on, and as
@@ -158,6 +159,8 @@ let counting: Promise<unknown> = Promise.resolve();
 interface View {
   stop: number;
   screencast: boolean;
+  /** Send the latest frame sent again, or why none goes, for a viewer that came since: a still page paints no other. */
+  resend(): void;
   close(): Promise<void>;
 }
 
@@ -442,9 +445,15 @@ async function viewportOf(page: Page): Promise<{ width: number; height: number }
   return read && isViewSize(read.width, read.height) ? read : null;
 }
 
-/** Start the live view of a stop the editor asked for, or say why there is none. */
+/**
+ * Start the live view of a stop the editor asked for, or say why there is none; for a view on already, asked again for
+ * a viewer that came since, send its latest frame again.
+ */
 function startView(holding: HeldStop): Promise<IntentAnswer> {
-  if (view?.stop === holding.stop) return Promise.resolve({ ok: true, message: 'The live view is on.' });
+  if (view?.stop === holding.stop) {
+    view.resend();
+    return Promise.resolve({ ok: true, message: 'The live view is on.' });
+  }
   if (viewStarting?.stop === holding.stop) return viewStarting.started;
   const page = holding.page;
   if (!page || page.isClosed()) return Promise.resolve({ ok: false, message: NO_PAGE });
@@ -493,13 +502,20 @@ interface Frame {
  * before is dropped; one longer than `MAX_VIEW_FRAME` is too, an image of the page at `LIGHT_QUALITY` taken in its
  * place, one at a time and `SHOT_MS` apart, and when that one is too long as well, the viewers hear once why no frame
  * goes (`frame` with `refused`), until a frame goes again. They go at most `MAX_VIEW_FPS` a second, the latest one
- * when the connection is backed up. Null when the page cannot be read.
+ * when the connection is backed up; the latest sent is kept, in memory, until the view ends, and sent again for a
+ * viewer that comes later (`resend`). Null when the page cannot be read.
  */
 async function openView(page: Page, stop: number): Promise<View | null> {
   const viewport = await viewportOf(page);
   if (!viewport) return null;
   let closed = false;
   let last: Buffer | null = null;
+  /** The latest frame sent, or why none goes: kept for a viewer that comes later, in memory, until the view ends. */
+  let sent: Extract<RunToHub, { type: 'frame' }> | null = null;
+  const send = (message: Extract<RunToHub, { type: 'frame' }>): void => {
+    sent = message;
+    tellHub(message);
+  };
   /** Whether the viewers heard that no frame goes, since the last frame that went. */
   let refused = false;
   const pacer = new LatestPacer<Frame>({
@@ -509,7 +525,7 @@ async function openView(page: Page, stop: number): Promise<View | null> {
       // Once its stop began to end, no frame of it goes.
       if (held?.stop !== stop) return;
       refused = false;
-      tellHub({ type: 'frame', stop, width: frame.width, height: frame.height, data: frame.data.toString('base64') });
+      send({ type: 'frame', stop, width: frame.width, height: frame.height, data: frame.data.toString('base64') });
     },
   });
   /** The lighter image on its way, and when the last one was asked. */
@@ -529,7 +545,7 @@ async function openView(page: Page, stop: number): Promise<View | null> {
           if (shot.length <= MAX_VIEW_FRAME) return pacer.offer({ data: shot, ...viewport });
           if (refused || held?.stop !== stop) return;
           refused = true;
-          tellHub({ type: 'frame', stop, refused: TOO_HEAVY });
+          send({ type: 'frame', stop, refused: TOO_HEAVY });
         },
         () => undefined,
       )
@@ -595,8 +611,12 @@ async function openView(page: Page, stop: number): Promise<View | null> {
   return {
     stop,
     screencast: end !== null,
+    resend: () => {
+      if (!closed && sent && held?.stop === stop) tellHub(sent);
+    },
     close: async () => {
       closed = true;
+      sent = null;
       acks.close();
       pacer.close();
       page.off('close', onClose);
