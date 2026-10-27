@@ -160,8 +160,11 @@ What the package does to a user's run, process by process.
   through an internal call, at its viewport scaled to fit 1280 by 800, JPEG quality 60,
   unless a client that came first, the test's video or its trace's images, set its own
   size and quality, which every later client gets; the view stops its own client alone,
-  and the video stays whole). Each frame is acknowledged ten a second at most, so the
-  browser paints no more, and sent as `frame` with the viewport in CSS pixels; one like
+  and the video stays whole). One frame at a time waits for its acknowledgment, an
+  interval at most (`FrameAcks`), so a browser the view alone holds paints ten a second at
+  most; a frame that comes while one waits (another client acknowledged the one before)
+  is acknowledged at once, so none the view drops is held. Each goes as `frame` with the
+  viewport in CSS pixels; one like
   the frame before or over 384 KB is dropped, the latest alone waits while the connection
   is backed up, and none is kept nor attached. Where the screencast cannot start (the test
   runs its own), an image of the page goes twice a second.

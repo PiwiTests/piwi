@@ -21,6 +21,7 @@ import {
   type UnknownMessage,
 } from '@piwitests/core/run-channel';
 import {
+  FrameAcks,
   LatestPacer,
   MAX_VIEW_EVENT_RATE,
   MAX_VIEW_FPS,
@@ -480,7 +481,8 @@ interface Frame {
  * Open the live view of a page at the stop `stop`: the page's screencast (`page.screencast.start`, an internal call),
  * at the size of its viewport scaled down to fit `MAX_VIEW_WIDTH` by `MAX_VIEW_HEIGHT` and `VIEW_QUALITY`, unless
  * another client of the screencast (a test's video, its trace's images) came first, whose size and quality every
- * later one gets; its own end leaves that client as it is. Where the screencast cannot start (the test runs one
+ * later one gets; its own end leaves that client as it is. Its frames are acknowledged at the view's pace
+ * (`FrameAcks`), one held at a time. Where the screencast cannot start (the test runs one
  * itself), an image of the page every `SHOT_MS`. Each frame goes to the editor as `frame`: a frame the same as the one
  * before, or longer than `MAX_VIEW_FRAME`, is dropped, and the others go at most `MAX_VIEW_FPS` a second, the latest
  * one when the connection is backed up. Null when the page cannot be read.
@@ -521,22 +523,17 @@ async function openView(page: Page, stop: number): Promise<View | null> {
   const screencast = (page as unknown as { screencast?: Screencast }).screencast;
   let end: (() => Promise<unknown>) | null = null;
   let shots: ReturnType<typeof setTimeout> | null = null;
-  /** When the last frame taken is acknowledged: one each `1000 / MAX_VIEW_FPS` ms at most. */
-  let ackAt = 0;
+  /** The view's acknowledgments: one frame each `1000 / MAX_VIEW_FPS` ms waits for its own, the others none. */
+  const acks = new FrameAcks(1000 / MAX_VIEW_FPS);
   try {
     if (typeof screencast?.start !== 'function') throw new Error('This Playwright has no screencast.');
     const started = await internalCall(page, () =>
       screencast.start!({
         size: viewSize(viewport),
         quality: VIEW_QUALITY,
-        // Each frame is acknowledged at the view's pace: a browser that waits for its frames' acknowledgments (as
-        // Chromium and Firefox do when no other client acknowledges them at once) paints no more of them.
         onFrame: (frame) => {
           onFrame(frame.data, frame.viewportWidth, frame.viewportHeight);
-          const now = Date.now();
-          ackAt = Math.max(now, ackAt + 1000 / MAX_VIEW_FPS);
-          if (closed || ackAt <= now) return;
-          return new Promise<void>((resolve) => setTimeout(resolve, ackAt - now).unref());
+          return acks.next();
         },
       }),
     );
@@ -563,6 +560,7 @@ async function openView(page: Page, stop: number): Promise<View | null> {
     screencast: end !== null,
     close: async () => {
       closed = true;
+      acks.close();
       pacer.close();
       page.off('close', onClose);
       if (shots) clearTimeout(shots);

@@ -179,10 +179,15 @@ following the runs watches no stop. The worker starts the stopped page's screenc
 with the stop's first viewer and stops its own client with the last, as the stop ends (before its `running`), and as
 its page or the connection closes. Each frame (`frame { ref, worker, since, width, height, data }`: a JPEG in base64,
 the viewport scaled to fit 1280 by 800, quality 60, 384 KB at most, `width` and `height` the viewport in CSS pixels)
-goes to that stop's viewers alone, ten a second at most at each step: the worker acknowledges the browser's frames at
-that pace, so Chromium and Firefox paint no more of them, drops a frame like the one before, keeps the latest alone
-while its connection holds 1 MB unsent, as the hub does for each WebSocket holding 1 MB unread, and sends none of a
-stop that began to end; nobody keeps one. A test's video, or its trace's images, starting first gives every later
+goes to that stop's viewers alone, ten a second at most at each step: the worker holds one frame's acknowledgment at
+a time, an interval at most, so Chromium and Firefox paint no more while the view is the page's one screencast client;
+a test's video or its trace's images acknowledge each frame at once, and the browser then paints at its own pace,
+up to 60 a second, the worker acknowledging at once each frame that comes while one is held, so it holds none it does
+not send (measured with `video: 'on'` and `trace: 'on'` on an animated page, the worker's `arrayBuffers` stays under
+25 MB in both browsers over 30 s; an acknowledgment for every frame, each an interval after the one before, would hold
+them all, 5 MB more each second). It drops a frame like the one before, keeps the latest alone while its connection holds 1 MB unsent,
+as the hub does for each WebSocket holding 1 MB unread, and sends none of a stop that began to end; nobody keeps
+one. A test's video, or its trace's images, starting first gives every later
 client of the page's one screencast its size and quality (800 by 512 at quality 90 for a 1000 by 640 viewport); the
 view stops its own client alone (the disposable `start()` returns), and a run with `video: 'on'` keeps a whole video
 through a watched stop, its duration checked with `ffprobe`. Where the screencast cannot start (the test runs its

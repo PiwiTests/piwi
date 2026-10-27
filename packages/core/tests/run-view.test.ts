@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
+  FrameAcks,
   LatestPacer,
   MAX_VIEW_COORD,
   MAX_VIEW_EVENTS,
@@ -257,5 +258,66 @@ describe('the pace of the view', () => {
     pacer.offer(54);
     expect(sent).toEqual([1, 50, 52]);
     expect(pacer.waiting).toBe(false);
+  });
+
+  test('acknowledges a browser’s frames one an interval while it waits for them, the first at once', async () => {
+    vi.useFakeTimers();
+    const acks = new FrameAcks(100);
+    // A browser that paints the next frame once the one before is acknowledged, as fast as it can.
+    const acked: number[] = [];
+    for (let frame = 0; frame < 10; frame++) {
+      let done = false;
+      void (acks.next() ?? Promise.resolve()).then(() => (done = true));
+      while (!done) await vi.advanceTimersByTimeAsync(1);
+      acked.push(Date.now());
+      await vi.advanceTimersByTimeAsync(16);
+    }
+    const gaps = acked.slice(1).map((at, i) => at - acked[i]!);
+    // The first one at once, then one an interval, as the browser paints each one.
+    expect(gaps[0]).toBeLessThanOrEqual(100);
+    for (const gap of gaps.slice(1)) expect(gap).toBe(100);
+  });
+
+  test('holds one frame at a time, one interval at most, while another client acknowledges the others', async () => {
+    vi.useFakeTimers();
+    const acks = new FrameAcks(100);
+    // A test's video acknowledges every frame at once: the browser paints at 60 a second whatever the view waits for.
+    let waiting = 0;
+    let most = 0;
+    let longest = 0;
+    for (let frame = 0; frame < 600; frame++) {
+      const ack = acks.next();
+      if (ack) {
+        const asked = Date.now();
+        waiting++;
+        void ack.then(() => {
+          waiting--;
+          longest = Math.max(longest, Date.now() - asked);
+        });
+      }
+      most = Math.max(most, waiting);
+      await vi.advanceTimersByTimeAsync(1000 / 60);
+    }
+    // Ten seconds of frames: one held at a time, each one interval at most, and none left once they stop.
+    expect(most).toBe(1);
+    expect(longest).toBeLessThanOrEqual(100);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(waiting).toBe(0);
+    expect(acks.holding).toBe(false);
+  });
+
+  test('lets the frame waiting go as the view stops, and every later one at once', async () => {
+    vi.useFakeTimers();
+    const acks = new FrameAcks(100);
+    expect(acks.next()).toBeUndefined();
+    const held = acks.next();
+    expect(held).toBeInstanceOf(Promise);
+    let released = false;
+    void held!.then(() => (released = true));
+    acks.close();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(released).toBe(true);
+    expect(acks.next()).toBeUndefined();
+    expect(acks.holding).toBe(false);
   });
 });

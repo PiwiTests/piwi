@@ -399,3 +399,53 @@ export class LatestPacer<T> {
     this.timer = null;
   }
 }
+
+/**
+ * When a view acknowledges its page's screencast frames: one each `intervalMs` at most, so a browser that waits for a
+ * frame's acknowledgment before it paints the next one (Chromium, Firefox) paints no more for the view alone. `next()`
+ * is what the screencast's `onFrame` returns for a frame: nothing, to acknowledge it at once, or a promise that settles
+ * once it is acknowledged. One frame waits at a time, one interval at most: a frame that comes while one waits was
+ * not waited for (another client of the page's screencast, a test's video or its trace's images, acknowledged the one
+ * before at once), and is acknowledged at once, so no frame the view does not send is held.
+ */
+export class FrameAcks {
+  private due = -Infinity;
+  private waiting: { timer: ReturnType<typeof setTimeout>; resolve: () => void } | null = null;
+  private closed = false;
+
+  constructor(
+    private readonly intervalMs: number,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  next(): Promise<void> | undefined {
+    if (this.closed || this.waiting) return undefined;
+    const now = this.now();
+    this.due = Math.min(Math.max(now, this.due + this.intervalMs), now + this.intervalMs);
+    if (this.due <= now) return undefined;
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => this.release(), this.due - now);
+      (timer as { unref?: () => void }).unref?.();
+      this.waiting = { timer, resolve };
+    });
+  }
+
+  /** Whether a frame waits for its acknowledgment. */
+  get holding(): boolean {
+    return this.waiting !== null;
+  }
+
+  /** The frame waiting is acknowledged now, and every later one at once. */
+  close(): void {
+    this.closed = true;
+    this.release();
+  }
+
+  private release(): void {
+    const waiting = this.waiting;
+    this.waiting = null;
+    if (!waiting) return;
+    clearTimeout(waiting.timer);
+    waiting.resolve();
+  }
+}
