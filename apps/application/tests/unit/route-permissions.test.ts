@@ -52,7 +52,7 @@ const NO_PROJECT_IN_REQUEST: Record<string, string> = {
 
 /** The calls that check a permission on one project, or narrow to the projects where it is held. */
 const PROJECT_CHECK =
-  /\b(requireProjectAccess|requireResolvedProjectAccess|getProjectScope|canAccessProject|scopeAllows|can)\(/;
+  /\b(requireProjectAccess|requireResolvedProjectAccess|requireProjectPermission|getProjectScope|canAccessProject|scopeAllows|can)\(/;
 
 /** Scope helpers and the position of their permission argument (1-based). */
 const SCOPE_HELPERS = { getProjectScope: 3, canAccessProject: 4 } as const;
