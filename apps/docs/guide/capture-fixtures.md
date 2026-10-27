@@ -120,10 +120,7 @@ Capture never fails or noticeably slows a test:
 
 - Per call site: one DOM read, and a bounded ARIA snapshot (500 ms deadline) only when the element's attributes don't
   already settle its accessible name.
-- At teardown: draining in-flight captures is capped at 2 seconds. When the test's page or context closes, the reads of
-  the page's end state (web vitals, URL, storage keys, cookie flags, focus) go out together while those captures
-  finish, so on a [remote browser](https://playwright.dev/docs/api/class-browsertype#browser-type-connect) the close
-  waits about one round trip for them.
+- At teardown: draining in-flight captures is capped at 2 seconds.
 - A capture that can't complete (mid-navigation, detached element) is dropped silently; it never throws into your test.
 - Capture adds no steps to the report or trace, and errors, step locations and stacks name your own call.
 
