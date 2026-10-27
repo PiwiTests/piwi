@@ -8,19 +8,11 @@ a decision, or deserves its own pull request. This proposal keeps that list so t
 Each finding says what happens, where, and the fix the review suggested. A finding names functions and files rather than
 line numbers, which move.
 
-**Status.** Proposed 2026-10-27, from the review of the agent guide restructuring. Nothing is built yet. The findings
-are independent: each can ship alone, in any order, and close its line here.
+**Status.** Proposed 2026-10-27, from the review of the agent guide restructuring. F1, F3, F4, F5 and F21 are fixed
+and their entries removed; the others are open. The findings are independent: each can ship alone, in any order, and
+close its line here.
 
 ## Bugs
-
-### F1. `piwi/testAt` can run the wrong test
-
-- **What happens:** with two `test('pays', …)` calls in different `test.describe` blocks of one spec, **Run the test at
-  the cursor** on the first one runs whichever case comes last in the catalog.
-- **Where:** `packages/editor/src/server.ts`, the `piwi/testAt` handler, matches the catalog case by title alone
-  (`new Map(cases.map((c) => [c.title, c])).get(call.title)`); `testCallAt` returns no suite.
-- **Fix:** match with `caseOfCall` (`packages/editor/src/analysis.ts`), as the file summary and the test items do, and
-  add the two-describe case to `tests/lsp.test.ts`.
 
 ### F2. A failed read during an editor refresh empties what the service held
 
@@ -32,32 +24,6 @@ are independent: each can ship alone, in any order, and close its line here.
   failure: the two paths disagree.
 - **Fix:** keep the previous value when a read fails, in both paths, and test it with a stub instance that fails one
   read.
-
-### F3. An unauthenticated caller can tell which ids exist
-
-- **What happens:** with authentication on, a request with no credentials to a route scoped by a child entity answers
-  404 for a missing id and 401 for an existing one.
-- **Where:** `requireResolvedProjectAccess` (`apps/application/server/utils/project-access.ts`) resolves the entity
-  before `requireAuth` runs. About 196 routes use it.
-- **Fix:** call `requireAuth(event)` first, then resolve. Impact is low (ids are sequential), but it is a one-line
-  change with a test in `tests/unit/route-permissions.test.ts`.
-
-### F4. `piwi bug` and `piwi codegen bug:<id>` ignore `.env`
-
-- **What happens:** a project set up by `npx @piwitests/reporter init --api-key` keeps the connection in `.env`.
-  `piwi flake` and `piwi preflight` read it; `piwi bug` and `piwi codegen` exit with "No dashboard".
-- **Where:** `packages/reporter/src/cli/bug.ts` and `codegen.ts` read `PIWI_DASHBOARD_URL` from `process.env` only.
-- **Fix:** use `resolveCliConnection` (`internal/support/connection.ts`), as `flake.ts` and `preflight.ts` do. The
-  `fix-a-reported-bug` skill then drops its note that this command does not read `.env`.
-
-### F5. A replay started from a page names its own origin
-
-- **What happens:** `piwi-start-replay` carries an `origin` that the worker uses without comparing it to the sending
-  tab's address.
-- **Where:** `apps/extension/src/background/index.ts`, the `piwi-start-replay` handler and `startReplayNow`; the
-  message is sent from `record-ui.ts` and `replay-panel.ts`.
-- **Fix:** check `message.origin` against `sender.tab.url` (through `hostPattern`), or add the message to
-  `EXTENSION_PAGE_MESSAGES` if only extension pages should send it.
 
 ### F6. A recording's append can bring back a stopped recording (to confirm)
 
@@ -141,18 +107,6 @@ are independent: each can ship alone, in any order, and close its line here.
 
 - **Where:** `apps/docs/scripts/generate-llms.mjs` (`GENERATED`) repeats `apps/application/shared/docs-generated-pages.ts`.
 - **Fix:** read the shared list, through the same jiti alias the other generators use.
-
-### F21. An editor cache test fails when the config read takes more than a second
-
-- **What happens:** `packages/editor/tests/project-options.test.ts`, "reads a config once whatever the spelling of its
-  path, and again after five minutes", fails under load (seen while the dashboard's unit suite ran beside it, with the
-  test taking 1,625 ms), and passes alone.
-- **Where:** `readProjectOptions` (`src/recorder/project-options.ts`) sets the cache entry's expiry when the first read
-  starts. The test awaits that read, which runs the project's Playwright in a child process, and only then sets the
-  clock to the current time plus five minutes minus one second. A read longer than one second has already expired the
-  entry.
-- **Fix:** keep `Date.now()` before the first read and set the clock from it (`start + 5 * 60_000 - 1_000`, then
-  `start + 5 * 60_000 + 1_000`).
 
 ## Release tooling
 
