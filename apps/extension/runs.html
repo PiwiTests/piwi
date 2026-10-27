@@ -19,6 +19,7 @@
         --stopped: #b45309;
         --running: #0369a1;
         --error: #dc2626;
+        --row-hover: rgba(100, 116, 139, 0.12);
         --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
       @media (prefers-color-scheme: dark) {
@@ -34,6 +35,7 @@
           --stopped: #fbbf24;
           --running: #7dd3fc;
           --error: #f87171;
+          --row-hover: rgba(148, 163, 184, 0.16);
         }
       }
       /* An element with the `hidden` attribute is hidden, whatever `display` a rule below gives it. */
@@ -278,13 +280,28 @@
         font-size: 11.5px;
         color: var(--muted);
       }
-      .worker .piwi-actions {
+      /* The controls that steer the test, then the code a stop can write, on a row of their own. */
+      .controls {
+        display: grid;
+        gap: 6px;
         margin-top: 8px;
+      }
+      /* A test held where it failed: a stop, not a breakpoint. */
+      .worker[data-failed] .state {
+        color: var(--error);
+      }
+      .stop .error {
+        overflow-wrap: anywhere;
       }
       /* A command on its way: the buttons wait for its answer, and keep the focus. */
       .piwi-btn[aria-disabled='true'] {
         opacity: 0.5;
         cursor: default;
+      }
+      /* Mock a request while its list of requests is open under it. */
+      .piwi-btn[aria-expanded='true'] {
+        background: var(--piwi-btn-pressed-bg);
+        border-color: var(--piwi-btn-pressed-border);
       }
       .piwi-btn[aria-disabled='true']:hover {
         background: var(--piwi-btn-bg);
@@ -307,6 +324,120 @@
         width: 12px;
         height: 12px;
         margin-top: 2px;
+      }
+      /* The editor wrote the code. */
+      .note.written > .piwi-icon {
+        color: var(--ok);
+      }
+      /* The requests a stopped test kept, to choose the one to mock: one row each, scrolled within its box. */
+      .requests {
+        margin-top: 8px;
+        padding: 6px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+      .requests-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding-left: 4px;
+      }
+      .requests-title {
+        flex: 1;
+        min-width: 0;
+        margin: 0;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 16px;
+      }
+      .requests .note {
+        margin: 4px;
+      }
+      .requests-filter {
+        display: block;
+        width: 100%;
+        margin: 4px 0 6px;
+        padding: 4px 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg);
+        color: var(--fg);
+        font: inherit;
+        font-size: 12px;
+      }
+      .requests-filter:focus-visible {
+        outline: 2px solid var(--accent-fg);
+        outline-offset: 1px;
+      }
+      .request-list {
+        max-height: 216px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        overflow-y: auto;
+      }
+      .request {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        width: 100%;
+        min-width: 0;
+        padding: 5px 6px;
+        border: none;
+        border-radius: 6px;
+        background: none;
+        color: inherit;
+        font: inherit;
+        text-align: start;
+        cursor: pointer;
+      }
+      .request:hover {
+        background: var(--row-hover);
+      }
+      .request:focus-visible {
+        outline: 2px solid var(--accent-fg);
+        outline-offset: -2px;
+      }
+      .request[aria-disabled='true'] {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .request-line {
+        display: flex;
+        gap: 6px;
+        min-width: 0;
+        font-size: 12px;
+        line-height: 16px;
+      }
+      .request-line .method {
+        flex-shrink: 0;
+        font: 600 11px/16px var(--mono);
+        color: var(--accent-fg);
+      }
+      /* The address cut to the row's width: the whole of it is in the row's tooltip and its name. */
+      .request-line .path {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font: 11.5px/16px var(--mono);
+      }
+      .request-line .piwi-url {
+        padding: 0;
+        border: none;
+        background: none;
+        font: inherit;
+      }
+      .request-facts {
+        font-size: 11px;
+        line-height: 15px;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      .request-facts .failed {
+        color: var(--error);
+        font-weight: 600;
       }
       footer {
         margin-top: 4px;

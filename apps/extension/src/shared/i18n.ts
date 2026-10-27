@@ -172,6 +172,16 @@ export function formatNumber(value: number): string {
   return new Intl.NumberFormat(safeLocale()).format(value);
 }
 
+/** A quantity with its unit, in the interface language's narrow form: `12B`, `1.2kB`, `0.8s` in English. */
+export function formatUnit(value: number, unit: 'byte' | 'kilobyte' | 'second'): string {
+  return new Intl.NumberFormat(safeLocale(), {
+    style: 'unit',
+    unit,
+    unitDisplay: 'narrow',
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
 /**
  * The counted message `base`: picks `<base>_one`, `<base>_other`, … with the
  * interface language's plural rules, and fills `$count$` with the formatted
