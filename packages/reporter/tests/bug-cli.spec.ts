@@ -12,6 +12,15 @@ const SPEC = {
   warnings: [],
 };
 
+const NO_DESKTOP = { PIWI_DESKTOP_CONFIG: '/nonexistent/desktop.json' };
+
+/** A folder holding a `.env` with `text`. */
+function dotEnvFolder(text: string): string {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-bug-env-'));
+  fs.writeFileSync(path.join(folder, '.env'), text);
+  return folder;
+}
+
 describe('parseBugArgs', () => {
   it('reads the id, the flags and the env fallbacks', () => {
     expect(parseBugArgs(['#37', '--write'], { PIWI_DASHBOARD_URL: 'https://dash.example/', PIWI_API_KEY: 'k' })).toEqual({
@@ -32,7 +41,35 @@ describe('parseBugArgs', () => {
   it('needs an id and a dashboard', () => {
     expect(() => parseBugArgs([], { PIWI_DASHBOARD_URL: 'x' })).toThrow(/No bug report id/);
     expect(() => parseBugArgs(['abc'], { PIWI_DASHBOARD_URL: 'x' })).toThrow(/No bug report id/);
-    expect(() => parseBugArgs(['37'], {})).toThrow(/No dashboard/);
+    expect(() => parseBugArgs(['37'], NO_DESKTOP)).toThrow(/No dashboard/);
+  });
+
+  it('reads the connection from the .env of the folders it is given', () => {
+    const folder = dotEnvFolder('PIWI_DASHBOARD_URL=https://dash.example/\nPIWI_API_KEY=pd_workspace\n');
+    try {
+      expect(parseBugArgs(['37'], NO_DESKTOP, [folder])).toMatchObject({
+        serverUrl: 'https://dash.example',
+        apiKey: 'pd_workspace',
+      });
+      expect(parseBugArgs(['37', '--server-url', 'https://flag.example'], NO_DESKTOP, [folder])).toMatchObject({
+        serverUrl: 'https://flag.example',
+        apiKey: null,
+      });
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('never sends the key exported in the environment to a URL the .env names', () => {
+    const folder = dotEnvFolder('PIWI_DASHBOARD_URL=https://dash.example\n');
+    try {
+      expect(parseBugArgs(['37'], { ...NO_DESKTOP, PIWI_API_KEY: 'pd_mine' }, [folder])).toMatchObject({
+        serverUrl: 'https://dash.example',
+        apiKey: null,
+      });
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
   });
 });
 
@@ -56,6 +93,17 @@ describe('runBug', () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://dash.example/api/bug-reports/37/spec?mode=commit');
     expect(init.headers).toEqual({ 'X-API-Key': 'k' });
+  });
+
+  it("asks the dashboard the working directory's .env names, with its key", async () => {
+    fs.writeFileSync(path.join(dir, '.env'), 'PIWI_DASHBOARD_URL=https://dash.example\nPIWI_API_KEY=pd_workspace\n');
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(SPEC), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    expect(await runBug(['37'], NO_DESKTOP, dir)).toBe(0);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://dash.example/api/bug-reports/37/spec?mode=commit');
+    expect(init.headers).toEqual({ 'X-API-Key': 'pd_workspace' });
   });
 
   it('writes it without running it, and keeps an existing file without --force', async () => {
@@ -144,5 +192,33 @@ describe('codegen bug:<id>', () => {
     expect((fetchMock.mock.calls[0] as unknown[] | undefined)?.[0]).toBe('https://dash.example/api/bug-reports/12');
     expect(String(write.mock.calls[0]?.[0])).toContain("test('Coupon not applied'");
     expect(String(write.mock.calls[0]?.[0])).toContain("await page.goto('/cart');");
+  });
+
+  it("reads the report from the dashboard the working directory's .env names, with its key", async () => {
+    const folder = dotEnvFolder('PIWI_DASHBOARD_URL=https://dash.example\nPIWI_API_KEY=pd_workspace\n');
+    const report = { title: 'Coupon not applied', steps: { v: 1, title: null, origin: null, recordedAt: 0, steps: [] } };
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(report), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await runCodegen(['bug:12', '--offline'], NO_DESKTOP, folder);
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe('https://dash.example/api/bug-reports/12');
+      expect(init.headers).toEqual({ 'X-API-Key': 'pd_workspace' });
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('exits 2 with no dashboard in the flags, the environment or the .env', async () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-bug-env-'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(await runCodegen(['bug:12'], NO_DESKTOP, folder)).toBe(2);
+      expect(String(error.mock.calls[0]?.[0])).toMatch(/bug:<id> reads the report from the dashboard/);
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
   });
 });

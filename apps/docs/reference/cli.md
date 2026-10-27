@@ -33,7 +33,7 @@ npx @piwitests/reporter <command> [options]
 | [`preflight`](#preflight) | List the test locators your change breaks, and fix them |
 | [`bug`](#bug) | Write a bug report's failing test into the project and run it once |
 
-Several commands read connection settings from the environment as a fallback: `PIWI_DASHBOARD_URL` (dashboard URL), `PIWI_API_KEY` (API key), and `PIWI_PROJECT_NAME` (project). A flag always wins over its environment variable.
+The commands that talk to a dashboard find it in their flags first, then in the environment: `PIWI_DASHBOARD_URL` (dashboard URL), `PIWI_API_KEY` (API key) and `PIWI_PROJECT_NAME` (project), then in the project's `.env` (the one `init` writes), then in the running [desktop app](/features/desktop). An API key goes only to the URL it came with: a key exported in the environment is never sent to a URL the `.env` names.
 
 ## `init`
 
@@ -96,7 +96,7 @@ npx @piwitests/reporter gate --max-new-regressions 0 --fail-on-flaky
 |---|---|
 | `--run-id <id>` | Run id to evaluate |
 | `--from-file <path>` | Read `runId` from the reporter's output JSON |
-| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
 | `--api-key <key>` | API key (env `PIWI_API_KEY`) |
 | `--require-tag <tags>` | Comma-separated; every test carrying the tag must pass |
 | `--max-failed <n>` | Fail when more than *n* tests failed |
@@ -129,7 +129,7 @@ npx @piwitests/reporter report --project checkout --period 7d --format md
 
 | Flag | Description |
 |---|---|
-| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
 | `--api-key <key>` | API key (env `PIWI_API_KEY`) |
 | `--project <names>` | Comma-separated project names or ids (default: every project the key can see) |
 | `--period <period>` | `7d`, `30d` (default), `last-month`, `this-quarter`, `2026-08-01..2026-08-31`, … |
@@ -164,9 +164,9 @@ npx @piwitests/reporter coverage upload "**/coverage.cobertura.xml" --suite unit
 | `--kind <kind>` | `unit` (default) or `e2e`, for a backend's own run-level report |
 | `--format <format>` | `cobertura`, `lcov` or `piwi` (a .NET test host's report, written at exit with `PIWI_COVERAGE_OUTPUT`); detected from the content when absent |
 | `--root <dir>` | The directory the reports' relative paths start from |
-| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`) |
-| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
-| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`, `.env`) |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
 | `--branch <name>` | The branch (env `PIWI_BRANCH`, the CI's, else git's) |
 | `--dry-run` | Read and resolve the reports, print the summary, send nothing |
 | `--json` | Print the summary as JSON |
@@ -196,9 +196,9 @@ npx @piwitests/reporter run impact --base origin/main
 
 | Flag | Description |
 |---|---|
-| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
-| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
-| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`) |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
+| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`, `.env`) |
 | `--format <fmt>` | `args` (`file:line`, default) · `grep` · `files`. For the full resolution use `--json`; `run` rejects `--format json` |
 | `--budget <duration>` | Cap total time, e.g. `5m`, `90s`, `300000` (ms) |
 | `--shard <i/n>` | Keep only shard *i* of *n*, balanced by test duration and lock-aware (a lock's holders stay in one shard). `run` reports the shard to the dashboard (`PIWI_SHARD`), so the shards merge into one run |
@@ -233,9 +233,9 @@ npx @piwitests/reporter probe --project my-app
 
 | Flag | Description |
 |---|---|
-| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
-| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
-| `--project <name\|id>` | Project name or id (env `PIWI_PROJECT_NAME`) |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
+| `--project <name\|id>` | Project name or id (env `PIWI_PROJECT_NAME`, `.env`) |
 | `--budget <n>` | Max pairs to probe this run (default the server's) |
 | `-h`, `--help` | Show help |
 
@@ -275,7 +275,7 @@ nothing, and answers in the exit codes `git bisect run` reads, so a bisect can f
 | `--json` | Print the arms, their counts, verdicts and p-values as JSON |
 | `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
 | `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
-| `--project <name\|id>` | The Piwi project, for a `file:line` test (env `PIWI_PROJECT_NAME`) |
+| `--project <name\|id>` | The Piwi project, for a `file:line` test (env `PIWI_PROJECT_NAME`, `.env`) |
 | `-h`, `--help` | Show help |
 
 An arm stops at 3 failures with the same error as in CI. It runs in batches of up to five repeats and its attempts are
@@ -343,9 +343,9 @@ of a file.
 | `--fail` | Mark the test as expected to fail (`test.fail()`) |
 | `--fail-reason <text>` | The reason written beside `test.fail()`, such as a ticket key |
 | `--tag <tag>` | Add a tag; repeat for more (`@` is added when missing) |
-| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`): its [function catalog](/features/test-functions) turns matching steps into calls to your own functions, and a locator your tests already use is preferred when it is not brittle |
-| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
-| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`, `.env`): its [function catalog](/features/test-functions) turns matching steps into calls to your own functions, and a locator your tests already use is preferred when it is not brittle |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
 | `--offline` | Do not contact the dashboard, even when one is configured |
 | `-h`, `--help` | Show help |
 
@@ -378,8 +378,8 @@ npx @piwitests/reporter preflight --fix --run -- --workers=2
 | `--run` | Run the tests that reach the changed files and the specs of the broken locators; Playwright arguments go after `--` |
 | `--strict` | Exit 1 when a likely break is left unfixed |
 | `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, then `.env`, then the running desktop app) |
-| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
-| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
+| `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`, `.env`) |
 | `--json` | Print the breaks, their call sites, the edits and the impact as JSON |
 | `-h`, `--help` | Show help |
 
@@ -408,8 +408,8 @@ npx @piwitests/reporter bug 37 --write
 | `--no-run` | With `--write` or `--out`: write it without running it |
 | `--force` | Replace an existing file |
 | `--run-mode` | The spec without `test.fail()`, as a reproduction runs it |
-| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`) |
-| `--api-key <key>` | API key (env `PIWI_API_KEY`) |
+| `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
+| `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
 | `-h`, `--help` | Show help |
 
 **Exit codes:** `0` printed or written, and when run, the test failed on the bug as `test.fail()` expects · `1` the run

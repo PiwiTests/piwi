@@ -15,6 +15,7 @@ import { renderSpec, type CodegenOptions, type CodegenResult } from '@piwitests/
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
 import { parseSteps, sessionFromSteps, type PiwiSteps } from '@piwitests/core/steps';
+import { resolveCliConnection } from '../internal/support/connection.js';
 import { resolveProjectId } from '../internal/support/selection-client.js';
 
 const EXIT_OK = 0;
@@ -46,9 +47,9 @@ Code:
   --tag <tag>           Add a tag; repeat for more
 
 Project (optional: your function catalog, and the locators your tests already use):
-  --project <name|id>   Project               (env PIWI_PROJECT_NAME)
-  --server-url <url>    Dashboard URL         (env PIWI_DASHBOARD_URL)
-  --api-key <key>       API key               (env PIWI_API_KEY)
+  --project <name|id>   Project               (env PIWI_PROJECT_NAME, .env)
+  --server-url <url>    Dashboard URL         (env PIWI_DASHBOARD_URL, .env, the desktop app)
+  --api-key <key>       API key               (env PIWI_API_KEY, .env)
   --offline             Do not contact the dashboard
 
 Exit codes: 0 ok, 2 the steps could not be read or the spec could not be written.
@@ -112,12 +113,22 @@ function findFile(argv: string[]): string | undefined {
   return undefined;
 }
 
-export function parseCodegenArgs(argv: string[], env: NodeJS.ProcessEnv): CodegenArgs {
+/** Parse the arguments; the connection falls back to the `.env` of `dirs`, then the desktop app. */
+export function parseCodegenArgs(argv: string[], env: NodeJS.ProcessEnv, dirs: string[] = []): CodegenArgs {
   const file = findFile(argv);
   if (!file) throw new Error('No steps file — usage: piwi codegen <steps.json>');
   for (const flag of VALUE_FLAGS) {
     if (argv.includes(flag) && readOption(argv, flag) === undefined) throw new Error(`${flag} expects a value`);
   }
+  const connection = resolveCliConnection(
+    {
+      serverUrl: readOption(argv, '--server-url'),
+      apiKey: readOption(argv, '--api-key'),
+      project: readOption(argv, '--project'),
+    },
+    env,
+    dirs,
+  );
   return {
     file,
     out: readOption(argv, '--out') ?? null,
@@ -131,9 +142,9 @@ export function parseCodegenArgs(argv: string[], env: NodeJS.ProcessEnv): Codege
     fail: argv.includes('--fail') || argv.includes('--fail-reason'),
     failReason: readOption(argv, '--fail-reason') ?? null,
     tags: readAll(argv, '--tag'),
-    project: readOption(argv, '--project') ?? env.PIWI_PROJECT_NAME ?? '',
-    serverUrl: (readOption(argv, '--server-url') ?? env.PIWI_DASHBOARD_URL ?? '').replace(/\/+$/, ''),
-    apiKey: readOption(argv, '--api-key') ?? env.PIWI_API_KEY ?? null,
+    project: connection?.project ?? readOption(argv, '--project') ?? env.PIWI_PROJECT_NAME ?? '',
+    serverUrl: connection?.serverUrl ?? '',
+    apiKey: connection?.apiKey ?? null,
     offline: argv.includes('--offline'),
   };
 }
@@ -208,14 +219,18 @@ async function loadProjectContext(args: CodegenArgs): Promise<ProjectContext> {
   return { catalog, suiteLocators };
 }
 
-export async function runCodegen(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
+export async function runCodegen(
+  argv: string[],
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd(),
+): Promise<number> {
   if (argv.includes('-h') || argv.includes('--help')) {
     console.log(USAGE);
     return EXIT_OK;
   }
   let args: CodegenArgs;
   try {
-    args = parseCodegenArgs(argv, env);
+    args = parseCodegenArgs(argv, env, [cwd]);
   } catch (e) {
     console.error(`piwi codegen: ${(e as Error).message}\n\n${USAGE}`);
     return EXIT_ERROR;
@@ -226,7 +241,7 @@ export async function runCodegen(argv: string[], env: NodeJS.ProcessEnv = proces
   if (bugId) {
     if (!args.serverUrl) {
       console.error(
-        'piwi codegen: bug:<id> reads the report from the dashboard — pass --server-url or set PIWI_DASHBOARD_URL',
+        'piwi codegen: bug:<id> reads the report from the dashboard — pass --server-url or set PIWI_DASHBOARD_URL (environment or .env)',
       );
       return EXIT_ERROR;
     }

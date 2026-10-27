@@ -24,6 +24,7 @@ import {
   type CoverageScope,
 } from '@piwitests/core/coverage-scope';
 import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
+import { resolveCliConnection } from '../internal/support/connection.js';
 import { hashPaths, readCheckout, readInventory } from '../internal/coverage-upload/git-inventory.js';
 import {
   expandPattern,
@@ -65,9 +66,9 @@ Suite:
   --kind <kind>            unit (the default) or e2e
 
 Connection:
-  --project <name|id>      Project                 (env PIWI_PROJECT_NAME)
-  --server-url <url>       Dashboard URL           (env PIWI_DASHBOARD_URL)
-  --api-key <key>          API key                 (env PIWI_API_KEY)
+  --project <name|id>      Project                 (env PIWI_PROJECT_NAME, .env)
+  --server-url <url>       Dashboard URL           (env PIWI_DASHBOARD_URL, .env, the desktop app)
+  --api-key <key>          API key                 (env PIWI_API_KEY, .env)
   --branch <name>          The branch              (env PIWI_BRANCH, the CI's, else git's)
 
 Other:
@@ -105,7 +106,12 @@ const VALUE_OPTIONS = new Set([
   '--branch',
 ]);
 
-export function parseCoverageUploadArgs(argv: string[], env: NodeJS.ProcessEnv): CoverageUploadArgs {
+/** Parse the arguments; the connection falls back to the `.env` of `dirs`, then the desktop app. */
+export function parseCoverageUploadArgs(
+  argv: string[],
+  env: NodeJS.ProcessEnv,
+  dirs: string[] = [],
+): CoverageUploadArgs {
   const values = new Map<string, string>();
   const patterns: string[] = [];
   const flags = new Set<string>();
@@ -137,11 +143,18 @@ export function parseCoverageUploadArgs(argv: string[], env: NodeJS.ProcessEnv):
   if (format !== undefined && format !== 'cobertura' && format !== 'lcov' && format !== 'piwi') {
     throw new Error('--format is cobertura, lcov or piwi');
   }
-  const serverUrl = (values.get('--server-url') ?? env.PIWI_DASHBOARD_URL ?? '').replace(/\/+$/, '');
+  const connection = resolveCliConnection(
+    { serverUrl: values.get('--server-url'), apiKey: values.get('--api-key'), project: values.get('--project') },
+    env,
+    dirs,
+  );
+  const serverUrl = connection?.serverUrl ?? '';
   const dryRun = flags.has('--dry-run');
-  if (!serverUrl && !dryRun) throw new Error('No dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL');
-  const project = values.get('--project') ?? env.PIWI_PROJECT_NAME ?? '';
-  if (!project && !dryRun) throw new Error('No project — pass --project or set PIWI_PROJECT_NAME');
+  if (!serverUrl && !dryRun)
+    throw new Error('No dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL (environment or .env)');
+  const project = connection?.project ?? values.get('--project') ?? env.PIWI_PROJECT_NAME ?? '';
+  if (!project && !dryRun)
+    throw new Error('No project — pass --project or set PIWI_PROJECT_NAME (environment or .env)');
   return {
     patterns,
     suite,
@@ -150,7 +163,7 @@ export function parseCoverageUploadArgs(argv: string[], env: NodeJS.ProcessEnv):
     ...(values.get('--root') ? { root: values.get('--root') } : {}),
     project,
     serverUrl,
-    apiKey: values.get('--api-key') ?? env.PIWI_API_KEY ?? null,
+    apiKey: connection?.apiKey ?? null,
     ...(values.get('--branch') ? { branch: values.get('--branch') } : {}),
     dryRun,
     json: flags.has('--json'),
@@ -410,7 +423,7 @@ export async function runCoverage(
   }
   let args: CoverageUploadArgs;
   try {
-    args = parseCoverageUploadArgs(rest, env);
+    args = parseCoverageUploadArgs(rest, env, [cwd]);
   } catch (error) {
     console.error(`piwi coverage upload: ${errorMessage(error)}`);
     return EXIT_ERROR;

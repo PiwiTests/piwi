@@ -9,6 +9,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { resolveCliConnection } from '../internal/support/connection.js';
 import { resolveProjectId } from '../internal/support/selection-client.js';
 import { spawnPlaywright } from '../internal/support/playwright-spawn.js';
 import { PIWI_ENV_KEYS, PIWI_PROBE_ENV } from '../internal/config/env.js';
@@ -25,9 +26,9 @@ Usage:
   npx @piwitests/reporter probe [options] [-- <playwright args>]
 
 Options:
-  --server-url <url>   Dashboard URL (or PIWI_DASHBOARD_URL)
-  --api-key <key>      Reporter API key (or PIWI_API_KEY)
-  --project <name|id>  Project name or id (or PIWI_PROJECT_NAME)
+  --server-url <url>   Dashboard URL (or PIWI_DASHBOARD_URL, .env, the desktop app)
+  --api-key <key>      Reporter API key (or PIWI_API_KEY, .env)
+  --project <name|id>  Project name or id (or PIWI_PROJECT_NAME, .env)
   --budget <n>         Max pairs to probe this run (default the server's)
 
 Everything after \`--\` is passed to \`playwright test\`.
@@ -52,13 +53,20 @@ export async function runProbe(argv: string[]): Promise<number> {
   }
 
   const env = process.env;
-  const serverUrl = (readOption(own, '--server-url') ?? env.PIWI_DASHBOARD_URL ?? '').replace(/\/$/, '');
-  if (!serverUrl) {
-    console.error('piwi probe: no dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL');
+  const connection = resolveCliConnection(
+    {
+      serverUrl: readOption(own, '--server-url'),
+      apiKey: readOption(own, '--api-key'),
+      project: readOption(own, '--project'),
+    },
+    env,
+    [process.cwd()],
+  );
+  if (!connection) {
+    console.error('piwi probe: no dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL (environment or .env)');
     return EXIT_ERROR;
   }
-  const apiKey = readOption(own, '--api-key') ?? env.PIWI_API_KEY ?? null;
-  const project = readOption(own, '--project') ?? env.PIWI_PROJECT_NAME ?? '';
+  const { serverUrl, apiKey, project } = connection;
   const budget = readOption(own, '--budget');
 
   let projectId: number;
