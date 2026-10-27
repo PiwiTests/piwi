@@ -54,7 +54,7 @@ const session: HubSession = {
         since: '2026-10-25T10:00:00.000Z',
       },
       pausing: false,
-      intents: ['pick', 'record'],
+      intents: ['pick', 'record', 'assert', 'assert-region', 'mock'],
     },
   ],
   ended: false,
@@ -134,7 +134,7 @@ describe('the hub’s WebSocket', () => {
       ref: 'ed-1',
       worker: 0,
     });
-    for (const type of ['pick', 'record'] as const) {
+    for (const type of ['pick', 'record', 'assert', 'assert-region', 'requests'] as const) {
       expect(parseHubCommand(json({ type, id: 5, ref: 'ed-1', since: 'S' }))).toEqual({
         type,
         id: 5,
@@ -143,6 +143,14 @@ describe('the hub’s WebSocket', () => {
         since: 'S',
       });
     }
+    expect(parseHubCommand(json({ type: 'mock', id: 6, ref: 'ed-1', worker: 2, since: 'S', request: 3 }))).toEqual({
+      type: 'mock',
+      id: 6,
+      ref: 'ed-1',
+      worker: 2,
+      since: 'S',
+      request: 3,
+    });
   });
 
   test('answers a command it cannot take as refused, with why, and one it does not know as unknown', () => {
@@ -161,6 +169,9 @@ describe('the hub’s WebSocket', () => {
       { type: 'runControl', ref: 'ed-1', action: 'step', since: 5 },
       { type: 'pausedPage', ref: 'ed-1' },
       { type: 'pick', ref: 'ed-1', since: '' },
+      { type: 'mock', ref: 'ed-1', since: 'S' },
+      { type: 'mock', ref: 'ed-1', since: 'S', request: 0 },
+      { type: 'mock', ref: 'ed-1', since: 'S', request: '3' },
       { type: '' },
       { type: 7 },
     ]) {
@@ -178,8 +189,8 @@ describe('the hub’s WebSocket', () => {
         );
       }
     }
-    for (const type of ['pick', 'record']) {
-      expect(parseHubCommand(json({ type, id: 9, ref: 'ed-1', worker: 0 }))).toEqual(needsStop);
+    for (const type of ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock']) {
+      expect(parseHubCommand(json({ type, id: 9, ref: 'ed-1', worker: 0, request: 1 }))).toEqual(needsStop);
       expect(parseHubCommand(json({ type, id: 9, ref: 'ed-1', since: null }))).toEqual(needsStop);
     }
     expect(parseHubCommand(json({ type: 'runControl', id: 9, ref: 'ed-1', action: 'pause', since: 'S' }))).toEqual({
@@ -218,6 +229,24 @@ describe('the hub’s WebSocket', () => {
         image: { mime: 'image/jpeg', data: '/9j/4A==' },
       },
       { type: 'answer', id: 3, ok: false, message: 'No image.', image: null },
+      {
+        type: 'answer',
+        id: 4,
+        ok: true,
+        message: 'The test kept 1 response.',
+        requests: [
+          {
+            id: 1,
+            method: 'GET',
+            url: 'https://shop.test/api/cart',
+            status: 200,
+            type: 'application/json',
+            size: 12,
+            time: 830,
+          },
+        ],
+      },
+      { type: 'answer', id: 5, ok: false, message: 'The test went on.', requests: [] },
       { type: 'session', session },
       {
         type: 'session',
@@ -234,12 +263,23 @@ describe('the hub’s WebSocket', () => {
           session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, reason: 'failure' } }] },
         }),
       ),
+    ).toMatchObject({ session: { workers: [{ stop: { reason: 'failure' } }] } });
+    expect(
+      parseHubMessage(
+        json({
+          type: 'session',
+          session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, reason: 'dance' } }] },
+        }),
+      ),
     ).toMatchObject({ session: { workers: [{ stop: { reason: 'other' } }] } });
     expect(
       parseHubMessage(
-        json({ type: 'session', session: { ...session, workers: [{ ...worker, intents: ['assert', 'pick'] }] } }),
+        json({
+          type: 'session',
+          session: { ...session, workers: [{ ...worker, intents: ['dance', 'mock', 'pick'] }] },
+        }),
       ),
-    ).toMatchObject({ session: { workers: [{ intents: ['pick'] }] } });
+    ).toMatchObject({ session: { workers: [{ intents: ['pick', 'mock'] }] } });
   });
 
   test('has the extension refuse a message it cannot read', () => {
@@ -248,6 +288,8 @@ describe('the hub’s WebSocket', () => {
       { type: 'answer', id: 1, ok: 'yes', message: '' },
       { type: 'answer', id: 1, ok: true, message: 'x', image: { mime: 'image/svg+xml', data: 'PHN2Zz4=' } },
       { type: 'answer', id: 1, ok: true, message: 'x', image: { mime: 'image/jpeg', data: '<svg>' } },
+      { type: 'answer', id: 1, ok: true, message: 'x', requests: {} },
+      { type: 'answer', id: 1, ok: true, message: 'x', requests: [{ id: 1, method: 'GET', url: 'u', status: 9 }] },
       { type: 'welcome', pid: 0, version: '1', client: null, roots: [], keepaliveMs: 1 },
       { type: 'session', session: { ...session, ref: 'ed 1' } },
       { type: 'session', session: { ...session, command: 5 } },

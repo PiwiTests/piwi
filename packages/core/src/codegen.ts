@@ -391,6 +391,60 @@ function locatorForStep(step: RecordedStep, index: number, ctx: RenderContext): 
   return `${ctx.page}.${chosen.text}`;
 }
 
+/** A character a template literal's text writes as an escape: a control character but the tab, and a line separator. */
+function escapedInTemplate(code: number): boolean {
+  return (code < 0x20 && code !== 0x09) || code === 0x7f || code === 0x2028 || code === 0x2029;
+}
+
+/**
+ * A line of text as it reads inside a template literal: the backslash, the backtick and the `$` of `${` escaped, so
+ * nothing in it ends the literal or starts an expression, and the characters `escapedInTemplate` names as escapes.
+ */
+function templateText(text: string): string {
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    const code = c.charCodeAt(0);
+    if (c === '\\' || c === '`' || (c === '$' && text[i + 1] === '{')) out += `\\${c}`;
+    else if (escapedInTemplate(code)) out += `\\u${code.toString(16).padStart(4, '0')}`;
+    else out += c;
+  }
+  return out;
+}
+
+/**
+ * An ARIA snapshot as the template literal `toMatchAriaSnapshot` takes, one entry a line: the backtick, the snapshot's
+ * lines under the statement at `indent` (two spaces deeper, the snapshot's own common indentation removed, blank lines
+ * left out) and the closing backtick at `indent`. Each line's text is escaped (`templateText`), so a page's text can
+ * neither end the literal nor run as code. Playwright removes the common indentation before it compares.
+ */
+export function ariaSnapshotLiteral(snapshot: string, indent: string): string[] {
+  const lines = snapshot.split(/\r\n?|\n/).filter((line) => line.trim());
+  const common = Math.min(...lines.map((line) => line.length - line.replace(/^ +/, '').length));
+  return ['`', ...lines.map((line) => `${indent}  ${templateText(line.slice(common).trimEnd())}`), `${indent}\``];
+}
+
+/** `await expect(<region>).toMatchAriaSnapshot(`…`);`, the snapshot read from the page, on several lines. */
+function renderAriaSnapshotStep(step: RecordedStep, index: number, ctx: RenderContext, not: string): string[] {
+  const snapshot = step.assertion?.expected ?? '';
+  if (!snapshot.trim()) {
+    ctx.warnings.push({
+      step: index,
+      code: 'incomplete-assertion',
+      detail: 'toMatchAriaSnapshot',
+      message: 'toMatchAriaSnapshot needs the ARIA snapshot to match.',
+    });
+    return [`  // Step ${index + 1}: toMatchAriaSnapshot without a snapshot.`];
+  }
+  const [open, ...rest] = ariaSnapshotLiteral(snapshot, '  ');
+  const close = rest.pop()!;
+  return [
+    `  await expect(${locatorForStep(step, index, ctx)})${not}.toMatchAriaSnapshot(${open}`,
+    ...rest,
+    `${close});`,
+  ];
+}
+
 function renderAssertStep(step: RecordedStep, index: number, ctx: RenderContext): string[] {
   const assertion = step.action === 'assertVisible' ? null : step.assertion;
   if (step.action === 'assert' && !assertion) {
@@ -401,6 +455,7 @@ function renderAssertStep(step: RecordedStep, index: number, ctx: RenderContext)
   const not = assertion?.negated ? '.not' : '';
   const lines: string[] = [];
   if (assertion?.note) lines.push(`  // ${commentText(assertion.note)}`);
+  if (matcher === 'toMatchAriaSnapshot') return [...lines, ...renderAriaSnapshotStep(step, index, ctx, not)];
   let arg = '';
   if (VALUE_MATCHERS.has(matcher)) {
     if (assertion?.expected == null) {

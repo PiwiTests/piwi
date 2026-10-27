@@ -7553,6 +7553,10 @@
     "message": "Stopped at page.pause()",
     "description": "Runs window, the state of a test stopped at a page.pause() call. page.pause() is code: keep it."
   },
+  "runs_stoppedFailure": {
+    "message": "Stopped at a failure",
+    "description": "Runs window, the state of a test stopped where it failed: its page is held so code can be written there."
+  },
   "runs_stoppedOther": {
     "message": "Stopped",
     "description": "Runs window, the state of a stopped test, for a reason this version does not know."

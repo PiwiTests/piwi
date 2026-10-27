@@ -6370,6 +6370,9 @@
   "runs_stoppedPagePause": {
     "message": "Detenido en page.pause()"
   },
+  "runs_stoppedFailure": {
+    "message": "Detenido en un fallo"
+  },
   "runs_stoppedOther": {
     "message": "Detenido"
   },

@@ -1,6 +1,18 @@
 import { describe, expect, test } from 'vitest';
 import { RECORD_CHANNEL_ENV } from '../src/ide-recorder';
-import { RUN_CHANNEL_ENV, parseHubToRun, parseRunToHub, type HubToRun, type RunToHub } from '../src/run-channel';
+import {
+  MAX_KEPT_BODY,
+  MAX_KEPT_RESPONSES,
+  MAX_REGION_SNAPSHOT,
+  RUN_CHANNEL_ENV,
+  RUN_TAKES,
+  parseHubToRun,
+  parseRunToHub,
+  type HubToRun,
+  type KeptRequest,
+  type KeptResponse,
+  type RunToHub,
+} from '../src/run-channel';
 
 const line = (message: unknown) => JSON.stringify(message);
 
@@ -21,7 +33,7 @@ describe('the run channel', () => {
       pid: 4242,
       playwright: '1.64.1',
       reporter: '0.60.0',
-      takes: ['pick', 'record'],
+      takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'],
     } satisfies RunToHub;
 
     test('reads its attach, and refuses one without a ref, a folder or a worker', () => {
@@ -33,7 +45,9 @@ describe('the run channel', () => {
       });
       // A reporter that predates the intents lists none; one names only those this side knows.
       expect(parseRunToHub(line({ ...attach, takes: undefined }))).toEqual({ ...attach, takes: [] });
-      expect(parseRunToHub(line({ ...attach, takes: ['assert', 'record'] }))).toMatchObject({ takes: ['record'] });
+      expect(parseRunToHub(line({ ...attach, takes: ['dance', 'record'] }))).toMatchObject({ takes: ['record'] });
+      expect(parseRunToHub(line({ ...attach, takes: ['mock', 'pick'] }))).toMatchObject({ takes: ['pick', 'mock'] });
+      expect(RUN_TAKES).toEqual(attach.takes);
       expect(parseRunToHub(line({ ...attach, takes: 'pick' }))).toMatchObject({ takes: [] });
       for (const broken of [
         { ...attach, ref: '' },
@@ -89,7 +103,8 @@ describe('the run channel', () => {
         bar: false,
       } satisfies RunToHub;
       expect(parseRunToHub(line(stopped))).toEqual(stopped);
-      expect(parseRunToHub(line({ ...stopped, reason: 'failure' }))).toMatchObject({ reason: 'other' });
+      expect(parseRunToHub(line({ ...stopped, reason: 'failure' }))).toMatchObject({ reason: 'failure' });
+      expect(parseRunToHub(line({ ...stopped, reason: 'dance' }))).toMatchObject({ reason: 'other' });
       expect(parseRunToHub(line({ ...stopped, place: { file: '../shared/a.ts', line: 2 } }))).toMatchObject({
         place: { file: '../shared/a.ts', line: 2 },
       });
@@ -138,6 +153,114 @@ describe('the run channel', () => {
       ).toEqual({ ...started, what: 'record', value: { ok: false, message: 'x'.repeat(500) } });
       for (const value of [null, { ok: true }, { ok: 'yes', message: '' }, { message: 'x' }]) {
         expect(parseRunToHub(line({ ...started, value })), JSON.stringify(value)).toBeNull();
+      }
+    });
+
+    test('reads the responses a test kept, each field checked, and refuses a list it cannot read whole', () => {
+      const kept = {
+        id: 3,
+        method: 'POST',
+        url: 'https://shop.test/api/cart?id=4',
+        status: 201,
+        type: 'application/json',
+        size: 812,
+        time: 1450,
+      } satisfies KeptRequest;
+      const listed = {
+        type: 'answer',
+        request: 4,
+        what: 'requests',
+        value: { ok: true, message: 'The test kept 1 response.', requests: [kept] },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(listed))).toEqual(listed);
+      expect(
+        parseRunToHub(line({ ...listed, value: { ...listed.value, requests: [{ ...kept, method: 'post' }] } })),
+      ).toMatchObject({ value: { requests: [{ method: 'POST' }] } });
+      expect(parseRunToHub(line({ ...listed, value: { ok: false, message: 'gone', requests: [] } }))).toMatchObject({
+        value: { ok: false, requests: [] },
+      });
+      for (const broken of [
+        { ...kept, id: 0 },
+        { ...kept, method: 'GE T' },
+        { ...kept, url: '' },
+        { ...kept, url: 'https://a.test/\nb' },
+        { ...kept, status: 99 },
+        { ...kept, status: 600 },
+        { ...kept, type: 'application/json; charset=utf-8' },
+        { ...kept, size: MAX_KEPT_BODY + 1 },
+        { ...kept, time: -1 },
+      ]) {
+        expect(
+          parseRunToHub(line({ ...listed, value: { ...listed.value, requests: [kept, broken] } })),
+          JSON.stringify(broken),
+        ).toBeNull();
+      }
+      const many = Array.from({ length: MAX_KEPT_RESPONSES + 1 }, (_, i) => ({ ...kept, id: i + 1 }));
+      expect(parseRunToHub(line({ ...listed, value: { ...listed.value, requests: many } }))).toBeNull();
+      expect(parseRunToHub(line({ ...listed, value: { ok: true, message: 'x' } }))).toBeNull();
+    });
+
+    test('reads the one response to mock with its body, or none, and refuses a body past the cap', () => {
+      const response = {
+        method: 'GET',
+        url: 'https://shop.test/api/cart',
+        status: 200,
+        type: 'application/json',
+        body: '{"items":[]}',
+      } satisfies KeptResponse;
+      const mock = {
+        type: 'answer',
+        request: 5,
+        what: 'mock',
+        value: { ok: true, message: 'The response.', response },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(mock))).toEqual(mock);
+      expect(
+        parseRunToHub(
+          line({ ...mock, value: { ok: false, message: 'The test kept no such response.', response: null } }),
+        ),
+      ).toMatchObject({ value: { ok: false, response: null } });
+      for (const broken of [
+        { ...response, body: 'x'.repeat(MAX_KEPT_BODY + 1) },
+        { ...response, body: null },
+        { ...response, status: 0 },
+        { ...response, url: 'a\rb' },
+      ]) {
+        expect(parseRunToHub(line({ ...mock, value: { ...mock.value, response: broken } }))).toBeNull();
+      }
+      expect(parseRunToHub(line({ ...mock, value: { ok: true, message: 'x' } }))).toBeNull();
+    });
+
+    test('reads a locator’s count, or none, and a region picked with its ARIA snapshot', () => {
+      const counted = {
+        type: 'answer',
+        request: 6,
+        what: 'locator',
+        value: { ok: true, message: '2 elements match.', count: 2 },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(counted))).toEqual(counted);
+      expect(
+        parseRunToHub(line({ ...counted, value: { ok: false, message: 'It does not parse.', count: null } })),
+      ).toMatchObject({ value: { count: null } });
+      expect(parseRunToHub(line({ ...counted, value: { ok: true, message: '', count: -1 } }))).toBeNull();
+      expect(parseRunToHub(line({ ...counted, value: { ok: true, message: '' } }))).toBeNull();
+
+      const region = {
+        type: 'region',
+        stop: 2,
+        locator: "getByRole('region', { name: 'Order summary' })",
+        snapshot: '- heading "Order summary" [level=2]\n- text: Total €72.00',
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(region))).toEqual(region);
+      for (const broken of [
+        { ...region, stop: 0 },
+        { ...region, locator: '' },
+        { ...region, locator: "getByRole('a')\n.click()" },
+        { ...region, locator: 'x'.repeat(1001) },
+        { ...region, snapshot: '  ' },
+        { ...region, snapshot: 'x'.repeat(MAX_REGION_SNAPSHOT + 1) },
+      ]) {
+        expect(parseRunToHub(line(broken)), JSON.stringify(broken).slice(0, 80)).toBeNull();
       }
     });
 
@@ -195,8 +318,8 @@ describe('the run channel', () => {
       expect(parseHubToRun(line({ type: 'request', request: 0, what: 'image' }))).toBeNull();
     });
 
-    test('reads a request to pick or record at a stop, which names that stop', () => {
-      for (const what of ['pick', 'record'] as const) {
+    test('reads a request to start an intent or to answer a query at a stop, which names that stop', () => {
+      for (const what of ['pick', 'record', 'assert', 'assert-region', 'requests'] as const) {
         expect(parseHubToRun(line({ type: 'request', request: 6, what, stop: 2 }))).toEqual({
           type: 'request',
           request: 6,
@@ -206,6 +329,21 @@ describe('the run channel', () => {
         expect(parseHubToRun(line({ type: 'request', request: 6, what }))).toBeNull();
         expect(parseHubToRun(line({ type: 'request', request: 6, what, stop: 0 }))).toBeNull();
       }
+      expect(parseHubToRun(line({ type: 'request', request: 7, what: 'mock', stop: 2, id: 4 }))).toEqual({
+        type: 'request',
+        request: 7,
+        what: 'mock',
+        stop: 2,
+        id: 4,
+      });
+      expect(parseHubToRun(line({ type: 'request', request: 7, what: 'mock', stop: 2 }))).toBeNull();
+      expect(parseHubToRun(line({ type: 'request', request: 7, what: 'mock', stop: 2, id: 0 }))).toBeNull();
+      const locator = { type: 'request', request: 8, what: 'locator', stop: 2, locator: "getByText('Pay')" };
+      expect(parseHubToRun(line(locator))).toEqual(locator);
+      expect(parseHubToRun(line({ ...locator, locator: null }))).toEqual({ ...locator, locator: null });
+      expect(parseHubToRun(line({ ...locator, locator: undefined }))).toBeNull();
+      expect(parseHubToRun(line({ ...locator, locator: '' }))).toBeNull();
+      expect(parseHubToRun(line({ ...locator, locator: "getByText('a')\ngetByText('b')" }))).toBeNull();
     });
 
     test('names what a newer service sends that this version does not know, and refuses what is malformed', () => {

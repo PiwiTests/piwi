@@ -478,7 +478,12 @@ export interface PausePoint {
    * `dispose()` of, which hides it.
    */
   target: { highlight?: () => Promise<unknown> } | null;
+  /** The test failed at `location` (`call` says how): no call is about to run, and the bar offers no Step nor Finish. */
+  failure?: boolean;
 }
+
+/** What a stop shows the bar again after, started from outside the page: a check, a region's snapshot. */
+export type CodeIntent = Extract<RunIntent, 'assert' | 'assert-region'>;
 
 /** What Playwright says when a navigation took away the document a call ran in. */
 const NAVIGATED = /Execution context was destroyed|Cannot find context with specified id/;
@@ -543,7 +548,8 @@ function unlessEnded<T>(run: Promise<T>, ended: AbortSignal | undefined): Promis
  * the picker and shows the bar again; `onPick` receives each confirmed pick. With `onRecord` (the editor that started
  * the run can record), **Record here** hands the page to it and shows the bar again once the recording ended. An
  * intent handed to `intents` while the bar waits is taken as its own button's click, the bar's own answer first, with
- * the test's window brought to the front. Returns the answer that ends the stop: `resume`, `step` or `finish`; `resume`
+ * the test's window brought to the front; `assert` and `assert-region`, which no button starts, run `onIntent` with
+ * the bar down and show it again after. Returns the answer that ends the stop: `resume`, `step` or `finish`; `resume`
  * when the page breaks or `ended` aborts (the test ended under the bar), never throwing. The bar and the highlight are
  * gone once it returns. Every page call it makes must run inside an internal call.
  */
@@ -555,6 +561,7 @@ export async function pauseHere(
   onRecord?: () => Promise<void>,
   ended?: AbortSignal,
   intents?: BarIntents,
+  onIntent?: (intent: CodeIntent) => Promise<void>,
 ): Promise<PauseAnswer> {
   let shown: unknown = null;
   try {
@@ -577,10 +584,14 @@ export async function pauseHere(
       action: point.call,
       locator: null,
       record: !!onRecord,
+      ...(point.failure ? { failure: true } : {}),
     };
     console.log(
-      `[piwi] Paused at ${callSiteLine(point.location)} before ${point.call}` +
-        `: Resume, Step, Pick a locator${onRecord ? ', Record here' : ''} or Finish in the browser (Esc resumes).`,
+      point.failure
+        ? `[piwi] The test failed at ${callSiteLine(point.location)}: Resume, Pick a locator` +
+            `${onRecord ? ' or Record here' : ''} in the browser (Esc resumes, and the test ends as it failed).`
+        : `[piwi] Paused at ${callSiteLine(point.location)} before ${point.call}` +
+            `: Resume, Step, Pick a locator${onRecord ? ', Record here' : ''} or Finish in the browser (Esc resumes).`,
     );
     // A navigation that lands while the bar is drawn or read takes its document away: the bar comes back in the next
     // one, a few times in a row at most. A closed page, or anything else, resumes.
@@ -599,6 +610,10 @@ export async function pauseHere(
         if (choice === 'resume' || choice === 'step' || choice === 'finish') return choice;
         if (choice === 'record' && onRecord) {
           await onRecord().catch(() => undefined);
+          continue;
+        }
+        if (choice === 'assert' || choice === 'assert-region') {
+          await onIntent?.(choice).catch(() => undefined);
           continue;
         }
         if (choice !== 'pick') continue;

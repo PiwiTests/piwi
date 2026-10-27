@@ -9,7 +9,9 @@ import {
   lineReader,
   parseHandoffToTest,
   parseRecordChannel,
+  type HandoffMode,
   type HandoffReason,
+  type HandoffStop,
   type HandoffToEditor,
 } from '@piwitests/core/ide-recorder';
 
@@ -20,7 +22,8 @@ import {
  * editor's) loaded into the page: each call of its binding goes to the editor service, which answers it, and what the
  * editor says (a pause, the stop) is handed to the recorder in the page. The steps are written in the editor, before
  * the paused line. It ends when the recording stops, the page closes, or the editor does not take it; the test then
- * goes on from where it paused.
+ * goes on from where it paused. In its `check` mode, the recorder opens the check panel's **Check an element** alone,
+ * and the editor service writes the check the person makes above the stopped line itself.
  */
 
 /** How long the editor may take to start the recording before the test goes on without it. */
@@ -66,6 +69,10 @@ export interface RecordFromHereOptions {
   reason: HandoffReason;
   /** The record channel; `PIWI_RECORD_CHANNEL` by default. */
   channel?: string;
+  /** `check`: one check with the check panel, which the editor service writes; a recording by default. */
+  mode?: HandoffMode;
+  /** For a check: the stop of the worker's run connection it was started at. */
+  stop?: HandoffStop | null;
 }
 
 /** Whether the editor that started the run can record from a pause: the run names its record channel. */
@@ -192,6 +199,7 @@ export async function recordFromHere(options: RecordFromHereOptions): Promise<st
         reason: options.reason,
         testIdAttribute: typeof use.testIdAttribute === 'string' ? use.testIdAttribute : null,
         baseURL: typeof use.baseURL === 'string' ? use.baseURL : null,
+        ...(options.mode === 'check' ? { mode: 'check' as const, stop: options.stop ?? null } : {}),
       });
     });
     socket.on(

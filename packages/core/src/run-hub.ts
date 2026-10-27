@@ -11,6 +11,7 @@
  * Nothing a command asks evaluates code, reads a file or reaches an instance.
  */
 import type { EditorDiscovery, HubAddress } from './editor-discovery';
+import type { KeptRequest } from './run-channel';
 
 /** The WebSocket's path. */
 export const HUB_PATH = '/piwi/hub';
@@ -47,8 +48,11 @@ export const HUB_CLOSE = {
   malformed: 4003,
 } as const;
 
-/** Why a test stopped (`RunStopReason` in the editor's protocol); `other` for a reason of a newer reporter. */
-export type HubStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'other';
+/**
+ * Why a test stopped (`RunStopReason` in the editor's protocol): `failure`, the test failed and its page is held at
+ * the failing line, where Resume lets it end as it failed; `other` for a reason of a newer reporter.
+ */
+export type HubStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'failure' | 'other';
 
 /** Where a worker stands stopped: before a call, which runs as soon as the stop is answered. */
 export interface HubStop {
@@ -84,8 +88,28 @@ export interface HubTest {
   cannotPause: string | null;
 }
 
-/** What a stop of a worker can start from outside the page: the pause bar's Pick a locator and Record here. */
+/** What a stop of a worker can start from outside the page, in the test's window: the pause bar's Pick a locator and Record here. */
 export type HubIntent = 'pick' | 'record';
+
+/**
+ * What a stop of a worker can start in the test's window for the editor to write: the check panel's Check an element
+ * (`assert`) and a region's ARIA snapshot (`assert-region`).
+ */
+export type HubCodeIntent = 'assert' | 'assert-region';
+
+/** What a stop can take from the Runs page: the intents, and Mock a request (`mock`, with the `requests` it lists). */
+export type HubAction = HubIntent | HubCodeIntent | 'mock';
+
+const HUB_INTENTS: readonly string[] = ['pick', 'record', 'assert', 'assert-region'];
+
+/** The actions this version knows, in the order a worker's `intents` lists them. */
+export const HUB_ACTIONS: readonly HubAction[] = ['pick', 'record', 'assert', 'assert-region', 'mock'];
+
+/**
+ * A response the stopped test's pages received for a fetch or an XHR request, whose text body the worker keeps for
+ * Mock a request: no header, no body.
+ */
+export type HubKeptRequest = KeptRequest;
 
 /** A worker of a run. */
 export interface HubWorker {
@@ -97,8 +121,8 @@ export interface HubWorker {
   stop: HubStop | null;
   /** A Pause reached it and it has not stopped yet. */
   pausing: boolean;
-  /** The intents its reporter takes: none for one that predates them, whose stops Pick and Record are refused at. */
-  intents: HubIntent[];
+  /** The actions its reporter takes: none for one that predates them, whose stops every action is refused at. */
+  intents: HubAction[];
 }
 
 /** A run the editor started, with its workers. */
@@ -155,12 +179,21 @@ export type HubCommand =
   /** An image of a stopped worker's page, without the pause bar: the answer's `image`. */
   | { type: 'pausedPage'; id: number; ref: string; worker: number }
   /**
-   * At the stop `since` names (of the one stopped worker, or `worker`), start what the pause bar's **Pick a locator**
-   * (`pick`) or **Record here** (`record`) starts, in the test's window: the picked locator goes to the editor in place
-   * of the locator on the stopped line, the recorded steps above that line. Refused at a stop no pause bar shows (a
-   * headless run), and at a stop the test went on from.
+   * At the stop `since` names (of the one stopped worker, or `worker`), start an intent in the test's window: the
+   * picked locator goes to the editor in place of the locator on the stopped line (`pick`), the recorded steps above
+   * that line (`record`), and so does the check the person makes with the check panel (`assert`) or the ARIA snapshot
+   * of the region they pick (`assert-region`), written by the editor, never sent here. Refused at a stop no pause bar
+   * shows (a headless run), at a stop the test went on from, and, for `assert` and `assert-region`, when the editor
+   * cannot write code from a stop.
    */
-  | { type: HubIntent; id: number; ref: string; worker: number | null; since: string };
+  | { type: HubIntent | HubCodeIntent; id: number; ref: string; worker: number | null; since: string }
+  /** The responses the test kept as it stood at the stop `since` names: the answer's `requests`. */
+  | { type: 'requests'; id: number; ref: string; worker: number | null; since: string }
+  /**
+   * At the stop `since` names, Mock a request: the kept response `request` (a `HubKeptRequest`'s `id`) becomes
+   * `await page.route(…)` written by the editor above the stopped line; the code never comes here.
+   */
+  | { type: 'mock'; id: number; ref: string; worker: number | null; since: string; request: number };
 
 /** What `parseHubCommand` reads: a command, or one answered as refused. */
 export type ParsedHubCommand =
@@ -178,6 +211,8 @@ export interface HubAnswer {
   message: string;
   /** For `pausedPage`: the image, null when there is none. */
   image?: HubImage | null;
+  /** For `requests`: the responses the test kept, oldest first; empty when it was refused. */
+  requests?: HubKeptRequest[];
 }
 
 /** Sent once `hello` was accepted: the service the connection reached. */
@@ -288,7 +323,7 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
   const invalid = (message: string): ParsedHubCommand => ({ type: 'invalid', id, message });
   if (typeof value.type !== 'string' || !value.type) return invalid('A command needs a type.');
   if (value.type === 'subscribe') return { type: 'subscribe', id };
-  if (!['runControl', 'pausedPage', 'pick', 'record'].includes(value.type)) {
+  if (!['runControl', 'pausedPage', 'requests', 'mock', ...HUB_INTENTS].includes(value.type)) {
     return { type: 'unknown', id, what: value.type.slice(0, 64) };
   }
   if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
@@ -311,8 +346,19 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
     }
     case 'pausedPage':
       return worker === null ? invalid('pausedPage needs the worker.') : { type: 'pausedPage', id, ref, worker };
+    case 'mock': {
+      if (since === null) return invalid(NEEDS_STOP);
+      const { request } = value;
+      return isInt(request, 1)
+        ? { type: 'mock', id, ref, worker, since, request }
+        : invalid('mock needs the response to mock: the id of one of those requests lists.');
+    }
+    case 'requests':
+      return since === null ? invalid(NEEDS_STOP) : { type: 'requests', id, ref, worker, since };
     default:
-      return since === null ? invalid(NEEDS_STOP) : { type: value.type as HubIntent, id, ref, worker, since };
+      return since === null
+        ? invalid(NEEDS_STOP)
+        : { type: value.type as HubIntent | HubCodeIntent, id, ref, worker, since };
   }
 }
 
@@ -325,8 +371,18 @@ function nullableStr(value: unknown, max: number): string | null | undefined {
   return value === null ? null : (str(value, max) ?? undefined);
 }
 
-const STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause'];
+const STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'failure'];
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/** A kept request as an answer lists it, field by field; null when it is not one. */
+function readKeptRequest(value: unknown): HubKeptRequest | null {
+  if (!isObject(value)) return null;
+  const { id, method, url, status, type, size, time } = value;
+  if (!isInt(id, 1) || typeof method !== 'string' || !/^[A-Z]{1,16}$/.test(method)) return null;
+  if (str(url, 8192) === null || !isInt(status, 100, 599) || str(type, 200) === null) return null;
+  if (!isInt(size, 0) || !isInt(time, 0)) return null;
+  return { id, method, url: url as string, status, type: type as string, size, time };
+}
 
 function readImage(value: unknown): HubImage | null | undefined {
   if (value === null) return null;
@@ -384,7 +440,7 @@ function readWorker(value: unknown): HubWorker | null {
   const stop = readStop(value.stop);
   if (test === undefined || stop === undefined) return null;
   const intents = Array.isArray(value.intents)
-    ? (['pick', 'record'] as const).filter((intent) => (value.intents as unknown[]).includes(intent))
+    ? HUB_ACTIONS.filter((action) => (value.intents as unknown[]).includes(action))
     : [];
   return { worker, parallelIndex, state, test, stop, pausing, intents };
 }
@@ -429,6 +485,12 @@ export function parseHubMessage(text: string): HubMessage | null {
       const { id, ok, message } = value;
       if (!isInt(id, 1) || typeof ok !== 'boolean' || str(message, 1000) === null) return null;
       const answer: HubAnswer = { type: 'answer', id, ok, message: message as string };
+      if (value.requests !== undefined) {
+        if (!Array.isArray(value.requests) || value.requests.length > 50) return null;
+        const requests = value.requests.map(readKeptRequest);
+        if (!requests.every((r): r is HubKeptRequest => r !== null)) return null;
+        answer.requests = requests;
+      }
       if (value.image === undefined) return answer;
       const image = readImage(value.image);
       return image === undefined ? null : { ...answer, image };

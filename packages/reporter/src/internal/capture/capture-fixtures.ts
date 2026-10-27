@@ -90,6 +90,7 @@ import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFai
 import {
   applyPickToSnapshots,
   deriveFailedLocator,
+  pickLocator,
   runLocatorPicker,
   type PickedLocator,
   type UserPickResult,
@@ -118,12 +119,17 @@ import {
   wantsStops,
   watchStops,
   withTestTimeoutHeld,
+  type CodeIntent,
   type GoOn,
   type PauseAnswer,
   type PauseRecord,
   type PauseState,
   type StopReason,
 } from './pause-at.js';
+import { locatorOn } from './chain-locator.js';
+import { keepResponse, startKeeping, stopKeeping } from './kept-responses.js';
+import { PIWI_ORIGIN_ENV } from '../config/env.js';
+import { stripAnsi } from '@piwitests/core/error-parse';
 import { canRecordFromHere, recordFromHere } from './record-handoff.js';
 import {
   closeRunChannel,
@@ -135,7 +141,13 @@ import {
   tellHub,
   type RunControl,
 } from './run-channel.js';
-import { RUN_INTENT_NAMES, type IntentAnswer, type RunIntent, type RunToHub } from '@piwitests/core/run-channel';
+import {
+  MAX_REGION_SNAPSHOT,
+  RUN_INTENT_NAMES,
+  type IntentAnswer,
+  type RunIntent,
+  type RunToHub,
+} from '@piwitests/core/run-channel';
 import {
   browserCoverageInWorker,
   browserFunctionCoverage,
@@ -366,6 +378,8 @@ interface CaptureSink {
   stops: PauseRecord[];
   // The stops shown now, by the handle that ends each when the test ends under it.
   shownStops: Map<AbortController, ShownStop>;
+  // The attempt's failure was held already (`holdFailure`): it is held once.
+  failureHeld: boolean;
   // Settles once teardown has read the test's pages and attached its data (`markFlushed`): a call held under a bar the
   // test ended under goes on then.
   flushed: Promise<void>;
@@ -421,6 +435,7 @@ function createSink(): CaptureSink {
     locatorCalls: new Map(),
     stops: [],
     shownStops: new Map(),
+    failureHeld: false,
     flushed,
     markFlushed,
     locatorPages: new LocatorPageLog(),
@@ -1447,6 +1462,11 @@ function stopPage(sink: CaptureSink, context: BrowserContext, call: LocatorCall 
   return open[open.length - 1] ?? null;
 }
 
+/** What a stop at a failure shows beside the stop's own: the failing locator a pick replaces. */
+interface FailureStop {
+  failed: FailedLocatorInfo | null;
+}
+
 /**
  * Show a stop: the pause bar in a headed page, through `pauseHere`, as an internal call so nothing it does is a step
  * of the test, and the editor while the worker's run connection is open (`holdStop`), with the test timeout held.
@@ -1455,9 +1475,11 @@ function stopPage(sink: CaptureSink, context: BrowserContext, call: LocatorCall 
  * element is highlighted, and a locator picked meanwhile is folded into the call site's snapshot (which the call's own
  * capture then leaves as it is); a pick is printed and posted to the editor. The stop is kept for `piwi-pauses` from
  * the moment it shows. A stop the test ended under is ended unanswered (`endShownStops`): its call is held until
- * teardown has read the page, and the answer is Finish. The editor can start the bar's Pick a locator and Record here
- * from outside the page (`intentAt`): the same pick and recording, their results going where the bar's go. Returns the
- * answer; none when neither a bar nor the editor can show the stop.
+ * teardown has read the page, and the answer is Finish. The editor can start the bar's Pick a locator and Record here,
+ * the check panel's Check an element and a region's ARIA snapshot from outside the page (`intentAt`): their results go
+ * where the bar's go, the check and the snapshot to the editor, which writes them. A stop at a failure (`failure`)
+ * holds a page whose test failed: a pick there replaces the failing locator, and the stop ends with the test's
+ * teardown, whatever the answer. Returns the answer; none when neither a bar nor the editor can show the stop.
  */
 async function showStop(
   sink: CaptureSink,
@@ -1465,14 +1487,16 @@ async function showStop(
   title: string,
   location: string,
   reason: StopReason,
+  failure: FailureStop | null = null,
 ): Promise<PauseAnswer | undefined> {
   const testInfo = sink.testInfo;
-  const call = sink.locatorCalls.get(callSiteLine(location));
+  const call = failure ? undefined : sink.locatorCalls.get(callSiteLine(location));
   const page = stopPage(sink, context, call);
   if (!testInfo) return undefined;
   const bar = !!page && (testInfo.project?.use as { headless?: unknown } | undefined)?.headless === false;
   const place = runChannelOpen() ? callSitePlace(location) : null;
   if (!bar && !place) return undefined;
+  const failing = failure?.failed ?? null;
   const onPick = async (picked: PickedLocator) => {
     if (call) {
       call.picked = true;
@@ -1483,12 +1507,19 @@ async function showStop(
         ...picked,
       });
       sink.probedLocations.add(call.location);
+    } else if (failing) {
+      const pick: UserPickResult = {
+        failing: { method: failing.method, args: failing.args, rendered: renderFailing(failing), location },
+        ...picked,
+      };
+      sink.userPick = pick;
+      applyPickToSnapshots(sink.capturedLocators, pick);
     }
     console.log(`[piwi] Locator picked at ${callSiteLine(location)}: ${picked.picked.locator}`);
     await postPickToEditor(editorSendAddress(), pickPayload(picked.picked.locator, location));
   };
-  const onRecord =
-    bar && page ? recorderAt(page, testInfo, location, reason === 'page-pause' ? 'pause' : 'breakpoint') : undefined;
+  const handoffReason = reason === 'page-pause' ? 'pause' : 'breakpoint';
+  const onRecord = bar && page ? recorderAt(page, testInfo, location, handoffReason) : undefined;
   const intents = bar && page ? new BarIntents() : null;
   const record: PauseRecord = { title, location, reason, startedAt: Date.now(), duration: 0 };
   sink.stops.push(record);
@@ -1503,7 +1534,11 @@ async function showStop(
           reason,
           title,
           place,
-          locator: call ? locatorSource(call.target, call.origin.method, call.origin.args) : null,
+          locator: call
+            ? locatorSource(call.target, call.origin.method, call.origin.args)
+            : failing
+              ? renderFailing(failing)
+              : null,
           bar,
           page,
           intent: intents ? (what) => intentAt(intents, what, !!onRecord) : undefined,
@@ -1514,9 +1549,20 @@ async function showStop(
         },
       )
     : null;
+  const onIntent =
+    bar && page && held
+      ? (intent: CodeIntent) =>
+          intent === 'assert'
+            ? checkAt(page, testInfo, location, handoffReason, held.stop)
+            : regionAt(page, location, held.stop)
+      : undefined;
   const shown = withTestTimeoutHeld(testInfo, async (): Promise<PauseAnswer> => {
     if (!bar || !page) {
-      console.log(`[piwi] Paused at ${callSiteLine(location)} before ${title}: Resume, Step or Finish in the editor.`);
+      console.log(
+        failure
+          ? `[piwi] The test failed at ${callSiteLine(location)}: Resume in the editor lets it end as it failed.`
+          : `[piwi] Paused at ${callSiteLine(location)} before ${title}: Resume, Step or Finish in the editor.`,
+      );
       await abortion(over.signal);
       return 'resume';
     }
@@ -1528,20 +1574,23 @@ async function showStop(
           call: title,
           attempt: testInfo.retry > 0 ? testInfo.retry + 1 : null,
           target: call?.page === page ? call.target : null,
+          ...(failure ? { failure: true } : {}),
         },
         { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG },
         onPick,
         onRecord,
         over.signal,
         intents ?? undefined,
+        onIntent,
       ),
     );
-  }).finally(() => {
+  }).finally(async () => {
     record.duration = Date.now() - record.startedAt;
     sink.shownStops.delete(end);
-    held?.release();
+    await held?.release();
   });
-  sink.shownStops.set(end, { page, context, done: shown.catch(() => undefined) });
+  // A failure's stop ends with the teardown it holds: no later teardown step ends it.
+  if (!failure) sink.shownStops.set(end, { page, context, done: shown.catch(() => undefined) });
   const answer = await shown;
   if (end.signal.aborted) {
     // The test ended under the stop: its call goes on once teardown has read the page, and nothing stops after it.
@@ -1552,26 +1601,118 @@ async function showStop(
 }
 
 /**
- * Start the pause bar's Pick a locator or Record here from outside the page, at a stop the bar shows: answered at
- * once, the pick or the recording then running in the test's window as from the bar.
+ * Start an intent from outside the page, at a stop the bar shows: answered at once, the pick, the recording, the
+ * check or the region's pick then running in the test's window as from the bar.
  */
 function intentAt(intents: BarIntents, what: RunIntent, canRecord: boolean): IntentAnswer {
-  if (what === 'record' && !canRecord) {
+  if ((what === 'record' || what === 'assert') && !canRecord) {
     return {
       ok: false,
-      message: 'Record here needs the editor that started the run: this run names no record channel.',
+      message: `${RUN_INTENT_NAMES[what]} needs the editor that started the run: this run names no record channel.`,
     };
   }
   if (!intents.offer(what)) {
-    return { ok: false, message: `${RUN_INTENT_NAMES[what]} waits: a pick or a recording runs in the test's window.` };
+    return {
+      ok: false,
+      message: `${RUN_INTENT_NAMES[what]} waits: a pick, a check or a recording runs in the test's window.`,
+    };
   }
-  return {
-    ok: true,
-    message:
-      what === 'pick'
-        ? "Pick an element in the test's window: the locator goes to the editor."
-        : "Recording in the test's window: the editor writes the steps above the stopped line.",
+  const started: Record<RunIntent, string> = {
+    pick: "Pick an element in the test's window: the locator goes to the editor.",
+    record: "Recording in the test's window: the editor writes the steps above the stopped line.",
+    assert: "Check an element in the test's window: the editor writes the check above the stopped line.",
+    'assert-region':
+      "Pick the region in the test's window: the editor writes its ARIA snapshot above the stopped line.",
   };
+  return { ok: true, message: started[what] };
+}
+
+/**
+ * **Assert** at a stop: the page handed to the editor's recorder in its `check` mode, which opens the check panel's
+ * Check an element alone; the editor service writes the check above the stopped line. Resolves once the check ended.
+ */
+async function checkAt(
+  page: Page,
+  testInfo: TestInfo,
+  location: string,
+  reason: 'breakpoint' | 'pause',
+  stop: number,
+): Promise<void> {
+  const ref = process.env[PIWI_ORIGIN_ENV.ref] ?? '';
+  console.log(`[piwi] Checking an element at ${callSiteLine(location)}: the editor writes the check.`);
+  const why = await recordFromHere({
+    page,
+    testInfo,
+    location,
+    reason,
+    mode: 'check',
+    stop: { ref, worker: testInfo.workerIndex, stop },
+  });
+  console.log(why ? `[piwi] Nothing was checked: ${why}` : '[piwi] The check ended: the test is paused again.');
+}
+
+/**
+ * **Assert a region** at a stop: the region picked with the bar's picker, its ARIA snapshot read through the locator
+ * the person confirmed (`locator.ariaSnapshot()`, inside the bar's internal call), sent to the editor, which writes
+ * `toMatchAriaSnapshot` above the stopped line. A region the locator does not find alone, or a snapshot too long, is
+ * said to the editor instead.
+ */
+async function regionAt(page: Page, location: string, stop: number): Promise<void> {
+  const picked = await pickLocator(page, { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG }, null).catch(() => null);
+  if (!picked) return;
+  const source = picked.picked.locator;
+  const say = (message: string) => {
+    console.log(`[piwi] ${message}`);
+    tellHub({ type: 'notice', message });
+  };
+  const region = locatorOn(page, source);
+  if (!region) return say(`The region's locator, ${source}, is not one Piwi can read.`);
+  const count = await region.count().catch(() => 0);
+  if (count !== 1) return say(`${source} finds ${count} elements: pick a region it finds alone.`);
+  const snapshot = await region.ariaSnapshot({ timeout: 5000 }).catch(() => null);
+  if (!snapshot?.trim()) return say(`The ARIA snapshot of ${source} could not be read.`);
+  if (snapshot.length > MAX_REGION_SNAPSHOT) {
+    return say(
+      `The ARIA snapshot of ${source} is longer than ${MAX_REGION_SNAPSHOT} characters: pick a smaller region.`,
+    );
+  }
+  console.log(`[piwi] Region picked at ${callSiteLine(location)}: ${source}, its ARIA snapshot sent to the editor.`);
+  tellHub({ type: 'region', stop, locator: source, snapshot });
+}
+
+/**
+ * A failure in an interactive run (the worker's run connection open, a test that can stop): the failing page is held
+ * before its context closes, as a stop at the failing line with the reason `failure`, the test timeout lifted, after
+ * the failure's evidence was read. The editor and the bar answer it as any stop, with Pick (which replaces the
+ * failing locator), Record (the missing steps, above the failing line) and the code actions; any answer lets the test
+ * end as it failed. Without a surface to answer it, the editor lets it go at once. Once per attempt, never for an
+ * expected failure. With `closing`, only for a page that closes, or one in a context that closes.
+ */
+async function holdFailure(sink: CaptureSink, closing?: { page?: Page; context?: BrowserContext }): Promise<void> {
+  const testInfo = sink.testInfo;
+  if (sink.failureHeld || !sink.pause || !testInfo || !runChannelOpen()) return;
+  const { status, expectedStatus } = testInfo;
+  if ((status !== 'failed' && status !== 'timedOut') || status === expectedStatus) return;
+  const page = sink.lastActivePage;
+  const context = page ? pageContext(page) : null;
+  if (!page || !context || isPageClosed(page)) return;
+  if (closing && closing.page !== page && (!closing.context || context !== closing.context)) return;
+  sink.failureHeld = true;
+  const failed = sink.failedLocators[sink.failedLocators.length - 1] ?? deriveFailedLocator(testInfo);
+  const error = testInfo.errors[0] ?? testInfo.error;
+  // The runner names the failing line of the test's code (feature-checked: the public type leaves it out).
+  const at = (error as { location?: { file: string; line: number; column: number } } | undefined)?.location;
+  const location =
+    (at?.file && at.line ? stopCallSite(at) : null) ??
+    failed?.location ??
+    stopCallSite({ file: testInfo.file, line: testInfo.line, column: testInfo.column });
+  if (!location) return;
+  const said =
+    stripAnsi(error?.message ?? '')
+      .split('\n')
+      .find((line) => line.trim()) ?? status;
+  testInfo.setTimeout(0);
+  await showStop(sink, context, `Failed: ${said.trim().slice(0, 300)}`, location, 'failure', { failed });
 }
 
 /** Settles once `signal` aborts. */
@@ -1900,6 +2041,7 @@ function instrumentPage(page: Page): void {
       if (sink) {
         await endShownStops(sink, { page });
         await stashPageState(sink, { page });
+        await holdFailure(sink, { page });
         await maybeOpenPicker(sink, { page });
         await stopSinkCodeReach(sink, { page });
       }
@@ -2041,6 +2183,8 @@ function instrumentPage(page: Page): void {
     const response = sink.openResponses.get(request) ?? null;
     sink.openResponses.delete(request);
     recordRequest(sink, request, failed ? 'failed' : 'finished', response);
+    // An interactive run keeps the text bodies of its fetch and XHR answers, for Mock a request at a stop.
+    if (!failed) void keepResponse(request, response);
   };
   page.on('requestfinished', (request: Request) => onRequestEnd(request, false));
   page.on('requestfailed', (request: Request) => onRequestEnd(request, true));
@@ -2259,6 +2403,7 @@ function instrumentContext(context: BrowserContext): void {
       if (sink) {
         await endShownStops(sink, { context });
         await stashPageState(sink, { context });
+        await holdFailure(sink, { context });
         await maybeOpenPicker(sink, { context });
         await stopSinkCodeReach(sink, { context });
       }
@@ -2400,9 +2545,13 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
   const pageReadable = page !== null && !isPageClosed(page);
 
   // A page the test left open (e.g. a raw browser.newPage) never passes
-  // through the close wrappers — offer the picker here instead, before the
-  // snapshots are attached (a confirmed pick is folded into them).
-  if (pageReadable) await maybeOpenPicker(sink);
+  // through the close wrappers — hold its failure and offer the picker here
+  // instead, before the snapshots are attached (a confirmed pick is folded
+  // into them).
+  if (pageReadable) {
+    await holdFailure(sink);
+    await maybeOpenPicker(sink);
+  }
 
   // The stops the pause bar showed: the reporter takes the time they held out of the steps' timings.
   if (sink.stops.length > 0) {
@@ -2830,6 +2979,8 @@ export const piwiFixtures: Fixtures<
       }
       pauseNextTest = false;
       if (channel) tellHub(testBegin(testInfo, cannotPause));
+      // While the run connection is open, the test's fetch and XHR answers are kept for Mock a request.
+      if (channel && sink.pause) startKeeping();
       if (isFlakeMode()) {
         const plan = loadFlakePlan();
         const role = flakeRoleForTest(plan, {
@@ -2900,6 +3051,7 @@ export const piwiFixtures: Fixtures<
           await flushSink(sink, testInfo);
         } finally {
           sink.markFlushed();
+          stopKeeping();
           if (runChannelOpen()) tellHub(testEnd(sink, testInfo));
         }
         // Last: the test-scoped fixtures have torn down, so what is still open

@@ -35,6 +35,11 @@ export interface IdeRecorderSettings {
   file: string | null;
   /** The project's `testIdAttribute`; null for Playwright's default, `data-testid`. */
   testIdAttribute: string | null;
+  /**
+   * The recorder records nothing but one check: it opens the check panel's **Check an element** at once, adds the
+   * check the person makes as an `assert` event, and stops (a hand-off in its `check` mode). Absent for a recording.
+   */
+  check?: boolean;
 }
 
 /** A call from the page to the launcher. */
@@ -84,11 +89,25 @@ export function parseRecordChannel(value: string | null | undefined): RecordChan
 /** Why a test hands its page over: a breakpoint's pause bar, or `page.pause()`. */
 export type HandoffReason = 'breakpoint' | 'pause';
 
+/**
+ * What a hand-off is for: a recording the editor is asked to take (`record`), or one check made with the check panel,
+ * which the editor service writes itself (`check`).
+ */
+export type HandoffMode = 'record' | 'check';
+
+/** The stop of a worker's run connection a hand-off was started at: the run's ref, the worker and its stop's number. */
+export interface HandoffStop {
+  ref: string;
+  worker: number;
+  stop: number;
+}
+
 /** What the test's worker sends the editor service. */
 export type HandoffToEditor =
   /**
    * Record from here: the line (1-based) of `file` (absolute) the test is paused before, why, and what the recording
-   * reads from the test's project.
+   * reads from the test's project. A `check` (`mode`) names the stop of the worker's run connection it was started at
+   * (`stop`); an older service reads it as a recording.
    */
   | {
       type: 'attach';
@@ -98,6 +117,8 @@ export type HandoffToEditor =
       reason: HandoffReason;
       testIdAttribute: string | null;
       baseURL: string | null;
+      mode?: HandoffMode;
+      stop?: HandoffStop | null;
     }
   /** The recorder's IDE bundle is loaded into the page. */
   | { type: 'loaded' }
@@ -125,6 +146,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isWhole(value: unknown, min: number): boolean {
+  return typeof value === 'number' && Number.isInteger(value) && value >= min;
+}
+
 /** A line the test's worker sent, checked field by field; null when it is not one. */
 export function parseHandoffToEditor(line: string): HandoffToEditor | null {
   let value: unknown;
@@ -141,7 +166,7 @@ export function parseHandoffToEditor(line: string): HandoffToEditor | null {
       if (typeof at !== 'number' || !Number.isInteger(at) || at < 1) return null;
       if (reason !== 'breakpoint' && reason !== 'pause') return null;
       const text = (v: unknown) => (typeof v === 'string' && v ? v : null);
-      return {
+      const attach: HandoffToEditor = {
         type: 'attach',
         token,
         file,
@@ -150,6 +175,17 @@ export function parseHandoffToEditor(line: string): HandoffToEditor | null {
         testIdAttribute: text(testIdAttribute),
         baseURL: text(baseURL),
       };
+      if (value.mode !== 'check') return attach;
+      const stop = isObject(value.stop) ? value.stop : null;
+      const named =
+        stop &&
+        typeof stop.ref === 'string' &&
+        /^[\w-]{1,64}$/.test(stop.ref) &&
+        isWhole(stop.worker, 0) &&
+        isWhole(stop.stop, 1)
+          ? { ref: stop.ref, worker: stop.worker as number, stop: stop.stop as number }
+          : null;
+      return { ...attach, mode: 'check', stop: named };
     }
     case 'loaded':
     case 'closed':

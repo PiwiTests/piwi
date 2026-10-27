@@ -40,14 +40,29 @@ per-directory responsibilities.
    projects depending on its own): it says
    which test it runs and where it stops, takes the editor's Pause, Step, Resume, Finish, Run to a line and breakpoints
    (in place of `PIWI_PAUSE_AT`) through the same stop policy, and answers a request for an image of the stopped page
-   with a JPEG screenshot taken through an internal call. Its `run-attach` lists the intents it takes (`takes: ['pick',
-   'record']`): at a stop the pause bar shows, a `request` naming that stop starts the bar's own **Pick a locator** or
-   **Record here** (`BarIntents` in `pause-at.ts`, which the bar's loop races against its own buttons: the same
-   picker, the pick posted to `PIWI_EDITOR_SEND`, the same hand-off over `PIWI_RECORD_CHANNEL`), the test's window
-   brought to the front through an internal call, and is answered at once with whether it started: refused at a stop
-   that ended, one no bar shows, without a record channel for Record here, and while a pick or a recording runs. While it is open a headless run stops too, held until the
-   editor answers; a headed stop shows the bar as well, and the first answer wins. A stop no bar shows goes on when the
-   connection closes, and one stop shows at a time in a worker.
+   with a JPEG screenshot taken through an internal call. Its `run-attach` lists what it takes (`takes`: the intents
+   `pick`, `record`, `assert`, `assert-region` and the queries `requests`, `mock`, `locator`): at a stop the pause bar
+   shows, a `request` naming that stop starts the bar's own **Pick a locator** or **Record here** (`BarIntents` in
+   `pause-at.ts`, which the bar's loop races against its own buttons: the same picker, the pick posted to
+   `PIWI_EDITOR_SEND`, the same hand-off over `PIWI_RECORD_CHANNEL`), **Assert** (the same hand-off in its `check`
+   mode, naming the stop: the editor's recorder opens the check panel's Check an element alone, and the editor service
+   writes the check) or **Assert a region** (the bar's picker, then the confirmed locator's `ariaSnapshot()`, sent as
+   `region`), the test's window brought to the front through an internal call, and is answered at once with whether it
+   started: refused at a stop that ended, one no bar shows, without a record channel for Record here and Assert, and
+   while a pick, a check or a recording runs. At any stop, headless included, `requests` lists the responses the test
+   kept and `mock` hands over one of them with its body (`kept-responses.ts`: while the run connection is open, the
+   text bodies of the fetch and XHR answers of the test's pages since it began, the latest 50, 256 KB each at most,
+   read through an internal call once each request finished, in the worker's memory alone, never in an attachment, and
+   dropped as the test ends), and `locator` counts a chain (`chain-locator.ts`, built through the chain grammar's
+   calls alone) on the stopped page and, where the bar shows, outlines its matches with Playwright's highlight, taken
+   down before the stop ends. While it is open a headless run stops too, held until the editor answers; a headed stop
+   shows the bar as well, and the first answer wins. A stop no bar shows goes on when the connection closes, and one
+   stop shows at a time in a worker. A test that fails while the connection is open (`holdFailure` in
+   `capture-fixtures.ts`: not an expected failure, never under CI nor Playwright's own debugger) holds its page as
+   its context closes, after its evidence was read, the test timeout lifted: a stop with the reason `failure` at the
+   failing line, the bar saying `Failed at …` with Resume, Pick a locator (which replaces the failing locator, and
+   is folded into its snapshot) and Record here; any answer lets the test end as it failed. Without a run connection
+   nothing of it runs.
 4. **The desktop discovery file** — `~/.piwi/desktop.json` and its `{ url, token }` shape
    (`internal/config/desktop.ts`). The desktop shell writes it (`apps/desktop/src-tauri/src/lib.rs`) and this package reads
    it, on independent release cycles, so path and shape changes must land in both.

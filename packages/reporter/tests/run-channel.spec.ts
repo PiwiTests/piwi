@@ -15,6 +15,21 @@ import {
   type RunControl,
   type StopToHold,
 } from '../src/internal/capture/run-channel.js';
+import { keepResponse, startKeeping, stopKeeping } from '../src/internal/capture/kept-responses.js';
+
+/** A finished request of the page, as Playwright hands it. */
+function fakeRequest(resourceType: string, method: string, url: string) {
+  return { resourceType: () => resourceType, method: () => method, url: () => url } as never;
+}
+
+/** Its response, with a body. */
+function fakeResponse(status: number, body: string | Buffer, headers: Record<string, string> = {}) {
+  return {
+    status: () => status,
+    headers: () => ({ 'content-type': 'application/json; charset=utf-8', ...headers }),
+    body: async () => (Buffer.isBuffer(body) ? body : Buffer.from(body)),
+  } as never;
+}
 
 const TOKEN = 'run-token-0123456789abcdef';
 const WORKER = { workerIndex: 2, parallelIndex: 1, config: { version: '1.64.1' } } as never;
@@ -135,7 +150,7 @@ describe('the worker’s run connection', () => {
         pid: process.pid,
         playwright: '1.64.1',
         reporter: expect.any(String),
-        takes: ['pick', 'record'],
+        takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'],
       });
       const answers: string[] = [];
       const held = holdStop(STOP, (answer) => void answers.push(answer));
@@ -205,6 +220,74 @@ describe('the worker’s run connection', () => {
         },
       });
     } finally {
+      await hub.close();
+    }
+  });
+
+  it('lists the responses the test kept and hands over the one to mock, at the stop the editor names', async () => {
+    const hub = await startHub();
+    try {
+      expect(await openRunChannel(WORKER, handlers().control, hub.env)).toBe(true);
+      startKeeping(Date.now() - 1000);
+      await keepResponse(fakeRequest('fetch', 'POST', 'https://shop.test/api/cart'), fakeResponse(201, '{"id":7}'));
+      const held = holdStop(STOP, () => {});
+      const { stop } = (await until(() => hub.heard.find((m) => m.type === 'stopped'))) as { stop: number };
+      const answers = () => hub.heard.filter((m) => m.type === 'answer');
+      hub.send({ type: 'request', request: 1, what: 'requests', stop });
+      hub.send({ type: 'request', request: 2, what: 'mock', stop, id: 1 });
+      hub.send({ type: 'request', request: 3, what: 'mock', stop, id: 9 });
+      hub.send({ type: 'request', request: 4, what: 'requests', stop: stop + 1 });
+      hub.send({ type: 'request', request: 5, what: 'locator', stop, locator: "getByText('Pay')" });
+      await until(() => (answers().length === 5 ? true : undefined));
+      const byRequest = (n: number) => answers().find((a) => a.request === n);
+      expect(byRequest(1)).toEqual({
+        type: 'answer',
+        request: 1,
+        what: 'requests',
+        value: {
+          ok: true,
+          message: 'The test kept 1 response.',
+          requests: [
+            {
+              id: 1,
+              method: 'POST',
+              url: 'https://shop.test/api/cart',
+              status: 201,
+              type: 'application/json',
+              size: 8,
+              time: expect.any(Number),
+            },
+          ],
+        },
+      });
+      expect(byRequest(2)).toEqual({
+        type: 'answer',
+        request: 2,
+        what: 'mock',
+        value: {
+          ok: true,
+          message: 'POST https://shop.test/api/cart',
+          response: {
+            method: 'POST',
+            url: 'https://shop.test/api/cart',
+            status: 201,
+            type: 'application/json',
+            body: '{"id":7}',
+          },
+        },
+      });
+      expect(byRequest(3)).toMatchObject({ value: { ok: false, response: null } });
+      expect(byRequest(4)).toMatchObject({ value: { ok: false, message: 'The test went on.', requests: [] } });
+      // A stop without a page counts nothing.
+      expect(byRequest(5)).toEqual({
+        type: 'answer',
+        request: 5,
+        what: 'locator',
+        value: { ok: false, message: 'This stop has no page to count on.', count: null },
+      });
+      await held.release();
+    } finally {
+      stopKeeping();
       await hub.close();
     }
   });

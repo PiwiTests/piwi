@@ -312,7 +312,7 @@ describe('Pick and Record started from outside the page', () => {
       // Neither the run's channel nor the editor's pairing reaches a process a test starts.
       ['a process it starts', 'passed'],
     ]);
-    expect(connections[0]!.heard[0]).toMatchObject({ type: 'run-attach', ref: REF, takes: ['pick', 'record'] });
+    expect(connections[0]!.heard[0]).toMatchObject({ type: 'run-attach', ref: REF, takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'] });
   });
 
   it('picks in the test’s window as the bar’s Pick a locator does, the locator going to the editor', () => {

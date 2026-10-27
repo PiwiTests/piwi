@@ -6370,6 +6370,9 @@
   "runs_stoppedPagePause": {
     "message": "Parado em page.pause()"
   },
+  "runs_stoppedFailure": {
+    "message": "Parado em uma falha"
+  },
   "runs_stoppedOther": {
     "message": "Parado"
   },

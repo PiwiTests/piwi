@@ -448,6 +448,7 @@ const STOP_WORDS = {
   pause: 'runs_stoppedPause',
   'run-to': 'runs_stoppedRunTo',
   'page-pause': 'runs_stoppedPagePause',
+  failure: 'runs_stoppedFailure',
   other: 'runs_stoppedOther',
 } as const;
 

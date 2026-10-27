@@ -3,11 +3,12 @@ import type { Page, WorkerInfo } from '@playwright/test';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import {
   RUN_CHANNEL_ENV,
-  RUN_INTENTS,
   RUN_INTENT_NAMES,
+  RUN_TAKES,
   parseHubToRun,
   type HubToRun,
   type IntentAnswer,
+  type LocatorAnswer,
   type PausedImage,
   type Place,
   type RunIntent,
@@ -16,7 +17,10 @@ import {
   type UnknownMessage,
 } from '@piwitests/core/run-channel';
 import { PIWI_LOCAL_DEBUG_ENV, PIWI_ORIGIN_ENV } from '../config/env.js';
+import { errorMessage } from '../support/errors.js';
 import { getReporterVersion } from '../support/reporter-version.js';
+import { locatorOn } from './chain-locator.js';
+import { keptRequests, keptResponse } from './kept-responses.js';
 import type { PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
 
@@ -24,10 +28,12 @@ import { internalCall } from './quiet-capture.js';
  * The worker's run connection to the editor that started the run: the socket the run's environment names
  * (`PIWI_RUN_CHANNEL`, `@piwitests/core/run-channel`), opened once per worker before its first test and kept until
  * the worker ends. The worker says which test it runs and where it stops; the editor pauses it, answers its stops
- * (Step, Resume, Finish, Run to a line), changes the run's breakpoints, asks for an image of the stopped page, and
- * starts the pause bar's Pick a locator or Record here from outside the page (`takes` in its attach). A test never
- * waits on it but while stopped, and a connection that does not open, or closes, leaves the run as without it: a stop
- * no pause bar can answer then goes on at once.
+ * (Step, Resume, Finish, Run to a line), changes the run's breakpoints, asks for an image of the stopped page, starts
+ * the pause bar's Pick a locator or Record here, the check panel's Check an element or a region's ARIA snapshot from
+ * outside the page, asks for the responses the test kept (`kept-responses.ts`) and the one to mock, and counts a
+ * locator on the stopped page, outlining its matches where the bar shows until the test goes on (`takes` in its
+ * attach). A test never waits on it but while stopped, and a connection that does not open, or closes, leaves the run
+ * as without it: a stop no pause bar can answer then goes on at once.
  */
 
 /** How long a worker waits for its run connection to open before its first test runs without it. */
@@ -35,6 +41,12 @@ const CONNECT_MS = 2000;
 
 /** The pause bar, hidden in an image of the stopped page. */
 const BAR_HIDDEN = '#__piwi-pause-bar { display: none !important; }';
+
+/** How the matches of the locator at the editor's caret are outlined in the stopped page. */
+const OUTLINE_STYLE = 'outline: 2px dashed #a78bfa; outline-offset: 2px; background: rgba(167, 139, 250, 0.15);';
+
+/** Why a request naming a stop that ended is refused. */
+const WENT_ON = 'The test went on.';
 
 /** What the editor asks that the capture fixtures apply to the running test's stops. */
 export interface RunControl {
@@ -75,6 +87,10 @@ let socket: net.Socket | null = null;
 let control: RunControl | null = null;
 let stops = 0;
 let held: HeldStop | null = null;
+/** The outline of a locator's matches in a stopped page, and the stop it belongs to. */
+let outline: { stop: number; remove(): Promise<void> } | null = null;
+/** The count of a locator under way, whose outline the end of its stop waits for to take it down. */
+let counting: Promise<unknown> = Promise.resolve();
 
 /**
  * Open the worker's run connection when the run names a channel and a ref, with `handlers` for what the editor asks.
@@ -133,7 +149,7 @@ export async function openRunChannel(
     pid: process.pid,
     playwright: worker.config.version,
     reporter: getReporterVersion(),
-    takes: [...RUN_INTENTS],
+    takes: [...RUN_TAKES],
   });
   return true;
 }
@@ -188,9 +204,13 @@ export function tellHub(message: RunToHub): void {
 
 /**
  * Hold a stop for the editor: it hears where the test stopped, and its answer reaches `onAnswer`, once, until
- * `release`, which tells it the stop ended, however it did.
+ * `release`, which takes the outline of a locator down and tells it the stop ended, however it did. `stop` is the
+ * worker's number for it, which the editor's requests name.
  */
-export function holdStop(stop: StopToHold, onAnswer: (answer: PauseAnswer) => void): { release(): void } {
+export function holdStop(
+  stop: StopToHold,
+  onAnswer: (answer: PauseAnswer) => void,
+): { stop: number; release(): Promise<void> } {
   const id = ++stops;
   let answered = false;
   const holding: HeldStop = {
@@ -204,7 +224,7 @@ export function holdStop(stop: StopToHold, onAnswer: (answer: PauseAnswer) => vo
     },
     intent: (what) =>
       answered
-        ? { ok: false, message: 'The test went on.' }
+        ? { ok: false, message: WENT_ON }
         : (stop.intent?.(what) ?? {
             ok: false,
             message: `${RUN_INTENT_NAMES[what]} needs the pause bar in the test's window, and this stop shows none: run the test headed.`,
@@ -222,12 +242,54 @@ export function holdStop(stop: StopToHold, onAnswer: (answer: PauseAnswer) => vo
   });
   if (!runChannelOpen() && !stop.bar) holding.answer('resume');
   return {
-    release: () => {
+    stop: id,
+    release: async () => {
       answered = true;
       if (held === holding) held = null;
+      await counting;
+      if (outline?.stop === id) await removeOutline();
       tellHub({ type: 'running', stop: id });
     },
   };
+}
+
+/** Take the outline of a locator's matches down, before the test goes on. */
+async function removeOutline(): Promise<void> {
+  const shown = outline;
+  outline = null;
+  await shown?.remove().catch(() => undefined);
+}
+
+/**
+ * How many elements `source` matches on the stopped page, its matches outlined where the pause bar shows, in place of
+ * the outline before; null takes the outline down. Every call to the page is internal.
+ */
+async function countLocator(holding: HeldStop, source: string | null): Promise<LocatorAnswer> {
+  await removeOutline();
+  if (source === null) return { ok: true, message: 'The outline is gone.', count: null };
+  const page = holding.page;
+  if (!page || page.isClosed()) return { ok: false, message: 'This stop has no page to count on.', count: null };
+  const locator = locatorOn(page, source);
+  if (!locator) return { ok: false, message: `${source} is not a locator Piwi can build.`, count: null };
+  try {
+    const count = await internalCall(page, () => locator.count());
+    if (holding.bar && count > 0 && held === holding) {
+      const shown = (await internalCall(page, () => locator.highlight({ style: OUTLINE_STYLE }))) as unknown;
+      const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
+      outline = {
+        stop: holding.stop,
+        remove: () =>
+          internalCall(page, () => (typeof dispose === 'function' ? dispose.call(shown) : page.hideHighlight())),
+      };
+    }
+    return {
+      ok: true,
+      message: count === 0 ? 'No element matches.' : count === 1 ? '1 element matches.' : `${count} elements match.`,
+      count,
+    };
+  } catch (error) {
+    return { ok: false, message: `The locator could not be counted: ${errorMessage(error)}`, count: null };
+  }
 }
 
 function onMessage(message: HubToRun | UnknownMessage | null): void {
@@ -248,15 +310,46 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
       held.answer('resume');
       return;
     case 'request': {
-      if (message.what !== 'image') {
-        const value =
-          held?.stop === message.stop ? held.intent(message.what) : { ok: false, message: 'The test went on.' };
-        tellHub({ type: 'answer', request: message.request, what: message.what, value });
-        return;
+      const { request } = message;
+      const at = message.what !== 'image' && held?.stop === message.stop ? held : null;
+      switch (message.what) {
+        case 'image':
+          void imageOf(held?.page ?? null).then((value) => tellHub({ type: 'answer', request, what: 'image', value }));
+          return;
+        case 'requests': {
+          const requests = at ? keptRequests() : [];
+          const said = !at
+            ? WENT_ON
+            : requests.length
+              ? `The test kept ${requests.length === 1 ? '1 response' : `${requests.length} responses`}.`
+              : 'The test kept no response yet: Piwi keeps the text answers of its fetch and XHR requests.';
+          tellHub({ type: 'answer', request, what: 'requests', value: { ok: !!at, message: said, requests } });
+          return;
+        }
+        case 'mock': {
+          const response = at ? keptResponse(message.id) : null;
+          const said = !at
+            ? WENT_ON
+            : response
+              ? `${response.method} ${response.url}`
+              : 'The test kept no such response: it keeps the latest 50.';
+          tellHub({ type: 'answer', request, what: 'mock', value: { ok: !!response, message: said, response } });
+          return;
+        }
+        case 'locator': {
+          const counted = at
+            ? countLocator(at, message.locator)
+            : Promise.resolve({ ok: false, message: WENT_ON, count: null });
+          counting = counted.catch(() => undefined);
+          void counted.then((value) => tellHub({ type: 'answer', request, what: 'locator', value }));
+          return;
+        }
+        default: {
+          const value = at ? at.intent(message.what) : { ok: false, message: WENT_ON };
+          tellHub({ type: 'answer', request, what: message.what, value });
+          return;
+        }
       }
-      const page = held?.page ?? null;
-      void imageOf(page).then((value) => tellHub({ type: 'answer', request: message.request, what: 'image', value }));
-      return;
     }
     case 'unknown':
       tellHub({

@@ -61,9 +61,18 @@ Two **external contracts** beyond the npm API:
   each test's begin and end and each stop it shows, and the editor's controls (Pause, Step,
   Resume, Finish, Run to a line, the run's breakpoints) go through the same stop policy as
   `PIWI_PAUSE_AT`. While it is open a headless run stops too, with no bar, until the editor
-  answers or the connection closes; the editor's answer takes a headed stop's bar down. At a
+  answers; the editor's answer takes a headed stop's bar down. At a
   stop the bar shows, the editor can also start the bar's Pick a locator and Record here
-  (an intent, `request` with `what: 'pick' | 'record'`), which the bar takes as its own click.
+  (an intent, `request` with `what: 'pick' | 'record'`), which the bar takes as its own click,
+  Assert (the record hand-off in its `check` mode: the editor's check panel) and Assert a
+  region (the bar's picker, then the region's `ariaSnapshot()`, sent as `region`). At any
+  stop it asks for the responses the test kept (`internal/capture/kept-responses.ts`: while
+  the run connection is open, the text bodies of the test's fetch and XHR answers, the
+  latest 50, 256 KB each, in memory only, dropped as the test ends), the one to mock, and a
+  locator's count on the stopped page (`internal/capture/chain-locator.ts`), its matches
+  outlined while the bar shows. With the connection open, a failing test's page is held
+  as its context closes (`holdFailure`), as a stop with the reason `failure` at the failing
+  line, the bar offering Resume, Pick and Record; the test ends as it failed.
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
   unref'd timer (`internal/collect/process-sampler.ts`).
   With server coverage on (`coverage.server`), the capture fixtures keep the
@@ -204,7 +213,10 @@ src/
                 PIWI_EDITOR_SEND), record-handoff (Record here:
                 the paused page relayed to the editor's recorder, PIWI_RECORD_CHANNEL),
                 run-channel (the worker's run connection to the editor,
-                PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in)
+                PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in),
+                kept-responses (the text bodies an interactive run keeps for
+                Mock a request), chain-locator (a locator chain's source built
+                against a page, for the locator at the editor's caret)
     config/     env (PIWI_* ↔ options, and the probe and flake-lab variables),
                 desktop (the desktop app's discovery file), dotenv (the `.env` reader)
     probe/      probe mode: plan matching, faults, the shared route interception

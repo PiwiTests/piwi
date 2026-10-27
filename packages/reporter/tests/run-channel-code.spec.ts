@@ -1,0 +1,557 @@
+import { execFile } from 'node:child_process';
+import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
+import * as net from 'node:net';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { formatRecordChannel, lineReader, parseHandoffToEditor } from '@piwitests/core/ide-recorder';
+import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
+import { jsonRes, startServer, type FakeServer } from './_helpers.js';
+
+/**
+ * Code from a stop, the worker's part, in real Playwright runs through the built package under a fake editor service:
+ * the text bodies an interactive run keeps and the one handed over to mock, a locator counted and outlined on the
+ * stopped page, a region picked with its ARIA snapshot, a check handed to the editor's check panel, and a failure
+ * held at its line, headed and headless, where Pick replaces the failing locator and Resume lets the test end as it
+ * failed. Under CI, and without a run connection, a failure is not held. Without a display, Chromium runs the headed
+ * project without a window (`--headless=new`); under `xvfb-run -a` it opens one.
+ */
+
+const pkgRoot = path.join(import.meta.dirname, '..');
+const dist = path.join(pkgRoot, 'dist', 'index.js');
+const project = path.join(pkgRoot, 'tests', `.run-code-${process.pid}`);
+const REF = 'ed-5e6f7a8b';
+const TOKEN = 'run-code-token-0123456789ab';
+const SEND_TOKEN = 'send-token-code-0123456789';
+const WINDOWS = process.platform === 'linux' && !!process.env.DISPLAY;
+const MARKER = 'KEPT-BODY-MARKER';
+/** How long the editor waits for the bar to show before it asks. */
+const LOOK_MS = 300;
+
+/**
+ * A page of the app: `/k` fetches its answers one after another, then says so in its title; every page says when the
+ * pause bar shows, and plays a person's part in the element picker, picking the region on `/r` and the button
+ * elsewhere.
+ */
+const PAGE = `<!doctype html><meta charset="utf-8"><title>a</title>
+<section aria-label="Order summary"><h2>Order summary</h2><p>Total 72</p></section>
+<button data-testid="go">Go</button>
+<script>
+const PICK = location.pathname === '/r' ? 'section' : 'button';
+new MutationObserver(() => {
+  if (document.querySelector('x-pw-glass') && !window.__glassSaid) {
+    window.__glassSaid = true;
+    fetch('/glass', { method: 'POST', body: location.pathname });
+  }
+  const bar = document.getElementById('__piwi-pause-bar');
+  if (!bar || bar.dataset.seen) return;
+  bar.dataset.seen = '1';
+  fetch('/bar', { method: 'POST', body: bar.children[0].textContent });
+}).observe(document.documentElement, { childList: true, subtree: true });
+setInterval(() => {
+  if (document.getElementById('__piwi_picker_banner') && window.__piwiPickState === undefined) {
+    window.__piwiPickedElement = document.querySelector(PICK);
+    window.__piwiPickState = 'picked';
+  }
+  if (typeof window.__piwiAnchorCleanup === 'function' && window.__piwiAnchorState === undefined) {
+    window.__piwiAnchorState = 'skipped';
+  }
+  const confirm = [...document.querySelectorAll('button')].some((b) => b.textContent.startsWith('Skip '));
+  if (confirm && window.__piwiPickChoice === undefined) window.__piwiPickChoice = 0;
+}, 100);
+if (location.pathname === '/k') {
+  (async () => {
+    for (const url of ['/api/cart', '/api/big', '/img.png', '/api/text']) await (await fetch(url)).arrayBuffer();
+    await new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/xhr');
+      xhr.onloadend = resolve;
+      xhr.send('{}');
+    });
+    document.title = 'done';
+  })();
+}
+</script>`;
+
+const HEADED_SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
+test('keeps the text bodies', async ({ page }) => {
+  await page.goto('${base}/k');
+  await expect(page).toHaveTitle('done');
+  await page.keyboard.press('Tab'); // bp
+  test.info().annotations.push({ type: 'glass', description: String(await page.evaluate(() => document.querySelectorAll('x-pw-glass').length)) });
+});
+test('keeps nothing of the test before', async ({ page }) => {
+  await page.goto('${base}/a');
+  await page.keyboard.press('Tab'); // bp
+});
+test('asserts a region', async ({ page }) => {
+  await page.goto('${base}/r');
+  await page.keyboard.press('Tab'); // bp
+});
+test('checks an element', async ({ page }) => {
+  await page.goto('${base}/a');
+  await page.keyboard.press('Tab'); // bp
+});
+test('fails headed', async ({ page }) => {
+  await page.goto('${base}/a');
+  await expect(page.getByRole('button', { name: 'Missing' })).toBeVisible({ timeout: 300 }); // fails
+});
+`;
+
+const HEADLESS_SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
+test('fails headless', async ({ page }) => {
+  await page.goto('${base}/k');
+  await expect(page).toHaveTitle('done');
+  await expect(page.getByRole('button', { name: 'Missing' })).toBeVisible({ timeout: 300 }); // fails
+});
+`;
+
+/** Each test's steps, annotations and attachments, as the run's own reporter writes them. */
+const STEPS_REPORTER = `const fs = require('node:fs');
+module.exports = class {
+  constructor(options) { this.file = options.outputFile; this.tests = []; }
+  onTestEnd(test, result) {
+    const step = (s) => ({ title: s.title, steps: s.steps.map(step) });
+    this.tests.push({
+      title: test.title,
+      status: result.status,
+      duration: result.duration,
+      annotations: test.annotations.concat(result.annotations ?? []),
+      attachments: result.attachments.map((a) => ({ name: a.name, body: a.body ? a.body.toString('utf8') : (a.path && fs.existsSync(a.path) ? fs.readFileSync(a.path, 'latin1') : '') })),
+      steps: result.steps.map(step),
+    });
+  }
+  onStdOut(chunk) { process.stdout.write(chunk); }
+  onEnd() { fs.writeFileSync(this.file, JSON.stringify(this.tests)); }
+};
+`;
+
+interface DumpedStep {
+  title: string;
+  steps: DumpedStep[];
+}
+
+interface DumpedTest {
+  title: string;
+  status: string;
+  duration: number;
+  annotations: Array<{ type: string; description?: string }>;
+  attachments: Array<{ name: string; body: string }>;
+  steps: DumpedStep[];
+}
+
+/** A worker's run connection, as the fake editor service holds it. */
+interface Connection {
+  socket: net.Socket;
+  heard: RunToHub[];
+  test: string | null;
+}
+
+type Stopped = Extract<RunToHub, { type: 'stopped' }>;
+
+let server: FakeServer;
+let hub: net.Server;
+let folder = '';
+let socketPath = '';
+const connections: Connection[] = [];
+/** The record channel's hand-offs the editor heard, and the picks posted to its Send to editor endpoint. */
+const handoffs: unknown[] = [];
+const picks: Array<{ body: unknown }> = [];
+/** What the pause bar said each time it showed, and the pages an outline was drawn in. */
+const bars: string[] = [];
+const outlined: string[] = [];
+/** What the worker answered, and what it sent, by test. */
+const heard: Record<string, unknown[]> = {};
+/** The stops each test made, by test. */
+const stops: Record<string, Stopped[]> = {};
+let tests: DumpedTest[] = [];
+let exitCode: number | null = null;
+let output = '';
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function waitFor<T>(read: () => T | undefined, ms = 20_000): Promise<T> {
+  const start = Date.now();
+  for (;;) {
+    const value = read();
+    if (value !== undefined) return value;
+    if (Date.now() - start > ms) throw new Error('timed out');
+    await sleep(20);
+  }
+}
+
+function send(connection: Connection, message: HubToRun): void {
+  connection.socket.write(`${JSON.stringify(message)}\n`);
+}
+
+let requests = 0;
+/** Asks the worker at a stop, and waits for its answer's value. */
+async function ask(connection: Connection, message: Record<string, unknown>): Promise<unknown> {
+  const request = ++requests;
+  send(connection, { type: 'request', request, ...message } as HubToRun);
+  const answer = await waitFor(() => connection.heard.find((m) => m.type === 'answer' && m.request === request));
+  return (answer as { value: unknown }).value;
+}
+
+/** The editor's side of each stop. */
+async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
+  const test = connection.test!;
+  (stops[test] ??= []).push(stop);
+  const said = (heard[test] ??= []);
+  const barsBefore = bars.length;
+  if (stop.bar) await waitFor(() => (bars.length > barsBefore ? true : undefined));
+  await sleep(LOOK_MS);
+  const at = { stop: stop.stop };
+  switch (test) {
+    case 'keeps the text bodies': {
+      const listed = (await ask(connection, { what: 'requests', ...at })) as { requests: Array<{ id: number }> };
+      said.push(listed);
+      said.push(await ask(connection, { what: 'mock', ...at, id: listed.requests[0]?.id ?? 1 }));
+      said.push(await ask(connection, { what: 'mock', ...at, id: 99 }));
+      said.push(await ask(connection, { what: 'locator', ...at, locator: "getByRole('button', { name: 'Go' })" }));
+      said.push(await ask(connection, { what: 'locator', ...at, locator: "getByText('Nowhere')" }));
+      said.push(await ask(connection, { what: 'locator', ...at, locator: 'getByRole(' }));
+      // The outline of the first one, drawn again: the test going on takes it down.
+      said.push(await ask(connection, { what: 'locator', ...at, locator: "getByTestId('go')" }));
+      break;
+    }
+    case 'keeps nothing of the test before':
+      said.push(await ask(connection, { what: 'requests', ...at }));
+      break;
+    case 'asserts a region':
+      said.push(await ask(connection, { what: 'assert-region', ...at }));
+      said.push(await waitFor(() => connection.heard.find((m) => m.type === 'region')));
+      await waitFor(() => (bars.length > barsBefore + 1 ? true : undefined));
+      break;
+    case 'checks an element':
+      said.push(await ask(connection, { what: 'assert', ...at }));
+      await waitFor(() => (handoffs.length ? true : undefined));
+      await waitFor(() => (bars.length > barsBefore + 1 ? true : undefined));
+      break;
+    case 'fails headed':
+      said.push(await ask(connection, { what: 'pick', ...at }));
+      await waitFor(() => (picks.length ? true : undefined));
+      await waitFor(() => (bars.length > barsBefore + 1 ? true : undefined));
+      break;
+    case 'fails headless':
+      said.push(await ask(connection, { what: 'assert', ...at }));
+      said.push(await ask(connection, { what: 'requests', ...at }));
+      said.push(await ask(connection, { what: 'locator', ...at, locator: "getByTestId('go')" }));
+      break;
+  }
+  send(connection, { type: 'control', action: 'resume', stop: stop.stop });
+}
+
+function write(file: string, text: string): void {
+  fs.mkdirSync(path.dirname(path.join(project, file)), { recursive: true });
+  fs.writeFileSync(path.join(project, file), text);
+}
+
+/** Runs the project's Playwright with `env`, and reads what its reporter wrote. */
+function run(env: NodeJS.ProcessEnv, args: string[] = []): Promise<{ code: number; output: string; tests: DumpedTest[] }> {
+  const results = path.join(project, 'results.json');
+  fs.rmSync(results, { force: true });
+  return new Promise((resolve) => {
+    execFile(
+      process.execPath,
+      [createRequire(import.meta.url).resolve('@playwright/test/cli'), 'test', ...args],
+      { cwd: project, env, timeout: 120_000 },
+      (error, stdout, stderr) => {
+        resolve({
+          code: error ? ((error as { code?: number }).code ?? 1) : 0,
+          output: `${stdout}\n${stderr}`,
+          tests: fs.existsSync(results) ? JSON.parse(fs.readFileSync(results, 'utf8')) : [],
+        });
+      },
+    );
+  });
+}
+
+let baseEnv: NodeJS.ProcessEnv = {};
+const channel = () => formatRecordChannel({ path: socketPath, token: TOKEN });
+
+beforeAll(async () => {
+  if (!fs.existsSync(dist)) throw new Error(`${dist} is missing: run \`npm run reporter:build\` before this spec`);
+  folder = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-run-code-'));
+  socketPath = path.join(folder, 'channel.sock');
+  hub = net.createServer((socket) => {
+    const connection: Connection = { socket, heard: [], test: null };
+    socket.setEncoding('utf8');
+    socket.on('error', () => socket.destroy());
+    let first = true;
+    socket.on(
+      'data',
+      lineReader(
+        (line) => {
+          if (first) {
+            first = false;
+            const attach = parseHandoffToEditor(line);
+            if (attach?.type === 'attach') {
+              handoffs.push(attach);
+              socket.end(`${JSON.stringify({ type: 'refused', message: 'this editor takes no check.' })}\n`);
+              return;
+            }
+            connections.push(connection);
+          }
+          const message = parseRunToHub(line);
+          if (!message) return;
+          connection.heard.push(message);
+          if (message.type === 'test-begin') connection.test = message.title[message.title.length - 1]!;
+          if (message.type === 'stopped') void onStopped(connection, message);
+        },
+        () => socket.destroy(),
+      ),
+    );
+  });
+  await new Promise<void>((resolve) => hub.listen(socketPath, resolve));
+
+  server = await startServer((req, res) => {
+    const url = new URL(req.url, 'http://x');
+    switch (url.pathname) {
+      case '/bar':
+        bars.push(req.body);
+        return res.end();
+      case '/glass':
+        outlined.push(req.body);
+        return res.end();
+      case '/piwi/send':
+        picks.push({ body: JSON.parse(req.body) });
+        return jsonRes(res, 200, { inserted: true, file: null });
+      case '/api/cart':
+        return jsonRes(res, 200, { marker: MARKER, items: [] });
+      case '/api/big':
+        return jsonRes(res, 200, { big: 'x'.repeat(300 * 1024) });
+      case '/img.png':
+        res.writeHead(200, { 'content-type': 'image/png' });
+        return res.end(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+      case '/api/text':
+        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+        return res.end('hello');
+      case '/api/xhr':
+        return jsonRes(res, 201, { saved: true });
+    }
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end(PAGE);
+  });
+
+  write('tests/headed.spec.cjs', HEADED_SPEC(server.url));
+  write('tests/headless.spec.cjs', HEADLESS_SPEC(server.url));
+  write(
+    'fixture.cjs',
+    `const { test: base, expect } = require('@playwright/test');
+const { extendPiwiFixtures } = require(${JSON.stringify(dist)});
+exports.test = extendPiwiFixtures(base);
+exports.expect = expect;
+`,
+  );
+  write('steps-reporter.cjs', STEPS_REPORTER);
+  write(
+    'playwright.config.cjs',
+    `const { defineConfig } = require('@playwright/test');
+module.exports = defineConfig({
+  testDir: './tests',
+  outputDir: './test-results',
+  timeout: 5000,
+  workers: 1,
+  reporter: [['./steps-reporter.cjs', { outputFile: 'results.json' }]],
+  projects: [
+    {
+      name: 'headed',
+      testMatch: 'headed.spec.cjs',
+      use: { headless: false, launchOptions: { args: ${WINDOWS ? '[]' : "['--headless=new']"} } },
+    },
+    { name: 'headless', testMatch: 'headless.spec.cjs', use: { headless: true } },
+  ],
+});
+`,
+  );
+  const breakpoints = HEADED_SPEC(server.url)
+    .split('\n')
+    .flatMap((line, i) => (line.endsWith('// bp') ? [`tests/headed.spec.cjs:${i + 1}`] : []))
+    .join(';');
+  baseEnv = { ...process.env, PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: REF };
+  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL']) delete baseEnv[name];
+  const ran = await run({
+    ...baseEnv,
+    PIWI_RUN_CHANNEL: channel(),
+    PIWI_RECORD_CHANNEL: channel(),
+    PIWI_EDITOR_SEND: `${server.url}/piwi/send#${SEND_TOKEN}`,
+    PIWI_PAUSE_AT: breakpoints,
+  });
+  exitCode = ran.code;
+  output = ran.output;
+  tests = ran.tests;
+}, 180_000);
+
+afterAll(async () => {
+  fs.rmSync(project, { recursive: true, force: true });
+  await new Promise<void>((resolve) => hub?.close(() => resolve()));
+  for (const connection of connections) connection.socket.destroy();
+  if (folder) fs.rmSync(folder, { recursive: true, force: true });
+  await server?.close();
+});
+
+function allSteps(steps: DumpedStep[]): DumpedStep[] {
+  return steps.flatMap((s) => [s, ...allSteps(s.steps)]);
+}
+
+const lineOf = (spec: string, marker: string) => spec.split('\n').findIndex((line) => line.endsWith(marker)) + 1;
+
+describe('code from a stop, the worker’s part', () => {
+  it('lets the tests end as they would, the failures as failures, and says what the worker takes', () => {
+    expect(exitCode, output).toBe(1);
+    expect(tests.map((t) => [t.title, t.status])).toEqual([
+      ['keeps the text bodies', 'passed'],
+      ['keeps nothing of the test before', 'passed'],
+      ['asserts a region', 'passed'],
+      ['checks an element', 'passed'],
+      ['fails headed', 'failed'],
+      ['fails headless', 'failed'],
+    ]);
+    expect(connections[0]!.heard[0]).toMatchObject({
+      type: 'run-attach',
+      takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'],
+    });
+  });
+
+  it('keeps the text bodies of the fetch and XHR answers alone, 256 KB each at most, and hands over the one asked', () => {
+    const [listed, mock, gone] = heard['keeps the text bodies']!;
+    expect(listed).toEqual({
+      ok: true,
+      message: 'The test kept 3 responses.',
+      requests: [
+        { id: 1, method: 'GET', url: `${server.url}/api/cart`, status: 200, type: 'application/json', size: expect.any(Number), time: expect.any(Number) },
+        { id: 2, method: 'GET', url: `${server.url}/api/text`, status: 200, type: 'text/plain', size: 5, time: expect.any(Number) },
+        { id: 3, method: 'POST', url: `${server.url}/api/xhr`, status: 201, type: 'application/json', size: expect.any(Number), time: expect.any(Number) },
+      ],
+    });
+    expect(mock).toEqual({
+      ok: true,
+      message: `GET ${server.url}/api/cart`,
+      response: {
+        method: 'GET',
+        url: `${server.url}/api/cart`,
+        status: 200,
+        type: 'application/json',
+        body: JSON.stringify({ marker: MARKER, items: [] }),
+      },
+    });
+    expect(gone).toEqual({ ok: false, message: 'The test kept no such response: it keeps the latest 50.', response: null });
+    // A new test keeps its own.
+    expect(heard['keeps nothing of the test before']).toEqual([
+      {
+        ok: true,
+        message: 'The test kept no response yet: Piwi keeps the text answers of its fetch and XHR requests.',
+        requests: [],
+      },
+    ]);
+  });
+
+  it('never puts a kept body in an attachment', () => {
+    for (const result of tests) {
+      for (const attachment of result.attachments) expect(attachment.body, attachment.name).not.toContain(MARKER);
+    }
+  });
+
+  it('counts a locator on the stopped page, outlines its matches and takes the outline down as the test goes on', () => {
+    const [, , , one, none, broken, again] = heard['keeps the text bodies']!;
+    expect(one).toEqual({ ok: true, message: '1 element matches.', count: 1 });
+    expect(none).toEqual({ ok: true, message: 'No element matches.', count: 0 });
+    expect(broken).toEqual({ ok: false, message: 'getByRole( is not a locator Piwi can build.', count: null });
+    expect(again).toEqual({ ok: true, message: '1 element matches.', count: 1 });
+    // Drawn in the page while it stood stopped, gone once the test went on.
+    expect(outlined).toContain('/k');
+    const glass = tests[0]!.annotations.find((a) => a.type === 'glass');
+    expect(glass?.description).toBe('0');
+  });
+
+  it('picks a region in the test’s window and sends its ARIA snapshot', () => {
+    const [started, region] = heard['asserts a region']!;
+    expect(started).toEqual({
+      ok: true,
+      message: "Pick the region in the test's window: the editor writes its ARIA snapshot above the stopped line.",
+    });
+    expect(region).toEqual({
+      type: 'region',
+      stop: stops['asserts a region']![0]!.stop,
+      locator: "getByRole('region', { name: 'Order summary' })",
+      snapshot: expect.stringContaining('- heading "Order summary" [level=2]'),
+    });
+  });
+
+  it('hands the page to the editor’s check panel through a hand-off in its check mode', () => {
+    expect(heard['checks an element']).toEqual([
+      { ok: true, message: "Check an element in the test's window: the editor writes the check above the stopped line." },
+    ]);
+    expect(handoffs).toEqual([
+      expect.objectContaining({
+        type: 'attach',
+        token: TOKEN,
+        line: HEADED_SPEC(server.url).split('\n').findIndex((l) => l.includes("'checks an element'")) + 3,
+        reason: 'breakpoint',
+        mode: 'check',
+        stop: { ref: REF, worker: expect.any(Number), stop: stops['checks an element']![0]!.stop },
+      }),
+    ]);
+    expect(output).toContain('[piwi] Nothing was checked: this editor takes no check.');
+  });
+
+  it('holds a failure at its line, the bar saying so, where Pick replaces the failing locator', () => {
+    const line = lineOf(HEADED_SPEC(server.url), '// fails');
+    expect(stops['fails headed']).toEqual([
+      {
+        type: 'stopped',
+        stop: expect.any(Number),
+        reason: 'failure',
+        title: expect.stringMatching(/^Failed: .*toBeVisible/),
+        place: { file: 'tests/headed.spec.cjs', line, column: expect.any(Number) },
+        locator: "getByRole('button', { name: 'Missing' })",
+        bar: true,
+      },
+    ]);
+    expect(bars).toContain(`Failed at headed.spec.cjs:${line}`);
+    expect(heard['fails headed']).toEqual([
+      { ok: true, message: "Pick an element in the test's window: the locator goes to the editor." },
+    ]);
+    expect(picks).toEqual([
+      { body: { kind: 'locator', text: "getByTestId('go')", at: { file: 'tests/headed.spec.cjs', line } } },
+    ]);
+  });
+
+  it('holds a headless failure for the editor, which can count and list there but not check', () => {
+    const line = lineOf(HEADLESS_SPEC(server.url), '// fails');
+    expect(stops['fails headless']).toEqual([
+      expect.objectContaining({ reason: 'failure', place: expect.objectContaining({ line }), bar: false }),
+    ]);
+    const [check, listed, counted] = heard['fails headless']!;
+    expect(check).toEqual({
+      ok: false,
+      message: "Assert needs the pause bar in the test's window, and this stop shows none: run the test headed.",
+    });
+    expect(listed).toMatchObject({ ok: true, message: 'The test kept 3 responses.' });
+    expect(counted).toEqual({ ok: true, message: '1 element matches.', count: 1 });
+  });
+
+  it('shows none of its own calls among the test’s steps', () => {
+    for (const result of tests) {
+      const titles = allSteps(result.steps).map((s) => s.title);
+      expect(titles, result.title).not.toContainEqual(
+        expect.stringMatching(/Bring to front|Pause on next|Wait for function|Screenshot|Highlight|Aria snapshot|Count|Piwi capture|Response body/i),
+      );
+    }
+  });
+
+  it('holds no failure under CI, nor without a run connection', async () => {
+    const before = connections.length;
+    const ci = await run({ ...baseEnv, CI: '1', PIWI_RUN_CHANNEL: channel() }, ['--project=headless']);
+    expect(ci.tests.map((t) => [t.title, t.status])).toEqual([['fails headless', 'failed']]);
+    const ciConnection = connections[before]!;
+    expect(ciConnection.heard).toContainEqual(expect.objectContaining({ type: 'test-begin', cannotPause: expect.stringContaining('CI') }));
+    expect(ciConnection.heard.filter((m) => m.type === 'stopped')).toEqual([]);
+
+    const plain = await run(baseEnv, ['--project=headless']);
+    expect(plain.tests.map((t) => [t.title, t.status])).toEqual([['fails headless', 'failed']]);
+    expect(connections.length).toBe(before + 1);
+  }, 120_000);
+});
