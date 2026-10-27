@@ -1,5 +1,8 @@
 # Resource leaks and waste
 
+- Status: accepted
+- Date: 2026-10-03
+
 A plan to find the browsers, contexts and pages a Playwright suite keeps open for nothing, measure what they and the
 rest of a run cost in CPU and memory, and hand back the line to change. Playwright closes what its own fixtures create
 at the end of each test. Everything else a test, a hook or a fixture opens stays alive until its worker exits, and a
@@ -11,134 +14,17 @@ every `close`, and their auto fixture tears down after Playwright's own `page` a
 position into a **ledger** of every object's birth, use and death, a **measured cost** per test and per run, and
 **findings** that name a call site, a fixture or a config line, each with its fix.
 
-**Status.** Proposed 2026-10-01. A prototype of the ledger and of both samplers ran on Playwright 1.63 against a
-deliberately leaky suite and a page closer to an application, and every metric source in Part 2 was read and timed on
-the same machine; the results are in [What we measured](#what-we-measured). **PR 1 built 2026-10-01**: the ledger in
-the capture fixtures and the dogfood mirror, the `piwi-resources` census, the verdicts and the end-of-run summary in the
-reporter (also written to the GitHub job summary), the fixture-free tier, `captureResources` and `leakCheck`, a
-Resource leaks docs page, and an integration suite where each leaky test must produce exactly its finding and the clean
-ones none. What changed while building PR 1:
-
-- The worker-end census is taken by the `piwiResources` worker fixture alone: it tears down after the `browser`
-  fixture, so it sees what the worker's shutdown closed, and no `close` wrapper is needed. Each worker appends it to
-  the file the reporter names in `PIWI_RESOURCES_RESULTS` before any worker starts.
-- An object a later test or hook of the same file closes is handed on, not leaked; one closed by a test of another
-  file is leaked. A describe-scope leak is held from the last test of the describe block of the test that ran its hook.
-- What a failed test left open is not judged: Playwright shuts the worker down right after it, and `fail` would add a
-  second error to a test that already failed.
-- A page is used when it navigates or loads, when it runs an `evaluate`-family call the test made, or when a locator is
-  built on it; Piwi's own reads are internal calls and never count.
-- Node handles are servers and file watchers (`TCPServerWrap`, `FSEventWrap`, `StatWatcher`): sockets, child
-  processes and timers move on every test with Playwright's own. A server reports a second handle until one timer tick
-  after it starts listening, so a test whose count grew is read again a tick later.
-- `leakCheck` judges a test when it ends, and Playwright exposes nothing there that tells a serial hand-over apart: a
-  test that hands what it opened to the next one fails under `fail` and loses it under `close`. D8's "never shared"
-  holds for `beforeAll` objects, which the gate leaves alone.
-- A warning annotation at each leak's line waits for PR 4, where only the leaks a branch introduces are flagged.
-
-**PR 2 built 2026-10-01**: the run sampler in the reporter, artifact sizes, the per-test reads in the workers, the CDP
-reads of pages that outlive their test, and the machine panel after the summary, with a CPU, memory & disk docs page
-and a `resources` rung in the bench. What changed while building PR 2:
-
-- Nothing new leaves the machine: the machine facts feed the panel and travel with the run's profile in PR 3, rather
-  than going into the run's metadata now.
-- The sampler scans `/proc` every second (about 2 ms of CPU with a browser running) and reads PSS, the container
-  and the disk every five (about 30 ms): under 1% of one core. A worker reads its process tree once per test, at its
-  end (about 2 ms), and that read starts the next test's window; a worker that never started a browser skips it. macOS reads the tree through `ps` every five seconds and counts RSS. Windows measures the machine and the
-  disk, and reads the tree through a PowerShell CIM query every fifteen seconds (built 2026-10-03).
-- The web server is whatever the runner starts that is not a worker, a browser or ffmpeg: the runner does not expose
-  the pid of `webServer`'s command, and a `globalSetup` server counts the same way.
-- A leaked page's cost is its main thread's task time over CDP (`TaskDuration` in thread ticks), not its renderer's
-  process CPU, which the pages a renderer hosts share. It is shown from half a second: a static page logs about
-  0.1 s of background tasks over a few seconds.
-- The container's peak counts from the container's start, so the panel names it only when the run raised it.
-- Artifact sizes are what the tests attached: `preserveOutput` can delete them after the run.
-- Each test's reads (the worker's CPU, event loop, switches, heap and descriptors; on Linux the CPU, run-queue wait
-  and peak RSS of each browser process by role) go into its census for PR 3's wire; the panel prints the workers'
-  event loop and switches.
-- Not read yet: device I/O (`diskstats`, PSI `io`, `io.stat`), major faults and swap, descriptors of the browser
-  processes, PSS by kind, bytes per page, CPU by role over CDP outside Linux, and `PIWI_CAPTURE_RESOURCES=full`.
-
-**PR 3 built 2026-10-01**: the wire, storage, the run's Resources tab, each execution's cost, the `resources`
-capability, a leaky run in the demo seed and in the run simulator, and the docs. What changed while building PR 3:
-
-- A run stores its report as one JSON value, `test_runs.resource_report`, with one part per reporter: a sharded run
-  gets one per shard, each measured on its own machine, and a retried finish replaces its shard's part. Finding rows
-  with fingerprints wait for PR 4, which needs them for the history; until then `shared/resource-report.ts` rebuilds
-  every incoming report field by field, bounded, and the server and the demo share it.
-- An execution stores its cost in `test_runs_cases.resources`: the worker's CPU, event loop, switches and heap, the
-  CPU, run-queue wait and peak RSS of each browser role (Linux), the pages already open when it started, what it left
-  open, and its artifact sizes.
-- The report travels with `finish` (and with a whole-run submit or upload), not as the run streams: the verdicts need
-  every census, including each worker's last. Each execution's cost travels with its test.
-- Bounded on the wire: 100 findings, most severe first, 240 points of the CPU series, 200 points of each worker's open
-  pages.
-- The execution's cost sits in its Performance evidence tab, above the Web Vitals.
-- `resources` is a passive-data capability, as the Test Map is: declining it hides the tab and the cost even though the
-  data still arrives.
-- The demo's leaky run is Web Dashboard's newest: a login fixture leaves a context open per test, a page fixture is
-  never used, listeners pile up on a worker-scoped page and a test leaves a server running. The run before it is clean,
-  for comparison. The simulator's **Leaky run** replays the same story on `e2e-checkout`, from the same builder
-  (`shared/demo/demo-resources.mjs`); its report lands with `finish`.
-
-**PR 4 built 2026-10-01**: finding history and fix verification, the gate's leak rules, the pull-request line, two MCP
-tools, and each finding's history on the Resources tab. What changed while building PR 4:
-
-- A finding's identity is where it was opened, line included, so each opening line is its own finding and counts on
-  its own in the gate. A finding that shows under a new identity while an open finding of the same identity without
-  line numbers no longer shows has moved with an edit above its line: it takes that finding's history and is not new;
-  the closest lines pair first. (A first version dropped line numbers, which folded every leak of a file into one.) A
-  pull request that fixes one leak and opens another in the same file reads as a move. The identity is plain JS
-  (`shared/resource-fingerprint.mjs`), so the demo seed writes the same rows the server does.
-- Each shard's report is its own row (`test_run_resource_reports`), written whole by its finish. A first version kept
-  one JSON value per run that each finish read, merged and wrote back, so two shards finishing at once could lose one
-  shard's report.
-- Runs are ordered by start time, not by id: an imported run can be older than runs stored before it.
-- A clean run vouches for a finding only when it is a full run of the default branch (a run with no branch counts as
-  one) whose report could have shown it: with the fixtures on, or any report for a probable leak. The first of the five
-  is recorded as the run that fixed it.
-- "New" is read against the base branch (the pull request's target, else the default branch) from the run's own report
-  and earlier runs' occurrences, so the gate and the comment do not wait for the run's history to be recorded.
-- `--max-leaks` and `--max-new-leaks` count leaked and probable findings, one per opening line. A leak rule on a run
-  that sent no resource report is a violation.
-- The pull-request comment lists new leaks only; idle pages and piling owners stay on the tab until PR 6's waste
-  findings.
-- The demo's three runs before the leaky one now carry the server a test leaves running, so that finding's history
-  spans four runs while the leaky run's own findings are new.
-- Not built: the daily rollups for analytics, and per-finding notifications.
-- The bench's `resources` rung measured +15 ms and +0 ms per test over `full` in two runs of four rounds (1.3% and
-  0%), inside the 3% the Verification section sets.
-
-**Part of PR 7 built 2026-10-02 and 03** (optional): each worker row of the run's timeline draws its sampled CPU,
-memory and open pages, and the Resources tab's open pages point at it. **Live bands built 2026-10-26**: while a run
-is open on the dashboard, the same bands and strips fill in as it runs, instead of waiting for its end, and each
-running test on the Tests tab shows its worker's last cores, memory and open pages beside its step (D13). **The
-failure timeline's resource rows built 2026-10-26**: a failed execution's Timeline tab draws, behind a **Resources**
-switch kept per browser and off by default, the CPU and memory of the worker that ran it with its browsers and the
-pages open in that worker, sliced from the run's stored report (`shared/timeline-resources.ts`), with the pages
-earlier tests left open and its browsers' wait for a CPU. Not built: the leak tails, the pressure strip, the
-machine's CPU on the failure timeline, and the lane of the births and closes inside the test. PRs 5 and 6 are not
-started.
-
-**Detection extended 2026-10-26**, measured on a 60-test suite on one worker before each rule was set:
-
-- Servers and child processes are tracked one by one: the ledger wraps `net.Server.prototype.listen` and
-  `ChildProcess.prototype.spawn` in each worker (put back at its end) and records the line and the runnable as it
-  does for a context. This fixed a false positive: a worker-scoped fixture that starts a server is set up inside the
-  census window of the first test that asks for it (auto fixtures come first), and the handle count blamed that test.
-  A child process a test leaves running (`spawn`, `exec`, `fork`; Playwright's browsers and `ffmpeg` left out) is a
-  new `handle` finding, named by the line that started it. File watchers keep the count.
-- Piling up allows a dip: besides the series that never goes down, a series whose floor (the lowest reading from
-  each census on) rose by the rule's amount by three quarters of it, a quarter of that by its middle.
-- New piling series: attached DOM elements of a page that outlives its test (`document.getElementsByTagName('*')`
-  over its DevTools session; CDP's `Nodes` counts detached nodes until Blink collects them, and climbed from 165 to
-  25,341 on a page that only replaced its content), and per worker its open file descriptors and its heap after a
-  full garbage collection, read from V8's own `gc` performance entries. The heap at the end of a test is no signal:
-  it rose 30 MB over 60 clean tests, while after a forced collection plain Playwright kept 1.6 MB over 80 tests and
-  Piwi's capture 2.7 MB. A worker keeping 30 MB a test showed 143 → 602 → 1,852 MB over the three full collections
-  V8 ran in 60 tests. What tests that left something open added is left out of the worker's series, since each of
-  those is a finding already. Wire: `growth.what` gains `elements`, `heapMb` and `descriptors`, `kind` gains `worker`.
-- The ledger drops a closed object once a census reported it (about 0.7 KB of worker heap per test).
+**Status.** Proposed 2026-10-01. Built: PRs 1 to 4 (2026-10-01 and 02), with PR 2's macOS and Windows readers
+(2026-10-03); the measurements are in [What we measured](#what-we-measured), the details in [As built](#as-built). Of
+the optional PR 7: the CPU, memory and open-pages bands on the run's workers timeline (2026-10-02 and 03, filled live
+since 2026-10-26), and the worker's resources on a failed execution's timeline (2026-10-26). Detection extended
+2026-10-26: servers and child processes at their line, piling up with a dip, attached DOM elements, and the worker's
+descriptors and heap after a full collection. PR 5 (clues, flake suspect and `hold`, editor diagnostics) and PR 6 (the
+waste findings of Part 3) moved to [resource-consumption-next.md](../proposals/resource-consumption-next.md), which
+ranks them with the rest of what a run wastes. Deferred, not planned elsewhere: a warning annotation at each new leak's
+line, PR 2's unread metrics (device I/O, major faults and swap, the browsers' descriptors, PSS by kind, bytes per page,
+CPU by role outside Linux, `PIWI_CAPTURE_RESOURCES=full`), daily rollups, per-finding notifications, and PR 7's leak
+tails, pressure strip, machine CPU on the failure timeline and lane of births and closes.
 
 ## What the reader gets
 
@@ -308,7 +194,8 @@ Tracing's cost grows with the page: on the trivial page it added a third to the 
 a machine without a GPU, went from 0.8 s of CPU to 37.6 s with tracing and to 30.2 s with video (plus 13 s of
 `ffmpeg`). Turning the frames off cut what a tracing run keeps from 145 MB to 2.4 MB; turning the DOM snapshots off
 left 89 MB. A run needs about three times the disk it keeps while it writes and zips its traces, and a green
-`retain-on-failure` run keeps nothing yet needs 280 MB of scratch. With tracing on, the worker's event loop was busy 28% of the time (12% without), its p99 delay reached
+`retain-on-failure` run keeps nothing yet needs 280 MB of scratch. With tracing on, the worker's event loop was busy 28%
+of the time (12% without), its p99 delay reached
 181 ms, and it was switched out involuntarily about 2,100 times per test (70 without): the process that drives the
 browser was starved as well.
 
@@ -388,7 +275,7 @@ browser was starved as well.
   proposes tighter timeouts.
 - **Neighbors already explain failures.** The clue engine has `worker-pollution` (the previous test on this worker
   failed, `shared/failure-clues.ts`); the flake profile has a load suspect and the lab has `cpu`, `after` and
-  `alongside` conditions ([`flake-lab.md`](../adr/flake-lab.md)).
+  `alongside` conditions ([`flake-lab.md`](flake-lab.md)).
 - **Delivery routes.** The gate takes `--max-*` policies (`packages/reporter/src/cli/gate.ts`), the editor service
   publishes diagnostics with quick fixes and hovers (`packages/editor/src/server.ts`), MCP lists tools in
   `shared/mcp-tools.ts`, and every optional surface is a capability in `shared/capabilities.ts`.
@@ -655,7 +542,8 @@ Hard waits already have a lens (wasted time); the Resources tab links to it rath
 
 ## Part 5 — Further out, each with an entry condition
 
-[resource-consumption-next.md](resource-consumption-next.md) ranks what comes after this plan: waste in data already
+[resource-consumption-next.md](../proposals/resource-consumption-next.md) ranks what comes after this plan: waste in
+data already
 stored, deeper detection and fixes Piwi applies.
 
 - **Memory lab** (application leaks). A lab mode that runs one test's flow repeatedly in one context, forces a garbage
@@ -776,6 +664,144 @@ stored, deeper detection and fixes Piwi applies.
   while the run is live; `app/utils/live-worker-resources.ts` and `TestRow.vue` show each worker's last values on its
   running test; the demo simulator posts its timeline after each test.
 
+## As built
+
+What each built pull request of the [Delivery](#delivery) does where the text above leaves a choice open, or
+differs from it.
+
+### PR 1
+
+**PR 1 built 2026-10-01**: the ledger in the capture fixtures and the dogfood mirror, the `piwi-resources` census, the
+verdicts and the end-of-run summary in the reporter (also written to the GitHub job summary), the fixture-free tier,
+`captureResources` and `leakCheck`, a Resource leaks docs page, and an integration suite where each leaky test must
+produce exactly its finding and the clean ones none. What changed while building PR 1:
+
+- The worker-end census is taken by the `piwiResources` worker fixture alone: it tears down after the `browser`
+  fixture, so it sees what the worker's shutdown closed, and no `close` wrapper is needed. Each worker appends it to
+  the file the reporter names in `PIWI_RESOURCES_RESULTS` before any worker starts.
+- An object a later test or hook of the same file closes is handed on, not leaked; one closed by a test of another
+  file is leaked. A describe-scope leak is held from the last test of the describe block of the test that ran its hook.
+- What a failed test left open is not judged: Playwright shuts the worker down right after it, and `fail` would add a
+  second error to a test that already failed.
+- A page is used when it navigates or loads, when it runs an `evaluate`-family call the test made, or when a locator is
+  built on it; Piwi's own reads are internal calls and never count.
+- Node handles are servers and file watchers (`TCPServerWrap`, `FSEventWrap`, `StatWatcher`): sockets, child
+  processes and timers move on every test with Playwright's own. A server reports a second handle until one timer tick
+  after it starts listening, so a test whose count grew is read again a tick later.
+- `leakCheck` judges a test when it ends, and Playwright exposes nothing there that tells a serial hand-over apart: a
+  test that hands what it opened to the next one fails under `fail` and loses it under `close`. D8's "never shared"
+  holds for `beforeAll` objects, which the gate leaves alone.
+- A warning annotation at each leak's line waits for PR 4, where only the leaks a branch introduces are flagged.
+
+### PR 2
+
+**PR 2 built 2026-10-01**: the run sampler in the reporter, artifact sizes, the per-test reads in the workers, the CDP
+reads of pages that outlive their test, and the machine panel after the summary, with a CPU, memory & disk docs page
+and a `resources` rung in the bench. What changed while building PR 2:
+
+- Nothing new leaves the machine: the machine facts feed the panel and travel with the run's profile in PR 3, rather
+  than going into the run's metadata now.
+- The sampler scans `/proc` every second (about 2 ms of CPU with a browser running) and reads PSS, the container
+  and the disk every five (about 30 ms): under 1% of one core. A worker reads its process tree once per test, at its
+  end (about 2 ms), and that read starts the next test's window; a worker that never started a browser skips it. macOS
+  reads the tree through `ps` every five seconds and counts RSS. Windows measures the machine and the
+  disk, and reads the tree through a PowerShell CIM query every fifteen seconds (built 2026-10-03).
+- The web server is whatever the runner starts that is not a worker, a browser or ffmpeg: the runner does not expose
+  the pid of `webServer`'s command, and a `globalSetup` server counts the same way.
+- A leaked page's cost is its main thread's task time over CDP (`TaskDuration` in thread ticks), not its renderer's
+  process CPU, which the pages a renderer hosts share. It is shown from half a second: a static page logs about
+  0.1 s of background tasks over a few seconds.
+- The container's peak counts from the container's start, so the panel names it only when the run raised it.
+- Artifact sizes are what the tests attached: `preserveOutput` can delete them after the run.
+- Each test's reads (the worker's CPU, event loop, switches, heap and descriptors; on Linux the CPU, run-queue wait
+  and peak RSS of each browser process by role) go into its census for PR 3's wire; the panel prints the workers'
+  event loop and switches.
+
+### PR 3
+
+**PR 3 built 2026-10-01**: the wire, storage, the run's Resources tab, each execution's cost, the `resources`
+capability, a leaky run in the demo seed and in the run simulator, and the docs. What changed while building PR 3:
+
+- A run stores its report as one JSON value, `test_runs.resource_report`, with one part per reporter: a sharded run
+  gets one per shard, each measured on its own machine, and a retried finish replaces its shard's part. Finding rows
+  with fingerprints wait for PR 4, which needs them for the history; until then `shared/resource-report.ts` rebuilds
+  every incoming report field by field, bounded, and the server and the demo share it.
+- An execution stores its cost in `test_runs_cases.resources`: the worker's CPU, event loop, switches and heap, the
+  CPU, run-queue wait and peak RSS of each browser role (Linux), the pages already open when it started, what it left
+  open, and its artifact sizes.
+- The report travels with `finish` (and with a whole-run submit or upload), not as the run streams: the verdicts need
+  every census, including each worker's last. Each execution's cost travels with its test.
+- Bounded on the wire: 100 findings, most severe first, 240 points of the CPU series, 200 points of each worker's open
+  pages.
+- The execution's cost sits in its Performance evidence tab, above the Web Vitals.
+- `resources` is a passive-data capability, as the Test Map is: declining it hides the tab and the cost even though the
+  data still arrives.
+- The demo's leaky run is Web Dashboard's newest: a login fixture leaves a context open per test, a page fixture is
+  never used, listeners pile up on a worker-scoped page and a test leaves a server running. The run before it is clean,
+  for comparison. The simulator's **Leaky run** replays the same story on `e2e-checkout`, from the same builder
+  (`shared/demo/demo-resources.mjs`); its report lands with `finish`.
+
+### PR 4
+
+**PR 4 built 2026-10-01**: finding history and fix verification, the gate's leak rules, the pull-request line, two MCP
+tools, and each finding's history on the Resources tab. What changed while building PR 4:
+
+- A finding's identity is where it was opened, line included, so each opening line is its own finding and counts on
+  its own in the gate. A finding that shows under a new identity while an open finding of the same identity without
+  line numbers no longer shows has moved with an edit above its line: it takes that finding's history and is not new;
+  the closest lines pair first. (A first version dropped line numbers, which folded every leak of a file into one.) A
+  pull request that fixes one leak and opens another in the same file reads as a move. The identity is plain JS
+  (`shared/resource-fingerprint.mjs`), so the demo seed writes the same rows the server does.
+- Each shard's report is its own row (`test_run_resource_reports`), written whole by its finish. A first version kept
+  one JSON value per run that each finish read, merged and wrote back, so two shards finishing at once could lose one
+  shard's report.
+- Runs are ordered by start time, not by id: an imported run can be older than runs stored before it.
+- A clean run vouches for a finding only when it is a full run of the default branch (a run with no branch counts as
+  one) whose report could have shown it: with the fixtures on, or any report for a probable leak. The first of the five
+  is recorded as the run that fixed it.
+- "New" is read against the base branch (the pull request's target, else the default branch) from the run's own report
+  and earlier runs' occurrences, so the gate and the comment do not wait for the run's history to be recorded.
+- `--max-leaks` and `--max-new-leaks` count leaked and probable findings, one per opening line. A leak rule on a run
+  that sent no resource report is a violation.
+- The pull-request comment lists new leaks only; idle pages and piling owners stay on the tab until PR 6's waste
+  findings.
+- The demo's three runs before the leaky one now carry the server a test leaves running, so that finding's history
+  spans four runs while the leaky run's own findings are new.
+- The bench's `resources` rung measured +15 ms and +0 ms per test over `full` in two runs of four rounds (1.3% and
+  0%), inside the 3% the Verification section sets.
+
+### PR 7, in part
+
+**Part of PR 7 built 2026-10-02 and 03** (optional): each worker row of the run's timeline draws its sampled CPU,
+memory and open pages, and the Resources tab's open pages point at it. **Live bands built 2026-10-26**: while a run
+is open on the dashboard, the same bands and strips fill in as it runs, instead of waiting for its end, and each
+running test on the Tests tab shows its worker's last cores, memory and open pages beside its step (D13). **The
+failure timeline's resource rows built 2026-10-26**: a failed execution's Timeline tab draws, behind a **Resources**
+switch kept per browser and off by default, the CPU and memory of the worker that ran it with its browsers and the
+pages open in that worker, sliced from the run's stored report (`shared/timeline-resources.ts`), with the pages
+earlier tests left open and its browsers' wait for a CPU.
+
+### Detection extended
+
+**Detection extended 2026-10-26**, measured on a 60-test suite on one worker before each rule was set:
+
+- Servers and child processes are tracked one by one: the ledger wraps `net.Server.prototype.listen` and
+  `ChildProcess.prototype.spawn` in each worker (put back at its end) and records the line and the runnable as it
+  does for a context. This fixed a false positive: a worker-scoped fixture that starts a server is set up inside the
+  census window of the first test that asks for it (auto fixtures come first), and the handle count blamed that test.
+  A child process a test leaves running (`spawn`, `exec`, `fork`; Playwright's browsers and `ffmpeg` left out) is a
+  new `handle` finding, named by the line that started it. File watchers keep the count.
+- Piling up allows a dip: besides the series that never goes down, a series whose floor (the lowest reading from
+  each census on) rose by the rule's amount by three quarters of it, a quarter of that by its middle.
+- New piling series: attached DOM elements of a page that outlives its test (`document.getElementsByTagName('*')`
+  over its DevTools session; CDP's `Nodes` counts detached nodes until Blink collects them, and climbed from 165 to
+  25,341 on a page that only replaced its content), and per worker its open file descriptors and its heap after a
+  full garbage collection, read from V8's own `gc` performance entries. The heap at the end of a test is no signal:
+  it rose 30 MB over 60 clean tests, while after a forced collection plain Playwright kept 1.6 MB over 80 tests and
+  Piwi's capture 2.7 MB. A worker keeping 30 MB a test showed 143 → 602 → 1,852 MB over the three full collections
+  V8 ran in 60 tests. What tests that left something open added is left out of the worker's series, since each of
+  those is a finding already. Wire: `growth.what` gains `elements`, `heapMb` and `descriptors`, `kind` gains `worker`.
+- The ledger drops a closed object once a census reported it (about 0.7 KB of worker heap per test).
 ## Verification
 
 - The leaky suite reports exactly its planted findings at their lines; the clean suite (fixture pages, worker

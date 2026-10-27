@@ -667,7 +667,7 @@ never answers and no run starts.
 
 The JetBrains plugin's script reuses the fixture, so a change to the fixture means recapturing both sets. What was found
 about driving VS Code this way is recorded in
-[`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md).
+[`adr/real-editor-checks.md`](../../adr/real-editor-checks.md).
 
 ## Nightly suite
 

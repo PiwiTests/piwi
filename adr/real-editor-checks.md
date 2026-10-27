@@ -1,5 +1,8 @@
 # The plugins in the real editors: what the screenshot pipelines found, and the checks they could carry
 
+- Status: accepted
+- Date: 2026-10-24
+
 The illustrations of the browser extension, the VS Code extension and the JetBrains plugin are captured in the real
 products: Chromium with the extension loaded, the VS Code that `@vscode/test-electron` downloads, the latest WebStorm
 release. Getting there took a set of findings about each product, verified while the three pipelines were built
@@ -8,12 +11,12 @@ quiet, and what it costs. This document is their durable home, and the record of
 pipelines are not turned into continuous checks of the plugins yet. The second half says what such checks would be
 and what they would need, so the decision can be revisited with the facts at hand.
 
-**Status.** Proposed 2026-10-21. Being built: the VS Code check of section 6 is built (2026-10-24), as D3 has it: a
-Playwright suite, `apps/vscode/tests/e2e/`, over the launcher the screenshot script now shares
+**Status.** Proposed 2026-10-21. Built: the VS Code check of section 6, as D3 has it (#872, 2026-10-24): a Playwright
+suite, `apps/vscode/tests/e2e/`, over the launcher the screenshot script shares
 (`apps/vscode/scripts/lib/vscode-window.mjs`, which pins the VS Code release both open), run every night and on demand
-by `.github/workflows/nightly-vscode.yml`, not on pull requests. The JetBrains check remains deferred until a license
-for CI exists. The three pipelines are still run by hand to recapture the illustrations; where this text and a script
-differ, the script's header is right.
+by `.github/workflows/nightly-vscode.yml`, not on pull requests. Deferred: the JetBrains check, until a license for CI
+exists (see [Open questions](#open-questions)). The three pipelines are still run by hand to recapture the
+illustrations; where this text and a script differ, the script's header is right.
 
 **Summary.** Three scripts capture the illustrations, all against the same fixture project and stub instance where an
 instance is involved: `apps/extension/tests/e2e/docs-screenshots.spec.ts` (a Playwright test, skipped unless asked),
@@ -209,7 +212,7 @@ Verified on VS Code 1.143.0, the stable build `@vscode/test-electron` downloaded
 
 - **The editor service** (`packages/editor/`): unit tests on the analysis, the commands, the context, the coverage,
   the failure tree, the host state and the imports, with fixtures of their own. Both plugins run this service, so this
-  is where the behaviour they show is checked.
+  is where the behavior they show is checked.
 - **VS Code** (`apps/vscode/`): unit tests (`npm run vscode:test`) and an integration suite
   (`npm run vscode:test:integration`) that starts a stub instance, writes a fixture repository and drives a real
   VS Code through its public commands (`vscode.executeCodeActionProvider`, `vscode.executeCodeLensProvider`, …) and the
@@ -245,7 +248,8 @@ assertions:
 
 Cost: a Playwright config in `apps/vscode/tests/e2e/`, the launcher of the script moved to a shared module, the stub
 instance of `tests/integration/run.mjs` (a second copy of the fixture's, with fewer routes) folded into the fixture
-module, Xvfb in the workflow, the VS Code download cached (about 100 MB, `@vscode/test-electron` caches it). A run is one to two
+module, Xvfb in the workflow, the VS Code download cached (about 100 MB, `@vscode/test-electron` caches it). A run is
+one to two
 minutes. Risk: the workbench's DOM (class names, the quick input's rows) changes across VS Code versions, where the
 integration suite's public commands do not; the suite should pin the VS Code version it downloads and move it on
 purpose.
@@ -293,7 +297,7 @@ on every pull request.
 
 ## Open questions
 
-- A license for CI: which kind (key or license server), from which programme, and where it is kept.
+- A license for CI: which kind (key or license server), from which program, and where it is kept.
 - Whether the Starter framework runs in the 2024.1 the Gradle build targets or needs the build's platform version
   raised.
 - Whether the VS Code suite should drive the stable `@vscode/test-electron` download or the Insiders build the

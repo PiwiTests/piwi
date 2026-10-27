@@ -809,7 +809,7 @@ An EAP build asks for a JetBrains account, so it cannot serve.
 **Other options.** `--ide` names another installed release, `--probe` captures the IDE as it stands without driving
 it, and `--keep` leaves the run's directory with the IDE's logs. What was found about the IDE on the way (the license,
 the launcher, the properties that keep it quiet, what a check in the real IDE would need) is recorded in
-[`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md).
+[`adr/real-editor-checks.md`](../../adr/real-editor-checks.md).
 
 ## The JDK
 

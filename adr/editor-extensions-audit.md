@@ -12,7 +12,7 @@ request's rule, in both clients, with the coverage marks (`CoverageResult.uncove
 the part a run's pause carries: **Record here** in Piwi's pause bar, at a breakpoint or at `page.pause()`, records in
 the test's page from there, in both clients ([record-from-the-ide.md](../proposals/record-from-the-ide.md), part 5, whose status
 lists what of it remains). L4 is built (2026-10-24): a Playwright suite asserts what the extension draws in the real
-VS Code, at a pinned release, every night ([real-editor-checks.md](../proposals/real-editor-checks.md), D3); the JetBrains check
+VS Code, at a pinned release, every night ([real-editor-checks.md](real-editor-checks.md), D3); the JetBrains check
 stays deferred there, for want of a license in CI. L5 is built (2026-10-24): a setting in both clients
 (`piwi.mcpAuthorization`, **Settings → Tools → Piwi → AI Assistant**: `key` by default, or `sign-in`) has `piwi/mcp`
 hand an instance's MCP server without the key, so the agent signs in through the instance's OAuth for a token of its
@@ -127,7 +127,7 @@ from reading and running the code, not from user reports.
   `PiwiPlaywrightRunner.kt`, `plugin.xml`, `build.gradle.kts`), the seven docs pages under `features/editor*` and
   `ide-integration.md`, the two ADRs ([`suite-in-the-editor.md`](suite-in-the-editor.md),
   [`editor-local-runs.md`](editor-local-runs.md)) and the two proposals
-  ([`record-from-the-ide.md`](../proposals/record-from-the-ide.md), [`real-editor-checks.md`](../proposals/real-editor-checks.md)), the
+  ([`record-from-the-ide.md`](../proposals/record-from-the-ide.md), [`real-editor-checks.md`](real-editor-checks.md)), the
   dashboard's Open in IDE (`useOpenInIde.ts`, `ide-links.ts`) and the instance routes the service reads.
 - **Reviewed by a second reading**: the JetBrains recording, coverage, Open in IDE and Send to editor handlers, and
   the recorder's internals (`page-candidates.ts`, `imports.ts`, `host-state.ts`, `project-options.ts`,
@@ -465,7 +465,7 @@ developer are the end of a run and the status bar's reach, both in [section 10](
 The service carries the behavior (303 tests, a stub instance, the launcher with a real Chromium), the VS Code
 client has unit tests of its pure half and an integration suite in a real VS Code on pull requests, the JetBrains
 client platform tests on 2024.1 and the Plugin Verifier on the latest IDEs. What no suite checks is what the editors
-draw ([`real-editor-checks.md`](../proposals/real-editor-checks.md), D1 to D3): a nightly Playwright suite over the VS Code
+draw ([`real-editor-checks.md`](real-editor-checks.md), D1 to D3): a nightly Playwright suite over the VS Code
 screenshot launcher is within reach and would have caught a copy error such as the welcome text of
 [3.1](#31-first-run-and-onboarding).
 
@@ -536,7 +536,7 @@ the files it touches.
 | L1 | A results-only Test Explorer integration in VS Code ([6.3](#63-the-playwright-extension-and-the-test-explorer)) | integration | `apps/vscode/src` |
 | L2 | The uncovered changes gutter mark (ADR priority 4) | usefulness | `server.ts`, `coverage.ts`, both clients |
 | L3 | Record at a breakpoint or at `page.pause()` ([record-from-the-ide.md](../proposals/record-from-the-ide.md), part 5) | usefulness | the reporter's capture fixtures, the service, both clients |
-| L4 | A nightly check in the real VS Code ([real-editor-checks.md](../proposals/real-editor-checks.md), D3) | quality | `apps/vscode/tests` |
+| L4 | A nightly check in the real VS Code ([real-editor-checks.md](real-editor-checks.md), D3) | quality | `apps/vscode/tests` |
 | L5 | A scoped token for the agent: the MCP definition without the key, signed in through the instance's OAuth | connectivity | `server.ts`, `extension.ts`, docs |
 
 The order inside each tier is the order to build. Q1 to Q6 remove the reasons a developer would uninstall in the
