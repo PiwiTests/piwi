@@ -34,6 +34,7 @@ import {
   isNull,
   isNotNull,
   count,
+  max,
   ne,
   notInArray,
   type SQL,
@@ -49,9 +50,15 @@ import {
 } from '#shared/test-search';
 import { splitSuitePath } from '#shared/utils/suites';
 import { notLabExecutionInProject, notLabRun } from './probes';
-import { resolveStoredDefaultBranch } from '../../server/utils/scm/stored-default-branch';
-import { projectRunScopeConditions, scopedExecutionInProject, scopedExecutionInProjectJoin } from './project-run-scope';
-import { parseProjectRunScope, type ProjectRunScope } from '../project-run-scope';
+import { resolveStoredDefaultBranch, resolveStoredDefaultBranches } from '../../server/utils/scm/stored-default-branch';
+import {
+  projectRunScopeConditions,
+  runScopeConditions,
+  scopeReadsDefaultBranch,
+  scopedExecutionInProject,
+  scopedExecutionInProjectJoin,
+} from './project-run-scope';
+import { parseProjectRunScope, resolveProjectRunScope, type ProjectRunScope } from '../project-run-scope';
 import { eligibleRunSql } from '../run-eligibility';
 import { isFailedStatus } from '../utils/test-counts';
 import { getHoldingVerifiedFixes } from './flake-verified';
@@ -117,27 +124,70 @@ async function getProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
   };
 }
 
+/**
+ * The `test_runs` condition of the runs that set each project's status, its
+ * latest run: the runs in its status filter (`projects.statusFilter`, a run
+ * scope), or every run when it has none. A lab run never sets a status. The
+ * default branches the filters read are resolved together, and returned so
+ * the list can name them.
+ */
+async function statusRunConditions(
+  db: DrizzleDB,
+  rows: { id: number; defaultBranch?: string | null; statusFilter?: unknown }[],
+): Promise<{ condition: SQL | undefined; defaultBranches: Map<number, string> }> {
+  const filters = new Map<number, ProjectRunScope>();
+  for (const row of rows) {
+    const filter = resolveProjectRunScope(row.statusFilter);
+    if (filter) filters.set(row.id, filter);
+  }
+  const defaultBranches = await resolveStoredDefaultBranches(
+    db,
+    rows.filter((row) => {
+      const filter = filters.get(row.id);
+      return filter !== undefined && scopeReadsDefaultBranch(filter);
+    }),
+  );
+  const unfiltered: number[] = [];
+  const perProject: SQL[] = [];
+  for (const row of rows) {
+    const filter = filters.get(row.id);
+    if (!filter) {
+      unfiltered.push(row.id);
+      continue;
+    }
+    const conditions = runScopeConditions(filter, defaultBranches.get(row.id) ?? '');
+    perProject.push(and(eq(testRuns.projectId, row.id), ...conditions)!);
+  }
+  if (unfiltered.length > 0) perProject.push(inArray(testRuns.projectId, unfiltered));
+  return { condition: and(notLabRun(testRuns.origin), or(...perProject)), defaultBranches };
+}
+
 export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
   const { ids: projectIds, projects: allProjects } = await getProjects(db, scope);
 
-  // 1. Run counts per project
+  // 1. Run counts and the start of the latest run, of any kind, per project
   const runStats: any[] = await db
     .select({
       projectId: testRuns.projectId,
       count: count(),
+      lastRunAt: max(testRuns.startTime),
     })
     .from(testRuns)
     .where(inArray(testRuns.projectId, projectIds))
     .groupBy(testRuns.projectId);
 
   const runCountByProjectId = new Map<number, number>();
+  const lastRunAtByProjectId = new Map<number, Date | null>();
   for (const r of runStats) {
     runCountByProjectId.set(r.projectId, r.count);
+    lastRunAtByProjectId.set(r.projectId, r.lastRunAt ?? null);
   }
 
-  // Latest run id per project, ranked by start_time (id as a deterministic
-  // tiebreaker): rows can be ingested out of chronological order (historical
-  // uploads on the server; the demo seed inserts runs newest-first).
+  // Latest run id per project among the runs that set its status, ranked by
+  // start_time (id as a deterministic tiebreaker): rows can be ingested out of
+  // chronological order (historical uploads on the server; the demo seed
+  // inserts runs newest-first).
+  const statusRuns = await statusRunConditions(db, allProjects);
   const rankedRuns = db.$with('ranked_latest_runs').as(
     db
       .select({
@@ -148,7 +198,7 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
         ),
       })
       .from(testRuns)
-      .where(inArray(testRuns.projectId, projectIds)),
+      .where(and(inArray(testRuns.projectId, projectIds), statusRuns.condition)),
   );
   const latestIdRows: any[] = await db
     .with(rankedRuns)
@@ -223,7 +273,10 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
     return {
       ...project,
       latestRun: latestRun ? { ...latestRun, reports: reportsByRunId.get(latestRun.id) ?? [] } : null,
+      statusFilter: resolveProjectRunScope(project.statusFilter),
+      statusDefaultBranch: statusRuns.defaultBranches.get(project.id) ?? null,
       totalRuns: runCountByProjectId.get(project.id) ?? 0,
+      lastRunAt: lastRunAtByProjectId.get(project.id) ?? null,
       totalTestCases: caseCountByProjectId.get(project.id) ?? 0,
       tags: tagsByProjectId.get(project.id) ?? [],
     };
@@ -436,6 +489,18 @@ export const INVALID_COVERAGE_SCOPE =
 export const INVALID_COVERAGE_AREAS =
   'coverageAreas must be a list of at most 20 { name, include: string[] }: distinct names of 1 to 40 letters, digits, spaces, ".", "_" or "-", each with at least one pattern';
 
+/**
+ * The status filter `updateProject` stores: null for none, and for a filter
+ * every non-lab run passes (every branch, every environment, partial runs too).
+ */
+function statusFilterToStore(raw: unknown): ProjectRunScope | null {
+  const filter = resolveProjectRunScope(raw);
+  if (!filter) return null;
+  const readsEveryRun =
+    filter.allBranches && filter.branches.length === 0 && filter.environments.length === 0 && !filter.fullRunsOnly;
+  return readsEveryRun ? null : filter;
+}
+
 export async function updateProject(
   db: DrizzleDB,
   id: number,
@@ -465,6 +530,8 @@ export async function updateProject(
     coverageScope?: unknown;
     /** Named areas of the code (`CoverageArea[]`), each counted apart; null or [] removes them. */
     coverageAreas?: unknown;
+    /** The runs that set the project's status (`ProjectRunScope`); null for every run. */
+    statusFilter?: unknown;
     tagIds?: number[];
   },
 ) {
@@ -489,6 +556,7 @@ export async function updateProject(
     targets,
     coverageScope,
     coverageAreas,
+    statusFilter,
     tagIds: dataTagIds,
   } = data;
   const linkTemplate = externalIdUrl === undefined ? undefined : normalizeExternalIdUrl(externalIdUrl);
@@ -531,6 +599,7 @@ export async function updateProject(
         gateStatus,
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
+        statusFilter: statusFilter === undefined ? undefined : statusFilterToStore(statusFilter),
         ...(scopeChanged ? { coverageScope: scope } : {}),
         // Totals counted under another scope or other areas read as stale.
         ...(scopeChanged || areasChanged ? { coverageScopeVersion: sql`${projects.coverageScopeVersion} + 1` } : {}),

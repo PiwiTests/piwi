@@ -422,6 +422,7 @@ describe('CoverageCollection', () => {
 
   const requestsAttachment = (origin: string, ids: string[]) => ({
     name: ATTACHMENT_NAMES.serverCoverageRequests,
+    contentType: 'application/json',
     body: Buffer.from(JSON.stringify({ [origin]: ids })),
   });
 
@@ -456,7 +457,7 @@ describe('CoverageCollection', () => {
       const tc = testCase(['src/pay.ts']);
       const body = { v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions: [[1, 1]] }] };
       const ready = collection.apply(tc, [
-        { name: ATTACHMENT_NAMES.browserCoverage, body: Buffer.from(JSON.stringify(body)) },
+        { name: ATTACHMENT_NAMES.browserCoverage, contentType: 'application/json', body: Buffer.from(JSON.stringify(body)) },
       ]);
       expect(ready).not.toBeNull();
       await collection.settle();
@@ -490,8 +491,8 @@ describe('CoverageCollection', () => {
       const rules = { v: 1, files: [{ path: 'web/app.css', runtime: 'browser', functions: [[1, 1]] }] };
       const known = { v: 1, files: [{ path: 'web/app.css', allFunctions: [[1, 1], [2, 2]] }] };
       collection.apply(tc, [
-        { name: ATTACHMENT_NAMES.cssCoverage, body: Buffer.from(JSON.stringify(rules)) },
-        { name: ATTACHMENT_NAMES.cssRules, body: Buffer.from(JSON.stringify(known)) },
+        { name: ATTACHMENT_NAMES.cssCoverage, contentType: 'application/json', body: Buffer.from(JSON.stringify(rules)) },
+        { name: ATTACHMENT_NAMES.cssRules, contentType: 'application/json', body: Buffer.from(JSON.stringify(known)) },
       ]);
       await collection.settle();
       const blob = gitBlobId(fs.readFileSync(path.join(dir, 'web', 'app.css')));
@@ -529,9 +530,10 @@ describe('CoverageCollection', () => {
       const attach = (functions: number[][], known: Array<{ path: string; allFunctions: number[][] }>) => [
         {
           name: ATTACHMENT_NAMES.browserCoverage,
+          contentType: 'application/json',
           body: Buffer.from(JSON.stringify({ v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions }] })),
         },
-        { name: ATTACHMENT_NAMES.browserFunctions, body: Buffer.from(JSON.stringify({ v: 1, files: known })) },
+        { name: ATTACHMENT_NAMES.browserFunctions, contentType: 'application/json', body: Buffer.from(JSON.stringify({ v: 1, files: known })) },
       ];
       collection.apply(
         testCase(['src/pay.ts']),
@@ -592,6 +594,7 @@ describe('CoverageCollection', () => {
       });
       const part = (allFunctions: number[][]) => ({
         name: ATTACHMENT_NAMES.browserFunctions,
+        contentType: 'application/json',
         body: Buffer.from(JSON.stringify({ v: 1, files: [{ path: 'src/pay.ts', allFunctions }] })),
       });
       collection.apply(testCase(['src/pay.ts']), [part([[1, 1]]), part([[2, 2]])]);
@@ -615,6 +618,34 @@ describe('CoverageCollection', () => {
     }
   });
 
+  it('leaves out a text/plain piwi-browser-functions attachment, as a browser server header makes', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-browser-header-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'src'));
+      fs.writeFileSync(path.join(dir, 'src', 'pay.ts'), 'export function pay() {}\nexport function refund() {}\n');
+      const collection = new CoverageCollection({
+        settings: { browser: 'functions', server: 'off' },
+        baseUrls: [],
+        configDir: dir,
+      });
+      const part = (allFunctions: number[][], contentType: string) => ({
+        name: ATTACHMENT_NAMES.browserFunctions,
+        contentType,
+        body: Buffer.from(JSON.stringify({ v: 1, files: [{ path: 'src/pay.ts', allFunctions }] })),
+      });
+      collection.apply(testCase(['src/pay.ts']), [part([[2, 2]], 'text/plain'), part([[1, 1]], 'application/json')]);
+      await collection.settle();
+      const sent: Array<[string, { files: Array<{ allFunctions?: unknown }> }]> = [];
+      const client = {
+        putJSON: async (url: string, body: { files: Array<{ allFunctions?: unknown }> }) => void sent.push([url, body]),
+      };
+      await collection.sendRunCoverage(client as never, 7, null);
+      expect(sent[0]![1].files.map((file) => file.allFunctions)).toEqual([[[1, 1]]]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('falls back to the code reach paths when the browser coverage attachment is corrupt', () => {
     const collection = new CoverageCollection({
       settings: { browser: 'functions', server: 'off' },
@@ -622,7 +653,7 @@ describe('CoverageCollection', () => {
       configDir: os.tmpdir(),
     });
     const tc = testCase(['src/pay.ts']);
-    const ready = collection.apply(tc, [{ name: ATTACHMENT_NAMES.browserCoverage, body: Buffer.from('{"v":1,"fil') }]);
+    const ready = collection.apply(tc, [{ name: ATTACHMENT_NAMES.browserCoverage, contentType: 'application/json', body: Buffer.from('{"v":1,"fil') }]);
     expect(ready).toBeNull();
     expect(tc.coverage).toEqual({ v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser' }] });
   });
@@ -643,7 +674,7 @@ describe('CoverageCollection', () => {
       const body = { v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions: [[1, 1]] }] };
       const ready = collection.apply(tc, [
         requestsAttachment(server.url, ['a.1']),
-        { name: ATTACHMENT_NAMES.browserCoverage, body: Buffer.from(JSON.stringify(body)) },
+        { name: ATTACHMENT_NAMES.browserCoverage, contentType: 'application/json', body: Buffer.from(JSON.stringify(body)) },
       ]);
       expect(ready).not.toBeNull();
       await ready;
@@ -782,7 +813,7 @@ describe('CoverageCollection', () => {
     const tc = testCase(['src/pay.ts']);
     const body = { v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions: [[1, 1]] }] };
     expect(
-      collection.apply(tc, [{ name: ATTACHMENT_NAMES.browserCoverage, body: Buffer.from(JSON.stringify(body)) }]),
+      collection.apply(tc, [{ name: ATTACHMENT_NAMES.browserCoverage, contentType: 'application/json', body: Buffer.from(JSON.stringify(body)) }]),
     ).not.toBeNull();
     const started = Date.now();
     await collection.settle(100);

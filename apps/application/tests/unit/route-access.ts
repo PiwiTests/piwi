@@ -76,15 +76,23 @@ async function requireAuth(state: RouteAccessState, permission?: RoutePermission
   return user;
 }
 
+function requireProjectPermission(
+  state: RouteAccessState,
+  projectId: number,
+  permission?: RoutePermission | RoutePermission[],
+) {
+  if (!passesProjectCheck(caller(state).access, required(state, permission), projectId)) {
+    throw apiError({ statusCode: 403, message: 'No access to this project' });
+  }
+}
+
 async function requireProjectAccess(
   state: RouteAccessState,
   projectId: number,
   permission?: RoutePermission | RoutePermission[],
 ) {
   const user = await requireAuth(state, permission);
-  if (!passesProjectCheck(caller(state).access, required(state, permission), projectId)) {
-    throw apiError({ statusCode: 403, message: 'No access to this project' });
-  }
+  requireProjectPermission(state, projectId, permission);
   return user;
 }
 
@@ -101,6 +109,11 @@ export function projectAccessMock<T extends object>(state: RouteAccessState, ori
     ...original,
     requireProjectAccess: (_event: unknown, projectId: number, permission?: RoutePermission | RoutePermission[]) =>
       requireProjectAccess(state, projectId, permission),
+    requireProjectPermission: async (
+      _event: unknown,
+      projectId: number,
+      permission?: RoutePermission | RoutePermission[],
+    ) => requireProjectPermission(state, projectId, permission),
     requireResolvedProjectAccess: async (
       _event: unknown,
       id: number,
@@ -108,9 +121,10 @@ export function projectAccessMock<T extends object>(state: RouteAccessState, ori
       notFoundLabel: string,
       permission?: RoutePermission | RoutePermission[],
     ) => {
+      const user = await requireAuth(state, permission);
       const projectId = await resolve(state.db as never, id);
       if (!projectId) throw apiError({ statusCode: 404, message: `${notFoundLabel} not found` });
-      const user = await requireProjectAccess(state, projectId, permission);
+      requireProjectPermission(state, projectId, permission);
       return { db: state.db, projectId, user };
     },
     getProjectScope: async (_db: unknown, _user: unknown, permission: ProjectPermission = 'project:read') =>

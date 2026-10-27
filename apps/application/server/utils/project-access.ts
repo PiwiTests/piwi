@@ -70,6 +70,20 @@ export async function requireProjectAccess(
   permission?: RoutePermission | RoutePermission[],
 ): Promise<User> {
   const user = await requireAuth(event, permission);
+  await requireProjectPermission(event, projectId, permission);
+  return user;
+}
+
+/**
+ * The project decision of `requireProjectAccess`, for a handler that already
+ * called `requireAuth`: it reads the access `requireAuth` loaded, so the caller
+ * is identified once per request.
+ */
+export async function requireProjectPermission(
+  event: H3Event,
+  projectId: number,
+  permission?: RoutePermission | RoutePermission[],
+): Promise<void> {
   const access = await getRequestAccess(event);
   if (!passesProjectCheck(access, requiredPermissionsFor(event, permission), projectId)) {
     throw apiError({
@@ -77,7 +91,6 @@ export async function requireProjectAccess(
       message: can(access, 'project:read', projectId) ? 'Insufficient permissions' : 'No access to this project',
     });
   }
-  return user;
 }
 
 /** Whether the caller holds at least one of `permissions` on `projectId`. */
@@ -98,10 +111,11 @@ export function requireRouteId(event: H3Event, paramName = 'id', label = 'ID'): 
 }
 
 /**
- * Resolve a child entity's project via `resolve`, 404 if the entity doesn't
- * exist, then require the caller holds the route's permission on that project
- * (see `requireProjectAccess`). Returns the db/projectId/user so callers don't
- * need a second getDatabase() call.
+ * Authenticate the caller (`requireAuth`), resolve a child entity's project via
+ * `resolve`, 404 if the entity doesn't exist, then require the caller holds the
+ * route's permission on that project (see `requireProjectAccess`). A caller
+ * without credentials gets 401 whether the entity exists or not. Returns the
+ * db/projectId/user so callers don't need a second getDatabase() call.
  */
 export async function requireResolvedProjectAccess(
   event: H3Event,
@@ -110,10 +124,11 @@ export async function requireResolvedProjectAccess(
   notFoundLabel: string,
   permission?: RoutePermission | RoutePermission[],
 ): Promise<{ db: DrizzleDB; projectId: number; user: User }> {
+  const user = await requireAuth(event, permission);
   const db = await getDatabase();
   const projectId = await resolve(db, id);
   if (!projectId) throw apiError({ statusCode: 404, message: `${notFoundLabel} not found` });
-  const user = await requireProjectAccess(event, projectId, permission);
+  await requireProjectPermission(event, projectId, permission);
   return { db, projectId, user };
 }
 

@@ -983,12 +983,11 @@ interface CiRun {
   shardTotal: number | null;
 }
 
-/** The project a CI question is about: `named` (the page's), else the one whose latest run is newest. */
+/** The project a CI question is about: `named` (the page's), else the one whose last run is newest. */
 async function ciProject(w: AnswerWriter, named: number | null) {
   const { db, scope } = w.env;
   const projects = await listProjects(db, scope);
-  const time = (p: { latestRun?: { startTime?: Date | string | null } | null }) =>
-    p.latestRun?.startTime ? new Date(p.latestRun.startTime).getTime() : 0;
+  const time = (p: { lastRunAt?: Date | string | null }) => (p.lastRunAt ? new Date(p.lastRunAt).getTime() : 0);
   const project =
     named !== null
       ? projects.find((p: { id: number }) => p.id === named)

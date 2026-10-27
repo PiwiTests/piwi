@@ -19,7 +19,9 @@ can tell Piwi beyond what the test sees.
 
 **Status.** Proposed 2026-10-26. Built: the `checkBaseUrl` message for a base URL that a remote browser reaches from
 its own network (Part 1); Part 3's measurement, and its cut: the reads the test waits for as its page closes go out
-together, while the last locator captures finish. Nothing else is built. The spikes in the [appendix](#appendix-the-spikes) are the evidence
+together, while the last locator captures finish. From D3, the reporter reads its own `piwi-*` attachments only
+with the content type the capture fixtures write; the `piwi-grid-session` attachment is not read yet. Nothing else is
+built. The spikes in the [appendix](#appendix-the-spikes) are the evidence
 for the claims about Playwright and the capture's cost; they are not part of the repository. Nothing here is on
 [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D61 of
 [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -344,7 +346,7 @@ Its commands work on Windows too, as the root guide requires.
 | --- | --- | --- |
 | A grid gets a credential it can reuse. | An API key carries its owner's access ([`api-keys/index.post.ts`](../apps/application/server/api/users/%5Bid%5D/api-keys/index.post.ts): "The key carries its owner's access"). | Grids receive browser tokens, one run each, or grid keys, which open browsers and nothing else (4.3). |
 | The grid reaches into the runner. | With `exposeNetwork`, the grid opens connections through the client to any address the rule allows; `<loopback>` allows every port on the CI machine's loopback ([spike F](#f-the-exposenetwork-rule-against-a-server-that-misbehaves)). | The rule Piwi writes covers the `baseURL` and `webServer` ports alone (D8). |
-| A grid replaces Piwi's capture data. | A grid's `x-playwright-attachment` headers become attachments of any name, before the fixtures write theirs, and the reporter reads the first of each name. | The reporter reads its own attachments only as `application/json`, and the session's name only as `text/plain` (D3). |
+| A grid replaces Piwi's capture data. | A grid's `x-playwright-attachment` headers become attachments of any name, before the fixtures write theirs, and the reporter reads the first of each name. | The reporter reads its own attachments only with the content type the fixtures write (`application/json`, and `text/plain; charset=utf-8` for the ARIA snapshot), and the session's name only as `text/plain` (D3). |
 | A token in a recorded endpoint. | Grids that take a token in the query string (Browserless, the commercial clouds' capabilities) put it in the address. | The reporter records the endpoint without its query string or credentials (Part 1). |
 | A grid reports false facts. | A report can make a run an incident (D7). | Only an administrator creates a grid's credential; each report names its grid on every page that uses it; an incident from a grid can be cleared like any other (`setRunIncident`). |
 | A team exposes `run-server`. | Selenium Grids exposed without authentication were taken over in campaigns reported by [Wiz](https://www.wiz.io/blog/seleniumgreed-cryptomining-exploit-attack-flow-remediation-steps) (2024-07-25), [Cado Security](https://thehackernews.com/2024/09/exposed-selenium-grid-servers-targeted.html) (2024-09) and [LeakIX](https://blog.leakix.net/2026/02/seleniumgreed-rce/) (2026-02-21). A `run-server` up to 1.59.1 applies a client's `args`, and Chromium's [`--renderer-cmd-prefix` and `--gpu-launcher`](https://chromium.googlesource.com/chromium/src/+/main/content/public/common/content_switches.cc) start a program of the caller's choice. | The docs' warning (D9, Part 5). |
@@ -407,8 +409,8 @@ PR 1 is the first release.
 - **A grid can replace the capture's data** (`packages/reporter/src/public/reporter.ts`, the `attachments.find` reads
   of `piwi-pauses`, `piwi-locators`, `piwi-locator-pages`, code reach and `piwi-resources`): Playwright Test turns a
   server's `x-playwright-attachment` headers into attachments of any name, at context creation, before the fixtures
-  write theirs, and the reporter takes the first of each name without checking its type. The fix is D3's, and does
-  not wait for this plan.
+  write theirs, and the reporter took the first of each name without checking its type. Fixed by D3's rule: every
+  read matches the name and the content type the fixtures write (`findPiwiAttachment`).
 - **The capture's cost grows with the round trip** (Part 3): 293 ms per test between no added delay and 30 ms, from
   reads the test waits for. Fixed: the reads at the page's close go out together, during the drain (49 ms of growth
   where the same machine measured 109).

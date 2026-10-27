@@ -32,7 +32,14 @@ import {
 } from '../src/coverage';
 import type { CodeIndex, FileCoverage } from '../src/piwi-client';
 import { startServer } from '../src/server';
-import type { CoverageResult, FileSummary, RunCommand, StatusResult, TestsForFile } from '../src/protocol';
+import type {
+  CoverageResult,
+  FileSummary,
+  RunCommand,
+  RunStatusResult,
+  StatusResult,
+  TestsForFile,
+} from '../src/protocol';
 
 /** A server file of the application, as committed: the version the tests' coverage recorded. */
 const BASKET = [
@@ -215,7 +222,10 @@ async function waitFor<T>(read: () => T | undefined | Promise<T | undefined>, ms
   }
 }
 
-/** A service on the fixture repository, connected once its indexes are read. */
+/**
+ * A service on the fixture repository, ready once it read the latest run on the checked-out branch and the code index,
+ * and no refresh runs.
+ */
 async function startService(apiKey?: string): Promise<{ client: MessageConnection; stop: () => void }> {
   const toServer = new PassThrough();
   const toClient = new PassThrough();
@@ -238,10 +248,17 @@ async function startService(apiKey?: string): Promise<{ client: MessageConnectio
     workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
   });
   await connection.sendNotification('initialized', {});
+  // The coverage is read for the branch the latest run's read found checked out, and the code index, read after that
+  // run, gates it.
   await waitFor(async () => {
     const status = (await connection.sendRequest('piwi/status')) as StatusResult;
-    return status.contexts[0]?.connected ? true : undefined;
+    const run = (await connection.sendRequest('piwi/runStatus')) as RunStatusResult;
+    const context = status.contexts[0];
+    return context?.connected && context.reachedFiles > 0 && run.contexts[0]?.checkedOut === 'main' ? true : undefined;
   });
+  // The refresh `initialized` started may still be reading the other indexes: `piwi/refresh` answers once it, and the
+  // refresh asked for after it, have ended.
+  await connection.sendRequest('piwi/refresh');
   return { client: connection, stop: stopService };
 }
 

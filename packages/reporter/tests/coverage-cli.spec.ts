@@ -21,7 +21,7 @@ vi.mock('../src/internal/collect/blob-ids.js', async (importOriginal) => {
   return { ...actual, gitHashObjects: vi.fn(actual.gitHashObjects) };
 });
 
-const EMPTY_ENV = {} as NodeJS.ProcessEnv;
+const EMPTY_ENV = { PIWI_DESKTOP_CONFIG: '/nonexistent/desktop.json' } as NodeJS.ProcessEnv;
 
 let repo: string;
 let server: FakeServer | null = null;
@@ -100,6 +100,23 @@ describe('parseCoverageUploadArgs', () => {
       apiKey: 'k',
       dryRun: false,
     });
+  });
+
+  it('reads the connection and the project from the .env of the folders it is given', () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-coverage-env-'));
+    try {
+      fs.writeFileSync(
+        path.join(folder, '.env'),
+        'PIWI_DASHBOARD_URL=https://dash.example\nPIWI_API_KEY=pd_workspace\nPIWI_PROJECT_NAME=web\n',
+      );
+      expect(parseCoverageUploadArgs(['a.xml', '--suite', 'unit'], EMPTY_ENV, [folder])).toMatchObject({
+        serverUrl: 'https://dash.example',
+        apiKey: 'pd_workspace',
+        project: 'web',
+      });
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
   });
 
   it('refuses a missing report, suite, URL or project, and an unknown option', () => {

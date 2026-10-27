@@ -19,13 +19,23 @@ export async function projectRunScopeConditions(
   projectId: number,
   scope: ProjectRunScope,
 ): Promise<SQL[]> {
+  const defaultBranch = scopeReadsDefaultBranch(scope) ? await projectDefaultBranch(db, projectId) : '';
+  return runScopeConditions(scope, defaultBranch);
+}
+
+/** Whether a scope reads the default branch, the one case its conditions need it. */
+export function scopeReadsDefaultBranch(scope: ProjectRunScope): boolean {
+  return scope.branches.length === 0 && !scope.allBranches;
+}
+
+/** `projectRunScopeConditions` with the default branch already resolved. */
+export function runScopeConditions(scope: ProjectRunScope, defaultBranch: string): SQL[] {
   const conditions: SQL[] = [];
   if (scope.fullRunsOnly) conditions.push(eq(testRuns.isFullRun, 1));
   if (scope.environments.length > 0) conditions.push(inArray(testRuns.environment, scope.environments));
   if (scope.branches.length > 0) {
     conditions.push(inArray(testRuns.branch, scope.branches));
   } else if (!scope.allBranches) {
-    const defaultBranch = await projectDefaultBranch(db, projectId);
     conditions.push(or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch), eq(testRuns.branch, ''))!);
   }
   return conditions;

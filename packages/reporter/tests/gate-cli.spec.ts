@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { parseGateArgs, runGate } from '../src/cli/gate.js';
 
 const EMPTY_ENV = {} as NodeJS.ProcessEnv;
+const NO_DESKTOP = { PIWI_DESKTOP_CONFIG: '/nonexistent/desktop.json' } as NodeJS.ProcessEnv;
 
 let tmpDir: string;
 
@@ -135,7 +136,18 @@ describe('parseGateArgs', () => {
   });
 
   it('refuses to run without a dashboard URL', () => {
-    expect(() => parseGateArgs(['--run-id', '1'], EMPTY_ENV)).toThrow(/No dashboard URL/);
+    expect(() => parseGateArgs(['--run-id', '1'], NO_DESKTOP)).toThrow(/No dashboard URL/);
+  });
+
+  it('reads the connection from the .env of the folders it is given', () => {
+    fs.writeFileSync(path.join(tmpDir, '.env'), 'PIWI_DASHBOARD_URL=https://piwi.example.com\nPIWI_API_KEY=pd_workspace\n');
+    expect(parseGateArgs(['--run-id', '1'], NO_DESKTOP, [tmpDir])).toMatchObject({
+      serverUrl: 'https://piwi.example.com',
+      apiKey: 'pd_workspace',
+    });
+    expect(parseGateArgs(['--run-id', '1'], { ...NO_DESKTOP, PIWI_API_KEY: 'pd_mine' }, [tmpDir]).apiKey).toBe(
+      'pd_workspace',
+    );
   });
 
   it('refuses to run when no run can be resolved', () => {

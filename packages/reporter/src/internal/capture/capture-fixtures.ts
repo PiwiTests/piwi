@@ -44,6 +44,7 @@ import {
   type FailedLocatorInfo,
 } from './locator-healing.js';
 import {
+  ARIA_SNAPSHOT_CONTENT_TYPE,
   ATTACHMENT_NAMES,
   FAILURE_SCREENSHOT_ATTACHMENT,
   LOCATOR_SUGGESTION_ANNOTATION,
@@ -3121,7 +3122,7 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
       const snapshot = (live ? await readRootAria(page) : null) ?? sink.stashedAria;
       if (snapshot) {
         await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
-          contentType: 'text/plain',
+          contentType: ARIA_SNAPSHOT_CONTENT_TYPE,
           body: snapshot,
         });
 
@@ -3185,7 +3186,7 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
       const snapshot = (live ? await readRootAria(page) : null) ?? sink.stashedAria;
       if (snapshot) {
         await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
-          contentType: 'text/plain',
+          contentType: ARIA_SNAPSHOT_CONTENT_TYPE,
           body: snapshot,
         });
         const snapshotJson = (live ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson;

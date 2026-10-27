@@ -2437,6 +2437,11 @@ const SCENES = [
     },
     { shot: 'project-targets', route: '/projects/1?tab=settings&section=targets', what: 'the project targets form' },
     {
+      shot: 'project-status-filter',
+      route: '/projects/3?tab=settings&section=status',
+      what: 'the status filter of a project, the runs that set its status in the sidebar',
+    },
+    {
       shot: 'project-url-patterns',
       route: '/projects/1?tab=settings&section=browser-extension',
       what: 'the browser extension URL patterns of a project, with the origins its suite visited',

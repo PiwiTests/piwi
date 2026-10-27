@@ -6,7 +6,8 @@ import { execFileSync } from 'node:child_process';
 import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
-import { findPlaywrightRoot, parsePreflightArgs, runPreflight } from '../src/cli/preflight.js';
+import { parsePreflightArgs, runPreflight } from '../src/cli/preflight.js';
+import { findPlaywrightRoot } from '../src/internal/support/connection.js';
 import { spawnPlaywrightForRun } from '../src/cli/select.js';
 import type * as SelectModule from '../src/cli/select.js';
 
