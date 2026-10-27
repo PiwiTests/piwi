@@ -305,7 +305,11 @@ export class RunHub {
           return reply(
             image
               ? { ok: true, message: 'The stopped page.' }
-              : { ok: false, message: 'No image: the worker is not stopped, or did not answer in time.' },
+              : {
+                  ok: false,
+                  message:
+                    'No image: the worker is not stopped, cannot tell which page it stopped in, or did not answer in time.',
+                },
             { image },
           );
         }
