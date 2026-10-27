@@ -1,15 +1,16 @@
 # VS Code extension architecture
 
 How the VS Code extension in `apps/vscode/` works: what it draws from each answer of the editor service, its views and
-commands, recording, and its test suites. The rules are in [`AGENTS.md`](AGENTS.md); the protocol and what the service
-answers are in [`packages/editor/ARCHITECTURE.md`](../../packages/editor/ARCHITECTURE.md). This file is reference
-material: open the section for the area you change.
+commands, recording, and its test suites. The rules are in [`AGENTS.md`](AGENTS.md). What the service answers, and why,
+is in [`packages/editor/ARCHITECTURE.md`](../../packages/editor/ARCHITECTURE.md): this file describes only what the
+extension does with it. It is reference material: open the section for the area you change.
 
 ## Contents
 
 - [Overview](#overview)
 - [Service, lenses and credentials](#service-lenses-and-credentials)
   - [Proxy and the log](#proxy-and-the-log)
+- [Settings and stored state](#settings-and-stored-state)
 - [Walkthrough](#walkthrough)
 - [Coverage marks](#coverage-marks)
 - [Failures view](#failures-view)
@@ -40,308 +41,534 @@ material: open the section for the area you change.
 
 ## Overview
 
-A thin client of the editor service. `npm run vscode:build` builds the service's bundle and copies it to
-`dist/piwi-language-server.cjs`, with the recorder's files the service finds next to itself
-(`piwi-recorder-launcher.cjs`, `piwi-use-reporter.cjs`, `record-ide.js`, `record-ide-messages.json`: `build.mjs` fails
-when one is missing), beside the extension's own bundle (`dist/extension.cjs`, esbuild, `vscode` external). The editor
-service's [Build output](../../packages/editor/ARCHITECTURE.md#build-output) says what each of those files is, and its
-[Protocol](../../packages/editor/ARCHITECTURE.md#protocol) covers the requests and notifications named below.
+The extension is a thin client of the editor service. `npm run vscode:build` builds the service, then `build.mjs`
+bundles the extension into `dist/extension.cjs` (esbuild, with `vscode` as an external module) and copies the service
+beside it:
+
+- `dist/piwi-language-server.cjs`, the service;
+- the recorder's files the service looks for next to itself: `piwi-recorder-launcher.cjs`, `piwi-use-reporter.cjs`,
+  `record-ide.js` and `record-ide-messages.json`.
+
+`build.mjs` fails when one of these files is missing. What each file is:
+[Build output](../../packages/editor/ARCHITECTURE.md#build-output) in the editor service's reference. The requests and
+notifications named below: [Protocol](../../packages/editor/ARCHITECTURE.md#protocol), in the same reference.
 
 ## Service, lenses and credentials
 
-`src/extension.ts` starts the service with `vscode-languageclient`, draws `piwi/fileSummary` as CodeLens (a test's line
-as a gutter icon from `media/`, its details in a hover, the `piwi.failingTestBackground` color over a failing test and
-`piwi.failingLineBackground` on the line it failed at, still drawn once that line changed since the run, which the hover
-says, with **Run** (`piwi.runTests` with `SummaryLine.testCaseId`) and **Open in dashboard**: `testDecorations`,
-`testHoverMarkdown` and `TEST_HOVER_COMMANDS` in `src/glue.ts`; `piwi/failuresChanged` and `piwi/coverageChanged` draw
-them again, once for the notifications of a 50 ms burst (`filesChanged`, `coalesced` in `src/glue.ts`); the gutter is
-drawn with CodeLens turned off too, from the same `piwi/fileSummary`, asked once per text version and drawing of the
-files: `summaryOf`, `decorateVisible`) and `piwi/runStatus` in the status bar (the tests still failing and those fixed
-locally since the latest run, from `failingTests` and `resolved`, and the run in progress, `live`; a notification that
-moves only the run in progress leaves the CodeLens and the gutter as they are: `runsInFiles`), implements the commands
-the service names (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.desktopJob`,
-from a quick fix or a flaky test's lens, which shows `piwi/desktopJobChanged` as notifications with the share button),
-keeps the API key in `SecretStorage`, hands the connection to the service with `piwi/setCredentials` and as the
-initialization options of each of its starts (`handed`: the client starts the service again after it stops
-unexpectedly): a change of `piwi.serverUrl`, `piwi.project`, `piwi.failureSeverity` (`error`, `warning`, `information`,
-`off`: the severity of a failure's diagnostic, sent as `failureSeverity`), `piwi.mcpAuthorization` (`key`, `sign-in`:
-how the agent signs in to Piwi's MCP server, an application setting a workspace cannot override, sent as
-`mcpAuthorization`) or a key is handed 250 ms after the last of a burst, and only when the connection differs from the
-one handed (`handChangedCredentials`), since each one reads everything again, then the MCP servers are asked again
-(`mcpServersChanged`); and provides Piwi's MCP server through `vscode.lm.registerMcpServerDefinitionProvider` where the
-editor has it (read at runtime: `engines.vscode` stays at the oldest version `vscode-languageclient` supports, for
-Cursor and VSCodium).
+`src/extension.ts` starts the service with `vscode-languageclient` and draws its answers.
+
+**Each file's summary.** The extension asks `piwi/fileSummary` once per text version of a file and per drawing of the
+files (`summaryOf`), and draws it in two places:
+
+- A test's line goes to the gutter: an icon from `media/` and a hover with the test's details, **Run**
+  (`piwi.runTests` with `SummaryLine.testCaseId`) and **Open in dashboard** (`testDecorations`, `testHoverMarkdown`,
+  `TEST_HOVER_COMMANDS` in `src/glue.ts`). A failing test gets the `piwi.failingTestBackground` color, and the line it
+  failed at gets `piwi.failingLineBackground`. That line keeps its color after it changed since the run, and the hover
+  says so.
+- Every other line of the summary (the file's line, a locator's tests) is a CodeLens.
+
+The gutter is drawn with CodeLens turned off too (`decorateVisible`). `piwi/failuresChanged` and `piwi/coverageChanged`
+draw the CodeLens and the gutter again, once for all the notifications of a 50 ms burst (`filesChanged`, `coalesced`
+in `src/glue.ts`).
+
+**The runs.** `piwi/runStatus` goes to the status bar: the tests still failing, those fixed locally since the latest
+run (`failingTests`, `resolved`), and the run in progress (`live`). A notification that moves only the run in progress
+leaves the CodeLens and the gutter as they are (`runsInFiles`). What the item shows: [Status bar](#status-bar).
+
+**The service's commands.** The extension implements the commands the service names: `piwi.openInDashboard`,
+`piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyText`,
+`piwi.copyAgentContext` and `piwi.desktopJob`. `piwi.desktopJob` comes from a quick fix or from a flaky test's lens;
+the job's updates (`piwi/desktopJobChanged`) show as notifications, with a button that shares the verdict.
+
+**The credentials.** The connection is the instance (`piwi.serverUrl`), the project (`piwi.project`), the API key
+(kept in `SecretStorage`), the choice of the desktop app, the baselines, `piwi.failureSeverity` (sent as
+`failureSeverity`) and `piwi.mcpAuthorization` (sent as `mcpAuthorization`). The extension hands it to the service in
+two ways:
+
+- `piwi/setCredentials`, when a setting or the key changes: 250 ms after the last change of a burst, and only when the
+  connection differs from the one last handed (`handChangedCredentials`), since each handing makes the service read
+  everything again. The MCP servers are then asked again (`mcpServersChanged`).
+- the initialization options of each start of the service (`handed`), since the client starts the service again after
+  it stops unexpectedly.
+
+**The MCP server.** Where the editor has `vscode.lm.registerMcpServerDefinitionProvider` (VS Code 1.101 and later),
+the extension provides Piwi's MCP server through it. The API is looked up at run time: `engines.vscode` stays at the
+oldest version `vscode-languageclient` supports, for Cursor and VSCodium. Once per machine, a notification says where
+the server went, or, in an editor without that API, offers to copy its configuration (`offerMcp`).
 
 ### Proxy and the log
 
-The service's environment follows the editor's proxy settings (`serviceEnvironment` in `src/glue.ts`: `http.proxy`, with
-a `Basic` `http.proxyAuthorization` as its credentials, `http.noProxy` and `http.proxyStrictSSL`, as `HTTPS_PROXY`,
-`HTTP_PROXY`, `NO_PROXY` and `NODE_TLS_REJECT_UNAUTHORIZED` over the extension host's environment, which passes
-`NODE_EXTRA_CA_CERTS` through); a change of one starts the service again, 250 ms after the last of a burst
-(`proxyChanged`). **Piwi: Open the log** (`piwi.openLog`) shows the client's output channel, where `piwi.trace.server`
-writes the traffic with the service.
+The service's environment is the extension host's, with the editor's proxy settings on top (`serviceEnvironment` in
+`src/glue.ts`):
+
+- `http.proxy` becomes `HTTPS_PROXY` and `HTTP_PROXY`, with a `Basic` `http.proxyAuthorization` as the proxy URL's
+  credentials;
+- `http.noProxy` becomes `NO_PROXY`;
+- `http.proxyStrictSSL` turned off sets `NODE_TLS_REJECT_UNAUTHORIZED=0`;
+- `NODE_EXTRA_CA_CERTS` passes through from the extension host's environment.
+
+A setting left empty keeps the environment's own variable. A change of one of these settings starts the service again,
+250 ms after the last change of a burst (`proxyChanged`). **Piwi: Open the log** (`piwi.openLog`) shows the client's
+output channel, where `piwi.trace.server` writes the traffic with the service.
+
+## Settings and stored state
+
+The settings (`contributes.configuration` in `package.json`):
+
+| Setting                 | Values, default first                    | What it does                                                                                    |
+| ----------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `piwi.serverUrl`        | a URL                                    | The instance. Connect writes it in the workspace settings.                                      |
+| `piwi.project`          | a project name                           | The project. Connect writes it in the workspace settings.                                       |
+| `piwi.breakpoints`      | `true`, `false`                          | Test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                          |
+| `piwi.runNotifications` | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)).                                                |
+| `piwi.failureSeverity`  | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
+| `piwi.mcpAuthorization` | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
+| `piwi.testExplorer`     | `true`, `false`                          | Piwi's tests in the Testing view ([Testing view](#testing-view)).                               |
+| `piwi.trace.server`     | `off`, `messages`, `verbose`             | The traffic with the service in the log.                                                        |
+
+What the extension stores:
+
+- **`SecretStorage`**: the API key of each instance (`piwi.apiKey <url>`) and the Send to editor token
+  (`piwi.sendToken`). The old key slot shared by every instance (`piwi.apiKey`) is deleted once (`forgetSharedKey`).
+- **Global state** (this machine): `piwi.walkthroughOpened`, `piwi.mcpOffered`, `piwi.sendPort`,
+  `piwi.sharedKeyForgotten`.
+- **Workspace state** (this machine and this workspace, never a file the team shares): the desktop app chosen with
+  Connect and its project (`piwi.desktop`, `piwi.desktopProject`, `piwi.desktopOffered`), the baselines
+  (`piwi.baseline`), `piwi.coverageShown`, `piwi.failuresGrouping`, `piwi.followEditor`, and a recording's choices
+  (`piwi.recordStartUrl`, `piwi.recordPage`, `piwi.recordProject`).
+
+The context keys the extension sets, which `package.json` reads in `when` clauses: `piwi.active`, `piwi.failuresView`,
+`piwi.followEditor`, `piwi.hasCoverage`, `piwi.recording` and `piwi.recordingPaused`.
 
 ## Walkthrough
 
-**Get started with Piwi** is the walkthrough (`contributes.walkthroughs`, each step's media a Markdown file of
-`walkthrough/`, which `.vscodeignore` ships): connect, the failures, a run, a recording, the MCP server, the settings,
-each step with a button that runs the extension's command (`piwi.connect`, `piwi.failures.focus`, `piwi.rerunFailing`,
-`piwi.recordFile`, `piwi.copyMcpConfiguration`, `piwi.openSettings`) and checked off by its events
-(`onContext:piwi.active`, `onView:piwi.failures`, `onCommand:…`). It opens once per machine (`piwi.walkthroughOpened` in
-global state), on the first activation in a workspace holding a Playwright config (`PLAYWRIGHT_CONFIGS` in
-`src/glue.ts`, the activation event's glob), unless `workbench.welcomePage.walkthroughs.openOnInstall` is off, and never
-in the integration suite's window (`ExtensionMode.Test`); **Piwi: Get started** (`piwi.getStarted`) opens it again
-(`WALKTHROUGH`). `tests/walkthrough.test.ts` holds each step to a contributed command or view, a context key the
-extension sets, and a shipped Markdown file: a renamed command, view or context key fails it.
+**Get started with Piwi** is the walkthrough (`contributes.walkthroughs`). Its steps are: connect, the failures, a run,
+a recording, the MCP server, and the settings.
+
+- Each step's media is a Markdown file of `walkthrough/`, which `.vscodeignore` ships.
+- Each step has a button that runs a command of the extension: `piwi.connect`, `piwi.failures.focus`,
+  `piwi.rerunFailing`, `piwi.recordFile`, `piwi.copyMcpConfiguration`, `piwi.openSettings`.
+- Each step is checked off by its completion events (`onContext:piwi.active`, `onView:piwi.failures`, `onCommand:…`).
+
+The walkthrough opens once per machine (`piwi.walkthroughOpened` in global state), on the first activation in a
+workspace that holds a Playwright config (`PLAYWRIGHT_CONFIGS` in `src/glue.ts`, the activation event's glob). It does
+not open when `workbench.welcomePage.walkthroughs.openOnInstall` is off, nor in the integration suite's window
+(`ExtensionMode.Test`). **Piwi: Get started** (`piwi.getStarted`) opens it again (`WALKTHROUGH`).
+
+`tests/walkthrough.test.ts` checks that each step names a contributed command or view, a context key the extension
+sets, and a shipped Markdown file: a step that still names a renamed command, view or context key fails it.
 
 ## Coverage marks
 
-Coverage marks: each visible file the service reads (C# among them) is asked `piwi/coverage` once, again after a
-`piwi/statusChanged`, and drawn as whole-line left borders (`coverageDecorations` in `src/glue.ts`): the lines tests ran
-in `piwi.coverageRunBorder`, the executable lines none runs in `piwi.coverageNotRunBorder`, both defaulting to the
-dashboard's colors (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`, checked by
-`apps/application/tests/unit/coverage-mark-colors.test.ts`), and the lines changed since the coverage run dashed in
-`piwi.coverageChangedBorder`; in a file no test reaches, its uncovered changes (`CoverageResult.uncovered`) in
-`piwi.uncoveredChangeBorder`; all but the lines run also in the overview ruler. `piwi/coverageChanged` replaces a file's
-answer and draws it again with its lenses; an edit asks nothing, the service pushes the marks it placed. The service's
-hover names the tests behind a line and ends on what the marks mean (VS Code has no hover on a decoration's border).
-**Piwi: Toggle the coverage marks** (`piwi.toggleCoverage`, kept in `workspaceState` as `piwi.coverageShown`, shown by
-default) is in the palette only once a file showed marks (`piwi.hasCoverage`): a workspace without coverage shows
-nothing of it.
+Each visible file the service reads (C# files among them) is asked `piwi/coverage` once, and again after a
+`piwi/statusChanged`. The answer is drawn as whole-line left borders (`coverageDecorations` in `src/glue.ts`):
+
+| Lines                                                                         | Color                        | Style  |
+| ----------------------------------------------------------------------------- | ---------------------------- | ------ |
+| Lines tests ran                                                               | `piwi.coverageRunBorder`     | solid  |
+| Executable lines no test runs                                                 | `piwi.coverageNotRunBorder`  | solid  |
+| Lines changed since the coverage run                                          | `piwi.coverageChangedBorder` | dashed |
+| In a file no test reaches, its uncovered changes (`CoverageResult.uncovered`) | `piwi.uncoveredChangeBorder` | solid  |
+
+The first two colors default to the dashboard's (`COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`, checked by
+`apps/application/tests/unit/coverage-mark-colors.test.ts`). Every mark but the lines run also shows in the overview
+ruler.
+
+`piwi/coverageChanged` replaces a file's answer and draws it again, with the file's lenses. An edit asks for nothing:
+the service pushes the marks it moved. The service's hover names the tests behind a line and ends on what the marks
+mean, since VS Code shows no hover on a decoration's border. What the service computes:
+[Coverage marks](../../packages/editor/ARCHITECTURE.md#coverage-marks) in the editor service's reference.
+
+**Piwi: Toggle the coverage marks** (`piwi.toggleCoverage`) hides or shows them; the choice is kept in workspace state
+(`piwi.coverageShown`, shown by default). The command is in the palette only once a file showed marks
+(`piwi.hasCoverage`), so a workspace without coverage shows nothing of it.
 
 ## Failures view
 
-`src/failures-view.ts` is the **Failures** view of the **Piwi** panel (`viewsContainers.panel`): a `TreeView` over the
-failures `piwi/failuresChanged` pushes (`show`), read from `piwi/failures` with the grouping 200 ms after the extension
-starts or a `piwi/statusChanged`, and when the grouping changes, and drawn again when a `piwi/runStatusChanged` moves
-the editor's own run in progress (`ownLiveRun`); a push is never answered with a read. Its nodes are the tree the
-service grouped (`FailuresResult.tree`), drawn by `failureNodes` in `src/glue.ts` with a run's age, or the editor's own
-run in progress on the run of its Playwright config (`liveRoot`): the run, **Your runs since**, then the failures by
-file, cluster, owner or flat (`piwi.groupFailuresBy`, kept in `workspaceState` as `piwi.failuresGrouping`), under a node
-per config (`root-folder`) when several have something to show. A failure's `contextValue` (`piwi.failure.<state>` and
-`trace`, `screenshot`, `agent`, `desktop`) decides its inline actions and context menu in `package.json`, and a config's
-(`piwi.context` with `failing` and `run`) runs **Re-run the failing tests**, **Open in dashboard** and **Compare with…**
-for that config, as a run's node does **Compare with…** (`FailureNode.root`); **Copy context for agent** asks
-`piwi/agentContext`. The badge counts the failing tests; **Follow the active editor** (`piwi.toggleFollowEditor`,
-`piwi.stopFollowingEditor`, kept as `piwi.followEditor`) reveals the active file's first failure; the welcome content
-follows the `piwi.failuresView` context key. The badge is `FailuresResult.failing`. **Re-run the failing tests**
-(`piwi.rerunFailing`) runs `FailuresResult.rerun`, one run per Playwright config, or a config's alone from its node
-(`failingRuns`), and **Run this test** `failureRunArgs`: both name the failure's config (`root`). The view's
-`getChildren` is in the API `activate` returns (`failureChildren`).
+`src/failures-view.ts` is the **Failures** view of the **Piwi** panel (`viewsContainers.panel`), a `TreeView`.
+
+**Where its failures come from.**
+
+- It shows what `piwi/failuresChanged` pushes (`show`). A push is never answered with a read.
+- It reads `piwi/failures`, with its grouping, 200 ms after the extension starts or after a `piwi/statusChanged`, and
+  when the grouping changes.
+- It is drawn again when a `piwi/runStatusChanged` moves the editor's own run in progress (`ownLiveRun`).
+
+**Its nodes** are the tree the service grouped (`FailuresResult.tree`), drawn by `failureNodes` in `src/glue.ts` with
+each run's age. From the top: the run, **Your runs since**, then the failures by file, cluster, owner or flat. The
+editor's own run in progress shows on the run of its Playwright config (`liveRoot`). When several configs have something
+to show, each has a node of its own (icon `root-folder`) above its tree. **Group the failures by…**
+(`piwi.groupFailuresBy`) changes the grouping, kept in workspace state (`piwi.failuresGrouping`). How the service builds
+the tree: [The failures answer](../../packages/editor/ARCHITECTURE.md#the-failures-answer) in the editor service's
+reference.
+
+**Actions.** A node's `contextValue` decides its inline actions and its context menu (`view/item/context` in
+`package.json`):
+
+- A failure: `piwi.failure.<state>`, then `trace`, `screenshot`, `agent` and `desktop` for what it offers.
+  **Copy context for agent** asks `piwi/agentContext`.
+- A Playwright config's node: `piwi.context`, with `failing` and `run`. It runs **Re-run the failing tests**,
+  **Open in dashboard** and **Compare with…** for that config.
+- A run's node runs **Compare with…** for its config (`FailureNode.root`).
+
+**Re-run the failing tests** (`piwi.rerunFailing`) runs `FailuresResult.rerun`, one run per Playwright config, or one
+config's alone from its node (`failingRuns`). **Run this test** runs `failureRunArgs`. Both name the failure's config
+(`root`).
+
+**The rest of the view.**
+
+- The badge counts the failing tests (`FailuresResult.failing`).
+- **Follow the active editor** (`piwi.toggleFollowEditor`, `piwi.stopFollowingEditor`, kept as `piwi.followEditor`)
+  reveals the active file's first failure.
+- The welcome content follows the `piwi.failuresView` context key.
+- The view's `getChildren` is in the API `activate` returns (`failureChildren`).
 
 ## Runs
 
 ### Run notifications and tests in progress
 
-`piwi/runEnded` is a notification (`runVerdict` in `src/glue.ts`): a warning with **Re-run failing** when something
-fails, an information otherwise, with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**, as the
-`piwi.runNotifications` setting allows (`always`, `failures`, `never`); a run's `repeat` (**Verify ×3**) is said
-whatever the setting, `Piwi: run #124 · Failed 1 of 3`, a warning when one of the runs failed. A test the run in
-progress runs has the `running` gutter icon (`media/test-running.svg`), then that run's result; `runsInFiles` keeps the
-run's `liveTests`, so the files are drawn again as its tests begin and end, at most once a second (`filesRedraw`,
-`drawFiles` in `src/extension.ts`), and at once when the latest run changes.
+When a run started from the editor ends, `piwi/runEnded` shows as a notification (`runVerdict` in `src/glue.ts`), as
+the `piwi.runNotifications` setting allows (`always`, `failures`, `never`):
+
+- a warning with **Re-run failing** when something fails, an information message otherwise;
+- both with **Open the failures** (`piwi.failures.focus`) and **Open in dashboard**.
+
+A run with `repeat` (**Verify ×3**) is reported whatever the setting, as `Piwi: run #124 · Failed 1 of 3`, a warning
+when one of the runs failed. A `piwi/notice` is shown as a warning or an information message, as its severity says.
+
+A test the run in progress runs has the `running` gutter icon (`media/test-running.svg`), then that run's result.
+`runsInFiles` keeps the run's `liveTests`, so the files are drawn again as its tests begin and end, at most once a
+second (`filesRedraw`, `drawFiles` in `src/extension.ts`), and at once when the latest run changes.
 
 ### Test runs as tasks
 
-A test run, which carries its own ref (`RunCommand.ref`, also in its environment), is a task (`runAsTask`): a
-`vscode.Task` of the `piwi` type (`taskDefinitions` in `package.json`, `{ type: 'piwi', ref }`), its command a
-`ShellExecution` in the Playwright config's folder, named `playwright test` and its arguments (`runTaskName` in
-`src/glue.ts`), in a dedicated terminal that is shown and cleared. Its start sends `piwi/commandStarted`, and
-`tasks.onDidEndTaskProcess` sends `piwi/commandEnded` with the exit code, on every VS Code version and in every shell.
-**Tasks: Rerun Last Task** runs the same command with the same ref: `tasks.onDidStartTaskProcess` sends
-`piwi/commandStarted` for it, which the service follows as a rerun of a ref it knows. A command without a ref
-(`piwi.runCommand`: the Flake Lab, a trace viewer) runs in a terminal (`runInTerminal`), reused per folder and
-environment. A `piwi/notice` is shown once, as a warning or an information message.
+A test run carries its own ref (`RunCommand.ref`, also in its environment). It runs as a VS Code task (`runAsTask`):
+
+- a `vscode.Task` of the `piwi` type (`taskDefinitions` in `package.json`, `{ type: 'piwi', ref }`);
+- its command is a `ShellExecution` in the Playwright config's folder, named `playwright test` and its arguments
+  (`runTaskName` in `src/glue.ts`);
+- it runs in a dedicated terminal, shown and cleared.
+
+Its start sends `piwi/commandStarted`, and `tasks.onDidEndTaskProcess` sends `piwi/commandEnded` with the exit code, on
+every VS Code version and in every shell. **Tasks: Rerun Last Task** runs the same command with the same ref:
+`tasks.onDidStartTaskProcess` sends `piwi/commandStarted` for it, and the service follows it as a rerun of a ref it
+knows.
+
+A command without a ref (`piwi.runCommand`: the Flake Lab, a trace viewer) runs in a terminal instead (`runInTerminal`),
+reused per folder and environment.
 
 ### Running the test at the cursor
 
-**Piwi: Run the test at the cursor** (`piwi.runTestAtCursor`), **Piwi: Verify the test at the cursor ×3**
-(`piwi.verifyTestAtCursor`) and **Piwi: Run this spec** (`piwi.runSpec`, while `piwi.active`), in the palette and the
-editor's context menu of a spec, ask `piwi/testAt` for the cursor, save the spec when it has unsaved changes, then run
-through `runTests` (`runTestAt`, `runSpec`) the test by its id when Piwi knows it, else by its location (`testAtRun` in
-`src/glue.ts`), and to verify it by its location three times (`VERIFY_REPEAT`); or say that there is none. The first two
-take a `{ uri, line }` argument (`testLineArg`) for the test at another line: the notification after a recording names
-the line its block ends on.
+Three commands, in the palette and in the editor's context menu of a spec:
+
+- **Piwi: Run the test at the cursor** (`piwi.runTestAtCursor`);
+- **Piwi: Verify the test at the cursor ×3** (`piwi.verifyTestAtCursor`);
+- **Piwi: Run this spec** (`piwi.runSpec`), shown while `piwi.active`.
+
+Each asks `piwi/testAt` for the cursor and saves the spec when it has unsaved changes. Then it runs through `runTests`
+(`runTestAt`, `runSpec`): the test by its id when Piwi knows it, else by its location (`testAtRun` in `src/glue.ts`);
+to verify, by its location, three times (`VERIFY_REPEAT`). When there is no test, a message says so. The first two
+commands take a `{ uri, line }` argument (`testLineArg`) for the test at another line: the notification after a
+recording names the line its block ends on.
 
 ### Breakpoints
 
-Every test run (`runTests`: the lenses, the gutter hover's **Run**, **Run this test**, **Run the test at the cursor**,
-**Run this spec**, **Run the tests that reach this file**, **Re-run the failing tests**; and **Run selection…**) passes
-the editor's breakpoints to the service (`breakpoints`), as the `piwi.breakpoints` setting allows (default on): the
-enabled `vscode.SourceBreakpoint`s in script files under a Playwright config's folder (`runBreakpoints` in
-`src/breakpoints.ts`). When the answer carries `PIWI_PAUSE_AT`, `startRun` starts the send listener if it is not
-running, minting its token as **Pair with Piwi Picker** does, without copying anything, and adds the pairing address as
-`PIWI_EDITOR_SEND`; `RunCommand.notice` (a reporter too old for breakpoints) is a warning, once per notice. The API
-`activate` returns gives the latest run's command (`lastRun`).
+Every test run passes the editor's breakpoints to the service (`breakpoints`), as the `piwi.breakpoints` setting allows
+(on by default). That covers every run through `runTests` (the lenses, the gutter hover's **Run**, **Run this test**,
+**Run the test at the cursor**, **Run this spec**, **Run the tests that reach this file**, **Re-run the failing
+tests**) and **Run selection…**. The breakpoints passed are the enabled `vscode.SourceBreakpoint`s in script files under
+a Playwright config's folder (`runBreakpoints` in `src/breakpoints.ts`).
+
+When the answer's environment carries `PIWI_PAUSE_AT`, or the command says the run pauses at a `page.pause()`
+(`RunCommand.pauses`), `startRun` adds the pairing address as `PIWI_EDITOR_SEND`. It starts the send listener when it is
+not running, minting its token as **Pair with Piwi Picker** does, but copies nothing. A `RunCommand.notice` (a reporter
+too old for breakpoints) shows as a warning, once per notice. The API `activate` returns gives the latest run's command
+(`lastRun`). What the service does with the breakpoints:
+[Breakpoints and picked locators](../../packages/editor/ARCHITECTURE.md#breakpoints-and-picked-locators) in the editor
+service's reference.
 
 ## Status bar
 
-The status bar item (`statusBarView` in `src/glue.ts`) speaks for the Playwright config of the active editor's file
-(`statusContext`: the deepest config folder holding it, else the first connected config), and is drawn again from the
-answers it holds on `window.onDidChangeActiveTextEditor`: a click runs `piwi.refreshRun` (`piwi/refreshRun`, the item's
-icon spinning meanwhile: `refreshingText`), **Piwi: Refresh** while the instance does not answer
-(`problemKind: 'unreachable'`, the `retry` action), and **Piwi: Connect** while not connected. Its tooltip is a trusted
-`MarkdownString`, whose commands are `STATUS_TOOLTIP_COMMANDS`: the counts and the branch, the config it speaks for when
-there are several (`StatusResult.contexts[].label`), the local runs, the run in progress, `Updated 12 s ago · live` or
-`· read every minute` (`relativeTime`, written again every 30 s), the reporter version the project installs
-(`reporter 0.47.0`), then links to `piwi.openRun`, `piwi.openInDashboard`, `piwi.compareWith`, `piwi.connect` and
-`piwi.refresh`; **Piwi: Open the latest run** (`piwi.openRun`) is in the palette too.
+The status bar item (`statusBarView` in `src/glue.ts`) speaks for one Playwright config (`statusContext`): the deepest
+config folder that holds the active editor's file, else the first connected config, else the first the instance did
+not answer, else the first. It is drawn again from the answers it holds on `window.onDidChangeActiveTextEditor`.
+
+**A click** depends on the state:
+
+- connected: `piwi.refreshRun` (`piwi/refreshRun`), with the item's icon spinning meanwhile (`refreshingText`);
+- the instance does not answer (`problemKind: 'unreachable'`, the `retry` action): **Piwi: Refresh**;
+- not connected: **Piwi: Connect**;
+- no Playwright config found: nothing.
+
+**The tooltip** is a trusted `MarkdownString` whose commands are `STATUS_TOOLTIP_COMMANDS`. It holds, in order:
+
+- the counts and the branch, and the config it speaks for when there are several (`StatusResult.contexts[].label`);
+- the baseline, the local runs and the run in progress;
+- when the run was read, `Updated 12 s ago · live` or `· read every minute` (`relativeTime`, written again every
+  30 s);
+- the instance and where its address comes from, the reporter version the project installs (`reporter 0.47.0`), and
+  a hint when the desktop app runs but is not in use, or was chosen but does not run;
+- links to `piwi.openRun`, `piwi.openInDashboard`, `piwi.compareWith` and `piwi.connect`, and to `piwi.refresh`
+  (**Retry**) while the instance does not answer.
+
+**Piwi: Open the latest run** (`piwi.openRun`) is in the palette too.
 
 ### Compare with
 
-**Piwi: Compare with…** (`piwi.compareWith`, also in the failures view's title bar and the tooltip) picks the baseline
-of the config's or the run's node it runs from, else of the active file's context (`baselinePicks` in `src/glue.ts`: the
-ladder, each of `RunStatus.branches`, a run by its id through an input box, which `piwi/runId` reads, and the local runs
-only), keeps it in `workspaceState` (`piwi.baseline`, by root, the ladder as no entry: `withBaseline`), sends it with
-`piwi/setBaseline`, and sends the whole map in the credentials (`baselines`). The tooltip and the view's run node name
-it (`baselineLine`); with the local runs alone, the run node is `Your local runs`.
+**Piwi: Compare with…** (`piwi.compareWith`, also in the failures view's title bar and in the tooltip) picks the
+baseline of a config: the one of the node it runs from, else the active file's. The choices (`baselinePicks` in
+`src/glue.ts`) are the default ladder, each branch of `RunStatus.branches`, a run by its id (typed in an input box and
+read by `piwi/runId`), and the local runs only.
+
+The choice is kept in workspace state (`piwi.baseline`, by config folder, the ladder as no entry: `withBaseline`) and
+sent with `piwi/setBaseline`; the credentials carry the whole map (`baselines`). The tooltip and the view's run node
+name the baseline (`baselineLine`); with the local runs alone, the run node reads `Your local runs`. What the ladder is:
+[Latest run and baseline](../../packages/editor/ARCHITECTURE.md#latest-run-and-baseline) in the editor service's
+reference.
 
 ## Open in IDE
 
-**Open in IDE** from the dashboard: a URI handler (`vscode.window.registerUriHandler`, the `onUri` activation event)
-takes `vscode://piwitests.piwi/open?file=<path as the run reported it>&line=&column=&root=` (the dashboard's
-`buildVscodeExtensionUrl`), finds the file as the service finds a run's path (`resolveOpenFile` in `src/glue.ts`: under
-`root` when it lies in a workspace folder, the Playwright configs' folders, then the workspace folders; never a file
-outside them) and opens it at the 1-based line and column; when this window holds no such file, a warning says so (VS
-Code hands the link to the window focused last).
+The dashboard's **Open in IDE** reaches the extension through a URI handler (`vscode.window.registerUriHandler`, the
+`onUri` activation event). The link is
+`vscode://piwitests.piwi/open?file=<path as the run reported it>&line=&column=&root=`, built by the dashboard's
+`buildVscodeExtensionUrl`.
+
+`resolveOpenFile` in `src/glue.ts` finds the file as the service finds a run's path. It looks under `root` when that
+lies in a workspace folder, then under the Playwright configs' folders, then under the workspace folders, and never
+returns a file outside the workspace folders. The file opens at the 1-based line and column. When this window holds no
+such file, a warning says so: VS Code hands the link to the window focused last.
 
 ## Send to editor
 
 `src/send-listener.ts` is the Send to editor endpoint: `POST /piwi/send` on `127.0.0.1`, on the port kept in global
-state, with the token from `SecretStorage` (`piwi.sendToken`); **Piwi: Pair with Piwi Picker** starts it and copies the
-pairing address as the browser's machine reaches it (`pickerPairing`: `vscode.env.asExternalUri`, which a remote window
-forwards), while a run's `PIWI_EDITOR_SEND` keeps the loopback address (`runPairing`), the reporter running where the
-extension does. A recorded flow is rendered by the service (`piwi/renderSteps`, indented for the caret's line) before it
-is inserted, with the service's import edit in the same edit. A locator with `at`, picked while a run was paused at a
-breakpoint, asks `piwi/applyPick` and applies its edit as a workspace edit on that line; when the line holds no locator,
-it is inserted at the cursor, and the notification says why (`pickNotice` in `src/glue.ts`).
+state (`piwi.sendPort`), with the token from `SecretStorage` (`piwi.sendToken`).
+
+- **Piwi: Pair with Piwi Picker** starts it and copies the pairing address as the browser's machine reaches it
+  (`pickerPairing`: `vscode.env.asExternalUri`, which a remote window forwards).
+- A run's `PIWI_EDITOR_SEND` keeps the loopback address (`runPairing`), since the reporter runs where the extension
+  does.
+
+What it inserts:
+
+- A recorded flow is rendered by the service first (`piwi/renderSteps`, indented for the caret's line), and the
+  service's import edit goes in the same edit.
+- A locator with `at`, picked while a run was paused at a breakpoint, asks `piwi/applyPick` and applies the answer as a
+  workspace edit on that line. When the line holds no locator, or the file is not in the workspace, the locator goes to
+  the cursor and the notification says why (`pickNotice` in `src/glue.ts`).
+- With no editor open, the text goes into a new untitled editor.
 
 ## Recording
 
+What the service does during a recording: [Recorder](../../packages/editor/ARCHITECTURE.md#recorder) in the editor
+service's reference.
+
 ### Recording a test
 
-`src/recording.ts` records a test from the editor. **Piwi: Record here** asks `piwi/pageCandidates` for the caret
-(inside a test's body it records `steps`, elsewhere a new `test`); **Piwi: Record a new test file** creates a spec
-first, next to the active test file or in the config's `testDir` (`file`). The start page and the page expression (asked
-when there are several candidates) are kept in `workspaceState`, with the Playwright project, asked only when
-`piwi/record` lists them. Nothing is written before the first `piwi/recordingChanged`; each one then replaces the
-recorded block (first at `RecordResult.placement`), with the service's import edit (`importEdit`) in the same edit,
-tinted with `piwi.recordingBlockBackground`, a CodeLens above it (the state, the step count, Stop, Pause or Resume), the
-recording in the status bar and its warnings as diagnostics, each staying after Stop until its line is edited in place
-(`editedLine`; an edit that adds or removes a line of the block removes them all).
+`src/recording.ts` records a test from the editor.
+
+- **Piwi: Record here** asks `piwi/pageCandidates` where the caret is (`recordInto` in `src/glue.ts`): outside every
+  test, function and class it records a new `test`; anywhere else, `steps` there.
+- **Piwi: Record a new test file** creates a spec first (`file`), next to the active test file or in the config's
+  `testDir`.
+
+The start page and the page expression (asked when there are several candidates) are kept in workspace state, with the
+Playwright project, which is asked only when `piwi/record` answers with the list of projects.
+
+Nothing is written before the first `piwi/recordingChanged`. Each one then replaces the recorded block (the first one
+at `RecordResult.placement`), with the service's import edit (`importEdit`) in the same edit. While it records:
+
+- the block is tinted with `piwi.recordingBlockBackground`, with a CodeLens above it: the state, the step count, and
+  Stop, Pause or Resume;
+- the status bar shows the recording;
+- the recording's warnings are diagnostics. Each stays after Stop until its line is edited in place (`editedLine`); an
+  edit that adds or removes a line of the block removes them all.
 
 ### Locator quick fixes
 
-Once the recording stopped, a warning on a step with other verified locators (`RecordingStep.locators`) offers each as a
-quick fix (a `CodeActionProvider` on the diagnostic, `locatorChoices` in `src/glue.ts`): **Use getByTestId('pay')** puts
-it in place of the written one, found on the line exactly once, as one workspace edit; none while it records, since the
-next update writes the block again.
+Once the recording stopped, a warning on a step with other verified locators (`RecordingStep.locators`) offers each one
+as a quick fix (a `CodeActionProvider` on the diagnostic, `locatorChoices` in `src/glue.ts`).
+**Use getByTestId('pay')** puts it in place of the written locator, found on the line exactly once, as one workspace
+edit. None is offered while it records, since the next update writes the block again.
 
 ### Edits, recording from a paused test, and Stop
 
-The block is followed through the edits around it; typing inside it pauses the recording (Resume writes it again, Keep
-my edits stops). A test paused in a run started here that asks to record from there (`piwi/recordRequested`) has its
-file shown at the paused line and its recording started at once (`recordFromTest`: `piwi/record` with the `handoff`,
-nothing asked), as one at the caret, and the answer's sentence shown; one it cannot start (the file is being recorded
-into, cannot be opened, or the service failed) is declined at once with why (`piwi/declineRecord`). Closing the file or
-the window stops its recording. The notification after Stop says what was written (`recordingSummary`:
-`Piwi: recorded 6 steps into checkout.spec.ts.`) and, when `piwi/testAt` finds a test holding the block's last line,
-offers **Run** and **Verify ×3** (`RECORDED_ACTIONS`), which run `piwi.runTestAtCursor` and `piwi.verifyTestAtCursor` at
-that line as the block stands when clicked. No CodeLens offers them: the recording's lens goes with Stop.
+The block follows the edits made around it. Typing inside it pauses the recording: **Resume** writes it again, **Keep
+my edits** stops.
+
+A test paused in a run started here can ask to record from there (`piwi/recordRequested`). Its file is shown at the
+paused line and its recording starts at once, as one at the caret, with nothing asked (`recordFromTest`: `piwi/record`
+with the `handoff`); the answer's sentence is shown. A recording that cannot start (the file is being recorded into,
+cannot be opened, or the service failed) is declined at once with the reason (`piwi/declineRecord`). How the hand-off
+works: [Recording from a paused test](../../packages/editor/ARCHITECTURE.md#recording-from-a-paused-test) in the editor
+service's reference.
+
+Closing the file or the window stops its recording. The notification after Stop says what was written
+(`recordingSummary`: `Piwi: recorded 6 steps into checkout.spec.ts.`). When `piwi/testAt` finds a test holding the
+block's last line, it offers **Run** and **Verify ×3** (`RECORDED_ACTIONS`), which run `piwi.runTestAtCursor` and
+`piwi.verifyTestAtCursor` at that line, as the block stands when clicked. No CodeLens offers them: the recording's lens
+goes away with Stop.
 
 ### Undo during a recording
 
-One undo step per recording. The block's writes go through the editor that shows the file: the first one opens an undo
-stop and the later ones join it (`undoStopBefore: false`; the one Stop brings closes it), so one Undo after Stop removes
-the block and its imports. A save during the recording (auto save included) or an edit of the file between two writes
-starts another undo step, and a write while no editor shows the file is a workspace edit, an undo step of its own.
+A recording is one undo step. The block's writes go through the editor that shows the file: the first one opens an
+undo stop and the later ones join it (`undoStopBefore: false`; the write Stop brings closes it), so one Undo after Stop
+removes the block and its imports.
+
+Three cases start another undo step: a save during the recording (auto save included), an edit of the file between
+two writes, and a write while no editor shows the file (a workspace edit is an undo step of its own).
 
 ## Testing view
 
 ### Test items
 
-`src/test-explorer.ts` lists Piwi's tests in VS Code's Testing view while `piwi.testExplorer` is on (the default; a
-change creates or disposes it, `showTestExplorer`): a `TestController` whose items are `piwi/testItems` (the catalog's
-specs and the open ones, read again in full when the connection or the runs change, a spec alone 300 ms after its last
-edit or when it opens: `withSpec`), drawn by `testTree` in `src/glue.ts` (a node per Playwright config when there are
-several, the spec's folders, the spec, its describe blocks, its tests; ids joined by `\x1f`, which VS Code takes where
-it refuses `\0`), each item kept while its id stays so its result does.
+`src/test-explorer.ts` lists Piwi's tests in VS Code's Testing view while `piwi.testExplorer` is on (the default). A
+change of the setting creates or disposes it (`showTestExplorer`).
+
+It is a `TestController` whose items come from `piwi/testItems`: the catalog's specs and the open ones. They are read
+again in full when the connection or the runs change, and one spec alone 300 ms after its last edit or when it opens
+(`withSpec`). What the service answers: [Test items](../../packages/editor/ARCHITECTURE.md#test-items) in the editor
+service's reference.
+
+`testTree` in `src/glue.ts` builds the tree: a node per Playwright config when there are several, then the spec's
+folders, the spec, its describe blocks and its tests. Item ids are joined by `\x1f`, since VS Code refuses `\0` in an
+id. An item is kept while its id stays, so its result stays too.
 
 ### Results and test runs
 
-The latest results are published as one test run (`resultsRunName`, `testOutcome`: a failure's message and line from
-`TestFailure`) when `resultsKey` changes; a run in progress (`RunStatus.live`) is a test run of its own (`liveRunName`)
-showing `liveTests` as they come, ended once the run was read, after which nothing is published again for it. **Run with
-Piwi** and **Verify ×3 with Piwi** (run profiles) run the picked tests through `runTests` (`testRunsOf`: one run per
-config, by id when every test has one, else by location), queued in their test run, which is followed from its first
-command on (a command that ends while the next starts is kept in `endedEarly`), takes each command's run in progress by
-its ref (`LiveRun.ref`; by its config when the service no longer keeps the command), and ends once each command's task
-ended (`taskEnded`, from `tasks.onDidEndTaskProcess`, or at once for a task VS Code could not start) and its run was
-read; a run that ended before it was followed is read from `piwi/runEnded` by its ref, and 15 s after a task's end with
-neither, a test no run gave a result for passes when every command exited with 0, else is an error
-(`unfollowedOutcome`). Cancel terminates the commands' tasks and ends the test run, the tests it showed no result for
-skipped. The spec URIs the service answers are spelled as VS Code spells a document's (`asEditorUris`), and a read that
-made items anew publishes the results again. While it lists the tests, the gutter's own icons give way to the Testing
-view's and a test's line keeps the hover (`testHover`). The API `activate` returns gives what it shows (`testExplorer`).
+**The latest results** are published as one test run (`resultsRunName`, `testOutcome`: a failure's message and line
+from `TestFailure`) whenever `resultsKey` changes. A read that made items anew publishes the results again. **A run in
+progress** (`RunStatus.live`) is a test run of its own (`liveRunName`), showing `liveTests` as they come. It ends once
+the run was read, and nothing is published again for it.
+
+**The run profiles**, **Run with Piwi** and **Verify ×3 with Piwi**, run the picked tests through `runTests`
+(`testRunsOf`: one run per config, by id when every test has one, else by location). The commands are queued in their
+test run, which:
+
+- follows the runs from its first command on (a command that ends while the next starts is kept in `endedEarly`);
+- takes each command's run in progress by its ref (`LiveRun.ref`), or by its config when the service no longer keeps
+  the command;
+- ends once each command's task ended (`taskEnded`, from `tasks.onDidEndTaskProcess`, or at once for a task VS Code
+  could not start) and its run was read.
+
+A run that ended before it was followed is read from `piwi/runEnded` by its ref. 15 s after a task's end with neither,
+a test no run gave a result for passes when every command exited with 0, and is an error otherwise
+(`unfollowedOutcome`). **Cancel** terminates the commands' tasks and ends the test run; the tests it showed no result
+for are skipped.
+
+The spec URIs the service answers are spelled as VS Code spells a document's (`asEditorUris`). While the view lists the
+tests, the gutter's own icons give way to the Testing view's, and a test's line keeps the hover (`testHover`). The API
+`activate` returns gives what the view shows (`testExplorer`).
 
 ## Connect
 
-**Piwi: Connect** (`src/connect.ts`, no VS Code API) asks the instance whether it needs a key, then signs in with the
-browser (the device authorization Piwi Picker uses) or takes a pasted key, then the project. When the desktop app runs,
-it first lists the app beside the instance the workspace names (`connectChoices` in `src/glue.ts`).
+**Piwi: Connect** (`connect` in `src/extension.ts`):
+
+1. When the desktop app runs, it first lists the app beside the instance the workspace names (`connectChoices` in
+   `src/glue.ts`).
+2. Otherwise it asks for the instance's address, then asks the instance whether it needs a key.
+3. A key comes from the browser sign-in (the device authorization Piwi Picker uses) or is pasted.
+4. Then it asks for the project, and saves the address and the project in the workspace settings and the key in
+   `SecretStorage`.
+
+The requests to the instance (`needsKey`, `startSignIn`, `waitForSignIn`, `listProjects`) are in `src/connect.ts`, which
+uses no VS Code API and is tested against a stub (`tests/connect.test.ts`). The order in which the service picks a
+connection:
+[Connection order and watching `HEAD`](../../packages/editor/ARCHITECTURE.md#connection-order-and-watching-head) in the
+editor service's reference.
 
 ## The pure half
 
-`src/glue.ts` is the pure half (the status bar item, the failures view's nodes, the MCP configuration to paste, the file
-an open link names, the recorded block's text and writes with the service's import edit, and following them through a
-change: `writeBlock`, `followBlock`, `followEdit`, and the quick fixes of a recorded line's warning: `locatorChoices`;
-what runs the test at a line: `testAtRun`; the Testing view's tree and results: `testTree`, `testOutcome`,
-`testRunsOf`), tested without an editor.
+`src/glue.ts` is the pure half, tested without an editor (`tests/glue.test.ts`). It computes:
+
+- the status bar item and the failures view's nodes;
+- the MCP configuration to paste, and the file an open link names;
+- the recorded block's text and writes, with the service's import edit, and how they follow a change (`writeBlock`,
+  `followBlock`, `followEdit`), and the quick fixes of a recorded line's warning (`locatorChoices`);
+- what runs the test at a line (`testAtRun`);
+- the Testing view's tree and results (`testTree`, `testOutcome`, `testRunsOf`).
+
+`src/connect.ts`, `src/breakpoints.ts` and `src/send-listener.ts` use no VS Code API either, each with its unit test.
 
 ## Keybindings
 
-The default keybindings (`contributes.keybindings`: `ctrl+shift+alt+r`, `cmd` on macOS, records at the caret and stops
-the recording; `ctrl+shift+alt+f` re-runs the failing tests; `ctrl+shift+alt+k`, in a focused editor, runs the test at
-the cursor: the JetBrains plugin's chords for the same actions) stay free in VS Code's default keymap on Windows, Linux
-and macOS, and in the JetBrains IDEs' bundled keymaps. VS Code binds `ctrl+shift+alt` (`cmd` on macOS) with `a`, `c`,
-`g`, `i`, `l`, `n` and `o`, the JetBrains keymaps with `c`, `d`, `e`, `h`, `i`, `j`, `l`, `m`, `n`, `p`, `s`, `t`, `u`,
-`v`, `w`, `x` and `y`; `ctrl+alt+<key>` and the `ctrl+k` chords are taken too.
+The default keybindings (`contributes.keybindings`) are the JetBrains plugin's chords for the same actions:
+
+| Chord (`cmd` instead of `ctrl` on macOS) | Command                                                                                  |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `ctrl+shift+alt+r`                       | `piwi.record` in a TypeScript or JavaScript editor, `piwi.stopRecording` while recording |
+| `ctrl+shift+alt+f`                       | `piwi.rerunFailing`                                                                      |
+| `ctrl+shift+alt+k`                       | `piwi.runTestAtCursor`, in a focused editor                                              |
+
+**VS Code** binds `ctrl+shift+alt` (`cmd` on macOS) with these letters, checked in the `microsoft/vscode` sources
+(1.145): `a`, `c`, `g`, `i` (Linux only), `l`, `n` (VS Code for the Web only) and `o`. It binds none of `r`, `f` and
+`k`. `ctrl+alt+<key>` and the `ctrl+k` chords are taken too.
+
+**The JetBrains IDEs** (`intellij-community` sources, October 2026):
+
+- The platform's `$default` keymap, which every bundled keymap descends from, binds `ctrl+alt+shift` with `c`, `e`,
+  `h`, `i`, `j`, `l`, `n`, `s`, `t`, `v` and `w`. Its bundled plugins add `d` (database grid), `p` (Java), `o`
+  (Python), and `a`, `k`, `m` and `r` (Kotlin, in IntelliJ IDEA: `ctrl+alt+shift+K` converts a Java file to Kotlin,
+  `ctrl+alt+shift+R` reloads a Kotlin script's configuration). A list made earlier in the IDEs, closed-source plugins
+  included, also named `u`, `x` and `y`.
+- The macOS keymaps turn `$default`'s `ctrl` into `cmd`, and **Mac OS X 10.5+** binds `cmd+alt+shift+R` to Force
+  Refresh.
+- Keymaps installed as plugins, and preinstalled in some IDEs such as Rider, take the chords too. Visual Studio binds
+  `R` and `K`, and ReSharper, which descends from it, adds `F`. On macOS, Visual Studio OSX binds `cmd+alt+shift` with
+  `R` and `K`, ReSharper OSX and Visual Studio for Mac with `F`, and Xcode with `R`, `F` and `K`.
+
+So the Piwi chords are free in VS Code and in the platform's own `$default` keymap, but meet the bindings above in
+IntelliJ IDEA with Kotlin, on macOS and in those keymaps. Check a new chord against these lists.
 
 ## Changelog
 
-The Marketplace's Changelog tab shows the package's `CHANGELOG.md`, which `reusable-publish-vscode.yml` writes before
-`vsce package` from the `ide` entries of the root `CHANGELOG.md`, under their version and section
-(`node scripts/ide-changelog.mjs --format md --all > apps/vscode/CHANGELOG.md` from the repository root): a commit with
+The Marketplace's Changelog tab shows the package's `CHANGELOG.md`. `reusable-publish-vscode.yml` writes it before
+`vsce package`, from the `ide` entries of the root `CHANGELOG.md`, under their version and section
+(`node scripts/ide-changelog.mjs --format md --all > apps/vscode/CHANGELOG.md` from the repository root). A commit with
 the `ide` scope is what puts a line in it. The file is gitignored, and `.vscodeignore` lets it into the VSIX.
 
 ## Screenshots
 
-`scripts/take-screenshots.mjs` writes the extension's illustrations (`apps/docs/public/screenshots/vscode-*.png`, shown
-by the docs, the README and the Marketplace README): it opens the fixture project of `scripts/lib/editor-fixture.mjs`, a
-small shop's suite with one brittle locator, two CI failures and a local run since, against the stub instance the same
-module serves, in the VS Code `scripts/lib/vscode-window.mjs` downloads (the release `VSCODE_VERSION` pins, moved on
-purpose: the workbench's DOM changes between releases), and drives the window with Playwright's Electron support. On
-Linux, run it under Xvfb at twice the window size for 2× images:
-`xvfb-run -a -s "-screen 0 2880x1800x24" node scripts/take-screenshots.mjs`. A scene is a function of `SCENES`; one that
-fails leaves `vscode-<scene>-failed.png` with the window as it stood. The JetBrains plugin's script reuses the fixture,
-so a change to it recaptures both sets. What was found about driving VS Code this way is recorded in
+`scripts/take-screenshots.mjs` writes the extension's illustrations, `apps/docs/public/screenshots/vscode-*.png`, shown
+by the docs, the README and the Marketplace README. It:
+
+- opens the fixture project of `scripts/lib/editor-fixture.mjs` (a small shop's suite with one brittle locator, two CI
+  failures and a local run since) against the stub instance the same module serves;
+- runs the VS Code that `scripts/lib/vscode-window.mjs` downloads, at the release `VSCODE_VERSION` pins (moved on
+  purpose, since the workbench's DOM changes between releases);
+- drives the window with Playwright's Electron support.
+
+On Linux, run it under Xvfb at twice the window size for 2× images:
+`xvfb-run -a -s "-screen 0 2880x1800x24" node scripts/take-screenshots.mjs`. A scene is a function of `SCENES`. A scene
+that fails leaves `vscode-<scene>-failed.png`, the window as it stood, in the temporary directory.
+
+The JetBrains plugin's script reuses the fixture, so a change to the fixture means recapturing both sets. What was found
+about driving VS Code this way is recorded in
 [`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md).
 
 ## Nightly suite
 
-The nightly suite (`tests/e2e/`, `npm run vscode:test:e2e`) opens the same fixture in the same window and asserts on the
-workbench's DOM what the in-process suites check as answers: the status bar's counts, the Problems panel's rows, the
-quick fixes, the hover, CodeLens, the failures view and the Testing view. `.github/workflows/nightly-vscode.yml` runs it
-every night and on demand, not on pull requests; a failure leaves the HTML report with a screenshot of the window. Find
-elements by ARIA role and name where the workbench gives one (`getByRole('tree', { name: 'Test Explorer' })`), a class
-name only where it does not; a step that opens a menu or a hover clears the notification toasts first
-(`clearNotifications`).
+The nightly suite (`tests/e2e/`, `npm run vscode:test:e2e`) opens the same fixture in the same window. It asserts on
+the workbench's DOM what the in-process suites check as answers: the status bar's counts, the Problems panel's rows,
+the quick fixes, the hover, CodeLens, the failures view and the Testing view.
+
+`.github/workflows/nightly-vscode.yml` runs it every night and on demand, not on pull requests. A failure leaves the
+HTML report, with a screenshot of the window.
+
+- Find elements by ARIA role and name where the workbench gives one
+  (`getByRole('tree', { name: 'Test Explorer' })`), and by a class name only where it does not.
+- A step that opens a menu or a hover clears the notification toasts first (`clearNotifications`).
 
 ## Integration suite
 
 The integration suite (`tests/integration/`) starts a stub instance, writes a fixture repository, and drives VS Code
-through its public commands (`vscode.executeCodeActionProvider`, `vscode.executeCodeLensProvider`, …), and through the
-API `activate` returns (`pageCandidates`, the service's answer for a position, `failureChildren`, the failures view's
-nodes, `lastRun`, the command a breakpoint's run was given, `gutter`, the tests last drawn in a file's gutter,
-`coverage`, a file's coverage answer and whether its marks are shown, and `testExplorer`, the Testing view's tests with
-the result last shown for each).
+(downloaded by `@vscode/test-electron`). CI runs it on pull requests that change the extension
+(`reusable-e2e-vscode.yml`, from `ci.yml`). It drives VS Code in two ways:
+
+- through its public commands (`vscode.executeCodeActionProvider`, `vscode.executeCodeLensProvider`, …);
+- through the API `activate` returns:
+  - `pageCandidates`: the service's answer for a position;
+  - `failureChildren`: the failures view's nodes;
+  - `lastRun`: the command a breakpoint's run was given;
+  - `gutter`: the tests last drawn in a file's gutter;
+  - `coverage`: a file's coverage answer, and whether its marks are shown;
+  - `testExplorer`: the Testing view's tests, with the result last shown for each.
