@@ -1,402 +1,794 @@
-# Dashboard app — architecture map
+# Dashboard app: architecture map
 
-Reference for `apps/application/`: what exists and where. The **rules** for changing it live in
-[`AGENTS.md`](AGENTS.md) and the topic guides it lists — read those before editing.
+The reference for `apps/application/`: what exists, where it lives and how the pieces connect. The **rules** for
+changing it live in [`AGENTS.md`](AGENTS.md) and the topic guides it lists: read those before editing.
 
-This map describes structure and intent, not every file. Directory listings and the auto-generated
-[`/_openapi.json`](#backend) are the authority on exact names.
+This map describes structure and intent, not every file. For exact names, the directory listings and the generated
+OpenAPI spec ([`/_openapi.json`](#backend)) are the authority.
+
+## Contents
+
+- [Shape](#shape): the top-level folders.
+- [Shared types and core](#shared-types-and-core): the wire contract, the permissions, `@piwitests/core`.
+- [Database](#database): the schemas, the migrations, the tables by area, the tables worth a note.
+- [Backend](#backend): [route families](#route-families), [other routes](#other-routes),
+  [server utilities](#server-utilities), [scheduled tasks](#scheduled-tasks),
+  [code the server and the demo share](#code-the-server-and-the-demo-share).
+- [Front end](#front-end): [pages](#pages), [the failure pages](#failure-pages), [components](#components),
+  [shared building blocks](#shared-building-blocks), [composables](#composables), [utils](#utils),
+  [coverage insights](#coverage-insights-in-the-ui).
+- [Demo SPA](#demo-spa): the in-browser mirror of the server.
+- [Extension points](#extension-points): where to add things whose wiring spans several files.
+- [Key features](#key-features): what the dashboard does, in one paragraph.
 
 ## Shape
 
 ```
-app/          Vue 4 SPA/SSR front end — pages, components, composables, utils, layouts
-server/       Nitro back end — api/, routes/, utils/, database/, middleware/, tasks/
-shared/       Types, constants, pure helpers shared by app + server + demo (`#shared/...`)
-app/demo/     In-browser mirror of the server for the demo SPA
-scripts/      Seed generation, demo media capture, DB query helper, the performance suite (`scripts/perf/`)
-tests/        Playwright specs (`*.spec.ts`) + Vitest unit tests (`tests/unit/*.test.ts`)
+app/          Nuxt 4 (Vue 3) front end: pages, components, composables, utils, layouts, plugins, middleware
+app/demo/     In-browser mirror of the server, used by the demo SPA
+server/       Nitro back end: api/, routes/, middleware/, plugins/, tasks/, utils/, database/, storage/
+shared/       Types, constants and pure helpers shared by app, server and demo (imported as `#shared/...`)
+public/       Static files (logos, favicon, the demo's media)
+scripts/      Demo seed, dev server, DB query helper, screenshots and demo media, page measurements,
+              the performance suite (`scripts/perf/`)
+tests/        Playwright specs (`*.spec.ts`), Vitest unit tests (`tests/unit/*.test.ts`), live AI tests (`tests/live/`)
 types/        Front-end API response types (`api.ts`)
 ```
 
-## Shared types & core
+## Shared types and core
 
-- `shared/types.ts` — the **wire contract**: `TestCasePayload`, `StreamEventPayload`, `TestRunSubmitPayload` and
-  `TestRunFinishPayload`. Server endpoints import it directly via `#shared/types`; every ingest route and the demo map a
-  wire test case to what `persistRunCases` stores with `mapWireCaseToRunCase` (`server/utils/map-wire-case.ts`).
-- `shared/permissions.ts` holds the **authorization model**: `InstanceRole`, `ProjectRole`, `Permission`, the matrix
-  `ROLE_PERMISSIONS`, a user's `AccessSummary` and the checks on it (`can`, `passesEarlyCheck`, `projectScopeFor`).
-  Pure, imported by the server, the MCP tools, the demo and `useAuth`.
-- `shared/project-run-scope.ts` is the **project run scope**: the runs a project page's filters pick (environments,
-  branches, the branch policy, full runs only), its query keys (the analytics ones) and the in-browser matcher;
-  `shared/handlers/project-run-scope.ts` turns it into the SQL every project tab's handler adds.
-- The small wire **leaf shapes** (`BrowserConfig`, `TestStepEvent`, `SuiteConfigEntry`, `TestAnnotation`,
-  `FilterDetails`, `TestSourceFrame`) live in `@piwitests/core/wire` and are re-exported here — one source of truth
-  shared with the reporter. Per-case payloads stay app-side; the reporter's `WireTestCase` stays reporter-side. The two
-  are kept compatible by `tests/unit/wire-shared-drift.test.ts`.
-- `@piwitests/core` (`packages/core/`) is a private, **zero-dependency**, browser/worker/server-safe package holding
-  pure cross-cutting logic: locator generation/scoring, ARIA parsing + element-match healing, locator-healing types, the
-  wire leaves, and the locator-method list. It ships **TypeScript source** (no build step) — Vite/Vitest transpile it,
-  the reporter's tsup inlines it. The app consumes it through thin `shared/*` re-export shims.
+- **Wire contract.** `shared/types.ts` holds the shapes the reporter sends: `TestCasePayload`, `StreamEventPayload`,
+  `TestRunSubmitPayload`, `TestRunStartPayload` and `TestRunFinishPayload`. Server endpoints import it as
+  `#shared/types`. The routes that receive test cases (`submit`, `upload`, `[id]/events`) and the demo's reporter turn a
+  wire test case into what `persistRunCases` stores with `mapWireCaseToRunCase` (`server/utils/map-wire-case.ts`).
+- **Wire leaf shapes.** The small shapes the app shares with the reporter (`BrowserConfig`, `TestStepEvent`,
+  `SuiteConfigEntry`, `TestAnnotation`, `FilterDetails`, `TestSourceFrame`, the resource report shapes and a few more)
+  live in `@piwitests/core/wire`, and `shared/types.ts` re-exports them: one definition for both sides. The per-case
+  payloads stay in the app, and the reporter keeps its own `WireTestCase`. `tests/unit/wire-shared-drift.test.ts` keeps
+  the two compatible.
+- **Authorization model.** `shared/permissions.ts` holds `InstanceRole`, `ProjectRole`, `Permission`, the role matrix
+  `ROLE_PERMISSIONS`, a user's `AccessSummary` and the checks on it (`can`, `passesEarlyCheck`, `projectScopeFor`). It
+  is pure; the server, the MCP tools, the demo and `useAuth` import it.
+- **Project run scope.** `shared/project-run-scope.ts` describes the runs a project page's Filters block picks
+  (environments, branches, the branch policy, full runs only), the scope's query keys (the analytics ones, so an
+  analytics drill-down address is a scope too) and the in-browser matcher (`runInProjectScope`).
+  `shared/handlers/project-run-scope.ts` turns a scope into the SQL conditions (`projectRunScopeConditions`) that every
+  project tab's handler adds.
+- **`@piwitests/core`** (`packages/core/`) is a private package with **zero dependencies**, safe to run in the browser,
+  a service worker or the server. It holds the pure logic the app shares with the reporter, Piwi Picker (the browser
+  extension) and the editor service: locators (generation and scoring, ARIA role resolution, element-fingerprint
+  matching for healing, chains, the locator index, the locator-method list), error text and parsing, step analysis,
+  coverage and code reach, recordings and codegen, bug reports, the CI gate, and the wire leaves. The `exports` of its
+  `package.json` list every module. It ships **TypeScript source** with no build step: Vite and Vitest transpile it, and
+  the reporter's tsup bundles it in. The modules that moved there from the app keep a thin re-export shim under
+  `shared/*`, so their `#shared/...` path still works; newer app code also imports `@piwitests/core/<module>` directly.
 
 ## Database
 
-Drizzle ORM over **SQLite (libSQL)** or **PostgreSQL (postgres.js)**, chosen at runtime by `PIWI_DATABASE_URL`.
+Drizzle ORM over **SQLite (libSQL)** or **PostgreSQL (postgres.js)**. `PIWI_DATABASE_URL` picks the dialect at
+startup: PostgreSQL when it is set, else a SQLite file (`.data/piwi.db` by default).
 
-- `server/database/schema.sqlite.ts` and `schema.pg.ts` — the real schemas (edit both).
-- `server/database/schema.ts` — a conditional re-export that picks a dialect at module init; type-checking uses the
-  SQLite schema as canonical. Never edit it to add tables.
-- `server/database/migrations/` (SQLite) and `migrations-pg/` (PostgreSQL, auto-run on startup).
-- `server/database/migration-history.ts` — the startup check of the recorded migration history, and the repair of a
-  database that ran another branch's migrations; `migration-targets.ts` holds its SQLite and PostgreSQL queries.
+- `server/database/schema.sqlite.ts` and `schema.pg.ts`: the real schemas, one per dialect, kept identical (a change
+  edits both).
+- `server/database/schema.ts`: a conditional re-export that picks one dialect when the module loads. Type-checking uses
+  the SQLite schema as the reference. It never declares a table (see `server/database/AGENTS.md`).
+- `server/database/index.ts`: `getDatabase()` and `initDatabase()`, which open the connection and run the migrations
+  once per process (the startup plugins are the first callers).
+- `server/database/migrations/` (SQLite) and `migrations-pg/` (PostgreSQL): both run automatically at startup.
+- `server/database/migration-history.ts`: the startup check of the recorded migration history, and the repair of a
+  database that ran another branch's migrations. `migration-targets.ts` holds its SQLite and PostgreSQL queries.
 
-Tables, by area:
+### Tables by area
 
-| Area               | Tables                                                                                                                        |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| Core results       | `projects`, `test_runs`, `test_suites`, `test_cases`, `test_runs_cases`, `network_requests`                                   |
-| Failure analysis   | `failure_clusters`, `failure_cluster_aliases`, `cluster_merge_suggestions`, `failure_diagnoses`, `failure_diagnosis_versions` |
-| Evidence & storage | `files`, `trace_resources`, `trace_blobs`, `case_payloads`, `locator_snapshots`, `locator_usages`                             |
-| Coverage           | `code_reach`, `coverage_fragments`, `test_coverage`, `run_coverage`                                                           |
-| Metadata           | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`                        |
-| Identity           | `users`, `api_keys`, `account_tokens`, `groups`, `group_members`, `role_bindings`                                             |
-| Notifications      | `notification_channels`, `subscriptions`, `notification_deliveries`                                                           |
-| Analytics          | `analytics_daily_rollups`, `analytics_dashboards`, `report_schedules`, `report_snapshots`                                     |
-| Resources          | `test_run_resource_reports`, `resource_findings`, `resource_occurrences`                                                      |
+| Area                 | Tables                                                                                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core results         | `projects`, `test_runs`, `test_suites`, `test_cases`, `test_runs_cases`, `network_requests`, `run_deliveries`                                                                               |
+| Failure analysis     | `failure_clusters`, `failure_cluster_aliases`, `failure_cluster_test_routes`, `cluster_merge_suggestions`, `failure_diagnoses`, `failure_diagnosis_versions`                                |
+| Flaky tests          | `quarantined_tests`, `flake_experiments`, `flake_arms`                                                                                                                                      |
+| Evidence & storage   | `files`, `trace_resources`, `trace_blobs`, `trace_blob_resources`, `case_payloads`, `locator_snapshots`, `locator_usages`                                                                   |
+| Coverage             | `code_reach`, `coverage_fragments`, `test_coverage`, `run_coverage`, `coverage_reports`, `coverage_report_files`, `coverage_executable`, `coverage_totals`, `coverage_daily`                |
+| Test Map             | `graph_nodes`, `graph_edges`, `probes`, `scenario_gaps`                                                                                                                                     |
+| CI and pull requests | `gate_evaluations`, `pr_feedback_posts`, `run_locator_breaks`, `heal_actions`                                                                                                               |
+| Metadata             | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`, `project_url_patterns`                                                              |
+| Bug reports          | `bug_reports`, `bug_reproductions`                                                                                                                                                          |
+| Identity             | `users`, `api_keys`, `account_tokens`, `groups`, `group_members`, `role_bindings`, `extension_device_codes`, `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`, `share_links` |
+| Integrations         | `integration_connections`, `project_integrations`, `integration_actions`                                                                                                                    |
+| Notifications        | `notification_channels`, `subscriptions`, `notification_deliveries`                                                                                                                         |
+| Analytics, reports   | `analytics_daily_rollups`, `analytics_dashboards`, `report_schedules`, `report_snapshots`, `handback_outcomes`, `handback_outcome_rollups`                                                  |
+| Assistant and agents | `assistant_conversations`, `assistant_messages`, `assistant_usage`, `assistant_nudge_dismissals`, `mcp_tool_calls`                                                                          |
+| Resources            | `test_run_resource_reports`, `resource_findings`, `resource_occurrences`                                                                                                                    |
 
-Non-obvious ones:
+Each table's comment in `schema.sqlite.ts` says what a row is.
 
-- **`case_payloads`** — content-addressed storage for large per-execution text (`aria_snapshot`, `test_source`,
-  `test_source_frames`): one row per unique content per project (SHA-256 `hash`, unique `(project_id, hash)`),
-  referenced from `test_runs_cases.*_payload_id`. See the rule in `server/database/AGENTS.md`.
-- **`locator_snapshots`** — one row per locator call site (`test_case_id` + `location`), upserted each run with the
-  latest element attributes and pre-computed ranked alternatives. Unique index on `(test_case_id, location)`;
-  `last_seen_run_id` FK is `ON DELETE set null`.
-- **`locator_usages`** — the locator index: one row per (test case, Playwright project, branch, call site, action,
-  canonical chain, page), read from the steps of each ingested execution; `branch` is `''` for the default branch, and a
-  view of another branch replaces the default rows of the tests that ran on it. `page` is the page key the call ran
-  on, joined by call site and chain from the execution's `piwi-locator-pages` list (stored through `case_payloads` as
-  `test_runs_cases.locator_pages_payload_id`, so a rebuild keeps it; `server/utils/locator-pages.ts`), `''` when
-  unknown; `arrival` says a call ran there before any locator interaction. Feeds "Who uses this?", the project's
-  Locators page and the extension's Tested elements (`GET /api/projects/:id/locator-index`).
-- **Coverage** (`server/utils/coverage.ts`, `server/utils/code-reach.ts`) — which code each test executed, per
-  repository-relative file and runtime (`browser`, `server`). `coverage_fragments` holds one file's coverage as one test
-  recorded it (function and executed line ranges, the git blob they refer to), content-addressed per project (unique
-  `(project_id, hash)`); each execution names its fragments through `test_runs_cases.coverage_payload_id` (a
-  `case_payloads` row); `test_coverage` holds, per test case, branch and runtime, the fragments of its latest run with
-  coverage, and `code_reach` their files (or the reporter's `codeReach` list for a test without coverage), replaced the
-  same way. `branch` is `''` for the default branch, and a view of another branch reads, per runtime, the branch's rows
-  of the tests that have some. `run_coverage` holds a run's coverage per file, merged across shards, and
-  `test_runs.server_coverage_gaps` the backends whose part of it is missing (one restarted during the run, or was
-  unreachable at its end; `#shared/run-coverage-gaps`). Branch rows go with
-  the Test Map's branch rows (`graph:sweep`, 30 days); fragments nothing references go in the orphan sweep.
-- **`account_tokens`** — single-use SHA-256-hashed tokens for reset/invite/verify, with a purpose enum and TTL enforced
-  at query time.
-- **`notification_deliveries`** — an outbox: `dedupeKey` unique for idempotency, `status`, `attempts` + `scheduledFor`
-  for progressive retry: five retries, after 1/5/15/60/240 min (`server/utils/outbox.ts`).
-- **`resource_findings`** — one row per project and finding identity (`shared/resource-fingerprint.mjs`: verdict,
-  kind, scope and where it was opened, line included), with the runs it was first and last seen in, ordered by start
-  time; `resource_occurrences` holds each run's showing with the run's branch. Written on finalize by
-  `shared/handlers/resource-findings.ts`, which also fixes a finding after five clean full runs of the default branch,
-  moves a finding to its new line when an edit above it shifted it (the same identity without line numbers, closest
-  line first), and tells the gate and the pull-request comment which findings are new to the base branch.
-- **`test_run_resource_reports`** — one row per run and shard with that reporter's resource report, upserted whole by
-  its finish so concurrent shards never overwrite each other; read folded in shard order
+### Tables worth a note
+
+- **`case_payloads`**: content-addressed storage for large per-execution text: `aria_snapshot` (and its JSON form),
+  `test_source`, `test_source_frames`, the page inventory, the locator pages, the code reach and the list of coverage
+  fragments. One row per unique content per project (SHA-256 `hash`, unique `(project_id, hash)`), referenced from
+  `test_runs_cases.*_payload_id`. See the rule in `server/database/AGENTS.md`.
+- **`locator_snapshots`**: one row per locator call site (`test_case_id` + `location`), upserted on each run with the
+  latest element attributes and the ranked alternatives computed in advance. Unique index on
+  `(test_case_id, location)`; the `last_seen_run_id` foreign key is `ON DELETE set null`.
+- **`locator_usages`**: the **locator index**, read from the steps of each ingested execution. One row per test case,
+  Playwright project, branch, call site, action, canonical chain and page.
+  - `branch` is `''` for the default branch. A view of another branch replaces the default rows of the tests that ran
+    on it.
+  - `page` is the page key the call ran on, `''` when unknown. It comes from the execution's `piwi-locator-pages` list,
+    joined by call site and chain; the list is stored through `case_payloads` as
+    `test_runs_cases.locator_pages_payload_id`, so a rebuild keeps it (`server/utils/locator-pages.ts`).
+  - `arrival` says the call ran on that page before any locator interaction there.
+  - It feeds "Who uses this?", the project's Locators page and the extension's Tested elements
+    (`GET /api/projects/:id/locator-index`).
+- **Coverage tables** (`server/utils/coverage.ts`, `server/utils/code-reach.ts`): which code each test executed, per
+  repository-relative file and runtime (`browser`, `server`).
+  - `coverage_fragments` holds one file's coverage as one test recorded it (the function and executed line ranges, and
+    the git blob they refer to), content-addressed per project (unique `(project_id, hash)`). Each execution names its
+    fragments through `test_runs_cases.coverage_payload_id` (a `case_payloads` row).
+  - `test_coverage` holds, per test case, branch and runtime, the fragments of its latest run with coverage, and
+    `code_reach` their files (or the reporter's `codeReach` list for a test without coverage). A newer run replaces
+    both the same way. `branch` is `''` for the default branch; a view of another branch reads, per runtime, the
+    branch's rows of the tests that have some.
+  - `run_coverage` holds a run's coverage per file, merged across shards. `test_runs.server_coverage_gaps` lists the
+    backends whose part of it is missing: one restarted during the run, or was unreachable at its end
+    (`#shared/run-coverage-gaps`).
+  - Branch rows are pruned with the Test Map's branch rows (`graph:sweep`, after 30 days); fragments nothing
+    references go in the orphan sweep.
+  - `coverage_reports`, `coverage_report_files`, `coverage_executable`, `coverage_totals` and `coverage_daily` hold
+    the coverage imported from other tools per commit and suite (`piwi coverage upload`), and its totals and trend.
+- **`account_tokens`**: single-use, SHA-256-hashed tokens for password reset, invite and email verification, with a
+  `purpose` and an expiry checked at query time (`server/utils/account-tokens.ts`).
+- **`notification_deliveries`**: an outbox. `dedupeKey` is unique, which makes delivery idempotent; `status`,
+  `attempts` and `scheduledFor` drive progressive retry: five retries, after 1, 5, 15, 60 and 240 minutes
+  (`server/utils/outbox.ts`). `heal_actions` and `integration_actions` are outboxes of the same kind.
+- **`resource_findings`**: one row per project and finding identity (`shared/resource-fingerprint.mjs`: verdict, kind,
+  scope and where it was opened, line included), with the runs it was first and last seen in, ordered by start time.
+  `resource_occurrences` holds each run's showing with the run's branch. `shared/handlers/resource-findings.ts` writes
+  them when a run finishes. It also:
+  - marks a finding fixed after five clean full runs of the default branch;
+  - moves a finding to its new line when an edit above it shifted it (the same identity without line numbers, closest
+    line first);
+  - tells the gate and the pull-request comment which findings are new to the base branch.
+- **`test_run_resource_reports`**: one row per run and shard with that reporter's resource report. Each shard's finish
+  upserts its row whole, so concurrent shards never overwrite each other. Reads fold the rows in shard order
   (`shared/handlers/resource-reports.ts`).
-- **`entity_links`** — external URLs (Jira, GitHub…) attached to a run, execution or test case via three nullable FK
-  columns with `ON DELETE CASCADE`, mirroring the `files` pattern. Provider auto-detected by `shared/link-detect.ts`.
+- **`entity_links`**: external URLs (Jira, GitHub…) attached to a run, an execution, a test case, a failure cluster or
+  a bug report, through one nullable foreign key column per owner with `ON DELETE CASCADE`, like `files`.
+  `shared/link-detect.ts` detects the provider from the URL.
+- **`run_deliveries`**: one row per batch delivery of a run's results (`submit`, `upload`, a shard's), under the key
+  the reporter generated. A delivery repeated with the same key answers with the run it already created.
+- **`graph_nodes`, `graph_edges`, `probes`, `scenario_gaps`**: the Test Map. Their run ids are not foreign keys, since
+  runs are pruned independently and a node must outlive them.
 
 ## Backend
 
-Nitro file-based routing under `server/api/`, plus `server/routes/` for non-`/api` routes. The auto-generated
-**OpenAPI 3.1** spec at `/_openapi.json` and the in-app reference at `/docs` are the authoritative endpoint list — this
-is only the shape of it.
+Nitro file-based routing: `server/api/` serves `/api/...`, and `server/routes/` serves the other paths. The generated
+**OpenAPI 3.1** spec at `/_openapi.json` and the in-app reference at `/docs` list every endpoint; this section only
+gives the shape.
 
-| Family                                                                  | What it covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test-runs/`                                                            | Ingest (`submit`, `upload`, `import` + `import/check`), the streaming protocol (`setup`, `start`, `[id]/events`, `[id]/finish`, `[id]/case-files`, and `[id]/live-resources`, a watched run's CPU, memory and open pages, held in `run-events.ts` until the run ends and merged by `shared/live-resources.ts`), run detail, SSE `stream`, network requests, comparison, deletion, `[id]/resources` (the report each reporter sent, one `test_run_resource_reports` row per shard rebuilt on ingest by `shared/resource-report.ts`, and the costliest executions; `shared/handlers/run-resources.ts`)                                                                                                                                                                                                                                                                                                        |
-| `test-cases/`, `test-run-cases/`                                        | Stable test-case detail/history/traces; per-execution detail, execution-scoped diagnosis (`diagnose`, `diagnosis`, `diagnosis-context`), locator healing, DOM snapshots                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `projects/`                                                             | List (heavy stats), `menu` (slim sidebar list, one SELECT), `overview`, detail, CRUD, members, flaky tests, spec health, trends, SCM                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `failure-clusters/`, `cluster-merge-suggestions/`, `failure-diagnoses/` | Cluster detail and triage, AI diagnosis (`diagnose`, `context`, `commits`, `commit-diff`, `base-commit`), semantic merge suggestions, diagnosis version history and feedback                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `analytics/[widget]`                                                    | Cross-project analytics widgets backing `/analytics`; `analytics/scope` (how a scope resolves), `analytics/dashboards` (saved dashboards CRUD, `duplicate`, `[id]/widgets/[key]` cached 60 s by `server/utils/dashboard-widget-cache.ts`), `analytics/widgets/preview` (the editor's unsaved widget); handlers in `shared/handlers/dashboards.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `auth/`, `users/`                                                       | Login/logout/me/setup, OAuth, password reset & change, email verification, invites, user + API-key management                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `channels/`, `subscriptions/`, `notifications/stream`                   | Notification destinations, per-project subscriptions, SSE delivery stream                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `settings/`                                                             | AI, SMTP and other admin settings (secrets never returned; env-managed flags exposed)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `files/`, `traces/`, `markers/`, `links/`, `tags/`, `search`, `admin/`  | Artifact download, trace checks, timeline markers, entity links, tags, global search, admin stats/cleanup                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `projects/[id]/test-functions`, `test-functions/[id]`                   | The browser extension's function catalog — CRUD, plus `test-functions/extract` (AI: pasted source → a proposed catalog entry, unsaved draft) and `test-functions/validate-proposal` (no AI call — parses/validates a pasted-back AI reply against the same schema, for instances with no AI configured; mirrored in demo mode since it's AI-free)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `extension/connect`, `extension/url-patterns`                           | Connecting the browser extension: an RFC 8628 device authorization (`connect` → `connect/token` polled by the extension; `connect/request` + `connect/decision` behind the `/extension/connect` page), which creates the API key on the first poll that sees the request approved (`server/utils/extension-connect.ts`, table `extension_device_codes`); and every URL pattern the caller can see                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `projects/[id]/url-patterns`                                            | A project's URL patterns (`project_url_patterns`): list, replace, add one, and `suggestions` from the origins the suite visited; handlers in `shared/handlers/url-patterns.ts`, editor `ProjectUrlPatternsForm`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `projects/[id]/bug-reports`, `bug-reports/[id]`                         | Bug reports from Piwi Picker (`bug_reports`, `bug_reproductions`): send (multipart, screenshots in storage under `bug-reports/<id>/`), list, read, update, `reproductions`, `spec` (the failing test with the project's `generated_specs`) and `screenshots/:index`; handlers and the run lifecycle (`applyBugReportLifecycle`, from `runFinalizeSideEffects`) in `shared/handlers/bug-reports.ts`; pages `projects/[id]/bug-reports.vue`, `bug-reports/[id].vue`                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `projects/[id]/selections`, `selections/[key]`                          | Named, data-driven test selections — CRUD, `[key]/resolve` (definition → matching tests + `playwright test` command, with `shard` duration-balancing, what `piwi select` / `piwi run` call), `preview` (ad-hoc definition), `suggestions` (proposed `slow`/`feature` tags + a mined smoke suite), `impact` (changed files, and with `changes` their changed base lines → affected tests, what `piwi run impact --base` and the MCP tool `get_impacted_tests` call) and `analytics` (per-selection health + drift-from-last-run + unselected-test coverage). Resolver + CRUD in `shared/handlers/selections.ts`, suggestions in `shared/handlers/selection-suggestions.ts`, analytics in `shared/handlers/selection-analytics.ts`, impact in `server/utils/selection-impact.ts` (its line-level rules, pure, in `shared/line-impact.ts`); definition shape/validation/materialization in `shared/selection/` |
-| `health`, `version`, `apps/desktop/`                                    | Readiness probe (200/503 with DB check), build info, desktop-shell helpers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `server/routes/mcp.post.ts`                                             | The MCP server endpoint (tool defs in `shared/mcp-tools.ts`, handlers in `server/utils/mcp/`; `describe_piwi` and `get_release_notes` live in `server/utils/mcp/about-piwi.ts` and read the docs and CHANGELOG bundled as Nitro server assets, parsed by `shared/docs-corpus.ts` and `shared/changelog.ts`, with the pieces and setup decisions in `shared/piwi-ecosystem.ts`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `server/routes/oauth/`, `server/routes/.well-known/`                    | The OAuth authorization server MCP clients sign in through: discovery metadata (RFC 9728, RFC 8414), dynamic client registration, `authorize` (stores the request, redirects to the `/oauth/consent` page backed by `api/oauth/authorizations/[id]`), `token` (code with PKCE, refresh rotation) and `revoke`; logic in `server/utils/mcp-oauth.ts`, pure helpers in `mcp-oauth-helpers.ts`, tables `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `server/routes/__piwi/`                                                 | Desktop session bootstrap, guarded by `server/middleware/desktop-guard.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+### Route families
 
-Key server utilities (`server/utils/`):
+Each entry names folders under `server/api/`.
 
-| File / folder                                                 | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `persist-run-cases.ts`                                        | The single write path for run cases — every ingest site goes through it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `blob-report.ts`                                              | Reads a Playwright blob report (`report.jsonl` + `resources/`) into run + `RunCaseInput`s for the import endpoint                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `trace-import.ts`                                             | Rebuilds one execution from a bare `trace.zip` — title, browser, timing and error from the trace's own headers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `archive-reader.ts`                                           | The server's ZIP half of the import parsers (the demo supplies its own), inflating entries on demand                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `import-evidence.ts`                                          | Recovers ARIA snapshot / source snippet from `error-context`, and console entries from the trace, for imported executions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `upload-limits.ts`                                            | Effective multipart ceiling (`PIWI_IMPORT_MAX_BYTES`), shared by `upload` and `import` and surfaced to the import page                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `case-payloads.ts`                                            | Content-addressed payload upsert/inline/resolve                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `locator-healing.ts`                                          | Shared `upsertLocatorSnapshots`, `getLocatorHealing`, `saveLocatorPick` (server + demo)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `locator-usages.ts`                                           | Shared locator index: step indexing on ingest, "Who uses this?", `getLocatorIndex` (server + demo)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `code-reach.ts`, `coverage.ts`                                | Code reach (the code index, a file's reach, latest-run replacement per test, branch and runtime) and coverage storage (fragments, per-execution payloads, test and run coverage, their reads, retention) (server + demo)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `source-at-blob.ts`                                           | A file's source at the git blob a coverage names, through the project's SCM provider (`fetchBlob`, else the file at a run's commit when its blob id matches), kept per blob; the demo serves its canned files instead (`getDemoSourceAtBlob`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `suspect-lines.ts`                                            | Suspect lines of an execution or a failure cluster: the regression context's range, its changes from source control and the coverage, joined by `@piwitests/core/suspect-lines`, kept five minutes; the database reads and the join live in `#shared/handlers/suspect-lines` (server + demo)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `mcp/coverage-tools.ts`                                       | The coverage MCP tools (`get_coverage`, `compare_coverage`, `get_coverage_loss`) over the coverage insights: a failure's path against its last pass, a test's path varying with the tests before it (the `order` flaky root cause), what quarantining tests leaves uncovered, whether a test reached target lines; the pure comparisons live in `shared/coverage-insights.ts`, the database reads in `#shared/handlers/coverage-insights` (server + demo)                                                                                                                                                                                                                                                                                                                          |
-| `project-access.ts`                                           | `getProjectScope`, `requireProjectAccess`, `requireResolvedProjectAccess`, entity resolvers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `route-required-permission.ts`, `route-permission-match.ts`   | Read `x-required-permission` from compiled route metas; rou3 matching                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `ai-*.ts`                                                     | Provider abstraction, diagnosis, context building + limits, research stage, embeddings, images, system prompt, function-catalog extraction from pasted code (rules/schema/prompt-builder live in `shared/test-function-extract-prompt.ts` — one source for the AI-calling endpoint, the dashboard's no-AI-credits "copy prompt" flow, and the MCP `create_test_function` tool description)                                                                                                                                                                                                                                                                                                                                                                                         |
-| `assistant/`, `ai-tool-calls.ts`, `mcp/catalog.ts`            | The in-app assistant: one turn's loop (`loop.ts`) and its answer (`answer.ts`), the Claude Code CLI's run of a turn with its MCP endpoint and token (`claude-code.ts`, `turn-mcp.ts`, `turn-token.ts`), its tools per page (`tools.ts`, `instance-config.ts`, `explain_setting` in `settings.ts`, desktop `local-source.ts`), block tools (`blocks.ts`, limits in `#shared/assistant-blocks`, proposal actions in `#shared/assistant-actions`), read entities (`entities.ts`), guide checks (`guides.ts`), the prompt, limits, allowance and route entry points (`turn.ts`), running answers, Stop (`running.ts`); model calls with tools; the `/mcp` catalog filter, `McpContext`. Conversations, question history, replies, ticks, outcomes, usage: `#shared/handlers/assistant` |
-| `cluster-*.ts`                                                | Similarity, semantic adjudication, naming, reconciliation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `scm/`                                                        | Repo history, diffs and patch validation for AI diagnosis; on the desktop app, `local-git.ts` reads a linked clone                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `notifications/`                                              | `match.ts` (subscription matching → outbox rows), `dispatch.ts` (`sweepOutbox`, HMAC-SHA256 `X-Piwi-Signature`), `emit.ts`, `run-notifications.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `email.ts`, `account-tokens.ts`, `rate-limit.ts`, `crypto.ts` | SMTP transport + templates, single-use tokens (reset 1 h / verify 24 h / invite 72 h), in-memory sliding window, AES-256-GCM                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `export-request.ts`, `export-assets.ts`                       | Offline-export endpoints' shared plumbing: format parsing, download headers, size budget, storage-backed asset reader                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `trace-reconstruct.ts`                                        | Rebuilds a full trace ZIP from a slim blob + the shared resource pool (pooled screenshots and frames back under their entry names); used by the file endpoint and by exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `trace-manifest.ts`                                           | The slim blob's manifest: what went to the shared pool (`resources`, and screenshots and screencast frames by content hash in `pooledEntries`); the one reader and path helper                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `retention.ts`                                                | Nightly pruning of runs, notification history, diagnosis versions and orphan payloads                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `compute-regression-signals.ts`                               | `isNewRegression` / `isNewFlaky` signals                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `server/tasks/notifications/sweep.ts`                         | Nitro scheduled task — sweeps the outbox every minute                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `otel.ts`, `server/plugins/opentelemetry.ts`                  | OpenTelemetry tracing, on when an OTLP endpoint is set: a span per request (and per request the server makes to itself during SSR), a span per SQL statement through `@kubiks/otel-drizzle`, `Server-Timing: traceparent` on responses                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+- **`test-runs/`**: the reporter's routes and the run page.
+  - Batch ingest: `submit` (JSON), `upload` (multipart), `import` and `import/check` (a historical blob report or
+    trace).
+  - The streaming protocol: `setup`, `start`, `[id]/begin`, `[id]/events`, `[id]/heartbeat`, `[id]/case-files`,
+    `[id]/finish`, and `[id]/live-resources`: a watched run's CPU, memory and open pages, held in memory by
+    `server/utils/run-events.ts` until the run ends and merged by `shared/live-resources.ts`.
+  - Run detail: `[id]` (read, update, delete), `recent`, the SSE `[id]/stream`, network requests, failure groups,
+    `[id]/insights` (the comparison with a baseline that the Changes tab shows), coverage, the Perfetto export.
+  - `[id]/resources`: the report each reporter sent (one `test_run_resource_reports` row per shard, rebuilt on ingest
+    by `shared/resource-report.ts`) and the costliest executions (`shared/handlers/run-resources.ts`);
+    `[id]/resource-timeline`.
+  - CI: `[id]/gate` (a gate policy's verdict) and `[id]/incident` (an environment incident).
+- **`test-cases/`**: one test across runs: detail, history, stability trend, coverage reach, path variation, merge,
+  and the Flake Lab (`flake-plan`, `flake-experiments`, `flake-lab-ci`, `flake-profile`).
+- **`test-run-cases/`**: one execution: detail, steps, timeline, the trace views, DOM snapshots, page and visual
+  diffs, the attempt diff, clues, coverage and its divergence, suspect lines, execution-scoped diagnosis (`diagnose`,
+  `diagnosis`, `diagnosis-context`), locator healing (`locator-healing`, `locator-pick`, `locators`), the export, the
+  `.piwibug` file, share links.
+- **`projects/`**: the list with stats (`projects.get.ts`), `menu` (the sidebar's short list, one SELECT),
+  `overview` (per-project trends), create, detail, update, delete. Under `projects/[id]/`: members, flaky and slow
+  tests, failure clusters, the test catalog, coverage, the locator index, the Test Map (`graph`, `feature-map`,
+  `gaps/`, `probes/`, `surface/`), quarantine, the Flake Lab, capabilities, markers, share links, and the families
+  listed below.
+- **`failure-clusters/`, `cluster-merge-suggestions/`, `failure-diagnoses/`**: cluster list, detail and triage
+  (status, assignee, snooze, bulk, quarantine, extract cases), AI diagnosis (`diagnose`, `context`, `commits`,
+  `commit-diff`, `base-commit`), the diagnosis version history (`diagnoses`), suspect lines, fix plan, fixed-before
+  matches, occurrence trend, rerun, bisect, export; semantic merge suggestions (approve, reject); diagnosis feedback.
+- **`widgets/`, `dashboards/`**: the cross-project analytics behind `/analytics`.
+  - `widgets/[widget]` answers one widget; `widgets/preview` answers the editor's unsaved widget. `analytics/[widget]`
+    is the former path of `widgets/[widget]`, kept for scripts: ad blockers refuse an address containing "analytics".
+  - `dashboards/`: the saved dashboards (CRUD, `duplicate`, share links), `dashboards/scope` (how a scope resolves) and
+    `[id]/widgets/[key]` (a saved widget's answer, cached 60 s by `server/utils/dashboard-widget-cache.ts`).
+  - Handlers in `shared/handlers/dashboards.ts`.
+- **`reports/`**: quality reports: the preview, the schedules and the snapshots.
+- **`auth/`, `users/`, `groups/`, `project-access`**: login, logout, `me`, first setup, OAuth sign-in, password reset
+  and change, email verification, invites, user and API-key management, groups, the permission grid.
+- **`channels/`, `subscriptions/`, `notifications/stream`**: notification destinations, per-project subscriptions, the
+  SSE delivery stream.
+- **`settings/`**: AI, SMTP, auto-heal, pull-request feedback, CI cost, locale and other admin settings. A stored
+  secret is never returned, only whether it is set; the flags the environment manages are exposed.
+- **`ai/`, `assistant/`**: the AI status and the local CLI providers; the in-app assistant's conversations, messages,
+  Stop, questions and nudge dismissals.
+- **`integrations/`**: issue trackers: connections, issue creation and drafts, the Jira webhook, status sync.
+- **`files/`, `traces/`, `markers/`, `links/`, `tags/`, `search`, `share-links/`, `admin/`**: artifact download,
+  trace checks, timeline markers, entity links, tags, global search, share links, admin stats, storage and cleanup.
+- **`projects/[id]/test-functions`, `test-functions/[id]`**: the browser extension's function catalog: CRUD, plus:
+  - `test-functions/extract` (AI): pasted source becomes a proposed catalog entry, an unsaved draft;
+  - `test-functions/validate-proposal` (no AI call): parses and validates an AI reply pasted back, against the same
+    schema, for instances with no AI configured. The demo serves it too, since it needs no AI.
+- **`extension/connect`, `extension/url-patterns`**: connecting the browser extension, an RFC 8628 device
+  authorization. The extension calls `connect`, then polls `connect/token`; the `/extension/connect` page reads
+  `connect/request` and answers with `connect/decision`. The first poll that sees the request approved creates the API
+  key (`server/utils/extension-connect.ts`, table `extension_device_codes`). `extension/url-patterns` lists every URL
+  pattern the caller can see.
+- **`projects/[id]/url-patterns`**: a project's URL patterns (`project_url_patterns`): list, replace, add one, and
+  `suggestions` from the origins the suite visited. Handlers in `shared/handlers/url-patterns.ts`; the editor is
+  `ProjectUrlPatternsForm`.
+- **`projects/[id]/bug-reports`, `bug-reports/[id]`**: bug reports from Piwi Picker (`bug_reports`,
+  `bug_reproductions`).
+  - Routes: send (multipart, screenshots in storage under `bug-reports/<id>/`), `intake` (what sending will do), list,
+    read, update, `reproductions`, `spec` (the failing test, with the project's `generated_specs`), `missed-by`,
+    `screenshots/:index` and `step-shots/:step`.
+  - Handlers and the run lifecycle (`applyBugReportLifecycle`, called from `runFinalizeSideEffects`) in
+    `shared/handlers/bug-reports.ts`; pages `projects/[id]/bug-reports.vue` and `bug-reports/[id].vue`.
+- **`projects/[id]/selections`, `selections/[key]`**: named, data-driven test selections.
+  - CRUD, and `[key]/resolve`: a definition becomes the matching tests and a `playwright test` command, with `shard`
+    balanced by duration. This is what `piwi select` and `piwi run` call.
+  - `preview` (an ad-hoc definition) and `suggestions` (proposed `slow` and `feature` tags, and a mined smoke suite).
+  - `impact`: changed files, and with `changes` their changed base lines, become the affected tests. This is what
+    `piwi run impact --base` and the MCP tool `get_impacted_tests` call.
+  - `overview`: per-selection health, drift from the last run and the coverage of unselected tests (`analytics` is
+    its former path).
+  - Code: resolver and CRUD in `shared/handlers/selections.ts`, suggestions in
+    `shared/handlers/selection-suggestions.ts`, overview in `shared/handlers/selection-analytics.ts`, impact in
+    `server/utils/selection-impact.ts` (its pure line-level rules in `shared/line-impact.ts`), the definition's shape,
+    validation and materialization in `shared/selection/`.
+- **`desktop/`**: routes the desktop app calls: its event stream, local imports, Piwi Picker pairing, reproduction
+  requests, reporter configuration.
+- **`flake-lab/inbox`, `gaps/`**: cross-project inboxes of the Flake Lab and the scenario gaps.
+- **`health`, `version`, `capabilities`, `setup-status`, `metrics`, `rollups`, `stream`, `agent-skills`**: the
+  readiness probe (200 or 503, with a database check), build info, the instance capabilities, the setup status,
+  metrics for Prometheus, the rollup export, the global SSE stream, the agent skills this build ships.
 
-Import orchestration is shared, not mirrored: `shared/handlers/import-runs.ts` owns everything after parsing, with
-the server and demo supplying an `ImportPort` for the parts that genuinely differ.
+### Other routes
 
-Offline export follows the same split: `shared/export/` collects the bundle, renders the self-contained HTML and
-Markdown, and writes the ZIP (fflate, so it runs in the demo's service worker too); server and demo differ only in the
-`ExportAssetReader` that fetches evidence bytes. `server/utils/trace-zip.ts` is unrelated — it stores rather than
-deflates and exists for trace-blob reconstruction.
+- **`server/routes/mcp.post.ts`**: the MCP server endpoint. Tool definitions in `shared/mcp-tools.ts`, handlers in
+  `server/utils/mcp/`. `describe_piwi` and `get_release_notes` live in `server/utils/mcp/about-piwi.ts`: they read the
+  docs and the CHANGELOG bundled as Nitro server assets, parsed by `shared/docs-corpus.ts` and `shared/changelog.ts`,
+  with the pieces and setup decisions in `shared/piwi-ecosystem.ts`.
+- **`server/routes/oauth/`, `server/routes/.well-known/`**: the OAuth authorization server MCP clients sign in
+  through: discovery metadata (RFC 9728, RFC 8414), dynamic client registration, `authorize` (stores the request and
+  redirects to the `/oauth/consent` page, backed by `api/oauth/authorizations/[id]`), `token` (code with PKCE, refresh
+  rotation) and `revoke`. Logic in `server/utils/mcp-oauth.ts`, pure helpers in `mcp-oauth-helpers.ts`, tables
+  `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`.
+- **`server/routes/share/`**: the public page of a share link (an execution or a cluster rendered as the offline
+  export, a report snapshot, a live dashboard), with its badge and chart image.
+- **`server/routes/test-runs/[id]/locate`**: finds an execution from what the reporter knows before the server
+  assigns ids, and redirects to its page (the links the reporter prints when a test fails).
+- **`server/routes/__piwi/`**: the desktop session bootstrap, guarded by `server/middleware/desktop-guard.ts`.
 
-A failed execution's `.piwibug` (Piwi Picker's bug report file) is the same split again:
-`shared/handlers/execution-bug-report.ts` reads the execution and writes the archive, every entry stored, through the
-same `ExportAssetReader`; the conversion of the stored steps into a steps document is `bugReportFromExecution` in
-`@piwitests/core/execution-steps`, and the archive's text files come from `bugReportTextFiles`
-(`@piwitests/core/bug-report`), which Piwi Picker writes its own archives with.
+### Server utilities
+
+The main files of `server/utils/`, by area.
+
+**Ingest and import**
+
+- `persist-run-cases.ts`: the single write path for run cases; every ingest site, server and demo, goes through it.
+- `run-finalize-side-effects.ts`: `runFinalizeSideEffects`, what runs when a run finishes (see
+  [Extension points](#extension-points)).
+- `blob-report.ts`: reads a Playwright blob report (`report.jsonl` + `resources/`) into a run and `RunCaseInput`s for
+  the import endpoint.
+- `trace-import.ts`: rebuilds one execution from a bare `trace.zip`: title, browser, timing and error from the trace's
+  own headers.
+- `archive-reader.ts`: the server's ZIP half of the import parsers (the demo supplies its own), inflating entries on
+  demand.
+- `import-evidence.ts`: recovers the ARIA snapshot and source snippet from `error-context`, and the console entries
+  from the trace, for imported executions.
+- `upload-limits.ts`: the effective multipart ceiling (`PIWI_IMPORT_MAX_BYTES`), shared by `upload` and `import` and
+  shown on the import page.
+- `case-payloads.ts`: content-addressed payloads: upsert, inline, resolve.
+
+**Locators, coverage and suspect lines** (each shared with the demo)
+
+- `locator-healing.ts`: `upsertLocatorSnapshots`, `getLocatorHealing`, `saveLocatorPick`.
+- `locator-usages.ts`: the locator index: step indexing on ingest, "Who uses this?", `getLocatorIndex`.
+- `code-reach.ts`, `coverage.ts`: code reach (the code index, a file's reach, replacement by the latest run per test,
+  branch and runtime) and coverage storage (fragments, per-execution payloads, test and run coverage, their reads,
+  retention).
+- `source-at-blob.ts`: a file's source at the git blob a coverage names, through the project's SCM provider
+  (`fetchBlob`, else the file at a run's commit when its blob id matches), kept per blob. The demo serves its canned
+  files instead (`getDemoSourceAtBlob`).
+- `suspect-lines.ts`: the suspect lines of an execution or a failure cluster: the regression context's range, its
+  changes from source control and the coverage, joined by `@piwitests/core/suspect-lines` and kept five minutes. The
+  database reads and the join live in `#shared/handlers/suspect-lines`.
+- `mcp/coverage-tools.ts`: the coverage MCP tools (`get_coverage`, `compare_coverage`, `get_coverage_loss`,
+  `get_coverage_summary`) over the coverage insights: a failure's path against its last pass, a test's path that
+  varies with the tests before it (the `order` flaky root cause), what quarantining tests leaves uncovered, whether a
+  test reached target lines. The pure comparisons live in `shared/coverage-insights.ts`, the database reads in
+  `#shared/handlers/coverage-insights`.
+
+**Access**
+
+- `project-access.ts`: `getProjectScope`, `requireProjectAccess`, `requireResolvedProjectAccess`, and the resolvers
+  from an entity to its project.
+- `route-required-permission.ts`, `route-permission-match.ts`: read `x-required-permission` from the compiled route
+  metas, and match a request to its route with rou3.
+
+**AI and the assistant**
+
+- `ai-*.ts`: the provider abstraction and the local CLI providers, the AI settings, diagnosis, context building and
+  its limits, the research stage, embeddings, images, the system prompt, AI-step resolution, model calls with tools
+  (`ai-tool-calls.ts`), and the function-catalog extraction from pasted code. The extraction's rules, schema and
+  prompt builder live in `shared/test-function-extract-prompt.ts`, the one source for the endpoint that calls the AI,
+  the dashboard's "copy prompt" flow for instances with no AI credits, and the description of the MCP
+  `create_test_function` tool.
+- `assistant/`, `ai-tool-calls.ts`, `mcp/catalog.ts`: the in-app assistant.
+  - One turn: its loop (`loop.ts`) and its answer (`answer.ts`), or a run by the Claude Code CLI with its own MCP
+    endpoint and token (`claude-code.ts`, `turn-mcp.ts`, `turn-token.ts`).
+  - Its tools per page (`tools.ts`, `instance-config.ts`, `explain_setting` in `settings.ts`, the desktop's
+    `local-source.ts`), the block tools (`blocks.ts`, limits in `#shared/assistant-blocks`, proposal actions in
+    `#shared/assistant-actions`), the entities a read names (`entities.ts`), the guide checks (`guides.ts`).
+  - The system prompt (`prompt.ts`), the limits and daily allowance (`limits.ts`), the route entry points
+    (`turn.ts`), the answers being written and Stop (`running.ts`).
+  - `mcp/catalog.ts` filters the tools a caller is offered (on `/mcp` and in the assistant) and builds the
+    `McpContext`.
+  - Conversations, question history, replies, ticks, outcomes and usage: `#shared/handlers/assistant`.
+- `cluster-*.ts`: failure clustering: similarity, semantic adjudication, naming, reconciliation, and the resolved
+  clusters a new one resembles (`cluster-memory.ts`, "Fixed before").
+- `scm/`: the SCM providers (GitHub, GitLab, Bitbucket): repository history, diffs and patch validation for AI
+  diagnosis, the default branch, code ownership, change coverage and the pull-request feedback. On the desktop app,
+  `local-git.ts` reads a linked clone.
+
+**Notifications, email and security**
+
+- `notifications/`: `match.ts` (subscription matching into outbox rows), `dispatch.ts` (`sweepOutbox`, webhooks
+  signed with HMAC-SHA256 in `X-Piwi-Signature`, Slack and Microsoft Teams messages), `emit.ts`,
+  `run-notifications.ts`.
+- `outbox.ts`: the retry schedule and the row claim every outbox sweeper shares (notifications, auto-heal,
+  integrations).
+- `email.ts`, `account-tokens.ts`, `rate-limit.ts`, `crypto.ts`: the SMTP transport and templates; single-use tokens
+  (reset 1 h, verify 24 h, invite 72 h); an in-memory fixed-window rate limiter; AES-256-GCM encryption of stored
+  secrets.
+
+**Export and trace storage**
+
+- `export-request.ts`, `export-assets.ts`: the plumbing the offline-export endpoints share: format parsing, download
+  headers, the size budget, the asset reader backed by storage.
+- `trace-reconstruct.ts`: rebuilds a full trace ZIP from a slim blob and the shared resource pool (pooled screenshots
+  and frames go back under their entry names). The file endpoint and the exports use it.
+- `trace-manifest.ts`: the slim blob's manifest: what went to the shared pool (`resources`, and the screenshots and
+  screencast frames by content hash in `pooledEntries`). The one reader and path helper.
+
+**Housekeeping and observability**
+
+- `retention.ts`: run deletion, and the pruning the nightly `retention:sweep` runs: runs past the retention period
+  (opt-in), settled notification deliveries and outbox rows, report snapshots, idle assistant conversations, extra
+  diagnosis versions, orphan payloads and other orphan rows.
+- `compute-regression-signals.ts`: the `isNewRegression` and `isNewFlaky` signals of a finished run.
+- `otel.ts`, `server/plugins/opentelemetry.ts`: OpenTelemetry tracing, on when an OTLP endpoint is set: a span per
+  request (and per request the server makes to itself during SSR), a span per SQL statement through
+  `@kubiks/otel-drizzle`, and `Server-Timing: traceparent` on responses.
+
+### Scheduled tasks
+
+Nitro tasks under `server/tasks/`, scheduled in `nuxt.config.ts` (`scheduledTasks`):
+
+| Schedule        | Tasks                                                                                                                                           |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every minute    | `notifications:sweep` (`server/tasks/notifications/sweep.ts`, the notification outbox), `heal:sweep`, `integrations:sweep`, `integrations:sync` |
+| Every 5 minutes | `reports:schedule` (the report schedules that are due)                                                                                          |
+| Every 10 min    | `gate:sweep` (the final state of the pull requests a gate failed on)                                                                            |
+| Nightly         | `retention:sweep` (retention, outbox pruning, orphan sweep), `graph:sweep` (stale Test Map and coverage branch rows)                            |
+
+### Code the server and the demo share
+
+- **Import.** The orchestration is shared, not mirrored: `shared/handlers/import-runs.ts` owns everything after
+  parsing, and the server and the demo each supply an `ImportPort` for the parts that really differ.
+- **Offline export.** Same split: `shared/export/` collects the bundle, renders the self-contained HTML, the Markdown
+  and the PDF, and writes the ZIP (with fflate, so it also runs in the demo's service worker). The server and the demo
+  differ only in the `ExportAssetReader` that fetches the evidence bytes. `server/utils/trace-zip.ts` is unrelated: the
+  server's own ZIP reader and writer for trace blobs (it parses and inflates archives within size caps, writes the
+  slim blob deflated and the rebuilt trace stored).
+- **A failed execution's `.piwibug`** (Piwi Picker's bug report file) follows the same split.
+  `shared/handlers/execution-bug-report.ts` reads the execution and writes the archive, every entry stored, through
+  the same `ExportAssetReader`. The conversion of the stored steps into a steps document is `bugReportFromExecution` in
+  `@piwitests/core/execution-steps`. The archive's file names and text (`BUG_REPORT_FILES`, `renderBugMarkdown`,
+  `renderBugSpec`, gathered by its local `bugReportTextFiles`) come from `@piwitests/core/bug-report`, which Piwi
+  Picker writes its own archives with.
 
 ## Front end
 
-### Pages (`app/pages/`)
+### Pages
 
-`/` dashboard home · `/projects` + `/projects/[id]` · `/projects/[id]/test-functions` (the browser extension's
-function catalog — add by hand, via AI extraction from pasted code, or — with no AI configured — copy a prompt for
-your own AI chat and paste its reply back in) · `/projects/[id]/selections` (test selections — builder with live
-preview and the runnable command) · `/projects/[id]/coverage` (a file's coverage, `?file=`: its source with how many
-tests ran each line, the tests of a selected line or range and the nearest test to copy for a line none runs, a
-version selector; worded by `app/utils/file-coverage.ts`, linked from the execution page's Coverage rows, the
-suspect lines and the Test Map's file nodes) · `/test-runs/[id]` · `/test-cases/[id]` (stable
-case across runs) · `/test-run-cases/[id]` (one execution) · `/failure-clusters/[id]` · `/analytics` (the viewer's default dashboard) + `/analytics/d/[id]` (one dashboard, `?tv=1` for TV mode) + `/analytics/dashboards` · `/settings/*` ·
-`/docs` (in-app API reference) · `/mcp` · `/login`, `/forgot-password`, `/reset-password` (public, layout-free).
+The files of `app/pages/`:
 
-**Failure pages.** `/test-run-cases/[id]` (one execution) and `/failure-clusters/[id]` read top to bottom in one
-column. Both open on `SituationBlock`: an identity kicker, the headline as the page's `h1`, then labelled rows in the
-order of `SITUATION_ROWS` (`app/utils/situation-rows.ts`), the explanation, then the action, then the context (Most
-likely `StoryLine`, Situation, State `ClusterStateLine`, Next `NextStepLine`, Cluster, Issue `IssueLine`,
-Occurrences, What changed `WhatChangedLine`, The suite; a page fills the rows it has) and a facts line
-(`ExecutionFactsLine`, `ClusterFactsLine`) holding Details and Raw error. On the execution page a meta line under the
-headline (`ExecutionMetaLine`) says since when it fails, on which commit, and whether a newer execution of the test
-failed again or passed, and the Cluster row names the cluster, then its ticket (`SituationParts` in the lead of
-`IssueLine`); the cluster page has an Issue row instead. A test that passed on retry takes its headline from its
-failed attempt's row (`FailureVerdict.attempt`), which the meta line names and links. The rows are built in the
-handlers the demo shares (`shared/handlers/test-cases.ts`, `shared/handlers/failure-clusters.ts`) from
-`shared/situation.ts` (with `shared/latest-execution.ts` over `getNewerExecutions`), `shared/cluster-state.ts` and
-`computeNextStep` (`shared/next-step.ts`); `useNextStepActions` turns the Next row's action id into behavior on both pages, copying
-the change the row shows (`buildNextStepChange`, `app/utils/next-step-change.ts`). Both pages choose Most likely
-and word where the Next step's change comes from with `shared/most-likely.ts` (`pickMostLikely`,
-`nextStepSourceLine`), one rule for the two; a test that did not run gives its reason as Most likely instead
-(`DidNotRunLine`, from `describeDidNotRun` in `shared/did-not-run.ts`), and its Next opens the blocking failure or
-the run (`open-blocker`, `open-run`). Under the block, the execution page shows `EvidenceTabs` (opening on the tab
-`useEvidenceHint` picks from the leading clue), the `Toolbox` (More ways to fix: one folded section per way to fix, the
-one the next step points at open) and History (`HistoryStrip`). The cluster page shows the section the next step points
-at as a card of its own (`Toolbox` with `lead`; the sections, their order and the step each serves are in
-`app/utils/fix-sections.ts`), then `ClusterInvestigation` when there is a diff to browse (with the cluster's suspect
-lines in `SuspectLinesList`, marked in its diff), `ClusterAffectedTests` (its
-selection picks the execution the evidence shows, with several tests), `EvidenceTabs`, More ways to fix with the other
-sections folded, then the history, folded to one line each: `ClusterOccurrenceTrend` (a `ChartCard` with `foldKey`,
-opened by the occurrence sparkline) and `ClusterActivity`. Both
-pages provide a section locator (`clusterSectionLocatorKey`) so a clue or an AI citation reveals the evidence it cites,
-and `useEvidenceHint` hands the evidence card what Most likely cites, whose tabs and timeline rows it marks
-(`citedItemIds`, `app/utils/timeline-rows.ts`). Both What changed lines say what the suspect lines say
-(`SuspectLinesSentence`, worded by `app/utils/suspect-lines.ts`), from the suspect-lines endpoints, fetched in the
-browser after the page mounted.
-`/bug-reports/[id]` opens on the same block with Situation, State, Next and The suite. `npm run app:measure` holds the
-two failure pages to their budgets (text styles, the controls of the navbar and the situation block, the Next step
-beside what it copies).
+- `/`: the dashboard home.
+- `/projects` and `/projects/[id]`: the project list, and a project's page with its tabs (Runs, Tests, Failures,
+  Flake Lab, Gaps, Performance, Settings). `/projects/[id]/compare`, `/edit` and `/test-cases` only redirect to a tab.
+- `/projects/[id]/test-functions`: the browser extension's function catalog. Add an entry by hand, through AI
+  extraction from pasted code or, with no AI configured, by copying a prompt for your own AI chat and pasting its reply
+  back.
+- `/projects/[id]/selections`: test selections: a builder with a live preview and the command to run.
+- `/projects/[id]/coverage`: with `?file=`, a file's coverage: its source with how many tests ran each line, the
+  tests of a selected line or range, the nearest test to copy for a line no test runs, and a version selector. Worded
+  by `app/utils/file-coverage.ts`; linked from the execution page's Coverage rows, the suspect lines and the Test
+  Map's file nodes. Without `?file=`, the project's combined coverage at a commit, by folder.
+- `/projects/[id]/locators`: check locators against the ones the tests use, and browse the locator index. Piwi Picker
+  links here.
+- `/projects/[id]/bug-reports` and `/bug-reports/[id]`: the bug reports from Piwi Picker.
+- `/projects/[id]/import`: import historical Playwright blob reports.
+- `/test-runs/[id]`: one run. `/test-cases/[id]`: one test case across runs. `/test-run-cases/[id]`: one execution.
+  `/failure-clusters/[id]`: one failure cluster.
+- `/analytics` (the viewer's default dashboard), `/analytics/d/[id]` (one dashboard, `?tv=1` for TV mode) and
+  `/analytics/dashboards` (the list).
+- `/reports` and `/reports/[id]`: quality report schedules and snapshots.
+- `/setup`: the connect wizard and the optional capabilities.
+- `/settings/*`: the settings pages.
+- `/docs` (the in-app API reference) and `/mcp` (the MCP server and its tools).
+- `/extension/connect` and `/oauth/consent`: where a signed-in user answers a connection request.
+- `/login`, `/forgot-password`, `/reset-password`: public pages with no layout.
 
-### Components (`app/components/`)
+### Failure pages
 
-Domain subfolders, all auto-imported **without a folder prefix** (`pathPrefix: false`), so names are globally unique:
+`/test-run-cases/[id]` (one execution) and `/failure-clusters/[id]` read top to bottom in one column.
 
-| Folder                                                                  | Scope                                                                                                                                                                                                                           |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shared/`                                                               | Cross-page primitives and widgets — see below                                                                                                                                                                                   |
-| `run/`                                                                  | Run detail: summary, cases table, workers timeline, comparison, slow endpoints, failure groups, reports, the Resources tab (`RunResources`, formatting in `app/utils/resources.ts`)                                             |
-| `test-case/`                                                            | Single-execution detail: the facts line, the evidence tabs and their cards (timeline, screen, source, network, console, state, performance, attempts, locators), the did-not-run line, clues; the test page's flakiness tab     |
-| `cluster/`                                                              | Failure-cluster detail: the state, what-changed and facts lines, the occurrence sparkline and trend, the affected-tests selector, investigation + baseline picker, commit browser, activity, fixed-before matches               |
-| `diagnosis/`                                                            | AI diagnosis panel: context preview + coverage strip, result with evidence citations, export                                                                                                                                    |
-| `integrations/`                                                         | Issue trackers: the Issue line both failure pages share, the create and link dialogs, the Jira connection, the project binding and its field defaults, the integration activity                                                 |
-| `project/`                                                              | Project detail charts, flaky list, cluster list, SCM changes, subscribe bell, the tests panel of a file's coverage page                                                                                                         |
-| `analytics/`                                                            | Cross-project widgets (component map in `app/utils/analytics-widgets.ts`), and the dashboard page: `DashboardPage`, `DashboardBody` (view, editor, TV mode), `DashboardSwitcher`, `AddWidgetSlideover`, `WidgetConfigSlideover` |
-| `bug-reports/`                                                          | Bug report detail (Piwi Picker): the reported steps (`BugStepText`, from core's step parts), the evidence, the generated spec                                                                                                   |
-| `gaps/`                                                                 | Test Map: the feature graph and map views, the node inspector, the scenario gaps panel                                                                                                                                          |
-| `notifications/`, `reports/`                                            | Notification channels and subscription scope; quality reports: the schedule form and list, previews, snapshots                                                                                                                  |
-| `assistant/`                                                            | The assistant's panel (`AssistantPanel`, docked or over the page; `AssistantPanelBody`), its input (`AssistantInput`, `AssistantUsage`), messages and blocks, on `useAssistant`; a page's nudge, `AssistantNudge`               |
-| `home/`, `layout/`, `settings/`, `apps/desktop/`, `apps/docs/`, `demo/` | Home filters; app shell/nav; settings surfaces; desktop-only cards; in-app API reference; demo-only banner, simulator and guided tour                                                                                           |
+**The situation block.** Both pages open on `SituationBlock`:
 
-Shared building blocks worth knowing before writing new markup (`app/AGENTS.md` makes reuse a rule):
+- an identity kicker, then the headline as the page's `h1`;
+- labelled rows in the order of `SITUATION_ROWS` (`app/utils/situation-rows.ts`): the explanation, then the action,
+  then the context. The rows are Most likely (`StoryLine`), Situation, State (`ClusterStateLine`), Next
+  (`NextStepLine`), Cluster, Issue (`IssueLine`), Occurrences, What changed (`WhatChangedLine`) and The suite; a page
+  fills the rows it has;
+- a facts line (`ExecutionFactsLine`, `ClusterFactsLine`) that holds Details and Raw error.
 
-- **Structure** — `SectionCard` (standard icon/title/count/subtitle header, `actions` + `footer` slots),
-  `CollapsibleSectionCard` (same contract + required `storageKey`, cookie-persisted fold state via `useFoldedState`,
-  `#folded` peek slot), `FoldableSummary`, `DetailPageLayout` (summary + tabs + panels with correct flex height at `lg`+,
-  single-document scroll below).
-- **States** — `EmptyState`, `LoadingState`, `ErrorState` (with an `action` slot).
-- **Connection requests** — `ConnectRequestCard` (the logo-and-card page, with its loading and error states) and
-  `ConnectRequestButtons` (Deny / Allow), driven by `useConnectRequest`: the page a signed-in user answers a client's
-  request on, Piwi Picker's and the editors' (`/extension/connect`) and an MCP client's OAuth sign-in (`/oauth/consent`).
-- **Piwi Picker install hint** — `PickerInstallHint` (one line on what the extension does on that page, the store of
-  this browser and _Don't show again_), driven by `usePickerInstallHint`: shown only in a browser the extension exists
-  for (`pickerStoreFor`), never in the desktop window, and never once the extension marked the page
-  (`@piwitests/core/picker-marker`, which it does on its connected instance's pages). Placed where the extension is the
-  next step: an empty bug reports list, an empty test function catalog, the Locators page's empty check box.
-- **Filters** — `FiltersBlock` (the bordered _Filters_ block every page's filters sit in, folding to a summary on a
+On the execution page:
+
+- a meta line under the headline (`ExecutionMetaLine`) says since when the test fails, on which commit, and whether
+  a newer execution of the test failed again or passed;
+- the Cluster row names the cluster, then its ticket (`SituationParts` in the lead of `IssueLine`). The cluster page
+  has an Issue row instead;
+- a test that passed on retry takes its headline from its failed attempt's row (`FailureVerdict.attempt`), which the
+  meta line names and links.
+
+**Where the rows come from.**
+
+- The handlers the demo shares build them (`shared/handlers/test-cases.ts`, `shared/handlers/failure-clusters.ts`),
+  from `shared/situation.ts` (with `shared/latest-execution.ts` over `getNewerExecutions`), `shared/cluster-state.ts`
+  and `computeNextStep` (`shared/next-step.ts`).
+- `useNextStepActions` turns the Next row's action id into behavior on both pages, and copies the change the row shows
+  (`buildNextStepChange`, `app/utils/next-step-change.ts`).
+- Both pages choose Most likely, and word where the Next step's change comes from, with `shared/most-likely.ts`
+  (`pickMostLikely`, `nextStepSourceLine`): one rule for the two.
+- A test that did not run gives its reason as Most likely instead (`DidNotRunLine`, from `describeDidNotRun` in
+  `shared/did-not-run.ts`), and its Next opens the blocking failure or the run (`open-blocker`, `open-run`).
+
+**Under the block.**
+
+- The execution page shows `EvidenceTabs` (opening on the tab `useEvidenceHint` picks from the leading clue), the
+  `Toolbox` (More ways to fix: one folded section per way to fix, the one the next step points at open) and the
+  history (`HistoryStrip`).
+- The cluster page shows, in order:
+  - the section the next step points at, as a card of its own (`Toolbox` with `lead`; the sections, their order and
+    the step each serves are in `app/utils/fix-sections.ts`);
+  - `ClusterInvestigation` when there is a diff to browse, with the cluster's suspect lines in `SuspectLinesList`,
+    marked in its diff;
+  - `ClusterAffectedTests`, when the cluster has several tests: its selection picks the execution the evidence shows;
+  - `EvidenceTabs`, then More ways to fix with the other sections folded;
+  - the history, each folded to one line: `ClusterOccurrenceTrend` (a `ChartCard` with `foldKey`, opened by the
+    occurrence sparkline) and `ClusterActivity`.
+
+**Shared by both pages.**
+
+- Both provide a section locator (`clusterSectionLocatorKey`), so a clue or an AI citation reveals the evidence it
+  cites.
+- `useEvidenceHint` hands the evidence card what Most likely cites; the card marks those tabs and timeline rows
+  (`citedItemIds`, `app/utils/timeline-rows.ts`).
+- Both What changed lines say what the suspect lines say (`SuspectLinesSentence`, worded by
+  `app/utils/suspect-lines.ts`), from the suspect-lines endpoints, fetched in the browser after the page mounted.
+
+`/bug-reports/[id]` opens on the same block, with Situation, State, Next and The suite.
+
+`npm run app:measure` (`scripts/measure-detail-pages.mjs`) checks the two failure pages against their budgets: the
+text styles, the controls of the navbar and of the situation block, and the distance between the Next step and what
+it copies.
+
+### Components
+
+The components of `app/components/` live in domain subfolders. They are all auto-imported **without a folder prefix**
+(`pathPrefix: false`), so their names are unique across folders.
+
+| Folder               | Scope                                                                                                                                                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/`            | Cross-page primitives and widgets: see [Shared building blocks](#shared-building-blocks)                                                                                                                                        |
+| `run/`               | The run page: header, tests list, workers timeline (`timeline/`), the Changes tab's comparison and baseline picker, reports, the Resources tab (`RunResources`, formatting in `app/utils/resources.ts`), keep and delete        |
+| `test-case/`         | One execution: the meta and facts lines, the evidence tabs and their cards (timeline, screen, source, network, console, state, performance, attempts, locators), the did-not-run line, clues; the test page's flakiness tab     |
+| `cluster/`           | One failure cluster: the state, owner, what-changed and facts lines, the occurrence sparkline and trend, the affected-tests selector, the investigation and baseline picker, the commit browser, activity, fixed-before matches |
+| `diagnosis/`         | The AI diagnosis panel: the context preview and coverage strip, the result with evidence citations, screenshots, the version history                                                                                            |
+| `integrations/`      | Issue trackers: the Issue line both failure pages share, the create and link dialogs, the Jira connection, the project binding and its field defaults, the automation rules, the integration activity                           |
+| `project/`           | A project's page: charts, flaky list, cluster list, SCM changes, subscribe bell, quarantine, Flake Lab, locators, the settings panels, the tests panel of a file's coverage page                                                |
+| `combined-coverage/` | The combined coverage view: the tree, the bars, the legend                                                                                                                                                                      |
+| `analytics/`         | Cross-project widgets (component map in `app/utils/analytics-widgets.ts`), and the dashboard page: `DashboardPage`, `DashboardBody` (view, editor, TV mode), `DashboardSwitcher`, `AddWidgetSlideover`, `WidgetConfigSlideover` |
+| `bug-reports/`       | A bug report from Piwi Picker: the reported steps (`BugStepText`, from core's step parts), the evidence, the generated spec                                                                                                     |
+| `gaps/`              | The Test Map: the feature graph and map views, the map health, the node inspector, the scenario gaps panel                                                                                                                      |
+| `notifications/`     | Notification channels and subscription scope                                                                                                                                                                                    |
+| `reports/`           | Quality reports: the schedule form and list, previews, snapshots                                                                                                                                                                |
+| `assistant/`         | The assistant's panel (`AssistantPanel`, docked or over the page; `AssistantPanelBody`), its input (`AssistantInput`, `AssistantUsage`), messages and blocks, on `useAssistant`; a page's nudge, `AssistantNudge`               |
+| `guides/`, `mcp/`    | The authored guides list; one MCP tool on the `/mcp` page                                                                                                                                                                       |
+| `home/`              | The home page's cards (open failures, the Flake Lab inbox)                                                                                                                                                                      |
+| `layout/`            | The app shell: user menu, sidebar status badges, the get-started wizard and its setup steps                                                                                                                                     |
+| `settings/`          | The settings pages' panels                                                                                                                                                                                                      |
+| `desktop/`           | Desktop-only cards, modals and controls                                                                                                                                                                                         |
+| `docs/`              | The in-app API reference                                                                                                                                                                                                        |
+| `demo/`              | Demo-only banner, simulator, user switcher and guided tour                                                                                                                                                                      |
+
+### Shared building blocks
+
+The components of `app/components/shared/` worth knowing before writing new markup (`app/AGENTS.md` makes reuse a
+rule):
+
+- **Structure**
+  - `SectionCard`: the standard header (icon, title, count, subtitle), with `actions` and `footer` slots.
+  - `CollapsibleSectionCard`: the same contract plus a required `storageKey`. Its fold state is kept in a cookie
+    through `useFoldedState`, and its `#folded` slot shows a one-line peek while folded.
+  - `DetailPageLayout`: summary, tabs and panels, with the right flex height at `lg` and up, and one scrolling
+    document below.
+- **States**: `EmptyState`, `LoadingState`, `ErrorState` (with an `action` slot).
+- **Connection requests**: `ConnectRequestCard` (the page with the logo and the card, with its loading and error
+  states) and `ConnectRequestButtons` (Deny / Allow), driven by `useConnectRequest`. They make the page where a
+  signed-in user answers a client's request: Piwi Picker's and the editors' (`/extension/connect`) and an MCP client's
+  OAuth sign-in (`/oauth/consent`).
+- **Piwi Picker install hint**: `PickerInstallHint` (one line on what the extension does on that page, the store of
+  this browser and _Don't show again_), driven by `usePickerInstallHint`.
+  - It shows only in a browser the extension exists for (`pickerStoreFor`), never in the desktop window, and never
+    once the extension marked the page (`@piwitests/core/picker-marker`, which the extension does on its connected
+    instance's pages).
+  - It sits where the extension is the next step: an empty bug reports list, an empty test function catalog, the
+    Locators page's empty check box.
+- **Filters**: `FiltersBlock` (the bordered _Filters_ block every page's filters sit in, folding to a summary on a
   phone), `FilterBar` (environment, branch, branch policy via `BranchPolicySelect`, full runs only) and
   `HiddenRunsNote` (what the filters hide, with the action that shows it).
-- **Data display** — `StatTile` + `StatTileGrid` (auto-fitting, no per-page breakpoints), `TableScroller`,
-  `FilterToolbar`, `ChartCard` (header + `legend`; `foldKey` folds it to one line), the SVG chart primitives `ChartFrame` (self-measuring plot area,
-  y-axis, and the tooltip of the `ChartMarkerLines` in its slot, kept outside the SVG) / `ChartTooltip` / `ChartMarkerLines` / `ChartLegend` / `ChartMarkerTooltip`, `MiniRunBars`,
-  `DurationValue` (tight `210ms` via
-  the pure `splitDuration`), `CodeBlock`, `MarkdownPreview`, `DiffPatch` / `DiffFile`, `CoverageSourceView` (a source
-  file with the lines a coverage ran and the executable lines it did not marked, the functions that ran linked above
-  it, an optional per-line annotation column; the line numbers alone without the source), `LocatorCode` (a locator
-  expression syntax-highlighted through `@piwitests/picker-dom`'s `tokenizeLocator`), `ErrorText` (error text with
-  its ANSI colors rendered — a one-line `line` preview for lists and cells, or the full `block`), `DeferredTooltip`
-  (a `UTooltip` built on the pointer's first entry, for a tooltip repeated on every row of a list).
-- **Test lists** — `TestRow` + `TestRowGroup` (one test or group header, read the same in every list),
-  `TestSearchInput` (the search box of the run and project Tests tabs: qualifiers, completion of the term under the
-  caret, Ctrl+F through `useFindShortcut`) and `SearchHighlight` (marks what a search matched). The language lives in
-  `shared/test-search.ts` — parser, in-memory matcher, highlight ranges, completion — with its SQL form in
-  `shared/utils/test-search-sql.ts` for the paged catalog; run and file order and the File / File + Describe rows in
-  `app/utils/test-list-order.ts`.
-- **Navigation & actions** — `NavbarActions` (every `UDashboardNavbar` `#right` group; labels collapse to icons below
-  `xl`), `BreadcrumbNav` (drop-in for `UBreadcrumb` and the page title of every detail page — the navbar never
-  repeats it; only the current crumb truncates, middle levels hide below `2xl`, ancestors collapse into a dropdown
-  below `sm`), `OpenInIdeLink` +
-  `OpenInIdeSettingsModal`, `DocLink`, `LinkChip` / `EntityLinks`.
-- **Help & settings** — `HelpHint` (topic keys from `shared/help-content.ts`), `SettingsField`, `EnvManagedBadge`,
+- **Data display**
+  - `StatTile` + `StatTileGrid` (auto-fitting, no per-page breakpoints), `TableScroller`, `FilterToolbar`.
+  - `ChartCard`: a header and a `legend`; `foldKey` folds it to one line.
+  - The SVG chart primitives: `ChartFrame` (measures its own plot area, draws the y-axis, and renders the tooltip of
+    the `ChartMarkerLines` in its slot, outside the SVG), `ChartTooltip`, `ChartMarkerLines`, `ChartLegend`,
+    `ChartMarkerTooltip`; and `MiniRunBars`.
+  - `DurationValue`: a tight `210ms`, through the pure `splitDuration`.
+  - `CodeBlock`, `MarkdownPreview`, `DiffPatch` / `DiffFile`.
+  - `CoverageSourceView`: a source file with the lines a coverage ran and the executable lines it did not, the
+    functions that ran linked above it, and an optional per-line annotation column; without the source, the line
+    numbers alone.
+  - `LocatorCode`: a locator expression, syntax-highlighted through `@piwitests/picker-dom`'s `tokenizeLocator`.
+  - `ErrorText`: error text with its ANSI colors rendered, as a one-line `line` preview for lists and cells, or the
+    full `block`.
+  - `DeferredTooltip`: a `UTooltip` built when the pointer first enters, for a tooltip repeated on every row of a
+    list.
+- **Test lists**
+  - `TestRow` + `TestRowGroup`: one test or one group header, read the same way in every list.
+  - `TestSearchInput`: the search box of the run and project Tests tabs (qualifiers, completion of the term under the
+    caret, Ctrl+F through `useFindShortcut`), and `SearchHighlight`, which marks what a search matched.
+  - The search language lives in `shared/test-search.ts` (parser, in-memory matcher, highlight ranges, completion),
+    with its SQL form in `shared/utils/test-search-sql.ts` for the paged catalog. The run and file order and the File /
+    File + Describe rows live in `app/utils/test-list-order.ts`.
+- **Navigation and actions**
+  - `NavbarActions`: every `UDashboardNavbar` `#right` group; labels collapse to icons below `xl`.
+  - `BreadcrumbNav`: a drop-in for `UBreadcrumb`, and the page title of every detail page, so the navbar never repeats
+    it. The current page label takes the remaining width, the middle levels hide below `2xl`, and the ancestors
+    collapse into a dropdown below `sm`.
+  - `OpenInIdeLink` + `OpenInIdeSettingsModal`, `DocLink`, `LinkChip` / `EntityLinks`.
+- **Help and settings**: `HelpHint` (topic keys from `shared/help-content.ts`), `SettingsField`, `EnvManagedBadge`,
   `EnvManagedAlert`.
-- **Domain widgets** — `RunStatusBadge`, `StatusChip` (status icon + label in one badge, for detail summaries),
-  `TestStatusBar`, `TagBadge` / `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerForm`,
-  `ZoomableImage` (a click / keyboard-accessible image with a hover "Enlarge" affordance) driving
-  `ScreenshotLightbox` (full-screen, keyboard-navigable, with an actual-size zoom toggle for large captures and a
-  details panel naming the test, the step and the error raised on the page — `LightboxImage` in
-  `app/utils/lightbox.ts`),
-  `VideoPlayer`, `TraceListItem`, `LocatorHealingPanel` / `LocatorAlternativeRow`,
-  `SnapshotLocatorPicker`, `EnvironmentDiffCard`, `DataLocationCard`.
-- **Failure pages** — `SituationBlock` (the labelled block the failure pages and a bug report open on: its rows in
-  `SITUATION_ROWS`, the status color on its left edge), `FailureHeadline` (the one-line headline, its locator in a chip when it
-  is the `h1`), `StatusChip` in the block's identity kicker, `StoryLine` (Most likely), `NextStepLine` (the one
-  recommended step, its actions emitted as ids the page handles through `useNextStepActions`), `Toolbox` (More ways
-  to fix, one folded section per way) and `HistoryStrip` (this test's recent executions as a row of squares).
+- **Domain widgets**
+  - `RunStatusBadge`, `StatusChip` (status icon and label in one badge, for detail summaries), `TestStatusBar`,
+    `TagBadge` / `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerForm`.
+  - `ZoomableImage` (an image opened by click or keyboard, with an "Enlarge" hint on hover) drives
+    `ScreenshotLightbox` (full screen, keyboard navigation, an actual-size zoom toggle for large captures, and a
+    details panel naming the test, the step and the error raised on the page; `LightboxImage` in
+    `app/utils/lightbox.ts`).
+  - `VideoPlayer`, `TraceListItem`, `LocatorHealingPanel` / `LocatorAlternativeRow`, `SnapshotLocatorPicker`,
+    `EnvironmentDiffCard`, `DataLocationCard`.
+- **Failure pages** (see [Failure pages](#failure-pages))
+  - `SituationBlock`: the labelled block the failure pages and a bug report open on, its rows in `SITUATION_ROWS`,
+    the status color on its left edge.
+  - `FailureHeadline`: the one-line headline, its locator in a chip when it is the `h1`. `StatusChip` sits in the
+    block's identity kicker.
+  - `StoryLine` (Most likely) and `NextStepLine` (the one recommended step; it emits its actions as ids the page
+    handles through `useNextStepActions`).
+  - `Toolbox` (More ways to fix, one folded section per way) and `HistoryStrip` (this test's recent executions as a
+    row of squares).
 
-### Composables & utils
+### Composables
 
-`app/composables/` covers cross-component state and behaviour — auth and dashboard shell, run streaming
-(`useRunStream`, `useNotificationStream`, and `useTabRunIndicator`, a watched run's progress on the browser tab's
-favicon and title), diagnosis (`useClusterDiagnosis`, `useStreamingDiagnosis`,
-`useDiagnosisNotification`), timeline (`useTimelineModel`, `useTimelineViewport`, and `useExecutionTimeline`, an
-execution's failure timeline under one key for its Timeline and Network tabs), fold/tree state
-(`useFoldedState`, `useFoldableSummary`, `useTreeViewCookie`), a page's view state (`useViewState` — search,
-filters, sort and open groups kept per page path until a reload — and `useViewScroll`, its scroll position), settings derivation (`useSettingsNav`,
-`useSettingsEnvState`), analytics scope, the run page's retry command (`useRunRetryCommand` — one failing set and one
-shared mode for every copy button on the page), IDE preferences (`useOpenInIde`), desktop detection (`useIsDesktop`,
-`useTauri`), guides (`useGuide`, the engine that walks a guide's stops with a driver.js popover on each stop's
-guide anchor, `useDemoTour`, the demo tour's prompt and language on top of it, and `useAuthoredGuides`, the authored
-guides the command palette and the assistant panel list), the assistant (`useAssistant`:
-the panel's state across navigation, the question asked with its page, the answer's event stream, its Stop and Try
-again, the question being typed and the question history; `useAssistantDock`: where the panel sits and its width), and small utilities
-(`useCopy` / `useCopyRich` — use these instead of hand-rolling `navigator.clipboard`, `useAiStatus`, `useChartTooltip`).
+`app/composables/` holds state and behavior shared across components:
 
-`app/utils/` holds pure helpers: `index.ts` (`formatDuration`, `splitDuration`, `getStatusColor`, `getFileApiPath`,
-`formatRelativeTime`, `createSortHeader`, `formatBytes`, `errorMessage`, patch/commit helpers, cluster colour maps),
-`page-error.ts` (`showPageLoadError`: a detail page whose entity does not load shows `app/error.vue`, inside the
-dashboard layout, and answers with the API's 404 or 403), `route-query.ts` (`replaceQuery` — query changes made in the
-same tick, such as a tab switch and the list the tab mounts, add up instead of the last one dropping the others),
-`performance-hints.ts`, `ide-links.ts`, `help-content.ts` and `settings-metadata.ts` (re-exporting `shared/`'s), `openapi.ts` / `openapi-console.ts`,
-`status-palette.ts` (`STATUS_PALETTE` / `statusPalette` — the test outcome colors every bar, chart, history cell,
-timeline bar and filter chip uses, backed by the `--color-status-*` tokens in `assets/css/main.css`), `pass-rate.ts`
-(the one threshold set and color scale for every colored pass rate, heatmap cells included), `duration-tone.ts` (the
-one tone of a timeline duration that stands out in its test, by the rule of
-`shared/duration-standout.ts`: at least 1 s, and a third of the test or much slower than its usual time over the
-last passing runs; that module also holds the much-slower rule, the usual durations the timeline sends, and the step
-match key the Attempts tab's `shared/attempt-diff.ts` compares attempts with), `chart.ts` (the
-per-chart series definitions the plots and their legends share, and the tick/stack/bar geometry behind the SVG
-charts). `retry-command.ts` (`buildRetryCommand` — `file-line` / `grep` / `file` modes,
-shell-escaped, capped at 4096 chars; `buildTitleGrepFlag` — the regex-escaped, shell-quoted `-g` flag the fix plan and
-auto-heal verify commands add) and `locator-edit.ts` (`buildLocatorEdit` — rewrite the failing locator call on a
-source line) now live in `shared/` so the server and demo share them (the fix plan builds the same verify command and
-edits); thin `app/utils/` re-export shims keep them auto-imported. Locator-line edits become a git-applyable unified
-diff via `shared/heal-edit.ts` (`buildHealEdit` / `buildUnifiedLineDiff`), and `shared/callsite-location.ts`
-(`parseCallsiteLocation`) parses a captured `file:line:col` (drive-letter-safe). `app/utils/guide/` holds the guide
-engine's pure parts: the `GuideRun` and `GuideStop` types, the route a stop opens (`stopRoute`, re-exported from
-`shared/guide-stops.ts`, which the assistant's guide checks read too) and the `**bold**` markup. `app/utils/demo-tour/` holds the demo's guided tour as data: the tours (`TOUR_PROFILES`), their words (one
-`copy.<code>.ts` per language, registered in `TOUR_COPY`), the tour languages and the prompt's stored state.
-`app/utils/guides/` holds the authored guides as data: the guides (`AUTHORED_GUIDES`), the resolvers that find the
-entity a stop opens on this instance (`GUIDE_RESOLVERS`) and the guide run they make for the engine.
-`app/utils/assistant/` holds the assistant panel's pure parts: the event reducer, the page context a question carries
-(with the guide anchors rendered on the page), the replies to a question or options block, the page suggestions and the
-next question the input offers, the input's question history, the usage limits as the input shows them and the guide
-run of a composed guide.
-`app/utils/nudges/` holds the nudges (`NUDGES`: each one's page, rule, offer and words) and the browser's weekly budget.
+- **Auth and the dashboard shell**: `useAuth`, and the desktop detection (`useIsDesktop`, the Tauri bridge in
+  `useTauri.ts`).
+- **Run streaming**: `useRunStream`, `useNotificationStream`, and `useTabRunIndicator` (a watched run's progress on
+  the browser tab's favicon and title).
+- **Diagnosis**: `useClusterDiagnosis`, `useStreamingDiagnosis`, `useDiagnosisNotification`.
+- **Timeline**: `useTimelineModel`, `useTimelineViewport`, and `useExecutionTimeline` (an execution's failure timeline
+  under one key, for its Timeline and Network tabs).
+- **Fold state**: `useFoldedState`.
+- **A page's view state**: `useViewState` (search, filters, sort and open groups, kept per page path until a reload)
+  and `useViewScroll` (its scroll position), both in `useViewState.ts`.
+- **Settings**: `useSettingsNav`, `useSettingsEnvState`.
+- **Analytics scope**: `useAnalyticsScope`.
+- **The run page's retry command**: `useRunRetryCommand` (one failing set and one shared mode for every copy button on
+  the page).
+- **IDE preferences**: `useOpenInIde`.
+- **Guides**: `useGuide` (the engine that walks a guide's stops, with a driver.js popover on each stop's guide
+  anchor), `useDemoTour` (the demo tour's prompt and language, on top of it) and `useAuthoredGuides` (the authored
+  guides the command palette and the assistant panel list).
+- **Date and time localization**: `useLocaleSettings`, applied by `app/plugins/locale.client.ts`. The locale and time
+  zone come from the per-browser override (Settings → Localization), else the instance default: `PIWI_LOCALE` /
+  `PIWI_TIME_ZONE`, then the stored instance setting, then the built-in `en-US`. `en-US` output is byte-identical to
+  the historical format (`M/d/yyyy, h:mm:ss a`).
+- **The assistant**: `useAssistant` (the panel's state across navigation, the question asked with its page, the
+  answer's event stream, its Stop and Try again, the question being typed, the question history) and
+  `useAssistantDock` (where the panel sits, and its width).
+- **Small utilities**: `useCopy` / `useCopyRich` (use them instead of calling `navigator.clipboard` by hand),
+  `useAiStatus`, `useChartTooltip`.
+
+How the guide engine plays a guide (`app/composables/useGuide.ts`):
+
+- `start(run)` takes a `GuideRun` (`app/utils/guide/types.ts`: an id, a language, the stops with their copy, the words
+  of the popover's controls).
+- For each stop it opens the stop's route (else its anchor's main page when that is a fixed path), runs the anchor's
+  reveal, scrolls the panels holding it and highlights it.
+- A stop whose anchor does not render shows centered, with the anchor's `shownWhen` under its body; an `absent` stop
+  does so at once, without opening a page or waiting.
+- Until the user scrolls, clicks or types, the engine scrolls back into view a target that content loading above
+  pushed out of it.
+- `app/assets/css/guide.css` themes the popover (`piwi-guide*` classes). The anchor kinds are `GUIDE_ANCHOR_KINDS`
+  (`page`, `tab`, `block`, `row`, `field`, `action`, `nav`).
+
+### Utils
+
+`app/utils/` holds pure helpers. The main ones:
+
+- `index.ts`: `formatDuration`, `splitDuration`, `getStatusColor`, `getFileApiPath`, `formatRelativeTime`,
+  `createSortHeader`, `formatBytes`, `errorMessage`, patch and commit helpers, the cluster color maps.
+- `page-error.ts`: `showPageLoadError`. A detail page whose entity does not load shows `app/error.vue`, inside the
+  dashboard layout, and answers with the API's 404 or 403.
+- `route-query.ts`: `replaceQuery`. Query changes made in the same tick (a tab switch and the list the tab mounts) add
+  up, instead of the last one dropping the others.
+- `status-palette.ts`: `STATUS_PALETTE` / `statusPalette`, the test outcome colors every bar, chart, history cell,
+  timeline bar and filter chip uses, backed by the `--color-status-*` tokens in `assets/css/main.css`.
+- `pass-rate.ts`: the one set of thresholds and the one color scale for every colored pass rate, heatmap cells
+  included.
+- `duration-tone.ts`: the one tone for a timeline duration that stands out in its test. The rule is in
+  `shared/duration-standout.ts`: at least 1 s, and either a third of the test or much slower than its usual time over
+  the last passing runs. That module also holds the much-slower rule, the usual durations the timeline sends, and the
+  step match key that the Attempts tab's `shared/attempt-diff.ts` compares attempts with.
+- `chart.ts`: the per-chart series definitions the plots and their legends share, and the tick, stack and bar
+  geometry of the SVG charts.
+- `performance-hints.ts`, `ide-links.ts`, `openapi.ts` / `openapi-console.ts`.
+- **Re-export shims.** `help-content.ts`, `settings-metadata.ts`, `retry-command.ts` and `locator-edit.ts` re-export
+  shared modules, so they stay auto-imported in the app while the server and the demo import the same code:
+  - `shared/retry-command.ts`: `buildRetryCommand` (`file-line` / `grep` / `file` modes, shell-escaped, capped at 4096
+    chars) and `buildTitleGrepFlag` (the regex-escaped, shell-quoted `-g` flag the fix plan and auto-heal verify
+    commands add);
+  - `shared/locator-edit.ts`, itself a re-export of `@piwitests/core/locator-edit`: `buildLocatorEdit` (rewrites the
+    failing locator call on a source line). The fix plan builds the same verify command and edits.
+- Locator-line edits become a unified diff `git apply` accepts through `shared/heal-edit.ts` (`buildHealEdit` /
+  `buildUnifiedLineDiff`), and `shared/callsite-location.ts` (`parseCallsiteLocation`) parses a captured
+  `file:line:col` (safe with Windows drive letters).
+- `app/utils/guide/`: the guide engine's pure parts: the `GuideRun` and `GuideStop` types, the route a stop opens
+  (`stopRoute`, re-exported from `shared/guide-stops.ts`, which the assistant's guide checks read too) and the
+  `**bold**` markup.
+- `app/utils/demo-tour/`: the demo's guided tour as data: the tours (`TOUR_PROFILES`), their words (one
+  `copy.<code>.ts` per language, registered in `TOUR_COPY`), the tour languages and the prompt's stored state.
+- `app/utils/guides/`: the authored guides as data: the guides (`AUTHORED_GUIDES`), the resolvers that find the entity
+  a stop opens on this instance (`GUIDE_RESOLVERS`) and the guide run they make for the engine.
+- `app/utils/assistant/`: the assistant panel's pure parts: the event reducer, the page context a question carries
+  (with the guide anchors rendered on the page), the replies to a question or options block, the page suggestions and
+  the next question the input offers, the input's question history, the usage limits as the input shows them, and the
+  guide run of a composed guide.
+- `app/utils/nudges/`: the nudges (`NUDGES`: each one's page, rule, offer and words) and the browser's weekly budget.
+
+### Coverage insights in the UI
 
 The coverage insights (`#shared/coverage-insights`) reach the UI where the project's coverage capability is active,
-and render nothing elsewhere: a failed execution's Coverage section compares it with the test's last passing run
-(`CoverageDivergencePart`, a file both ran at one version unfolding to `CoverageDivergenceSource`), the test page's
-`PathVariationCard` names the earlier test a path depends on, and every quarantine action previews the code only its
-tests run (`CoverageLossPreview`; beside a bare button, `CoverageLossPopover` on hover or focus), read through
-`useCoverageLoss` when the action is about to be taken. Their wording is `app/utils/coverage-insights.ts`. Both AI
-contexts, the server's and the demo's, carry the divergence through `coverageDivergenceContext`
-(`#shared/handlers/coverage-insights`).
+and render nothing elsewhere:
+
+- a failed execution's Coverage section compares it with the test's last passing run (`CoverageDivergencePart`; a
+  file both ran at one version unfolds to `CoverageDivergenceSource`);
+- the test page's `PathVariationCard` names the earlier test a path depends on;
+- every quarantine action previews the code only its tests run (`CoverageLossPreview`; beside a bare button,
+  `CoverageLossPopover` on hover or focus), read through `useCoverageLoss` when the action is about to be taken.
+
+Their wording is in `app/utils/coverage-insights.ts`. Both AI contexts, the server's and the demo's, carry the
+divergence through `coverageDivergenceContext` (`#shared/handlers/coverage-insights`).
 
 ## Demo SPA
 
-`PIWI_DEMO_MODE=true` builds a client-only SPA: a PWA service worker (`app/service-worker/demo-sw.ts`) intercepts
-`/api/` and serves it from in-browser sql.js (WASM SQLite) through Drizzle, persisted in IndexedDB. `app/demo/api/router.ts`
-dispatches to per-domain handlers that mirror the server; `app/demo/db.client.ts` is shared by SW and main thread.
-Live updates use a BroadcastChannel instead of SSE. The demo build also mounts the guided tour (`public.demoTour`):
-`DemoTour` in `app.vue` asks a first-time visitor's role and walks that role's seeded screens with a driver.js popover
-on a guide anchor of each, `useDemoTour` handing the role's tour to the guide engine (`useGuide`); the tours are
-`TOUR_PROFILES` and their words one `copy.<code>.ts` per language, both in `app/utils/demo-tour/`. The anchors are the
-registry in `shared/guide-anchors/`: every element a guide can point at, by its `data-tour` attribute, with the pages
-it renders on, how to reveal it and a seeded sample where it renders. With no model, the demo's assistant answers the
-prepared questions of `shared/demo/assistant-questions.mjs`, matched by `app/demo/api/assistant-match.ts` and computed
-from the seed by `app/demo/api/assistant-answers.ts`. Rules and invariants: see `app/demo/AGENTS.md`.
+`PIWI_DEMO_MODE=true` builds a client-only SPA with no server:
+
+- A PWA service worker (`app/service-worker/demo-sw.ts`) intercepts `/api/` and answers from in-browser sql.js (WASM
+  SQLite) through Drizzle, persisted in IndexedDB.
+- `app/demo/api/router.ts` dispatches to per-domain handlers that mirror the server. `app/demo/db.client.ts` is shared
+  by the service worker and the main thread.
+- Live updates use a BroadcastChannel instead of SSE.
+- The demo build also mounts the guided tour (`public.demoTour`). `DemoTour` in `app.vue` asks a first-time visitor's
+  role, then walks that role's seeded screens with a driver.js popover on a guide anchor of each; `useDemoTour` hands
+  the role's tour to the guide engine (`useGuide`). The tours are `TOUR_PROFILES` and their words one `copy.<code>.ts`
+  per language, both in `app/utils/demo-tour/`.
+- The anchors are the registry in `shared/guide-anchors/`: every element a guide can point at, by its `data-tour`
+  attribute, with the pages it renders on, how to reveal it and a seeded sample where it renders.
+- With no model, the demo's assistant answers the prepared questions of `shared/demo/assistant-questions.mjs`,
+  matched by `app/demo/api/assistant-match.ts` and computed from the seed by `app/demo/api/assistant-answers.ts`.
+
+- The demo build puts the hash of `public/demo/seed.version.json` in `runtimeConfig.public.demoDataVersion`. The
+  layout compares it to the copy in IndexedDB and offers a "New demo data available" reset.
+- Until the in-browser database is ready, the static shell shows `app/demo/loading-template.html` (Nuxt's
+  `spaLoadingTemplate`, removed on `app:suspense:resolve`).
+- The run simulator (`DemoSimulator.vue` + `app/demo/simulator.ts`) replays the reporter's streaming protocol against
+  the in-browser endpoints; its live updates go over a BroadcastChannel (`app/demo/run-events.ts`).
+- The tour's prompt is a toast (`DemoTourPrompt`, hosted by `DemoTour`) asking a first-time visitor what they do: a
+  role starts its tour, **Later** asks again a day later (`TOUR_SNOOZE_MS`), **×** never again, and the banner's
+  **Guided tour** button (`DemoTourButton`) reopens it. The decision is stored under `localStorage['piwi-demo-tour']`
+  (`app/utils/demo-tour/prompt-state.ts`). The tour speaks the browser's language (`pickTourLanguage`) or the one
+  picked in the toast; each stop links its docs page.
+
+Rules and invariants: see `app/demo/AGENTS.md`.
 
 ## Extension points
 
 Where to add things in subsystems whose wiring spans several files:
 
-- **Flaky root-cause category**: `classifyFlakyRootCause()` + keyword arrays in `shared/flaky-classify.ts`; persistence and triggers in `shared/handlers/flaky-classify.ts` (`classifyRunFlakyTests`, called from `runFinalizeSideEffects`; `withFlakyRootCauses`, called by the flaky-tests read on the server and in the demo); `rootCause` on `FlakyTest` (`types/api.ts`); `FlakyTestsList.vue` colour map
-- **Flaky impact scoring**: `getProjectFlakyTests` (`shared/handlers/projects.ts`) — sorts by impact desc; `impact`, `wastedCiMinutes`, `avgFailedDurationMs` on `FlakyTest`
-- **Regression signals**: `computeRegressionSignals()` (`server/utils/compute-regression-signals.ts`), fired by the shared finalize helper `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`); surfaced by `getTestRun` / `getTestRunCase` mappers
-- **A computed AI-context section**: Update the `SectionId` union (`ai-context.types.ts`), `DIAGNOSIS_SECTIONS` (`diagnosis-sections.ts`) and `DiagnosisContextCoverage` (`types/api.ts`) **in one batch** before writing the section builder
-- **Blob-report import**: `server/utils/blob-report.ts` (parse) + `import-evidence.ts` (recovered evidence); everything after parsing in `shared/handlers/import-runs.ts`; endpoints `test-runs/import[.post]` and `import/check.post.ts`; page `projects/[id]/import.vue` + `useBlobReportImport`
-- **Trace-file import**: `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`
-- **Quality report language**: Its code in `shared/reports/languages.ts`, the `lang` enum of `server/api/reports/preview.get.ts` (a literal the test checks) and a `shared/reports/sentences.<code>.ts` implementing `ReportSentences` (copy `sentences.fr.ts`), registered in `REPORT_SENTENCES`; validation, the MCP tool, the pickers and the CLI follow. `tests/unit/report-languages.test.ts` names the labels, metrics and gap titles the file lacks, and a new gap detector needs a sample in `tests/unit/gap-title-samples.ts`. The PDF's standard fonts write Windows-1252 only
-- **Issue automation criterion**: The rule field and its check in `shared/integrations/automation.ts` (`AutoCreateRule`, `resolveAutoCreateRule`, `evaluateAutoCreate`, `describeAutoCreateRule`); the fact it reads in `gatherAutoCreateFacts` (`shared/handlers/tracker-automation.ts`, shared with the demo preview); the form in `app/utils/tracker-binding-form.ts` and `AutoCreateRulesEditor.vue`; the table on `apps/docs/features/issue-automation.md`. The run trigger (`server/utils/integrations/automation.ts`) and the write-back scope (`policies.ts`, `tracker-run.ts`) read the rules, never re-implement them
-- **Finish-time side effects**: `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`): the order and the rules are in [`server/api/test-runs/AGENTS.md`](server/api/test-runs/AGENTS.md#finish-time-side-effects)
-- **Guide anchor, guided tour stop, role or language**: [`shared/guide-anchors/AGENTS.md`](shared/guide-anchors/AGENTS.md), [`app/utils/demo-tour/AGENTS.md`](app/utils/demo-tour/AGENTS.md)
+- **Flaky root-cause category**: `classifyFlakyRootCause()` and its keyword arrays in `shared/flaky-classify.ts`.
+  Persistence and triggers in `shared/handlers/flaky-classify.ts`: `classifyRunFlakyTests`, called from
+  `runFinalizeSideEffects`, and `withFlakyRootCauses`, called by the flaky-tests read on the server and in the demo.
+  Then `rootCause` on `FlakyTest` (`types/api.ts`), and the color map and filter options of `FlakyTestsList.vue`.
+- **Flaky impact scoring**: `getProjectFlakyTestsWithVerified` (`shared/handlers/projects.ts`, wrapped by
+  `getProjectFlakyTests`) computes `impact` and sorts by it, highest first; `impact`, `wastedCiMinutes` and
+  `avgFailedDurationMs` are fields of `FlakyTest`.
+- **Regression signals**: `computeRegressionSignals()` (`server/utils/compute-regression-signals.ts`), started by the
+  shared finalize helper `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`); the `getTestRun` and
+  `getTestRunCase` mappers return the signals.
+- **A computed AI-context section**: update the `SectionId` union (`ai-context.types.ts`), `DIAGNOSIS_SECTIONS`
+  (`diagnosis-sections.ts`) and `DiagnosisContextCoverage` (`types/api.ts`) **in one batch** before writing the section
+  builder.
+- **Blob-report import**: `server/utils/blob-report.ts` (parsing) and `import-evidence.ts` (recovered evidence);
+  everything after parsing in `shared/handlers/import-runs.ts`; the endpoints `test-runs/import[.post]` and
+  `import/check.post.ts`; the page `projects/[id]/import.vue` with `useBlobReportImport`.
+- **Trace-file import**: `server/utils/trace-import.ts` rebuilds an execution from a trace's `context-options` and
+  `error` events. The `importGroup` field of `test-runs/import.post.ts` gathers several traces into one run.
+- **Quality report language**:
+  - its code in `shared/reports/languages.ts`;
+  - the `lang` enum of `server/api/reports/preview.get.ts` (a literal the test checks);
+  - a `shared/reports/sentences.<code>.ts` implementing `ReportSentences` (copy `sentences.fr.ts`), registered in
+    `REPORT_SENTENCES`.
+
+  Validation, the MCP tool, the pickers and the CLI follow. `tests/unit/report-languages.test.ts` names the labels,
+  metrics and gap titles the file lacks, and a new gap detector needs a sample in `tests/unit/gap-title-samples.ts`.
+  The PDF's standard fonts write Windows-1252 only.
+
+- **Issue automation criterion**:
+  - the rule field and its check in `shared/integrations/automation.ts` (`AutoCreateRule`, `resolveAutoCreateRule`,
+    `evaluateAutoCreate`, `describeAutoCreateRule`);
+  - the fact it reads in `gatherAutoCreateFacts` (`shared/handlers/tracker-automation.ts`, shared with the demo
+    preview);
+  - the form in `app/utils/tracker-binding-form.ts` and `AutoCreateRulesEditor.vue`;
+  - the table on `apps/docs/features/issue-automation.md`.
+
+  The run trigger (`server/utils/integrations/automation.ts`) and the write-back scope (`policies.ts`,
+  `tracker-run.ts`) read the rules and never re-implement them.
+
+- **Finish-time side effects**: `runFinalizeSideEffects` (`server/utils/run-finalize-side-effects.ts`). The order and
+  the rules are in [`server/api/test-runs/AGENTS.md`](server/api/test-runs/AGENTS.md#finish-time-side-effects).
+- **Guide anchor, guided tour stop, role or language**:
+  [`shared/guide-anchors/AGENTS.md`](shared/guide-anchors/AGENTS.md),
+  [`app/utils/demo-tour/AGENTS.md`](app/utils/demo-tour/AGENTS.md).
 
 ## Key features
 
-Auto-created projects on first submission · run ingest by JSON, multipart upload or live streaming (with shard merge and
-crash recovery) · HTML reports, traces, videos and screenshots stored under `.data/storage/` with relative paths ·
-flaky detection with root-cause classification and impact scoring · failure clustering with semantic merge suggestions ·
-AI diagnosis grounded in real SCM diffs, optionally two-stage · locator healing · timeline markers · notifications
-(email, Slack, webhook, browser) · an MCP server for AI agents · optional auth with project roles and groups ·
-retention and storage housekeeping · offline export of an execution or a cluster as self-contained HTML, a ZIP of the
-raw evidence, or a printed PDF.
+Projects created automatically on their first run · run ingest by JSON, multipart upload or live streaming (with
+shard merge and crash recovery) · HTML reports, traces, videos and screenshots stored under `.data/storage/` (or S3)
+with relative paths · flaky detection with root-cause classification and impact scoring · failure clustering with
+semantic merge suggestions · AI diagnosis grounded in real SCM diffs, optionally in two stages · locator healing ·
+timeline markers · notifications (email, Slack, Microsoft Teams and other webhooks, browser) · an MCP server for AI
+agents · optional authentication with project roles and groups · retention and storage housekeeping · offline export
+of an execution or a cluster as self-contained HTML, Markdown, JSON, a ZIP of the raw evidence, or a PDF.
