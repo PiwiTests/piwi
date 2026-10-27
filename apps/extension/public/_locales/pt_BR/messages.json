@@ -1299,6 +1299,12 @@
   "common_sendToEditorFailed": {
     "message": "Não enviado"
   },
+  "common_editorNotProven": {
+    "message": "O programa na porta do editor não provou que é o editor pareado, então nada foi enviado: atualize a extensão do Piwi no editor ou pareie de novo."
+  },
+  "common_editorUnreachable": {
+    "message": "O editor não responde: abra-o, com a extensão do Piwi, e envie de novo."
+  },
   "common_cancel": {
     "message": "Cancelar"
   },
@@ -6185,5 +6191,258 @@
   },
   "bug_noScreenshotNone": {
     "message": "nenhuma foi feita"
+  },
+  "runs_command": {
+    "message": "Pausar as execuções do editor ou retomar um teste parado"
+  },
+  "popup_runs": {
+    "message": "Execuções"
+  },
+  "popup_runsHintNone": {
+    "message": "Pausar, passo, retomar"
+  },
+  "popup_runsHint_one": {
+    "message": "$count$ execução no editor",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHint_other": {
+    "message": "$count$ execuções no editor",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_title": {
+    "message": "Execuções · Piwi Picker"
+  },
+  "runs_heading": {
+    "message": "As execuções do seu editor"
+  },
+  "runs_runToCursor": {
+    "message": "Executar até o cursor fica no editor, que tem o arquivo."
+  },
+  "runs_failOffline": {
+    "message": "O serviço do editor não está conectado: o Piwi Picker se conecta de novo."
+  },
+  "runs_failTimeout": {
+    "message": "O editor não respondeu a tempo."
+  },
+  "runs_announceEnded": {
+    "message": "$run$: a execução terminou.",
+    "placeholders": {
+      "run": {
+        "content": "$1",
+        "example": "shop"
+      }
+    }
+  },
+  "runs_announceStopped": {
+    "message": "$test$ parou em $place$.",
+    "placeholders": {
+      "place": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      },
+      "test": {
+        "content": "$2",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_announceRunning": {
+    "message": "$test$ continua.",
+    "placeholders": {
+      "test": {
+        "content": "$1",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_run": {
+    "message": "Execução"
+  },
+  "runs_reconnecting": {
+    "message": "Conectando de novo a $editor$…",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
+  "runs_editor": {
+    "message": "seu editor"
+  },
+  "runs_following_one": {
+    "message": "Acompanhando $count$ janela do editor",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_following_other": {
+    "message": "Acompanhando $count$ janelas do editor",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_openSettings": {
+    "message": "Abrir as configurações"
+  },
+  "runs_findAgain": {
+    "message": "Procurar de novo"
+  },
+  "runs_statusSearching": {
+    "message": "Procurando seu editor…"
+  },
+  "runs_statusUnpaired": {
+    "message": "Pareie o Piwi Picker com o VS Code ou um IDE JetBrains, em Enviar ao editor nas configurações, para acompanhar as execuções que ele inicia."
+  },
+  "runs_statusNoAccess": {
+    "message": "O Piwi Picker não pode mais acessar o endereço do seu editor: pareie-o de novo nas configurações."
+  },
+  "runs_statusRefused": {
+    "message": "Seu editor recusou o pareamento: pareie o Piwi Picker de novo nas configurações."
+  },
+  "runs_statusUnreachable": {
+    "message": "Seu editor não responde: abra o VS Code ou seu IDE JetBrains, com a extensão do Piwi."
+  },
+  "runs_statusOutdated": {
+    "message": "A extensão do Piwi no seu editor não compartilha as execuções: atualize-a."
+  },
+  "runs_statusUnproven": {
+    "message": "O programa na porta pareada não é este editor: o Piwi Picker não enviou nada a ele e pergunta de novo em instantes."
+  },
+  "runs_statusNoHub": {
+    "message": "Seu editor responde, mas nenhuma janela dele compartilha as execuções: atualize lá a extensão do Piwi."
+  },
+  "runs_statusNoRuns": {
+    "message": "Nenhuma execução agora. Inicie um teste pelo editor: ele aparece aqui."
+  },
+  "runs_ended": {
+    "message": "A execução terminou."
+  },
+  "runs_stoppedBreakpoint": {
+    "message": "Parado em um ponto de interrupção"
+  },
+  "runs_stoppedStep": {
+    "message": "Parado após um passo"
+  },
+  "runs_stoppedPause": {
+    "message": "Pausado"
+  },
+  "runs_stoppedRunTo": {
+    "message": "Parado na linha pedida"
+  },
+  "runs_stoppedPagePause": {
+    "message": "Parado em page.pause()"
+  },
+  "runs_stoppedOther": {
+    "message": "Parado"
+  },
+  "runs_statePausing": {
+    "message": "Pausando…"
+  },
+  "runs_stateRunning": {
+    "message": "Em execução"
+  },
+  "runs_stateBetween": {
+    "message": "Entre dois testes"
+  },
+  "runs_worker": {
+    "message": "worker $number$",
+    "placeholders": {
+      "number": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_attempt": {
+    "message": "tentativa $attempt$",
+    "placeholders": {
+      "attempt": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_cannotPause": {
+    "message": "Este teste não pode pausar: $reason$",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "The run is under CI."
+      }
+    }
+  },
+  "runs_nextLabel": {
+    "message": "A seguir"
+  },
+  "runs_whereLabel": {
+    "message": "Em"
+  },
+  "runs_resume": {
+    "message": "Retomar"
+  },
+  "runs_resumeTitle": {
+    "message": "Continuar até o próximo ponto de interrupção"
+  },
+  "runs_step": {
+    "message": "Passo"
+  },
+  "runs_stepTitle": {
+    "message": "Executar esta chamada e parar antes da próxima"
+  },
+  "runs_finish": {
+    "message": "Concluir"
+  },
+  "runs_finishTitle": {
+    "message": "Continuar o teste sem parar de novo em pontos de interrupção"
+  },
+  "runs_pick": {
+    "message": "Escolher"
+  },
+  "runs_pickTitle": {
+    "message": "Escolher um locator na janela do teste: ele substitui o desta linha"
+  },
+  "runs_record": {
+    "message": "Gravar"
+  },
+  "runs_recordTitle": {
+    "message": "Gravar passos na janela do teste: eles são escritos acima desta linha"
+  },
+  "runs_pause": {
+    "message": "Pausar"
+  },
+  "runs_pauseTitle": {
+    "message": "Parar o teste antes da próxima chamada"
+  },
+  "runs_imageAlt": {
+    "message": "A página do teste, parada antes de: $call$",
+    "placeholders": {
+      "call": {
+        "content": "$1",
+        "example": "Click getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "runs_imageNone": {
+    "message": "Nenhuma imagem da página."
+  },
+  "runs_imageLoading": {
+    "message": "Capturando uma imagem da página…"
   }
 }

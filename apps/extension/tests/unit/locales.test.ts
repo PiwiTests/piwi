@@ -35,6 +35,7 @@ const SURFACES = [
   'devtools',
   'view',
   'login',
+  'runs',
   'stability',
   'codegen',
   'badge',
@@ -193,7 +194,14 @@ describe('languages', () => {
   });
 
   it('knows every key the HTML pages name', () => {
-    for (const page of ['popup.html', 'options.html', 'devtools-sidebar.html', 'devtools-panel.html', 'login.html']) {
+    for (const page of [
+      'popup.html',
+      'options.html',
+      'devtools-sidebar.html',
+      'devtools-panel.html',
+      'login.html',
+      'runs.html',
+    ]) {
       const html = readFileSync(path.join(root, page), 'utf8');
       for (const match of html.matchAll(/data-i18n(?:-title|-placeholder|-aria-label)?="([^"]+)"/g)) {
         expect(english[match[1]!], `${page}: ${match[1]}`).toBeDefined();

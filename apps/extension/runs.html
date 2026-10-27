@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title data-i18n="runs_title">Runs · Piwi Picker</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --surface: #f9fafb;
+        --fg: #111827;
+        --muted: #6b7280;
+        --border: #e5e7eb;
+        --accent: #7c3aed;
+        --accent-fg: #6d28d9;
+        --ok: #059669;
+        --warn: #b45309;
+        --stopped: #b45309;
+        --running: #0369a1;
+        --error: #dc2626;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111827;
+          --surface: #1f2937;
+          --fg: #f9fafb;
+          --muted: #9ca3af;
+          --border: #374151;
+          --accent-fg: #c4b5fd;
+          --ok: #34d399;
+          --warn: #fbbf24;
+          --stopped: #fbbf24;
+          --running: #7dd3fc;
+          --error: #f87171;
+        }
+      }
+      /* An element with the `hidden` attribute is hidden, whatever `display` a rule below gives it. */
+      [hidden] {
+        display: none !important;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          13px/1.5 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      main {
+        padding: 12px 14px 16px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      header img {
+        border-radius: 5px;
+      }
+      h1 {
+        flex: 1;
+        margin: 0;
+        font-size: 15px;
+        line-height: 20px;
+      }
+      /* Which editor windows the window follows: a line under the title. */
+      .hubs {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: -4px 0 10px;
+        font-size: 11.5px;
+        line-height: 16px;
+        color: var(--muted);
+      }
+      .hubs > .piwi-icon {
+        width: 12px;
+        height: 12px;
+        color: var(--ok);
+      }
+      .hubs.waiting > .piwi-icon {
+        color: var(--warn);
+      }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+      /* Nothing to show: why, and what to do. */
+      .empty {
+        padding: 14px;
+        border: 1px dashed var(--border);
+        border-radius: 10px;
+        color: var(--muted);
+      }
+      .empty p {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        margin: 0 0 10px;
+        line-height: 20px;
+        color: var(--fg);
+      }
+      .empty p > .piwi-icon {
+        width: 16px;
+        height: 16px;
+        margin-top: 2px;
+        color: var(--accent-fg);
+      }
+      .empty .piwi-actions:empty {
+        display: none;
+      }
+      .run {
+        margin-bottom: 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface);
+        overflow: hidden;
+      }
+      .run.ended {
+        opacity: 0.75;
+      }
+      .run-head {
+        padding: 9px 12px 8px;
+        border-bottom: 1px solid var(--border);
+      }
+      .run-title {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      h2 {
+        flex: 1;
+        min-width: 0;
+        margin: 0;
+        font-size: 13.5px;
+        line-height: 18px;
+        overflow-wrap: anywhere;
+      }
+      .client {
+        flex-shrink: 0;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .command {
+        display: block;
+        margin-top: 3px;
+        font: 11px/16px var(--mono);
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .run-ended {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0;
+        padding: 8px 12px;
+        color: var(--muted);
+      }
+      .run-ended > .piwi-icon {
+        width: 14px;
+        height: 14px;
+        color: var(--ok);
+      }
+      .workers {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .worker {
+        padding: 10px 12px 12px;
+        background: var(--bg);
+      }
+      .worker + .worker {
+        border-top: 1px solid var(--border);
+      }
+      .state {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0 0 4px;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 16px;
+        color: var(--running);
+      }
+      .state > .piwi-icon {
+        width: 14px;
+        height: 14px;
+      }
+      .state .worker-number {
+        margin-left: auto;
+        font-weight: 400;
+        color: var(--muted);
+      }
+      .worker[data-state='stopped'] .state {
+        color: var(--stopped);
+      }
+      .worker[data-state='between'] .state {
+        color: var(--muted);
+      }
+      .test {
+        margin: 0;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .meta {
+        margin: 0;
+        font-size: 11.5px;
+        color: var(--muted);
+      }
+      .note {
+        display: flex;
+        gap: 6px;
+        align-items: flex-start;
+        margin: 6px 0 0;
+        font-size: 11.5px;
+        line-height: 16px;
+        color: var(--muted);
+      }
+      .note > .piwi-icon {
+        width: 12px;
+        height: 12px;
+        margin-top: 2px;
+      }
+      /* Where the test stands: the call about to run, and its file and line. */
+      .stop {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 2px 8px;
+        margin: 8px 0;
+        font-size: 12px;
+      }
+      .stop dt {
+        color: var(--muted);
+      }
+      .stop dd {
+        margin: 0;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .stop .place {
+        font-family: var(--mono);
+        font-size: 11.5px;
+      }
+      /* The stopped page: an image the hub took, never a page of its own. */
+      .page {
+        margin: 0 0 8px;
+      }
+      .page img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+      }
+      .page p {
+        margin: 0;
+        font-size: 11.5px;
+        color: var(--muted);
+      }
+      .worker .piwi-actions {
+        margin-top: 8px;
+      }
+      /* What a command answered when it was not done. */
+      .answer {
+        display: flex;
+        gap: 6px;
+        align-items: flex-start;
+        margin: 6px 0 0;
+        font-size: 12px;
+        line-height: 16px;
+        color: var(--error);
+      }
+      .answer:empty {
+        display: none;
+      }
+      .answer > .piwi-icon {
+        width: 12px;
+        height: 12px;
+        margin-top: 2px;
+      }
+      footer {
+        margin-top: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="icons/icon-32.png" width="18" height="18" alt="" />
+        <h1 data-i18n="runs_heading">Your editor’s runs</h1>
+      </header>
+      <p id="hubs" class="hubs" hidden></p>
+      <!-- Says what changed, for a screen reader: a test stopped, went on, a run ended. -->
+      <p id="announce" class="visually-hidden" role="status" aria-live="polite"></p>
+      <div id="empty" class="empty" hidden>
+        <p id="empty-text"></p>
+        <div id="empty-actions" class="piwi-actions"></div>
+      </div>
+      <div id="runs"></div>
+      <footer>
+        <p class="note" data-i18n="runs_runToCursor" data-icon="info">Run to Cursor is in the editor, which has the file.</p>
+      </footer>
+    </main>
+    <script type="module" src="src/runs/main.ts"></script>
+  </body>
+</html>

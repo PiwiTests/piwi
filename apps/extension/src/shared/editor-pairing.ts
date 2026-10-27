@@ -10,7 +10,8 @@ import type { EditorPairing } from '@piwitests/core/editor-send';
 import { isExtensionContext, moveLegacySecret, secretArea, type SecretArea } from './secret-store.js';
 import { hostPattern } from './web-origin.js';
 
-const PAIRING_KEY = 'piwiEditorPairing';
+/** The editor's address in `chrome.storage.local`, without its token. */
+export const EDITOR_PAIRING_KEY = 'piwiEditorPairing';
 
 function coercePairing(value: unknown): EditorPairing | null {
   const v = value as Partial<EditorPairing> | null | undefined;
@@ -26,7 +27,9 @@ function coercePairing(value: unknown): EditorPairing | null {
  */
 export async function getEditorPairing(area?: SecretArea): Promise<EditorPairing | null> {
   if (!area && !isExtensionContext()) {
-    const stored = (await chrome.storage.local.get(PAIRING_KEY))[PAIRING_KEY] as { url?: unknown } | undefined;
+    const stored = (await chrome.storage.local.get(EDITOR_PAIRING_KEY))[EDITOR_PAIRING_KEY] as
+      | { url?: unknown }
+      | undefined;
     return stored && typeof stored.url === 'string' ? { url: stored.url, token: '' } : null;
   }
   const secrets = area ?? secretArea();
@@ -37,21 +40,25 @@ export async function getEditorPairing(area?: SecretArea): Promise<EditorPairing
 export async function setEditorPairing(pairing: EditorPairing | null, area: SecretArea = secretArea()): Promise<void> {
   if (pairing) {
     await area.set('editor', { url: pairing.url, token: pairing.token });
-    await chrome.storage.local.set({ [PAIRING_KEY]: { url: pairing.url } });
+    await chrome.storage.local.set({ [EDITOR_PAIRING_KEY]: { url: pairing.url } });
   } else {
     await area.remove('editor');
-    await chrome.storage.local.remove(PAIRING_KEY);
+    // The run hubs the pairing found go with it.
+    await area.remove('hubs');
+    await chrome.storage.local.remove(EDITOR_PAIRING_KEY);
   }
 }
 
 /** Moves the token an older version kept in `chrome.storage.local` into the secret area, leaving the address. */
 export async function moveLegacyEditorPairing(area: SecretArea = secretArea()): Promise<void> {
-  const stored = (await chrome.storage.local.get(PAIRING_KEY))[PAIRING_KEY] as { url?: unknown } | undefined;
+  const stored = (await chrome.storage.local.get(EDITOR_PAIRING_KEY))[EDITOR_PAIRING_KEY] as
+    | { url?: unknown }
+    | undefined;
   if (!stored || typeof stored !== 'object' || !('token' in stored)) return;
   await moveLegacySecret(area, 'editor', coercePairing(stored), () =>
     typeof stored.url === 'string'
-      ? chrome.storage.local.set({ [PAIRING_KEY]: { url: stored.url } })
-      : chrome.storage.local.remove(PAIRING_KEY),
+      ? chrome.storage.local.set({ [EDITOR_PAIRING_KEY]: { url: stored.url } })
+      : chrome.storage.local.remove(EDITOR_PAIRING_KEY),
   );
 }
 

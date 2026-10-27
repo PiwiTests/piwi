@@ -52,7 +52,8 @@ test.describe('popup.html', () => {
   test('every tool tile carries a digit shortcut, 1 through 7, in render order', async ({ context, extensionId }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
-    const keys = await page.locator('.actions button').evaluateAll((buttons) =>
+    // The Runs tile, in More tools' free cell while the editor's runs show, has a letter, as the flows do.
+    const keys = await page.locator('.actions button:not(#runs)').evaluateAll((buttons) =>
       buttons.map((b) => ({
         id: b.id,
         badge: b.querySelector('.key')?.textContent ?? null,
@@ -458,7 +459,10 @@ function seedRefusedConnection(page: Page): Promise<void> {
   );
 }
 
-/** The popup with a connection kept, its project row and the connection's line shown: the tallest it is without a recording. */
+/**
+ * The popup with a connection kept, its project row and the connection's line shown, and the Runs tile, which the
+ * paired editor's runs show (`runs.spec.ts` shows it for real): the tallest it is without a recording.
+ */
 async function connectedPopupHeight(page: Page, extensionId: string): Promise<number> {
   await page.setViewportSize({ width: 480, height: 600 });
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
@@ -466,6 +470,8 @@ async function connectedPopupHeight(page: Page, extensionId: string): Promise<nu
   await page.reload();
   await expect(page.locator('#active-project-row')).toBeVisible();
   await expect(page.locator('#connection-health')).toBeVisible();
+  await page.locator('#runs').evaluate((tile: HTMLElement) => (tile.hidden = false));
+  await expect(page.locator('#runs')).toBeVisible();
   return page.locator('.popup').evaluate((el) => el.getBoundingClientRect().height);
 }
 

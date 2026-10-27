@@ -1299,6 +1299,12 @@
   "common_sendToEditorFailed": {
     "message": "No enviado"
   },
+  "common_editorNotProven": {
+    "message": "El programa del puerto del editor no demostró ser el editor emparejado, así que no se envió nada: actualiza la extensión de Piwi en el editor o vuelve a emparejarlo."
+  },
+  "common_editorUnreachable": {
+    "message": "El editor no responde: ábrelo, con la extensión de Piwi, y vuelve a enviar."
+  },
   "common_cancel": {
     "message": "Cancelar"
   },
@@ -6185,5 +6191,258 @@
   },
   "bug_noScreenshotNone": {
     "message": "no se hizo ninguna"
+  },
+  "runs_command": {
+    "message": "Pausar las ejecuciones del editor o reanudar un test detenido"
+  },
+  "popup_runs": {
+    "message": "Ejecuciones"
+  },
+  "popup_runsHintNone": {
+    "message": "Pausar, paso, reanudar"
+  },
+  "popup_runsHint_one": {
+    "message": "$count$ ejecución en el editor",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHint_other": {
+    "message": "$count$ ejecuciones en el editor",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_title": {
+    "message": "Ejecuciones · Piwi Picker"
+  },
+  "runs_heading": {
+    "message": "Las ejecuciones de tu editor"
+  },
+  "runs_runToCursor": {
+    "message": "Ejecutar hasta el cursor está en el editor, que tiene el archivo."
+  },
+  "runs_failOffline": {
+    "message": "El servicio del editor no está conectado: Piwi Picker vuelve a conectarse."
+  },
+  "runs_failTimeout": {
+    "message": "El editor no respondió a tiempo."
+  },
+  "runs_announceEnded": {
+    "message": "$run$: la ejecución terminó.",
+    "placeholders": {
+      "run": {
+        "content": "$1",
+        "example": "shop"
+      }
+    }
+  },
+  "runs_announceStopped": {
+    "message": "$test$ se detuvo en $place$.",
+    "placeholders": {
+      "place": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      },
+      "test": {
+        "content": "$2",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_announceRunning": {
+    "message": "$test$ continúa.",
+    "placeholders": {
+      "test": {
+        "content": "$1",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_run": {
+    "message": "Ejecución"
+  },
+  "runs_reconnecting": {
+    "message": "Conectando de nuevo con $editor$…",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
+  "runs_editor": {
+    "message": "tu editor"
+  },
+  "runs_following_one": {
+    "message": "Siguiendo $count$ ventana del editor",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_following_other": {
+    "message": "Siguiendo $count$ ventanas del editor",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_openSettings": {
+    "message": "Abrir la configuración"
+  },
+  "runs_findAgain": {
+    "message": "Buscar de nuevo"
+  },
+  "runs_statusSearching": {
+    "message": "Buscando tu editor…"
+  },
+  "runs_statusUnpaired": {
+    "message": "Empareja Piwi Picker con VS Code o un IDE de JetBrains, en Enviar al editor de la configuración, para seguir las ejecuciones que inicia."
+  },
+  "runs_statusNoAccess": {
+    "message": "Piwi Picker ya no puede acceder a la dirección de tu editor: vuelve a emparejarlo en la configuración."
+  },
+  "runs_statusRefused": {
+    "message": "Tu editor rechazó el emparejamiento: vuelve a emparejar Piwi Picker en la configuración."
+  },
+  "runs_statusUnreachable": {
+    "message": "Tu editor no responde: abre VS Code o tu IDE de JetBrains, con la extensión de Piwi."
+  },
+  "runs_statusOutdated": {
+    "message": "La extensión de Piwi de tu editor no puede compartir sus ejecuciones: actualízala."
+  },
+  "runs_statusUnproven": {
+    "message": "El programa del puerto emparejado no es este editor: Piwi Picker no le envió nada y vuelve a preguntar en un momento."
+  },
+  "runs_statusNoHub": {
+    "message": "Tu editor responde, pero ninguna de sus ventanas comparte sus ejecuciones: actualiza allí la extensión de Piwi."
+  },
+  "runs_statusNoRuns": {
+    "message": "Ninguna ejecución por ahora. Inicia un test desde el editor: aparece aquí."
+  },
+  "runs_ended": {
+    "message": "La ejecución terminó."
+  },
+  "runs_stoppedBreakpoint": {
+    "message": "Detenido en un punto de interrupción"
+  },
+  "runs_stoppedStep": {
+    "message": "Detenido tras un paso"
+  },
+  "runs_stoppedPause": {
+    "message": "En pausa"
+  },
+  "runs_stoppedRunTo": {
+    "message": "Detenido en la línea pedida"
+  },
+  "runs_stoppedPagePause": {
+    "message": "Detenido en page.pause()"
+  },
+  "runs_stoppedOther": {
+    "message": "Detenido"
+  },
+  "runs_statePausing": {
+    "message": "Pausando…"
+  },
+  "runs_stateRunning": {
+    "message": "En curso"
+  },
+  "runs_stateBetween": {
+    "message": "Entre dos tests"
+  },
+  "runs_worker": {
+    "message": "worker $number$",
+    "placeholders": {
+      "number": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_attempt": {
+    "message": "intento $attempt$",
+    "placeholders": {
+      "attempt": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_cannotPause": {
+    "message": "Este test no puede pausarse: $reason$",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "The run is under CI."
+      }
+    }
+  },
+  "runs_nextLabel": {
+    "message": "Siguiente"
+  },
+  "runs_whereLabel": {
+    "message": "En"
+  },
+  "runs_resume": {
+    "message": "Reanudar"
+  },
+  "runs_resumeTitle": {
+    "message": "Continuar hasta el siguiente punto de interrupción"
+  },
+  "runs_step": {
+    "message": "Paso"
+  },
+  "runs_stepTitle": {
+    "message": "Ejecutar esta llamada y detenerse antes de la siguiente"
+  },
+  "runs_finish": {
+    "message": "Terminar"
+  },
+  "runs_finishTitle": {
+    "message": "Continuar el test sin volver a detenerse en un punto de interrupción"
+  },
+  "runs_pick": {
+    "message": "Elegir"
+  },
+  "runs_pickTitle": {
+    "message": "Elegir un locator en la ventana del test: reemplaza el de esta línea"
+  },
+  "runs_record": {
+    "message": "Grabar"
+  },
+  "runs_recordTitle": {
+    "message": "Grabar pasos en la ventana del test: se escriben encima de esta línea"
+  },
+  "runs_pause": {
+    "message": "Pausar"
+  },
+  "runs_pauseTitle": {
+    "message": "Detener el test antes de su próxima llamada"
+  },
+  "runs_imageAlt": {
+    "message": "La página del test, detenida antes de: $call$",
+    "placeholders": {
+      "call": {
+        "content": "$1",
+        "example": "Click getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "runs_imageNone": {
+    "message": "No hay imagen de la página."
+  },
+  "runs_imageLoading": {
+    "message": "Tomando una imagen de la página…"
   }
 }

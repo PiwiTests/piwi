@@ -9,6 +9,7 @@ import { DIST, SHOP_ORIGIN, injectCoverage, openShop, stubCoverageChrome } from 
 import { openDevtoolsPage, selectElement } from './devtools-stub.js';
 import { stubChromeI18n } from './i18n-stub.js';
 import { stubChromeStorage } from './recording-stub.js';
+import { pairedExtension, startEditor, startRun } from './runs-fixtures.js';
 
 /**
  * The extension's illustrations on the docs site, captured from the same shop
@@ -20,7 +21,8 @@ import { stubChromeStorage } from './recording-stub.js';
  * `picker-record`) are a 1280 × 800 viewport captured at 2× and written at
  * 1280 px wide, the size the stores take; the overlay and the DevTools pane
  * are the docs' alone, at their own sizes. `picker-pause` is the docs' too:
- * the reporter's pause bar, at the stores' size. The harness in
+ * the reporter's pause bar, at the stores' size, and so is `picker-runs`, the Runs window beside a test stopped there,
+ * against the real editor service's hub. The harness in
  * `apps/application/scripts/take-feature-screenshots.mjs` lists them all as
  * external so `--check` leaves them alone.
  */
@@ -44,6 +46,57 @@ test.skip(!process.env.PIWI_DOCS_SHOTS, 'captures docs illustrations only when P
 async function shoot(page: Page, name: string, width = VIEWPORT.width): Promise<void> {
   await sharp(await page.screenshot())
     .resize({ width })
+    .png()
+    .toFile(path.join(SCREENSHOTS, `${name}.png`));
+}
+
+/**
+ * Writes `name`: `panel`, a page rendered at 2× whose CSS size is `box`, framed with its shadow over `backdrop`, at
+ * the right, `top` CSS pixels down, as a popup or a window beside the page shows, then the whole at the stores' width.
+ */
+async function framedOver(
+  backdrop: Buffer,
+  panel: Buffer,
+  box: { width: number; height: number },
+  name: string,
+  top = 12,
+): Promise<void> {
+  const { width, height } = { width: Math.round(box.width * 2), height: Math.round(box.height * 2) };
+  const { width: canvasWidth = 0, height: canvasHeight = 0 } = await sharp(backdrop).metadata();
+  const canvas = { width: canvasWidth, height: canvasHeight };
+  const margin = 24;
+  const left = canvas.width - width - margin * 2;
+  const y = top * 2;
+  // The shadow's rectangle composited on a transparent canvas, then blurred in a second pipeline: sharp blurs
+  // before it composites in one.
+  const rectangle = await sharp({
+    create: { width, height, channels: 4, background: { r: 15, g: 23, b: 42, alpha: 0.35 } },
+  })
+    .png()
+    .toBuffer();
+  const shadow = await sharp(
+    await sharp({ create: { ...canvas, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .composite([{ input: rectangle, left, top: y + 8 }])
+      .png()
+      .toBuffer(),
+  )
+    .blur(28)
+    .png()
+    .toBuffer();
+  const framed = await sharp(panel)
+    .extend({ top: 2, bottom: 2, left: 2, right: 2, background: { r: 203, g: 213, b: 225, alpha: 1 } })
+    .png()
+    .toBuffer();
+  // Composited at 2×, then resized: sharp resizes before it composites in one pipeline.
+  const composed = await sharp(backdrop)
+    .composite([
+      { input: shadow, left: 0, top: 0 },
+      { input: framed, left: left - 2, top: y - 2 },
+    ])
+    .png()
+    .toBuffer();
+  await sharp(composed)
+    .resize({ width: VIEWPORT.width })
     .png()
     .toFile(path.join(SCREENSHOTS, `${name}.png`));
 }
@@ -94,44 +147,8 @@ test('picker-popup', async ({ context, extensionId }) => {
   await popup.waitForTimeout(300);
   const body = popup.locator('body');
   const box = (await body.boundingBox())!;
-  const panel = await body.screenshot();
-  const { width, height } = { width: Math.round(box.width * 2), height: Math.round(box.height * 2) };
-
-  // The popup as it hangs under the toolbar icon: top right, over the page, with its shadow.
-  const { width: canvasWidth = 0, height: canvasHeight = 0 } = await sharp(backdrop).metadata();
-  const canvas = { width: canvasWidth, height: canvasHeight };
-  const margin = 24;
-  const left = canvas.width - width - margin * 2;
-  const top = margin;
-  // The shadow's rectangle composited on a transparent canvas, then blurred in a second pipeline: sharp blurs
-  // before it composites in one.
-  const rectangle = await sharp({
-    create: { width, height, channels: 4, background: { r: 15, g: 23, b: 42, alpha: 0.35 } },
-  })
-    .png()
-    .toBuffer();
-  const shadow = await sharp(
-    await sharp({ create: { ...canvas, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-      .composite([{ input: rectangle, left, top: top + 8 }])
-      .png()
-      .toBuffer(),
-  )
-    .blur(28)
-    .png()
-    .toBuffer();
-  const framed = await sharp(panel)
-    .extend({ top: 2, bottom: 2, left: 2, right: 2, background: { r: 203, g: 213, b: 225, alpha: 1 } })
-    .png()
-    .toBuffer();
-  // Composited at 2×, then resized: sharp resizes before it composites in one pipeline.
-  const composed = await sharp(backdrop)
-    .composite([
-      { input: shadow, left: 0, top: 0 },
-      { input: framed, left: left - 2, top: top - 2 },
-    ])
-    .png()
-    .toBuffer();
-  await sharp(composed).resize({ width: VIEWPORT.width }).png().toFile(path.join(SCREENSHOTS, 'picker-popup.png'));
+  // The popup as it hangs under the toolbar icon: top right, over the page.
+  await framedOver(backdrop, await body.screenshot(), box, 'picker-popup');
 });
 
 // The pause bar of a test paused at a breakpoint in a run the editor started: the reporter's, on the shop page, with
@@ -150,6 +167,64 @@ test('picker-pause', async ({ context }) => {
   await bar.getByRole('button', { name: 'Record here' }).hover();
   await page.waitForTimeout(500);
   await shoot(page, 'picker-pause');
+});
+
+// The Runs window beside the test's browser, the test stopped at a breakpoint before a click on Checkout, with the
+// pause bar in its page: the real editor service's hub, a worker the spec plays, the page's image as the worker sends it.
+test('picker-runs', async () => {
+  const editor = await startEditor();
+  const { context, extensionId } = await pairedExtension(editor, { deviceScaleFactor: 2 });
+  try {
+    const shop = await shopPage(context);
+    await shop.getByRole('button', { name: 'Checkout' }).highlight();
+    await shop.evaluate(showPauseBar, {
+      place: 'cart.spec.ts:12',
+      attempt: null,
+      action: 'click',
+      locator: "getByRole('button', { name: 'Checkout' })",
+      record: true,
+    });
+    await shop.waitForTimeout(300);
+    const backdrop = await shop.screenshot();
+    const image = (await shop.screenshot({ type: 'jpeg', quality: 70, scale: 'css' })).toString('base64');
+
+    const runs = await context.newPage();
+    await runs.setViewportSize({ width: 440, height: 700 });
+    await runs.goto(`chrome-extension://${extensionId}/runs.html`);
+    const run = await startRun(editor, 'pays with a coupon');
+    try {
+      await expect(runs.getByText('cart › pays with a coupon')).toBeVisible();
+      run.worker.send({
+        type: 'stopped',
+        stop: 1,
+        reason: 'breakpoint',
+        title: "Click getByRole('button', { name: 'Checkout' })",
+        place: { file: 'tests/cart.spec.ts', line: 12, column: 5 },
+        locator: "getByRole('button', { name: 'Checkout' })",
+        bar: true,
+      });
+      const asked = await run.worker.next('request');
+      run.worker.send({
+        type: 'answer',
+        request: asked.request,
+        what: 'image',
+        value: { mime: 'image/jpeg', data: image },
+      });
+      await expect(runs.getByRole('img')).toBeVisible();
+      // The service under test names itself after its test client: the window shows the editor's name.
+      await runs.locator('.client').evaluate((client) => (client.textContent = 'Visual Studio Code'));
+      await runs.getByRole('button', { name: 'Resume' }).hover();
+      await runs.waitForTimeout(300);
+      const body = runs.locator('body');
+      // Below the pause bar, whose buttons answer the same stop.
+      await framedOver(backdrop, await body.screenshot(), (await body.boundingBox())!, 'picker-runs', 64);
+    } finally {
+      run.worker.socket.destroy();
+    }
+  } finally {
+    await context.close();
+    await editor.close();
+  }
 });
 
 test('picker-record', async ({ context }) => {

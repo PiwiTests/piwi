@@ -1587,6 +1587,14 @@
     "message": "Not sent",
     "description": "A Send to editor button’s label when the editor did not accept what was sent; the reason is in the button’s tooltip."
   },
+  "common_editorNotProven": {
+    "message": "The program on the editor’s port did not prove it is the paired editor, so nothing was sent: update Piwi’s extension in the editor, or pair again.",
+    "description": "Send to editor, why nothing was sent: the program on the paired editor’s port did not prove it holds the pairing’s token (another program took the port, or the editor’s Piwi extension is older than this check)."
+  },
+  "common_editorUnreachable": {
+    "message": "The editor does not answer: open it, with Piwi’s extension, and send again.",
+    "description": "Send to editor, why nothing was sent: the paired editor did not answer at its address."
+  },
   "common_cancel": {
     "message": "Cancel",
     "description": "Button that closes a dialog without doing anything."
@@ -7326,5 +7334,317 @@
   "bug_noScreenshotNone": {
     "message": "none was taken",
     "description": "Bug report, after “No screenshot:”: the reason when no screenshot was taken and nothing said why. Lower case."
+  },
+  "runs_command": {
+    "message": "Pause the editor’s runs, or resume a stopped test",
+    "description": "The global keyboard shortcut’s name, in the browser’s list of extension shortcuts (chrome://extensions/shortcuts)."
+  },
+  "popup_runs": {
+    "message": "Runs",
+    "description": "Popup, the Runs tile’s label: opens the window that follows the runs the paired editor started. Short."
+  },
+  "popup_runsHintNone": {
+    "message": "Pause, step, resume",
+    "description": "Popup, the line under the Runs tile while the paired editor runs nothing: what the Runs window does. A compact tile’s hint: one short line, about 25 characters."
+  },
+  "popup_runsHint_one": {
+    "message": "$count$ run in your editor",
+    "description": "Popup, the line under the Runs tile: how many runs the paired editor has now. A compact tile’s hint: one short line, about 25 characters.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "popup_runsHint_other": {
+    "message": "$count$ runs in your editor",
+    "description": "Popup, the line under the Runs tile: how many runs the paired editor has now. A compact tile’s hint: one short line, about 25 characters.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_title": {
+    "message": "Runs · Piwi Picker",
+    "description": "Runs window, its title in the browser’s window bar."
+  },
+  "runs_heading": {
+    "message": "Your editor’s runs",
+    "description": "Runs window, its heading: the runs that VS Code or a JetBrains IDE started."
+  },
+  "runs_runToCursor": {
+    "message": "Run to Cursor is in the editor, which has the file.",
+    "description": "Runs window, a note at the bottom: the editor’s Run to Cursor control is not in this window."
+  },
+  "runs_failOffline": {
+    "message": "The editor’s service is not connected: Piwi Picker connects again.",
+    "description": "Runs window, under a button whose command could not reach the editor’s service."
+  },
+  "runs_failTimeout": {
+    "message": "The editor did not answer in time.",
+    "description": "Runs window, under a button whose command the editor did not answer."
+  },
+  "runs_announceEnded": {
+    "message": "$run$: the run ended.",
+    "description": "Runs window, read by a screen reader when a run ends. $run$ is the run’s project or folder.",
+    "placeholders": {
+      "run": {
+        "content": "$1",
+        "example": "shop"
+      }
+    }
+  },
+  "runs_announceStopped": {
+    "message": "$test$ stopped at $place$.",
+    "description": "Runs window, read by a screen reader when a test stops. $test$ is the test’s name, $place$ a file and line.",
+    "placeholders": {
+      "place": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts:12"
+      },
+      "test": {
+        "content": "$2",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_announceRunning": {
+    "message": "$test$ goes on.",
+    "description": "Runs window, read by a screen reader when a stopped test goes on. $test$ is the test’s name.",
+    "placeholders": {
+      "test": {
+        "content": "$1",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_run": {
+    "message": "Run",
+    "description": "Runs window, the name of a run whose folder and Piwi project are not known."
+  },
+  "runs_reconnecting": {
+    "message": "Connecting to $editor$ again…",
+    "description": "Runs window, under the heading while a window of the editor does not answer. $editor$ is the editor’s name (Visual Studio Code), or runs_editor.",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
+  "runs_editor": {
+    "message": "your editor",
+    "description": "Runs window, in runs_reconnecting when the editor does not say its name. Lower case."
+  },
+  "runs_following_one": {
+    "message": "Following $count$ editor window",
+    "description": "Runs window, under the heading: how many windows of VS Code or a JetBrains IDE the window follows.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_following_other": {
+    "message": "Following $count$ editor windows",
+    "description": "Runs window, under the heading: how many windows of VS Code or a JetBrains IDE the window follows.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_openSettings": {
+    "message": "Open the settings",
+    "description": "Runs window, a button that opens Piwi Picker’s settings, where the editor is paired."
+  },
+  "runs_findAgain": {
+    "message": "Look again",
+    "description": "Runs window, a button that asks the editor for its runs again."
+  },
+  "runs_statusSearching": {
+    "message": "Looking for your editor…",
+    "description": "Runs window, while it asks the paired editor for its runs."
+  },
+  "runs_statusUnpaired": {
+    "message": "Pair Piwi Picker with VS Code or a JetBrains IDE, under Send to editor in the settings, to follow the runs it starts.",
+    "description": "Runs window, when no editor is paired. “Send to editor” is the settings card’s heading (options_editorHeading)."
+  },
+  "runs_statusNoAccess": {
+    "message": "Piwi Picker may no longer reach your editor’s address: pair it again in the settings.",
+    "description": "Runs window, when the permission to reach the paired editor was taken back."
+  },
+  "runs_statusRefused": {
+    "message": "Your editor refused the pairing: pair Piwi Picker with it again in the settings.",
+    "description": "Runs window, when the paired editor refuses the pairing’s token (it was paired again, or reset)."
+  },
+  "runs_statusUnreachable": {
+    "message": "Your editor does not answer: open VS Code or your JetBrains IDE, with Piwi’s extension.",
+    "description": "Runs window, when the paired editor does not answer."
+  },
+  "runs_statusOutdated": {
+    "message": "Your editor’s Piwi extension cannot share its runs: update it.",
+    "description": "Runs window, when the paired editor’s Piwi extension is older than the Runs window."
+  },
+  "runs_statusUnproven": {
+    "message": "The program on the paired port is not this editor: Piwi Picker sent it nothing, and asks again in a moment.",
+    "description": "Runs window, when the program on the paired editor’s port does not prove it holds the pairing’s token: another program took the port. Nothing was sent to it."
+  },
+  "runs_statusNoHub": {
+    "message": "Your editor answers, but none of its windows shares its runs: update Piwi’s extension there.",
+    "description": "Runs window, when the paired editor answers but no window of it shares its runs."
+  },
+  "runs_statusNoRuns": {
+    "message": "No run right now. Start a test from the editor: it shows here.",
+    "description": "Runs window, when the editor answers and runs nothing."
+  },
+  "runs_ended": {
+    "message": "The run ended.",
+    "description": "Runs window, on a run that ended. The editor does not say whether its tests passed."
+  },
+  "runs_stoppedBreakpoint": {
+    "message": "Stopped at a breakpoint",
+    "description": "Runs window, the state of a test stopped at one of the editor’s breakpoints."
+  },
+  "runs_stoppedStep": {
+    "message": "Stopped after a step",
+    "description": "Runs window, the state of a test stopped after Step."
+  },
+  "runs_stoppedPause": {
+    "message": "Paused",
+    "description": "Runs window, the state of a test stopped by Pause."
+  },
+  "runs_stoppedRunTo": {
+    "message": "Stopped at the line it ran to",
+    "description": "Runs window, the state of a test stopped by the editor’s Run to Cursor."
+  },
+  "runs_stoppedPagePause": {
+    "message": "Stopped at page.pause()",
+    "description": "Runs window, the state of a test stopped at a page.pause() call. page.pause() is code: keep it."
+  },
+  "runs_stoppedOther": {
+    "message": "Stopped",
+    "description": "Runs window, the state of a stopped test, for a reason this version does not know."
+  },
+  "runs_statePausing": {
+    "message": "Pausing…",
+    "description": "Runs window, the state of a test a Pause reached, until it stops before its next call."
+  },
+  "runs_stateRunning": {
+    "message": "Running",
+    "description": "Runs window, the state of a test that runs."
+  },
+  "runs_stateBetween": {
+    "message": "Between tests",
+    "description": "Runs window, the state of a worker between two tests."
+  },
+  "runs_worker": {
+    "message": "worker $number$",
+    "description": "Runs window, which of a run’s Playwright workers a test runs in, when there are several. Lower case.",
+    "placeholders": {
+      "number": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_attempt": {
+    "message": "attempt $attempt$",
+    "description": "Runs window, after the test’s project: the attempt it is on, 1 for the first. Lower case.",
+    "placeholders": {
+      "attempt": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_cannotPause": {
+    "message": "This test cannot pause: $reason$",
+    "description": "Runs window, under a test that never stops. $reason$ is the editor’s own sentence, in English.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "The run is under CI."
+      }
+    }
+  },
+  "runs_nextLabel": {
+    "message": "Next",
+    "description": "Runs window, label before the call a stopped test runs next."
+  },
+  "runs_whereLabel": {
+    "message": "At",
+    "description": "Runs window, label before the file and line a test is stopped at."
+  },
+  "runs_resume": {
+    "message": "Resume",
+    "description": "Runs window, button on a stopped test: it runs on to the next breakpoint."
+  },
+  "runs_resumeTitle": {
+    "message": "Run on to the next breakpoint",
+    "description": "Runs window, the Resume button’s tooltip."
+  },
+  "runs_step": {
+    "message": "Step",
+    "description": "Runs window, button on a stopped test: it runs one call and stops before the next."
+  },
+  "runs_stepTitle": {
+    "message": "Run this call, and stop before the next one",
+    "description": "Runs window, the Step button’s tooltip."
+  },
+  "runs_finish": {
+    "message": "Finish",
+    "description": "Runs window, button on a stopped test: it runs on without stopping at a breakpoint again."
+  },
+  "runs_finishTitle": {
+    "message": "Run the test on without stopping at a breakpoint again",
+    "description": "Runs window, the Finish button’s tooltip."
+  },
+  "runs_pick": {
+    "message": "Pick",
+    "description": "Runs window, button on a stopped test: starts the pause bar’s Pick a locator in the test’s window."
+  },
+  "runs_pickTitle": {
+    "message": "Pick a locator in the test’s window: it replaces the one on this line",
+    "description": "Runs window, the Pick button’s tooltip."
+  },
+  "runs_record": {
+    "message": "Record",
+    "description": "Runs window, button on a stopped test: starts the pause bar’s Record here in the test’s window."
+  },
+  "runs_recordTitle": {
+    "message": "Record steps in the test’s window: they are written above this line",
+    "description": "Runs window, the Record button’s tooltip."
+  },
+  "runs_pause": {
+    "message": "Pause",
+    "description": "Runs window, button on a running test: it stops before its next call."
+  },
+  "runs_pauseTitle": {
+    "message": "Stop the test before its next call",
+    "description": "Runs window, the Pause button’s tooltip."
+  },
+  "runs_imageAlt": {
+    "message": "The test’s page, stopped before: $call$",
+    "description": "Runs window, the text alternative of the image of a stopped page. $call$ is Playwright’s name of the call, as code.",
+    "placeholders": {
+      "call": {
+        "content": "$1",
+        "example": "Click getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "runs_imageNone": {
+    "message": "No image of the page.",
+    "description": "Runs window, in place of the image of a stopped page when the editor sends none."
+  },
+  "runs_imageLoading": {
+    "message": "Taking an image of the page…",
+    "description": "Runs window, while the image of a stopped page is on its way."
   }
 }

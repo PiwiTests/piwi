@@ -43,7 +43,10 @@ and the Edge Add-ons listing that is still outstanding.
   workers — AMO rejects the manifest without it); the build writes `dist/` for Chrome and Edge
   without `scripts` (Edge lists it as an error) and `dist-firefox/` with it, and `gecko.data_collection_permissions` is
   `"none"`, which holds only while nothing is sent anywhere but the user's own instance and the editor paired on
-  the same computer (Send to editor). See
+  the same computer (Send to editor, and its run hubs: see "The editor's runs"). `commands` holds the pick shortcut and
+  the run shortcut, `"global": true` (Chrome and Edge suggest a global command's key only on `Ctrl+Shift+[0-9]`,
+  `Command+Shift+[0-9]` on macOS, whose `3` to `6` are its screenshots); `firefoxManifest` leaves `global` out, which
+  Firefox does not have. See
   `PUBLISHING.md` §4. The manifest's `description` and the shortcut's label are `__MSG_*__`
   strings, translated in `public/_locales/` (English, the default, French, and German, Spanish and
   Brazilian Portuguese as drafts). The
@@ -61,8 +64,9 @@ and the Edge Add-ons listing that is still outstanding.
   there on `pageshow` (`persisted`), or lets go of the page when the recording ended meanwhile.
   A bug recording (**Report a bug**, `bug-panel.ts`) registers a second script beside it,
   `bug-evidence-main.ts`, in the page's **main world** — see "The main-world evidence script" below.
-- `src/background/` — the service worker. Handles the `chrome.commands` keyboard shortcut
-  (the toolbar icon opens the popup instead, which injects content scripts itself) and the
+- `src/background/` — the service worker. Handles the `chrome.commands` keyboard shortcuts, pick and the run
+  shortcut (see "The editor's runs"; the toolbar icon opens the popup instead, which injects content scripts itself),
+  the editor's run hubs, and the
   recorder's start/stop messages (`piwi-start-recording` / `piwi-recording-stopped`, plus the
   `chrome.permissions.onAdded` fallback that starts a recording when the grant prompt closed
   the popup — see below) — the only places `chrome.scripting.registerContentScripts`/
@@ -76,7 +80,8 @@ and the Edge Add-ons listing that is still outstanding.
   report**, **Tested elements**, and the other page tools as compact tiles under **More tools**. Every tile shows its
   one-line hint under its label, never only as a tooltip (`popup.spec.ts` checks the compact ones). The developer tools
   that have a home in DevTools are there, not here (see "DevTools"), and Pick, Lint and Tested elements are in the Piwi
-  panel's toolbar as well: the popup ends with a line saying so. It has a
+  panel's toolbar as well: the popup ends with a line saying so. **Runs** fills More tools' free cell while a hub of the
+  paired editor answers (see "The editor's runs"), so it adds no height. It has a
   config (gear) button (`chrome.runtime.openOptionsPage()`) and, once connected, an **Active project** select that
   shows/overrides which mapped project applies to the current tab's site, with the connection's line under it
   (`#connection-health`, see "Connected mode"). **It must fit Chrome's 600-pixel popup height** in
@@ -99,6 +104,7 @@ and the Edge Add-ons listing that is still outstanding.
   of the instance's projects), never linked to from a content script. `main.ts` awaits the language catalog and the
   stored settings before it attaches a listener, then sets `html[data-ready]`: an e2e spec opens the page with
   `openOptions` (`tests/e2e/fixtures.ts`), and calls `optionsReady` after a `reload()`, before it clicks anything.
+- `src/runs/` + `runs.html` — the Runs window: see "The editor's runs".
 - `src/shared/` — code shared between content scripts, background, popup, and options.
 - `src/ide/` — the entry and the host of the IDE bundle, the recorder built for the editor service: see "The IDE
   bundle" below. Nothing in the extension loads it.
@@ -260,8 +266,8 @@ the wait ends, and **Cancel** ends it at once, mid-sleep or mid-poll. The browse
 from `describeClient` (`src/shared/client-info.ts`) and nothing else about the machine.
 
 **No secret is kept in `chrome.storage.local`.** Content scripts read and write that area (the panels read
-`ConnectionSettings` from it), so the API key, the desktop app's pairing and the editor's token live in the extension
-origin's IndexedDB (`src/shared/secret-store.ts`), which a content script cannot open (its IndexedDB is the page's):
+`ConnectionSettings` from it), so the API key, the desktop app's pairing, the editor's token and its run hubs' live in
+the extension origin's IndexedDB (`src/shared/secret-store.ts`), which a content script cannot open (its IndexedDB is the page's):
 only the worker and the extension pages read them. The key is kept with the origin of the instance it was given for, and
 `getInstanceApiKey` hands it out for that origin only, so an `instanceUrl` rewritten in storage gets requests without
 it; no request to the instance or the desktop app follows a redirect (`redirect: 'error'`). `isConnected` never looks
@@ -395,6 +401,50 @@ live ranking, so a function this reports "ready" is scored exactly the way it wo
 It counts what Playwright finds, open shadow roots included (`createPageEngine`): a test id target every element
 carrying it, hidden ones too, as `getByTestId` does; a role or name target none hidden from the accessibility tree, as
 `getByRole` does.
+
+## The editor's runs (the Runs window and the run shortcut)
+
+The runs the paired editor starts (`proposals/run-control.md` Part 4; the editor's side is `packages/editor/src/run-hub.ts`
+and `@piwitests/core/run-hub`) are followed and steered from the background worker alone, beside Send to editor:
+
+- **Finding the hubs** (`background/run-hubs.ts`, `RunHubs`): the Send to editor pairing's address with `send` replaced
+  by `live` (`liveUrlOf`), and its origin's grant from the pairing. Before the pairing's token goes there, as before
+  Send to editor's post (`postToEditor`), a request with a challenge alone (`EDITOR_CHALLENGE_HEADER`) must come back
+  with `editorTokenProof` for the port it was sent to, compared in constant time (`proveEditor`,
+  `src/shared/editor-proof.ts`): an endpoint without it gets nothing (`unproven`, asked again later), one answering
+  404 without it predates the proof (`outdated`). Then `GET …/live` with the bearer token, read by
+  `parseLiveAnswer`. The hubs (address and token) go to the secret area under `hubs`, never to `chrome.storage.local`;
+  Unpair removes them (`setEditorPairing(null)`). Found again as the worker starts, when the pairing or a grant changes,
+  when a hub's connection fails (1 s, doubling to 30 s; four tries in a row with no Runs window open, without end while
+  one is), and when the popup, the window or the shortcut asks. An unreachable editor leaves the hubs found last to try.
+- **A connection per hub** (`background/hub-connection.ts`, `HubConnection`): the browser's WebSocket
+  (`browserSocket`), which sends the extension's origin; `hello` with the hub's token, `subscribe` once welcomed, each
+  `session` kept by ref, an ended one kept ten minutes with its last workers. Every message goes through
+  `parseHubMessage`; one it cannot read is ignored. A command gets the next `id` and waits for its answer, answered by
+  the connection itself as `offline` or `timeout`; the hub's own `id` never leaves it. Silence past two keepalives and
+  10 s closes it (`silent`), 4001 drops the hub from the secret area. Chrome keeps the worker running while a WebSocket
+  hears a message within 30 s, which the hub's keepalive gives (Chrome 116, under the manifest's 118); Firefox's
+  background page connects again when it is asked.
+- **The Runs window** (`runs.html`, `src/runs/main.ts`, its shared half `src/shared/runs.ts`): opened by the popup's
+  **Runs** (`piwi-open-runs`, which brings an open one to the front, found from its port or `runtime.getContexts`, else
+  `windows.create({ type: 'popup' })`). It talks only to the worker, through the port `RUNS_PORT`, which the worker takes
+  from `runs.html` alone (`fromRunsPage`: the extension's id and the page's address) and whose messages it reads with
+  `parseRunsRequest`; the state it posts (`RunsState`) carries no token, and the window makes no network call. Every
+  control but Pause names the stop shown (`since`), so a click made twice never answers the next stop. The image of a
+  stopped page is asked once per stop and shown as a `data:` JPEG after its base64 is checked again; a hub's sentences
+  are text, a call's title goes through `richText`. Focus is kept across redraws by `data-focus`; `#announce` (a polite
+  live region) says when a test stops, goes on, or a run ends. The window pings every 20 s, which keeps the worker
+  alive while it is open.
+- **The popup's tile** asks `piwi-runs-summary` (both messages are the extension pages' alone, `EXTENSION_PAGE_MESSAGES`).
+- **The run shortcut** (`run-pause-resume`, `RUN_COMMAND`): `shortcutCommands` resumes every stopped test at its stop,
+  else pauses every run with a worker. The e2e suite cannot press a shortcut the browser holds: the worker's
+  `__piwiRunShortcut()` does what it does.
+- **Tests**: `run-hubs.test.ts` plays the editor's endpoint and each hub's socket (the proof, discovery, hello, subscribe,
+  answers, keepalive, backoff, the shortcut); `runs.test.ts` the pure half; `runs.spec.ts` runs the real extension
+  against the real editor service started in-process (`tests/e2e/runs-fixtures.ts`, on
+  `packages/editor/tests/run-fixtures.ts`), with a stub Send to editor endpoint and a fake worker on the run channel:
+  the popup's tile, the window's Pause, Step, Resume, image, Pick and Record, the shortcut, and a page served from
+  `127.0.0.1` refused by the hub. `docs-screenshots.spec.ts` captures `picker-runs.png` the same way.
 
 ## Tested elements (the project's locator index, evaluated on the page)
 
@@ -959,7 +1009,8 @@ found by its icon and its color before its words are read, and a step reads at a
 
 ## Rules
 
-- **No network call from a content script, ever.** Picking/recording talk to no server.
+- **No network call from a content script, ever, nor from an extension page but the settings page.** Picking and
+  recording talk to no server; the Runs window reads the editor's runs from the worker.
   Connected mode (see above) is opt-in, off by default, confined to `src/options/` and the
   background worker (`piwi-client.ts`). It never sends a recording or anything read from a
   page except a bug report the user sends from its preview. Any other feature that wants to
@@ -1092,4 +1143,4 @@ launches with Developer mode on (`launchWithExtension(path, { developerMode: tru
 Chromium enables a reloaded unpacked extension again only then.
 
 Disable the Chrome Web Store copy while a local build is loaded — two installs both claim the
-`Ctrl+Shift+E` command, and only one of them gets it, which reads as "my change didn't apply".
+`Ctrl+Shift+E` and `Ctrl+Shift+9` commands, and only one of them gets each, which reads as "my change didn't apply".

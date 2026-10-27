@@ -6,7 +6,7 @@ import type { Page } from '@playwright/test';
  * version and schema, so a spec that opens it first leaves it as the extension
  * expects.
  */
-export function storedSecret(page: Page, name: 'instance' | 'desktop' | 'editor'): Promise<unknown> {
+export function storedSecret(page: Page, name: 'instance' | 'desktop' | 'editor' | 'hubs'): Promise<unknown> {
   return page.evaluate(
     (name) =>
       new Promise((resolve, reject) => {

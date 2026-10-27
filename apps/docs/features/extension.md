@@ -28,6 +28,7 @@ Every tool below runs on the live page, from the toolbar popup. The last three n
 | [Record actions](./record-actions) | a runnable spec from clicks and fills across pages |
 | [Report a bug](./report-a-bug) | a failing test and a report of a bug you reproduce |
 | [Developer tools](./devtools) | in DevTools: the selected element's locators, the locator console, the session, mocks, viewports |
+| [Runs from the editor](#runs-from-the-editor) | pause, step and resume the tests your editor runs, from a window beside them |
 | [Matching functions](./record-actions#matching-functions) | a recording that calls your own functions |
 | [Test functions](#test-functions-against-this-page) | which of your functions work on this page |
 | [Tested elements](#tested-elements) | which elements of this page your tests reach |
@@ -61,6 +62,36 @@ bound.
 
 With a connection, [Tested elements](./tested-elements) outlines every element of the page a test of the active
 project reaches, lists those tests, and marks the buttons, links and fields no test reaches.
+
+## Runs from the editor
+
+With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-recording#send-from-piwi-picker), the popup shows a
+**Runs** tile under **More tools** while the editor answers, with the number of runs it has. It opens the Runs
+window, a small window of its own to keep beside the test's browser. For each run the editor
+[started](./editor-runs), it shows the folder and the command, then each worker's test, project and attempt, and
+whether it runs or where it stopped: the file and line, the call about to run, and an image of the page, taken again
+at each stop.
+
+**Pause** stops a running test before its next call. At a stop, **Resume**, **Step** and **Finish** do what they do
+[in the editor](./editor-run-control#the-controls); **Pick** and **Record**, when Piwi's pause bar shows in the test's
+window, start the bar's **Pick a locator** and **Record here** there, and the code lands in the editor. Run to cursor
+stays in the editor, which has the file. A control the editor refuses, because the test went on meanwhile, says why
+under the test.
+
+<figure>
+  <img src="/screenshots/picker-runs.png" alt="The Runs window beside a shop page stopped before a click on Checkout: the test, its file and line, the call, an image of the page, and Resume, Step, Finish, Pick and Record">
+  <figcaption>The Runs window, beside a test stopped at a breakpoint.</figcaption>
+</figure>
+
+`Ctrl+Shift+9` (`Cmd+Shift+9` on macOS) works from any window in Chrome and Edge, the test's and the editor's
+included, Runs window open or not: it resumes the stopped tests, each at its stop, or with none stopped, pauses every
+run. In Firefox it works while Firefox has the focus; ChromeOS has no shortcut of this kind. Change it at
+`chrome://extensions/shortcuts` (`edge://extensions/shortcuts` in Edge).
+
+The extension's background worker asks the editor for the address of each of its windows' services, once the program
+on the paired port has proved it holds the pairing's token, and keeps a WebSocket to each on `127.0.0.1`, their tokens
+in the extension's own database. A page, even one your machine serves, cannot reach them:
+[how the pieces connect](./editor-run-control#how-it-works).
 
 ## Languages
 

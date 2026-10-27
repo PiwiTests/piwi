@@ -27,7 +27,27 @@ describe('the manifests the build writes', () => {
       ...firefox,
       permissions: manifest.permissions,
       minimum_chrome_version: manifest.minimum_chrome_version,
+      commands: manifest.commands,
     }).toEqual(manifest);
+  });
+
+  it('makes the run shortcut global in Chrome and Edge, on a key their rules let a global command suggest', () => {
+    const command = chromiumManifest(manifest).commands['run-pause-resume'];
+    expect(command.global).toBe(true);
+    // Chrome assigns a global command's suggested key only on Ctrl+Shift+[0-9] (Command+Shift+[0-9] on macOS).
+    expect(command.suggested_key.default).toMatch(/^Ctrl\+Shift\+[0-9]$/);
+    expect(command.suggested_key.mac).toMatch(/^Command\+Shift\+[0-9]$/);
+    // macOS takes Command+Shift+3 to 6 for its screenshots.
+    expect(command.suggested_key.mac).not.toMatch(/\+[3-6]$/);
+  });
+
+  it('leaves `global` out of Firefox’s manifest, whose commands work while Firefox has the focus', () => {
+    const firefox = firefoxManifest(manifest);
+    expect(firefox.commands['run-pause-resume']).not.toHaveProperty('global');
+    expect(firefox.commands['run-pause-resume'].suggested_key).toEqual(
+      manifest.commands['run-pause-resume'].suggested_key,
+    );
+    expect(firefox.commands['pick-element']).toEqual(manifest.commands['pick-element']);
   });
 
   it('asks for Chrome or Edge 118 or later, which keep the worker running while a debugging session is attached', () => {

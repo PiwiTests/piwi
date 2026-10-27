@@ -18,6 +18,7 @@ import type { ConnectPoll } from './connect-flow.js';
 import { desktopOrigin, getDesktopSettings, type DesktopSettings } from './desktop-settings.js';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { bugReportUrl, normalizeBaseUrl } from './instance-links.js';
+import { proveEditor } from './editor-proof.js';
 import { t } from './i18n.js';
 
 /**
@@ -378,12 +379,17 @@ export async function addServerPattern(
 /**
  * Post a locator or a recording to the paired editor, on this computer's
  * loopback interface; the editor inserts it at its cursor. Needs the host
- * permission for the editor's origin, requested when pairing.
+ * permission for the editor's origin, requested when pairing. The program on
+ * the paired port proves it holds the token first (`proveEditor`).
  */
 export async function postToEditor(
   pairing: EditorPairing,
   payload: EditorSendPayload,
 ): Promise<{ ok: true; file: string | null } | { ok: false; error: string }> {
+  // The token goes only to the program that proves it holds it: never to another one that took the paired port.
+  const proof = await proveEditor(pairing.url, pairing.token);
+  if (proof === 'unreachable') return { ok: false, error: t('common_editorUnreachable') };
+  if (proof !== 'proven') return { ok: false, error: t('common_editorNotProven') };
   try {
     const res = await request(pairing.url, {
       method: 'POST',

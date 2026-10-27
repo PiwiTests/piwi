@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 410" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <style>
+  .bg{fill:#fcfcfd;stroke:#e4e7ec}
+  .t{fill:#101828;font-weight:700;font-size:16px}
+  .s{fill:#475467;font-size:12.5px}
+  .h{fill:#98a2b3;font-size:10.5px;font-weight:700;letter-spacing:.06em}
+  .l{fill:#475467;font-size:12px}
+  .lb{fill:#344054;font-size:13px;font-weight:600}
+  .m{fill:#667085;font-size:11px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10.5px}
+  .box{fill:#ffffff;stroke:#d0d5dd}
+  .chip{fill:#f9fafb;stroke:#d0d5dd}
+  .hd{fill:#f2f4f7}
+  .edge{fill:none;stroke:#667085;stroke-width:1.3}
+  .dash{fill:none;stroke:#98a2b3;stroke-width:1.2;stroke-dasharray:4 4}
+  .acc{fill:none;stroke:#4353ff;stroke-width:1.6}
+  .acct{fill:#4353ff;font-size:11px}
+  .et{fill:#475467;font-size:11px}
+  .arr{fill:#667085} .arrd{fill:#98a2b3} .arra{fill:#4353ff}
+  @media (prefers-color-scheme: dark){
+    .bg{fill:#161b26;stroke:#333741}
+    .t{fill:#f5f5f6} .s{fill:#94969c} .h{fill:#85888e}
+    .l{fill:#cecfd2} .lb{fill:#ececed} .m{fill:#85888e}
+    .box{fill:#1f242f;stroke:#333741} .chip{fill:#262b36;stroke:#333741} .hd{fill:#262b36}
+    .edge{stroke:#94969c} .arr{fill:#94969c}
+    .dash{stroke:#61646c} .arrd{fill:#61646c}
+    .acc{stroke:#8098f9} .acct{fill:#8098f9} .arra{fill:#8098f9}
+    .et{fill:#94969c}
+  }
+</style>
+  <defs>
+    <marker id="rcA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arr" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="rcD" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrd" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="rcB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arra" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+  </defs>
+  <rect class="bg" x="0.5" y="0.5" width="919" height="409" rx="12"/>
+  <text class="t" x="24" y="36">How the pieces connect</text>
+  <text class="s" x="24" y="56">A run the editor starts reports to the editor service; the editor and Piwi Picker are two views of it.</text>
+
+  <text class="h" x="24" y="86">THE TEST RUN</text>
+  <text class="h" x="356" y="86">YOUR EDITOR</text>
+  <text class="h" x="680" y="86">WHERE YOU STEER IT</text>
+
+  <!-- The run: its workers and the browser they drive. -->
+  <rect class="box" x="24" y="98" width="268" height="236" rx="8"/>
+  <path class="hd" d="M 24.5 128 L 24.5 106 Q 24.5 98.5 32 98.5 L 284 98.5 Q 291.5 98.5 291.5 106 L 291.5 128 Z"/>
+  <text class="lb" x="40" y="118">A test run</text>
+  <rect class="chip" x="40" y="140" width="236" height="52" rx="6"/>
+  <text class="lb" x="54" y="162">Each worker</text>
+  <text class="m" x="54" y="180">the capture fixtures, the reporter</text>
+  <rect class="chip" x="40" y="264" width="236" height="52" rx="6"/>
+  <text class="lb" x="54" y="286">The test’s browser</text>
+  <text class="m" x="54" y="304">headed or headless</text>
+  <path class="edge" d="M 64 193 L 64 262" marker-end="url(#rcA)"/>
+  <text class="et" x="72" y="222">context.debugger:</text>
+  <text class="et" x="72" y="236">pause, step, resume</text>
+  <path class="dash" d="M 196 193 L 196 262" marker-end="url(#rcD)"/>
+  <text class="m" x="204" y="222">pause bar,</text>
+  <text class="m" x="204" y="236">at a stop only</text>
+
+  <!-- The editor service, which holds the runs it started. -->
+  <rect class="box" x="356" y="140" width="220" height="132" rx="8"/>
+  <path class="hd" d="M 356.5 170 L 356.5 148 Q 356.5 140.5 364 140.5 L 568 140.5 Q 575.5 140.5 575.5 148 L 575.5 170 Z"/>
+  <text class="lb" x="372" y="160">The editor service</text>
+  <text class="l" x="372" y="192">each run it started, its</text>
+  <text class="l" x="372" y="208">workers, where they stop</text>
+  <text class="mono m" x="372" y="236">127.0.0.1 only</text>
+  <text class="m" x="372" y="254">a token per service</text>
+
+  <path class="acc" d="M 278 166 L 354 166" marker-start="url(#rcB)" marker-end="url(#rcB)"/>
+  <text class="acct" x="316" y="157" text-anchor="middle">run channel</text>
+
+  <!-- The surfaces. -->
+  <rect class="box" x="680" y="98" width="216" height="88" rx="8"/>
+  <text class="lb" x="696" y="122">VS Code, JetBrains IDEs</text>
+  <text class="l" x="696" y="142">the paused line, the controls,</text>
+  <text class="l" x="696" y="158">breakpoints; writes the code</text>
+  <text class="m" x="696" y="176">Send to editor: the pairing</text>
+
+  <rect class="box" x="680" y="246" width="216" height="88" rx="8"/>
+  <text class="lb" x="696" y="270">Piwi Picker</text>
+  <text class="l" x="696" y="290">in your own browser: the Runs</text>
+  <text class="l" x="696" y="306">window, the global shortcut</text>
+  <text class="m" x="696" y="324">Chrome, Edge, Firefox</text>
+
+  <path class="edge" d="M 578 176 L 678 148" marker-start="url(#rcA)" marker-end="url(#rcA)"/>
+  <text class="et" x="628" y="150" text-anchor="middle">LSP</text>
+  <path class="acc" d="M 578 240 L 678 284" marker-start="url(#rcB)" marker-end="url(#rcB)"/>
+  <text class="acct" x="620" y="296" text-anchor="middle">WebSocket:</text>
+  <text class="acct" x="620" y="310" text-anchor="middle">origin, token</text>
+
+  <path class="dash" d="M 860 245 L 860 189" marker-end="url(#rcD)"/>
+  <text class="m" x="852" y="212" text-anchor="end">finds the services</text>
+  <text class="m" x="852" y="226" text-anchor="end">through the pairing</text>
+
+  <text class="l" x="24" y="370">The service takes an extension’s origin with the token its editor handed over: a page served from your machine is refused.</text>
+  <text class="l" x="24" y="388">Nothing of Piwi is in the test’s page while it acts; the pause bar shows only while the test is stopped.</text>
+</svg>

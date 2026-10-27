@@ -8,6 +8,8 @@ import {
 import { memorySecretArea } from './memory-secret-area.js';
 import { sendToEditor } from '../../src/shared/editor-send.js';
 import { postToEditor } from '../../src/shared/piwi-client.js';
+import { t } from '../../src/shared/i18n.js';
+import { EDITOR_CHALLENGE_HEADER, EDITOR_PROOF_HEADER, editorTokenProof } from '@piwitests/core/editor-send';
 
 const PAIRING = { url: 'http://127.0.0.1:47211/piwi/send', token: 'abcdefghijklmnop_1234' };
 let store: Record<string, unknown> = {};
@@ -85,23 +87,58 @@ describe('sendToEditor', () => {
   });
 });
 
+/**
+ * The editor's endpoint: a request with a challenge alone gets the proof that the program holds `token` (the
+ * pairing's, unless another), refused; any other request `answer`.
+ */
+function editorEndpoint(answer: () => Promise<Response>, token = PAIRING.token) {
+  return vi.fn(async (_url: string, init: RequestInit) => {
+    const challenge = (init.headers as Record<string, string>)[EDITOR_CHALLENGE_HEADER];
+    if (!challenge) return answer();
+    const proof = await editorTokenProof(token, 47211, challenge);
+    return new Response('{"error":"not paired"}', { status: 401, headers: { [EDITOR_PROOF_HEADER]: proof } });
+  });
+}
+
 describe('postToEditor', () => {
-  it('posts the payload with the token as a bearer credential', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ inserted: true, file: null }), { status: 200 }));
+  it('posts the payload with the token as a bearer credential, once the editor proved it holds it', async () => {
+    const fetchMock = editorEndpoint(
+      async () => new Response(JSON.stringify({ inserted: true, file: null }), { status: 200 }),
+    );
     vi.stubGlobal('fetch', fetchMock);
     const result = await postToEditor(PAIRING, { kind: 'steps', steps: { v: 1 } });
     expect(result).toEqual({ ok: true, file: null });
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const [challengeUrl, challenge] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(challengeUrl).toBe(PAIRING.url);
+    expect(challenge.headers).toEqual({ [EDITOR_CHALLENGE_HEADER]: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    const [url, init] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
     expect(url).toBe(PAIRING.url);
     expect(init.method).toBe('POST');
     expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${PAIRING.token}`);
     expect(JSON.parse(init.body as string)).toEqual({ kind: 'steps', steps: { v: 1 } });
   });
 
+  it('sends nothing to a program on the paired port that cannot prove it holds the token', async () => {
+    for (const fetchMock of [
+      editorEndpoint(async () => new Response('{}'), 'another_token_0123456789'),
+      vi.fn(async () => new Response('{}', { status: 200 })),
+      vi.fn(async () => new Response('not found', { status: 404 })),
+    ]) {
+      vi.stubGlobal('fetch', fetchMock);
+      expect(await postToEditor(PAIRING, { kind: 'locator', text: 'x' })).toEqual({
+        ok: false,
+        error: t('common_editorNotProven'),
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(JSON.stringify(init.headers)).not.toContain(PAIRING.token);
+    }
+  });
+
   it('reports the editor’s reason when it refuses', async () => {
     vi.stubGlobal(
       'fetch',
-      async () => new Response(JSON.stringify({ error: 'no editor is open in shop' }), { status: 422 }),
+      editorEndpoint(async () => new Response(JSON.stringify({ error: 'no editor is open in shop' }), { status: 422 })),
     );
     expect(await postToEditor(PAIRING, { kind: 'locator', text: 'x' })).toEqual({
       ok: false,
@@ -115,7 +152,7 @@ describe('postToEditor', () => {
     });
     expect(await postToEditor(PAIRING, { kind: 'locator', text: 'x' })).toEqual({
       ok: false,
-      error: 'Failed to fetch',
+      error: t('common_editorUnreachable'),
     });
   });
 });

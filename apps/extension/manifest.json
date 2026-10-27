@@ -64,6 +64,14 @@
         "mac": "Command+Shift+E"
       },
       "description": "__MSG_pickElementCommand__"
+    },
+    "run-pause-resume": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+9",
+        "mac": "Command+Shift+9"
+      },
+      "description": "__MSG_runs_command__",
+      "global": true
     }
   }
 }

@@ -74,6 +74,7 @@ import {
 } from './step-views.js';
 import { handleRelayLeft } from './relay-left.js';
 import { connectionChanged, syncInstanceMarker } from './instance-marker.js';
+import { RUN_COMMAND, openRunsWindow, runHubs, runsSummary, startRunHubs } from './runs-window.js';
 import {
   captureThroughDebugger,
   collectsThroughDebugger,
@@ -94,6 +95,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // A secret an older version kept where content scripts can read it moves to the secret area as the worker starts.
 void moveLegacySecrets();
+
+// The editor's runs, for the Runs window and the global shortcut (`runs-window.ts`).
+startRunHubs();
 
 // The connected instance's pages carry the marker the dashboard looks for (`instance-marker.ts`).
 void syncInstanceMarker();
@@ -149,9 +153,15 @@ async function showStateBadge(): Promise<void> {
  * icon's click opens the popup instead, per `action.default_popup` in the
  * manifest — the popup injects the content script itself, needing no
  * message through here). `chrome.commands` firing is itself the qualifying
- * user gesture for `activeTab`, so this can inject directly.
+ * user gesture for `activeTab`, so this can inject directly. The run
+ * shortcut, global in Chrome and Edge, pauses or resumes the editor's runs,
+ * with or without a Runs window.
  */
 chrome.commands.onCommand.addListener((command, tab) => {
+  if (command === RUN_COMMAND) {
+    void runHubs.shortcut();
+    return;
+  }
   if (command !== 'pick-element') return;
   void runPickCommand(tab);
 });
@@ -985,6 +995,8 @@ const EXTENSION_PAGE_MESSAGES = new Set([
   'piwi-open-viewport',
   'piwi-set-conditions',
   'piwi-set-language',
+  'piwi-runs-summary',
+  'piwi-open-runs',
 ]);
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -1117,6 +1129,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'piwi-replay-step-view') {
     void handleReplayStepView(message).then(sendResponse);
+    return true;
+  }
+  if (message?.type === 'piwi-runs-summary') {
+    // The popup's Runs tile: shown while a hub of the paired editor answers.
+    void runsSummary().then(sendResponse, () => sendResponse({ connected: false, runs: 0 }));
+    return true;
+  }
+  if (message?.type === 'piwi-open-runs') {
+    void openRunsWindow().then(sendResponse);
     return true;
   }
   if (message?.type === 'piwi-send-to-editor') {

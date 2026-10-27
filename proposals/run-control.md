@@ -12,8 +12,8 @@ stepped it and let it pass. The same session reaches the dashboard, as a live vi
 tools that follow the run, read the stopped page as its accessibility tree and act on it.
 
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
-(Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PR 2 is built too, and PR 3's hub half
-(below), while PR 3's extension half (the Runs page, the global shortcut) and PRs 4 to 9 are not. PR 1 differs from the text in four ways. A headed browser opens Playwright's Inspector at every stop of
+(Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2 and 3 are built too (below), while PRs
+4 to 9 are not. PR 1 differs from the text in four ways. A headed browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs, and a run under Playwright's own debugger (`--debug`, `--debug=cli`, `PWDEBUG`) ignores the
 breakpoints. The runner suspends the test timeout only for
@@ -77,7 +77,17 @@ are intents of the run channel (a `request` naming its stop, answered at once wi
 lists in its `run-attach` (`takes`) rather than the hub reading the reporter's version; both start the pause bar's own
 pick or recording, in the test's window brought to the front, and both IDE clients now name their pairing in
 `PIWI_EDITOR_SEND` for every run that names a run channel, since any such run can stop with the bar, Pause included.
-The live endpoint lists loopback addresses: a remote window forwards them with Part 6. The spikes in the
+The live endpoint lists loopback addresses: a remote window forwards them with Part 6. PR 3's extension half is the
+worker's hub connections, the Runs window, the popup's **Runs** tile and the run shortcut (Part 4.1 and 4.4). It
+differs from the text in five ways. The shortcut is `Ctrl+Shift+9` (`Command+Shift+9` on macOS), not `Ctrl+Shift+5`:
+Chrome suggests a global key only as `Ctrl` (`Command`) + `Shift` + a digit, macOS keeps `Command+Shift+3` to `6` for
+its screenshots, and a global key takes its combination from every application, VS Code's Split Terminal
+(`Ctrl+Shift+5` on Windows and Linux) among them; Firefox's manifest leaves `global` out. It resumes every stopped test,
+each at its stop, and with none stopped pauses every run. A run that ends says so, with the tests it ran last, and has
+no verdict, **Open in editor** or **Open the run**, and a running worker shows its test without its last call: the
+session carries none of these. The **Runs** tile fills More tools' free cell, so the popup stays within 600 pixels in
+every language. Before the pairing's token goes to `…/live`, the program on the paired port proves it holds it
+(`editorTokenProof`, as the desktop app's pairing does), else it is sent nothing. The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of
 [`1.0-stabilization.md`](1.0-stabilization.md).

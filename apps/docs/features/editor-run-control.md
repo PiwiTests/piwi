@@ -11,7 +11,9 @@ lang: en-US
 A test run the [editor extensions](./editors) start can be paused, stepped and resumed from the editor, with Piwi's
 own commands: no debug session starts, and the IDE's debugger works as usual beside it. The editor marks the line the
 test is stopped at as a debugger marks its execution point, and the breakpoints you set or remove reach the run while
-it goes on. The [pause bar](./editor-breakpoints#pause-a-run) in the page answers the same stops.
+it goes on. The [pause bar](./editor-breakpoints#pause-a-run) in the page answers the same stops, and so does Piwi
+Picker's [Runs window](./extension#runs-from-the-editor), beside the test's browser, with a shortcut that pauses and
+resumes from any window.
 
 ## The controls
 
@@ -86,6 +88,10 @@ in script files under a Playwright config's folder, while `piwi.breakpoints` (**
 editor's breakpoints** in a JetBrains IDE) is on. Turning the setting off lets the run go on without them.
 
 ## How it works
+
+<figure>
+  <img src="/diagrams/run-control.svg" alt="Each worker of a test run reports to the editor service through the run channel; VS Code or a JetBrains IDE, and Piwi Picker through a WebSocket, steer it; the pause bar shows in the test's browser only at a stop">
+</figure>
 
 With a reporter newer than 0.59.0, each worker of a run Piwi starts keeps a connection to the editor service while it
 runs, through a socket on your machine that the service opens, readable by you only, named in the run's environment as
