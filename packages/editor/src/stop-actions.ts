@@ -61,9 +61,23 @@ export interface StopOutcome {
   warnings: string[];
 }
 
+/**
+ * What a host's sentences say of the code it made at a stop: `what` (`the check`) above `where`
+ * (`checkout.spec.ts:5`).
+ */
+export interface StopCodeWords {
+  /** The code's own sentence (`StopCode.message`), which the surface that writes it shows once it did. */
+  wrote(what: string, where: string): string;
+  /** What every other surface hears (`StopOutcome.message`): where the code went. */
+  sent(what: string, where: string): string;
+  /** Why no code is written in a file this host does not write code into (`target` gave none). */
+  outside(uri: string): string;
+}
+
 export interface StopActionsOptions {
   sessions: RunSessions;
-  recordings: RecordingSessions;
+  /** The recorder whose check panel Assert runs; without one, a check is refused. */
+  recordings?: Pick<RecordingSessions, 'check'>;
   /** Whether the client writes the code (`InitializationOptions.stopCode`). */
   writesCode(): boolean;
   /** Sends the client the code to write. */
@@ -80,6 +94,8 @@ export interface StopActionsOptions {
   language(): string | null;
   /** The editor's name, as `initialize` gives it (`Visual Studio Code`); null when it gave none. */
   editor?(): string | null;
+  /** The host's sentences, when it is not the editor service: the desktop app keeps the code for its window to copy. */
+  words?: StopCodeWords;
 }
 
 /** What each action writes, as a sentence names it. */
@@ -258,8 +274,10 @@ export class StopActions {
     if ('refusal' in place) return refused(place.refusal);
     const cannot = stopCodeRefusal(place.target.text, place.line, stop.character);
     if (cannot) return refused(cannot);
+    const { recordings } = this.options;
+    if (!recordings) return refused('this app takes no check.');
     const startedAt = Date.now();
-    const missing = this.options.recordings.check(handoff, {
+    const missing = recordings.check(handoff, {
       file: place.file,
       language: this.options.language(),
       onCheck: (event: RawCaptureEvent) => {
@@ -289,7 +307,11 @@ export class StopActions {
   private place(stop: StopRef): { file: string; target: StopTarget; line: number } | { refusal: string } {
     const file = uriToPath(stop.uri);
     const target = file ? this.options.target(file) : null;
-    if (!file || !target) return { refusal: `No Playwright config of this workspace holds ${stop.uri}.` };
+    if (!file || !target) {
+      return {
+        refusal: this.options.words?.outside(stop.uri) ?? `No Playwright config of this workspace holds ${stop.uri}.`,
+      };
+    }
     const now = this.options.lineNow(stop, target);
     return 'refusal' in now ? now : { file, target, line: now.line };
   }
@@ -313,9 +335,12 @@ export class StopActions {
     const where = `${path.basename(file)}:${rendered.line + 1}`;
     const goesOn = first ? ' The stopped test goes on with the code it started with: the new lines run next time.' : '';
     // The client says it wrote the code once it did; anyone else hears it was sent, the client still able to refuse it.
-    const wrote = `Piwi wrote ${WRITTEN[action]} above ${where}.${goesOn}`;
+    const { words } = this.options;
     const editor = this.options.editor?.() || 'the editor';
-    const sent = `Piwi sent ${WRITTEN[action]} to ${editor} to write above ${where}.${goesOn}`;
+    const wrote = `${words?.wrote(WRITTEN[action], where) ?? `Piwi wrote ${WRITTEN[action]} above ${where}.`}${goesOn}`;
+    const sent = `${
+      words?.sent(WRITTEN[action], where) ?? `Piwi sent ${WRITTEN[action]} to ${editor} to write above ${where}.`
+    }${goesOn}`;
     this.options.notify({
       ref: stop.ref,
       worker: stop.worker,

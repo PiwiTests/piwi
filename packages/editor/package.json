@@ -9,6 +9,7 @@
     ".": "./src/server.ts",
     "./protocol": "./src/protocol.ts",
     "./discovery": "./src/discovery.ts",
+    "./run-host": "./src/run-host.ts",
     "./server": "./dist/piwi-language-server.cjs"
   },
   "scripts": {

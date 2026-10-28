@@ -168,6 +168,11 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   again, whatever the worker's reporter hid, and a mock through `mockCode`, by the rule `@piwitests/core/mask` writes
   down. Checked by `tests/stop-actions.test.ts` ("lists the responses a test kept with the credentials …").
   ([ARCHITECTURE.md](ARCHITECTURE.md#code-from-a-stop))
+- **The run control runs without the language server too: the desktop app's server hosts it.** `src/run-host.ts`
+  exports `RecordChannel`, `RunSessions`, `RunHub`, `StopActions` and `RunLines`, which import nothing of the LSP;
+  `apps/application/server/utils/desktop-runs.ts` wires them, so a change to their options runs its tests too
+  (`apps/application/tests/unit/desktop-runs*.test.ts`). Checked here by `tests/run-host.test.ts`.
+  ([ARCHITECTURE.md](ARCHITECTURE.md#another-host))
 - **The discovery file is this user's alone, and a reader deletes only a dead service's file of this machine.**
   `writeDiscovery` renames a 0600 file into a 0700 folder this user owns, never a link; a reader skips a folder that is
   a link, another user's or open to others, reads only files this user owns, and deletes only a file naming this
@@ -206,8 +211,8 @@ npm run editor:test         # the Vitest suites of tests/
 - [Breakpoints and picked locators](ARCHITECTURE.md#breakpoints-and-picked-locators): `PIWI_PAUSE_AT`, the reporter
   version check, `piwi/applyPick`.
 - [Run control](ARCHITECTURE.md#run-control): the run sessions, `piwi/runControl` and the paused page, the stops no
-  pause bar shows, the hub Piwi Picker connects to, a stopped page's live view, the code from a stop, and the
-  discovery file.
+  pause bar shows, the hub Piwi Picker connects to, a stopped page's live view, the code from a stop, the desktop app's
+  server as another host, and the discovery file.
 - [Coverage](ARCHITECTURE.md#coverage): coverage marks and uncovered changes.
 - [Analysis and completion](ARCHITECTURE.md#analysis-and-completion): the diagnostics and their quick fixes, and where
   completion offers locator chains.

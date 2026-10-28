@@ -180,6 +180,16 @@ export interface RunSessionsOptions {
    * they were, whose code is the files as they stand now).
    */
   sessionStarted?(ref: string, again: boolean): void;
+  /**
+   * Why this host does not start an intent at any stop, whatever the worker takes (the desktop app's server, which no
+   * editor records into nor checks with); null for one it starts. Such an intent is refused, and left out of
+   * `intentsOf`.
+   */
+  declines?(what: RunIntent): string | null;
+  /** What the sentences call the host the workers connect to: `the editor` by default. */
+  host?: string;
+  /** What the sentences call the surfaces of this host that show where a run stops: `this editor` by default. */
+  surfaces?: string;
   paceMs?: number;
   burstMs?: number;
   lingerMs?: number;
@@ -278,6 +288,11 @@ export class RunSessions {
 
   constructor(private readonly options: RunSessionsOptions) {}
 
+  /** What the sentences call the host the workers connect to. */
+  private get host(): string {
+    return this.options.host ?? 'the editor';
+  }
+
   /**
    * A worker connected with `attach`: it joins its run's session, a new one when none runs, hears which of the stops it
    * holds only then the service shows (`attached`, to a worker that lists them: a failure's) and the breakpoints sent
@@ -343,10 +358,10 @@ export class RunSessions {
   control(params: RunControlParams): RunControlResult {
     const refuse = (message: string): RunControlResult => ({ ok: false, message });
     const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
-    if (!session?.workers.size) return refuse('No worker of this run is connected to the editor.');
+    if (!session?.workers.size) return refuse(`No worker of this run is connected to ${this.host}.`);
     const named = typeof params.worker === 'number' ? (session.workers.get(params.worker) ?? null) : null;
     if (typeof params.worker === 'number' && !named) {
-      return refuse(`Worker ${params.worker} of this run is not connected to the editor.`);
+      return refuse(`Worker ${params.worker} of this run is not connected to ${this.host}.`);
     }
     const workers = named ? [named] : [...session.workers.values()];
     switch (params.action) {
@@ -426,10 +441,10 @@ export class RunSessions {
   private stopped(params: StopParams): { session: Session; worker: Worker } | RunControlResult {
     const refuse = (message: string): RunControlResult => ({ ok: false, message });
     const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
-    if (!session?.workers.size) return refuse('No worker of this run is connected to the editor.');
+    if (!session?.workers.size) return refuse(`No worker of this run is connected to ${this.host}.`);
     const named = typeof params.worker === 'number' ? (session.workers.get(params.worker) ?? null) : null;
     if (typeof params.worker === 'number' && !named) {
-      return refuse(`Worker ${params.worker} of this run is not connected to the editor.`);
+      return refuse(`Worker ${params.worker} of this run is not connected to ${this.host}.`);
     }
     const since = typeof params.since === 'string' && params.since ? params.since : null;
     const worker = this.stoppedWorker(named ? [named] : [...session.workers.values()], named, since);
@@ -449,6 +464,8 @@ export class RunSessions {
     if (typeof params?.since !== 'string' || !params.since) return refuse('The command needs the stop it answers.');
     const name = RUN_INTENT_NAMES[params.what];
     if (!name) return refuse(`Piwi does not know the intent ${JSON.stringify(params.what)}.`);
+    const declined = this.options.declines?.(params.what);
+    if (declined) return refuse(declined);
     const at = this.stopped(params);
     if ('message' in at) return Promise.resolve(at);
     const { worker } = at;
@@ -653,7 +670,10 @@ export class RunSessions {
     if (!found) return [];
     const code = !!this.options.writesCode?.();
     const intents: HubAction[] = (['pick', 'record', 'assert', 'assert-region'] as const).filter(
-      (what) => found.takes.has(what) && (code || (what !== 'assert' && what !== 'assert-region')),
+      (what) =>
+        found.takes.has(what) &&
+        (code || (what !== 'assert' && what !== 'assert-region')) &&
+        !this.options.declines?.(what),
     );
     if (code && found.takes.has('requests') && found.takes.has('mock')) intents.push('mock');
     return [
@@ -882,7 +902,8 @@ export class RunSessions {
       session.root ?? worker.cwd,
       'information',
       `Piwi resumed the test stopped at ${path.basename(place.file)}:${place.line}: no pause bar shows in a headless ` +
-        'browser, and neither this editor nor Piwi Picker shows where a run stops. Run it headed to pause there.',
+        `browser, and neither ${this.options.surfaces ?? 'this editor'} nor Piwi Picker shows where a run stops. Run ` +
+        'it headed to pause there.',
     );
   }
 

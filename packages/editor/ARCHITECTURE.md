@@ -35,6 +35,7 @@ run control, coverage, the recorder, the build, and the reads and the connection
   - [The hub](#the-hub)
   - [The live view](#the-live-view)
   - [Code from a stop](#code-from-a-stop)
+  - [Another host](#another-host)
   - [The discovery file](#the-discovery-file)
 - [Coverage](#coverage)
   - [Coverage marks](#coverage-marks)
@@ -130,6 +131,7 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/stop-actions.ts`, `src/stop-code.ts`, `src/run-lines.ts`: the code from a stop, rendered, and placed where the
   stopped statement stands now.
 - `src/discovery.ts`: the discovery file, `~/.piwi/editors/<pid>.json`, written and read.
+- `src/run-host.ts`: the run control another host builds on, the desktop app's server.
 - `src/recorder/`: recording from the editor: the project's options, the launcher, the sessions, page candidates,
   imports and the record channel, whose socket also takes the workers' run connections.
 - `build.mjs`: writes the five files of `dist/`.
@@ -818,6 +820,25 @@ it on the stopped page and outlines its matches where the bar shows; a line with
 
 A failure held at its line ([Stops no pause bar shows](#stops-no-pause-bar-shows)) takes the same actions.
 
+### Another host
+
+The desktop app's server is the hub of the runs its shell starts (`apps/application/server/utils/desktop-runs.ts`).
+It runs these classes through `src/run-host.ts`, with no language server, and wires their callbacks to its own
+surfaces as `server.ts` wires them to the client:
+
+- `RunSessions` takes `host` and `surfaces`, what its sentences call the service and the surfaces that show stops (`No
+  worker of this run is connected to the desktop app.`), and `declines`, the intents the host never starts, refused
+  with its sentence and left out of `intentsOf` (Pick and Record in the test's window and Assert, which end in an
+  editor).
+- `RunHub` takes the `token` `hello` carries (the desktop token) and the sentence its connections close with
+  (`closing`). `join` adds a peer of the host's own transport (`HubTransport`: `send`, `buffered`, `close`), which needs
+  no handshake nor `hello`, counts toward none of the WebSocket's limits, and commands and hears the hub as a WebSocket
+  connection that said hello does (`HubPeer.command`, answered with the `HubAnswer`). The desktop app's window is one,
+  through routes behind the app's token.
+- `StopActions` takes `words`, what its sentences say of the code made (`Piwi made the check to write above
+  checkout.spec.ts:5: copy it in the desktop app's window.`) and why none is made for a file outside the host's folders,
+  and runs without a recorder (`recordings`), refusing a check then.
+
 ### The discovery file
 
 `src/discovery.ts` writes and reads `~/.piwi/editors/<pid>.json` (`@piwitests/core/editor-discovery`;
@@ -1342,7 +1363,8 @@ connection without a key gets `authorization: 'none'`. `piwi/mcp` gives one defi
 
 `npm run editor:test` runs the Vitest suites of `tests/`. `tests/lsp.test.ts` drives the server in-process, as a client
 does, against a fixture repository and a stub instance. `tests/run-sessions.test.ts`, `tests/run-hub.test.ts` and
-`tests/discovery.test.ts` cover the run sessions, the hub and the discovery file.
+`tests/discovery.test.ts` cover the run sessions, the hub and the discovery file, and `tests/run-host.test.ts` the run
+control as another host builds it.
 
 These tests use the build in `dist/`, so run `npm run editor:build` first:
 
