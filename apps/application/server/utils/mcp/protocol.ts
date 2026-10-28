@@ -7,7 +7,6 @@ export {
   ok,
   rpcErr,
   type JsonRpcRequest,
-  type JsonRpcResponse,
 } from '@piwitests/editor/mcp-protocol';
 
 /**
