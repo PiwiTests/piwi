@@ -26,7 +26,7 @@ import { pauseStepEvents, readPauses } from '../internal/collect/pause-events.js
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
-import { resolveRunLabel } from '../internal/support/ci.js';
+import { detectCi, resolveRunLabel } from '../internal/support/ci.js';
 import { workerIndexOf } from '../internal/support/worker-index.js';
 import { detectCliFileFilters } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
@@ -438,11 +438,11 @@ export class PiwiDashboardReporter {
 
   /**
    * Name the run's live view on the instance for the workers, which Playwright starts after this hook with this
-   * environment: the key the instance gave the global setup for a project that turned its live view on, for this run
-   * alone. Read before the stream starts, which takes the setup file.
+   * environment: the key the instance gave the global setup of a CI run, for a project that turned its live view on,
+   * for this run alone. Read before the stream starts, which takes the setup file.
    */
   private shareLiveView(): void {
-    if (!this.streamManager) return;
+    if (!this.streamManager || !detectCi(process.env)) return;
     const setup = peekSetupInfo(this.options.projectName!);
     if (!setup?.liveViewKey) return;
     process.env[LIVE_VIEW_ENV] = formatLiveViewEnv(this.httpClient.baseUrl, setup.runId, setup.liveViewKey);

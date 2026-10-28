@@ -146,12 +146,14 @@ import { stripAnsi } from '@piwitests/core/error-parse';
 import { canRecordFromHere, recordFromHere } from './record-handoff.js';
 import {
   closeLiveView,
+  liveViewOpen,
   liveViewPage,
   liveViewStopped,
   liveViewTestBegan,
   liveViewTestEnded,
   openLiveView,
 } from './live-view.js';
+import { guardScreencast } from './page-view.js';
 import type { LiveCall } from '@piwitests/core/live-view';
 import {
   closeRunChannel,
@@ -2576,6 +2578,10 @@ function instrumentPage(page: Page): void {
     page.pause = (): Promise<void> => pauseInPlace(page, playwrightPause, captureCallerLocation());
   }
 
+  // A view of the page for the editor or the instance may hold its one screencast client: the test's own
+  // `page.screencast.start` or `stop` ends that client first.
+  if (runChannelOpen() || liveViewOpen()) guardScreencast(page);
+
   // Drain in-flight probes before a user-initiated close (the guard tolerates
   // page-like test fakes without a close method), and preserve the
   // page-dependent teardown reads while the page can still serve them.
@@ -3589,7 +3595,7 @@ export const piwiFixtures: Fixtures<
         });
       activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
-      liveViewTestBegan(() => runningCall(testInfo));
+      liveViewTestBegan(testInfo.title, () => runningCall(testInfo));
       const showRunChannel = hideRunChannel();
       try {
         // The contexts a hook or an earlier test opened stop at this test's breakpoints too.

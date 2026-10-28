@@ -2,11 +2,8 @@ import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import type * as http from 'node:http';
 import { createRequire } from 'node:module';
-import * as net from 'node:net';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
 import {
   LIVE_FRAME_BYTE_RATE,
   LIVE_FRAME_FPS,
@@ -16,17 +13,18 @@ import {
   readWorkerToInstance,
   type WorkerToInstance,
 } from '@piwitests/core/live-view';
-import { parseRunToHub } from '@piwitests/core/run-channel';
+import { detectCi } from '../src/internal/support/ci.js';
 import { jsonRes, startServer, type FakeServer } from './_helpers.js';
 
 /**
  * The run page's live view, in real Playwright runs through the built package against a fake instance. The global
- * setup asks for a key; the instance gives one for a project with the live view on, and the reporter names it in the
- * workers' environment. Each worker then keeps an event stream open to the instance and sends nothing more until the
- * instance says someone watches: then frames of the running test's page, each with its call, a few a second at
- * most, which stop as nobody watches or the test ends; a test stopped by `page.pause()` (the editor's run channel
- * answers it) is said to be paused while it is. A suite that records video keeps its video, and sends fewer, heavier
- * frames. With the live view off, the instance gives no key and no worker sends anything.
+ * setup of a CI run asks for a key; the instance gives one for a project with the live view on, and the reporter names
+ * it in the workers' environment, which no process the worker's hooks, fixtures or tests start gets. Each worker then
+ * keeps an event stream open to the instance and sends nothing more until the instance says someone watches: then
+ * frames of the running test's page, each with its call and its test, a few a second at most, which stop as nobody
+ * watches or the test ends. A suite that records video keeps its video, and sends fewer, heavier frames; a test that
+ * starts its own screencast while watched gets it, and the view goes on with images. With the live view off, the
+ * instance gives no key and no worker sends anything; a run outside CI asks for none.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -35,9 +33,8 @@ const dist = path.join(pkgRoot, 'dist', 'index.js');
 const projects = path.join(pkgRoot, 'tests', `.live-view-${process.pid}`);
 const RUN = 41;
 const KEY = `pdl_${'k'.repeat(43)}`;
-const REF = 'ed-11ve11ve';
-const TOKEN = 'live-view-token-0123456789';
 const requireHere = createRequire(import.meta.url);
+const OWN = 'records its own screencast while watched';
 
 /** A page of the app: an animated one paints all the time, a still one once. */
 const PAGE = (animated: boolean) => `<!doctype html><meta charset="utf-8"><title>shop</title>
@@ -61,13 +58,20 @@ const draw = () => {
 draw();
 </script>`;
 
-/** Each test tells the instance when its page shows, then waits until the instance watched it as it planned. */
-const SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
+/**
+ * Each test tells the instance when its page shows, then waits until the instance watched it as it planned. The
+ * hooks and a worker fixture say whether a process they start gets the live view's key.
+ */
+const SPEC = (base: string) => `const { test, expect, sawKey } = require('../fixture.cjs');
 const ready = (name) => fetch('${base}/ready?test=' + encodeURIComponent(name));
 const done = (name) => expect.poll(async () => (await (await fetch('${base}/done?test=' + encodeURIComponent(name))).json()).done, { timeout: 15000 }).toBe(true);
+const mark = (name) => fetch('${base}/mark?name=' + name);
+test.beforeAll(() => sawKey('beforeAll'));
+test.afterAll(() => sawKey('afterAll'));
 test('watched while it runs', async ({ page }) => {
   // The key is the workers' alone: a process the test starts does not get it.
   if (process.env.PIWI_LIVE_VIEW !== undefined) throw new Error('the live view key is in the test environment');
+  await sawKey('test');
   await page.goto('${base}/animated');
   await ready('watched while it runs');
   await done('watched while it runs');
@@ -83,10 +87,19 @@ test('ended while watched', async ({ page }) => {
   await ready('ended while watched');
   await done('ended while watched');
 });
-test('paused by page.pause()', async ({ page }) => {
-  await page.goto('${base}/still');
-  await page.pause();
-  await expect(page.locator('h1')).toHaveText('Shop');
+test('${OWN}', async ({ page }) => {
+  await page.goto('${base}/animated');
+  await ready('${OWN}');
+  await expect.poll(async () => (await (await fetch('${base}/framed?test=${encodeURIComponent(OWN)}')).json()).framed, { timeout: 15000 }).toBe(true);
+  let own = 0;
+  await mark('own-start');
+  await page.screencast.start({ path: test.info().outputPath('own.webm'), onFrame: () => { own += 1; } });
+  await page.waitForTimeout(2500);
+  await page.screencast.stop();
+  await mark('own-stop');
+  expect(own).toBeGreaterThan(0);
+  expect(require('node:fs').statSync(test.info().outputPath('own.webm')).size).toBeGreaterThan(1000);
+  await done('${OWN}');
 });
 `;
 
@@ -130,18 +143,33 @@ interface Heard {
   /** When the instance said someone watches, and stopped saying it, per test. */
   watching: Record<string, { from: number; to: number | null }>;
   done: Set<string>;
+  /** When each test said it reached a point of its own. */
+  marks: Record<string, number>;
+  /** Where a process the worker started looked for the key, and whether it had it. */
+  sawKey: Array<{ where: string; had: boolean }>;
 }
 
-const fresh = (): Heard => ({ setups: [], streams: [], posts: [], liveRequests: 0, watching: {}, done: new Set() });
+const fresh = (): Heard => ({
+  setups: [],
+  streams: [],
+  posts: [],
+  liveRequests: 0,
+  watching: {},
+  done: new Set(),
+  marks: {},
+  sawKey: [],
+});
+
+/** A CI run of a project with the live view on or off, and a run outside CI of a project with it on. */
+type Mode = 'on' | 'off' | 'local';
 
 let server: FakeServer;
-let hub: net.Server;
-let folder = '';
-let liveOn = true;
+let mode: Mode = 'on';
 let heard = fresh();
-const runs: Record<'on' | 'off', { heard: Heard; exitCode: number | null; output: string; tests: DumpedTest[] }> = {
+const runs: Record<Mode, { heard: Heard; exitCode: number | null; output: string; tests: DumpedTest[] }> = {
   on: { heard: fresh(), exitCode: null, output: '', tests: [] },
   off: { heard: fresh(), exitCode: null, output: '', tests: [] },
+  local: { heard: fresh(), exitCode: null, output: '', tests: [] },
 };
 
 interface DumpedStep {
@@ -183,8 +211,8 @@ const frames = (from = 0, to = Infinity) =>
 
 /** What the instance does once a test's page shows: someone watches it a while, as each test plans. */
 async function onReady(test: string): Promise<void> {
-  // With the live view off, nobody can watch.
-  if (!liveOn) return void heard.done.add(test);
+  // With the live view off, or in a run that asked for no key, nobody can watch.
+  if (mode !== 'on') return void heard.done.add(test);
   const watch = (heard.watching[test] = { from: Date.now(), to: null as number | null });
   try {
     if (
@@ -203,6 +231,11 @@ async function onReady(test: string): Promise<void> {
       sayViewers(1);
       await waitFor(() => frames(watch.from).length > 0);
       // The test ends while watched: the worker says so.
+    } else if (test === OWN) {
+      sayViewers(1);
+      await waitFor(() => heard.marks['own-stop'], 30_000);
+      watch.to = Date.now();
+      sayViewers(0);
     }
   } finally {
     heard.done.add(test);
@@ -226,9 +259,9 @@ function jpegSize(data: Buffer): { width: number; height: number } | null {
   return null;
 }
 
-/** Run the suite once, the live view on or off for its project. */
-async function runSuite(which: 'on' | 'off', socketPath: string): Promise<void> {
-  liveOn = which === 'on';
+/** Run the suite once, as `which` says. */
+async function runSuite(which: Mode): Promise<void> {
+  mode = which;
   heard = fresh();
   const project = path.join(projects, which);
   write(project, 'tests/live.spec.cjs', SPEC(server.url));
@@ -236,10 +269,19 @@ async function runSuite(which: 'on' | 'off', socketPath: string): Promise<void> 
   write(
     project,
     'fixture.cjs',
-    `const { test: base, expect } = require('@playwright/test');
+    `const { execFileSync } = require('node:child_process');
+const { test: base, expect } = require('@playwright/test');
 const { extendPiwiFixtures } = require(${JSON.stringify(dist)});
-exports.test = extendPiwiFixtures(base);
+/** Whether a process started now gets the live view's key, said to the instance. */
+const sawKey = (where) => {
+  const had = execFileSync(process.execPath, ['-e', 'process.stdout.write(String(process.env.PIWI_LIVE_VIEW !== undefined))']).toString();
+  return fetch(${JSON.stringify(server.url)} + '/saw-key?where=' + where + '&had=' + had);
+};
+exports.test = extendPiwiFixtures(base).extend({
+  workerSawKey: [async ({}, use) => { await sawKey('worker-fixture'); await use(); await sawKey('worker-teardown'); }, { scope: 'worker', auto: true }],
+});
 exports.expect = expect;
+exports.sawKey = sawKey;
 `,
   );
   write(project, 'results-reporter.cjs', RESULTS_REPORTER);
@@ -263,17 +305,13 @@ module.exports = wrapConfig(defineConfig({
 }), { serverUrl: ${JSON.stringify(server.url)}, projectName: 'live-view-spec', streamingBatchDelay: 50 });
 `,
   );
-  const channel = formatRecordChannel({ path: socketPath, token: TOKEN });
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    PIWI_RUN_CHANNEL: channel,
-    PIWI_RECORD_CHANNEL: channel,
-    PIWI_ORIGIN: 'editor',
-    PIWI_ORIGIN_REF: REF,
-  };
-  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PROJECT_NAME', 'PIWI_LIVE_VIEW']) {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PROJECT_NAME', 'PIWI_LIVE_VIEW']) {
     delete env[name];
   }
+  // A CI run, or none: no variable a CI provider sets is left.
+  for (const name of Object.keys(env)) if (detectCi({ [name]: env[name] })) delete env[name];
+  if (which !== 'local') env.CI = 'true';
   const run = runs[which];
   await new Promise<void>((resolve) => {
     execFile(
@@ -295,28 +333,6 @@ module.exports = wrapConfig(defineConfig({
 
 beforeAll(async () => {
   if (!fs.existsSync(dist)) throw new Error(`${dist} is missing: run \`npm run reporter:build\` before this spec`);
-  folder = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-live-view-'));
-  const socketPath = path.join(folder, 'channel.sock');
-  // The editor's run channel: it answers each stop a second later, as a person would.
-  hub = net.createServer((socket) => {
-    socket.setEncoding('utf8');
-    socket.on('error', () => socket.destroy());
-    socket.on(
-      'data',
-      lineReader(
-        (line) => {
-          const message = parseRunToHub(line);
-          if (message?.type !== 'stopped') return;
-          setTimeout(() => {
-            socket.write(`${JSON.stringify({ type: 'control', action: 'resume', stop: message.stop })}\n`);
-          }, 1000);
-        },
-        () => socket.destroy(),
-      ),
-    );
-  });
-  await new Promise<void>((resolve) => hub.listen(socketPath, resolve));
-
   server = await startServer((req, res) => {
     const url = new URL(req.url, 'http://x');
     const route = url.pathname;
@@ -325,6 +341,18 @@ beforeAll(async () => {
       return res.end();
     }
     if (route === '/done') return jsonRes(res, 200, { done: heard.done.has(url.searchParams.get('test') ?? '') });
+    if (route === '/framed') {
+      const watch = heard.watching[url.searchParams.get('test') ?? ''];
+      return jsonRes(res, 200, { framed: mode !== 'on' || (!!watch && frames(watch.from).length > 0) });
+    }
+    if (route === '/mark') {
+      heard.marks[url.searchParams.get('name') ?? ''] = Date.now();
+      return res.end();
+    }
+    if (route === '/saw-key') {
+      heard.sawKey.push({ where: url.searchParams.get('where') ?? '', had: url.searchParams.get('had') === 'true' });
+      return res.end();
+    }
     if (route === '/busy') {
       res.writeHead(200, { 'content-type': 'text/html' });
       return res.end(BUSY);
@@ -340,7 +368,10 @@ beforeAll(async () => {
         runId: RUN,
         projectId: 1,
         setupToken: 'setup-token',
-        ...(liveOn ? { liveView: { key: KEY } } : {}),
+        // The project's setting: a key for a reporter that asks.
+        ...(mode !== 'off' && heard.setups[heard.setups.length - 1]?.liveView === true
+          ? { liveView: { key: KEY } }
+          : {}),
       });
     }
     if (route === `/api/test-runs/${RUN}/begin`) {
@@ -365,38 +396,48 @@ beforeAll(async () => {
     res.end();
   });
 
-  await runSuite('on', socketPath);
-  await runSuite('off', socketPath);
-}, 300_000);
+  await runSuite('on');
+  await runSuite('off');
+  await runSuite('local');
+}, 400_000);
 
 afterAll(async () => {
-  await new Promise<void>((resolve) => hub?.close(() => resolve()));
   await server?.close();
   fs.rmSync(projects, { recursive: true, force: true });
-  if (folder) fs.rmSync(folder, { recursive: true, force: true });
 });
 
 /** Every step title of a test, nested ones included. */
 const stepTitles = (steps: DumpedStep[]): string[] => steps.flatMap((s) => [s.title, ...stepTitles(s.steps)]);
 
+const TITLES = [
+  'watched while it runs',
+  'watched on a busy page',
+  'ended while watched',
+  OWN,
+  'recorded on video while watched',
+  'a busy page recorded on video while watched',
+];
+
 describe('the live view of a run on the instance', () => {
-  it('lets every test pass, the run asking for a key and each worker holding one stream with it', () => {
+  it('lets every test of a CI run pass, the run asking for a key and each worker holding one stream with it', () => {
     const { on } = runs;
     expect(on.exitCode, on.output).toBe(0);
-    expect(on.tests.map((t) => [t.title, t.status, t.errors])).toEqual([
-      ['watched while it runs', 'passed', []],
-      ['watched on a busy page', 'passed', []],
-      ['ended while watched', 'passed', []],
-      ['paused by page.pause()', 'passed', []],
-      ['recorded on video while watched', 'passed', []],
-      ['a busy page recorded on video while watched', 'passed', []],
-    ]);
+    expect(on.tests.map((t) => [t.title, t.status, t.errors])).toEqual(TITLES.map((title) => [title, 'passed', []]));
     expect(on.heard.setups[0]).toMatchObject({ projectName: 'live-view-spec', liveView: true });
     expect(on.output).toContain('Live view on');
-    // One worker: one stream, naming it, with the run's key.
-    expect(on.heard.streams.length).toBeGreaterThanOrEqual(1);
+    // One worker a project: one stream each, naming it, with the run's key.
+    expect(on.heard.streams.length).toBeGreaterThanOrEqual(2);
     expect(on.heard.streams[0]!.url).toMatch(/\/api\/test-runs\/41\/live-view\?worker=0$/);
     expect(on.heard.streams[0]!.authorization).toBe(`Bearer ${KEY}`);
+  });
+
+  it('keeps the key from every process the worker starts, and hands it to the projects that depend on its own', () => {
+    const { sawKey, watching } = runs.on.heard;
+    const places = ['worker-fixture', 'beforeAll', 'test', 'afterAll', 'worker-teardown'];
+    for (const where of places) expect(sawKey.filter((s) => s.where === where).length, where).toBeGreaterThan(0);
+    expect(sawKey.filter((s) => s.had)).toEqual([]);
+    // The video project depends on the first: its worker got the key too, and was watched.
+    expect(watching['recorded on video while watched']).toBeDefined();
   });
 
   it('sends no frame before anyone watches, and none once nobody does', () => {
@@ -462,23 +503,22 @@ describe('the live view of a run on the instance', () => {
     expect(heard.posts.some((p) => p.message.type === 'ended' && p.at >= watch.from)).toBe(true);
   });
 
-  it('says a test stopped by page.pause() is paused, at its call, until it goes on', () => {
-    const stops = runs.on.heard.posts.filter((p) => p.message.type === 'stop');
-    expect(stops.map((p) => p.message)).toEqual([
-      {
-        type: 'stop',
-        shard: null,
-        worker: 0,
-        stop: {
-          reason: 'page-pause',
-          call: { title: expect.any(String), file: 'tests/live.spec.cjs', line: 24 },
-          test: 'paused by page.pause()',
-        },
-      },
-      { type: 'stop', shard: null, worker: 0, stop: null },
-    ]);
-    // Paused about as long as the editor took to answer.
-    expect(stops[1]!.at - stops[0]!.at).toBeGreaterThanOrEqual(900);
+  it('names each frame’s test', () => {
+    heard = runs.on.heard;
+    for (const test of ['watched while it runs', 'watched on a busy page', 'recorded on video while watched']) {
+      const watch = heard.watching[test]!;
+      const named = new Set(frames(watch.from, watch.to!).map((f) => f.message.test));
+      expect([...named], test).toEqual([test]);
+    }
+  });
+
+  it('lets a watched test start its own screencast, and goes on with images of the page while it records', () => {
+    heard = runs.on.heard;
+    const watch = heard.watching[OWN]!;
+    const { 'own-start': start, 'own-stop': stop } = heard.marks;
+    expect(frames(watch.from, start).length).toBeGreaterThan(0);
+    // One image a second while the test holds the page's screencast.
+    expect(frames(start, stop).length).toBeGreaterThanOrEqual(1);
   });
 
   it('keeps the video whole and sends fewer, heavier frames in a suite that records video', () => {
@@ -512,9 +552,19 @@ describe('the live view of a run on the instance', () => {
   it('sends nothing with the live view off: no key, no stream, no post', () => {
     const { off } = runs;
     expect(off.exitCode, off.output).toBe(0);
-    expect(off.tests.map((t) => t.status)).toEqual(['passed', 'passed', 'passed', 'passed', 'passed', 'passed']);
+    expect(off.tests.map((t) => t.status)).toEqual(TITLES.map(() => 'passed'));
     expect(off.heard.setups[0]).toMatchObject({ liveView: true });
     expect(off.heard.liveRequests).toBe(0);
     expect(off.output).not.toContain('Live view on');
+  });
+
+  it('asks for no key in a run outside CI, in a project with the live view on', () => {
+    const { local } = runs;
+    expect(local.exitCode, local.output).toBe(0);
+    expect(local.tests.map((t) => t.status)).toEqual(TITLES.map(() => 'passed'));
+    expect(local.heard.setups).toHaveLength(1);
+    expect(local.heard.setups[0]).not.toHaveProperty('liveView');
+    expect(local.heard.liveRequests).toBe(0);
+    expect(local.output).not.toContain('Live view on');
   });
 });

@@ -98,21 +98,36 @@ describe('the messages', () => {
     expect(readLiveCall('Click')).toBeNull();
   });
 
-  test('a frame is base64 within the cap, with its call', () => {
+  test('a frame is base64 within the cap, with its call and its test', () => {
     expect(isLiveFrameData('/9j/4AAQ')).toBe(true);
     expect(isLiveFrameData('')).toBe(false);
     expect(isLiveFrameData('not base64!')).toBe(false);
     expect(isLiveFrameData('A'.repeat(MAX_LIVE_FRAME_BASE64))).toBe(true);
     expect(isLiveFrameData('A'.repeat(MAX_LIVE_FRAME_BASE64 + 4))).toBe(false);
     expect(
-      readWorkerToInstance({ type: 'frame', shard: null, worker: 1, data: '/9j/', call: { title: 'Fill', line: 2 } }),
-    ).toEqual({ type: 'frame', shard: null, worker: 1, data: '/9j/', call: { title: 'Fill', file: null, line: null } });
-    expect(readWorkerToInstance({ type: 'frame', worker: 1, data: '/9j/' })).toEqual({
+      readWorkerToInstance({
+        type: 'frame',
+        shard: null,
+        worker: 1,
+        data: '/9j/',
+        call: { title: 'Fill', line: 2 },
+        test: 'pays',
+      }),
+    ).toEqual({
+      type: 'frame',
+      shard: null,
+      worker: 1,
+      data: '/9j/',
+      call: { title: 'Fill', file: null, line: null },
+      test: 'pays',
+    });
+    expect(readWorkerToInstance({ type: 'frame', worker: 1, data: '/9j/', test: 7 })).toEqual({
       type: 'frame',
       shard: null,
       worker: 1,
       data: '/9j/',
       call: null,
+      test: null,
     });
     expect(readWorkerToInstance({ type: 'frame', worker: 1, refused: 'Too heavy.' })).toEqual({
       type: 'frame',

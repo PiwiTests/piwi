@@ -3,7 +3,8 @@
  * keeps one event stream open to the instance, with a key for that run alone that the reporter sets in the workers'
  * environment (`PIWI_LIVE_VIEW`, `<url>#<key>`, `formatLiveViewEnv`). On that stream the instance says how many people
  * watch the worker (`viewers`). While anyone does, the worker posts small JPEG frames of its test's page, each with the
- * call it was taken at, a few a second at most, and the instance relays them to those viewers alone and keeps none.
+ * call it was taken at and the title of its test, a few a second at most, and the instance relays them to those viewers
+ * alone and keeps none.
  * The worker also posts when its test stops and goes on (`stop`), which the run page shows, and when the test watched
  * ended (`ended`). Nothing goes from the instance to the page: the view never steers the run. Each message is JSON,
  * checked field by field (`parseInstanceToWorker`, `readWorkerToInstance`).
@@ -35,6 +36,8 @@ export const MAX_LIVE_MESSAGE = MAX_LIVE_FRAME_BASE64 + 8 * 1024;
 const MAX_TITLE = 500;
 /** The longest refusal a message carries; a longer one is cut. */
 const MAX_REFUSAL = 500;
+/** The longest test title a message carries; a longer one is cut. */
+const MAX_TEST_TITLE = 1000;
 
 /** How a live view key starts: `pdl_`, then 43 characters of base64url (32 random bytes). */
 export const LIVE_VIEW_KEY_PREFIX = 'pdl_';
@@ -94,6 +97,11 @@ export interface LiveWorkerId {
   worker: number;
 }
 
+/** The title of a test a message names, cut short; null for none. */
+export function readLiveTestTitle(value: unknown): string | null {
+  return typeof value === 'string' && value ? value.slice(0, MAX_TEST_TITLE) : null;
+}
+
 /** A stop of a worker's test: why, the call it holds, and the test's title, which tells its row from the one before. */
 export interface LiveStop {
   reason: StopReason | 'other';
@@ -106,8 +114,8 @@ export type InstanceToWorker = { type: 'viewers'; count: number };
 
 /** What a worker posts to the instance. */
 export type WorkerToInstance =
-  /** A frame of the test's page, a JPEG in base64, and the call it was taken at. */
-  | (LiveWorkerId & { type: 'frame'; data: string; call: LiveCall | null })
+  /** A frame of the test's page, a JPEG in base64, the call it was taken at and the test's title. */
+  | (LiveWorkerId & { type: 'frame'; data: string; call: LiveCall | null; test: string | null })
   /** Why no frame goes: the sentence the viewers see in place of the view. */
   | (LiveWorkerId & { type: 'frame'; refused: string })
   /** The worker's test stopped (its call), or went on (null). */
@@ -177,7 +185,7 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
       }
       if (!isLiveFrameData(value.data)) return `A frame is a JPEG in base64, ${MAX_LIVE_FRAME / 1024} KB at most.`;
       const call = value.call === null || value.call === undefined ? null : readLiveCall(value.call);
-      return { type: 'frame', ...id, data: value.data, call };
+      return { type: 'frame', ...id, data: value.data, call, test: readLiveTestTitle(value.test) };
     }
     case 'stop': {
       if (value.stop === null) return { type: 'stop', ...id, stop: null };
@@ -187,8 +195,7 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
       const reason = STOP_REASONS.includes(value.stop.reason as string)
         ? (value.stop.reason as LiveStop['reason'])
         : 'other';
-      const test = typeof value.stop.test === 'string' && value.stop.test ? value.stop.test.slice(0, 1000) : null;
-      return { type: 'stop', ...id, stop: { reason, call, test } };
+      return { type: 'stop', ...id, stop: { reason, call, test: readLiveTestTitle(value.stop.test) } };
     }
     case 'ended':
       return { type: 'ended', ...id };

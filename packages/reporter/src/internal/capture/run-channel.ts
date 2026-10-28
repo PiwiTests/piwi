@@ -1,7 +1,6 @@
 import * as net from 'node:net';
 import type { Page, WorkerInfo } from '@playwright/test';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
-import { LIVE_VIEW_ENV } from '@piwitests/core/live-view';
 import { hideSecretsInText } from '@piwitests/core/mask';
 import {
   RUN_CHANNEL_ENV,
@@ -268,22 +267,19 @@ export function editorShows(what: RunHold): boolean {
   return runChannelOpen() && shown.has(what);
 }
 
-/**
- * What a test runs without: the run's channel, the editor's Send to editor pairing with its token, and the key of the
- * run's live view on the instance.
- */
-const HIDDEN_ENV = [RUN_CHANNEL_ENV, PIWI_LOCAL_DEBUG_ENV.editorSend, LIVE_VIEW_ENV] as const;
+/** What a test runs without: the run's channel, and the editor's Send to editor pairing with its token. */
+const HIDDEN_ENV = [RUN_CHANNEL_ENV, PIWI_LOCAL_DEBUG_ENV.editorSend] as const;
 
 /** `PIWI_EDITOR_SEND` while a test runs without it: where the test's picks go. */
 let hiddenEditorSend: string | undefined;
 
 /**
- * Take the run's channel, the editor's pairing and the live view's key out of the worker's environment while a test
- * runs, so a process the test starts (Playwright run from a test) opens no connection on this run and is not handed
- * the pairing's token nor the key;
+ * Take the run's channel and the editor's pairing out of the worker's environment while a test runs, so a process the
+ * test starts (Playwright run from a test) opens no connection on this run and is not handed the pairing's token;
  * returns what puts them back once the test ended. The test's picks still go to the pairing (`editorSendAddress`).
  * Playwright compares a worker's environment as it stops with the one it started with, and hands what changed to the
- * projects that depend on its own: between tests, all three are there. `PIWI_RECORD_CHANNEL` stays, for **Record here**.
+ * projects that depend on its own: between tests, both are there. `PIWI_RECORD_CHANNEL` stays, for **Record here**.
+ * The live view's key is out for the worker's whole life (`live-view.ts`).
  */
 export function hideRunChannel(env: NodeJS.ProcessEnv = process.env): () => void {
   const hidden = HIDDEN_ENV.flatMap((name) => {

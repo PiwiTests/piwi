@@ -17,6 +17,7 @@ import {
   type LiveWorkerId,
   type WorkerToInstance,
 } from '@piwitests/core/live-view';
+import { hideSecretsInText } from '@piwitests/core/mask';
 import { fitViewSize } from '@piwitests/core/run-view';
 import { resolveShardInfo } from '../support/shard-info.js';
 import { openPageView, type PageFrame, type PageView } from './page-view.js';
@@ -30,9 +31,13 @@ import { openPageView, type PageFrame, type PageView } from './page-view.js';
  * `LIVE_FRAME_WIDTH` by `LIVE_FRAME_HEIGHT` at `LIVE_FRAME_QUALITY`, `LIVE_FRAME_FPS` frames a second and
  * `LIVE_FRAME_BYTE_RATE` bytes, each frame posted with the call it was taken at, one post in flight, the latest frame
  * alone waiting. Nobody watching, no screencast runs and no frame goes. The view stops as nobody watches any more, as
- * the test ends (the viewers hear it, `ended`) and as its page closes. The worker also posts when its test stops and
- * goes on (`stop`). A test never waits on any of it: a connection that fails is tried again a few times, then given
- * up for the worker's life, and a refused key gives it up at once.
+ * the test ends (the viewers hear it, `ended`) and as its page closes; someone who watches while no test runs hears
+ * why no image shows. Each frame names its test, so a view opened from one test's row ends at the next test's first
+ * frame. The worker also posts when its test stops and goes on (`stop`), and the stop it holds again on each stream
+ * it opens, since the instance forgets a stream's stop as it closes. Every call named goes through
+ * `hideSecretsInText`. A test never waits on any of it: a connection that fails is tried again a few times, then given
+ * up for the worker's life, and a refused key gives it up at once. The key is out of the worker's environment from the
+ * connection's opening to its close (`hideKey`).
  */
 
 /** How long the worker waits before it opens its stream again, after each failure in a row; then it gives up. */
@@ -61,6 +66,7 @@ const TOO_HEAVY =
   `This page is too heavy for the live view: each image of it is over ${MAX_LIVE_FRAME / 1024} KB, ` +
   'a lighter one included.';
 const NO_PAGE = 'This test has no page to show yet.';
+const NO_TEST = 'No test runs on this worker now: the next one shows once it opens its page.';
 
 interface Link {
   address: LiveViewAddress;
@@ -76,14 +82,17 @@ interface Link {
   /** The posts of a stop's start and end, one after the other, and how many wait. */
   states: Promise<unknown>;
   statesWaiting: number;
+  /** The stop the worker's test holds now, posted again each time the stream opens. */
+  stop: LiveStop | null;
   /** Whether a frame's post is in flight. */
   posting: boolean;
 }
 
 let link: Link | null = null;
 
-/** The test the worker runs: its page once known, and the call it is on. */
+/** The test the worker runs: its title, its page once known, and the call it is on. */
 interface RunningTest {
+  title: string;
   page: Page | null;
   call: () => LiveCall | null;
 }
@@ -92,9 +101,47 @@ let running: RunningTest | null = null;
 /** The view of the running test's page, while someone watches. */
 let view: { page: Page; opened: Promise<PageView | null>; onClose: () => void } | null = null;
 
+/** `PIWI_LIVE_VIEW` while the worker runs without it, and the listener that puts it back for Playwright's look. */
+let hidden: { env: NodeJS.ProcessEnv; value: string; onStop: (message: unknown) => void } | null = null;
+
 /**
- * Open the worker's connection to the instance when the run's environment names one. Returns at once, whether it
- * named one; the stream opens in the background. Never throws.
+ * Take the key out of the worker's environment until `showKey`, so no process the worker's hooks, fixtures or tests
+ * start gets it. Playwright compares a worker's environment as it stops (its `__stop__` message) with the one it
+ * started with, and hands what changed to the projects that depend on its own: the key is back for that look alone.
+ */
+function hideKey(env: NodeJS.ProcessEnv): void {
+  const value = env[LIVE_VIEW_ENV];
+  if (value === undefined || hidden) return;
+  delete env[LIVE_VIEW_ENV];
+  const onStop = (message: unknown): void => {
+    if ((message as { method?: unknown } | null)?.method !== '__stop__') return;
+    env[LIVE_VIEW_ENV] = value;
+    process.nextTick(() => {
+      if (hidden?.onStop === onStop) delete env[LIVE_VIEW_ENV];
+    });
+  };
+  process.prependListener('message', onStop);
+  hidden = { env, value, onStop };
+}
+
+/** Put the key back in the worker's environment, as its connection closes. */
+function showKey(): void {
+  const own = hidden;
+  hidden = null;
+  if (!own) return;
+  process.off('message', own.onStop);
+  own.env[LIVE_VIEW_ENV] = own.value;
+}
+
+/** Whether the worker holds a connection to the instance's live view, or tried to. */
+export function liveViewOpen(): boolean {
+  return link !== null;
+}
+
+/**
+ * Open the worker's connection to the instance when the run's environment names one, and take the key out of that
+ * environment until the connection closes. Returns at once, whether it named one; the stream opens in the background.
+ * Never throws.
  */
 export function openLiveView(
   worker: Pick<WorkerInfo, 'workerIndex' | 'config'>,
@@ -102,6 +149,7 @@ export function openLiveView(
 ): boolean {
   if (link) return false;
   const address = parseLiveViewEnv(env[LIVE_VIEW_ENV]);
+  hideKey(env);
   if (!address) return false;
   const secure = address.url.startsWith('https:');
   const client = secure ? https : http;
@@ -118,6 +166,7 @@ export function openLiveView(
     viewers: 0,
     states: Promise.resolve(),
     statesWaiting: 0,
+    stop: null,
     posting: false,
   };
   connect(link);
@@ -129,6 +178,7 @@ export function closeLiveView(): void {
   const own = link;
   link = null;
   running = null;
+  showKey();
   void stopView();
   if (!own) return;
   own.closed = true;
@@ -137,10 +187,10 @@ export function closeLiveView(): void {
   own.agent.destroy();
 }
 
-/** A test begins: `call` names the call it is on, for each frame. */
-export function liveViewTestBegan(call: () => LiveCall | null): void {
+/** A test titled `title` begins: `call` names the call it is on, for each frame. */
+export function liveViewTestBegan(title: string, call: () => LiveCall | null): void {
   if (!link) return;
-  running = { page: null, call };
+  running = { title, page: null, call };
 }
 
 /** The running test's page: watched from now on, at once when someone already watches. */
@@ -163,8 +213,18 @@ export async function liveViewTestEnded(): Promise<void> {
 export function liveViewStopped(stop: LiveStop): () => void {
   const own = link;
   if (!own || own.closed) return () => undefined;
-  postState(own, { type: 'stop', ...own.id, stop });
-  return () => postState(own, { type: 'stop', ...own.id, stop: null });
+  const shown = { ...stop, call: hideCallSecrets(stop.call) };
+  own.stop = shown;
+  postState(own, { type: 'stop', ...own.id, stop: shown });
+  return () => {
+    if (own.stop === shown) own.stop = null;
+    postState(own, { type: 'stop', ...own.id, stop: null });
+  };
+}
+
+/** A call as the run page shows it: its title through `hideSecretsInText`, which a URL or a token may hold. */
+function hideCallSecrets(call: LiveCall): LiveCall {
+  return { ...call, title: hideSecretsInText(call.title) };
 }
 
 /** Post a stop's start or end after the ones before it, a few waiting at most. */
@@ -223,6 +283,8 @@ function connect(own: Link): void {
       return drop(GIVE_UP.has(response.statusCode ?? 0));
     }
     openedAt = Date.now();
+    // The instance forgets a stream's stop as it closes: a stream opened again hears it again.
+    if (own.stop) postState(own, { type: 'stop', ...own.id, stop: own.stop });
     response.setEncoding('utf8');
     let text = '';
     response.on('data', (chunk: string) => {
@@ -264,8 +326,8 @@ function setViewers(own: Link, count: number): void {
   if (own !== link) return;
   if (count === 0) return void stopView();
   if (!running) {
-    // No test runs to show: the view of the one watched ended.
-    if (!own.closed) void post(own, { type: 'ended', ...own.id });
+    // Between two tests, or in a hook outside them: the one who came hears why no image shows.
+    if (count > before && !own.closed) void post(own, { type: 'frame', ...own.id, refused: NO_TEST });
     return;
   }
   if (view) {
@@ -327,7 +389,15 @@ async function stopView(): Promise<void> {
 function postFrame(own: Link, frame: PageFrame): void {
   if (own.closed) return;
   own.posting = true;
-  void post(own, { type: 'frame', ...own.id, data: frame.data.toString('base64'), call: running?.call() ?? null })
+  const call = running?.call() ?? null;
+  const data = frame.data.toString('base64');
+  void post(own, {
+    type: 'frame',
+    ...own.id,
+    data,
+    call: call && hideCallSecrets(call),
+    test: running?.title ?? null,
+  })
     .catch(() => undefined)
     .finally(() => {
       own.posting = false;
