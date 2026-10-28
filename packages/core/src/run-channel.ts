@@ -19,6 +19,13 @@ import { isViewFrameData, isViewPoint, isViewSize, readViewInput, type ViewInput
 export const RUN_CHANNEL_ENV = 'PIWI_RUN_CHANNEL';
 
 /**
+ * The name a run's workers give the hub in `run-attach` (`ref`, letters, digits, `_` and `-`, 64 at most), for a
+ * launcher whose `PIWI_ORIGIN_REF` names what the run was launched for rather than the run itself: the desktop app,
+ * whose reproduce and bisect runs carry the failure cluster's id there. Without it, `PIWI_ORIGIN_REF` names the run.
+ */
+export const RUN_REF_ENV = 'PIWI_RUN_REF';
+
+/**
  * A line of the user's code: its file relative to the run's working directory, with forward slashes (`..` for a file
  * above it), and the 1-based line and column.
  */

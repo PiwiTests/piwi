@@ -36,7 +36,8 @@ responsibilities.
    - with `PIWI_RECORD_CHANNEL`, **Record here** handing the page to the editor's recorder
      (`internal/capture/record-handoff.ts`, framed as `@piwitests/core/ide-recorder`): this package carries the relay
      alone, the recorder's host stays in the editor service;
-   - with `PIWI_RUN_CHANNEL` and `PIWI_ORIGIN_REF`, each worker's run connection to the editor
+   - with `PIWI_RUN_CHANNEL` and `PIWI_RUN_REF`, else `PIWI_ORIGIN_REF`, each worker's run connection to the editor
+     (or the desktop app, which names its runs by `PIWI_RUN_REF` and keeps `PIWI_ORIGIN_REF` for what they were for)
      (`internal/capture/run-channel.ts`, framed as `@piwitests/core/run-channel`), open from the `piwiResources`
      worker fixture's setup to the worker's end: it reports each test and stop, takes the editor's controls,
      breakpoints, intents and queries (`takes` in its `run-attach`), keeps the test's text responses in memory for

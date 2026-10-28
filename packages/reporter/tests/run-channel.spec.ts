@@ -120,6 +120,22 @@ describe('the worker’s run connection', () => {
     expect(runChannelOpen()).toBe(false);
   });
 
+  it('names the run by PIWI_RUN_REF when the launcher sets it, PIWI_ORIGIN_REF naming what it was launched for', async () => {
+    const hub = await startHub();
+    try {
+      const { control } = handlers();
+      expect(
+        await openRunChannel(WORKER, control, { ...hub.env, PIWI_ORIGIN_REF: '42', PIWI_RUN_REF: 'desktop-7' }),
+      ).toBe(true);
+      expect(await until(() => hub.heard[0])).toMatchObject({ type: 'run-attach', ref: 'desktop-7' });
+      closeRunChannel();
+      // A name the hub could not read opens nothing, whatever PIWI_ORIGIN_REF says.
+      expect(await openRunChannel(WORKER, control, { ...hub.env, PIWI_RUN_REF: 'job:ab12' })).toBe(false);
+    } finally {
+      await hub.close();
+    }
+  });
+
   it('takes the channel and the editor’s pairing out of the environment while a test runs, and puts them back after', () => {
     const pairing = 'http://127.0.0.1:47211/piwi/send#abcdefghijklmnop_1234';
     const env: NodeJS.ProcessEnv = { PIWI_RUN_CHANNEL: 'a#b', PIWI_RECORD_CHANNEL: 'a#b', PIWI_EDITOR_SEND: pairing };

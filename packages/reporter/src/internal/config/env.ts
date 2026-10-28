@@ -118,7 +118,8 @@ export const PIWI_ENV_KEYS = {
  * pause bar's Record here hands the page to the editor's recorder, and
  * `PIWI_RUN_CHANNEL` (`@piwitests/core/run-channel`) the same socket, which each
  * worker keeps a run connection to (`internal/capture/run-channel.ts`) when
- * `PIWI_ORIGIN_REF` names the run.
+ * `PIWI_RUN_REF`, else `PIWI_ORIGIN_REF`, names the run. The desktop app names
+ * its own server's socket there for the runs it starts, with `PIWI_RUN_REF`.
  */
 export const PIWI_LOCAL_DEBUG_ENV = {
   pauseAt: 'PIWI_PAUSE_AT',

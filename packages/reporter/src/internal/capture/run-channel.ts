@@ -6,6 +6,7 @@ import {
   RUN_CHANNEL_ENV,
   RUN_HOLDS,
   RUN_INTENT_NAMES,
+  RUN_REF_ENV,
   RUN_TAKES,
   parseHubToRun,
   type HubToRun,
@@ -196,8 +197,9 @@ let input = freshInput();
 let pickingAt = false;
 
 /**
- * Open the worker's run connection when the run names a channel and a ref, with `handlers` for what the editor asks.
- * Resolves with whether it opened, once it did, failed or took too long. Never throws.
+ * Open the worker's run connection when the run names a channel and a ref (`PIWI_RUN_REF`, else `PIWI_ORIGIN_REF`),
+ * with `handlers` for what the editor asks. Resolves with whether it opened, once it did, failed or took too long.
+ * Never throws.
  */
 export async function openRunChannel(
   worker: Pick<WorkerInfo, 'workerIndex' | 'parallelIndex' | 'config'>,
@@ -205,7 +207,7 @@ export async function openRunChannel(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<boolean> {
   const channel = parseRecordChannel(env[RUN_CHANNEL_ENV]);
-  const ref = env[PIWI_ORIGIN_ENV.ref];
+  const ref = env[RUN_REF_ENV] ?? env[PIWI_ORIGIN_ENV.ref];
   if (socket || !channel || !ref || !/^[\w-]{1,64}$/.test(ref)) return false;
   const opening = net.connect(channel.path);
   opening.setEncoding('utf8');

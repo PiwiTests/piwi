@@ -97,6 +97,9 @@ What the package does to a user's run, process by process.
 
 **The editor's run connection** (`internal/capture/run-channel.ts`, with `PIWI_RUN_CHANNEL` and `PIWI_ORIGIN_REF`)
 
+- The run's name on it, its `run-attach`'s `ref`, is `PIWI_RUN_REF` when set, else `PIWI_ORIGIN_REF`. The desktop app
+  sets `PIWI_RUN_REF` (`desktop-<its run id>`) on the runs it starts, whose `PIWI_ORIGIN_REF` names the failure cluster
+  or bug report they were started for; its bundled server is their hub.
 - `PIWI_RUN_CHANNEL` names the same local socket as `PIWI_RECORD_CHANNEL`. Each worker
   connects to it in the `piwiResources` worker fixture, before its first test (it waits
   2 seconds at most), and stays connected until the worker ends. The messages are defined
