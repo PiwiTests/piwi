@@ -447,7 +447,13 @@ describe('the commands', () => {
     const page = 'https://piwi.example.com/test-runs/42';
     try {
       worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
-      expect(await waitFor(() => other.session(ref)?.live)).toEqual({ shared: false, refused: null, page, viewers: 0 });
+      expect(await waitFor(() => other.session(ref)?.live)).toEqual({
+        shared: false,
+        refused: null,
+        stopped: null,
+        page,
+        viewers: 0,
+      });
       client.send({ type: 'share', id: 2, ref, on: true });
       expect(await client.answer(2)).toMatchObject({
         ok: true,
@@ -456,7 +462,7 @@ describe('the commands', () => {
       expect(await worker.next('share')).toEqual({ type: 'share', on: true });
       worker.send({ type: 'live', can: true, on: true, viewers: 1, page, why: null });
       await waitFor(() => (other.session(ref)?.live?.viewers === 1 ? true : undefined));
-      expect(other.session(ref)?.live).toEqual({ shared: true, refused: null, page, viewers: 1 });
+      expect(other.session(ref)?.live).toEqual({ shared: true, refused: null, stopped: null, page, viewers: 1 });
       client.send({ type: 'share', id: 3, ref });
       expect(await client.answer(3)).toMatchObject({ ok: false, message: expect.stringMatching(/^share needs on/) });
     } finally {

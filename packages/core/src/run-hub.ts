@@ -185,14 +185,16 @@ export interface HubWorker {
 }
 
 /**
- * How a run stands on the team instance's live view (**Share live**): whether it is shared now, why it cannot be (or
- * why its sharing stopped), its page on the instance for a teammate to open, and how many people watch its workers
- * there.
+ * How a run stands on the team instance's live view (**Share live**): whether it is shared now, why it cannot be, why
+ * its sharing stopped though nobody asked, its page on the instance for a teammate to open, and how many views of its
+ * workers are open there.
  */
 export interface HubLive {
   shared: boolean;
   /** One sentence; null when the run can be shared. At most `MAX_HUB_MESSAGE` characters. */
   refused: string | null;
+  /** One sentence, until a person shares the run again or stops it; null otherwise (and from an older hub). */
+  stopped: string | null;
   /** The run's page on the instance (`<instance>/test-runs/<id>`); null when the run holds no key. */
   page: string | null;
   viewers: number;
@@ -750,11 +752,18 @@ function readSession(value: unknown): HubSession | null {
 /** A run's live view on the team instance, field by field; null when it is not one. */
 function readLive(value: unknown): HubLive | null {
   if (!isObject(value)) return null;
-  const { shared, refused, page, viewers } = value;
+  const { shared, refused, stopped = null, page, viewers } = value;
   if (typeof shared !== 'boolean' || !isInt(viewers, 0, 1_000_000)) return null;
   if (refused !== null && str(refused, MAX_HUB_MESSAGE) === null) return null;
+  if (stopped !== null && str(stopped, MAX_HUB_MESSAGE) === null) return null;
   if (page !== null && (str(page, 2048) === null || !/^https?:\/\//.test(page as string))) return null;
-  return { shared, refused: refused as string | null, page: page as string | null, viewers };
+  return {
+    shared,
+    refused: refused as string | null,
+    stopped: stopped as string | null,
+    page: page as string | null,
+    viewers,
+  };
 }
 
 /** A message from the hub, checked field by field; null when it is not one, or of a type this version does not know. */

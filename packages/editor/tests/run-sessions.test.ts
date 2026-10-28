@@ -958,7 +958,7 @@ describe('RunSessions', () => {
     first.read(ready);
     const live = () => sessions.current().find((s) => s.ref === 'ed-1')?.live;
     await waitFor(() => (live() ? true : undefined));
-    expect(live()).toEqual({ shared: false, refused: null, page, viewers: 0 });
+    expect(live()).toEqual({ shared: false, refused: null, stopped: null, page, viewers: 0 });
 
     expect(sessions.share({ ref: 'ed-1', on: true })).toEqual({
       ok: true,
@@ -972,12 +972,23 @@ describe('RunSessions', () => {
     expect(shares(second.socket)).toEqual([{ type: 'share', on: true }]);
     second.read({ ...ready, on: true, viewers: 1 });
     await waitFor(() => (live()?.viewers === 3 ? true : undefined));
-    expect(live()).toEqual({ shared: true, refused: null, page, viewers: 3 });
+    expect(live()).toEqual({ shared: true, refused: null, stopped: null, page, viewers: 3 });
 
-    // A stream the instance stopped answering stops the sharing of that worker, said once.
-    second.read({ ...ready, why: 'Sharing stopped: the instance did not answer.' });
-    second.read({ ...ready, why: 'Sharing stopped: the instance did not answer.' });
-    expect(notices).toEqual(['Sharing stopped: the instance did not answer.']);
+    // A stream the instance stopped answering stops that worker's sharing: the run stays shared while another streams,
+    // and stops with the last, said once, Share live offered again.
+    const lost = 'Sharing stopped: the instance did not answer.';
+    second.read({ ...ready, why: lost });
+    await waitFor(() => (live()?.viewers === 2 ? true : undefined));
+    expect(live()).toMatchObject({ shared: true, stopped: null });
+    first.read({ ...ready, why: lost });
+    second.read({ ...ready, why: lost });
+    await waitFor(() => (live()?.shared === false ? true : undefined));
+    expect(live()).toEqual({ shared: false, refused: null, stopped: lost, page, viewers: 0 });
+    expect(notices).toEqual([lost]);
+    expect(sessions.share({ ref: 'ed-1', on: true })).toMatchObject({ ok: true });
+    first.read({ ...ready, on: true });
+    await waitFor(() => (live()?.shared ? true : undefined));
+    expect(live()).toMatchObject({ shared: true, stopped: null });
 
     expect(sessions.share({ ref: 'ed-1', on: false })).toEqual({
       ok: true,
@@ -986,6 +997,7 @@ describe('RunSessions', () => {
     first.read(ready);
     await waitFor(() => (live()?.shared === false ? true : undefined));
     expect(shares(first.socket)).toEqual([
+      { type: 'share', on: true },
       { type: 'share', on: true },
       { type: 'share', on: false },
     ]);
@@ -1002,6 +1014,7 @@ describe('RunSessions', () => {
     expect(sessions.current().find((s) => s.ref === 'ed-2')?.live).toEqual({
       shared: false,
       refused: why,
+      stopped: null,
       page: null,
       viewers: 0,
     });
@@ -1014,6 +1027,52 @@ describe('RunSessions', () => {
     });
     expect(shares(older.socket)).toEqual([]);
     expect(sessions.share({ ref: 'ed-9', on: true })).toMatchObject({ ok: false });
+    sessions.dispose();
+  });
+
+  test('stops sharing a run while no worker of it is connected, and the next worker hears it', async () => {
+    const { sessions, attach } = harness();
+    const shares = (socket: ReturnType<typeof fakeSocket>) =>
+      socket.written.map((line) => JSON.parse(line)).filter((m) => m.type === 'share');
+    const page = 'https://piwi.example.com/test-runs/7';
+    const ready = { type: 'live', can: true, on: false, viewers: 0, page, why: null } as const;
+    const live = () => sessions.current().find((s) => s.ref === 'ed-1')?.live;
+    const first = attach(0, { takes: [...RUN_TAKES] });
+    first.read(ready);
+    expect(sessions.share({ ref: 'ed-1', on: true })).toMatchObject({ ok: true });
+    first.read({ ...ready, on: true });
+    await waitFor(() => (live()?.shared ? true : undefined));
+    // Its test failed: Playwright ends the worker and starts another, which has not connected yet.
+    first.socket.destroy();
+    await waitFor(() => (sessions.current().find((s) => s.ref === 'ed-1')?.workers.length === 0 ? true : undefined));
+    expect(sessions.share({ ref: 'ed-1', on: false })).toEqual({
+      ok: true,
+      message: 'Stopped sharing the run: nothing more goes to piwi.example.com.',
+    });
+    await waitFor(() => (live()?.shared === false ? true : undefined));
+    // Sharing again waits for a worker; the one that connects next does not share.
+    expect(sessions.share({ ref: 'ed-1', on: true })).toMatchObject({ ok: false });
+    const second = attach(1, { takes: [...RUN_TAKES] });
+    expect(shares(second.socket)).toEqual([{ type: 'share', on: false }]);
+    sessions.dispose();
+  });
+
+  test('says once a run, not once a worker, that its sharing stopped though nobody asked', async () => {
+    const notices: string[] = [];
+    const { sessions, attach } = harness({ notice: (_root, _severity, message) => void notices.push(message) });
+    const page = 'https://piwi.example.com/test-runs/7';
+    const ready = { type: 'live', can: true, on: false, viewers: 0, page, why: null } as const;
+    const workers = [0, 1, 2].map((index) => attach(index, { takes: [...RUN_TAKES] }));
+    for (const worker of workers) worker.read(ready);
+    expect(sessions.share({ ref: 'ed-1', on: true })).toMatchObject({ ok: true });
+    for (const worker of workers) worker.read({ ...ready, on: true });
+    // The instance started again: none of the workers' streams is taken any more.
+    const why = "Sharing stopped: the instance no longer takes this run's live view key.";
+    for (const worker of workers) worker.read({ type: 'live', can: false, on: false, viewers: 0, page, why });
+    expect(notices).toEqual([why]);
+    const live = () => sessions.current().find((s) => s.ref === 'ed-1')?.live;
+    await waitFor(() => (live()?.stopped ? true : undefined));
+    expect(live()).toEqual({ shared: false, refused: why, stopped: why, page, viewers: 0 });
     sessions.dispose();
   });
 

@@ -175,8 +175,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   stops there, and never sends it to the client. Checked by `tests/debug-run.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#a-run-that-debugs-a-failure))
 - **A run is shared live only as a person asks on a surface, never on an agent's word.** `RunSessions.share` serves
-  `piwi/shareRun` and the hub's `share` alone, no tool of `run-agent.ts` reaches it, and a worker that connects later
-  follows the run's choice. Checked by `tests/run-sessions.test.ts` ("shares a run live as a person asks …").
+  `piwi/shareRun` and the hub's `share` alone, no tool of `run-agent.ts` reaches it, a worker that connects later
+  follows the run's choice, and stopping is never refused. Checked by `tests/run-sessions.test.ts` ("shares a run live
+  as a person asks …", "stops sharing a run while no worker of it is connected …").
   ([ARCHITECTURE.md](ARCHITECTURE.md#share-live))
 - **The run control runs without the language server too: the desktop app's server hosts it.** `src/run-host.ts`
   exports `RecordChannel`, `RunSessions`, `RunHub`, `StopActions`, `RunLines` and the agents' `RunAgent`, which import

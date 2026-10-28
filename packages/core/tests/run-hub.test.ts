@@ -453,18 +453,34 @@ describe('Share live on the hub', () => {
   });
 
   test('has the extension read how a run stands on the instance, and refuse what it cannot read', () => {
-    const live = { shared: true, refused: null, page: 'https://piwi.example.com/test-runs/42', viewers: 3 };
+    const live = {
+      shared: true,
+      refused: null,
+      stopped: null,
+      page: 'https://piwi.example.com/test-runs/42',
+      viewers: 3,
+    };
     const shared = { ...session, live };
     expect(parseHubMessage(json({ type: 'session', session: shared }))).toEqual({ type: 'session', session: shared });
     const refused = { ...live, shared: false, refused: 'This run cannot be shared live.', page: null, viewers: 0 };
     expect(parseHubMessage(json({ type: 'session', session: { ...session, live: refused } }))).toMatchObject({
       session: { live: refused },
     });
+    // Why its sharing stopped though nobody asked; an older hub says nothing of it.
+    const stopped = { ...live, shared: false, stopped: 'Sharing stopped: the instance did not answer.', viewers: 0 };
+    expect(parseHubMessage(json({ type: 'session', session: { ...session, live: stopped } }))).toMatchObject({
+      session: { live: stopped },
+    });
+    const { stopped: _stopped, ...older } = live;
+    expect(parseHubMessage(json({ type: 'session', session: { ...session, live: older } }))).toMatchObject({
+      session: { live: { ...older, stopped: null } },
+    });
     for (const broken of [
       { ...live, shared: 'yes' },
       { ...live, viewers: -1 },
       { ...live, refused: 5 },
       { ...live, refused: 'x'.repeat(MAX_HUB_MESSAGE + 1) },
+      { ...live, stopped: 5 },
       { ...live, page: 'javascript:alert(1)' },
       'shared',
     ]) {

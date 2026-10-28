@@ -778,11 +778,13 @@ A person shares a run on the team instance its reporter reports to, for a teamma
 (`piwi/shareRun` from a client, `share` from a hub connection, the desktop app's window included; `RunSessions.share`).
 That stream is the reporter's own, from each worker to the instance (`@piwitests/core/live-view`): the service only
 tells each worker that takes `share` to open or close it, and a worker that connects later follows the run's choice
-(`Session.share`). Each worker says how it stands (`live`: whether it holds a key, whether it streams, how many watch it,
-the run's page, why not), which the session sums up for the client and the hub (`RunSession.live`, `HubSession.live`):
-shared as the person left it, a CI run's as its workers stream, why it cannot be when no worker can, the viewers of
-every worker. A sharing that stopped though nobody asked (the instance did not answer, refused the key) is said once,
-as a notice. Nothing of the stream passes through the service, and no agent's tool shares a run.
+(`Session.share`). Stopping is never refused, not even while no worker is connected: the next one hears it. Each worker
+says how it stands (`live`: whether it holds a key, whether it streams, the views open of it, the run's page, why not),
+which the session sums up for the client and the hub (`RunSession.live`, `HubSession.live`): shared while a worker
+streams or opens its stream, why it cannot be when no worker can, the views of every worker. A sharing that stops
+though nobody asked (the instance stopped answering, refused the key) ends with the run's last streaming worker: said
+once a run, as a notice, kept as `stopped` until a person shares it again, and a worker that connects later no longer
+shares. Nothing of the stream passes through the service, and no agent's tool shares a run.
 
 ### Code from a stop
 

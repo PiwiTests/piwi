@@ -346,8 +346,12 @@ interface Session {
   stoppedAt: number;
   /** The client heard that a stop of this run was resumed for it. */
   resumedSaid: boolean;
-  /** Whether a person shared the run live (`share`), or stopped; null while nobody asked. */
+  /**
+   * Whether a person shared the run live (`share`), or stopped; null while nobody asked. False again once its last
+   * streaming worker stopped though nobody asked, `stopped` saying why.
+   */
   share: boolean | null;
+  stopped: string | null;
   /** The run's live view as it was last summed up, kept while no worker that says it is connected. */
   live: RunLive | null;
 }
@@ -479,6 +483,7 @@ export class RunSessions {
         stoppedAt: 0,
         resumedSaid: false,
         share: null,
+        stopped: null,
         live: null,
       };
       this.sessions.set(attach.ref, session);
@@ -553,25 +558,30 @@ export class RunSessions {
 
   /**
    * `piwi/shareRun`: share the run of `ref` live on the team instance its reporter reports to (`on`), or stop: each
-   * worker that takes it opens or closes its stream there, and a worker that connects later follows. Refused, with
-   * why, for a run whose reporter predates it, or none of whose workers can be shared.
+   * worker that takes it opens or closes its stream there, and a worker that connects later follows. Sharing is
+   * refused, with why, for a run with no worker connected, whose reporter predates it, or none of whose workers can be
+   * shared; stopping never is, a worker that connects later included.
    */
   share(params: ShareRunParams): RunControlResult {
     const refuse = (message: string): RunControlResult => ({ ok: false, message });
-    const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
-    if (!session?.workers.size) return refuse(`No worker of this run is connected to ${this.host}.`);
-    if (typeof params.on !== 'boolean') return refuse('Share live needs on: true to share the run, false to stop.');
-    const workers = [...session.workers.values()].filter((w) => w.takes.has('share'));
-    if (!workers.length) {
-      const reporter = [...session.workers.values()][0]!.reporter;
-      return refuse(`@piwitests/reporter ${reporter}`.trimEnd() + ' cannot share a run live: update it.');
-    }
+    if (typeof params?.on !== 'boolean') return refuse('Share live needs on: true to share the run, false to stop.');
+    const session = typeof params.ref === 'string' ? this.sessions.get(params.ref) : undefined;
+    if (!session) return refuse(`No worker of this run is connected to ${this.host}.`);
     const live = this.liveOf(session);
-    if (params.on && !workers.some((w) => w.live?.can)) return refuse(live?.refused ?? NOT_SAID);
+    const instance = live?.page ? instanceOf(live.page) : 'the instance';
+    const workers = [...session.workers.values()].filter((w) => w.takes.has('share'));
+    if (params.on) {
+      if (!session.workers.size) return refuse(`No worker of this run is connected to ${this.host}.`);
+      if (!workers.length) {
+        const reporter = [...session.workers.values()][0]!.reporter;
+        return refuse(`@piwitests/reporter ${reporter}`.trimEnd() + ' cannot share a run live: update it.');
+      }
+      if (!workers.some((w) => w.live?.can)) return refuse(live?.refused ?? NOT_SAID);
+    }
     session.share = params.on;
+    session.stopped = null;
     for (const worker of workers) this.send(worker, { type: 'share', on: params.on });
     this.changed(session, true);
-    const instance = live?.page ? instanceOf(live.page) : 'the instance';
     return {
       ok: true,
       message: params.on
@@ -581,18 +591,23 @@ export class RunSessions {
   }
 
   /**
-   * How the run stands on the team instance's live view, summed up from what its workers said: shared as a person
-   * left it (a CI run's as its workers stream), why it cannot be when none of them can, its page, and the people who
-   * watch. Kept as it was while no worker that says it is connected; none for a run whose reporter predates it.
+   * How the run stands on the team instance's live view, summed up from what its workers said: shared while one of
+   * them streams or opens its stream, why it cannot be when none of them can, why its sharing stopped though nobody
+   * asked, its page, and the views open of its workers. Kept as it was while no worker that says it is connected (not
+   * shared once a person stopped it); none for a run whose reporter predates it.
    */
   private liveOf(session: Session): RunLive | undefined {
     const states = [...session.workers.values()].flatMap((w) => (w.takes.has('share') && w.live ? [w.live] : []));
-    if (!states.length) return session.live ? { ...session.live, viewers: 0 } : undefined;
+    if (!states.length) {
+      if (!session.live) return undefined;
+      return { ...session.live, shared: session.live.shared && session.share !== false, viewers: 0 };
+    }
     const can = states.some((state) => state.can);
     const on = states.some((state) => state.on);
     session.live = {
-      shared: session.share === null ? on : session.share && can,
+      shared: on,
       refused: can ? null : (states.find((state) => state.why)?.why ?? NOT_SAID),
+      stopped: on ? null : session.stopped,
       page: states.find((state) => state.page)?.page ?? null,
       viewers: states.reduce((sum, state) => sum + (state.on ? state.viewers : 0), 0),
     };
@@ -1288,8 +1303,12 @@ export class RunSessions {
         const before = worker.live;
         const { type: _type, ...state } = message;
         worker.live = state;
-        // A sharing that stopped though nobody asked says why, once, where the person shared it.
-        if (session.share && before?.on && !state.on && state.why && state.why !== before.why) {
+        // A sharing that stopped though nobody asked ends with the run's last streaming worker: said once, where the
+        // person shared it, and a worker that connects later no longer shares.
+        const streaming = [...session.workers.values()].some((w) => w.live?.on);
+        if (session.share && before?.on && !state.on && state.why && !streaming) {
+          session.share = false;
+          session.stopped = state.why;
           this.options.notice(session.root ?? worker.cwd, 'warning', state.why);
         }
         return this.changed(session, true);

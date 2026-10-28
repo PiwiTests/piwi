@@ -626,7 +626,15 @@ export class RunHub {
       })),
       ended: session.ended,
       ...(session.terminal ? { terminal: true } : {}),
-      ...(session.live ? { live: { ...session.live, refused: cut(session.live.refused, MAX_HUB_MESSAGE) } } : {}),
+      ...(session.live
+        ? {
+            live: {
+              ...session.live,
+              refused: cut(session.live.refused, MAX_HUB_MESSAGE),
+              stopped: cut(session.live.stopped, MAX_HUB_MESSAGE),
+            },
+          }
+        : {}),
     };
   }
 

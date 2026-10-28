@@ -1509,10 +1509,15 @@ export interface RunSession {
  * that instance; a CI run's stream from the start.
  */
 export interface RunLive {
-  /** The run is shared now: its workers hold their streams to the instance, or open them. */
+  /** The run is shared now, as its workers say: they hold their streams to the instance, or open them. */
   shared: boolean;
-  /** Why the run cannot be shared, or why its sharing stopped, in one sentence; null when it can be. */
+  /** Why the run cannot be shared, in one sentence; null when it can be. */
   refused: string | null;
+  /**
+   * Why its sharing stopped though nobody asked (the instance stopped answering, the setting turned off), in one
+   * sentence, until a person shares it again or stops it; null otherwise.
+   */
+  stopped: string | null;
   /** The run's page on the instance (`https://piwi.example.com/test-runs/42`), for a teammate; null without a key. */
   page: string | null;
   /** How many people watch its workers on the instance now: 0 unless shared. */
