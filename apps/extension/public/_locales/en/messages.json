@@ -7533,6 +7533,10 @@
     "message": "Desktop app",
     "description": "Runs window, beside a run’s name: the run was started by the Piwi desktop app rather than an editor. Short."
   },
+  "runs_terminal": {
+    "message": "Terminal",
+    "description": "Runs window, beside a run’s name: the run was started in a terminal, and follows the editor whose workspace holds it. Short."
+  },
   "runs_desktopName": {
     "message": "the desktop app",
     "description": "Runs window, in runs_reconnecting for the Piwi desktop app’s hub. Lower case, inside a sentence."
@@ -7690,6 +7694,14 @@
   "runs_finishTitle": {
     "message": "Run the test on without stopping at a breakpoint again",
     "description": "Runs window, the Finish button’s tooltip."
+  },
+  "runs_end": {
+    "message": "End the test",
+    "description": "Runs window, button on a stopped test: it ends the test there, reported as skipped; the stopped call and the rest of the test never run. Short."
+  },
+  "runs_endTitle": {
+    "message": "End the test here: the rest of it is skipped",
+    "description": "Runs window, the End the test button’s tooltip."
   },
   "runs_pick": {
     "message": "Pick",

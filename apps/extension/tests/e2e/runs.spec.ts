@@ -30,14 +30,15 @@ import {
 } from './runs-fixtures.js';
 
 /**
- * The Runs window in the real extension, against the real editor service and its hub: the worker finds the hub
- * through the pairing, the popup's Runs tile opens the window, and the window pauses, steps and resumes a run whose
- * worker the spec plays, with the image of the stopped page. At a stop it starts the code the editor writes there
- * (Assert, Assert a region, Mock a request, as the worker's reporter takes them), and holds a failed test, a headless
- * one only while a Runs window is open. A page served from 127.0.0.1 never reaches the hub. Watch live shows a stop's
- * frames, the clicks and keys on them reach the page, Pick on the image names the element under a click, and a
- * headless stop takes Pick, Record and the checks once watched; an older editor service shows none of it. The paired
- * desktop app's runs show beside the editor's, the app named, their code made there for the app's window to copy.
+ * The Runs window in the real extension, against the real editor service and its hub: the worker finds the hub through
+ * the pairing, the popup's Runs tile opens the window, and the window pauses, steps, resumes and ends a run whose
+ * worker the spec plays, with the image of the stopped page, a run started in a terminal named as one. At a stop it
+ * starts the code the editor writes there (Assert, Assert a region, Mock a request, as the worker's reporter takes
+ * them), and holds a failed test, a headless one only while a Runs window is open. A page served from 127.0.0.1 never
+ * reaches the hub. Watch live shows a stop's frames, the clicks and keys on them reach the page, Pick on the image
+ * names the element under a click, and a headless stop takes Pick, Record and the checks once watched; an older editor
+ * service shows none of it. The paired desktop app's runs show beside the editor's, the app named, their code made
+ * there for the app's window to copy.
  */
 
 let editor: Editor;
@@ -208,6 +209,50 @@ test('the run shortcut pauses the runs, then resumes the stopped test, with no R
   }
 });
 
+test('End the test ends a stopped test there, and a run started in a terminal shows as one', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  try {
+    const runs = await openRuns(context, extensionId);
+    const card = liveRun(runs);
+    const run = await startRun(editor, 'pays', [...RUN_TAKES]);
+    try {
+      await expect(card.getByText('Running')).toBeVisible();
+      await expect(card.getByText('Terminal')).toHaveCount(0);
+      stopAtCheckout(run.worker, 1);
+      // Beside the other controls that steer the test, above the code a stop can write.
+      const steering = card.locator('.controls .piwi-actions').first().getByRole('button');
+      await expect(steering).toHaveText(['Resume', 'Step', 'Finish', 'End the test']);
+      const end = card.getByRole('button', { name: 'End the test' });
+      await expect(end).toHaveAttribute('title', 'End the test here: the rest of it is skipped');
+      await end.click();
+      expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'end', stop: 1 });
+      run.worker.send({ type: 'running', stop: 1 });
+      await expect(card.getByText('Running')).toBeVisible();
+    } finally {
+      await endRun(run);
+    }
+
+    // A run started in a terminal: a ref the editor never built, on its run channel, named a terminal's run.
+    const { channel } = await editor.svc.command();
+    const ref = `terminal-4242-${Date.now()}`;
+    const terminal = new FakeWorker(channel.path, editor.dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    try {
+      terminal.begin('pays');
+      const shown = liveRun(runs).filter({ has: runs.locator('.run-title', { hasText: 'Terminal' }) });
+      await expect(shown.locator('.run-title')).toHaveText(`${path.basename(editor.dir)}Test EditorTerminal`);
+      stopAtCheckout(terminal, 1);
+      await shown.getByRole('button', { name: 'End the test' }).click();
+      expect(await terminal.next('control')).toEqual({ type: 'control', action: 'end', stop: 1 });
+    } finally {
+      terminal.socket.destroy();
+      // Its session ends a while after its last worker left, with no command to end.
+      await waitFor(() => (editor.svc.latest(ref)?.ended ? true : undefined), 10_000);
+    }
+  } finally {
+    await context.close();
+  }
+});
+
 test('a page served from 127.0.0.1 cannot open the hub’s WebSocket, which the extension can', async () => {
   const { context, worker } = await pairedExtension(editor);
   try {
@@ -331,6 +376,7 @@ test.describe('code from a stop', () => {
           'Resume',
           'Step',
           'Finish',
+          'End the test',
           'Pick',
           'Record',
           'Assert',
@@ -732,7 +778,7 @@ test.describe('code from a stop', () => {
       const headless = await startRun(editor, 'pays', [...RUN_TAKES]);
       try {
         stopAtCheckout(headless.worker, 1, { bar: false });
-        await expect(buttons).toHaveText(['Resume', 'Step', 'Finish', 'Mock a request']);
+        await expect(buttons).toHaveText(['Resume', 'Step', 'Finish', 'End the test', 'Mock a request']);
       } finally {
         await endRun(headless);
       }
@@ -782,7 +828,7 @@ test.describe('the live view', () => {
         await expect(still).toBeVisible();
         const buttons = card.locator('.controls button');
         // Headless, nobody watching: Pick and Record have no page to start in.
-        await expect(buttons).toHaveText(['Resume', 'Step', 'Finish', 'Mock a request']);
+        await expect(buttons).toHaveText(['Resume', 'Step', 'Finish', 'End the test', 'Mock a request']);
         const watch = card.getByRole('button', { name: 'Watch live' });
         await expect(watch).toHaveAttribute('aria-pressed', 'false');
         await expect(card.getByRole('button', { name: 'Pick on the image' })).toBeVisible();
@@ -810,6 +856,7 @@ test.describe('the live view', () => {
           'Resume',
           'Step',
           'Finish',
+          'End the test',
           'Pick',
           'Record',
           'Assert',
@@ -843,7 +890,7 @@ test.describe('the live view', () => {
         await expect(watch).toHaveAttribute('aria-pressed', 'false');
         await expect(live).toHaveCount(0);
         await expect(still).toBeVisible();
-        await expect(buttons).toHaveText(['Resume', 'Step', 'Finish', 'Mock a request']);
+        await expect(buttons).toHaveText(['Resume', 'Step', 'Finish', 'End the test', 'Mock a request']);
         sendFrame(run.worker, 1, before);
         await runs.waitForTimeout(300);
         await expect(card.locator('img.live')).toHaveCount(0);
@@ -1355,6 +1402,7 @@ test.describe('the desktop app’s runs', () => {
           'Resume',
           'Step',
           'Finish',
+          'End the test',
           'Assert a region',
           'Mock a request',
         ]);

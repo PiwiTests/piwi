@@ -6355,6 +6355,9 @@
   "runs_desktopApp": {
     "message": "Aplicación de escritorio"
   },
+  "runs_terminal": {
+    "message": "Terminal"
+  },
   "runs_desktopName": {
     "message": "la aplicación de escritorio"
   },
@@ -6480,6 +6483,12 @@
   },
   "runs_finishTitle": {
     "message": "Continuar el test sin volver a detenerse en un punto de interrupción"
+  },
+  "runs_end": {
+    "message": "Terminar el test"
+  },
+  "runs_endTitle": {
+    "message": "Terminar el test aquí: el resto se omite"
   },
   "runs_pick": {
     "message": "Elegir"

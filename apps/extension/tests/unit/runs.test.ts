@@ -46,6 +46,7 @@ describe('the Runs window’s requests, as the worker reads them', () => {
   it('takes a command with every field it needs', () => {
     const command = { type: 'command', id: 3, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: 2, since: 's4' };
     expect(parseRunsRequest({ ...command, what: 'step' })).toEqual({ ...command, what: 'step' });
+    expect(parseRunsRequest({ ...command, what: 'end' })).toEqual({ ...command, what: 'end' });
     expect(parseRunsRequest({ ...command, worker: null, since: null, what: 'pause' })).toMatchObject({ worker: null });
     expect(parseRunsRequest({ type: 'window', windowId: 7 })).toEqual({ type: 'window', windowId: 7 });
     expect(parseRunsRequest({ type: 'find' })).toEqual({ type: 'find' });
@@ -67,6 +68,7 @@ describe('the Runs window’s requests, as the worker reads them', () => {
       { ...command, what: 'image', worker: null },
       // Every control but Pause names the stop it answers.
       { ...command, since: null, what: 'resume' },
+      { ...command, since: null, what: 'end' },
       { ...command, since: null, what: 'pick' },
       { ...command, since: null, what: 'assert' },
       { ...command, since: null, what: 'requests' },

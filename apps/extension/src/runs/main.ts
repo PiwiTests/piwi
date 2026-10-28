@@ -1010,11 +1010,12 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
   const hub = current.hubs.find((h) => h.id === run.hub);
   const client = hub?.desktop ? t('runs_desktopApp') : (hub?.client ?? null);
   const children = [
-    part(`${runKey}|head`, { headingId, name, client, command: session.command }, () => {
+    part(`${runKey}|head`, { headingId, name, client, command: session.command, terminal: session.terminal }, () => {
       const heading = element('h2', undefined, name);
       heading.id = headingId;
       const title = element('div', 'run-title', heading);
       if (client) title.append(element('span', 'client', client));
+      if (session.terminal) title.append(iconText(element('span', 'client terminal'), 'terminal', t('runs_terminal')));
       const head = element('div', 'run-head', title);
       if (session.command) {
         const code = element('code', 'command', session.command);
@@ -1069,6 +1070,7 @@ const CONTROLS = {
   resume: { label: 'runs_resume', title: 'runs_resumeTitle', icon: 'play', tone: 'primary' },
   step: { label: 'runs_step', title: 'runs_stepTitle', icon: 'skip' },
   finish: { label: 'runs_finish', title: 'runs_finishTitle', icon: 'next' },
+  end: { label: 'runs_end', title: 'runs_endTitle', icon: 'stop' },
   pick: { label: 'runs_pick', title: 'runs_pickTitle', icon: 'pick' },
   record: { label: 'runs_record', title: 'runs_recordTitle', icon: 'record' },
   assert: { label: 'runs_assert', title: 'runs_assertTitle', icon: 'check-circle' },
@@ -1083,18 +1085,19 @@ const CONTROLS = {
 type Control = keyof typeof CONTROLS;
 
 /** The controls that steer the test, on a row of their own above the code a stop can write. */
-const STEERING: ReadonlySet<Control> = new Set(['resume', 'step', 'finish', 'pause']);
+const STEERING: ReadonlySet<Control> = new Set(['resume', 'step', 'finish', 'end', 'pause']);
 
 /**
  * The controls a worker takes now: at a stop, Resume, Step and Finish (Resume alone where the test failed, which ends
- * it as it failed); then the actions the stop takes from this window (`stopIntents`): Pick, Record, Assert and Assert
- * a region, which start in the test's window where the pause bar shows, or through the live view this window watches
- * at a headless stop, and Mock a request.
+ * it as it failed), and End the test where the stop takes it; then the actions the stop takes from this window
+ * (`stopIntents`): Pick, Record, Assert and Assert a region, which start in the test's window where the pause bar
+ * shows, or through the live view this window watches at a headless stop, and Mock a request.
  */
 function controlsOf(worker: HubWorker, stop: HubStop | null): Control[] {
   if (!stop) return worker.pausing ? [] : ['pause'];
   const controls: Control[] = stop.reason === 'failure' ? ['resume'] : ['resume', 'step', 'finish'];
   const intents = stopIntents(worker, stop);
+  if (intents.includes('end')) controls.push('end');
   controls.push(...IN_WINDOW.filter((what) => intents.includes(what)));
   if (intents.includes('mock')) controls.push('mock');
   return controls;

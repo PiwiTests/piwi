@@ -102,6 +102,7 @@ const WHATS: readonly string[] = [
   'step',
   'resume',
   'finish',
+  'end',
   'pick',
   'record',
   'assert',
@@ -269,8 +270,8 @@ export const IN_WINDOW = ['pick', 'record', 'assert', 'assert-region'] as const;
 /**
  * What a stop takes from this window (`stop.intents`, as the hub tells each connection): its live view, the input on
  * it while the window watches it, Pick on the image, the actions in the test's window where the pause bar shows or
- * while the window watches the view, Mock a request. From a service that predates it, what the worker's reporter
- * takes where the pause bar shows, and Mock a request at any stop: no live view.
+ * while the window watches the view, Mock a request, End the test but at a failure. From a service that predates it,
+ * what the worker's reporter takes where the pause bar shows, and Mock a request at any stop: no live view.
  */
 export function stopIntents(worker: Pick<HubWorker, 'intents'>, stop: Pick<HubStop, 'bar' | 'intents'>): HubAction[] {
   if (stop.intents) return stop.intents;

@@ -877,9 +877,11 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   (`fromRunsPage`: the extension's id and the page's address), and reads its messages with `parseRunsRequest`. The
   state the worker posts (`RunsState`) carries no token, and the window makes no network call.
 - Every control but Pause names the stop shown (`since`), so a click made twice never answers the next stop.
-- At a stop, the test's controls are Resume, Step and Finish; Resume alone where it failed (`reason: 'failure'`, its
+- At a stop, the test's controls are Resume, Step and Finish, and End the test where the stop's `intents` list `end`
+  (the hub's `runControl` `end`: the test ends there, skipped); Resume alone where it failed (`reason: 'failure'`, its
   state line **Failed at** and the place, the error under it: the stop's `error`, its lines kept, else, from a service
   or a reporter that predates it, read from its title, `stopError`).
+- A run started in a terminal (`HubSession.terminal`) shows **Terminal** beside its name.
 - In a group of their own come the actions the stop takes from this window (`stopIntents`): the hub's `stop.intents`,
   what the reporter and the editor's client take, from this connection now. Pick, Record, Assert and Assert a region
   where the pause bar shows, or at a headless stop while the window watches its live view; Mock a request at any

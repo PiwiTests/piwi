@@ -6355,6 +6355,9 @@
   "runs_desktopApp": {
     "message": "Application de bureau"
   },
+  "runs_terminal": {
+    "message": "Terminal"
+  },
   "runs_desktopName": {
     "message": "l’application de bureau"
   },
@@ -6480,6 +6483,12 @@
   },
   "runs_finishTitle": {
     "message": "Continuer le test sans plus s’arrêter aux points d’arrêt"
+  },
+  "runs_end": {
+    "message": "Terminer le test"
+  },
+  "runs_endTitle": {
+    "message": "Terminer le test ici : la suite est ignorée"
   },
   "runs_pick": {
     "message": "Choisir"

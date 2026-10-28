@@ -6355,6 +6355,9 @@
   "runs_desktopApp": {
     "message": "Desktop-App"
   },
+  "runs_terminal": {
+    "message": "Terminal"
+  },
   "runs_desktopName": {
     "message": "der Desktop-App"
   },
@@ -6480,6 +6483,12 @@
   },
   "runs_finishTitle": {
     "message": "Den Test weiterlaufen lassen, ohne erneut an einem Haltepunkt anzuhalten"
+  },
+  "runs_end": {
+    "message": "Test beenden"
+  },
+  "runs_endTitle": {
+    "message": "Den Test hier beenden: der Rest wird übersprungen"
   },
   "runs_pick": {
     "message": "Wählen"

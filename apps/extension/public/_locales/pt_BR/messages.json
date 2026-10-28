@@ -6355,6 +6355,9 @@
   "runs_desktopApp": {
     "message": "Aplicativo de desktop"
   },
+  "runs_terminal": {
+    "message": "Terminal"
+  },
   "runs_desktopName": {
     "message": "seu aplicativo de desktop"
   },
@@ -6480,6 +6483,12 @@
   },
   "runs_finishTitle": {
     "message": "Continuar o teste sem parar de novo em pontos de interrupção"
+  },
+  "runs_end": {
+    "message": "Encerrar o teste"
+  },
+  "runs_endTitle": {
+    "message": "Encerrar o teste aqui: o restante é ignorado"
   },
   "runs_pick": {
     "message": "Escolher"

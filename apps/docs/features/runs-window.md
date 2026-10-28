@@ -1,6 +1,6 @@
 ---
 title: Runs window
-description: "Piwi Picker's Runs window follows the tests your editor runs, from a window beside them: pause, step and resume, write code from a stop, and watch a headless test's page live, click and type on it, and pick a locator on its image."
+description: "Piwi Picker's Runs window follows the tests your editor runs, from a window beside them: pause, step, resume and end them, write code from a stop, and watch a headless test's page live, click and type on it, and pick a locator on its image."
 lang: en-US
 ---
 
@@ -17,13 +17,15 @@ locator on its image. The editor shows the same stops: [Pause and step from the 
 
 With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-recording#send-from-piwi-picker), the popup shows a
 **Runs** tile under **More tools** while the editor answers. It opens the Runs window, to keep beside the test's
-browser. For each run the editor [started](./editor-runs), it shows the folder and the command, then each worker's
-test and whether it runs or where it stopped: the file and line, the call about to run, and an image of the page.
+browser. For each run the editor [started](./editor-runs), it shows the folder and the command, then each worker's test
+and whether it runs or where it stopped: the file and line, the call about to run, and an image of the page. A run you
+[started in a terminal](./terminal-runs) shows too, marked **Terminal**.
 
 ## The controls
 
-**Pause** stops a running test before its next call. At a stop, **Resume**, **Step** and **Finish** do what they do
-[in the editor](./editor-run-control#the-controls); Run to cursor stays in the editor.
+**Pause** stops a running test before its next call. At a stop, **Resume**, **Step**, **Finish** and
+[**End the test**](./end-the-test) do what they do [in the editor](./editor-run-control#the-controls); Run to cursor
+stays in the editor.
 
 A failing test is held at its line, a headless one only while a Runs window is open: **Failed at** in red, its error
 under it. **Resume** lets it end as it failed; **Pick** replaces the failing locator.

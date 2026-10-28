@@ -536,10 +536,12 @@ describe('a hub’s connection', () => {
     const step = hubs.command({ hub: HUB.url, ref: 'r1', worker: 1, since: 's7', what: 'step' });
     const image = hubs.command({ hub: HUB.url, ref: 'r1', worker: 1, since: 's7', what: 'image' });
     const pick = hubs.command({ hub: HUB.url, ref: 'r1', worker: null, since: 's7', what: 'pick' });
+    void hubs.command({ hub: HUB.url, ref: 'r1', worker: 1, since: 's7', what: 'end' });
     expect(socket.sent.slice(2)).toEqual([
       { type: 'runControl', id: 2, ref: 'r1', worker: 1, action: 'step', since: 's7' },
       { type: 'pausedPage', id: 3, ref: 'r1', worker: 1 },
       { type: 'pick', id: 4, ref: 'r1', worker: null, since: 's7' },
+      { type: 'runControl', id: 5, ref: 'r1', worker: 1, action: 'end', since: 's7' },
     ]);
     socket.hear({ type: 'answer', id: 4, ok: false, message: 'Pick needs the pause bar.' });
     socket.hear({
