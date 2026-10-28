@@ -681,7 +681,7 @@ export class RunAgent {
    * snapshots read included.
    */
   off(): void {
-    for (const ref of [...this.following.keys()]) this.unfollow(ref);
+    for (const ref of this.following.keys()) this.unfollow(ref);
     this.snapshots.clear();
   }
 
