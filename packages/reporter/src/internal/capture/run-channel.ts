@@ -103,6 +103,8 @@ const VIEW_END_MS = 1000;
 const PAGE_ANSWER_MS = 10_000;
 /** Why a view or a pick on an image is refused when the page does not answer. */
 const NO_ANSWER = 'The page did not answer in time.';
+/** What an agent's action the page did not answer in time is answered with: it may still be played. */
+const LATE_ACT = 'The page did not answer in time: the action may still take effect, and is told when it does.';
 /** The most input messages a stop holds waiting to be played: one more is refused. */
 const MAX_INPUT_WAITING = 4;
 /** Why the input of a stop nobody watches is refused. */
@@ -935,16 +937,25 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
           ).then((value) => tellHub({ type: 'answer', request, what: 'snapshot', value }));
           return;
         }
-        case 'ref-locator':
+        case 'ref-locator': {
+          const { ref } = message;
+          void agentAt(
+            at,
+            (agent) => agent.refLocator(ref),
+            (refused) => ({ ...refused, element: null, locators: [] }),
+          ).then((value) => tellHub({ type: 'answer', request, what: 'ref-locator', value }));
+          return;
+        }
         case 'act': {
-          const what = message.what;
-          const run = (agent: StopAgent) =>
-            message.what === 'act'
-              ? agent.act({ ref: message.ref, action: message.action, value: message.value })
-              : agent.refLocator(message.ref);
-          void agentAt(at, run, (refused) => ({ ...refused, element: null, locators: [] })).then((value) =>
-            tellHub({ type: 'answer', request, what, value }),
-          );
+          const { ref, action, value: given } = message;
+          const answer = (value: ActAnswer) => tellHub({ type: 'answer', request, what: 'act', value });
+          // An action the page did not answer in time may still be played: once it is, the editor hears it again.
+          void agentAt(
+            at,
+            (agent) => agent.act({ ref, action, value: given }),
+            (refused) => ({ ...refused, element: null, locators: [] }),
+            { answer: { ok: false, message: LATE_ACT, element: null, locators: [], late: true }, again: answer },
+          ).then(answer);
           return;
         }
         case 'bind': {
@@ -968,21 +979,31 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
 
 /**
  * Run an agent's request at the stop held, after the one before it, `PAGE_ANSWER_MS` at most: refused at a stop that
- * ended or whose page is not known (`refuse` shapes the answer).
+ * ended or whose page is not known (`refuse` shapes the answer). With `late`, a request the page did not answer in
+ * time is answered `late.answer`, and, once it was played after all, `late.again` with what it did.
  */
 function agentAt<T extends IntentAnswer>(
   at: HeldStop | null,
   run: (agent: StopAgent) => Promise<T>,
   refuse: (refused: IntentAnswer) => T,
+  late?: { answer: T; again(value: T): void },
 ): Promise<T> {
   if (!at) return Promise.resolve(refuse({ ok: false, message: WENT_ON }));
   const agent = at.agent;
   if (!agent) return Promise.resolve(refuse({ ok: false, message: NO_AGENT_PAGE }));
-  const answered = agentTurn.then(() =>
-    held !== at
-      ? refuse({ ok: false, message: WENT_ON })
-      : answerWithin(run(agent), PAGE_ANSWER_MS, refuse({ ok: false, message: NO_ANSWER })),
-  );
+  const answered = agentTurn.then(async () => {
+    if (held !== at) return refuse({ ok: false, message: WENT_ON });
+    const running = run(agent);
+    const settled = running.then(
+      (value) => ({ value }),
+      () => ({ value: refuse({ ok: false, message: NO_ANSWER }) }),
+    );
+    const said = await answerWithin(settled, PAGE_ANSWER_MS, null);
+    if (said) return said.value;
+    if (!late) return refuse({ ok: false, message: NO_ANSWER });
+    void running.then((value) => value.ok && held === at && late.again(value)).catch(() => undefined);
+    return late.answer;
+  });
   agentTurn = answered.catch(() => undefined);
   return answered;
 }

@@ -26,6 +26,7 @@ import {
   MAX_ELEMENT_TEXT,
   MAX_SNAPSHOT_DEPTH,
   readAct,
+  type ActAnswer,
   type RankedRefLocator,
   type RefElement,
   type RunActAction,
@@ -215,6 +216,9 @@ const PAGE_UNREAD = "The stopped page could not be read; the page's own answer i
 /** Piwi's word for an element that could not be read, its own answer apart. */
 const ELEMENT_UNREAD =
   "The element could not be read (its ref may be stale: take the page's snapshot again); the page's own answer is in the page content.";
+/** Piwi's word for an action the page did not answer in time, which may still be played. */
+const ACT_LATE =
+  'The page did not answer in time: the action may still take effect. If it does, it is kept as a step for code_write and run_follow tells it (act-played); take the page’s snapshot to see what it did.';
 /** Piwi's word for an action the page did not take, its own answer apart. */
 const ACT_UNPLAYED = "The action could not be played on the page; the page's own answer is in the page content.";
 
@@ -599,18 +603,8 @@ export class RunAgent {
   heard(ref: string, worker: number | null, what: RunHeard, root: string | null): void {
     // A worker of a run whose run ended starts a run of its own: a rerun of its command.
     const log = this.log(ref, root, what.type !== 'ended');
-    const add = (kind: string, fields: Record<string, unknown> = {}, page?: Record<string, unknown>) => {
-      log.events.push({
-        seq: log.next++,
-        at: new Date().toISOString(),
-        worker,
-        kind,
-        fields,
-        ...(page ? { page } : {}),
-      });
-      if (log.events.length > MAX_RUN_EVENTS) log.events.splice(0, log.events.length - MAX_RUN_EVENTS);
-      for (const wake of log.waiters) wake();
-    };
+    const add = (kind: string, fields: Record<string, unknown> = {}, page?: Record<string, unknown>) =>
+      this.push(log, worker, kind, fields, page);
     switch (what.type) {
       case 'joined':
         return add('worker-joined');
@@ -638,6 +632,19 @@ export class RunAgent {
         add('run-ended');
         return this.trimEnded();
     }
+  }
+
+  /** Add an event to a run's events, which wakes its followers. */
+  private push(
+    log: RunLog,
+    worker: number | null,
+    kind: string,
+    fields: Record<string, unknown> = {},
+    page?: Record<string, unknown>,
+  ): void {
+    log.events.push({ seq: log.next++, at: new Date().toISOString(), worker, kind, fields, ...(page ? { page } : {}) });
+    if (log.events.length > MAX_RUN_EVENTS) log.events.splice(0, log.events.length - MAX_RUN_EVENTS);
+    for (const wake of log.waiters) wake();
   }
 
   /** The service stops: every long poll answers now. */
@@ -1011,21 +1018,27 @@ export class RunAgent {
     }
     this.known(ref);
     const stop = this.stopNamed(ref, worker, since);
-    const done = await this.options.sessions.act({ ref, worker: stop.worker, since }, act);
+    // An action the page did not answer in time may be played after all: it is kept as a step then, and followed.
+    const playedLate = (late: ActAnswer) => {
+      if (!late.element || 'message' in this.options.sessions.stopOf({ ref, worker: stop.worker, since })) return;
+      this.keepStep(stop, act, late.element, late.locators);
+      this.tellOnce(stop);
+      this.push(this.log(ref, stop.root), stop.worker, 'act-played', {
+        stop: since,
+        target: act.ref,
+        action: act.action,
+      });
+    };
+    const done = await this.options.sessions.act({ ref, worker: stop.worker, since }, act, playedLate);
     if (done.ok && done.element) this.keepStep(stop, act, done.element, done.locators);
     const key = `${ref} ${stop.worker} ${since}`;
-    if (done.ok && !this.told.has(key)) {
-      this.told.add(key);
-      while (this.told.size > 200) this.told.delete(this.told.values().next().value!);
-      this.options.notice(
-        stop.root,
-        `An agent acts on the page stopped at ${path.basename(fileOf(stop.uri, stop.root))}:${stop.line + 1}: each action shows in the page, and its steps can be written there.`,
-      );
-    }
+    if (done.ok) this.tellOnce(stop);
     const page = done.ok ? await this.pageNow(ref, stop.worker, since, undefined) : { how: 'none', text: null };
     const told = done.ok
       ? { message: `${PLAYED[act.action]} ${act.ref}.`, page: null }
-      : said(done, done.element ? ACT_UNPLAYED : ELEMENT_UNREAD);
+      : done.late
+        ? { message: ACT_LATE, page: done.answered ? `the test's answer: ${hideSecretsInText(done.message)}` : null }
+        : said(done, done.element ? ACT_UNPLAYED : ELEMENT_UNREAD);
     return this.result(
       {
         ok: done.ok,
@@ -1038,6 +1051,18 @@ export class RunAgent {
       [told.page, done.element ? `element: ${JSON.stringify(shownElement(done.element))}` : null, page.text]
         .filter((p) => p !== null)
         .join('\n\n') || null,
+    );
+  }
+
+  /** A person watching hears once of the first action an agent took at a stop. */
+  private tellOnce(stop: StopRef): void {
+    const key = `${stop.ref} ${stop.worker} ${stop.since}`;
+    if (this.told.has(key)) return;
+    this.told.add(key);
+    while (this.told.size > 200) this.told.delete(this.told.values().next().value!);
+    this.options.notice(
+      stop.root,
+      `An agent acts on the page stopped at ${path.basename(fileOf(stop.uri, stop.root))}:${stop.line + 1}: each action shows in the page, and its steps can be written there.`,
     );
   }
 

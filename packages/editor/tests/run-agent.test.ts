@@ -716,6 +716,55 @@ describe('what an agent reads of the page', () => {
     other.socket.destroy();
   });
 
+  test('says an action the page did not answer in time may still take effect, and keeps it once it does', async () => {
+    let request = 0;
+    const { run, since, other } = await stoppedRun({
+      act: (message) => {
+        request = message.request;
+        return {
+          ok: false,
+          message: 'The page did not answer in time: the action may still take effect, and is told when it does.',
+          element: null,
+          locators: [],
+          late: true,
+        };
+      },
+    });
+    const acted = await call('page_act', { run, stop: since, target: 'e2', action: 'click' });
+    expect(acted.piwi.ok).toBe(false);
+    expect(acted.piwi.message).toContain('the action may still take effect');
+    expect(acted.piwi.message).toContain('act-played');
+    expect((await call('code_write', { run, stop: since, kind: 'steps' })).piwi.message).toBe(
+      'No step was taken at this stop: page_act takes them.',
+    );
+    // The click is played after all: the worker answers the same request again.
+    other.send({
+      type: 'answer',
+      request,
+      what: 'act',
+      value: {
+        ok: true,
+        message: 'Clicked e2.',
+        element: BUTTON,
+        locators: [
+          { locator: "getByRole('button', { name: 'Add a mug' })", method: 'getByRole', score: 90, unique: true },
+        ],
+      },
+    } as RunToHub);
+    let followed = await call('run_follow', { run, wait: 0 });
+    for (let i = 0; i < 100 && !followed.piwi.events.some((e: { kind: string }) => e.kind === 'act-played'); i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      followed = await call('run_follow', { run, wait: 0 });
+    }
+    expect(followed.piwi.events.find((e: { kind: string }) => e.kind === 'act-played')).toMatchObject({
+      stop: since,
+      target: 'e2',
+      action: 'click',
+    });
+    expect((await call('code_write', { run, stop: since, kind: 'steps' })).piwi).toMatchObject({ ok: true, steps: 1 });
+    other.socket.destroy();
+  });
+
   test("names a failure's title and error, which may quote the page, only inside the block", async () => {
     const { ref: run, channel: again } = await ide.command();
     const other = new FakeWorker(again.path, fs.realpathSync(dir)).attach(again.token, run, 0, [

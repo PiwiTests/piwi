@@ -583,6 +583,14 @@ describe('the run channel', () => {
       } satisfies RunToHub;
       expect(parseRunToHub(line(answer))).toEqual(answer);
       expect(parseRunToHub(line({ ...answer, what: 'act' }))).toEqual({ ...answer, what: 'act' });
+      // An action the page did not answer in time may still be played: said so, on a refusal alone.
+      const late = { ok: false, message: 'Late.', element: null, locators: [], late: true };
+      expect(parseRunToHub(line({ ...answer, what: 'act', value: late }))).toMatchObject({ value: { late: true } });
+      expect(parseRunToHub(line({ ...answer, what: 'act', value: { ...answer.value, late: true } }))).toEqual({
+        ...answer,
+        what: 'act',
+      });
+      expect(parseRunToHub(line({ ...answer, value: late }))).not.toHaveProperty('value.late');
       const secret = { ...element, tagName: 'input', role: 'textbox', value: 'hunter2', secret: true };
       expect(parseRunToHub(line({ ...answer, value: { ...answer.value, element: secret } }))).toMatchObject({
         value: { element: { value: null, valueCut: false, secret: true } },

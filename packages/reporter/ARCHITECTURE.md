@@ -199,7 +199,8 @@ What the package does to a user's run, process by process.
   boxes feature-checked, refused before Playwright 1.64). An image of a stopped page names
   its viewport (`width`, `height`), the CSS pixels a point is in.
 - For an agent (the editor's MCP server), at the stop held alone, one request after the
-  other, 10 seconds at most each (`agent-page.ts`): `snapshot` reads the page's ARIA
+  other, 10 seconds at most each, an `act` the page takes longer over answered `late`
+  and again once it was played (`agent-page.ts`): `snapshot` reads the page's ARIA
   snapshot in AI mode to a depth (`page.ariaSnapshot({ mode: 'ai', depth })`), its
   credentials hidden by `hideSecretsInText` and each secret field's value written as
   `<hidden>` (`withoutFieldSecrets`: an AI snapshot shows a field's value, quoted when

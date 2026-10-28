@@ -871,8 +871,11 @@ and a JSON schema that names them (`AGENT_TOOLS`, `additionalProperties: false`)
   smaller than the snapshot and read to the same depth, else with the whole snapshot, 100,000 characters at most.
 - **Acting on it.** `page_act { run, worker?, stop, target, action, value? }` has the worker play a click, a fill, a key
   press, a check, an uncheck or a select on the element of the ref (`RunSessions.act`, checked by `readAct`), and keeps
-  it as the step a person's would be: the element ranked, a password field's value never kept (`redacted`). The first
-  action at a stop is a `piwi/notice` for the person watching.
+  it as the step a person's would be: the element ranked, a secret field's value never kept (`redacted`). The first
+  action at a stop is a `piwi/notice` for the person watching. An action the page did not answer in time (the worker's
+  10 seconds, answered `late`, or the service's) may still be played: the answer says so, and the request is heard a
+  minute more (`hearLate`, `LATE_ANSWER_MS`), the worker answering it again once it was played, which keeps the step
+  and adds an `act-played` event to the run's.
 - **Locators.** `page_locator { run, worker?, target }` ranks the element as Pick does (`RunSessions.refLocator`): those
   that find it alone first, the suite's own locators first among them (`preferLocators`).
 - **Code.** `code_write { run, worker?, stop, kind, target?, assertion? }` renders and sends to the client

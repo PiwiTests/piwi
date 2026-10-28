@@ -28,6 +28,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   RUN_INTENT_NAMES,
   parseRunToHub,
+  type ActAnswer,
   type BindAnswer,
   type HubToRun,
   type IntentAnswer,
@@ -168,6 +169,11 @@ export interface StopRef {
  * line of Playwright's error for a page call that failed), or the service's refusal, whose words are its own.
  */
 export type AgentAnswer<T> = T & { answered: boolean };
+
+/** Why an agent's request the worker did not answer in time is refused. */
+const NO_ANSWER_YET = 'The test did not answer.';
+/** How long an action the page did not answer in time may still answer, once it was played. */
+const LATE_ANSWER_MS = 60_000;
 
 /** The service's refusal of an agent's request about an element, in its own words: no element, no locator. */
 function noElement(message: string): AgentAnswer<RefLocatorAnswer> {
@@ -735,29 +741,37 @@ export class RunSessions {
 
   /**
    * For an agent: act on the element `ref` names on the page of the stop `since` names, as trusted input, the element
-   * as it stood before in the answer; refused without the stop.
+   * as it stood before in the answer; refused without the stop. An action the page did not answer in time is answered
+   * `late`, and `played` hears it if it is played after all.
    */
   async act(
     params: StopParams & { since: string },
     act: { ref: string; action: RunActAction; value: string | null },
-  ): Promise<AgentAnswer<RefLocatorAnswer>> {
+    played?: (answer: ActAnswer) => void,
+  ): Promise<AgentAnswer<ActAnswer>> {
     if (typeof params?.since !== 'string' || !params.since) {
       return noElement('The command needs the stop it answers.');
     }
-    return this.refQuery(params, 'act', act);
+    const late = played
+      ? (value: Answered) => (value as ActAnswer | null)?.ok && played(value as ActAnswer)
+      : undefined;
+    return this.refQuery(params, 'act', act, late);
   }
 
   private async refQuery(
     params: StopParams,
     what: 'ref-locator' | 'act',
     extra: RequestExtra,
-  ): Promise<AgentAnswer<RefLocatorAnswer>> {
+    late?: (value: Answered) => void,
+  ): Promise<AgentAnswer<ActAnswer>> {
     const at = this.stopped(params);
     if ('message' in at) return noElement(at.message);
     const refused = this.refusesQuery(at.worker, what);
     if (refused) return noElement(refused);
-    const answer = (await this.ask(at.worker, what, at.worker.stop!.id, extra)) as RefLocatorAnswer | null;
-    return answer ? { ...answer, answered: true } : noElement('The test did not answer.');
+    const answer = (await this.ask(at.worker, what, at.worker.stop!.id, extra, late)) as ActAnswer | null;
+    if (answer) return { ...answer, answered: true };
+    // An action the worker did not answer in time may still be played.
+    return what === 'act' ? { ...noElement(NO_ANSWER_YET), late: true } : noElement(NO_ANSWER_YET);
   }
 
   /**
@@ -944,11 +958,22 @@ export class RunSessions {
   }
 
   /** Ask a worker, and settle with its answer, or null after `PAUSED_PAGE_WAIT_MS` or when it leaves. */
-  private ask(worker: Worker, what: Asked, stop?: number, extra: RequestExtra = {}): Promise<Answered> {
+  /**
+   * Ask a worker `what`, its answer or null once `requestMs` passed. With `late`, a request it did not answer in time,
+   * or answered `late`, is heard `LATE_ANSWER_MS` more, its next answer going to `late`.
+   */
+  private ask(
+    worker: Worker,
+    what: Asked,
+    stop?: number,
+    extra: RequestExtra = {},
+    late?: (value: Answered) => void,
+  ): Promise<Answered> {
     const request = ++this.lastRequest;
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         worker.requests.delete(request);
+        if (late) this.hearLate(worker, request, what, late);
         resolve(null);
       }, this.options.requestMs ?? PAUSED_PAGE_WAIT_MS);
       timer.unref?.();
@@ -956,10 +981,24 @@ export class RunSessions {
         what,
         settle: (value) => {
           clearTimeout(timer);
+          if (late && (value as { late?: unknown } | null)?.late === true) this.hearLate(worker, request, what, late);
           resolve(value);
         },
       });
       this.send(worker, requestOf(request, what, stop ?? 0, extra));
+    });
+  }
+
+  /** A request the worker may still answer, once what it started took effect: `late` hears that answer, if one comes. */
+  private hearLate(worker: Worker, request: number, what: Asked, late: (value: Answered) => void): void {
+    const timer = setTimeout(() => worker.requests.delete(request), LATE_ANSWER_MS);
+    timer.unref?.();
+    worker.requests.set(request, {
+      what,
+      settle: (value) => {
+        clearTimeout(timer);
+        if (value) late(value);
+      },
     });
   }
 

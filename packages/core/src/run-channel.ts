@@ -269,8 +269,14 @@ export interface RefLocatorAnswer extends IntentAnswer {
   locators: RankedRefLocator[];
 }
 
-/** The answer to `act`: whether it was played, and the element it acted on as it stood before, ranked, for its step. */
-export type ActAnswer = RefLocatorAnswer;
+/**
+ * The answer to `act`: whether it was played, and the element it acted on as it stood before, ranked, for its step.
+ * `late` says the page did not answer in time and the action may still be played: the worker answers the same request
+ * again once it was.
+ */
+export interface ActAnswer extends RefLocatorAnswer {
+  late?: boolean;
+}
 
 /** The answer to `bind`: the name the browser was bound under and its endpoint, or why not; both null once unbound. */
 export interface BindAnswer extends IntentAnswer {
@@ -372,8 +378,10 @@ export type RunToHub =
   | { type: 'answer'; request: number; what: 'pick-at'; value: PickAtAnswer }
   /** The answer to `snapshot`. */
   | { type: 'answer'; request: number; what: 'snapshot'; value: SnapshotAnswer }
-  /** The answer to `ref-locator` and to `act`. */
-  | { type: 'answer'; request: number; what: 'ref-locator' | 'act'; value: RefLocatorAnswer }
+  /** The answer to `ref-locator`. */
+  | { type: 'answer'; request: number; what: 'ref-locator'; value: RefLocatorAnswer }
+  /** The answer to `act`, and its second answer once an action that answered `late` was played. */
+  | { type: 'answer'; request: number; what: 'act'; value: ActAnswer }
   /** The answer to `bind`. */
   | { type: 'answer'; request: number; what: 'bind'; value: BindAnswer }
   /** Something the running test did, while the editor asked for its events (`events`). */
@@ -850,9 +858,14 @@ export function parseRunToHub(line: string): RunToHub | null {
         const read = readSnapshotAnswer(answered);
         return read ? { type: 'answer', request, what, value: read } : null;
       }
-      if (what === 'ref-locator' || what === 'act') {
+      if (what === 'ref-locator') {
         const read = readRefLocatorAnswer(answered);
         return read ? { type: 'answer', request, what, value: read } : null;
+      }
+      if (what === 'act') {
+        const read = readRefLocatorAnswer(answered);
+        const late = isObject(answered) && answered.late === true && !read?.ok;
+        return read ? { type: 'answer', request, what, value: late ? { ...read, late } : read } : null;
       }
       if (what === 'bind') {
         const read = readBindAnswer(answered);
