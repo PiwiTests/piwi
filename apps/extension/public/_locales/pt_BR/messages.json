@@ -6672,7 +6672,7 @@
     "message": "Deixar quem pode abrir esta execução na instância do Piwi da sua equipe ver as páginas dos testes dela pela página da execução"
   },
   "runs_shareWarning": {
-    "message": "Enquanto alguém a assiste em $instance$, cada worker desta execução envia para lá imagens da página do seu teste, cada uma com a chamada em que foi tirada, e avisa quando o teste está em pausa. Quem pode abrir a execução nessa instância pode assisti-la. Nada é guardado, e Parar de compartilhar encerra tudo na hora.",
+    "message": "Enquanto esta execução está compartilhada em $instance$, quem estiver com a página dela aberta lá vê cada parada dos seus testes: a chamada, o arquivo e a linha, e o título do teste, mesmo quando ninguém assiste. Enquanto alguém assiste um worker, imagens da página do teste dele também vão para lá, cada uma com a sua chamada e o título do teste. Quem pode abrir a execução lá pode assistir e, numa instância com a autenticação desligada, qualquer um que a alcance. Nada é guardado, e Parar de compartilhar encerra tudo em segundos.",
     "placeholders": {
       "instance": {
         "content": "$1",
@@ -6695,8 +6695,8 @@
   "runs_sharedNobody": {
     "message": "ninguém assiste ainda"
   },
-  "runs_sharedWatching_one": {
-    "message": "$count$ pessoa assiste",
+  "runs_sharedViews_one": {
+    "message": "$count$ visualização aberta",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -6704,8 +6704,8 @@
       }
     }
   },
-  "runs_sharedWatching_other": {
-    "message": "$count$ pessoas assistem",
+  "runs_sharedViews_other": {
+    "message": "$count$ visualizações abertas",
     "placeholders": {
       "count": {
         "content": "$1",

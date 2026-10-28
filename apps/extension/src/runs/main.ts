@@ -1112,8 +1112,9 @@ function instanceOf(live: Pick<HubLive, 'page'>): string {
 }
 
 /**
- * A run's Share live, under its heading: shared, where and how many watch, its page's link and Stop sharing; asked,
- * what it sends and to whom, with Share live and Cancel; else Share live. A refusal shows under it.
+ * A run's Share live, under its heading: shared, where and how many views are open, its page's link and Stop sharing;
+ * asked, what it sends and to whom, with Share live and Cancel; else Share live. A refusal shows under it, else why
+ * the sharing stopped though nobody asked.
  */
 function renderShare(run: RunsRun, live: HubLive): HTMLElement {
   const key = runKeyOf(run);
@@ -1131,7 +1132,7 @@ function renderShare(run: RunsRun, live: HubLive): HTMLElement {
       return made;
     };
     if (live.shared) {
-      const watching = live.viewers === 0 ? t('runs_sharedNobody') : tn('runs_sharedWatching', live.viewers);
+      const watching = live.viewers === 0 ? t('runs_sharedNobody') : tn('runs_sharedViews', live.viewers);
       box.append(
         iconText(
           element('p', 'shared'),
@@ -1162,7 +1163,8 @@ function renderShare(run: RunsRun, live: HubLive): HTMLElement {
       button(t('runs_shareLive'), () => askShare(run), 'share', { icon: 'share', title: t('runs_shareLiveTitle') });
     }
     box.append(row);
-    if (refusal) box.append(iconText(element('p', 'note'), 'info', refusal));
+    const note = refusal ?? (live.shared ? null : live.stopped);
+    if (note) box.append(iconText(element('p', 'note'), 'info', note));
     return box;
   });
 }

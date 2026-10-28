@@ -6672,7 +6672,7 @@
     "message": "Allen, die diesen Lauf auf der Piwi-Instanz Ihres Teams öffnen dürfen, die Seiten seiner Tests auf der Seite des Laufs zeigen"
   },
   "runs_shareWarning": {
-    "message": "Solange jemand ihn auf $instance$ ansieht, sendet jeder Worker dieses Laufs Bilder der Seite seines Tests dorthin, jedes mit dem Aufruf, bei dem es entstand, und meldet, wenn sein Test angehalten ist. Alle, die den Lauf auf dieser Instanz öffnen dürfen, können ihn ansehen. Nichts wird gespeichert, und mit Teilen beenden endet es sofort.",
+    "message": "Solange dieser Lauf auf $instance$ geteilt ist, sieht dort jeder, der seine Seite geöffnet hat, jeden Halt seiner Tests: den Aufruf, seine Datei und Zeile und den Titel des Tests, auch wenn niemand zusieht. Solange jemand einem Worker zusieht, gehen auch Bilder der Seite seines Tests dorthin, jedes mit seinem Aufruf und dem Titel des Tests. Alle, die den Lauf dort öffnen dürfen, können zusehen, und auf einer Instanz ohne Anmeldung alle, die sie erreichen. Nichts wird gespeichert, und Teilen beenden beendet es binnen Sekunden.",
     "placeholders": {
       "instance": {
         "content": "$1",
@@ -6695,8 +6695,8 @@
   "runs_sharedNobody": {
     "message": "noch sieht niemand zu"
   },
-  "runs_sharedWatching_one": {
-    "message": "$count$ Person sieht zu",
+  "runs_sharedViews_one": {
+    "message": "$count$ Ansicht offen",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -6704,8 +6704,8 @@
       }
     }
   },
-  "runs_sharedWatching_other": {
-    "message": "$count$ Personen sehen zu",
+  "runs_sharedViews_other": {
+    "message": "$count$ Ansichten offen",
     "placeholders": {
       "count": {
         "content": "$1",

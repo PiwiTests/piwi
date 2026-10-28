@@ -7930,7 +7930,7 @@
     "description": "Runs window, the Share live button’s tooltip."
   },
   "runs_shareWarning": {
-    "message": "While someone watches it on $instance$, each worker of this run sends images of its test’s page there, each with the call it was taken at, and says when its test is paused. Anyone who can open the run on that instance can watch it. Nothing is stored, and Stop sharing ends it at once.",
+    "message": "While this run is shared on $instance$, anyone with its page open there sees each stop of its tests: the call, its file and line, and the test’s title, even while nobody watches. While someone watches a worker, images of its test’s page go there too, each with its call and the test’s title. Anyone who can open the run there can watch, and on an instance with authentication off, anyone who can reach it. Nothing is stored, and Stop sharing ends it within seconds.",
     "description": "Runs window, asked the first time a run is shared live in this window: what goes out and who sees it. $instance$ is the host of the Piwi instance (piwi.example.com), or runs_shareInstance. Stop sharing is the button’s name (runs_stopSharing).",
     "placeholders": {
       "instance": {
@@ -7957,9 +7957,9 @@
     "message": "nobody watches yet",
     "description": "Runs window, after runs_sharedLive: nobody watches the shared run on the instance now."
   },
-  "runs_sharedWatching_one": {
-    "message": "$count$ person watches",
-    "description": "Runs window, after runs_sharedLive: how many people watch the shared run on the instance.",
+  "runs_sharedViews_one": {
+    "message": "$count$ view open",
+    "description": "Runs window, after runs_sharedLive: how many views of the shared run are open on the instance (one person may hold several).",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -7967,9 +7967,9 @@
       }
     }
   },
-  "runs_sharedWatching_other": {
-    "message": "$count$ people watch",
-    "description": "Runs window, after runs_sharedLive: how many people watch the shared run on the instance.",
+  "runs_sharedViews_other": {
+    "message": "$count$ views open",
+    "description": "Runs window, after runs_sharedLive: how many views of the shared run are open on the instance (one person may hold several).",
     "placeholders": {
       "count": {
         "content": "$1",

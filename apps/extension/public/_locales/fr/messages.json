@@ -6672,7 +6672,7 @@
     "message": "Permettre à quiconque peut ouvrir cette exécution sur l’instance Piwi de votre équipe de regarder les pages de ses tests depuis la page de l’exécution"
   },
   "runs_shareWarning": {
-    "message": "Tant que quelqu’un la regarde sur $instance$, chaque worker de cette exécution y envoie des images de la page de son test, chacune avec l’appel où elle a été prise, et dit quand son test est en pause. Quiconque peut ouvrir l’exécution sur cette instance peut la regarder. Rien n’est conservé, et Arrêter le partage y met fin aussitôt.",
+    "message": "Tant que cette exécution est partagée sur $instance$, quiconque y a sa page ouverte voit chaque arrêt de ses tests : l’appel, son fichier et sa ligne, et le titre du test, même quand personne ne regarde. Tant que quelqu’un regarde un worker, des images de la page de son test y partent aussi, chacune avec son appel et le titre du test. Quiconque peut y ouvrir l’exécution peut la regarder, et sur une instance sans authentification, quiconque peut l’atteindre. Rien n’est conservé, et Arrêter le partage y met fin en quelques secondes.",
     "placeholders": {
       "instance": {
         "content": "$1",
@@ -6695,8 +6695,8 @@
   "runs_sharedNobody": {
     "message": "personne ne regarde encore"
   },
-  "runs_sharedWatching_one": {
-    "message": "$count$ personne regarde",
+  "runs_sharedViews_one": {
+    "message": "$count$ vue ouverte",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -6704,8 +6704,8 @@
       }
     }
   },
-  "runs_sharedWatching_other": {
-    "message": "$count$ personnes regardent",
+  "runs_sharedViews_other": {
+    "message": "$count$ vues ouvertes",
     "placeholders": {
       "count": {
         "content": "$1",

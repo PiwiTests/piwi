@@ -269,9 +269,11 @@ test('Share live says what it sends the first time, shares the run, says who wat
       // The first time in this window, it says what goes out and to whom, and waits for a yes.
       const asked = card.getByRole('group', { name: 'Share live' });
       await expect(card.locator('.share-warning')).toContainText(
-        'While someone watches it on piwi.example.com, each worker of this run sends images of its test’s page there',
+        'While this run is shared on piwi.example.com, anyone with its page open there sees each stop of its tests',
       );
-      await expect(card.locator('.share-warning')).toContainText('Anyone who can open the run on that instance');
+      await expect(card.locator('.share-warning')).toContainText(
+        'on an instance with authentication off, anyone who can reach it',
+      );
       await expect(asked.getByRole('button', { name: 'Share live' })).toBeFocused();
       await asked.getByRole('button', { name: 'Cancel' }).click();
       await expect(card.locator('.share-warning')).toHaveCount(0);
@@ -279,9 +281,11 @@ test('Share live says what it sends the first time, shares the run, says who wat
       await share.click();
       await card.getByRole('button', { name: 'Share live' }).click();
       expect(await run.worker.next('share')).toEqual({ type: 'share', on: true });
+      // Shared as its worker says it is.
+      run.worker.send({ type: 'live', can: true, on: true, viewers: 0, page, why: null });
       await expect(card.getByText('Shared live on piwi.example.com · nobody watches yet')).toBeVisible();
       run.worker.send({ type: 'live', can: true, on: true, viewers: 2, page, why: null });
-      await expect(card.getByText('Shared live on piwi.example.com · 2 people watch')).toBeVisible();
+      await expect(card.getByText('Shared live on piwi.example.com · 2 views open')).toBeVisible();
       await expect(card.getByRole('button', { name: 'Copy the run page’s link' })).toBeVisible();
       await card.getByRole('button', { name: 'Stop sharing' }).click();
       expect(await run.worker.next('share', 1)).toEqual({ type: 'share', on: false });
@@ -290,6 +294,14 @@ test('Share live says what it sends the first time, shares the run, says who wat
       await card.getByRole('button', { name: 'Share live' }).click();
       expect(await run.worker.next('share', 2)).toEqual({ type: 'share', on: true });
       await expect(card.locator('.share-warning')).toHaveCount(0);
+      run.worker.send({ type: 'live', can: true, on: true, viewers: 1, page, why: null });
+      await expect(card.getByRole('button', { name: 'Stop sharing' })).toBeVisible();
+      // Its stream given up, the run is no longer shared: it says why, and offers Share live again.
+      const lost = 'Sharing stopped: the instance did not answer. Share the run again to try once more.';
+      run.worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: lost });
+      await expect(card.getByText(lost)).toBeVisible();
+      await expect(card.getByRole('button', { name: 'Share live' })).toBeVisible();
+      await expect(card.getByRole('button', { name: 'Stop sharing' })).toHaveCount(0);
     } finally {
       await endRun(run);
     }
