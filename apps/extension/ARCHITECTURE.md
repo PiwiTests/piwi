@@ -762,7 +762,7 @@ ready, partial or not found.
 The paired editor (VS Code or a JetBrains IDE, the one Send to editor reaches) starts Playwright runs whose tests can
 stop at a breakpoint, and so does the paired desktop app, whose server is the hub of the runs its shell starts. Each of its windows runs an editor service, which shares its runs through a **hub**: a WebSocket
 server on 127.0.0.1 that pushes each run as it changes and takes commands. The protocol is `@piwitests/core/run-hub`,
-the editor's side `packages/editor/src/run-hub.ts`, and the design `proposals/run-control.md` Part 4.
+the editor's side `packages/editor/src/run-hub.ts`, and the design `adr/run-control.md` Part 4.
 
 The extension follows and steers these runs from the background worker alone, beside Send to editor. The Runs window
 and the popup's Runs tile only ask the worker, and the worker handles the run shortcut.
