@@ -45,7 +45,9 @@ channel, so a per-user install pulls a per-user update.
    (`PIWI_RUN_CHANNEL`, `PIWI_RUN_REF`): each worker keeps a connection to
    the server's run channel, so the window and the paired Piwi Picker (over
    the server's hub WebSocket, with the desktop token) can follow, pause,
-   step and watch it (`apps/application/server/utils/desktop-runs.ts`).
+   step and watch it (`apps/application/server/utils/desktop-runs.ts`), the
+   window in its Local runs tray. The locators the tests pick go back to the
+   server (`PIWI_EDITOR_SEND`), which shows them in the window to copy.
 5. Files the OS hands to the app (drag & drop, "Open with", second-launch
    file arguments, macOS open events) are queued shell-side and drained by the
    dashboard over IPC (`desktop_take_pending_open_files` + a `piwi:open-files`
