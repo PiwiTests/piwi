@@ -238,10 +238,18 @@ export function useRunEvents(listener: (event: RunLifecycleEvent) => void, onOpe
  */
 export function useRunStart(runId: number, status: () => string | null | undefined, refresh: () => Promise<unknown>) {
   const nuxtApp = useNuxtApp();
+  let waitingForHydration = false;
   const refreshWhileInitializing = () => {
     if (status() !== 'initializing') return;
-    if (nuxtApp.isHydrating) nuxtApp.hooks.hookOnce('app:suspense:resolve', refreshWhileInitializing);
-    else refresh();
+    if (!nuxtApp.isHydrating) {
+      refresh();
+    } else if (!waitingForHydration) {
+      waitingForHydration = true;
+      nuxtApp.hooks.hookOnce('app:suspense:resolve', () => {
+        waitingForHydration = false;
+        refreshWhileInitializing();
+      });
+    }
   };
   useRunEvents((event) => {
     if (event.runId === runId) refreshWhileInitializing();

@@ -190,7 +190,7 @@ describe('useRunStart', () => {
     expect(run.refetches).toBe(0);
   });
 
-  test('while the app hydrates, refetches once hydration ends: before, a refetch reads the loaded data', async () => {
+  test('while the app hydrates, refetches once when hydration ends: before, a refetch reads the loaded data', async () => {
     stubBrowser(true);
     nuxtApp.isHydrating = true;
     const { useRunStart } = await composables();
@@ -200,7 +200,9 @@ describe('useRunStart', () => {
     expect(run.refetches).toBe(0);
 
     nuxtApp.endHydration();
-    expect(run.refetches).toBeGreaterThan(0);
+    expect(run.refetches).toBe(1);
+    demo.handler!({ scope: 'global', event: { type: 'run-started', runId: 7, projectId: 1 } });
+    expect(run.refetches).toBe(2);
   });
 
   test('in the demo, refetches at once and on the run-started the service worker broadcasts', async () => {

@@ -36,11 +36,15 @@ async function setUpRun(request: APIRequestContext, liveView = false) {
   return (await setup.json()) as { runId: number; setupToken: string; liveView?: { key: string } };
 }
 
-/** The run's tests begin: worker 0 runs one. Returns the run's stream token. */
+/** The run's tests begin. Returns the run's stream token. */
 async function beginRun(request: APIRequestContext, runId: number, setupToken: string): Promise<string> {
   const begun = await request.post(`/api/test-runs/${runId}/begin`, { data: { setupToken, totalTests: 1 } });
   expect(begun.ok()).toBeTruthy();
-  const { streamToken } = (await begun.json()) as { streamToken: string };
+  return ((await begun.json()) as { streamToken: string }).streamToken;
+}
+
+/** Worker 0 runs the run's test. */
+async function beginTest(request: APIRequestContext, runId: number, streamToken: string) {
   const events = await request.post(`/api/test-runs/${runId}/events`, {
     data: {
       streamToken,
@@ -56,7 +60,6 @@ async function beginRun(request: APIRequestContext, runId: number, setupToken: s
     },
   });
   expect(events.ok()).toBeTruthy();
-  return streamToken;
 }
 
 /** End the run, beginning it first when it never began, so it is not left for the stale-run sweep. */
@@ -135,6 +138,7 @@ test.describe('Run page of an initializing run', () => {
       await stream;
 
       streamToken = await beginRun(request, runId, setupToken);
+      await beginTest(request, runId, streamToken);
       worker = holdWorkerStream(target.baseUrl, runId, liveView!.key);
       await expect(header).toContainText(/running/i, { timeout: 15_000 });
       await expect(page.getByText('In progress…')).toBeVisible({ timeout: 15_000 });
@@ -189,6 +193,7 @@ test.describe('Run page of an initializing run', () => {
       const header = await openInitializingRun(page, runId);
       await requested;
       streamToken = await beginRun(request, runId, setupToken);
+      await beginTest(request, runId, streamToken);
       release();
 
       await expect(header).toContainText(/running/i, { timeout: 15_000 });
