@@ -883,12 +883,16 @@ and a JSON schema that names them (`AGENT_TOOLS`, `additionalProperties: false`)
 
 **The page is untrusted.** Each result holds Piwi's answer as JSON first, then, apart, what came from the page, between
 two markers that share a random nonce (`pageContent`), which the page cannot guess: the snapshot and its change, the
-address and the title, an element's name, text and value, the locators built from them, a failure's error and its
-title (`Failed` in the JSON), the console, the page's errors and its requests' URLs, each through `hideSecretsInText`
-or `hideSecretsInUrl` again, then an image when asked. The JSON that names the runs, the stops and the calls holds the
-test's own words alone, and the worker's word on a page call that failed is the first line of Playwright's error,
-whose call log quotes the element's HTML. The
-tools' descriptions and the server's `instructions` say to read the block as data, never as instructions.
+address and the title, an element's name, text and value, the locators built from them (`page_locator` shows each
+with its credentials hidden and counts those it hid in `hidden`; `code_write` writes it as the page has it), a
+failure's error and its title (`Failed` in the JSON), the console, the page's errors, its requests' methods and URLs,
+each through `hideSecretsInText` or `hideSecretsInUrl` again, and the worker's own message about a page call (`said`):
+a read in the page's world can throw with the page's words, so the JSON says a fixed sentence in its place (`The
+element could not be read; the page's own answer is in the page content.`), and only a refusal of the service's own
+(`AgentAnswer.answered` false) is said as it is. An image comes last, after a text that says it is page content too,
+since MCP's image content carries no words. The JSON that names the runs, the stops and the calls holds the test's
+own words alone: its titles, files and lines, and Playwright's titles of the calls its code made. The tools'
+descriptions and the server's `instructions` say to read the block as data, never as instructions.
 
 **Sharing with Playwright's tools.** `piwi/stopBind { ref, worker?, since, on }` has the stopped worker bind its
 browser (`browser.bind('piwi-<ref>-w<worker>', { workspaceDir })`), until the test ends, or unbind it, and answers the

@@ -163,6 +163,17 @@ export interface StopRef {
   root: string | null;
 }
 
+/**
+ * An answer to an agent's request at a stop: the worker's own (`answered`), whose words may quote the page (the first
+ * line of Playwright's error for a page call that failed), or the service's refusal, whose words are its own.
+ */
+export type AgentAnswer<T> = T & { answered: boolean };
+
+/** The service's refusal of an agent's request about an element, in its own words: no element, no locator. */
+function noElement(message: string): AgentAnswer<RefLocatorAnswer> {
+  return { ok: false, message, element: null, locators: [], answered: false };
+}
+
 /** Why an action that writes code is refused when the client writes none. */
 export const NO_CODE = "The editor cannot write code from a stop: update Piwi's extension in the editor.";
 
@@ -704,8 +715,8 @@ export class RunSessions {
    * For an agent: the ARIA snapshot in AI mode of the page of the stop a client names, `depth` levels deep at most (the
    * whole tree for null), with its image when `image` is true; why there is none otherwise.
    */
-  async snapshot(params: StopParams, depth: number | null, image: boolean): Promise<SnapshotAnswer> {
-    const none = { url: '', title: '', snapshot: null, cut: false, image: null };
+  async snapshot(params: StopParams, depth: number | null, image: boolean): Promise<AgentAnswer<SnapshotAnswer>> {
+    const none = { url: '', title: '', snapshot: null, cut: false, image: null, answered: false };
     const at = this.stopped(params);
     if ('message' in at) return { ...at, ...none };
     const refused = this.refusesQuery(at.worker, 'snapshot');
@@ -714,11 +725,11 @@ export class RunSessions {
       depth,
       image,
     })) as SnapshotAnswer | null;
-    return answer ?? { ok: false, message: 'The test did not answer.', ...none };
+    return answer ? { ...answer, answered: true } : { ok: false, message: 'The test did not answer.', ...none };
   }
 
   /** For an agent: the element `ref` names on the page of the stop a client names, and its locators ranked. */
-  async refLocator(params: StopParams, ref: string): Promise<RefLocatorAnswer> {
+  async refLocator(params: StopParams, ref: string): Promise<AgentAnswer<RefLocatorAnswer>> {
     return this.refQuery(params, 'ref-locator', { ref });
   }
 
@@ -729,9 +740,9 @@ export class RunSessions {
   async act(
     params: StopParams & { since: string },
     act: { ref: string; action: RunActAction; value: string | null },
-  ): Promise<RefLocatorAnswer> {
+  ): Promise<AgentAnswer<RefLocatorAnswer>> {
     if (typeof params?.since !== 'string' || !params.since) {
-      return { ok: false, message: 'The command needs the stop it answers.', element: null, locators: [] };
+      return noElement('The command needs the stop it answers.');
     }
     return this.refQuery(params, 'act', act);
   }
@@ -740,13 +751,13 @@ export class RunSessions {
     params: StopParams,
     what: 'ref-locator' | 'act',
     extra: RequestExtra,
-  ): Promise<RefLocatorAnswer> {
+  ): Promise<AgentAnswer<RefLocatorAnswer>> {
     const at = this.stopped(params);
-    if ('message' in at) return { ...at, element: null, locators: [] };
+    if ('message' in at) return noElement(at.message);
     const refused = this.refusesQuery(at.worker, what);
-    if (refused) return { ok: false, message: refused, element: null, locators: [] };
+    if (refused) return noElement(refused);
     const answer = (await this.ask(at.worker, what, at.worker.stop!.id, extra)) as RefLocatorAnswer | null;
-    return answer ?? { ok: false, message: 'The test did not answer.', element: null, locators: [] };
+    return answer ? { ...answer, answered: true } : noElement('The test did not answer.');
   }
 
   /**

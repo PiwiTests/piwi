@@ -183,8 +183,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
 - **What comes from the page reaches an agent apart from Piwi's answer, between the markers of a page-content block,
   its credentials hidden again.** The snapshot, its address and title, an element's words, the locators built from
-  them, the console, the errors and the requests (`pageContent`, `hideSecretsInText`); never in the JSON that names
-  the runs. Checked by `tests/run-agent.test.ts` ("… the page’s text apart …"). ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
+  them, the console, the errors, the requests (their methods too) and every message a worker sends about a page call
+  (`said`: Piwi's own sentence stands in its place); never in the JSON that names the runs. Checked by
+  `tests/run-agent.test.ts` ("… the page’s text apart …", "says a worker’s own words …").
+  ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
 - **What an agent does shows where a person watches.** A stop it asked for carries `RunStop.by: 'agent'`, its first
   action at a stop is a `piwi/notice`, and its code's sentences say the agent made it (`AGENT_WROTE` in
   `src/stop-actions.ts`), to the client and to Piwi Picker. Checked by `tests/run-agent.test.ts`.

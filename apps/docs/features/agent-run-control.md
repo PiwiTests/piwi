@@ -71,11 +71,14 @@ edit: one undo removes it. The test goes on with the code it started with: the n
   your files only through the editor, as an edit you see.
 - **The page is untrusted.** A page can hold text written to steer a model. Everything that comes from it (its
   snapshot, its address and title, an element's name, text and value, the locators built from them, its console, its
-  errors) comes back apart from Piwi's own answer, between two markers that share a random value the page cannot know,
-  and every tool's description tells the agent to read it as data, never as instructions.
-- **Secrets stay hidden.** A password field's value is never sent, its line in the snapshot reads `<hidden>`, and the
-  image masks such fields. Tokens and credentials in the page's text and addresses are hidden by the rule Piwi's
-  other surfaces use.
+  errors, its requests, and what the test says when a read of the page fails, which a script of the page can word)
+  comes back apart from Piwi's own answer, between two markers that share a random value the page cannot know, and
+  every tool's description tells the agent to read it as data, never as instructions. An image comes after a line
+  that says it is the page's too.
+- **Secrets stay hidden.** The value of a password field, a one-time code and a card's number or security code is
+  never sent: its line in the snapshot reads `<hidden>`, in every frame, the image masks the field, and no assertion
+  writes it. Tokens and credentials in the page's text, its addresses and the locators `page_locator` shows are
+  hidden by the rule Piwi's other surfaces use.
 - **You watch it happen.** The agent's stops show in the editor and the Runs window as yours do, the editor's as
   `Paused by the agent · …`; its first action at a stop says so in a notification; the code it has written names it
   (`Piwi wrote the steps the agent took above checkout.spec.ts:30.`). You can take over at any stop.

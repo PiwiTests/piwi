@@ -59,8 +59,9 @@ function byRef(page: Page, ref: string): Locator {
 }
 
 /**
- * Why a page's call failed: the first line of Playwright's error alone, since its call log quotes the element's HTML
- * (the page's own text, which goes to the agent as Piwi's answer here), its credentials hidden.
+ * Why a page's call failed: the first line of Playwright's error alone, since its call log quotes the element's HTML,
+ * its credentials hidden. A script of the page can throw with words of its own (a read in the page's world): the
+ * editor service gives the agent this message as page content, never as its own answer.
  */
 function failed(prefix: string, error: unknown): string {
   const first = errorMessage(error).split('\n')[0]!.trim();

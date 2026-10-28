@@ -192,15 +192,17 @@ export function renderStopCode(
 
 /**
  * The edit that puts `locator` in place of the locator chain on the 0-based `line` (`pickEditOnLine`: its page and its
- * action stay), or why none can: a locator Piwi cannot write, a line holding no locator.
+ * action stay), or why none can: a locator Piwi cannot write, a line holding no locator. A refusal never quotes the
+ * locator, which an agent's page may have written.
  */
 export function renderStopLocator(text: string, line: number, locator: string): RenderedStopCode | { refusal: string } {
-  if (!safeLocator(locator)) return { refusal: `${locator} is not a locator Piwi can write.` };
+  if (!safeLocator(locator)) return { refusal: 'That locator is not one Piwi can write.' };
   const lineText = text.split(/\r\n|\r|\n/)[line] ?? '';
   const edit = pickEditOnLine(lineText, locator);
   if (!edit)
     return { refusal: 'The stopped line holds no locator to replace: write the steps or an assertion instead.' };
-  if (lineText.slice(edit.start, edit.end) === locator) return { refusal: `The stopped line already uses ${locator}.` };
+  if (lineText.slice(edit.start, edit.end) === locator)
+    return { refusal: 'The stopped line already uses that locator.' };
   return {
     line,
     code: locator,
