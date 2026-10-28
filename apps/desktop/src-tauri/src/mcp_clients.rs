@@ -133,15 +133,18 @@ const CLAUDE_DESKTOP_CONFIG: &str = "claude_desktop_config.json";
 
 /// Claude Desktop config directories, in the order they are preferred.
 ///
-/// A Windows Store (MSIX) install runs in a package container, and Windows
-/// redirects the writes it aims at `%APPDATA%` into
-/// `%LOCALAPPDATA%\Packages\<package family name>\LocalCache\Roaming\` — so
-/// that container, not `%APPDATA%\Claude`, holds the file that build reads.
-/// Both are offered, container first; on macOS and Linux only the plain
-/// config-dir candidate ever exists.
+/// On Windows, the folder depends on the build:
+///   - `%LOCALAPPDATA%\Claude-Data\claude_<publisher id>\` for recent builds;
+///   - `%LOCALAPPDATA%\Packages\Claude_<publisher id>\LocalCache\Roaming\Claude\`
+///     for an earlier Store (MSIX) build: it runs in a package container, and
+///     Windows redirects the writes it aims at `%APPDATA%` there;
+///   - `%APPDATA%\Claude\` for the classic installer.
+///
+/// On macOS and Linux only the last, the plain config-dir candidate, exists.
 fn claude_desktop_dirs(app: &AppHandle) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Ok(local) = app.path().local_data_dir() {
+        dirs.extend(claude_named_dirs(&local.join("Claude-Data")));
         dirs.extend(packaged_claude_dirs(&local.join("Packages")));
     }
     if let Ok(config) = app.path().config_dir() {
@@ -150,41 +153,66 @@ fn claude_desktop_dirs(app: &AppHandle) -> Vec<PathBuf> {
     dirs
 }
 
-/// The `LocalCache\Roaming\Claude` directory of every `Claude_*` package under
-/// the MSIX package root, sorted so the choice never depends on the order the
-/// filesystem happens to list entries in.
+/// The directories under `root` whose name starts with `claude_` in any case,
+/// sorted so the choice never depends on the order the filesystem happens to
+/// list entries in.
 ///
-/// The package family name is matched by prefix: its suffix is a hash of the
-/// publisher identity, so it is the same on every machine but changes with a
-/// re-signed or side-by-side package.
-fn packaged_claude_dirs(packages_root: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(packages_root) else {
+/// The name is matched by prefix: its suffix is a hash of the publisher
+/// identity, so it is the same on every machine but changes with a re-signed
+/// or side-by-side package.
+fn claude_named_dirs(root: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(root) else {
         return Vec::new();
     };
     let mut dirs: Vec<PathBuf> = entries
         .flatten()
         .map(|entry| entry.path())
         .filter(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("Claude_"))
+            path.is_dir()
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.to_ascii_lowercase().starts_with("claude_"))
         })
-        .map(|path| path.join("LocalCache").join("Roaming").join("Claude"))
         .collect();
     dirs.sort();
     dirs
 }
 
-/// The first candidate that exists, else the last — where a fresh install of
-/// the client would create it. Existence beats content: a container that is
-/// present but still empty belongs to the build that is actually installed,
-/// while a config left behind elsewhere belongs to one that is not.
+/// The `LocalCache\Roaming\Claude` directory of every `Claude_*` package under
+/// the MSIX package root.
+fn packaged_claude_dirs(packages_root: &Path) -> Vec<PathBuf> {
+    claude_named_dirs(packages_root)
+        .into_iter()
+        .map(|path| path.join("LocalCache").join("Roaming").join("Claude"))
+        .collect()
+}
+
+/// The first candidate that exists and still holds the client's data, else the
+/// last: where a fresh install of the client would create it. Existence beats
+/// content: a folder that is present but still empty belongs to the build that
+/// is actually installed, while a config left behind elsewhere belongs to one
+/// that is not.
 fn pick_config_dir(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates
         .iter()
-        .find(|dir| dir.is_dir())
+        .find(|dir| dir.is_dir() && !data_has_left(dir))
         .or_else(|| candidates.last())
         .cloned()
+}
+
+/// Whether Claude Desktop has moved its data out of a folder: it leaves an
+/// empty `.user-data-left.<folder it moved to>` file there, and no longer reads
+/// the config beside it.
+fn data_has_left(dir: &Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.starts_with(".user-data-left."))
+        })
+    })
 }
 
 /// Where the client keeps the config to edit, and the directory whose presence
@@ -813,6 +841,52 @@ mod tests {
     #[test]
     fn packaged_dirs_are_empty_without_a_package_root() {
         assert!(packaged_claude_dirs(Path::new("/no/such/packages/root")).is_empty());
+    }
+
+    #[test]
+    fn claude_data_dirs_are_the_lowercase_publisher_folders() {
+        let temp = TempDir::new("claude-data");
+        temp.mkdir("claude_pzs8sxrjxfjjc");
+        std::fs::write(temp.join("README.txt"), "").expect("write readme");
+
+        assert_eq!(
+            claude_named_dirs(&temp.0),
+            vec![temp.join("claude_pzs8sxrjxfjjc")]
+        );
+    }
+
+    /// The order `claude_desktop_dirs` builds, on a machine where Claude Desktop
+    /// moved its data from the package container to `Claude-Data`: both old
+    /// folders keep a marker, and the new one is picked.
+    #[test]
+    fn pick_follows_the_data_to_claude_data() {
+        let temp = TempDir::new("moved");
+        let data = temp.mkdir("Local/Claude-Data/claude_pzs8sxrjxfjjc");
+        let container = temp.mkdir("Local/Packages/Claude_pzs8sxrjxfjjc/LocalCache/Roaming/Claude");
+        let appdata = temp.mkdir("Roaming/Claude");
+        for left in [&container, &appdata] {
+            std::fs::write(left.join(".user-data-left.claude_pzs8sxrjxfjjc"), "")
+                .expect("write marker");
+            std::fs::write(left.join(CLAUDE_DESKTOP_CONFIG), "{}").expect("write config");
+        }
+
+        let mut candidates = claude_named_dirs(&temp.join("Local/Claude-Data"));
+        candidates.extend(packaged_claude_dirs(&temp.join("Local/Packages")));
+        candidates.push(appdata);
+
+        assert_eq!(pick_config_dir(&candidates), Some(data));
+    }
+
+    #[test]
+    fn pick_passes_over_a_folder_the_data_has_left() {
+        let temp = TempDir::new("left");
+        let container = temp.mkdir("Packages/Claude_x/LocalCache/Roaming/Claude");
+        std::fs::write(container.join(".user-data-left.claude_x"), "").expect("write marker");
+        let appdata = temp.mkdir("Roaming/Claude");
+
+        let picked = pick_config_dir(&[container, appdata.clone()]);
+
+        assert_eq!(picked, Some(appdata));
     }
 
     #[test]
