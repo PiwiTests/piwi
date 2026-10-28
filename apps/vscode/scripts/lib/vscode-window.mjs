@@ -59,8 +59,18 @@ const SETTINGS = {
  * shows Piwi's status bar item. VS Code is taken from `cachePath` (`.vscode-test/` of the current folder by default).
  * `close` closes the window and deletes the profile; `codePath` and `userDataDir` reach the running window from
  * another process (`code --user-data-dir … --open-url …`, as the system's handler of `vscode://` links runs it).
+ * A window that does not come up is closed with its profile, unless `keepOnFailure`: the error then carries it as
+ * `error.window` (`page` missing when no window opened), for the caller to keep its screen and logs, then close it.
  */
-export async function launchVSCode({ extensionPath, workspace, env = {}, scale = 1, cachePath, settings = {} }) {
+export async function launchVSCode({
+  extensionPath,
+  workspace,
+  env = {},
+  scale = 1,
+  cachePath,
+  settings = {},
+  keepOnFailure = false,
+}) {
   const version = process.env.VSCODE_TEST_VERSION || VSCODE_VERSION;
   const codePath = await downloadAndUnzipVSCode(cachePath ? { version, cachePath } : version);
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-vscode-user-'));
@@ -75,6 +85,11 @@ export async function launchVSCode({ extensionPath, workspace, env = {}, scale =
     fs.rmSync(extensionsDir, { recursive: true, force: true });
   };
   let app;
+  let page;
+  const close = async () => {
+    await app?.close().catch(() => {});
+    removeProfile();
+  };
   try {
     app = await electron.launch({
       executablePath: codePath,
@@ -96,23 +111,14 @@ export async function launchVSCode({ extensionPath, workspace, env = {}, scale =
       env: { ...process.env, ...env },
       timeout: 120_000,
     });
-    const page = await app.firstWindow();
+    page = await app.firstWindow();
     await page.locator('.monaco-workbench').waitFor({ timeout: 120_000 });
     await page.locator('.statusbar-item', { hasText: 'Piwi:' }).waitFor({ timeout: 120_000 });
     await closeSecondarySideBar(page);
-    return {
-      app,
-      page,
-      codePath,
-      userDataDir,
-      close: async () => {
-        await app.close().catch(() => {});
-        removeProfile();
-      },
-    };
+    return { app, page, codePath, userDataDir, close };
   } catch (error) {
-    await app?.close().catch(() => {});
-    removeProfile();
+    if (keepOnFailure && app) error.window = { app, page, codePath, userDataDir, close };
+    else await close();
     throw error;
   }
 }
