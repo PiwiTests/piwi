@@ -12,19 +12,21 @@ import {
   pairedExtension,
   playInput,
   sendFrame,
+  startDesktop,
   startEditor,
   startRun,
   stopAtCheckout,
   waitFor,
   CART_RESPONSE,
   CHECK,
+  DESKTOP_TOKEN,
   FAILURE_ERROR,
   KEPT,
   PAIRING_TOKEN,
   RUN_TAKES,
   VIEWPORT,
   type Editor,
-  type FakeWorker,
+  FakeWorker,
 } from './runs-fixtures.js';
 
 /**
@@ -34,7 +36,8 @@ import {
  * (Assert, Assert a region, Mock a request, as the worker's reporter takes them), and holds a failed test, a headless
  * one only while a Runs window is open. A page served from 127.0.0.1 never reaches the hub. Watch live shows a stop's
  * frames, the clicks and keys on them reach the page, Pick on the image names the element under a click, and a
- * headless stop takes Pick, Record and the checks once watched; an older editor service shows none of it.
+ * headless stop takes Pick, Record and the checks once watched; an older editor service shows none of it. The paired
+ * desktop app's runs show beside the editor's, the app named, their code made there for the app's window to copy.
  */
 
 let editor: Editor;
@@ -1318,6 +1321,93 @@ test.describe('the live view', () => {
     } finally {
       await context.close();
       await older.close();
+    }
+  });
+});
+
+test.describe('the desktop app’s runs', () => {
+  test('show beside the editor’s as the desktop app’s, steered here, their code to copy in the app’s window', async () => {
+    const desktop = await startDesktop(editor.dir);
+    const { context, worker, extensionId } = await pairedExtension(editor, { desktop });
+    try {
+      // The popup's tile shows once the hubs answer.
+      const popup = await context.newPage();
+      await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+      await expect(popup.getByRole('button', { name: /Runs/ })).toBeVisible();
+      await popup.close();
+      const runs = await openRuns(context, extensionId);
+      await expect(runs.getByText('Following 1 editor window and the desktop app')).toBeVisible();
+
+      const run = new FakeWorker(desktop.channel.path, editor.dir).attach(desktop.channel.token, 'desktop-7', 0, [
+        ...RUN_TAKES,
+      ]);
+      run.begin('pays');
+      try {
+        const card = runs.getByRole('region', { name: path.basename(editor.dir) });
+        await expect(card.getByText('Desktop app', { exact: true })).toBeVisible();
+        await expect(card.getByText('cart › pays')).toBeVisible();
+        await card.getByRole('button', { name: 'Pause' }).click();
+        expect(await run.next('control')).toEqual({ type: 'control', action: 'pause' });
+        stopAtCheckout(run, 1);
+        await expect(card.getByText('Stopped at a breakpoint')).toBeVisible();
+        // Pick, Record and Assert end in an editor, which the desktop app has none of: never offered.
+        await expect(card.locator('.controls button')).toHaveText([
+          'Resume',
+          'Step',
+          'Finish',
+          'Assert a region',
+          'Mock a request',
+        ]);
+
+        // Mock a request: the code is made in the desktop app, for its window to copy; this window hears where it went.
+        await card.getByRole('button', { name: 'Mock a request' }).click();
+        await answerNext(run, 'requests', {
+          ok: true,
+          message: 'The test kept 1 response.',
+          requests: KEPT.slice(0, 1),
+        });
+        await card.getByRole('button', { name: /api\/cart/ }).click();
+        await answerNext(run, 'mock', { ok: true, message: '', response: CART_RESPONSE });
+        await expect(card.locator('.note.sent')).toHaveText(
+          /^Piwi made the mock to write above checkout\.spec\.ts:5: copy it in the desktop app's window\./,
+        );
+        await waitFor(() => desktop.codes[0]);
+        expect(desktop.codes[0]).toMatchObject({ ref: 'desktop-7', action: 'mock' });
+        expect(desktop.codes[0]!.code).toContain("await page.route('**/api/cart'");
+        expect(await runs.content()).not.toContain('route.fulfill');
+
+        await card.getByRole('button', { name: 'Resume' }).click();
+        expect(await run.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 1 });
+        // The app's token stays in the secret area, never in the storage a content script reads.
+        expect(await localStorageText(runs)).not.toContain(DESKTOP_TOKEN);
+        expect(await storedSecret(runs, 'desktop')).toEqual({ url: desktop.origin, token: DESKTOP_TOKEN });
+        expect(await storedSecret(runs, 'hubs')).toEqual([editor.hub]);
+        expect(JSON.stringify(await worker.evaluate(() => chrome.storage.local.get(null)))).not.toContain(
+          DESKTOP_TOKEN,
+        );
+      } finally {
+        run.socket.destroy();
+      }
+    } finally {
+      await context.close();
+      await desktop.close();
+    }
+  });
+
+  test('with no editor paired, follow the desktop app alone, and say when it does not answer', async () => {
+    const desktop = await startDesktop(editor.dir);
+    const { context, extensionId } = await pairedExtension(null, { desktop });
+    try {
+      const runs = await openRuns(context, extensionId);
+      await expect(runs.getByText('Following the desktop app')).toBeVisible();
+      await expect(runs.getByText('No run right now. Run a test from the desktop app: it shows here.')).toBeVisible();
+      await desktop.close();
+      await expect(runs.getByText('Connecting to the desktop app again…')).toBeVisible();
+      await expect(
+        runs.getByText('The desktop app does not answer: open it to follow the runs it starts.'),
+      ).toBeVisible();
+    } finally {
+      await context.close();
     }
   });
 });

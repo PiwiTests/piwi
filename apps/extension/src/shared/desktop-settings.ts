@@ -7,7 +7,7 @@ import { moveLegacySecret, secretArea, type SecretArea } from './secret-store.js
  * Picker** (the extension cannot read `~/.piwi/desktop.json`). Kept together in
  * the secret area (`secret-store.ts`), so the token only goes to the address it
  * was paired with. Used only by the background worker, for **Run with
- * Playwright**, and by the options page.
+ * Playwright** and the hub of the app's runs, and by the options page.
  */
 export interface DesktopSettings {
   /** The app's origin, such as `http://127.0.0.1:4318`. */
@@ -57,13 +57,21 @@ export async function getDesktopSettings(area: SecretArea = secretArea()): Promi
   return coerceDesktopSettings(await area.get('desktop'));
 }
 
+/**
+ * When the pairing last changed, in `chrome.storage.local`: no secret, only the time, so the background worker hears
+ * that the pairing it reads from the secret area changed and asks the app for the hub of its runs again.
+ */
+export const DESKTOP_PAIRED_AT_KEY = 'piwiDesktopPairedAt';
+
 export async function setDesktopSettings(settings: DesktopSettings, area: SecretArea = secretArea()): Promise<void> {
   await area.set('desktop', settings);
+  await chrome.storage.local.set({ [DESKTOP_PAIRED_AT_KEY]: Date.now() });
 }
 
 export async function clearDesktopSettings(area: SecretArea = secretArea()): Promise<void> {
   await area.remove('desktop');
   await chrome.storage.local.remove(DESKTOP_KEY);
+  await chrome.storage.local.set({ [DESKTOP_PAIRED_AT_KEY]: Date.now() });
 }
 
 /** Moves the pairing an older version kept in `chrome.storage.local` (`piwiDesktop`) into the secret area. */

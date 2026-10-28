@@ -14,8 +14,8 @@ tools that follow the run, read the stopped page as its accessibility tree and a
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
 (Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2, 3 and 4 are built too (below; PR 4 is
 merged as #932), and so are PR 5's three halves, the service's, the IDE's with the forwarded addresses, and the Runs
-window's, and PR 6's first half, the desktop app's server as the hub of its runs (below), while PR 6's second half and
-PRs 7 to 9 are not. PR 1 differs from the text in four ways. A headed
+window's, and PR 6's two halves, the desktop app's server as the hub of its runs, then its window's controls, live
+view and Copy with Piwi Picker listing those runs (below), while PRs 7 to 9 are not. PR 1 differs from the text in four ways. A headed
 browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
@@ -291,6 +291,29 @@ run's first worker connected. Pick a locator and Record here in the test's windo
 the server declines them; a pick on the image answers with its locator, Assert a region and Mock a request make code.
 A headed desktop run's `page.pause()` shows Piwi's pause bar where it showed Playwright's Inspector, as in a run the
 editor starts.
+PR 6's second half is the window's side and Piwi Picker's, and differs from the text in seven ways. The live run view
+is the Local runs tray, where each run shows its workers under its output, as the hub tells them: a running worker shows
+its test without its current call, which the session does not carry, and at a stop the place, the call about to run,
+the image, **Watch live** with the input on the view, **Pick on the image**, **Resume**, **Step**, **Finish** (Resume
+alone at a failure, its error shown), **Pause** while it runs, and **Assert a region** and **Mock a request** where
+the stop takes them; the input, the points on an image and what a stop takes are the Runs window's own code
+(`apps/extension/src/shared/view-input.ts`, `runs.ts`), which the app imports from the extension's sources, both under
+the same license, as the editor service bundles the extension's mock generator. The window holds the hub's stream only
+while a run of its tray runs or the hub still has a live run: while it does, every headless stop waits for it, so the
+tray opens on each stop it hears, and the system says so with the window in the background; it says `show` for the runs
+whose part of the tray is open, and closing the stream lets every stop go on. Code from a desktop run never goes to an
+editor, even a paired one: it comes to the tray under **Code from the runs**, the block apart from the import lines its
+edits add, each with **Copy** through the window's clipboard (`navigator.clipboard`, the app's loopback origin being a
+secure context, so no clipboard command of the shell's). The locators a desktop run picks come back too: the shell
+names the server's `POST /api/desktop/runs/picks` as the run's `PIWI_EDITOR_SEND`, read with the run channel, behind
+the guard with the desktop token, so the pause bar's **Pick a locator** and a pick on the image reach the window to
+copy (`pick`), and the hub answers a pick on the image `…: copy it in the desktop app's window.`; Pick in the test's
+window from the hub stays declined. Piwi Picker asks the paired desktop app for its hub beside the editor's
+(`fetchDesktopHubs`, `GET /api/desktop/live` once the app proved its token), connects it with the app's token in
+`hello`, leaves out a hub named with another token, and never keeps it in the secret area under `hubs`; a pairing
+changed writes its time to `piwiDesktopPairedAt`, so the worker asks again. The Runs window marks the app's runs
+**Desktop app**, follows the app alone when no editor is paired, saying then what the app answered, and offers its
+stops no Pick, Record or Assert, which the server declines. The app's tools for agents (Part 9.2) stay with PR 9.
 The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of

@@ -6352,6 +6352,54 @@
   "runs_statusNoRuns": {
     "message": "Ninguna ejecución por ahora. Inicia un test desde el editor: aparece aquí."
   },
+  "runs_desktopApp": {
+    "message": "Aplicación de escritorio"
+  },
+  "runs_desktopName": {
+    "message": "la aplicación de escritorio"
+  },
+  "runs_followingDesktop": {
+    "message": "Siguiendo la aplicación de escritorio"
+  },
+  "runs_followingWithDesktop_one": {
+    "message": "Siguiendo $count$ ventana del editor y la aplicación de escritorio",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_followingWithDesktop_other": {
+    "message": "Siguiendo $count$ ventanas del editor y la aplicación de escritorio",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_statusDesktopSearching": {
+    "message": "Buscando las ejecuciones de la aplicación de escritorio…"
+  },
+  "runs_statusDesktopNoAccess": {
+    "message": "Piwi Picker ya no puede acceder a la dirección de la aplicación de escritorio: vuelve a emparejarla en la configuración."
+  },
+  "runs_statusDesktopRefused": {
+    "message": "La aplicación de escritorio rechazó el emparejamiento: vuelve a emparejar Piwi Picker en la configuración."
+  },
+  "runs_statusDesktopUnreachable": {
+    "message": "La aplicación de escritorio no responde: ábrela para seguir las ejecuciones que inicia."
+  },
+  "runs_statusDesktopOutdated": {
+    "message": "Esta aplicación de escritorio no puede compartir sus ejecuciones: actualízala."
+  },
+  "runs_statusDesktopUnproven": {
+    "message": "El programa en la dirección de la aplicación de escritorio no es la aplicación emparejada: Piwi Picker no le envió nada y vuelve a preguntar en un momento."
+  },
+  "runs_statusDesktopNoRuns": {
+    "message": "Ninguna ejecución por ahora. Ejecuta un test desde la aplicación de escritorio: aparece aquí."
+  },
   "runs_ended": {
     "message": "La ejecución terminó."
   },

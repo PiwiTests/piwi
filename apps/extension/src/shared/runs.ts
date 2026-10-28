@@ -1,7 +1,7 @@
 /**
  * The Runs window: the runs the paired editor started, as the background worker hears them from each editor
- * service's hub (`background/run-hubs.ts`), and what the window and the worker say to each other through their port
- * (`RUNS_PORT`). The window makes no network call and never sees a hub's token: it reads this state and sends the
+ * service's hub (`background/run-hubs.ts`), and the runs the paired desktop app's shell started, from the hub its
+ * server is, and what the window and the worker say to each other through their port (`RUNS_PORT`). The window makes no network call and never sees a hub's token: it reads this state and sends the
  * controls, which the worker passes on. What a hub sends is data from another program: shown as text, an image or a
  * frame of a live view as an image, never as markup. A frame is kept in memory, the latest one alone, never stored.
  */
@@ -48,6 +48,12 @@ export type RunsDiscovery =
   /** The editor answered with its hubs. */
   | 'found';
 
+/**
+ * What the worker found when it last asked the paired desktop app for the hub of its runs, once the app proved it
+ * holds the pairing's token: as for the editor, and `unpaired` while no desktop app is paired.
+ */
+export type RunsDesktopDiscovery = Exclude<RunsDiscovery, 'searching'>;
+
 /** A hub as the window shows it: no token. */
 export interface RunsHub {
   /** Its address, which names it in the window's commands. */
@@ -55,6 +61,8 @@ export interface RunsHub {
   connected: boolean;
   /** The editor it belongs to (`Visual Studio Code`, `WebStorm`); null when it does not say. */
   client: string | null;
+  /** The paired desktop app's hub, of the runs its shell starts, rather than an editor's. */
+  desktop: boolean;
 }
 
 /** A run of a hub; `session.ended` for one that ended, kept a while with its last workers. */
@@ -65,6 +73,8 @@ export interface RunsRun {
 
 export interface RunsState {
   discovery: RunsDiscovery;
+  /** What the paired desktop app answered; `unpaired` while none is. */
+  desktop: RunsDesktopDiscovery;
   hubs: RunsHub[];
   /** The live runs first, in the order the hubs told them, then the ended ones, the latest first. */
   runs: RunsRun[];
@@ -111,7 +121,7 @@ const VIEW_WHATS: readonly string[] = ['view', 'input', 'pick-at'];
 export type RunsRequest =
   /** The window's own browser window, which the popup's Runs brings to the front. */
   | { type: 'window'; windowId: number }
-  /** Ask the editor for its hubs again. */
+  /** Ask the editor and the desktop app for their hubs again. */
   | { type: 'find' }
   /** Keeps the worker alive while the window is open. */
   | { type: 'ping' }

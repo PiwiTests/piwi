@@ -15,8 +15,8 @@ each rule below ends with the section to read there.
   editor's run hubs in `run-hubs.ts` and `hub-connection.ts`).
 - `src/content/`: content scripts injected on demand, the in-page engine (`engine-*.ts`, `locator-engine.ts`).
 - `src/popup/`, `src/options/`, `src/login/` (Save login for tests), `src/devtools/` (Elements pane, Piwi panel).
-- `src/runs/` and `runs.html`: the Runs window, which follows and steers the paired editor's runs, and shows a stop's
-  live view.
+- `src/runs/` and `runs.html`: the Runs window, which follows and steers the paired editor's runs and the paired
+  desktop app's, and shows a stop's live view.
 - `src/ide/`: the recorder built for the editor service (`record-ide.js`). The extension never loads it.
 - `src/shared/`: storage, translations, the instance client, buttons and icons, used by all of the above.
 - `public/_locales/`: the catalogs; `i18n/`: the translation rules and glossaries. `store/`: the Firefox listing.
@@ -143,8 +143,13 @@ each rule below ends with the section to read there.
   `run-hubs.test.ts`, `runs.spec.ts`). (see "The Runs window" and "A connection per hub")
 - **Escape, the function keys and the browser's shortcuts never reach a stopped page through the live view, and Tab
   leaves it unless a click took the keyboard** (`keyOnView`, `view-input.test.ts`). (see "The Runs window")
-- **No code from a stop comes to the Runs window:** it goes to the editor, which writes it, and the window shows the
-  hub's sentence that it was sent (`.note.sent`), never that it was written. (see "The Runs window")
+- **No code from a stop comes to the Runs window:** it goes to the editor, which writes it, or to the desktop app's
+  window, which offers it to copy, and the window shows the hub's sentence that it was sent (`.note.sent`), never that
+  it was written. (see "The Runs window")
+- **The desktop app's hub is asked of the paired app alone, after its proof** (`fetchDesktopHubs` in `piwi-client.ts`,
+  `GET /api/desktop/live` with the app's token), connected with that token in `hello` and never kept under `hubs`; a
+  hub the app names with another token is left out (`piwi-client.test.ts`, `run-hubs.test.ts`, `runs.spec.ts`). (see
+  "Finding the hubs")
 - **The hub's keepalive (`HUB_KEEPALIVE_MS`, `@piwitests/core/run-hub`) and the Runs window's ping (`RUNS_PING_MS`)
   stay within the 30 s an MV3 worker lives after a message;** that holds for a WebSocket from Chrome 116, under
   `minimum_chrome_version` 118. (see "A connection per hub")
