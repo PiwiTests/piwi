@@ -6,11 +6,13 @@
  * apart, between the markers of a page-content block, its credentials hidden; the arguments are a closed set.
  */
 import * as fs from 'node:fs';
+import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { MAX_ELEMENT_TEXT, RUN_TAKES, type HubToRun, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
+import { MAX_AGENT_REQUESTS } from '../src/agent-server';
 import type { AgentsResult, StopBindResult } from '../src/protocol';
 import { MAX_FOLLOW_EVENTS, pageContent, snapshotChange } from '../src/run-agent';
 import { FakeWorker, last, service, waitFor, type Service } from './run-fixtures';
@@ -762,6 +764,48 @@ describe('what an agent reads of the page', () => {
       action: 'click',
     });
     expect((await call('code_write', { run, stop: since, kind: 'steps' })).piwi).toMatchObject({ ok: true, steps: 1 });
+    other.socket.destroy();
+  });
+
+  test('lets go of a run_follow whose client left, so others are answered at once', async () => {
+    const { ref: run, channel: again } = await ide.command();
+    const other = new FakeWorker(again.path, fs.realpathSync(dir)).attach(again.token, run, 0, [
+      ...RUN_TAKES,
+    ] as RunTake[]);
+    await waitFor(() => ide.latest(run));
+    other.begin('adds a mug');
+    await waitFor(() => ide.latest(run)?.workers[0]?.test ?? undefined);
+    const url = new URL(agents.url!);
+    await Promise.all(
+      Array.from({ length: MAX_AGENT_REQUESTS }, (_, i) => {
+        const controller = new AbortController();
+        const req = http.request({
+          host: url.hostname,
+          port: url.port,
+          path: url.pathname,
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${agents.token}` },
+          signal: controller.signal,
+        });
+        req.on('error', () => {});
+        req.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: `gone-${i}`,
+            method: 'tools/call',
+            params: { name: 'run_follow', arguments: { run, after: 999, wait: 20 } },
+          }),
+        );
+        return new Promise((r) => setTimeout(r, 200)).then(() => controller.abort());
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 100));
+    const listed = await fetch(agents.url!, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${agents.token}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    });
+    expect(listed.status).toBe(200);
     other.socket.destroy();
   });
 

@@ -844,7 +844,9 @@ answered with its address and token), and closes as the client turns it off or t
   another method a 405, a body that is not JSON a 415, and a missing or wrong `Authorization: Bearer` a 401, the token
   compared in constant time (`sameToken`).
 - A body is 256 KiB at most (`MAX_AGENT_BODY`, a 413), a batch 8 requests (`MAX_AGENT_BATCH`), and 8 requests run at
-  once (`MAX_AGENT_REQUESTS`, a 503 with `Retry-After`).
+  once (`MAX_AGENT_REQUESTS`, a 503 with `Retry-After`). A long poll lets go of its slot as soon as nobody waits for
+  it: its client closes the connection (the response's `close`), or cancels it (`notifications/cancelled` naming its
+  JSON-RPC id), and the wait (`RunAgent.waitFor`) ends on the call's `AbortSignal`.
 
 As for the hub, this user's own processes are not a boundary: the token reaches the agent through the client's
 registration of the server (VS Code's provider) or a configuration the developer copies.

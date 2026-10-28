@@ -52,7 +52,7 @@ afterEach(() => {
 
 /** A server whose tools answer `answer`, or wait for `hold`. */
 async function open(
-  answer: (name: string, args: unknown) => Promise<ToolResult> = async (name, args) => ({
+  answer: (name: string, args: unknown, signal: AbortSignal) => Promise<ToolResult> = async (name, args) => ({
     content: [{ type: 'text', text: JSON.stringify({ name, args }) }],
   }),
   port: number | null = null,
@@ -217,6 +217,68 @@ describe("the agents' MCP server", () => {
     release();
     expect((await Promise.all(waiting)).every((a) => a.status === 200)).toBe(true);
     expect((await request(port, { body: rpc('ping') })).status).toBe(200);
+  });
+
+  test('lets go of a long poll as soon as its client closes the connection', async () => {
+    const aborted: string[] = [];
+    /** A long poll: it answers once nobody waits for it, else after 20 seconds. */
+    const { port } = await open(
+      (name, args, signal) =>
+        new Promise((resolve) => {
+          const timer = setTimeout(() => resolve({ content: [{ type: 'text', text: 'late' }] }), 20_000);
+          signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            aborted.push(String((args as { n: number }).n));
+            resolve({ content: [{ type: 'text', text: 'aborted' }] });
+          });
+        }),
+    );
+    // Eight clients that time out and leave, holding every slot until they do.
+    await Promise.all(
+      Array.from({ length: MAX_AGENT_REQUESTS }, (_, n) => {
+        const controller = new AbortController();
+        const req = http.request({
+          host: '127.0.0.1',
+          port,
+          method: 'POST',
+          path: AGENT_PATH,
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+          signal: controller.signal,
+        });
+        req.on('error', () => {});
+        req.end(rpc('tools/call', { name: 'run_follow', arguments: { n } }, n));
+        return new Promise((resolve) => setTimeout(resolve, 200)).then(() => controller.abort());
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 100));
+    expect(aborted).toHaveLength(MAX_AGENT_REQUESTS);
+    expect((await request(port, { body: rpc('ping') })).status).toBe(200);
+  });
+
+  test('ends the wait of the request a cancel names, and of no other', async () => {
+    const { port } = await open(
+      (name, args, signal) =>
+        new Promise((resolve) => {
+          const timer = setTimeout(() => resolve({ content: [{ type: 'text', text: 'waited' }] }), 3000);
+          signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            resolve({ content: [{ type: 'text', text: 'cancelled' }] });
+          });
+        }),
+    );
+    const at = Date.now();
+    const named = request(port, { body: rpc('tools/call', { name: 'run_follow' }, 'follow-1') });
+    const other = request(port, { body: rpc('tools/call', { name: 'run_follow' }, 'follow-2') });
+    await new Promise((r) => setTimeout(r, 100));
+    const cancel = (requestId: unknown) =>
+      request(port, {
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId } }),
+      });
+    expect((await cancel('follow-1')).status).toBe(202);
+    expect((await cancel({ id: 'follow-2' })).status).toBe(202);
+    expect(JSON.parse((await named).body).result.content[0].text).toBe('cancelled');
+    expect(Date.now() - at).toBeLessThan(2000);
+    expect(JSON.parse((await other).body).result.content[0].text).toBe('waited');
   });
 
   test('takes the port it is given when free, another when it is taken, and a new token for one too short', async () => {

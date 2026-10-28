@@ -653,8 +653,8 @@ export class RunAgent {
     for (const log of this.logs.values()) for (const wake of log.waiters) wake();
   }
 
-  /** Run a tool: its answer, or why not, as a result the agent reads. */
-  async call(name: string, args: unknown): Promise<ToolResult> {
+  /** Run a tool: its answer, or why not, as a result the agent reads; a wait ends as `signal` aborts. */
+  async call(name: string, args: unknown, signal?: AbortSignal): Promise<ToolResult> {
     const values = args === undefined || args === null ? {} : args;
     if (typeof values !== 'object' || Array.isArray(values)) return this.error('The arguments are an object.');
     try {
@@ -662,10 +662,11 @@ export class RunAgent {
         case 'run_list':
           return this.list(new Args(values as Record<string, unknown>, []));
         case 'run_follow':
-          return await this.follow(new Args(values as Record<string, unknown>, ['run', 'after', 'wait']));
+          return await this.follow(new Args(values as Record<string, unknown>, ['run', 'after', 'wait']), signal);
         case 'run_control':
           return await this.control(
             new Args(values as Record<string, unknown>, ['run', 'worker', 'action', 'stop', 'place', 'wait']),
+            signal,
           );
         case 'page_snapshot':
           return await this.snapshot(new Args(values as Record<string, unknown>, ['run', 'worker', 'image', 'depth']));
@@ -790,13 +791,14 @@ export class RunAgent {
     return session.workers.some((w) => w.test) ? 'running' : 'between';
   }
 
-  /** Wait until `done` says so, at each event of `log`, `ms` at most. */
-  private waitFor(log: RunLog, ms: number, done: () => boolean): Promise<void> {
-    if (done() || ms <= 0) return Promise.resolve();
+  /** Wait until `done` says so, at each event of `log`, `ms` at most, and no longer than `signal` lets it. */
+  private waitFor(log: RunLog, ms: number, done: () => boolean, signal?: AbortSignal): Promise<void> {
+    if (done() || ms <= 0 || signal?.aborted) return Promise.resolve();
     return new Promise((resolve) => {
       const finish = () => {
         clearTimeout(timer);
         log.waiters.delete(check);
+        signal?.removeEventListener('abort', finish);
         resolve();
       };
       const check = () => {
@@ -805,10 +807,11 @@ export class RunAgent {
       const timer = setTimeout(finish, ms);
       timer.unref?.();
       log.waiters.add(check);
+      signal?.addEventListener('abort', finish, { once: true });
     });
   }
 
-  private async follow(args: Args): Promise<ToolResult> {
+  private async follow(args: Args, signal?: AbortSignal): Promise<ToolResult> {
     const ref = args.run();
     const after = args.integer('after', -1, Number.MAX_SAFE_INTEGER) ?? -1;
     const wait = (args.seconds('wait', MAX_FOLLOW_WAIT_S) ?? MAX_FOLLOW_WAIT_S) * 1000;
@@ -821,7 +824,7 @@ export class RunAgent {
       if (fresh.some((e) => e.kind === 'stopped' || e.kind === 'run-ended')) return true;
       return this.state(this.live(ref), log) !== 'running' && this.state(this.live(ref), log) !== 'between';
     };
-    await this.waitFor(log, Math.min(wait, this.options.followMs ?? MAX_FOLLOW_WAIT_S * 1000), settled);
+    await this.waitFor(log, Math.min(wait, this.options.followMs ?? MAX_FOLLOW_WAIT_S * 1000), settled, signal);
     const session = this.live(ref);
     const fresh = since();
     const events = fresh.slice(0, MAX_FOLLOW_EVENTS);
@@ -851,7 +854,7 @@ export class RunAgent {
     );
   }
 
-  private async control(args: Args): Promise<ToolResult> {
+  private async control(args: Args, signal?: AbortSignal): Promise<ToolResult> {
     const ref = args.run();
     const worker = args.worker();
     const action = args.raw('action');
@@ -887,7 +890,12 @@ export class RunAgent {
     );
     if (!answer.ok) return this.error(answer.message);
     const next = () => log.events.find((e) => e.seq > mark && (e.kind === 'stopped' || e.kind === 'run-ended'));
-    await this.waitFor(log, Math.min(wait, this.options.controlMs ?? MAX_CONTROL_WAIT_S * 1000), () => !!next());
+    await this.waitFor(
+      log,
+      Math.min(wait, this.options.controlMs ?? MAX_CONTROL_WAIT_S * 1000),
+      () => !!next(),
+      signal,
+    );
     const came = next();
     const now = this.live(ref);
     if (!came) {

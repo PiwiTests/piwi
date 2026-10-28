@@ -176,7 +176,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **The agents' MCP server listens on `127.0.0.1` alone, only once the client turns it on (`agents.enabled`,
   `piwi/agents`), and answers only its own `Host`, a request with no `Origin`, and its bearer token compared in
   constant time.** Anything else is refused before a tool runs (`src/agent-server.ts`), and a body, a batch and the
-  requests at once are bounded. Checked by `tests/agent-server.test.ts`. ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
+  requests at once are bounded, a long poll letting go of its slot once its client leaves or cancels it. Checked by
+  `tests/agent-server.test.ts`. ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
 - **An agent's tools are a closed set, each taking a closed set of arguments, and act only at a stop of a run of this
   window; nothing evaluates code, and code is written only by the client (`piwi/stopCode`).** `src/run-agent.ts`
   checks each argument (`Args`); a long poll waits `MAX_FOLLOW_WAIT_S` at most. Checked by `tests/run-agent.test.ts`.
