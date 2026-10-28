@@ -15,17 +15,19 @@ import type { EventStreamSink } from './event-stream';
 import { runEventBus, type GlobalRunEvent } from './run-events';
 
 /**
- * The run page's live view on this instance: a relay, in memory alone, between the workers of a live run whose
- * project turned it on and the people watching them. Each worker holds one event stream, opened with a key minted
- * for its run (`mintKey`, handed to the run's global setup), on which it hears how many people watch it; a viewer
- * holds one stream per worker it watches. The frames a worker posts go to that worker's viewers and nowhere else: none
- * is kept, written to the database, logged or exported, and a viewer whose stream is backed up gets the latest frame
- * alone once it drains. The worker's stops go to everyone with the run page open, through the run's event stream
- * (`live-worker`), and so does each worker's leaving, whatever ends it. A run's keys, workers and viewers end with the
- * run (its finish or cancel), with the project's setting turned off (`endProject`), and a key after `LIVE_KEY_TTL_MS`
- * at most; an interrupted run's workers and viewers end, its keys stay for the run to go on (`interruptRun`). Bounded
- * throughout: keys per project and in all (the expired ones go first), workers and viewers per run, viewers per person
- * (the oldest replaced), frames a second per worker, and each frame's bytes (the route's).
+ * The run page's live view on this instance: a relay, in memory alone, between the workers of a live run whose project
+ * turned it on (a CI run's, or one a developer shares from their machine) and the people watching them. Each worker
+ * holds one event stream, opened with a key minted for its run (`mintKey`, handed to the run's global setup), on which
+ * it hears how many people watch it; a viewer holds one stream per worker it watches. The frames a worker posts go to
+ * that worker's viewers and nowhere else: none is kept, written to the database, logged or exported, and a viewer whose
+ * stream is backed up gets the latest frame alone once it drains. The worker's stops go to everyone with the run page
+ * open, through the run's event stream (`live-worker`), and so does each worker's leaving, whatever ends it; a
+ * developer who stops sharing their run has each worker's viewers hear so (`unshared`) before its stream closes. A
+ * run's keys, workers and viewers end with the run (its finish or cancel), with the project's setting turned off
+ * (`endProject`), and a key after `LIVE_KEY_TTL_MS` at most; an interrupted run's workers and viewers end, its keys
+ * stay for the run to go on (`interruptRun`). Bounded throughout: keys per project and in all (the expired ones go
+ * first), workers and viewers per run, viewers per person (the oldest replaced), frames a second per worker, and each
+ * frame's bytes (the route's).
  */
 
 /** The most workers of one run that hold a stream. */
@@ -211,6 +213,9 @@ export class LiveViewRelay {
         return null;
       case 'ended':
         this.endViewers(link, 'test-ended');
+        return null;
+      case 'unshared':
+        this.endViewers(link, 'unshared');
         return null;
     }
   }

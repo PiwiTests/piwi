@@ -3,8 +3,12 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import { createRequire } from 'node:module';
+import * as net from 'node:net';
+import * as os from 'node:os';
 import { join, resolve } from 'node:path';
+import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
 import type { LiveStop } from '@piwitests/core/live-view';
+import { parseRunToHub, type RunToHub } from '@piwitests/core/run-channel';
 import { detectCi } from '../../../packages/reporter/src/internal/support/ci';
 import { PROJECT } from '#shared/test-project-names';
 import { resolveE2ETarget } from './desktop-target';
@@ -12,9 +16,11 @@ import { resolveE2ETarget } from './desktop-target';
 /**
  * The run page's live view against this server. A real CI run through the built reporter, in a project with the live
  * view on, shows **Watch** beside its running test; Watch shows the test's page, with the call each image was taken
- * at. In a project with the live view off, and for a run outside CI, the run's workers send this server nothing. A
- * worker of the run's live view, played by this spec, shows **Paused** on the row of the test it stopped, at its call,
- * and Watch on the test it runs alone; both leave every row as the project turns the live view off.
+ * at. In a project with the live view off, and for a run outside CI nobody shared, the run's workers send this server
+ * nothing; a run outside CI its editor shares (Share live, played by this spec on the run channel) shows Watch, and
+ * its view ends, saying why, as the sharing stops. A worker of the run's live view, played by this spec, shows
+ * **Paused** on the row of the test it stopped, at its call, and Watch on the test it runs alone; both leave every row
+ * as the project turns the live view off.
  */
 
 const target = resolveE2ETarget();
@@ -43,8 +49,8 @@ interface Run {
   release: () => void;
 }
 
-/** Start the suite as a project's run against this server, in a CI job or outside one. */
-async function startRun(projectName: string, ci: boolean): Promise<Run> {
+/** Start the suite as a project's run against this server, in a CI job or outside one, `extra` in its environment. */
+async function startRun(projectName: string, ci: boolean, extra: NodeJS.ProcessEnv = {}): Promise<Run> {
   fs.mkdirSync(join(process.cwd(), '.test-temp'), { recursive: true });
   const folder = fs.mkdtempSync(join(process.cwd(), '.test-temp', 'live-view-'));
   fs.writeFileSync(join(folder, 'live.spec.cjs'), SPEC(folder));
@@ -77,6 +83,7 @@ module.exports = wrapConfig(defineConfig({
   }
   for (const name of Object.keys(env)) if (detectCi({ [name]: env[name] })) delete env[name];
   if (ci) env.CI = 'true';
+  Object.assign(env, extra);
   let output = '';
   const child = spawn(process.execPath, [playwrightCli, 'test'], { cwd: folder, env });
   child.stdout?.on('data', (chunk) => (output += String(chunk)));
@@ -159,6 +166,53 @@ function holdWorkerStream(runId: number, key: string): { open: () => boolean; cl
   request.on('error', () => (open = false));
   request.end();
   return { open: () => open, close: () => request.destroy() };
+}
+
+/**
+ * The editor's side of a run channel, as Share live drives it: it shares the run as each worker attaches, and keeps
+ * how each worker says the run stands on the instance (`live`).
+ */
+async function startShareHub(): Promise<{
+  env: NodeJS.ProcessEnv;
+  heard: () => Array<Extract<RunToHub, { type: 'live' }>>;
+  share: (on: boolean) => void;
+  close: () => Promise<void>;
+}> {
+  const folder = fs.mkdtempSync(join(os.tmpdir(), 'piwi-share-'));
+  const path = join(folder, 'channel.sock');
+  const sockets: net.Socket[] = [];
+  const lives: Array<Extract<RunToHub, { type: 'live' }>> = [];
+  const send = (socket: net.Socket, message: unknown) => socket.write(`${JSON.stringify(message)}\n`);
+  const server = net.createServer((socket) => {
+    sockets.push(socket);
+    socket.setEncoding('utf8');
+    socket.on('error', () => socket.destroy());
+    socket.on(
+      'data',
+      lineReader(
+        (line) => {
+          const message = parseRunToHub(line);
+          if (message?.type === 'run-attach') send(socket, { type: 'share', on: true });
+          if (message?.type === 'live') lives.push(message);
+        },
+        () => socket.destroy(),
+      ),
+    );
+  });
+  await new Promise<void>((done) => server.listen(path, done));
+  return {
+    env: {
+      PIWI_RUN_CHANNEL: formatRecordChannel({ path, token: 'share-live-token-0123456789' }),
+      PIWI_RUN_REF: 'ed-share',
+    },
+    heard: () => lives,
+    share: (on) => sockets.forEach((socket) => send(socket, { type: 'share', on })),
+    close: async () => {
+      sockets.forEach((socket) => socket.destroy());
+      await new Promise<void>((done) => server.close(() => done()));
+      fs.rmSync(folder, { recursive: true, force: true });
+    },
+  };
 }
 
 test.describe('Live view of a run', () => {
@@ -260,7 +314,7 @@ test.describe('Live view of a run', () => {
     }
   });
 
-  test('a run outside CI, in a project with the live view on, asks for no key and sends nothing', async ({
+  test('a run outside CI nobody shares, in a project with the live view on, sends nothing', async ({
     page,
     request,
   }) => {
@@ -289,6 +343,51 @@ test.describe('Live view of a run', () => {
       expect((await liveWorkers(request, runId)).received.requests).toBe(0);
     } finally {
       await endRun(run);
+    }
+  });
+
+  test('a run outside CI its editor shares shows Watch, and its view ends, saying why, as the sharing stops', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(240_000);
+    const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
+    expect((await request.patch(`/api/projects/${project}`, { data: { liveView: true } })).ok()).toBeTruthy();
+    const before = await latestRunId(request, project);
+    const hub = await startShareHub();
+    const run = await startRun(PROJECT.LIVE_VIEW_ON, false, hub.env);
+    try {
+      const runId = await liveRunId(request, project, before);
+      // Its worker says the run can be shared, with its page on this server, and shares it as the editor asks.
+      await expect.poll(() => hub.heard().some((live) => live.on), { timeout: 60_000 }).toBe(true);
+      expect(hub.heard().at(-1)).toMatchObject({
+        can: true,
+        page: expect.stringMatching(new RegExp(`/test-runs/${runId}$`)),
+      });
+      await page.goto(`/test-runs/${runId}`);
+      const watch = page.getByRole('button', { name: /^Watch worker \d+ live$/ });
+      await expect(watch).toBeVisible({ timeout: 60_000 });
+      await watch.click();
+      const view = page.getByRole('dialog');
+      await expect(view.getByTestId('live-frame')).toBeVisible({ timeout: 20_000 });
+      // The editor hears someone watches.
+      await expect.poll(() => hub.heard().at(-1)?.viewers, { timeout: 10_000 }).toBe(1);
+
+      hub.share(false);
+      await expect(view.getByTestId('live-status')).toHaveText(
+        'The developer stopped sharing this run from their machine.',
+        { timeout: 20_000 },
+      );
+      await page.keyboard.press('Escape');
+      await expect(watch).toHaveCount(0, { timeout: 10_000 });
+      await expect.poll(async () => (await liveWorkers(request, runId)).workers.length).toBe(0);
+
+      run.release();
+      expect(await run.exited, run.output()).toBe(0);
+      expect(run.output()).toContain('Live view ready');
+    } finally {
+      await endRun(run);
+      await hub.close();
     }
   });
 

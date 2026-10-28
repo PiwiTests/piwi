@@ -347,4 +347,22 @@ describe('the relay', () => {
     // The run page hears the worker left: no Watch, and no Paused, stays on its row.
     expect(published.at(-1)?.state).toEqual({ shard: null, worker: 0, connected: false, paused: null });
   });
+
+  test('ends the views of a run its developer stops sharing, each viewer hearing why, before the worker leaves', () => {
+    const { live, published } = relay();
+    const entry = live.authorize(8, live.mintKey(8, 1))!;
+    const worker = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => worker);
+    const watching = new FakeSink();
+    live.addViewer(8, { shard: null, worker: 0 }, () => watching);
+    live.receive(8, { type: 'stop', shard: null, worker: 0, stop: STOP });
+    expect(live.receive(8, { type: 'unshared', shard: null, worker: 0 })).toBeNull();
+    expect(watching.sent).toEqual([{ type: 'end', reason: 'unshared' }]);
+    expect(watching.closed).toBe(true);
+    expect(worker.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
+    // The worker closes its stream: the run page hears it left, no Paused left on its row.
+    worker.close();
+    expect(published.at(-1)?.state).toEqual({ shard: null, worker: 0, connected: false, paused: null });
+    expect(live.workersOf(8)).toEqual([]);
+  });
 });

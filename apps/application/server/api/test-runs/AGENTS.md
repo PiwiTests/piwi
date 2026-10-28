@@ -72,7 +72,7 @@ How the server merges shards:
   directly: `matchesShardToken` and `matchesStreamToken` refuse a presented digest.
 - **The live view routes authenticate with the run's live view key, and nothing else does** (`liveViewRelay.authorize`,
   `server/utils/live-view.ts`). `setup` mints one, for a project with `live_view` on and a reporter that asked
-  (`liveView: true`, a CI run's); it is held as its digest, in memory, opens that run's `[id]/live-view` alone while
+  (`liveView: true`, any run's: outside CI its workers stream only once shared); it is held as its digest, in memory, opens that run's `[id]/live-view` alone while
   the project's setting is on (rechecked on each stream), and ends with the run (its finish or cancel; an interruption
   closes the streams and keeps it) or the setting (`tests/unit/live-view-routes.test.ts`).
 - **A live view frame is relayed, never kept**: no frame reaches the database, a log line, an error message or an
