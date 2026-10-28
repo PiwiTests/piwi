@@ -97,18 +97,9 @@ export class DeveloperBrowser {
  * the whole screen (`screen`, CSS pixels) at device scale `scale`; what its pages and Piwi Picker's worker log goes to
  * `log`.
  */
-export async function launchDeveloperBrowser({ dir, editorOrigin, dashboardOrigin, screen, scale, log }) {
+export async function launchDeveloperBrowser({ dir, editorOrigin, screen, scale, log }) {
   const extension = pickerWithGrant(path.join(dir, 'piwi-picker'), editorOrigin);
-  // The dashboard's `vscode://` links open without the browser's question, as once a person ticked "Always allow"
-  // for its origin; this script hands them to VS Code.
   const profile = path.join(dir, 'profile');
-  fs.mkdirSync(path.join(profile, 'Default'), { recursive: true });
-  fs.writeFileSync(
-    path.join(profile, 'Default', 'Preferences'),
-    JSON.stringify({
-      protocol_handler: { allowed_origin_protocol_pairs: { [dashboardOrigin]: { vscode: true } } },
-    }),
-  );
   const context = await chromium.launchPersistentContext(profile, {
     headless: false,
     viewport: null,

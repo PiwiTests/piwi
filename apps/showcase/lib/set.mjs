@@ -67,21 +67,32 @@ async function endStrays(dir) {
 
 /**
  * The dashboard's links to the editor reach VS Code as the system's handler of `vscode://` would take them: the page
- * hands such a link to a hidden frame (or an anchor), which this script sees and passes to VS Code's command line. A
- * bare X server has no handler of its own.
+ * hands such a link to a hidden frame (or an anchor), which this script takes before the browser loads it and passes
+ * to VS Code's command line. The browser never sees the link, so no handler of the machine's opens it, and a bare X
+ * server has none.
  */
 const HAND_OVER_EDITOR_LINKS = `(() => {
-  const handOver = (url) => typeof url === 'string' && /^vscode:/.test(url) && window.__showcaseOpenInEditor(url);
-  new MutationObserver((records) => {
-    for (const record of records) {
-      for (const node of record.addedNodes) {
-        if (node.tagName === 'IFRAME') handOver(node.getAttribute('src'));
-      }
+  const isEditorLink = (url) => typeof url === 'string' && /^vscode:/i.test(url.trim());
+  const handOver = (url) => window.__showcaseOpenInEditor(url.trim());
+  const src = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
+  Object.defineProperty(HTMLIFrameElement.prototype, 'src', {
+    ...src,
+    set(value) {
+      if (isEditorLink(String(value))) handOver(String(value));
+      else src.set.call(this, value);
+    },
+  });
+  const setAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function (name, value) {
+    if (this instanceof HTMLIFrameElement && String(name).toLowerCase() === 'src' && isEditorLink(String(value))) {
+      handOver(String(value));
+      return;
     }
-  }).observe(document, { childList: true, subtree: true });
+    return setAttribute.call(this, name, value);
+  };
   document.addEventListener('click', (event) => {
-    const anchor = event.target instanceof Element ? event.target.closest('a[href^="vscode:"]') : null;
-    if (anchor) {
+    const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
+    if (anchor && isEditorLink(anchor.getAttribute('href'))) {
       event.preventDefault();
       handOver(anchor.getAttribute('href'));
     }
