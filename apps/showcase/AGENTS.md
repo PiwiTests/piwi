@@ -28,8 +28,8 @@ How the set, the script and the beats work is in [`ARCHITECTURE.md`](ARCHITECTUR
   (`lintLines`; `node showcase.mjs --lint`). The lines are the subtitles.
 - **The set lives in a new folder of the temporary directory, which every app's temporary files, the editors'
   discovery files and the desktop app's file go into (`TMPDIR`, `PIWI_EDITORS_DIR`, `PIWI_DESKTOP_CONFIG`), and the
-  take removes it with every process still working there** (`createSet` and `endStrays` in `lib/set.mjs`). A process
-  the set starts inherits them; never point one at `~/.piwi`. Keep the folder's path short: VS Code's and the editor
+  take removes it with every process still working there or started with them** (`createSet` and `endStrays` in
+  `lib/set.mjs`). A process the set starts inherits them; never point one at `~/.piwi`. Keep the folder's path short: VS Code's and the editor
   service's sockets must stay under 107 characters.
 - **A take that stops keeps what it saw before anything closes**: a failed beat, a set that fails to build, a signal
   (`keepEvidence` in `showcase.mjs`). A new app of the set leaves its log in `results/logs/` and the signals to the

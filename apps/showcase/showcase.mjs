@@ -126,7 +126,7 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
         say(`  keeping them failed: ${why}`);
       }
       fs.writeFileSync(path.join(out, 'outcomes.json'), JSON.stringify(outcomes, null, 2));
-      await teardown();
+      await teardown().catch((why) => say(`  ending the set failed: ${why}`));
       process.exit(128 + os.constants.signals[signal]);
     })();
   });

@@ -12,7 +12,7 @@ service writes and the reporter reads for a run started in a terminal) and the d
 (`PIWI_DESKTOP_CONFIG`, which the reporter and the editor service read). A developer's own editors and desktop app stay
 out of the take, and the set's out of theirs; the build checks the editor service's discovery file lands there.
 `buildSet` builds the set in it from scratch for each take, and `close` ends every app, then every process still
-working in the folder (`endStrays`), and removes it. Before anything, `showcase.mjs` takes a CI provider's variables
+working in the folder or whose environment names it (`endStrays`), and removes it. Before anything, `showcase.mjs` takes a CI provider's variables
 out of its environment (`CI_VARIABLE`): the developer's runs must not read as CI, which `detectCi` decides from them.
 
 | Piece              | Built by                                     | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |

@@ -43,16 +43,20 @@ function listening(port) {
 }
 
 /**
- * Ends every process still working in `dir` (a run the editor started and left stopped, its shop server, its
- * browser): the processes whose working directory is in it, as Linux's `/proc` tells them. Each has two seconds to
- * end on SIGTERM before SIGKILL.
+ * Ends every process of the set still running: those working in `dir` (a run the editor started and left stopped,
+ * its shop server, its browser) and those whose environment names it, as every process the set starts inherits its
+ * `TMPDIR` (the dev server's, still flushing its caches there as it exits), as Linux's `/proc` tells them. Each has two
+ * seconds to end on SIGTERM before SIGKILL.
  */
 async function endStrays(dir) {
+  const inside = (file) => file === dir || file.startsWith(`${dir}/`);
   const strays = () =>
     fs.readdirSync('/proc').filter((pid) => {
       if (!/^\d+$/.test(pid) || Number(pid) === process.pid) return false;
       try {
-        return fs.readlinkSync(`/proc/${pid}/cwd`).startsWith(dir);
+        if (inside(fs.readlinkSync(`/proc/${pid}/cwd`))) return true;
+        const environ = fs.readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0');
+        return environ.some((entry) => inside(entry.slice(entry.indexOf('=') + 1)));
       } catch {
         return false;
       }
@@ -138,7 +142,7 @@ export function createSet({ logs }) {
         if (value === undefined) delete process.env[name];
         else process.env[name] = value;
       }
-      if (!keep) fs.rmSync(dir, { recursive: true, force: true });
+      if (!keep) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
     })());
   return set;
 }
