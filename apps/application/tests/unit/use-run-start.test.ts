@@ -48,10 +48,22 @@ class FakeSource {
 const documentListeners: Record<string, () => void> = {};
 const page = { visibilityState: 'visible' as DocumentVisibilityState };
 
+/** The Nuxt app: hydrating until the test ends it, as its first Suspense resolving does. */
+const nuxtApp = {
+  isHydrating: false,
+  resolved: [] as Array<() => void>,
+  hooks: { hookOnce: (name: string, fn: () => void) => name === 'app:suspense:resolve' && nuxtApp.resolved.push(fn) },
+  endHydration() {
+    nuxtApp.isHydrating = false;
+    for (const fn of nuxtApp.resolved.splice(0)) fn();
+  },
+};
+
 function stubBrowser(demoMode = false) {
   vi.stubGlobal('__IMPORT_META_CLIENT__', true);
   vi.stubGlobal('EventSource', FakeSource);
   vi.stubGlobal('useRuntimeConfig', () => ({ public: { demoMode } }));
+  vi.stubGlobal('useNuxtApp', () => nuxtApp);
   vi.stubGlobal('window', { addEventListener: () => {} });
   vi.stubGlobal('document', {
     get visibilityState() {
@@ -83,6 +95,8 @@ beforeEach(() => {
   unmounts.length = 0;
   demo.handler = null;
   page.visibilityState = 'visible';
+  nuxtApp.isHydrating = false;
+  nuxtApp.resolved = [];
 });
 
 afterEach(() => vi.unstubAllGlobals());
@@ -174,6 +188,19 @@ describe('useRunStart', () => {
     source.open();
     source.send({ type: 'run-started', runId: 7, projectId: 1 });
     expect(run.refetches).toBe(0);
+  });
+
+  test('while the app hydrates, refetches once hydration ends: before, a refetch reads the loaded data', async () => {
+    stubBrowser(true);
+    nuxtApp.isHydrating = true;
+    const { useRunStart } = await composables();
+    const { run, status, refresh } = runPage('initializing');
+    useRunStart(7, status, refresh);
+    demo.handler!({ scope: 'global', event: { type: 'run-started', runId: 7, projectId: 1 } });
+    expect(run.refetches).toBe(0);
+
+    nuxtApp.endHydration();
+    expect(run.refetches).toBeGreaterThan(0);
   });
 
   test('in the demo, refetches at once and on the run-started the service worker broadcasts', async () => {

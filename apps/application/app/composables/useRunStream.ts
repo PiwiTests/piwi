@@ -232,11 +232,16 @@ export function useRunEvents(listener: (event: RunLifecycleEvent) => void, onOpe
  * Refetch a run the page shows as initializing once it moves on, so the page
  * goes live without a reload: on each lifecycle event of the run (its
  * `run-started`, or a cancel or an end before it began), and each time the
- * shared connection opens, for an event sent while it was closed.
+ * shared connection opens, for an event sent while it was closed. A refetch
+ * while the app hydrates answers with the data it loaded with, so the page
+ * reads the run once hydration ends.
  */
 export function useRunStart(runId: number, status: () => string | null | undefined, refresh: () => Promise<unknown>) {
+  const nuxtApp = useNuxtApp();
   const refreshWhileInitializing = () => {
-    if (status() === 'initializing') refresh();
+    if (status() !== 'initializing') return;
+    if (nuxtApp.isHydrating) nuxtApp.hooks.hookOnce('app:suspense:resolve', refreshWhileInitializing);
+    else refresh();
   };
   useRunEvents((event) => {
     if (event.runId === runId) refreshWhileInitializing();

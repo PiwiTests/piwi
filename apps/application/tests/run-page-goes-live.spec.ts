@@ -1,28 +1,19 @@
 import * as http from 'node:http';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
 import { resolveE2ETarget, targetAuthHeaders } from './desktop-target';
 import { waitForHydration } from './utils';
+import { holdWorkerStream } from './utils/live-view';
 
 /**
  * A run page opened while its run initializes (the reporter's global setup registered it, no test has begun) goes
  * live as the run starts, without a reload: its running test shows the step its worker is on and, in a project with
- * the live view on, Watch. The page reads the run again as the instance's stream opens, which it does as soon as it
- * is subscribed, so a start sent before the page listened is not missed either.
+ * the live view on, Watch. It goes live on the run's start event, and on a start sent before the page listened, which
+ * it reads as the instance's stream opens; the stream opens as soon as the server has subscribed it.
  */
 
 const target = resolveE2ETarget();
-
-/** A worker's stream to the run's live view, held as a test worker holds it. */
-function holdWorkerStream(runId: number, key: string): { close: () => void } {
-  const request = http.request(`${target.baseUrl}/api/test-runs/${runId}/live-view?worker=0`, {
-    headers: { Accept: 'text/event-stream', Authorization: `Bearer ${key}` },
-  });
-  request.on('response', (response) => response.resume());
-  request.on('error', () => {});
-  request.end();
-  return { close: () => request.destroy() };
-}
 
 /** The instance's run events (`/api/stream`), as they arrive. */
 function openInstanceStream(): { text: () => string; close: () => void } {
@@ -36,19 +27,77 @@ function openInstanceStream(): { text: () => string; close: () => void } {
   return { text: () => text, close: () => request.destroy() };
 }
 
+/** A CI run's setup, as the reporter's global setup asks for it: the run initializes. */
+async function setUpRun(request: APIRequestContext, liveView = false) {
+  const setup = await request.post('/api/test-runs/setup', {
+    data: { projectName: PROJECT.RUN_GOES_LIVE, startTime: new Date().toISOString(), liveView },
+  });
+  expect(setup.ok()).toBeTruthy();
+  return (await setup.json()) as { runId: number; setupToken: string; liveView?: { key: string } };
+}
+
+/** The run's tests begin: worker 0 runs one. Returns the run's stream token. */
+async function beginRun(request: APIRequestContext, runId: number, setupToken: string): Promise<string> {
+  const begun = await request.post(`/api/test-runs/${runId}/begin`, { data: { setupToken, totalTests: 1 } });
+  expect(begun.ok()).toBeTruthy();
+  const { streamToken } = (await begun.json()) as { streamToken: string };
+  const events = await request.post(`/api/test-runs/${runId}/events`, {
+    data: {
+      streamToken,
+      testCases: [
+        {
+          type: 'begin',
+          title: 'pays on a slow page',
+          location: 'tests/checkout.spec.ts:3:1',
+          workerIndex: 0,
+          startedAt: Date.now(),
+        },
+      ],
+    },
+  });
+  expect(events.ok()).toBeTruthy();
+  return streamToken;
+}
+
+/** End the run, beginning it first when it never began, so it is not left for the stale-run sweep. */
+async function endRun(request: APIRequestContext, runId: number, setupToken: string, streamToken: string | null) {
+  let token = streamToken;
+  if (!token) {
+    const begun = await request.post(`/api/test-runs/${runId}/begin`, { data: { setupToken, totalTests: 0 } });
+    token = ((await begun.json()) as { streamToken?: string }).streamToken ?? null;
+  }
+  if (token) {
+    await request.post(`/api/test-runs/${runId}/finish`, {
+      data: { streamToken: token, status: 'passed', totalTests: 0 },
+    });
+  }
+}
+
+/** Open the run's page and see it initializing; the page notes it was loaded, so a reload shows. */
+async function openInitializingRun(page: Page, runId: number) {
+  await page.goto(`/test-runs/${runId}`);
+  await waitForHydration(page);
+  const header = page.locator('[data-shot="run-header"]');
+  await expect(header).toContainText(/initializing/i);
+  await page.evaluate(() => ((window as unknown as { sameDocument: boolean }).sameDocument = true));
+  return header;
+}
+
+async function sameDocument(page: Page): Promise<boolean | undefined> {
+  return page.evaluate(() => (window as unknown as { sameDocument?: boolean }).sameDocument);
+}
+
 test('the instance’s stream opens once subscribed, and hears every run event after', async ({ request }) => {
   const stream = openInstanceStream();
+  let run: { runId: number; setupToken: string } | null = null;
   try {
     // The comment comes at once, not with the first heartbeat.
     await expect.poll(stream.text, { timeout: 5_000 }).toMatch(/^: subscribed\n\n/);
-    const setup = await request.post('/api/test-runs/setup', {
-      data: { projectName: PROJECT.RUN_GOES_LIVE, startTime: new Date().toISOString() },
-    });
-    expect(setup.ok()).toBeTruthy();
-    const { runId } = (await setup.json()) as { runId: number };
-    await expect.poll(stream.text).toContain(`"type":"run-initializing","runId":${runId}`);
+    run = await setUpRun(request);
+    await expect.poll(stream.text).toContain(`"type":"run-initializing","runId":${run.runId}`);
   } finally {
     stream.close();
+    if (run) await endRun(request, run.runId, run.setupToken, null);
   }
 });
 
@@ -76,54 +125,25 @@ test.describe('Run page of an initializing run', () => {
     const { projectId } = (await (await request.get(`/api/test-runs/${first.runId}`)).json()) as { projectId: number };
     expect((await request.patch(`/api/projects/${projectId}`, { data: { liveView: true } })).ok()).toBeTruthy();
 
-    // A CI run's setup, as the reporter's global setup asks for it.
-    const setup = await request.post('/api/test-runs/setup', {
-      data: { projectName: PROJECT.RUN_GOES_LIVE, startTime: new Date().toISOString(), liveView: true },
-    });
-    expect(setup.ok()).toBeTruthy();
-    const { runId, setupToken, liveView } = (await setup.json()) as {
-      runId: number;
-      setupToken: string;
-      liveView: { key: string };
-    };
-
-    const stream = page.waitForResponse((response) => response.url().includes('/api/stream'));
-    await page.goto(`/test-runs/${runId}`);
-    await waitForHydration(page);
-    const header = page.locator('[data-shot="run-header"]');
-    await expect(header).toContainText(/initializing/i);
-    // The page hears the run's events from here.
-    await stream;
-    await page.evaluate(() => ((window as unknown as { sameDocument: boolean }).sameDocument = true));
-
-    // The tests begin: worker 0 runs one, and opens its stream to the live view.
-    const begun = await request.post(`/api/test-runs/${runId}/begin`, { data: { setupToken, totalTests: 1 } });
-    expect(begun.ok()).toBeTruthy();
-    const { streamToken } = (await begun.json()) as { streamToken: string };
-    const events = (testCases: Array<Record<string, unknown>>) =>
-      request.post(`/api/test-runs/${runId}/events`, { data: { streamToken, testCases } });
-    expect(
-      (
-        await events([
-          {
-            type: 'begin',
-            title: 'pays on a slow page',
-            location: 'tests/checkout.spec.ts:3:1',
-            workerIndex: 0,
-            startedAt: Date.now(),
-          },
-        ])
-      ).ok(),
-    ).toBeTruthy();
-    const worker = holdWorkerStream(runId, liveView.key);
+    const { runId, setupToken, liveView } = await setUpRun(request, true);
+    let streamToken: string | null = null;
+    let worker: { close: () => void } | null = null;
     try {
+      const stream = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/stream');
+      const header = await openInitializingRun(page, runId);
+      // The page hears the run's events from here.
+      await stream;
+
+      streamToken = await beginRun(request, runId, setupToken);
+      worker = holdWorkerStream(target.baseUrl, runId, liveView!.key);
       await expect(header).toContainText(/running/i, { timeout: 15_000 });
       await expect(page.getByText('In progress…')).toBeVisible({ timeout: 15_000 });
 
       // The page streams the run now: the step the worker takes shows on its test's row.
-      expect(
-        (
-          await events([
+      const step = await request.post(`/api/test-runs/${runId}/events`, {
+        data: {
+          streamToken,
+          testCases: [
             {
               type: 'step-begin',
               title: 'Click',
@@ -134,16 +154,49 @@ test.describe('Run page of an initializing run', () => {
               workerIndex: 0,
               startedAt: Date.now(),
             },
-          ])
-        ).ok(),
-      ).toBeTruthy();
+          ],
+        },
+      });
+      expect(step.ok()).toBeTruthy();
       await expect(page.getByTestId('live-step')).toContainText('Click');
       await expect(page.getByRole('button', { name: 'Watch worker 0 live' })).toBeVisible({ timeout: 15_000 });
 
-      expect(await page.evaluate(() => (window as unknown as { sameDocument?: boolean }).sameDocument)).toBe(true);
+      expect(await sameDocument(page)).toBe(true);
     } finally {
-      worker.close();
-      await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'passed', totalTests: 0 } });
+      worker?.close();
+      await endRun(request, runId, setupToken, streamToken);
+    }
+  });
+
+  test('goes live when the run started before the page listened', async ({ page, request }) => {
+    test.setTimeout(60_000);
+    const { runId, setupToken } = await setUpRun(request);
+    let streamToken: string | null = null;
+    // The page's request for the instance's stream waits until the run has begun: its start event reaches no one.
+    let held!: () => void;
+    const requested = new Promise<void>((resolve) => (held = resolve));
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    await page.route(
+      (url) => url.pathname === '/api/stream',
+      async (route) => {
+        held();
+        await released;
+        await route.continue();
+      },
+    );
+    try {
+      const header = await openInitializingRun(page, runId);
+      await requested;
+      streamToken = await beginRun(request, runId, setupToken);
+      release();
+
+      await expect(header).toContainText(/running/i, { timeout: 15_000 });
+      await expect(page.getByText('In progress…')).toBeVisible({ timeout: 15_000 });
+      expect(await sameDocument(page)).toBe(true);
+    } finally {
+      release();
+      await endRun(request, runId, setupToken, streamToken);
     }
   });
 });
