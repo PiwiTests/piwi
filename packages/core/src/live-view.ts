@@ -99,12 +99,13 @@ export function liveRunPage(address: LiveViewAddress): string {
 /**
  * Why a run outside CI holds no live view key: it reports to no Piwi instance (`no-instance`), the reporter's global
  * setup did not register it as it started (`unregistered`: the reporter entry without `wrapConfig`, a run that reports
- * at its end alone, or an instance the setup could not reach), or the instance gave none (`off`: its project has the
- * live view off, or the instance predates it).
+ * at its end alone, or an instance the setup could not reach), the instance gave none (`off`: its project has the
+ * live view off, or the instance predates it), or it reports to the desktop app on this machine, which gives none
+ * since no teammate reaches it (`local`: its setup answers `liveView.refused: 'local'`).
  */
-export type LiveViewMissing = 'no-instance' | 'unregistered' | 'off';
+export type LiveViewMissing = 'no-instance' | 'unregistered' | 'off' | 'local';
 
-const MISSING: readonly string[] = ['no-instance', 'unregistered', 'off'];
+const MISSING: readonly string[] = ['no-instance', 'unregistered', 'off', 'local'];
 
 /** The value of `PIWI_LIVE_VIEW` for a run outside CI that holds no key: why. */
 export function formatLiveViewMissing(why: LiveViewMissing): string {
@@ -124,6 +125,8 @@ export const LIVE_SHARE_MISSING: Record<LiveViewMissing, string> = {
   unregistered:
     "This run cannot be shared live: the reporter's global setup did not register it with the instance as it started (wrapConfig adds it).",
   off: "This run cannot be shared live: its project's live view is off on the instance. A Project admin turns it on in Project → Settings → Live view.",
+  local:
+    "This run cannot be shared live: it reports to the Piwi desktop app on this machine, which no teammate reaches. Name your team's instance in PIWI_DASHBOARD_URL to share a run there.",
 };
 
 /** What a surface says of a run whose workers name no live view at all: a reporter that set nothing for them. */
@@ -132,8 +135,8 @@ export const LIVE_SHARE_UNKNOWN =
 
 /**
  * Why a worker's shared stream was given up, by the instance's answer: the setting turned off (404), the key no longer
- * taken (401, 403: the run ended, or the instance started again), the run no longer live (410); and the instance that
- * did not answer after the retries.
+ * taken (401, 403: the instance started again, or gave the key up), the run no longer live (410), the run held as
+ * interrupted after the retries (409); and the instance that did not answer after them.
  */
 export function liveShareRefusal(status: number | null): string {
   switch (status) {
@@ -141,9 +144,11 @@ export function liveShareRefusal(status: number | null): string {
       return "Sharing stopped: the project's live view was turned off on the instance.";
     case 401:
     case 403:
-      return "Sharing stopped: the instance no longer takes this run's live view key (it started again, or the run ended there).";
+      return "Sharing stopped: the instance no longer takes this run's live view key (it started again, or gave the key up).";
     case 410:
       return 'Sharing stopped: the run is no longer live on the instance.';
+    case 409:
+      return 'Sharing stopped: the instance holds the run as interrupted, having heard nothing from it for a while. Share the run again once it reports there again.';
     default:
       return 'Sharing stopped: the instance did not answer. Share the run again to try once more.';
   }

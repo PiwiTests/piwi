@@ -465,7 +465,11 @@ export class PiwiDashboardReporter {
     const ci = detectCi(process.env);
     const setup = this.streamManager ? peekSetupInfo(this.options.projectName!) : null;
     if (!setup?.liveViewKey) {
-      if (!ci) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing(setup ? 'off' : 'unregistered');
+      if (!ci) {
+        process.env[LIVE_VIEW_ENV] = formatLiveViewMissing(
+          setup?.liveViewLocal ? 'local' : setup ? 'off' : 'unregistered',
+        );
+      }
       return;
     }
     process.env[LIVE_VIEW_ENV] = formatLiveViewEnv(this.httpClient.baseUrl, setup.runId, setup.liveViewKey);

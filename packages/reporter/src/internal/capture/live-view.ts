@@ -96,6 +96,8 @@ interface Link {
   sharing: boolean;
   /** Why the sharing stopped though nobody asked: the instance did not answer after the retries. */
   lost: string | null;
+  /** The instance's latest answer that opened no stream, since one last opened: what the retries end on. */
+  answered: number | null;
   viewers: number;
   /** The posts of a stop's start and end, one after the other, and how many wait. */
   states: Promise<unknown>;
@@ -227,6 +229,7 @@ export function openLiveView(
     refused: null,
     sharing: ci,
     lost: null,
+    answered: null,
     viewers: 0,
     states: Promise.resolve(),
     statesWaiting: 0,
@@ -269,6 +272,7 @@ function startSharing(): void {
   if (!own || own.ended || own.refused || own.sharing) return;
   own.sharing = true;
   own.lost = null;
+  own.answered = null;
   own.retries = 0;
   own.reconnects = 0;
   connect(own);
@@ -354,14 +358,19 @@ function connect(own: Link): void {
   if (own.id.shard !== null) url.searchParams.set('shard', String(own.id.shard));
   let openedAt: number | null = null;
   let dropped = false;
-  /** The stream closed: `status` is the instance's refusal, null for a connection that failed or closed. */
+  /**
+   * The stream closed: `status` is the instance's refusal, null for a connection that failed or closed. A stream
+   * already replaced or closed for good is done with: nothing is tried again for it.
+   */
   const drop = (status: number | null): void => {
     if (dropped) return;
     dropped = true;
-    if (own.stream === request) own.stream = null;
+    if (own.stream !== request) return;
+    own.stream = null;
     setViewers(own, 0);
     if (!active(own)) return;
     if (openedAt !== null && Date.now() - openedAt >= STEADY_MS) own.retries = 0;
+    if (status !== null) own.answered = status;
     if (status !== null && GIVE_UP.has(status)) return void refuse(own, status);
     if (own.retries >= RETRY_MS.length || own.reconnects >= MAX_RECONNECTS) return void giveUp(own);
     const wait = RETRY_MS[own.retries++]!;
@@ -393,6 +402,7 @@ function connect(own: Link): void {
       return drop(response.statusCode ?? null);
     }
     openedAt = Date.now();
+    own.answered = null;
     // The instance forgets a stream's stop as it closes: a stream opened again hears it again.
     if (own.stop) postState(own, { type: 'stop', ...own.id, stop: own.stop });
     response.setEncoding('utf8');
@@ -430,11 +440,19 @@ function refuse(own: Link, status: number): void {
   changed();
 }
 
-/** The instance did not answer after the retries: the sharing stops, which a person may start again. */
+/**
+ * The retries are over: the sharing stops, saying what the instance last answered (nothing, or that the run is
+ * interrupted), and its stream closes; a person may share the run again.
+ */
 function giveUp(own: Link): void {
   own.sharing = false;
-  own.lost = liveShareRefusal(null);
+  own.lost = liveShareRefusal(own.answered);
   own.viewers = 0;
+  if (own.timer) clearTimeout(own.timer);
+  own.timer = null;
+  own.stream?.destroy();
+  own.stream = null;
+  void stopView();
   changed();
 }
 

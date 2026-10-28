@@ -19,7 +19,7 @@ import { jsonRes, startServer, type FakeServer } from './_helpers.js';
  * runs: the worker opens its stream, sends frames while someone watches, and the stop it holds shows as paused. The
  * editor stops sharing at that stop: the viewers hear why, the stream closes, and nothing more goes to the instance,
  * the stop's end included. A run whose project has the live view off tells the editor why it cannot be shared, and a
- * share asked anyway sends nothing.
+ * share asked anyway sends nothing; so does a run that reports to the desktop app, which gives no key.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -77,8 +77,8 @@ const fresh = (): Heard => ({
   watched: false,
 });
 
-/** A run of a project with the live view on, and one of a project with it off. */
-type Mode = 'on' | 'off';
+/** A run of a project with the live view on, one of a project with it off, and one that reports to the desktop app. */
+type Mode = 'on' | 'off' | 'local';
 
 let server: FakeServer;
 let hub: net.Server;
@@ -89,6 +89,7 @@ let editor: net.Socket | null = null;
 const runs: Record<Mode, { heard: Heard; exitCode: number | null; output: string }> = {
   on: { heard: fresh(), exitCode: null, output: '' },
   off: { heard: fresh(), exitCode: null, output: '' },
+  local: { heard: fresh(), exitCode: null, output: '' },
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -120,7 +121,7 @@ async function onReady(): Promise<void> {
   try {
     heard.beforeShare = heard.liveRequests;
     tell({ type: 'share', on: true });
-    if (mode === 'off') return void (await sleep(1000));
+    if (mode !== 'on') return void (await sleep(1000));
     await waitFor(() => heard.streams.length > 0);
     sayViewers(1);
     await waitFor(() => frames().length > 2);
@@ -252,6 +253,7 @@ beforeAll(async () => {
         ...(mode === 'on' && heard.setups[heard.setups.length - 1]?.liveView === true
           ? { liveView: { key: KEY } }
           : {}),
+        ...(mode === 'local' ? { liveView: { refused: 'local' } } : {}),
       });
     }
     if (route === `/api/test-runs/${RUN}/begin`) {
@@ -280,6 +282,7 @@ beforeAll(async () => {
 
   await runSuite('on', socketPath);
   await runSuite('off', socketPath);
+  await runSuite('local', socketPath);
 }, 300_000);
 
 afterAll(async () => {
@@ -339,5 +342,14 @@ describe('Share live of a run outside CI', () => {
       { type: 'live', can: false, on: false, viewers: 0, page: null, why: LIVE_SHARE_MISSING.off },
     ]);
     expect(off.output).not.toContain('Live view ready');
+  });
+
+  it('says a run that reports to the desktop app cannot be shared, since no teammate reaches it', () => {
+    const { local } = runs;
+    expect(local.exitCode, local.output).toBe(0);
+    expect(local.heard.liveRequests).toBe(0);
+    expect(local.heard.lives).toEqual([
+      { type: 'live', can: false, on: false, viewers: 0, page: null, why: LIVE_SHARE_MISSING.local },
+    ]);
   });
 });

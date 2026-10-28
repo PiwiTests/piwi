@@ -18,6 +18,8 @@ export interface SetupInfo {
   projectName: string;
   /** The run's live view key, when the project turned its live view on: the workers' alone, set in `onBegin`. */
   liveViewKey?: string;
+  /** The instance gives no key since no teammate reaches it: the desktop app on this machine. */
+  liveViewLocal?: true;
 }
 
 /** Write the setup info file, readable by its owner alone. */

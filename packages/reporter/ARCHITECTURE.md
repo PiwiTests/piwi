@@ -296,8 +296,9 @@ What the package does to a user's run, process by process.
   Playwright hands the workers it starts after: a CI run (`detectCi`, which the run's origin
   reads too) says so in its `Live view on` line, a run outside CI that a run channel follows
   in its `Live view ready` line. A run outside CI with no key names why instead
-  (`none:no-instance`, `none:unregistered`, `none:off`); a run the reporter registers
-  itself, without the global setup, has none.
+  (`none:no-instance`, `none:unregistered`, `none:off`, and `none:local` for the desktop
+  app, which gives none: `liveView.refused: 'local'`); a run the reporter registers itself,
+  without the global setup, has none.
 - In a CI run, each worker opens an event stream to that URL in the `piwiResources` worker
   fixture, without waiting for it, and keeps it until the worker ends. Outside CI, it holds
   the key and opens nothing until the run channel says `share` with `on: true` (**Share
@@ -307,8 +308,10 @@ What the package does to a user's run, process by process.
   stops as it closes. Nothing goes to the instance while the run is not shared, its stops
   included. The stream never keeps the worker alive; a failed one is opened again after 1,
   2, 4, 8 and 16 seconds, 20 times at most over the worker's life (a 409 while the run is
-  interrupted included), then given up until the run is shared again, and a 401, 403, 404
-  or 410 gives the key up at once, the run channel hearing why.
+  interrupted included), then given up and closed until the run is shared again, saying
+  what the instance last answered, and a 401, 403, 404 or 410 gives the key up at once,
+  the run channel hearing why. A stream replaced by another (shared again at once) or
+  closed for good is done with: nothing is tried again for it.
 - The same fixture takes `PIWI_LIVE_VIEW` out of the worker's `process.env` until its
   teardown, so no process the worker's fixtures, hooks or tests start gets the key. A
   listener put before Playwright's own on the worker's IPC puts it back for the

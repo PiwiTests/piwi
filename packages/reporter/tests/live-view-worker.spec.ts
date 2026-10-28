@@ -1,6 +1,6 @@
 import type * as http from 'node:http';
 import type { Page, WorkerInfo } from '@playwright/test';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LIVE_SHARE_MISSING,
   LIVE_SHARE_UNKNOWN,
@@ -41,16 +41,20 @@ let posts: WorkerToInstance[];
 let streams: http.ServerResponse[];
 /** What the instance answers a stream: 200, or a refusal. */
 let streamStatus = 200;
+/** Whether a worker's new stream closes the one it held, as the instance's relay does. */
+let replaceStreams = false;
 
 beforeEach(async () => {
   posts = [];
   streams = [];
   streamStatus = 200;
+  replaceStreams = false;
   server = await startServer((req, res) => {
     if (!req.url.startsWith(`/api/test-runs/${RUN}/live-view`)) return jsonRes(res, 404, {});
     if (req.method === 'GET' && streamStatus !== 200) return jsonRes(res, streamStatus, {});
     if (req.headers.authorization !== `Bearer ${KEY}`) return jsonRes(res, 401, {});
     if (req.method === 'GET') {
+      if (replaceStreams) for (const earlier of streams) earlier.end();
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.write(`data: ${JSON.stringify({ type: 'viewers', count: 0 })}\n\n`);
       streams.push(res);
@@ -257,6 +261,48 @@ describe('Share live, in a run outside CI', () => {
     expect(liveViewState()).toMatchObject({ can: false, why: LIVE_SHARE_UNKNOWN });
     await sleep(100);
     expect(server.requests).toEqual([]);
+  });
+
+  it('stopped and shared again at once, holds one stream, and tries nothing again for the one it replaced', async () => {
+    replaceStreams = true;
+    openHere();
+    await shareLiveView(true);
+    await waitFor(() => streams.length === 1);
+    const off = shareLiveView(false);
+    const on = shareLiveView(true);
+    await off;
+    await on;
+    await waitFor(() => streams.length === 2);
+    // Past the first retries' waits: no stream more opens, and the one the worker holds stays open.
+    await sleep(3500);
+    expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(2);
+    expect(streams[1]!.writableEnded).toBe(false);
+    expect(liveViewState()).toMatchObject({ can: true, on: true });
+  }, 10_000);
+
+  it('gives up a stream the instance holds as interrupted after the retries, saying so', async () => {
+    streamStatus = 409;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      openHere();
+      await shareLiveView(true);
+      const gets = () => server.requests.filter((request) => request.method === 'GET').length;
+      for (let tried = 1; liveViewState().on && tried <= 10; tried++) {
+        const start = Date.now();
+        while (gets() < tried && Date.now() - start < 5000) await new Promise((resolve) => setImmediate(resolve));
+        await vi.advanceTimersByTimeAsync(16_000);
+      }
+      expect(liveViewState()).toEqual({
+        can: true,
+        on: false,
+        viewers: 0,
+        page: `${server.url}/test-runs/${RUN}`,
+        why: expect.stringMatching(/^Sharing stopped: the instance holds the run as interrupted/),
+      });
+      expect(gets()).toBe(6);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('cannot be shared once the instance refused its key, and says why', async () => {

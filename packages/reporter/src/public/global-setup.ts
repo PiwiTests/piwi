@@ -150,8 +150,9 @@ export function createGlobalSetup(
           instanceId: computeInstanceId(opts.projectName!, resolveRunLabel(opts.runLabel, shard !== null)),
           shardIndex: shard?.current,
           shardTotal: shard?.total,
-          // A key for the run's live view: the instance hands one out only for a project that turned it on. A CI run's
-          // workers stream with it at once; a run outside CI sends nothing with it until a person shares the run.
+          // A key for the run's live view: the instance hands one out only for a project that turned it on, and the
+          // desktop app none. A CI run's workers stream with it at once; a run outside CI sends nothing with it until a
+          // person shares the run.
           liveView: true,
         },
         auth,
@@ -164,6 +165,7 @@ export function createGlobalSetup(
           setupToken: response.setupToken,
           projectName: opts.projectName!,
           ...(isLiveViewKey(liveViewKey) ? { liveViewKey } : {}),
+          ...(response.liveView?.refused === 'local' ? { liveViewLocal: true as const } : {}),
         });
         logger.debug(`Global setup: initializing run #${response.runId}`);
       }
