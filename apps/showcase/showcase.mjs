@@ -190,7 +190,10 @@ try {
     out,
     mode,
     until,
-    say,
+    // Once a signal's handler closes the set, the beat it stops fails: the handler tells the take's end.
+    say: (line) => {
+      if (!interruption) say(line);
+    },
     outcomes,
     // A beat that fails as a signal's handler closes the set keeps nothing: the handler kept the take as it stood.
     keep: async (_beat, dir) => {
