@@ -208,8 +208,10 @@ What the package does to a user's run, process by process.
   one-time code or a card's number or security code (`SECRET_FIELDS`, from
   `SECRET_AUTOCOMPLETE`); `ref-locator` ranks the element a
   ref names (`page.getByRef`, 1.64) as Pick does, with the project's `testIdAttribute`,
-  each candidate checked to find it alone, and reads its text, value (none of a secret
-  field, `el.matches(SECRET_FIELDS)`) and checked state; `act` plays a click, a fill, a key press, a check or a select
+  each candidate checked to find it alone, and reads its text (its `textContent` with
+  whitespace collapsed, as a text assertion compares it, 1,000 characters at most and
+  `textCut` past them), value (none of a secret field, `el.matches(SECRET_FIELDS)`) and
+  checked state, each text's credentials hidden before it is cut; `act` plays a click, a fill, a key press, a check or a select
   on it with Playwright's own action (trusted input, 5 seconds at most), after ranking it
   for the step it makes. Each runs as an internal call, never a step of the test.
 - `events` (`run-events.ts`): while the editor asked and a test runs, each call of the

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { chromium, type Browser, type Page } from '@playwright/test';
+import { chromium, expect as expectPage, type Browser, type Page } from '@playwright/test';
+import { MAX_ELEMENT_TEXT } from '@piwitests/core/run-channel';
 import { probeElementAttrs } from '@piwitests/picker-dom';
 import { CAPTURED_ATTRS_ARG } from '../src/internal/capture/capture-fixtures.js';
 import { readSnapshot, refLocators, withoutFieldSecrets } from '../src/internal/capture/agent-page.js';
@@ -7,7 +8,8 @@ import { readSnapshot, refLocators, withoutFieldSecrets } from '../src/internal/
 /**
  * What an agent reads of a stopped page holding secrets: the value of a password field, a card's number or security
  * code and a one-time code, short or long, plain or quoted in the snapshot, in the main frame or an iframe, is hidden in
- * the snapshot, masked in the image and left out of the element's answer.
+ * the snapshot, masked in the image and left out of the element's answer. And an element's text, read whole up to its
+ * limit, as Playwright's text assertions compare it.
  */
 
 describe('a snapshot without the secret fields’ values', () => {
@@ -82,19 +84,19 @@ describe('a stopped page with secrets, for an agent', () => {
     const viewer = await browser.newPage();
     try {
       await viewer.setContent(`<img id="shot" src="data:image/jpeg;base64,${read.image!.data}">`);
-      await viewer.waitForFunction(() => (document.getElementById('shot') as HTMLImageElement).complete);
-      const [r, g, b] = await viewer.evaluate(
-        ({ x, y }) => {
-          const img = document.getElementById('shot') as HTMLImageElement;
-          const canvas = document.createElement('canvas');
-          canvas.width = img.naturalWidth;
-          canvas.height = img.naturalHeight;
-          const context = canvas.getContext('2d')!;
-          context.drawImage(img, 0, 0);
-          return Array.from(context.getImageData(x, y, 1, 1).data);
-        },
-        { x: Math.round(field.x + 20), y: Math.round(field.y + field.height / 2) },
-      );
+      await viewer.waitForFunction('document.getElementById("shot").complete');
+      // The color of the image's pixel at the field, read on a canvas.
+      const x = Math.round(field.x + 20);
+      const y = Math.round(field.y + field.height / 2);
+      const [r, g, b] = await viewer.evaluate<number[]>(`(() => {
+        const img = document.getElementById('shot');
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const context = canvas.getContext('2d');
+        context.drawImage(img, 0, 0);
+        return Array.from(context.getImageData(${x}, ${y}, 1, 1).data);
+      })()`);
       // Playwright's mask: magenta over the field, where its digits would be.
       expect(r).toBeGreaterThan(200);
       expect(g).toBeLessThan(60);
@@ -115,5 +117,36 @@ describe('a stopped page with secrets, for an agent', () => {
     }
     const coupon = /textbox "Coupon" \[ref=(e\d+)\]/.exec(read.snapshot!)![1]!;
     expect((await refLocators(page, PROBE, coupon, null)).element).toMatchObject({ secret: false, value: 'WELCOME10' });
+  });
+});
+
+describe('an element’s text, for an assertion', () => {
+  let browser: Browser;
+  const PROBE = { fn: probeElementAttrs, arg: { ...CAPTURED_ATTRS_ARG, testIdAttribute: null } };
+
+  beforeAll(async () => {
+    browser = await chromium.launch();
+  });
+  afterAll(async () => browser?.close());
+
+  it('is read whole, as toHaveText compares it, and cut past its limit, saying so', async () => {
+    const page = await browser.newPage();
+    try {
+      const text =
+        'Your order of three ceramic mugs, two saucers and one teapot has shipped and will arrive within five working days at the address you gave.';
+      const long = 'many words '.repeat(120);
+      await page.setContent(`<p role="status">  ${text.replace(/ /g, '\n  ')}  </p><p role="note">${long}</p>`);
+      const read = await readSnapshot(page, null, false);
+      const refOf = (role: string) => new RegExp(`${role} \\[ref=(e\\d+)\\]`).exec(read.snapshot!)![1]!;
+      const status = (await refLocators(page, PROBE, refOf('status'), null)).element!;
+      expect(status).toMatchObject({ text, textCut: false });
+      await expectPage(page.getByRole('status')).toHaveText(status.text!, { timeout: 1000 });
+      const note = (await refLocators(page, PROBE, refOf('note'), null)).element!;
+      expect(note.textCut).toBe(true);
+      expect(note.text).toHaveLength(MAX_ELEMENT_TEXT);
+      await expectPage(page.getByRole('note')).toContainText(note.text!.trim(), { timeout: 1000 });
+    } finally {
+      await page.close();
+    }
   });
 });

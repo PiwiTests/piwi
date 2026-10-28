@@ -879,7 +879,10 @@ and a JSON schema that names them (`AGENT_TOOLS`, `additionalProperties: false`)
   (`StopActions.agentCode`, `piwi/stopCode`): the steps taken at the stop (`steps`, then forgotten), the best locator
   of `target` in place of the stopped line's (`locator`, `renderStopLocator`), or an assertion on it (`assertion`:
   visible, hidden, enabled, disabled, checked, unchecked, text, value). Its sentences say the agent made it
-  (`AGENT_WROTE`), to the client and, as a `code`, to Piwi Picker.
+  (`AGENT_WROTE`), to the client and, as a `code`, to Piwi Picker. A text assertion expects the element's whole text,
+  which the worker reads up to `MAX_ELEMENT_TEXT` (1,000 characters, `textCut` past it), or, cut, that the element
+  contains its first words (`toContainText`, `MAX_CONTAINED_TEXT`); `expectedOf` refuses a secret field, a text or a
+  value a credential was hidden in, and a value cut at `MAX_ACT_VALUE`.
 
 **The page is untrusted.** Each result holds Piwi's answer as JSON first, then, apart, what came from the page, between
 two markers that share a random nonce (`pageContent`), which the page cannot guess: the snapshot and its change, the

@@ -19,9 +19,11 @@ import { randomBytes } from 'node:crypto';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { diffLines } from '@piwitests/core/line-diff';
-import { hideSecretsInText, hideSecretsInUrl } from '@piwitests/core/mask';
+import { HIDDEN_VALUE, hideSecretsInText, hideSecretsInUrl } from '@piwitests/core/mask';
 import type { AssertionMatcher, RecordedStep, RecordedTarget, StepAction } from '@piwitests/core/recording';
 import {
+  MAX_ACT_VALUE,
+  MAX_ELEMENT_TEXT,
   MAX_SNAPSHOT_DEPTH,
   readAct,
   type RankedRefLocator,
@@ -406,7 +408,7 @@ export const AGENT_TOOLS: ToolDefinition[] = [
         assertion: {
           type: 'string',
           enum: ['visible', 'hidden', 'enabled', 'disabled', 'checked', 'unchecked', 'text', 'value'],
-          description: 'For `assertion`: what to assert of the element, `text` and `value` as the page shows them now.',
+          description: `For \`assertion\`: what to assert of the element, \`text\` and \`value\` as the page shows them now: its whole text (\`toHaveText\`), or the first words of one longer than ${MAX_ELEMENT_TEXT} characters (\`toContainText\`). A secret field's value, or a text or a value that holds a credential, is never written.`,
         },
       },
       required: ['run', 'stop', 'kind'],
@@ -538,6 +540,45 @@ function targetOf(element: RefElement, locators: RankedRefLocator[]): RecordedTa
     testId: element.testId,
     text: element.text,
     alternatives: locators.filter((l) => l.unique).map(({ locator, method, score }) => ({ locator, method, score })),
+  };
+}
+
+/** The most characters of a long text an assertion checks the element contains, cut at a word's end. */
+const MAX_CONTAINED_TEXT = 200;
+
+/**
+ * What an assertion on an element's text or value expects: the whole of it, or for a text cut at `MAX_ELEMENT_TEXT`
+ * its first words, up to `MAX_CONTAINED_TEXT` characters, to contain (`contains`); refused for a secret field, for a
+ * text or a value a credential was hidden in (it would be written down, or never match), for a value cut, and for none.
+ */
+function expectedOf(
+  element: RefElement,
+  of: 'text' | 'value',
+): { expected: string; contains: boolean } | { refusal: string } {
+  if (element.secret) {
+    return {
+      refusal:
+        'A secret field’s value (a password, a one-time code, a card’s number or security code) is never written down.',
+    };
+  }
+  const said = element[of];
+  if (said === null || said === '') return { refusal: `The element has no ${of} to assert: choose another assertion.` };
+  if (said.includes(HIDDEN_VALUE) || hideSecretsInText(said) !== said) {
+    return {
+      refusal: `The element's ${of} holds a credential, which Piwi never writes down: choose another assertion.`,
+    };
+  }
+  if (of === 'value') {
+    return element.valueCut
+      ? { refusal: `The field's value is longer than ${MAX_ACT_VALUE} characters: choose another assertion.` }
+      : { expected: said, contains: false };
+  }
+  if (!element.textCut) return { expected: said, contains: false };
+  const first = said.slice(0, MAX_CONTAINED_TEXT + 1);
+  const end = first.lastIndexOf(' ', MAX_CONTAINED_TEXT);
+  return {
+    expected: (end > MAX_CONTAINED_TEXT / 2 ? first.slice(0, end) : first.slice(0, MAX_CONTAINED_TEXT)).trim(),
+    contains: true,
   };
 }
 
@@ -1114,15 +1155,9 @@ export class RunAgent {
       return this.result({ ok: written.ok, message: written.message });
     }
     const asked = ASSERTIONS[assertion!]!;
-    const expected = asked.expected ? found.element[asked.expected] : null;
-    if (asked.expected && found.element.secret) {
-      return this.error(
-        'A secret field’s value (a password, a one-time code, a card’s number or security code) is never written down.',
-      );
-    }
-    if (asked.expected && (expected === null || expected === '')) {
-      return this.error(`The element has no ${asked.expected} to assert: choose another assertion.`);
-    }
+    const expecting = asked.expected ? expectedOf(found.element, asked.expected) : { expected: null, contains: false };
+    if ('refusal' in expecting) return this.error(expecting.refusal);
+    const { expected, contains } = expecting;
     const step: RecordedStep = {
       action: 'assert',
       target: targetOf(found.element, locators),
@@ -1130,12 +1165,24 @@ export class RunAgent {
       redacted: false,
       pageUrl: '',
       timestamp: Date.now(),
-      assertion: { matcher: asked.matcher, expected, actual: null, negated: asked.negated, note: null },
+      assertion: {
+        matcher: contains ? 'toContainText' : asked.matcher,
+        expected,
+        actual: null,
+        negated: asked.negated,
+        note: null,
+      },
     };
     const written = this.options.writeCode(stop, {
       action: 'assert',
       session: { steps: [step], startedAt: step.timestamp, startUrl: '' },
     });
-    return this.result({ ok: written.ok, message: written.message });
+    return this.result({
+      ok: written.ok,
+      message:
+        written.ok && contains
+          ? `${written.message} The element's text is longer than ${MAX_ELEMENT_TEXT} characters: the assertion checks that it contains its first ${expected!.length} (toContainText).`
+          : written.message,
+    });
   }
 }

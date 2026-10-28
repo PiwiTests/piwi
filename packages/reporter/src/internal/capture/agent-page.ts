@@ -1,7 +1,9 @@
 import type { Browser, ElementHandle, Locator, Page } from '@playwright/test';
 import { HIDDEN_VALUE, SECRET_AUTOCOMPLETE, hideSecretsInText, hideSecretsInUrl } from '@piwitests/core/mask';
 import {
+  MAX_ACT_VALUE,
   MAX_AGENT_SNAPSHOT,
+  MAX_ELEMENT_TEXT,
   type ActAnswer,
   type BindAnswer,
   type PausedImage,
@@ -179,30 +181,60 @@ export async function readSnapshot(page: Page, depth: number | null, image: bool
   };
 }
 
-/** What an element is and holds, read in the page: whether it holds a secret, its value and whether it is checked. */
+/**
+ * What an element is and holds, read in the page: whether it holds a secret, its text and its value, each read to
+ * `read` characters at most with its whole length, and whether it is checked.
+ */
 interface Held {
   secret: boolean;
-  value: string | null;
+  text: { read: string; length: number } | null;
+  value: { read: string; length: number } | null;
   checked: boolean | null;
 }
 
 /**
- * In the page: whether an element is a field that holds a secret (`secretFields`), its value (a form control's, none
- * of a secret field's) and whether it is checked. Self-contained.
+ * In the page: whether an element is a field that holds a secret (`secretFields`), its text (its `textContent`,
+ * whitespace collapsed as Playwright's text assertions compare it) and its value (a form control's, none of a secret
+ * field's), each to `read` characters, and whether it is checked. Self-contained.
  */
-const heldIn = (el: unknown, secretFields: string): Held => {
-  type Field = { type?: unknown; value?: unknown; checked?: unknown; tagName?: string; matches?(css: string): boolean };
+const heldIn = (el: unknown, args: { secretFields: string; read: number }): Held => {
+  type Field = {
+    type?: unknown;
+    value?: unknown;
+    checked?: unknown;
+    tagName?: string;
+    textContent?: unknown;
+    matches?(css: string): boolean;
+  };
   const field = el as Field;
   const tag = (field.tagName ?? '').toLowerCase();
   const control = tag === 'input' || tag === 'textarea' || tag === 'select';
   const type = typeof field.type === 'string' ? field.type.toLowerCase() : null;
-  const secret = typeof field.matches === 'function' && field.matches(secretFields);
+  const secret = typeof field.matches === 'function' && field.matches(args.secretFields);
+  const words =
+    typeof field.textContent === 'string'
+      ? field.textContent
+          .replace(/\u200b/g, '')
+          .replace(/\s+/g, ' ')
+          .trim()
+      : '';
+  const value = control && !secret && typeof field.value === 'string' ? field.value : null;
   return {
     secret,
-    value: control && !secret && typeof field.value === 'string' ? field.value : null,
+    text: words ? { read: words.slice(0, args.read), length: words.length } : null,
+    value: value === null ? null : { read: value.slice(0, args.read), length: value.length },
     checked: tag === 'input' && (type === 'checkbox' || type === 'radio') ? field.checked === true : null,
   };
 };
+
+/** How much more of a text than it sends the worker reads, so that a credential cut at the end is hidden whole. */
+const READ_PAST = 1000;
+
+/** A text read in the page, its credentials hidden, then cut at `max`; whether it was longer than `max`. */
+function hiddenAndCut(held: { read: string; length: number }, max: number): { text: string; cut: boolean } {
+  const hidden = hideSecretsInText(held.read);
+  return { text: hidden.slice(0, max), cut: held.length > max || hidden.length > max };
+}
 
 /** The element and its locators, ranked: those that find it alone first, each as Pick ranks it. */
 async function ranked(
@@ -213,7 +245,7 @@ async function ranked(
   testIdAttribute: string | null,
 ): Promise<{ element: RefElement; locators: RankedRefLocator[] }> {
   const { attrs, accessibleName, candidates } = await rankedCandidates(probe, locator, handle, testIdAttribute);
-  const held = await handle.evaluate(heldIn, SECRET_FIELDS);
+  const held = await handle.evaluate(heldIn, { secretFields: SECRET_FIELDS, read: MAX_ACT_VALUE + READ_PAST });
   const checked: RankedRefLocator[] = [];
   for (const candidate of candidates.slice(0, MAX_CHECKED)) {
     checked.push({
@@ -225,7 +257,8 @@ async function ranked(
   }
   const locators = [...checked.filter((l) => l.unique), ...checked.filter((l) => !l.unique)];
   const { secret } = held;
-  const text = attrs.textContent ? attrs.textContent.replace(/\s+/g, ' ').trim().slice(0, 120) || null : null;
+  const text = held.text ? hiddenAndCut(held.text, MAX_ELEMENT_TEXT) : null;
+  const value = held.value && !secret ? hiddenAndCut(held.value, MAX_ACT_VALUE) : null;
   const role = resolveAriaRole({ ...attrs, accessibleName });
   return {
     element: {
@@ -233,8 +266,10 @@ async function ranked(
       role,
       name: accessibleName ? hideSecretsInText(accessibleName).slice(0, 1000) : null,
       testId: attrs.attributes[testIdAttribute ?? 'data-testid'] ?? null,
-      text: text && hideSecretsInText(text),
-      value: secret || held.value === null ? null : hideSecretsInText(held.value).slice(0, 10_000),
+      text: text?.text ?? null,
+      textCut: text?.cut ?? false,
+      value: value?.text ?? null,
+      valueCut: value?.cut ?? false,
       checked: held.checked,
       secret,
     },

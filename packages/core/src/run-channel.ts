@@ -231,11 +231,16 @@ export function isSnapshotRef(ref: unknown): ref is string {
   return typeof ref === 'string' && /^(?:f\d{1,6})?e\d{1,9}$/.test(ref);
 }
 
+/** The longest text of an element an answer carries, in characters, whitespace collapsed: a longer one is cut. */
+export const MAX_ELEMENT_TEXT = 1000;
+
 /**
  * An element of a stopped page, as its ref names it: its tag, role and accessible name, its test id (the project's
- * `testIdAttribute`), its text (whitespace collapsed, at most 120 characters), its value (none of a password field)
- * and whether it is checked (null for an element that is not a checkbox or a radio). `secret` says it is a password
- * field, whose typed value is never written down.
+ * `testIdAttribute`), its text (its `textContent`, whitespace collapsed as Playwright's text assertions compare it, at
+ * most `MAX_ELEMENT_TEXT` characters, `textCut` when it was longer), its value (none of a secret field, at most
+ * `MAX_ACT_VALUE` characters, `valueCut` when it was longer) and whether it is checked (null for an element that is
+ * not a checkbox or a radio). `secret` says it is a field that holds a secret (a password, a one-time code, a card's
+ * number or security code), whose value is never sent nor written down.
  */
 export interface RefElement {
   tagName: string;
@@ -243,7 +248,9 @@ export interface RefElement {
   name: string | null;
   testId: string | null;
   text: string | null;
+  textCut: boolean;
   value: string | null;
+  valueCut: boolean;
   checked: boolean | null;
   secret: boolean;
 }
@@ -601,7 +608,7 @@ function readRefElement(value: unknown): RefElement | null {
   const role = optionalText(value.role, 64);
   const name = optionalText(value.name, 1000);
   const testId = optionalText(value.testId, 1000);
-  const text = optionalText(value.text, 120);
+  const text = optionalText(value.text, MAX_ELEMENT_TEXT);
   const kept = optionalText(value.value, MAX_ACT_VALUE);
   if (role === undefined || name === undefined || testId === undefined || text === undefined || kept === undefined) {
     return null;
@@ -613,8 +620,13 @@ function readRefElement(value: unknown): RefElement | null {
     name,
     testId,
     text,
-    // A password field's value never travels.
+    // A text cut here, or by the worker, says so: an assertion never takes it for the whole.
+    textCut: value.textCut === true || (typeof value.text === 'string' && value.text.length > MAX_ELEMENT_TEXT),
+    // A secret field's value never travels.
     value: value.secret ? null : kept,
+    valueCut:
+      !value.secret &&
+      (value.valueCut === true || (typeof value.value === 'string' && value.value.length > MAX_ACT_VALUE)),
     checked: value.checked as boolean | null,
     secret: value.secret,
   };

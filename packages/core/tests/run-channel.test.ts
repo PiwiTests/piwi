@@ -7,6 +7,7 @@ import {
   MAX_REGION_SNAPSHOT,
   MAX_ACT_VALUE,
   MAX_AGENT_SNAPSHOT,
+  MAX_ELEMENT_TEXT,
   MAX_RUN_EVENT_TEXT,
   MAX_SNAPSHOT_DEPTH,
   MAX_STOP_ERROR,
@@ -560,7 +561,9 @@ describe('the run channel', () => {
         name: 'Pay',
         testId: 'pay',
         text: 'Pay',
+        textCut: false,
         value: null,
+        valueCut: false,
         checked: null,
         secret: false,
       };
@@ -582,7 +585,23 @@ describe('the run channel', () => {
       expect(parseRunToHub(line({ ...answer, what: 'act' }))).toEqual({ ...answer, what: 'act' });
       const secret = { ...element, tagName: 'input', role: 'textbox', value: 'hunter2', secret: true };
       expect(parseRunToHub(line({ ...answer, value: { ...answer.value, element: secret } }))).toMatchObject({
-        value: { element: { value: null, secret: true } },
+        value: { element: { value: null, valueCut: false, secret: true } },
+      });
+      // A text or a value longer than this side reads is cut, and says so; one the worker cut says so too.
+      const long = { ...element, text: 'a'.repeat(MAX_ELEMENT_TEXT + 5), value: 'b'.repeat(MAX_ACT_VALUE + 5) };
+      expect(parseRunToHub(line({ ...answer, value: { ...answer.value, element: long } }))).toMatchObject({
+        value: {
+          element: {
+            text: 'a'.repeat(MAX_ELEMENT_TEXT),
+            textCut: true,
+            value: 'b'.repeat(MAX_ACT_VALUE),
+            valueCut: true,
+          },
+        },
+      });
+      const cut = { ...element, textCut: true };
+      expect(parseRunToHub(line({ ...answer, value: { ...answer.value, element: cut } }))).toMatchObject({
+        value: { element: { textCut: true } },
       });
       for (const value of [
         { ...answer.value, element: { ...element, tagName: 'a b' } },

@@ -10,7 +10,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { RUN_TAKES, type HubToRun, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
+import { MAX_ELEMENT_TEXT, RUN_TAKES, type HubToRun, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
 import type { AgentsResult, StopBindResult } from '../src/protocol';
 import { MAX_FOLLOW_EVENTS, pageContent, snapshotChange } from '../src/run-agent';
 import { FakeWorker, last, service, waitFor, type Service } from './run-fixtures';
@@ -677,6 +677,42 @@ describe('what an agent reads of the page', () => {
         'A secret field’s value (a password, a one-time code, a card’s number or security code) is never written down.',
       );
     }
+    other.socket.destroy();
+  });
+
+  test('asserts an element’s whole text, the first words of a long one, and never a text that holds a credential', async () => {
+    const long = Array.from({ length: 60 }, (_, i) => `word${i}`)
+      .join(' ')
+      .repeat(4)
+      .slice(0, MAX_ELEMENT_TEXT);
+    let asked: Record<string, unknown> = { ...BUTTON, text: long, textCut: true };
+    const { run, since, other } = await stoppedRun({
+      'ref-locator': () => ({
+        ok: true,
+        message: '1 locator finds that element alone.',
+        element: asked,
+        locators: [{ locator: "getByRole('status')", method: 'getByRole', score: 90, unique: true }],
+      }),
+    });
+    const write = (assertion: string) =>
+      call('code_write', { run, stop: since, kind: 'assertion', target: 'e2', assertion });
+    const contained = await write('text');
+    expect(contained.piwi.ok).toBe(true);
+    expect(contained.piwi.message).toContain(`longer than ${MAX_ELEMENT_TEXT} characters`);
+    const code = await waitFor(() => ide.codes.find((c) => c.ref === run && c.action === 'assert'));
+    const written = /toContainText\('([^']*)'\)/.exec(code.code)?.[1];
+    expect(written, code.code).toBeTruthy();
+    expect(long.startsWith(written!)).toBe(true);
+    expect(written!.length).toBeLessThanOrEqual(200);
+    expect(written).toMatch(/word\d+$/);
+    asked = { ...BUTTON, text: `Your token: <hidden>` };
+    expect((await write('text')).piwi.message).toBe(
+      "The element's text holds a credential, which Piwi never writes down: choose another assertion.",
+    );
+    asked = { ...BUTTON, tagName: 'textarea', role: 'textbox', text: null, value: 'x'.repeat(100), valueCut: true };
+    expect((await write('value')).piwi.message).toBe(
+      "The field's value is longer than 10000 characters: choose another assertion.",
+    );
     other.socket.destroy();
   });
 

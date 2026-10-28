@@ -61,6 +61,10 @@ project's test id attribute first and the suite's own locators preferred. `code_
 generator, as [Code from a pause](./editor-stop-code) does, and the editor writes them above the stopped line as one
 edit: one undo removes it. The test goes on with the code it started with: the new lines run next time.
 
+**An assertion on an element's text** checks the whole text, as the page shows it now (`toHaveText`); for a text
+longer than 1,000 characters, it checks that the element contains its first words (`toContainText`, up to 200
+characters). Piwi refuses to write a secret field's value, and a text or a value that holds a credential.
+
 ## What keeps it safe
 
 - **Only this machine, only this window.** The server answers a request to its own address on `127.0.0.1` with the
