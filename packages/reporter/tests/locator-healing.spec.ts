@@ -1,5 +1,8 @@
+import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
+  callSitePath,
   captureCallerLocation,
   generateAlternatives,
   classifyCssStability,
@@ -929,6 +932,65 @@ describe('captureCallerLocation', () => {
       frame(`${process.cwd()}/tests/fixtures.ts`, 88),
     ].join('\n');
     expect(captureCallerLocation(stack)).toBe('tests/fixtures.ts:88:5');
+  });
+
+  it("reads an ES module's file URL frame below the CommonJS bundle's frames", () => {
+    const spec = pathToFileURL(path.join(process.cwd(), 'tests', 'checkout.spec.ts')).href;
+    const stack = [
+      'Error',
+      frame('/pkg/node_modules/@piwitests/reporter/dist/index.js', 3163),
+      frame('/pkg/node_modules/@piwitests/reporter/dist/index.js', 3100),
+      `    at ${spec}:42:5`,
+      frame(pathToFileURL(path.join(process.cwd(), 'tests', 'other.spec.ts')).href, 7),
+    ].join('\n');
+    expect(captureCallerLocation(stack)).toBe('tests/checkout.spec.ts:42:5');
+  });
+
+  it("keeps an ES module page object's frame, decoded, and skips the ESM machinery above it", () => {
+    const stack = [
+      'Error',
+      frame('file:///pkg/node_modules/@piwitests/reporter/dist/index.mjs', 3163),
+      frame('file:///pkg/node_modules/@piwitests/reporter/dist/index.mjs', 3100),
+      frame('file:///pkg/node_modules/playwright/lib/matchers/matchers.js', 131),
+      frame(pathToFileURL(path.join(process.cwd(), 'tests', 'pages', 'my cart.ts')).href, 12),
+      frame(pathToFileURL(path.join(process.cwd(), 'tests', 'cart.spec.ts')).href, 4),
+    ].join('\n');
+    expect(captureCallerLocation(stack)).toBe('tests/pages/my cart.ts:12:5');
+  });
+
+  it('gives no call site for a file URL that names no local file', () => {
+    const stack = [
+      'Error',
+      frame('/pkg/node_modules/@piwitests/reporter/dist/index.js', 3163),
+      frame('file://fileserver/share/tests/checkout.spec.ts', 42),
+    ].join('\n');
+    expect(captureCallerLocation(stack)).toBeNull();
+  });
+});
+
+describe('callSitePath', () => {
+  it('reads a POSIX file URL, percent-encoding decoded', () => {
+    expect(callSitePath('file:///tmp/work/tests/a.spec.ts', '/tmp/work', false)).toBe('tests/a.spec.ts');
+    expect(callSitePath('file:///tmp/my%20work/tests/a%20b.spec.ts', '/tmp/my work', false)).toBe('tests/a b.spec.ts');
+  });
+
+  it('reads a Windows file URL, drive letter and all', () => {
+    expect(callSitePath('file:///C:/work/tests/a.spec.ts', 'C:\\work', true)).toBe('tests/a.spec.ts');
+    expect(callSitePath('file:///c:/my%20work/tests/pages/home.ts', 'C:\\my work', true)).toBe('tests/pages/home.ts');
+  });
+
+  it("reads a CommonJS frame's plain path", () => {
+    expect(callSitePath('/tmp/work/tests/a.spec.ts', '/tmp/work', false)).toBe('tests/a.spec.ts');
+    expect(callSitePath('C:\\work\\tests\\a.spec.ts', 'C:\\work', true)).toBe('tests/a.spec.ts');
+  });
+
+  it('names a file outside the working directory from it', () => {
+    expect(callSitePath('file:///tmp/shared/steps.ts', '/tmp/work', false)).toBe('../shared/steps.ts');
+    expect(callSitePath('file:///D:/shared/steps.ts', 'C:\\work', true)).toBe('D:/shared/steps.ts');
+  });
+
+  it('gives null for a file URL with a host outside Windows', () => {
+    expect(callSitePath('file://fileserver/share/a.spec.ts', '/tmp/work', false)).toBeNull();
   });
 });
 

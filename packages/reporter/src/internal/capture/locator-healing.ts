@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { fingerprintPresent, matchRenamedElement, parseAriaCandidates } from '@piwitests/core/locator-fingerprint';
 import type { ElementFingerprint } from '@piwitests/core/locator-fingerprint';
 import { LOCATOR_BUILDER_METHODS } from '@piwitests/core/locator-methods';
@@ -464,12 +465,11 @@ export function captureCallerLocation(stack: string = new Error().stack ?? ''): 
       prevWasCaptureModule = false;
       continue;
     }
-    let file = m[2]!;
+    const file = m[2]!;
     if (!file || file.startsWith('node:')) {
       prevWasCaptureModule = false;
       continue;
     }
-    file = file.replace(/^file:\/\/\/?/, '');
     // Must look like a source file (has an extension).
     if (!/\.[a-z]+$/i.test(file)) {
       prevWasCaptureModule = false;
@@ -501,15 +501,32 @@ export function captureCallerLocation(stack: string = new Error().stack ?? ''): 
       prevWasCaptureModule = false;
       continue;
     }
-    let rel = file;
-    try {
-      rel = path.relative(process.cwd(), file);
-    } catch {
-      /* keep absolute if relative fails */
-    }
-    rel = rel.split(path.sep).join('/');
-    if (rel.startsWith('./')) rel = rel.slice(2);
-    return `${rel}:${m[3]!}:${m[4]!}`;
+    const rel = callSitePath(file);
+    return rel === null ? null : `${rel}:${m[3]!}:${m[4]!}`;
   }
   return null;
+}
+
+/**
+ * A stack frame's file as a call site names it: relative to `cwd`, with forward
+ * slashes. An ES module's frame carries a `file://` URL, read with
+ * `fileURLToPath` (`file:///C:/…` on Windows, percent-encoding decoded); a
+ * CommonJS frame carries the path itself. Null for a URL that names no local
+ * file (`file://host/…` outside Windows).
+ */
+export function callSitePath(
+  file: string,
+  cwd: string = process.cwd(),
+  windows: boolean = process.platform === 'win32',
+): string | null {
+  const paths = windows ? path.win32 : path.posix;
+  let absolute = file;
+  if (file.startsWith('file:')) {
+    try {
+      absolute = fileURLToPath(file, { windows });
+    } catch {
+      return null;
+    }
+  }
+  return paths.relative(cwd, absolute).split(paths.sep).join('/');
 }
