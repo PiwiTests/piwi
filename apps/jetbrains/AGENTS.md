@@ -78,11 +78,22 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   page finds files only in the projects connected to it. Every other request gets a 403 from `PiwiOpenHandler` itself (`OpenOrigins.kt`, `OpenOriginsTest`,
   `PiwiOpenHandlerTest`); a change to its query or answer changes the dashboard's `useOpenInIde` and `ide-links.ts` in
   `apps/application` too. ([Open in IDE](ARCHITECTURE.md#open-in-ide))
+- **A debug request (`debug=1` on `/api/piwi/open`) runs nothing until the person clicks **Debug** in a notification,
+  and names files, a line and a title, never a command.** `Glue.parseOpenRequest` checks each field and refuses one
+  given twice, `PiwiOpenHandler` checks both files again by their canonical paths (`Glue.debugFileRefusal`), and the
+  service builds the run. Checked by `GlueTest`. ([Open in IDE](ARCHITECTURE.md#open-in-ide))
 - **The Send to editor endpoint proves it holds the token on every answer to a challenge, and `GET /api/piwi/live`
   lists hubs only, never a run channel's token.** `isOriginAllowed` allows an extension's origin on `/api/piwi/send`
   and `/api/piwi/live` alone, and leaves the platform's `isAccessible` its check of `Host`. Checked by `PiwiPluginTest`
   (`testPiwiPickersChallengeAloneIsAnsweredWithTheProofOnTheLiveEndpoint`,
   `testPiwiPickerListsTheLiveHubsThroughThePairing`). ([Send to editor](ARCHITECTURE.md#send-to-editor))
+- **The runs' MCP server's token lives in the `PasswordSafe`, one per project, and a stop's browser is shared only
+  after the person said yes to `Glue.SHARE_WARNING`, every time.** The service gets the token in its initialization
+  options (`agentsOptions`), never in `.idea/workspace.xml`, and a token it answers or tells (`piwi/agentsChanged`)
+  replaces the one kept (`agentsHeard`); no agent can share a browser (`piwi/stopBind` is the IDE's). Checked by
+  `PiwiRunControlTest`. ([MCP server configuration](ARCHITECTURE.md#mcp-server-configuration))
+- **An `mcp-remote` entry runs one exact release over HTTP alone** (`Glue.MCP_REMOTE`, `--transport http-only`), for
+  the instance's servers and the runs' alike. Checked by `GlueTest`.
 - **An instance on this machine is never reached through the IDE's proxy.** Connect tries every loopback address
   (`Glue.loopbackAlternatives`) and saves the one that answered. ([Connect](ARCHITECTURE.md#connect))
 
@@ -110,6 +121,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A rerun under the ref of a run that ended maps its lines from when it is first heard**, never from the ended run's
   start. Checked by `PiwiRunControlTest` (`testARerunUnderTheRefOfARunThatEndedMapsItsLinesFromItsOwnStart`).
   ([Run control](ARCHITECTURE.md#run-control))
+- **A run started in a terminal has the controls but Stop, and starts with the IDE's breakpoints**
+  (`piwi/setBreakpoints`, sent as they change). Checked by `PiwiRunControlTest`
+  (`testARunStartedInATerminalTakesTheBreakpointsAndEndsThere`). ([Run control](ARCHITECTURE.md#run-control))
 - **Every run of a Playwright run configuration Piwi made is followed** (`PiwiRunSessions.followRunner`), its Rerun,
   Rerun Failed Tests and Debug included, so Stop ends it and the service hears its end. Checked by
   `PiwiRunControlTest`. ([Playwright runner](ARCHITECTURE.md#playwright-runner))

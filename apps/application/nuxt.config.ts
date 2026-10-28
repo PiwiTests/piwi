@@ -117,12 +117,14 @@ export default defineNuxtConfig({
   },
 
   // @piwitests/core and @piwitests/picker-dom ship TypeScript source (shared
-  // with the reporter); Vite must transpile them since node_modules is not
-  // transpiled by default. Nuxt also passes this list to Nitro's
-  // externals.inline, so they are bundled into the server build instead of
-  // being copied as TypeScript into .output/server/node_modules.
+  // with the reporter), and so does @piwitests/editor, whose run control the
+  // desktop build's server hosts (server/utils/desktop-runs.ts); Vite must
+  // transpile them since node_modules is not transpiled by default. Nuxt also
+  // passes this list to Nitro's externals.inline, so they are bundled into the
+  // server build instead of being copied as TypeScript into
+  // .output/server/node_modules.
   build: {
-    transpile: ['@piwitests/core', '@piwitests/picker-dom'],
+    transpile: ['@piwitests/core', '@piwitests/picker-dom', '@piwitests/editor'],
   },
 
   devtools: {

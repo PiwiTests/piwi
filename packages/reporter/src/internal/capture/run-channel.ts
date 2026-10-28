@@ -1,22 +1,31 @@
 import * as net from 'node:net';
-import type { Page, WorkerInfo } from '@playwright/test';
-import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
+import type { Browser, Page, WorkerInfo } from '@playwright/test';
+import { RECORD_CHANNEL_ENV, lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import { hideSecretsInText } from '@piwitests/core/mask';
 import {
+  MAX_RUN_EVENT_RATE,
   RUN_CHANNEL_ENV,
   RUN_HOLDS,
   RUN_INTENT_NAMES,
+  RUN_REF_ENV,
   RUN_TAKES,
   parseHubToRun,
+  type ActAnswer,
+  type BindAnswer,
   type HubToRun,
   type IntentAnswer,
   type LocatorAnswer,
   type PausedImage,
   type PickAtAnswer,
   type Place,
+  type RefLocatorAnswer,
+  type RunActAction,
+  type RunEvent,
   type RunHold,
   type RunIntent,
+  type RunTake,
   type RunToHub,
+  type SnapshotAnswer,
   type StopReason,
   type UnknownMessage,
 } from '@piwitests/core/run-channel';
@@ -33,6 +42,7 @@ import {
 import { PIWI_LOCAL_DEBUG_ENV, PIWI_ORIGIN_ENV } from '../config/env.js';
 import { errorMessage } from '../support/errors.js';
 import { getReporterVersion } from '../support/reporter-version.js';
+import { bindBrowser } from './agent-page.js';
 import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
 import { openPageView, viewportOf } from './page-view.js';
@@ -48,15 +58,21 @@ import { internalCall } from './quiet-capture.js';
  * outside the page, asks for the responses the test kept (`kept-responses.ts`) and the one to mock, and counts a
  * locator on the stopped page, outlining its matches where the bar shows until the test goes on (`takes` in its
  * attach). Its attach also lists the stops it holds only once the editor says it shows them (`holds`: a failure), which
- * the editor answers with `attached`; an editor that predates it says nothing, and no failure is held for it. For a
+ * the editor answers with `attached`, naming the service when it is not the editor (`host`: the desktop app, which the
+ * worker's lines name then, `runHost`); an editor that predates it says nothing, and no failure is held for it. For a
  * viewer outside the page, it shows the stopped page's live view (`view`: the page's screencast, its frames sent at
  * most `MAX_VIEW_FPS` a second, the latest one when the connection is backed up, the latest sent kept in memory for a
  * viewer that comes later until the view ends, never stored), plays the viewer's input
  * on it as trusted input (`input`: `page.mouse`, `page.keyboard`, at most `MAX_VIEW_EVENT_RATE` events a second, what
  * it holds down let go before the test goes on), and sends the locator of the element under a point of an image of
  * the page where a pick goes (`pick-at`, `pick-at.ts`). The view ends with its stop, before the test goes on, and as
- * its page or the connection closes. A test never waits on it but while stopped, and a connection that does not open,
- * or closes, leaves the run as without it: a stop no pause bar can answer then goes on at once.
+ * its page or the connection closes. For an agent (the editor's MCP server), it reads the stopped page's ARIA snapshot
+ * in AI mode (`snapshot`), acts on one of its elements by its ref as trusted input (`act`) and ranks that element's
+ * locators (`ref-locator`, `agent-page.ts`), one at a time, at the stop held alone; it tells what the running test does
+ * (`events`, `run-events.ts`) while the editor asks, at most `MAX_RUN_EVENT_RATE` a second; and it binds its browser for
+ * Playwright's own tools at a stop on request (`bind`), until the test ends. A test never waits on it but while
+ * stopped, and a connection that does not open, or closes, leaves the run as without it: a stop no pause bar can
+ * answer then goes on at once.
  */
 
 /** How long a worker waits for its run connection to open before its first test runs without it. */
@@ -87,6 +103,8 @@ const VIEW_END_MS = 1000;
 const PAGE_ANSWER_MS = 10_000;
 /** Why a view or a pick on an image is refused when the page does not answer. */
 const NO_ANSWER = 'The page did not answer in time.';
+/** What an agent's action the page did not answer in time is answered with: it may still be played. */
+const LATE_ACT = 'The page did not answer in time: the action may still take effect, and is told when it does.';
 /** The most input messages a stop holds waiting to be played: one more is refused. */
 const MAX_INPUT_WAITING = 4;
 /** Why the input of a stop nobody watches is refused. */
@@ -116,6 +134,15 @@ interface HeldStop {
   answer(choice: PauseAnswer): void;
   intent(what: RunIntent): IntentAnswer;
   pickAt?(x: number, y: number): Promise<PickAtAnswer>;
+  agent?: StopAgent;
+  browser: Browser | null;
+}
+
+/** What an agent does at a stop whose page is known, each call internal. */
+export interface StopAgent {
+  snapshot(depth: number | null, image: boolean): Promise<SnapshotAnswer>;
+  refLocator(ref: string): Promise<RefLocatorAnswer>;
+  act(act: { ref: string; action: RunActAction; value: string | null }): Promise<ActAnswer>;
 }
 
 /** A stop as the editor hears it. */
@@ -137,12 +164,18 @@ export interface StopToHold {
   intent?(what: RunIntent): IntentAnswer;
   /** The element under a point of the stopped page, its locator sent where a pick goes; refused without it. */
   pickAt?(x: number, y: number): Promise<PickAtAnswer>;
+  /** What an agent reads and does on the stopped page; refused without it. */
+  agent?: StopAgent;
+  /** The browser of the stopped context, which `bind` shares with Playwright's own tools. */
+  browser?: Browser | null;
 }
 
 let socket: net.Socket | null = null;
 let control: RunControl | null = null;
 /** The stops the editor said it shows, of those this worker holds only then (`attached`). */
 let shown = new Set<RunHold>();
+/** What the service the run connection reaches calls itself (`attached`), when it is not the editor. */
+let host: string | null = null;
 let stops = 0;
 let held: HeldStop | null = null;
 /** The outline of a locator's matches in a stopped page, and the stop it belongs to. */
@@ -193,9 +226,38 @@ let input = freshInput();
 /** A pick on an image runs: the next one waits for its answer. */
 let pickingAt = false;
 
+/** The run's ref and the worker's index, as its attach named them: a bound browser is named after them. */
+let runName = '';
+/** The editor asked for the running tests' events (`events`), and a test runs. */
+let eventsOn = false;
+let testRunning = false;
+/** The pace of the events, and how many it did not send since the last one sent. */
+let eventRate = new RateWindow(MAX_RUN_EVENT_RATE);
+let droppedEvents = 0;
+/** The agent's requests at a stop, one after the other, in the order they came. */
+let agentTurn: Promise<unknown> = Promise.resolve();
+/** The browser shared with Playwright's own tools, until the test ends, and its endpoint. */
+let bound: { browser: Browser; endpoint: string | null } | null = null;
+/** Why an agent's request at a stop whose page is not known is refused. */
+const NO_AGENT_PAGE = "This stop has no page an agent can read: its call does not name one among its context's pages.";
+
 /**
- * Open the worker's run connection when the run names a channel and a ref, with `handlers` for what the editor asks.
- * Resolves with whether it opened, once it did, failed or took too long. Never throws.
+ * What a worker takes, of `RUN_TAKES`: Pick a locator only where the run names a pairing its locators go to
+ * (`PIWI_EDITOR_SEND`), Record here and Assert only where it names a record channel (`PIWI_RECORD_CHANNEL`), neither of
+ * which a run started in a terminal carries.
+ */
+export function workerTakes(env: NodeJS.ProcessEnv = process.env): RunTake[] {
+  const pairing = !!env[PIWI_LOCAL_DEBUG_ENV.editorSend];
+  const recorder = parseRecordChannel(env[RECORD_CHANNEL_ENV]) !== null;
+  return RUN_TAKES.filter((take) =>
+    take === 'pick' ? pairing : take === 'record' || take === 'assert' ? recorder : true,
+  );
+}
+
+/**
+ * Open the worker's run connection when the run names a channel and a ref (`PIWI_RUN_REF`, else `PIWI_ORIGIN_REF`),
+ * with `handlers` for what the editor asks. Resolves with whether it opened, once it did, failed or took too long.
+ * Never throws.
  */
 export async function openRunChannel(
   worker: Pick<WorkerInfo, 'workerIndex' | 'parallelIndex' | 'config'>,
@@ -203,7 +265,7 @@ export async function openRunChannel(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<boolean> {
   const channel = parseRecordChannel(env[RUN_CHANNEL_ENV]);
-  const ref = env[PIWI_ORIGIN_ENV.ref];
+  const ref = env[RUN_REF_ENV] ?? env[PIWI_ORIGIN_ENV.ref];
   if (socket || !channel || !ref || !/^[\w-]{1,64}$/.test(ref)) return false;
   const opening = net.connect(channel.path);
   opening.setEncoding('utf8');
@@ -225,6 +287,9 @@ export async function openRunChannel(
   socket = opening;
   control = handlers;
   shown = new Set();
+  runName = `piwi-${ref}-w${worker.workerIndex}`;
+  eventsOn = false;
+  host = null;
   opening.unref();
   opening.on(
     'data',
@@ -240,7 +305,7 @@ export async function openRunChannel(
     if (view) void stopView();
     if (!held || held.bar) return;
     // A stop no bar can answer goes on: nobody else can.
-    console.log('[piwi] The connection to the editor closed: the test goes on.');
+    console.log(`[piwi] The connection to ${runHost()} closed: the test goes on.`);
     held.answer('resume');
   });
   tellHub({
@@ -253,7 +318,7 @@ export async function openRunChannel(
     pid: process.pid,
     playwright: worker.config.version,
     reporter: getReporterVersion(),
-    takes: [...RUN_TAKES],
+    takes: workerTakes(env),
     holds: [...RUN_HOLDS],
   });
   return true;
@@ -265,6 +330,14 @@ export async function openRunChannel(
  */
 export function editorShows(what: RunHold): boolean {
   return runChannelOpen() && shown.has(what);
+}
+
+/**
+ * What the worker's lines call the service its run connection reaches, as it named itself (`attached`): `the editor`
+ * unless it said otherwise (`the desktop app`).
+ */
+export function runHost(): string {
+  return host ?? 'the editor';
 }
 
 /** What a test runs without: the run's channel, and the editor's Send to editor pairing with its token. */
@@ -311,9 +384,43 @@ export function runChannelOpen(): boolean {
   return !!socket && !socket.destroyed;
 }
 
-/** Send the editor a message, when the run connection is open. */
+/** Send the editor a message, when the run connection is open. A test's end lets go of the browser it shared. */
 export function tellHub(message: RunToHub): void {
+  if (message.type === 'test-begin') testRunning = true;
+  if (message.type === 'test-end') {
+    testRunning = false;
+    void unbind();
+  }
   if (socket && !socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
+}
+
+/** Whether the editor wants the running test's events now: it asked for them, and a test runs. */
+export function runEventsWanted(): boolean {
+  return eventsOn && testRunning && runChannelOpen();
+}
+
+/** Tell the editor something the running test did, at most `MAX_RUN_EVENT_RATE` a second, saying how many it dropped. */
+export function tellEvent(event: RunEvent): void {
+  if (!runEventsWanted()) return;
+  if (!eventRate.take(droppedEvents ? 2 : 1)) {
+    droppedEvents++;
+    return;
+  }
+  if (droppedEvents) tellHub({ type: 'event', event: { kind: 'dropped', count: droppedEvents } });
+  droppedEvents = 0;
+  tellHub({ type: 'event', event });
+}
+
+/** The browser shared with Playwright's own tools is no longer: the test ended. */
+async function unbind(): Promise<void> {
+  const shared = bound?.browser;
+  bound = null;
+  if (shared?.isConnected()) {
+    await within(
+      internalCall(shared, () => bindBrowser(shared, runName, process.cwd(), false)),
+      VIEW_END_MS,
+    );
+  }
 }
 
 /**
@@ -348,6 +455,8 @@ export function holdStop(
           ? needsBar(what)
           : (stop.intent?.(what) ?? needsBar(what)),
     ...(stop.pickAt ? { pickAt: stop.pickAt } : {}),
+    ...(stop.agent ? { agent: stop.agent } : {}),
+    browser: stop.browser ?? null,
   };
   held = holding;
   tellHub({
@@ -647,6 +756,12 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
   switch (message.type) {
     case 'attached':
       shown = new Set(message.holds);
+      host = message.host ?? null;
+      return;
+    case 'events':
+      eventsOn = message.on;
+      eventRate = new RateWindow(MAX_RUN_EVENT_RATE);
+      droppedEvents = 0;
       return;
     case 'breakpoints':
       control?.breakpoints(message.places);
@@ -720,6 +835,41 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
           void picked.then((value) => tellHub({ type: 'answer', request, what: 'pick-at', value }));
           return;
         }
+        case 'snapshot': {
+          const { depth, image } = message;
+          const none = { url: '', title: '', snapshot: null, cut: false, image: null };
+          void agentAt(
+            at,
+            (agent) => agent.snapshot(depth, image),
+            (refused) => ({ ...refused, ...none }),
+          ).then((value) => tellHub({ type: 'answer', request, what: 'snapshot', value }));
+          return;
+        }
+        case 'ref-locator': {
+          const { ref } = message;
+          void agentAt(
+            at,
+            (agent) => agent.refLocator(ref),
+            (refused) => ({ ...refused, element: null, locators: [] }),
+          ).then((value) => tellHub({ type: 'answer', request, what: 'ref-locator', value }));
+          return;
+        }
+        case 'act': {
+          const { ref, action, value: given } = message;
+          const answer = (value: ActAnswer) => tellHub({ type: 'answer', request, what: 'act', value });
+          // An action the page did not answer in time may still be played: once it is, the editor hears it again.
+          void agentAt(
+            at,
+            (agent) => agent.act({ ref, action, value: given }),
+            (refused) => ({ ...refused, element: null, locators: [] }),
+            { answer: { ok: false, message: LATE_ACT, element: null, locators: [], late: true }, again: answer },
+          ).then(answer);
+          return;
+        }
+        case 'bind': {
+          void bindAt(at, message.on).then((value) => tellHub({ type: 'answer', request, what: 'bind', value }));
+          return;
+        }
         default: {
           const value = at ? at.intent(message.what) : { ok: false, message: WENT_ON };
           tellHub({ type: 'answer', request, what: message.what, value });
@@ -733,6 +883,63 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
         message: `@piwitests/reporter ${getReporterVersion()} does not take the editor's ${message.what}: update it.`,
       });
   }
+}
+
+/**
+ * Run an agent's request at the stop held, after the one before it, `PAGE_ANSWER_MS` at most: refused at a stop that
+ * ended or whose page is not known (`refuse` shapes the answer). With `late`, a request the page did not answer in
+ * time is answered `late.answer`, and, once it was played after all, `late.again` with what it did.
+ */
+function agentAt<T extends IntentAnswer>(
+  at: HeldStop | null,
+  run: (agent: StopAgent) => Promise<T>,
+  refuse: (refused: IntentAnswer) => T,
+  late?: { answer: T; again(value: T): void },
+): Promise<T> {
+  if (!at) return Promise.resolve(refuse({ ok: false, message: WENT_ON }));
+  const agent = at.agent;
+  if (!agent) return Promise.resolve(refuse({ ok: false, message: NO_AGENT_PAGE }));
+  const answered = agentTurn.then(async () => {
+    if (held !== at) return refuse({ ok: false, message: WENT_ON });
+    const running = run(agent);
+    const settled = running.then(
+      (value) => ({ value }),
+      () => ({ value: refuse({ ok: false, message: NO_ANSWER }) }),
+    );
+    const said = await answerWithin(settled, PAGE_ANSWER_MS, null);
+    if (said) return said.value;
+    if (!late) return refuse({ ok: false, message: NO_ANSWER });
+    void running.then((value) => value.ok && held === at && late.again(value)).catch(() => undefined);
+    return late.answer;
+  });
+  agentTurn = answered.catch(() => undefined);
+  return answered;
+}
+
+/**
+ * Share the stopped context's browser with Playwright's own tools, as `piwi-<ref>-w<worker>`, until the test ends; or
+ * stop sharing it. Refused at a stop that ended.
+ */
+async function bindAt(at: HeldStop | null, on: boolean): Promise<BindAnswer> {
+  if (!at) return { ok: false, message: WENT_ON, name: null, endpoint: null };
+  const browser = at.browser;
+  if (!on) {
+    await unbind();
+    return { ok: true, message: 'The browser is no longer shared with Playwright tools.', name: null, endpoint: null };
+  }
+  if (!browser) return { ok: false, message: NO_AGENT_PAGE, name: null, endpoint: null };
+  if (bound?.browser === browser) {
+    return {
+      ok: true,
+      message: `The browser is shared with Playwright tools as ${runName} until the test ends: any process of yours can drive it.`,
+      name: runName,
+      endpoint: bound.endpoint,
+    };
+  }
+  if (bound) await unbind();
+  const answer = await internalCall(browser, () => bindBrowser(browser, runName, process.cwd(), true));
+  if (answer.ok) bound = { browser, endpoint: answer.endpoint };
+  return answer;
 }
 
 /**

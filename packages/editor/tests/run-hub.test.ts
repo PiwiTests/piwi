@@ -20,6 +20,7 @@ import {
   type HubMessage,
   type HubSession,
 } from '@piwitests/core/run-hub';
+import { RUN_TAKES } from '@piwitests/core/run-channel';
 import type { RunSession } from '../src/protocol';
 import { RunHub } from '../src/run-hub';
 import type { RunSessions } from '../src/run-sessions';
@@ -387,6 +388,47 @@ describe('the commands', () => {
         workers: [],
         ended: true,
       });
+    } finally {
+      worker.socket.destroy();
+      client.socket.close();
+    }
+  });
+
+  test('end the test at its stop, never at a failure, and name a run started in a terminal', async () => {
+    const client = await paired();
+    client.send({ type: 'subscribe', id: 1 });
+    await client.answer(1);
+    const channel = (await waitFor(() => svc.published[0] ?? undefined)).runChannel!;
+    const ref = 'terminal-4242-1730000000001';
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    try {
+      expect(await waitFor(() => client.session(ref))).toMatchObject({ ref, command: null, terminal: true });
+      expect(client.session(ref)!.workers[0]!.intents).toContain('end');
+      worker.begin();
+      worker.stopAt(1, 30, true);
+      const stop = await waitFor(() => client.session(ref)?.workers[0]?.stop ?? undefined);
+      expect(stop.intents).toContain('end');
+      client.send({ type: 'runControl', id: 2, ref, action: 'end', since: stop.since });
+      expect(await client.answer(2)).toMatchObject({
+        ok: true,
+        message: 'Ending the test: it is reported as skipped.',
+      });
+      expect(await worker.next('control')).toEqual({ type: 'control', action: 'end', stop: 1 });
+      worker.send({ type: 'running', stop: 1 });
+      worker.send({
+        type: 'stopped',
+        stop: 2,
+        reason: 'failure',
+        title: 'Failed: Timed out',
+        place: { file: 'tests/cart.spec.ts', line: 3, column: 1 },
+        locator: null,
+        bar: true,
+      });
+      const failed = await waitFor(() => {
+        const next = client.session(ref)?.workers[0]?.stop;
+        return next?.reason === 'failure' ? next : undefined;
+      });
+      expect(failed.intents).not.toContain('end');
     } finally {
       worker.socket.destroy();
       client.socket.close();

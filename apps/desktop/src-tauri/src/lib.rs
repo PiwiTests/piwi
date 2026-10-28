@@ -10,6 +10,7 @@
 // and "start on login". Everything binds 127.0.0.1 — nothing is exposed to the
 // network.
 
+mod hub_env;
 mod ide_launcher;
 mod inspect;
 mod interrupt;
@@ -128,6 +129,11 @@ struct LogFile(PathBuf);
 /// Whether this launch enabled debug mode (`--devtools` / `PIWI_DEBUG`), so the
 /// aux-window opener can mirror the main window and open the inspector too.
 struct DebugMode(bool);
+
+/// The nonce this launch gave its server (`PIWI_DESKTOP_LAUNCH_NONCE`): a
+/// request carrying the desktop token goes only to a server whose readiness
+/// probe echoes it (`health_ok`).
+struct LaunchNonce(String);
 
 /// Archives handed to the app by the OS (drag onto the dock icon, "Open with",
 /// a second launch with file arguments) that the dashboard has not collected
@@ -1570,6 +1576,7 @@ pub fn run() {
 
             app.manage(DataDir(data_dir.clone()));
             app.manage(mcp_clients::ServerInfo { port, token: token.clone() });
+            app.manage(LaunchNonce(launch_nonce.clone()));
 
             // MCP client configs written on earlier launches embed the URL and
             // token — bring any that drifted (a different port this launch)

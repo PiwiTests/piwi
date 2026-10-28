@@ -17,7 +17,9 @@ responsibilities.
 3. **Side effects**: what a user's suite can observe, each changed only on purpose:
    - `PIWI_*` env vars (`internal/config/env.ts`; `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also from
      the `.env` in the Playwright config's folder, below the environment), and the ones `onBegin` sets for the
-     workers;
+     workers: for a run started in a terminal, `PIWI_RUN_CHANNEL` and `PIWI_RUN_REF` (`terminal-<pid>-<time>`) of the
+     editor whose workspace holds it (`internal/config/editors.ts`: never under CI, Playwright's debugger or UI mode,
+     nor with `PIWI_EDITOR=off`, and only with a terminal unless `PIWI_EDITOR=on`), with one line saying so;
    - `piwi-*` attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`, and
      `[Piwi Dashboard]`-prefixed log output;
    - the `__piwiProbeElement` global the capture fixtures install into every instrumented page
@@ -36,17 +38,23 @@ responsibilities.
    - with `PIWI_RECORD_CHANNEL`, **Record here** handing the page to the editor's recorder
      (`internal/capture/record-handoff.ts`, framed as `@piwitests/core/ide-recorder`): this package carries the relay
      alone, the recorder's host stays in the editor service;
-   - with `PIWI_RUN_CHANNEL` and `PIWI_ORIGIN_REF`, each worker's run connection to the editor
-     (`internal/capture/run-channel.ts`, framed as `@piwitests/core/run-channel`), open from the `piwiResources`
-     worker fixture's setup to the worker's end: it reports each test and stop, takes the editor's controls,
-     breakpoints, intents and queries (`takes` in its `run-attach`), keeps the test's text responses in memory for
-     Mock a request (`kept-responses.ts`), holds a failing test's page for an editor that answered its `holds` with
-     `attached` (`holdFailure`, `editorShows`), and makes a headless run stop too; for a viewer outside the page, it
-     streams a stopped page's screencast (`view`), plays trusted input there only while that stop's view is watched
-     (`input`, let go before the test goes on), runs the bar's actions in a headless page through it (`viewHere`), and
-     picks under a point of an image (`pick-at.ts`); a frame goes to the editor service alone, never stored nor attached,
-     the latest one sent kept in memory until the view ends, for a viewer that comes later
-     (`tests/run-channel-view.spec.ts`);
+   - with `PIWI_RUN_CHANNEL` and `PIWI_RUN_REF`, else `PIWI_ORIGIN_REF`, each worker's run connection to the editor (or
+     the desktop app, which names its runs by `PIWI_RUN_REF` and keeps `PIWI_ORIGIN_REF` for what they were for)
+     (`internal/capture/run-channel.ts`, framed as `@piwitests/core/run-channel`), open from the `piwiResources` worker
+     fixture's setup to the worker's end: it reports each test and stop, takes the editor's controls, breakpoints,
+     intents and queries (`takes` in its `run-attach`), ends the test at a stop (`end`: the held locator call given up
+     through Playwright's own `signal` option, `withEndSignal`, and the attempt skipped by `testInfo.skip` with
+     `ENDED_REASON`, `tests/run-channel-end.spec.ts`), keeps the test's text responses in memory for Mock a request
+     (`kept-responses.ts`), holds a failing test's page for an editor that answered its `holds` with `attached`
+     (`holdFailure`, `editorShows`), and makes a headless run stop too; for a viewer outside the page, it streams a
+     stopped page's screencast (`view`), plays trusted input there only while that stop's view is watched (`input`, let
+     go before the test goes on), runs the bar's actions in a headless page through it (`viewHere`), and picks under a
+     point of an image (`pick-at.ts`); a frame goes to the editor service alone, never stored nor attached, the latest
+     one sent kept in memory until the view ends, for a viewer that comes later (`tests/run-channel-view.spec.ts`); for
+     an agent, at the stop held alone, it reads the page's AI snapshot, acts on an element by its ref with Playwright's
+     own action and ranks its locators (`agent-page.ts`), tells the test's calls and page events while asked (`events`,
+     `run-events.ts`, Playwright's `_instrumentation`, feature-checked), and binds the browser for Playwright's tools on
+     request until the test ends (`tests/run-channel-agent.spec.ts`);
    - with `PIWI_LIVE_VIEW` (set in `onBegin` from the key the global setup's `/setup` gave, asked in a CI run alone,
      `detectCi` as the run's origin, for a project with the live view on), each worker's event stream to the instance
      (`internal/capture/live-view.ts`, framed as `@piwitests/core/live-view`), opened in the background by the
@@ -67,11 +75,17 @@ responsibilities.
    hides its credentials by `@piwitests/core/mask`'s rule: a region's snapshot leaves out the value of a field that
    holds a secret (`SECRET_AUTOCOMPLETE`, read through a locator, so in shadow roots too), a kept response's URL goes
    through `hideSecretsInUrl`, and a held failure's title and error through `hideSecretsInText`
-   (`tests/run-channel-code.spec.ts`).
+   (`tests/run-channel-code.spec.ts`); for an agent, the value of a field that holds a secret (`SECRET_FIELDS` in
+   `agent-page.ts`: a password field and `SECRET_AUTOCOMPLETE`'s) is hidden in the snapshot, plain or quoted
+   (`withoutFieldSecrets`), masked in the image, in every frame, and never sent as an element's
+   (`tests/agent-page.spec.ts`).
 4. **The desktop discovery file.** The desktop shell writes `~/.piwi/desktop.json` (`apps/desktop/src-tauri/src/lib.rs`)
    and this package reads its `url`, `token` and `pid` (`internal/config/desktop.ts`); the shell also writes
    `projects` for other readers ([`apps/desktop/AGENTS.md`](../../apps/desktop/AGENTS.md)). The two ship on independent
-   release cycles, so a path or shape change must land in both.
+   release cycles, so a path or shape change must land in both. The editors' discovery files
+   (`~/.piwi/editors/<pid>.json`, `@piwitests/core/editor-discovery`) are the editor service's: this package reads
+   them for a run started in a terminal (`internal/config/editors.ts`), from a folder this user alone can enter, and
+   never deletes one.
 5. **The dogfooded capture modules.** The dashboard's E2E fixtures (`apps/application/tests/fixtures.ts`) import five
    capture modules from `dist/internal/capture/`, each its own entry in `tsup.config.ts`. Renaming or moving one, or
    changing what it exports, breaks the dashboard's suite.

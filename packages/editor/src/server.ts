@@ -46,7 +46,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
-import { RUN_CHANNEL_ENV } from '@piwitests/core/run-channel';
+import { RUN_CHANNEL_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
 import { forwardedPorts } from '@piwitests/core/run-hub';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
@@ -160,6 +160,9 @@ import { RunLines, type DiskFile } from './run-lines.js';
 import { RunSessions } from './run-sessions.js';
 import { RunHub } from './run-hub.js';
 import { StopActions } from './stop-actions.js';
+import { AgentServer } from './agent-server.js';
+import { RunAgent } from './run-agent.js';
+import { DebugRuns, checkedDebugRun, debugArgs, debugTest } from './debug-run.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
@@ -212,8 +215,12 @@ import {
   PAUSED_PAGE_REQUEST,
   PICK_AT_REQUEST,
   HUB_REQUEST,
+  AGENTS_REQUEST,
+  AGENTS_CHANGED_NOTIFICATION,
+  STOP_BIND_REQUEST,
   RUN_CONTROL_REQUEST,
   RUN_SESSION_NOTIFICATION,
+  SET_BREAKPOINTS_NOTIFICATION,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
   LOCATOR_AT_CARET_REQUEST,
   STOP_ACTION_REQUEST,
@@ -253,8 +260,13 @@ import {
   type PickAtResult,
   type HubParams,
   type HubResult,
+  type AgentsParams,
+  type AgentsResult,
+  type StopBindParams,
+  type StopBindResult,
   type RunControlParams,
   type RunControlResult,
+  type SetBreakpointsParams,
   type SetRunBreakpointsParams,
   type PageCandidatesParams,
   type PageCandidatesResult,
@@ -380,6 +392,8 @@ export interface ServerOptions {
   /** How often the hub sends its keepalive, and how long it waits for `hello`. */
   hubKeepaliveMs?: number;
   hubHelloMs?: number;
+  /** How long an agent follows a run after its last call on it; `FOLLOW_IDLE_S` by default. */
+  agentFollowIdleMs?: number;
 }
 
 /** What the last analysis of an application file found, for its quick fixes and hover. */
@@ -1670,6 +1684,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let runHub: RunHub | null = null;
   /** The loopback ports the client forwards to the hub from the browser's machine (`piwi/hub`). */
   let hubForwarded: number[] = [];
+  /** The MCP server for agents, once `piwi/agents` turned it on; the port and the token the client keeps for it. */
+  let agentServer: AgentServer | null = null;
+  let agentOpening: Promise<AgentServer | null> | null = null;
+  /** What the client last asked of it: a server that opens after it was turned off is closed at once. */
+  let agentWanted = false;
+  let agentPrefs: InitializationOptions['agents'] = undefined;
   /** The command lines of the runs the service built, by ref, which the hub names to Piwi Picker. */
   const runCommands = new Map<string, string>();
   /** The runs the service built to be watched (with the editor's breakpoints, or a `page.pause()`), by ref. */
@@ -1707,6 +1727,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     // The client, or a Piwi Picker subscribed to the hub.
     answersStops: () => answersStops || !!runHub?.answersStops(),
     watched: (ref) => watchedRuns.has(ref),
+    // A run started in a terminal names itself so, by no command the service built.
+    terminal: (ref) => ref.startsWith(TERMINAL_REF_PREFIX) && !runCommands.has(ref),
     // A Runs window open in Piwi Picker: its connection says it follows the runs.
     followed: () => !!runHub?.follows(),
     // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.
@@ -1720,6 +1742,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       'refused' in region
         ? stopActions.regionRefused(stop, region.refused)
         : stopActions.region(stop, region.locator, region.snapshot),
+    // An agent following the runs through the MCP server hears what each worker says, and a debug run its stops.
+    heard: (ref, worker, what, root) => {
+      runAgent.heard(ref, worker, what, root);
+      debugRuns.heard(ref, worker, what, root);
+    },
+  });
+  /** The runs that debug a failure: the line each stops at once, and the suggested locator outlined there. */
+  const debugRuns = new DebugRuns({
+    sessions: runSessions,
+    notice: (root, severity, message) =>
+      void connection.sendNotification(NOTICE_NOTIFICATION, { root: root ?? '', severity, message } satisfies Notice),
   });
   const recordRequested = (handoff: Handoff) => {
     // The run ran in its config's folder as the file system spells it (`commandFolder`): the test names its file so,
@@ -1789,6 +1822,25 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     },
     language: () => clientLocale,
     editor: () => clientName,
+  });
+
+  /** The runs the service built, as the tools of its MCP server for the agents of this machine (`piwi/agents`). */
+  const runAgent = new RunAgent({
+    sessions: runSessions,
+    // The client writes the code into the file, where the agent reads it: the answer says where it went.
+    writeCode: (stop, input) => {
+      const { ok, message } = stopActions.agentCode(stop, input);
+      return { ok, message };
+    },
+    notice: (root, message) =>
+      void connection.sendNotification(NOTICE_NOTIFICATION, {
+        root: root ?? folders[0] ?? '',
+        severity: 'information',
+        message,
+      } satisfies Notice),
+    command: (ref) => runCommands.get(ref) ?? null,
+    preferLocators: (root) => suiteLocators(root ? contextOfRoot(root) : null),
+    ...(options.agentFollowIdleMs === undefined ? {} : { followIdleMs: options.agentFollowIdleMs }),
   });
 
   /**
@@ -2126,6 +2178,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     credentials = init?.credentials ?? {};
     answersStops = init?.runControl === true;
     writesCode = init?.stopCode === true;
+    agentPrefs = init?.agents && typeof init.agents === 'object' ? init.agents : undefined;
     clientLocale = typeof params.locale === 'string' && params.locale ? params.locale : null;
     const name = params.clientInfo?.name;
     clientName = typeof name === 'string' && name ? name.slice(0, 200) : null;
@@ -2161,6 +2214,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     );
     // A checkout or a commit is read within seconds: the latest run and the diagnostics follow the new `HEAD`.
     void watchRepositories();
+    // A client that serves its runs to agents from the start says so as it starts the service.
+    if (agentPrefs?.enabled === true) void setAgents(true, false, false);
     void Promise.all([
       RecordChannel.open({
         onAttach: recordRequested,
@@ -3138,9 +3193,60 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /** The commands that run each test several times, by ref: what their end says when their run reaches no instance. */
   const repeatedCommands = new Map<string, { root: string; repeat: number; target: string }>();
 
+  /**
+   * The command that debugs one test from a failure (`RunTestsArgs.debug`): the test its title names in the spec, as
+   * saved, headed with one worker, stopping once at the failing line, with the editor's breakpoints too; the failure's
+   * suggested locator asked of the instance at once, for the stop. Null, with a notice saying why, when it cannot run.
+   */
+  const debugRunArgs = (context: PiwiContext | null, params: RunTestsArgs): RunCommand | null => {
+    const refuse = (message: string) => {
+      void connection.sendNotification(NOTICE_NOTIFICATION, {
+        root: context?.root ?? '',
+        severity: 'warning',
+        message,
+      } satisfies Notice);
+      return null;
+    };
+    if (!context)
+      return refuse('No Playwright config of this workspace holds the test to debug, so Piwi runs nothing.');
+    const debug = checkedDebugRun(params.debug);
+    if (typeof debug === 'string') return refuse(debug);
+    const spec = uriToPath(params.uri);
+    const relative = spec ? relativeTo(context.root, spec) : null;
+    const stopFile = uriToPath(debug.stop.uri);
+    if (!spec || !relative || !SPEC_FILE.test(relative) || !stopFile || relativeTo(context.root, stopFile) === null) {
+      return refuse('The test to debug and its failing line must be files under the Playwright config’s folder.');
+    }
+    const text = readText(spec);
+    if (text === null) return refuse(`${relative} cannot be read, so Piwi runs nothing.`);
+    const test = debugTest(text, relative, debug.title);
+    if (typeof test === 'string') return refuse(test);
+    const args = debugArgs(`${relative}:${test.line + 1}`, debug.project);
+    const command = playwrightTestCommand(args);
+    if (!command) {
+      return refuse(
+        playwrightTestCommand([args[0]!])
+          ? `The Playwright project “${debug.project}” cannot be passed on a command line.`
+          : `${relative} cannot be passed on a command line, so Piwi runs nothing.`,
+      );
+    }
+    const ref = newRunRef();
+    runWatch.watch(context, ref);
+    const run: RunCommand = { cwd: commandFolder(context), args, command, env: editorRunEnv(ref), ref };
+    const own = Array.isArray(params.breakpoints) ? params.breakpoints : [];
+    const built = withRecording(context, withBreakpoints(context, run, [...own, debug.stop]), params);
+    const execution = debug.execution;
+    const candidate = execution
+      ? () => context.healing(execution).then((healing) => healing?.recommendation?.recommended?.locator ?? null)
+      : null;
+    debugRuns.started(ref, debug.stop, own, candidate);
+    return built;
+  };
+
   connection.onRequest(RUN_ARGS_REQUEST, async (params: RunTestsArgs): Promise<RunCommand | null> => {
     const file = uriToPath(params.uri);
     const context = contexts.find((c) => c.root === params.root) ?? (file ? contextFor(file) : null);
+    if (params.debug) return debugRunArgs(context, params);
     if (!context) return null;
     const repeat = params.repeat ?? null;
     const tests = await testArgs(context, params);
@@ -3451,7 +3557,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   );
 
   connection.onNotification(SET_RUN_BREAKPOINTS_NOTIFICATION, (params: SetRunBreakpointsParams) =>
-    runSessions.setBreakpoints(params),
+    runSessions.setBreakpoints(debugRuns.breakpoints(params)),
+  );
+
+  connection.onNotification(SET_BREAKPOINTS_NOTIFICATION, (params: SetBreakpointsParams) =>
+    runSessions.setEditorBreakpoints(params),
   );
 
   connection.onRequest(PAUSED_PAGE_REQUEST, (params: PausedPageParams): Promise<PausedPageResult> =>
@@ -3469,12 +3579,96 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     stopActions.action(params),
   );
 
+  /**
+   * The MCP server for agents listens only once the client turns it on, and closes as it turns it off; `newToken`
+   * gives it a new token, the one before refused from then on. The client keeps the address and the token it hears:
+   * in the answer when it asked (`asked`), else in `piwi/agentsChanged`, sent only when they differ from what it holds.
+   */
+  const setAgents = async (enabled: boolean, newToken: boolean, asked: boolean): Promise<AgentsResult> => {
+    agentWanted = enabled;
+    const serving = agentServer;
+    if (newToken) agentPrefs = { ...agentPrefs, token: agentServer?.newToken() ?? null };
+    if (!agentWanted) {
+      agentServer?.close();
+      agentServer = null;
+      // No agent follows a run any more: the workers stop telling, and what the pages said goes.
+      runAgent.off();
+      return toldAgents({ url: null, token: null, message: "Piwi's runs are not served to agents." }, asked);
+    }
+    if (!agentServer && !shutDown) {
+      const kept = agentPrefs?.port ?? null;
+      agentOpening ??= AgentServer.open({
+        tools: runAgent,
+        port: kept,
+        token: agentPrefs?.token ?? null,
+        version: SERVICE_VERSION,
+      }).finally(() => {
+        agentOpening = null;
+      });
+      const opened = await agentOpening;
+      if (opened && (shutDown || !agentWanted || (agentServer && agentServer !== opened))) opened.close();
+      else if (!agentServer && opened) {
+        agentServer = opened;
+        // Another program holds the port kept for agents: a configuration copied before sends it the old token.
+        if (opened.moved) {
+          void connection.sendNotification(NOTICE_NOTIFICATION, {
+            root: folders[0] ?? '',
+            severity: 'warning',
+            message: `Another program listens at port ${kept}, which Piwi kept for agents: Piwi serves the runs at ${opened.url} with a new token. An agent the editor lists for itself follows; copy the runs' MCP server configuration again for any other.`,
+          } satisfies Notice);
+        }
+      }
+      // A server another call was opening takes the new token too.
+      if (newToken && !serving && agentServer) agentServer.newToken();
+      // Turned off and on again, it listens at the same address with the same token.
+      if (agentServer) agentPrefs = { ...agentPrefs, port: agentServer.port, token: agentServer.token };
+    }
+    return toldAgents(
+      agentServer
+        ? {
+            url: agentServer.url,
+            token: agentServer.token,
+            message: newToken
+              ? `Piwi serves the runs to agents at ${agentServer.url} with a new token: an agent with the one before is refused.`
+              : `Piwi serves the runs of this window to agents at ${agentServer.url}.`,
+          }
+        : { url: null, token: null, message: 'Piwi could not listen on this machine for agents.' },
+      asked,
+    );
+  };
+  /** The address and the token the client holds, as it last heard them: `piwi/agentsChanged` tells it a new one. */
+  let agentsHeld = JSON.stringify([null, null]);
+  const toldAgents = (answer: AgentsResult, asked: boolean): AgentsResult => {
+    const held = JSON.stringify([answer.url, answer.token]);
+    if (held !== agentsHeld && !asked) void connection.sendNotification(AGENTS_CHANGED_NOTIFICATION, answer);
+    agentsHeld = held;
+    return answer;
+  };
+  connection.onRequest(AGENTS_REQUEST, (params: AgentsParams): Promise<AgentsResult> =>
+    setAgents(params?.enabled === true, params?.newToken === true, true),
+  );
+
+  connection.onRequest(STOP_BIND_REQUEST, async (params: StopBindParams): Promise<StopBindResult> => {
+    const answer = await runSessions.bind(
+      { ref: params?.ref, worker: params?.worker ?? null, since: params?.since },
+      params?.on === true,
+    );
+    return {
+      ok: answer.ok,
+      message: answer.message,
+      name: answer.name,
+      command: answer.name ? `npx playwright cli attach ${answer.name}` : null,
+    };
+  });
+
   connection.onRequest(STOP_REQUESTS_REQUEST, (params: StopRequestsParams): Promise<StopRequestsResult> =>
     stopActions.requests(params),
   );
 
-  connection.onRequest(LOCATOR_AT_CARET_REQUEST, (params: LocatorAtCaretParams): Promise<LocatorAtCaretResult> =>
-    stopActions.locatorAtCaret(params),
+  connection.onRequest(
+    LOCATOR_AT_CARET_REQUEST,
+    async (params: LocatorAtCaretParams): Promise<LocatorAtCaretResult> =>
+      (await debugRuns.atCaret(params)) ?? stopActions.locatorAtCaret(params),
   );
 
   connection.onRequest(DESKTOP_JOB_REQUEST, async (params: DesktopJobParams): Promise<DesktopJobResult> => {
@@ -3531,6 +3725,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     recordChannel = null;
     runHub?.close();
     runHub = null;
+    agentServer?.close();
+    agentServer = null;
+    runAgent.dispose();
     runSessions.dispose();
     if (open) options.publish?.(null);
   };

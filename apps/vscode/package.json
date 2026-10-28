@@ -242,6 +242,16 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.copyRunsMcpConfiguration",
+        "title": "Copy the runs' MCP server configuration for agents",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.resetRunsMcpToken",
+        "title": "Reset the runs' MCP server token",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.pairPicker",
         "title": "Pair with Piwi Picker",
         "category": "Piwi"
@@ -395,6 +405,12 @@
         "icon": "$(debug-step-out)"
       },
       {
+        "command": "piwi.endTest",
+        "title": "End the test here, skipping the rest of it",
+        "category": "Piwi",
+        "icon": "$(circle-slash)"
+      },
+      {
         "command": "piwi.showPausedPage",
         "title": "Show the paused page",
         "category": "Piwi"
@@ -422,6 +438,11 @@
       {
         "command": "piwi.mockAtStop",
         "title": "Mock a request of the stopped test",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.shareWithPlaywright",
+        "title": "Share the stopped test's browser with Playwright tools",
         "category": "Piwi"
       },
       {
@@ -538,6 +559,10 @@
           "when": "piwi.runStopped"
         },
         {
+          "command": "piwi.endTest",
+          "when": "piwi.runCanEnd"
+        },
+        {
           "command": "piwi.showPausedPage",
           "when": "piwi.runStopped"
         },
@@ -560,6 +585,10 @@
         {
           "command": "piwi.mockAtStop",
           "when": "piwi.runCanMock"
+        },
+        {
+          "command": "piwi.shareWithPlaywright",
+          "when": "piwi.runCanShare"
         },
         {
           "command": "piwi.codeAtStop",
@@ -848,6 +877,11 @@
           "default": "key",
           "markdownDescription": "How the editor's agent signs in to Piwi's MCP server, as the extension provides it and as **Piwi: Copy the MCP server configuration** writes it. The desktop app's server takes its own token either way."
         },
+        "piwi.serveRunsToAgents": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Serve the test runs this window starts to the coding agents of this machine, as an MCP server the editor lists for its agent (**Piwi runs**): an agent can follow a run, stop it, read and act on the stopped page, and have Piwi write the code there. It listens on `127.0.0.1` alone, behind a token; **Piwi: Copy the runs' MCP server configuration for agents** gives it to another agent, and **Piwi: Reset the runs' MCP server token** gives it a new token."
+        },
         "piwi.testExplorer": {
           "type": "boolean",
           "default": true,
@@ -957,6 +991,10 @@
       {
         "id": "piwi.mcp",
         "label": "Piwi"
+      },
+      {
+        "id": "piwi.runs",
+        "label": "Piwi runs"
       }
     ],
     "taskDefinitions": [

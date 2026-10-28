@@ -1,6 +1,6 @@
 ---
 title: Runs window
-description: "Piwi Picker's Runs window follows the tests your editor runs, from a window beside them: pause, step and resume, write code from a stop, and watch a headless test's page live, click and type on it, and pick a locator on its image."
+description: "Piwi Picker's Runs window follows the tests your editor runs, from a window beside them: pause, step, resume and end them, write code from a stop, and watch a headless test's page live, click and type on it, and pick a locator on its image."
 lang: en-US
 ---
 
@@ -17,13 +17,15 @@ locator on its image. The editor shows the same stops: [Pause and step from the 
 
 With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-recording#send-from-piwi-picker), the popup shows a
 **Runs** tile under **More tools** while the editor answers. It opens the Runs window, to keep beside the test's
-browser. For each run the editor [started](./editor-runs), it shows the folder and the command, then each worker's
-test and whether it runs or where it stopped: the file and line, the call about to run, and an image of the page.
+browser. For each run the editor [started](./editor-runs), it shows the folder and the command, then each worker's test
+and whether it runs or where it stopped: the file and line, the call about to run, and an image of the page. A run you
+[started in a terminal](./terminal-runs) shows too, marked **Terminal**.
 
 ## The controls
 
-**Pause** stops a running test before its next call. At a stop, **Resume**, **Step** and **Finish** do what they do
-[in the editor](./editor-run-control#the-controls); Run to cursor stays in the editor.
+**Pause** stops a running test before its next call. At a stop, **Resume**, **Step**, **Finish** and
+[**End the test**](./end-the-test) do what they do [in the editor](./editor-run-control#the-controls); Run to cursor
+stays in the editor.
 
 A failing test is held at its line, a headless one only while a Runs window is open: **Failed at** in red, its error
 under it. **Resume** lets it end as it failed; **Pick** replaces the failing locator.
@@ -92,10 +94,21 @@ The run shortcut resumes the stopped tests, else pauses every run. It has no key
 shortcut** opens the browser's shortcuts page, where you give it a key and, in Chrome and Edge, the **Global** scope.
 In Firefox, it works while Firefox has the focus.
 
+## The desktop app's runs
+
+[Paired](./bug-reports#running-it-with-playwright-in-the-desktop-app) with the [desktop app](./desktop), the window
+lists the runs the app starts beside your editor's, marked **Desktop app**: reproductions, bisect steps and bug
+reports included, with the same controls and live view. With no editor paired, it follows the app alone. A failure
+of a run nobody attends (a Flake Lab run, a bisect, a lab job, a run with `--repeat-each` above 1, UI mode) goes on
+while the window is open. The app holds no editor, so **Pick**, **Record** and **Assert** in the test's window are not
+offered; the code **Assert a region** and **Mock a request** make goes to the app's window, to copy there, and the
+window here says so: [Desktop app runs](./desktop-runs).
+
 ## How it connects
 
 The background worker reaches the editor's services on `127.0.0.1` only once the paired port proves it holds the
-pairing's token: [how the pieces connect](./editor-run-control#how-it-works). The window talks to that worker alone,
+pairing's token: [how the pieces connect](./editor-run-control#how-it-works). The desktop app proves it holds its
+token the same way before the worker asks it for its runs. The window talks to that worker alone,
 and makes no network call of its own. With an editor extension older than the live view, the window shows the image
 and the controls alone.
 
@@ -121,3 +134,4 @@ and the controls alone.
 - [Code from a pause](./editor-stop-code): what each action writes, and where.
 - [Browser extension](./extension): Piwi Picker's other tools, and its permissions.
 - [Remote development](/guide/remote-development): the runs of a dev container or a remote window.
+- [Desktop app runs](./desktop-runs): the same runs, in the desktop app's window.

@@ -142,6 +142,15 @@
             <action id="Piwi.CopyMcpConfiguration" class="dev.piwitests.jetbrains.CopyMcpConfigurationAction"
                     text="Copy the MCP Server Configuration"
                     description="An mcpServers entry for the AI Assistant's MCP settings"/>
+            <action id="Piwi.CopyRunsMcpConfiguration" class="dev.piwitests.jetbrains.CopyRunsMcpConfigurationAction"
+                    text="Copy the Runs' MCP Server Configuration for Agents"
+                    description="An mcpServers entry through mcp-remote, for the AI Assistant or another agent that starts commands, to follow, stop and act on the test runs this project starts"/>
+            <action id="Piwi.CopyRunsMcpHttpConfiguration" class="dev.piwitests.jetbrains.CopyRunsMcpHttpConfigurationAction"
+                    text="Copy the Runs' MCP Server Configuration for Claude Code or Cursor"
+                    description="An mcpServers entry of type http, with the token as a bearer header, for an agent that connects to it directly"/>
+            <action id="Piwi.ResetRunsMcpToken" class="dev.piwitests.jetbrains.ResetRunsMcpTokenAction"
+                    text="Reset the Runs' MCP Server Token"
+                    description="A new token for the runs' MCP server: every agent given the one before is refused"/>
             <separator/>
             <action id="Piwi.RecordHere" class="dev.piwitests.jetbrains.RecordHereAction" text="Record Here"
                     icon="AllIcons.Ide.Macro.Recording_1"
@@ -198,6 +207,10 @@
             <action id="Piwi.FinishRun" class="dev.piwitests.jetbrains.FinishRunAction" text="Finish the Test"
                     icon="AllIcons.Actions.StepOut" use-shortcut-of="StepOut"
                     description="Run the stopped test on without stopping at a breakpoint again in this attempt"/>
+            <!-- No shortcut: the debugger has no action it stands for. -->
+            <action id="Piwi.EndTest" class="dev.piwitests.jetbrains.EndTestAction" text="End the Test"
+                    icon="AllIcons.RunConfigurations.TestIgnored"
+                    description="End the stopped test there, reported as skipped: the rest of it never runs"/>
             <action id="Piwi.ShowPausedPage" class="dev.piwitests.jetbrains.ShowPausedPageAction" text="Show the Paused Page"
                     icon="AllIcons.Actions.Preview"
                     description="An image of the stopped test's page, in the Piwi tool window"/>
@@ -213,6 +226,10 @@
                     description="Pick a region in the stopped test's window: its ARIA snapshot goes above the stopped line"/>
             <action id="Piwi.MockAtStop" class="dev.piwitests.jetbrains.MockAtStopAction" text="Mock a Request at the Stop"
                     description="Answer a request the stopped test made as the server did: page.route() goes above the stopped line"/>
+            <!-- Off until asked, each time, after a warning: a shared browser is open to any process of the user. -->
+            <action id="Piwi.ShareWithPlaywright" class="dev.piwitests.jetbrains.ShareWithPlaywrightAction"
+                    text="Share the Stopped Browser with Playwright Tools"
+                    description="Until the test ends, let playwright-cli attach and Playwright's dashboard join the stopped test's browser"/>
             <action id="Piwi.StopRun" class="dev.piwitests.jetbrains.StopRunAction" text="Stop the Run"
                     icon="AllIcons.Actions.Suspend"
                     description="End the process of the run started from Piwi"/>

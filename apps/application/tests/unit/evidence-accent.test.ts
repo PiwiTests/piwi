@@ -22,6 +22,7 @@ const APP_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 /** The components of the evidence card and of the cluster page's affected tests. */
 const FILES = [
   'app/components/test-case/EvidenceTabs.vue',
+  'app/components/test-case/DebugInEditorButton.vue',
   'app/components/test-case/FailureTimelineCard.vue',
   'app/components/test-case/TimelineTypeFilter.vue',
   'app/components/test-case/TimelineDuration.vue',

@@ -18,6 +18,7 @@ import type {
   RunTest,
   SetRunBreakpointsParams,
   StopActionKind,
+  StopBindResult,
   StopCode,
   StopRequest,
 } from '@piwitests/editor/protocol';
@@ -183,20 +184,35 @@ export function spelledSession(session: RunSession, spell: (uri: string) => stri
   };
 }
 
-/** A worker stopped: its run, the worker, where it stands, the test it runs and what its reporter takes there. */
+/**
+ * A worker stopped: its run, the worker, where it stands, the test it runs, what its reporter takes there, and whether
+ * its run was started in a terminal (`RunSession.terminal`).
+ */
 export interface ShownStop {
   ref: string;
   worker: number;
   stop: RunStop;
   test: RunTest | null;
   takes: readonly RunTake[];
+  terminal?: boolean;
 }
 
 /** Every stopped worker of the sessions, in their order. */
 export function stopsOf(sessions: Sessions): ShownStop[] {
   return [...sessions.values()].flatMap((s) =>
     s.workers.flatMap((w) =>
-      w.stop ? [{ ref: s.ref, worker: w.worker, stop: w.stop, test: w.test, takes: w.takes ?? [] }] : [],
+      w.stop
+        ? [
+            {
+              ref: s.ref,
+              worker: w.worker,
+              stop: w.stop,
+              test: w.test,
+              takes: w.takes ?? [],
+              ...(s.terminal ? { terminal: true } : {}),
+            },
+          ]
+        : [],
     ),
   );
 }
@@ -211,10 +227,28 @@ export function stopKey(stop: ShownStop): string {
  * at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in plain
  * text. The lens and the choice among several draw the stop's icon before it (`stopIcon`).
  */
-export function pausedText(stop: RunStop, test: RunTest | null): string {
+export function pausedText(stop: RunStop, test: RunTest | null, terminal = false): string {
   const attempt = test && test.retry > 0 ? ` · attempt ${test.retry + 1}` : '';
-  if (stop.reason === 'failure') return `Failed · ${stop.title.replace(/^Failed:\s*/, '')}${attempt}`;
-  return `Paused · ${stop.title}${attempt}`;
+  // A run started in a terminal says so: its process is the terminal's.
+  const where = terminal ? ' · run in a terminal' : '';
+  if (stop.reason === 'failure') return `Failed · ${stop.title.replace(/^Failed:\s*/, '')}${attempt}${where}`;
+  // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching.
+  return `Paused${stop.by === 'agent' ? ' by the agent' : ''} · ${stop.title}${attempt}${where}`;
+}
+
+/** Whether a stop's browser can be shared with Playwright's own tools: its reporter takes `bind`. */
+export function canShare(stop: ShownStop): boolean {
+  return stop.takes.includes('bind');
+}
+
+/** What sharing a stopped browser with Playwright's own tools risks, asked before it is shared. */
+export const SHARE_WARNING =
+  "Share the stopped test's browser with Playwright tools? Until the test ends, any process of yours can then drive it, read its pages and run code in them (playwright-cli attach, Playwright's dashboard).";
+
+/** What a shared browser's answer says, with the command that joins it. */
+export function sharedText(result: StopBindResult): string {
+  if (!result.ok || !result.name) return result.message;
+  return `${result.message} Join it with: ${result.command}`;
 }
 
 /** The icon before a stop's line: a failure's, else the pause's. */
@@ -230,6 +264,7 @@ export const RUN_COMMANDS = {
   step: 'piwi.stepRun',
   runTo: 'piwi.runToCursor',
   finish: 'piwi.finishRun',
+  end: 'piwi.endTest',
   showPage: 'piwi.showPausedPage',
   pick: 'piwi.pickAtStop',
   record: 'piwi.recordAtStop',
@@ -237,6 +272,7 @@ export const RUN_COMMANDS = {
   assertRegion: 'piwi.assertRegionAtStop',
   mock: 'piwi.mockAtStop',
   code: 'piwi.codeAtStop',
+  share: 'piwi.shareWithPlaywright',
 } as const;
 
 /** A control or a code action offered at a stop: its title above the stopped line, and its command. */
@@ -246,18 +282,28 @@ export interface StopControl {
 }
 
 /**
- * The controls offered at a stop, as its lens and its hover name them: Resume, Step, Run to cursor and Finish; at a
- * failure, Resume alone, which lets the test end as it failed (Step and Finish do the same).
+ * The controls offered at a stop, as its lens and its hover name them: Resume, Step, Run to cursor, Finish, and End
+ * test where its reporter takes it; at a failure, Resume alone, which lets the test end as it failed (Step, Finish and
+ * End do the same).
  */
-export function stopControls(stop: RunStop): StopControl[] {
+export function stopControls(stop: ShownStop): StopControl[] {
   const resume = { title: 'Resume', command: RUN_COMMANDS.resume };
-  if (stop.reason === 'failure') return [resume];
+  if (stop.stop.reason === 'failure') return [resume];
   return [
     resume,
     { title: 'Step', command: RUN_COMMANDS.step },
     { title: 'Run to cursor', command: RUN_COMMANDS.runTo },
     { title: 'Finish', command: RUN_COMMANDS.finish },
+    ...(canEnd(stop) ? [{ title: 'End test', command: RUN_COMMANDS.end }] : []),
   ];
+}
+
+/**
+ * Whether a stop can end its test (End the test, `end`): its reporter takes it, and it is no failure, which Resume ends
+ * as it failed.
+ */
+export function canEnd(stop: ShownStop): boolean {
+  return stop.stop.reason !== 'failure' && stop.takes.includes('end');
 }
 
 /**
@@ -339,16 +385,22 @@ export function stopActions(stop: ShownStop): StopAction[] {
 
 /** What the controls offer: Stop while a run is live, Pause while a worker runs, the others while one is stopped. */
 export interface ControlState {
-  /** A run is live: Stop. */
+  /** A run is live. */
   active: boolean;
+  /** A run this window started is live: Stop. A run started in a terminal is the terminal's to stop. */
+  stoppable: boolean;
   /** A worker runs a test or is between tests, no Pause reached it, and its test can stop: Pause. */
   pausable: boolean;
   /** A Pause reached a worker that has not stopped yet. */
   pausing: boolean;
   /** A worker is stopped: Resume, Step, Run to cursor, Finish. */
   stopped: boolean;
+  /** A stopped worker can end its test: End the test. */
+  endable: boolean;
   /** The code actions a stop offers, any stop. */
   actions: StopActionKind[];
+  /** A stop's browser can be shared with Playwright's own tools. */
+  shareable: boolean;
 }
 
 export function controlState(sessions: Sessions): ControlState {
@@ -356,10 +408,13 @@ export function controlState(sessions: Sessions): ControlState {
   const offered = new Set(stopsOf(sessions).flatMap((s) => stopActions(s).map((a) => a.action)));
   return {
     active: sessions.size > 0,
+    stoppable: [...sessions.values()].some((s) => !s.terminal),
     pausable: workers.some((w) => w.state !== 'stopped' && !w.pausing && !w.test?.cannotPause),
     pausing: workers.some((w) => w.pausing),
     stopped: workers.some((w) => w.state === 'stopped'),
+    endable: stopsOf(sessions).some(canEnd),
     actions: STOP_ACTIONS.filter((a) => offered.has(a.action)).map((a) => a.action),
+    shareable: stopsOf(sessions).some(canShare),
   };
 }
 
@@ -371,13 +426,15 @@ export interface ControlItem {
 }
 
 /**
- * The status bar items beside the run's progress: Resume, Step and Finish while a worker is stopped, with the code
- * actions' menu while a stop offers one, else Pause, or `Pausing…` once asked; and Stop while a run is live. None
- * without one.
+ * The status bar items beside the run's progress: Resume, Step, Finish and End the test while a worker is stopped,
+ * with the code actions' menu while a stop offers one, else Pause, or `Pausing…` once asked; and Stop while a run this
+ * window started is live. None without one.
  */
 export function controlItems(state: ControlState): ControlItem[] {
   if (!state.active) return [];
-  const stop = { text: '$(debug-stop)', tooltip: 'Piwi: Stop the run (Shift+F5)', command: RUN_COMMANDS.stop };
+  const stop = state.stoppable
+    ? [{ text: '$(debug-stop)', tooltip: 'Piwi: Stop the run (Shift+F5)', command: RUN_COMMANDS.stop }]
+    : [];
   if (state.stopped) {
     const titles = STOP_ACTIONS.filter((a) => state.actions.includes(a.action)).map((a) => a.title);
     return [
@@ -388,6 +445,15 @@ export function controlItems(state: ControlState): ControlItem[] {
         tooltip: 'Piwi: Finish the test without stopping again (Shift+F11)',
         command: RUN_COMMANDS.finish,
       },
+      ...(state.endable
+        ? [
+            {
+              text: '$(circle-slash)',
+              tooltip: 'Piwi: End the test here: the rest of it is skipped',
+              command: RUN_COMMANDS.end,
+            },
+          ]
+        : []),
       ...(titles.length
         ? [
             {
@@ -397,19 +463,22 @@ export function controlItems(state: ControlState): ControlItem[] {
             },
           ]
         : []),
-      stop,
+      ...stop,
     ];
   }
   if (state.pausable) {
     return [
       { text: '$(debug-pause)', tooltip: 'Piwi: Pause the run at its next call', command: RUN_COMMANDS.pause },
-      stop,
+      ...stop,
     ];
   }
   if (state.pausing) {
-    return [{ text: '$(loading~spin) Pausing…', tooltip: 'Piwi: the run stops at its next call', command: null }, stop];
+    return [
+      { text: '$(loading~spin) Pausing…', tooltip: 'Piwi: the run stops at its next call', command: null },
+      ...stop,
+    ];
   }
-  return [stop];
+  return stop;
 }
 
 /** What a control names: a run, one of its workers, and the stop it was shown at (`RunStop.since`). */
@@ -457,7 +526,7 @@ export function stopPick(stop: ShownStop): { label: string; description: string 
   const file = stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1);
   const test = stop.test ? `${stop.test.title.join(' › ')} · ` : '';
   return {
-    label: `${stopIcon(stop.stop)} ${pausedText(stop.stop, stop.test)}`,
+    label: `${stopIcon(stop.stop)} ${pausedText(stop.stop, stop.test, stop.terminal)}`,
     description: `${test}${decodeURIComponent(file)}:${stop.stop.line + 1} · worker ${stop.worker}`,
   };
 }

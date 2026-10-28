@@ -105,6 +105,8 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var coverageMarks: Boolean = true,
         var failureSeverity: String = "error",
         var mcpAuthorization: String = "key",
+        var serveRunsToAgents: Boolean = true,
+        var agentsPort: Int = 0,
     )
 
     private var state = State()
@@ -443,6 +445,56 @@ class PiwiProjectService(private val project: Project) : Disposable {
             failureSeverity = local.failureSeverity.takeIf { it in Glue.FAILURE_SEVERITIES },
             mcpAuthorization = local.mcpAuthorization.takeIf { it in Glue.MCP_AUTHORIZATIONS },
         )
+    }
+
+    /**
+     * What the service's MCP server for agents takes as the service starts: whether it serves
+     * (`serveRunsToAgents`), the port it listened at last, and the token this project keeps in the password safe,
+     * a new one the first time, so an agent's configuration copied once still connects after a restart. Reads the
+     * password safe: never on the event thread.
+     */
+    fun agentsOptions(): Map<String, Any?> {
+        val local = local()
+        return mapOf("enabled" to local.serveRunsToAgents, "port" to local.agentsPort.takeIf { it > 0 }, "token" to agentsToken())
+    }
+
+    /** Where the password safe keeps this project's token for the runs' MCP server. */
+    private fun agentsTokenAttributes() =
+        PiwiCredentials.attributes(generateServiceName("Piwi", Glue.agentsTokenEntry(project.locationHash)))
+
+    private fun agentsToken(): String {
+        val attributes = agentsTokenAttributes()
+        PasswordSafe.instance.getPassword(attributes)?.takeIf(Glue::isAgentsToken)?.let { return it }
+        val token = Glue.newAgentsToken()
+        PasswordSafe.instance.setPassword(attributes, token)
+        return token
+    }
+
+    /**
+     * Turn the service's MCP server for agents on or off as `serveRunsToAgents` says (`piwi/agents`), with a new token
+     * when `newToken` (Reset the Runs' MCP Server Token), keeping the port it listens at and its token for the next
+     * start; null when no service runs. Waits on the service: never on the event thread.
+     */
+    fun agentsChanged(newToken: Boolean = false): AgentsResult? {
+        val answer = server()?.agents(AgentsParams(local().serveRunsToAgents, newToken.takeIf { it }))?.orNull()
+        agentsHeard(answer)
+        // Served or not, the token kept for the next start is a new one.
+        if (newToken && answer?.token == null) PasswordSafe.instance.setPassword(agentsTokenAttributes(), Glue.newAgentsToken())
+        return answer
+    }
+
+    /**
+     * What the service says of its MCP server for agents, asked or not (`piwi/agentsChanged`): its port and its token
+     * kept for the next start (a new token when the kept port was taken, or reset). Writes the password safe on a
+     * pooled thread.
+     */
+    fun agentsHeard(answer: AgentsResult?) {
+        answer?.url?.let(Glue::portOf)?.let { local().agentsPort = it }
+        val token = answer?.token?.takeIf(Glue::isAgentsToken) ?: return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val attributes = agentsTokenAttributes()
+            if (PasswordSafe.instance.getPassword(attributes) != token) PasswordSafe.instance.setPassword(attributes, token)
+        }
     }
 
     /**

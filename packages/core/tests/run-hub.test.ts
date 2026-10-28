@@ -154,6 +154,9 @@ describe('the hub’s WebSocket', () => {
     expect(
       parseHubCommand(json({ type: 'runControl', id: 3, ref: 'ed-1', worker: 1, action: 'step', since: 'S' })),
     ).toEqual({ type: 'runControl', id: 3, ref: 'ed-1', worker: 1, action: 'step', since: 'S' });
+    expect(
+      parseHubCommand(json({ type: 'runControl', id: 4, ref: 'ed-1', worker: null, action: 'end', since: 'S' })),
+    ).toEqual({ type: 'runControl', id: 4, ref: 'ed-1', worker: null, action: 'end', since: 'S' });
     expect(parseHubCommand(json({ type: 'pausedPage', id: 4, ref: 'ed-1', worker: 0 }))).toEqual({
       type: 'pausedPage',
       id: 4,
@@ -187,7 +190,7 @@ describe('the hub’s WebSocket', () => {
       message: 'Run to a line stays in the editor: use Run to Cursor there.',
     });
     for (const broken of [
-      { type: 'runControl', ref: 'ed-1', action: 'end' },
+      { type: 'runControl', ref: 'ed-1', action: 'stop', since: 'S' },
       { type: 'runControl', ref: 'ed 1', action: 'pause' },
       { type: 'runControl', action: 'pause' },
       { type: 'runControl', ref: 'ed-1', worker: -1, action: 'pause' },
@@ -211,7 +214,7 @@ describe('the hub’s WebSocket', () => {
 
   test('refuses a command that answers a stop without naming it, and takes a pause without one', () => {
     const needsStop = { type: 'invalid', id: 9, message: 'The command needs the stop it answers.' };
-    for (const action of ['step', 'resume', 'finish']) {
+    for (const action of ['step', 'resume', 'finish', 'end']) {
       for (const since of [undefined, null]) {
         expect(parseHubCommand(json({ type: 'runControl', id: 9, ref: 'ed-1', worker: 0, action, since }))).toEqual(
           needsStop,
@@ -309,6 +312,7 @@ describe('the hub’s WebSocket', () => {
         type: 'session',
         session: { ...session, root: null, label: null, command: null, project: null, workers: [], ended: true },
       },
+      { type: 'session', session: { ...session, command: null, terminal: true } },
       { type: 'keepalive' },
     ];
     for (const message of messages) expect(parseHubMessage(json(message))).toEqual(message);
@@ -329,14 +333,26 @@ describe('the hub’s WebSocket', () => {
         }),
       ),
     ).toMatchObject({ session: { workers: [{ stop: { reason: 'other' } }] } });
+    // A stop an agent asked for says so; any other value of `by` is left out.
+    const byAgent = { ...session, workers: [{ ...worker, stop: { ...worker.stop!, by: 'agent' as const } }] };
+    expect(parseHubMessage(json({ type: 'session', session: byAgent }))).toEqual({ type: 'session', session: byAgent });
+    const byOther = parseHubMessage(
+      json({ type: 'session', session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, by: 'me' } }] } }),
+    ) as { session: HubSession };
+    expect(byOther.session.workers[0]!.stop).not.toHaveProperty('by');
     expect(
       parseHubMessage(
         json({
           type: 'session',
-          session: { ...session, workers: [{ ...worker, intents: ['dance', 'mock', 'pick'] }] },
+          session: { ...session, workers: [{ ...worker, intents: ['dance', 'end', 'mock', 'pick'] }] },
         }),
       ),
-    ).toMatchObject({ session: { workers: [{ intents: ['pick', 'mock'] }] } });
+    ).toMatchObject({ session: { workers: [{ intents: ['pick', 'mock', 'end'] }] } });
+    // A run of the editor's own says nothing of a terminal; `terminal` is true or left out.
+    expect(parseHubMessage(json({ type: 'session', session: { ...session, terminal: 'yes' } }))).toEqual({
+      type: 'session',
+      session,
+    });
     // A failure's stop names its error; a hub that predates it names none.
     const failed = { ...worker.stop!, reason: 'failure', error: 'expect(locator).toBeVisible() failed' };
     expect(

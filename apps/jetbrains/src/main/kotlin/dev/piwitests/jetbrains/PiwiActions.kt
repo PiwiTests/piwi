@@ -15,6 +15,7 @@ import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.InputValidator
+import com.intellij.openapi.ui.MessageDialogBuilder
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.vfs.VirtualFile
@@ -334,6 +335,104 @@ class CopyMcpConfigurationAction : AnAction(), DumbAware {
         }
 
         private const val OFFERED = "piwi.mcpOffered"
+    }
+}
+
+/**
+ * Piwi: Copy the runs' MCP server configuration — for an agent of this machine to follow, stop and act on the test
+ * runs this project starts (the editor service's own MCP server, `piwi/agents`), bridged through `mcp-remote` for an
+ * agent that starts only commands (the AI Assistant's settings). The platform has no public way to register an MCP
+ * server for the AI Assistant, so the person pastes it.
+ */
+class CopyRunsMcpConfigurationAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        copyRunsMcp(project, "Settings → Tools → AI Assistant → Model Context Protocol, or your agent's MCP settings", Glue::runsMcpConfiguration)
+    }
+
+    companion object {
+        /** The runs' MCP server's configuration, as `render` writes it, on the clipboard; why not otherwise. */
+        fun copyRunsMcp(project: Project, where: String, render: (String, String) -> String) {
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val service = project.service<PiwiProjectService>()
+                if (!service.local().serveRunsToAgents) {
+                    return@executeOnPooledThread PiwiCommands.notify(
+                        project,
+                        "This project's runs are not served to agents: turn it on in Settings → Tools → Piwi.",
+                        NotificationType.WARNING,
+                    )
+                }
+                val served = service.agentsChanged()
+                val url = served?.url
+                val token = served?.token
+                if (url == null || token == null) {
+                    return@executeOnPooledThread PiwiCommands.notify(
+                        project,
+                        served?.message ?: "The Piwi editor service is not running: open a test file first.",
+                        NotificationType.WARNING,
+                    )
+                }
+                CopyPasteManager.getInstance().setContents(StringSelection(render(url, token)))
+                PiwiCommands.notify(
+                    project,
+                    "The runs' MCP configuration is on the clipboard: paste it in $where. It holds this project's token: " +
+                        "keep it in your user settings, never in a file of the repository such as a project's .mcp.json. " +
+                        "It serves while this project is open.",
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Piwi: Copy the runs' MCP server configuration for Claude Code or Cursor — the `mcpServers` entry of type `http` they
+ * read, with no bridge, the token as a bearer header.
+ */
+class CopyRunsMcpHttpConfigurationAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        CopyRunsMcpConfigurationAction.copyRunsMcp(
+            project,
+            "your agent's user settings (claude mcp add-json, ~/.cursor/mcp.json)",
+            Glue::runsMcpHttpConfiguration,
+        )
+    }
+}
+
+/**
+ * Piwi: Reset the runs' MCP server token — after the person said yes, the service takes a new token, the one before
+ * refused from then on, and the project keeps it; every agent given the configuration needs it copied again.
+ */
+class ResetRunsMcpTokenAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val yes = MessageDialogBuilder.yesNo("Reset the Runs' MCP Server Token?", RESET_WARNING)
+            .yesText("Reset the Token")
+            .noText("Cancel")
+            .ask(project)
+        if (!yes) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val answer = project.service<PiwiProjectService>().agentsChanged(newToken = true)
+            PiwiCommands.notify(
+                project,
+                if (answer?.token != null) {
+                    "The runs' MCP server has a new token: copy the runs' MCP server configuration again for each agent."
+                } else {
+                    "The runs' MCP server takes a new token from its next start."
+                },
+            )
+        }
+    }
+
+    companion object {
+        const val RESET_WARNING =
+            "Every agent you copied the runs' MCP server configuration to is refused until you copy it again."
     }
 }
 

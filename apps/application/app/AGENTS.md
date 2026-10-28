@@ -257,6 +257,15 @@ views are exempt only where a rule says so.
   preference (`useOpenInIde`, `piwi-ide-prefs`), deliberately not in `SETTINGS_PAGES` and with no `PIWI_*` variable.
   Only the Piwi JetBrains plugin (`/api/piwi/open`, `PiwiOpenHandler.kt` in `apps/jetbrains`) confirms a file opened:
   the IDE Remote Control probe and the `vscode://` / `jetbrains://` launches never report a confirmed "opened".
+- **Debug in my editor goes only through Piwi's own IDE clients, and the IDE asks before it runs anything**
+  (`debugInIde` in `useOpenInIde`: `debug=1` on `buildVscodeExtensionUrl` and on `buildPiwiPluginOpenUrl`'s open, never
+  on a check). Its fields are read by `apps/vscode/src/debug-link.ts` and `Glue.parseOpenRequest` in `apps/jetbrains`:
+  a change to one changes the others. Checked by `tests/unit/ide-links.test.ts` and `tests/debug-in-editor.spec.ts`.
+- **The desktop window holds the stream of its runs' hub only while it has a run to show** (`useDesktopRunHub.want`,
+  from the Local runs tray): while it is open every headless stop waits for the window, so the tray opens on each stop
+  it hears, once, and it says `show` only for the running runs whose **Hold failures** switch is on (off by default,
+  on for a reproduction, `desktopHoldsByDefault`; never for a run nobody attends, `desktopHoldRefusal`), each by its
+  steps' names (`hubRefs`); expanding a run or closing the tray changes none (`tests/desktop-run-view.spec.ts`).
 - **Anything opened outside `$fetch` carries `useRuntimeConfig().app.baseURL`** (`window.open`, an `href`, a download
   URL): the demo is served from `/demo/` and its service worker only intercepts that prefix, so a root-relative
   `/api/...` 404s there. `fileApiUrl` and `getTraceViewerUrl` do it.

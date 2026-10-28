@@ -91,6 +91,8 @@ export interface HubStop {
    * another stop, and from a service or a reporter that predates it, whose `title` alone says how the test failed.
    */
   error?: string;
+  /** `agent` for a stop an agent asked for through a host's MCP tools (its Pause, Step or Run to); absent otherwise. */
+  by?: 'agent';
 }
 
 /** A test a worker runs. */
@@ -128,15 +130,19 @@ export type HubCodeIntent = 'assert' | 'assert-region';
 export type HubViewAction = 'view' | 'input' | 'input-clicks' | 'pick-at';
 
 /**
- * What a stop can take from the Runs page: the intents, Mock a request (`mock`, with the `requests` it lists), and the
- * live view's actions.
+ * What a stop can take from the Runs page: the intents, Mock a request (`mock`, with the `requests` it lists), the
+ * live view's actions, and End the test (`end`, the `runControl` that skips the rest of the test), which a stop at a
+ * failure leaves out: Resume ends it as it failed.
  */
-export type HubAction = HubIntent | HubCodeIntent | 'mock' | HubViewAction;
+export type HubAction = HubIntent | HubCodeIntent | 'mock' | HubViewAction | 'end';
 
-/** The actions that write code at a stop, in the editor. */
-export type HubCodeAction = HubCodeIntent | 'mock';
+/**
+ * The actions that write code at a stop, in the editor: the intents', Mock a request, and an agent's (the editor's MCP
+ * server): the steps it took on the stopped page (`steps`) and a locator in place of the stopped line's (`locator`).
+ */
+export type HubCodeAction = HubCodeIntent | 'mock' | 'steps' | 'locator';
 
-const HUB_CODE_ACTIONS: readonly string[] = ['assert', 'assert-region', 'mock'];
+const HUB_CODE_ACTIONS: readonly string[] = ['assert', 'assert-region', 'mock', 'steps', 'locator'];
 
 const HUB_INTENTS: readonly string[] = ['pick', 'record', 'assert', 'assert-region'];
 
@@ -151,6 +157,7 @@ export const HUB_ACTIONS: readonly HubAction[] = [
   'input',
   'input-clicks',
   'pick-at',
+  'end',
 ];
 
 /**
@@ -192,6 +199,11 @@ export interface HubSession {
   workers: HubWorker[];
   /** The run ended: its last message. A later run of the same ref is a new session. */
   ended: boolean;
+  /**
+   * The run was started in a terminal, not by the editor: it found the editor through its discovery file, and its
+   * `command` is null. Absent from a service that predates it, and for a run the editor started.
+   */
+  terminal?: boolean;
 }
 
 /**
@@ -205,8 +217,11 @@ export interface HubImage {
   height?: number;
 }
 
-/** The controls the extension sends; Run to a line stays in the editor, which has the file. */
-export type HubControlAction = 'pause' | 'step' | 'resume' | 'finish';
+/**
+ * The controls the extension sends; Run to a line stays in the editor, which has the file. `end` ends the test at the
+ * stop, for a worker whose `intents` list it.
+ */
+export type HubControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'end';
 
 /** The first message: the token of the hub's discovery file. */
 export interface HubHello {
@@ -225,9 +240,9 @@ export type HubCommand =
   | { type: 'follow'; id: number; on: boolean }
   /**
    * Steer a run, as `piwi/runControl` does: `pause` every running worker (or `worker`), or answer the stop of the one
-   * stopped (`worker`, needed when several are): `step`, `resume`, `finish`. `since` names the stop the extension
-   * showed, and these three need it: one that went on is refused (`The test went on.`), so a click twice does not skip
-   * the next stop. `pause` takes none.
+   * stopped (`worker`, needed when several are): `step`, `resume`, `finish`, `end`. `since` names the stop the
+   * extension showed, and these need it: one that went on is refused (`The test went on.`), so a click twice does not
+   * skip the next stop. `pause` takes none.
    */
   | {
       type: 'runControl';
@@ -469,7 +484,7 @@ function isInt(value: unknown, min: number, max = 2_147_483_647): value is numbe
 }
 
 const REF = /^[\w-]{1,64}$/;
-const ACTIONS: readonly string[] = ['pause', 'step', 'resume', 'finish'];
+const ACTIONS: readonly string[] = ['pause', 'step', 'resume', 'finish', 'end'];
 /** Why a command that answers a stop and names none is refused. */
 const NEEDS_STOP = 'The command needs the stop it answers.';
 
@@ -508,7 +523,7 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
       const { action } = value;
       if (action === 'run-to') return invalid('Run to a line stays in the editor: use Run to Cursor there.');
       if (typeof action !== 'string' || !ACTIONS.includes(action)) {
-        return invalid('action must be pause, step, resume or finish.');
+        return invalid('action must be pause, step, resume, finish or end.');
       }
       if (action !== 'pause' && since === null) return invalid(NEEDS_STOP);
       return { type: 'runControl', id, ref, worker, action: action as HubControlAction, since };
@@ -625,6 +640,7 @@ function readStop(value: unknown): HubStop | null | undefined {
     since: since as string,
     ...(error === undefined ? {} : { error: error as string }),
     ...(value.intents === undefined ? {} : { intents: readActions(value.intents) }),
+    ...(value.by === 'agent' ? { by: 'agent' as const } : {}),
   };
 }
 
@@ -692,7 +708,8 @@ function readSession(value: unknown): HubSession | null {
   if (!Array.isArray(value.workers) || value.workers.length > 1000) return null;
   const workers = value.workers.map(readWorker);
   if (!workers.every((w): w is HubWorker => w !== null)) return null;
-  return { ref: value.ref, root, label, command, project, workers, ended: value.ended };
+  const session: HubSession = { ref: value.ref, root, label, command, project, workers, ended: value.ended };
+  return value.terminal === true ? { ...session, terminal: true } : session;
 }
 
 /** A message from the hub, checked field by field; null when it is not one, or of a type this version does not know. */

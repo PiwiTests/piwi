@@ -12,29 +12,33 @@ import {
   pairedExtension,
   playInput,
   sendFrame,
+  startDesktop,
   startEditor,
   startRun,
   stopAtCheckout,
   waitFor,
   CART_RESPONSE,
   CHECK,
+  DESKTOP_TOKEN,
   FAILURE_ERROR,
   KEPT,
   PAIRING_TOKEN,
   RUN_TAKES,
   VIEWPORT,
   type Editor,
-  type FakeWorker,
+  FakeWorker,
 } from './runs-fixtures.js';
 
 /**
- * The Runs window in the real extension, against the real editor service and its hub: the worker finds the hub
- * through the pairing, the popup's Runs tile opens the window, and the window pauses, steps and resumes a run whose
- * worker the spec plays, with the image of the stopped page. At a stop it starts the code the editor writes there
- * (Assert, Assert a region, Mock a request, as the worker's reporter takes them), and holds a failed test, a headless
- * one only while a Runs window is open. A page served from 127.0.0.1 never reaches the hub. Watch live shows a stop's
- * frames, the clicks and keys on them reach the page, Pick on the image names the element under a click, and a
- * headless stop takes Pick, Record and the checks once watched; an older editor service shows none of it.
+ * The Runs window in the real extension, against the real editor service and its hub: the worker finds the hub through
+ * the pairing, the popup's Runs tile opens the window, and the window pauses, steps, resumes and ends a run whose
+ * worker the spec plays, with the image of the stopped page, a run started in a terminal named as one. At a stop it
+ * starts the code the editor writes there (Assert, Assert a region, Mock a request, as the worker's reporter takes
+ * them), and holds a failed test, a headless one only while a Runs window is open. A page served from 127.0.0.1 never
+ * reaches the hub. Watch live shows a stop's frames, the clicks and keys on them reach the page, Pick on the image
+ * names the element under a click, and a headless stop takes Pick, Record and the checks once watched; an older editor
+ * service shows none of it. The paired desktop app's runs show beside the editor's, the app named, their code made
+ * there for the app's window to copy.
  */
 
 let editor: Editor;
@@ -205,6 +209,50 @@ test('the run shortcut pauses the runs, then resumes the stopped test, with no R
   }
 });
 
+test('End the test ends a stopped test there, and a run started in a terminal shows as one', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  try {
+    const runs = await openRuns(context, extensionId);
+    const card = liveRun(runs);
+    const run = await startRun(editor, 'pays', [...RUN_TAKES]);
+    try {
+      await expect(card.getByText('Running')).toBeVisible();
+      await expect(card.getByText('Terminal')).toHaveCount(0);
+      stopAtCheckout(run.worker, 1);
+      // Beside the other controls that steer the test, above the code a stop can write.
+      const steering = card.locator('.controls .piwi-actions').first().getByRole('button');
+      await expect(steering).toHaveText(['Resume', 'Step', 'Finish', 'End the test']);
+      const end = card.getByRole('button', { name: 'End the test' });
+      await expect(end).toHaveAttribute('title', 'End the test here: the rest of it is skipped');
+      await end.click();
+      expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'end', stop: 1 });
+      run.worker.send({ type: 'running', stop: 1 });
+      await expect(card.getByText('Running')).toBeVisible();
+    } finally {
+      await endRun(run);
+    }
+
+    // A run started in a terminal: a ref the editor never built, on its run channel, named a terminal's run.
+    const { channel } = await editor.svc.command();
+    const ref = `terminal-4242-${Date.now()}`;
+    const terminal = new FakeWorker(channel.path, editor.dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    try {
+      terminal.begin('pays');
+      const shown = liveRun(runs).filter({ has: runs.locator('.run-title', { hasText: 'Terminal' }) });
+      await expect(shown.locator('.run-title')).toHaveText(`${path.basename(editor.dir)}Test EditorTerminal`);
+      stopAtCheckout(terminal, 1);
+      await shown.getByRole('button', { name: 'End the test' }).click();
+      expect(await terminal.next('control')).toEqual({ type: 'control', action: 'end', stop: 1 });
+    } finally {
+      terminal.socket.destroy();
+      // Its session ends a while after its last worker left, with no command to end.
+      await waitFor(() => (editor.svc.latest(ref)?.ended ? true : undefined), 10_000);
+    }
+  } finally {
+    await context.close();
+  }
+});
+
 test('a page served from 127.0.0.1 cannot open the hub’s WebSocket, which the extension can', async () => {
   const { context, worker } = await pairedExtension(editor);
   try {
@@ -328,6 +376,7 @@ test.describe('code from a stop', () => {
           'Resume',
           'Step',
           'Finish',
+          'End the test',
           'Pick',
           'Record',
           'Assert',
@@ -729,7 +778,7 @@ test.describe('code from a stop', () => {
       const headless = await startRun(editor, 'pays', [...RUN_TAKES]);
       try {
         stopAtCheckout(headless.worker, 1, { bar: false });
-        await expect(buttons).toHaveText(['Resume', 'Step', 'Finish', 'Mock a request']);
+        await expect(buttons).toHaveText(['Resume', 'Step', 'Finish', 'End the test', 'Mock a request']);
       } finally {
         await endRun(headless);
       }
@@ -779,7 +828,7 @@ test.describe('the live view', () => {
         await expect(still).toBeVisible();
         const buttons = card.locator('.controls button');
         // Headless, nobody watching: Pick and Record have no page to start in.
-        await expect(buttons).toHaveText(['Resume', 'Step', 'Finish', 'Mock a request']);
+        await expect(buttons).toHaveText(['Resume', 'Step', 'Finish', 'End the test', 'Mock a request']);
         const watch = card.getByRole('button', { name: 'Watch live' });
         await expect(watch).toHaveAttribute('aria-pressed', 'false');
         await expect(card.getByRole('button', { name: 'Pick on the image' })).toBeVisible();
@@ -807,6 +856,7 @@ test.describe('the live view', () => {
           'Resume',
           'Step',
           'Finish',
+          'End the test',
           'Pick',
           'Record',
           'Assert',
@@ -840,7 +890,7 @@ test.describe('the live view', () => {
         await expect(watch).toHaveAttribute('aria-pressed', 'false');
         await expect(live).toHaveCount(0);
         await expect(still).toBeVisible();
-        await expect(buttons).toHaveText(['Resume', 'Step', 'Finish', 'Mock a request']);
+        await expect(buttons).toHaveText(['Resume', 'Step', 'Finish', 'End the test', 'Mock a request']);
         sendFrame(run.worker, 1, before);
         await runs.waitForTimeout(300);
         await expect(card.locator('img.live')).toHaveCount(0);
@@ -1318,6 +1368,94 @@ test.describe('the live view', () => {
     } finally {
       await context.close();
       await older.close();
+    }
+  });
+});
+
+test.describe('the desktop app’s runs', () => {
+  test('show beside the editor’s as the desktop app’s, steered here, their code to copy in the app’s window', async () => {
+    const desktop = await startDesktop(editor.dir);
+    const { context, worker, extensionId } = await pairedExtension(editor, { desktop });
+    try {
+      // The popup's tile shows once the hubs answer.
+      const popup = await context.newPage();
+      await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+      await expect(popup.getByRole('button', { name: /Runs/ })).toBeVisible();
+      await popup.close();
+      const runs = await openRuns(context, extensionId);
+      await expect(runs.getByText('Following 1 editor window and the desktop app')).toBeVisible();
+
+      const run = new FakeWorker(desktop.channel.path, editor.dir).attach(desktop.channel.token, 'desktop-7', 0, [
+        ...RUN_TAKES,
+      ]);
+      run.begin('pays');
+      try {
+        const card = runs.getByRole('region', { name: path.basename(editor.dir) });
+        await expect(card.getByText('Desktop app', { exact: true })).toBeVisible();
+        await expect(card.getByText('cart › pays')).toBeVisible();
+        await card.getByRole('button', { name: 'Pause' }).click();
+        expect(await run.next('control')).toEqual({ type: 'control', action: 'pause' });
+        stopAtCheckout(run, 1);
+        await expect(card.getByText('Stopped at a breakpoint')).toBeVisible();
+        // Pick, Record and Assert end in an editor, which the desktop app has none of: never offered.
+        await expect(card.locator('.controls button')).toHaveText([
+          'Resume',
+          'Step',
+          'Finish',
+          'End the test',
+          'Assert a region',
+          'Mock a request',
+        ]);
+
+        // Mock a request: the code is made in the desktop app, for its window to copy; this window hears where it went.
+        await card.getByRole('button', { name: 'Mock a request' }).click();
+        await answerNext(run, 'requests', {
+          ok: true,
+          message: 'The test kept 1 response.',
+          requests: KEPT.slice(0, 1),
+        });
+        await card.getByRole('button', { name: /api\/cart/ }).click();
+        await answerNext(run, 'mock', { ok: true, message: '', response: CART_RESPONSE });
+        await expect(card.locator('.note.sent')).toHaveText(
+          /^Piwi made the mock to write above checkout\.spec\.ts:5: copy it in the desktop app's window\./,
+        );
+        await waitFor(() => desktop.codes[0]);
+        expect(desktop.codes[0]).toMatchObject({ ref: 'desktop-7', action: 'mock' });
+        expect(desktop.codes[0]!.code).toContain("await page.route('**/api/cart'");
+        expect(await runs.content()).not.toContain('route.fulfill');
+
+        await card.getByRole('button', { name: 'Resume' }).click();
+        expect(await run.next('control', 1)).toEqual({ type: 'control', action: 'resume', stop: 1 });
+        // The app's token stays in the secret area, never in the storage a content script reads.
+        expect(await localStorageText(runs)).not.toContain(DESKTOP_TOKEN);
+        expect(await storedSecret(runs, 'desktop')).toEqual({ url: desktop.origin, token: DESKTOP_TOKEN });
+        expect(await storedSecret(runs, 'hubs')).toEqual([editor.hub]);
+        expect(JSON.stringify(await worker.evaluate(() => chrome.storage.local.get(null)))).not.toContain(
+          DESKTOP_TOKEN,
+        );
+      } finally {
+        run.socket.destroy();
+      }
+    } finally {
+      await context.close();
+      await desktop.close();
+    }
+  });
+
+  test('with no editor paired, follow the desktop app alone, and say when it does not answer', async () => {
+    const desktop = await startDesktop(editor.dir);
+    const { context, extensionId } = await pairedExtension(null, { desktop });
+    try {
+      const runs = await openRuns(context, extensionId);
+      await expect(runs.getByText('Following the desktop app')).toBeVisible();
+      await expect(runs.getByText('No run right now. Run a test from the desktop app: it shows here.')).toBeVisible();
+      await desktop.close();
+      await expect(runs.getByText('Connecting to the desktop app again…')).toBeVisible();
+      await expect(
+        runs.getByText('The desktop app does not answer: open it to follow the runs it starts.'),
+      ).toBeVisible();
+    } finally {
+      await context.close();
     }
   });
 });

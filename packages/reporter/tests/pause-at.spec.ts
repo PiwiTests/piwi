@@ -35,6 +35,7 @@ import {
   stopCallSite,
   testTimeSlot,
   watchStops,
+  withEndSignal,
   withInspector,
   withTestTimeoutHeld,
   type PausePoint,
@@ -200,6 +201,16 @@ describe('the stop policy', () => {
     expect(atStop(s, 'tests/a.spec.ts:6:3')).toEqual({ show: 'step' });
   });
 
+  it('stops nowhere more after End the test, a stop asked once included', () => {
+    const s = state('tests/a.spec.ts:5');
+    s.runTo = 'tests/a.spec.ts:9';
+    s.pause = true;
+    expect(goOn(s, 'end')).toBe('resume');
+    expect(wantsStops(s)).toBe(false);
+    expect(atStop(s, 'tests/a.spec.ts:5:3')).toEqual({ go: 'resume' });
+    expect(atStop(s, 'tests/a.spec.ts:9:3')).toEqual({ go: 'resume' });
+  });
+
   it('shows the first stop in the user’s code after a Pause, and resumes a stale one on another context at once', () => {
     const s = state('');
     expect(wantsStops(s)).toBe(false);
@@ -284,6 +295,39 @@ describe('the stop policy', () => {
     expect(atBreakpoint(s, 'tests/a.spec.ts:6:3')).toBe(true);
     goOn(s, 'finish');
     expect(atBreakpoint(s, 'tests/a.spec.ts:6:3')).toBe(false);
+  });
+});
+
+describe('withEndSignal', () => {
+  const signal = new AbortController().signal;
+
+  it('adds the end signal to a locator call’s options, wherever the method takes them, leaving the test’s own alone', () => {
+    expect(withEndSignal('click', [], signal)).toEqual([{ signal }]);
+    const options = { force: true };
+    const given = withEndSignal('click', [options], signal)!;
+    expect(given).toEqual([{ force: true, signal }]);
+    expect(options).toEqual({ force: true });
+    expect(withEndSignal('fill', ['hello'], signal)).toEqual(['hello', { signal }]);
+    expect(withEndSignal('selectOption', [{ label: 'Red' }, { timeout: 5 }], signal)).toEqual([
+      { label: 'Red' },
+      { timeout: 5, signal },
+    ]);
+    expect(withEndSignal('dispatchEvent', ['click'], signal)).toEqual(['click', undefined, { signal }]);
+    expect(withEndSignal('_expect', ['to.be.visible', { isNot: false }], signal)).toEqual([
+      'to.be.visible',
+      { isNot: false, signal },
+    ]);
+  });
+
+  it('gives up with the test’s own signal too, and adds none to options it cannot read', () => {
+    const own = new AbortController();
+    const [options] = withEndSignal('click', [{ signal: own.signal }], signal) as [{ signal: AbortSignal }];
+    expect(options.signal).not.toBe(own.signal);
+    own.abort();
+    expect(options.signal.aborted).toBe(true);
+    expect(withEndSignal('click', ['nope'], signal)).toBeNull();
+    expect(withEndSignal('fill', ['x', null], signal)).toBeNull();
+    expect(withEndSignal('click', [{ signal: 'nope' }], signal)).toBeNull();
   });
 });
 
@@ -413,6 +457,23 @@ describe('postPickToEditor', () => {
       ]);
     } finally {
       log.mockRestore();
+    }
+  });
+
+  it('names the host the run names in place of the editor', async () => {
+    resetPauseLogs();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const refuse = vi.fn(async () => new Response('{}', { status: 401 })) as unknown as typeof fetch;
+      const address = 'http://127.0.0.1:47211/api/desktop/runs/picks#abcdefghijklmnop_1234';
+      const payload = pickPayload('getByText("Pay")', 'tests/a.spec.ts:3:1');
+      expect(await postPickToEditor(address, payload, refuse, 'the desktop app')).toBe(false);
+      expect(log.mock.calls.map((c: unknown[]) => String(c[0]))).toEqual([
+        '[piwi] Could not send the picked locator to the desktop app: the desktop app answered 401.',
+      ]);
+    } finally {
+      log.mockRestore();
+      resetPauseLogs();
     }
   });
 });

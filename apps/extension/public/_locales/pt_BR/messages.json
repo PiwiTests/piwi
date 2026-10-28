@@ -6352,6 +6352,57 @@
   "runs_statusNoRuns": {
     "message": "Nenhuma execução agora. Inicie um teste pelo editor: ele aparece aqui."
   },
+  "runs_desktopApp": {
+    "message": "Aplicativo de desktop"
+  },
+  "runs_terminal": {
+    "message": "Terminal"
+  },
+  "runs_desktopName": {
+    "message": "seu aplicativo de desktop"
+  },
+  "runs_followingDesktop": {
+    "message": "Acompanhando o aplicativo de desktop"
+  },
+  "runs_followingWithDesktop_one": {
+    "message": "Acompanhando $count$ janela do editor e o aplicativo de desktop",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_followingWithDesktop_other": {
+    "message": "Acompanhando $count$ janelas do editor e o aplicativo de desktop",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_statusDesktopSearching": {
+    "message": "Procurando as execuções do aplicativo de desktop…"
+  },
+  "runs_statusDesktopNoAccess": {
+    "message": "O Piwi Picker não pode mais acessar o endereço do aplicativo de desktop: pareie-o de novo nas configurações."
+  },
+  "runs_statusDesktopRefused": {
+    "message": "O aplicativo de desktop recusou o pareamento: pareie o Piwi Picker de novo nas configurações."
+  },
+  "runs_statusDesktopUnreachable": {
+    "message": "O aplicativo de desktop não responde: abra-o para acompanhar as execuções que ele inicia."
+  },
+  "runs_statusDesktopOutdated": {
+    "message": "Este aplicativo de desktop não pode compartilhar suas execuções: atualize-o."
+  },
+  "runs_statusDesktopUnproven": {
+    "message": "O programa no endereço do aplicativo de desktop não é o aplicativo pareado: o Piwi Picker não enviou nada a ele e pergunta de novo em instantes."
+  },
+  "runs_statusDesktopNoRuns": {
+    "message": "Nenhuma execução agora. Execute um teste pelo aplicativo de desktop: ele aparece aqui."
+  },
   "runs_ended": {
     "message": "A execução terminou."
   },
@@ -6432,6 +6483,12 @@
   },
   "runs_finishTitle": {
     "message": "Continuar o teste sem parar de novo em pontos de interrupção"
+  },
+  "runs_end": {
+    "message": "Encerrar o teste"
+  },
+  "runs_endTitle": {
+    "message": "Encerrar o teste aqui: o restante é ignorado"
   },
   "runs_pick": {
     "message": "Escolher"

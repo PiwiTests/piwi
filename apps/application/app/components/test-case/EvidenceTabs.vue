@@ -22,6 +22,7 @@
 import type { AttachmentInfo, NetworkRequest, PerformanceStep, TraceInfo, WebVitals } from '~~/types/api';
 import type { WireExecutionResources } from '#shared/types';
 import { isVideoFile } from '~/utils/text-format';
+import { debugTargetOf } from '~/utils/ide-links';
 import { getPerformanceHints } from '~/utils/performance-hints';
 import { resolveEvidenceState, type EvidenceState } from '#shared/evidence-state';
 import type { CapabilityState } from '#shared/capabilities';
@@ -104,6 +105,11 @@ const ariaSnapshot = computed<string | null>(() => props.testCase?.ariaSnapshot 
 const pageState = computed(() => props.testCase?.pageState ?? null);
 const attachments = computed(() => props.testCase?.attachments ?? []);
 const testSourceFrames = computed(() => props.testCase?.testSourceFrames ?? null);
+// Debug in my editor, at the line where the failure enters the test's code.
+const debugTarget = computed(() => {
+  const target = debugTargetOf(props.testCase);
+  return target && { ...target, projectKey: projectKey.value ?? null, projectName: projectName.value ?? null };
+});
 const testSource = computed<string | null>(() => props.testCase?.testSource ?? null);
 
 // ── Three-state evidence (never captured / nothing happened / not applicable) ──
@@ -683,6 +689,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :has-trace="hasTrace"
           :project-key="projectKey"
           :project-name="projectName"
+          :debug-target="debugTarget"
         />
         <EmptyState v-else icon="i-lucide-file-code-2" text="No test source captured for this execution" />
         <ExecutionCoverageSection

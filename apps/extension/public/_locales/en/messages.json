@@ -7529,6 +7529,70 @@
     "message": "No run right now. Start a test from the editor: it shows here.",
     "description": "Runs window, when the editor answers and runs nothing."
   },
+  "runs_desktopApp": {
+    "message": "Desktop app",
+    "description": "Runs window, beside a run’s name: the run was started by the Piwi desktop app rather than an editor. Short."
+  },
+  "runs_terminal": {
+    "message": "Terminal",
+    "description": "Runs window, beside a run’s name: the run was started in a terminal, and follows the editor whose workspace holds it. Short."
+  },
+  "runs_desktopName": {
+    "message": "the desktop app",
+    "description": "Runs window, in runs_reconnecting for the Piwi desktop app’s hub. Lower case, inside a sentence."
+  },
+  "runs_followingDesktop": {
+    "message": "Following the desktop app",
+    "description": "Runs window, under the heading: the window follows the runs the Piwi desktop app starts, and no editor window."
+  },
+  "runs_followingWithDesktop_one": {
+    "message": "Following $count$ editor window and the desktop app",
+    "description": "Runs window, under the heading: how many windows of VS Code or a JetBrains IDE the window follows, beside the Piwi desktop app.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_followingWithDesktop_other": {
+    "message": "Following $count$ editor windows and the desktop app",
+    "description": "Runs window, under the heading: how many windows of VS Code or a JetBrains IDE the window follows, beside the Piwi desktop app.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_statusDesktopSearching": {
+    "message": "Looking for the desktop app’s runs…",
+    "description": "Runs window, while it asks the paired Piwi desktop app for its runs, and no editor is paired."
+  },
+  "runs_statusDesktopNoAccess": {
+    "message": "Piwi Picker may no longer reach the desktop app’s address: pair it again in the settings.",
+    "description": "Runs window, when the permission to reach the paired Piwi desktop app was taken back, and no editor is paired."
+  },
+  "runs_statusDesktopRefused": {
+    "message": "The desktop app refused the pairing: pair Piwi Picker with it again in the settings.",
+    "description": "Runs window, when the paired Piwi desktop app refuses the pairing’s token, and no editor is paired."
+  },
+  "runs_statusDesktopUnreachable": {
+    "message": "The desktop app does not answer: open it to follow the runs it starts.",
+    "description": "Runs window, when the paired Piwi desktop app does not answer, and no editor is paired."
+  },
+  "runs_statusDesktopOutdated": {
+    "message": "This desktop app cannot share its runs: update it.",
+    "description": "Runs window, when the paired Piwi desktop app is older than the runs it shares, and no editor is paired."
+  },
+  "runs_statusDesktopUnproven": {
+    "message": "The program at the desktop app’s address is not the paired app: Piwi Picker sent it nothing, and asks again in a moment.",
+    "description": "Runs window, when the program at the paired desktop app’s address does not prove it holds the pairing’s token: another program took the port. Nothing was sent to it."
+  },
+  "runs_statusDesktopNoRuns": {
+    "message": "No run right now. Run a test from the desktop app: it shows here.",
+    "description": "Runs window, when the paired Piwi desktop app answers and runs nothing, and no editor is paired."
+  },
   "runs_ended": {
     "message": "The run ended.",
     "description": "Runs window, on a run that ended. The editor does not say whether its tests passed."
@@ -7630,6 +7694,14 @@
   "runs_finishTitle": {
     "message": "Run the test on without stopping at a breakpoint again",
     "description": "Runs window, the Finish button’s tooltip."
+  },
+  "runs_end": {
+    "message": "End the test",
+    "description": "Runs window, button on a stopped test: it ends the test there, reported as skipped; the stopped call and the rest of the test never run. Short."
+  },
+  "runs_endTitle": {
+    "message": "End the test here: the rest of it is skipped",
+    "description": "Runs window, the End the test button’s tooltip."
   },
   "runs_pick": {
     "message": "Pick",

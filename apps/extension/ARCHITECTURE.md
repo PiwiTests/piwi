@@ -760,7 +760,7 @@ ready, partial or not found.
 ## The editor's runs
 
 The paired editor (VS Code or a JetBrains IDE, the one Send to editor reaches) starts Playwright runs whose tests can
-stop at a breakpoint. Each of its windows runs an editor service, which shares its runs through a **hub**: a WebSocket
+stop at a breakpoint, and so does the paired desktop app, whose server is the hub of the runs its shell starts. Each of its windows runs an editor service, which shares its runs through a **hub**: a WebSocket
 server on 127.0.0.1 that pushes each run as it changes and takes commands. The protocol is `@piwitests/core/run-hub`,
 the editor's side `packages/editor/src/run-hub.ts`, and the design `proposals/run-control.md` Part 4.
 
@@ -792,6 +792,21 @@ and the popup's Runs tile only ask the worker, and the worker handles the run sh
 5. The hubs go to the secret area under `hubs`, never to `chrome.storage.local`. Unpair removes them
    (`setEditorPairing(null)`).
 
+The paired desktop app (see "The desktop app") is asked beside the editor, through `fetchDesktopHubs`
+(`piwi-client.ts`), wired in `runs-window.ts`:
+
+1. It needs the grant the pairing holds for the app's origin (`no-access` without it).
+2. The app proves it holds the pairing's token first (`proveDesktop`, the challenge on `/api/health`), else it is sent
+   nothing (`unproven`).
+3. Then `GET /api/desktop/live` with the token in `x-piwi-token`, answered in the shape of an editor's `…/live`
+   (`parseLiveAnswer`). The app names its own token as its hub's, which goes in `hello`: a hub named with another token
+   is left out. A 401 reads as `refused`, a 404 as an app older than the hub of its runs (`outdated`).
+4. Its hub is connected as an editor's is, and named apart in the state (`RunsHub.desktop`, `RunsState.desktop`). It
+   is never kept in the secret area: the app names it each time, and its token is the pairing's, kept there already.
+
+The settings page writes the time of each change of the app's pairing to `piwiDesktopPairedAt` in
+`chrome.storage.local`, nothing secret, so the worker hears it and asks again.
+
 The hubs are found again:
 
 - as the worker starts;
@@ -817,7 +832,8 @@ An unreachable editor leaves the hubs found last to try.
 - It sends `follow` with `on: true` while a Runs window is open (`RunHubs.listen`): as the first window's port
   connects, on each connection that opens meanwhile (a reconnection included), and `on: false` as the last one leaves.
   Only that holds a failure no pause bar shows for the person watching: the worker, subscribed with no window open,
-  never does.
+  never does. The desktop app's hub holds none of a run nobody attends (its ref ends in `-unattended`: a Flake Lab, a
+  bisect, a lab job, a run repeating its tests or in UI mode), whoever follows it.
 - Each `code` the hub sends (what a code written at a stop came to) is passed on to the windows with its hub
   (`RunHubs.listen`, `RunsCode`).
 - A window watches a stop's live view through the hub's `view` (`RunHubs.view`). The connection watches a stop while
@@ -861,9 +877,11 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   (`fromRunsPage`: the extension's id and the page's address), and reads its messages with `parseRunsRequest`. The
   state the worker posts (`RunsState`) carries no token, and the window makes no network call.
 - Every control but Pause names the stop shown (`since`), so a click made twice never answers the next stop.
-- At a stop, the test's controls are Resume, Step and Finish; Resume alone where it failed (`reason: 'failure'`, its
+- At a stop, the test's controls are Resume, Step and Finish, and End the test where the stop's `intents` list `end`
+  (the hub's `runControl` `end`: the test ends there, skipped); Resume alone where it failed (`reason: 'failure'`, its
   state line **Failed at** and the place, the error under it: the stop's `error`, its lines kept, else, from a service
   or a reporter that predates it, read from its title, `stopError`).
+- A run started in a terminal (`HubSession.terminal`) shows **Terminal** beside its name.
 - In a group of their own come the actions the stop takes from this window (`stopIntents`): the hub's `stop.intents`,
   what the reporter and the editor's client take, from this connection now. Pick, Record, Assert and Assert a region
   where the pause bar shows, or at a headless stop while the window watches its live view; Mock a request at any
@@ -921,7 +939,11 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   again (Step, at the next stop); meanwhile another control of the same worker holds it.
 - `#announce` (a polite live region) says when a test stops, goes on, or a run ends, and what a command answered
   under the test.
-- The line under the heading says the window follows the editor while any of its hubs is connected.
+- The line under the heading says the window follows the editor while any of its hubs is connected, and the desktop
+  app while its hub is. A run of the app's hub is marked **Desktop app** beside its name. The app holds no editor: it
+  declines Pick, Record and Assert, which its stops never offer, and the code a stop makes goes to the app's window to
+  copy, the hub's sentence saying so (`…: copy it in the desktop app's window.`). With no editor paired, the empty box
+  says what the app answered.
 - The window pings the worker every 20 s (`RUNS_PING_MS`), which keeps the worker alive while the window is open.
 
 ### The run shortcut
@@ -949,6 +971,12 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   and triple clicks, drags, the wheel, texts joined, the bound, the rate, a refusal and `dispose`.
 - `editor-pairing.test.ts` checks Send to editor's proof against a JetBrains IDE's routes, and the pairing's address
   and `at`.
+- `piwi-client.test.ts` checks `fetchDesktopHubs`: the proof first, the token on `/api/desktop/live` alone, a hub
+  named with another token left out, and each refusal; `run-hubs.test.ts` the app's hub beside the editor's, alone,
+  found again while the app is away, let go with its pairing and dropped when it refuses the token.
+- `runs.spec.ts` plays the desktop app as its server builds the hub (`startDesktop`, on the editor service's run
+  control with the desktop token): its run beside the editor's, steered, its mock made for the app's window, and the
+  window following the app alone.
 - `runs.test.ts` covers the pure half (`src/shared/runs.ts`): the live view's commands field by field,
   `stopIntents` and its fallback, `stateForViewer`, and `pagePoint`.
 - `runs.spec.ts` runs the real extension against the real editor service, started in-process

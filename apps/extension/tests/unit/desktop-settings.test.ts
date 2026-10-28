@@ -21,10 +21,15 @@ beforeEach(() => {
 describe('the desktop app pairing', () => {
   it('is kept in the secret area, address and token together, never in chrome.storage.local', async () => {
     await setDesktopSettings(PAIRED, area);
-    expect(local.store).toEqual({});
+    // Only the time it changed, for the worker to hear it: nothing of the pairing.
+    expect(Object.keys(local.store)).toEqual(['piwiDesktopPairedAt']);
+    expect(local.store.piwiDesktopPairedAt).toEqual(expect.any(Number));
+    expect(JSON.stringify(local.store)).not.toContain(PAIRED.token);
+    expect(JSON.stringify(local.store)).not.toContain(PAIRED.url);
     expect(await getDesktopSettings(area)).toEqual(PAIRED);
     await clearDesktopSettings(area);
     expect(await getDesktopSettings(area)).toBeNull();
+    expect(Object.keys(local.store)).toEqual(['piwiDesktopPairedAt']);
   });
 
   it('a pairing left in chrome.storage.local moves to the secret area', async () => {

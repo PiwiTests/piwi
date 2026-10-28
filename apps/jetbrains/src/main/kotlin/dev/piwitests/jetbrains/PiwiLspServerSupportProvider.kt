@@ -139,11 +139,18 @@ class PiwiLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor
     }
 
     /**
-     * The connection, and that the plugin shows where the runs it started stop, answers those stops and writes the code
-     * made there.
+     * The connection, that the plugin shows where the runs it started stop, answers those stops and writes the code made
+     * there, and whether the service serves those runs to the agents of this machine, at which port and token.
      */
-    override fun createInitializationOptions(): Any =
-        mapOf("credentials" to project.service<PiwiProjectService>().credentials(), "runControl" to true, "stopCode" to true)
+    override fun createInitializationOptions(): Any {
+        val service = project.service<PiwiProjectService>()
+        return mapOf(
+            "credentials" to service.credentials(),
+            "runControl" to true,
+            "stopCode" to true,
+            "agents" to service.agentsOptions(),
+        )
+    }
 
     override val lsp4jServerClass: Class<out org.eclipse.lsp4j.services.LanguageServer> = PiwiLanguageServer::class.java
 
@@ -190,6 +197,8 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     @JsonNotification("piwi/statusChanged")
     fun statusChanged(status: StatusResult) {
         project.service<PiwiProjectService>().statusChanged(status)
+        // The breakpoints are read under the Playwright configs the status names: the service hears them as they stand.
+        project.service<PiwiRunSessions>().breakpointsChanged()
     }
 
     /** A failure moved with an edit, or its line changed since the run: the tool window's list. */
@@ -237,6 +246,15 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     @JsonNotification("piwi/stopCode")
     fun stopCode(code: StopCode) {
         project.service<PiwiRunSessions>().write(code)
+    }
+
+    /**
+     * The address or the token of the runs' MCP server changed without the plugin asking (it listened as the service
+     * started, or found the kept port taken and took another with a new token): kept for the next start.
+     */
+    @JsonNotification("piwi/agentsChanged")
+    fun agentsChanged(told: AgentsResult) {
+        project.service<PiwiProjectService>().agentsHeard(told)
     }
 
     /** A sentence on a run the editor started, such as one that never reached the instance: a balloon, once. */

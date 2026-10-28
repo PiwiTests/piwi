@@ -391,7 +391,9 @@ session. The initialization options say so (`runControl`). What the service does
 
 **Sessions.** The plugin keeps the latest `piwi/runSessionChanged` of each ref (`PiwiLsp4jClient.runSessionChanged`,
 `Glue.withSession`) until one says `ended`, or the service's process ends (`watch`, from
-`PiwiLspServerDescriptor.startServerProcess`).
+`PiwiLspServerDescriptor.startServerProcess`). A run started in a terminal (`RunSession.terminal`) is one too: its
+stops say `run in a terminal` (`Glue.pausedText`), and it has no Stop, its process being the terminal's
+(`RunControls.stoppable`).
 
 **A stop.** A stop opens its file at its line once (`Glue.stopKey`), at the line it stands on now. It is drawn as the
 execution point:
@@ -402,7 +404,8 @@ execution point:
   (`stopActions`);
 - a block inlay above the line in each editor of the file (`StopInlay`, added again in an editor opened later:
   `EditorFactoryListener`): `Glue.pausedText` (`Paused · <title> · attempt N`, the attempt on a retry only), then
-  **Resume**, **Step**, **Run to Caret** and **Finish** as links. An `EditorMouseListener` on the multicaster clicks
+  **Resume**, **Step**, **Run to Caret** and **Finish** as links, and **End Test** at a stop whose worker takes `end`
+  and is no failure (`Glue.canEnd`, `Glue.stopControls`). An `EditorMouseListener` on the multicaster clicks
   them in the editors of its own project (`StopInlay.controlAt`, the hand cursor over one).
 
 A stop in a file the VFS has not loaded is looked for on disk off the event thread, once
@@ -415,7 +418,8 @@ caret's match, `Glue.stopsFor`), and the caret's line back to the run's for Run 
 written since.
 
 **The actions** (`RunControlAction`): `Piwi.PauseRun`, `Piwi.ResumeRun`, `Piwi.StepRun`, `Piwi.RunToCaret`,
-`Piwi.FinishRun`, `Piwi.ShowPausedPage` and `Piwi.StopRun`.
+`Piwi.FinishRun`, `Piwi.EndTest` (**End the Test**, `end`, enabled where `Glue.canEnd`), `Piwi.ShowPausedPage` and
+`Piwi.StopRun`.
 
 - They are under **Tools → Piwi**, and first in the status bar item's menu while a run is live; the item reads
   `Piwi: paused · checkout.page.ts:12` while one is stopped (`Glue.runControlStatus`).
@@ -428,7 +432,8 @@ written since.
   Stop and Close) takes no other action.
 
 **Shortcuts.** The actions use the debugger actions' shortcuts, in every keymap (`use-shortcut-of`): Pause and Resume
-`Resume`'s (`F9` in the default keymap), Step `StepOver`'s, Run to Caret `RunToCursor`'s, Finish `StepOut`'s. They are
+`Resume`'s (`F9` in the default keymap), Step `StepOver`'s, Run to Caret `RunToCursor`'s, Finish `StepOut`'s; End the
+Test has none, the debugger having no action it stands for. They are
 enabled only while they apply, and from the keyboard only while no debug session runs (`ActionPlaces.KEYBOARD_SHORTCUT`,
 `XDebuggerManager.debugSessions`), so the debugger keeps its keys. While a run is live, `PiwiRunActionPromoter` (an
 `ActionPromoter`) puts them first among the actions a key runs: a keymap that gives the key to another action too (the
@@ -445,7 +450,9 @@ each live run 100 ms after a burst of changes, and the settings page does when t
 as lines of the run's code (`Glue.runPlaces`): a breakpoint the run was given, known by the `XLineBreakpoint` itself,
 keeps its line while it only moved with the edits (`XLineBreakpointImpl.updatePosition` firing `breakpointChanged`);
 one added or dragged is mapped back through them. They go only to a run whose places differ from those its command
-started with or was last sent (`Glue.breakpointUpdates`, `PiwiCommands.startRun` recording the first).
+started with or was last sent (`Glue.breakpointUpdates`, `PiwiCommands.startRun` recording the first). The service
+hears them as they stand too (`piwi/setBreakpoints`, from `PiwiRunSessions.breakpointsChanged`, also as the status
+changes, only when they differ): a run started in a terminal starts with them.
 
 **A held failure** (`reason: 'failure'`, `Glue.isFailure`) is `Failed · <how it failed> · attempt N`, with
 `AllIcons.RunConfigurations.TestError` in the gutter, **Resume** alone among its controls (`Glue.stopControls`), and
@@ -674,6 +681,17 @@ no `.env` file.
 folder and the content roots (`Glue.candidatePaths`), ranking first the projects connected to the `project` named.
 It opens only a file inside an open project, and answers JSON with CORS, so the dashboard knows the file opened.
 
+**Debug in my editor.** With `debug=1`, the request also names the test's spec (`spec`), its title after its describe
+blocks' (`test`), its Playwright project (`playwrightProject`) and the failed execution (`execution`), each checked by
+`Glue.parseOpenRequest` (a positive whole line and execution, a title and a project of plain text, a project no shell
+expands, a path without `..`, no field twice). Both files are found as an open's file is, then checked by their
+canonical paths, every symbolic link followed (`Glue.debugFileRefusal`): in the project, under a Playwright config's
+folder, a script file and a spec. A refusal answers 400 with the reason and says it in a notification; otherwise the
+failing line opens and `PiwiDebugLink` asks in a notification, the answer saying `debug: "asked"`. Only **Debug**
+runs the test, through `PiwiCommands.runTests` (the IDE's breakpoints, the Playwright runner when it is on) with
+`RunTestsArgs.debug`; the service keeps the failing line as the run's own breakpoint until the stop, so the IDE's
+breakpoints are left as they are.
+
 ## Connect
 
 **Connect** (`PiwiConnect.kt`):
@@ -703,7 +721,8 @@ file is opened.
 
 `PiwiLocalSettings` holds the choice of the desktop app and its project, a recording's choices, the failures'
 grouping, the breakpoints setting, the Playwright runner setting, the run notifications, the coverage marks, the
-failure severity, how the agent signs in to Piwi's MCP server, and the baselines.
+failure severity, how the agent signs in to Piwi's MCP server, whether the runs are served to agents and the port
+they were last served at, and the baselines. The runs' MCP server's token is in the `PasswordSafe`.
 
 A project's settings never select another instance's key, and choosing the desktop app never changes the instance, its
 project or its key. The old key entry shared by every instance is deleted once (`forgetSharedKey`).
@@ -711,11 +730,42 @@ project or its key. The old key entry shared by every instance is deleted once (
 ## MCP server configuration
 
 **Copy the MCP Server Configuration** (`CopyMcpConfigurationAction`) writes the servers of `piwi/mcp` as `mcpServers`
-entries that run `mcp-remote` (`Glue.mcpConfiguration`), with the key in `env`, never on the command line.
+entries that run `mcp-remote` (`Glue.mcpConfiguration`), with the key in `env`, never on the command line. Every
+entry runs one exact release, `Glue.MCP_REMOTE` (`npx -y mcp-remote@<version>`, a release with the fix for
+CVE-2025-6514), over streamable HTTP alone (`--transport http-only`): `npx` with no version runs whatever npm serves
+that day, with the key or the token in its environment.
 
 With `PiwiLocalSettings.mcpAuthorization` at `sign-in` (`Glue.MCP_AUTHORIZATIONS`, in the AI Assistant group of the
 settings page, sent in `credentials()`), the service hands an instance's server without a key, and `mcp-remote` signs
 in through the instance's OAuth. The notification says which (`Glue.mcpAuthorizationNote`).
+
+**The runs' MCP server.** The editor service serves this project's runs to the agents of this machine as an MCP server
+of its own ([Agents](../../packages/editor/ARCHITECTURE.md#agents) in its reference). The initialization options say
+whether (`agents`, from `PiwiProjectService.agentsOptions`): `PiwiLocalSettings.serveRunsToAgents` (**Serve the test
+runs this project starts to the agents of this machine**, in the AI Assistant group of the settings page, which sends
+`piwi/agents` on a change), the port it listened at last (`agentsPort`) and the token, kept in the `PasswordSafe`
+per project (`Glue.agentsTokenEntry` of `Project.getLocationHash`, a new one when none is kept: `Glue.newAgentsToken`).
+So a configuration copied once still connects after a restart. When another program holds the kept port, the service
+takes another with a new token, tells it (`piwi/agentsChanged`, `PiwiLsp4jClient.agentsChanged`) and says in a
+`piwi/notice` to copy the configuration again: `PiwiProjectService.agentsHeard` keeps the new port and token, as it
+does for every answer of `piwi/agents`. **Reset the Runs' MCP Server Token** (`ResetRunsMcpTokenAction`, after
+`MessageDialogBuilder.yesNo`) sends `piwi/agents` with `newToken` and keeps the new token the same way.
+
+**Copy the Runs' MCP Server Configuration for Agents** (`CopyRunsMcpConfigurationAction`) asks `piwi/agents`, keeps
+the port it answers (`Glue.portOf`) and writes a `piwi-runs` entry bridged by `mcp-remote`
+(`Glue.runsMcpConfiguration`), the token in `env` (`PIWI_RUNS_AUTH`), for an agent that starts only commands; **…for
+Claude Code or Cursor** (`CopyRunsMcpHttpConfigurationAction`) writes the `mcpServers` entry of type `http` they read
+(`Glue.runsMcpHttpConfiguration`), the token as a bearer header. Both notifications say to keep it out of every file
+of the repository. The AI Assistant (`com.intellij.ml.llm`, not bundled) has no public API to add
+an MCP server, and the MCP Server plugin's `mcpServer.mcpToolset` extension point, which adds tools to the IDE's own
+server, starts at 2025.2 (the plugin compiles against 2024.1, [Platform compatibility](#platform-compatibility)), so
+the person pastes the entry.
+
+**Share with Playwright Tools** (`ShareWithPlaywrightAction`, `Piwi.ShareWithPlaywright`, and the last item of a stop's
+gutter popup, at a stop whose worker takes `bind`: `Glue.canShare`) asks first (`MessageDialogBuilder.yesNo`,
+`Glue.SHARE_WARNING`), then sends `piwi/stopBind` on a pooled thread; the notification names the command that joins
+the browser (`Glue.sharedText`), with **Copy the Command** and **Stop Sharing**. A stop an agent asked for reads
+`Paused by the agent · …` (`RunStop.by`, `Glue.pausedText`).
 
 ## Platform compatibility
 
@@ -847,5 +897,5 @@ session and controls with a fake worker on the run channel among them, and the c
 the actions, the edits above a stop and Run to Caret from them, the paused page of a file the VFS has not loaded, the
 breakpoint listener (a breakpoint moved as the platform moves one outside tests, which a unit test does not), the
 promoter, the runs of the IDE's Playwright runner (a rerun under an ended ref included), the code actions, a failure's
-stop, the code a stop made written in one command (one undo, once the service knows the document) and the count at
-the caret.
+stop, the code a stop made written in one command (one undo, once the service knows the document), the count at the
+caret, and a stop's browser shared only once the person said yes.

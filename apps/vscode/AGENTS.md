@@ -17,7 +17,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `packages/editor/src/protocol.ts`, and `piwi.copyAgentContext` in a quick fix: renaming one changes the service and
   both clients in the same change ([Clients and versions](../../packages/editor/ARCHITECTURE.md#clients-and-versions)),
   and is a breaking change for users, whose keybindings and settings name the ids (`proposals/1.0-stabilization.md`
-  freezes them, with the extension's own command ids, settings and MCP provider id).
+  freezes them, with the extension's own command ids, settings and MCP provider ids, `piwi.mcp` and `piwi.runs`).
   `tests/walkthrough.test.ts` also fails when a walkthrough step names a command, view or context key that no longer
   exists.
 - **Credentials are handed to the service only when they differ from the ones last handed** (`handChangedCredentials`,
@@ -28,14 +28,14 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   (`piwi/statusChanged` still makes the extension read the status, the failures, the coverage and the MCP servers
   again.)
   ([Failures view](ARCHITECTURE.md#failures-view))
-- **`src/glue.ts`, `src/connect.ts`, `src/breakpoints.ts`, `src/send-listener.ts` and `src/run-control.ts` use no
-  VS Code API.** Put logic that needs no editor there, so the unit tests (`npm run vscode:test`) cover it.
+- **`src/glue.ts`, `src/connect.ts`, `src/breakpoints.ts`, `src/send-listener.ts`, `src/run-control.ts` and
+  `src/debug-link.ts` use no VS Code API.** Put logic that needs no editor there, so the unit tests (`npm run vscode:test`) cover it.
   ([The pure half](ARCHITECTURE.md#the-pure-half))
-- **A run control names the stop it answers, and a line sent for a run is a line of the run's code.** Resume, Step,
-  Run to the cursor and Finish pass the stop's `since`; Run to the cursor and `piwi/setRunBreakpoints` map the editor's
-  lines back through `EditLog` (`runPlaces` for the breakpoints). Checked by `tests/run-control.test.ts`.
-  ([Run control](ARCHITECTURE.md#run-control); the service's side:
-  [Controls, breakpoints and the paused page](../../packages/editor/ARCHITECTURE.md#controls-breakpoints-and-the-paused-page))
+- **A run control names the stop it answers, and a line sent for a run is a line of the run's code.** Resume, Step, Run
+  to the cursor, Finish and End the test pass the stop's `since`; Run to the cursor and `piwi/setRunBreakpoints` map the
+  editor's lines back through `EditLog` (`runPlaces` for the breakpoints). Checked by `tests/run-control.test.ts`.
+  ([Run control](ARCHITECTURE.md#run-control); the service's side: [Controls, breakpoints and the paused
+  page](../../packages/editor/ARCHITECTURE.md#controls-breakpoints-and-the-paused-page))
 - **The code a stop makes is one workspace edit, made only in the version of its document the service placed it in**
   (else the file as saved; otherwise a warning offers **Copy the code**), so it never lands on a line the service did
   not choose. Checked by `tests/run-control.test.ts` ("the code a stop makes") and the integration suite.
@@ -76,6 +76,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   is one pick.
 - **Open in IDE never opens a file outside the workspace folders** (`resolveOpenFile` in `src/glue.ts`).
   ([Open in IDE](ARCHITECTURE.md#open-in-ide))
+- **A debug link (`debug=1`) runs nothing until the person says yes in a notification, and names files, a line and a
+  title, never a command.** `debugLink` checks each field and refuses one named twice, `debugFiles` follows every
+  symbolic link before a file counts as the workspace's, and the service builds the run (`RunTestsArgs.debug`).
+  Checked by `tests/debug-link.test.ts` and the integration suite ("Debug in my editor …").
+  ([Debug in my editor](ARCHITECTURE.md#debug-in-my-editor))
 - **The Send to editor endpoint listens on `127.0.0.1` only, with its token in `SecretStorage`** (`piwi.sendToken`,
   `src/send-listener.ts`). It answers only a `Host` of `127.0.0.1` or `localhost` at its port or the one a remote window
   forwards to it (`forwarded`), and every answer to a request carrying `x-piwi-editor-challenge`, whatever its route and
@@ -89,6 +94,16 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **Only the pairing Piwi Picker is given saves the listener's port** (`sendPairing`): a run's pairing takes any free
   port while another window holds the saved one, and leaves it saved. Checked by `tests/send-listener.test.ts` ("keeps
   the port Piwi Picker was given …"). ([Breakpoints](ARCHITECTURE.md#breakpoints))
+- **The runs' MCP server's token lives in `SecretStorage`, one per workspace (`agentsTokenKey`), and reaches an agent
+  only through the provider `piwi.runs` or the configuration the person copies, which says it holds it**
+  (`keptAgentsToken`, `runsMcpConfiguration`). A token the service answers or tells (`piwi/agentsChanged`) replaces the
+  one kept, and **Piwi: Reset the runs' MCP server token** asks the service for a new one (`newToken`).
+  `piwi.serveRunsToAgents` off turns the server off at once (`piwi/agents`). Checked by the integration suite ("the
+  runs are served to agents …").
+  ([Service, lenses and credentials](ARCHITECTURE.md#service-lenses-and-credentials))
+- **A stop's browser is shared with Playwright's tools only after a modal warning, each time it is asked**
+  (`share` in `src/run-view.ts`, `SHARE_WARNING`), never on an agent's word.
+  ([Run control](ARCHITECTURE.md#run-control))
 - **The paused page webview runs a script only where a click on the image picks, by the style's nonce.** Its document
   takes images from `data:` only, and the script posts a click's offset alone (`pausedPageHtml`, `imageClickOf` in
   `src/run-control.ts`). Checked by `tests/run-control.test.ts` ("runs one script …").
@@ -133,6 +148,7 @@ npm run vscode:package            # dist/piwi.vsix
 - `src/test-explorer.ts`: Piwi's tests in VS Code's Testing view.
 - `src/recording.ts`: recording a test from the editor.
 - `src/send-listener.ts`: the Send to editor endpoint.
+- `src/debug-link.ts`: a debug link read and checked; `src/debug-from-link.ts`: the prompt, then the run.
 - `src/breakpoints.ts`: the breakpoints a test run passes to the service.
 - `src/run-view.ts`: the run controls (the stops, their commands, the paused page); `src/run-control.ts`: their pure
   half.
