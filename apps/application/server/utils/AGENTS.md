@@ -213,11 +213,21 @@ runs (`@piwitests/editor/run-host`), plus these:
 - **The hub takes the desktop token in `hello`, and nothing else opens without it.** Its WebSocket keeps the editor's
   `Host`, extension `Origin`, limits and closed command set; the window reaches the same hub as a joined peer through
   `/api/desktop/runs/*`, behind the desktop guard. None of the routes is an open route (`isOpenDesktopRoute`).
+- **The window's stream counts what the window has not read.** `runs/events.get.ts` writes to the response itself, its
+  sink's `buffered()` being `res.writableLength`, so a frame waits past 1 MB unread and the stream is cut past 32 MB, as
+  the hub does with a WebSocket; a `ReadableStream` handed to h3 counts nothing (`desktop-runs-events.test.ts`).
 - **The run channel goes to the shell alone.** `GET /api/desktop/run-channel` refuses a request a browser sends
   (`isBrowserRequest`); `GET /api/desktop/live` names the hub to Piwi Picker, never the channel.
 - **Code from a stop goes to the window, never over the hub.** `StopActions` keeps it for the window's stream
   (`stop-code`); the hub's peers hear only its sentence (`code`). It is made only for a file of a linked folder, from
   its disk text, and refused once the file was written since the run's first worker connected.
 - **Pick and Record in the test's window, and Assert, are declined**: they end in an editor (its Send to editor pairing,
-  its recorder), which this server has none of. A failure no pause bar shows is held only in a run a window `show`s, or
-  while Piwi Picker `follow`s the runs.
+  its recorder), which this server has none of. A failure no pause bar shows is held only in a run a window `show`s (its
+  **Hold failures** switch is on), or while Piwi Picker `follow`s the runs, and never in a run nobody attends: its ref
+  ends in `-unattended` (`isUnattendedDesktopRun`, `holdsFailures`), as the shell names a Flake Lab, a bisect, a lab
+  job, and a run with `--repeat-each` above 1 or `--ui`.
+- **A run's picks come back to this server, with a token for that route alone.** The run channel's route also names
+  `POST /api/desktop/runs/picks` with the picks token (`picksAddress`, `desktopPicksToken`), never the desktop token,
+  which the shell gives each run as `PIWI_EDITOR_SEND`: the pause bar's pick and a pick on the image reach the window to
+  copy (`pick`), and a pick on the image answers that it goes there (`DesktopRunSessions`). The guard takes that token
+  on that route alone (`presentsDesktopPicksToken`).

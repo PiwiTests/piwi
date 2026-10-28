@@ -3,13 +3,15 @@
  * channel the shell names in a run's environment, Piwi Picker's WebSocket with the desktop token, and the app's window
  * as a peer of the hub (its stream and its commands).
  */
+import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { WebSocket } from 'ws';
+import { parsePairing } from '@piwitests/core/editor-send';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import { parseHubToRun, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
 import {
@@ -19,9 +21,20 @@ import {
   type HubMessage,
   type HubSession,
 } from '@piwitests/core/run-hub';
-import { DESKTOP_HUB_CLIENT, DesktopRuns, insideFolder } from '../../server/utils/desktop-runs';
-import { isBrowserRequest, isOpenDesktopRoute } from '../../server/utils/desktop-access';
-import type { DesktopRunCommand, DesktopRunEvent } from '#shared/desktop-runs';
+import {
+  DESKTOP_HUB_CLIENT,
+  DesktopRuns,
+  RUN_CHANNEL_FOLDER_PREFIX,
+  clearStaleRunChannels,
+  insideFolder,
+} from '../../server/utils/desktop-runs';
+import {
+  desktopPicksToken,
+  isBrowserRequest,
+  isOpenDesktopRoute,
+  presentsDesktopPicksToken,
+} from '../../server/utils/desktop-access';
+import { DESKTOP_PICKS_PATH, type DesktopRunCommand, type DesktopRunEvent } from '#shared/desktop-runs';
 
 const TOKEN = `pd_${'ab'.repeat(32)}`;
 const ORIGIN = `chrome-extension://${'a'.repeat(32)}`;
@@ -140,12 +153,13 @@ interface Window {
   session(ref: string): HubSession | undefined;
 }
 
-async function openWindow(): Promise<Window> {
+/** A window's stream; `unread` is what it says it holds unsent, as its response's backlog would. */
+async function openWindow(unread: () => number = () => 0): Promise<Window> {
   const events: DesktopRunEvent[] = [];
   const state = { closed: false };
   const opened = await runs.openWindow({
     send: (event) => void events.push(JSON.parse(JSON.stringify(event)) as DesktopRunEvent),
-    buffered: () => 0,
+    buffered: unread,
     close: () => {
       state.closed = true;
     },
@@ -253,8 +267,52 @@ describe('the run channel the shell names in a run', () => {
     if (process.platform !== 'win32') {
       expect(fs.statSync(path.dirname(channel.path)).mode & 0o077).toBe(0);
       expect(fs.statSync(channel.path).isSocket()).toBe(true);
+      expect(path.basename(path.dirname(channel.path))).toMatch(new RegExp(`^${RUN_CHANNEL_FOLDER_PREFIX}`));
     }
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'is cleared as the server starts when a server that was killed left it, and kept while one listens',
+    async () => {
+      const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-tmp-')));
+      onTestFinished(() => fs.rmSync(dir, { recursive: true, force: true }));
+      const folder = (name: string) => {
+        fs.mkdirSync(path.join(dir, name), { mode: 0o700 });
+        return path.join(dir, name, 'channel.sock');
+      };
+      // A server killed while it listened: its socket stays, and nothing answers it.
+      const killed = folder(`${RUN_CHANNEL_FOLDER_PREFIX}killed`);
+      const child = spawn(
+        process.execPath,
+        ['-e', `require('net').createServer().listen(${JSON.stringify(killed)}, () => console.log('up'))`],
+        { stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      await new Promise((resolve) => child.stdout!.once('data', resolve));
+      child.kill('SIGKILL');
+      await new Promise((resolve) => child.once('exit', resolve));
+      expect(fs.statSync(killed).isSocket()).toBe(true);
+      // A server that listens, a folder with no socket yet, another program's folder, and a link: all stay.
+      const live = net.createServer();
+      await new Promise<void>((resolve) => live.listen(folder(`${RUN_CHANNEL_FOLDER_PREFIX}live`), resolve));
+      onTestFinished(() => void live.close());
+      folder(`${RUN_CHANNEL_FOLDER_PREFIX}starting`);
+      const other = folder('piwi-record-other');
+      fs.symlinkSync(path.dirname(killed), path.join(dir, `${RUN_CHANNEL_FOLDER_PREFIX}link`));
+      fs.writeFileSync(path.join(path.dirname(other), 'kept'), '');
+
+      expect(await clearStaleRunChannels(dir)).toBe(1);
+      expect(fs.readdirSync(dir).sort()).toEqual(
+        [
+          `${RUN_CHANNEL_FOLDER_PREFIX}link`,
+          `${RUN_CHANNEL_FOLDER_PREFIX}live`,
+          `${RUN_CHANNEL_FOLDER_PREFIX}starting`,
+          'piwi-record-other',
+        ].sort(),
+      );
+      // A second pass finds nothing more to clear.
+      expect(await clearStaleRunChannels(dir)).toBe(0);
+    },
+  );
 
   it('takes a worker with its token, and closes one with another token or none', async () => {
     const window = await openWindow();
@@ -267,8 +325,8 @@ describe('the run channel the shell names in a run', () => {
     expect(window.session('desktop-90')).toBeUndefined();
 
     const worker = new Worker(folder).attach('desktop-1');
-    // The hub shows a failure, so it says so to a worker that holds one only for a hub that does.
-    expect(await worker.next('attached')).toEqual({ type: 'attached', holds: ['failure'] });
+    // The hub shows a failure, so it says so to a worker that holds one only for a hub that does, naming itself.
+    expect(await worker.next('attached')).toEqual({ type: 'attached', holds: ['failure'], host: 'the desktop app' });
     worker.begin();
     const session = await waitFor(() => window.session('desktop-1')?.workers[0]?.test ?? undefined);
     expect(session.title).toEqual(['checkout', 'pays']);
@@ -434,6 +492,39 @@ describe('a failure no pause bar shows', () => {
     window.close();
   });
 
+  it('never waits in a run nobody attends, whoever shows or follows it, and tells its workers so', async () => {
+    const window = await openWindow();
+    const picker = await paired();
+    picker.send({ type: 'subscribe', id: 1 });
+    picker.send({ type: 'follow', id: 2, on: true });
+    await picker.answer(2);
+    const lab = 'desktop-8-unattended';
+    expect(await window.command({ type: 'show', id: 1, ref: lab, on: true })).toMatchObject({
+      ok: true,
+      message: 'Nobody attends a run of this kind: its failures go on at once, whoever watches it.',
+    });
+    const worker = new Worker(folder).attach(lab);
+    // Its workers hold no failure, as the host names itself.
+    expect(await worker.next('attached')).toEqual({ type: 'attached', holds: [], host: 'the desktop app' });
+    worker.begin();
+    worker.stop(1, 'failure');
+    expect(await worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
+    // A plain run the window shows, at the same time, holds its failure.
+    const plain = new Worker(folder).attach('desktop-9');
+    expect(await plain.next('attached')).toEqual({ type: 'attached', holds: ['failure'], host: 'the desktop app' });
+    expect(await window.command({ type: 'show', id: 2, ref: 'desktop-9', on: true })).toMatchObject({ ok: true });
+    plain.begin();
+    plain.stop(1, 'failure');
+    await waitFor(() => window.session('desktop-9')?.workers[0]?.stop?.reason === 'failure');
+    await sleep(100);
+    expect(plain.heard.some((m) => m.type === 'control')).toBe(false);
+    expect(window.session(lab)?.workers[0]?.stop ?? null).toBeNull();
+    worker.socket.destroy();
+    plain.socket.destroy();
+    picker.socket.close();
+    window.close();
+  });
+
   it('waits while a Runs window of Piwi Picker follows the runs', async () => {
     const picker = await paired();
     picker.send({ type: 'subscribe', id: 1 });
@@ -519,13 +610,52 @@ describe('the window', () => {
       what: 'pick-at',
       value: { ok: true, message: 'Picked.', locator: "getByRole('button', { name: 'Pay' })" },
     });
-    expect(await picking).toMatchObject({ ok: true, locator: "getByRole('button', { name: 'Pay' })" });
+    // Its locator goes where the run's picks go, the window, never to an editor.
+    expect(await picking).toMatchObject({
+      ok: true,
+      locator: "getByRole('button', { name: 'Pay' })",
+      message: "getByRole('button', { name: 'Pay' }): copy it in the desktop app's window.",
+    });
 
     // The window closing ends its view: the worker stops it.
     window.close();
     const stopped = await worker.request('view', 1);
     expect(stopped).toMatchObject({ on: false });
     other.close();
+    worker.socket.destroy();
+  });
+});
+
+describe('a window that stops reading', () => {
+  it('gets no frame past 1 MB unread, the latest one once it reads, and is let go past 32 MB', async () => {
+    let unread = 0;
+    const window = await openWindow(() => unread);
+    const worker = new Worker(folder).attach('desktop-12');
+    worker.begin();
+    worker.stop(1);
+    const stop = await waitFor(() => window.session('desktop-12')?.workers[0]?.stop ?? undefined);
+    const at = { ref: 'desktop-12', worker: 0, since: stop.since };
+    const watching = window.command({ type: 'view', id: 2, ...at, on: true });
+    const view = await worker.request('view');
+    worker.send({ type: 'answer', request: view.request, what: 'view', value: { ok: true, message: 'Watching.' } });
+    await watching;
+    const frames = () => window.events.filter((e) => e.type === 'frame').length;
+    worker.send({ type: 'frame', stop: 1, width: 800, height: 600, data: '/9j/AA==' });
+    await waitFor(() => frames() === 1);
+    // 1 MB unread: the next frames wait, the latest one alone.
+    unread = 2 * 1024 * 1024;
+    worker.send({ type: 'frame', stop: 1, width: 800, height: 600, data: '/9j/AB==' });
+    worker.send({ type: 'frame', stop: 1, width: 800, height: 600, data: '/9j/AC==' });
+    await sleep(600);
+    expect(frames()).toBe(1);
+    unread = 0;
+    await waitFor(() => frames() === 2);
+    expect(window.events.filter((e) => e.type === 'frame').at(-1)).toMatchObject({ data: '/9j/AC==' });
+    // 32 MB unread: the next message the hub sends lets the window go.
+    unread = 33 * 1024 * 1024;
+    worker.send({ type: 'running', stop: 1 });
+    await waitFor(() => window.closed);
+    expect(await window.command({ type: 'subscribe', id: 3 })).toBeNull();
     worker.socket.destroy();
   });
 });
@@ -606,6 +736,29 @@ describe('the code from a stop of a desktop run', () => {
     window.close();
   });
 
+  it('takes the locators the runs pick at the address the shell names, for the window to copy', async () => {
+    const address = runs.picksAddress(4318)!;
+    // The address reads as an editor's Send to editor pairing, which the reporter posts a pick to with its token: one
+    // of its own, never the desktop token.
+    expect(parsePairing(address)).toEqual({
+      url: `http://127.0.0.1:4318${DESKTOP_PICKS_PATH}`,
+      token: desktopPicksToken(),
+    });
+    expect(desktopPicksToken()).toMatch(/^pdp_[0-9a-f]{64}$/);
+    expect(address).not.toContain(TOKEN);
+    const window = await openWindow();
+    runs.picked({ locator: "getByRole('button', { name: 'Go' })", file: 'tests/shop.spec.ts', line: 3 });
+    expect(window.events.filter((e) => e.type === 'pick')).toEqual([
+      { type: 'pick', pick: { locator: "getByRole('button', { name: 'Go' })", file: 'tests/shop.spec.ts', line: 3 } },
+    ]);
+    // A window that opens later is given the picks kept, with the codes, in the order they came.
+    const later = await openWindow();
+    const kept = later.events.filter((e) => e.type === 'pick' || e.type === 'stop-code').map((e) => e.type);
+    expect(kept.at(-1)).toBe('pick');
+    later.close();
+    window.close();
+  });
+
   it('reads a file of a linked folder alone, a link out of it included', () => {
     const outside = path.join(worktree, 'tests', 'checkout.spec.ts');
     expect(insideFolder(folder, path.join(folder, 'tests', 'checkout.spec.ts'))).toBe(true);
@@ -633,9 +786,55 @@ describe('the routes', () => {
       ['GET', '/api/desktop/live'],
       ['GET', '/api/desktop/runs/events'],
       ['POST', '/api/desktop/runs/commands'],
+      ['POST', '/api/desktop/runs/picks'],
     ] as const) {
       expect(isOpenDesktopRoute(route[0], route[1])).toBe(false);
     }
+  });
+
+  it('open the picks route alone with the picks token, from this machine, and nothing else with it', async () => {
+    vi.stubGlobal('defineEventHandler', (handler: unknown) => handler);
+    vi.stubGlobal('apiError', (opts: { statusCode: number; statusMessage?: string }) =>
+      Object.assign(new Error(opts.statusMessage), opts),
+    );
+    vi.stubEnv('PIWI_DESKTOP_TOKEN', TOKEN);
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    });
+    const guard = (await import('../../server/middleware/desktop-guard')).default as unknown as (e: never) => void;
+    const picks = desktopPicksToken();
+    const request = (method: string, path: string, headers: Record<string, string>, peer = '127.0.0.1') =>
+      ({
+        method,
+        path,
+        context: {},
+        node: { req: { headers: { host: '127.0.0.1:4318', ...headers }, socket: { remoteAddress: peer } }, res: {} },
+      }) as never;
+    const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
+    const refused = /Desktop access token required/;
+    expect(() => guard(request('POST', DESKTOP_PICKS_PATH, bearer(picks)))).not.toThrow();
+    expect(presentsDesktopPicksToken(request('POST', `${DESKTOP_PICKS_PATH}?x=1`, bearer(picks)))).toBe(true);
+    for (const [method, path] of [
+      ['GET', DESKTOP_PICKS_PATH],
+      ['POST', '/api/desktop/runs/commands'],
+      ['GET', '/api/desktop/runs/events'],
+      ['GET', '/api/desktop/run-channel'],
+      ['GET', '/api/projects'],
+      ['POST', '/mcp'],
+    ] as const) {
+      expect(() => guard(request(method, path, bearer(picks))), `${method} ${path}`).toThrow(refused);
+    }
+    // Only as a bearer, only from this machine, and only that token.
+    expect(() => guard(request('POST', DESKTOP_PICKS_PATH, { 'x-piwi-token': picks }))).toThrow(refused);
+    expect(() => guard(request('POST', DESKTOP_PICKS_PATH, { cookie: `piwi_token=${picks}` }))).toThrow(refused);
+    expect(() => guard(request('POST', DESKTOP_PICKS_PATH, bearer(picks), '192.168.1.9'))).toThrow(refused);
+    expect(() =>
+      guard(request('POST', DESKTOP_PICKS_PATH, { ...bearer(picks), origin: 'https://evil.example' })),
+    ).toThrow(refused);
+    expect(() => guard(request('POST', DESKTOP_PICKS_PATH, bearer(`pdp_${'0'.repeat(64)}`)))).toThrow(refused);
+    // The desktop token still opens it, as every route.
+    expect(() => guard(request('POST', DESKTOP_PICKS_PATH, bearer(TOKEN)))).not.toThrow();
   });
 
   it('give the run channel to the shell alone, never to a request a browser sends', () => {

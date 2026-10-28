@@ -13,7 +13,7 @@ defineRouteMeta({
     tags: ['System'],
     summary: 'The run channel of the runs the shell starts (desktop app)',
     description:
-      'Desktop build only — 404 on the server build. Answers `{ runChannel }`: the socket the desktop shell names in each Playwright run it starts as `PIWI_RUN_CHANNEL` (`<path>#<token>`), the bundled server being the hub of those runs; null while it does not listen. Refused (403) to a request a browser sends (one carrying `Origin` or `Sec-Fetch-Site`): the shell alone asks.',
+      'Desktop build only — 404 on the server build. Answers `{ runChannel, picks }`: the socket the desktop shell names in each Playwright run it starts as `PIWI_RUN_CHANNEL` (`<path>#<token>`), the bundled server being the hub of those runs, and the address the shell names as `PIWI_EDITOR_SEND` (`<url>#<token>`), where the runs’ tests send the locators they pick, for the window to copy, with a token that opens that route alone, never the desktop token; both null while the channel does not listen. Refused (403) to a request a browser sends (one carrying `Origin` or `Sec-Fetch-Site`): the shell alone asks.',
     'x-required-permission': 'signed-in',
   },
 });
@@ -25,5 +25,6 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 403, message: 'The desktop shell alone reads the run channel' });
   setResponseHeader(event, 'cache-control', 'no-store');
   const runs = await desktopRuns();
-  return { runChannel: runs?.runChannel ?? null };
+  const port = process.env.NITRO_PORT || process.env.PORT || '3000';
+  return { runChannel: runs?.runChannel ?? null, picks: runs?.picksAddress(port) ?? null };
 });

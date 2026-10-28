@@ -6352,6 +6352,54 @@
   "runs_statusNoRuns": {
     "message": "Gerade kein Lauf. Starten Sie einen Test im Editor: Er erscheint hier."
   },
+  "runs_desktopApp": {
+    "message": "Desktop-App"
+  },
+  "runs_desktopName": {
+    "message": "der Desktop-App"
+  },
+  "runs_followingDesktop": {
+    "message": "Mit der Desktop-App verbunden"
+  },
+  "runs_followingWithDesktop_one": {
+    "message": "$count$ Editorfenster und die Desktop-App verbunden",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_followingWithDesktop_other": {
+    "message": "$count$ Editorfenster und die Desktop-App verbunden",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_statusDesktopSearching": {
+    "message": "Läufe der Desktop-App werden gesucht…"
+  },
+  "runs_statusDesktopNoAccess": {
+    "message": "Piwi Picker darf die Adresse der Desktop-App nicht mehr erreichen: Koppeln Sie sie in den Einstellungen erneut."
+  },
+  "runs_statusDesktopRefused": {
+    "message": "Die Desktop-App hat die Kopplung abgelehnt: Koppeln Sie Piwi Picker in den Einstellungen erneut."
+  },
+  "runs_statusDesktopUnreachable": {
+    "message": "Die Desktop-App antwortet nicht: Öffnen Sie sie, um die Läufe zu verfolgen, die sie startet."
+  },
+  "runs_statusDesktopOutdated": {
+    "message": "Diese Desktop-App kann ihre Läufe nicht teilen: Aktualisieren Sie sie."
+  },
+  "runs_statusDesktopUnproven": {
+    "message": "Das Programm an der Adresse der Desktop-App ist nicht die gekoppelte App: Piwi Picker hat ihm nichts gesendet und fragt gleich erneut."
+  },
+  "runs_statusDesktopNoRuns": {
+    "message": "Gerade kein Lauf. Starten Sie einen Test in der Desktop-App: Er erscheint hier."
+  },
   "runs_ended": {
     "message": "Der Lauf ist beendet."
   },

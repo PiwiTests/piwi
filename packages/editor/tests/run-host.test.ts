@@ -136,6 +136,25 @@ describe('a host of its own', () => {
     worker.socket.destroy();
   });
 
+  test('names itself to the workers that hold a stop only for a host that shows it', async () => {
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, 'host-3');
+    expect(await worker.next('attached')).toEqual({ type: 'attached', holds: ['failure'], host: 'the desktop app' });
+    worker.socket.destroy();
+  });
+
+  test.skipIf(process.platform === 'win32')(
+    'makes its socket’s folder under the prefix it names, and removes it',
+    async () => {
+      const own = (await RecordChannel.open({ onAttach: () => {}, folderPrefix: 'piwi-host-test-' }))!;
+      const folder = path.dirname(own.path);
+      expect(path.basename(folder)).toMatch(/^piwi-host-test-/);
+      expect(path.dirname(folder)).toBe(os.tmpdir());
+      expect((fs.statSync(folder).mode & 0o777).toString(8)).toBe('700');
+      own.close();
+      expect(fs.existsSync(folder)).toBe(false);
+    },
+  );
+
   test('lets a joined peer go as it closes', () => {
     const { closed } = join();
     const other = new RunSessions({

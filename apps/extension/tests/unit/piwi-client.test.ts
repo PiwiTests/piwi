@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   fetchCatalog,
+  fetchDesktopHubs,
   fetchLocatorIndex,
   fetchProjects,
   testConnection,
@@ -198,6 +199,58 @@ describe('responses as the dashboard sends them', () => {
     const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as Array<[string, RequestInit]>;
     expect(calls.map(([url]) => url)).toEqual(['http://127.0.0.1:4318/api/health']);
     expect(JSON.stringify(calls[0]![1].headers)).not.toContain('pd_desktop');
+  });
+
+  test('the hub of the desktop app’s runs is asked of the app that proves it holds the token, with it', async () => {
+    const desktop = { url: 'http://127.0.0.1:4318', token: 'pd_desktop_token_0123456789' };
+    const hub = {
+      url: 'ws://localhost:51234/piwi/hub',
+      token: 'pd_desktop_token_0123456789',
+      pid: 7,
+      version: '0.62.0',
+      client: 'Piwi desktop app',
+      roots: ['/home/me/shop'],
+      startedAt: '2026-10-28T10:00:00.000Z',
+    };
+    const live = (status: number, body: unknown) =>
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string, init?: RequestInit) =>
+          url.endsWith('/api/health')
+            ? desktopHealth(url, init, 'pd_desktop_token_0123456789')
+            : new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }),
+        ),
+      );
+    // A hub named with another token is left out: the app's token goes to its own hub alone.
+    live(200, { hubs: [hub, { ...hub, url: 'ws://127.0.0.1:51235/piwi/hub', token: 'someone_elses_token_000' }] });
+    expect(await fetchDesktopHubs(desktop)).toEqual({ hubs: [{ ...hub, url: 'ws://127.0.0.1:51234/piwi/hub' }] });
+    const calls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as Array<[string, RequestInit]>;
+    expect(calls.map(([url]) => url)).toEqual([
+      'http://127.0.0.1:4318/api/health',
+      'http://127.0.0.1:4318/api/desktop/live',
+    ]);
+    expect(lastCall()[1]).toMatchObject({
+      headers: { 'x-piwi-token': 'pd_desktop_token_0123456789' },
+      redirect: 'error',
+    });
+
+    live(401, { message: 'Desktop access token required' });
+    expect(await fetchDesktopHubs(desktop)).toEqual({ failure: 'refused' });
+    live(404, { message: 'Not found' });
+    expect(await fetchDesktopHubs(desktop)).toEqual({ failure: 'outdated' });
+    live(200, { nothing: true });
+    expect(await fetchDesktopHubs(desktop)).toEqual({ failure: 'unreachable' });
+
+    // Another program on the port proves nothing and is sent nothing.
+    desktopApp('pd_other');
+    expect(await fetchDesktopHubs(desktop)).toEqual({ failure: 'unproven' });
+    const proved = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls as Array<[string, RequestInit]>;
+    expect(proved.map(([url]) => url)).toEqual(['http://127.0.0.1:4318/api/health']);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))),
+    );
+    expect(await fetchDesktopHubs(desktop)).toEqual({ failure: 'unreachable' });
   });
 
   test('fetchLocatorIndex explains a rejected key, a missing endpoint and a malformed answer', async () => {

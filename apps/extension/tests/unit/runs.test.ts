@@ -244,7 +244,8 @@ describe('what a stop takes from the window', () => {
     ] as const;
     const state: RunsState = {
       discovery: 'found',
-      hubs: [{ id: hub, connected: true, client: null }],
+      desktop: 'unpaired',
+      hubs: [{ id: hub, connected: true, client: null, desktop: false }],
       runs: [
         {
           hub,

@@ -151,9 +151,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   grants neither. Checked by `tests/run-view.test.ts` ("takes Pick and Record … from a viewer of its view alone",
   "plays a viewer’s input …"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-live-view))
 - **A failure no pause bar shows is held only where a person can answer it.** In a run the service built to be watched,
-  or while a hub connection said `follow` with `on: true` (`followed` in `src/server.ts`), and only for a worker whose
-  `run-attach` lists `holds`, answered with `attached` (`SHOWN_HOLDS`). Checked by `tests/run-sessions.test.ts` ("holds
-  a failure no bar shows only …", "tells a worker that holds a failure …") and `tests/stop-actions.test.ts`.
+  or while a hub connection said `follow` with `on: true` (`followed` in `src/server.ts`), never in a run its host says
+  holds none (`holdsFailures`), and only for a worker whose `run-attach` lists `holds`, answered with `attached`
+  (`SHOWN_HOLDS`). Checked by `tests/run-sessions.test.ts` ("holds a failure no bar shows only …", "holds no failure in
+  a run its host says …", "tells a worker that holds a failure …") and `tests/stop-actions.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#stops-no-pause-bar-shows))
 - **The code from a stop goes to the client that writes it, placed where the stopped statement stands now, or is
   refused.** `RunLines` follows the file from the run's start (a rerun's own start) through every `didChange`, and

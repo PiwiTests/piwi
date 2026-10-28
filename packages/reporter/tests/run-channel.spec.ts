@@ -13,6 +13,7 @@ import {
   holdStop,
   openRunChannel,
   runChannelOpen,
+  runHost,
   type RunControl,
   type StopToHold,
 } from '../src/internal/capture/run-channel.js';
@@ -169,6 +170,33 @@ describe('the worker’s run connection', () => {
       await new Promise((r) => setTimeout(r, 50));
       expect(editorShows('failure')).toBe(false);
     } finally {
+      await hub.close();
+    }
+  });
+
+  it('names the service as it names itself in attached, the editor unless it says otherwise', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const hub = await startHub();
+    try {
+      const { control } = handlers();
+      expect(await openRunChannel(WORKER, control, hub.env)).toBe(true);
+      await until(() => hub.heard[0]);
+      expect(runHost()).toBe('the editor');
+      hub.send({ type: 'attached', holds: ['failure'], host: 'the desktop app' });
+      await until(() => (runHost() === 'the desktop app' ? true : undefined));
+      holdStop(STOP, () => {});
+      await until(() => hub.heard.find((m) => m.type === 'stopped'));
+      hub.drop();
+      await until(() => (runChannelOpen() ? undefined : true));
+      expect(log).toHaveBeenCalledWith('[piwi] The connection to the desktop app closed: the test goes on.');
+      // A connection opened again, to an editor that names itself nothing, names the editor.
+      expect(await openRunChannel(WORKER, control, hub.env)).toBe(true);
+      expect(runHost()).toBe('the editor');
+      hub.send({ type: 'attached', holds: ['failure'] });
+      await until(() => (editorShows('failure') ? true : undefined));
+      expect(runHost()).toBe('the editor');
+    } finally {
+      log.mockRestore();
       await hub.close();
     }
   });

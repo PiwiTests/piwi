@@ -28,6 +28,17 @@ const OTHER_HUB: LiveHub = {
   pid: 4243,
 };
 
+/** The paired desktop app's hub, which its server is, with the app's token. */
+const DESKTOP_HUB: LiveHub = {
+  url: 'ws://127.0.0.1:50200/piwi/hub',
+  token: 'pd_desktop_token_0123456789',
+  pid: 5151,
+  version: '0.62.0',
+  client: 'Piwi desktop app',
+  roots: ['/home/me/shop'],
+  startedAt: '2026-10-28T10:00:00.000Z',
+};
+
 const RUNNING: HubWorker = {
   worker: 0,
   parallelIndex: 0,
@@ -309,6 +320,74 @@ describe('finding the hubs through the pairing', () => {
     answer(async () => Response.json({ hubs: [{ ...HUB, url: 'ws://evil.example/piwi/hub' }, HUB] }));
     await hubs.find();
     expect(sockets.map((s) => s.url)).toEqual([HUB.url]);
+  });
+});
+
+describe('the desktop app’s hub', () => {
+  it('is connected beside the editor’s with the app’s token, its runs shown apart, and never kept', async () => {
+    const { hubs, sockets, stored } = setup({ desktopHubs: async () => ({ discovery: 'found', hubs: [DESKTOP_HUB] }) });
+    await hubs.find();
+    expect(sockets.map((s) => s.url)).toEqual([HUB.url, DESKTOP_HUB.url]);
+    // Only the editor's hubs go to the secret area: the app names its own each time.
+    expect(stored.hubs).toEqual([HUB]);
+    const desktop = sockets[1]!;
+    desktop.open();
+    expect(desktop.sent).toEqual([{ type: 'hello', token: DESKTOP_HUB.token }]);
+    await welcome(desktop, [session([STOPPED], { ref: 'desktop-7', command: null })]);
+    const state = hubs.state();
+    expect(state).toMatchObject({
+      discovery: 'found',
+      desktop: 'found',
+      hubs: [
+        { id: HUB.url, desktop: false },
+        { id: DESKTOP_HUB.url, desktop: true, connected: true },
+      ],
+    });
+    expect(state.runs.map((run) => [run.hub, run.session.ref])).toEqual([[DESKTOP_HUB.url, 'desktop-7']]);
+    expect(JSON.stringify(state)).not.toContain(DESKTOP_HUB.token);
+  });
+
+  it('shows its runs with no editor paired, and is asked again while it does not answer', async () => {
+    let answer: () => Promise<{ discovery: 'found' | 'unreachable'; hubs: LiveHub[] }> = async () => ({
+      discovery: 'unreachable',
+      hubs: [],
+    });
+    const { hubs, sockets, fetches } = setup({ pairing: async () => null, desktopHubs: () => answer() });
+    await hubs.find();
+    expect(hubs.state()).toMatchObject({ discovery: 'unpaired', desktop: 'unreachable', hubs: [] });
+    expect(fetches).toEqual([]);
+    answer = async () => ({ discovery: 'found', hubs: [DESKTOP_HUB] });
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => sockets.length === 1);
+    await welcome(sockets[0]!, [session([RUNNING], { ref: 'desktop-7' })]);
+    expect(hubs.state()).toMatchObject({ discovery: 'unpaired', desktop: 'found' });
+    expect(hubs.connected()).toBe(true);
+    expect(hubs.state().runs).toHaveLength(1);
+  });
+
+  it('is let go with the pairing, and dropped when it refuses the token, the editor’s hubs kept', async () => {
+    let desktop: { discovery: 'found' | 'unpaired'; hubs: LiveHub[] } = { discovery: 'found', hubs: [DESKTOP_HUB] };
+    const { hubs, sockets, stored } = setup({ desktopHubs: async () => desktop });
+    await hubs.find();
+    await welcome(sockets[1]!, [session([RUNNING], { ref: 'desktop-7' })]);
+    sockets[1]!.hear({ type: 'session', session: session([], { ref: 'desktop-7', ended: true }) });
+    expect(hubs.state().runs).toHaveLength(1);
+    // Unpaired: its connection closes and its ended run goes with it.
+    desktop = { discovery: 'unpaired', hubs: [] };
+    await hubs.find();
+    expect(sockets[1]!.closedWith).toBe(1000);
+    expect(hubs.state()).toMatchObject({ desktop: 'unpaired', hubs: [{ id: HUB.url }], runs: [] });
+
+    // Paired again, then refused: the app's hub is dropped, the editor's stay kept.
+    desktop = { discovery: 'found', hubs: [DESKTOP_HUB] };
+    await hubs.find();
+    const again = sockets[2]!;
+    expect(again.url).toBe(DESKTOP_HUB.url);
+    again.open();
+    again.hangUp(HUB_CLOSE.unauthorized);
+    expect(hubs.state().hubs.map((h) => h.id)).toEqual([HUB.url]);
+    await settle();
+    expect(stored.hubs).toEqual([HUB]);
   });
 });
 
@@ -631,7 +710,9 @@ describe('connections that fail', () => {
     await welcome(sockets[0]!, [session([RUNNING])]);
     sockets[0]!.hangUp(1006);
     expect(hubs.state().runs).toEqual([]);
-    expect(hubs.state().hubs).toEqual([{ id: HUB.url, connected: false, client: 'Visual Studio Code' }]);
+    expect(hubs.state().hubs).toEqual([
+      { id: HUB.url, connected: false, client: 'Visual Studio Code', desktop: false },
+    ]);
     expect(fetches).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1000);
     await until(() => sockets.length === 2);
@@ -745,7 +826,7 @@ describe('connections that fail', () => {
     pairing = null;
     await hubs.find();
     expect(sockets[0]!.closedWith).toBe(1000);
-    expect(hubs.state()).toEqual({ discovery: 'unpaired', hubs: [], runs: [] });
+    expect(hubs.state()).toEqual({ discovery: 'unpaired', desktop: 'unpaired', hubs: [], runs: [] });
     expect(stored.hubs).toEqual([]);
   });
 });

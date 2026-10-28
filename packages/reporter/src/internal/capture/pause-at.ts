@@ -474,19 +474,21 @@ export function pickPayload(locator: string, callerLocation: string): EditorSend
 let postFailureLogged = false;
 
 /**
- * Post a picked locator to the editor that started the run (`PIWI_EDITOR_SEND`). A pairing that does not parse, a
- * refused or failed post is logged once per process; nothing is thrown.
+ * Post a picked locator to the editor that started the run (`PIWI_EDITOR_SEND`), or the host the run names in its
+ * place (`host`, as the logged line calls it: the desktop app). A pairing that does not parse, a refused or failed
+ * post is logged once per process; nothing is thrown.
  */
 export async function postPickToEditor(
   pairingAddress: string | undefined,
   payload: EditorSendPayload,
   fetchImpl: typeof fetch = fetch,
+  host = 'the editor',
 ): Promise<boolean> {
   if (!pairingAddress) return false;
   const logOnce = (why: string) => {
     if (postFailureLogged) return;
     postFailureLogged = true;
-    console.log(`[piwi] Could not send the picked locator to the editor: ${why}.`);
+    console.log(`[piwi] Could not send the picked locator to ${host}: ${why}.`);
   };
   const pairing = parsePairing(pairingAddress);
   if (!pairing) {
@@ -501,7 +503,7 @@ export async function postPickToEditor(
       signal: AbortSignal.timeout(5000),
     });
     if (response.ok) return true;
-    logOnce(`the editor answered ${response.status}`);
+    logOnce(`${host} answered ${response.status}`);
   } catch (error) {
     logOnce(error instanceof Error ? error.message : String(error));
   }

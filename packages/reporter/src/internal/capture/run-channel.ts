@@ -59,7 +59,8 @@ import { internalCall } from './quiet-capture.js';
  * outside the page, asks for the responses the test kept (`kept-responses.ts`) and the one to mock, and counts a
  * locator on the stopped page, outlining its matches where the bar shows until the test goes on (`takes` in its
  * attach). Its attach also lists the stops it holds only once the editor says it shows them (`holds`: a failure), which
- * the editor answers with `attached`; an editor that predates it says nothing, and no failure is held for it. For a
+ * the editor answers with `attached`, naming the service when it is not the editor (`host`: the desktop app, which the
+ * worker's lines name then, `runHost`); an editor that predates it says nothing, and no failure is held for it. For a
  * viewer outside the page, it shows the stopped page's live view (`view`: the page's screencast, its frames sent at
  * most `MAX_VIEW_FPS` a second, the latest one when the connection is backed up, the latest sent kept in memory for a
  * viewer that comes later until the view ends, never stored), plays the viewer's input
@@ -174,6 +175,8 @@ let socket: net.Socket | null = null;
 let control: RunControl | null = null;
 /** The stops the editor said it shows, of those this worker holds only then (`attached`). */
 let shown = new Set<RunHold>();
+/** What the service the run connection reaches calls itself (`attached`), when it is not the editor. */
+let host: string | null = null;
 let stops = 0;
 let held: HeldStop | null = null;
 /** The outline of a locator's matches in a stopped page, and the stop it belongs to. */
@@ -274,6 +277,7 @@ export async function openRunChannel(
   shown = new Set();
   runName = `piwi-${ref}-w${worker.workerIndex}`;
   eventsOn = false;
+  host = null;
   opening.unref();
   opening.on(
     'data',
@@ -289,7 +293,7 @@ export async function openRunChannel(
     if (view) void stopView();
     if (!held || held.bar) return;
     // A stop no bar can answer goes on: nobody else can.
-    console.log('[piwi] The connection to the editor closed: the test goes on.');
+    console.log(`[piwi] The connection to ${runHost()} closed: the test goes on.`);
     held.answer('resume');
   });
   tellHub({
@@ -314,6 +318,14 @@ export async function openRunChannel(
  */
 export function editorShows(what: RunHold): boolean {
   return runChannelOpen() && shown.has(what);
+}
+
+/**
+ * What the worker's lines call the service its run connection reaches, as it named itself (`attached`): `the editor`
+ * unless it said otherwise (`the desktop app`).
+ */
+export function runHost(): string {
+  return host ?? 'the editor';
 }
 
 /** What a test runs without: the run's channel, and the editor's Send to editor pairing with its token. */
@@ -849,6 +861,7 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
   switch (message.type) {
     case 'attached':
       shown = new Set(message.holds);
+      host = message.host ?? null;
       return;
     case 'events':
       eventsOn = message.on;

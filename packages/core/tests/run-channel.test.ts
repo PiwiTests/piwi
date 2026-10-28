@@ -372,6 +372,17 @@ describe('the run channel', () => {
       expect(parseHubToRun(line({ type: 'attached', holds: 'failure' }))).toBeNull();
     });
 
+    test('reads what the worker’s lines call the service, leaving out a name it could not print', () => {
+      expect(parseHubToRun(line({ type: 'attached', holds: ['failure'], host: 'the desktop app' }))).toEqual({
+        type: 'attached',
+        holds: ['failure'],
+        host: 'the desktop app',
+      });
+      for (const host of ['', 7, 'the\neditor', '\u001b[31mred', 'a'.repeat(65), ' leading space']) {
+        expect(parseHubToRun(line({ type: 'attached', holds: [], host }))).toEqual({ type: 'attached', holds: [] });
+      }
+    });
+
     test('reads the breakpoints, all of them or none', () => {
       const breakpoints = {
         type: 'breakpoints',

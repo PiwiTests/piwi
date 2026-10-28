@@ -41,15 +41,23 @@ shell and are feature-equivalent.
     the window (`DesktopPickerPairingModal`), behind the guard.
 - **The bundled server is the hub of every Playwright run the shell starts.** Each spawn of a test (`runner.rs`,
   `repro.rs`, and in `worktree.rs` the reproduce, bisect and `piwi flake` runs) adds `bundled_hub_env`: the server's
-  `PIWI_RUN_CHANNEL`, read from `GET /api/desktop/run-channel` only after `health_ok` proved the launch nonce, and
-  `PIWI_RUN_REF` (`hub_env.rs`, `desktop-<run id>`, which the window knows the run by). The hub's WebSocket takes the
-  desktop token in `hello`; its code is `apps/application/server/utils/desktop-runs.ts`.
-- **One route passes on another token.** An assistant answer's MCP endpoint
-  (`POST /api/assistant/conversations/:id/mcp`) is called by the Claude Code CLI the server starts, with the token
-  minted for that one answer (`presentsAssistantTurnToken` in `server/utils/assistant/turn-token.ts`). It opens that
-  conversation's endpoint only, only while the answer runs, and only for a loopback host, origin and peer; the CLI is
-  never given the desktop token. Anything else the CLI or a turn needs goes through that endpoint, never a new open
-  route.
+  `PIWI_RUN_CHANNEL` and the address its picks go to (`PIWI_EDITOR_SEND`, the server's own route), read from
+  `GET /api/desktop/run-channel` only after `health_ok` proved the launch nonce, and `PIWI_RUN_REF` (`hub_env.rs`,
+  `desktop-<run id>`, which the window knows the run by). A run nobody attends (Flake Lab, a bisect, a lab job, one
+  with `--repeat-each` above 1 or `--ui`) ends its ref in `-unattended` (`attended_args`), and the server never holds
+  its failures. The hub's WebSocket takes the desktop token in `hello`; its code is
+  `apps/application/server/utils/desktop-runs.ts`.
+- **Two routes pass on another token, each for that route alone, from a loopback host, origin and peer.**
+  - An assistant answer's MCP endpoint (`POST /api/assistant/conversations/:id/mcp`) is called by the Claude Code CLI
+    the server starts, with the token minted for that one answer (`presentsAssistantTurnToken` in
+    `server/utils/assistant/turn-token.ts`), only while the answer runs. Anything else the CLI or a turn needs goes
+    through that endpoint, never a new open route.
+  - The runs the shell starts post their picks (`POST /api/desktop/runs/picks`) with the token minted for that route
+    as the server starts (`desktopPicksToken`, `presentsDesktopPicksToken` in `server/utils/desktop-access.ts`), the
+    one `GET /api/desktop/run-channel` names in `PIWI_EDITOR_SEND`.
+
+  Neither the CLI nor a run's environment is ever given the desktop token (`tests/unit/assistant-claude-code.test.ts`,
+  `tests/unit/desktop-runs.test.ts`).
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), and deletes it on quit. Its readers:

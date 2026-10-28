@@ -1,11 +1,17 @@
 import { createHash } from 'node:crypto';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { connect, type AddressInfo, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { BrowserContext, Page, Worker } from '@playwright/test';
+import {
+  DESKTOP_CHALLENGE_HEADER,
+  DESKTOP_PROOF_HEADER,
+  desktopTokenProof,
+  isDesktopChallenge,
+} from '@piwitests/core/desktop-proof';
 import {
   EDITOR_CHALLENGE_HEADER,
   EDITOR_PROOF_HEADER,
@@ -24,6 +30,13 @@ import {
   writeRunWorkspace,
   type Service,
 } from '../../../../packages/editor/tests/run-fixtures.js';
+import {
+  RecordChannel,
+  RunHub,
+  RunSessions,
+  StopActions,
+  type StopCode,
+} from '../../../../packages/editor/src/run-host.js';
 import { extensionWorker, launchWithExtension } from './fixtures.js';
 
 /**
@@ -116,24 +129,177 @@ export async function startEditor(): Promise<Editor> {
 /**
  * The extension, loaded with the grant of the editor's address the settings page requests in Pair's click, which a
  * test cannot make, and paired with the editor as an older version kept its pairing (the worker moves the token to
- * the secret area).
+ * the secret area); with `desktop`, paired with that desktop app too, its address granted and its pairing in the
+ * secret area as **Allow** leaves it, and with `editor: null`, with the desktop app alone.
  */
 export async function pairedExtension(
-  editor: Pick<Editor, 'origin'>,
-  options: { deviceScaleFactor?: number; language?: string } = {},
+  editor: Pick<Editor, 'origin'> | null,
+  options: { deviceScaleFactor?: number; language?: string; desktop?: Pick<Desktop, 'origin'> } = {},
 ): Promise<{ context: BrowserContext; worker: Worker; extensionId: string }> {
   const dir = mkdtempSync(path.join(tmpdir(), 'piwi-picker-runs-'));
   cpSync(DIST, dir, { recursive: true });
   const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
-  manifest.host_permissions = [`${editor.origin}/*`];
+  manifest.host_permissions = [editor, options.desktop].filter((paired) => !!paired).map((p) => `${p!.origin}/*`);
   writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest));
   const context = await launchWithExtension(dir, options);
   const worker = await extensionWorker(context);
-  await worker.evaluate(({ url, token }) => chrome.storage.local.set({ piwiEditorPairing: { url, token } }), {
-    url: `${editor.origin}/piwi/send`,
-    token: PAIRING_TOKEN,
-  });
+  if (options.desktop) {
+    await worker.evaluate(
+      (desktop) =>
+        new Promise<void>((resolve, reject) => {
+          const open = indexedDB.open('piwi-secrets', 1);
+          open.onupgradeneeded = () => {
+            if (!open.result.objectStoreNames.contains('secrets')) open.result.createObjectStore('secrets');
+          };
+          open.onerror = () => reject(open.error);
+          open.onsuccess = () => {
+            const transaction = open.result.transaction('secrets', 'readwrite');
+            transaction.objectStore('secrets').put(desktop, 'desktop');
+            transaction.oncomplete = () => {
+              open.result.close();
+              // As the settings page says a pairing changed: the worker asks the app for its runs' hub.
+              void chrome.storage.local.set({ piwiDesktopPairedAt: Date.now() }).then(() => resolve());
+            };
+            transaction.onerror = () => reject(transaction.error);
+          };
+        }),
+      { url: options.desktop.origin, token: DESKTOP_TOKEN },
+    );
+  }
+  if (editor) {
+    await worker.evaluate(({ url, token }) => chrome.storage.local.set({ piwiEditorPairing: { url, token } }), {
+      url: `${editor.origin}/piwi/send`,
+      token: PAIRING_TOKEN,
+    });
+  }
   return { context, worker, extensionId: worker.url().split('/')[2]! };
+}
+
+/** The paired desktop app's token, which its hub takes in `hello`. */
+export const DESKTOP_TOKEN = `pd_${'d1'.repeat(32)}`;
+
+/** The desktop app's server, as Piwi Picker reaches it: its address, its hub, its run channel, the code its window got. */
+export interface Desktop {
+  origin: string;
+  hub: LiveHub;
+  channel: Channel;
+  /** The code made at a stop of its runs, which the app's window alone receives, to copy. */
+  codes: StopCode[];
+  close(): Promise<void>;
+}
+
+/** What the desktop app's server declines, as it has no editor: Pick and Record in the test's window, and Assert. */
+const DESKTOP_DECLINES = new Set(['pick', 'record', 'assert']);
+
+/**
+ * The paired desktop app, built as its server builds the hub of the runs its shell starts
+ * (`apps/application/server/utils/desktop-runs.ts`): the editor service's run control hosted with the desktop token as
+ * the hub's, `Piwi desktop app` its client, Pick, Record and Assert declined, the code made at a stop from the file on
+ * disk going to its window alone (`codes`), Piwi Picker hearing that it was made, to copy in that window; and the two
+ * routes of its server Piwi Picker reads: `/api/health`, which answers a challenge with the proof that it holds the
+ * token, and `/api/desktop/live`, which names the hub to a request carrying the token. A run is a fake worker on its
+ * run channel, in `dir`.
+ */
+export async function startDesktop(dir: string): Promise<Desktop> {
+  const codes: StopCode[] = [];
+  let hub: RunHub | null = null;
+  const sessions = new RunSessions({
+    notify: (session) => hub?.push(session),
+    answersStops: () => !!hub?.answersStops(),
+    notice: () => {},
+    rootOf: (cwd) => (cwd === dir ? dir : null),
+    writesCode: () => true,
+    followed: () => !!hub?.follows(),
+    declines: (what) =>
+      DESKTOP_DECLINES.has(what) ? `${what} ends in an editor, and the desktop app has none.` : null,
+    host: 'the desktop app',
+    surfaces: "the desktop app's window",
+  });
+  const actions = new StopActions({
+    sessions,
+    writesCode: () => true,
+    notify: (code) => void codes.push(code),
+    notice: () => {},
+    outcome: (outcome) => hub?.code(outcome),
+    target: (file) =>
+      file.startsWith(`${dir}${path.sep}`) && existsSync(file)
+        ? {
+            uri: pathToFileURL(file).href,
+            text: readFileSync(file, 'utf8'),
+            version: null,
+            preferLocators: new Set(),
+            expectModule: '@playwright/test',
+          }
+        : null,
+    lineNow: (stop) => ({ line: stop.line }),
+    language: () => null,
+    words: {
+      wrote: (what, where) => `Piwi made ${what} to write above ${where}.`,
+      sent: (what, where) => `Piwi made ${what} to write above ${where}: copy it in the desktop app's window.`,
+      outside: (uri) => `${uri} is not in a folder linked to a project.`,
+    },
+  });
+  const channel = (await RecordChannel.open({
+    onAttach: (handoff) => channel.refuse(handoff.id, 'The desktop app has no recorder.'),
+    onRun: (socket, attach) => sessions.attach(socket, attach),
+  }))!;
+  hub = (await RunHub.open({
+    sessions,
+    actions,
+    runInfo: (_ref, root) => ({ command: null, label: root ? path.basename(root) : null, project: null }),
+    welcome: () => ({ pid: process.pid, version: '0.62.0', client: 'Piwi desktop app', roots: [dir] }),
+    surfacesChanged: () => sessions.surfacesChanged(),
+    token: DESKTOP_TOKEN,
+    closing: 'The desktop app stopped.',
+  }))!;
+  const live: LiveHub = {
+    url: hub.url,
+    token: DESKTOP_TOKEN,
+    pid: process.pid,
+    version: '0.62.0',
+    client: 'Piwi desktop app',
+    roots: [dir],
+    startedAt: new Date().toISOString(),
+  };
+  const server: Server = createServer(async (req, res) => {
+    const port = (server.address() as AddressInfo).port;
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/api/health') {
+      const challenge = req.headers[DESKTOP_CHALLENGE_HEADER];
+      if (isDesktopChallenge(challenge)) {
+        res.setHeader(DESKTOP_PROOF_HEADER, await desktopTokenProof(DESKTOP_TOKEN, port, challenge));
+      }
+      res.end('{"status":"ok","database":"ok"}');
+      return;
+    }
+    if (req.headers['x-piwi-token'] !== DESKTOP_TOKEN) {
+      res.statusCode = 401;
+      res.end('{"message":"Desktop access token required"}');
+      return;
+    }
+    if (req.url === '/api/desktop/live' && req.method === 'GET') {
+      res.end(JSON.stringify({ hubs: [live] }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end('{}');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return {
+    origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    hub: live,
+    channel: { path: channel.path, token: channel.token },
+    codes,
+    close: async () => {
+      hub?.close();
+      channel.close();
+      sessions.dispose();
+      await new Promise<void>((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      });
+    },
+  };
 }
 
 /** The proof that the program on the editor's port holds the pairing's token, for a request with a challenge. */

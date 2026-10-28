@@ -202,9 +202,11 @@ describe('PIWI_ENV_VARS registry', () => {
       'PIWI_ORIGIN',
       'PIWI_ORIGIN_REF',
       // Set by the desktop shell on the Playwright runs it starts and read by the reporter's workers: the desktop
-      // server answers the channel's address (`server/utils/desktop-runs.ts`) but reads neither.
+      // server answers the channel's address and where the runs' picks go (`server/utils/desktop-runs.ts`) but reads
+      // none of them.
       'PIWI_RUN_CHANNEL',
       'PIWI_RUN_REF',
+      'PIWI_EDITOR_SEND',
     ]);
     const realMissing = missing.filter((v) => !knownFalsePositives.has(v));
     expect(realMissing.sort()).toEqual([]);

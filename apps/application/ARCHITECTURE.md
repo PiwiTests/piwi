@@ -250,7 +250,11 @@ Each entry names folders under `server/api/`.
     validation and materialization in `shared/selection/`.
 - **`desktop/`**: routes the desktop app calls: its event stream, local imports, Piwi Picker pairing, reproduction
   requests, reporter configuration, and the hub of the runs its shell starts (`run-channel`, `live`, `runs/`; the hub
-  is `server/utils/desktop-runs.ts`, on the editor service's run control).
+  is `server/utils/desktop-runs.ts`, on the editor service's run control). The window's side is the Local runs tray
+  (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands, `DesktopRunSession`,
+  `DesktopRunWorker` and `DesktopRunStopPage` show each worker, its stop, its page and its live view (with the Runs
+  window's input, `apps/extension/src/shared/view-input.ts`), and `DesktopRunCopyList` the code to copy; the pure half
+  is `app/utils/desktop-run-view.ts`.
 - **`flake-lab/inbox`, `gaps/`**: cross-project inboxes of the Flake Lab and the scenario gaps.
 - **`health`, `version`, `capabilities`, `setup-status`, `metrics`, `rollups`, `stream`, `agent-skills`**: the
   readiness probe (200 or 503, with a database check), build info, the instance capabilities, the setup status,

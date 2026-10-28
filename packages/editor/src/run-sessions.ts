@@ -15,12 +15,13 @@
  * A stop that shows no pause bar while no surface can answer stops (the client does not, and no Piwi Picker hears the
  * runs) is resumed at once, and so is one held when the last of them goes. A failure no pause bar shows is held only
  * in a run started to be watched (`watched`: with the editor's breakpoints or a `page.pause()`) or while a Runs window
- * of Piwi Picker follows the runs, else it goes on at once and no client hears of it. A worker's connection that
- * closes lets a stop no pause bar shows go on; a stop the bar shows waits there for its answer. An agent (the service's
- * MCP server, `run-agent.ts`) hears what each worker says (`heard`), has a run's workers tell what their tests do
- * (`followRun`), and, at a stop, reads the page's ARIA snapshot (`snapshot`), acts on an element of it by its ref
- * (`act`), ranks an element's locators (`refLocator`) and shares the browser with Playwright's own tools (`bind`);
- * a stop it asked for (Pause, Step, Run to) is said to be the agent's (`RunStop.by`).
+ * of Piwi Picker follows the runs, and never in a run its host says holds none (`holdsFailures`), else it goes on at
+ * once and no client hears of it. A worker's connection that closes lets a stop no pause bar shows go on; a stop the
+ * bar shows waits there for its answer. An agent (the service's MCP server, `run-agent.ts`) hears what each worker
+ * says (`heard`), has a run's workers tell what their tests do (`followRun`), and, at a stop, reads the page's ARIA
+ * snapshot (`snapshot`), acts on an element of it by its ref (`act`), ranks an element's locators (`refLocator`) and
+ * shares the browser with Playwright's own tools (`bind`); a stop it asked for (Pause, Step, Run to) is said to be the
+ * agent's (`RunStop.by`).
  */
 import * as path from 'node:path';
 import type * as net from 'node:net';
@@ -241,6 +242,12 @@ export interface RunSessionsOptions {
    */
   followed?(): boolean;
   /**
+   * Whether a failure of the run of `ref` may be held at all, whoever watches it: true by default. A run nobody attends
+   * (the desktop app's Flake Lab, bisect and lab runs, a run repeating its tests or in UI mode) holds none: its workers
+   * hear that they hold no failure (`attached`), and a failure that stops one anyway goes on at once.
+   */
+  holdsFailures?(ref: string): boolean;
+  /**
    * A session starts: the first worker of a run connected, the run's command being one the service built or one it did
    * not, or a run of a ref whose command ended before (`again`: a rerun of that command, its environment and ref as
    * they were, whose code is the files as they stand now).
@@ -394,11 +401,11 @@ export class RunSessions {
 
   /**
    * A worker connected with `attach`: it joins its run's session, a new one when none runs, hears which of the stops it
-   * holds only then the service shows (`attached`, to a worker that lists them: a failure's) and the breakpoints sent
-   * for the run since it started. Returns where its next lines go. A connection naming the index of a worker
-   * connected now is closed: another process the run's environment reached (a test running Playwright itself) takes
-   * no worker's place. The workers of a command that ended are let go with its session (`commandEnded`), so those of
-   * a rerun start a new one.
+   * holds only then the service shows (`attached`, to a worker that lists them: a failure's, unless its run holds none),
+   * with what the service is called when it is not the editor (`host`), and the breakpoints sent for the run since it
+   * started. Returns where its next lines go. A connection naming the index of a worker connected now is closed:
+   * another process the run's environment reached (a test running Playwright itself) takes no worker's place. The
+   * workers of a command that ended are let go with its session (`commandEnded`), so those of a rerun start a new one.
    */
   attach(socket: net.Socket, attach: RunAttach): (line: string) => void {
     let session = this.sessions.get(attach.ref);
@@ -446,8 +453,10 @@ export class RunSessions {
     if (holder) this.closeWorker(holder);
     const own = session;
     socket.on('close', () => this.detach(own, worker));
-    if (attach.holds)
-      this.send(worker, { type: 'attached', holds: SHOWN_HOLDS.filter((h) => attach.holds!.includes(h)) });
+    if (attach.holds) {
+      const holds = SHOWN_HOLDS.filter((h) => attach.holds!.includes(h) && (h !== 'failure' || this.holds(attach.ref)));
+      this.send(worker, { type: 'attached', holds, ...(this.options.host ? { host: this.options.host } : {}) });
+    }
     const breakpoints = this.breakpoints.get(attach.ref);
     if (breakpoints) this.sendBreakpoints(worker, breakpoints, session.root);
     if (this.followedRuns.has(attach.ref) && worker.takes.has('events'))
@@ -938,9 +947,18 @@ export class RunSessions {
     return worker.stop?.view.reason === 'failure' && !this.watches(session);
   }
 
-  /** Whether someone watches the run's failures: it was started to be watched, or a Runs window follows the runs. */
+  /**
+   * Whether someone watches the run's failures: it was started to be watched, or a Runs window follows the runs; never
+   * for a run that holds no failure (`holdsFailures`).
+   */
   private watches(session: Session): boolean {
+    if (!this.holds(session.ref)) return false;
     return !!this.options.watched?.(session.ref) || !!this.options.followed?.();
+  }
+
+  /** Whether a failure of the run of `ref` may be held at all. */
+  private holds(ref: string): boolean {
+    return this.options.holdsFailures?.(ref) ?? true;
   }
 
   /** `piwi/setRunBreakpoints`: the run's workers stop at these lines from now on, a worker that starts later too. */
