@@ -5,8 +5,11 @@
  * filter or an option of {@link PLAYWRIGHT_OPTIONS}, or that a shell would expand, refuses the whole command.
  */
 
-/** Characters bash, zsh, PowerShell or cmd expand inside double quotes, plus control characters. */
-const SHELL_EXPANDED = /[$`"\\%!\p{Cc}]/u;
+/**
+ * Characters bash, zsh, PowerShell or cmd expand inside double quotes, plus control characters. PowerShell reads the
+ * typographic double quotes (“ ” „) as `"`: one of them would end the quoted word.
+ */
+const SHELL_EXPANDED = /[$`"\\%!\u201C\u201D\u201E\p{Cc}]/u;
 
 /** Characters every shell leaves as they are outside quotes. */
 const SHELL_PLAIN = /^[A-Za-z0-9._/:=+-]+$/;

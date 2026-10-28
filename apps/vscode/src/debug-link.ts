@@ -7,7 +7,7 @@
  * API here, so the rules are tested without an editor.
  */
 import * as path from 'node:path';
-import { resolveOpenFile } from './glue';
+import { SPEC_FILE, inertLinks, resolveOpenFile } from './glue';
 
 /** What a debug link names, each value checked. Lines are 1-based. */
 export interface DebugLink {
@@ -44,15 +44,17 @@ const MAX_EXECUTION = 2_147_483_647;
  */
 const PLAIN_TEXT = /^[^\p{Cc}[\]<>`\\]+$/u;
 
-/** Characters a shell expands, which no Playwright project name on a command line may hold. */
-const SHELL_EXPANDED = /[$"%!]/;
+/**
+ * Characters a shell expands, which no Playwright project name on a command line may hold: PowerShell reads the
+ * typographic double quotes (“ ” „) as `"` too.
+ */
+const SHELL_EXPANDED = /[$"%!\u201C\u201D\u201E]/;
 
 /** A positive whole number as a link writes it: no sign, no leading zero, no exponent. */
 const POSITIVE = /^[1-9]\d{0,9}$/;
 
-/** A file a failing line can be in, and a spec. */
+/** A file a failing line can be in; a spec is one as the editor service reads specs (`SPEC_FILE`). */
 const SCRIPT_FILE = /\.[cm]?[jt]sx?$/i;
-const SPEC_FILE = /\.(?:spec|test)\.[cm]?[jt]sx?$/i;
 
 /** Whether an open link's query (as `vscode.Uri.query` gives it, decoded) asks to debug: `debug=1`, alone or not. */
 export function isDebugLink(query: string): boolean {
@@ -167,12 +169,13 @@ export function debugFiles(
   return { file, spec };
 }
 
-/** The prompt that asks before a link runs anything. */
-export function debugPrompt(link: Pick<DebugLink, 'title' | 'line'>): string {
-  return `Piwi: Debug this test here? Piwi runs “${link.title}” headed, one worker, and stops at line ${link.line}.`;
+/** The prompt that asks before a link runs anything: the test, and the Playwright project it runs in. */
+export function debugPrompt(link: Pick<DebugLink, 'title' | 'line' | 'project'>): string {
+  const project = link.project ? ` in the Playwright project “${link.project}”,` : '';
+  return `Piwi: Debug this test here? Piwi runs “${link.title}”${project} headed, one worker, and stops at line ${link.line}.`;
 }
 
-/** What a refused debug link says. */
+/** What a refused debug link says: the paths it quotes are the link's, so none reads as a link of its own. */
 export function debugRefusal(why: string): string {
-  return `Piwi: this Debug in my editor link was refused: ${why}. Nothing was opened or run.`;
+  return inertLinks(`Piwi: this Debug in my editor link was refused: ${why}. Nothing was opened or run.`);
 }

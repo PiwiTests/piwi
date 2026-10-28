@@ -168,6 +168,7 @@ import {
   openLink,
   openLinkMissing,
   resolveOpenFile,
+  inertLinks,
   runTaskName,
   type FailureNode,
   type ProxySettings,
@@ -1472,7 +1473,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       else if (e.newState === State.Running) runControl.breakpointsChanged();
     }),
     lc.onNotification(NOTICE_NOTIFICATION, (notice: Notice) => {
-      const text = `Piwi: ${notice.message}`;
+      // A notice may quote what a tested page wrote (a debug run's suggested locator): it shows as text alone.
+      const text = inertLinks(`Piwi: ${notice.message}`);
       void (notice.severity === 'warning'
         ? vscode.window.showWarningMessage(text)
         : vscode.window.showInformationMessage(text));

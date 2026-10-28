@@ -110,7 +110,17 @@ describe('a debug link', () => {
       title: 'shows "Welcome" for $5 (50% off!)',
     });
     const refusedProject = { refused: 'playwrightProject is not a project name of 1 to 200 characters of plain text' };
-    for (const project of ['chromium$(touch pwned)', 'a"b', '%PATH%', 'x!', '[a](b)', 'p'.repeat(201)]) {
+    // PowerShell reads “ ” „ as `"`: one would end the quoted --project and run what follows.
+    const smartQuotes = ['chromium\u201C ; calc.exe ; #', 'chromium\u201D ; calc.exe', 'a\u201Eb'];
+    for (const project of [
+      'chromium$(touch pwned)',
+      'a"b',
+      '%PATH%',
+      'x!',
+      '[a](b)',
+      'p'.repeat(201),
+      ...smartQuotes,
+    ]) {
       expect(debugLink(query({ playwrightProject: project }))).toEqual(refusedProject);
     }
     expect(debugLink(query({ playwrightProject: 'Mobile Chrome' }))).toMatchObject({ project: 'Mobile Chrome' });
@@ -125,12 +135,30 @@ describe('a debug link', () => {
   });
 
   test('asks before it runs anything, and says what it refused', () => {
-    expect(debugPrompt({ title: 'checkout › pays', line: 5 })).toBe(
+    expect(debugPrompt({ title: 'checkout › pays', line: 5, project: null })).toBe(
       'Piwi: Debug this test here? Piwi runs “checkout › pays” headed, one worker, and stops at line 5.',
+    );
+    // The project the run passes to Playwright is said too.
+    expect(debugPrompt({ title: 'checkout › pays', line: 5, project: 'Mobile Chrome' })).toBe(
+      'Piwi: Debug this test here? Piwi runs “checkout › pays” in the Playwright project “Mobile Chrome”, headed, one ' +
+        'worker, and stops at line 5.',
     );
     expect(debugRefusal('line is not a positive whole number')).toBe(
       'Piwi: this Debug in my editor link was refused: line is not a positive whole number. Nothing was opened or run.',
     );
+  });
+
+  test('says a refused path as text: a link it holds does not read as one', () => {
+    const named = '[Repair the link](command:workbench.action.terminal.sendSequence?{"text":"calc\n"})';
+    const refused = debugFiles(
+      { file: named, spec: named, root: null },
+      { workspaceFolders: ['/work'], configRoots: ['/work'] },
+      { isFile: () => false, realpath: (file) => file },
+    );
+    expect(refused).toMatchObject({ refused: expect.stringContaining('no file of this window matches') });
+    const message = debugRefusal((refused as { refused: string }).refused);
+    expect(message).not.toContain('](');
+    expect(message).toContain('[Repair the link] (command:');
   });
 });
 

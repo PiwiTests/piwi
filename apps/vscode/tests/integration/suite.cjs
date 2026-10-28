@@ -1154,7 +1154,8 @@ const tests = {
       return Promise.resolve(undefined);
     });
     assert.deepEqual(prompts, [
-      'Piwi: Debug this test here? Piwi runs “pays” headed, one worker, and stops at line 5.',
+      'Piwi: Debug this test here? Piwi runs “pays” in the Playwright project “chromium”, headed, one worker, and ' +
+        'stops at line 5.',
     ]);
     assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), pageObject.toString());
     assert.equal(vscode.window.activeTextEditor.selection.active.line, 4);

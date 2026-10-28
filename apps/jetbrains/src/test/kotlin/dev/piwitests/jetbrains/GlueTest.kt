@@ -1025,6 +1025,8 @@ class GlueTest {
         assertEquals("file must not contain '..'", refused(debugQuery("file" to "tests/../../etc/passwd")))
         assertEquals("spec must not contain '..'", refused(debugQuery("spec" to "tests\\..\\..\\secret.spec.ts")))
         assertEquals("network paths are not supported", refused(debugQuery("spec" to "//attacker/share/a.spec.ts")))
+        // Every control character, as VS Code refuses them, not the NUL alone.
+        assertEquals("spec must not contain a control character", refused(debugQuery("spec" to "tests/a\u001b.spec.ts")))
         for (title in listOf(
             "",
             "[Run](command:workbench.action.terminal.new)",
@@ -1036,7 +1038,9 @@ class GlueTest {
         )) {
             assertEquals(title, "test must be a title of 1 to 1000 characters of plain text", refused(debugQuery("test" to title)))
         }
-        for (project in listOf("chromium\$(touch pwned)", "a\"b", "%PATH%", "x!", "<b>", "p".repeat(201))) {
+        // PowerShell reads “ ” „ as `"`: one would end the quoted --project and run what follows.
+        val smartQuotes = listOf("chromium\u201C ; calc.exe ; #", "chromium\u201D ; calc.exe", "a\u201Eb")
+        for (project in listOf("chromium\$(touch pwned)", "a\"b", "%PATH%", "x!", "<b>", "p".repeat(201)) + smartQuotes) {
             assertEquals(
                 project,
                 "playwrightProject must be a project name of 1 to 200 characters of plain text",
@@ -1070,6 +1074,11 @@ class GlueTest {
         assertEquals(
             "Debug this test here? Piwi runs “checkout › pays” headed, one worker, and stops at line 5.",
             Glue.debugPrompt("checkout › pays", 5),
+        )
+        assertEquals(
+            "Debug this test here? Piwi runs “checkout › pays” in the Playwright project “Mobile Chrome”, headed, one " +
+                "worker, and stops at line 5.",
+            Glue.debugPrompt("checkout › pays", 5, "Mobile Chrome"),
         )
         assertEquals(
             "This Debug in my editor link was refused: line must be a positive whole number. Nothing was opened or run.",

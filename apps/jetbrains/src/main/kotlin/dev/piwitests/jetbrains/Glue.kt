@@ -1884,8 +1884,11 @@ object Glue {
      */
     private val PLAIN_TEXT = Regex("^[^\\p{Cc}\\[\\]<>`\\\\]+$")
 
-    /** Characters a shell expands, which no Playwright project name on a command line may hold. */
-    private val SHELL_EXPANDED = Regex("[$\"%!]")
+    /**
+     * Characters a shell expands, which no Playwright project name on a command line may hold: PowerShell reads the
+     * typographic double quotes (“ ” „) as `"` too.
+     */
+    private val SHELL_EXPANDED = Regex("[$\"%!\u201C\u201D\u201E]")
 
     /** A positive whole number as a link writes it: no sign, no leading zero, no exponent, 32 bits at most. */
     private fun positive(value: String?): Int? =
@@ -1923,7 +1926,7 @@ object Glue {
     /** Why a path given to Open in IDE is refused, or null when it is acceptable. */
     private fun refusedPath(name: String, path: String): String? = when {
         path.length > MAX_OPEN_PATH -> "$name is at most $MAX_OPEN_PATH characters"
-        '\u0000' in path -> "$name must not contain a NUL character"
+        path.any { it.isISOControl() } -> "$name must not contain a control character"
         // A UNC path would make the IDE reach a network share (and send the user's credentials to it).
         path.startsWith("//") -> "network paths are not supported"
         path.split('/').any { it == ".." } -> "$name must not contain '..'"
@@ -1981,9 +1984,11 @@ object Glue {
     /** The button of the prompt that asks before a debug request runs anything. */
     const val DEBUG_ANSWER = "Debug"
 
-    /** The prompt that asks before a debug request runs anything, as plain text. */
-    fun debugPrompt(title: String, line: Int): String =
-        "Debug this test here? Piwi runs “$title” headed, one worker, and stops at line $line."
+    /** The prompt that asks before a debug request runs anything, as plain text: the test, and its Playwright project. */
+    fun debugPrompt(title: String, line: Int, project: String? = null): String {
+        val inProject = project?.let { " in the Playwright project “$it”," } ?: ""
+        return "Debug this test here? Piwi runs “$title”$inProject headed, one worker, and stops at line $line."
+    }
 
     /** What a refused debug request says. */
     fun debugRefusal(why: String): String = "This Debug in my editor link was refused: $why. Nothing was opened or run."

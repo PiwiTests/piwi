@@ -1325,6 +1325,14 @@ export function serviceEnvironment(settings: ProxySettings, env: NodeJS.ProcessE
 export const SPEC_FILE = /[^/]\.(?:spec|test)\.[cm]?[jt]sx?$/;
 
 /**
+ * `text` as a notification shows it with no link in it: VS Code reads `[label](command:…)` in a message as a link that
+ * runs the command, so each `](` gets a space. For a message that quotes what a link or a tested page wrote.
+ */
+export function inertLinks(text: string): string {
+  return text.replace(/\]\(/g, '] (');
+}
+
+/**
  * The tests last answered, with one spec's own answer (`piwi/testItems` with `catalog: false`) in place of it: a spec
  * the answer holds joins its Playwright config, in the order of the files; one it does not hold leaves the tree.
  */

@@ -23,7 +23,7 @@ object PiwiDebugLink {
         val failingUri = uriOf(failing) ?: return
         // The notification's text is HTML: the title, plain text already, is escaped too.
         val notification = NotificationGroupManager.getInstance().getNotificationGroup("Piwi").createNotification(
-            StringUtil.escapeXmlEntities(Glue.debugPrompt(debug.title, line)),
+            StringUtil.escapeXmlEntities(Glue.debugPrompt(debug.title, line, debug.project)),
             NotificationType.INFORMATION,
         )
         notification.addAction(

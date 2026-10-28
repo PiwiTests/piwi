@@ -16,7 +16,8 @@ the failure enters your code (a page object's line included), in the captured fr
    JetBrains IDE, or the Piwi extension in VS Code, Cursor or VSCodium, as your **Open in IDE** method picks
    ([Auto](./ide-integration#auto-the-first-method-that-works) asks the plugin first).
 2. The editor opens the failing line, then asks in a notification, never a dialog: **Debug this test here? Piwi runs
-   “Checkout › pays” headed, one worker, and stops at line 16.** Nothing runs until you click **Debug**.
+   “Checkout › pays” in the Playwright project “chromium”, headed, one worker, and stops at line 16.** Nothing runs
+   until you click **Debug**.
 3. Piwi runs that test alone, found in its spec by its title, in the Playwright project it failed in, headed, with
    `--workers=1` and your breakpoints, and stops at the failing line. From there the
    [controls](./editor-run-control) apply, and so does [Code from a pause](./editor-stop-code).

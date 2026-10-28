@@ -26,6 +26,7 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindowManager
 import org.jetbrains.ide.BuiltInServerManager
@@ -347,8 +348,13 @@ object PiwiCommands {
         }
     }
 
+    /**
+     * Show `message`, plain text, in a balloon. A notification's text is HTML, and a message may quote what a link or a
+     * tested page wrote (a refused path, a debug run's suggested locator): it is escaped, so it shows as text alone.
+     */
     fun notify(project: Project, message: String, type: NotificationType = NotificationType.INFORMATION) {
-        NotificationGroupManager.getInstance().getNotificationGroup("Piwi").createNotification(message, type).notify(project)
+        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+            .createNotification(StringUtil.escapeXmlEntities(message), type).notify(project)
     }
 
     private fun background(project: Project, title: String, body: () -> Unit) {
