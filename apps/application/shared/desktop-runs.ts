@@ -70,8 +70,8 @@ export type DesktopRunEvent =
 
 /**
  * A command of the window: one of the hub's (`HubCommand`, answered as the hub answers it), or `show`, which only the
- * window sends: the person opened the run `ref` in the window (`on`), so a failure no pause bar shows is held in it,
- * until the window says otherwise or its stream closes; never in a run nobody attends. Each names the stream it comes
+ * window sends: the person turned **Hold failures** on for the run `ref` (`on`), so a failure no pause bar shows is
+ * held in it, until the window says otherwise or its stream closes; never in a run nobody attends. Each names the stream it comes
  * from (`viewer`, the stream's `hello`), whose views it watches and whose input it plays.
  */
 export type DesktopRunCommand = (HubCommand | { type: 'show'; id: number; ref: string; on: boolean }) & {

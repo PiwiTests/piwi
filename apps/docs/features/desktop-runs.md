@@ -23,13 +23,14 @@ At a stop, the tray says why the test stopped, the call about to run and its pla
 page. **Resume** lets the test go on, **Step** runs one call and stops before the next, and **Finish** runs the test to
 its end without stopping again.
 
-A failing test is held at its line in a run you open in the tray yourself, with **Expand output** (a run starts open:
-collapse it and expand it again), or while [Piwi Picker's Runs window](./runs-window) is open: **Failed at**, its error
-under it, and **Resume** to let it end as it failed. A run nobody attends never holds one: a Flake Lab run, a bisect, a
-lab job, a run with `--repeat-each` above 1 and UI mode go on past each failure.
+**Hold failures**, on each running run in the tray, holds a failing test at its line: **Failed at**, its error under
+it, and **Resume** to let it end as it failed. It is off for a run you start, and on from the start for **Reproduce**,
+which runs to show you the failure; while [Piwi Picker's Runs window](./runs-window) is open, failures are held too. A
+run nobody attends never holds one, and its switch says so: a Flake Lab run, a bisect, a lab job, a run with
+`--repeat-each` above 1 and UI mode go on past each failure.
 
 <figure>
-  <img src="/screenshots/desktop-run-live.png" alt="The Local runs tray of the desktop app: a checkout test stopped at its page.pause() before its click on Pay now, its page watched live, with Resume, Step, Finish, Assert a region and Mock a request">
+  <img src="/screenshots/desktop-run-live.png" alt="The Local runs tray of the desktop app: a running run with its Hold failures switch, and its checkout test stopped at its page.pause() before its click on Pay now, its page watched live, with Resume, Step, Finish, Assert a region and Mock a request">
   <figcaption>A run the desktop app started, stopped at a <code>page.pause()</code> and watched live.</figcaption>
 </figure>
 

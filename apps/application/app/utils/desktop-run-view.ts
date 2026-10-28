@@ -9,6 +9,7 @@
 import type { HubAction, HubCodeAction, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
 import { UNATTENDED_RUN_SUFFIX, isUnattendedDesktopRun, type DesktopRunPick } from '#shared/desktop-runs';
+import type { LocalRunKind } from '~/composables/useDesktopLocalRuns';
 import { runFile, stopError, stopIntents, stopPlace, testName } from '../../../extension/src/shared/runs';
 
 /** The name a run the shell started gives the bundled server on its run channel (`PIWI_RUN_REF`, `hub_env.rs`). */
@@ -22,6 +23,50 @@ export function desktopRunRef(shellId: number): string {
  */
 export function desktopRunOf(ref: string): string {
   return isUnattendedDesktopRun(ref) ? ref.slice(0, -UNATTENDED_RUN_SUFFIX.length) : ref;
+}
+
+/**
+ * Whether a person attends a `playwright test` run with these arguments, as the shell reads them (`attended_args`,
+ * `hub_env.rs`): not one in UI mode (`--ui`), nor one that repeats each test (`--repeat-each` above 1).
+ */
+export function desktopArgsAttended(args: readonly string[]): boolean {
+  for (const [index, arg] of args.entries()) {
+    if (arg === '--ui' || arg.startsWith('--ui=')) return false;
+    const repeat =
+      arg === '--repeat-each' ? args[index + 1] : arg.startsWith('--repeat-each=') ? arg.slice(14) : undefined;
+    if (repeat !== undefined && !(/^\d+$/.test(repeat) && Number(repeat) <= 1)) return false;
+  }
+  return true;
+}
+
+/** A run of the Local runs tray, as far as holding its failures goes: what it is and what its steps run. */
+export interface DesktopHoldRun {
+  kind: LocalRunKind;
+  steps: ReadonlyArray<{ args: readonly string[] }>;
+}
+
+/**
+ * Why a run of the tray holds no failure whatever the person chooses, as the shell names it one nobody attends (a
+ * bisect, a Flake Lab run or lab job, a run that repeats its tests or runs in UI mode); null for one that can.
+ */
+export function desktopHoldRefusal(run: DesktopHoldRun): string | null {
+  if (run.kind === 'bisect') return 'A bisect goes on past each failure.';
+  if (run.kind === 'flake') return 'A Flake Lab run goes on past each failure.';
+  if (run.steps.some((step) => step.args.some((arg) => arg === '--ui' || arg.startsWith('--ui=')))) {
+    return 'UI mode goes on past each failure.';
+  }
+  if (!run.steps.every((step) => desktopArgsAttended(step.args))) {
+    return 'A run that repeats its tests goes on past each failure.';
+  }
+  return null;
+}
+
+/**
+ * Whether a run holds its failures until the person says otherwise (**Hold failures** on from its start): a
+ * reproduction, which runs to see its failure at its line; every other run starts with it off.
+ */
+export function desktopHoldsByDefault(run: Pick<DesktopHoldRun, 'kind'>): boolean {
+  return run.kind === 'reproduce';
 }
 
 /** Names a worker of a run, for what the window keeps of it (its answer, its image, its view). */

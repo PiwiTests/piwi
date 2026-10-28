@@ -9,8 +9,9 @@
  * What it keeps: each live run as the hub last told it, what each code made at a stop came to, and the codes and
  * the locators picked, to copy. The frames of a stop's live view go to whoever listens for that view (`onFrame`):
  * none is reactive state, and only the latest one of each view is kept, in memory, until the view ends. Commands go to
- * `POST /api/desktop/runs/commands`, naming the stream (`viewer`); `show` says which runs the person opened in the
- * window, so a failure no pause bar shows is held in them, and is said again as the stream opens again.
+ * `POST /api/desktop/runs/commands`, naming the stream (`viewer`); `show` says which runs hold their failures (the
+ * tray's **Hold failures**), so a failure no pause bar shows is held in them, and is said again as the stream opens
+ * again.
  */
 import {
   parseHubMessage,

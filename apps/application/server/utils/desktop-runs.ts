@@ -13,8 +13,8 @@
  *    paired Piwi Picker holds since **Allow**, and `GET /api/desktop/live` names the hub to a request carrying it;
  *  - the app's window is a peer of that hub (`RunHub.join`) through routes behind the desktop guard: it hears what
  *    Piwi Picker hears, sends the same commands, and alone receives the code made at a stop, to copy (`stop-code`);
- *  - a failure no pause bar shows is held in a run the person opened in the window (`show`), or while a Runs window of
- *    Piwi Picker follows the runs (`follow`); otherwise it goes on at once, and always in a run nobody attends (a Flake
+ *  - a failure no pause bar shows is held in a run whose **Hold failures** the window turned on (`show`), or while a
+ *    Runs window of Piwi Picker follows the runs (`follow`); otherwise it goes on at once, and always in a run nobody attends (a Flake
  *    Lab, a bisect, a lab job, a run repeating its tests or in UI mode: its ref ends in `-unattended`), whose workers
  *    hear that they hold no failure;
  *  - the code from a stop is rendered by the editor's generator from the file as it is on disk, for a file of a
@@ -145,7 +145,7 @@ export interface DesktopRunsOptions {
 interface RunWindow {
   peer: HubPeer;
   sink: DesktopRunSink;
-  /** The runs the person opened in it: a failure no pause bar shows is held in them. */
+  /** The runs whose Hold failures it turned on: a failure no pause bar shows is held in them. */
   shows: Set<string>;
 }
 

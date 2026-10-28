@@ -3,8 +3,11 @@ import { reactive } from 'vue';
 import type { HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
 import {
+  desktopArgsAttended,
   desktopCodeActions,
   desktopCodeItem,
+  desktopHoldRefusal,
+  desktopHoldsByDefault,
   desktopPickItem,
   desktopRunName,
   desktopRunOf,
@@ -78,6 +81,45 @@ describe('a worker of a desktop run', () => {
     expect(desktopRunName({ project: null, label: 'shop' })).toBe('shop');
     expect(desktopRunName({ project: 'Shop', label: 'shop' })).toBe('Shop');
     expect(desktopRunName({ project: null, label: null })).toBe('Run');
+  });
+
+  test('holds its failures only for a run a person attends, as the shell tells them apart, on for a reproduction', () => {
+    const run = (kind: Parameters<typeof desktopHoldRefusal>[0]['kind'], ...steps: string[][]) => ({
+      kind,
+      steps: steps.map((args) => ({ args })),
+    });
+    // As `attended_args` in hub_env.rs reads them.
+    expect(desktopArgsAttended([])).toBe(true);
+    expect(desktopArgsAttended(['tests/a.spec.ts:3', '--project=chromium', '--headed', '--trace=on'])).toBe(true);
+    expect(desktopArgsAttended(['--repeat-each=1'])).toBe(true);
+    expect(desktopArgsAttended(['--repeat-each', '1'])).toBe(true);
+    for (const args of [
+      ['--ui'],
+      ['--ui=true'],
+      ['--repeat-each=20'],
+      ['--repeat-each', '3'],
+      ['--repeat-each=many'],
+    ]) {
+      expect(desktopArgsAttended(args), args.join(' ')).toBe(false);
+    }
+    expect(desktopHoldRefusal(run('tests', ['tests/a.spec.ts:3']))).toBeNull();
+    expect(desktopHoldRefusal(run('reproduce'))).toBeNull();
+    expect(desktopHoldRefusal(run('repro', ['--headed']))).toBeNull();
+    expect(desktopHoldRefusal(run('bisect'))).toBe('A bisect goes on past each failure.');
+    expect(desktopHoldRefusal(run('flake', []))).toBe('A Flake Lab run goes on past each failure.');
+    expect(desktopHoldRefusal(run('tests', ['--project=a'], ['--project=b', '--ui']))).toBe(
+      'UI mode goes on past each failure.',
+    );
+    expect(desktopHoldRefusal(run('tests', ['--grep', 'pays', '--repeat-each=20', '--trace=on']))).toBe(
+      'A run that repeats its tests goes on past each failure.',
+    );
+    expect(desktopHoldRefusal(run('repro', ['--repeat-each=5']))).toBe(
+      'A run that repeats its tests goes on past each failure.',
+    );
+    // A reproduction runs to see its failure at its line: it holds from its start; every other run starts off.
+    expect(desktopHoldsByDefault({ kind: 'reproduce' })).toBe(true);
+    for (const kind of ['tests', 'repro', 'bisect', 'flake'] as const)
+      expect(desktopHoldsByDefault({ kind })).toBe(false);
   });
 
   test('says where it stands, with Pause while it runs and Resume, Step and Finish at a stop', () => {

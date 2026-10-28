@@ -123,10 +123,9 @@ function tray(page: Page) {
   return page.getByRole('region', { name: 'Local runs' });
 }
 
-/** The person opens the run in the tray themselves: open by default as it runs, it is closed, then opened. */
-async function openRunYourself(page: Page) {
-  await tray(page).getByRole('button', { name: 'Collapse output' }).click();
-  await tray(page).getByRole('button', { name: 'Expand output' }).click();
+/** The run's Hold failures switch in the tray. */
+function holdSwitch(page: Page) {
+  return tray(page).getByRole('switch', { name: 'Hold failures' });
 }
 
 const TEST = {
@@ -267,9 +266,17 @@ test.describe('Desktop run live view', () => {
     await expect(worker.getByText('Running', { exact: true })).toBeVisible();
     await expect(worker.getByText('checkout › pays')).toBeVisible();
     await expect(worker.getByText('chromium · attempt 1')).toBeVisible();
-    // Open by default, the run is not shown live: a failure no pause bar shows would go on. The person opens it.
+    // Hold failures is off: the run is not shown live, and a failure no pause bar shows would go on. Opening or closing
+    // its part of the tray changes nothing; the switch does.
+    await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'false');
+    await expect(holdSwitch(page)).toHaveAccessibleDescription(
+      'A failing test waits at its line for you to look at it and resume.',
+    );
+    await tray(page).getByRole('button', { name: 'Collapse output' }).click();
+    await tray(page).getByRole('button', { name: 'Expand output' }).click();
     expect(commands.filter((c) => c.type === 'show')).toEqual([]);
-    await openRunYourself(page);
+    await holdSwitch(page).click();
+    await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'true');
     await expect
       .poll(() => commands.find((c) => c.type === 'show'))
       .toMatchObject({ ref: REF, on: true, viewer: VIEWER });
@@ -425,13 +432,12 @@ test.describe('Desktop run live view', () => {
     await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
     const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
     await expect(worker.getByText('Running', { exact: true })).toBeVisible();
-    await openRunYourself(page);
+    await holdSwitch(page).click();
     await expect.poll(() => commands.filter((c) => c.type === 'show').at(-1)).toMatchObject({ on: true });
 
-    // The tray closed, a stop opens it again on the run, said in the live region.
+    // The tray closed, the run still holds its failures, and a stop opens it again on the run, said in the live region.
     await tray(page).getByRole('button', { name: 'Close local runs' }).click();
     await expect(tray(page)).toHaveCount(0);
-    await expect.poll(() => commands.filter((c) => c.type === 'show').at(-1)).toMatchObject({ on: false });
     const markup = "Click getByText('<img src=x onerror=alert(1)>')";
     await page.evaluate(
       (event) => window.__hub.send(event),
@@ -445,7 +451,7 @@ test.describe('Desktop run live view', () => {
     // What the hub sends is text: the call's title never becomes markup.
     await expect(worker.getByText(markup)).toBeVisible();
     await expect(worker.locator('img[src="x"]')).toHaveCount(0);
-    await expect.poll(() => commands.filter((c) => c.type === 'show').at(-1)).toMatchObject({ on: true });
+    expect(commands.filter((c) => c.type === 'show')).toEqual([expect.objectContaining({ ref: REF, on: true })]);
 
     // A failure: where it failed and its error, with Resume alone.
     await page.evaluate(
@@ -513,7 +519,7 @@ test.describe('Desktop run live view', () => {
     await expect(worker.getByRole('button', { name: 'Resume' })).not.toBeFocused();
   });
 
-  test('shows a run the person opened from its start, and tells the system of a failure or a page.pause() once', async ({
+  test('holds a run from its first step once Hold failures is on, and tells the system of a failure or a page.pause() once', async ({
     page,
   }) => {
     await installBridge(page);
@@ -523,8 +529,8 @@ test.describe('Desktop run live view', () => {
     await page.getByRole('button', { name: 'Run locally' }).click();
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
-    // Opened by the person before its workers connect: the run is shown by the name its step gave the hub.
-    await openRunYourself(page);
+    // Turned on before its workers connect: the run is shown by the name its step gave the hub.
+    await holdSwitch(page).click();
     await expect.poll(() => commands.find((c) => c.type === 'show')).toMatchObject({ ref: REF, on: true });
     await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
     const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
@@ -558,5 +564,35 @@ test.describe('Desktop run live view', () => {
         'A test waits at page.pause() | checkout › pays stopped at tests/checkout.spec.ts:5.',
         'A test failed and waits | checkout › pays failed at tests/checkout.spec.ts:5.',
       ]);
+
+    // Turned off: the run is shown no more, and its failures go on.
+    await holdSwitch(page).click();
+    await expect.poll(() => commands.filter((c) => c.type === 'show').at(-1)).toMatchObject({ ref: REF, on: false });
+  });
+
+  test('offers no Hold failures for a run nobody attends, and says why', async ({ page }) => {
+    await installBridge(page);
+    const commands = await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: 'Run locally' }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await holdSwitch(page).click();
+    await expect.poll(() => commands.find((c) => c.type === 'show')).toMatchObject({ ref: REF, on: true });
+    // The hub names the run's step as one nobody attends (a run repeating its tests): the switch goes off, and stays.
+    const unattended = session(RUNNING);
+    unattended.session.ref = `${REF}-unattended`;
+    await page.evaluate((event) => window.__hub.send(event), unattended);
+    await expect(holdSwitch(page)).toBeDisabled();
+    await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'false');
+    await expect(holdSwitch(page)).toHaveAccessibleDescription(
+      'Nobody attends a run of this kind: it goes on past each failure.',
+    );
+    await expect.poll(() => commands.filter((c) => c.type === 'show').at(-1)).toMatchObject({ ref: REF, on: false });
+    // Its workers still show in the run, as the tray's own.
+    await expect(
+      tray(page).locator('[data-shot="desktop-run-worker"]').getByText('Running', { exact: true }),
+    ).toBeVisible();
   });
 });

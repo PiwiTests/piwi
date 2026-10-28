@@ -13,14 +13,22 @@
  * of the tray runs or the hub still has a live run: while it does, a headless
  * stop waits for the window, so the tray opens on every stop it hears, and a
  * notification says so of a failure or a `page.pause()` when the window is in
- * the background. A run whose part of the tray the person opened themselves
- * (Expand output) is shown live (`show`), so a failure no pause bar shows
- * waits there too; one open by default or by a stop is not, and the server
- * holds no failure of a run nobody attends (a Flake Lab, a bisect).
+ * the background. A running run's **Hold failures** switch, off by default
+ * and on from the start for a reproduction, makes a failure no pause bar shows
+ * wait at its line (`show`); a run nobody attends (a Flake Lab, a bisect, a
+ * run repeating its tests or in UI mode) holds none, and its switch says why.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
+import { isUnattendedDesktopRun } from '#shared/desktop-runs';
 import { flakeLabOutcome, type LocalRun } from '~/composables/useDesktopLocalRuns';
-import { desktopRunName, desktopRunOf, desktopStopPlace, desktopWorkerTest } from '~/utils/desktop-run-view';
+import {
+  desktopHoldRefusal,
+  desktopHoldsByDefault,
+  desktopRunName,
+  desktopRunOf,
+  desktopStopPlace,
+  desktopWorkerTest,
+} from '~/utils/desktop-run-view';
 
 const store = useDesktopLocalRuns();
 const { runs, trayOpen, activeCount } = store;
@@ -73,15 +81,7 @@ function heardStop(session: HubSession, worker: HubWorker) {
   if (!stop) return;
   trayOpen.value = true;
   const run = runOf(session);
-  if (run) {
-    // Open, but not by the person: the run is not shown live for it.
-    if (expandedByKey.value[run.key] === false) {
-      const choices = { ...expandedByKey.value };
-      delete choices[run.key];
-      expandedByKey.value = choices;
-    }
-    openedByStop.value = { ...openedByStop.value, [run.key]: true };
-  }
+  if (run) expandedByKey.value = { ...expandedByKey.value, [run.key]: true };
   const test = desktopWorkerTest(worker) ?? desktopRunName(session);
   const place = desktopStopPlace(stop, session.root);
   const said = stop.reason === 'failure' ? `${test} failed at ${place}.` : `${test} stopped at ${place}.`;
@@ -114,29 +114,43 @@ useRunStream(() => store.correlatePiwiRuns());
 
 /** Manual expand/collapse choices; unset falls back to the default below. */
 const expandedByKey = ref<Record<number, boolean>>({});
-/** The runs a stop opened: open, as the person's choice and the default leave them, never shown live for it. */
-const openedByStop = ref<Record<number, true>>({});
 
 function isExpanded(run: LocalRun): boolean {
-  return (
-    expandedByKey.value[run.key] ??
-    (!!openedByStop.value[run.key] || run.status === 'running' || run.key === runs.value[0]?.key)
-  );
+  return expandedByKey.value[run.key] ?? (run.status === 'running' || run.key === runs.value[0]?.key);
 }
 
 function toggleExpanded(run: LocalRun) {
   expandedByKey.value = { ...expandedByKey.value, [run.key]: !isExpanded(run) };
 }
 
+/** Each run's Hold failures choice; unset falls back to its kind's (`desktopHoldsByDefault`). */
+const holdByKey = ref<Record<number, boolean>>({});
+
+/** Why a run holds no failure whatever is chosen: one nobody attends, by its kind or as the hub names its steps. */
+function holdRefusal(run: LocalRun): string | null {
+  const refused = desktopHoldRefusal(run);
+  if (refused) return refused;
+  return sessionsOf(run).some((session) => isUnattendedDesktopRun(session.ref))
+    ? 'Nobody attends a run of this kind: it goes on past each failure.'
+    : null;
+}
+
+function holdsFailures(run: LocalRun): boolean {
+  return !holdRefusal(run) && (holdByKey.value[run.key] ?? desktopHoldsByDefault(run));
+}
+
+function setHold(run: LocalRun, on: boolean) {
+  holdByKey.value = { ...holdByKey.value, [run.key]: on };
+}
+
 /**
- * The runs the window shows live, so a failure no pause bar shows is held in them: those the person opened in the open
- * tray themselves (Expand output), never one open by default or by a stop, nor another window's. Each step's name is
- * shown as the step starts, before its workers connect, so a failure right after they do waits too.
+ * The runs the window shows live, so a failure no pause bar shows is held in them: the running ones whose Hold failures
+ * is on, by each step's name as the step starts, before its workers connect, so a failure right after they do waits
+ * too. Opening or closing the tray, or a run's part of it, changes nothing.
  */
 const shownRefs = computed(() => {
-  if (!trayOpen.value) return [];
-  const opened = runs.value.filter((run) => expandedByKey.value[run.key] === true);
-  return [...new Set(opened.flatMap((run) => run.hubRefs))].sort();
+  const held = runs.value.filter((run) => run.status === 'running' && holdsFailures(run));
+  return [...new Set(held.flatMap((run) => run.hubRefs))].sort();
 });
 watch(
   () => shownRefs.value.join(' '),
@@ -232,7 +246,7 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
             <UBadge :color="badge(run).color" variant="subtle" size="sm" class="shrink-0">
               {{ badge(run).label }}
             </UBadge>
-            <span class="text-sm font-medium truncate shrink-0 max-w-40">
+            <span class="text-sm font-medium truncate min-w-0 max-w-40">
               {{ run.projectLabel || `Project ${run.projectId}` }}
             </span>
             <code class="text-[11px] text-muted truncate flex-1 min-w-0" :title="run.steps[run.stepIndex]?.display">
@@ -272,6 +286,24 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
               :aria-label="isExpanded(run) ? 'Collapse output' : 'Expand output'"
               @click="toggleExpanded(run)"
             />
+          </div>
+          <div
+            v-if="run.status === 'running'"
+            class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1"
+            data-shot="desktop-run-hold"
+          >
+            <USwitch
+              :model-value="holdsFailures(run)"
+              :disabled="!!holdRefusal(run)"
+              label="Hold failures"
+              size="sm"
+              :aria-describedby="`desktop-run-hold-${run.key}`"
+              :ui="{ label: 'text-xs font-medium' }"
+              @update:model-value="(on: boolean) => setHold(run, on)"
+            />
+            <p :id="`desktop-run-hold-${run.key}`" class="min-w-0 text-xs text-muted">
+              {{ holdRefusal(run) ?? 'A failing test waits at its line for you to look at it and resume.' }}
+            </p>
           </div>
           <div v-if="run.piwiRunId != null" class="mt-1.5">
             <UButton

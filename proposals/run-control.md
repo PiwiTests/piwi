@@ -305,8 +305,9 @@ the stop takes them; the input, the points on an image and what a stop takes are
 the same license, as the editor service bundles the extension's mock generator. The window holds the hub's stream only
 while a run of its tray runs or the hub still has a live run: while it does, every headless stop waits for it, so the
 tray opens on each stop it hears, once, and the system says so of a failure or a `page.pause()` with the window in the
-background; it says `show` only for the runs the person opened in the tray themselves, by each step's name as the step
-starts, and closing the stream lets every stop go on. The stream is written to the response itself, so the hub's 1 MB
+background; it says `show` only for the running runs whose **Hold failures** switch is on (off by default, on from
+the start for a reproduction, which runs to show its failure, and never offered for a run nobody attends), by each
+step's name as the step starts, and closing the stream lets every stop go on. The stream is written to the response itself, so the hub's 1 MB
 frame wait and 32 MB cut count what the window has not read. Code from a desktop run never goes to an
 editor, even a paired one: it comes to the tray under **Code from the runs**, the block apart from the import lines its
 edits add, each with **Copy** through the window's clipboard (`navigator.clipboard`, the app's loopback origin being a

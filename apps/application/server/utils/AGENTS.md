@@ -222,10 +222,10 @@ runs (`@piwitests/editor/run-host`), plus these:
   (`stop-code`); the hub's peers hear only its sentence (`code`). It is made only for a file of a linked folder, from
   its disk text, and refused once the file was written since the run's first worker connected.
 - **Pick and Record in the test's window, and Assert, are declined**: they end in an editor (its Send to editor pairing,
-  its recorder), which this server has none of. A failure no pause bar shows is held only in a run a window `show`s (the
-  person opened it), or while Piwi Picker `follow`s the runs, and never in a run nobody attends: its ref ends in
-  `-unattended` (`isUnattendedDesktopRun`, `holdsFailures`), as the shell names a Flake Lab, a bisect, a lab job, and a
-  run with `--repeat-each` above 1 or `--ui`.
+  its recorder), which this server has none of. A failure no pause bar shows is held only in a run a window `show`s (its
+  **Hold failures** switch is on), or while Piwi Picker `follow`s the runs, and never in a run nobody attends: its ref
+  ends in `-unattended` (`isUnattendedDesktopRun`, `holdsFailures`), as the shell names a Flake Lab, a bisect, a lab
+  job, and a run with `--repeat-each` above 1 or `--ui`.
 - **A run's picks come back to this server, with a token for that route alone.** The run channel's route also names
   `POST /api/desktop/runs/picks` with the picks token (`picksAddress`, `desktopPicksToken`), never the desktop token,
   which the shell gives each run as `PIWI_EDITOR_SEND`: the pause bar's pick and a pick on the image reach the window to
