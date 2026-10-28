@@ -1,7 +1,4 @@
-import { eq } from 'drizzle-orm';
-import { getDatabase } from '../../../database';
-import { failureClusters } from '../../../database/schema';
-import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
+import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
 import { buildFixPlan } from '../../../utils/fix-plan';
 import { enrichFixPlanOwnership } from '../../../utils/scm/ownership';
 import { withFixPlanSuspectLines } from '../../../utils/suspect-lines';
@@ -23,19 +20,16 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const clusterId = requireRouteId(event, 'id', 'cluster ID');
-  const db = await getDatabase();
-
-  const [cluster] = await db
-    .select({ projectId: failureClusters.projectId })
-    .from(failureClusters)
-    .where(eq(failureClusters.id, clusterId));
-  if (!cluster) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
-
-  await requireProjectAccess(event, cluster.projectId);
+  const { db, projectId } = await requireResolvedProjectAccess(
+    event,
+    clusterId,
+    resolveClusterProjectId,
+    'Failure cluster',
+  );
 
   const plan = await buildFixPlan(db, clusterId);
   if (!plan) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
-  const enriched = await withFixPlanSuspectLines(db, clusterId, enrichFixPlanOwnership(db, cluster.projectId, plan));
+  const enriched = await withFixPlanSuspectLines(db, clusterId, enrichFixPlanOwnership(db, projectId, plan));
 
   if (getQuery(event).format === 'markdown') {
     setResponseHeader(event, 'Content-Type', 'text/markdown; charset=utf-8');

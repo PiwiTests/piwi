@@ -9,8 +9,8 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { originEnv } from '../internal/config/env.js';
+import { connectionFolders, gitRoot, resolveCliConnection } from '../internal/support/connection.js';
 import { resolvePlaywrightCli, spawnPlaywright } from '../internal/support/playwright-spawn.js';
 
 const EXIT_OK = 0;
@@ -34,8 +34,8 @@ Options:
   --no-run              With --write or --out: write it without running it
   --force               Replace an existing file
   --run-mode            The spec without test.fail(), as a reproduction runs it
-  --server-url <url>    Dashboard URL         (env PIWI_DASHBOARD_URL)
-  --api-key <key>       API key               (env PIWI_API_KEY)
+  --server-url <url>    Dashboard URL         (env PIWI_DASHBOARD_URL, .env, the desktop app)
+  --api-key <key>       API key               (env PIWI_API_KEY, .env)
 
 Exit codes: 0 printed or written (and, when run, the test behaved as its
 test.fail() expects: the bug reproduces), 1 the run did not (the bug may be
@@ -63,7 +63,8 @@ function readOption(argv: string[], name: string): string | undefined {
   return value !== undefined && !value.startsWith('--') ? value : undefined;
 }
 
-export function parseBugArgs(argv: string[], env: NodeJS.ProcessEnv): BugArgs {
+/** Parse the arguments; the connection falls back to the `.env` of `dirs`, then the desktop app. */
+export function parseBugArgs(argv: string[], env: NodeJS.ProcessEnv, dirs: string[] = []): BugArgs {
   let idText: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]!;
@@ -79,8 +80,13 @@ export function parseBugArgs(argv: string[], env: NodeJS.ProcessEnv): BugArgs {
   for (const flag of VALUE_FLAGS) {
     if (argv.includes(flag) && readOption(argv, flag) === undefined) throw new Error(`${flag} expects a value`);
   }
-  const serverUrl = (readOption(argv, '--server-url') ?? env.PIWI_DASHBOARD_URL ?? '').replace(/\/+$/, '');
-  if (!serverUrl) throw new Error('No dashboard — pass --server-url or set PIWI_DASHBOARD_URL');
+  const connection = resolveCliConnection(
+    { serverUrl: readOption(argv, '--server-url'), apiKey: readOption(argv, '--api-key') },
+    env,
+    dirs,
+    'piwi bug',
+  );
+  if (!connection) throw new Error('No dashboard — pass --server-url or set PIWI_DASHBOARD_URL (environment or .env)');
   const out = readOption(argv, '--out') ?? null;
   const write = argv.includes('--write') || out !== null;
   return {
@@ -90,8 +96,8 @@ export function parseBugArgs(argv: string[], env: NodeJS.ProcessEnv): BugArgs {
     run: write && !argv.includes('--no-run'),
     force: argv.includes('--force'),
     mode: argv.includes('--run-mode') ? 'run' : 'commit',
-    serverUrl,
-    apiKey: readOption(argv, '--api-key') ?? env.PIWI_API_KEY ?? null,
+    serverUrl: connection.serverUrl,
+    apiKey: connection.apiKey,
   };
 }
 
@@ -126,20 +132,6 @@ async function fetchBugSpec(
   const body = (await res.json()) as Partial<BugSpec>;
   if (typeof body.code !== 'string' || typeof body.path !== 'string') throw new Error('the dashboard sent no spec');
   return { code: body.code, path: body.path, warnings: Array.isArray(body.warnings) ? body.warnings : [] };
-}
-
-/** The root of the git repository holding `cwd`; null outside one. */
-function repositoryRoot(cwd: string): string | null {
-  try {
-    const out = execFileSync('git', ['rev-parse', '--show-toplevel'], {
-      cwd,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    return out ? path.resolve(out) : null;
-  } catch {
-    return null;
-  }
 }
 
 /** `dir` with symbolic links resolved, as far as it exists. */
@@ -182,14 +174,15 @@ export async function runBug(
   }
   let args: BugArgs;
   try {
-    args = parseBugArgs(argv, env);
+    // With --server-url the connection takes nothing from a .env, so the folders are not looked up.
+    args = parseBugArgs(argv, env, readOption(argv, '--server-url') ? [] : connectionFolders(cwd));
   } catch (e) {
     console.error(`piwi bug: ${(e as Error).message}\n\n${USAGE}`);
     return EXIT_ERROR;
   }
 
   // --out is read from the working directory; the bugs folder from the repository root.
-  const root = args.write ? repositoryRoot(cwd) : null;
+  const root = args.write ? gitRoot(cwd) : null;
   const outFile = args.out !== null ? path.resolve(cwd, args.out) : null;
   let spec: BugSpec;
   try {

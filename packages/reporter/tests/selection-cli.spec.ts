@@ -50,8 +50,25 @@ describe('parseSelectArgs', () => {
   });
 
   it('requires a server URL and a key', () => {
-    expect(() => parseSelectArgs(['smoke'], {})).toThrow(/dashboard URL/);
+    expect(() => parseSelectArgs(['smoke'], { PIWI_DESKTOP_CONFIG: '/nonexistent/desktop.json' })).toThrow(/dashboard URL/);
     expect(() => parseSelectArgs(['--format', 'grep'], env)).toThrow(/selection key/);
+  });
+
+  it('reads the connection and the project from the .env of the folders it is given', () => {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-select-env-'));
+    try {
+      fs.writeFileSync(
+        path.join(folder, '.env'),
+        'PIWI_DASHBOARD_URL=https://dash.example\nPIWI_API_KEY=pd_workspace\nPIWI_PROJECT_NAME=web\n',
+      );
+      expect(parseSelectArgs(['smoke'], { PIWI_DESKTOP_CONFIG: '/nonexistent/desktop.json' }, [folder])).toMatchObject({
+        serverUrl: 'https://dash.example',
+        apiKey: 'pd_workspace',
+        project: 'web',
+      });
+    } finally {
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
   });
 
   it('rejects an unparseable budget', () => {

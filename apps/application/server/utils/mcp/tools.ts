@@ -9,6 +9,7 @@ import {
 } from '#shared/handlers/projects';
 import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
+import { describeProjectRunScope } from '#shared/project-run-scope';
 import { buildFixPlan } from '../fix-plan';
 import { codeownersOwnerResolver, enrichFixPlanOwnership } from '../scm/ownership';
 import { withFixPlanSuspectLines } from '../suspect-lines';
@@ -482,6 +483,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         totalRuns: p.totalRuns,
         totalTestCases: p.totalTestCases,
         tags: p.tags?.length ? p.tags.map((t: any) => t.name) : null,
+        statusFilter: p.statusFilter ? describeProjectRunScope(p.statusFilter, p.statusDefaultBranch) : null,
         latestRun: p.latestRun
           ? dropNulls({
               id: p.latestRun.id,

@@ -20,6 +20,7 @@
  */
 import * as fs from 'node:fs';
 import { formatGateResult, type GatePolicy, type GateResult } from '@piwitests/core/gate';
+import { resolveCliConnection } from '../internal/support/connection.js';
 
 const EXIT_OK = 0;
 const EXIT_VIOLATED = 1;
@@ -50,8 +51,8 @@ Where the run comes from (first match wins):
   (default)                ./piwi-run.json, if it exists
 
 Connection:
-  --server-url <url>       Dashboard URL      (env PIWI_DASHBOARD_URL)
-  --api-key <key>          API key            (env PIWI_API_KEY)
+  --server-url <url>       Dashboard URL      (env PIWI_DASHBOARD_URL, .env, the desktop app)
+  --api-key <key>          API key            (env PIWI_API_KEY, .env)
 
 Policy (at least one rule or warn-only flag is required):
   --require-tag <tags>     Comma-separated; every test carrying the tag must pass
@@ -114,9 +115,16 @@ function readRunIdFromFile(path: string): number | null {
   }
 }
 
-export function parseGateArgs(argv: string[], env: NodeJS.ProcessEnv): GateArgs {
-  const serverUrl = (readOption(argv, '--server-url') ?? env.PIWI_DASHBOARD_URL ?? '').replace(/\/$/, '');
-  if (!serverUrl) throw new Error('No dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL');
+/** Parse the arguments; the connection falls back to the `.env` of `dirs`, then the desktop app. */
+export function parseGateArgs(argv: string[], env: NodeJS.ProcessEnv, dirs: string[] = []): GateArgs {
+  const connection = resolveCliConnection(
+    { serverUrl: readOption(argv, '--server-url'), apiKey: readOption(argv, '--api-key') },
+    env,
+    dirs,
+    'piwi gate',
+  );
+  if (!connection)
+    throw new Error('No dashboard URL — pass --server-url or set PIWI_DASHBOARD_URL (environment or .env)');
 
   let runId = Number(readOption(argv, '--run-id') ?? NaN);
   if (!Number.isFinite(runId) || runId <= 0) {
@@ -148,8 +156,8 @@ export function parseGateArgs(argv: string[], env: NodeJS.ProcessEnv): GateArgs 
   };
 
   return {
-    serverUrl,
-    apiKey: readOption(argv, '--api-key') ?? env.PIWI_API_KEY ?? null,
+    serverUrl: connection.serverUrl,
+    apiKey: connection.apiKey,
     runId,
     policy,
     maxUncoveredChanges: readCount(argv, '--max-uncovered-changes'),
@@ -182,7 +190,11 @@ async function requestGate(args: GateArgs): Promise<GateResult> {
 }
 
 /** Run the gate. Returns the process exit code rather than calling `exit`. */
-export async function runGate(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
+export async function runGate(
+  argv: string[],
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd(),
+): Promise<number> {
   if (argv.includes('-h') || argv.includes('--help')) {
     console.log(USAGE);
     return EXIT_OK;
@@ -190,7 +202,7 @@ export async function runGate(argv: string[], env: NodeJS.ProcessEnv = process.e
 
   let args: GateArgs;
   try {
-    args = parseGateArgs(argv, env);
+    args = parseGateArgs(argv, env, [cwd]);
   } catch (e) {
     console.error(`piwi gate: ${(e as Error).message}\n`);
     console.error(USAGE);

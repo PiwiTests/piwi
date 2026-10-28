@@ -84,7 +84,7 @@ Options:
   --json               Print the results as JSON instead of text
   --server-url <url>   Dashboard URL (env PIWI_DASHBOARD_URL, .env, the desktop app)
   --api-key <key>      Reporter API key (env PIWI_API_KEY, .env)
-  --project <name|id>  The Piwi project, for a file:line test (env PIWI_PROJECT_NAME)
+  --project <name|id>  The Piwi project, for a file:line test (env PIWI_PROJECT_NAME, .env)
 
 Exit codes: 0 an arm reproduced the failure (verify: the fix held),
             1 nothing reproduced (verify: it still fails, or too few runs),
@@ -566,6 +566,7 @@ async function loadPlan(args: FlakeArgs, commit: string | null): Promise<{ plan:
     { serverUrl: args.serverUrl, apiKey: args.apiKey, project: args.project },
     process.env,
     [process.cwd()],
+    args.verify ? 'piwi flake verify' : 'piwi flake',
   );
   if (!connection) {
     throw new FlakeError(

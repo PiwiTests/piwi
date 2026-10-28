@@ -1,4 +1,4 @@
-import { getProjectScope, requireProjectAccess, requireRouteId } from '../../utils/project-access';
+import { getProjectScope, requireProjectPermission, requireRouteId } from '../../utils/project-access';
 import { getShareLink, revokeShareLink } from '../../utils/share-links';
 import { forgetLiveDashboard } from '../../utils/share-view';
 import { requireAuth } from '../../utils/auth';
@@ -21,25 +21,22 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'share link ID');
+  const user = await requireAuth(event);
   const db = await getDatabase();
   const link = await getShareLink(db, id);
   if (!link) {
     throw apiError({ statusCode: 404, message: 'Share link not found' });
   }
   if (link.entityKind === 'report') {
-    const user = await requireAuth(event);
     await reportRoute(async () =>
       getReportSnapshot(db as any, link.entityId, await getProjectScope(db, user as any, 'share:create')),
     );
   } else if (link.entityKind === 'dashboard') {
-    const user = await requireAuth(event);
     await dashboardRoute(async () =>
       loadDashboardDefinition(db as any, String(link.entityId), await dashboardActor(event, user as any)),
     );
   } else if (link.projectId != null) {
-    await requireProjectAccess(event, link.projectId);
-  } else {
-    await requireAuth(event);
+    await requireProjectPermission(event, link.projectId);
   }
   await revokeShareLink(db, id);
   forgetLiveDashboard(id);

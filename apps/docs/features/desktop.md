@@ -55,10 +55,10 @@ its local runs here with
 **Setup** carry once you turn on **CI reports to a team server**.
 
 When the tests run as another user or in a container, **Setup → Send results to this app** gives the
-address (port 3000 unless it is taken) and the token to configure by hand. Keep the token in `PIWI_API_KEY`, not in
-the config.
+address (port 3000 unless taken) and the token to configure by hand. Keep the token in `PIWI_API_KEY`, not the
+config.
 
-A dashboard link opened in your browser opens in the app instead.
+A dashboard link opened in your browser opens in the app; a tab opened for it closes.
 
 ## Projects from local folders
 

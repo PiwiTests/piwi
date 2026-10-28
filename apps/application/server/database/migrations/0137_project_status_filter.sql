@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `status_filter` text;

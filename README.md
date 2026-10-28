@@ -258,7 +258,7 @@ Contributions are welcome: [CONTRIBUTING.md](CONTRIBUTING.md) covers dev setup, 
 conventions, and [AGENTS.md](AGENTS.md) has the architecture tour.
 
 ```bash
-cd apps/application && npm install && npm run app:dev   # http://localhost:3000
+cd apps/application && npm install && npm run app:dev   # http://localhost:7494
 ```
 
 ## License

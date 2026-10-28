@@ -2,6 +2,7 @@
 import type { BadgeProps, CommandPaletteGroup, CommandPaletteItem, NavigationMenuItem } from '@nuxt/ui';
 import type { ProjectWithStats } from '~~/types/api';
 import { DOCS_BASE_URL } from '#shared/docs';
+import { describeProjectRunScope, resolveProjectRunScope } from '#shared/project-run-scope';
 
 const route = useRoute();
 const toast = useToast();
@@ -120,9 +121,13 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
     return labelA.localeCompare(labelB);
   });
 
-  // Split into active and others
-  const active = sorted.filter((p) => p.latestRun && new Date(p.latestRun.startTime).getTime() > activeThreshold);
-  const others = sorted.filter((p) => !p.latestRun || new Date(p.latestRun.startTime).getTime() <= activeThreshold);
+  // Split into active and others, by the latest run of any kind: the status filter picks the status, not the activity
+  const isActiveProject = (p: ProjectWithStats) => {
+    const lastRunAt = p.lastRunAt ?? p.latestRun?.startTime;
+    return !!lastRunAt && new Date(lastRunAt).getTime() > activeThreshold;
+  };
+  const active = sorted.filter(isActiveProject);
+  const others = sorted.filter((p) => !isActiveProject(p));
 
   function buildProjectItem(project: ProjectWithStats): NavigationMenuItem {
     const isActive = currentProjectId.value !== null && currentProjectId.value === project.id;
@@ -177,11 +182,9 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
   return items;
 });
 
-const latestRunByItemValue = computed(() => {
-  const map = new Map<string, NonNullable<ProjectWithStats['latestRun']>>();
-  for (const project of projects.value ?? []) {
-    if (project.latestRun) map.set(`project-${project.id}`, project.latestRun);
-  }
+const projectByItemValue = computed(() => {
+  const map = new Map<string, ProjectWithStats>();
+  for (const project of projects.value ?? []) map.set(`project-${project.id}`, project);
   return map;
 });
 
@@ -193,8 +196,11 @@ function projectStatusBadgeProps({
   item: NavigationMenuItem;
   ui: { linkTrailingBadgeSize: () => string; linkTrailingBadge: () => string };
 }) {
+  const project = item.value ? projectByItemValue.value.get(item.value) : undefined;
+  const filter = resolveProjectRunScope(project?.statusFilter);
   return {
-    run: (item.value ? latestRunByItemValue.value.get(item.value) : undefined) ?? null,
+    run: project?.latestRun ?? null,
+    statusFilter: filter ? describeProjectRunScope(filter, project?.statusDefaultBranch) : undefined,
     badge: item.badge as BadgeProps,
     size: ui.linkTrailingBadgeSize() as BadgeProps['size'],
     badgeClass: ui.linkTrailingBadge(),

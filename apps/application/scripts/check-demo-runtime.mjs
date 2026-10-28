@@ -14,7 +14,7 @@
  *   node scripts/check-demo-runtime.mjs
  *
  * Flags, to check guide anchors while adding them:
- *   --url <base>         drive a running server (`--url http://localhost:3000`)
+ *   --url <base>         drive a running server (`--url http://localhost:7494`)
  *                        instead of serving the built demo. Only the anchor
  *                        checks run, and an anchor whose sample acts as a
  *                        persona or that needs the demo build is skipped, as
@@ -64,7 +64,7 @@ const { values: flags } = parseArgs({
   },
 });
 
-/** Where `--desktop` boots its server without `--url`: off 3000, where a dev server may run. */
+/** Where `--desktop` boots its server without `--url`: off the ports where a dev server or the desktop app may run. */
 const DESKTOP_PORT = 3050;
 /** The running server to drive: `--url`, else the one `--desktop` boots; null to serve the built demo. */
 const SERVER = flags.url ? new URL(flags.url) : flags.desktop ? new URL(`http://localhost:${DESKTOP_PORT}`) : null;

@@ -717,7 +717,7 @@ function reportSupersededBranch(request, base) {
 /** Surfaces a scene can be captured against, in the order a run boots their servers. */
 const MODES = ['web', 'tour', 'desktop', 'demo'];
 
-/** Where the `demo` mode serves the built demo: off 3000 and 3050, where dev servers run. */
+/** Where the `demo` mode serves the built demo: off the ports where dev servers and the desktop app run. */
 const DEMO_PORT = 4175;
 
 /** Serves the built demo for the `demo` mode; its base is the demo's sub-path, which every scene route follows. */
@@ -2436,6 +2436,11 @@ const SCENES = [
       expand: [`[data-shot="cluster-occurrence-trend"]`],
     },
     { shot: 'project-targets', route: '/projects/1?tab=settings&section=targets', what: 'the project targets form' },
+    {
+      shot: 'project-status-filter',
+      route: '/projects/3?tab=settings&section=status',
+      what: 'the status filter of a project, the runs that set its status in the sidebar',
+    },
     {
       shot: 'project-url-patterns',
       route: '/projects/1?tab=settings&section=browser-extension',

@@ -9,7 +9,6 @@ import type {
   FlakyTest,
   MarkersResponse,
 } from '~~/types/api';
-import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
 import { drillQueryKey, parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
@@ -77,23 +76,7 @@ async function handleDeleteProject() {
 }
 
 // === FILTERS (persisted per project) ===
-const defaultFilters = (): FilterBarState => ({
-  environments: [],
-  branches: [],
-  fullRunsOnly: true,
-  allBranches: false,
-});
-const filters = useCookie<FilterBarState>(`piwi-filters-project-${projectId}`, {
-  default: defaultFilters,
-  encode: (v) => JSON.stringify(v),
-  decode: (v) => {
-    try {
-      return { ...defaultFilters(), ...(v ? (JSON.parse(v) as Partial<FilterBarState>) : {}) };
-    } catch {
-      return defaultFilters();
-    }
-  },
-});
+const filters = useProjectFilters(projectId);
 
 // === DRILL-DOWN FROM ANALYTICS ===
 // A number on a dashboard links here with its scope: the filters and branch
@@ -184,7 +167,7 @@ const scopedRuns = computed(() => (project.value?.testRuns ?? []).filter((run) =
 const filteredRuns = computed(() => scopedRuns.value.filter(inDrillPeriod));
 
 function resetFilters(): void {
-  filters.value = defaultFilters();
+  filters.value = defaultProjectFilters();
 }
 
 const filtersActive = computed(

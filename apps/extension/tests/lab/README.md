@@ -15,11 +15,11 @@ cope with. `LAB_SET=all` runs both.
 
 ## Running it
 
-The scenarios use the Piwi dashboard with its seeded data, on port 3000. From `apps/application`:
+The scenarios use the Piwi dashboard with its seeded data, on its dev server's port (7494). From `apps/application`:
 
 ```bash
 npm run app:seed:dev
-npm run app:dev:bg        # http://localhost:3000, in the background
+npm run app:dev:bg        # http://localhost:7494, in the background
 ```
 
 Then, from `apps/extension`:
@@ -31,7 +31,7 @@ LAB_DRY=1 npm run extension:lab -- --grep x  # drive the scenarios in a plain br
 LAB_SKIP_BUILD=1 npm run extension:lab       # keep dist/ as it is
 ```
 
-`LAB_ORIGIN` points it at another server (`http://localhost:3000` by default), and `LAB_SETTLE_MS` sets how long it
+`LAB_ORIGIN` points it at another server (`http://localhost:7494` by default), and `LAB_SETTLE_MS` sets how long it
 waits after the first load (5000 by default: the dashboard's dev server hydrates slowly; a scenario can set its own).
 
 The public sites need no server:

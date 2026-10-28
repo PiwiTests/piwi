@@ -26,7 +26,7 @@ describe('parseReportArgs', () => {
   });
 
   it('refuses what it cannot send', () => {
-    expect(() => parseReportArgs([], {})).toThrow(/dashboard URL/);
+    expect(() => parseReportArgs([], { PIWI_DESKTOP_CONFIG: '/nonexistent/desktop.json' })).toThrow(/dashboard URL/);
     expect(() => parseReportArgs(['--format', 'docx'], env)).toThrow(/--format/);
     expect(() => parseReportArgs(['--dashboard', 'team'], env)).toThrow(/--dashboard/);
     expect(() => parseReportArgs(['--format', 'pdf'], env)).toThrow(/--output/);

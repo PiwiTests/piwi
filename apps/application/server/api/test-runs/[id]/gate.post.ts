@@ -1,7 +1,8 @@
 import { and, eq } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
 import { failureClusters, projects, testCases, testRuns, testRunsCases } from '../../../database/schema';
-import { holdsProjectPermission, requireProjectAccess } from '../../../utils/project-access';
+import { requireAuth } from '../../../utils/auth';
+import { holdsProjectPermission, requireProjectPermission } from '../../../utils/project-access';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { evaluateGatePolicy, isEmptyPolicy, type GateFacts, type GatePolicy } from '@piwitests/core/gate';
 import { parseTagFilter } from '#shared/utils/tag-filter';
@@ -73,11 +74,12 @@ export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0');
   if (!id) throw apiError({ statusCode: 400, message: 'Invalid test run ID' });
 
+  await requireAuth(event);
   const db = await getDatabase();
   const [run] = await db.select().from(testRuns).where(eq(testRuns.id, id));
   if (!run) throw apiError({ statusCode: 404, message: 'Test run not found' });
 
-  await requireProjectAccess(event, run.projectId);
+  await requireProjectPermission(event, run.projectId);
 
   const body = (await readBody(event)) as Record<string, unknown> | null;
   const policy: GatePolicy = {

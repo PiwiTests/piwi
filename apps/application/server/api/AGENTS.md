@@ -93,8 +93,11 @@ The early check only proves the user holds the permission _somewhere_. The proje
 - **A route whose `:id` is the project id** calls `requireRouteId(event, 'id', label)`, then
   `requireProjectAccess(event, projectId)`.
 - **A route scoped by a child entity** (run, case, cluster, execution, diagnosis) calls
-  `requireResolvedProjectAccess(event, id, resolveXProjectId, notFoundLabel)`. It resolves the project, answers 404 for
-  a missing entity, then authorizes, and returns `{ db, projectId, user }`, so no second `getDatabase()` is needed.
+  `requireResolvedProjectAccess(event, id, resolveXProjectId, notFoundLabel)`. It authenticates, resolves the project,
+  answers 404 for a missing entity, then authorizes, and returns `{ db, projectId, user }`.
+- **Authenticate before any lookup by a request's id**, so a caller without credentials gets 401 whether the id exists
+  or not. A handler that loads the row itself calls `requireAuth(event)`, then `requireProjectPermission(event,
+  projectId)` (`tests/unit/request-access.test.ts`, `tests/unit/route-permissions.test.ts`).
 - Both refuse with 403: "No access to this project" when the user cannot read the project, "Insufficient permissions"
   when they read it without the route's permission.
 - **A list handler takes the user's project scope**: `getProjectScope(db, user, permission = 'project:read')` returns

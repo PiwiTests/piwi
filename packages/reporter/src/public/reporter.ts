@@ -18,7 +18,7 @@ import { Uploader } from '../internal/submit/uploader.js';
 import { StreamBuffer } from '../internal/streaming/stream-buffer.js';
 import { CrashRecovery } from '../internal/streaming/crash-recovery.js';
 import { FileHandler } from '../internal/files/file-handler.js';
-import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES } from '../internal/capture/attachments.js';
+import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES, findPiwiAttachment } from '../internal/capture/attachments.js';
 import { MetadataCollector, resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
 import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '@piwitests/core/step-analysis';
@@ -644,7 +644,7 @@ export class PiwiDashboardReporter {
 
     if (this.options.collectPerformanceMetrics && result.steps?.length > 0) {
       // The stops at Piwi's pause bar: the steps keep their clock, the statistics leave the stopped time out.
-      const pauses = readPauses(result.attachments?.find((a) => a.name === ATTACHMENT_NAMES.pauses)?.body);
+      const pauses = readPauses(findPiwiAttachment(result.attachments, ATTACHMENT_NAMES.pauses)?.body);
       testCase.performanceMetrics = collectStepMetrics(result.steps, result.errors, pauses);
       const stepEvents = extractTestStepEvents(result.steps, result.startTime);
       const waitEvents = extractWaitEvents(result.steps);
@@ -662,7 +662,7 @@ export class PiwiDashboardReporter {
       // correlated with pw:api steps by index.
       const locatorAttachment =
         this.options.captureLocators !== false
-          ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.locators)
+          ? findPiwiAttachment(result.attachments, ATTACHMENT_NAMES.locators)
           : undefined;
       if (locatorAttachment?.body) {
         try {
@@ -674,7 +674,7 @@ export class PiwiDashboardReporter {
       // The page each locator call ran on, recorded by the same locator wrapper.
       const pagesAttachment =
         this.options.captureLocators !== false
-          ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.locatorPages)
+          ? findPiwiAttachment(result.attachments, ATTACHMENT_NAMES.locatorPages)
           : undefined;
       if (pagesAttachment?.body) {
         try {
@@ -689,7 +689,7 @@ export class PiwiDashboardReporter {
     // The source files the test executed, when code reach is on.
     const reachAttachment =
       this.coverageSettings.browser !== 'off'
-        ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.codeReach)
+        ? findPiwiAttachment(result.attachments, ATTACHMENT_NAMES.codeReach)
         : undefined;
     if (reachAttachment?.body) {
       try {
@@ -782,7 +782,7 @@ export class PiwiDashboardReporter {
         // A file already moved or removed.
       }
     }
-    const attachment = result.attachments?.find((a) => a.name === ATTACHMENT_NAMES.resources);
+    const attachment = findPiwiAttachment(result.attachments, ATTACHMENT_NAMES.resources);
     const census = parseResourceCensus(attachment?.body);
     if (census) {
       this.resourceCensuses.push(census);

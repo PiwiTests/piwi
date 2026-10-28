@@ -2,6 +2,7 @@ import { defineConfig, devices, type ReporterDescription } from '@playwright/tes
 import PiwiDashboardReporter from '@piwitests/reporter';
 const { wrapConfig } = PiwiDashboardReporter;
 import { join } from 'path';
+import { DEV_SERVER_PORT } from './shared/dev-server-port.mjs';
 import { resolveE2ETarget, targetAuthHeaders } from './tests/desktop-target';
 
 // Where the suite runs: the Playwright-managed server by default, or the Piwi
@@ -148,7 +149,9 @@ const baseConfig = defineConfig({
     : [
         {
           command: serverCommand,
-          url: 'http://localhost:3000',
+          url: `http://localhost:${DEV_SERVER_PORT}`,
+          // The built server listens on 3000 unless told otherwise.
+          env: { NITRO_PORT: String(DEV_SERVER_PORT) },
           reuseExistingServer: !process.env.CI,
           timeout: 60 * 1000,
         },

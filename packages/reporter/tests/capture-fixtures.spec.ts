@@ -13,6 +13,7 @@ import {
   failureError,
 } from '../src/internal/capture/capture-fixtures.js';
 import {
+  ARIA_SNAPSHOT_CONTENT_TYPE,
   ATTACHMENT_NAMES,
   FAILURE_SCREENSHOT_ATTACHMENT,
   LOCATOR_SUGGESTION_ANNOTATION,
@@ -308,14 +309,15 @@ describe('per-call-site capture dedupe', () => {
     const emit = (event: string) => (listeners.get(event) ?? []).forEach((handler) => handler());
 
     const attached: LocatorSnapshot[] = [];
-    const ariaAttachments: string[] = [];
+    const ariaAttachments: Array<{ body: string; contentType?: string }> = [];
     const testInfo = {
       status: infoOverrides.status ?? 'passed',
       file: infoOverrides.file,
       title: infoOverrides.title,
-      attach: vi.fn(async (name: string, body: { body: Buffer | string }) => {
+      attach: vi.fn(async (name: string, body: { body: Buffer | string; contentType?: string }) => {
         if (name === ATTACHMENT_NAMES.locators) attached.push(...JSON.parse(String(body.body)));
-        if (name === ATTACHMENT_NAMES.ariaSnapshot) ariaAttachments.push(String(body.body));
+        if (name === ATTACHMENT_NAMES.ariaSnapshot)
+          ariaAttachments.push({ body: String(body.body), contentType: body.contentType });
       }),
       annotations: [],
     };
@@ -426,6 +428,7 @@ describe('per-call-site capture dedupe', () => {
         { status: 'passed', file: FILE, title: TITLE },
       );
       expect(ariaAttachments).toHaveLength(1);
+      expect(ariaAttachments[0]!.contentType).toBe(ARIA_SNAPSHOT_CONTENT_TYPE);
     });
 
     it('does not sample a passing test outside the due set (rate limit)', async () => {
