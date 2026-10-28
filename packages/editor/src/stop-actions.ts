@@ -32,7 +32,14 @@ import type { Handoff } from './recorder/handoff.js';
 import type { RecordingSessions } from './recorder/sessions.js';
 import type { LineNow } from './run-lines.js';
 import { NO_CODE, type RunSessions, type StopRef, type Viewer } from './run-sessions.js';
-import { caretLocator, renderStopCode, stopCodeRefusal, stopPage, type StopCodeInput } from './stop-code.js';
+import {
+  caretLocator,
+  renderStopCode,
+  renderStopLocator,
+  stopCodeRefusal,
+  stopPage,
+  type StopCodeInput,
+} from './stop-code.js';
 
 /** What the code of a file is written from: its text as the editor holds it, and what its rendering reads. */
 export interface StopTarget {
@@ -103,7 +110,21 @@ const WRITTEN: Record<StopCode['action'], string> = {
   assert: 'the check',
   'assert-region': "the region's ARIA snapshot",
   mock: 'the mock',
+  steps: 'the steps',
+  locator: 'the locator',
 };
+
+/** What each action an agent started writes, as a sentence names it: the person watching reads who made it. */
+const AGENT_WROTE: Record<StopCode['action'], string> = {
+  assert: 'the check the agent made',
+  'assert-region': "the region's ARIA snapshot the agent read",
+  mock: 'the mock the agent made',
+  steps: 'the steps the agent took',
+  locator: 'the locator the agent picked',
+};
+
+/** What an agent writes at a stop: what a person's actions write, or a locator in place of the stopped line's. */
+export type AgentCodeInput = StopCodeInput | { action: 'locator'; locator: string };
 
 function uriToPath(uri: string): string | null {
   try {
@@ -240,6 +261,15 @@ export class StopActions {
     return { ok: answer.ok, message: answer.message, locator: found.locator, count: answer.count };
   }
 
+  /**
+   * For an agent (the service's MCP server): render what it made at a stop, its steps, a check, a region's snapshot or
+   * a locator in place of the stopped line's, and send it to the client to write, the sentences saying the agent made
+   * it; why not otherwise, a client that writes no code included.
+   */
+  agentCode(stop: StopRef, input: AgentCodeInput): RunControlResult {
+    return this.write(stop, input, true);
+  }
+
   /** A worker sent the region picked at its stop: its `toMatchAriaSnapshot` goes to the client. */
   region(stop: StopRef, locator: string, snapshot: string): void {
     const written = this.write(stop, { action: 'assert-region', locator, snapshot });
@@ -316,17 +346,20 @@ export class StopActions {
     return 'refusal' in now ? now : { file, target, line: now.line };
   }
 
-  /** Render the code for a stop and send it to the client; why not otherwise. */
-  private write(stop: StopRef, input: StopCodeInput): RunControlResult {
+  /** Render the code for a stop and send it to the client, saying an agent made it (`agent`); why not otherwise. */
+  private write(stop: StopRef, input: AgentCodeInput, agent = false): RunControlResult {
     if (!this.options.writesCode()) return refuse(NO_CODE);
     const place = this.place(stop);
     if ('refusal' in place) return refuse(place.refusal);
     const { file, target } = place;
-    const rendered = renderStopCode(target.text, place.line, input, {
-      preferLocators: target.preferLocators,
-      expectModule: target.expectModule,
-      character: stop.character,
-    });
+    const rendered =
+      input.action === 'locator'
+        ? renderStopLocator(target.text, place.line, input.locator)
+        : renderStopCode(target.text, place.line, input, {
+            preferLocators: target.preferLocators,
+            expectModule: target.expectModule,
+            character: stop.character,
+          });
     if ('refusal' in rendered) return refuse(rendered.refusal);
     const action = input.action;
     const first = !this.told.has(stop.ref);
@@ -337,10 +370,11 @@ export class StopActions {
     // The client says it wrote the code once it did; anyone else hears it was sent, the client still able to refuse it.
     const { words } = this.options;
     const editor = this.options.editor?.() || 'the editor';
-    const wrote = `${words?.wrote(WRITTEN[action], where) ?? `Piwi wrote ${WRITTEN[action]} above ${where}.`}${goesOn}`;
-    const sent = `${
-      words?.sent(WRITTEN[action], where) ?? `Piwi sent ${WRITTEN[action]} to ${editor} to write above ${where}.`
-    }${goesOn}`;
+    const what = (agent ? AGENT_WROTE : WRITTEN)[action];
+    // A locator takes the place of the stopped line's; any other code goes above it.
+    const at = action === 'locator' ? `in place of the one on ${where}` : `above ${where}`;
+    const wrote = `${words?.wrote(what, where) ?? `Piwi wrote ${what} ${at}.`}${goesOn}`;
+    const sent = `${words?.sent(what, where) ?? `Piwi sent ${what} to ${editor} to write ${at}.`}${goesOn}`;
     this.options.notify({
       ref: stop.ref,
       worker: stop.worker,

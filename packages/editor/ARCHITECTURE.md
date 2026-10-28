@@ -35,6 +35,7 @@ run control, coverage, the recorder, the build, and the reads and the connection
   - [The hub](#the-hub)
   - [The live view](#the-live-view)
   - [Code from a stop](#code-from-a-stop)
+  - [Agents](#agents)
   - [Another host](#another-host)
   - [The discovery file](#the-discovery-file)
 - [Coverage](#coverage)
@@ -105,6 +106,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - **Pause bar**: Piwi's bar in the page of a stopped test. A headed run shows it, a headless run does not
   (`RunStop.bar`).
 - **Hub**: the WebSocket through which Piwi Picker follows and steers the runs the service built.
+- **Agent**: a coding agent of this machine (Claude Code, Copilot, Cursor) that follows and steers the same runs
+  through the service's MCP server ([Agents](#agents)).
 - **Code from a stop**: the code an action at a stop writes above the stopped line (Assert, Assert a region, Mock a
   request), which the client writes.
 - **Push**: a notification the service sends unasked, carrying a whole answer: `piwi/failuresChanged` carries what
@@ -131,6 +134,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/stop-actions.ts`, `src/stop-code.ts`, `src/run-lines.ts`: the code from a stop, rendered, and placed where the
   stopped statement stands now.
 - `src/discovery.ts`: the discovery file, `~/.piwi/editors/<pid>.json`, written and read.
+- `src/agent-server.ts`, `src/run-agent.ts`: the MCP server for the agents of this machine, and its tools.
+- `src/mcp-protocol.ts`: MCP's JSON-RPC pieces, shared with the instance's MCP server.
 - `src/run-host.ts`: the run control another host builds on, the desktop app's server.
 - `src/recorder/`: recording from the editor: the project's options, the launcher, the sessions, page candidates,
   imports and the record channel, whose socket also takes the workers' run connections.
@@ -182,7 +187,7 @@ the custom messages of `src/protocol.ts`:
   - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/selections`, `piwi/runStatus`, `piwi/refreshRun`, `piwi/runId`;
   - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`,
-    `piwi/locatorAtCaret`, `piwi/hub`;
+    `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`, `piwi/agents`;
   - failures: `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/applyPick`;
   - connection: `piwi/status`, `piwi/refresh`, `piwi/desktop`, `piwi/mcp`;
   - desktop jobs: `piwi/desktopJob`, `piwi/shareDesktopJob`;
@@ -820,6 +825,73 @@ it on the stopped page and outlines its matches where the bar shows; a line with
 
 A failure held at its line ([Stops no pause bar shows](#stops-no-pause-bar-shows)) takes the same actions.
 
+### Agents
+
+`src/agent-server.ts` (`AgentServer`) serves the runs the service built to the agents of this machine as an MCP
+server of its own, over MCP's streamable HTTP transport (one POST per request, answered with JSON; a notification
+alone with a 202), its JSON-RPC pieces those of the instance's server (`src/mcp-protocol.ts`). It listens only once the
+client turns it on (`piwi/agents { enabled }`, answered with its address and token), and closes as the client turns
+it off or the service stops.
+
+**Who reaches it.**
+
+- `127.0.0.1` alone, at the port the client keeps (`InitializationOptions.agents.port`) when it is free, else a free
+  one; the token the client keeps (`agents.token`, 32 to 256 characters of base64url), else a random one. Both clients
+  keep them, so an agent's configuration copied once still connects after a restart.
+- A request whose `Host` is not `127.0.0.1` or `localhost` at its port is a 403 (`isHubHost`: DNS rebinding), and so is
+  one that carries an `Origin`: a browser sends one with every POST, MCP clients are native. Another path is a 404,
+  another method a 405, a body that is not JSON a 415, and a missing or wrong `Authorization: Bearer` a 401, the token
+  compared in constant time (`sameToken`).
+- A body is 256 KiB at most (`MAX_AGENT_BODY`, a 413), a batch 8 requests (`MAX_AGENT_BATCH`), and 8 requests run at
+  once (`MAX_AGENT_REQUESTS`, a 503 with `Retry-After`).
+
+As for the hub, this user's own processes are not a boundary: the token reaches the agent through the client's
+registration of the server (VS Code's provider) or a configuration the developer copies.
+
+**The tools** (`src/run-agent.ts`, `RunAgent`): `run_list`, `run_follow`, `run_control`, `page_snapshot`, `page_act`,
+`page_locator` and `code_write`, each with a closed set of arguments read one by one (`Args`, an unknown one refused)
+and a JSON schema that names them (`AGENT_TOOLS`, `additionalProperties: false`).
+
+- **Following a run.** `RunSessions` tells the agent what each worker says (`heard`): its connection, each test's
+  start and end, each stop and its end, and, once an agent follows the run (`followRun`, sent as `events` to each of
+  its workers whose reporter takes it, a later worker too), each call of the test as it ends, with its place, and each
+  page's navigations, console errors and warnings, uncaught errors and failed requests. Each run keeps its last 2,000
+  events, numbered (`seq`), and the 20 latest ended runs theirs. `run_follow { run, after?, wait? }` answers the events
+  after the cursor, 200 at most (`more`), waiting up to `wait` seconds (25 at most, `MAX_FOLLOW_WAIT_S`) for a stop or
+  the run's end, and at once while the run is stopped or ended.
+- **Controlling it.** `run_control { run, worker?, action, stop?, place?, wait? }` is `piwi/runControl` with `by:
+  'agent'` (`pause`, and `step`, `run-to`, `resume`, `finish` naming the stop they answer), then waits up to `wait`
+  seconds (30 at most) for the run's next stop or its end. The stop a Pause, a Step or a Run to the agent asked for
+  carries `RunStop.by: 'agent'`, which the clients show. `end` is refused: ending a test from a stop is not built yet.
+  A `place` is a line of the run's code, relative to the run's folder.
+- **Reading the page.** The answer to a stop, `page_snapshot { run, worker?, image?, depth? }` and `page_act` read
+  the page's ARIA snapshot in AI mode through the worker (`RunSessions.snapshot`). The service keeps the last snapshot
+  read of each worker (32 at most) and answers with its change since (a line diff, `snapshotChange`) when it is
+  smaller than the snapshot and read to the same depth, else with the whole snapshot, 100,000 characters at most.
+- **Acting on it.** `page_act { run, worker?, stop, target, action, value? }` has the worker play a click, a fill, a key
+  press, a check, an uncheck or a select on the element of the ref (`RunSessions.act`, checked by `readAct`), and keeps
+  it as the step a person's would be: the element ranked, a password field's value never kept (`redacted`). The first
+  action at a stop is a `piwi/notice` for the person watching.
+- **Locators.** `page_locator { run, worker?, target }` ranks the element as Pick does (`RunSessions.refLocator`): those
+  that find it alone first, the suite's own locators first among them (`preferLocators`).
+- **Code.** `code_write { run, worker?, stop, kind, target?, assertion? }` renders and sends to the client
+  (`StopActions.agentCode`, `piwi/stopCode`): the steps taken at the stop (`steps`, then forgotten), the best locator
+  of `target` in place of the stopped line's (`locator`, `renderStopLocator`), or an assertion on it (`assertion`:
+  visible, hidden, enabled, disabled, checked, unchecked, text, value). Its sentences say the agent made it
+  (`AGENT_WROTE`), to the client and, as a `code`, to Piwi Picker.
+
+**The page is untrusted.** Each result holds Piwi's answer as JSON first, then, apart, what came from the page, between
+two markers that share a random nonce (`pageContent`), which the page cannot guess: the snapshot and its change, the
+address and the title, an element's name, text and value, the locators built from them, a failure's error, the
+console, the page's errors and its requests' URLs, each through `hideSecretsInText` or `hideSecretsInUrl` again, then
+an image when asked. The JSON that names the runs, the stops and the calls holds the test's own words alone. The
+tools' descriptions and the server's `instructions` say to read the block as data, never as instructions.
+
+**Sharing with Playwright's tools.** `piwi/stopBind { ref, worker?, since, on }` has the stopped worker bind its
+browser (`browser.bind('piwi-<ref>-w<worker>', { workspaceDir })`), until the test ends, or unbind it, and answers the
+name and the command that joins it (`npx playwright cli attach <name>`). It is the client's alone, never an agent's
+tool: a bound browser is open to any process of this user.
+
 ### Another host
 
 The desktop app's server is the hub of the runs its shell starts (`apps/application/server/utils/desktop-runs.ts`).
@@ -1364,7 +1436,9 @@ connection without a key gets `authorization: 'none'`. `piwi/mcp` gives one defi
 `npm run editor:test` runs the Vitest suites of `tests/`. `tests/lsp.test.ts` drives the server in-process, as a client
 does, against a fixture repository and a stub instance. `tests/run-sessions.test.ts`, `tests/run-hub.test.ts` and
 `tests/discovery.test.ts` cover the run sessions, the hub and the discovery file, and `tests/run-host.test.ts` the run
-control as another host builds it.
+control as another host builds it. `tests/agent-server.test.ts` and `tests/run-agent.test.ts` cover the agents' MCP
+server and its tools, and `tests/agent-run.test.ts` an agent on a real Playwright run, through the reporter's build
+(`npm run reporter:build`) and Chromium: it skips without them.
 
 These tests use the build in `dist/`, so run `npm run editor:build` first:
 

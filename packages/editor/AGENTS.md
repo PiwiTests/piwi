@@ -173,6 +173,23 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   `apps/application/server/utils/desktop-runs.ts` wires them, so a change to their options runs its tests too
   (`apps/application/tests/unit/desktop-runs*.test.ts`). Checked here by `tests/run-host.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#another-host))
+- **The agents' MCP server listens on `127.0.0.1` alone, only once the client turns it on (`piwi/agents`), and
+  answers only its own `Host`, a request with no `Origin`, and its bearer token compared in constant time.** Anything
+  else is refused before a tool runs (`src/agent-server.ts`), and a body, a batch and the requests at once are bounded.
+  Checked by `tests/agent-server.test.ts`. ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
+- **An agent's tools are a closed set, each taking a closed set of arguments, and act only at a stop of a run of this
+  window; nothing evaluates code, and code is written only by the client (`piwi/stopCode`).** `src/run-agent.ts`
+  checks each argument (`Args`); a long poll waits `MAX_FOLLOW_WAIT_S` at most. Checked by `tests/run-agent.test.ts`.
+  ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
+- **What comes from the page reaches an agent apart from Piwi's answer, between the markers of a page-content block,
+  its credentials hidden again.** The snapshot, its address and title, an element's words, the locators built from
+  them, the console, the errors and the requests (`pageContent`, `hideSecretsInText`); never in the JSON that names
+  the runs. Checked by `tests/run-agent.test.ts` ("… the page’s text apart …"). ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
+- **What an agent does shows where a person watches.** A stop it asked for carries `RunStop.by: 'agent'`, its first
+  action at a stop is a `piwi/notice`, and its code's sentences say the agent made it (`AGENT_WROTE` in
+  `src/stop-actions.ts`), to the client and to Piwi Picker. Checked by `tests/run-agent.test.ts`.
+- **`src/mcp-protocol.ts` is the instance's MCP server's too** (`apps/application/server/utils/mcp/protocol.ts`
+  re-exports it): a change there changes what the instance answers. ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
 - **The discovery file is this user's alone, and a reader deletes only a dead service's file of this machine.**
   `writeDiscovery` renames a 0600 file into a 0700 folder this user owns, never a link; a reader skips a folder that is
   a link, another user's or open to others, reads only files this user owns, and deletes only a file naming this
@@ -211,8 +228,8 @@ npm run editor:test         # the Vitest suites of tests/
 - [Breakpoints and picked locators](ARCHITECTURE.md#breakpoints-and-picked-locators): `PIWI_PAUSE_AT`, the reporter
   version check, `piwi/applyPick`.
 - [Run control](ARCHITECTURE.md#run-control): the run sessions, `piwi/runControl` and the paused page, the stops no
-  pause bar shows, the hub Piwi Picker connects to, a stopped page's live view, the code from a stop, the desktop app's
-  server as another host, and the discovery file.
+  pause bar shows, the hub Piwi Picker connects to, a stopped page's live view, the code from a stop, the agents' MCP
+  server and its tools, the desktop app's server as another host, and the discovery file.
 - [Coverage](ARCHITECTURE.md#coverage): coverage marks and uncovered changes.
 - [Analysis and completion](ARCHITECTURE.md#analysis-and-completion): the diagnostics and their quick fixes, and where
   completion offers locator chains.

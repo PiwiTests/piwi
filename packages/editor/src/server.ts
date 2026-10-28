@@ -160,6 +160,8 @@ import { RunLines, type DiskFile } from './run-lines.js';
 import { RunSessions } from './run-sessions.js';
 import { RunHub } from './run-hub.js';
 import { StopActions } from './stop-actions.js';
+import { AgentServer } from './agent-server.js';
+import { RunAgent } from './run-agent.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
@@ -212,6 +214,8 @@ import {
   PAUSED_PAGE_REQUEST,
   PICK_AT_REQUEST,
   HUB_REQUEST,
+  AGENTS_REQUEST,
+  STOP_BIND_REQUEST,
   RUN_CONTROL_REQUEST,
   RUN_SESSION_NOTIFICATION,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
@@ -253,6 +257,10 @@ import {
   type PickAtResult,
   type HubParams,
   type HubResult,
+  type AgentsParams,
+  type AgentsResult,
+  type StopBindParams,
+  type StopBindResult,
   type RunControlParams,
   type RunControlResult,
   type SetRunBreakpointsParams,
@@ -1670,6 +1678,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   let runHub: RunHub | null = null;
   /** The loopback ports the client forwards to the hub from the browser's machine (`piwi/hub`). */
   let hubForwarded: number[] = [];
+  /** The MCP server for agents, once `piwi/agents` turned it on; the port and the token the client keeps for it. */
+  let agentServer: AgentServer | null = null;
+  let agentOpening: Promise<AgentServer | null> | null = null;
+  /** What the client last asked of it: a server that opens after it was turned off is closed at once. */
+  let agentWanted = false;
+  let agentPrefs: InitializationOptions['agents'] = undefined;
   /** The command lines of the runs the service built, by ref, which the hub names to Piwi Picker. */
   const runCommands = new Map<string, string>();
   /** The runs the service built to be watched (with the editor's breakpoints, or a `page.pause()`), by ref. */
@@ -1720,6 +1734,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       'refused' in region
         ? stopActions.regionRefused(stop, region.refused)
         : stopActions.region(stop, region.locator, region.snapshot),
+    // An agent following the runs through the MCP server hears what each worker says.
+    heard: (ref, worker, what, root) => runAgent.heard(ref, worker, what, root),
   });
   const recordRequested = (handoff: Handoff) => {
     // The run ran in its config's folder as the file system spells it (`commandFolder`): the test names its file so,
@@ -1789,6 +1805,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     },
     language: () => clientLocale,
     editor: () => clientName,
+  });
+
+  /** The runs the service built, as the tools of its MCP server for the agents of this machine (`piwi/agents`). */
+  const runAgent = new RunAgent({
+    sessions: runSessions,
+    writeCode: (stop, input) => stopActions.agentCode(stop, input),
+    notice: (root, message) =>
+      void connection.sendNotification(NOTICE_NOTIFICATION, {
+        root: root ?? folders[0] ?? '',
+        severity: 'information',
+        message,
+      } satisfies Notice),
+    command: (ref) => runCommands.get(ref) ?? null,
+    preferLocators: (root) => suiteLocators(root ? contextOfRoot(root) : null),
   });
 
   /**
@@ -2126,6 +2156,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     credentials = init?.credentials ?? {};
     answersStops = init?.runControl === true;
     writesCode = init?.stopCode === true;
+    agentPrefs = init?.agents && typeof init.agents === 'object' ? init.agents : undefined;
     clientLocale = typeof params.locale === 'string' && params.locale ? params.locale : null;
     const name = params.clientInfo?.name;
     clientName = typeof name === 'string' && name ? name.slice(0, 200) : null;
@@ -3469,6 +3500,49 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     stopActions.action(params),
   );
 
+  // The MCP server for agents listens only once the client turns it on, and closes as it turns it off.
+  connection.onRequest(AGENTS_REQUEST, async (params: AgentsParams): Promise<AgentsResult> => {
+    agentWanted = params?.enabled === true;
+    if (!agentWanted) {
+      agentServer?.close();
+      agentServer = null;
+      return { url: null, token: null, message: "Piwi's runs are not served to agents." };
+    }
+    if (!agentServer && !shutDown) {
+      agentOpening ??= AgentServer.open({
+        tools: runAgent,
+        port: agentPrefs?.port ?? null,
+        token: agentPrefs?.token ?? null,
+        version: SERVICE_VERSION,
+      }).finally(() => {
+        agentOpening = null;
+      });
+      const opened = await agentOpening;
+      if (opened && (shutDown || !agentWanted || (agentServer && agentServer !== opened))) opened.close();
+      else if (!agentServer) agentServer = opened;
+    }
+    return agentServer
+      ? {
+          url: agentServer.url,
+          token: agentServer.token,
+          message: `Piwi serves the runs of this window to agents at ${agentServer.url}.`,
+        }
+      : { url: null, token: null, message: 'Piwi could not listen on this machine for agents.' };
+  });
+
+  connection.onRequest(STOP_BIND_REQUEST, async (params: StopBindParams): Promise<StopBindResult> => {
+    const answer = await runSessions.bind(
+      { ref: params?.ref, worker: params?.worker ?? null, since: params?.since },
+      params?.on === true,
+    );
+    return {
+      ok: answer.ok,
+      message: answer.message,
+      name: answer.name,
+      command: answer.name ? `npx playwright cli attach ${answer.name}` : null,
+    };
+  });
+
   connection.onRequest(STOP_REQUESTS_REQUEST, (params: StopRequestsParams): Promise<StopRequestsResult> =>
     stopActions.requests(params),
   );
@@ -3531,6 +3605,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     recordChannel = null;
     runHub?.close();
     runHub = null;
+    agentServer?.close();
+    agentServer = null;
+    runAgent.dispose();
     runSessions.dispose();
     if (open) options.publish?.(null);
   };

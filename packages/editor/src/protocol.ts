@@ -479,6 +479,12 @@ export interface InitializationOptions {
    * are refused, from the client and from Piwi Picker alike.
    */
   stopCode?: boolean;
+  /**
+   * What the service's MCP server for agents takes once `piwi/agents` turns it on: the loopback port to listen on, else
+   * a free one when it is taken, and the token an agent sends (32 to 256 characters of base64url), else a new random
+   * one; both kept by the client, so an agent's configuration copied once still connects after a restart.
+   */
+  agents?: { port?: number | null; token?: string | null };
 }
 
 /**
@@ -1335,8 +1341,10 @@ export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-p
  * `assert-region` (`piwi/stopAction`), the queries `requests` (`piwi/stopRequests`), `mock` and `locator`
  * (`piwi/locatorAtCaret`), and, for a viewer outside the page, the stopped page's live view (`view`), the input played
  * on it (`input`, with the click count of a button's `down` and `up`: `input-clicks`) and the element under a point of
- * an image of it (`pick-at`, `piwi/pickAt`). An older reporter lists fewer, or none: the service refuses what it does
- * not take.
+ * an image of it (`pick-at`, `piwi/pickAt`); for an agent, the stopped page's ARIA snapshot (`snapshot`), an action
+ * by an element's ref (`act`), the element's ranked locators (`ref-locator`) and the running tests' events (`events`);
+ * and its browser shared with Playwright's own tools (`bind`, `piwi/stopBind`). An older reporter lists fewer, or
+ * none: the service refuses what it does not take.
  */
 export type RunTake =
   | 'pick'
@@ -1349,7 +1357,12 @@ export type RunTake =
   | 'view'
   | 'input'
   | 'input-clicks'
-  | 'pick-at';
+  | 'pick-at'
+  | 'snapshot'
+  | 'act'
+  | 'ref-locator'
+  | 'events'
+  | 'bind';
 
 /** Where a worker stands stopped: before a call, which runs as soon as the stop is answered. */
 export interface RunStop {
@@ -1376,6 +1389,11 @@ export interface RunStop {
    * reporter that predates it, whose `title` (`Failed: ` and the error's first line) alone says how the test failed.
    */
   error?: string;
+  /**
+   * Who asked for the stop: `agent`, an agent through the service's MCP server (its Pause, Step or Run to), which the
+   * client shows beside the stop. Absent for a stop a person or a breakpoint made.
+   */
+  by?: 'agent';
 }
 
 /** A test a worker runs. */
@@ -1690,7 +1708,11 @@ export interface StopCode {
   worker: number;
   /** The stop the code was made at (`RunStop.since`). */
   since: string;
-  action: 'assert' | 'assert-region' | 'mock';
+  /**
+   * What made it: a check, a region's snapshot or a mock, of a person or an agent; or an agent's own: the steps it took
+   * on the stopped page (`steps`) and a locator it picked (`locator`), whose edit replaces the stopped line's locator.
+   */
+  action: 'assert' | 'assert-region' | 'mock' | 'steps' | 'locator';
   uri: string;
   /** The document's version the edits are placed in; null when the file is not open. */
   version: number | null;
@@ -1706,3 +1728,48 @@ export interface StopCode {
 }
 
 export const STOP_CODE_NOTIFICATION = 'piwi/stopCode';
+
+/**
+ * `piwi/agents`: turn the service's MCP server for agents on (`enabled`) or off. It serves the runs the service
+ * started to the agents of this machine (Claude Code, Copilot, Cursor): on `127.0.0.1` alone, its `Host` its own, no
+ * browser's `Origin`, the token as a bearer `Authorization`, the tools a closed set acting only at a stop of a run of
+ * this editor window, the code written through the client (`piwi/stopCode`).
+ */
+export interface AgentsParams {
+  enabled: boolean;
+}
+
+export interface AgentsResult {
+  /** The streamable HTTP endpoint, `http://127.0.0.1:<port>/mcp`; null while it is off or could not listen. */
+  url: string | null;
+  /** The bearer token an agent sends: null while it is off. */
+  token: string | null;
+  /** One sentence: that it serves, or why not. */
+  message: string;
+}
+
+export const AGENTS_REQUEST = 'piwi/agents';
+
+/**
+ * `piwi/stopBind`: at the stop `since` names, of the run's one stopped worker or `worker`, share its browser with
+ * Playwright's own tools (`on`: `browser.bind('piwi-<ref>-w<worker>', { workspaceDir })`), until the test ends, or stop
+ * sharing it. A bound browser is open to any process of this user: off until asked, every time.
+ */
+export interface StopBindParams {
+  ref: string;
+  worker?: number | null;
+  since: string;
+  on: boolean;
+}
+
+export interface StopBindResult {
+  ok: boolean;
+  /** One sentence: what was shared and until when, its risk, or why not. */
+  message: string;
+  /** The name `playwright-cli attach` takes; null once unshared or refused. */
+  name: string | null;
+  /** The command that joins it, `npx playwright cli attach <name>`; null once unshared or refused. */
+  command: string | null;
+}
+
+export const STOP_BIND_REQUEST = 'piwi/stopBind';

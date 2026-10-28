@@ -133,10 +133,13 @@ export type HubViewAction = 'view' | 'input' | 'input-clicks' | 'pick-at';
  */
 export type HubAction = HubIntent | HubCodeIntent | 'mock' | HubViewAction;
 
-/** The actions that write code at a stop, in the editor. */
-export type HubCodeAction = HubCodeIntent | 'mock';
+/**
+ * The actions that write code at a stop, in the editor: the intents', Mock a request, and an agent's (the editor's MCP
+ * server): the steps it took on the stopped page (`steps`) and a locator in place of the stopped line's (`locator`).
+ */
+export type HubCodeAction = HubCodeIntent | 'mock' | 'steps' | 'locator';
 
-const HUB_CODE_ACTIONS: readonly string[] = ['assert', 'assert-region', 'mock'];
+const HUB_CODE_ACTIONS: readonly string[] = ['assert', 'assert-region', 'mock', 'steps', 'locator'];
 
 const HUB_INTENTS: readonly string[] = ['pick', 'record', 'assert', 'assert-region'];
 
