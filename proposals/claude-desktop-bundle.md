@@ -7,8 +7,10 @@ app's one-click connect and the hosted instance's setup snippet; the other MCP c
 
 **Status.** Proposed; nothing is built. A stopgap shipped first: the desktop app's detection (`claude_desktop_dirs` in
 `apps/desktop/src-tauri/src/mcp_clients.rs`) knows the three Windows folders below and passes over one holding a
-`.user-data-left.*` file, and the MCP page and `apps/docs/features/mcp.md` list them. Rollout step 1, checking a
-hand-built bundle on real installs, comes before any code. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
+`.user-data-left.*` file, and the MCP page and `apps/docs/features/mcp.md` list them. Rollout step 1 is under way: a
+test bundle is built outside the repository (two versions, plus a `piwi_bundle_diagnostics` tool), `mcpb validate`
+accepts its manifest, and its bridge passes the cases of [Tests](#tests) on Node 20 and 22, against a dev server and a
+stub; the checks on real Claude Desktop installs are pending. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
 
 **Summary.** Piwi already has a **bridge**: a process Claude Desktop starts over stdio, which forwards each JSON-RPC
 message to Piwi's `/mcp` endpoint over HTTP (`piwi-desktop mcp-stdio` for the desktop app, `npx mcp-remote` for a hosted
@@ -62,15 +64,17 @@ What the format and Claude Desktop provide, from the [MCPB specification][mcpb-m
 - **`server.type: "node"`** runs `mcp_config.command`, `args` and `env`, with `${__dirname}` (the bundle's folder once
   installed) and `${user_config.<key>}` replaced. Claude Desktop ships its own Node, so the user installs nothing.
 - **`user_config`** declares the settings the dialog asks for (`string`, `number`, `boolean`, `directory`, `file`, each
-  with `required` and `default`). A `string` marked `sensitive` is masked and stored in the OS keychain.
+  with `required` and `default`); the v0.3 schema requires a `title` and a `description` on each. A `string` marked
+  `sensitive` is masked and stored in the OS keychain.
 - **`compatibility`** names the platforms (`darwin`, `win32`) and a minimum Claude Desktop version.
 - **Claude Desktop keeps the bundle in its own data folder**: `Claude Extensions/<id>/`, with its settings in
   `Claude Extensions Settings/<id>.json`, as a third party observed on macOS ([himalaya-mcp][himalaya]). _To check_ on
   Windows. Either way, finding that folder is Claude Desktop's job, not Piwi's.
 - **Organizations can block extensions** through Group Policy or MDM. There, the config file stays the only route.
 - **The `@anthropic-ai/mcpb` command line** validates (`mcpb validate`), packs (`mcpb pack`), signs and verifies
-  (`mcpb sign`, `mcpb verify`: X.509, detached signature) a bundle. How Claude Desktop presents an unsigned bundle:
-  _to check_.
+  (`mcpb sign`, `mcpb verify`: X.509, detached signature) a bundle. Its verification, which the MCPB README says Claude
+  Desktop uses, accepts a signature only when the certificate chains to the OS trust store: a self-signed bundle
+  (`mcpb sign --self-signed`) reads as unsigned. How Claude Desktop presents an unsigned bundle: _to check_.
 
 ## Design
 
@@ -110,7 +114,13 @@ The manifest, in outline:
       "required": false,
       "default": "<the instance's MCP URL>"
     },
-    "api_key": { "type": "string", "title": "API key", "sensitive": true, "required": false }
+    "api_key": {
+      "type": "string",
+      "title": "API key",
+      "description": "Only for an instance that asks for one. Not used with the desktop app.",
+      "sensitive": true,
+      "required": false
+    }
   },
   "tools_generated": true,
   "compatibility": { "platforms": ["darwin", "win32"] }
@@ -206,7 +216,9 @@ template. It is not published to npm: the app bundles its build. Like any worksp
    - where the bundle is installed, and whether Claude Desktop needs a restart to start it;
    - opening a newer version of the same bundle: does it update in place, keep the settings and the key?
    - how an unsigned bundle is presented;
-   - whether `fetch` in Claude Desktop's Node follows `HTTPS_PROXY`.
+   - whether `fetch` in Claude Desktop's Node follows `HTTPS_PROXY`;
+   - what a setting left blank reaches the script as: an empty value or the `${user_config.…}` placeholder (the test
+     bridge reads both as empty).
 
    The answers go into this proposal before step 2.
 
@@ -234,7 +246,9 @@ template. It is not published to npm: the app bundles its build. Like any worksp
   cannot take FSL code.
 - **Proxies.** If Claude Desktop's Node ignores `HTTPS_PROXY`, the script needs undici's `EnvHttpProxyAgent`, as the
   editor service has, which adds a dependency to the bundle.
-- **Signing.** Which certificate signs the bundle, and whether an unsigned one is acceptable for a self-hosted tool.
+- **Signing.** A signature counts only with a code-signing certificate from a public certificate authority (see
+  [MCP bundles](#mcp-bundles)). Buy one, or ship the bundle unsigned, depending on what Claude Desktop shows for an
+  unsigned bundle.
 - **OAuth.** The first version takes an API key. Signing in through the instance's OAuth from the script would replace
   `mcp-remote` entirely, at the cost of a browser flow and a token store in the script.
 - **The variable names.** `PIWI_API_KEY` means the same as the reporter's; `PIWI_MCP_URL` is new, and differs from the
