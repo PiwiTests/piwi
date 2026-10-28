@@ -16,6 +16,8 @@ apps/extension/tests/lab/out
 apps/vscode/CHANGELOG.md
 apps/vscode/tests/e2e/results/
 apps/vscode/tests/e2e/report/
+# What a showcase take leaves (apps/showcase/showcase.mjs): a failed beat's screen and logs
+apps/showcase/results/
 # The JetBrains plugin's Gradle outputs and the IDEs its tests and verifier download
 apps/jetbrains/.gradle
 apps/jetbrains/.intellijPlatform
