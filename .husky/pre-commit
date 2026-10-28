@@ -55,5 +55,6 @@ format_staged packages/picker-dom oxfmt.config.mts packages/picker-dom/src/ pack
 format_staged packages/editor oxfmt.config.mts packages/editor/src/ packages/editor/tests/
 format_staged apps/extension oxfmt.config.mts apps/extension/src/ apps/extension/tests/ apps/extension/scripts/
 format_staged apps/vscode oxfmt.config.mts apps/vscode/src/ apps/vscode/tests/ apps/vscode/build.mjs
+format_staged apps/showcase oxfmt.config.mts apps/showcase/
 
 exit "$failed"

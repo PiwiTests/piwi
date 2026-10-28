@@ -109,6 +109,7 @@ jobs:
               - 'apps/docs/**'
               - 'apps/extension/**'
               - 'apps/vscode/**'
+              - 'apps/showcase/**'
               - 'packages/**'
               - 'integrations/nitro/**'
               - 'shared/**'
@@ -322,6 +323,7 @@ jobs:
           npm run picker-dom:format:check -w packages/picker-dom
           npm run editor:format:check -w packages/editor
           npm run reporter:format:check -w packages/reporter
+          npm run showcase:format:check --prefix apps/showcase
 
       - name: Lint
         working-directory: apps/application
@@ -381,6 +383,13 @@ jobs:
           npm run extension:lint
           npm run extension:typecheck
           npm run extension:test
+
+      # The story itself plays nightly (nightly-showcase.yml): here, its script and its lines.
+      - name: Lint the showcase and its lines
+        working-directory: apps/showcase
+        run: |
+          npm run showcase:lint
+          node showcase.mjs --lint
 
       - name: Test picker-dom integration (drives a real browser)
         working-directory: packages/picker-dom
