@@ -91,6 +91,8 @@ export interface HubStop {
    * another stop, and from a service or a reporter that predates it, whose `title` alone says how the test failed.
    */
   error?: string;
+  /** `agent` for a stop an agent asked for through a host's MCP tools (its Pause, Step or Run to); absent otherwise. */
+  by?: 'agent';
 }
 
 /** A test a worker runs. */
@@ -638,6 +640,7 @@ function readStop(value: unknown): HubStop | null | undefined {
     since: since as string,
     ...(error === undefined ? {} : { error: error as string }),
     ...(value.intents === undefined ? {} : { intents: readActions(value.intents) }),
+    ...(value.by === 'agent' ? { by: 'agent' as const } : {}),
   };
 }
 

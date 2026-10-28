@@ -333,6 +333,13 @@ describe('the hub’s WebSocket', () => {
         }),
       ),
     ).toMatchObject({ session: { workers: [{ stop: { reason: 'other' } }] } });
+    // A stop an agent asked for says so; any other value of `by` is left out.
+    const byAgent = { ...session, workers: [{ ...worker, stop: { ...worker.stop!, by: 'agent' as const } }] };
+    expect(parseHubMessage(json({ type: 'session', session: byAgent }))).toEqual({ type: 'session', session: byAgent });
+    const byOther = parseHubMessage(
+      json({ type: 'session', session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, by: 'me' } }] } }),
+    ) as { session: HubSession };
+    expect(byOther.session.workers[0]!.stop).not.toHaveProperty('by');
     expect(
       parseHubMessage(
         json({
