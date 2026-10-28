@@ -55,14 +55,20 @@ const SETTINGS = {
 
 /**
  * Opens `workspace` in VS Code with the extension at `extensionPath` under development, a fresh profile and no other
- * extension, with `env` over this process's environment; waits until the workbench shows Piwi's status bar item.
- * `close` closes the window and deletes the profile.
+ * extension, with `env` over this process's environment and `settings` over the quiet ones; waits until the workbench
+ * shows Piwi's status bar item. VS Code is taken from `cachePath` (`.vscode-test/` of the current folder by default).
+ * `close` closes the window and deletes the profile; `codePath` and `userDataDir` reach the running window from
+ * another process (`code --user-data-dir … --open-url …`, as the system's handler of `vscode://` links runs it).
  */
-export async function launchVSCode({ extensionPath, workspace, env = {}, scale = 1 }) {
-  const codePath = await downloadAndUnzipVSCode(process.env.VSCODE_TEST_VERSION || VSCODE_VERSION);
+export async function launchVSCode({ extensionPath, workspace, env = {}, scale = 1, cachePath, settings = {} }) {
+  const version = process.env.VSCODE_TEST_VERSION || VSCODE_VERSION;
+  const codePath = await downloadAndUnzipVSCode(cachePath ? { version, cachePath } : version);
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-vscode-user-'));
   fs.mkdirSync(path.join(userDataDir, 'User'), { recursive: true });
-  fs.writeFileSync(path.join(userDataDir, 'User', 'settings.json'), JSON.stringify(SETTINGS, null, 2));
+  fs.writeFileSync(
+    path.join(userDataDir, 'User', 'settings.json'),
+    JSON.stringify({ ...SETTINGS, ...settings }, null, 2),
+  );
   const extensionsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-vscode-ext-'));
   const removeProfile = () => {
     fs.rmSync(userDataDir, { recursive: true, force: true });
@@ -97,6 +103,8 @@ export async function launchVSCode({ extensionPath, workspace, env = {}, scale =
     return {
       app,
       page,
+      codePath,
+      userDataDir,
       close: async () => {
         await app.close().catch(() => {});
         removeProfile();
