@@ -24,6 +24,7 @@ extension does with it. It is reference material: open the section for the area 
 - [Status bar](#status-bar)
   - [Compare with](#compare-with)
 - [Open in IDE](#open-in-ide)
+  - [Debug in my editor](#debug-in-my-editor)
 - [Send to editor](#send-to-editor)
 - [Recording](#recording)
   - [Recording a test](#recording-a-test)
@@ -453,6 +454,24 @@ lies in a workspace folder, then under the Playwright configs' folders, then und
 returns a file outside the workspace folders. The file opens at the 1-based line and column. When this window holds no
 such file, a warning says so: VS Code hands the link to the window focused last.
 
+### Debug in my editor
+
+A link with `debug=1` (`isDebugLink`) also names the test's spec (`spec`), its title after its describe blocks'
+(`test`), its Playwright project (`playwrightProject`) and the failed execution (`execution`). `src/debug-link.ts`
+reads it field by field (`debugLink`): `debug` must be `1`, the line, column and execution positive whole numbers, the
+title and the project plain text (no control character, `[`, `]`, `<`, `>`, backtick or backslash; a project no shell
+expands), a path without `..` nor a network share, and no field twice. `debugFiles` finds both files as an open link's
+are, then follows every symbolic link: each must be in a workspace folder and under a Playwright config's folder, the
+failing one a script file, the test's a spec. A refusal is a warning, and nothing opens or runs.
+
+`src/debug-from-link.ts` opens the failing line, then asks in a notification (`debugPrompt`, never modal). Only
+**Debug** runs anything: the spec saved, `runTests` with `RunTestsArgs.debug` (the failing line, the title, the
+project, the execution), so the editor's breakpoints go with it as for every run; the service says why it builds
+none. The failing line is the run's own breakpoint, kept by the service until the stop
+([A run that debugs a failure](../../packages/editor/ARCHITECTURE.md#a-run-that-debugs-a-failure)), so nothing is
+added to `vscode.debug.breakpoints`. The API `activate` returns takes a debug link with its prompt answered
+(`openDebugLink`), for the integration suite.
+
 ## Send to editor
 
 `src/send-listener.ts` is the Send to editor endpoint: `POST /piwi/send` on `127.0.0.1`, on the port kept in global
@@ -734,3 +753,4 @@ The integration suite (`tests/integration/`) starts a stub instance, writes a fi
   - `testExplorer`: the Testing view's tests, with the result last shown for each;
   - `runSessions`, `executionPoints`, `pausedPage` and `caretCount`: a run's stops, as a fake worker on the run
     channel plays them, and the code written there, a check's included, whose hand-off it plays too.
+  - `openDebugLink`: a debug link, its prompt answered, then its run's stop as a fake worker plays it.

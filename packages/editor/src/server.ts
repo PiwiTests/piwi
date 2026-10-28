@@ -162,6 +162,7 @@ import { RunHub } from './run-hub.js';
 import { StopActions } from './stop-actions.js';
 import { AgentServer } from './agent-server.js';
 import { RunAgent } from './run-agent.js';
+import { DebugRuns, checkedDebugRun, debugArgs, debugTest } from './debug-run.js';
 import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
@@ -1737,8 +1738,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       'refused' in region
         ? stopActions.regionRefused(stop, region.refused)
         : stopActions.region(stop, region.locator, region.snapshot),
-    // An agent following the runs through the MCP server hears what each worker says.
-    heard: (ref, worker, what, root) => runAgent.heard(ref, worker, what, root),
+    // An agent following the runs through the MCP server hears what each worker says, and a debug run its stops.
+    heard: (ref, worker, what, root) => {
+      runAgent.heard(ref, worker, what, root);
+      debugRuns.heard(ref, worker, what, root);
+    },
+  });
+  /** The runs that debug a failure: the line each stops at once, and the suggested locator outlined there. */
+  const debugRuns = new DebugRuns({
+    sessions: runSessions,
+    notice: (root, severity, message) =>
+      void connection.sendNotification(NOTICE_NOTIFICATION, { root: root ?? '', severity, message } satisfies Notice),
   });
   const recordRequested = (handoff: Handoff) => {
     // The run ran in its config's folder as the file system spells it (`commandFolder`): the test names its file so,
@@ -3175,9 +3185,60 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /** The commands that run each test several times, by ref: what their end says when their run reaches no instance. */
   const repeatedCommands = new Map<string, { root: string; repeat: number; target: string }>();
 
+  /**
+   * The command that debugs one test from a failure (`RunTestsArgs.debug`): the test its title names in the spec, as
+   * saved, headed with one worker, stopping once at the failing line, with the editor's breakpoints too; the failure's
+   * suggested locator asked of the instance at once, for the stop. Null, with a notice saying why, when it cannot run.
+   */
+  const debugRunArgs = (context: PiwiContext | null, params: RunTestsArgs): RunCommand | null => {
+    const refuse = (message: string) => {
+      void connection.sendNotification(NOTICE_NOTIFICATION, {
+        root: context?.root ?? '',
+        severity: 'warning',
+        message,
+      } satisfies Notice);
+      return null;
+    };
+    if (!context)
+      return refuse('No Playwright config of this workspace holds the test to debug, so Piwi runs nothing.');
+    const debug = checkedDebugRun(params.debug);
+    if (typeof debug === 'string') return refuse(debug);
+    const spec = uriToPath(params.uri);
+    const relative = spec ? relativeTo(context.root, spec) : null;
+    const stopFile = uriToPath(debug.stop.uri);
+    if (!spec || !relative || !SPEC_FILE.test(relative) || !stopFile || relativeTo(context.root, stopFile) === null) {
+      return refuse('The test to debug and its failing line must be files under the Playwright config’s folder.');
+    }
+    const text = readText(spec);
+    if (text === null) return refuse(`${relative} cannot be read, so Piwi runs nothing.`);
+    const test = debugTest(text, relative, debug.title);
+    if (typeof test === 'string') return refuse(test);
+    const args = debugArgs(`${relative}:${test.line + 1}`, debug.project);
+    const command = playwrightTestCommand(args);
+    if (!command) {
+      return refuse(
+        playwrightTestCommand([args[0]!])
+          ? `The Playwright project “${debug.project}” cannot be passed on a command line.`
+          : `${relative} cannot be passed on a command line, so Piwi runs nothing.`,
+      );
+    }
+    const ref = newRunRef();
+    runWatch.watch(context, ref);
+    const run: RunCommand = { cwd: commandFolder(context), args, command, env: editorRunEnv(ref), ref };
+    const own = Array.isArray(params.breakpoints) ? params.breakpoints : [];
+    const built = withRecording(context, withBreakpoints(context, run, [...own, debug.stop]), params);
+    const execution = debug.execution;
+    const candidate = execution
+      ? () => context.healing(execution).then((healing) => healing?.recommendation?.recommended?.locator ?? null)
+      : null;
+    debugRuns.started(ref, debug.stop, own, candidate);
+    return built;
+  };
+
   connection.onRequest(RUN_ARGS_REQUEST, async (params: RunTestsArgs): Promise<RunCommand | null> => {
     const file = uriToPath(params.uri);
     const context = contexts.find((c) => c.root === params.root) ?? (file ? contextFor(file) : null);
+    if (params.debug) return debugRunArgs(context, params);
     if (!context) return null;
     const repeat = params.repeat ?? null;
     const tests = await testArgs(context, params);
@@ -3488,7 +3549,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   );
 
   connection.onNotification(SET_RUN_BREAKPOINTS_NOTIFICATION, (params: SetRunBreakpointsParams) =>
-    runSessions.setBreakpoints(params),
+    runSessions.setBreakpoints(debugRuns.breakpoints(params)),
   );
 
   connection.onRequest(PAUSED_PAGE_REQUEST, (params: PausedPageParams): Promise<PausedPageResult> =>
@@ -3592,8 +3653,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     stopActions.requests(params),
   );
 
-  connection.onRequest(LOCATOR_AT_CARET_REQUEST, (params: LocatorAtCaretParams): Promise<LocatorAtCaretResult> =>
-    stopActions.locatorAtCaret(params),
+  connection.onRequest(
+    LOCATOR_AT_CARET_REQUEST,
+    async (params: LocatorAtCaretParams): Promise<LocatorAtCaretResult> =>
+      (await debugRuns.atCaret(params)) ?? stopActions.locatorAtCaret(params),
   );
 
   connection.onRequest(DESKTOP_JOB_REQUEST, async (params: DesktopJobParams): Promise<DesktopJobResult> => {

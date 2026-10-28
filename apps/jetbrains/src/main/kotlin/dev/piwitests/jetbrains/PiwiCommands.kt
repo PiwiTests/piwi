@@ -162,15 +162,18 @@ object PiwiCommands {
         notification.notify(project)
     }
 
-    /** Run tests in the Run tool window, pausing at the IDE's breakpoints as **Settings → Tools → Piwi** allows. */
-    fun runTests(project: Project, args: RunTestsArgs) {
+    /**
+     * Run tests in the Run tool window, pausing at the IDE's breakpoints as **Settings → Tools → Piwi** allows. With
+     * `quiet`, a command the service does not build is not said: the service says why it builds no debug run.
+     */
+    fun runTests(project: Project, args: RunTestsArgs, quiet: Boolean = false) {
         background(project, "Piwi: resolving the tests") {
             val service = project.service<PiwiProjectService>()
             val breakpoints = service.breakpoints()
             val withBreakpoints = if (breakpoints.isEmpty()) args else args.copy(breakpoints = breakpoints.map { it.place })
             val command = service.server()?.runArgs(withBreakpoints)?.orNull()
             if (command?.command.isNullOrBlank() || command?.cwd == null) {
-                notify(project, "No command to run these tests (not connected?).", NotificationType.WARNING)
+                if (!quiet) notify(project, "No command to run these tests (not connected?).", NotificationType.WARNING)
             } else {
                 startRun(project, command, breakpoints)
             }

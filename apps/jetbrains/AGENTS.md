@@ -78,6 +78,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   page finds files only in the projects connected to it. Every other request gets a 403 from `PiwiOpenHandler` itself (`OpenOrigins.kt`, `OpenOriginsTest`,
   `PiwiOpenHandlerTest`); a change to its query or answer changes the dashboard's `useOpenInIde` and `ide-links.ts` in
   `apps/application` too. ([Open in IDE](ARCHITECTURE.md#open-in-ide))
+- **A debug request (`debug=1` on `/api/piwi/open`) runs nothing until the person clicks **Debug** in a notification,
+  and names files, a line and a title, never a command.** `Glue.parseOpenRequest` checks each field and refuses one
+  given twice, `PiwiOpenHandler` checks both files again by their canonical paths (`Glue.debugFileRefusal`), and the
+  service builds the run. Checked by `GlueTest`. ([Open in IDE](ARCHITECTURE.md#open-in-ide))
 - **The Send to editor endpoint proves it holds the token on every answer to a challenge, and `GET /api/piwi/live`
   lists hubs only, never a run channel's token.** `isOriginAllowed` allows an extension's origin on `/api/piwi/send`
   and `/api/piwi/live` alone, and leaves the platform's `isAccessible` its check of `Host`. Checked by `PiwiPluginTest`

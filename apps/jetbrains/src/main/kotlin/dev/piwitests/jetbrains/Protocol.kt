@@ -134,7 +134,9 @@ data class EditorBreakpoint(val uri: String, val line: Int)
  * run record the backend's coverage by line; `browser`, set by a browser file's, the browser's coverage by function.
  * `locations` names tests by where their `test(…)` call starts (`TestAtResult.location`), in place of `testIds`: a
  * test the instance does not know yet runs too, without an instance. `repeat` runs each test that many times without
- * retries (`--repeat-each=3 --retries=0`), headless, and the run's end says how many of those runs passed.
+ * retries (`--repeat-each=3 --retries=0`), headless, and the run's end says how many of those runs passed. `debug`
+ * debugs one test from a failure (**Debug in my editor**): the test of the spec at `uri` its title names, headed, with
+ * one worker, stopping once at the failing line; refused with a `piwi/notice` when the spec holds no such test.
  */
 data class RunTestsArgs(
     val uri: String,
@@ -144,6 +146,20 @@ data class RunTestsArgs(
     val coverage: String? = null,
     val locations: List<String>? = null,
     val repeat: Int? = null,
+    val debug: DebugRun? = null,
+)
+
+/**
+ * What a run that debugs one test from a failure stops at, runs and shows there (`RunTestsArgs.debug`): the failing
+ * line it stops at once (`stop`, a breakpoint of that run alone, never one of the IDE's), the test's title after its
+ * describe blocks' joined by ` › `, the Playwright project it failed in, and the failed execution whose locator
+ * healing's recommended locator is outlined at the stop.
+ */
+data class DebugRun(
+    val stop: EditorBreakpoint,
+    val title: String,
+    val project: String? = null,
+    val execution: Int? = null,
 )
 
 data class RunCommandArgs(val cwd: String, val command: String, val env: Map<String, String>? = null)
@@ -800,7 +816,9 @@ data class StopRequestsResult(val ok: Boolean = false, val message: String? = nu
 
 /**
  * `piwi/locatorAtCaret`: count on the page of the stop `since` names the locator at the caret's 0-based `line` of the
- * file at `uri`, outlined there where the pause bar shows; a null `uri` or `line` takes the outline down.
+ * file at `uri`, outlined there where the pause bar shows; a null `uri` or `line` takes the outline down. At the stop
+ * of a run that debugs a failure, while the failure's suggested locator is outlined, the stopped line is answered with
+ * that locator and no count, and the outline stays.
  */
 data class LocatorAtCaretParams(val ref: String, val worker: Int? = null, val since: String, val uri: String?, val line: Int?)
 

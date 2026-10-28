@@ -1836,9 +1836,64 @@ object Glue {
             val check: Boolean,
             val piwiProject: String?,
             val root: String? = null,
+            /** **Debug in my editor** (`debug=1`): the test to run, stopping at `line` of the file, once asked. */
+            val debug: DebugRequest? = null,
         ) : OpenRequest()
 
         data class Refused(val error: String) : OpenRequest()
+    }
+
+    /**
+     * What a Debug in my editor request names beside the failing line: the test's spec as the run reported it, its title
+     * after its describe blocks' (joined by ` › `), the Playwright project it failed in, and the failed execution whose
+     * suggested locator is outlined at the stop.
+     */
+    data class DebugRequest(val spec: String, val title: String, val project: String?, val execution: Int?)
+
+    /** The fields a debug request names, none of them twice. */
+    private val DEBUG_FIELDS = listOf("file", "line", "column", "root", "debug", "spec", "test", "playwrightProject", "execution")
+
+    const val MAX_DEBUG_TITLE = 1000
+    const val MAX_DEBUG_PROJECT = 200
+
+    /**
+     * Text alone: no control character, and none of the characters a notification could read as markup or a link
+     * (`[`, `]`, `<`, `>`, a backtick, a backslash).
+     */
+    private val PLAIN_TEXT = Regex("^[^\\p{Cc}\\[\\]<>`\\\\]+$")
+
+    /** Characters a shell expands, which no Playwright project name on a command line may hold. */
+    private val SHELL_EXPANDED = Regex("[$\"%!]")
+
+    /** A positive whole number as a link writes it: no sign, no leading zero, no exponent, 32 bits at most. */
+    private fun positive(value: String?): Int? =
+        value?.takeIf { Regex("^[1-9][0-9]{0,9}$").matches(it) }?.toLongOrNull()?.takeIf { it <= Int.MAX_VALUE }?.toInt()
+
+    /**
+     * Read what a debug request adds to an open request (`debug=1`), each value checked: `line` a positive whole
+     * number, `test` a title of plain text, `spec` a path as `file` is, `playwrightProject` a name of plain text no shell
+     * expands, `execution` an id; no field given twice. A link is anyone's to write: it names files, a line and a title,
+     * never a command.
+     */
+    private fun parseDebugRequest(query: Map<String, List<String>>, path: String): Any {
+        for (name in DEBUG_FIELDS) if ((query[name]?.size ?: 0) > 1) return "$name is given twice"
+        fun one(name: String) = query[name]?.firstOrNull()
+        if (one("debug") != "1") return "debug must be 1"
+        if (positive(one("line")) == null) return "line must be a positive whole number"
+        if (one("column") != null && positive(one("column")) == null) return "column must be a positive whole number"
+        val spec = one("spec")?.trim()?.ifEmpty { null }?.replace('\\', '/') ?: path
+        refusedPath("spec", spec)?.let { return it }
+        val title = one("test")?.trim().orEmpty()
+        if (title.isEmpty() || title.length > MAX_DEBUG_TITLE || !PLAIN_TEXT.matches(title)) {
+            return "test must be a title of 1 to $MAX_DEBUG_TITLE characters of plain text"
+        }
+        val project = one("playwrightProject")?.trim()?.ifEmpty { null }
+        if (project != null && (project.length > MAX_DEBUG_PROJECT || !PLAIN_TEXT.matches(project) || SHELL_EXPANDED.containsMatchIn(project))) {
+            return "playwrightProject must be a project name of 1 to $MAX_DEBUG_PROJECT characters of plain text"
+        }
+        val execution = one("execution")
+        if (execution != null && positive(execution) == null) return "execution must be an id"
+        return DebugRequest(spec, title, project, execution?.let { positive(it) })
     }
 
     const val MAX_OPEN_PATH = 4096
@@ -1863,6 +1918,15 @@ object Glue {
             refusedPath("root", root)?.let { return OpenRequest.Refused(it) }
             if (!isAbsolutePath(root)) return OpenRequest.Refused("root must be an absolute path")
         }
+        // A debug request's fields are checked first, each by its own rule.
+        val debug = if (query.containsKey("debug")) {
+            when (val read = parseDebugRequest(query, path)) {
+                is DebugRequest -> read
+                else -> return OpenRequest.Refused(read as String)
+            }
+        } else {
+            null
+        }
         val line = last("line")
         val lineNumber = line?.toIntOrNull()
         if (line != null && (lineNumber == null || lineNumber < 1)) return OpenRequest.Refused("line must be a positive integer")
@@ -1871,8 +1935,46 @@ object Glue {
         if (column != null && (columnNumber == null || columnNumber < 1)) return OpenRequest.Refused("column must be a positive integer")
         // `?check` and `?check=1` ask for a check; `?check=0` does not.
         val check = query["check"]?.lastOrNull()?.trim()?.let { it != "0" && it != "false" } ?: query.containsKey("check")
-        return OpenRequest.File(path, lineNumber, columnNumber, check, last("project"), root)
+        return OpenRequest.File(path, lineNumber, columnNumber, check, last("project"), root, debug)
     }
+
+    /**
+     * Why a file a debug request names may not be debugged, with every link followed (`canonical`, the file's
+     * canonical path, and the folders'): it must be in one of `projectRoots` and under one of `configDirs`, the failing
+     * line's a script file, the test's a spec. Null when it may. `named` is the path as the request named it.
+     */
+    fun debugFileRefusal(named: String, canonical: String, projectRoots: List<String>, configDirs: List<String>, spec: Boolean): String? {
+        fun inside(folders: List<String>) = folders.any { folder ->
+            runCatching { Path.of(canonical).normalize().startsWith(Path.of(folder).normalize()) }.getOrDefault(false)
+        }
+        return when {
+            !inside(projectRoots) -> "$named is outside the project's folders"
+            !inside(configDirs) -> "$named is under no Playwright config's folder"
+            spec && !SPEC_FILE.containsMatchIn(canonical) -> "$named is not a spec"
+            !spec && !SCRIPT_FILE.containsMatchIn(canonical) -> "$named is not a JavaScript or TypeScript file"
+            else -> null
+        }
+    }
+
+    /** The button of the prompt that asks before a debug request runs anything. */
+    const val DEBUG_ANSWER = "Debug"
+
+    /** The prompt that asks before a debug request runs anything, as plain text. */
+    fun debugPrompt(title: String, line: Int): String =
+        "Debug this test here? Piwi runs “$title” headed, one worker, and stops at line $line."
+
+    /** What a refused debug request says. */
+    fun debugRefusal(why: String): String = "This Debug in my editor link was refused: $why. Nothing was opened or run."
+
+    /**
+     * The run a yes to a debug request starts (`piwi/runArgs`): the test of the spec at `specUri` its title names,
+     * stopping once at the 1-based `line` of the file at `fileUri`.
+     */
+    fun debugRunArgs(specUri: String, fileUri: String, line: Int, debug: DebugRequest): RunTestsArgs = RunTestsArgs(
+        uri = specUri,
+        testIds = emptyList(),
+        debug = DebugRun(EditorBreakpoint(fileUri, line - 1), debug.title, debug.project, debug.execution),
+    )
 
     /** Whether a path, with forward slashes, is absolute: `/home/me/a.ts` or `C:/me/a.ts`. */
     fun isAbsolutePath(path: String): Boolean = path.startsWith("/") || Regex("^[A-Za-z]:/").containsMatchIn(path)
