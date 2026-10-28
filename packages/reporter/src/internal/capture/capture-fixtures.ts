@@ -152,6 +152,7 @@ import {
   holdStop,
   openRunChannel,
   runChannelOpen,
+  runHost,
   tellHub,
   viewEnded,
   type RunControl,
@@ -1707,7 +1708,7 @@ async function showStop(
       applyPickToSnapshots(sink.capturedLocators, pick);
     }
     console.log(`[piwi] Locator picked at ${callSiteLine(location)}: ${picked.picked.locator}`);
-    return postPickToEditor(editorSendAddress(), pickPayload(picked.picked.locator, location));
+    return postPickToEditor(editorSendAddress(), pickPayload(picked.picked.locator, location), fetch, runHost());
   };
   const onPick = async (picked: PickedLocator) => void (await pickTaken(picked));
   const probe = { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG };
@@ -1788,8 +1789,8 @@ async function showStop(
     if (!bar || !page) {
       console.log(
         failure
-          ? `[piwi] The test failed at ${callSiteLine(location)}: Resume in the editor lets it end as it failed.`
-          : `[piwi] Paused at ${callSiteLine(location)} before ${title}: Resume, Step or Finish in the editor.`,
+          ? `[piwi] The test failed at ${callSiteLine(location)}: Resume in ${runHost()} lets it end as it failed.`
+          : `[piwi] Paused at ${callSiteLine(location)} before ${title}: Resume, Step or Finish in ${runHost()}.`,
       );
       if (page && intents && held) {
         const stop = held.stop;

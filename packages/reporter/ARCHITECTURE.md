@@ -218,6 +218,11 @@ What the package does to a user's run, process by process.
   request, console entry or dialog of the hold is recorded, and its context's code reach
   ends; Playwright's own trace and video record the hold too), and the test timeout is
   held while the stop shows.
+- **The host's name.** `attached` also says what the service calls itself when it is not
+  the editor (`host`: the desktop app, whose server is the hub of the runs its shell
+  starts). The worker's lines name it then (`runHost`): `Resume in the desktop app`, `The
+  connection to the desktop app closed`, and a pick that could not be sent; else they
+  name the editor.
 - It is a stop with the reason `failure` at the failing line (where the error's stack
   enters the test's code, else the failing locator's, else the call a test timeout cut
   short, the runner's step in progress, else the test's declaration). It names its error

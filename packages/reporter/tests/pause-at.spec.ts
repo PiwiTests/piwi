@@ -415,6 +415,23 @@ describe('postPickToEditor', () => {
       log.mockRestore();
     }
   });
+
+  it('names the host the run names in place of the editor', async () => {
+    resetPauseLogs();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const refuse = vi.fn(async () => new Response('{}', { status: 401 })) as unknown as typeof fetch;
+      const address = 'http://127.0.0.1:47211/api/desktop/runs/picks#abcdefghijklmnop_1234';
+      const payload = pickPayload('getByText("Pay")', 'tests/a.spec.ts:3:1');
+      expect(await postPickToEditor(address, payload, refuse, 'the desktop app')).toBe(false);
+      expect(log.mock.calls.map((c: unknown[]) => String(c[0]))).toEqual([
+        '[piwi] Could not send the picked locator to the desktop app: the desktop app answered 401.',
+      ]);
+    } finally {
+      log.mockRestore();
+      resetPauseLogs();
+    }
+  });
 });
 
 /**
