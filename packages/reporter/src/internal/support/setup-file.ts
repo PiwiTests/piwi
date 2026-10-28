@@ -16,19 +16,37 @@ export interface SetupInfo {
   setupToken: string;
   /** Project name this run belongs to */
   projectName: string;
+  /** The run's live view key, when the project turned its live view on: the workers' alone, set in `onBegin`. */
+  liveViewKey?: string;
 }
 
-/** Read and delete the setup info file for the given project. Returns `null` when no file exists. */
-export function readSetupInfo(projectName: string): SetupInfo | null {
+/** Write the setup info file, readable by its owner alone. */
+export function writeSetupInfo(info: SetupInfo): void {
+  const setupFile = getSetupFilePath(info.projectName);
+  fs.writeFileSync(setupFile, JSON.stringify(info), { mode: 0o600 });
+}
+
+/** Read the setup info file for the given project, and leave it in place. Returns `null` when no file exists. */
+export function peekSetupInfo(projectName: string): SetupInfo | null {
   const setupFile = getSetupFilePath(projectName);
   try {
     if (fs.existsSync(setupFile)) {
       const info = JSON.parse(fs.readFileSync(setupFile, 'utf8'));
-      fs.unlinkSync(setupFile);
       if (info.projectName === projectName) return info;
     }
   } catch {
     /* ignore */
   }
   return null;
+}
+
+/** Read and delete the setup info file for the given project. Returns `null` when no file exists. */
+export function readSetupInfo(projectName: string): SetupInfo | null {
+  const info = peekSetupInfo(projectName);
+  try {
+    fs.unlinkSync(getSetupFilePath(projectName));
+  } catch {
+    /* ignore */
+  }
+  return info;
 }

@@ -27,6 +27,7 @@
     "./run-channel": "./src/run-channel.ts",
     "./run-hub": "./src/run-hub.ts",
     "./run-view": "./src/run-view.ts",
+    "./live-view": "./src/live-view.ts",
     "./editor-discovery": "./src/editor-discovery.ts",
     "./function-match": "./src/function-match.ts",
     "./codegen": "./src/codegen.ts",

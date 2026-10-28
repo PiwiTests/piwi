@@ -145,6 +145,15 @@ import { PIWI_ORIGIN_ENV } from '../config/env.js';
 import { stripAnsi } from '@piwitests/core/error-parse';
 import { canRecordFromHere, recordFromHere } from './record-handoff.js';
 import {
+  closeLiveView,
+  liveViewPage,
+  liveViewStopped,
+  liveViewTestBegan,
+  liveViewTestEnded,
+  openLiveView,
+} from './live-view.js';
+import type { LiveCall } from '@piwitests/core/live-view';
+import {
   closeRunChannel,
   editorSendAddress,
   editorShows,
@@ -1717,6 +1726,13 @@ async function showStop(
   const intents = page ? new BarIntents() : null;
   const record: PauseRecord = { title, location, reason, startedAt: Date.now(), duration: 0 };
   sink.stops.push(record);
+  // The run page's live view says the worker is paused, until the stop ends.
+  const stoppedAt = callSitePlace(location);
+  const goneOn = liveViewStopped({
+    reason,
+    call: { title, file: stoppedAt?.file ?? null, line: stoppedAt?.line ?? null },
+    test: testInfo.title,
+  });
   // `end`: the stop ends unanswered, why as its reason (`StopEnd`). `over`: that, or the editor answered; the bar
   // comes down then.
   const end = new AbortController();
@@ -1824,6 +1840,7 @@ async function showStop(
     if (!end.signal.aborted) record.duration = Date.now() - record.startedAt;
     else if (end.signal.reason === 'ended') releaseCall(sink, call?.settled ?? Promise.resolve());
     sink.shownStops.delete(end);
+    goneOn();
     await held?.release();
   });
   const heldAt = testTimeSlot(testInfo)?.elapsed ?? null;
@@ -2064,18 +2081,19 @@ function errorPlace(error: unknown): CodePlace | null {
 
 type RunnerStep = {
   category?: unknown;
+  title?: unknown;
   endWallTime?: unknown;
   steps?: unknown;
   stack?: Array<{ file?: unknown; line?: unknown; column?: unknown }>;
 };
 
 /**
- * The call still running in the test, where the runner placed it in the test's code: the innermost step not ended of
- * a Playwright call, an assertion or a `test.step`, which a test timeout cut short (the runner's steps, a Playwright
- * internal, feature-checked). Null for none.
+ * The call still running in the test, its title and where the runner placed it in the test's code: the innermost step
+ * not ended of a Playwright call, an assertion or a `test.step` (the runner's steps, a Playwright internal,
+ * feature-checked). Null for none.
  */
-function stepInProgress(testInfo: TestInfo): CodePlace | null {
-  let found: CodePlace | null = null;
+function callInProgress(testInfo: TestInfo): { title: string | null; place: CodePlace } | null {
+  let found: { title: string | null; place: CodePlace } | null = null;
   const visit = (steps: unknown): void => {
     if (!Array.isArray(steps)) return;
     for (const step of steps as RunnerStep[]) {
@@ -2083,13 +2101,32 @@ function stepInProgress(testInfo: TestInfo): CodePlace | null {
       const at = step.stack?.[0];
       const called = step.category === 'pw:api' || step.category === 'expect' || step.category === 'test.step';
       if (called && typeof at?.file === 'string' && typeof at.line === 'number') {
-        found = { file: at.file, line: at.line, column: typeof at.column === 'number' ? at.column : 0 };
+        found = {
+          title: typeof step.title === 'string' ? step.title : null,
+          place: { file: at.file, line: at.line, column: typeof at.column === 'number' ? at.column : 0 },
+        };
       }
       visit(step.steps);
     }
   };
   visit((testInfo as unknown as { _steps?: unknown })._steps);
   return found;
+}
+
+/** The call still running in the test, where a test timeout cut it short (`callInProgress`). Null for none. */
+function stepInProgress(testInfo: TestInfo): CodePlace | null {
+  return callInProgress(testInfo)?.place ?? null;
+}
+
+/**
+ * The call the test is on, as the run page's live view names it beside each frame, its file relative to the working
+ * directory. Null for none.
+ */
+function runningCall(testInfo: TestInfo): LiveCall | null {
+  const call = callInProgress(testInfo);
+  if (!call?.title) return null;
+  const file = path.relative(process.cwd(), call.place.file).split(path.sep).join('/');
+  return { title: call.title, file, line: call.place.line };
 }
 
 /** Settles once `signal` aborts. */
@@ -3451,8 +3488,9 @@ export const piwiFixtures: Fixtures<
   // ledger and records the calls the tests make through it, and torn down after
   // the browser closed, so its census sees what only the worker's shutdown
   // closed. Depends on `playwright` alone, which launches nothing. The worker's
-  // run connection to the editor (`PIWI_RUN_CHANNEL`) opens here, before the
-  // first test, and closes as the worker ends.
+  // run connection to the editor (`PIWI_RUN_CHANNEL`) and its connection to the
+  // instance's live view (`PIWI_LIVE_VIEW`) open here, before the first test,
+  // and close as the worker ends.
   piwiResources: [
     async ({ playwright }: PlaywrightWorkerArgs, use: UseFn<void>, workerInfo: WorkerInfo) => {
       // A browser launched in the first `beforeAll` goes through the ledger's
@@ -3461,9 +3499,11 @@ export const piwiFixtures: Fixtures<
       startResourceLedger(playwright, workerInfo.workerIndex);
       observeApiRequests(playwright, apiCallRecorder);
       await openRunChannel(workerInfo, runControl);
+      openLiveView(workerInfo);
       try {
         await use();
       } finally {
+        closeLiveView();
         closeRunChannel();
         stopResourceLedger();
       }
@@ -3489,6 +3529,8 @@ export const piwiFixtures: Fixtures<
     await armStops([pageContext(page)]);
     await awaitFlakeConditions();
     await maybeStartCodeReach(page);
+    // The page the run page's live view shows, while someone watches this worker.
+    liveViewPage(page);
     await use(page);
     // The test function and its hooks are done, every fixture built on the page torn down: a failure holds its page
     // now, before the page's context closes.
@@ -3547,6 +3589,7 @@ export const piwiFixtures: Fixtures<
         });
       activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
+      liveViewTestBegan(() => runningCall(testInfo));
       const showRunChannel = hideRunChannel();
       try {
         // The contexts a hook or an earlier test opened stop at this test's breakpoints too.
@@ -3559,6 +3602,7 @@ export const piwiFixtures: Fixtures<
         sink.ending = true;
         await endShownStops(sink, 'ended');
         await awaitReleasedCalls(sink);
+        await liveViewTestEnded();
         showRunChannel();
         currentSink = null;
         // A pause the editor asked that no call of this test took stops the next test's first call.

@@ -225,13 +225,38 @@ What the package does to a user's run, process by process.
   locator (which replaces the failing locator, and is folded into its snapshot) and
   Record here. Any answer lets the test end as it failed, and the editor service lets
   one go at once in a run nobody watches.
-- While each test runs, the capture fixtures take `PIWI_RUN_CHANNEL` and
-  `PIWI_EDITOR_SEND` out of the worker's `process.env` (`hideRunChannel`), whether a run
-  connection is open or not, so a process the test starts does not connect to the run
-  and does not get the pairing's token. Picks still go to the pairing
+- While each test runs, the capture fixtures take `PIWI_RUN_CHANNEL`,
+  `PIWI_EDITOR_SEND` and `PIWI_LIVE_VIEW` out of the worker's `process.env`
+  (`hideRunChannel`), whether a run connection is open or not, so a process the test
+  starts does not connect to the run and does not get the pairing's token nor the live
+  view's key. Picks still go to the pairing
   (`editorSendAddress`). Both are put back after the test, since Playwright passes a
   worker's environment changes to the projects that depend on its project.
   `PIWI_RECORD_CHANNEL` stays, for **Record here**.
+
+**The instance's live view** (`internal/capture/live-view.ts`, with `PIWI_LIVE_VIEW`)
+
+- The global setup's `/setup` asks for a live view key (`liveView: true`); the instance gives
+  one for a project with the live view on, for that run alone, and the setup file keeps it.
+  In `onBegin` the reporter names it in `PIWI_LIVE_VIEW` (`<instance>/api/test-runs/<id>/live-view#<key>`,
+  `@piwitests/core/live-view`), which Playwright hands the workers it starts after. A run
+  the reporter registers itself, without the global setup, has no key.
+- Each worker opens an event stream to that URL in the `piwiResources` worker fixture,
+  without waiting for it, and keeps it until the worker ends. It never keeps the worker
+  alive; a failed stream is opened again after 1, 2, 4, 8 and 16 seconds, 20 times at most
+  over the worker's life, and a 401, 403, 404 or 410 gives it up at once.
+- On it the instance says how many people watch the worker (`viewers`). While anyone does,
+  the test's `page` goes out as its screencast (`page-view.ts`, the helper the editor's view
+  of a stop uses too), through internal calls: at most 640 by 400 at quality 50 unless the
+  test's trace or video came first (their size and quality, 800 wide at 90), four frames a
+  second and 256 KB a second at most (a heavier frame holds the next one back longer), a
+  frame over 192 KB replaced by an image at quality 30. One post is in flight at a time,
+  the latest frame alone waiting; each frame carries the call the runner's steps say the
+  test is on (`callInProgress`). Nobody watching, no screencast runs and no frame goes.
+- The view stops as nobody watches, as the test ends (the worker posts `ended`) and as its
+  page closes; a viewer that joins gets the latest frame again. Each stop the fixtures show
+  (`showStop`, at the bar or for the editor) is posted as it starts and ends (`stop`), with
+  the test's title, whoever watches.
 
 **In the reporter process**
 
@@ -403,6 +428,10 @@ src/
                 run-channel (the worker's run connection to the editor,
                 PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in,
                 a stopped page's live view and the input played on it),
+                page-view (a page's screencast for a viewer outside it, paced
+                and capped: the editor's view of a stop, the instance's live view),
+                live-view (the worker's stream to the instance's live view,
+                PIWI_LIVE_VIEW: viewers in, frames and stops out),
                 pick-at (the element under a point of an image of a stopped page),
                 kept-responses (the text bodies an interactive run keeps for
                 Mock a request), chain-locator (a locator chain's source built
