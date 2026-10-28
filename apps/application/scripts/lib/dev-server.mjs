@@ -185,13 +185,22 @@ const SERVER_MODES = {
  * returns { base, stop }. `env` is added to the server's environment; when it
  * names its own database (`PIWI_DATABASE_PATH`, as `seedThrowawayDb` returns)
  * the dev database is left alone, otherwise a missing one is created and
- * seeded first. With `logFile`, the server's output is written there.
+ * seeded first. With `logFile`, the server's output is written there. A
+ * Ctrl+C stops the server and exits; with `exitOnSignal: false`, SIGINT,
+ * SIGTERM and SIGHUP stop the server and leave the exit to the caller, which
+ * handles them.
  *
  * It refuses a port something already listens on: `nuxt dev` would quietly bind
  * another port, and the health check would then pass against the server that
  * was already there, so the run would drive that server's code and data.
  */
-export async function startServer({ mode = 'web', port = DEFAULT_PORT, env = {}, logFile = null } = {}) {
+export async function startServer({
+  mode = 'web',
+  port = DEFAULT_PORT,
+  env = {},
+  logFile = null,
+  exitOnSignal = true,
+} = {}) {
   const serverMode = SERVER_MODES[mode];
   if (!serverMode) throw new Error(`unknown server mode "${mode}" — use ${Object.keys(SERVER_MODES).join(', ')}`);
   if (await portInUse(port)) throw new Error(`port ${port} is already in use; stop the server on it first`);
@@ -205,7 +214,7 @@ export async function startServer({ mode = 'web', port = DEFAULT_PORT, env = {},
     detached: process.platform !== 'win32',
     shell: process.platform === 'win32',
   });
-  return superviseServer(child, port, `dev server${serverMode.label}`);
+  return superviseServer(child, port, `dev server${serverMode.label}`, exitOnSignal);
 }
 
 /**
@@ -246,9 +255,9 @@ export async function startBuiltServer({ outputDir, port = DEFAULT_PORT, env = {
 /**
  * Wait for a server process to answer its health check on `port`; returns
  * { base, stop }. It is stopped when the check times out or the script is
- * interrupted.
+ * interrupted (and the script exits then, unless `exitOnSignal` is false).
  */
-async function superviseServer(child, port, name) {
+async function superviseServer(child, port, name, exitOnSignal = true) {
   const stop = () => {
     // Negative pid kills the whole process group where supported. On Windows
     // child.kill() only terminates the cmd wrapper — the nuxt node process
@@ -263,10 +272,14 @@ async function superviseServer(child, port, name) {
       // already gone
     }
   };
-  process.on('SIGINT', () => {
-    stop();
-    process.exit(130);
-  });
+  if (exitOnSignal) {
+    process.on('SIGINT', () => {
+      stop();
+      process.exit(130);
+    });
+  } else {
+    for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, stop);
+  }
   const base = `http://localhost:${port}`;
   console.error(`Starting ${name} at ${base}…`);
   try {
