@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import type { APIRequestContext, Browser, BrowserContext, Page, TestInfo } from '@playwright/test';
 import { PIWI_ENV_KEYS, PIWI_RESOURCES_RESULTS_ENV } from '../config/env.js';
 import { ATTACHMENT_NAMES } from './attachments.js';
+import { callSitePath, framePath } from './locator-healing.js';
 import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
 import { PageReader, WorkerMetrics, type PageMain, type TestMetrics } from './worker-metrics.js';
 import { roleOf } from '../support/system-readers.js';
@@ -232,11 +233,12 @@ const HOOK_PHASES = new Set(['beforeAll', 'afterAll', 'beforeEach', 'afterEach']
 const KIND_ORDER: Record<ResourceKind, number> = { browser: 0, context: 1, page: 2, request: 3 };
 
 /** A path relative to the working directory, POSIX separators. */
-function relativePath(file: string): string {
-  return path
-    .relative(process.cwd(), file.replace(/^file:\/\//, ''))
-    .split(path.sep)
-    .join('/');
+function relativePath(
+  file: string,
+  cwd: string = process.cwd(),
+  windows: boolean = process.platform === 'win32',
+): string {
+  return callSitePath(file, cwd, windows) ?? file;
 }
 
 /** Frames that are never the line a test wrote: Node itself, installed packages, this module. */
@@ -250,14 +252,21 @@ function isLibraryFile(file: string): boolean {
   );
 }
 
-/** The first frame of a stack that belongs to the test code, `file:line`. */
-export function userSite(stack: string | undefined): string | null {
+/**
+ * The first frame of a stack that belongs to the test code, `file:line` relative to `cwd`. `windows` reads the frames
+ * as Windows writes them.
+ */
+export function userSite(
+  stack: string | undefined,
+  cwd: string = process.cwd(),
+  windows: boolean = process.platform === 'win32',
+): string | null {
   for (const line of (stack ?? '').split('\n').slice(1)) {
     const match = /^\s*at\s+(?:.*?\s+\()?(.+?):(\d+):\d+\)?$/.exec(line);
     if (!match) continue;
-    const file = match[1]!.replace(/^file:\/\//, '');
-    if (isLibraryFile(file) || !/\.[a-z]+$/i.test(file)) continue;
-    return `${relativePath(file)}:${match[2]}`;
+    const file = framePath(match[1]!, windows);
+    if (!file || isLibraryFile(file) || !/\.[a-z]+$/i.test(file)) continue;
+    return `${relativePath(file, cwd, windows)}:${match[2]}`;
   }
   return null;
 }
