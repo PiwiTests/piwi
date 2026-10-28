@@ -604,7 +604,7 @@ export function registerRunControl(
     }
     if (!ref) return;
     const live = sessions.get(ref)?.live;
-    if (on && live && !live.refused && !liveWarned) {
+    if (on && !live?.refused && !liveWarned) {
       const yes = 'Share live';
       if ((await vscode.window.showWarningMessage(`Piwi: ${shareLiveWarning(live)}`, { modal: true }, yes)) !== yes) {
         return;

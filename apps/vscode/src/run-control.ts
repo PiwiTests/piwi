@@ -301,44 +301,56 @@ export function liveInstance(live: Pick<RunLive, 'page'>): string | null {
 }
 
 /** What Share live sends, and who sees it, asked before the window shares a run for the first time. */
-export function shareLiveWarning(live: Pick<RunLive, 'page'>): string {
-  const instance = liveInstance(live) ?? 'the Piwi instance it reports to';
+export function shareLiveWarning(live: Pick<RunLive, 'page'> | null | undefined): string {
+  const instance = (live && liveInstance(live)) ?? 'the Piwi instance it reports to';
   return (
-    `Share this run live on ${instance}? While someone watches it there, each worker sends images of its test's ` +
-    'page, each with the call it was taken at, and says when its test is paused. Anyone who can open the run on ' +
-    'that instance can watch it. Nothing is stored, and Stop sharing ends it at once.'
+    `Share this run live on ${instance}? While it is shared, anyone with its page open there sees each stop of its ` +
+    "tests: the call, its file and line, and the test's title, even while nobody watches. While someone watches a " +
+    "worker, images of its test's page go there too, each with its call and the test's title. Anyone who can open " +
+    'the run there can watch, and on an instance with authentication off, anyone who can reach it. Nothing is ' +
+    'stored, and Stop sharing ends it within seconds.'
   );
 }
 
-/** How a run shared live stands, as the status bar and the answers say it: where, and how many watch. */
+/** How many views are open, counted as views: one person may hold several. */
+export function viewsText(count: number): string {
+  return count === 1 ? '1 view' : `${count} views`;
+}
+
+/** How a run shared live stands, as the status bar and the answers say it: where, and how many views are open. */
 export function liveText(live: RunLive): string {
   const instance = liveInstance(live);
   const where = instance ? `Shared live on ${instance}` : 'Shared live';
-  if (live.viewers === 0) return `${where}: nobody watches yet`;
-  return `${where}: ${live.viewers === 1 ? '1 person watches' : `${live.viewers} people watch`}`;
+  return live.viewers === 0 ? `${where}: nobody watches yet` : `${where}: ${viewsText(live.viewers)} open`;
 }
 
 /**
- * The status bar item of Share live while a run is live: a shared run says where and how many watch, and stops being
- * shared on a click; else a run that can be shared offers it. None while no run can be shared: the command says why.
+ * The status bar item of Share live while a run is live: the shared runs say where and the views open of them all,
+ * and stop being shared on a click; else a run that can be shared offers it, saying why its sharing stopped when it
+ * stopped though nobody asked. None while no run can be shared: the command says why.
  */
 export function liveItem(sessions: Sessions): ControlItem | null {
   const runs = liveRunsOf(sessions);
-  const shared = runs.find((r) => r.live.shared);
-  if (shared) {
-    const { viewers } = shared.live;
+  const shared = runs.filter((r) => r.live.shared);
+  if (shared.length) {
+    const viewers = shared.reduce((sum, r) => sum + r.live.viewers, 0);
+    const what =
+      shared.length === 1
+        ? liveText(shared[0]!.live)
+        : `${shared.length} runs shared live: ${viewers ? `${viewsText(viewers)} open` : 'nobody watches yet'}`;
     return {
-      text: viewers > 0 ? `$(broadcast) Live · ${viewers} watching` : '$(broadcast) Live',
-      tooltip: `Piwi: ${liveText(shared.live)}. Click to stop sharing the run.`,
+      text: viewers > 0 ? `$(broadcast) Live · ${viewsText(viewers)}` : '$(broadcast) Live',
+      tooltip: `Piwi: ${what}. Click to stop sharing ${shared.length === 1 ? 'the run' : 'one'}.`,
       command: RUN_COMMANDS.stopSharing,
     };
   }
   const shareable = runs.find((r) => !r.live.refused);
   if (!shareable) return null;
   const instance = liveInstance(shareable.live);
+  const offer = `Share the run live${instance ? ` on ${instance}` : ''}, for a teammate to watch from its page`;
   return {
     text: '$(broadcast)',
-    tooltip: `Piwi: Share the run live${instance ? ` on ${instance}` : ''}, for a teammate to watch from its page`,
+    tooltip: `Piwi: ${shareable.live.stopped ? `${shareable.live.stopped} ${offer}.` : offer}`,
     command: RUN_COMMANDS.shareLive,
   };
 }

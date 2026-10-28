@@ -290,7 +290,7 @@ describe('Share live', () => {
   const page = 'https://piwi.example.com/test-runs/42';
   const live = (ref: string, extra: Partial<NonNullable<RunSession['live']>> = {}): RunSession => ({
     ...session(ref, [worker(0, 'running', { takes: ['share'] })]),
-    live: { shared: false, refused: null, page, viewers: 0, ...extra },
+    live: { shared: false, refused: null, stopped: null, page, viewers: 0, ...extra },
   });
 
   test('says what it sends and to whom before the first share, naming the instance', () => {
@@ -298,9 +298,14 @@ describe('Share live', () => {
     expect(liveInstance({ page: null })).toBeNull();
     const warning = shareLiveWarning({ page });
     expect(warning).toMatch(/^Share this run live on piwi\.example\.com\? /);
-    expect(warning).toContain("images of its test's page, each with the call it was taken at");
-    expect(warning).toContain('Anyone who can open the run on that instance can watch it.');
+    // Its stops show to whoever has the run page open, watched or not; the images only while someone watches.
+    expect(warning).toContain("each stop of its tests: the call, its file and line, and the test's title, even while");
+    expect(warning).toContain("images of its test's page go there too, each with its call and the test's title");
+    expect(warning).toContain('on an instance with authentication off, anyone who can reach it');
+    expect(warning).toMatch(/Stop sharing ends it within seconds\.$/);
     expect(shareLiveWarning({ page: null })).toContain('the Piwi instance it reports to');
+    // A run whose workers have not said yet how it stands is warned of too.
+    expect(shareLiveWarning(undefined)).toBe(shareLiveWarning({ page: null }));
   });
 
   test('offers a run that can be shared in the status bar, and none that cannot, whose command says why', () => {
@@ -315,20 +320,37 @@ describe('Share live', () => {
     // The command asks the service anyway, which says why.
     expect(liveTarget(sessionsOf(refused), true)).toEqual({ ref: 'ed-2' });
     expect(liveTarget(new Map(), true)).toEqual({ none: 'no run started from the editor is running.' });
+    // A run whose sharing stopped though nobody asked is offered again, saying why it stopped.
+    const lost = 'Sharing stopped: the instance did not answer. Share the run again to try once more.';
+    expect(liveItem(sessionsOf(live('ed-1', { stopped: lost })))).toEqual({
+      text: '$(broadcast)',
+      tooltip: `Piwi: ${lost} Share the run live on piwi.example.com, for a teammate to watch from its page.`,
+      command: 'piwi.shareRunLive',
+    });
   });
 
   test('says how a shared run stands, and stops sharing it from the status bar', () => {
     const shared = sessionsOf(live('ed-1', { shared: true, viewers: 2 }));
     expect(controlState(shared).liveShared).toBe(true);
     expect(liveItem(shared)).toEqual({
-      text: '$(broadcast) Live · 2 watching',
-      tooltip: 'Piwi: Shared live on piwi.example.com: 2 people watch. Click to stop sharing the run.',
+      text: '$(broadcast) Live · 2 views',
+      tooltip: 'Piwi: Shared live on piwi.example.com: 2 views open. Click to stop sharing the run.',
       command: 'piwi.stopSharingRun',
     });
-    expect(liveText({ shared: true, refused: null, page, viewers: 0 })).toBe(
+    // Two runs shared: the views open of both, as JetBrains counts them.
+    expect(
+      liveItem(sessionsOf(live('ed-1', { shared: true, viewers: 2 }), live('ed-2', { shared: true, viewers: 1 }))),
+    ).toEqual({
+      text: '$(broadcast) Live · 3 views',
+      tooltip: 'Piwi: 2 runs shared live: 3 views open. Click to stop sharing one.',
+      command: 'piwi.stopSharingRun',
+    });
+    expect(liveText({ shared: true, refused: null, stopped: null, page, viewers: 0 })).toBe(
       'Shared live on piwi.example.com: nobody watches yet',
     );
-    expect(liveText({ shared: true, refused: null, page: null, viewers: 1 })).toBe('Shared live: 1 person watches');
+    expect(liveText({ shared: true, refused: null, stopped: null, page: null, viewers: 1 })).toBe(
+      'Shared live: 1 view open',
+    );
     expect(liveTarget(shared, false)).toEqual({ ref: 'ed-1' });
     expect(liveTarget(sessionsOf(live('ed-1')), false)).toEqual({ none: 'no run is shared live.' });
     // Two runs that can be shared: the person chooses.

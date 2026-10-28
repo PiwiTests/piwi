@@ -698,7 +698,7 @@ const tests = {
       // A worker that streams from the start, as a CI run's does: the run reads as shared, with who watches it.
       send({ type: 'live', can: true, on: true, viewers: 2, page, why: null });
       await waitFor(() => sessionOf()?.live?.shared, 'the shared run');
-      assert.deepEqual(sessionOf().live, { shared: true, refused: null, page, viewers: 2 });
+      assert.deepEqual(sessionOf().live, { shared: true, refused: null, stopped: null, page, viewers: 2 });
       const commands = await vscode.commands.getCommands(true);
       assert.ok(commands.includes('piwi.stopSharingRun'));
       await vscode.commands.executeCommand('piwi.stopSharingRun');

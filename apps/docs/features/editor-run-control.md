@@ -28,8 +28,8 @@ code from the page: [Code from a pause](./editor-stop-code).
 | **Stop** | Ends the run's process | `Shift+F5` | the Run tool window's Stop |
 
 The keys are the IDE's own debugger keys (in a JetBrains IDE, your keymap's), Piwi's only while their control applies
-and no debug session runs, and first where a JetBrains keymap gives one to another action too. On
-macOS, `Cmd+F10` runs to the cursor in VS Code. **Pause** and **End the test** have no key in VS Code: bind one in
+and no debug session runs, and first where a JetBrains keymap gives one to another action too. On macOS, `Cmd+F10`
+runs to the cursor in VS Code. **Pause** and **End the test** have no key in VS Code: bind one in
 **Preferences: Open Keyboard Shortcuts** (search `piwi`). There, `F5` pressed again within two seconds of an answer
 waits for the next stop rather than start a debug session.
 
@@ -93,9 +93,9 @@ at the editor's breakpoints** in a JetBrains IDE) is on.
 
 ## Share live
 
-**Share live** lets a teammate watch the run from its page on your team's instance, in a project whose live view is on:
-**Piwi: Share the run live on the team instance** in VS Code, **Tools → Piwi → Share the Run Live** in a JetBrains IDE,
-any time during the run. It first says what goes out and to whom; shared, the status bar says how many watch, until
+**Share live** lets a teammate watch the run from its page on your team's instance: **Piwi: Share the run live on the
+team instance** in VS Code, **Tools → Piwi → Share the Run Live** in a JetBrains IDE, any time. It first says what goes
+out and to whom (once a VS Code window, once a JetBrains project); shared, the status bar counts its views, until
 **Stop sharing**: [Share a run from your machine](./live-view#share-a-run-from-your-machine).
 
 ## How it works

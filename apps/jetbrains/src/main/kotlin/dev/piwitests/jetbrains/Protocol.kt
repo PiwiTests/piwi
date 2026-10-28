@@ -737,15 +737,17 @@ data class RunSession(
 )
 
 /**
- * Share live: the run shared on the team instance its reporter reports to (`shared`), why it cannot be or why its
- * sharing stopped (`refused`, null when it can be), its page there (`page`, for a teammate), and how many people watch
- * its workers there now (`viewers`).
+ * Share live: the run shared on the team instance its reporter reports to, as its workers say (`shared`), why it
+ * cannot be (`refused`, null when it can be), its page there (`page`, for a teammate), how many views of its workers
+ * are open there now (`viewers`), and why its sharing stopped though nobody asked (`stopped`, until it is shared
+ * again).
  */
 data class RunLive(
     val shared: Boolean = false,
     val refused: String? = null,
     val page: String? = null,
     val viewers: Int = 0,
+    val stopped: String? = null,
 )
 
 /**

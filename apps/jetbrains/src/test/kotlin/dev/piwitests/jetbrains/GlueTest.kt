@@ -638,9 +638,12 @@ class GlueTest {
     fun `Share live says what it sends, offers a run that can be shared, and says how a shared one stands`() {
         val page = "https://piwi.example.com/test-runs/42"
         val warning = Glue.shareLiveWarning(page)
-        assertTrue(warning.startsWith("While someone watches this run on piwi.example.com, "))
-        assertTrue(warning.contains("images of its test's page there, each with the call it was taken at"))
-        assertTrue(warning.contains("Anyone who can open the run on that instance can watch it."))
+        assertTrue(warning.startsWith("While this run is shared on piwi.example.com, anyone with its page open there "))
+        // Its stops show to whoever has the run page open, watched or not; the images only while someone watches.
+        assertTrue(warning.contains("each stop of its tests: the call, its file and line, and the test's title, even while nobody watches"))
+        assertTrue(warning.contains("images of its test's page go there too, each with its call and the test's title"))
+        assertTrue(warning.contains("on an instance with authentication off, anyone who can reach it"))
+        assertTrue(warning.endsWith("Stop Sharing ends it within seconds."))
         assertTrue(Glue.shareLiveWarning(null).contains("the Piwi instance it reports to"))
         assertEquals("piwi.example.com", Glue.liveInstance(page))
         assertEquals("127.0.0.1:7494", Glue.liveInstance("http://127.0.0.1:7494/test-runs/5"))
@@ -663,15 +666,19 @@ class GlueTest {
         assertTrue(controls.liveShared)
         assertEquals(2, controls.liveViewers)
         assertFalse(Glue.runControls(mapOf("ed-1" to ready)).liveShared)
-        assertEquals("Piwi: shared live · 2 watching", Glue.liveStatus(controls))
+        // The views open of every shared run, counted as views: one person may hold several.
+        assertEquals("Piwi: shared live · 2 views", Glue.liveStatus(controls))
+        val two = Glue.runControls(mapOf("ed-1" to shared, "ed-3" to shared.copy(ref = "ed-3", live = RunLive(true, null, page, 1))))
+        assertEquals("Piwi: shared live · 3 views", Glue.liveStatus(two))
+        assertEquals("Piwi: shared live · 1 view", Glue.liveStatus(Glue.runControls(mapOf("ed-1" to shared.copy(live = RunLive(true, null, page, 1))))))
         assertEquals(null, Glue.liveStatus(Glue.runControls(mapOf("ed-1" to ready))))
         assertEquals(shared.live, Glue.sharedLive(mapOf("ed-1" to shared, "ed-2" to refused)))
         assertEquals(null, Glue.sharedLive(mapOf("ed-1" to ready)))
-        assertEquals("Shared live on piwi.example.com: 2 people watch", Glue.sharedLiveText(shared.live!!))
+        assertEquals("Shared live on piwi.example.com: 2 views open", Glue.sharedLiveText(shared.live!!))
         assertEquals("Shared live: nobody watches yet", Glue.sharedLiveText(RunLive(true, null, null, 0)))
         val stoppedShared = mapOf("ed-1" to shared.copy(workers = listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4)))))
         assertEquals(
-            "Piwi: paused · checkout.page.ts:5 · shared live · 2 watching",
+            "Piwi: paused · checkout.page.ts:5 · shared live · 2 views",
             Glue.runControlStatus(Glue.runControls(stoppedShared), Glue.stopsOf(stoppedShared)),
         )
     }

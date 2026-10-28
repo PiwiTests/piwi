@@ -105,8 +105,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   (`share` in `src/run-view.ts`, `SHARE_WARNING`), never on an agent's word.
   ([Run control](ARCHITECTURE.md#run-control))
 - **A run is shared live on the team instance only from the person's command, after a modal warning the first time in
-  the window** (`shareLive` in `src/run-view.ts`, `shareLiveWarning`), as the JetBrains plugin does; a run that cannot
-  be shared is asked without it, for the service to say why. Checked by `tests/run-control.test.ts` ("Share live").
+  the window** (`shareLive` in `src/run-view.ts`, `shareLiveWarning`), as the JetBrains plugin does; only a run known
+  not to be shareable is asked without it, for the service to say why. Checked by `tests/run-control.test.ts` ("Share live").
 - **The paused page webview runs a script only where a click on the image picks, by the style's nonce.** Its document
   takes images from `data:` only, and the script posts a click's offset alone (`pausedPageHtml`, `imageClickOf` in
   `src/run-control.ts`). Checked by `tests/run-control.test.ts` ("runs one script …").

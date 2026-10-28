@@ -72,6 +72,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     override fun setUp() {
         super.setUp()
         sessions = project.service<PiwiRunSessions>()
+        sessions.liveWarned = false
         remote = sessions.remote
         sessions.remote = object : RunRemote {
             override fun control(params: RunControlParams): RunControlResult {
@@ -438,9 +439,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
-     * Share the Run Live asks what it sends the first time in the IDE's session alone, and shares nothing on a no; a
-     * run that cannot be shared is asked without the warning, and the service says why; Stop Sharing applies once a run
-     * is.
+     * Share the Run Live asks what it sends the first time in the project alone, and shares nothing on a no; a run that
+     * cannot be shared is asked without the warning, and the service says why; Stop Sharing applies once a run is.
      */
     fun testARunIsSharedLiveOnlyOnceThePersonSaidYesTheFirstTime() {
         val page = "https://piwi.example.com/test-runs/42"
@@ -479,9 +479,27 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             TestDialogManager.setTestDialog(TestDialog.DEFAULT)
         }
         hear(running("ed-live").copy(live = RunLive(true, null, page, 2)))
-        assertEquals("Piwi: shared live · 2 watching", Glue.liveStatus(sessions.controls()))
+        assertEquals("Piwi: shared live · 2 views", Glue.liveStatus(sessions.controls()))
         assertTrue(myFixture.testAction(stop).isEnabled)
         assertEquals(ShareRunParams("ed-live", false), waitFor("the stop") { shares.getOrNull(2) })
+    }
+
+    /** A run whose workers have not said yet how it stands on the instance is warned of too, before it is shared. */
+    fun testARunNotHeardOfYetIsWarnedOfBeforeItIsShared() {
+        hear(running("ed-quiet"))
+        val asked = mutableListOf<String>()
+        TestDialogManager.setTestDialog { message ->
+            asked += message
+            Messages.NO
+        }
+        try {
+            myFixture.testAction(ActionManager.getInstance().getAction("Piwi.ShareRunLive"))
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(listOf(Glue.shareLiveWarning(null)), asked)
+        assertTrue(shares.isEmpty())
     }
 
     /** A failure the IDE holds: its own icon and words, Resume alone among the controls, then the code actions. */
