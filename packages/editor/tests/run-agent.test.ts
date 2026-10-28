@@ -809,6 +809,37 @@ describe('what an agent reads of the page', () => {
     other.socket.destroy();
   });
 
+  test('reads a rerun’s events from their first with a cursor of the run before it', async () => {
+    const { ref: run, channel: again } = await ide.command();
+    const first = new FakeWorker(again.path, fs.realpathSync(dir)).attach(again.token, run, 0, [
+      ...RUN_TAKES,
+    ] as RunTake[]);
+    await waitFor(() => ide.latest(run));
+    first.begin('adds a mug');
+    first.send({ type: 'test-end', testId: 'id-adds a mug', status: 'passed', pausedMs: 0 });
+    await waitFor(() => (ide.latest(run)?.workers[0]?.test === null ? true : undefined));
+    first.socket.destroy();
+    await ide.client.sendNotification('piwi/commandEnded', { ref: run, exitCode: 0 });
+    let ended = await call('run_follow', { run, after: -1, wait: 0 });
+    for (let i = 0; i < 100 && ended.piwi.state !== 'ended'; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      ended = await call('run_follow', { run, after: -1, wait: 0 });
+    }
+    expect(ended.piwi.state).toBe('ended');
+    const cursor = ended.piwi.next as number;
+    // The developer runs the command again: the same ref.
+    const rerun = new FakeWorker(again.path, fs.realpathSync(dir)).attach(again.token, run, 0, [
+      ...RUN_TAKES,
+    ] as RunTake[]);
+    rerun.begin('adds a mug again');
+    await waitFor(() => ide.latest(run)?.workers[0]?.test?.title.includes('adds a mug again') || undefined);
+    const followed = await call('run_follow', { run, after: cursor, wait: 0 });
+    expect(followed.piwi.events.map((e: { kind: string }) => e.kind)).toEqual(['worker-joined', 'test-begin']);
+    expect(followed.piwi.events[0].seq).toBe(cursor + 1);
+    expect(followed.piwi).not.toHaveProperty('missed');
+    rerun.socket.destroy();
+  });
+
   test("names a failure's title and error, which may quote the page, only inside the block", async () => {
     const { ref: run, channel: again } = await ide.command();
     const other = new FakeWorker(again.path, fs.realpathSync(dir)).attach(again.token, run, 0, [

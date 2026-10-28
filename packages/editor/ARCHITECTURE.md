@@ -858,13 +858,14 @@ and a JSON schema that names them (`AGENT_TOOLS`, `additionalProperties: false`)
 - **Following a run.** `RunSessions` tells the agent what each worker says (`heard`): its connection, each test's
   start and end, each stop and its end, and, once an agent follows the run (`followRun`, sent as `events` to each of
   its workers whose reporter takes it, a later worker too), each call of the test as it ends, with its place, and each
-  page's navigations, console errors and warnings, uncaught errors and failed requests. A follow lasts while the agent
-  calls a tool on the run, and ends `FOLLOW_IDLE_S` (120 seconds) after its last call, or as agents are turned off
-  (`RunAgent.off`): `unfollowRun` sends `events { on: false }`, a later worker hears nothing, and what the pages said
-  in the events kept goes (`page: "dropped"` in `run_follow`), the snapshots read too when agents are turned off. Each run keeps its last 2,000
-  events, numbered (`seq`), and the 20 latest ended runs theirs. `run_follow { run, after?, wait? }` answers the events
-  after the cursor, 200 at most (`more`), waiting up to `wait` seconds (25 at most, `MAX_FOLLOW_WAIT_S`) for a stop or
-  the run's end, and at once while the run is stopped or ended.
+  page's navigations, console errors and warnings, uncaught errors and failed requests. A rerun of a run's command
+  (the same ref) numbers its events on from the run's before it, so a cursor of that run reads them. A follow lasts
+  while the agent calls a tool on the run, and ends `FOLLOW_IDLE_S` (120 seconds) after its last call, or as agents
+  are turned off (`RunAgent.off`): `unfollowRun` sends `events { on: false }`, a later worker hears nothing, and what
+  the pages said in the events kept goes (`page: "dropped"` in `run_follow`), the snapshots read too when agents are
+  turned off. Each run keeps its last 2,000 events, numbered (`seq`), and the 20 latest ended runs theirs. `run_follow
+  { run, after?, wait? }` answers the events after the cursor, 200 at most (`more`), waiting up to `wait` seconds (25
+  at most, `MAX_FOLLOW_WAIT_S`) for a stop or the run's end, and at once while the run is stopped or ended.
 - **Controlling it.** `run_control { run, worker?, action, stop?, place?, wait? }` is `piwi/runControl` with
   `by: 'agent'` (`pause`, and `step`, `run-to`, `resume`, `finish` naming the stop they answer), then waits up to
   `wait` seconds (30 at most) for the run's next stop or its end. The stop a Pause, a Step or a Run to the agent

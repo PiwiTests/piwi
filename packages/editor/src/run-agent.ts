@@ -739,11 +739,14 @@ export class RunAgent {
     }
   }
 
-  /** The events of the run `ref`, a new run's when none are kept, or when `fresh` and those kept are of a run that ended. */
+  /**
+   * The events of the run `ref`, a new run's when none are kept, or when `fresh` and those kept are of a run that ended:
+   * a rerun's numbers go on from the run's before, so a cursor of that run reads the rerun's events from their first.
+   */
   private log(ref: string, root: string | null, fresh = false): RunLog {
     let log = this.logs.get(ref);
     if (!log || (fresh && log.ended)) {
-      log = { root, events: [], next: 0, ended: false, waiters: new Set() };
+      log = { root, events: [], next: log?.next ?? 0, ended: false, waiters: new Set() };
       this.logs.delete(ref);
       this.logs.set(ref, log);
     }
