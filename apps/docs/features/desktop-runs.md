@@ -82,6 +82,10 @@ at a stop. The code `code_write` makes (the steps it took, an assertion, or a lo
 **Code from the runs**, to copy, and back to the agent in its answer: no file is written. A run nobody attends is not
 served, so an agent sees no Flake Lab run, bisect or lab job.
 
+An agent pauses, steps or runs to a line only while the app's window is open, in the tray included: a headless stop
+goes on with no window to show it. A stop it asked for goes on two minutes after its last call, so a run never waits
+for an agent that left.
+
 ## Limits
 
 - **No recording.** **Record here**, and **Pick** and **Assert** in the test's window, end in an editor: run the test
@@ -91,7 +95,8 @@ served, so an agent sees no Flake Lab run, bisect or lab job.
 - **A file changed since the run started** makes no code: run the test again.
 - **Run to cursor** stays in the editor, which has the file.
 - **One call at a time through the bridge.** Claude Desktop reaches the app through `piwi-desktop mcp-stdio`, which
-  passes its calls one by one: a `run_follow` or a `run_control` that waits holds the next call, 30 seconds at most.
+  passes its calls one by one: a `run_follow` or a `run_control` that waits holds the next call, 40 seconds at most
+  (a 30-second wait, then the stopped page's snapshot).
 
 ## Related
 

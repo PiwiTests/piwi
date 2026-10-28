@@ -401,7 +401,7 @@ chooser is.
 
 PR 9's desktop half is Part 9.2's last sentence: the desktop app adds the seven tools to the MCP server it serves
 already (`/mcp`, which `piwi-desktop mcp-stdio` bridges for Claude Desktop), for the runs its shell starts, and differs
-from the text in six ways. The tools are the editor service's own (`RunAgent`, through `@piwitests/editor/run-host`),
+from the text in seven ways. The tools are the editor service's own (`RunAgent`, through `@piwitests/editor/run-host`),
 in the app's words (`AgentWords`, `agentTools`), on PR 6's hub (`DesktopRuns.agent`); `/mcp` lists and runs them in
 the desktop build alone, in the `agents` module, and passes their answers on as they are (Piwi's JSON, the
 page-content block, the image) rather than as a catalog tool's JSON. A wait ends as its client goes (the response's
@@ -416,7 +416,12 @@ agent's (`Paused by the agent`), which needed `HubStop.by` in `@piwitests/core/r
 it, and Piwi Picker now reads it, though its Runs window does not show it. The tools prefer none of the suite's own
 locators and name no command, as the window's code does not and the hub has none for the shell's runs. The app's
 **MCP server** page says it serves the runs, with a link to the docs, rather than listing the seven tools, whose
-descriptions are the editor's single paragraphs; `describe_piwi`'s `mcp` topic names them.
+descriptions are the editor's single paragraphs; `describe_piwi`'s `mcp` topic names them. A stop the agent asks for holds only
+where a person can see it: with no window of the app nor Piwi Picker to answer a headless stop, a pause, a step or a
+run to a line is refused (`RunAgentOptions.stopsGoOn`), and since the window hides in the tray with its stream open, a
+stop the agent asked for goes on as the agent stops following the run, `FOLLOW_IDLE_S` after its last call
+(`letsGoOnIdle`), so a run never waits for an agent that left. The bridge never sends a `tools/call` again once the
+app had it whole, since the call may have run.
 The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of

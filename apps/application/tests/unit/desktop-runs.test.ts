@@ -38,6 +38,8 @@ import {
 import { DESKTOP_PICKS_PATH, type DesktopRunCommand, type DesktopRunEvent } from '#shared/desktop-runs';
 
 const TOKEN = `pd_${'ab'.repeat(32)}`;
+/** How long an agent follows a run after its last call, short for the test that waits it out. */
+const AGENT_IDLE_MS = 2000;
 const ORIGIN = `chrome-extension://${'a'.repeat(32)}`;
 const SPEC =
   "import { test, expect } from '@playwright/test';\n\ntest('pays', async ({ page }) => {\n  await page.goto('/');\n  await page.getByRole('button', { name: 'Pay' }).click();\n});\n";
@@ -258,6 +260,7 @@ beforeAll(async () => {
     helloMs: 300,
     lingerMs: 50,
     requestMs: 2000,
+    agentIdleMs: AGENT_IDLE_MS,
   });
   channel = parseRecordChannel(runs.runChannel!)!;
 });
@@ -933,6 +936,43 @@ describe("the agents' tools for the desktop app's runs", () => {
     worker.socket.destroy();
     picker.socket.close();
     window.close();
+  });
+
+  it('pause a run only while a window can show its stop, which goes on once the agent calls no more', async () => {
+    const ref = 'desktop-33';
+    const worker = new Worker(folder).attach(ref, channel.token, 0, ['agent', 'events', 'end']);
+    worker.begin();
+    const window = await openWindow();
+    await waitFor(() => window.session(ref)?.workers[0]?.test ?? undefined);
+    window.close();
+    // No window answers a headless stop: the agent hears so, and the worker hears nothing.
+    const refused = await call('run_control', { run: ref, action: 'pause' });
+    expect(refused.isError).toBe(true);
+    expect(refused.piwi.message).toMatch(/^No window of the desktop app is open/);
+    expect(worker.heard.some((m) => m.type === 'control')).toBe(false);
+
+    // With the window open (hidden in the tray, say), the agent's stop holds, then goes on once it calls no more.
+    const shown = await openWindow();
+    const pausing = call('run_control', { run: ref, action: 'pause', wait: 5 });
+    expect(await worker.next('control')).toMatchObject({ type: 'control', action: 'pause' });
+    worker.send({
+      type: 'stopped',
+      stop: 1,
+      reason: 'pause',
+      title: "Click getByRole('button', { name: 'Pay' })",
+      place: { file: 'tests/checkout.spec.ts', line: 5, column: 3 },
+      locator: "getByRole('button', { name: 'Pay' })",
+      bar: false,
+    });
+    await worker.answer('snapshot', snapshot(PAGE));
+    expect((await pausing).piwi).toMatchObject({ ok: true, state: 'stopped', stop: { by: 'agent' } });
+    expect(await worker.next('control', 1)).toMatchObject({ type: 'control', action: 'resume', stop: 1 });
+    const said = shown.events.filter((e) => e.type === 'notice').map((e) => (e as { message: string }).message);
+    expect(said).toContain(
+      `The agent called on the run no more for ${AGENT_IDLE_MS / 1000} seconds: the stop it asked for goes on.`,
+    );
+    worker.socket.destroy();
+    shown.close();
   });
 });
 

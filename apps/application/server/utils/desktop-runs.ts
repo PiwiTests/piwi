@@ -144,6 +144,11 @@ const UNATTENDED_FOR_AGENTS =
   'nobody attends it (a Flake Lab run, a bisect, a lab job, a run that repeats its tests or runs in UI mode), and an ' +
   'agent steers only a run a person can watch.';
 
+/** Why an agent's pause, step or run to a line would not hold: no window of the app nor Piwi Picker answers a stop. */
+const NO_WINDOW_FOR_AGENTS =
+  "No window of the desktop app is open, and a headless run's stop goes on with none to show it: open the app's " +
+  'window to pause, step or run to a line.';
+
 /** What a window's stream takes: the events, what it holds unsent in bytes, and its end. */
 export interface DesktopRunSink {
   send(event: DesktopRunEvent): void;
@@ -166,6 +171,8 @@ export interface DesktopRunsOptions {
   helloMs?: number;
   lingerMs?: number;
   requestMs?: number;
+  /** How long an agent follows a run after its last call on it (`RunAgent`'s `followIdleMs`). */
+  agentIdleMs?: number;
 }
 
 interface RunWindow {
@@ -303,6 +310,10 @@ export class DesktopRuns {
       preferLocators: () => new Set(),
       words: DESKTOP_AGENT_WORDS,
       refuses: (ref) => (isUnattendedDesktopRun(ref) ? UNATTENDED_FOR_AGENTS : null),
+      followIdleMs: options.agentIdleMs,
+      stopsGoOn: () => (this.hub?.answersStops() ? null : NO_WINDOW_FOR_AGENTS),
+      // The window may hide in the tray while it holds a stop: one the agent asked for goes on once it calls no more.
+      letsGoOnIdle: true,
     });
   }
 
