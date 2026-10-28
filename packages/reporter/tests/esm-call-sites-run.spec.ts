@@ -115,14 +115,12 @@ function test(title: string): DumpedTest {
 beforeAll(async () => {
   if (!fs.existsSync(dist)) throw new Error(`${dist} is missing: run \`npm run reporter:build\` before this spec`);
   write('package.json', JSON.stringify({ name: 'esm-suite', private: true, type: 'module' }));
-  // Its own outputDir: Playwright defaults to the package's test-results/, which every spawned run clears on start.
   write(
     'playwright.config.ts',
     `import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
-  outputDir: './test-results',
   workers: 1,
   reporter: [['./sites-reporter.cjs', { outputFile: 'results.json' }]],
 });

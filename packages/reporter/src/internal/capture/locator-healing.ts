@@ -509,14 +509,15 @@ export function captureCallerLocation(stack: string = new Error().stack ?? ''): 
 
 /**
  * A stack frame's file as a call site names it: relative to `cwd`, with forward
- * slashes. An ES module's frame carries a `file://` URL, read with
- * `fileURLToPath` (`file:///C:/…` on Windows, percent-encoding decoded); a
- * CommonJS frame carries the path itself. Null for a URL that names no local
- * file (`file://host/…` outside Windows).
+ * slashes, or absolute when there is no working directory. An ES module's frame
+ * carries a `file://` URL, read with `fileURLToPath` (`file:///C:/…` on
+ * Windows, percent-encoding decoded); a CommonJS frame carries the path itself.
+ * Null for a URL that names no local file (an encoded slash, or
+ * `file://host/…` outside Windows).
  */
 export function callSitePath(
   file: string,
-  cwd: string = process.cwd(),
+  cwd: string | null = workingDirectory(),
   windows: boolean = process.platform === 'win32',
 ): string | null {
   const paths = windows ? path.win32 : path.posix;
@@ -528,5 +529,15 @@ export function callSitePath(
       return null;
     }
   }
-  return paths.relative(cwd, absolute).split(paths.sep).join('/');
+  const rel = cwd === null ? absolute : paths.relative(cwd, absolute);
+  return rel.split(paths.sep).join('/');
+}
+
+/** The run's working directory; null once it has been removed, which `process.cwd()` throws for. */
+function workingDirectory(): string | null {
+  try {
+    return process.cwd();
+  } catch {
+    return null;
+  }
 }
