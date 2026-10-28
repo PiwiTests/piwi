@@ -370,7 +370,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const agentsKey = agentsTokenKey(
     vscode.workspace.workspaceFile?.toString() ?? vscode.workspace.workspaceFolders?.[0]?.uri.toString() ?? null,
   );
-  const agentsToken = await keptAgentsToken(context, agentsKey);
+  // The token the next start of the service is given: a new one replaces it as the service answers or tells one.
+  let agentsToken = await keptAgentsToken(context, agentsKey);
   let credentialsTimer: ReturnType<typeof setTimeout> | null = null;
   const credentialsChanged = () => {
     if (credentialsTimer) clearTimeout(credentialsTimer);
@@ -1304,7 +1305,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const before = JSON.stringify(agents);
     agents = answer?.url ? answer : null;
     if (agents?.url) await context.workspaceState.update(AGENTS_PORT, Number(new URL(agents.url).port));
-    if (agents?.token && agents.token !== (await context.secrets.get(agentsKey))) {
+    if (agents?.token && agents.token !== agentsToken) {
+      agentsToken = agents.token;
       await context.secrets.store(agentsKey, agents.token);
     }
     if (JSON.stringify(agents) !== before) runsMcpChanged.fire();
@@ -1366,7 +1368,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       }
       const answer = await agentsChanged(true);
       // Served or not, the token kept for the next start is a new one.
-      if (!answer?.token) await context.secrets.store(agentsKey, randomBytes(32).toString('base64url'));
+      if (!answer?.token) {
+        agentsToken = randomBytes(32).toString('base64url');
+        await context.secrets.store(agentsKey, agentsToken);
+      }
       void vscode.window.showInformationMessage(
         answer?.token
           ? "Piwi: the runs' MCP server has a new token. The editor's agent uses it already; copy the runs' MCP server configuration again for any other agent."
