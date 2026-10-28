@@ -2243,6 +2243,34 @@ const SCENES = [
     },
   },
   {
+    name: 'debug-in-editor',
+    description:
+      "Debug in my editor on a failure's Source tab, beside the failing line's frame (a helper its spec calls), then the toast once the Piwi extension in VS Code was asked",
+    route: '/',
+    viewport: { width: 1280, height: 800 },
+    async run({ page, shoot, settle, goto }) {
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-ide-prefs', JSON.stringify({ method: 'vscode', vscodeExtension: true })),
+      );
+      await goto('/test-run-cases/37?evidence=source');
+      // The trace's full stack shows once it loads; the failing line's frame is in the captured frames.
+      const captured = page.getByRole('tab', { name: /^Captured/ });
+      await captured.waitFor({ timeout: 60000 });
+      await captured.click();
+      const button = page.locator('[data-shot="debug-in-editor"]');
+      await button.waitFor({ timeout: 60000 });
+      await button.scrollIntoViewIfNeeded();
+      await settle();
+      await shoot('button');
+      await button.click();
+      await page
+        .getByText('Asked the Piwi extension in VS Code to debug the test', { exact: true })
+        .waitFor({ timeout: 15000 });
+      await shoot('asked');
+    },
+    outputs: ['debug-in-editor-button.png', 'debug-in-editor-asked.png'],
+  },
+  {
     name: 'analytics-scope-bar',
     description:
       'The Filters block on Analytics: Period, Runs and Tests groups, the period picker open with comparison and buckets',

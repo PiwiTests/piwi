@@ -27,7 +27,7 @@ const where = computed(() => `${props.target.filePath}:${props.target.line}`);
     label="Debug in my editor"
     :title="`Open ${where} in your editor, which offers to run this test there: headed, one worker, stopping at that line`"
     class="max-sm:hidden shrink-0"
-    data-testid="debug-in-editor"
+    data-shot="debug-in-editor"
     @click="debugInIde(target)"
   />
 </template>

@@ -31,17 +31,26 @@ async function openTheSource(page: Page, prefs: Record<string, unknown>, id = SE
   await waitForHydration(page);
 }
 
-/** The button beside the failing line's frame, once the captured frames show (the trace's stack loads first). */
+/**
+ * The button beside the failing line's frame, in the captured frames. With a trace, the tab shows its full stack once
+ * it loads, which names the seed's recording script, so the captured frames are chosen then.
+ */
 async function debugButton(page: Page) {
+  const captured = page.getByRole('tab', { name: /^Captured/ });
+  if (
+    await captured.waitFor({ timeout: 20_000 }).then(
+      () => true,
+      () => false,
+    )
+  )
+    await captured.click();
   const button = page.getByRole('button', { name: 'Debug in my editor' });
-  const fullStack = page.getByRole('tab', { name: /^Full stack/ });
-  await expect(button.or(fullStack).first()).toBeVisible({ timeout: 30_000 });
-  if (await fullStack.isVisible()) await page.getByRole('tab', { name: /^Captured/ }).click();
   await expect(button).toBeVisible();
   return button;
 }
 
 test.describe('Debug in my editor', () => {
+  test.setTimeout(60_000);
   let hasSeed = false;
   test.beforeAll(async ({ request }) => {
     const answer = await request.get(`/api/test-run-cases/${SEEDED}`);
