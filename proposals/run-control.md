@@ -17,9 +17,9 @@ merged as #932), and so are PR 5's three halves, the service's, the IDE's with t
 window's, and PR 6's two halves, the desktop app's server as the hub of its runs, then its window's controls, live
 view and Copy with Piwi Picker listing those runs, PR 9's tools for the runs an editor starts, then for the desktop
 app's own runs, PR 7's two halves, **End the test** with the runs started in a terminal, and **Debug in my
-editor**, and PR 8's team instance part (below; the desktop app's own runs are watched in PR 6's tray), while **Share
-live** is not. PR 1 differs from the text in four ways. A headed browser opens Playwright's Inspector at every stop of
-`context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
+editor**, and PR 8's team instance part (below; the desktop app's own runs are watched in PR 6's tray), **Share live**
+included (below). PR 1 differs from the text in four ways. A headed browser opens Playwright's Inspector at every stop
+of `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
 does not see, then stops with neither bar nor Inspector until the test's timeout), and a run under Playwright's own
 debugger (`--debug`, `--debug=cli`, `PWDEBUG`) ignores the breakpoints. The runner suspends the test timeout only for
@@ -464,10 +464,30 @@ test, the worker, the run or the setting, and the run page hears each worker lea
 a project with the setting off sends nothing.
 The demo shows the setting, and no view: it runs no test worker. The paused calls keep counting as interactive as
 PR 1 made them: the stops still go to `piwi-pauses` and the step events alone.
-The spikes in the
-[appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
-Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of
-[`1.0-stabilization.md`](1.0-stabilization.md).
+
+**Share live**, PR 8's last piece, shares a run on a developer's machine with the team instance, and differs from Part
+8.1's text in these ways. It is offered wherever a local run's stops show, not in the IDE and the Runs window alone: VS
+Code (**Piwi: Share the run live on the team instance**, and a status bar item that offers it and says how many watch),
+a JetBrains IDE (**Tools → Piwi → Share the Run Live**, its status bar item saying it), Piwi Picker's Runs window and
+the desktop app's Local runs tray; and at any time during a run, not only before it starts. Each asks once in its
+session (a VS Code window, the IDE's project, a Runs window, the app since it started) what goes out and to whom, the
+person alone shares (`piwi/shareRun`, the hub's `share`; no agent's tool does), and a shared run offers its page's link
+to copy. The key keeps PR 8's checked path: the global setup asks `/setup` for one in any run (`liveView: true`), and a
+project with the setting on answers with one, so every local run of such a project holds a key, within the same bounds
+and ending with the run. Outside CI the workers hold it and open no stream until the run channel says `share` with `on:
+true`, its sixteenth take, a worker that connects later following the run's choice (`Session.share`); `on: false` closes
+the streams, each worker posting `unshared` first so every viewer hears why (`LiveViewEnd` `unshared`: **The developer
+stopped sharing this run from their machine.**). A run outside CI without a key names why in its place
+(`PIWI_LIVE_VIEW=none:<why>`: no instance, unregistered by the global setup, the setting off), and each worker tells the
+run channel how it stands (`live`: whether it holds a key, whether it streams, how many watch it, the run's page, why
+not), which the editor service sums up (`RunSession.live`, `HubSession.live`) for the surfaces to say why a run cannot
+be shared. A sharing also stops as the run connection that asked for it closes (the editor or the desktop app quits),
+and as the instance refuses the key (the setting turned off, the instance restarted: the keys are in its memory) or does
+not answer after the retries, said once as a notice. PR 8's promise is now "nothing from a run outside CI unless it is
+shared". A run that reports to the desktop app's own server shares to that server alone, which no teammate reaches, when
+its project there turns the live view on. The spikes in the [appendix](#appendix-the-spikes) are the evidence for the
+feasibility claims; they are not part of the repository. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The
+contracts it would add are entry D60 of [`1.0-stabilization.md`](1.0-stabilization.md).
 
 **Summary.** Piwi already pauses a run the editor starts at the editor's breakpoints, with a bar in the page that picks
 a locator for that line or records the steps that come next ([`editor-local-runs.md`](../adr/editor-local-runs.md),
