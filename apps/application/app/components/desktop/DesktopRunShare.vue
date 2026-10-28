@@ -3,12 +3,14 @@
  * Desktop shell only: **Share live** for a run the shell started, which reports to a team instance: shared, its
  * workers stream their pages to the run's page there while someone watches, and say when a test is paused, for anyone
  * who can open the run on that instance. The first share in this session of the app says what goes out and to whom,
- * and waits for a yes; shared, the run says where and how many watch, with its page's link to copy and **Stop
- * sharing**. A run that cannot be shared (no instance, the project's live view off) says why when asked.
+ * and waits for a yes; shared, the run says where and how many views are open, with its page's link to copy and
+ * **Stop sharing**; a sharing that stopped though nobody asked says why, Share live offered again. A run that cannot be
+ * shared (no instance, the project's live view off) says why when asked; one that reports to this app is offered
+ * nothing.
  */
 import type { HubSession } from '@piwitests/core/run-hub';
 import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
-import { desktopLiveText, desktopShareWarning } from '~/utils/desktop-run-view';
+import { desktopLiveText, desktopShareOffered, desktopShareWarning } from '~/utils/desktop-run-view';
 
 const props = defineProps<{ session: HubSession }>();
 const emit = defineEmits<{ announce: [text: string] }>();
@@ -45,7 +47,7 @@ function confirm(): void {
 </script>
 
 <template>
-  <div v-if="live && !session.ended" class="space-y-1" data-shot="desktop-run-share">
+  <div v-if="live && desktopShareOffered(live) && !session.ended" class="space-y-1" data-shot="desktop-run-share">
     <div class="flex flex-wrap items-center gap-2">
       <template v-if="live.shared">
         <UBadge color="info" variant="subtle" size="sm" icon="i-lucide-radio">{{ desktopLiveText(live) }}</UBadge>
@@ -84,6 +86,7 @@ function confirm(): void {
       </UTooltip>
     </div>
     <p v-if="answer" class="text-xs text-muted" role="status">{{ answer.message }}</p>
+    <p v-else-if="!live.shared && live.stopped" class="text-xs text-muted">{{ live.stopped }}</p>
 
     <UModal v-model:open="asking" title="Share this run live?" :ui="{ content: 'max-w-lg' }">
       <template #body>

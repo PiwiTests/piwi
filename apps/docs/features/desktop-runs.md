@@ -68,9 +68,13 @@ as it is on disk, in the folder linked to the project.
 A run that reports to your team's Piwi instance, as a **Run locally** in a folder whose `.env` or Playwright config
 names it does, can be shared there for a teammate to watch from its page, in a project whose live view is on: **Share
 live**, above the run's workers, any time while it runs. The first time since the app started, it says what goes out and
-to whom, and waits for your yes. Shared, the run says where and how many watch, with **Copy the run page's link** and
-**Stop sharing**. A run that cannot be shared says why: [Share a run from your
+to whom, and waits for your yes. Shared, the run says where and how many views are open, with **Copy the run page's
+link** and **Stop sharing**. A run that cannot be shared says why: [Share a run from your
 machine](./live-view#share-a-run-from-your-machine).
+
+A run that reports to the app itself (a reproduction, a bisect, a **Run locally** in a folder that names no instance)
+offers no **Share live**: the app hands out no live view key, since no teammate reaches it, and its project settings
+have no **Live view** section.
 
 ## From Piwi Picker
 

@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'v
 import { WebSocket } from 'ws';
 import { parsePairing } from '@piwitests/core/editor-send';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
+import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 import { parseHubToRun, type HubToRun, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
 import type { ToolResult } from '@piwitests/editor/run-host';
 import {
@@ -646,6 +647,7 @@ describe('Share live from the window', () => {
     expect(await waitFor(() => window.session('desktop-13')?.live)).toEqual({
       shared: false,
       refused: null,
+      stopped: null,
       page,
       viewers: 0,
     });
@@ -659,9 +661,9 @@ describe('Share live from the window', () => {
     expect(await window.command({ type: 'share', id: 2, ref: 'desktop-13', on: false })).toMatchObject({ ok: true });
     expect(await worker.next('share', 1)).toEqual({ type: 'share', on: false });
 
-    // A run that reports to this app, whose project has the live view off, holds no key: it says why.
+    // A run that reports to this app holds no key: it says why.
     const local = new Worker(folder).attach('desktop-14', channel.token, 0, ['share']);
-    const why = "This run cannot be shared live: its project's live view is off on the instance.";
+    const why = LIVE_SHARE_MISSING.local;
     local.send({ type: 'live', can: false, on: false, viewers: 0, page: null, why });
     await waitFor(() => window.session('desktop-14')?.live);
     expect(await window.command({ type: 'share', id: 3, ref: 'desktop-14', on: true })).toMatchObject({
