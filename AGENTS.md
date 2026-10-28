@@ -42,7 +42,7 @@ apps/extension/       Piwi Picker, the browser extension (Manifest V3), standalo
 apps/vscode/          VS Code extension, a thin client of packages/editor (scope `ide`)
 apps/jetbrains/       JetBrains plugin, the same client in Kotlin and Gradle (scope `ide`)
 apps/docs/            VitePress documentation site, published to GitHub Pages
-apps/showcase/        The showcase's script: one story on every tool together, checked nightly (not a workspace)
+apps/showcase/        The showcase: one story on every tool together, checked nightly and filmed (not a workspace)
 packages/core/        @piwitests/core: private, zero-dependency logic shared by the app and the reporter
 packages/picker-dom/  @piwitests/picker-dom: the DOM picker overlay (reporter, dashboard, extension)
 packages/reporter/    @piwitests/reporter: the Playwright reporter (bundled with tsup)
