@@ -467,27 +467,34 @@ PR 1 made them: the stops still go to `piwi-pauses` and the step events alone.
 
 **Share live**, PR 8's last piece, shares a run on a developer's machine with the team instance, and differs from Part
 8.1's text in these ways. It is offered wherever a local run's stops show, not in the IDE and the Runs window alone: VS
-Code (**Piwi: Share the run live on the team instance**, and a status bar item that offers it and says how many watch),
-a JetBrains IDE (**Tools → Piwi → Share the Run Live**, its status bar item saying it), Piwi Picker's Runs window and
-the desktop app's Local runs tray; and at any time during a run, not only before it starts. Each asks once in its
-session (a VS Code window, the IDE's project, a Runs window, the app since it started) what goes out and to whom, the
-person alone shares (`piwi/shareRun`, the hub's `share`; no agent's tool does), and a shared run offers its page's link
-to copy. The key keeps PR 8's checked path: the global setup asks `/setup` for one in any run (`liveView: true`), and a
-project with the setting on answers with one, so every local run of such a project holds a key, within the same bounds
-and ending with the run. Outside CI the workers hold it and open no stream until the run channel says `share` with `on:
-true`, its sixteenth take, a worker that connects later following the run's choice (`Session.share`); `on: false` closes
-the streams, each worker posting `unshared` first so every viewer hears why (`LiveViewEnd` `unshared`: **The developer
-stopped sharing this run from their machine.**). A run outside CI without a key names why in its place
-(`PIWI_LIVE_VIEW=none:<why>`: no instance, unregistered by the global setup, the setting off), and each worker tells the
-run channel how it stands (`live`: whether it holds a key, whether it streams, how many watch it, the run's page, why
-not), which the editor service sums up (`RunSession.live`, `HubSession.live`) for the surfaces to say why a run cannot
-be shared. A sharing also stops as the run connection that asked for it closes (the editor or the desktop app quits),
-and as the instance refuses the key (the setting turned off, the instance restarted: the keys are in its memory) or does
-not answer after the retries, said once as a notice. PR 8's promise is now "nothing from a run outside CI unless it is
-shared". A run that reports to the desktop app's own server shares to that server alone, which no teammate reaches, when
-its project there turns the live view on. The spikes in the [appendix](#appendix-the-spikes) are the evidence for the
-feasibility claims; they are not part of the repository. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The
-contracts it would add are entry D60 of [`1.0-stabilization.md`](1.0-stabilization.md).
+Code (**Piwi: Share the run live on the team instance**, and a status bar item that offers it and counts the views
+open), a JetBrains IDE (**Tools → Piwi → Share the Run Live**, its status bar item saying it), Piwi Picker's Runs window
+and the desktop app's Local runs tray; and at any time during a run, not only before it starts. Each asks once in its
+session (a VS Code window, the IDE's project, a Runs window, the app since it started) what goes out and to whom (the
+stops, to everyone with the run page open, even while nobody watches; the images while someone does; to anyone who can
+open the run, anyone who can reach an instance with authentication off), unless the run is known not to be shareable,
+the person alone shares (`piwi/shareRun`, the hub's `share`; no agent's tool does), and a shared run offers its page's
+link to copy. The key keeps PR 8's checked path: the global setup asks `/setup` for one in any run (`liveView: true`),
+and a project with the setting on answers with one, so every local run of such a project holds a key, within the same
+bounds and ending with the run. Outside CI the workers hold it and open no stream until the run channel says `share`
+with `on: true`, its sixteenth take, a worker that connects later following the run's choice (`Session.share`); `on:
+false`, never refused, not even while no worker is connected, closes the streams, each worker posting `unshared` first
+so every viewer hears why (`LiveViewEnd` `unshared`: **The developer stopped sharing this run from their machine.**). A
+run outside CI without a key names why in its place (`PIWI_LIVE_VIEW=none:<why>`: no instance, unregistered by the
+global setup, the setting off, the desktop app), and each worker tells the run channel how it stands (`live`: whether it
+holds a key, whether it streams, the views open of it, the run's page, why not), which the editor service sums up
+(`RunSession.live`, `HubSession.live`): shared while a worker streams, why a run cannot be shared, and why its sharing
+stopped though nobody asked (`stopped`). A sharing also stops as the run connection that asked for it closes (the editor
+or the desktop app quits), and as the instance refuses the key (the setting turned off, which a key that ended says with
+404, the instance restarted: the keys are in its memory), holds the run as interrupted, or does not answer after the
+retries: said once a run, as a notice, with Share live offered again. PR 8's promise is now "nothing from a run outside
+CI unless it is shared". The desktop app's own server hands out no key (`liveView.refused: 'local'`, `none:local`),
+since no teammate reaches it: its Local runs tray offers no Share live for a run that reports to it, and its project
+settings hide Live view; a run it starts that reports to a team instance shares there. At either bound of the keys,
+those that never opened a stream go first, and an interrupted run's end. The spikes in the
+[appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
+Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of
+[`1.0-stabilization.md`](1.0-stabilization.md).
 
 **Summary.** Piwi already pauses a run the editor starts at the editor's breakpoints, with a bar in the page that picks
 a locator for that line or records the steps that come next ([`editor-local-runs.md`](../adr/editor-local-runs.md),

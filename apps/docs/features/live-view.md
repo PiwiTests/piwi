@@ -57,18 +57,21 @@ any time while it runs, in a project with the live view on.
 | Piwi Picker's [Runs window](./runs-window) | **Share live** under the run's name | **Stop sharing** |
 | The desktop app's [Local runs tray](./desktop-runs) | **Share live** above the run's workers | **Stop sharing** |
 
-The first share in a window (in a JetBrains IDE, since it started; in the desktop app, since it started) says what goes
-out and to whom, and waits for your yes. Shared, the run says where and how many people watch, with its page's link to
-copy for your teammate.
+The first share in a window (in a JetBrains IDE, in each project since it opened; in the desktop app, since it
+started) says what goes out and to whom, and waits for your yes. Shared, the run says where and how many views of it
+are open (one person may open several), with its page's link to copy for your teammate.
 
 Until then, the run's workers hold their key and send nothing. Once shared, each worker, and one Playwright starts
-later, opens its connection and sends what a CI run's do: images while someone watches, and its stops. **Stop
-sharing** closes the connections, so nothing more goes to the instance: each view ends saying the developer stopped
-sharing, and **Paused** leaves the rows. Closing the editor, or the desktop app, stops the sharing too.
+later, opens its connection and sends what a CI run's do: its stops, which everyone with the run's page open sees (the
+call, its file and line, and the test's title), even while nobody watches; and images while someone does. **Stop
+sharing** closes the connections within seconds, so nothing more goes to the instance: each view ends saying the
+developer stopped sharing, and **Paused** leaves the rows. Closing the editor, or the desktop app, stops the sharing
+too.
 
-A run that cannot be shared says why when you ask: it reports to no instance, its project has the live view off, or
-the reporter's global setup did not register it. The key lives in the instance's memory: once the instance restarts,
-it takes the key no more, and the run says its sharing stopped.
+A run that cannot be shared says why when you ask: it reports to no instance, its project has the live view off, the
+reporter's global setup did not register it, or it reports to the desktop app on your machine, which hands out no key
+since no teammate reaches it. A sharing that stops on its own says why, and **Share live** shows again: the project's
+live view turned off, the instance restarted (the key lives in its memory), or it stopped answering.
 
 ## What is sent, to whom, and what is kept
 
@@ -82,7 +85,7 @@ it takes the key no more, and the run says its sharing stopped.
   `page.screencast` gets it, and the view goes on with an image a second. Nothing of the view is a step of the test or
   an action of its trace.
 - **Only to people who may open the run**: watching needs what opening the run needs, the project's
-  [roles](/operate/project-access).
+  [roles](/operate/project-access). On an instance with authentication off, that is anyone who can reach it.
 - **Nothing is kept.** The dashboard relays each image to the people watching that worker and drops it: it is never
   written to the database, the logs or an export, and a viewer that reads slowly gets the latest image alone. The
   run's trace stays the record.
