@@ -18,6 +18,7 @@ file outside its directory to another guide: read that one yourself, whatever th
 | `apps/vscode/`: the VS Code extension                            | [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md)             |
 | `apps/jetbrains/`: the JetBrains plugin (Gradle, Kotlin)         | [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md)       |
 | `apps/docs/`: the VitePress documentation site                   | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md)                 |
+| `apps/showcase/`: the showcase's story, played on every tool     | [`apps/showcase/AGENTS.md`](apps/showcase/AGENTS.md)         |
 | `.github/`: the CI workflows and the actions they share          | [`.github/AGENTS.md`](.github/AGENTS.md)                     |
 | `proposals/`: design records for work proposed or being built    | [`proposals/AGENTS.md`](proposals/AGENTS.md)                 |
 | `adr/`: architecture decision records for shipped work           | [`adr/AGENTS.md`](adr/AGENTS.md)                             |
@@ -41,6 +42,7 @@ apps/extension/       Piwi Picker, the browser extension (Manifest V3), standalo
 apps/vscode/          VS Code extension, a thin client of packages/editor (scope `ide`)
 apps/jetbrains/       JetBrains plugin, the same client in Kotlin and Gradle (scope `ide`)
 apps/docs/            VitePress documentation site, published to GitHub Pages
+apps/showcase/        The showcase's script: one story on every tool together, checked nightly (not a workspace)
 packages/core/        @piwitests/core: private, zero-dependency logic shared by the app and the reporter
 packages/picker-dom/  @piwitests/picker-dom: the DOM picker overlay (reporter, dashboard, extension)
 packages/reporter/    @piwitests/reporter: the Playwright reporter (bundled with tsup)
@@ -55,7 +57,8 @@ plans/                The maintainer's local planning folder: gitignored, absent
 - **A new workspace goes where its kind is**: `apps/*` for a deployable surface, `packages/*` for a package consumed by
   name (published, or imported or bundled by another workspace), `integrations/*` for a framework adapter. Every JS
   workspace is listed in the root `package.json` `workspaces`. `apps/desktop`, `apps/docs` and `examples/sample-app`
-  are **intentionally not workspaces** (own toolchains; the example must resolve `@piwitests/*` from npm).
+  are **intentionally not workspaces** (own toolchains; the example must resolve `@piwitests/*` from npm), and
+  `apps/showcase` is scripts run on the root's `node_modules`, read by knip from the root.
 - **Adding a workspace takes two entries in [`release-please-config.json`](release-please-config.json)**: its
   `package.json` `$.version`, _and_ its `package-lock.json` `$.packages['<dir>'].version`. release-please bumps only
   the root package natively; a missing lockfile entry leaves the workspace a release behind and makes `npm install`
