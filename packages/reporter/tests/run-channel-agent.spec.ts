@@ -91,6 +91,7 @@ const read: {
   clicked?: RefLocatorAnswer;
   after?: SnapshotAnswer;
   filled?: RefLocatorAnswer;
+  wrong?: RefLocatorAnswer;
   stale?: RefLocatorAnswer;
   refused?: unknown;
   bound?: BindAnswer;
@@ -149,6 +150,13 @@ async function onStopped(c: Connection, stop: Extract<RunToHub, { type: 'stopped
       ref: refOf(snapshot, 'textbox "Coupon"'),
       action: 'fill',
       value: 'WELCOME10',
+    });
+    read.wrong = await ask(c, {
+      what: 'act',
+      ...at,
+      ref: refOf(snapshot, 'button "Pay"'),
+      action: 'fill',
+      value: 'x',
     });
     read.stale = await ask(c, { what: 'act', ...at, ref: 'e999', action: 'click', value: null });
     read.refused = await ask(c, { what: 'act', stop: stop.stop + 1, ref: 'e1', action: 'click', value: null });
@@ -314,6 +322,10 @@ describe('a stopped page, for an agent', () => {
     expect(read.clicked!.message).toMatch(/^Clicked e\d+\.$/);
     expect(read.after!.snapshot).toContain('heading "Clicked"');
     expect(read.filled).toMatchObject({ ok: true });
+    // Playwright's call log quotes the element's HTML, the page's text: only its error's first line comes back.
+    expect(read.wrong).toMatchObject({ ok: false });
+    expect(read.wrong!.message).toMatch(/^Filled e\d+ failed: /);
+    expect(read.wrong!.message).not.toMatch(/\n|Call log|<button/);
     expect(read.stale).toMatchObject({ ok: false, element: null });
     expect(read.stale!.message).toContain('No element of the stopped page has the ref e999');
     expect(read.refused).toMatchObject({ ok: false, message: 'The test went on.' });

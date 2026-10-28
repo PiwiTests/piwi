@@ -48,9 +48,13 @@ function byRef(page: Page, ref: string): Locator {
   return (page as unknown as Required<ByRef>).getByRef(ref);
 }
 
-/** Why a page's call failed, its credentials hidden: a page's error may name the address it was at. */
+/**
+ * Why a page's call failed: the first line of Playwright's error alone, since its call log quotes the element's HTML
+ * (the page's own text, which goes to the agent as Piwi's answer here), its credentials hidden.
+ */
 function failed(prefix: string, error: unknown): string {
-  return hideSecretsInText(`${prefix}: ${errorMessage(error)}`).slice(0, 500);
+  const first = errorMessage(error).split('\n')[0]!.trim();
+  return hideSecretsInText(`${prefix}: ${first}`).slice(0, 300);
 }
 
 /** The most frames whose secret fields are read before a snapshot goes. */
