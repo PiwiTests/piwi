@@ -4,8 +4,9 @@
  * Language Server Protocol: the socket every run names, which takes the workers' run connections with its token
  * (`RecordChannel`); the sessions and the controls they pass on (`RunSessions`); the hub's WebSocket for Piwi Picker,
  * and the peers a host joins to it with a transport of its own (`RunHub.join`); the code made at a stop
- * (`StopActions`), placed where the stopped statement stands (`RunLines`). A host wires their callbacks to its own
- * surfaces, as `server.ts` wires them to the client.
+ * (`StopActions`), placed where the stopped statement stands (`RunLines`); the agents' tools for those runs, in the
+ * host's words (`RunAgent`, `agentTools`), which a host serves from an MCP server of its own. A host wires their
+ * callbacks to its own surfaces, as `server.ts` wires them to the client.
  */
 export { RecordChannel, sameToken, type Handoff } from './recorder/handoff.js';
 export { expectModuleOf } from './recorder/imports.js';
@@ -14,4 +15,12 @@ export { RunLines, type DiskFile } from './run-lines.js';
 export { RunSessions, type Viewer } from './run-sessions.js';
 export { MAX_HUB_BUFFERED, RunHub, type HubPeer, type HubTransport } from './run-hub.js';
 export { StopActions, type StopCodeWords, type StopTarget } from './stop-actions.js';
+export {
+  RunAgent,
+  agentTools,
+  type AgentWords,
+  type RunAgentOptions,
+  type ToolDefinition,
+  type ToolResult,
+} from './run-agent.js';
 export type { Notice, RunSession, StopCode } from './protocol.js';

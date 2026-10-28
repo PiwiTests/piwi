@@ -1827,7 +1827,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /** The runs the service built, as the tools of its MCP server for the agents of this machine (`piwi/agents`). */
   const runAgent = new RunAgent({
     sessions: runSessions,
-    writeCode: (stop, input) => stopActions.agentCode(stop, input),
+    // The client writes the code into the file, where the agent reads it: the answer says where it went.
+    writeCode: (stop, input) => {
+      const { ok, message } = stopActions.agentCode(stop, input);
+      return { ok, message };
+    },
     notice: (root, message) =>
       void connection.sendNotification(NOTICE_NOTIFICATION, {
         root: root ?? folders[0] ?? '',

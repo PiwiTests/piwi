@@ -175,9 +175,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   stops there, and never sends it to the client. Checked by `tests/debug-run.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#a-run-that-debugs-a-failure))
 - **The run control runs without the language server too: the desktop app's server hosts it.** `src/run-host.ts`
-  exports `RecordChannel`, `RunSessions`, `RunHub`, `StopActions` and `RunLines`, which import nothing of the LSP;
-  `apps/application/server/utils/desktop-runs.ts` wires them, so a change to their options runs its tests too
-  (`apps/application/tests/unit/desktop-runs*.test.ts`). Checked here by `tests/run-host.test.ts`.
+  exports `RecordChannel`, `RunSessions`, `RunHub`, `StopActions`, `RunLines` and the agents' `RunAgent`, which import
+  nothing of the LSP; `apps/application/server/utils/desktop-runs.ts` wires them, so a change to their options runs its
+  tests too (`apps/application/tests/unit/desktop-runs*.test.ts`). Checked here by `tests/run-host.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#another-host))
 - **The agents' MCP server listens on `127.0.0.1` alone, only once the client turns it on (`agents.enabled`,
   `piwi/agents`), and answers only its own `Host`, a request with no `Origin`, and its bearer token compared in
@@ -187,6 +187,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **An agent's tools are a closed set, each taking a closed set of arguments, and act only at a stop of a run of this
   window; nothing evaluates code, and code is written only by the client (`piwi/stopCode`).** `src/run-agent.ts`
   checks each argument (`Args`); a long poll waits `MAX_FOLLOW_WAIT_S` at most. Checked by `tests/run-agent.test.ts`.
+  Another host serves the same tools in its own words (`agentTools`, `AgentWords`), the editor's left as they are
+  (`EDITOR_AGENT_WORDS`); the desktop app's server writes no file and gives the code back in the page content.
   ([ARCHITECTURE.md](ARCHITECTURE.md#agents))
 - **What comes from the page reaches an agent apart from Piwi's answer, between the markers of a page-content block,
   its credentials hidden again.** The snapshot, its address and title, an element's words, the locators built from

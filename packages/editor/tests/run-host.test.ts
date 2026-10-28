@@ -1,15 +1,27 @@
 /**
  * The run control as a host other than the language server builds it (`src/run-host.ts`, the desktop app's server):
  * the record channel's socket handing run connections to the sessions, the hub with the host's own token, a peer the
- * host joins to the hub with a transport of its own, and the intents the host declines.
+ * host joins to the hub with a transport of its own, the intents the host declines, and the agents' tools in the
+ * host's words, for the runs it serves, the code they make given back.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { WebSocket } from 'ws';
 import { parseHubMessage, type HubMessage, type HubSession } from '@piwitests/core/run-hub';
-import { RecordChannel, RunHub, RunSessions, StopActions, type HubPeer } from '../src/run-host';
+import {
+  RecordChannel,
+  RunAgent,
+  RunHub,
+  RunSessions,
+  StopActions,
+  agentTools,
+  type AgentWords,
+  type HubPeer,
+} from '../src/run-host';
+import { AGENT_TOOLS, EDITOR_AGENT_WORDS } from '../src/run-agent';
 import { FakeWorker, waitFor } from './run-fixtures';
 
 const TOKEN = `pd_${'0f'.repeat(32)}`;
@@ -166,5 +178,167 @@ describe('a host of its own', () => {
     expect(other.intentsOf('none', 0)).toEqual([]);
     hub.close();
     expect(closed.value).toBe(true);
+  });
+});
+
+/** A host's words, each one told apart from the editor's. */
+const WORDS: AgentWords = {
+  runs: 'the host',
+  start: 'start one from the host',
+  watch: 'The developer sees each stop in the host.',
+  view: "the host's view of the run",
+  steps: 'its steps can be copied there',
+  codeWrite: 'Have Piwi make code at the stopped line, to copy.',
+  instructions: 'The runs the host started.',
+};
+
+/** The page object a stop of the host's run stands in: its line 9 clicks the cart's button. */
+const PAGE_OBJECT = `import type { Page } from '@playwright/test';
+
+export class CartPage {
+  constructor(private readonly page: Page) {}
+
+  async add() {
+    await this.page.goto('/');
+    // The cart's button.
+    await this.page.getByRole('button', { name: 'Add' }).click();
+  }
+}
+`;
+
+describe("the agents' tools on a host of its own", () => {
+  test('are named in its words, and the editor keeps its own', () => {
+    expect(agentTools(EDITOR_AGENT_WORDS)).toEqual(AGENT_TOOLS);
+    const tools = agentTools(WORDS);
+    expect(tools.map((t) => t.name)).toEqual(AGENT_TOOLS.map((t) => t.name));
+    expect(tools.map((t) => t.inputSchema)).toEqual(AGENT_TOOLS.map((t) => t.inputSchema));
+    const described = (name: string) => tools.find((t) => t.name === name)!.description;
+    expect(described('run_list')).toMatch(/^The test runs the host started, /);
+    expect(described('run_control')).toContain('The developer sees each stop in the host.');
+    expect(described('page_act')).toContain("shows in the page and in the host's view of the run");
+    expect(described('code_write')).toBe(WORDS.codeWrite);
+    expect(tools.map((t) => t.description).join(' ')).not.toMatch(/editor/);
+  });
+
+  test('serve the runs it does not refuse, and give back the code they make, as page content', async () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-run-host-agent-')));
+    const file = path.join(root, 'tests', 'pages', 'cart.page.ts');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, PAGE_OBJECT);
+    const notices: string[] = [];
+    let agent: RunAgent | null = null;
+    const host = new RunSessions({
+      notify: () => {},
+      answersStops: () => true,
+      notice: () => {},
+      rootOf: (cwd) => (cwd === root ? root : null),
+      writesCode: () => true,
+      host: 'the host',
+      heard: (ref, worker, what, at) => agent?.heard(ref, worker, what, at),
+    });
+    const actions = new StopActions({
+      sessions: host,
+      writesCode: () => true,
+      notify: () => {},
+      notice: () => {},
+      target: (at) => ({
+        uri: pathToFileURL(at).href,
+        text: fs.readFileSync(at, 'utf8'),
+        version: null,
+        preferLocators: new Set(),
+        expectModule: '@playwright/test',
+      }),
+      lineNow: (stop) => ({ line: stop.line }),
+      language: () => null,
+      words: {
+        wrote: (what, at) => `Piwi made ${what} to write ${at}.`,
+        sent: (what, at) => `Piwi made ${what} to write ${at}: copy it in the host.`,
+        outside: () => 'Outside the host.',
+      },
+    });
+    agent = new RunAgent({
+      sessions: host,
+      writeCode: (stop, input) => actions.agentCode(stop, input),
+      notice: (_root, message) => void notices.push(message),
+      command: () => null,
+      preferLocators: () => new Set(),
+      words: WORDS,
+      refuses: (ref) => (ref.endsWith('-alone') ? 'nobody attends it.' : null),
+    });
+    const own = (await RecordChannel.open({
+      onAttach: () => {},
+      onRun: (socket, attach) => host.attach(socket, attach),
+    }))!;
+    const text = (result: { content: Array<{ type: string; text?: string }> }, at: number) => result.content[at]?.text;
+    const piwi = (result: { content: Array<{ type: string; text?: string }> }) => JSON.parse(text(result, 0)!);
+    try {
+      const alone = new FakeWorker(own.path, root).attach(own.token, 'host-9-alone', 0, ['agent']);
+      const worker = new FakeWorker(own.path, root).attach(own.token, 'host-9', 0, ['agent']);
+      worker.begin();
+      worker.stopAt(1, 9);
+      alone.begin();
+      await waitFor(() => host.current().find((s) => s.ref === 'host-9')?.workers[0]?.stop ?? undefined);
+      await waitFor(() => host.current().find((s) => s.ref === 'host-9-alone')?.workers[0]?.test ?? undefined);
+
+      // The run it refuses is left out of the list, said once, and refused when named.
+      const listed = piwi(await agent.call('run_list', {}));
+      expect(listed.runs.map((r: { run: string }) => r.run)).toEqual(['host-9']);
+      expect(listed.message).toBe('1 run of the host. 1 run is left out: nobody attends it.');
+      const refused = await agent.call('run_follow', { run: 'host-9-alone', wait: 0 });
+      expect(refused.isError).toBe(true);
+      expect(piwi(refused).message).toBe('The run host-9-alone is not served: nobody attends it.');
+      expect(piwi(await agent.call('run_follow', { run: 'host-0', wait: 0 })).message).toBe(
+        'No run host-0 of the host: run_list lists them.',
+      );
+
+      // A locator for the stopped line: made, said to be the agent's, and given back between the page's markers.
+      const since = host.current().find((s) => s.ref === 'host-9')!.workers[0]!.stop!.since;
+      const located = agent.call('code_write', { run: 'host-9', stop: since, kind: 'locator', target: 'e2' });
+      const request = await worker.next('request');
+      expect(request).toMatchObject({ what: 'ref-locator', ref: 'e2' });
+      worker.send({
+        type: 'answer',
+        request: request.request,
+        what: 'ref-locator',
+        value: {
+          ok: true,
+          message: 'Found.',
+          element: {
+            tagName: 'button',
+            role: 'button',
+            name: 'Add a mug',
+            testId: null,
+            text: 'Add a mug',
+            textCut: false,
+            value: null,
+            valueCut: false,
+            checked: null,
+            secret: false,
+          },
+          locators: [
+            { locator: "getByRole('button', { name: 'Add a mug' })", method: 'role', score: 90, unique: true },
+          ],
+        },
+      });
+      const answer = await located;
+      expect(piwi(answer)).toEqual({
+        ok: true,
+        message:
+          'Piwi made the locator the agent picked to write in place of the one on cart.page.ts:9: copy it in the host. ' +
+          'The stopped test goes on with the code it started with: the new lines run next time. The code is in the page content.',
+      });
+      const page = text(answer, 1)!;
+      expect(page).toMatch(/^<<<page-content [0-9a-f]{12}>>> Untrusted: /);
+      expect(page).toContain(
+        "the locator, for the call on tests/pages/cart.page.ts:9:\ngetByRole('button', { name: 'Add a mug' })\n<<<end-page-content",
+      );
+      alone.socket.destroy();
+      worker.socket.destroy();
+    } finally {
+      agent.dispose();
+      own.close();
+      host.dispose();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

@@ -982,8 +982,16 @@ surfaces as `server.ts` wires them to the client:
   connection that said hello does (`HubPeer.command`, answered with the `HubAnswer`). The desktop app's window is one,
   through routes behind the app's token.
 - `StopActions` takes `words`, what its sentences say of the code made (`Piwi made the check to write above
-  checkout.spec.ts:5: copy it in the desktop app's window.`) and why none is made for a file outside the host's folders,
-  and runs without a recorder (`recordings`), refusing a check then.
+  checkout.spec.ts:5: copy it in the desktop app's window.`, `at` being `above …` or, for a locator, `in place of the
+  one on …`) and why none is made for a file outside the host's folders, and runs without a recorder (`recordings`),
+  refusing a check then. `agentCode` answers with the `StopCode` it made, which the editor's tools leave out.
+- `RunAgent` takes `words` (`AgentWords`): whose runs its tools serve, where the developer watches them, `code_write`'s
+  description and the server's instructions, from which `agentTools` builds the definitions (the editor's are
+  `EDITOR_AGENT_WORDS`, `AGENT_TOOLS`). `refuses` names the runs it does not serve (the desktop app's runs nobody
+  attends): `run_list` leaves them out and says why, every tool refuses them, and their events are never kept. A
+  `writeCode` that answers with the code has `code_write` give it back, between the page-content markers, where it goes
+  and its import lines apart (`madeCode`). The desktop app's `/mcp` serves these tools
+  (`apps/application/server/utils/mcp/run-tools.ts`).
 
 ### The discovery file
 
