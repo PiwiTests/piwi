@@ -92,9 +92,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **The runs' MCP server's token lives in `SecretStorage` (`piwi.agentsToken`), and reaches an agent only through the
   provider `piwi.runs` or the configuration the person copies, which says it holds it** (`keptAgentsToken`,
   `runsMcpConfiguration`). `piwi.serveRunsToAgents` off turns the server off at once (`piwi/agents`). Checked by the
-  integration suite ("the runs are served to agents …"). ([Service, lenses and credentials](ARCHITECTURE.md#service-lenses-and-credentials))
+  integration suite ("the runs are served to agents …").
+  ([Service, lenses and credentials](ARCHITECTURE.md#service-lenses-and-credentials))
 - **A stop's browser is shared with Playwright's tools only after a modal warning, each time it is asked**
-  (`share` in `src/run-view.ts`, `SHARE_WARNING`), never on an agent's word. ([Run control](ARCHITECTURE.md#run-control))
+  (`share` in `src/run-view.ts`, `SHARE_WARNING`), never on an agent's word.
+  ([Run control](ARCHITECTURE.md#run-control))
 - **The paused page webview runs a script only where a click on the image picks, by the style's nonce.** Its document
   takes images from `data:` only, and the script posts a click's offset alone (`pausedPageHtml`, `imageClickOf` in
   `src/run-control.ts`). Checked by `tests/run-control.test.ts` ("runs one script …").

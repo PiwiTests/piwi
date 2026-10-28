@@ -137,13 +137,16 @@ function testOf(test: RunTest, root: string | null): Record<string, unknown> {
   };
 }
 
-/** A stop as an agent reads it, its error apart: a failure's error may quote the page. */
+/**
+ * A stop as an agent reads it, its error apart: a failure's error may quote the page, and so may the title it gives a
+ * failure (`Failed: …`), which comes with the error alone.
+ */
 function stopOf(stop: RunStop, root: string | null): { fields: Record<string, unknown>; error: string | null } {
   return {
     fields: {
       stop: stop.since,
       reason: stop.reason,
-      title: stop.title,
+      title: stop.reason === 'failure' ? 'Failed' : stop.title,
       file: fileOf(stop.uri, root),
       line: stop.line + 1,
       ...(stop.character === null ? {} : { column: stop.character + 1 }),
@@ -151,7 +154,11 @@ function stopOf(stop: RunStop, root: string | null): { fields: Record<string, un
       bar: stop.bar,
       ...(stop.by ? { by: stop.by } : {}),
     },
-    error: stop.error ? hideSecretsInText(stop.error) : null,
+    error: stop.error
+      ? hideSecretsInText(stop.error)
+      : stop.reason === 'failure' && stop.title
+        ? hideSecretsInText(stop.title)
+        : null,
   };
 }
 
@@ -311,7 +318,7 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'page_act',
-    description: `Act on an element of the stopped page by its ref, as a person would: click it, fill it with \`value\`, press the key \`value\` names (\`Enter\`, \`Shift+Tab\`), check or uncheck it, or select the option \`value\` names. It is played as trusted input, shows in the page and in the editor's view of the run, and is kept as a step for \`code_write\` (where the developer records, the recording takes it too). It answers with the page's change since the last snapshot read. ${UNTRUSTED}`,
+    description: `Act on an element of the stopped page by its ref, as a person would: click it, fill it with \`value\`, press the key \`value\` names (\`Enter\`, \`Shift+Tab\`), check or uncheck it, or select the option \`value\` names. It is played as trusted input, shows in the page and in the editor's view of the run, and is kept as a step for \`code_write\`. It answers with the page's change since the last snapshot read. ${UNTRUSTED}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -646,11 +653,10 @@ export class RunAgent {
     const errors = this.options.sessions
       .current()
       .flatMap((session) =>
-        session.workers.flatMap((worker) =>
-          worker.stop?.error
-            ? [{ run: session.ref, worker: worker.worker, error: hideSecretsInText(worker.stop.error) }]
-            : [],
-        ),
+        session.workers.flatMap((worker) => {
+          const error = worker.stop ? stopOf(worker.stop, session.root).error : null;
+          return error ? [{ run: session.ref, worker: worker.worker, error }] : [];
+        }),
       );
     return this.result(
       {

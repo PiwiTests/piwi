@@ -402,7 +402,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       runControl: true,
       stopCode: true,
       // The runs' MCP server for agents listens at the port and with the token this window keeps.
-      agents: { port: context.workspaceState.get<number>(AGENTS_PORT) ?? null, token: agentsToken },
+      agents: {
+        enabled: vscode.workspace.getConfiguration('piwi').get<boolean>('serveRunsToAgents') ?? true,
+        port: context.workspaceState.get<number>(AGENTS_PORT) ?? null,
+        token: agentsToken,
+      },
     }),
   };
   const lc = new LanguageClient('piwi', 'Piwi', serverOptions, clientOptions);

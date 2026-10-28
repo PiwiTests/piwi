@@ -480,11 +480,12 @@ export interface InitializationOptions {
    */
   stopCode?: boolean;
   /**
-   * What the service's MCP server for agents takes once `piwi/agents` turns it on: the loopback port to listen on, else
-   * a free one when it is taken, and the token an agent sends (32 to 256 characters of base64url), else a new random
-   * one; both kept by the client, so an agent's configuration copied once still connects after a restart.
+   * The service's MCP server for agents: turned on as the service starts (`enabled`, as `piwi/agents` turns it on
+   * later); the loopback port to listen on, else a free one when it is taken; and the token an agent sends (32 to 256
+   * characters of base64url), else a new random one. The client keeps the port and the token, so an agent's
+   * configuration copied once still connects after a restart.
    */
-  agents?: { port?: number | null; token?: string | null };
+  agents?: { enabled?: boolean; port?: number | null; token?: string | null };
 }
 
 /**

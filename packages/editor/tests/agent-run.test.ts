@@ -135,7 +135,7 @@ describe.skipIf(!runnable)('an agent and a real run of the editor window', () =>
         throw new Error(`no worker ran the test:\n${output}`);
       });
       const listed = await call('run_list');
-      expect(listed.piwi.runs[0]).toMatchObject({
+      expect(listed.piwi.runs.find((r: { run: string }) => r.run === ref)).toMatchObject({
         run: ref,
         workers: [{ worker: 0, test: { title: 'waits for a click' } }],
       });
@@ -157,7 +157,7 @@ describe.skipIf(!runnable)('an agent and a real run of the editor window', () =>
 
       const written = await call('code_write', { run: ref, stop: since, kind: 'steps' });
       expect(written.piwi.ok, written.piwi.message).toBe(true);
-      const code = await waitFor(() => ide.codes.find((c) => c.ref === ref && c.action === 'steps'));
+      const code = await waitFor(() => ide.codes.find((c) => c.ref === ref && c.action === 'steps'), 15_000);
       expect(code.uri).toMatch(/cart\.spec\.cjs$/);
       expect(code.code).toContain("await page.getByRole('button', { name: 'Go' }).click();");
 

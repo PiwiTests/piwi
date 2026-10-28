@@ -200,7 +200,8 @@ the custom messages of `src/protocol.ts`:
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
-writes the code from a stop ([Code from a stop](#code-from-a-stop)), as both clients do.
+writes the code from a stop ([Code from a stop](#code-from-a-stop)), as both clients do, and `agents` for the agents'
+MCP server ([Agents](#agents)).
 
 A summary line or a quick fix names a client command to run. The summary lines use those of `PiwiCommand.command`
 (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyText`,
@@ -830,8 +831,8 @@ A failure held at its line ([Stops no pause bar shows](#stops-no-pause-bar-shows
 `src/agent-server.ts` (`AgentServer`) serves the runs the service built to the agents of this machine as an MCP
 server of its own, over MCP's streamable HTTP transport (one POST per request, answered with JSON; a notification
 alone with a 202), its JSON-RPC pieces those of the instance's server (`src/mcp-protocol.ts`). It listens only once the
-client turns it on (`piwi/agents { enabled }`, answered with its address and token), and closes as the client turns
-it off or the service stops.
+client turns it on, as the service starts (`InitializationOptions.agents.enabled`) or later (`piwi/agents { enabled }`,
+answered with its address and token), and closes as the client turns it off or the service stops.
 
 **Who reaches it.**
 
@@ -859,11 +860,11 @@ and a JSON schema that names them (`AGENT_TOOLS`, `additionalProperties: false`)
   events, numbered (`seq`), and the 20 latest ended runs theirs. `run_follow { run, after?, wait? }` answers the events
   after the cursor, 200 at most (`more`), waiting up to `wait` seconds (25 at most, `MAX_FOLLOW_WAIT_S`) for a stop or
   the run's end, and at once while the run is stopped or ended.
-- **Controlling it.** `run_control { run, worker?, action, stop?, place?, wait? }` is `piwi/runControl` with `by:
-  'agent'` (`pause`, and `step`, `run-to`, `resume`, `finish` naming the stop they answer), then waits up to `wait`
-  seconds (30 at most) for the run's next stop or its end. The stop a Pause, a Step or a Run to the agent asked for
-  carries `RunStop.by: 'agent'`, which the clients show. `end` is refused: ending a test from a stop is not built yet.
-  A `place` is a line of the run's code, relative to the run's folder.
+- **Controlling it.** `run_control { run, worker?, action, stop?, place?, wait? }` is `piwi/runControl` with
+  `by: 'agent'` (`pause`, and `step`, `run-to`, `resume`, `finish` naming the stop they answer), then waits up to
+  `wait` seconds (30 at most) for the run's next stop or its end. The stop a Pause, a Step or a Run to the agent
+  asked for carries `RunStop.by: 'agent'`, which the clients show. `end` is refused: ending a test from a stop is not
+  built yet. A `place` is a line of the run's code, relative to the run's folder.
 - **Reading the page.** The answer to a stop, `page_snapshot { run, worker?, image?, depth? }` and `page_act` read
   the page's ARIA snapshot in AI mode through the worker (`RunSessions.snapshot`). The service keeps the last snapshot
   read of each worker (32 at most) and answers with its change since (a line diff, `snapshotChange`) when it is

@@ -2192,6 +2192,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     );
     // A checkout or a commit is read within seconds: the latest run and the diagnostics follow the new `HEAD`.
     void watchRepositories();
+    // A client that serves its runs to agents from the start says so as it starts the service.
+    if (agentPrefs?.enabled === true) void setAgents(true);
     void Promise.all([
       RecordChannel.open({
         onAttach: recordRequested,
@@ -3500,9 +3502,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     stopActions.action(params),
   );
 
-  // The MCP server for agents listens only once the client turns it on, and closes as it turns it off.
-  connection.onRequest(AGENTS_REQUEST, async (params: AgentsParams): Promise<AgentsResult> => {
-    agentWanted = params?.enabled === true;
+  /** The MCP server for agents listens only once the client turns it on, and closes as it turns it off. */
+  const setAgents = async (enabled: boolean): Promise<AgentsResult> => {
+    agentWanted = enabled;
     if (!agentWanted) {
       agentServer?.close();
       agentServer = null;
@@ -3521,7 +3523,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       if (opened && (shutDown || !agentWanted || (agentServer && agentServer !== opened))) opened.close();
       else if (!agentServer) agentServer = opened;
       // Turned off and on again, it listens at the same address with the same token.
-      if (agentServer) agentPrefs = { port: agentServer.port, token: agentServer.token };
+      if (agentServer) agentPrefs = { ...agentPrefs, port: agentServer.port, token: agentServer.token };
     }
     return agentServer
       ? {
@@ -3530,7 +3532,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           message: `Piwi serves the runs of this window to agents at ${agentServer.url}.`,
         }
       : { url: null, token: null, message: 'Piwi could not listen on this machine for agents.' };
-  });
+  };
+  connection.onRequest(AGENTS_REQUEST, (params: AgentsParams): Promise<AgentsResult> =>
+    setAgents(params?.enabled === true),
+  );
 
   connection.onRequest(STOP_BIND_REQUEST, async (params: StopBindParams): Promise<StopBindResult> => {
     const answer = await runSessions.bind(

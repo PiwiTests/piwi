@@ -99,10 +99,11 @@ oldest version `vscode-languageclient` supports, for Cursor and VSCodium. Once p
 the server went, or, in an editor without that API, offers to copy its configuration (`offerMcp`).
 
 **The runs' MCP server.** The service serves the runs this window starts to the agents of this machine
-([Agents](../../packages/editor/ARCHITECTURE.md#agents)) once the extension asks (`piwi/agents`, with
-`piwi.serveRunsToAgents`): as the service starts and after each of its restarts (`onDidChangeState`), and as the
-setting changes. The extension provides it beside Piwi's own, as the provider `piwi.runs` (**Piwi runs**), an HTTP
-definition with the token as a bearer `Authorization` header (`runsMcpHeaders`), changed as the service answers. The
+([Agents](../../packages/editor/ARCHITECTURE.md#agents)) while `piwi.serveRunsToAgents` says so: from the start (the
+initialization options' `agents.enabled`), and as the setting changes (`piwi/agents`, sent too after each start of the
+service for its address: `onDidChangeState`). The extension provides it beside Piwi's own, as the provider
+`piwi.runs` (**Piwi runs**), an HTTP definition with the token as a bearer `Authorization` header (`runsMcpHeaders`),
+changed as the service answers. The
 token is the window's (`piwi.agentsToken` in `SecretStorage`, made once) and the port the last one the service
 listened at (`piwi.agentsPort`), both in the initialization options (`agents`), so **Piwi: Copy the runs' MCP server
 configuration for agents** (`piwi.copyRunsMcpConfiguration`, `runsMcpConfiguration`) gives an agent outside the
@@ -127,22 +128,23 @@ output channel, where `piwi.trace.server` writes the traffic with the service.
 
 The settings (`contributes.configuration` in `package.json`):
 
-| Setting                 | Values, default first                    | What it does                                                                                    |
-| ----------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `piwi.serverUrl`        | a URL                                    | The instance. Connect writes it in the workspace settings.                                      |
-| `piwi.project`          | a project name                           | The project. Connect writes it in the workspace settings.                                       |
-| `piwi.breakpoints`      | `true`, `false`                          | Test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                          |
-| `piwi.runNotifications` | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)).                                                |
-| `piwi.failureSeverity`  | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
-| `piwi.mcpAuthorization` | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
-| `piwi.serveRunsToAgents` | `true`, `false`                         | The runs this window starts served to agents (**Piwi runs**).                                   |
-| `piwi.testExplorer`     | `true`, `false`                          | Piwi's tests in the Testing view ([Testing view](#testing-view)).                               |
-| `piwi.trace.server`     | `off`, `messages`, `verbose`             | The traffic with the service in the log.                                                        |
+| Setting                  | Values, default first                    | What it does                                                                                    |
+| ------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `piwi.serverUrl`         | a URL                                    | The instance. Connect writes it in the workspace settings.                                      |
+| `piwi.project`           | a project name                           | The project. Connect writes it in the workspace settings.                                       |
+| `piwi.breakpoints`       | `true`, `false`                          | Test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                          |
+| `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)).                                                |
+| `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
+| `piwi.mcpAuthorization`  | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
+| `piwi.serveRunsToAgents` | `true`, `false`                          | The runs this window starts served to agents (**Piwi runs**).                                   |
+| `piwi.testExplorer`      | `true`, `false`                          | Piwi's tests in the Testing view ([Testing view](#testing-view)).                               |
+| `piwi.trace.server`      | `off`, `messages`, `verbose`             | The traffic with the service in the log.                                                        |
 
 What the extension stores:
 
 - **`SecretStorage`**: the API key of each instance (`piwi.apiKey <url>`), the Send to editor token
-  (`piwi.sendToken`) and the runs' MCP server's token (`piwi.agentsToken`). The old key slot shared by every instance (`piwi.apiKey`) is deleted once (`forgetSharedKey`).
+  (`piwi.sendToken`) and the runs' MCP server's token (`piwi.agentsToken`). The old key slot shared by every
+  instance (`piwi.apiKey`) is deleted once (`forgetSharedKey`).
 - **Global state** (this machine): `piwi.walkthroughOpened`, `piwi.mcpOffered`, `piwi.sendPort`,
   `piwi.sharedKeyForgotten`.
 - **Workspace state** (this machine and this workspace, never a file the team shares): the desktop app chosen with
@@ -153,7 +155,8 @@ What the extension stores:
 
 The context keys the extension sets, which `package.json` reads in `when` clauses: `piwi.active`, `piwi.failuresView`,
 `piwi.followEditor`, `piwi.hasCoverage`, `piwi.recording`, `piwi.recordingPaused`, and the run control's
-`piwi.runActive`, `piwi.runPausable`, `piwi.runStopped`, `piwi.runResumed` and `piwi.runCanShare` ([Run control](#run-control)).
+`piwi.runActive`, `piwi.runPausable`, `piwi.runStopped`, `piwi.runResumed` and `piwi.runCanShare`
+([Run control](#run-control)).
 
 ## Walkthrough
 
