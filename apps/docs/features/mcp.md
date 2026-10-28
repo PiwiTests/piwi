@@ -90,8 +90,13 @@ writes their entry in one click instead.
 
 ### Claude Desktop
 
-Add to `claude_desktop_config.json` (`~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on
-Windows), then restart Claude Desktop:
+Add to `claude_desktop_config.json`, then restart Claude Desktop. On macOS it is in
+`~/Library/Application Support/Claude/`. On Windows it is in the first of these folders that exists, skipping one that
+holds a `.user-data-left.*` file (Claude Desktop has moved out of it):
+
+- `%LOCALAPPDATA%\Claude-Data\claude_pzs8sxrjxfjjc\`
+- `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\`, an earlier Microsoft Store install
+- `%APPDATA%\Claude\`, the classic installer
 
 ```json
 {

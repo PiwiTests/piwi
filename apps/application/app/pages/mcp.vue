@@ -398,8 +398,21 @@ const windsurfSnippet = computed(() =>
                       <code class="font-mono">~/Library/Application Support/Claude/claude_desktop_config.json</code>
                     </li>
                     <li>
-                      <strong>Windows:</strong>{{ ' ' }}
-                      <code class="font-mono">%APPDATA%\Claude\claude_desktop_config.json</code>
+                      <strong>Windows:</strong> <code class="font-mono">claude_desktop_config.json</code> in the first
+                      of these folders that exists, skipping one that holds a
+                      <code class="font-mono">.user-data-left.*</code> file (Claude Desktop has moved out of it):
+                      <ul class="pl-4 space-y-0.5">
+                        <li>
+                          <code class="font-mono break-all">%LOCALAPPDATA%\Claude-Data\claude_pzs8sxrjxfjjc\</code>
+                        </li>
+                        <li>
+                          <code class="font-mono break-all"
+                            >%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\</code
+                          >
+                          (an earlier Microsoft Store install)
+                        </li>
+                        <li><code class="font-mono break-all">%APPDATA%\Claude\</code> (the classic installer)</li>
+                      </ul>
                     </li>
                   </ul>
                   <CodeBlock :code="claudeDesktopSnippet" lang="json" />
