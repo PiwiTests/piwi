@@ -16,10 +16,9 @@ service serves the runs of its window (in a JetBrains IDE, its project) as an MC
 
 ## Connect your agent
 
-The server listens on `127.0.0.1` once the editor extension starts, behind a token the extension keeps for this
-workspace (in a JetBrains IDE, this project), at a port it keeps when it is free, so a configuration you copy once
-keeps working after a restart. When another program holds that port, the server takes another with a new token and
-says so: copy the configuration again for an agent you set up by hand.
+The server listens on `127.0.0.1` once the editor extension starts, at a port and behind a token the extension keeps
+for this workspace (in a JetBrains IDE, this project): a configuration you copy once keeps working after a restart. If
+another program holds that port, the server moves, with a new token, and says so.
 
 | Agent                                                                          | What it takes                                                                           |
 | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
@@ -37,21 +36,19 @@ says so: copy the configuration again for an agent you set up by hand.
   }
   ```
 
-  Claude Code reads it in your user settings (`~/.claude.json`, or `claude mcp add-json` with `--scope user`), Cursor
-  in `~/.cursor/mcp.json`. The other choice is VS Code's own `mcp.json` (`servers`), for another VS Code.
+  Claude Code reads it in your user settings (`claude mcp add-json` with `--scope user`), Cursor in
+  `~/.cursor/mcp.json`; the other choice is VS Code's own `mcp.json`.
 
 - **From a JetBrains IDE**: **Tools → Piwi → Copy the Runs' MCP Server Configuration for Claude Code or Cursor**
-  copies the same `type: "http"` entry; **Copy the Runs' MCP Server Configuration for Agents** copies one that runs
-  `npx -y mcp-remote@0.15.2 <url> --transport http-only`, the token in `env`, never on the command line, for
-  **Settings → Tools → AI Assistant → Model Context Protocol** or another agent that only starts commands. The
-  platform has no public way for a plugin to add a server to the AI Assistant, so you paste it once.
+  copies the same entry; **…for Agents** copies one that runs `npx -y mcp-remote@0.15.2 <url> --transport http-only`,
+  the token in `env`, for the AI Assistant (**Settings → Tools → AI Assistant → Model Context Protocol**), which has no
+  public way for a plugin to add a server.
 
-**The configuration holds the token.** Keep it in your user settings, never in a file of the repository, such as a
-project's `.mcp.json` or `.cursor/mcp.json`: anyone who reads the file can drive your runs while the editor is open.
-**Reset the token** gives the server a new one at once, and every agent you gave the old one to is refused until you
-copy the configuration again (the editor's own agent follows): **Piwi: Reset the runs' MCP server token** in VS Code,
-**Tools → Piwi → Reset the Runs' MCP Server Token** in a JetBrains IDE. **Serve the runs to agents** turns the server
-off at once: `piwi.serveRunsToAgents` in VS Code, **Settings → Tools → Piwi** in a JetBrains IDE.
+**The configuration holds the token.** Keep it in your user settings, never in a file of the repository such as a
+project's `.mcp.json`: whoever reads it can drive your runs while the editor is open. **Reset the token** (**Piwi:
+Reset the runs' MCP server token**; **Tools → Piwi → Reset the Runs' MCP Server Token**) gives the server a new one:
+an agent with the old one is refused until you copy the configuration again. `piwi.serveRunsToAgents` in VS Code, and
+**Settings → Tools → Piwi** in a JetBrains IDE, turn the server off.
 
 ## The tools
 
@@ -73,11 +70,8 @@ project's test id attribute first and the suite's own locators preferred. `code_
 generator, as [Code from a pause](./editor-stop-code) does, and the editor writes them above the stopped line as one
 edit: one undo removes it. The test goes on with the code it started with: the new lines run next time.
 
-A run's calls and page events are told while the agent calls a tool on that run, and stop two minutes after its last
-call or as you turn the server off; what the page said in them is then dropped.
-
-An action the page does not answer within 10 seconds is answered as such: it may still take effect, and if it does,
-it is kept as a step and `run_follow` tells it (`act-played`).
+A run's calls and page events are told until two minutes after the agent's last call on that run. An action the page
+does not answer within 10 seconds may still take effect: if it does, it is kept as a step, and `run_follow` says so.
 
 **An assertion on an element's text** checks the whole text, as the page shows it now (`toHaveText`); for a text
 longer than 1,000 characters, it checks that the element contains its first words (`toContainText`, up to 200
@@ -93,10 +87,9 @@ characters). Piwi refuses to write a secret field's value, and a text or a value
   your files only through the editor, as an edit you see.
 - **The page is untrusted.** A page can hold text written to steer a model. Everything that comes from it (its
   snapshot, its address and title, an element's name, text and value, the locators built from them, its console, its
-  errors, its requests, and what the test says when a read of the page fails, which a script of the page can word)
-  comes back apart from Piwi's own answer, between two markers that share a random value the page cannot know, and
-  every tool's description tells the agent to read it as data, never as instructions. An image comes after a line
-  that says it is the page's too.
+  errors, its requests, and what the test says when a read of it fails) comes back apart from Piwi's own answer,
+  between two markers that share a random value the page cannot know, and every tool's description tells the agent to
+  read it as data, never as instructions. An image comes after a line that says it is the page's too.
 - **Secrets stay hidden.** The value of a password field, a one-time code and a card's number or security code is
   never sent: its line in the snapshot reads `<hidden>`, in every frame, the image masks the field, and no assertion
   writes it. Tokens and credentials in the page's text, its addresses and the locators `page_locator` shows are
