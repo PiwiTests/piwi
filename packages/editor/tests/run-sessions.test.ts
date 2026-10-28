@@ -787,6 +787,38 @@ describe('RunSessions', () => {
     sessions.dispose();
   });
 
+  test('holds no failure in a run its host says holds none, whoever watches it, and tells its workers so', () => {
+    const { sessions, attach } = harness({
+      watched: () => true,
+      followed: () => true,
+      holdsFailures: (ref) => ref !== 'lab-1',
+      host: 'the desktop app',
+    });
+    const lines = (socket: ReturnType<typeof fakeSocket>) => socket.written.map((line) => JSON.parse(line));
+    const controls = (socket: ReturnType<typeof fakeSocket>) => lines(socket).filter((m) => m.type === 'control');
+    const lab = attach(0, { ref: 'lab-1', holds: ['failure'] });
+    const plain = attach(0, { ref: 'ed-1', holds: ['failure'] });
+    // Each worker hears what it holds, and what the host is called.
+    expect(lines(lab.socket)).toEqual([{ type: 'attached', holds: [], host: 'the desktop app' }]);
+    expect(lines(plain.socket)).toEqual([{ type: 'attached', holds: ['failure'], host: 'the desktop app' }]);
+    const failure: RunToHub = {
+      type: 'stopped',
+      stop: 1,
+      reason: 'failure',
+      title: 'Failed: Timed out',
+      place: { file: 'tests/a.spec.ts', line: 4, column: 5 },
+      locator: null,
+      bar: false,
+    };
+    // A failure that stops the lab's worker anyway goes on at once; the watched run's waits, and keeps waiting.
+    lab.read(failure);
+    plain.read(failure);
+    expect(controls(lab.socket)).toEqual([{ type: 'control', action: 'resume', stop: 1 }]);
+    sessions.surfacesChanged();
+    expect(controls(plain.socket)).toEqual([]);
+    sessions.dispose();
+  });
+
   test('offers Piwi Picker the actions that write code only while the client writes it', () => {
     let writes = false;
     const { sessions } = harness({ writesCode: () => writes });

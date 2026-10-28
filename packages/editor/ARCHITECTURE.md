@@ -829,7 +829,11 @@ surfaces as `server.ts` wires them to the client:
 - `RunSessions` takes `host` and `surfaces`, what its sentences call the service and the surfaces that show stops (`No
   worker of this run is connected to the desktop app.`), and `declines`, the intents the host never starts, refused
   with its sentence and left out of `intentsOf` (Pick and Record in the test's window and Assert, which end in an
-  editor).
+  editor). `host` also goes to each worker in `attached`, so the reporter's lines name the host (`Resume in the
+  desktop app`). `holdsFailures` names the runs that hold no failure, whoever watches them (the desktop app's runs
+  nobody attends): their workers hear `attached` without `failure`, and a failure that stops one anyway goes on.
+- `RecordChannel` takes `folderPrefix`, what its socket's folder is named from (`piwi-desktop-run-`), so a host finds
+  the folders a process of its own that was killed left behind.
 - `RunHub` takes the `token` `hello` carries (the desktop token) and the sentence its connections close with
   (`closing`). `join` adds a peer of the host's own transport (`HubTransport`: `send`, `buffered`, `close`), which needs
   no handshake nor `hello`, counts toward none of the WebSocket's limits, and commands and hears the hub as a WebSocket

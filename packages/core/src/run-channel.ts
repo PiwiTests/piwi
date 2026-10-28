@@ -275,9 +275,11 @@ export type RunToHub =
 export type HubToRun =
   /**
    * The answer to a `run-attach` that lists `holds`: of those stops, the ones the service shows and answers (`holds`),
-   * which the worker holds from then on. Sent once, before any other message, and only to a worker that listed them.
+   * which the worker holds from then on, and what the worker's lines call the service (`host`, `the desktop app`;
+   * absent for the editor, and from a service that predates it). Sent once, before any other message, and only to a
+   * worker that listed them.
    */
-  | { type: 'attached'; holds: RunHold[] }
+  | { type: 'attached'; holds: RunHold[]; host?: string }
   /** The run's breakpoints from now on, in place of `PIWI_PAUSE_AT` and of the ones sent before. */
   | { type: 'breakpoints'; places: Place[] }
   /** Stop before the next call of the running test, or of the next test. */
@@ -594,7 +596,10 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
   switch (value.type) {
     case 'attached': {
       const holds = readHolds(value.holds);
-      return holds ? { type: 'attached', holds } : null;
+      if (!holds) return null;
+      // A name to print in a sentence: letters, digits, spaces, `'`, `.` and `-`, 64 at most; anything else is left out.
+      const host = typeof value.host === 'string' && /^[A-Za-z0-9][\w '.-]{0,63}$/.test(value.host) ? value.host : null;
+      return host ? { type: 'attached', holds, host } : { type: 'attached', holds };
     }
     case 'breakpoints': {
       if (!Array.isArray(value.places) || value.places.length > MAX_PLACES) return null;
