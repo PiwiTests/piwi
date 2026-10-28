@@ -1,6 +1,7 @@
-import type { Page, Route } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { waitForHydration } from './utils';
+import { fakeJetbrainsIdes } from './utils/fake-jetbrains';
 
 /**
  * Open in IDE through the Piwi JetBrains plugin: the dashboard asks every port
@@ -9,48 +10,6 @@ import { waitForHydration } from './utils';
  * The IDEs are faked by intercepting those requests in the browser, so an IDE
  * running on the machine never answers.
  */
-
-const PLUGIN = /^http:\/\/127\.0\.0\.1:\d+\/api\/piwi\/open\?/;
-
-interface FakeIde {
-  port: number;
-  ide: string;
-  holds: boolean;
-}
-
-/** Answer the plugin's requests as `ides` would; every other port refuses the connection. Returns the requests seen. */
-async function fakeJetbrainsIdes(page: Page, ides: FakeIde[]): Promise<URL[]> {
-  const seen: URL[] = [];
-  await page.route(PLUGIN, async (route: Route) => {
-    const url = new URL(route.request().url());
-    seen.push(url);
-    const ide = ides.find((i) => String(i.port) === url.port);
-    if (!ide) return route.abort('connectionrefused');
-    const check = url.searchParams.has('check');
-    await route.fulfill({
-      status: ide.holds ? 200 : 404,
-      contentType: 'application/json',
-      headers: { 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify(
-        ide.holds
-          ? {
-              found: true,
-              opened: !check,
-              ide: ide.ide,
-              project: 'shop',
-              file: `/home/me/shop/${url.searchParams.get('file')}`,
-            }
-          : { found: false, ide: ide.ide, projects: ['other-app'], error: 'not found' },
-      ),
-    });
-  });
-  // IDE Remote Control's endpoint, and the built-in server's root, which Auto asks after the plugin: nothing listens.
-  await page.route(
-    (url) => Number(url.port) >= 63342 && Number(url.port) <= 63361 && !url.pathname.startsWith('/api/piwi/'),
-    (route) => route.abort('connectionrefused'),
-  );
-  return seen;
-}
 
 async function openTheSettings(page: Page) {
   await page.goto('/');

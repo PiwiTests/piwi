@@ -649,7 +649,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'End the test',
         summary:
-          "End a stopped test where it stands, from the editor, the pause bar, Piwi Picker, the desktop app or an agent: the call it stopped before never runs, and Playwright reports the test as skipped.",
+          'End a stopped test where it stands, from the editor, the pause bar, Piwi Picker, the desktop app or an agent: the call it stopped before never runs, and Playwright reports the test as skipped.',
         needs: ['fixtures'],
         where:
           "End test on the stopped line's CodeLens, Piwi: End the test here; Tools → Piwi → End the Test in a JetBrains IDE",
@@ -671,6 +671,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         where:
           "The paused line's CodeLens in VS Code, Piwi: Write code at the stop…; its inlay and Tools → Piwi in a JetBrains IDE",
         doc: 'features/editor-stop-code',
+      },
+      {
+        title: 'Debug in my editor',
+        summary:
+          "From a failure's page, the failing line opened in VS Code or a JetBrains IDE and, once you say yes there, the test run headed with one worker to stop at that line, the locator healing's suggestion outlined on the page.",
+        needs: ['fixtures'],
+        where: "Execution → Source, beside the failing line's frame",
+        doc: 'features/debug-in-editor',
       },
       {
         title: 'Run control for agents',

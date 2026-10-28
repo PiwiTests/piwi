@@ -35,6 +35,7 @@ run control, coverage, the recorder, the build, and the reads and the connection
   - [The hub](#the-hub)
   - [The live view](#the-live-view)
   - [Code from a stop](#code-from-a-stop)
+  - [A run that debugs a failure](#a-run-that-debugs-a-failure)
   - [Agents](#agents)
   - [Another host](#another-host)
   - [The discovery file](#the-discovery-file)
@@ -134,6 +135,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/stop-actions.ts`, `src/stop-code.ts`, `src/run-lines.ts`: the code from a stop, rendered, and placed where the
   stopped statement stands now.
 - `src/discovery.ts`: the discovery file, `~/.piwi/editors/<pid>.json`, written and read.
+- `src/debug-run.ts`: a run that debugs a failure (**Debug in my editor**): its test, its one-shot stop and the
+  suggested locator outlined there.
 - `src/agent-server.ts`, `src/run-agent.ts`: the MCP server for the agents of this machine, and its tools.
 - `src/mcp-protocol.ts`: MCP's JSON-RPC pieces, shared with the instance's MCP server.
 - `src/run-host.ts`: the run control another host builds on, the desktop app's server.
@@ -476,6 +479,8 @@ and the fix plan's verification carry `PIWI_ORIGIN=editor` alone.
 - by id, with the instance's arguments;
 - by location (`RunTestsArgs.locations`): a spec under the context's folder and the line of its `test(…)` call
   (`isTestLocation`, `specLocation`). This needs no instance, so it runs a test just recorded.
+- to debug a failure (`RunTestsArgs.debug`): the test of a spec its title names, headed with one worker, stopping once
+  at the failing line ([A run that debugs a failure](#a-run-that-debugs-a-failure)).
 
 With `repeat`, it runs each test that many times without retries (`repeatArgs`: `--repeat-each=3 --retries=0`, for
 **Verify ×3**), headless: neither the breakpoints nor the record and run channels are passed. A repeated command's
@@ -840,6 +845,29 @@ it on the stopped page and outlines its matches where the bar shows; a line with
 `uri` takes the outline down.
 
 A failure held at its line ([Stops no pause bar shows](#stops-no-pause-bar-shows)) takes the same actions.
+
+### A run that debugs a failure
+
+**Debug in my editor** on the dashboard's failure page opens the failing line through a client's open link with
+`debug=1`; once the person said yes, the client asks `piwi/runArgs` with `RunTestsArgs.debug` (`src/debug-run.ts`,
+`DebugRuns`):
+
+- **The command.** The fields are checked one by one (`checkedDebugRun`: a line, a title and a project of plain
+  text, an execution id), the spec and the failing line's file must be under the context's folder, and the test is
+  the one of the spec as saved whose describe blocks' titles and its own, joined by ` › `, are the title, else the
+  only one of its own title (`debugTest`). It runs alone (its location), in its Playwright project, with
+  `--workers=1`, and headed with the editor's breakpoints and the failing line in `PIWI_PAUSE_AT`, as a run started to
+  be watched (`withBreakpoints`). Anything refused answers null, with a `piwi/notice` saying why.
+- **The one-shot stop.** The failing line is a breakpoint of that run alone: `piwi/setRunBreakpoints` for the run
+  carries it beside the client's places until a worker stops there (heard through `RunSessions`' `heard`), and then
+  the run's breakpoints become the client's own, for its workers and those that connect later. The client never
+  holds it, so the editor's breakpoint list is left as it is.
+- **The suggested locator.** With `execution`, the instance's locator healing of that execution is asked as the
+  command is built (`PiwiContext.healing`), and again at the stop. Its recommended locator is counted on the stopped
+  page through `RunSessions.locator`, outlined where the bar shows, and said in a `piwi/notice`. While it stands,
+  `piwi/locatorAtCaret` on the stopped line answers it with no count, asking the worker nothing, so the caret's own
+  count does not take the outline down; anywhere else the caret's count goes on as at any stop. No instance, no
+  healing or no recommendation: the run only stops.
 
 ### Agents
 

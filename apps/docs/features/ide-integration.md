@@ -138,3 +138,4 @@ extension's link carries the file path and line to VS Code through your operatin
 
 - [Editor extensions](./editors): Piwi's answers inside VS Code and the JetBrains IDEs.
 - [JetBrains plugin](./jetbrains): what the plugin needs, and where it shows what.
+- [Debug in my editor](./debug-in-editor): both Piwi links, to run a failed test to its failing line.

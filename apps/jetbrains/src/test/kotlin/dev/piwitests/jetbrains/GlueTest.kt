@@ -970,6 +970,138 @@ class GlueTest {
         assertEquals("network paths are not supported", refused("file" to "a.ts", "root" to "\\\\attacker\\share"))
     }
 
+    /** A debug request's query, as the dashboard writes it, with `fields` over its own; a null value leaves one out. */
+    private fun debugQuery(vararg fields: Pair<String, String?>): Map<String, List<String>> {
+        val all = linkedMapOf<String, String?>(
+            "file" to "tests/pages/checkout.page.ts",
+            "line" to "5",
+            "debug" to "1",
+            "spec" to "tests/checkout.spec.ts",
+            "test" to "checkout › pays with a coupon",
+            "playwrightProject" to "chromium",
+            "execution" to "900",
+        )
+        for ((name, value) in fields) all[name] = value
+        return all.filterValues { it != null }.mapValues { listOf(it.value!!) }
+    }
+
+    @Test
+    fun `a debug request names the failing line, the test, its project and its execution`() {
+        assertEquals(
+            Glue.OpenRequest.File(
+                "tests/pages/checkout.page.ts",
+                5,
+                null,
+                false,
+                null,
+                debug = Glue.DebugRequest("tests/checkout.spec.ts", "checkout › pays with a coupon", "chromium", 900),
+            ),
+            Glue.parseOpenRequest(debugQuery()),
+        )
+        // The spec is the failing file when the request names none; a title of quotes and a shell's characters is text.
+        assertEquals(
+            Glue.DebugRequest("tests/a.spec.ts", "shows \"Welcome\" for \$5 (50% off!)", null, null),
+            (Glue.parseOpenRequest(
+                debugQuery(
+                    "file" to "tests/a.spec.ts",
+                    "spec" to null,
+                    "test" to "shows \"Welcome\" for \$5 (50% off!)",
+                    "playwrightProject" to null,
+                    "execution" to null,
+                ),
+            ) as Glue.OpenRequest.File).debug,
+        )
+        assertEquals(null, (Glue.parseOpenRequest(debugQuery("debug" to null)) as Glue.OpenRequest.File).debug)
+    }
+
+    @Test
+    fun `a debug request refuses every field it does not take, and a field given twice`() {
+        fun refused(query: Map<String, List<String>>) = (Glue.parseOpenRequest(query) as Glue.OpenRequest.Refused).error
+        for (line in listOf("0", "-1", "1.5", "1e3", "05", "+5", "five", "99999999999")) {
+            assertEquals(line, "line must be a positive whole number", refused(debugQuery("line" to line)))
+        }
+        assertEquals("line must be a positive whole number", refused(debugQuery("line" to null)))
+        assertEquals("debug must be 1", refused(debugQuery("debug" to "true")))
+        assertEquals("file must not contain '..'", refused(debugQuery("file" to "tests/../../etc/passwd")))
+        assertEquals("spec must not contain '..'", refused(debugQuery("spec" to "tests\\..\\..\\secret.spec.ts")))
+        assertEquals("network paths are not supported", refused(debugQuery("spec" to "//attacker/share/a.spec.ts")))
+        for (title in listOf(
+            "",
+            "[Run](command:workbench.action.terminal.new)",
+            "<a href=\"https://evil.example\">pays</a>",
+            "pays`rm -rf ~`",
+            "one\ntwo",
+            "a\\b",
+            "x".repeat(1001),
+        )) {
+            assertEquals(title, "test must be a title of 1 to 1000 characters of plain text", refused(debugQuery("test" to title)))
+        }
+        for (project in listOf("chromium\$(touch pwned)", "a\"b", "%PATH%", "x!", "<b>", "p".repeat(201))) {
+            assertEquals(
+                project,
+                "playwrightProject must be a project name of 1 to 200 characters of plain text",
+                refused(debugQuery("playwrightProject" to project)),
+            )
+        }
+        for (execution in listOf("0", "abc", "-3", "2147483648")) {
+            assertEquals(execution, "execution must be an id", refused(debugQuery("execution" to execution)))
+        }
+        assertEquals("file is given twice", refused(debugQuery() + ("file" to listOf("a.spec.ts", "/etc/passwd"))))
+        assertEquals("test is given twice", refused(debugQuery() + ("test" to listOf("pays", "refunds"))))
+    }
+
+    @Test
+    fun `a debug request's files are in the project, under a Playwright config's folder, with every link followed`() {
+        val roots = listOf("/home/me/shop")
+        val configs = listOf("/home/me/shop/e2e")
+        fun refusal(canonical: String, spec: Boolean) = Glue.debugFileRefusal("named.ts", canonical, roots, configs, spec)
+        assertEquals(null, refusal("/home/me/shop/e2e/tests/checkout.spec.ts", true))
+        assertEquals(null, refusal("/home/me/shop/e2e/tests/pages/checkout.page.ts", false))
+        // A link in the project to a file outside it is followed out.
+        assertEquals("named.ts is outside the project's folders", refusal("/home/me/elsewhere/evil.spec.ts", true))
+        assertEquals("named.ts is outside the project's folders", refusal("/home/me/shop-old/e2e/a.spec.ts", true))
+        assertEquals("named.ts is under no Playwright config's folder", refusal("/home/me/shop/scripts/seed.spec.ts", true))
+        assertEquals("named.ts is not a spec", refusal("/home/me/shop/e2e/tests/pages/checkout.page.ts", true))
+        assertEquals("named.ts is not a JavaScript or TypeScript file", refusal("/home/me/shop/e2e/tests/data.json", false))
+    }
+
+    @Test
+    fun `a debug request asks before it runs, and its yes runs the test to stop once at the failing line`() {
+        assertEquals(
+            "Debug this test here? Piwi runs “checkout › pays” headed, one worker, and stops at line 5.",
+            Glue.debugPrompt("checkout › pays", 5),
+        )
+        assertEquals(
+            "This Debug in my editor link was refused: line must be a positive whole number. Nothing was opened or run.",
+            Glue.debugRefusal("line must be a positive whole number"),
+        )
+        assertEquals(
+            RunTestsArgs(
+                uri = "file:///home/me/shop/e2e/tests/checkout.spec.ts",
+                testIds = emptyList(),
+                debug = DebugRun(
+                    EditorBreakpoint("file:///home/me/shop/e2e/tests/pages/checkout.page.ts", 4),
+                    "checkout › pays",
+                    "chromium",
+                    900,
+                ),
+            ),
+            Glue.debugRunArgs(
+                "file:///home/me/shop/e2e/tests/checkout.spec.ts",
+                "file:///home/me/shop/e2e/tests/pages/checkout.page.ts",
+                5,
+                Glue.DebugRequest("tests/checkout.spec.ts", "checkout › pays", "chromium", 900),
+            ),
+        )
+        // The run request the service reads: no test id or location, the debug run in their place.
+        assertEquals(
+            JsonParser.parseString(
+                """{"uri":"file:///s.spec.ts","testIds":[],"debug":{"stop":{"uri":"file:///p.ts","line":4},"title":"pays"}}""",
+            ),
+            Gson().toJsonTree(Glue.debugRunArgs("file:///s.spec.ts", "file:///p.ts", 5, Glue.DebugRequest("s.spec.ts", "pays", null, null))),
+        )
+    }
+
     @Test
     fun `a relative path is looked up under each root once, an absolute one as is`() {
         assertEquals(

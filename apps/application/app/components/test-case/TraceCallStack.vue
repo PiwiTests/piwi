@@ -5,9 +5,12 @@
  * visual language of TestSourceStack (frame blocks, highlighted code, red
  * failing line) with line-number gutters, function names, and consecutive
  * dependency frames folded into a single expandable group so the in-project
- * story stays scannable.
+ * story stays scannable. The frame the failure enters the test's code at
+ * offers Debug in my editor beside its path.
  */
 import type { TraceStackFrame } from '~~/types/api';
+import type { DebugInIdeTarget } from '~/composables/useOpenInIde';
+import { atFailurePlace } from '~/utils/ide-links';
 import { highlightLines, languageForPath } from '#shared/highlight';
 
 const props = defineProps<{
@@ -15,7 +18,13 @@ const props = defineProps<{
   /** Piwi project id + name, threaded so the IDE opener can resolve a workspace root. */
   projectKey?: string | number | null;
   projectName?: string | null;
+  /** Debug in my editor's target, offered on the first in-project frame at its failing line. */
+  debugTarget?: DebugInIdeTarget | null;
 }>();
+
+const debugIndex = computed(() =>
+  props.frames.findIndex((frame) => frame.inProject && atFailurePlace(frame, props.debugTarget)),
+);
 
 type Row =
   | { kind: 'frame'; frame: TraceStackFrame; frameIndex: number }
@@ -103,14 +112,17 @@ const frameSourceRows = computed(() =>
           <span v-if="row.frame.functionName" class="truncate text-gray-400 dark:text-gray-500">
             in <span class="font-mono">{{ row.frame.functionName }}</span>
           </span>
-          <UBadge
-            :color="row.frameIndex === failedFrameIndex ? 'error' : 'neutral'"
-            variant="subtle"
-            size="xs"
-            class="ml-auto shrink-0"
-          >
-            {{ row.frameIndex === failedFrameIndex ? 'Failed here' : 'Caller' }}
-          </UBadge>
+          <span class="ml-auto flex shrink-0 items-center gap-2">
+            <DebugInEditorButton v-if="debugTarget && row.frameIndex === debugIndex" :target="debugTarget" />
+            <UBadge
+              :color="row.frameIndex === failedFrameIndex ? 'error' : 'neutral'"
+              variant="subtle"
+              size="xs"
+              class="shrink-0"
+            >
+              {{ row.frameIndex === failedFrameIndex ? 'Failed here' : 'Caller' }}
+            </UBadge>
+          </span>
         </div>
         <div v-if="row.frame.source" class="overflow-x-auto text-xs font-mono leading-relaxed py-1">
           <div class="min-w-max">

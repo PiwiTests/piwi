@@ -47,7 +47,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  * machine and every page once the built-in server allows unsigned requests, do not apply. The
  * platform still refuses a request whose `Host` is not this machine. The addresses come from
  * each project's snapshot ([PiwiProjectService.knownAddresses]), read again when the status, the
- * configs or the settings change: the server's I/O thread reads nothing from the disk.
+ * configs or the settings change: the server's I/O thread reads nothing from the disk. With `debug=1` (**Debug in my
+ * editor**), every field is checked ([Glue.parseOpenRequest]) and both files again with every link followed; the
+ * failing line opens, and [PiwiDebugLink] asks before anything runs.
  */
 class PiwiOpenHandler : RestService() {
     override fun getServiceName(): String = SERVICE
@@ -114,7 +116,10 @@ class PiwiOpenHandler : RestService() {
     override fun execute(urlDecoder: QueryStringDecoder, request: FullHttpRequest, context: ChannelHandlerContext): String? {
         val origin = request.headers().get(HttpHeaderNames.ORIGIN)
         when (val parsed = Glue.parseOpenRequest(urlDecoder.parameters())) {
-            is Glue.OpenRequest.Refused -> respond(context, origin, HttpResponseStatus.BAD_REQUEST, mapOf("error" to parsed.error))
+            is Glue.OpenRequest.Refused -> {
+                if (urlDecoder.parameters().containsKey("debug")) refusedDebug(Glue.debugRefusal(parsed.error))
+                respond(context, origin, HttpResponseStatus.BAD_REQUEST, mapOf("error" to parsed.error))
+            }
             is Glue.OpenRequest.File -> ApplicationManager.getApplication().executeOnPooledThread {
                 val (status, body) = try {
                     answer(parsed, projectsFor(origin))
@@ -139,6 +144,8 @@ class PiwiOpenHandler : RestService() {
                 "error" to if (projects.isEmpty()) "no project is open in $ide" else "no project open in $ide holds ${request.path}",
             )
         val (project, file) = found
+        val debug = request.debug?.takeIf { !request.check }
+        if (debug != null) return openToDebug(request, debug, project, file, ide)
         if (!request.check) open(project, file, request.line, request.column)
         return HttpResponseStatus.OK to mapOf(
             "found" to true,
@@ -147,6 +154,64 @@ class PiwiOpenHandler : RestService() {
             "project" to project.name,
             "file" to file.path,
         )
+    }
+
+    /**
+     * A Debug in my editor request: the spec found as the failing file was, both checked again with every link
+     * followed ([Glue.debugFileRefusal]); then the failing line opens and the IDE asks before it runs the test. A refusal
+     * opens and runs nothing, and says why, in the IDE and in the answer.
+     */
+    private fun openToDebug(
+        request: Glue.OpenRequest.File,
+        debug: Glue.DebugRequest,
+        project: Project,
+        file: VirtualFile,
+        ide: String,
+    ): Pair<HttpResponseStatus, Map<String, Any?>> {
+        val spec = locate(project, debug.spec, request.root)
+        val refusal = if (spec == null) {
+            "no file of ${project.name} matches ${debug.spec}"
+        } else {
+            debugRefusal(project, file, request.path, false) ?: debugRefusal(project, spec, debug.spec, true)
+        }
+        val line = request.line
+        if (refusal != null || spec == null || line == null) {
+            val said = Glue.debugRefusal(refusal ?: "it names no line")
+            PiwiCommands.notify(project, said, NotificationType.WARNING)
+            return HttpResponseStatus.BAD_REQUEST to mapOf("found" to true, "opened" to false, "ide" to ide, "project" to project.name, "error" to said)
+        }
+        open(project, file, line, request.column)
+        PiwiDebugLink.ask(project, spec, file, line, debug)
+        return HttpResponseStatus.OK to mapOf(
+            "found" to true,
+            "opened" to true,
+            "debug" to "asked",
+            "ide" to ide,
+            "project" to project.name,
+            "file" to file.path,
+        )
+    }
+
+    /** Why a file a debug request found may not be debugged, with every link followed; null when it may. */
+    private fun debugRefusal(project: Project, file: VirtualFile, named: String, spec: Boolean): String? {
+        fun canonical(path: String) = runCatching { File(path).canonicalPath }.getOrNull()
+        val (roots, configs) = ApplicationManager.getApplication().runReadAction(Computable {
+            val roots = buildList {
+                project.basePath?.let { add(it) }
+                ProjectRootManager.getInstance(project).contentRoots.mapTo(this) { it.path }
+            }
+            roots to project.service<PiwiProjectService>().playwrightConfigDirs().map { it.toString() }
+        })
+        val real = canonical(file.path) ?: return "$named cannot be read"
+        return Glue.debugFileRefusal(named, real, roots.mapNotNull(::canonical), configs.mapNotNull(::canonical), spec)
+    }
+
+    /** A debug request refused before any file was looked for: said in the project focused last. */
+    private fun refusedDebug(message: String) {
+        val project = IdeFocusManager.getGlobalInstance().lastFocusedFrame?.project
+            ?: ProjectManager.getInstance().openProjects.firstOrNull { !it.isDefault }
+            ?: return
+        PiwiCommands.notify(project, message, NotificationType.WARNING)
     }
 
     /** The [allowed] projects still open: the ones connected to the Piwi project first, then the last focused one. */

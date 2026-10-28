@@ -479,9 +479,10 @@ On the execution page:
 
 **Under the block.**
 
-- The execution page shows `EvidenceTabs` (opening on the tab `useEvidenceHint` picks from the leading clue), the
-  `Toolbox` (More ways to fix: one folded section per way to fix, the one the next step points at open) and the
-  history (`HistoryStrip`).
+- The execution page shows `EvidenceTabs` (opening on the tab `useEvidenceHint` picks from the leading clue; its
+  Source tab's frame where the failure enters the test's code, `failurePlace`, offers Debug in my editor,
+  `DebugInEditorButton`), the `Toolbox` (More ways to fix: one folded section per way to fix, the one the next step
+  points at open) and the history (`HistoryStrip`).
 - The cluster page shows, in order:
   - the section the next step points at, as a card of its own (`Toolbox` with `lead`; the sections, their order and
     the step each serves are in `app/utils/fix-sections.ts`);
@@ -630,7 +631,7 @@ rule):
 - **Analytics scope**: `useAnalyticsScope`.
 - **The run page's retry command**: `useRunRetryCommand` (one failing set and one shared mode for every copy button on
   the page).
-- **IDE preferences**: `useOpenInIde`.
+- **IDE preferences**: `useOpenInIde`, and Debug in my editor through Piwi's own IDE clients (`debugInIde`).
 - **Guides**: `useGuide` (the engine that walks a guide's stops, with a driver.js popover on each stop's guide
   anchor), `useDemoTour` (the demo tour's prompt and language, on top of it) and `useAuthoredGuides` (the authored
   guides the command palette and the assistant panel list).

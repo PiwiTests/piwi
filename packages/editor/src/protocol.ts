@@ -301,6 +301,31 @@ export interface RunTestsArgs {
    * did not reach an instance, a `piwi/notice` from its exit code.
    */
   repeat?: number;
+  /**
+   * Debug one test from a failure (**Debug in my editor**, the dashboard's open link with `debug=1`): the test of the
+   * spec at `uri` that `DebugRun.title` names, in place of `testIds` and `locations`, headed, with one worker, stopping
+   * once at `DebugRun.stop`. Refused, with a `piwi/notice` saying why, when the spec holds no such test.
+   */
+  debug?: DebugRun;
+}
+
+/** What a run that debugs one test from a failure stops at, runs and shows there (`RunTestsArgs.debug`). */
+export interface DebugRun {
+  /**
+   * The failing line, in the spec or a page object under the Playwright config's folder: the run stops there once. It
+   * is a breakpoint of this run alone, kept through `piwi/setRunBreakpoints` until a worker stops there, and never one
+   * of the editor's.
+   */
+  stop: EditorBreakpoint;
+  /** The test's title after its describe blocks' (`cart › adds a mug`), as the dashboard joins them; or its own alone. */
+  title: string;
+  /** The Playwright project it failed in, run alone (`--project`); absent or null runs every project of the config. */
+  project?: string | null;
+  /**
+   * The failed execution on the instance: at the stop, its locator healing's recommended locator is counted on the
+   * stopped page, outlined there and said (a `piwi/notice`, and the stopped line's `piwi/locatorAtCaret`).
+   */
+  execution?: number | null;
 }
 
 export interface RunCommand {
@@ -1696,7 +1721,9 @@ export const STOP_REQUESTS_REQUEST = 'piwi/stopRequests';
  * `adminPage`), and be the page the test stopped on: the expression the code written at the stop runs on, in the
  * stopped file; another (`adminPage` at a stop on `page`), or a chain in another file, is refused. Where the pause bar
  * shows, the worker outlines the matches until the test goes on or the next `piwi/locatorAtCaret`; a `uri` or `line`
- * of null, or a line without a locator, takes the outline down. `since` names the stop, as for `piwi/stopAction`.
+ * of null, or a line without a locator, takes the outline down. `since` names the stop, as for `piwi/stopAction`. At
+ * the stop of a run that debugs a failure (`RunTestsArgs.debug`), while the failure's suggested locator is outlined,
+ * the stopped line is answered with that locator and no count, and the outline stays.
  */
 export interface LocatorAtCaretParams {
   ref: string;

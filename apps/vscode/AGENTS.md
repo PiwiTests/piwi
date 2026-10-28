@@ -28,8 +28,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   (`piwi/statusChanged` still makes the extension read the status, the failures, the coverage and the MCP servers
   again.)
   ([Failures view](ARCHITECTURE.md#failures-view))
-- **`src/glue.ts`, `src/connect.ts`, `src/breakpoints.ts`, `src/send-listener.ts` and `src/run-control.ts` use no
-  VS Code API.** Put logic that needs no editor there, so the unit tests (`npm run vscode:test`) cover it.
+- **`src/glue.ts`, `src/connect.ts`, `src/breakpoints.ts`, `src/send-listener.ts`, `src/run-control.ts` and
+  `src/debug-link.ts` use no VS Code API.** Put logic that needs no editor there, so the unit tests (`npm run vscode:test`) cover it.
   ([The pure half](ARCHITECTURE.md#the-pure-half))
 - **A run control names the stop it answers, and a line sent for a run is a line of the run's code.** Resume, Step, Run
   to the cursor, Finish and End the test pass the stop's `since`; Run to the cursor and `piwi/setRunBreakpoints` map the
@@ -76,6 +76,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   is one pick.
 - **Open in IDE never opens a file outside the workspace folders** (`resolveOpenFile` in `src/glue.ts`).
   ([Open in IDE](ARCHITECTURE.md#open-in-ide))
+- **A debug link (`debug=1`) runs nothing until the person says yes in a notification, and names files, a line and a
+  title, never a command.** `debugLink` checks each field and refuses one named twice, `debugFiles` follows every
+  symbolic link before a file counts as the workspace's, and the service builds the run (`RunTestsArgs.debug`).
+  Checked by `tests/debug-link.test.ts` and the integration suite ("Debug in my editor …").
+  ([Debug in my editor](ARCHITECTURE.md#debug-in-my-editor))
 - **The Send to editor endpoint listens on `127.0.0.1` only, with its token in `SecretStorage`** (`piwi.sendToken`,
   `src/send-listener.ts`). It answers only a `Host` of `127.0.0.1` or `localhost` at its port or the one a remote window
   forwards to it (`forwarded`), and every answer to a request carrying `x-piwi-editor-challenge`, whatever its route and
@@ -143,6 +148,7 @@ npm run vscode:package            # dist/piwi.vsix
 - `src/test-explorer.ts`: Piwi's tests in VS Code's Testing view.
 - `src/recording.ts`: recording a test from the editor.
 - `src/send-listener.ts`: the Send to editor endpoint.
+- `src/debug-link.ts`: a debug link read and checked; `src/debug-from-link.ts`: the prompt, then the run.
 - `src/breakpoints.ts`: the breakpoints a test run passes to the service.
 - `src/run-view.ts`: the run controls (the stops, their commands, the paused page); `src/run-control.ts`: their pure
   half.

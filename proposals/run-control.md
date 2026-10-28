@@ -15,9 +15,9 @@ tools that follow the run, read the stopped page as its accessibility tree and a
 (Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2, 3 and 4 are built too (below; PR 4 is
 merged as #932), and so are PR 5's three halves, the service's, the IDE's with the forwarded addresses, and the Runs
 window's, and PR 6's two halves, the desktop app's server as the hub of its runs, then its window's controls, live
-view and Copy with Piwi Picker listing those runs, PR 9's tools for the runs an editor starts and PR 7's first half,
-**End the test** and the runs started in a terminal (below), while the rest of PR 7 and the desktop app's tools for
-agents are not (PR 8's team-instance half is built on its own branch). PR 1
+view and Copy with Piwi Picker listing those runs, PR 9's tools for the runs an editor starts and PR 7's two halves,
+**End the test** with the runs started in a terminal, and **Debug in my editor** (below), while the desktop app's
+tools for agents are not (PR 8's team-instance half is built on its own branch). PR 1
 differs from the text in four ways. A headed browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
@@ -379,6 +379,24 @@ with the editor's breakpoints, which the clients send as they stand (`piwi/setBr
 while a Runs window follows the runs, so it never waits for nobody. Its workers take no Pick, Record or Assert, which
 need the pairing and the record channel only a command the editor builds carries.
 
+PR 7's second half, **Debug in my editor**, is Part 8.2's first bullet, and differs from the text in six ways. The button is on the
+execution page's **Source** tab, beside the open link of the frame where the failure enters the test's code (the
+first in-project frame other than the test's declaration, a page object's included), in the captured frames and in
+the trace's full stack, not in the situation block, whose controls are at their budget; it goes only through Piwi's
+own clients, the VS Code extension's link and the JetBrains plugin's route, as the visitor's Open in IDE method picks.
+The link names, beside the file and line, the test's spec, its title after its describe blocks' (joined by ` › `),
+its Playwright project and the execution, and the editor service finds the test in the spec as saved by that title
+(`RunTestsArgs.debug`), running it by its location with `--project`, `--workers=1` and `--headed`. The IDE asks in a
+notification, never a dialog, after the failing line opened, and a link with any field it does not take (a line that
+is not a positive whole number, a title that is not plain text, a project a shell expands, a file outside the window's
+folders once every symbolic link is followed or under no Playwright config, a field named twice) opens and runs
+nothing, and says why. The breakpoint is the run's alone: the service carries it in the run's breakpoints, through
+the client's `piwi/setRunBreakpoints`, until a worker stops there, then drops it, so the IDE's breakpoint list is left
+as it is and a retry does not stop there again. The candidate is the **Locator fix** panel's recommended locator,
+asked of the instance as the command is built and again at the stop, counted and outlined through the locator count
+of Part 5, and said in a notice; while it is outlined, the caret's count on the stopped line answers it without asking
+the worker, so it does not take the outline down. Below the tablet width the button is hidden, as the open link's
+chooser is.
 The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of

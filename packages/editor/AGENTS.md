@@ -169,6 +169,11 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   again, whatever the worker's reporter hid, and a mock through `mockCode`, by the rule `@piwitests/core/mask` writes
   down. Checked by `tests/stop-actions.test.ts` ("lists the responses a test kept with the credentials …").
   ([ARCHITECTURE.md](ARCHITECTURE.md#code-from-a-stop))
+- **A debug run's failing line is a breakpoint of that run alone, and its command is built from the test the service
+  finds in the spec, never from what the link named.** `RunTestsArgs.debug` names a line, a title, a project and an
+  execution, checked one by one (`checkedDebugRun`); `DebugRuns` keeps the line in the run's breakpoints until a worker
+  stops there, and never sends it to the client. Checked by `tests/debug-run.test.ts`.
+  ([ARCHITECTURE.md](ARCHITECTURE.md#a-run-that-debugs-a-failure))
 - **The run control runs without the language server too: the desktop app's server hosts it.** `src/run-host.ts`
   exports `RecordChannel`, `RunSessions`, `RunHub`, `StopActions` and `RunLines`, which import nothing of the LSP;
   `apps/application/server/utils/desktop-runs.ts` wires them, so a change to their options runs its tests too

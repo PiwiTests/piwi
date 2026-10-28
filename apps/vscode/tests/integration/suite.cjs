@@ -1124,6 +1124,97 @@ const tests = {
     assert.equal((await ask(served.token)).status, 401);
     assert.equal((await ask(reset.token)).status, 200);
   },
+
+  async 'Debug in my editor: the link opens the failing line, asks, and stops the test there with the suggested locator outlined'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const before = api.lastRun();
+    const breakpoints = vscode.debug.breakpoints.length;
+    const link = [
+      'file=/ci/work/tests/pages/checkout.page.ts',
+      'line=5',
+      'column=21',
+      'debug=1',
+      'spec=tests/checkout.spec.ts',
+      'test=pays',
+      'playwrightProject=chromium',
+      'execution=900',
+    ].join('&');
+    // A link refused (no line 0) opens and asks nothing.
+    const prompts = [];
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    await api.openDebugLink(link.replace('line=5', 'line=0'), (prompt) => {
+      prompts.push(prompt);
+      return Promise.resolve('Debug');
+    });
+    assert.deepEqual(prompts, []);
+    assert.equal(vscode.window.activeTextEditor, undefined);
+    // The prompt left: the failing line is open, and nothing runs.
+    await api.openDebugLink(link, (prompt) => {
+      prompts.push(prompt);
+      return Promise.resolve(undefined);
+    });
+    assert.deepEqual(prompts, [
+      'Piwi: Debug this test here? Piwi runs “pays” headed, one worker, and stops at line 5.',
+    ]);
+    assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), pageObject.toString());
+    assert.equal(vscode.window.activeTextEditor.selection.active.line, 4);
+    assert.equal(api.lastRun(), before);
+
+    // A yes: the test runs headed, with one worker, and its run alone stops at the failing line.
+    await api.openDebugLink(link, (_prompt, answer) => Promise.resolve(answer));
+    const run = await waitFor(() => (api.lastRun() !== before ? api.lastRun() : null), 'the debug run');
+    assert.equal(run.command, 'npx playwright test tests/checkout.spec.ts:3 --project=chromium --workers=1 --headed');
+    assert.ok(run.env.PIWI_PAUSE_AT.split(';').includes('tests/pages/checkout.page.ts:5'), run.env.PIWI_PAUSE_AT);
+    assert.equal(vscode.debug.breakpoints.length, breakpoints, 'no breakpoint added to the editor’s');
+    const { socket, heard, send, heardOne, answers } = runWorker(run.env.PIWI_RUN_CHANNEL, run.ref, [
+      'pick',
+      'record',
+      'locator',
+    ]);
+    answers.locator = { ok: true, message: '1 element matches.', count: 1 };
+    try {
+      send({
+        type: 'test-begin',
+        testId: 't-debug',
+        title: ['pays'],
+        file: 'tests/checkout.spec.ts',
+        line: 3,
+        project: 'chromium',
+        retry: 0,
+        cannotPause: null,
+      });
+      send({
+        type: 'stopped',
+        stop: 1,
+        reason: 'breakpoint',
+        title: "Click locator('.cart-row').nth(2)",
+        place: { file: 'tests/pages/checkout.page.ts', line: 5, column: 21 },
+        locator: "locator('.cart-row').nth(2)",
+        bar: true,
+      });
+      // Stopped once: the run's breakpoints lose the failing line, and the instance's suggested locator is outlined.
+      await heardOne(
+        'the breakpoints without the failing line',
+        (m) => m.type === 'breakpoints' && !m.places.some((p) => p.file === 'tests/pages/checkout.page.ts'),
+      );
+      const asked = await heardOne('the suggested locator', (m) => m.type === 'request' && m.what === 'locator');
+      assert.equal(asked.locator, "getByRole('row', { name: /Mug/ })");
+      await waitFor(() => api.executionPoints(pageObject.toString()).includes(4), 'the execution point');
+      // The cursor on the stopped line says what is outlined, and the outline stays.
+      const count = await waitFor(() => api.caretCount(), 'what the stopped line says');
+      assert.deepEqual(count, {
+        uri: pageObject.toString(),
+        line: 4,
+        text: "suggested locator getByRole('row', { name: /Mug/ }) (outlined on the page)",
+        brief: true,
+      });
+      assert.equal(heard.filter((m) => m.type === 'request').length, 1);
+    } finally {
+      socket.destroy();
+      await vscode.commands.executeCommand('piwi.stopRun', { ref: run.ref });
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    }
+  },
 };
 
 exports.run = async function run() {

@@ -173,6 +173,8 @@ import {
   type ProxySettings,
 } from './glue';
 import { isUnder, placesOf, runBreakpoints } from './breakpoints';
+import { openDebugLink, type DebugAsk } from './debug-from-link';
+import { isDebugLink } from './debug-link';
 import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
 import type { CaretShown, PausedPageView, RunBreakpoint } from './run-control';
@@ -274,6 +276,11 @@ export interface PiwiApi {
   caretCount(): CaretShown | null;
   /** The MCP server the runs are served to agents at, as the service last answered; null while it is off. */
   agents(): AgentsResult | null;
+  /**
+   * A debug link's query (`vscode://piwitests.piwi/open?…&debug=1`), as the URI handler takes it, its prompt answered
+   * by `ask` in place of a notification.
+   */
+  openDebugLink(query: string, ask: DebugAsk): Promise<void>;
 }
 
 /** A failures view node, or what a command names it by. */
@@ -785,12 +792,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
   );
 
+  // Debug in my editor: an open link with `debug=1` opens the failing line, and runs the test to stop there only once
+  // the person said yes.
+  const debugFromLink = (query: string, ask?: DebugAsk) =>
+    openDebugLink(
+      query,
+      { configRoots: () => status?.contexts.map((c) => c.root) ?? [], runTests: (args) => runTests(args, true) },
+      ask,
+    );
+
   // The dashboard's Open in IDE: `vscode://piwitests.piwi/open?file=…&line=…&column=…&root=…` opens the file the run
   // reported, found under the link's root, the Playwright configs' folders and the workspace folders, and never
   // outside the workspace folders. VS Code hands the link to the window focused last.
   context.subscriptions.push(
     vscode.window.registerUriHandler({
       handleUri: async (uri) => {
+        if (uri.path === '/open' && isDebugLink(uri.query)) return debugFromLink(uri.query);
         const link = uri.path === '/open' ? openLink(uri.query) : null;
         if (!link) return;
         const isFile = (file: string) => {
@@ -925,15 +942,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }
   };
 
-  /** Run tests as the service's command for them says; the command started, or null when there is none. */
-  const runTests = async (args: RunTestsArgs): Promise<RunCommand | null> => {
+  /**
+   * Run tests as the service's command for them says; the command started, or null when there is none, said unless
+   * `quiet`.
+   */
+  const runTests = async (args: RunTestsArgs, quiet = false): Promise<RunCommand | null> => {
     const breakpoints = breakpointsForRun();
     const command = await lc.sendRequest<RunCommand | null>(
       RUN_ARGS_REQUEST,
       breakpoints.length ? { ...args, breakpoints: placesOf(breakpoints) } : args,
     );
     if (!command) {
-      void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
+      if (!quiet) void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
       return null;
     }
     await startRun(command, breakpoints);
@@ -1486,6 +1506,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     pickOnPage: (message) => runControl.pickOnPage(message),
     caretCount: () => runControl.caretCount(),
     agents: () => agents,
+    openDebugLink: (query, ask) => debugFromLink(query, ask),
   };
 }
 
