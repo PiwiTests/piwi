@@ -842,3 +842,72 @@ describe('what an agent reads of the page', () => {
     other.socket.destroy();
   });
 });
+
+describe('a run an agent follows', () => {
+  let idle: Service;
+  let served: AgentsResult;
+
+  beforeAll(async () => {
+    idle = await service(dir, true, { agentFollowIdleMs: 400 }, { stopCode: true });
+    served = await idle.client.sendRequest<AgentsResult>('piwi/agents', { enabled: true });
+  });
+  afterAll(() => idle?.stop());
+
+  async function callIdle(name: string, args: Record<string, unknown>) {
+    const response = await fetch(served.url!, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${served.token}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: ++ids, method: 'tools/call', params: { name, arguments: args } }),
+    });
+    const body = (await response.json()) as { result: { content: Array<{ text?: string }> } };
+    return JSON.parse(body.result.content[0]!.text!) as Record<string, any>;
+  }
+
+  test('tells its events while an agent calls on it, then stops them and drops what the page said', async () => {
+    const { ref: run, channel: again } = await idle.command();
+    const other = new FakeWorker(again.path, fs.realpathSync(dir)).attach(again.token, run, 0, [
+      ...RUN_TAKES,
+    ] as RunTake[]);
+    await waitFor(() => idle.latest(run));
+    other.begin('adds a mug');
+    await waitFor(() => idle.latest(run)?.workers[0]?.test ?? undefined);
+    await callIdle('run_follow', { run, wait: 0 });
+    expect(await other.next('events')).toEqual({ type: 'events', on: true });
+    other.send({ type: 'event', event: { kind: 'console', level: 'error', text: 'the page says this' } });
+    // Calls on the run keep the follow going past its idle time.
+    for (let i = 0; i < 3; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      await callIdle('page_snapshot', { run });
+    }
+    expect(other.heard.filter((m) => m.type === 'events')).toHaveLength(1);
+    // Nobody calls on it any more: its workers stop telling, and the page's words go.
+    expect(await other.next('events', 1)).toEqual({ type: 'events', on: false });
+    const followed = await callIdle('run_follow', { run, after: -1, wait: 0 });
+    expect(followed.events.find((e: { kind: string }) => e.kind === 'console')).toMatchObject({ page: 'dropped' });
+    // Following it again turns them on again.
+    await callIdle('run_follow', { run, wait: 0 });
+    expect(await other.next('events', 2)).toEqual({ type: 'events', on: true });
+    other.socket.destroy();
+  });
+
+  test('stops them as agents are turned off, a worker that connects later too', async () => {
+    const { ref: run, channel: again } = await idle.command();
+    const first = new FakeWorker(again.path, fs.realpathSync(dir)).attach(again.token, run, 0, [
+      ...RUN_TAKES,
+    ] as RunTake[]);
+    await waitFor(() => idle.latest(run));
+    await callIdle('run_follow', { run, wait: 0 });
+    expect(await first.next('events')).toEqual({ type: 'events', on: true });
+    await idle.client.sendRequest<AgentsResult>('piwi/agents', { enabled: false });
+    expect(await first.next('events', 1)).toEqual({ type: 'events', on: false });
+    const later = new FakeWorker(again.path, fs.realpathSync(dir)).attach(again.token, run, 1, [
+      ...RUN_TAKES,
+    ] as RunTake[]);
+    await waitFor(() => (idle.latest(run)?.workers.length === 2 ? true : undefined));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(later.heard.some((m) => m.type === 'events')).toBe(false);
+    served = await idle.client.sendRequest<AgentsResult>('piwi/agents', { enabled: true });
+    first.socket.destroy();
+    later.socket.destroy();
+  });
+});

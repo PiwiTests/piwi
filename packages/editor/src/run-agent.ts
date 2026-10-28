@@ -53,6 +53,10 @@ export const MAX_RESULT_SNAPSHOT = 100_000;
 const MAX_STEPS = 200;
 /** The last snapshots read, by run and worker, for their change. */
 const MAX_SNAPSHOTS = 32;
+/** How long an agent follows a run after its last call on that run, in seconds: then its workers stop telling. */
+export const FOLLOW_IDLE_S = 120;
+/** The events a worker tells while an agent follows its run, whose page text goes once nobody follows it. */
+const TOLD_KINDS: ReadonlySet<string> = new Set(['call', 'navigation', 'console', 'page-error', 'request-failed']);
 
 /** A tool's result, as MCP's `tools/call` answers it. */
 export interface ToolResult {
@@ -83,6 +87,8 @@ export interface RunAgentOptions {
   /** The longest waits, in milliseconds: `MAX_FOLLOW_WAIT_S` and `MAX_CONTROL_WAIT_S` by default. */
   followMs?: number;
   controlMs?: number;
+  /** How long a follow lasts after the agent's last call on its run, in milliseconds: `FOLLOW_IDLE_S` by default. */
+  followIdleMs?: number;
 }
 
 /** A run's event, as an agent reads it: Piwi's own fields, and those of the page apart (`page`). */
@@ -95,6 +101,8 @@ interface AgentEvent {
   fields: Record<string, unknown>;
   /** What the page said (its console, its errors, its addresses): page content. */
   page?: Record<string, unknown>;
+  /** What the page said went once nobody followed the run. */
+  dropped?: boolean;
 }
 
 interface RunLog {
@@ -298,7 +306,7 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'run_follow',
-    description: `The events of a run since a cursor: each test's start and end, each call of the test as it ends (its title, its place in the code, whether it passed), the stops and the run's end, and the page's navigations, console errors and warnings, uncaught errors and failed requests. It waits for the next events up to \`wait\` seconds, and answers at once when the run is stopped or ended. Pass the answer's \`next\` as \`after\` to read on. ${UNTRUSTED}`,
+    description: `The events of a run since a cursor: each test's start and end, each call of the test as it ends (its title, its place in the code, whether it passed), the stops and the run's end, and the page's navigations, console errors and warnings, uncaught errors and failed requests. It waits for the next events up to \`wait\` seconds, and answers at once when the run is stopped or ended. Pass the answer's \`next\` as \`after\` to read on. The calls and the page's events are told while you call a tool on the run, and stop ${FOLLOW_IDLE_S} seconds after your last call, what the page said in them dropped (\`page: "dropped"\`). ${UNTRUSTED}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -594,6 +602,8 @@ export class RunAgent {
   private readonly steps = new Map<string, RecordedStep[]>();
   /** The stops the agent acted on, which a person watching heard of once. */
   private readonly told = new Set<string>();
+  /** The runs an agent follows, each until `followIdleMs` after its last call on it. */
+  private readonly following = new Map<string, ReturnType<typeof setTimeout>>();
   /** The service stopped: every long poll answers. */
   private disposed = false;
 
@@ -650,13 +660,53 @@ export class RunAgent {
   /** The service stops: every long poll answers now. */
   dispose(): void {
     this.disposed = true;
+    for (const timer of this.following.values()) clearTimeout(timer);
+    this.following.clear();
     for (const log of this.logs.values()) for (const wake of log.waiters) wake();
+  }
+
+  /**
+   * Agents are turned off: no run is followed any more, its workers told so, and what the pages said goes, the
+   * snapshots read included.
+   */
+  off(): void {
+    for (const ref of [...this.following.keys()]) this.unfollow(ref);
+    this.snapshots.clear();
+  }
+
+  /** An agent follows the run `ref` from now on, until `followIdleMs` after its last call on it. */
+  private startFollowing(ref: string): void {
+    this.options.sessions.followRun(ref);
+    this.touch(ref, true);
+  }
+
+  /** An agent called a tool on the run `ref`: a follow of it lasts on. */
+  private touch(ref: string, follows = this.following.has(ref)): void {
+    if (!follows) return;
+    clearTimeout(this.following.get(ref));
+    const timer = setTimeout(() => this.unfollow(ref), this.options.followIdleMs ?? FOLLOW_IDLE_S * 1000);
+    timer.unref?.();
+    this.following.set(ref, timer);
+  }
+
+  /** Nobody follows the run `ref` any more: its workers stop telling, and the page's words they told go. */
+  private unfollow(ref: string): void {
+    clearTimeout(this.following.get(ref));
+    this.following.delete(ref);
+    this.options.sessions.unfollowRun(ref);
+    for (const event of this.logs.get(ref)?.events ?? []) {
+      if (!event.page || !TOLD_KINDS.has(event.kind)) continue;
+      delete event.page;
+      event.dropped = true;
+    }
   }
 
   /** Run a tool: its answer, or why not, as a result the agent reads; a wait ends as `signal` aborts. */
   async call(name: string, args: unknown, signal?: AbortSignal): Promise<ToolResult> {
     const values = args === undefined || args === null ? {} : args;
     if (typeof values !== 'object' || Array.isArray(values)) return this.error('The arguments are an object.');
+    const named = (values as { run?: unknown }).run;
+    if (typeof named === 'string') this.touch(named);
     try {
       switch (name) {
         case 'run_list':
@@ -816,7 +866,7 @@ export class RunAgent {
     const after = args.integer('after', -1, Number.MAX_SAFE_INTEGER) ?? -1;
     const wait = (args.seconds('wait', MAX_FOLLOW_WAIT_S) ?? MAX_FOLLOW_WAIT_S) * 1000;
     const { log } = this.known(ref);
-    this.options.sessions.followRun(ref);
+    this.startFollowing(ref);
     const since = () => log.events.filter((e) => e.seq > after);
     const settled = () => {
       const fresh = since();
@@ -842,7 +892,7 @@ export class RunAgent {
           ...(e.worker === null ? {} : { worker: e.worker }),
           kind: e.kind,
           ...e.fields,
-          ...(e.page ? { page: true } : {}),
+          ...(e.page ? { page: true } : e.dropped ? { page: 'dropped' } : {}),
         })),
         next: lastSeq,
         more: fresh.length > events.length,
@@ -882,7 +932,7 @@ export class RunAgent {
     } else if (args.raw('place') !== undefined) {
       throw new ArgumentError('`place` is for `run-to` alone.');
     }
-    this.options.sessions.followRun(ref);
+    this.startFollowing(ref);
     const mark = log.next - 1;
     const answer = this.options.sessions.control(
       { ref, worker, action: chosen, ...(since ? { since } : {}), ...(place ? { place } : {}) },

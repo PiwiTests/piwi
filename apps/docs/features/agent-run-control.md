@@ -61,6 +61,9 @@ project's test id attribute first and the suite's own locators preferred. `code_
 generator, as [Code from a pause](./editor-stop-code) does, and the editor writes them above the stopped line as one
 edit: one undo removes it. The test goes on with the code it started with: the new lines run next time.
 
+A run's calls and page events are told while the agent calls a tool on that run, and stop two minutes after its last
+call or as you turn the server off; what the page said in them is then dropped.
+
 An action the page does not answer within 10 seconds is answered as such: it may still take effect, and if it does,
 it is kept as a step and `run_follow` tells it (`act-played`).
 

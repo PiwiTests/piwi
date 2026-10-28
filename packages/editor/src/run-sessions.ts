@@ -466,10 +466,20 @@ export class RunSessions {
     this.followedRuns.add(ref);
     for (const oldest of this.followedRuns) {
       if (this.followedRuns.size <= MAX_KEPT_RUNS) break;
-      this.followedRuns.delete(oldest);
+      this.unfollowRun(oldest);
     }
+    this.tellEvents(ref, true);
+  }
+
+  /** No agent follows the run `ref` any more: its workers stop telling what their tests do, a later one too. */
+  unfollowRun(ref: string): void {
+    if (this.followedRuns.delete(ref)) this.tellEvents(ref, false);
+  }
+
+  /** Have the workers of the run `ref` whose reporter takes it tell their tests' events, or stop. */
+  private tellEvents(ref: string, on: boolean): void {
     for (const worker of this.sessions.get(ref)?.workers.values() ?? []) {
-      if (worker.takes.has('events')) this.send(worker, { type: 'events', on: true });
+      if (worker.takes.has('events')) this.send(worker, { type: 'events', on });
     }
   }
 

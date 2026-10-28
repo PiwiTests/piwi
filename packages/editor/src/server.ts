@@ -388,6 +388,8 @@ export interface ServerOptions {
   /** How often the hub sends its keepalive, and how long it waits for `hello`. */
   hubKeepaliveMs?: number;
   hubHelloMs?: number;
+  /** How long an agent follows a run after its last call on it; `FOLLOW_IDLE_S` by default. */
+  agentFollowIdleMs?: number;
 }
 
 /** What the last analysis of an application file found, for its quick fixes and hover. */
@@ -1819,6 +1821,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       } satisfies Notice),
     command: (ref) => runCommands.get(ref) ?? null,
     preferLocators: (root) => suiteLocators(root ? contextOfRoot(root) : null),
+    ...(options.agentFollowIdleMs === undefined ? {} : { followIdleMs: options.agentFollowIdleMs }),
   });
 
   /**
@@ -3508,6 +3511,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!agentWanted) {
       agentServer?.close();
       agentServer = null;
+      // No agent follows a run any more: the workers stop telling, and what the pages said goes.
+      runAgent.off();
       return { url: null, token: null, message: "Piwi's runs are not served to agents." };
     }
     if (!agentServer && !shutDown) {
