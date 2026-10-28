@@ -104,9 +104,10 @@ The assertions a check skips, each only once it saw the bug's state:
 - **A run page opened while its run sets up stays there** (beat 9). Outside the demo, the run page connects to its
   run's stream only once the run is live, and does not refetch on the global stream's `run-started`, so a page opened
   between the reporter's global setup and its `onBegin` shows `Initializing` and no test until it is reloaded. The beat
-  records the run's status as its page loads and waits for either **Watch** or the header still at `Initializing`
-  once the instance holds a finished test of the run. It skips only when the run was `initializing` at the load and
-  **Watch** shows after a reload; a page stuck otherwise fails it.
+  records the run's status just before its page opens (read after the load, the run may have started in between),
+  and waits for either **Watch** or the header still at `Initializing` once the instance holds a finished test of the
+  run. It skips only when the run was still `initializing` before the page opened and **Watch** shows after a
+  reload; a page stuck otherwise fails it.
 
 ## Toward the cut
 
