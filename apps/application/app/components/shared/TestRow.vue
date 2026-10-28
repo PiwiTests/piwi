@@ -21,6 +21,7 @@
  */
 import type { TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo } from '~/utils/live-steps';
+import type { LiveWorkerState } from '#shared/live-view';
 import { liveResourcesLabel, type LiveWorkerResources } from '~/utils/live-worker-resources';
 import type { TestRowBadge } from '~/utils/test-row-badges';
 import type { KnownIssueRef } from '#shared/handlers/known-issues';
@@ -74,6 +75,8 @@ const props = withDefaults(
     liveStep?: LiveStepInfo | null;
     /** What this row's worker and its browsers use right now, as last measured (live runs only). */
     liveResources?: LiveWorkerResources | null;
+    /** This row's worker in the run's live view: Watch, and Paused while its test is stopped (live runs only). */
+    liveWorker?: LiveWorkerState | null;
     highlighted?: boolean;
     projectKey?: string | number | null;
     projectName?: string | null;
@@ -110,6 +113,7 @@ const props = withDefaults(
     active: false,
     liveStep: null,
     liveResources: null,
+    liveWorker: null,
     highlighted: false,
     projectKey: null,
     projectName: null,
@@ -120,7 +124,7 @@ const props = withDefaults(
   },
 );
 
-const emit = defineEmits<{ toggle: []; select: [] }>();
+const emit = defineEmits<{ toggle: []; select: []; watch: [] }>();
 
 const tc = computed(() => props.testCase);
 const liveResourcesText = computed(() => (props.liveResources ? liveResourcesLabel(props.liveResources) : ''));
@@ -254,7 +258,7 @@ const clusterLabel = computed(() =>
             <slot name="metrics">
               <template v-if="tc">
                 <template v-if="tc.status === 'running'">
-                  <span v-if="!liveStep" class="text-info">In progress…</span>
+                  <span v-if="!liveStep && !liveWorker?.paused" class="text-info">In progress…</span>
                   <span
                     v-if="liveResourcesText"
                     class="inline-flex items-center gap-0.5 tabular-nums"
@@ -324,7 +328,11 @@ const clusterLabel = computed(() =>
 
         <slot name="subline" />
 
-        <TestRowLiveStep v-if="liveStep" :step="liveStep" class="max-w-full" />
+        <div v-if="liveStep || liveWorker" class="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+          <!-- A stopped test shows where it is paused in place of its last step. -->
+          <TestRowLiveStep v-if="liveStep && !liveWorker?.paused" :step="liveStep" class="max-w-full" />
+          <TestRowLiveWorker v-if="liveWorker" :worker="liveWorker" @watch="emit('watch')" />
+        </div>
       </div>
     </div>
   </div>

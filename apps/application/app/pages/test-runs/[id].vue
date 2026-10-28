@@ -15,6 +15,7 @@ import { summarizeRunCases } from '#shared/utils/test-counts';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import type { WireLiveResources } from '#shared/types';
+import { liveWorkerKey, type LiveWorkerState } from '#shared/live-view';
 
 const route = useRoute();
 const router = useRouter();
@@ -66,6 +67,16 @@ const liveSteps = ref<LiveStepsByWorker>({});
 // per reporter, from the stream's `resources` events. The workers timeline
 // draws them while the run is live, and the stored report once it ended.
 const liveResources = ref<RunResourceTimelinePart[]>([]);
+// The workers in the run's live view, by `liveWorkerKey`, from the stream's `live-worker` events: each running row of
+// one offers Watch, and says Paused while its test is stopped.
+const liveWorkers = ref<Record<string, LiveWorkerState>>({});
+// The worker someone opened Watch on, and the test it ran then.
+const watching = ref<{ worker: number; shard: number | null; test: string } | null>(null);
+const watchOpen = ref(false);
+function watchWorker(worker: LiveWorkerState, testCase: TestCaseResult) {
+  watching.value = { worker: worker.worker, shard: worker.shard, test: testCase.title };
+  watchOpen.value = true;
+}
 let eventSource: EventSource | null = null;
 
 // Combined test cases: from server data + live stream. Includes every attempt
@@ -150,6 +161,7 @@ function flushPendingEvents() {
         browser?: { projectName?: string } | null;
         repeatEachIndex?: number;
         stepCategory?: string | null;
+        shardIndex?: number | null;
       };
       // Hook/fixture step-begin events are published as `test-begin` with a
       // `stepCategory`. They are not test cases — ignore them so they don't
@@ -173,6 +185,7 @@ function flushPendingEvents() {
             status: 'running',
             location: d.location,
             workerIndex: d.workerIndex ?? null,
+            shardIndex: d.shardIndex ?? null,
             startedAt: d.startedAt ?? Date.now(),
             browser: d.browser ?? null,
             repeatEachIndex: d.repeatEachIndex ?? 0,
@@ -306,6 +319,12 @@ function flushPendingEvents() {
           parentTitle: d.parentTitle ?? null,
         },
       };
+    } else if (parsed.type === 'live-worker') {
+      const worker = data as unknown as LiveWorkerState;
+      const next = { ...liveWorkers.value };
+      if (worker.connected) next[liveWorkerKey(worker)] = worker;
+      else delete next[liveWorkerKey(worker)];
+      liveWorkers.value = next;
     } else if (parsed.type === 'resources') {
       liveResources.value = applyLiveResourcesToParts(liveResources.value, data as unknown as WireLiveResources);
     } else if (parsed.type === 'run-finalizing') {
@@ -314,6 +333,7 @@ function flushPendingEvents() {
     } else if (parsed.type === 'run-finished') {
       isFinalizing.value = false;
       liveSteps.value = {};
+      liveWorkers.value = {};
       disconnectStream();
       refresh();
       // Nudge the Changes tab to refetch — it keeps its own fetch state and
@@ -901,12 +921,14 @@ const moreMenuItems = computed(() => {
             :total="displayProgress?.totalTests"
             :live-steps="liveSteps"
             :live-resources="liveResources"
+            :live-workers="liveWorkers"
             :cluster-meta="clusterMeta"
             :quarantined-case-ids="quarantinedCaseIds"
             :project-key="testRun?.projectId"
             :project-name="testRun?.project?.name"
             class="flex-1 min-h-0"
             @quarantine-changed="refreshQuarantine"
+            @watch="watchWorker"
           />
         </template>
 
@@ -961,6 +983,17 @@ const moreMenuItems = computed(() => {
 
   <ClientOnly>
     <RunKeepModal v-model:open="isKeepOpen" :run-id="Number(runId)" @kept="refresh" />
+  </ClientOnly>
+
+  <ClientOnly>
+    <RunLiveView
+      v-if="watching"
+      v-model:open="watchOpen"
+      :run-id="Number(runId)"
+      :worker="watching.worker"
+      :shard="watching.shard"
+      :test="watching.test"
+    />
   </ClientOnly>
 
   <ClientOnly>

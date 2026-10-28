@@ -12,13 +12,14 @@ import { resolveIngestProject } from '../../utils/ingest-project';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { liveViewRelay } from '../../utils/live-view';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Initialize a streaming test run in setup phase',
     description:
-      'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance. Supports sharded runs: when shardTotal > 1, a shard joins the initializing or running run of its instanceId.',
+      'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance. Supports sharded runs: when shardTotal > 1, a shard joins the initializing or running run of its instanceId. With `liveView: true`, a project that turned its live view on also gets `liveView.key`, a key of this run alone that its test workers hold their live view stream with; it opens nothing else and ends with the run.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -32,6 +33,10 @@ defineRouteMeta({
               instanceId: { type: 'string' },
               shardIndex: { type: 'integer' },
               shardTotal: { type: 'integer' },
+              liveView: {
+                type: 'boolean',
+                description: 'Ask for a live view key, which a project with the live view on gives',
+              },
             },
             required: ['projectName'],
           },
@@ -61,6 +66,11 @@ export default eventHandler(async (event) => {
   const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
 
   const instanceId = body.instanceId || null;
+  /** The run's live view key for its workers, when the reporter asks and the project turned the live view on. */
+  const liveViewOf = (runId: number) => {
+    const key = body.liveView === true && project.liveView ? liveViewRelay.mintKey(runId, project.id) : null;
+    return key ? { liveView: { key } } : {};
+  };
   const shardTotal = body.shardTotal as number | undefined;
   const isSharded = !!(shardTotal && shardTotal > 1);
 
@@ -82,6 +92,7 @@ export default eventHandler(async (event) => {
           runId: existingShardedRun.id,
           projectId: project.id,
           setupToken,
+          ...liveViewOf(existingShardedRun.id),
         };
       }
 
@@ -143,6 +154,7 @@ export default eventHandler(async (event) => {
         runId: testRun.id,
         projectId: project.id,
         setupToken,
+        ...liveViewOf(testRun.id),
       };
     }
 
@@ -195,6 +207,7 @@ export default eventHandler(async (event) => {
       runId: testRun.id,
       projectId: project.id,
       setupToken,
+      ...liveViewOf(testRun.id),
     };
   });
 });

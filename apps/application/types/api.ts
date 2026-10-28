@@ -419,6 +419,8 @@ export interface ProjectWithTestRuns {
   quarantineFailsStatus?: boolean;
   /** True: each gate evaluation also posts the `<statusContext>/gate` commit status. */
   gateStatus?: boolean;
+  /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
+  liveView?: boolean;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -451,6 +453,8 @@ export interface ProjectDetails {
   quarantineFailsStatus?: boolean;
   /** True: each gate evaluation also posts the `<statusContext>/gate` commit status. */
   gateStatus?: boolean;
+  /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
+  liveView?: boolean;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */

@@ -522,6 +522,8 @@ export async function updateProject(
     quarantineFailsStatus?: boolean;
     /** Whether each gate evaluation also posts the `<statusContext>/gate` commit status. */
     gateStatus?: boolean;
+    /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
+    liveView?: boolean;
     /** `GeneratedSpecSettings`; null clears them. */
     generatedSpecs?: unknown;
     /** Per-project targets (`ProjectTargets`); null clears them. */
@@ -552,6 +554,7 @@ export async function updateProject(
     ciRerun,
     quarantineFailsStatus,
     gateStatus,
+    liveView,
     generatedSpecs,
     targets,
     coverageScope,
@@ -597,6 +600,7 @@ export async function updateProject(
         ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
         quarantineFailsStatus,
         gateStatus,
+        liveView,
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
         statusFilter: statusFilter === undefined ? undefined : statusFilterToStore(statusFilter),

@@ -5,6 +5,7 @@ import type { RunClusterMeta, TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
 import { liveResourcesByWorker, liveResourcesForCase, type LiveWorkerResources } from '~/utils/live-worker-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
+import { liveWorkerKey, type LiveWorkerState } from '#shared/live-view';
 import { summarizeRunCases } from '#shared/utils/test-counts';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
@@ -40,6 +41,8 @@ const props = defineProps<{
   liveSteps?: LiveStepsByWorker | null;
   /** What the run's reporters measured so far; each running row shows its worker's last values. */
   liveResources?: RunResourceTimelinePart[] | null;
+  /** The workers in the run's live view, by `liveWorkerKey`: each running row of one offers Watch, and says Paused. */
+  liveWorkers?: Record<string, LiveWorkerState> | null;
   clusterMeta?: RunClusterMeta | null;
   /** Stable test-case ids currently quarantined — marks the matching rows. */
   quarantinedCaseIds?: Set<number> | null;
@@ -48,7 +51,7 @@ const props = defineProps<{
   projectName?: string | null;
 }>();
 
-const emit = defineEmits<{ 'quarantine-changed': [] }>();
+const emit = defineEmits<{ 'quarantine-changed': []; watch: [worker: LiveWorkerState, testCase: TestCaseResult] }>();
 
 function isQuarantined(tc: TestCaseResult): boolean {
   return Boolean(props.quarantinedCaseIds?.has(tc.testCaseId));
@@ -64,6 +67,17 @@ function clusterIssue(id: number | null | undefined) {
 
 function liveStep(tc: TestCaseResult): LiveStepInfo | null {
   return liveStepForCase(props.liveSteps, tc);
+}
+
+/**
+ * The running row's worker in the run's live view, matched by its shard and worker index. A stop names its test: one
+ * of the worker's next test is not this row's, whose end has not streamed in yet.
+ */
+function liveWorkerOf(tc: TestCaseResult): LiveWorkerState | null {
+  if (!props.liveWorkers || tc.status !== 'running' || tc.workerIndex == null) return null;
+  const worker = props.liveWorkers[liveWorkerKey({ shard: tc.shardIndex ?? null, worker: tc.workerIndex })];
+  if (!worker) return null;
+  return worker.paused?.test && worker.paused.test !== tc.title ? { ...worker, paused: null } : worker;
 }
 
 const liveWorkerValues = computed(() => liveResourcesByWorker(props.liveResources));
@@ -906,6 +920,8 @@ defineExpose({ scrollToCase });
                       item.tc.locks,
                       liveStep(item.tc)?.title,
                       liveResourcesOf(item.tc) !== null,
+                      liveWorkerOf(item.tc)?.paused?.call.title,
+                      liveWorkerOf(item.tc) !== null,
                       showSuitePath,
                       item.tc.suitePath,
                     ]
@@ -939,6 +955,7 @@ defineExpose({ scrollToCase });
                 :selected="selectedIds.has(item.tc.executionId)"
                 :live-step="liveStep(item.tc)"
                 :live-resources="liveResourcesOf(item.tc)"
+                :live-worker="liveWorkerOf(item.tc)"
                 :highlighted="highlightedCaseId === item.tc.executionId"
                 :indent="(item.depth ?? 0) * 16"
                 :suite-path="showSuitePath ? item.tc.suitePath : null"
@@ -946,6 +963,7 @@ defineExpose({ scrollToCase });
                 :project-key="projectKey"
                 :project-name="projectName"
                 @toggle="toggleRow(item.tc)"
+                @watch="emit('watch', liveWorkerOf(item.tc)!, item.tc)"
               />
             </DynamicScrollerItem>
           </template>

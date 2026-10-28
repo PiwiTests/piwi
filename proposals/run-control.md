@@ -14,7 +14,8 @@ tools that follow the run, read the stopped page as its accessibility tree and a
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
 (Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2, 3 and 4 are built too (below; PR 4 is
 merged as #932), and so are PR 5's three halves, the service's, the IDE's with the forwarded addresses, and the Runs
-window's (below), while PRs 6 to 9 are not. PR 1 differs from the text in four ways. A headed
+window's, and PR 8's team instance part (below), while PRs 6, 7 and 9 are not, nor PR 8's desktop view and **Share
+live**. PR 1 differs from the text in four ways. A headed
 browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
@@ -267,6 +268,35 @@ click into the view took the keyboard. Control, Alt and Meta held with a click g
 after it, with no change to the protocol, and Shift+click picks: **Pick on the image** is a toggle
 and a Shift+click on a stop's image, headed or not, or its view. The docs give the window a page of its own,
 [Runs window](../apps/docs/features/runs-window.md).
+PR 8's team instance part is the run page's live view of a run and its word that a worker is paused (Part 8.1's team
+instance half, 8.2's second bullet), and differs from the text in these ways. The setting is a column of the project
+(`projects.live_view`, no settings document holds the project's switches), off by default, under **Project → Settings
+→ Live view** for `project:manage`, beside what it sends, to whom and that nothing is kept; turning it off ends every
+view of the project's runs at once. It covers each run of the project the reporter's global setup registers, in CI or
+on a developer's machine alike: that setup asks `/setup` for a key (`liveView: true`), given for a project with the
+setting on alone, and `onBegin` names it in `PIWI_LIVE_VIEW` (`<instance>/api/test-runs/<id>/live-view#<key>`,
+`@piwitests/core/live-view`); a run the reporter registers without the global setup does so after Playwright started
+its workers, and has none. **Share live** is then a run's own sharing, for a project that does not share its runs.
+The key (`pdl_` and 32 random bytes) is held as its digest in the instance's memory, opens that run's live view
+alone, ends with the run (its finish, cancel or interruption), with the setting or after a day, and is out of the
+environment a test runs in. The connection is an event stream, as the run page's own (the server has no WebSocket):
+each worker holds `GET …/live-view?worker=&shard=`, on which it hears how many watch it (`viewers`), and posts
+`frame`, `stop` and `ended` to `POST …/live-view`, each checked field by field; it opens the stream again after 1 to
+16 s, 20 times at most, and gives it up on a 401, 403, 404 or 410, never holding a test. The frames are the `page`
+fixture's screencast, through the helper the editor's view of a stop now shares (`page-view.ts`): at most 640 by 400
+at quality 50, four a second and 256 KB a second, a heavier frame holding the next one back longer, so a page whose
+trace or video came first (800 wide at quality 90, which the trace `wrapConfig` sets makes the common case) sends
+fewer; measured on a canvas redrawn at every frame, 37 KB frames four a second on its own (148 KB a second) and 131
+KB frames two a second on video (261 KB a second), and a still page sends none. Each frame carries the call the
+runner's steps say the test is on. A stop is posted as it starts and ends with its test's title, so **Paused** lands
+on that test's row, not on the row of the test before, whose end streams later. The instance relays each frame to
+that worker's viewers alone and keeps none (`server/utils/live-view.ts`), one waiting per viewer that reads slowly,
+written straight to the response to see its backlog; 64 workers and 16 viewers a run, 8 frames a second a worker and
+192 KB a frame at most. The run page shows **Watch** beside a running test's step, and the view in a dialog with each
+image's call, ended with the test, the worker, the run or the setting; `…/live-view/workers` lists the run's workers
+and counts what they sent, refused requests included, which shows that a project with the setting off sends nothing.
+The demo shows the setting, and no view: it runs no test worker. The paused calls keep counting as interactive as
+PR 1 made them: the stops still go to `piwi-pauses` and the step events alone.
 The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of

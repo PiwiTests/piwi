@@ -139,6 +139,8 @@ export const PROJECT = {
   LATEST_EXECUTION_LINE: 'latest-execution-line-test',
   LATEST_RUN_TEST: 'latest-run-test',
   LIST_VISIBLE: 'list-visible-project',
+  LIVE_VIEW_OFF: 'live-view-off-test',
+  LIVE_VIEW_ON: 'live-view-on-test',
   LOCATORS_PAGE: 'locators-page-test',
   MALFORMED: 'malformed-project',
   MARKERS_PANEL: 'markers-panel-test',
