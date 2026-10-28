@@ -14,6 +14,7 @@ in-app assistant).
 | `dom-snapshot-render.ts`, `shared/snapshot-picker-extras.ts`                     | [DOM snapshot live state](#dom-snapshot-live-state) |
 | `ai-claude-cli.ts`, `ai-codex-cli.ts`, `ai-deepseek-cli.ts`, `ai-cli-process.ts` | [AI CLI providers](#ai-cli-providers)               |
 | `ai-context*.ts`, `integrations/automation.ts`                                   | [Wiring rules](#wiring-rules)                       |
+| `desktop-runs.ts`, `shared/desktop-runs.ts`, the `/api/desktop/run*` routes      | [Desktop runs](#desktop-runs)                       |
 
 ## SCM providers
 
@@ -197,3 +198,26 @@ message, a page's text), which must never make it run a command, read a file or 
 - **Issue automation decides from `shared/integrations/automation.ts` alone**: the run trigger
   (`server/utils/integrations/automation.ts`) and the write-back scope (`policies.ts`, `tracker-run.ts`) read the rules
   through its functions, never re-implement them.
+
+## Desktop runs
+
+The desktop build's server is the hub of the Playwright runs its shell starts (`desktop-runs.ts`, opened by
+`server/plugins/desktop-runs.ts` only with `PIWI_DESKTOP_TOKEN`). Its rules are the editor service's, whose classes it
+runs (`@piwitests/editor/run-host`), plus these:
+
+- **Never a copy of the run control.** The run channel, the sessions, the hub, the code from a stop and the run's lines
+  are `RecordChannel`, `RunSessions`, `RunHub`, `StopActions` and `RunLines`; this server only wires their callbacks.
+  What the desktop needs that they lack is an option of theirs (`declines`, `host`, `token`, `words`, `RunHub.join`),
+  added in `packages/editor` with its tests there. `tests/unit/desktop-runs.test.ts` and `desktop-runs-run.test.ts`
+  (a real run through the built reporter) drive the wiring.
+- **The hub takes the desktop token in `hello`, and nothing else opens without it.** Its WebSocket keeps the editor's
+  `Host`, extension `Origin`, limits and closed command set; the window reaches the same hub as a joined peer through
+  `/api/desktop/runs/*`, behind the desktop guard. None of the routes is an open route (`isOpenDesktopRoute`).
+- **The run channel goes to the shell alone.** `GET /api/desktop/run-channel` refuses a request a browser sends
+  (`isBrowserRequest`); `GET /api/desktop/live` names the hub to Piwi Picker, never the channel.
+- **Code from a stop goes to the window, never over the hub.** `StopActions` keeps it for the window's stream
+  (`stop-code`); the hub's peers hear only its sentence (`code`). It is made only for a file of a linked folder, from
+  its disk text, and refused once the file was written since the run's first worker connected.
+- **Pick and Record in the test's window, and Assert, are declined**: they end in an editor (its Send to editor pairing,
+  its recorder), which this server has none of. A failure no pause bar shows is held only in a run a window `show`s, or
+  while Piwi Picker `follow`s the runs.

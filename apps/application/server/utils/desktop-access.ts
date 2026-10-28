@@ -69,3 +69,13 @@ export async function answerDesktopChallenge(
   if (!port || !isDesktopChallenge(challenge)) return;
   setResponseHeader(event, DESKTOP_PROOF_HEADER, await desktopTokenProof(token, port, challenge));
 }
+
+/**
+ * Whether a browser sent the request: it carries `Origin` or a `Sec-Fetch-*` header, which a browser sets itself on a
+ * page's or an extension's request, and which the desktop shell's own requests never carry.
+ */
+export function isBrowserRequest(event: H3Event): boolean {
+  return ['origin', 'sec-fetch-site', 'sec-fetch-mode', 'sec-fetch-dest'].some(
+    (name) => !!getRequestHeader(event, name),
+  );
+}

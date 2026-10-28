@@ -11,23 +11,38 @@ export function desktopDiscoveryFilePath(): string {
   return join(homedir(), '.piwi', 'desktop.json');
 }
 
+/** A project's folder on this machine, as the desktop app links it. */
+export interface DesktopLink {
+  id: number;
+  path: string;
+}
+
+/**
+ * The folders the desktop app links to projects, or none outside the desktop runtime, or when the discovery file is
+ * missing, malformed, or published for another server (its token is not this server's).
+ */
+export function desktopLinkedFolders(file = desktopDiscoveryFilePath()): DesktopLink[] {
+  const token = process.env.PIWI_DESKTOP_TOKEN;
+  if (!token) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as {
+      token?: unknown;
+      projects?: Array<{ id?: unknown; path?: unknown }>;
+    };
+    if (parsed?.token !== token || !Array.isArray(parsed.projects)) return [];
+    return parsed.projects.flatMap((p) =>
+      typeof p?.id === 'number' && typeof p.path === 'string' && p.path ? [{ id: p.id, path: p.path }] : [],
+    );
+  } catch {
+    return [];
+  }
+}
+
 /**
  * The folder on this machine the desktop app links to a project, or null outside
  * the desktop runtime, without a link, or when the discovery file is missing,
  * malformed, or published for another server (its token is not this server's).
  */
 export function desktopLinkedFolder(projectId: number, file = desktopDiscoveryFilePath()): string | null {
-  const token = process.env.PIWI_DESKTOP_TOKEN;
-  if (!token) return null;
-  try {
-    const parsed = JSON.parse(readFileSync(file, 'utf8')) as {
-      token?: unknown;
-      projects?: Array<{ id?: unknown; path?: unknown }>;
-    };
-    if (parsed?.token !== token || !Array.isArray(parsed.projects)) return null;
-    const path = parsed.projects.find((p) => p?.id === projectId)?.path;
-    return typeof path === 'string' && path ? path : null;
-  } catch {
-    return null;
-  }
+  return desktopLinkedFolders(file).find((link) => link.id === projectId)?.path ?? null;
 }

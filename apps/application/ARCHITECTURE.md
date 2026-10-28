@@ -249,7 +249,8 @@ Each entry names folders under `server/api/`.
     `server/utils/selection-impact.ts` (its pure line-level rules in `shared/line-impact.ts`), the definition's shape,
     validation and materialization in `shared/selection/`.
 - **`desktop/`**: routes the desktop app calls: its event stream, local imports, Piwi Picker pairing, reproduction
-  requests, reporter configuration.
+  requests, reporter configuration, and the hub of the runs its shell starts (`run-channel`, `live`, `runs/`; the hub
+  is `server/utils/desktop-runs.ts`, on the editor service's run control).
 - **`flake-lab/inbox`, `gaps/`**: cross-project inboxes of the Flake Lab and the scenario gaps.
 - **`health`, `version`, `capabilities`, `setup-status`, `metrics`, `rollups`, `stream`, `agent-skills`**: the
   readiness probe (200 or 503, with a database check), build info, the instance capabilities, the setup status,

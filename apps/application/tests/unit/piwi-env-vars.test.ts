@@ -201,6 +201,10 @@ describe('PIWI_ENV_VARS registry', () => {
       // which stamps them on the run as `piwiOrigin`; the app reads the stamp.
       'PIWI_ORIGIN',
       'PIWI_ORIGIN_REF',
+      // Set by the desktop shell on the Playwright runs it starts and read by the reporter's workers: the desktop
+      // server answers the channel's address (`server/utils/desktop-runs.ts`) but reads neither.
+      'PIWI_RUN_CHANNEL',
+      'PIWI_RUN_REF',
     ]);
     const realMissing = missing.filter((v) => !knownFalsePositives.has(v));
     expect(realMissing.sort()).toEqual([]);
