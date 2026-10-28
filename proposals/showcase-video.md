@@ -10,8 +10,9 @@ recording, the same script is a check that the tools still work together, which 
 
 **Status.** Proposed 2026-10-27. V1 and V4 are built, in check mode: `apps/showcase/` builds the set and plays
 beats 1 to 10 with their checks (`xvfb-run … npm run showcase:check`, about four minutes after the builds), nightly in
-`nightly-showcase.yml`; the run-control pieces the story needs are all merged. Capture and the cut (V2), voice and
-publishing (V3) and the native take (V5) remain. Decided from the open questions: VS Code only, the coding agent as the
+`nightly-showcase.yml`, on the pieces of [`run-control.md`](../adr/run-control.md) the story needs, all merged. Capture
+and the cut (V2, which the two measurements in the [appendix](#appendix-what-was-measured) settle), voice and publishing
+(V3) and the native take (V5) remain. Decided from the open questions: VS Code only, the coding agent as the
 coda, English, the dark look. The build differs from the text in these ways. `apps/showcase/` is a folder of scripts on
 the root's `node_modules`, not yet a workspace, whose `package-lock.json` entry an `npm install` writes (left to a later
 change). The "CI" runs set `CI=true` beside `PIWI_ORIGIN=ci`: the origin alone names the

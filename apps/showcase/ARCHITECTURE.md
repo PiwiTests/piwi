@@ -30,7 +30,9 @@ The stand-ins for what a bare X server lacks:
 
 The layout, in CSS pixels at device scale 2 on a 3840 × 2160 screen (`TILES`): VS Code at the top left (1080 × 720),
 the test's browser at its right (800 × 540), the Runs window below it (800 × 500), and the dashboard's window over the
-screen, raised for the beats about it. Each beat raises the first window of its `focus`.
+screen, raised for the beats about it. Each beat raises the first window of its `focus`. No window manager runs:
+Playwright's input reaches its page whatever the windows' stacking and the pointer's place, in VS Code, the developer's
+browser and the test's.
 
 ## The script
 
