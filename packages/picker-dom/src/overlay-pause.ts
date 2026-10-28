@@ -10,6 +10,8 @@ export interface PauseBarArg {
   locator: string | null;
   /** Whether the editor that started the run can record from here: the bar then offers Record here. */
   record?: boolean;
+  /** Whether the test can end here, skipped: the bar then offers End the test. */
+  end?: boolean;
   /**
    * The test failed here (`action` says how) and its page is held before it closes: the bar says so and offers
    * Resume, which lets the test end as it failed, Pick a locator and Record here, without Step and Finish.
@@ -21,14 +23,15 @@ export interface PauseBarArg {
  * What the pause bar answers in `__piwiPauseState`: `resume` runs on to the next breakpoint, `step` pauses before the
  * next call, `pick` opens the element picker and shows the bar again after it, `record` records steps in the page for the
  * editor to write before the paused line, and shows the bar again once the recording stops, `finish` pauses no more in
- * this test.
+ * this test, `end` ends the test there, skipped.
  */
-export type PauseChoice = 'resume' | 'step' | 'pick' | 'record' | 'finish';
+export type PauseChoice = 'resume' | 'step' | 'pick' | 'record' | 'finish' | 'end';
 
 /**
  * Runs inside the browser via `evaluate()` — shows a bar fixed at the top of
  * the page while a test is paused before a call: where it is paused, the
- * attempt, the call and its locator, and its buttons (Record here when the editor can record). The choice lands in
+ * attempt, the call and its locator, and its buttons (Record here when the editor can record, End the test when the
+ * test can end there). The choice lands in
  * `__piwiPauseState` (see `PauseChoice`), polled from Node; Esc resumes. The
  * page under the bar stays live. Must stay fully self-contained.
  */
@@ -101,6 +104,16 @@ export function showPauseBar(arg: PauseBarArg): void {
     ...(arg.failure
       ? []
       : [['Finish', 'finish', 'Run on and pause no more in this test', false] as [string, string, string, boolean]]),
+    ...(arg.end && !arg.failure
+      ? [
+          ['End the test', 'end', 'Skip the rest of this test: it is reported as skipped', false] as [
+            string,
+            string,
+            string,
+            boolean,
+          ],
+        ]
+      : []),
   ];
   for (const [label, choice, hint, primary] of buttons) {
     const btn = doc.createElement('button');

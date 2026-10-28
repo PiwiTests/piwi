@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
-import { parseRunToHub, type HubToRun, type Place, type RunToHub } from '@piwitests/core/run-channel';
+import { RUN_TAKES, parseRunToHub, type HubToRun, type Place, type RunToHub } from '@piwitests/core/run-channel';
 import {
   closeRunChannel,
   editorSendAddress,
@@ -14,6 +14,7 @@ import {
   openRunChannel,
   runChannelOpen,
   runHost,
+  workerTakes,
   type RunControl,
   type StopToHold,
 } from '../src/internal/capture/run-channel.js';
@@ -59,7 +60,12 @@ async function startHub() {
   await new Promise<void>((resolve) => server.listen(socketPath, resolve));
   return {
     heard,
-    env: { PIWI_RUN_CHANNEL: formatRecordChannel({ path: socketPath, token: TOKEN }), PIWI_ORIGIN_REF: 'ed-12345678' },
+    env: {
+      PIWI_RUN_CHANNEL: formatRecordChannel({ path: socketPath, token: TOKEN }),
+      PIWI_RECORD_CHANNEL: formatRecordChannel({ path: socketPath, token: TOKEN }),
+      PIWI_EDITOR_SEND: 'http://127.0.0.1:1/piwi/send#send-token-0123456789',
+      PIWI_ORIGIN_REF: 'ed-12345678',
+    },
     send: (message: HubToRun | { type: string; [key: string]: unknown }) =>
       worker!.write(`${JSON.stringify(message)}\n`),
     drop: () => worker?.destroy(),
@@ -216,7 +222,7 @@ describe('the worker’s run connection', () => {
         pid: process.pid,
         playwright: '1.64.1',
         reporter: expect.any(String),
-        takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', 'pick-at', 'agent', 'events', 'bind'],
+        takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', 'pick-at', 'agent', 'events', 'bind', 'end'],
         holds: ['failure'],
       });
       const answers: string[] = [];
@@ -248,6 +254,33 @@ describe('the worker’s run connection', () => {
       hub.send({ type: 'breakpoints', places: [{ file: 'tests/a.spec.ts', line: 3 }] });
       await until(() => (asked.length === 3 ? true : undefined));
       expect(asked.slice(1)).toEqual(['pause', 'breakpoints 3']);
+    } finally {
+      await hub.close();
+    }
+  });
+
+  it('takes Pick a locator only with a pairing, and Record here and Assert only with a record channel', () => {
+    const channel = formatRecordChannel({ path: '/tmp/channel.sock', token: TOKEN });
+    expect(workerTakes({ PIWI_RUN_CHANNEL: channel })).toEqual(
+      RUN_TAKES.filter((take) => take !== 'pick' && take !== 'record' && take !== 'assert'),
+    );
+    expect(workerTakes({ PIWI_RECORD_CHANNEL: channel, PIWI_EDITOR_SEND: 'http://127.0.0.1:1/piwi/send#t' })).toEqual(
+      RUN_TAKES,
+    );
+  });
+
+  it('hands End the test to the stop it names, and to no other', async () => {
+    const hub = await startHub();
+    try {
+      expect(await openRunChannel(WORKER, handlers().control, hub.env)).toBe(true);
+      const answers: string[] = [];
+      const held = holdStop({ ...STOP, bar: true }, (answer) => void answers.push(answer));
+      const { stop } = (await until(() => hub.heard.find((m) => m.type === 'stopped'))) as { stop: number };
+      hub.send({ type: 'control', action: 'end', stop: stop + 1 });
+      hub.send({ type: 'control', action: 'end', stop });
+      await until(() => answers[0]);
+      expect(answers).toEqual(['end']);
+      await held.release();
     } finally {
       await hub.close();
     }
@@ -373,10 +406,10 @@ describe('the worker’s run connection', () => {
         what: 'image',
         value: null,
       });
-      hub.send({ type: 'control', action: 'end', stop: 1 });
+      hub.send({ type: 'control', action: 'stop', stop: 1 });
       expect(await until(() => hub.heard.find((m) => m.type === 'notice'))).toEqual({
         type: 'notice',
-        message: expect.stringMatching(/^@piwitests\/reporter .* does not take the editor's control end: update it\.$/),
+        message: expect.stringMatching(/^@piwitests\/reporter .* does not take the editor's control stop: update it\.$/),
       });
     } finally {
       await hub.close();

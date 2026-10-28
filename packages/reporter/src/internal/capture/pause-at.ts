@@ -273,12 +273,58 @@ export function askAgain(state: PauseState, asked: AskedOnce): void {
 
 /**
  * How the debugger goes on from a stop, once its `answer` applies: it keeps stopping before every call while
- * breakpoints remain or a stop is asked, so the next one is seen; it runs on freely otherwise.
+ * breakpoints remain or a stop is asked, so the next one is seen; it runs on freely otherwise. End the test (`end`)
+ * stops nowhere more in the attempt: no breakpoint, and none of the stops asked once.
  */
 export function goOn(state: PauseState, answer?: PauseAnswer): GoOn {
   if (answer === 'step') state.step = true;
   else if (answer === 'finish') state.finished = true;
+  else if (answer === 'end') {
+    state.finished = true;
+    stopShown(state);
+  }
   return wantsStops(state) ? 'next' : 'resume';
+}
+
+/** Why a test ended at a stop (End the test) is skipped, as its `skip` annotation reads. */
+export const ENDED_REASON = 'Ended from Piwi';
+
+/**
+ * Where the locator methods the capture fixtures delegate take their options, when not first: `fill(value,
+ * options)`, `dispatchEvent(type, eventInit, options)`, an assertion's `_expect(expression, options)`.
+ */
+const OPTIONS_AT: Readonly<Record<string, number>> = {
+  fill: 1,
+  selectOption: 1,
+  press: 1,
+  type: 1,
+  pressSequentially: 1,
+  setInputFiles: 1,
+  dragTo: 1,
+  dispatchEvent: 2,
+  _expect: 1,
+};
+
+/**
+ * The arguments of a delegated locator call with `signal` among its options, as Playwright's own `signal` (beside a
+ * signal the test gave, through `AbortSignal.any`), so End the test gives the call up before it runs: Playwright aborts
+ * a call its debugger holds as the debugger lets it go. Null where it cannot be added: options that are no object, or
+ * a signal of the test's that is none or that no `AbortSignal.any` combines. The test's own options are never changed.
+ */
+export function withEndSignal(method: string, args: readonly unknown[], signal: AbortSignal): unknown[] | null {
+  const at = OPTIONS_AT[method] ?? 0;
+  const given = args[at];
+  if (given !== undefined && (typeof given !== 'object' || given === null || Array.isArray(given))) return null;
+  const options = (given ?? {}) as { signal?: unknown };
+  let combined = signal;
+  if (options.signal !== undefined) {
+    if (!(options.signal instanceof AbortSignal) || typeof AbortSignal.any !== 'function') return null;
+    combined = AbortSignal.any([options.signal, signal]);
+  }
+  const next = [...args];
+  while (next.length < at) next.push(undefined);
+  next[at] = { ...options, signal: combined };
+  return next;
 }
 
 /** One stop shown, with the bar or in the editor, as the `piwi-pauses` attachment lists it. */
@@ -541,6 +587,8 @@ export interface PausePoint {
   target: { highlight?: () => Promise<unknown> } | null;
   /** The test failed at `location` (`call` says how): no call is about to run, and the bar offers no Step nor Finish. */
   failure?: boolean;
+  /** The test can end at this stop, skipped (End the test): the bar offers it. */
+  end?: boolean;
 }
 
 /** What a stop shows the bar again after, started from outside the page: a check, a region's snapshot. */
@@ -658,15 +706,15 @@ export async function viewHere(
 /**
  * Show the pause bar at a stop: highlight the element, show the bar and wait for its answer. **Pick a locator** runs
  * the picker and shows the bar again; `onPick` receives each confirmed pick. With `onRecord` (the editor that started
- * the run can record), **Record here** hands the page to it and shows the bar again once the recording ended. An
- * intent handed to `intents` while the bar waits is taken as its own button's click, the bar's own answer first, with
- * the test's window brought to the front; `assert` and `assert-region`, which no button starts, run `onIntent` with
- * the bar down and show it again after. Returns the answer that ends the stop: `resume`, `step` or `finish`; `resume`
- * when the page breaks or `ended` aborts (the test ended under the bar, its page closed, the editor answered the
- * stop), never throwing: the bar, the picker and the recording then end at once, whether the bar or an intent started
- * them, leaving nothing of theirs in the page. The bar and the highlight are gone once it returns, unless the page
- * stops answering: no page call holds it past `ended` but taking them down, for `TAKE_DOWN_MS` at most. Every page
- * call it makes must run inside an internal call.
+ * the run can record), **Record here** hands the page to it and shows the bar again once the recording ended; with
+ * `point.end`, **End the test** answers `end`. An intent handed to `intents` while the bar waits is taken as its own
+ * button's click, the bar's own answer first, with the test's window brought to the front; `assert` and
+ * `assert-region`, which no button starts, run `onIntent` with the bar down and show it again after. Returns the answer
+ * that ends the stop: `resume`, `step`, `finish` or `end`; `resume` when the page breaks or `ended` aborts (the test
+ * ended under the bar, its page closed, the editor answered the stop), never throwing: the bar, the picker and the
+ * recording then end at once, whether the bar or an intent started them, leaving nothing of theirs in the page. The bar
+ * and the highlight are gone once it returns, unless the page stops answering: no page call holds it past `ended` but
+ * taking them down, for `TAKE_DOWN_MS` at most. Every page call it makes must run inside an internal call.
  */
 export async function pauseHere(
   page: Page,
@@ -694,13 +742,15 @@ export async function pauseHere(
       locator: null,
       record: !!onRecord,
       ...(point.failure ? { failure: true } : {}),
+      ...(point.end ? { end: true } : {}),
     };
     console.log(
       point.failure
         ? `[piwi] The test failed at ${callSiteLine(point.location)}: Resume, Pick a locator` +
             `${onRecord ? ' or Record here' : ''} in the browser (Esc resumes, and the test ends as it failed).`
         : `[piwi] Paused at ${callSiteLine(point.location)} before ${point.call}` +
-            `: Resume, Step, Pick a locator${onRecord ? ', Record here' : ''} or Finish in the browser (Esc resumes).`,
+            `: Resume, Step, Pick a locator${onRecord ? ', Record here' : ''}, Finish` +
+            `${point.end ? ' or End the test' : ''} in the browser (Esc resumes).`,
     );
     // A navigation that lands while the bar is drawn or read takes its document away: the bar comes back in the next
     // one, a few times in a row at most. A closed page, or anything else, resumes.
@@ -721,7 +771,7 @@ export async function pauseHere(
         if (raised) await unlessEnded(raised, ended);
         if (ended?.aborted) return 'resume';
         navigated = 0;
-        if (choice === 'resume' || choice === 'step' || choice === 'finish') return choice;
+        if (choice === 'resume' || choice === 'step' || choice === 'finish' || choice === 'end') return choice;
         if (choice === 'record' && onRecord) {
           await unlessEnded(
             onRecord(ended).catch(() => undefined),

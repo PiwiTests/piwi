@@ -127,8 +127,10 @@ import {
   viewHere,
   wantsStops,
   watchStops,
+  withEndSignal,
   withInspector,
   withTestTimeoutHeld,
+  ENDED_REASON,
   type CodeIntent,
   type GoOn,
   type PauseAnswer,
@@ -410,6 +412,16 @@ interface CaptureSink {
   stopEnds: number;
   // Set as the capture fixture's teardown begins: a stop after it goes on unshown.
   ending: boolean;
+  // The test function ended (the runner's `_onDidFinishTestFunctionCallbacks`): End the test at a stop after it ends
+  // the stop as Resume does, the test's result kept.
+  functionEnded: boolean;
+  // End the test was answered at a stop (`endTest`): no stop shows in the attempt any more, and the attempt ends,
+  // skipped, at its next locator call. Every locator call the proxy delegates while the pause is on carries `end`'s
+  // signal (`withEndSignal`), which End aborts, so a call the debugger holds never runs. `skip` is the runner's own
+  // error that skips the attempt, taken once (`skipOf`).
+  ended: boolean;
+  end: AbortController;
+  skip: unknown;
   // The calls a stop let go when the test ended under it, each settling once its call does (at once for a call
   // other than a locator's), the requests the test's pages started since, until each ends (`releasedRequestsEnded`),
   // since when none of them has started, ended or settled, and until when they are waited for, set as the first wait
@@ -475,6 +487,10 @@ function createSink(): CaptureSink {
     frozenAt: null,
     stopEnds: 0,
     ending: false,
+    functionEnded: false,
+    ended: false,
+    end: new AbortController(),
+    skip: undefined,
     released: [],
     releasedRequests: new Set(),
     onReleasedRequestsEnded: null,
@@ -1429,6 +1445,8 @@ interface LocatorCall {
   origin: { method: string; args: unknown[] };
   /** A locator was picked at a stop on it: its snapshot is the pick, not the call's own capture. */
   picked: boolean;
+  /** The call carries the attempt's end signal (`withEndSignal`): End the test at a stop on it gives it up. */
+  endable: boolean;
   /** Settles once the call did, whatever its outcome (`forgetLocatorCall`). */
   settled: Promise<void>;
   settle: () => void;
@@ -1445,7 +1463,7 @@ function knowLocatorCall(
   if (!sink?.pause || !location) return null;
   let settle = (): void => {};
   const settled = new Promise<void>((resolve) => (settle = resolve));
-  const call: LocatorCall = { page, target, location, origin, picked: false, settled, settle };
+  const call: LocatorCall = { page, target, location, origin, picked: false, endable: false, settled, settle };
   sink.locatorCalls.set(callSiteLine(location), call);
   return call;
 }
@@ -1582,6 +1600,11 @@ function onDebuggerStop(context: BrowserContext): void {
         return;
       }
       if (pagePause) stopShown(state);
+      // An attempt ended at a stop goes no further: nothing stops in it any more.
+      if (sink.ended) {
+        how = goOn(state, 'end');
+        return;
+      }
       if (sink.ending || CLOSING_CONTEXTS.has(context)) {
         askAgain(state, asked);
         how = goOn(state, sink.ending ? endedWaiting(sink, call) : undefined);
@@ -1589,7 +1612,8 @@ function onDebuggerStop(context: BrowserContext): void {
       }
       const of = stopPageOf(context, call, pagePause?.page);
       const ends = sink.stopEnds;
-      const shown = stopTurn.then(async () => {
+      const shown = stopTurn.then(async (): Promise<PauseAnswer | undefined> => {
+        if (sink.ended) return 'end';
         const ended = currentSink !== sink || sink.ending || sink.stopEnds !== ends;
         const gone = decided.show === 'breakpoint' && !atBreakpoint(state, callSite);
         if (!ended && !gone && stopCanShow(context, of)) {
@@ -1829,7 +1853,7 @@ async function showStop(
           call: title,
           attempt: testInfo.retry > 0 ? testInfo.retry + 1 : null,
           target: call?.page === page ? call.target : null,
-          ...(failure ? { failure: true } : {}),
+          ...(failure ? { failure: true } : sink.functionEnded ? {} : { end: true }),
         },
         probe,
         onPick,
@@ -1851,12 +1875,98 @@ async function showStop(
   // A failure's stop ends with the teardown it holds: no later teardown step ends it.
   if (!failure) sink.shownStops.set(end, stop);
   const answer = await shown;
-  if (!end.signal.aborted) return fromEditor ?? answer;
+  if (!end.signal.aborted) {
+    const chosen = fromEditor ?? answer;
+    return chosen === 'end' ? endTest(sink, call, title, location, reason) : chosen;
+  }
   // The test ended under it: as on Finish, nothing stops after it.
   if (end.signal.reason === 'ended') return 'finish';
   // Its page or context closed: as on Resume, once the page that closed is gone.
   await settledWithin(stop.after ? [stop.after] : [], END_STOP_MS);
   return 'resume';
+}
+
+/**
+ * End the test at a stop (End the test). While its function runs (a `beforeEach` hook and the fixtures set up before
+ * it included), the attempt stops nowhere more, and the locator calls in flight that carry its end signal are given up
+ * (`end` aborts before the debugger lets the stopped call go, so that call never runs): the test is skipped
+ * (`skipOf`) as such a call rejects, before its next locator call, as a `page.pause()` it stopped at goes on, or as
+ * its function ends (`skipAtFunctionEnd`). A stopped call the proxy did not delegate (a navigation, a key press, an
+ * assertion on the page) runs first, which the editor hears. Once the function ended (an `afterEach` hook, a
+ * fixture's teardown, a held failure), the stop ends as Resume does, the test's result kept. Returns how the debugger
+ * goes on: as on `end`, or as on `finish` once the function ended.
+ */
+function endTest(
+  sink: CaptureSink,
+  call: LocatorCall | undefined,
+  title: string,
+  location: string,
+  reason: StopReason,
+): PauseAnswer {
+  const line = callSiteLine(location);
+  if (reason === 'failure' || sink.functionEnded || !sink.testInfo) {
+    const said =
+      reason === 'failure'
+        ? `The test failed at ${line}: End the test lets it end as it failed.`
+        : `The test function already ended: End the test at ${line} lets it end as it is.`;
+    console.log(`[piwi] ${said}`);
+    if (reason !== 'failure') tellHub({ type: 'notice', message: said });
+    return 'finish';
+  }
+  sink.ended = true;
+  skipAtFunctionEnd(sink);
+  sink.end.abort(new Error(ENDED_REASON));
+  if (reason === 'page-pause' || call?.endable) {
+    const what = reason === 'page-pause' ? 'nothing after its page.pause() runs' : `${title} never runs`;
+    console.log(`[piwi] Ended the test at ${line}: ${what}, and the test is skipped.`);
+    return 'end';
+  }
+  // A call's title may name the address it goes to: its credentials stay in the worker.
+  const said = hideSecretsInText(
+    `${title} at ${line} runs before the test ends: Piwi holds no locator call there. ` +
+      'The test is skipped at its next locator call, or as it ends.',
+  );
+  console.log(`[piwi] ${said}`);
+  tellHub({ type: 'notice', message: said });
+  return 'end';
+}
+
+/**
+ * Whether the attempt ends at the call being made: End the test was answered while its function runs. Once the
+ * function ended, its `afterEach` hooks and fixtures run as after a skip of the runner's own.
+ */
+function endsNow(sink: CaptureSink): boolean {
+  return sink.ended && !sink.functionEnded;
+}
+
+/**
+ * The error that skips an attempt ended at a stop: the runner's own (`testInfo.skip()`, which records the `skip`
+ * annotation with `ENDED_REASON`), taken once and thrown again by each locator call after.
+ */
+function skipOf(sink: CaptureSink): unknown {
+  if (sink.skip === undefined) {
+    try {
+      sink.testInfo?.skip(true, ENDED_REASON);
+      sink.skip = new Error(`Test is skipped: ${ENDED_REASON}`);
+    } catch (error) {
+      sink.skip = error;
+    }
+  }
+  return sink.skip;
+}
+
+/**
+ * Skip an attempt ended at a stop as its function ends when nothing skipped it before (it made no locator call after
+ * the stop, or it caught the skip): last among the runner's callbacks for that moment
+ * (`_onDidFinishTestFunctionCallbacks`, feature-checked), and only when the test passed, so a failure stands.
+ */
+function skipAtFunctionEnd(sink: CaptureSink): void {
+  const callbacks = (sink.testInfo as unknown as { _onDidFinishTestFunctionCallbacks?: unknown } | null)
+    ?._onDidFinishTestFunctionCallbacks;
+  if (!(callbacks instanceof Set)) return;
+  callbacks.add(() => {
+    if (sink.testInfo?.status === 'passed') throw skipOf(sink);
+  });
 }
 
 /** What a stop the bar shows says to an intent: whether it can record, whether its page is a guess, whether it holds. */
@@ -2229,7 +2339,10 @@ function endStopsWithTestFunction(testInfo: TestInfo, sink: CaptureSink): void {
   if (!(callbacks instanceof Set)) return;
   const theirs = [...(callbacks as Set<unknown>)];
   callbacks.clear();
-  callbacks.add(() => endShownStops(sink, 'ended'));
+  callbacks.add(() => {
+    sink.functionEnded = true;
+    return endShownStops(sink, 'ended');
+  });
   for (const callback of theirs) callbacks.add(callback);
 }
 
@@ -2287,6 +2400,8 @@ async function pauseInPlace(page: Page, playwrightPause: PlaywrightPause, locati
   } finally {
     PAGE_PAUSES.delete(context);
   }
+  // Ended at this stop, or at another one meanwhile: nothing after the pause runs.
+  if (endsNow(sink)) throw skipOf(sink);
 }
 
 /**
@@ -2354,6 +2469,8 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
       if (prop === EXPECT_METHOD) {
         return async (...callArgs: unknown[]): Promise<unknown> => {
           const sink = currentSink;
+          // An attempt ended at a stop goes no further.
+          if (sink && endsNow(sink)) throw skipOf(sink);
           const expression = typeof callArgs[0] === 'string' ? callArgs[0] : '';
           const isNot = Boolean((callArgs[1] as { isNot?: boolean } | undefined)?.isNot);
           // Sync, before the await — the caller's frames are gone after it.
@@ -2361,12 +2478,18 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
           // Every assertion records the page it ran on, negations included.
           if (sink) recordLocatorPage(sink, page, target, callerLocation, noteLocatorCall(page, EXPECT_METHOD, true));
           const call = knowLocatorCall(sink, page, target, callerLocation, { method: originMethod, args: originArgs });
+          // While the attempt can stop, the assertion carries its end signal: End the test gives it up.
+          const ending = sink?.pause && !sink.ended ? withEndSignal(EXPECT_METHOD, callArgs, sink.end.signal) : null;
+          if (call && ending) call.endable = true;
+          const expectArgs = ending ?? callArgs;
           try {
             // Only positive presence-proving assertions participate — negations,
             // absence/count/page-level assertions, and any unknown future
             // expression pass through untouched.
             if (!sink || isNot || !EXPECT_CAPTURE_EXPRESSIONS.has(expression)) {
-              return await callMethod(target, prop, callArgs);
+              const result = await callMethod(target, prop, expectArgs);
+              if (sink && endsNow(sink)) throw skipOf(sink);
+              return result;
             }
 
             sink.lastActivePage = page;
@@ -2386,7 +2509,9 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
               sink.capturedLocators.push({ location: callerLocation, used, element: null, alternatives: [] });
             }
 
-            const result = await callMethod(target, prop, callArgs);
+            const result = await callMethod(target, prop, expectArgs);
+            // Given up by End the test, or ended meanwhile: the test is skipped, and the outcome is none.
+            if (endsNow(sink)) throw skipOf(sink);
 
             // `_expect` reports the outcome instead of throwing (the matcher
             // layer above does the throw), so read it off the result. A missing
@@ -2404,6 +2529,9 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
             }
 
             return result;
+          } catch (error) {
+            if (sink && endsNow(sink)) throw skipOf(sink);
+            throw error;
           } finally {
             forgetLocatorCall(sink, call);
           }
@@ -2418,6 +2546,8 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         const sink = currentSink;
         // Action outside a tracked test (e.g. during beforeAll) — run untouched.
         if (!sink) return callMethod(target, prop, callArgs);
+        // An attempt ended at a stop goes no further.
+        if (endsNow(sink)) throw skipOf(sink);
 
         sink.lastActivePage = page;
         // Capture the test call-site now (sync) so the snapshot's location
@@ -2432,6 +2562,9 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
           raw: `${originMethod}(${JSON.stringify(originArgs)})`,
         };
         const call = knowLocatorCall(sink, page, target, callerLocation, used);
+        // While the attempt can stop, the action carries its end signal: End the test gives it up.
+        const ending = sink.pause && !sink.ended ? withEndSignal(String(prop), callArgs, sink.end.signal) : null;
+        if (call && ending) call.endable = true;
 
         // One probe per call site (see `probedLocations`). Push a placeholder
         // immediately on the first visit — DOM capture runs async below.
@@ -2452,13 +2585,17 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         // current identity) and re-throw so the test still fails.
         let result: unknown;
         try {
-          result = await callMethod(target, prop, callArgs);
+          result = await callMethod(target, prop, ending ?? callArgs);
         } catch (error) {
+          // Given up by End the test, or failed once it ended: the test is skipped, no locator failed.
+          if (endsNow(sink)) throw skipOf(sink);
           sink.failedLocators.push({ method: originMethod, args: originArgs, location: callerLocation });
           throw error;
         } finally {
           forgetLocatorCall(sink, call);
         }
+        // Ended while the call ran: the rest of the test is skipped.
+        if (endsNow(sink)) throw skipOf(sink);
 
         // Fire-and-forget: capture element data without blocking the test.
         if (!alreadyProbed && !call?.picked) {

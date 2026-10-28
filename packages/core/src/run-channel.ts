@@ -1,21 +1,21 @@
 /**
- * The run channel: each worker of a test run the editor started keeps one connection, from before its first test to
- * its end, to the local socket the editor service listens on for the record channel's hand-offs
- * (`@piwitests/core/ide-recorder`). The run's environment names it as `PIWI_RUN_CHANNEL`, `<socket path>#<token>`
- * as `PIWI_RECORD_CHANNEL` is (`formatRecordChannel`, `parseRecordChannel`). Its first line, `run-attach`, tells it
- * from a hand-off's `attach`. Over it the worker says which test it runs and where it stopped, and the editor service
- * steers it: pause, step, resume, finish, run to a line, the breakpoints, an image of the stopped page, and, at a stop
- * the pause bar shows, the bar's own **Pick a locator** and **Record here**, the check panel's **Check an element** and
- * a region's ARIA snapshot, started from outside the page; at any stop, the responses the test kept (an interactive
- * run keeps the text bodies of its pages' fetch and XHR answers), one of them to mock, and a locator's matches; and, for
- * a viewer outside the page, the stopped page's live view (`@piwitests/core/run-view`: its frames, the input played on
- * it) and the locator of the element under a point of an image of it; and, for an agent (the editor's MCP server), the
- * stopped page's ARIA snapshot in AI mode, an action on one of its elements by its ref, that element's ranked locators,
- * what the run does as it goes (`events`), and its browser bound for Playwright's own tools on request (`bind`). A
- * worker holds a failure for the editor only
- * once the service said it shows and answers one (`holds` in its `run-attach`, answered by `attached`): a service that
- * predates it says nothing, and the failure goes on. Each message is one line of JSON, at most `MAX_HANDOFF_LINE` long
- * (`lineReader`), checked field by field on both sides. A side ignores a message it cannot read.
+ * The run channel: each worker of a test run the editor started keeps one connection, from before its first test to its
+ * end, to the local socket the editor service listens on for the record channel's hand-offs
+ * (`@piwitests/core/ide-recorder`). The run's environment names it as `PIWI_RUN_CHANNEL`, `<socket path>#<token>` as
+ * `PIWI_RECORD_CHANNEL` is (`formatRecordChannel`, `parseRecordChannel`). Its first line, `run-attach`, tells it from a
+ * hand-off's `attach`. Over it the worker says which test it runs and where it stopped, and the editor service steers
+ * it: pause, step, resume, finish, run to a line, end the test, the breakpoints, an image of the stopped page, and, at
+ * a stop the pause bar shows, the bar's own **Pick a locator** and **Record here**, the check panel's **Check an
+ * element** and a region's ARIA snapshot, started from outside the page; at any stop, the responses the test kept (an
+ * interactive run keeps the text bodies of its pages' fetch and XHR answers), one of them to mock, and a locator's
+ * matches; and, for a viewer outside the page, the stopped page's live view (`@piwitests/core/run-view`: its frames,
+ * the input played on it) and the locator of the element under a point of an image of it; and, for an agent (the
+ * editor's MCP server), the stopped page's ARIA snapshot in AI mode, an action on one of its elements by its ref, that
+ * element's ranked locators, what the run does as it goes (`events`), and its browser bound for Playwright's own tools
+ * on request (`bind`). A worker holds a failure for the editor only once the service said it shows and answers one
+ * (`holds` in its `run-attach`, answered by `attached`): a service that predates it says nothing, and the failure goes
+ * on. Each message is one line of JSON, at most `MAX_HANDOFF_LINE` long (`lineReader`), checked field by field on both
+ * sides. A side ignores a message it cannot read.
  */
 import { isViewFrameData, isViewKeyCombo, isViewPoint, isViewSize, readViewInput, type ViewInput } from './run-view';
 
@@ -27,6 +27,12 @@ export const RUN_CHANNEL_ENV = 'PIWI_RUN_CHANNEL';
  * whose reproduce and bisect runs carry the failure cluster's id there. Without it, `PIWI_ORIGIN_REF` names the run.
  */
 export const RUN_REF_ENV = 'PIWI_RUN_REF';
+
+/**
+ * How the ref of a run started in a terminal begins (`terminal-<pid>-<time>`): the reporter names it so as it follows
+ * the editor whose discovery file names this channel (`@piwitests/core/editor-discovery`).
+ */
+export const TERMINAL_REF_PREFIX = 'terminal-';
 
 /**
  * A line of the user's code: its file relative to the run's working directory, with forward slashes (`..` for a file
@@ -97,8 +103,14 @@ export type RunViewTake = 'view' | 'input' | 'input-clicks' | 'pick-at';
  */
 export type RunAgentTake = 'agent' | 'events' | 'bind';
 
+/**
+ * A control a stopped worker takes beyond Pause, Step, Resume, Finish and Run to a line: End the test (`end`), which
+ * skips the rest of the test (`testInfo.skip()`), its stopped call never run where Piwi holds it.
+ */
+export type RunControlTake = 'end';
+
 /** What a worker's `run-attach` lists in `takes`. */
-export type RunTake = RunIntent | RunQuery | RunViewTake | RunAgentTake;
+export type RunTake = RunIntent | RunQuery | RunViewTake | RunAgentTake | RunControlTake;
 
 /** The intents a worker takes. */
 export const RUN_INTENTS: readonly RunIntent[] = ['pick', 'record', 'assert', 'assert-region'];
@@ -120,6 +132,7 @@ export const RUN_TAKES: readonly RunTake[] = [
   'agent',
   'events',
   'bind',
+  'end',
 ];
 
 /** The most entries a `run-attach` lists in `takes` that this side reads; a longer list is read as none. */
@@ -423,10 +436,11 @@ export type HubToRun =
   /** Stop before the next call of the running test, or of the next test. */
   | { type: 'control'; action: 'pause' }
   /**
-   * Answer the stop `stop`: go on and stop before the next call, go on to the next breakpoint, or go on with no
-   * breakpoint more in this attempt. A stop that already ended is left as it is.
+   * Answer the stop `stop`: go on and stop before the next call, go on to the next breakpoint, go on with no
+   * breakpoint more in this attempt, or end the test (`end`, to a worker that takes it): the rest of it is skipped,
+   * the stopped call never run where the worker holds it, else run first. A stop that already ended is left as it is.
    */
-  | { type: 'control'; action: 'step' | 'resume' | 'finish'; stop: number }
+  | { type: 'control'; action: 'step' | 'resume' | 'finish' | 'end'; stop: number }
   /** Answer the stop `stop`: go on, and stop at the first call on that line, or at a breakpoint before it. */
   | { type: 'run-to'; stop: number; place: Place }
   /** An image of the stopped page; answered with `answer`, null when the worker is not stopped. */
@@ -930,7 +944,7 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
     case 'control': {
       const { action, stop } = value;
       if (action === 'pause') return { type: 'control', action };
-      if (action === 'step' || action === 'resume' || action === 'finish') {
+      if (action === 'step' || action === 'resume' || action === 'finish' || action === 'end') {
         return isInt(stop, 1) ? { type: 'control', action, stop } : null;
       }
       return typeof action === 'string' ? unknown(`control ${action}`) : null;

@@ -58,6 +58,7 @@ describe('the run channel', () => {
         'agent',
         'events',
         'bind',
+        'end',
       ],
       holds: ['failure'],
     } satisfies RunToHub;
@@ -401,7 +402,7 @@ describe('the run channel', () => {
 
     test('reads the controls, each answering a stop but Pause', () => {
       expect(parseHubToRun(line({ type: 'control', action: 'pause' }))).toEqual({ type: 'control', action: 'pause' });
-      for (const action of ['step', 'resume', 'finish'] as const) {
+      for (const action of ['step', 'resume', 'finish', 'end'] as const) {
         expect(parseHubToRun(line({ type: 'control', action, stop: 2 }))).toEqual({ type: 'control', action, stop: 2 });
         expect(parseHubToRun(line({ type: 'control', action }))).toBeNull();
       }
@@ -452,9 +453,9 @@ describe('the run channel', () => {
     });
 
     test('names what a newer service sends that this version does not know, and refuses what is malformed', () => {
-      expect(parseHubToRun(line({ type: 'control', action: 'end', stop: 2 }))).toEqual({
+      expect(parseHubToRun(line({ type: 'control', action: 'stop', stop: 2 }))).toEqual({
         type: 'unknown',
-        what: 'control end',
+        what: 'control stop',
       });
       expect(parseHubToRun(line({ type: 'request', request: 5, what: 'aria' }))).toEqual({
         type: 'unknown',

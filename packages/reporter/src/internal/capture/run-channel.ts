@@ -1,6 +1,6 @@
 import * as net from 'node:net';
 import type { Browser, Page, WorkerInfo } from '@playwright/test';
-import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
+import { RECORD_CHANNEL_ENV, lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import { hideSecretsInText } from '@piwitests/core/mask';
 import {
   MAX_RUN_EVENT_RATE,
@@ -23,6 +23,7 @@ import {
   type RunEvent,
   type RunHold,
   type RunIntent,
+  type RunTake,
   type RunToHub,
   type SnapshotAnswer,
   type StopReason,
@@ -243,6 +244,19 @@ let bound: { browser: Browser; endpoint: string | null } | null = null;
 const NO_AGENT_PAGE = "This stop has no page an agent can read: its call does not name one among its context's pages.";
 
 /**
+ * What a worker takes, of `RUN_TAKES`: Pick a locator only where the run names a pairing its locators go to
+ * (`PIWI_EDITOR_SEND`), Record here and Assert only where it names a record channel (`PIWI_RECORD_CHANNEL`), neither of
+ * which a run started in a terminal carries.
+ */
+export function workerTakes(env: NodeJS.ProcessEnv = process.env): RunTake[] {
+  const pairing = !!env[PIWI_LOCAL_DEBUG_ENV.editorSend];
+  const recorder = parseRecordChannel(env[RECORD_CHANNEL_ENV]) !== null;
+  return RUN_TAKES.filter((take) =>
+    take === 'pick' ? pairing : take === 'record' || take === 'assert' ? recorder : true,
+  );
+}
+
+/**
  * Open the worker's run connection when the run names a channel and a ref (`PIWI_RUN_REF`, else `PIWI_ORIGIN_REF`),
  * with `handlers` for what the editor asks. Resolves with whether it opened, once it did, failed or took too long.
  * Never throws.
@@ -306,7 +320,7 @@ export async function openRunChannel(
     pid: process.pid,
     playwright: worker.config.version,
     reporter: getReporterVersion(),
-    takes: [...RUN_TAKES],
+    takes: workerTakes(env),
     holds: [...RUN_HOLDS],
   });
   return true;
