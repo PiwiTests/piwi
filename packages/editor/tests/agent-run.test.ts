@@ -6,7 +6,7 @@
  * to its end. Headless Chromium. Skipped when the reporter is not built (`npm run reporter:build`) or Chromium is not
  * installed.
  */
-import { execFile } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import { createRequire } from 'node:module';
@@ -47,6 +47,8 @@ test('waits for a click', async ({ page }) => {
 `;
 
 let server: http.Server;
+/** Whether the test's page was served: its `goto` is past, so a pause stops in the loop after it. */
+let served = false;
 let ide: Service;
 let agents: AgentsResult;
 
@@ -67,7 +69,10 @@ async function call(name: string, args: Record<string, unknown> = {}) {
 
 beforeAll(async () => {
   if (!runnable) return;
-  server = http.createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(PAGE));
+  server = http.createServer((_req, res) => {
+    served = true;
+    res.writeHead(200, { 'content-type': 'text/html' }).end(PAGE);
+  });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
   fs.rmSync(project, { recursive: true, force: true });
@@ -117,17 +122,23 @@ describe.skipIf(!runnable)('an agent and a real run of the editor window', () =>
       delete env[name];
     }
     let output = '';
-    let child: ReturnType<typeof execFile> | null = null;
+    let child: ChildProcess | null = null;
     const exited = new Promise<number | null>((resolve) => {
-      child = execFile(
-        process.execPath,
-        [requireHere.resolve('@playwright/test/cli'), 'test'],
-        { cwd: project, env, timeout: 90_000 },
-        () => {},
-      );
+      // A process group of its own, its workers with it, so a failing check ends them all.
+      child = spawn(process.execPath, [requireHere.resolve('@playwright/test/cli'), 'test'], {
+        cwd: project,
+        env,
+        timeout: 90_000,
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
       child!.stdout?.on('data', (chunk) => (output += chunk));
       child!.stderr?.on('data', (chunk) => (output += chunk));
       child!.on('exit', (code) => resolve(code));
+      child!.on('error', (error) => {
+        output += String(error);
+        resolve(null);
+      });
     });
     try {
       // The run is listed once its worker runs the test.
@@ -140,7 +151,8 @@ describe.skipIf(!runnable)('an agent and a real run of the editor window', () =>
         workers: [{ worker: 0, test: { title: 'waits for a click' } }],
       });
 
-      // Paused: answered at the stop, said to be the agent's, with the page's snapshot.
+      // Paused once the page is served: answered at the stop, said to be the agent's, with the page's snapshot.
+      await waitFor(() => (served ? true : undefined), 30_000);
       const paused = await call('run_control', { run: ref, action: 'pause', wait: 20 });
       expect(paused.piwi).toMatchObject({ ok: true, worker: 0, stop: { reason: 'pause', by: 'agent' } });
       expect(paused.piwi.snapshot).toBe('the whole snapshot');
@@ -180,8 +192,13 @@ describe.skipIf(!runnable)('an agent and a real run of the editor window', () =>
         expect.arrayContaining(['worker-joined', 'test-begin', 'stopped', 'went-on', 'call', 'test-end', 'run-ended']),
       );
     } finally {
-      // A run left stopped by a failing check is stopped with it.
-      (child as ReturnType<typeof execFile> | null)?.kill();
+      // A run left stopped by a failing check is stopped with it, its workers included.
+      const pid = (child as ChildProcess | null)?.pid;
+      try {
+        if (pid) process.kill(-pid, 'SIGKILL');
+      } catch {
+        /* the run ended */
+      }
       await exited.catch(() => null);
     }
   }, 120_000);
