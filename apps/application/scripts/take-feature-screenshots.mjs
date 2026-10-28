@@ -2562,6 +2562,16 @@ const SCENES = [
     of: '[data-shot="project-settings"]',
   })),
   ...[
+    { name: 'project-live-view-settings', width: 1280, height: 800 },
+    { name: 'project-live-view-settings-mobile', width: 375, height: 1100 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → Live view: the switch, and what goes out, to whom and what is kept, at ${width} px`,
+    route: '/projects/1?tab=settings&section=live-view',
+    viewport: { width, height },
+    of: '[data-shot="project-live-view-settings"]',
+  })),
+  ...[
     { name: 'project-url-patterns-empty', width: 1280 },
     { name: 'project-url-patterns-empty-mobile', width: 375 },
   ].map(({ name, width }) => ({

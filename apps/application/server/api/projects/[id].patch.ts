@@ -14,13 +14,14 @@ import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
 import { resolveCiRerunSettings, type CiRerunSettings } from '#shared/ci-rerun';
 import { resolveServerProbeSettings } from '#shared/server-probes';
 import { projectTargetsSchema } from '#shared/analytics/targets';
+import { liveViewRelay } from '../../utils/live-view';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Projects'],
     summary: 'Update a project',
     description:
-      'Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), targets, the coverage scope (`coverageScope`: `include` and `exclude` lists of gitignore-style patterns over repository-relative paths, the files coverage totals count; null restores the default excludes), the coverage areas (`coverageAreas`: up to 20 `{ name, include }`, named areas of the code such as `front` and `back`, each counted apart; a file belongs to the first whose patterns match it; null or `[]` removes them), the status filter (`statusFilter`: `{ environments, branches, allBranches, fullRunsOnly }`, all four required, the run scope of the project page, which picks the runs that set the project’s status, its `latestRun` in the project list; null, or a scope every run passes, for every run), and tags. A change of the scope or the areas recounts the commits whose totals are kept, the newest on the default branch a few seconds later and the others after it, 200 at most, and an area no longer named leaves the coverage trend. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. `repositoryUrl` is the repository every SCM call of the project reads with its token (`https://host/owner/repo`; an SSH remote is accepted and stored in that form): the first run that names a remote sets it, a run naming another repository is ignored for SCM calls, and `null` or an empty string clears it so the next run that names one sets it again. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires `project:manage` (Project admin on the project).',
+      'Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), whether people who may open a live run of the project can watch its workers’ pages from the run page (`liveView`, off by default; turning it off ends every view of the project’s runs at once), targets, the coverage scope (`coverageScope`: `include` and `exclude` lists of gitignore-style patterns over repository-relative paths, the files coverage totals count; null restores the default excludes), the coverage areas (`coverageAreas`: up to 20 `{ name, include }`, named areas of the code such as `front` and `back`, each counted apart; a file belongs to the first whose patterns match it; null or `[]` removes them), the status filter (`statusFilter`: `{ environments, branches, allBranches, fullRunsOnly }`, all four required, the run scope of the project page, which picks the runs that set the project’s status, its `latestRun` in the project list; null, or a scope every run passes, for every run), and tags. A change of the scope or the areas recounts the commits whose totals are kept, the newest on the default branch a few seconds later and the others after it, 200 at most, and an area no longer named leaves the coverage trend. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. `repositoryUrl` is the repository every SCM call of the project reads with its token (`https://host/owner/repo`; an SSH remote is accepted and stored in that form): the first run that names a remote sets it, a run naming another repository is ignored for SCM calls, and `null` or an empty string clears it so the next run that names one sets it again. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires `project:manage` (Project admin on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:manage',
   },
@@ -68,6 +69,8 @@ const updateProjectSchema = z.object({
   quarantineFailsStatus: z.boolean().optional(),
   /** True also posts each gate evaluation as the `<statusContext>/gate` commit status; false (the default) does not. */
   gateStatus: z.boolean().optional(),
+  /** True lets people who may open a live run of the project watch its workers' pages; false (the default) does not. */
+  liveView: z.boolean().optional(),
   /** Test import and bugs folder for specs rendered from bug reports; null clears them. */
   generatedSpecs: generatedSpecSettingsSchema.optional().nullable(),
   /** Per-project targets on catalog metrics; null clears them. */
@@ -122,6 +125,7 @@ export default eventHandler(async (event) => {
     ciRerun,
     quarantineFailsStatus,
     gateStatus,
+    liveView,
     generatedSpecs,
     targets,
     coverageScope,
@@ -162,6 +166,7 @@ export default eventHandler(async (event) => {
       ciRerun: resolvedCiRerun,
       quarantineFailsStatus,
       gateStatus,
+      liveView,
       generatedSpecs:
         generatedSpecs === undefined
           ? undefined
@@ -175,6 +180,8 @@ export default eventHandler(async (event) => {
       tagIds,
     }).then(async (project) => {
       if (coverageScope !== undefined || coverageAreas !== undefined) await recountProjectCoverage(db, id);
+      // Off: the views open now end, and the keys of the project's runs open nothing more.
+      if (liveView === false) liveViewRelay.endProject(id);
       return project;
     });
   } catch (e: any) {

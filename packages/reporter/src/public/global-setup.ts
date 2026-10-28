@@ -1,15 +1,15 @@
 import * as path from 'node:path';
 import { errorMessage } from '../internal/support/errors.js';
-import * as fs from 'node:fs';
 import type { PiwiDashboardOptions } from './options.js';
 import { resolveOptions } from '../internal/config/env.js';
 import { HttpClient } from '../internal/transport/http-client.js';
 import { Logger } from '../internal/support/logger.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
-import { resolveRunLabel } from '../internal/support/ci.js';
+import { detectCi, resolveRunLabel } from '../internal/support/ci.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
-import { getSetupFilePath } from '../internal/support/setup-file.js';
+import { isLiveViewKey } from '@piwitests/core/live-view';
+import { writeSetupInfo } from '../internal/support/setup-file.js';
 import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
 import { isUiMode, isListMode } from '../internal/support/run-mode.js';
 import { checkBaseUrls, remoteBrowserNote } from '../internal/support/base-url-check.js';
@@ -150,19 +150,21 @@ export function createGlobalSetup(
           instanceId: computeInstanceId(opts.projectName!, resolveRunLabel(opts.runLabel, shard !== null)),
           shardIndex: shard?.current,
           shardTotal: shard?.total,
+          // A key for the run's live view, asked in a CI run alone (the run's origin reads the same): the instance
+          // hands one out only for a project that turned the live view on.
+          ...(detectCi(process.env) ? { liveView: true } : {}),
         },
         auth,
       );
 
       if (response?.runId && response?.setupToken) {
-        fs.writeFileSync(
-          getSetupFilePath(opts.projectName!),
-          JSON.stringify({
-            runId: response.runId,
-            setupToken: response.setupToken,
-            projectName: opts.projectName,
-          }),
-        );
+        const liveViewKey = response.liveView?.key;
+        writeSetupInfo({
+          runId: response.runId,
+          setupToken: response.setupToken,
+          projectName: opts.projectName!,
+          ...(isLiveViewKey(liveViewKey) ? { liveViewKey } : {}),
+        });
         logger.debug(`Global setup: initializing run #${response.runId}`);
       }
 

@@ -150,6 +150,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/evidence',
       },
       {
+        title: 'Live view of a run',
+        summary:
+          'Watch the page each worker of a running CI run is on, beside its step: a few images a second, only while someone watches, to who may open the run, never stored.',
+        needs: ['fixtures'],
+        where: 'Test run → Tests → Watch; Project → Settings → Live view',
+        doc: 'features/live-view',
+      },
+      {
         title: 'Failure clusters & the inbox',
         summary:
           'Failures sharing an error fingerprint collapsed into one cluster, triaged once with an owner and known-issue link.',

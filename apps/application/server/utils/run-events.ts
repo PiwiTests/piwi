@@ -26,7 +26,9 @@ export interface RunEvent {
     | 'run-finalizing'
     | 'run-finished'
     | 'case-files'
-    | 'resources';
+    | 'resources'
+    /** A worker of the run's live view connected, stopped, went on or left (`LiveWorkerState`, `#shared/live-view`). */
+    | 'live-worker';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: Record<string, any>;
   seq: number;

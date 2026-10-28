@@ -509,6 +509,18 @@ export const PROJECTS_ANCHORS = [
     sample: { route: '/projects/1?tab=settings&section=ai', expect: PROJECT_1 },
   },
   {
+    id: 'project-settings-live-view',
+    kind: 'tab',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'settings', section: 'live-view' } }],
+    describes:
+      'The Live view section: whether people who may open a running run of the project can watch each worker’s page from the run page.',
+    requires: { permission: 'project:manage' },
+    help: 'project.live-view',
+    doc: 'features/live-view',
+    sample: { route: '/projects/1?tab=settings&section=live-view', expect: PROJECT_1 },
+  },
+  {
     id: 'project-settings-capabilities',
     kind: 'tab',
     pages: ['/projects/[id]'],

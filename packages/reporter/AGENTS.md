@@ -55,6 +55,17 @@ responsibilities.
      own action and ranks its locators (`agent-page.ts`), tells the test's calls and page events while asked (`events`,
      `run-events.ts`, Playwright's `_instrumentation`, feature-checked), and binds the browser for Playwright's tools on
      request until the test ends (`tests/run-channel-agent.spec.ts`);
+   - with `PIWI_LIVE_VIEW` (set in `onBegin` from the key the global setup's `/setup` gave, asked in a CI run alone,
+     `detectCi` as the run's origin, for a project with the live view on), each worker's event stream to the instance
+     (`internal/capture/live-view.ts`, framed as `@piwitests/core/live-view`), opened in the background by the
+     `piwiResources` worker fixture and dropped quietly after bounded retries: only while the instance says someone
+     watches does it post frames of the test's page, through the screencast helper the editor's view shares
+     (`page-view.ts`), each with its call (through `hideSecretsInText`) and its test; it always posts its test's stops
+     (`showStop`). Never a frame while nobody watches, never stored, nothing from a run outside CI
+     (`tests/live-view.spec.ts`, `tests/live-view-worker.spec.ts`). The key is out of the worker's `process.env` from
+     that fixture's setup to its teardown, put back only as Playwright's `__stop__` message compares the environment,
+     so the projects that depend on the worker's keep it; in a worker that can open a view, the test gets
+     `page.screencast` behind a guard whose `start` and `stop` first end a view's client (`guardScreencast`);
    - `PIWI_RUN_CHANNEL` and `PIWI_EDITOR_SEND` taken out of the worker's `process.env` while each test runs
      (`hideRunChannel`; picks still reach the editor through `editorSendAddress`), so a process the test starts gets
      neither, and put back after it, since Playwright passes a worker's environment changes to the projects that

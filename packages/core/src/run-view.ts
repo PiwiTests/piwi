@@ -324,9 +324,18 @@ export function isViewSize(width: unknown, height: unknown): boolean {
 
 /** The frame size a view of a viewport asks for: the viewport, scaled down to fit `MAX_VIEW_WIDTH` by `MAX_VIEW_HEIGHT`. */
 export function viewSize(viewport: { width: number; height: number }): { width: number; height: number } {
+  return fitViewSize(viewport, MAX_VIEW_WIDTH, MAX_VIEW_HEIGHT);
+}
+
+/** A viewport scaled down, its proportions kept, to fit `maxWidth` by `maxHeight` pixels; a smaller one as it is. */
+export function fitViewSize(
+  viewport: { width: number; height: number },
+  maxWidth: number,
+  maxHeight: number,
+): { width: number; height: number } {
   const width = Math.max(2, Math.round(viewport.width));
   const height = Math.max(2, Math.round(viewport.height));
-  const scale = Math.min(1, MAX_VIEW_WIDTH / width, MAX_VIEW_HEIGHT / height);
+  const scale = Math.min(1, maxWidth / width, maxHeight / height);
   return { width: Math.max(2, Math.floor(width * scale)), height: Math.max(2, Math.floor(height * scale)) };
 }
 
@@ -355,6 +364,8 @@ export class RateWindow {
 export interface LatestPacerOptions<T> {
   /** The least time between two sends. */
   intervalMs: number;
+  /** The least time after `item` went before the next one goes, when longer than `intervalMs`: a heavier item waits longer. */
+  spacing?(item: T): number;
   send(item: T): void;
   /** Whether the way out is backed up: the item waits, and the latest one goes once it is not. */
   busy?(): boolean;
@@ -362,16 +373,21 @@ export interface LatestPacerOptions<T> {
 }
 
 /**
- * Sends the latest item offered, at most one each `intervalMs` and none while `busy`: an item offered before the one
- * waiting went takes its place, so one waits at most, whatever comes in.
+ * Sends the latest item offered, at most one each `intervalMs` (longer after an item its `spacing` holds longer) and
+ * none while `busy`: an item offered before the one waiting went takes its place, so one waits at most, whatever comes
+ * in.
  */
 export class LatestPacer<T> {
   private pending: { item: T } | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private last = -Infinity;
+  /** The least time after the item sent last before the next goes. */
+  private gap: number;
   private closed = false;
 
-  constructor(private readonly options: LatestPacerOptions<T>) {}
+  constructor(private readonly options: LatestPacerOptions<T>) {
+    this.gap = options.intervalMs;
+  }
 
   offer(item: T): void {
     if (this.closed) return;
@@ -388,7 +404,7 @@ export class LatestPacer<T> {
   pump(): void {
     if (this.closed || !this.pending || this.timer) return;
     const now = this.options.now?.() ?? Date.now();
-    const wait = this.last + this.options.intervalMs - now;
+    const wait = this.last + this.gap - now;
     const busy = wait <= 0 && !!this.options.busy?.();
     if (wait > 0 || busy) {
       this.timer = setTimeout(
@@ -404,6 +420,7 @@ export class LatestPacer<T> {
     const { item } = this.pending;
     this.pending = null;
     this.last = now;
+    this.gap = Math.max(this.options.intervalMs, this.options.spacing?.(item) ?? 0);
     this.options.send(item);
   }
 

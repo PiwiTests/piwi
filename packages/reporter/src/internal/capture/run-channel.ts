@@ -30,14 +30,11 @@ import {
   type UnknownMessage,
 } from '@piwitests/core/run-channel';
 import {
-  FrameAcks,
-  LatestPacer,
   MAX_VIEW_EVENT_RATE,
   MAX_VIEW_FPS,
   MAX_VIEW_FRAME,
   RateWindow,
   VIEW_QUALITY,
-  isViewSize,
   viewSize,
   type ViewButton,
   type ViewInput,
@@ -48,6 +45,7 @@ import { getReporterVersion } from '../support/reporter-version.js';
 import { bindBrowser } from './agent-page.js';
 import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
+import { openPageView, viewportOf } from './page-view.js';
 import type { PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
 
@@ -354,6 +352,7 @@ let hiddenEditorSend: string | undefined;
  * returns what puts them back once the test ended. The test's picks still go to the pairing (`editorSendAddress`).
  * Playwright compares a worker's environment as it stops with the one it started with, and hands what changed to the
  * projects that depend on its own: between tests, both are there. `PIWI_RECORD_CHANNEL` stays, for **Record here**.
+ * The live view's key is out for the worker's whole life (`live-view.ts`).
  */
 export function hideRunChannel(env: NodeJS.ProcessEnv = process.env): () => void {
   const hidden = HIDDEN_ENV.flatMap((name) => {
@@ -540,20 +539,6 @@ async function stopView(): Promise<void> {
   if (shown) await within(shown.close(), VIEW_END_MS);
 }
 
-/** The page's viewport in CSS pixels; null when it cannot be read. */
-async function viewportOf(page: Page): Promise<{ width: number; height: number } | null> {
-  const size = page.viewportSize();
-  if (size) return size;
-  type Window = { innerWidth: number; innerHeight: number };
-  const read = await internalCall(page, () =>
-    page.evaluate(() => {
-      const { innerWidth, innerHeight } = globalThis as unknown as Window;
-      return { width: innerWidth, height: innerHeight };
-    }),
-  ).catch(() => null);
-  return read && isViewSize(read.width, read.height) ? read : null;
-}
-
 /**
  * Start the live view of a stop the editor asked for, or say why there is none; for a view on already, asked again for
  * a viewer that came since, send its latest frame again.
@@ -594,145 +579,41 @@ function startView(holding: HeldStop): Promise<IntentAnswer> {
   return started;
 }
 
-/** A frame as the page painted it, and the viewport it shows, in CSS pixels. */
-interface Frame {
-  data: Buffer;
-  width: number;
-  height: number;
-}
-
 /**
- * Open the live view of a page at the stop `stop`: the page's screencast (`page.screencast.start`, an internal call),
- * at the size of its viewport scaled down to fit `MAX_VIEW_WIDTH` by `MAX_VIEW_HEIGHT` and `VIEW_QUALITY`, unless
- * another client of the screencast (a test's video, its trace's images) came first, whose size and quality every
- * later one gets; its own end leaves that client as it is. Its frames are acknowledged at the view's pace
- * (`FrameAcks`), one held at a time. Where the screencast cannot start (the test runs one
- * itself), an image of the page every `SHOT_MS`. Each frame goes to the editor as `frame`: a frame the same as the one
- * before is dropped; one longer than `MAX_VIEW_FRAME` is too, an image of the page at `LIGHT_QUALITY` taken in its
- * place, one at a time and `SHOT_MS` apart, and when that one is too long as well, the viewers hear once why no frame
- * goes (`frame` with `refused`), until a frame goes again. They go at most `MAX_VIEW_FPS` a second, the latest one
- * when the connection is backed up; the latest sent is kept, in memory, until the view ends, and sent again for a
- * viewer that comes later (`resend`). Null when the page cannot be read.
+ * Open the live view of a page at the stop `stop` (`openPageView`): at the size of its viewport scaled down to fit
+ * `MAX_VIEW_WIDTH` by `MAX_VIEW_HEIGHT` and `VIEW_QUALITY`, `MAX_VIEW_FPS` frames a second at most, each frame going
+ * to the editor as `frame` with the viewport in CSS pixels, one longer than `MAX_VIEW_FRAME` replaced by an image of
+ * the page at `LIGHT_QUALITY`, and when that one is too long as well, `frame` with `refused` once, until a frame goes
+ * again. The latest alone waits while the connection is backed up; none goes once its stop began to end. The view
+ * stops as its page closes. Null when the page cannot be read.
  */
 async function openView(page: Page, stop: number): Promise<View | null> {
-  const viewport = await viewportOf(page);
-  if (!viewport) return null;
-  let closed = false;
-  let last: Buffer | null = null;
-  /** The latest frame sent, or why none goes: kept for a viewer that comes later, in memory, until the view ends. */
-  let sent: Extract<RunToHub, { type: 'frame' }> | null = null;
-  const send = (message: Extract<RunToHub, { type: 'frame' }>): void => {
-    sent = message;
-    tellHub(message);
-  };
-  /** Whether the viewers heard that no frame goes, since the last frame that went. */
-  let refused = false;
-  const pacer = new LatestPacer<Frame>({
-    intervalMs: 1000 / MAX_VIEW_FPS,
+  const opened = await openPageView(page, {
+    size: viewSize,
+    quality: VIEW_QUALITY,
+    fps: MAX_VIEW_FPS,
+    maxFrameBytes: MAX_VIEW_FRAME,
+    lightQuality: LIGHT_QUALITY,
+    shotMs: SHOT_MS,
     busy: () => !!socket && socket.writableLength > MAX_FRAME_BACKLOG,
-    send: (frame) => {
-      // Once its stop began to end, no frame of it goes.
-      if (held?.stop !== stop) return;
-      refused = false;
-      send({ type: 'frame', stop, width: frame.width, height: frame.height, data: frame.data.toString('base64') });
-    },
+    // Once its stop began to end, no frame of it goes.
+    live: () => held?.stop === stop,
+    send: (frame) =>
+      tellHub({ type: 'frame', stop, width: frame.width, height: frame.height, data: frame.data.toString('base64') }),
+    refuse: () => tellHub({ type: 'frame', stop, refused: TOO_HEAVY }),
   });
-  /** The lighter image on its way, and when the last one was asked. */
-  let lighter: Promise<void> | null = null;
-  let lighterAt = -Infinity;
-  /** A frame too long to send: an image of the page at a lower quality goes in its place, or the viewers hear why not. */
-  const lighten = (): void => {
-    const now = Date.now();
-    if (lighter || now - lighterAt < SHOT_MS) return;
-    lighterAt = now;
-    lighter = internalCall(page, () =>
-      page.screenshot({ type: 'jpeg', quality: LIGHT_QUALITY, scale: 'css', caret: 'initial', timeout: 5000 }),
-    )
-      .then(
-        (shot) => {
-          if (closed) return;
-          if (shot.length <= MAX_VIEW_FRAME) return pacer.offer({ data: shot, ...viewport });
-          if (refused || held?.stop !== stop) return;
-          refused = true;
-          send({ type: 'frame', stop, refused: TOO_HEAVY });
-        },
-        () => undefined,
-      )
-      .finally(() => {
-        lighter = null;
-      });
-  };
-  const onFrame = (data: Buffer, width: number, height: number): void => {
-    if (closed || last?.equals(data)) return;
-    last = data;
-    if (data.length > MAX_VIEW_FRAME) return lighten();
-    const named = isViewSize(width, height);
-    pacer.offer({ data, width: named ? width : viewport.width, height: named ? height : viewport.height });
-  };
+  if (!opened) return null;
   const onClose = () => {
     if (view?.stop === stop) void stopView();
   };
   page.once('close', onClose);
-  type Started = { dispose?: () => Promise<unknown> } | undefined;
-  type Screencast = {
-    start?: (options: {
-      size: { width: number; height: number };
-      quality: number;
-      onFrame: (frame: { data: Buffer; viewportWidth: number; viewportHeight: number }) => Promise<void> | void;
-    }) => Promise<Started>;
-    stop?: () => Promise<void>;
-  };
-  const screencast = (page as unknown as { screencast?: Screencast }).screencast;
-  let end: (() => Promise<unknown>) | null = null;
-  let shots: ReturnType<typeof setTimeout> | null = null;
-  /** The view's acknowledgments: one frame each `1000 / MAX_VIEW_FPS` ms waits for its own, the others none. */
-  const acks = new FrameAcks(1000 / MAX_VIEW_FPS);
-  try {
-    if (typeof screencast?.start !== 'function') throw new Error('This Playwright has no screencast.');
-    const started = await internalCall(page, () =>
-      screencast.start!({
-        size: viewSize(viewport),
-        quality: VIEW_QUALITY,
-        onFrame: (frame) => {
-          onFrame(frame.data, frame.viewportWidth, frame.viewportHeight);
-          return acks.next();
-        },
-      }),
-    );
-    // Its own client alone: the client a test's video records through stays.
-    end = () =>
-      internalCall(page, async () => {
-        if (typeof started?.dispose === 'function') await started.dispose();
-        else await screencast.stop?.();
-      });
-  } catch {
-    const shoot = async (): Promise<void> => {
-      shots = null;
-      if (closed || page.isClosed()) return;
-      const shot = await internalCall(page, () =>
-        page.screenshot({ type: 'jpeg', quality: VIEW_QUALITY, scale: 'css', timeout: 5000 }),
-      ).catch(() => null);
-      if (shot) onFrame(shot, viewport.width, viewport.height);
-      if (!closed) shots = setTimeout(() => void shoot(), SHOT_MS);
-    };
-    void shoot();
-  }
   return {
     stop,
-    screencast: end !== null,
-    resend: () => {
-      if (!closed && sent && held?.stop === stop) tellHub(sent);
-    },
+    screencast: opened.screencast,
+    resend: opened.resend,
     close: async () => {
-      closed = true;
-      sent = null;
-      acks.close();
-      pacer.close();
       page.off('close', onClose);
-      if (shots) clearTimeout(shots);
-      // A lighter image on its way is the view's last call to the page.
-      await lighter;
-      if (end && !page.isClosed()) await end().catch(() => undefined);
+      await opened.close();
     },
   };
 }

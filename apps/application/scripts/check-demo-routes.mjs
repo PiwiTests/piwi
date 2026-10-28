@@ -77,6 +77,12 @@ const INTENTIONALLY_EXCLUDED = new Set([
   // OpenMetrics for an operator's Prometheus or Grafana to pull: there is no
   // server in the browser demo for a scraper to reach.
   'GET /api/metrics',
+  // The run page's live view: a live run's test workers hold its streams and post its frames, and someone watches
+  // them; the demo runs no test worker, so its simulated runs have no worker in the live view to watch.
+  'GET /api/test-runs/:id/live-view',
+  'POST /api/test-runs/:id/live-view',
+  'GET /api/test-runs/:id/live-view/watch',
+  'GET /api/test-runs/:id/live-view/workers',
   // Inbound Jira webhook: a public receiver an external Jira posts to. There is
   // no server in the browser demo, and it only ever refreshes a link.
   'POST /api/integrations/jira/webhook/:token',

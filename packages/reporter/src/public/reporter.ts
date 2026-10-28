@@ -27,12 +27,14 @@ import { pauseStepEvents, readPauses } from '../internal/collect/pause-events.js
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
-import { resolveRunLabel } from '../internal/support/ci.js';
+import { detectCi, resolveRunLabel } from '../internal/support/ci.js';
 import { workerIndexOf } from '../internal/support/worker-index.js';
 import { detectCliFileFilters } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { isListMode } from '../internal/support/run-mode.js';
+import { peekSetupInfo } from '../internal/support/setup-file.js';
+import { LIVE_VIEW_ENV, formatLiveViewEnv } from '@piwitests/core/live-view';
 import { createGlobalSetup } from './global-setup.js';
 import { wrapConfig } from './config-wrapper.js';
 import { toWireTestCase } from '../internal/submit/serializer.js';
@@ -417,6 +419,7 @@ export class PiwiDashboardReporter {
       });
     }
 
+    this.shareLiveView();
     this.streamManager?.start(
       this.startTime,
       this.metadata,
@@ -446,6 +449,21 @@ export class PiwiDashboardReporter {
       live.start();
       this.liveResources = live;
     }
+  }
+
+  /**
+   * Name the run's live view on the instance for the workers, which Playwright starts after this hook with this
+   * environment: the key the instance gave the global setup of a CI run, for a project that turned its live view on,
+   * for this run alone. Read before the stream starts, which takes the setup file.
+   */
+  private shareLiveView(): void {
+    if (!this.streamManager || !detectCi(process.env)) return;
+    const setup = peekSetupInfo(this.options.projectName!);
+    if (!setup?.liveViewKey) return;
+    process.env[LIVE_VIEW_ENV] = formatLiveViewEnv(this.httpClient.baseUrl, setup.runId, setup.liveViewKey);
+    this.logger.info(
+      "Live view on: people who may open this run can watch its tests' pages on the dashboard while it runs. Nothing is stored.",
+    );
   }
 
   /**

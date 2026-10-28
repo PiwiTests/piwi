@@ -5,6 +5,7 @@ import type { RunClusterMeta, TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
 import { liveResourcesByWorker, liveResourcesForCase, type LiveWorkerResources } from '~/utils/live-worker-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
+import { liveWorkerKey, type LiveWorkerState } from '#shared/live-view';
 import { summarizeRunCases } from '#shared/utils/test-counts';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
@@ -40,6 +41,8 @@ const props = defineProps<{
   liveSteps?: LiveStepsByWorker | null;
   /** What the run's reporters measured so far; each running row shows its worker's last values. */
   liveResources?: RunResourceTimelinePart[] | null;
+  /** The workers in the run's live view, by `liveWorkerKey`: each running row of one offers Watch, and says Paused. */
+  liveWorkers?: Record<string, LiveWorkerState> | null;
   clusterMeta?: RunClusterMeta | null;
   /** Stable test-case ids currently quarantined — marks the matching rows. */
   quarantinedCaseIds?: Set<number> | null;
@@ -48,7 +51,7 @@ const props = defineProps<{
   projectName?: string | null;
 }>();
 
-const emit = defineEmits<{ 'quarantine-changed': [] }>();
+const emit = defineEmits<{ 'quarantine-changed': []; watch: [worker: LiveWorkerState, testCase: TestCaseResult] }>();
 
 function isQuarantined(tc: TestCaseResult): boolean {
   return Boolean(props.quarantinedCaseIds?.has(tc.testCaseId));
@@ -64,6 +67,39 @@ function clusterIssue(id: number | null | undefined) {
 
 function liveStep(tc: TestCaseResult): LiveStepInfo | null {
   return liveStepForCase(props.liveSteps, tc);
+}
+
+/** A running row's worker, as the run's live view files it. */
+function workerKeyOf(tc: TestCaseResult): string | null {
+  if (tc.status !== 'running' || tc.workerIndex == null) return null;
+  return liveWorkerKey({ shard: tc.shardIndex ?? null, worker: tc.workerIndex });
+}
+
+/**
+ * The execution each worker in the live view runs now: its running row that began last. A row of the test before,
+ * whose end has not streamed in yet, is not it.
+ */
+const currentExecutionOf = computed(() => {
+  const current = new Map<string, TestCaseResult>();
+  if (!props.liveWorkers) return current;
+  for (const tc of props.testCases) {
+    const key = workerKeyOf(tc);
+    if (!key || !props.liveWorkers[key]) continue;
+    const seen = current.get(key);
+    if (!seen || (tc.startedAt ?? 0) >= (seen.startedAt ?? 0)) current.set(key, tc);
+  }
+  return current;
+});
+
+/**
+ * The row's worker in the run's live view, when the row is the test that worker runs now. A stop names its test: one
+ * of the worker's next test, whose begin has not streamed in yet, is not this row's.
+ */
+function liveWorkerOf(tc: TestCaseResult): LiveWorkerState | null {
+  const key = workerKeyOf(tc);
+  const worker = key ? props.liveWorkers?.[key] : null;
+  if (!key || !worker || currentExecutionOf.value.get(key)?.executionId !== tc.executionId) return null;
+  return worker.paused?.test && worker.paused.test !== tc.title ? { ...worker, paused: null } : worker;
 }
 
 const liveWorkerValues = computed(() => liveResourcesByWorker(props.liveResources));
@@ -906,6 +942,8 @@ defineExpose({ scrollToCase });
                       item.tc.locks,
                       liveStep(item.tc)?.title,
                       liveResourcesOf(item.tc) !== null,
+                      liveWorkerOf(item.tc)?.paused?.call.title,
+                      liveWorkerOf(item.tc) !== null,
                       showSuitePath,
                       item.tc.suitePath,
                     ]
@@ -939,6 +977,7 @@ defineExpose({ scrollToCase });
                 :selected="selectedIds.has(item.tc.executionId)"
                 :live-step="liveStep(item.tc)"
                 :live-resources="liveResourcesOf(item.tc)"
+                :live-worker="liveWorkerOf(item.tc)"
                 :highlighted="highlightedCaseId === item.tc.executionId"
                 :indent="(item.depth ?? 0) * 16"
                 :suite-path="showSuitePath ? item.tc.suitePath : null"
@@ -946,6 +985,7 @@ defineExpose({ scrollToCase });
                 :project-key="projectKey"
                 :project-name="projectName"
                 @toggle="toggleRow(item.tc)"
+                @watch="emit('watch', liveWorkerOf(item.tc)!, item.tc)"
               />
             </DynamicScrollerItem>
           </template>

@@ -287,6 +287,50 @@ What the package does to a user's run, process by process.
   worker's environment changes to the projects that depend on its project.
   `PIWI_RECORD_CHANNEL` stays, for **Record here**.
 
+**The instance's live view** (`internal/capture/live-view.ts`, with `PIWI_LIVE_VIEW`)
+
+- The global setup's `/setup` of a CI run (`detectCi`, which the run's origin reads too)
+  asks for a live view key (`liveView: true`); the instance gives one for a project with
+  the live view on, for that run alone, and the setup file keeps it. In `onBegin` the
+  reporter of a CI run names it in `PIWI_LIVE_VIEW`
+  (`<instance>/api/test-runs/<id>/live-view#<key>`, `@piwitests/core/live-view`), which
+  Playwright hands the workers it starts after, and says so in its `Live view on` line.
+  A run outside CI asks for none; a run the reporter registers itself, without the global
+  setup, has none.
+- Each worker opens an event stream to that URL in the `piwiResources` worker fixture,
+  without waiting for it, and keeps it until the worker ends. It never keeps the worker
+  alive; a failed stream is opened again after 1, 2, 4, 8 and 16 seconds, 20 times at most
+  over the worker's life (a 409 while the run is interrupted included), and a 401, 403,
+  404 or 410 gives it up at once.
+- The same fixture takes `PIWI_LIVE_VIEW` out of the worker's `process.env` until its
+  teardown, so no process the worker's fixtures, hooks or tests start gets the key. A
+  listener put before Playwright's own on the worker's IPC puts it back for the
+  `__stop__` message alone, as Playwright compares the environment with the one the
+  worker started with and hands what changed to the projects that depend on its own,
+  and takes it out again on the next tick.
+- On it the instance says how many people watch the worker (`viewers`). While anyone does,
+  the test's `page` goes out as its screencast (`page-view.ts`, the helper the editor's view
+  of a stop uses too), through internal calls: at most 640 by 400 at quality 50 unless the
+  test's trace or video came first (their size and quality, 800 wide at 90), four frames a
+  second and about 256 KB a second (a heavier frame holds the next one back longer), a
+  frame over 192 KB replaced by an image at quality 30. One post is in flight at a time,
+  the latest frame alone waiting; each frame carries the call the runner's steps say the
+  test is on (`callInProgress`, its title through `hideSecretsInText`) and the test's
+  title. Nobody watching, no screencast runs and no frame goes.
+- A page has one screencast client of its own. In a worker that can open a view (a run
+  connection or a live view connection), `instrumentPage` hands the test `page.screencast`
+  behind a proxy (`guardScreencast`): the test's `start` or `stop` first ends the client a
+  view holds, and that view goes on with an image of the page every second, its caret as
+  the page shows it, as does any later view of that page and a second view of a page
+  another view holds.
+- The view stops as nobody watches, as the test ends (the worker posts `ended`) and as its
+  page closes; a viewer that joins gets the latest frame again, and one that joins while no
+  test runs (a `beforeAll`, between tests) hears why no image shows. Each stop the
+  fixtures show (`showStop`, at the bar or for the editor) is posted as it starts and ends
+  (`stop`), with the test's title and the call's through `hideSecretsInText`, whoever
+  watches, and the stop held is posted again on each stream the worker opens; a CI run
+  never stops, so this is for the run a person shares.
+
 **In the reporter process**
 
 - The run sampler reads `/proc`, the cgroup filesystem or `ps` on an unref'd timer
@@ -471,6 +515,10 @@ src/
                 run-channel (the worker's run connection to the editor,
                 PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in,
                 a stopped page's live view and the input played on it),
+                page-view (a page's screencast for a viewer outside it, paced
+                and capped: the editor's view of a stop, the instance's live view),
+                live-view (the worker's stream to the instance's live view,
+                PIWI_LIVE_VIEW: viewers in, frames and stops out),
                 pick-at (the element under a point of an image of a stopped page),
                 agent-page (a stopped page read and acted on by a ref for an agent,
                 its browser bound for Playwright's tools), run-events (the test's

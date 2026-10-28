@@ -18,6 +18,7 @@ const SECTION_IDS = [
   'members',
   'source-control',
   'ai',
+  'live-view',
   'capabilities',
   'coverage',
   'targets',
@@ -67,6 +68,7 @@ const sections = computed<Section[]>(() => [
   { id: 'members', label: 'Members', icon: 'i-lucide-users', group: 'project', visible: canSeeMembers.value },
   { id: 'source-control', label: 'Source control', icon: 'i-lucide-git-branch', group: 'project', visible: true },
   { id: 'ai', label: 'AI diagnosis', icon: 'i-lucide-sparkles', group: 'project', visible: true },
+  { id: 'live-view', label: 'Live view', icon: 'i-lucide-monitor-play', group: 'project', visible: canManage.value },
   {
     id: 'capabilities',
     label: 'Capabilities',
@@ -218,6 +220,13 @@ const activeIcon = computed(() => sections.value.find((s) => s.id === active.val
         v-else-if="active === 'ai'"
         :project="project"
         data-tour="project-settings-ai"
+        @saved="emit('saved')"
+      />
+
+      <ProjectLiveViewSettings
+        v-else-if="active === 'live-view'"
+        :project="project"
+        data-tour="project-settings-live-view"
         @saved="emit('saved')"
       />
 
