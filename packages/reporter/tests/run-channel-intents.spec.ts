@@ -396,7 +396,7 @@ describe('Pick and Record started from outside the page', () => {
     expect(tests.find((t) => t.title === 'ended under a pick')!.errors).toEqual([
       expect.stringContaining('the test gave up while the pick ran'),
     ]);
-    expect(connections[0]!.heard[0]).toMatchObject({ type: 'run-attach', ref: REF, takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', 'pick-at'] });
+    expect(connections[0]!.heard[0]).toMatchObject({ type: 'run-attach', ref: REF, takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', 'pick-at', 'snapshot', 'act', 'ref-locator', 'events', 'bind'] });
   });
 
   it('picks in the test’s window as the bar’s Pick a locator does, the locator going to the editor', () => {

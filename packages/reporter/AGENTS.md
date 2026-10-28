@@ -47,7 +47,10 @@ responsibilities.
      (`input`, let go before the test goes on), runs the bar's actions in a headless page through it (`viewHere`), and
      picks under a point of an image (`pick-at.ts`); a frame goes to the editor service alone, never stored nor attached,
      the latest one sent kept in memory until the view ends, for a viewer that comes later
-     (`tests/run-channel-view.spec.ts`);
+     (`tests/run-channel-view.spec.ts`); for an agent, at the stop held alone, it reads the page's AI snapshot, acts on
+     an element by its ref with Playwright's own action and ranks its locators (`agent-page.ts`), tells the test's
+     calls and page events while asked (`events`, `run-events.ts`, Playwright's `_instrumentation`, feature-checked),
+     and binds the browser for Playwright's tools on request until the test ends (`tests/run-channel-agent.spec.ts`);
    - `PIWI_RUN_CHANNEL` and `PIWI_EDITOR_SEND` taken out of the worker's `process.env` while each test runs
      (`hideRunChannel`; picks still reach the editor through `editorSendAddress`), so a process the test starts gets
      neither, and put back after it, since Playwright passes a worker's environment changes to the projects that
@@ -57,7 +60,8 @@ responsibilities.
    hides its credentials by `@piwitests/core/mask`'s rule: a region's snapshot leaves out the value of a field that
    holds a secret (`SECRET_AUTOCOMPLETE`, read through a locator, so in shadow roots too), a kept response's URL goes
    through `hideSecretsInUrl`, and a held failure's title and error through `hideSecretsInText`
-   (`tests/run-channel-code.spec.ts`).
+   (`tests/run-channel-code.spec.ts`); an agent's snapshot hides each secret field's value (`withoutFieldSecrets`), its
+   image masks those fields, and an element of `type="password"` sends no value (`tests/run-channel-agent.spec.ts`).
 4. **The desktop discovery file.** The desktop shell writes `~/.piwi/desktop.json` (`apps/desktop/src-tauri/src/lib.rs`)
    and this package reads its `url`, `token` and `pid` (`internal/config/desktop.ts`); the shell also writes
    `projects` for other readers ([`apps/desktop/AGENTS.md`](../../apps/desktop/AGENTS.md)). The two ship on independent

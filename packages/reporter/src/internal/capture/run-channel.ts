@@ -1,23 +1,30 @@
 import * as net from 'node:net';
-import type { Page, WorkerInfo } from '@playwright/test';
+import type { Browser, Page, WorkerInfo } from '@playwright/test';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import { hideSecretsInText } from '@piwitests/core/mask';
 import {
+  MAX_RUN_EVENT_RATE,
   RUN_CHANNEL_ENV,
   RUN_HOLDS,
   RUN_INTENT_NAMES,
   RUN_REF_ENV,
   RUN_TAKES,
   parseHubToRun,
+  type ActAnswer,
+  type BindAnswer,
   type HubToRun,
   type IntentAnswer,
   type LocatorAnswer,
   type PausedImage,
   type PickAtAnswer,
   type Place,
+  type RefLocatorAnswer,
+  type RunActAction,
+  type RunEvent,
   type RunHold,
   type RunIntent,
   type RunToHub,
+  type SnapshotAnswer,
   type StopReason,
   type UnknownMessage,
 } from '@piwitests/core/run-channel';
@@ -37,6 +44,7 @@ import {
 import { PIWI_LOCAL_DEBUG_ENV, PIWI_ORIGIN_ENV } from '../config/env.js';
 import { errorMessage } from '../support/errors.js';
 import { getReporterVersion } from '../support/reporter-version.js';
+import { bindBrowser } from './agent-page.js';
 import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
 import type { PauseAnswer } from './pause-at.js';
@@ -58,8 +66,13 @@ import { internalCall } from './quiet-capture.js';
  * on it as trusted input (`input`: `page.mouse`, `page.keyboard`, at most `MAX_VIEW_EVENT_RATE` events a second, what
  * it holds down let go before the test goes on), and sends the locator of the element under a point of an image of
  * the page where a pick goes (`pick-at`, `pick-at.ts`). The view ends with its stop, before the test goes on, and as
- * its page or the connection closes. A test never waits on it but while stopped, and a connection that does not open,
- * or closes, leaves the run as without it: a stop no pause bar can answer then goes on at once.
+ * its page or the connection closes. For an agent (the editor's MCP server), it reads the stopped page's ARIA snapshot
+ * in AI mode (`snapshot`), acts on one of its elements by its ref as trusted input (`act`) and ranks that element's
+ * locators (`ref-locator`, `agent-page.ts`), one at a time, at the stop held alone; it tells what the running test does
+ * (`events`, `run-events.ts`) while the editor asks, at most `MAX_RUN_EVENT_RATE` a second; and it binds its browser for
+ * Playwright's own tools at a stop on request (`bind`), until the test ends. A test never waits on it but while
+ * stopped, and a connection that does not open, or closes, leaves the run as without it: a stop no pause bar can
+ * answer then goes on at once.
  */
 
 /** How long a worker waits for its run connection to open before its first test runs without it. */
@@ -119,6 +132,15 @@ interface HeldStop {
   answer(choice: PauseAnswer): void;
   intent(what: RunIntent): IntentAnswer;
   pickAt?(x: number, y: number): Promise<PickAtAnswer>;
+  agent?: StopAgent;
+  browser: Browser | null;
+}
+
+/** What an agent does at a stop whose page is known, each call internal. */
+export interface StopAgent {
+  snapshot(depth: number | null, image: boolean): Promise<SnapshotAnswer>;
+  refLocator(ref: string): Promise<RefLocatorAnswer>;
+  act(act: { ref: string; action: RunActAction; value: string | null }): Promise<ActAnswer>;
 }
 
 /** A stop as the editor hears it. */
@@ -140,6 +162,10 @@ export interface StopToHold {
   intent?(what: RunIntent): IntentAnswer;
   /** The element under a point of the stopped page, its locator sent where a pick goes; refused without it. */
   pickAt?(x: number, y: number): Promise<PickAtAnswer>;
+  /** What an agent reads and does on the stopped page; refused without it. */
+  agent?: StopAgent;
+  /** The browser of the stopped context, which `bind` shares with Playwright's own tools. */
+  browser?: Browser | null;
 }
 
 let socket: net.Socket | null = null;
@@ -196,6 +222,21 @@ let input = freshInput();
 /** A pick on an image runs: the next one waits for its answer. */
 let pickingAt = false;
 
+/** The run's ref and the worker's index, as its attach named them: a bound browser is named after them. */
+let runName = '';
+/** The editor asked for the running tests' events (`events`), and a test runs. */
+let eventsOn = false;
+let testRunning = false;
+/** The pace of the events, and how many it did not send since the last one sent. */
+let eventRate = new RateWindow(MAX_RUN_EVENT_RATE);
+let droppedEvents = 0;
+/** The agent's requests at a stop, one after the other, in the order they came. */
+let agentTurn: Promise<unknown> = Promise.resolve();
+/** The browser shared with Playwright's own tools, until the test ends, and its endpoint. */
+let bound: { browser: Browser; endpoint: string | null } | null = null;
+/** Why an agent's request at a stop whose page is not known is refused. */
+const NO_AGENT_PAGE = "This stop has no page an agent can read: its call does not name one among its context's pages.";
+
 /**
  * Open the worker's run connection when the run names a channel and a ref (`PIWI_RUN_REF`, else `PIWI_ORIGIN_REF`),
  * with `handlers` for what the editor asks. Resolves with whether it opened, once it did, failed or took too long.
@@ -229,6 +270,8 @@ export async function openRunChannel(
   socket = opening;
   control = handlers;
   shown = new Set();
+  runName = `piwi-${ref}-w${worker.workerIndex}`;
+  eventsOn = false;
   opening.unref();
   opening.on(
     'data',
@@ -314,9 +357,43 @@ export function runChannelOpen(): boolean {
   return !!socket && !socket.destroyed;
 }
 
-/** Send the editor a message, when the run connection is open. */
+/** Send the editor a message, when the run connection is open. A test's end lets go of the browser it shared. */
 export function tellHub(message: RunToHub): void {
+  if (message.type === 'test-begin') testRunning = true;
+  if (message.type === 'test-end') {
+    testRunning = false;
+    void unbind();
+  }
   if (socket && !socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
+}
+
+/** Whether the editor wants the running test's events now: it asked for them, and a test runs. */
+export function runEventsWanted(): boolean {
+  return eventsOn && testRunning && runChannelOpen();
+}
+
+/** Tell the editor something the running test did, at most `MAX_RUN_EVENT_RATE` a second, saying how many it dropped. */
+export function tellEvent(event: RunEvent): void {
+  if (!runEventsWanted()) return;
+  if (!eventRate.take(droppedEvents ? 2 : 1)) {
+    droppedEvents++;
+    return;
+  }
+  if (droppedEvents) tellHub({ type: 'event', event: { kind: 'dropped', count: droppedEvents } });
+  droppedEvents = 0;
+  tellHub({ type: 'event', event });
+}
+
+/** The browser shared with Playwright's own tools is no longer: the test ended. */
+async function unbind(): Promise<void> {
+  const shared = bound?.browser;
+  bound = null;
+  if (shared?.isConnected()) {
+    await within(
+      internalCall(shared, () => bindBrowser(shared, runName, process.cwd(), false)),
+      VIEW_END_MS,
+    );
+  }
 }
 
 /**
@@ -351,6 +428,8 @@ export function holdStop(
           ? needsBar(what)
           : (stop.intent?.(what) ?? needsBar(what)),
     ...(stop.pickAt ? { pickAt: stop.pickAt } : {}),
+    ...(stop.agent ? { agent: stop.agent } : {}),
+    browser: stop.browser ?? null,
   };
   held = holding;
   tellHub({
@@ -769,6 +848,11 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
     case 'attached':
       shown = new Set(message.holds);
       return;
+    case 'events':
+      eventsOn = message.on;
+      eventRate = new RateWindow(MAX_RUN_EVENT_RATE);
+      droppedEvents = 0;
+      return;
     case 'breakpoints':
       control?.breakpoints(message.places);
       return;
@@ -841,6 +925,32 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
           void picked.then((value) => tellHub({ type: 'answer', request, what: 'pick-at', value }));
           return;
         }
+        case 'snapshot': {
+          const { depth, image } = message;
+          const none = { url: '', title: '', snapshot: null, cut: false, image: null };
+          void agentAt(
+            at,
+            (agent) => agent.snapshot(depth, image),
+            (refused) => ({ ...refused, ...none }),
+          ).then((value) => tellHub({ type: 'answer', request, what: 'snapshot', value }));
+          return;
+        }
+        case 'ref-locator':
+        case 'act': {
+          const what = message.what;
+          const run = (agent: StopAgent) =>
+            message.what === 'act'
+              ? agent.act({ ref: message.ref, action: message.action, value: message.value })
+              : agent.refLocator(message.ref);
+          void agentAt(at, run, (refused) => ({ ...refused, element: null, locators: [] })).then((value) =>
+            tellHub({ type: 'answer', request, what, value }),
+          );
+          return;
+        }
+        case 'bind': {
+          void bindAt(at, message.on).then((value) => tellHub({ type: 'answer', request, what: 'bind', value }));
+          return;
+        }
         default: {
           const value = at ? at.intent(message.what) : { ok: false, message: WENT_ON };
           tellHub({ type: 'answer', request, what: message.what, value });
@@ -854,6 +964,53 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
         message: `@piwitests/reporter ${getReporterVersion()} does not take the editor's ${message.what}: update it.`,
       });
   }
+}
+
+/**
+ * Run an agent's request at the stop held, after the one before it, `PAGE_ANSWER_MS` at most: refused at a stop that
+ * ended or whose page is not known (`refuse` shapes the answer).
+ */
+function agentAt<T extends IntentAnswer>(
+  at: HeldStop | null,
+  run: (agent: StopAgent) => Promise<T>,
+  refuse: (refused: IntentAnswer) => T,
+): Promise<T> {
+  if (!at) return Promise.resolve(refuse({ ok: false, message: WENT_ON }));
+  const agent = at.agent;
+  if (!agent) return Promise.resolve(refuse({ ok: false, message: NO_AGENT_PAGE }));
+  const answered = agentTurn.then(() =>
+    held !== at
+      ? refuse({ ok: false, message: WENT_ON })
+      : answerWithin(run(agent), PAGE_ANSWER_MS, refuse({ ok: false, message: NO_ANSWER })),
+  );
+  agentTurn = answered.catch(() => undefined);
+  return answered;
+}
+
+/**
+ * Share the stopped context's browser with Playwright's own tools, as `piwi-<ref>-w<worker>`, until the test ends; or
+ * stop sharing it. Refused at a stop that ended.
+ */
+async function bindAt(at: HeldStop | null, on: boolean): Promise<BindAnswer> {
+  if (!at) return { ok: false, message: WENT_ON, name: null, endpoint: null };
+  const browser = at.browser;
+  if (!on) {
+    await unbind();
+    return { ok: true, message: 'The browser is no longer shared with Playwright tools.', name: null, endpoint: null };
+  }
+  if (!browser) return { ok: false, message: NO_AGENT_PAGE, name: null, endpoint: null };
+  if (bound?.browser === browser) {
+    return {
+      ok: true,
+      message: `The browser is shared with Playwright tools as ${runName} until the test ends: any process of yours can drive it.`,
+      name: runName,
+      endpoint: bound.endpoint,
+    };
+  }
+  if (bound) await unbind();
+  const answer = await internalCall(browser, () => bindBrowser(browser, runName, process.cwd(), true));
+  if (answer.ok) bound = { browser, endpoint: answer.endpoint };
+  return answer;
 }
 
 /**

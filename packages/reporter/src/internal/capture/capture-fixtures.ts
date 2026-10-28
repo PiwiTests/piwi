@@ -138,6 +138,8 @@ import {
 } from './pause-at.js';
 import { locatorOn } from './chain-locator.js';
 import { pickAtPoint } from './pick-at.js';
+import { actOnRef, readSnapshot, refLocators } from './agent-page.js';
+import { watchCalls, watchPageEvents } from './run-events.js';
 import { errorMessage } from '../support/errors.js';
 import { regionSnapshotWithoutSecrets } from './region-snapshot.js';
 import { keepResponse, startKeeping, stopKeeping } from './kept-responses.js';
@@ -1746,6 +1748,21 @@ async function showStop(
           }
         }
       : undefined;
+  // An agent reads the stopped page and acts on it by the refs of its snapshot, its locators ranked with the project's
+  // test id attribute.
+  const use = (testInfo.project?.use ?? {}) as { testIdAttribute?: unknown };
+  const testIdAttribute = typeof use.testIdAttribute === 'string' ? use.testIdAttribute : null;
+  const agentProbe = { fn: probeElementAttrs, arg: { ...CAPTURED_ATTRS_ARG, testIdAttribute } };
+  const agent =
+    page && !guessed
+      ? {
+          snapshot: (depth: number | null, image: boolean) =>
+            internalCall(page, () => readSnapshot(page, depth, image)),
+          refLocator: (ref: string) => internalCall(page, () => refLocators(page, agentProbe, ref, testIdAttribute)),
+          act: (act: Parameters<typeof actOnRef>[2]) =>
+            internalCall(page, () => actOnRef(page, agentProbe, act, testIdAttribute)),
+        }
+      : undefined;
   const held = place
     ? holdStop(
         {
@@ -1770,6 +1787,8 @@ async function showStop(
                 })
             : undefined,
           ...(pickAt ? { pickAt } : {}),
+          ...(agent ? { agent } : {}),
+          browser: context.browser(),
         },
         (answer) => {
           fromEditor = answer;
@@ -2495,6 +2514,7 @@ function instrumentPage(page: Page): void {
   }
   void maybeStartCodeReach(page);
   observeOwnApiRequests(page);
+  watchPageEvents(page);
 
   // Probe mode: install the fault interception for this test's plan item on the
   // first page, before the test navigates. Fire-and-forget — page.route
@@ -3460,7 +3480,7 @@ export const piwiFixtures: Fixtures<
       boxCaptureFrames();
       startResourceLedger(playwright, workerInfo.workerIndex);
       observeApiRequests(playwright, apiCallRecorder);
-      await openRunChannel(workerInfo, runControl);
+      if (await openRunChannel(workerInfo, runControl)) watchCalls(playwright);
       try {
         await use();
       } finally {

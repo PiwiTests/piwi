@@ -8,6 +8,7 @@ import {
   type RankedLocator,
 } from './locator-healing.js';
 import type { PickedLocator, PickerProbe } from './pick-on-failure.js';
+import type { ProbedAttrs } from '@piwitests/picker-dom';
 
 /**
  * Pick on the image: the element under a point of an image of a stopped page (the IDE's, the Runs window's, a frame of
@@ -96,7 +97,7 @@ const PIWI_OVERLAY = '[id^="__piwi"], [id^="piwi-"][id$="-host"]';
 /** The most elements under a point read, the innermost first. */
 const MAX_UNDER = 24;
 /** The most candidates counted on the page for the one that finds the element alone. */
-const MAX_CHECKED = 8;
+export const MAX_CHECKED = 8;
 /** Where the locator `normalize()` writes ranks among the candidates: below a role's, a label's or a test id's. */
 const NORMALIZED_SCORE = 60;
 
@@ -203,13 +204,19 @@ export async function pickAtPoint(page: Page, probe: PickerProbe, x: number, y: 
 }
 
 /**
- * Rank an element as the bar's Pick a locator does, `normalize()`'s locator among the candidates, and keep the first
- * that finds that element alone on the page.
+ * An element's locator candidates, ranked as the bar's Pick a locator ranks them, the locator `normalize()` writes for
+ * `locator` among them, with the attributes the probe read; `testIdAttribute` is the project's (`data-testid` when
+ * null).
  */
-async function rank(page: Page, probe: PickerProbe, locator: Locator, handle: ElementHandle): Promise<PointPick> {
+export async function rankedCandidates(
+  probe: PickerProbe,
+  locator: Locator,
+  handle: ElementHandle,
+  testIdAttribute: string | null = null,
+): Promise<{ attrs: ProbedAttrs; accessibleName: string | null; candidates: RankedLocator[] }> {
   const attrs = await handle.evaluate(probe.fn, probe.arg);
   const accessibleName = approximateAccessibleName({ ...attrs, accessibleName: null });
-  const candidates = generateAlternatives({ ...attrs, accessibleName });
+  const candidates = generateAlternatives({ ...attrs, accessibleName }, { testIdAttribute });
   const normalize = (locator as Locator & { normalize?: () => Promise<Locator> }).normalize;
   const normalized = typeof normalize === 'function' ? await normalize.call(locator).then(String, () => null) : null;
   if (normalized && !candidates.some((c) => c.locator === normalized)) {
@@ -217,12 +224,25 @@ async function rank(page: Page, probe: PickerProbe, locator: Locator, handle: El
     candidates.push({ locator: normalized, method: leaf?.method ?? 'locator', args: {}, score: NORMALIZED_SCORE });
     candidates.sort((a, b) => b.score - a.score);
   }
+  return { attrs, accessibleName, candidates };
+}
+
+/** Whether `candidate` finds `handle`'s element alone on the page. */
+export async function findsAlone(page: Page, candidate: string, handle: ElementHandle): Promise<boolean> {
+  const built = locatorOn(page, candidate);
+  if (!built || (await built.count().catch(() => 0)) !== 1) return false;
+  return built.evaluate((el, target) => el === target, handle, { timeout: 2000 }).catch(() => false);
+}
+
+/**
+ * Rank an element as the bar's Pick a locator does, `normalize()`'s locator among the candidates, and keep the first
+ * that finds that element alone on the page.
+ */
+async function rank(page: Page, probe: PickerProbe, locator: Locator, handle: ElementHandle): Promise<PointPick> {
+  const { attrs, accessibleName, candidates } = await rankedCandidates(probe, locator, handle);
   let found: RankedLocator | null = null;
   for (const candidate of candidates.slice(0, MAX_CHECKED)) {
-    const built = locatorOn(page, candidate.locator);
-    if (!built || (await built.count().catch(() => 0)) !== 1) continue;
-    const same = await built.evaluate((el, target) => el === target, handle, { timeout: 2000 }).catch(() => false);
-    if (same) {
+    if (await findsAlone(page, candidate.locator, handle)) {
       found = candidate;
       break;
     }

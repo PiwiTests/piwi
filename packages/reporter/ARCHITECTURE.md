@@ -106,8 +106,9 @@ What the package does to a user's run, process by process.
   in `@piwitests/core/run-channel`.
 - The first message, `run-attach`, lists what the worker takes (`takes`: the intents
   `pick`, `record`, `assert`, `assert-region`, the queries `requests`, `mock`,
-  `locator`, and, for a viewer outside the page, `view`, `input` and `pick-at`) and the
-  stops it holds for an editor that shows them (`holds: ['failure']`).
+  `locator`, for a viewer outside the page, `view`, `input` and `pick-at`, and for an
+  agent, `snapshot`, `act`, `ref-locator`, `events` and `bind`) and the stops it holds
+  for an editor that shows them (`holds: ['failure']`).
   The worker then sends each test's begin and end, each stop it shows, and each stop's
   end (`running`).
 - The editor's controls (Pause, Step, Resume, Finish, Run to a line) and its breakpoints,
@@ -195,6 +196,26 @@ What the package does to a user's run, process by process.
   and posts the first that finds it alone to `PIWI_EDITOR_SEND` (`page.getByRef` and the
   boxes feature-checked, refused before Playwright 1.64). An image of a stopped page names
   its viewport (`width`, `height`), the CSS pixels a point is in.
+- For an agent (the editor's MCP server), at the stop held alone, one request after the
+  other, 10 seconds at most each (`agent-page.ts`): `snapshot` reads the page's ARIA
+  snapshot in AI mode to a depth (`page.ariaSnapshot({ mode: 'ai', depth })`), its
+  credentials hidden by `hideSecretsInText` and each secret field's value written as
+  `<hidden>` (`withoutFieldSecrets`: an AI snapshot shows a password field's value), with
+  an image whose secret fields are masked when asked; `ref-locator` ranks the element a
+  ref names (`page.getByRef`, 1.64) as Pick does, with the project's `testIdAttribute`,
+  each candidate checked to find it alone, and reads its text, value (none of a password
+  field) and checked state; `act` plays a click, a fill, a key press, a check or a select
+  on it with Playwright's own action (trusted input, 5 seconds at most), after ranking it
+  for the step it makes. Each runs as an internal call, never a step of the test.
+- `events` (`run-events.ts`): while the editor asked and a test runs, each call of the
+  test as it ends, through Playwright's `_instrumentation` (feature-checked; it never
+  hears an internal call), with its place in the user's code, and each page's navigation,
+  console error or warning, uncaught error and failed request (a failure, or a status of
+  400 or more), at most 50 a second, the others counted (`dropped`), their texts' and
+  URLs' credentials hidden.
+- `bind` shares the stopped context's browser with Playwright's own tools
+  (`browser.bind('piwi-<ref>-w<worker>', { workspaceDir })`, feature-checked), until the
+  test ends (`unbind` on `test-end`), or stops sharing it.
 - The view stops before the stop's `running`, as its page closes and as the connection
   does: no frame of a stop goes once it began to end. A frame carries whatever the page
   shows: it goes to the editor service alone, which sends it to the paired, authenticated
@@ -407,6 +428,9 @@ src/
                 PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in,
                 a stopped page's live view and the input played on it),
                 pick-at (the element under a point of an image of a stopped page),
+                agent-page (a stopped page read and acted on by a ref for an agent,
+                its browser bound for Playwright's tools), run-events (the test's
+                calls and page events, for an agent following the run),
                 kept-responses (the text bodies an interactive run keeps for
                 Mock a request), chain-locator (a locator chain's source built
                 against a page, for the locator at the editor's caret),
