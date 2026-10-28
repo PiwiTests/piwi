@@ -384,7 +384,7 @@ test.describe('the Runs window in another language', () => {
         sendFrame(run.worker, 3, frame);
         await expect(runs.locator('img.live')).toBeVisible();
         await expect(runs.locator('.hint')).toBeVisible();
-        await expect(runs.locator('.controls button')).toHaveCount(8);
+        await expect(runs.locator('.controls button')).toHaveCount(9);
         expect(await untranslated(runs)).toEqual([]);
         expect(await clipped(runs)).toEqual([]);
         expect(await runs.locator('img.live').getAttribute('alt')).toBe(
