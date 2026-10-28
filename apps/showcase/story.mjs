@@ -419,10 +419,12 @@ export const STORY = [
       state.liveRun = live.id;
       await dashboard.bringToFront();
       await dashboard.goto(`${instance.base}/projects/${set.projectId}`, { waitUntil: 'domcontentloaded' });
+      // What the run was just before its page opened: the known bug is a page that loaded while the run set up. A
+      // run only moves on, so one still setting up then may have been as the page loaded; one already running was
+      // past it. Read after the load, the run may have started in between.
+      const beforeLoad = (await instance.run(live.id)).status;
       await gesture.click('dashboard', dashboard.getByRole('link', { name: `Run #${live.id}`, exact: true }));
       await dashboard.waitForURL(`**/test-runs/${live.id}`);
-      // What the run was as its page loaded: the known bug is a page that loaded while the run set up.
-      const atLoad = (await instance.run(live.id)).status;
       const watch = dashboard.getByRole('button', { name: /^Watch .* live$/ }).first();
       const header = dashboard.locator('[data-shot="run-header"]');
       // A live page shows Watch while a worker runs a test; a page the run's start never reached still says
@@ -437,7 +439,10 @@ export const STORY = [
         120_000,
       );
       if (page === 'stuck') {
-        expect(atLoad === 'initializing', `the run page never went live, though the run was ${atLoad} as it loaded`);
+        expect(
+          beforeLoad === 'initializing',
+          `the run page never went live, though the run was ${beforeLoad} before the page opened`,
+        );
         // Reloaded, as a person does: the bug, when the page then shows the worker.
         await dashboard.reload({ waitUntil: 'domcontentloaded' });
         await watch.waitFor({ timeout: 60_000 });
