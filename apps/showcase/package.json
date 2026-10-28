@@ -10,6 +10,7 @@
     "showcase:check": "node showcase.mjs --mode check",
     "showcase:film": "node showcase.mjs --take virtual",
     "showcase:cut": "node showcase.mjs --cut results",
+    "showcase:test": "node --test \"tests/*.test.mjs\"",
     "showcase:lint": "oxlint --config oxlint.config.mts .",
     "showcase:lint:fix": "oxlint --config oxlint.config.mts . --fix",
     "showcase:format": "oxfmt --config oxfmt.config.mts --write .",
