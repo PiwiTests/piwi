@@ -3,7 +3,10 @@ package dev.piwitests.jetbrains
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Files
 import java.nio.file.Path
@@ -390,7 +393,7 @@ class GlueTest {
     }
 
     @Test
-    fun `the MCP configuration bridges each instance through mcp-remote, the key in env`() {
+    fun `the MCP configuration bridges each instance through a pinned mcp-remote over HTTP alone, the key in env`() {
         val json = JsonParser.parseString(
             Glue.mcpConfiguration(
                 listOf(
@@ -402,11 +405,55 @@ class GlueTest {
         val first = json.getAsJsonObject("piwi")
         assertEquals("npx", first.get("command").asString)
         assertEquals(
-            listOf("-y", "mcp-remote", "https://a/mcp", "--header", "Authorization:\${PIWI_AUTH}"),
+            listOf("-y", "mcp-remote@0.14.3", "https://a/mcp", "--transport", "http-only", "--header", "Authorization:\${PIWI_AUTH}"),
             first.getAsJsonArray("args").map { it.asString },
         )
         assertEquals("Bearer pd_x", first.getAsJsonObject("env").get("PIWI_AUTH").asString)
-        assertEquals(listOf("-y", "mcp-remote", "http://b/mcp"), json.getAsJsonObject("piwi-2").getAsJsonArray("args").map { it.asString })
+        assertEquals(
+            listOf("-y", "mcp-remote@0.14.3", "http://b/mcp", "--transport", "http-only"),
+            json.getAsJsonObject("piwi-2").getAsJsonArray("args").map { it.asString },
+        )
+        // An exact release: npx with none runs whatever npm serves that day.
+        assertTrue(Regex("^mcp-remote@\\d+\\.\\d+\\.\\d+$").matches(Glue.MCP_REMOTE))
+    }
+
+    @Test
+    fun `the runs' MCP configuration bridges the project's server through mcp-remote, its token in env`() {
+        val json = JsonParser.parseString(Glue.runsMcpConfiguration("http://127.0.0.1:41234/mcp", "t0ken"))
+            .asJsonObject.getAsJsonObject("mcpServers").getAsJsonObject("piwi-runs")
+        assertEquals("npx", json.get("command").asString)
+        assertEquals(
+            listOf(
+                "-y",
+                "mcp-remote@0.14.3",
+                "http://127.0.0.1:41234/mcp",
+                "--transport",
+                "http-only",
+                "--header",
+                "Authorization:\${PIWI_RUNS_AUTH}",
+            ),
+            json.getAsJsonArray("args").map { it.asString },
+        )
+        assertEquals("Bearer t0ken", json.getAsJsonObject("env").get("PIWI_RUNS_AUTH").asString)
+        assertEquals(41234, Glue.portOf("http://127.0.0.1:41234/mcp"))
+        assertEquals(null, Glue.portOf("not a url"))
+        val token = Glue.newAgentsToken()
+        assertTrue(Glue.isAgentsToken(token))
+        assertNotEquals(token, Glue.newAgentsToken())
+        assertFalse(Glue.isAgentsToken("short"))
+        assertFalse(Glue.isAgentsToken("a".repeat(40) + " "))
+    }
+
+    @Test
+    fun `the runs' MCP configuration for Claude Code or Cursor is an http entry, its token a bearer header`() {
+        val json = JsonParser.parseString(Glue.runsMcpHttpConfiguration("http://127.0.0.1:41234/mcp", "t0\"ken"))
+            .asJsonObject.getAsJsonObject("mcpServers").getAsJsonObject("piwi-runs")
+        assertEquals("http", json.get("type").asString)
+        assertEquals("http://127.0.0.1:41234/mcp", json.get("url").asString)
+        assertEquals("Bearer t0\"ken", json.getAsJsonObject("headers").get("Authorization").asString)
+        assertFalse(json.has("command"))
+        assertEquals("agentsToken 1a2b", Glue.agentsTokenEntry("1a2b"))
+        assertNotEquals(Glue.agentsTokenEntry("1a2b"), Glue.agentsTokenEntry("3c4d"))
     }
 
     @Test
@@ -573,6 +620,16 @@ class GlueTest {
         assertEquals(false, Glue.runControls(ci).pausable)
         val stopped = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4))))
         assertEquals(Glue.RunControls(active = true, pausable = false, pausing = false, stopped = true), Glue.runControls(stopped))
+        // A stop whose reporter takes it can be shared with Playwright's own tools.
+        val sharing = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4), takes = listOf("bind"))))
+        assertEquals(true, Glue.runControls(sharing).shareable)
+        assertTrue(Glue.canShare(Glue.stopsOf(sharing).single()))
+        assertFalse(Glue.canShare(Glue.stopsOf(stopped).single()))
+        assertEquals(
+            "Shared. Join it with: npx playwright cli attach piwi-ed-1-w0",
+            Glue.sharedText(StopBindResult(true, "Shared.", "piwi-ed-1-w0", "npx playwright cli attach piwi-ed-1-w0")),
+        )
+        assertEquals("The test went on.", Glue.sharedText(StopBindResult(false, "The test went on.")))
         assertEquals("Piwi: paused · checkout.page.ts:5", Glue.runControlStatus(Glue.runControls(stopped), Glue.stopsOf(stopped)))
         assertEquals(null, Glue.runControlStatus(Glue.runControls(running), emptyList()))
     }
@@ -581,6 +638,11 @@ class GlueTest {
     fun `a stop says what is about to run, with the attempt after the first`() {
         assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon')", Glue.pausedText(stopAt(specUri, 5), runTest()))
         assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · attempt 2", Glue.pausedText(stopAt(specUri, 5), runTest(retry = 1)))
+        // A stop an agent asked for says so.
+        assertEquals(
+            "Paused by the agent · Fill \"WELCOME10\" getByLabel('Coupon')",
+            Glue.pausedText(stopAt(specUri, 5).copy(by = "agent"), runTest()),
+        )
         val sessions = mapOf(
             "ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5)), RunWorker(1, 1, "running", runTest())),
             "ed-2" to session("ed-2", RunWorker(3, 3, "stopped", runTest(), stopAt(pageUri, 8))),
@@ -608,11 +670,35 @@ class GlueTest {
     fun `a failure held for the IDE says how the test failed and offers Resume alone among the controls`() {
         val failed = stopAt(specUri, 5).copy(reason = "failure", title = "Failed: Timed out 5000ms waiting for click")
         assertEquals("Failed · Timed out 5000ms waiting for click · attempt 2", Glue.pausedText(failed, runTest(retry = 1)))
-        assertEquals(listOf(Glue.StopControl.RESUME), Glue.stopControls(failed))
-        assertEquals(Glue.StopControl.entries, Glue.stopControls(stopAt(specUri, 5)))
+        val shown = { stop: RunStop, takes: List<String> -> Glue.ShownStop("ed-1", 0, stop, runTest(), takes) }
+        assertEquals(listOf(Glue.StopControl.RESUME), Glue.stopControls(shown(failed, listOf("end"))))
+        assertEquals(Glue.StopControl.entries - Glue.StopControl.END, Glue.stopControls(shown(stopAt(specUri, 5), allTakes)))
         val stopped = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), failed, takes = allTakes)))
         assertEquals("Piwi: failed · checkout.spec.ts:6", Glue.runControlStatus(Glue.runControls(stopped), Glue.stopsOf(stopped)))
         assertEquals(Glue.StopAction.entries.toSet(), Glue.runControls(stopped).actions)
+    }
+
+    @Test
+    fun `a stop ends its test where its reporter takes it, never at a failure`() {
+        val stopped = { stop: RunStop, takes: List<String> ->
+            mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stop, takes = takes)))
+        }
+        val ending = stopped(stopAt(specUri, 5), listOf("end"))
+        assertTrue(Glue.runControls(ending).endable)
+        assertEquals(Glue.StopControl.entries, Glue.stopControls(Glue.stopsOf(ending).single()))
+        assertFalse(Glue.runControls(stopped(stopAt(specUri, 5), emptyList())).endable)
+        assertFalse(Glue.runControls(stopped(stopAt(specUri, 5).copy(reason = "failure"), listOf("end"))).endable)
+    }
+
+    @Test
+    fun `a run started in a terminal is none to stop, and says so where it stops`() {
+        val terminal = RunSession("terminal-41-1", "/work/shop", listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5))), terminal = true)
+        val sessions = mapOf("terminal-41-1" to terminal)
+        assertFalse(Glue.runControls(sessions).stoppable)
+        assertTrue(Glue.runControls(sessions + ("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), null)))).stoppable)
+        val stop = Glue.stopsOf(sessions).single()
+        assertTrue(stop.terminal)
+        assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · run in a terminal", Glue.pausedText(stop.stop, stop.test, stop.terminal))
     }
 
     @Test
@@ -882,6 +968,147 @@ class GlueTest {
         assertEquals("column must be a positive integer", refused("file" to "a.ts", "line" to "2", "column" to "x"))
         assertEquals("root must be an absolute path", refused("file" to "a.ts", "root" to "repo"))
         assertEquals("network paths are not supported", refused("file" to "a.ts", "root" to "\\\\attacker\\share"))
+    }
+
+    /** A debug request's query, as the dashboard writes it, with `fields` over its own; a null value leaves one out. */
+    private fun debugQuery(vararg fields: Pair<String, String?>): Map<String, List<String>> {
+        val all = linkedMapOf<String, String?>(
+            "file" to "tests/pages/checkout.page.ts",
+            "line" to "5",
+            "debug" to "1",
+            "spec" to "tests/checkout.spec.ts",
+            "test" to "checkout › pays with a coupon",
+            "playwrightProject" to "chromium",
+            "execution" to "900",
+        )
+        for ((name, value) in fields) all[name] = value
+        return all.filterValues { it != null }.mapValues { listOf(it.value!!) }
+    }
+
+    @Test
+    fun `a debug request names the failing line, the test, its project and its execution`() {
+        assertEquals(
+            Glue.OpenRequest.File(
+                "tests/pages/checkout.page.ts",
+                5,
+                null,
+                false,
+                null,
+                debug = Glue.DebugRequest("tests/checkout.spec.ts", "checkout › pays with a coupon", "chromium", 900),
+            ),
+            Glue.parseOpenRequest(debugQuery()),
+        )
+        // The spec is the failing file when the request names none; a title of quotes and a shell's characters is text.
+        assertEquals(
+            Glue.DebugRequest("tests/a.spec.ts", "shows \"Welcome\" for \$5 (50% off!)", null, null),
+            (Glue.parseOpenRequest(
+                debugQuery(
+                    "file" to "tests/a.spec.ts",
+                    "spec" to null,
+                    "test" to "shows \"Welcome\" for \$5 (50% off!)",
+                    "playwrightProject" to null,
+                    "execution" to null,
+                ),
+            ) as Glue.OpenRequest.File).debug,
+        )
+        assertEquals(null, (Glue.parseOpenRequest(debugQuery("debug" to null)) as Glue.OpenRequest.File).debug)
+    }
+
+    @Test
+    fun `a debug request refuses every field it does not take, and a field given twice`() {
+        fun refused(query: Map<String, List<String>>) = (Glue.parseOpenRequest(query) as Glue.OpenRequest.Refused).error
+        for (line in listOf("0", "-1", "1.5", "1e3", "05", "+5", "five", "99999999999")) {
+            assertEquals(line, "line must be a positive whole number", refused(debugQuery("line" to line)))
+        }
+        assertEquals("line must be a positive whole number", refused(debugQuery("line" to null)))
+        assertEquals("debug must be 1", refused(debugQuery("debug" to "true")))
+        assertEquals("file must not contain '..'", refused(debugQuery("file" to "tests/../../etc/passwd")))
+        assertEquals("spec must not contain '..'", refused(debugQuery("spec" to "tests\\..\\..\\secret.spec.ts")))
+        assertEquals("network paths are not supported", refused(debugQuery("spec" to "//attacker/share/a.spec.ts")))
+        // Every control character, as VS Code refuses them, not the NUL alone.
+        assertEquals("spec must not contain a control character", refused(debugQuery("spec" to "tests/a\u001b.spec.ts")))
+        for (title in listOf(
+            "",
+            "[Run](command:workbench.action.terminal.new)",
+            "<a href=\"https://evil.example\">pays</a>",
+            "pays`rm -rf ~`",
+            "one\ntwo",
+            "a\\b",
+            "x".repeat(1001),
+        )) {
+            assertEquals(title, "test must be a title of 1 to 1000 characters of plain text", refused(debugQuery("test" to title)))
+        }
+        // PowerShell reads “ ” „ as `"`: one would end the quoted --project and run what follows.
+        val smartQuotes = listOf("chromium\u201C ; calc.exe ; #", "chromium\u201D ; calc.exe", "a\u201Eb")
+        for (project in listOf("chromium\$(touch pwned)", "a\"b", "%PATH%", "x!", "<b>", "p".repeat(201)) + smartQuotes) {
+            assertEquals(
+                project,
+                "playwrightProject must be a project name of 1 to 200 characters of plain text",
+                refused(debugQuery("playwrightProject" to project)),
+            )
+        }
+        for (execution in listOf("0", "abc", "-3", "2147483648")) {
+            assertEquals(execution, "execution must be an id", refused(debugQuery("execution" to execution)))
+        }
+        assertEquals("file is given twice", refused(debugQuery() + ("file" to listOf("a.spec.ts", "/etc/passwd"))))
+        assertEquals("test is given twice", refused(debugQuery() + ("test" to listOf("pays", "refunds"))))
+    }
+
+    @Test
+    fun `a debug request's files are in the project, under a Playwright config's folder, with every link followed`() {
+        val roots = listOf("/home/me/shop")
+        val configs = listOf("/home/me/shop/e2e")
+        fun refusal(canonical: String, spec: Boolean) = Glue.debugFileRefusal("named.ts", canonical, roots, configs, spec)
+        assertEquals(null, refusal("/home/me/shop/e2e/tests/checkout.spec.ts", true))
+        assertEquals(null, refusal("/home/me/shop/e2e/tests/pages/checkout.page.ts", false))
+        // A link in the project to a file outside it is followed out.
+        assertEquals("named.ts is outside the project's folders", refusal("/home/me/elsewhere/evil.spec.ts", true))
+        assertEquals("named.ts is outside the project's folders", refusal("/home/me/shop-old/e2e/a.spec.ts", true))
+        assertEquals("named.ts is under no Playwright config's folder", refusal("/home/me/shop/scripts/seed.spec.ts", true))
+        assertEquals("named.ts is not a spec", refusal("/home/me/shop/e2e/tests/pages/checkout.page.ts", true))
+        assertEquals("named.ts is not a JavaScript or TypeScript file", refusal("/home/me/shop/e2e/tests/data.json", false))
+    }
+
+    @Test
+    fun `a debug request asks before it runs, and its yes runs the test to stop once at the failing line`() {
+        assertEquals(
+            "Debug this test here? Piwi runs “checkout › pays” headed, one worker, and stops at line 5.",
+            Glue.debugPrompt("checkout › pays", 5),
+        )
+        assertEquals(
+            "Debug this test here? Piwi runs “checkout › pays” in the Playwright project “Mobile Chrome”, headed, one " +
+                "worker, and stops at line 5.",
+            Glue.debugPrompt("checkout › pays", 5, "Mobile Chrome"),
+        )
+        assertEquals(
+            "This Debug in my editor link was refused: line must be a positive whole number. Nothing was opened or run.",
+            Glue.debugRefusal("line must be a positive whole number"),
+        )
+        assertEquals(
+            RunTestsArgs(
+                uri = "file:///home/me/shop/e2e/tests/checkout.spec.ts",
+                testIds = emptyList(),
+                debug = DebugRun(
+                    EditorBreakpoint("file:///home/me/shop/e2e/tests/pages/checkout.page.ts", 4),
+                    "checkout › pays",
+                    "chromium",
+                    900,
+                ),
+            ),
+            Glue.debugRunArgs(
+                "file:///home/me/shop/e2e/tests/checkout.spec.ts",
+                "file:///home/me/shop/e2e/tests/pages/checkout.page.ts",
+                5,
+                Glue.DebugRequest("tests/checkout.spec.ts", "checkout › pays", "chromium", 900),
+            ),
+        )
+        // The run request the service reads: no test id or location, the debug run in their place.
+        assertEquals(
+            JsonParser.parseString(
+                """{"uri":"file:///s.spec.ts","testIds":[],"debug":{"stop":{"uri":"file:///p.ts","line":4},"title":"pays"}}""",
+            ),
+            Gson().toJsonTree(Glue.debugRunArgs("file:///s.spec.ts", "file:///p.ts", 5, Glue.DebugRequest("s.spec.ts", "pays", null, null))),
+        )
     }
 
     @Test

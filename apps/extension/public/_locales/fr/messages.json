@@ -6352,6 +6352,57 @@
   "runs_statusNoRuns": {
     "message": "Aucune exécution pour l’instant. Lancez un test depuis l’éditeur : il apparaît ici."
   },
+  "runs_desktopApp": {
+    "message": "Application de bureau"
+  },
+  "runs_terminal": {
+    "message": "Terminal"
+  },
+  "runs_desktopName": {
+    "message": "l’application de bureau"
+  },
+  "runs_followingDesktop": {
+    "message": "Application de bureau suivie"
+  },
+  "runs_followingWithDesktop_one": {
+    "message": "$count$ fenêtre d’éditeur et l’application de bureau suivies",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_followingWithDesktop_other": {
+    "message": "$count$ fenêtres d’éditeur et l’application de bureau suivies",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_statusDesktopSearching": {
+    "message": "Recherche des exécutions de l’application de bureau…"
+  },
+  "runs_statusDesktopNoAccess": {
+    "message": "Piwi Picker ne peut plus joindre l’adresse de l’application de bureau : associez-la à nouveau dans les réglages."
+  },
+  "runs_statusDesktopRefused": {
+    "message": "L’application de bureau a refusé l’association : associez à nouveau Piwi Picker dans les réglages."
+  },
+  "runs_statusDesktopUnreachable": {
+    "message": "L’application de bureau ne répond pas : ouvrez-la pour suivre les exécutions qu’elle lance."
+  },
+  "runs_statusDesktopOutdated": {
+    "message": "Cette application de bureau ne peut pas partager ses exécutions : mettez-la à jour."
+  },
+  "runs_statusDesktopUnproven": {
+    "message": "Le programme à l’adresse de l’application de bureau n’est pas l’application associée : Piwi Picker ne lui a rien envoyé, et redemande dans un instant."
+  },
+  "runs_statusDesktopNoRuns": {
+    "message": "Aucune exécution pour l’instant. Lancez un test depuis l’application de bureau : il apparaît ici."
+  },
   "runs_ended": {
     "message": "L’exécution est terminée."
   },
@@ -6432,6 +6483,12 @@
   },
   "runs_finishTitle": {
     "message": "Continuer le test sans plus s’arrêter aux points d’arrêt"
+  },
+  "runs_end": {
+    "message": "Terminer le test"
+  },
+  "runs_endTitle": {
+    "message": "Terminer le test ici : la suite est ignorée"
   },
   "runs_pick": {
     "message": "Choisir"

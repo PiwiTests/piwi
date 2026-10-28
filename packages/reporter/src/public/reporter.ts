@@ -12,6 +12,7 @@ import {
   PIWI_RESOURCES_RESULTS_ENV,
   type DotEnvUse,
 } from '../internal/config/env.js';
+import { PIWI_EDITOR_ENV, followEditor } from '../internal/config/editors.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
@@ -261,6 +262,20 @@ export class PiwiDashboardReporter {
     if (this.listMode) {
       this.logger.debug('List mode (--list) detected — no run registered or report uploaded.');
       return;
+    }
+    // A run started in a terminal follows the editor whose workspace holds it: its workers, which start after this
+    // hook, inherit the editor's run channel.
+    const followed = followEditor([configDirFromConfig(config), process.cwd()], {
+      env: process.env,
+      argv: process.argv,
+      terminal: !!process.stdout.isTTY || !!process.stderr.isTTY,
+    });
+    if (followed) {
+      const { editor } = followed;
+      this.logger.info(
+        `Following this run in ${editor.client ?? 'the editor'} (pid ${editor.pid}), whose breakpoints stop it: ` +
+          `${PIWI_EDITOR_ENV}=off runs it alone.`,
+      );
     }
     if (!this.enabled) {
       this.logger.info('Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');

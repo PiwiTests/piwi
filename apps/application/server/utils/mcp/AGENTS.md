@@ -58,6 +58,15 @@ array of strings per bulleted list), or a plain string when one sentence says it
 - `tests/unit/mcp-tool-descriptions.test.ts` checks the summary, the emphasis, the permission paragraph and that the
   names of other tools are in backticks.
 
+## The desktop app's run tools
+
+**The run tools are the editor service's, not catalog tools.** `run-tools.ts` serves `RunAgent`'s seven tools
+(`@piwitests/editor/run-host`) for the runs the desktop shell starts, in the desktop build alone (`desktopRunTools`,
+`IS_DESKTOP` in the route), and the route passes their result on as it is: Piwi's JSON, then the page's text in a
+page-content block. Change what they do or say in `packages/editor/src/run-agent.ts` and the desktop's words
+(`DESKTOP_AGENT_WORDS` in `server/utils/desktop-runs.ts`); never wrap their result with `toContent`.
+`tests/unit/mcp-desktop-tools.test.ts` checks the names and the gating.
+
 ## Tools about Piwi itself
 
 **`describe_piwi` and `get_release_notes` answer only from what the docs say** (`server/utils/mcp/about-piwi.ts`): the

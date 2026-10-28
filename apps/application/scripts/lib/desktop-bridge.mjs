@@ -24,13 +24,16 @@ export const READY_INSPECTION = {
  * answers: `link` (`desktop_get_project_link`, else no linked folder),
  * `inspection` (`desktop_inspect_folder`, else `READY_INSPECTION`),
  * `importableRuns` and `pickedFiles` (the archives the folder holds and the
- * native import picker returns, else none).
+ * native import picker returns, else none), and `localRunId` (the shell's id
+ * of a local run `desktop_run_local_tests` starts, which then goes on until
+ * the scene ends; else none starts).
  */
 export function bridgeScript(shape = {}) {
   const inspection = shape.inspection ?? READY_INSPECTION;
   const link = shape.link ?? null;
   const importableRuns = shape.importableRuns ?? [];
   const pickedFiles = shape.pickedFiles ?? [];
+  const localRunId = shape.localRunId ?? null;
   return `
     window.__mockLink = ${JSON.stringify(link)};
     window.__TAURI__ = {
@@ -60,6 +63,8 @@ export function bridgeScript(shape = {}) {
               return Promise.resolve({ state: 'unsupported' });
             case 'desktop_mcp_clients':
               return Promise.resolve([]);
+            case 'desktop_run_local_tests':
+              return Promise.resolve(${JSON.stringify(localRunId)});
             default:
               return Promise.resolve(null);
           }

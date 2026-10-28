@@ -19,7 +19,7 @@ import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import { parseHubToRun, type HubToRun, type RunHold, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
 import { startServer, type ServerOptions } from '../src/server';
-import type { InitializationOptions, Notice, RunCommand, RunSession, StopCode } from '../src/protocol';
+import type { AgentsResult, InitializationOptions, Notice, RunCommand, RunSession, StopCode } from '../src/protocol';
 
 export function last<T>(items: T[]): T | undefined {
   return items[items.length - 1];
@@ -57,6 +57,8 @@ export interface Service {
   notices: Notice[];
   /** The code made at stops the client was sent to write (`piwi/stopCode`). */
   codes: StopCode[];
+  /** What the service told of its MCP server for agents unasked (`piwi/agentsChanged`). */
+  agents: AgentsResult[];
   /** What the service published for its discovery file, last: null once it stopped. */
   published: Array<EditorDiscovery | null>;
   /** The latest session of a ref the client heard. */
@@ -83,6 +85,8 @@ export async function service(
   const sessions: RunSession[] = [];
   const notices: Notice[] = [];
   const codes: StopCode[] = [];
+  const agents: AgentsResult[] = [];
+  client.onNotification('piwi/agentsChanged', (told: AgentsResult) => void agents.push(told));
   client.onNotification('piwi/runSessionChanged', (session: RunSession) => void sessions.push(session));
   client.onNotification('piwi/notice', (notice: Notice) => void notices.push(notice));
   client.onNotification('piwi/stopCode', (code: StopCode) => void codes.push(code));
@@ -118,6 +122,7 @@ export async function service(
     sessions,
     notices,
     codes,
+    agents,
     published,
     latest: (ref) => last(sessions.filter((s) => s.ref === ref)),
     command,

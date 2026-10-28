@@ -204,6 +204,8 @@ test.describe('Desktop reproduce & bisect', () => {
 
     await page.getByRole('button', { name: 'Reproduce here' }).click();
     await expect(tray(page)).toBeVisible();
+    // A reproduction runs to show its failure: it holds failures from its start.
+    await expect(tray(page).getByRole('switch', { name: 'Hold failures' })).toHaveAttribute('aria-checked', 'true');
 
     // The shell drives the phases; the store surfaces each header and the label.
     await page.evaluate(() => window.__piwiRepro.phase('checkout'));
@@ -247,6 +249,10 @@ test.describe('Desktop reproduce & bisect', () => {
     await page.evaluate(() => window.__piwiRepro.phase('bisect'));
     await page.evaluate(() => window.__piwiRepro.bisectStep(1, 3, 'aaaaaaa'));
     await expect(tray(page).getByText(/Step 1 of ~3 — aaaaaaa — testing…/)).toBeVisible();
+    // A bisect goes on past each failure: it never holds one.
+    const hold = tray(page).getByRole('switch', { name: 'Hold failures' });
+    await expect(hold).toBeDisabled();
+    await expect(hold).toHaveAccessibleDescription('A bisect goes on past each failure.');
 
     // Stop is explicit, from the tray.
     await tray(page).getByRole('button', { name: 'Stop' }).click();

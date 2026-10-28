@@ -100,7 +100,7 @@ Windows), then restart Claude Desktop:
       "command": "npx",
       "args": [
         "-y",
-        "mcp-remote",
+        "mcp-remote@0.14.3",
         "<your-piwi-url>/mcp",
         "--transport",
         "http-only",
@@ -117,7 +117,9 @@ Windows), then restart Claude Desktop:
 
 Claude Desktop only starts local commands from this file and ignores an entry with a `url`, so
 [`mcp-remote`](https://www.npmjs.com/package/mcp-remote), a small Node bridge, carries the HTTP connection; `npx`
-needs Node on your PATH. The header goes through `env` because Claude Desktop mishandles arguments with spaces. Plans
+needs Node on your PATH. Keep its version in the entry: `npx` without one runs whatever release npm serves that day,
+with your key in its environment, and a release before 0.1.16 runs a command a hostile server hides in its sign-in
+address ([CVE-2025-6514](https://nvd.nist.gov/vuln/detail/CVE-2025-6514)). The header goes through `env` because Claude Desktop mishandles arguments with spaces. Plans
 that offer **Settings → Connectors → Add custom connector** take the `/mcp` URL directly.
 
 ### Claude Code (CLI)
@@ -202,5 +204,6 @@ The six workflow [agent skills](/features/agent-skills) are prompts too (`invest
 ## Related
 
 - [MCP tools](/reference/mcp-tools): every tool, by module and capability
+- [Run control for agents](/features/agent-run-control): the runs an editor or the desktop app starts, as tools
 - [Agent skills](/features/agent-skills): workflows that tell an agent what to do with these tools
 - [Desktop app](/features/desktop#connecting-ai-assistants): one-click client setup

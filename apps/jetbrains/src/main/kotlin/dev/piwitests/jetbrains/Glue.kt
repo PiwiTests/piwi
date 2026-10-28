@@ -1065,21 +1065,55 @@ object Glue {
         "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""
 
     /**
+     * The `mcp-remote` release an `mcpServers` entry runs, exactly: `npx` with no version runs whatever npm serves that
+     * day, with the key or the token in its environment. 0.1.16 and later carry the fix for CVE-2025-6514.
+     */
+    const val MCP_REMOTE = "mcp-remote@0.14.3"
+
+    /**
      * An `mcpServers` entry per instance, bridged to stdio with `mcp-remote` so every
      * MCP client takes it (the JetBrains AI Assistant's settings, Junie, Claude Desktop).
      * The key travels in `env`, never on the command line.
      */
     fun mcpConfiguration(servers: List<McpServerDefinition>): String {
         val entries = servers.mapIndexed { i, s ->
-            val name = if (i == 0) "piwi" else "piwi-${i + 1}"
-            val auth = s.headers?.get("Authorization")
-            val args = mutableListOf("\"-y\"", "\"mcp-remote\"", jsonString(s.url ?: ""))
-            if (auth != null) args += listOf("\"--header\"", "\"Authorization:\${PIWI_AUTH}\"")
-            val env = if (auth != null) ",\n      \"env\": { \"PIWI_AUTH\": ${jsonString(auth)} }" else ""
-            "    ${jsonString(name)}: {\n      \"command\": \"npx\",\n      \"args\": [${args.joinToString(", ")}]$env\n    }"
+            mcpEntry(if (i == 0) "piwi" else "piwi-${i + 1}", s.url ?: "", s.headers?.get("Authorization"), "PIWI_AUTH")
         }
         return "{\n  \"mcpServers\": {\n${entries.joinToString(",\n")}\n  }\n}"
     }
+
+    /**
+     * An `mcpServers` entry bridged to stdio with `mcp-remote` (`MCP_REMOTE`), over streamable HTTP alone, its
+     * `Authorization` header in the variable `variable`.
+     */
+    private fun mcpEntry(name: String, url: String, auth: String?, variable: String): String {
+        val args = mutableListOf("\"-y\"", jsonString(MCP_REMOTE), jsonString(url), "\"--transport\"", "\"http-only\"")
+        if (auth != null) args += listOf("\"--header\"", "\"Authorization:\${$variable}\"")
+        val env = if (auth != null) ",\n      \"env\": { \"$variable\": ${jsonString(auth)} }" else ""
+        return "    ${jsonString(name)}: {\n      \"command\": \"npx\",\n      \"args\": [${args.joinToString(", ")}]$env\n    }"
+    }
+
+    /**
+     * The `mcpServers` entry of the MCP server the editor service serves this project's runs to agents with, bridged as
+     * the instance's: its bearer token in `env`, never on the command line. The address and the token stay while the
+     * project keeps them (`PiwiLocalSettings.agentsPort`, the password safe).
+     */
+    fun runsMcpConfiguration(url: String, token: String): String =
+        "{\n  \"mcpServers\": {\n${mcpEntry("piwi-runs", url, "Bearer $token", "PIWI_RUNS_AUTH")}\n  }\n}"
+
+    /**
+     * The `mcpServers` entry of type `http` that Claude Code and Cursor read: the runs' server, with no bridge, its token
+     * as a bearer header.
+     */
+    fun runsMcpHttpConfiguration(url: String, token: String): String =
+        "{\n  \"mcpServers\": {\n    \"piwi-runs\": {\n      \"type\": \"http\",\n      \"url\": ${jsonString(url)},\n" +
+            "      \"headers\": { \"Authorization\": ${jsonString("Bearer $token")} }\n    }\n  }\n}"
+
+    /**
+     * The password safe's name for the runs' MCP server's token of a project (`Project.getLocationHash`): each project
+     * keeps its own, so a new token in one leaves the agents of another connected.
+     */
+    fun agentsTokenEntry(project: String): String = "agentsToken $project"
 
     /**
      * A script file named in a line of a run's output: the characters `[start, end)` that name it, its path as written,
@@ -1349,13 +1383,23 @@ object Glue {
         return if (session.ended) sessions - ref else sessions + (ref to session)
     }
 
-    /** A worker stopped: its run, the worker, where it stands, the test it runs and what its reporter takes there. */
-    data class ShownStop(val ref: String, val worker: Int, val stop: RunStop, val test: RunTest?, val takes: List<String> = emptyList())
+    /**
+     * A worker stopped: its run, the worker, where it stands, the test it runs, what its reporter takes there, and
+     * whether its run was started in a terminal (`RunSession.terminal`).
+     */
+    data class ShownStop(
+        val ref: String,
+        val worker: Int,
+        val stop: RunStop,
+        val test: RunTest?,
+        val takes: List<String> = emptyList(),
+        val terminal: Boolean = false,
+    )
 
     /** Every stopped worker of the sessions, in their order. */
     fun stopsOf(sessions: Map<String, RunSession>): List<ShownStop> = sessions.values.flatMap { session ->
         session.workers.orEmpty().mapNotNull { w ->
-            w.stop?.let { ShownStop(session.ref ?: "", w.worker, it, w.test, w.takes.orEmpty()) }
+            w.stop?.let { ShownStop(session.ref ?: "", w.worker, it, w.test, w.takes.orEmpty(), session.terminal) }
         }
     }
 
@@ -1367,11 +1411,37 @@ object Glue {
      * or, at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in
      * plain text: the gutter's icon marks the stop.
      */
-    fun pausedText(stop: RunStop, test: RunTest?): String {
+    fun pausedText(stop: RunStop, test: RunTest?, terminal: Boolean = false): String {
         val attempt = if (test != null && test.retry > 0) " · attempt ${test.retry + 1}" else ""
-        if (isFailure(stop)) return "Failed · ${stop.title.orEmpty().removePrefix("Failed:").trimStart()}$attempt"
-        return "Paused · ${stop.title.orEmpty()}$attempt"
+        // A run started in a terminal says so: its process is the terminal's.
+        val where = if (terminal) " · run in a terminal" else ""
+        if (isFailure(stop)) return "Failed · ${stop.title.orEmpty().removePrefix("Failed:").trimStart()}$attempt$where"
+        // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching.
+        val by = if (stop.by == "agent") " by the agent" else ""
+        return "Paused$by · ${stop.title.orEmpty()}$attempt$where"
     }
+
+    /** Whether a token kept for the runs' MCP server is one the editor service takes: 32 to 256 characters of base64url. */
+    fun isAgentsToken(token: String): Boolean = Regex("^[A-Za-z0-9_-]{32,256}$").matches(token)
+
+    /** A new token for the runs' MCP server: 32 random bytes, base64url. */
+    fun newAgentsToken(): String =
+        java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also { java.security.SecureRandom().nextBytes(it) })
+
+    /** The port of a loopback address the editor service names (`http://127.0.0.1:41234/mcp`); null for none. */
+    fun portOf(url: String): Int? = runCatching { java.net.URI(url).port }.getOrNull()?.takeIf { it in 1..65535 }
+
+    /** Whether a stop's browser can be shared with Playwright's own tools: its reporter takes `bind`. */
+    fun canShare(stop: ShownStop): Boolean = "bind" in stop.takes
+
+    /** What sharing a stopped browser with Playwright's own tools risks, asked before it is shared. */
+    const val SHARE_WARNING =
+        "Until the test ends, any process of yours can then drive the stopped test's browser, read its pages and run " +
+            "code in them (playwright-cli attach, Playwright's dashboard)."
+
+    /** What a shared browser's answer says, with the command that joins it. */
+    fun sharedText(result: StopBindResult): String =
+        if (!result.ok || result.name == null) result.message.orEmpty() else "${result.message.orEmpty()} Join it with: ${result.command}"
 
     /** Whether a stop holds a failed test's page: any answer lets the test end as it failed. */
     fun isFailure(stop: RunStop): Boolean = stop.reason == "failure"
@@ -1385,13 +1455,14 @@ object Glue {
     /** A stop as the choice among several names it: what it runs, its test, its place and its worker. */
     fun stopLabel(stop: ShownStop): String {
         val test = stop.test?.title?.joinToString(" › ")?.let { "$it · " }.orEmpty()
-        return "${pausedText(stop.stop, stop.test)} · $test${stopPlace(stop.stop)} · worker ${stop.worker}"
+        return "${pausedText(stop.stop, stop.test, stop.terminal)} · $test${stopPlace(stop.stop)} · worker ${stop.worker}"
     }
 
     /**
-     * What the controls offer: Stop while a run is live (`active`), Pause while a worker runs a test or is between
-     * tests and no Pause reached it (`pausable`), `pausing` once one did, Resume, Step, Run to Caret and Finish while a
-     * worker is stopped, and the code actions some stop offers (`actions`).
+     * What the controls offer: while a run is live (`active`), Stop for one this IDE started (`stoppable`; a run
+     * started in a terminal is the terminal's to stop), Pause while a worker runs a test or is between tests and no
+     * Pause reached it (`pausable`), `pausing` once one did, Resume, Step, Run to Caret and Finish while a worker is
+     * stopped, End the Test where a stop takes it (`endable`), and the code actions some stop offers (`actions`).
      */
     data class RunControls(
         val active: Boolean,
@@ -1399,6 +1470,10 @@ object Glue {
         val pausing: Boolean,
         val stopped: Boolean,
         val actions: Set<StopAction> = emptySet(),
+        /** A stop's browser can be shared with Playwright's own tools. */
+        val shareable: Boolean = false,
+        val stoppable: Boolean = active,
+        val endable: Boolean = false,
     )
 
     fun runControls(sessions: Map<String, RunSession>): RunControls {
@@ -1409,6 +1484,9 @@ object Glue {
             pausing = workers.any { it.pausing },
             stopped = workers.any { it.state == "stopped" },
             actions = stopsOf(sessions).flatMap(::stopActions).toSet(),
+            shareable = stopsOf(sessions).any(::canShare),
+            stoppable = sessions.values.any { !it.terminal },
+            endable = stopsOf(sessions).any(::canEnd),
         )
     }
 
@@ -1456,14 +1534,19 @@ object Glue {
         STEP("Step", "step"),
         RUN_TO_CARET("Run to Caret", "run-to"),
         FINISH("Finish", "finish"),
+        END("End Test", "end"),
     }
 
     /**
-     * The controls a stop offers: all of them; at a failure, Resume alone, which lets the test end as it failed (Step
-     * and Finish do the same).
+     * The controls a stop offers: all of them, End Test where its reporter takes it (`canEnd`); at a failure, Resume
+     * alone, which lets the test end as it failed (Step, Finish and End do the same).
      */
-    fun stopControls(stop: RunStop): List<StopControl> =
-        if (isFailure(stop)) listOf(StopControl.RESUME) else StopControl.entries
+    fun stopControls(stop: ShownStop): List<StopControl> =
+        if (isFailure(stop.stop)) listOf(StopControl.RESUME)
+        else StopControl.entries.filter { it != StopControl.END || canEnd(stop) }
+
+    /** Whether a stop can end its test (End the Test, `end`): its reporter takes it, and it is no failure. */
+    fun canEnd(stop: ShownStop): Boolean = !isFailure(stop.stop) && "end" in stop.takes
 
     /**
      * The code actions at a stop, in the order it offers them (`piwi/stopAction`): the pause bar's Pick a locator and
@@ -1775,9 +1858,67 @@ object Glue {
             val check: Boolean,
             val piwiProject: String?,
             val root: String? = null,
+            /** **Debug in my editor** (`debug=1`): the test to run, stopping at `line` of the file, once asked. */
+            val debug: DebugRequest? = null,
         ) : OpenRequest()
 
         data class Refused(val error: String) : OpenRequest()
+    }
+
+    /**
+     * What a Debug in my editor request names beside the failing line: the test's spec as the run reported it, its title
+     * after its describe blocks' (joined by ` › `), the Playwright project it failed in, and the failed execution whose
+     * suggested locator is outlined at the stop.
+     */
+    data class DebugRequest(val spec: String, val title: String, val project: String?, val execution: Int?)
+
+    /** The fields a debug request names, none of them twice. */
+    private val DEBUG_FIELDS = listOf("file", "line", "column", "root", "debug", "spec", "test", "playwrightProject", "execution")
+
+    const val MAX_DEBUG_TITLE = 1000
+    const val MAX_DEBUG_PROJECT = 200
+
+    /**
+     * Text alone: no control character, and none of the characters a notification could read as markup or a link
+     * (`[`, `]`, `<`, `>`, a backtick, a backslash).
+     */
+    private val PLAIN_TEXT = Regex("^[^\\p{Cc}\\[\\]<>`\\\\]+$")
+
+    /**
+     * Characters a shell expands, which no Playwright project name on a command line may hold: PowerShell reads the
+     * typographic double quotes (“ ” „) as `"` too.
+     */
+    private val SHELL_EXPANDED = Regex("[$\"%!\u201C\u201D\u201E]")
+
+    /** A positive whole number as a link writes it: no sign, no leading zero, no exponent, 32 bits at most. */
+    private fun positive(value: String?): Int? =
+        value?.takeIf { Regex("^[1-9][0-9]{0,9}$").matches(it) }?.toLongOrNull()?.takeIf { it <= Int.MAX_VALUE }?.toInt()
+
+    /**
+     * Read what a debug request adds to an open request (`debug=1`), each value checked: `line` a positive whole
+     * number, `test` a title of plain text, `spec` a path as `file` is, `playwrightProject` a name of plain text no shell
+     * expands, `execution` an id; no field given twice. A link is anyone's to write: it names files, a line and a title,
+     * never a command.
+     */
+    private fun parseDebugRequest(query: Map<String, List<String>>, path: String): Any {
+        for (name in DEBUG_FIELDS) if ((query[name]?.size ?: 0) > 1) return "$name is given twice"
+        fun one(name: String) = query[name]?.firstOrNull()
+        if (one("debug") != "1") return "debug must be 1"
+        if (positive(one("line")) == null) return "line must be a positive whole number"
+        if (one("column") != null && positive(one("column")) == null) return "column must be a positive whole number"
+        val spec = one("spec")?.trim()?.ifEmpty { null }?.replace('\\', '/') ?: path
+        refusedPath("spec", spec)?.let { return it }
+        val title = one("test")?.trim().orEmpty()
+        if (title.isEmpty() || title.length > MAX_DEBUG_TITLE || !PLAIN_TEXT.matches(title)) {
+            return "test must be a title of 1 to $MAX_DEBUG_TITLE characters of plain text"
+        }
+        val project = one("playwrightProject")?.trim()?.ifEmpty { null }
+        if (project != null && (project.length > MAX_DEBUG_PROJECT || !PLAIN_TEXT.matches(project) || SHELL_EXPANDED.containsMatchIn(project))) {
+            return "playwrightProject must be a project name of 1 to $MAX_DEBUG_PROJECT characters of plain text"
+        }
+        val execution = one("execution")
+        if (execution != null && positive(execution) == null) return "execution must be an id"
+        return DebugRequest(spec, title, project, execution?.let { positive(it) })
     }
 
     const val MAX_OPEN_PATH = 4096
@@ -1785,7 +1926,7 @@ object Glue {
     /** Why a path given to Open in IDE is refused, or null when it is acceptable. */
     private fun refusedPath(name: String, path: String): String? = when {
         path.length > MAX_OPEN_PATH -> "$name is at most $MAX_OPEN_PATH characters"
-        '\u0000' in path -> "$name must not contain a NUL character"
+        path.any { it.isISOControl() } -> "$name must not contain a control character"
         // A UNC path would make the IDE reach a network share (and send the user's credentials to it).
         path.startsWith("//") -> "network paths are not supported"
         path.split('/').any { it == ".." } -> "$name must not contain '..'"
@@ -1802,6 +1943,15 @@ object Glue {
             refusedPath("root", root)?.let { return OpenRequest.Refused(it) }
             if (!isAbsolutePath(root)) return OpenRequest.Refused("root must be an absolute path")
         }
+        // A debug request's fields are checked first, each by its own rule.
+        val debug = if (query.containsKey("debug")) {
+            when (val read = parseDebugRequest(query, path)) {
+                is DebugRequest -> read
+                else -> return OpenRequest.Refused(read as String)
+            }
+        } else {
+            null
+        }
         val line = last("line")
         val lineNumber = line?.toIntOrNull()
         if (line != null && (lineNumber == null || lineNumber < 1)) return OpenRequest.Refused("line must be a positive integer")
@@ -1810,8 +1960,48 @@ object Glue {
         if (column != null && (columnNumber == null || columnNumber < 1)) return OpenRequest.Refused("column must be a positive integer")
         // `?check` and `?check=1` ask for a check; `?check=0` does not.
         val check = query["check"]?.lastOrNull()?.trim()?.let { it != "0" && it != "false" } ?: query.containsKey("check")
-        return OpenRequest.File(path, lineNumber, columnNumber, check, last("project"), root)
+        return OpenRequest.File(path, lineNumber, columnNumber, check, last("project"), root, debug)
     }
+
+    /**
+     * Why a file a debug request names may not be debugged, with every link followed (`canonical`, the file's
+     * canonical path, and the folders'): it must be in one of `projectRoots` and under one of `configDirs`, the failing
+     * line's a script file, the test's a spec. Null when it may. `named` is the path as the request named it.
+     */
+    fun debugFileRefusal(named: String, canonical: String, projectRoots: List<String>, configDirs: List<String>, spec: Boolean): String? {
+        fun inside(folders: List<String>) = folders.any { folder ->
+            runCatching { Path.of(canonical).normalize().startsWith(Path.of(folder).normalize()) }.getOrDefault(false)
+        }
+        return when {
+            !inside(projectRoots) -> "$named is outside the project's folders"
+            !inside(configDirs) -> "$named is under no Playwright config's folder"
+            spec && !SPEC_FILE.containsMatchIn(canonical) -> "$named is not a spec"
+            !spec && !SCRIPT_FILE.containsMatchIn(canonical) -> "$named is not a JavaScript or TypeScript file"
+            else -> null
+        }
+    }
+
+    /** The button of the prompt that asks before a debug request runs anything. */
+    const val DEBUG_ANSWER = "Debug"
+
+    /** The prompt that asks before a debug request runs anything, as plain text: the test, and its Playwright project. */
+    fun debugPrompt(title: String, line: Int, project: String? = null): String {
+        val inProject = project?.let { " in the Playwright project “$it”," } ?: ""
+        return "Debug this test here? Piwi runs “$title”$inProject headed, one worker, and stops at line $line."
+    }
+
+    /** What a refused debug request says. */
+    fun debugRefusal(why: String): String = "This Debug in my editor link was refused: $why. Nothing was opened or run."
+
+    /**
+     * The run a yes to a debug request starts (`piwi/runArgs`): the test of the spec at `specUri` its title names,
+     * stopping once at the 1-based `line` of the file at `fileUri`.
+     */
+    fun debugRunArgs(specUri: String, fileUri: String, line: Int, debug: DebugRequest): RunTestsArgs = RunTestsArgs(
+        uri = specUri,
+        testIds = emptyList(),
+        debug = DebugRun(EditorBreakpoint(fileUri, line - 1), debug.title, debug.project, debug.execution),
+    )
 
     /** Whether a path, with forward slashes, is absolute: `/home/me/a.ts` or `C:/me/a.ts`. */
     fun isAbsolutePath(path: String): Boolean = path.startsWith("/") || Regex("^[A-Za-z]:/").containsMatchIn(path)

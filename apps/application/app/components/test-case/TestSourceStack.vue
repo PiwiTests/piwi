@@ -4,9 +4,12 @@
  * the line that actually threw (innermost, "Failed here") plus the callers above
  * it — so the interesting code isn't limited to the test line that triggered the
  * failure. Each frame shows its project-relative path:line and its code
- * syntax-highlighted, with the marked failing line on a red band.
+ * syntax-highlighted, with the marked failing line on a red band. The frame the
+ * failure enters the test's code at offers Debug in my editor beside its path.
  */
 import type { TestSourceFrame } from '~~/types/api';
+import type { DebugInIdeTarget } from '~/composables/useOpenInIde';
+import { atFailurePlace } from '~/utils/ide-links';
 import { highlightLines, languageForPath } from '#shared/highlight';
 import { parseSourceSnippet } from '#shared/source-snippet';
 
@@ -15,7 +18,11 @@ const props = defineProps<{
   /** Piwi project id + name, threaded so the IDE opener can resolve a workspace root. */
   projectKey?: string | number | null;
   projectName?: string | null;
+  /** Debug in my editor's target, offered on the first frame at its failing line. */
+  debugTarget?: DebugInIdeTarget | null;
 }>();
+
+const debugIndex = computed(() => props.frames.findIndex((frame) => atFailurePlace(frame, props.debugTarget)));
 
 /** Each frame's rows: the gutter as the snippet wrote it, and the code as highlighted HTML. */
 const frameRows = computed(() =>
@@ -50,9 +57,12 @@ const frameRows = computed(() =>
           :project-name="projectName"
           class="min-w-0"
         />
-        <UBadge :color="i === 0 ? 'error' : 'neutral'" variant="subtle" size="xs" class="ml-auto shrink-0">
-          {{ i === 0 ? 'Failed here' : 'Caller' }}
-        </UBadge>
+        <span class="ml-auto flex shrink-0 items-center gap-2">
+          <DebugInEditorButton v-if="debugTarget && i === debugIndex" :target="debugTarget" />
+          <UBadge :color="i === 0 ? 'error' : 'neutral'" variant="subtle" size="xs" class="shrink-0">
+            {{ i === 0 ? 'Failed here' : 'Caller' }}
+          </UBadge>
+        </span>
       </div>
       <div class="overflow-x-auto text-xs font-mono leading-relaxed py-1">
         <div class="min-w-max">

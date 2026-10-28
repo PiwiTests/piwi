@@ -47,12 +47,12 @@ action is under **Tools → Piwi**:
   **Run This Spec**.
 - **[Recording](./editor-recording)** starts from **Record Here**, Alt+Enter or Alt+Insert, and **File → New → Record
   a New Test File…**; its controls are in a banner above the editor.
-- **[A paused run](./editor-run-control)**: the line a run Piwi started is stopped at has an arrow in the gutter and
-  an inlay above it with **Resume**, **Step**, **Run to Caret** and **Finish**; they are also first in the status bar
-  item's menu and under **Tools → Piwi**, with **Pause the Run** and **Stop the Run**. A headless test's page shows in
-  the Piwi tool window's **Paused Page** tab, where a click on the image picks the locator of the element under it.
-  On a JetBrains Gateway backend, forward the ports **Pair with Piwi Picker** names:
-  [Remote development](/guide/remote-development#jetbrains-gateway).
+- **[A paused run](./editor-run-control)**: the line a run Piwi started is stopped at has an arrow in the gutter and an
+  inlay above it with **Resume**, **Step**, **Run to Caret**, **Finish** and **End Test**; they are also first in the
+  status bar item's menu and under **Tools → Piwi**, with **Pause the Run** and **Stop the Run**. A headless test's page
+  shows in the Piwi tool window's **Paused Page** tab, where a click on the image picks the locator of the element under
+  it. On a JetBrains Gateway backend, forward the ports **Pair with Piwi Picker** names: [Remote
+  development](/guide/remote-development#jetbrains-gateway).
 - **[Code from a pause](./editor-stop-code)**: the inlay, the arrow's menu, the status bar item's menu and **Tools →
   Piwi** also offer **Pick a Locator**, **Record Here**, **Assert**, **Assert a Region** and **Mock a Request** (the
   inlay names them shorter), whose code goes above the stopped line in one undoable edit; the end of the caret's line
@@ -63,6 +63,11 @@ action is under **Tools → Piwi**:
 - **Piwi's MCP server for the agent**: **Settings → Tools → Piwi → AI Assistant** chooses whether the copied
   configuration holds the IDE's key or has the agent sign in through the browser
   ([Piwi's MCP server for the agent](./editors#piwi-s-mcp-server-for-the-agent)).
+- **[Run control for agents](./agent-run-control)**: **Tools → Piwi → Copy the Runs' MCP Server Configuration for
+  Agents** gives the AI Assistant or another agent the test runs the project starts, to follow, stop and act on, and
+  **…for Claude Code or Cursor** the HTTP entry they read; **Reset the Runs' MCP Server Token** gives it a new token;
+  **Settings → Tools → Piwi → AI Assistant** turns it off. A stop's menu and **Tools → Piwi** offer **Share the
+  Stopped Browser with Playwright Tools**, after a warning.
 - **[Open in IDE](./ide-integration#jetbrains-ides-the-piwi-plugin)**: a path clicked in the dashboard or the desktop
   app opens at its line, with nothing to set up.
 

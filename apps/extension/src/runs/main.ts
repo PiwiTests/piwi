@@ -29,7 +29,8 @@ import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
 import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '../shared/view-input.js';
 
 /**
- * The Runs window: the runs the paired editor started, each worker's test and where it stands, an image of a stopped
+ * The Runs window: the runs the paired editor started, and the paired desktop app's beside them (`Desktop app`, their
+ * code made there for the app's window to copy), each worker's test and where it stands, an image of a stopped
  * page or its live view, and the controls, with the code a stop can write (Pick, Record, Assert, Assert a region, Mock
  * a request) as the stop takes them from this window (`stopIntents`). Opened from the popup's Runs tile in a small
  * window of its own. It reads everything from the background worker through its port (`RUNS_PORT`), and makes no
@@ -905,19 +906,28 @@ function forgetGone(current: RunsState): void {
 }
 
 function renderHubs(current: RunsState): void {
-  const connected = current.hubs.filter((hub) => hub.connected).length;
+  const connected = current.hubs.filter((hub) => hub.connected && !hub.desktop).length;
+  const desktop = current.hubs.some((hub) => hub.connected && hub.desktop);
   // The window follows the editor while any of its windows answers: one that does not is found again meanwhile.
-  const away = connected === 0 ? current.hubs[0] : undefined;
+  const away = connected === 0 && !desktop ? current.hubs[0] : undefined;
   hubsLine.hidden = current.hubs.length === 0;
   hubsLine.classList.toggle('waiting', !!away);
-  if (away) iconText(hubsLine, 'clock', t('runs_reconnecting', { editor: away.client ?? t('runs_editor') }));
+  if (away) {
+    const name = away.desktop ? t('runs_desktopName') : (away.client ?? t('runs_editor'));
+    iconText(hubsLine, 'clock', t('runs_reconnecting', { editor: name }));
+  } else if (desktop && connected > 0) iconText(hubsLine, 'check-circle', tn('runs_followingWithDesktop', connected));
+  else if (desktop) iconText(hubsLine, 'check-circle', t('runs_followingDesktop'));
   else iconText(hubsLine, 'check-circle', tn('runs_following', connected));
 }
 
 type EmptyAction = 'settings' | 'again';
 
-/** Why there is nothing to show, and what to do: its icon, its sentence and its buttons. */
+/**
+ * Why there is nothing to show, and what to do: its icon, its sentence and its buttons. While no editor is paired, the
+ * paired desktop app's answer says it.
+ */
 function emptyOf(current: RunsState): [IconName, string, EmptyAction[]] {
+  if (current.discovery === 'unpaired' && current.desktop !== 'unpaired') return desktopEmptyOf(current);
   switch (current.discovery) {
     case 'searching':
       return ['clock', t('runs_statusSearching'), []];
@@ -938,6 +948,25 @@ function emptyOf(current: RunsState): [IconName, string, EmptyAction[]] {
       if (current.hubs.length === 0) return ['plug', t('runs_statusNoHub'), ['again']];
       if (!current.hubs.some((hub) => hub.connected)) return ['clock', t('runs_statusSearching'), []];
       return ['play', t('runs_statusNoRuns'), []];
+  }
+}
+
+/** Why the paired desktop app shows no run, and what to do. */
+function desktopEmptyOf(current: RunsState): [IconName, string, EmptyAction[]] {
+  switch (current.desktop) {
+    case 'no-access':
+      return ['lock', t('runs_statusDesktopNoAccess'), ['settings']];
+    case 'refused':
+      return ['alert', t('runs_statusDesktopRefused'), ['settings', 'again']];
+    case 'unreachable':
+      return ['plug', t('runs_statusDesktopUnreachable'), ['again']];
+    case 'outdated':
+      return ['alert', t('runs_statusDesktopOutdated'), ['again']];
+    case 'unproven':
+      return ['alert', t('runs_statusDesktopUnproven'), ['again']];
+    default:
+      if (!current.hubs.some((hub) => hub.connected)) return ['clock', t('runs_statusDesktopSearching'), []];
+      return ['play', t('runs_statusDesktopNoRuns'), []];
   }
 }
 
@@ -978,13 +1007,15 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
   section.classList.toggle('ended', session.ended);
   const headingId = section.getAttribute('aria-labelledby') ?? '';
   const name = runName(session);
-  const client = current.hubs.find((hub) => hub.id === run.hub)?.client ?? null;
+  const hub = current.hubs.find((h) => h.id === run.hub);
+  const client = hub?.desktop ? t('runs_desktopApp') : (hub?.client ?? null);
   const children = [
-    part(`${runKey}|head`, { headingId, name, client, command: session.command }, () => {
+    part(`${runKey}|head`, { headingId, name, client, command: session.command, terminal: session.terminal }, () => {
       const heading = element('h2', undefined, name);
       heading.id = headingId;
       const title = element('div', 'run-title', heading);
       if (client) title.append(element('span', 'client', client));
+      if (session.terminal) title.append(iconText(element('span', 'client terminal'), 'terminal', t('runs_terminal')));
       const head = element('div', 'run-head', title);
       if (session.command) {
         const code = element('code', 'command', session.command);
@@ -1039,6 +1070,7 @@ const CONTROLS = {
   resume: { label: 'runs_resume', title: 'runs_resumeTitle', icon: 'play', tone: 'primary' },
   step: { label: 'runs_step', title: 'runs_stepTitle', icon: 'skip' },
   finish: { label: 'runs_finish', title: 'runs_finishTitle', icon: 'next' },
+  end: { label: 'runs_end', title: 'runs_endTitle', icon: 'stop' },
   pick: { label: 'runs_pick', title: 'runs_pickTitle', icon: 'pick' },
   record: { label: 'runs_record', title: 'runs_recordTitle', icon: 'record' },
   assert: { label: 'runs_assert', title: 'runs_assertTitle', icon: 'check-circle' },
@@ -1053,18 +1085,19 @@ const CONTROLS = {
 type Control = keyof typeof CONTROLS;
 
 /** The controls that steer the test, on a row of their own above the code a stop can write. */
-const STEERING: ReadonlySet<Control> = new Set(['resume', 'step', 'finish', 'pause']);
+const STEERING: ReadonlySet<Control> = new Set(['resume', 'step', 'finish', 'end', 'pause']);
 
 /**
  * The controls a worker takes now: at a stop, Resume, Step and Finish (Resume alone where the test failed, which ends
- * it as it failed); then the actions the stop takes from this window (`stopIntents`): Pick, Record, Assert and Assert
- * a region, which start in the test's window where the pause bar shows, or through the live view this window watches
- * at a headless stop, and Mock a request.
+ * it as it failed), and End the test where the stop takes it; then the actions the stop takes from this window
+ * (`stopIntents`): Pick, Record, Assert and Assert a region, which start in the test's window where the pause bar
+ * shows, or through the live view this window watches at a headless stop, and Mock a request.
  */
 function controlsOf(worker: HubWorker, stop: HubStop | null): Control[] {
   if (!stop) return worker.pausing ? [] : ['pause'];
   const controls: Control[] = stop.reason === 'failure' ? ['resume'] : ['resume', 'step', 'finish'];
   const intents = stopIntents(worker, stop);
+  if (intents.includes('end')) controls.push('end');
   controls.push(...IN_WINDOW.filter((what) => intents.includes(what)));
   if (intents.includes('mock')) controls.push('mock');
   return controls;

@@ -97,18 +97,41 @@ What the package does to a user's run, process by process.
 
 **The editor's run connection** (`internal/capture/run-channel.ts`, with `PIWI_RUN_CHANNEL` and `PIWI_ORIGIN_REF`)
 
+- The run's name on it, its `run-attach`'s `ref`, is `PIWI_RUN_REF` when set, else `PIWI_ORIGIN_REF`. The desktop app
+  sets `PIWI_RUN_REF` (`desktop-<its run id>`) on the runs it starts, whose `PIWI_ORIGIN_REF` names the failure cluster
+  or bug report they were started for; its bundled server is their hub.
 - `PIWI_RUN_CHANNEL` names the same local socket as `PIWI_RECORD_CHANNEL`. Each worker
   connects to it in the `piwiResources` worker fixture, before its first test (it waits
   2 seconds at most), and stays connected until the worker ends. The messages are defined
   in `@piwitests/core/run-channel`.
 - The first message, `run-attach`, lists what the worker takes (`takes`: the intents
   `pick`, `record`, `assert`, `assert-region`, the queries `requests`, `mock`,
-  `locator`, and, for a viewer outside the page, `view`, `input` and `pick-at`) and the
-  stops it holds for an editor that shows them (`holds: ['failure']`).
+  `locator`, for a viewer outside the page, `view`, `input` and `pick-at`, for an agent,
+  `agent` (its requests `snapshot`, `act` and `ref-locator`), `events` and `bind`, and
+  the control `end`) and the stops it holds for an editor that shows them (`holds:
+  ['failure']`). `pick` needs `PIWI_EDITOR_SEND`, and the intents that record or check
+  `PIWI_RECORD_CHANNEL` (`workerTakes`): a run started in a terminal takes neither. The
+  list holds 16 entries at most: an editor service released before `agent` reads a
+  longer one as none.
   The worker then sends each test's begin and end, each stop it shows, and each stop's
   end (`running`).
 - The editor's controls (Pause, Step, Resume, Finish, Run to a line) and its breakpoints,
   which replace `PIWI_PAUSE_AT`, go through the same stop policy as `PIWI_PAUSE_AT`.
+- **End the test** (`end`, the editor's control or the bar's button, `endTest` in
+  `capture-fixtures.ts`). While the test function runs (its `beforeEach` hooks and the
+  fixtures set up before it included), each locator call the proxy delegates carries the
+  attempt's end signal among its options (`withEndSignal` in `pause-at.ts`, beside a
+  signal the test gave, through `AbortSignal.any`): End aborts it before the debugger
+  lets the held call go, so Playwright gives that call up before it runs. The attempt
+  then stops nowhere more, and is skipped by the runner's own `testInfo.skip(true,
+  ENDED_REASON)` as the call rejects, at its next locator call, as a `page.pause()` it
+  stopped at goes on, or as its function ends (`_onDidFinishTestFunctionCallbacks`,
+  feature-checked, only when it passed). A call the proxy does not delegate (a
+  navigation, a key press, a page's own assertion) runs first, which the editor hears
+  (`notice`). At a failure, or once the function ended (an `afterEach` hook, a fixture's
+  teardown), End goes on as Resume does, the result kept; the bar offers it at neither.
+  `afterEach` hooks and the fixtures' teardown run as after any skip, and the next
+  attempt and test start as they would (`tests/run-channel-end.spec.ts`).
 - While the connection is open, a headless run stops too (never under CI or Playwright's
   own debugger): the stop waits for the editor's answer, and goes on if the connection
   closes. In a headed run the pause bar shows as well, and the first answer wins: the
@@ -192,6 +215,32 @@ What the package does to a user's run, process by process.
   and posts the first that finds it alone to `PIWI_EDITOR_SEND` (`page.getByRef` and the
   boxes feature-checked, refused before Playwright 1.64). An image of a stopped page names
   its viewport (`width`, `height`), the CSS pixels a point is in.
+- For an agent (the editor's MCP server), at the stop held alone, one request after the
+  other, 10 seconds at most each, an `act` the page takes longer over answered `late`
+  and again once it was played (`agent-page.ts`): `snapshot` reads the page's ARIA
+  snapshot in AI mode to a depth (`page.ariaSnapshot({ mode: 'ai', depth })`), its
+  credentials hidden by `hideSecretsInText` and each secret field's value written as
+  `<hidden>` (`withoutFieldSecrets`: an AI snapshot shows a field's value, quoted when
+  YAML needs it), with an image whose secret fields are masked when asked, in each frame;
+  a secret field is a password field or one whose `autocomplete` names a password, a
+  one-time code or a card's number or security code (`SECRET_FIELDS`, from
+  `SECRET_AUTOCOMPLETE`); `ref-locator` ranks the element a
+  ref names (`page.getByRef`, 1.64) as Pick does, with the project's `testIdAttribute`,
+  each candidate checked to find it alone, and reads its text (its `textContent` with
+  whitespace collapsed, as a text assertion compares it, 1,000 characters at most and
+  `textCut` past them), value (none of a secret field, `el.matches(SECRET_FIELDS)`) and
+  checked state, each text's credentials hidden before it is cut; `act` plays a click, a fill, a key press, a check or a select
+  on it with Playwright's own action (trusted input, 5 seconds at most), after ranking it
+  for the step it makes. Each runs as an internal call, never a step of the test.
+- `events` (`run-events.ts`): while the editor asked and a test runs, each call of the
+  test as it ends, through Playwright's `_instrumentation` (feature-checked; it never
+  hears an internal call), with its place in the user's code, and each page's navigation,
+  console error or warning, uncaught error and failed request (a failure, or a status of
+  400 or more), at most 50 a second, the others counted (`dropped`), their texts' and
+  URLs' credentials hidden.
+- `bind` shares the stopped context's browser with Playwright's own tools
+  (`browser.bind('piwi-<ref>-w<worker>', { workspaceDir })`, feature-checked), until the
+  test ends (`unbind` on `test-end`), or stops sharing it.
 - The view stops before the stop's `running`, as its page closes and as the connection
   does: no frame of a stop goes once it began to end. A frame carries whatever the page
   shows: it goes to the editor service alone, which sends it to the paired, authenticated
@@ -215,6 +264,11 @@ What the package does to a user's run, process by process.
   request, console entry or dialog of the hold is recorded, and its context's code reach
   ends; Playwright's own trace and video record the hold too), and the test timeout is
   held while the stop shows.
+- **The host's name.** `attached` also says what the service calls itself when it is not
+  the editor (`host`: the desktop app, whose server is the hub of the runs its shell
+  starts). The worker's lines name it then (`runHost`): `Resume in the desktop app`, `The
+  connection to the desktop app closed`, and a pick that could not be sent; else they
+  name the editor.
 - It is a stop with the reason `failure` at the failing line (where the error's stack
   enters the test's code, else the failing locator's, else the call a test timeout cut
   short, the runner's step in progress, else the test's declaration). It names its error
@@ -242,6 +296,20 @@ What the package does to a user's run, process by process.
   seconds (`internal/streaming/live-resources.ts`).
 - `onBegin` writes `PIWI_RESOURCES_RESULTS` (see below) and, with coverage on,
   `PIWI_COVERAGE_BROWSER` / `PIWI_COVERAGE_SERVER` / `PIWI_COVERAGE_CSS` for the workers.
+- **A run started in a terminal** (`internal/config/editors.ts`, `followEditor`). With
+  no `PIWI_RUN_CHANNEL` and no launcher (`PIWI_ORIGIN`), its output going to a terminal
+  (else `PIWI_EDITOR=on`), never under CI, `PWDEBUG`, `--debug`, UI mode (`--ui`,
+  `--ui-host`, `--ui-port`) or with `PIWI_EDITOR=off`, `onBegin` reads the editors'
+  discovery files (`@piwitests/core/editor-discovery`, `~/.piwi/editors` or
+  `PIWI_EDITORS_DIR`) from a folder this user owns that no other user can enter, only
+  the files this user owns, of this machine, whose process runs as this user, written
+  since the machine started, and (but on Windows, whose pipes tell no owner) whose run
+  channel is this user's socket in such a folder, deleting none. It follows the editor one of whose
+  workspace folders holds the config's folder or the working directory, real paths
+  compared (`editorForRun`: the most specific, then the latest started), and sets
+  `PIWI_RUN_CHANNEL` to its run channel and `PIWI_RUN_REF` to `terminal-<pid>-<time>`
+  for the workers, which connect as an editor's run's do, with one `[Piwi Dashboard]`
+  line naming the editor and `PIWI_EDITOR=off` (`tests/terminal-run.spec.ts`).
 - With server coverage on, it calls each origin's `/__piwi/coverage/collect` and
   `/__piwi/coverage/run`, and reads the covered files from the checkout for their blob
   ids (`internal/collect/server-coverage.ts`, `test-coverage.ts`).
@@ -404,6 +472,9 @@ src/
                 PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in,
                 a stopped page's live view and the input played on it),
                 pick-at (the element under a point of an image of a stopped page),
+                agent-page (a stopped page read and acted on by a ref for an agent,
+                its browser bound for Playwright's tools), run-events (the test's
+                calls and page events, for an agent following the run),
                 kept-responses (the text bodies an interactive run keeps for
                 Mock a request), chain-locator (a locator chain's source built
                 against a page, for the locator at the editor's caret),
@@ -412,7 +483,8 @@ src/
                 (the authoring loop), interpreter (replay), check (`piwi ai check`)
     coverage-upload/  git-inventory, report-files (`piwi coverage upload`)
     config/     env (PIWI_* ↔ options, and the probe and flake-lab variables),
-                desktop (the desktop app's discovery file), dotenv (the `.env` reader)
+                desktop (the desktop app's discovery file), editors (the editor a run
+                started in a terminal follows), dotenv (the `.env` reader)
     probe/      probe mode: plan matching, faults, the shared route interception
                 (a matcher over route keys + an action), server-probe signing
     flake/      flake mode: the arm's plan, its conditions on the target's first

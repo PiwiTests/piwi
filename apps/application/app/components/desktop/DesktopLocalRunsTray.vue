@@ -5,8 +5,30 @@
  * desktop cousin of a browser's downloads tray. Mounted once in the default
  * layout; runs keep going while it is closed, and closing it never stops
  * anything. Renders nothing without the IPC bridge.
+ *
+ * Each run shows its workers live, as the bundled server, the hub of the runs
+ * the shell starts, tells them (`useDesktopRunHub`): the test each one runs
+ * and, at a stop, the page, the controls and the code a stop can make, to copy
+ * (`DesktopRunCopyList`). The window holds the hub's stream only while a run
+ * of the tray runs or the hub still has a live run: while it does, a headless
+ * stop waits for the window, so the tray opens on every stop it hears, and a
+ * notification says so of a failure or a `page.pause()` when the window is in
+ * the background. A running run's **Hold failures** switch, off by default
+ * and on from the start for a reproduction, makes a failure no pause bar shows
+ * wait at its line (`show`); a run nobody attends (a Flake Lab, a bisect, a
+ * run repeating its tests or in UI mode) holds none, and its switch says why.
  */
+import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
+import { isUnattendedDesktopRun } from '#shared/desktop-runs';
 import { flakeLabOutcome, type LocalRun } from '~/composables/useDesktopLocalRuns';
+import {
+  desktopHoldRefusal,
+  desktopHoldsByDefault,
+  desktopRunName,
+  desktopRunOf,
+  desktopStopPlace,
+  desktopWorkerTest,
+} from '~/utils/desktop-run-view';
 
 const store = useDesktopLocalRuns();
 const { runs, trayOpen, activeCount } = store;
@@ -14,6 +36,75 @@ const { runs, trayOpen, activeCount } = store;
 const available = ref(false);
 onMounted(() => {
   available.value = !!tauriCore();
+});
+
+const hub = useDesktopRunHub();
+const liveSessions = computed(() => Object.values(hub.state.sessions) as HubSession[]);
+
+/** The run of the tray a hub's run is, by the name its step gave it; none for a run another window started. */
+function runOf(session: HubSession): LocalRun | undefined {
+  const ref = desktopRunOf(session.ref);
+  return runs.value.find((run) => run.hubRefs.includes(ref));
+}
+
+/** The hub's live runs of a run of the tray: those of its steps' names. */
+function sessionsOf(run: LocalRun): HubSession[] {
+  return liveSessions.value.filter((session) => run.hubRefs.includes(desktopRunOf(session.ref)));
+}
+
+/** The hub's live runs no run of the tray names: another window of the app started them. */
+const otherSessions = computed(() => liveSessions.value.filter((session) => !runOf(session)));
+
+// The stream, only while it has something to show: a run of the tray runs, or the hub still has a live one.
+watch(
+  () => available.value && (activeCount.value > 0 || liveSessions.value.length > 0),
+  (on) => hub.want(on),
+  { immediate: true },
+);
+
+/** What the live region reads out: a test stopped, what a command answered. */
+const announcement = ref('');
+function announce(text: string) {
+  announcement.value = '';
+  requestAnimationFrame(() => {
+    announcement.value = text;
+  });
+}
+
+/**
+ * Every stop the window hears is shown: the tray opens on its run, and the live region reads it out. A failure and a
+ * `page.pause()` are also said by the system while the window is in the background; a step, a pause or a line run to,
+ * which the person's own controls asked for here or in Piwi Picker, is not.
+ */
+function heardStop(session: HubSession, worker: HubWorker) {
+  const stop = worker.stop;
+  if (!stop) return;
+  trayOpen.value = true;
+  const run = runOf(session);
+  if (run) expandedByKey.value = { ...expandedByKey.value, [run.key]: true };
+  const test = desktopWorkerTest(worker) ?? desktopRunName(session);
+  const place = desktopStopPlace(stop, session.root);
+  const said = stop.reason === 'failure' ? `${test} failed at ${place}.` : `${test} stopped at ${place}.`;
+  announce(said);
+  if (stop.reason !== 'failure' && stop.reason !== 'page-pause') return;
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  if (!document.hidden && document.hasFocus()) return;
+  try {
+    new Notification(stop.reason === 'failure' ? 'A test failed and waits' : 'A test waits at page.pause()', {
+      body: said,
+    });
+  } catch {
+    // Notifications unavailable in this webview — the tray still shows the stop.
+  }
+}
+
+let stopListening: (() => void) | null = null;
+onMounted(() => {
+  stopListening = hub.onStop(heardStop);
+});
+onBeforeUnmount(() => {
+  stopListening?.();
+  hub.want(false);
 });
 
 // This component is mounted once in the layout, which makes it the natural
@@ -31,6 +122,41 @@ function isExpanded(run: LocalRun): boolean {
 function toggleExpanded(run: LocalRun) {
   expandedByKey.value = { ...expandedByKey.value, [run.key]: !isExpanded(run) };
 }
+
+/** Each run's Hold failures choice; unset falls back to its kind's (`desktopHoldsByDefault`). */
+const holdByKey = ref<Record<number, boolean>>({});
+
+/** Why a run holds no failure whatever is chosen: one nobody attends, by its kind or as the hub names its steps. */
+function holdRefusal(run: LocalRun): string | null {
+  const refused = desktopHoldRefusal(run);
+  if (refused) return refused;
+  return sessionsOf(run).some((session) => isUnattendedDesktopRun(session.ref))
+    ? 'Nobody attends a run of this kind: it goes on past each failure.'
+    : null;
+}
+
+function holdsFailures(run: LocalRun): boolean {
+  return !holdRefusal(run) && (holdByKey.value[run.key] ?? desktopHoldsByDefault(run));
+}
+
+function setHold(run: LocalRun, on: boolean) {
+  holdByKey.value = { ...holdByKey.value, [run.key]: on };
+}
+
+/**
+ * The runs the window shows live, so a failure no pause bar shows is held in them: the running ones whose Hold failures
+ * is on, by each step's name as the step starts, before its workers connect, so a failure right after they do waits
+ * too. Opening or closing the tray, or a run's part of it, changes nothing.
+ */
+const shownRefs = computed(() => {
+  const held = runs.value.filter((run) => run.status === 'running' && holdsFailures(run));
+  return [...new Set(held.flatMap((run) => run.hubRefs))].sort();
+});
+watch(
+  () => shownRefs.value.join(' '),
+  () => hub.show(shownRefs.value),
+  { immediate: true },
+);
 
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
 
@@ -66,6 +192,8 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
 
 <template>
   <Teleport to="body">
+    <!-- Outside the tray, so a stop that opens it is read out from a region already there. -->
+    <p v-if="available" class="sr-only" aria-live="polite">{{ announcement }}</p>
     <section
       v-if="available && trayOpen"
       aria-label="Local runs"
@@ -96,17 +224,29 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
         />
       </header>
 
-      <div class="max-h-[60vh] overflow-y-auto divide-y divide-default">
-        <p v-if="runs.length === 0" class="px-3 py-6 text-sm text-muted text-center">
+      <div class="max-h-[70vh] overflow-y-auto divide-y divide-default">
+        <p v-if="runs.length === 0 && otherSessions.length === 0" class="px-3 py-6 text-sm text-muted text-center">
           No local runs yet — start one from a “Run locally” button.
         </p>
+
+        <DesktopRunCopyList :kept="hub.state.kept" :roots="hub.state.roots" />
+
+        <section v-if="otherSessions.length" aria-label="Other runs of the desktop app" class="px-3 py-2 space-y-2">
+          <DesktopRunSession
+            v-for="session in otherSessions"
+            :key="session.ref"
+            :session="session"
+            named
+            @announce="announce"
+          />
+        </section>
 
         <article v-for="run in runs" :key="run.key" class="px-3 py-2">
           <div class="flex items-center gap-2 min-w-0">
             <UBadge :color="badge(run).color" variant="subtle" size="sm" class="shrink-0">
               {{ badge(run).label }}
             </UBadge>
-            <span class="text-sm font-medium truncate shrink-0 max-w-40">
+            <span class="text-sm font-medium truncate min-w-0 max-w-40">
               {{ run.projectLabel || `Project ${run.projectId}` }}
             </span>
             <code class="text-[11px] text-muted truncate flex-1 min-w-0" :title="run.steps[run.stepIndex]?.display">
@@ -147,6 +287,24 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
               @click="toggleExpanded(run)"
             />
           </div>
+          <div
+            v-if="run.status === 'running'"
+            class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1"
+            data-shot="desktop-run-hold"
+          >
+            <USwitch
+              :model-value="holdsFailures(run)"
+              :disabled="!!holdRefusal(run)"
+              label="Hold failures"
+              size="sm"
+              :aria-describedby="`desktop-run-hold-${run.key}`"
+              :ui="{ label: 'text-xs font-medium' }"
+              @update:model-value="(on: boolean) => setHold(run, on)"
+            />
+            <p :id="`desktop-run-hold-${run.key}`" class="min-w-0 text-xs text-muted">
+              {{ holdRefusal(run) ?? 'A failing test waits at its line for you to look at it and resume.' }}
+            </p>
+          </div>
           <div v-if="run.piwiRunId != null" class="mt-1.5">
             <UButton
               size="xs"
@@ -159,7 +317,16 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
               Live in Piwi — Run #{{ run.piwiRunId }}
             </UButton>
           </div>
-          <DesktopLocalRunConsole v-if="isExpanded(run)" :lines="run.lines" class="mt-2" />
+          <template v-if="isExpanded(run)">
+            <DesktopRunSession
+              v-for="session in sessionsOf(run)"
+              :key="session.ref"
+              :session="session"
+              class="mt-2"
+              @announce="announce"
+            />
+            <DesktopLocalRunConsole :lines="run.lines" class="mt-2" />
+          </template>
         </article>
       </div>
     </section>

@@ -41,6 +41,18 @@ test.describe('showPauseBar', () => {
     expect(await page.evaluate(takePauseState)).toBe('record');
   });
 
+  test('offers End the test only where the test can end there, and never at a failure', async ({ page }) => {
+    await page.setContent('<!doctype html><html><body></body></html>');
+    const bar = page.getByRole('toolbar', { name: 'Piwi: test paused' });
+    await page.evaluate(showPauseBar, { ...ARG, end: true });
+    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Step', 'Pick a locator', 'Finish', 'End the test']);
+    await bar.getByRole('button', { name: 'End the test' }).click();
+    expect(await page.evaluate(takePauseState)).toBe('end');
+    await page.evaluate(showPauseBar, { ...ARG, end: true, failure: true });
+    await expect(bar.getByRole('button')).toHaveText(['Resume', 'Pick a locator']);
+    await page.evaluate(takePauseState);
+  });
+
   test('resumes on Escape, and leaves the attempt out of the first one', async ({ page }) => {
     await page.setContent('<!doctype html><html><body></body></html>');
     await page.evaluate(showPauseBar, { ...ARG, attempt: null, locator: null });

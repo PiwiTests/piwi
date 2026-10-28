@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { getCookie, getRequestHeader, setResponseHeader, type H3Event } from 'h3';
 import {
   DESKTOP_CHALLENGE_HEADER,
@@ -5,8 +6,10 @@ import {
   desktopTokenProof,
   isDesktopChallenge,
 } from '@piwitests/core/desktop-proof';
+import { DESKTOP_PICKS_PATH } from '#shared/desktop-runs';
 import { timingSafeEqualStr } from './timing-safe';
 import { bearerToken } from './bearer';
+import { isLoopbackRequest } from './assistant/turn-token';
 
 /**
  * Whether the request presents the desktop access token `token`, as any of:
@@ -25,6 +28,29 @@ export function presentsDesktopToken(event: H3Event, token: string): boolean {
     bearerToken(event) ||
     getRequestHeader(event, 'x-api-key');
   return !!presented && timingSafeEqualStr(presented, token);
+}
+
+let picksToken: string | null = null;
+
+/**
+ * The token the Playwright runs the desktop shell starts post the locators their tests pick with: the token of the
+ * address the run channel's route names (`PIWI_EDITOR_SEND`), minted once per server start, the first time it is
+ * asked for. It opens `POST /api/desktop/runs/picks` alone (`presentsDesktopPicksToken`), so a run's environment (its
+ * tests, its `webServer`, the logs and crash reports they write) never holds the desktop token.
+ */
+export function desktopPicksToken(): string {
+  picksToken ??= `pdp_${randomBytes(32).toString('hex')}`;
+  return picksToken;
+}
+
+/**
+ * Whether a request posts a run's pick with the picks token, from this machine (a loopback host, origin and peer): the
+ * one request that token opens, which the desktop guard lets through without the desktop token.
+ */
+export function presentsDesktopPicksToken(event: H3Event): boolean {
+  if (!picksToken || event.method !== 'POST' || (event.path || '').split('?')[0] !== DESKTOP_PICKS_PATH) return false;
+  const presented = bearerToken(event);
+  return !!presented && timingSafeEqualStr(presented, picksToken) && isLoopbackRequest(event);
 }
 
 /**
@@ -68,4 +94,14 @@ export async function answerDesktopChallenge(
   const port = event.node.req.socket?.localPort;
   if (!port || !isDesktopChallenge(challenge)) return;
   setResponseHeader(event, DESKTOP_PROOF_HEADER, await desktopTokenProof(token, port, challenge));
+}
+
+/**
+ * Whether a browser sent the request: it carries `Origin` or a `Sec-Fetch-*` header, which a browser sets itself on a
+ * page's or an extension's request, and which the desktop shell's own requests never carry.
+ */
+export function isBrowserRequest(event: H3Event): boolean {
+  return ['origin', 'sec-fetch-site', 'sec-fetch-mode', 'sec-fetch-dest'].some(
+    (name) => !!getRequestHeader(event, name),
+  );
 }

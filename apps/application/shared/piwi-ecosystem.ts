@@ -157,7 +157,7 @@ export const ECOSYSTEM_PIECES: EcosystemPiece[] = [
     id: 'mcp',
     name: 'MCP server',
     summary:
-      'Built into every dashboard at `/mcp`, with the same `pd_` API keys as the REST API: tools that give a coding agent your runs, failures, clusters, flaky tests, diagnoses, fix plans, locator healing, scenario gaps and bug reports, plus the `setup_piwi` prompt. The desktop app adds three tools that work on local files.',
+      'Built into every dashboard at `/mcp`, with the same `pd_` API keys as the REST API: tools that give a coding agent your runs, failures, clusters, flaky tests, diagnoses, fix plans, locator healing, scenario gaps and bug reports, plus the `setup_piwi` prompt. The desktop app adds three tools that work on local files, and tools that follow and steer the Playwright runs it starts.',
     get: 'Point an MCP client at `<dashboard>/mcp`; the dashboard’s MCP server page has per-client snippets, the desktop app writes client configs in one click, and the VS Code extension provides the server to the editor’s agent.',
     when: 'A coding agent should read your results and hand back fixes.',
     needs: [],
