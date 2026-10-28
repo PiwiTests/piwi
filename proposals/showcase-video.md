@@ -10,7 +10,7 @@ recording, the same script is a check that the tools still work together, which 
 
 **Status.** Proposed 2026-10-27. Nothing is built. Two measurements in the [appendix](#appendix-what-was-measured)
 settle how the screen is captured and how the cut is rendered. The story needs pieces of
-[`run-control.md`](run-control.md) that are not merged yet: the editor's controls (its PR 2, beats 4 and 8), the Runs
+[`run-control.md`](../adr/run-control.md) that are not merged yet: the editor's controls (its PR 2, beats 4 and 8), the Runs
 window (PR 3, beats 3 and 5), **Assert a region** (PR 4, beat 7), **Debug in my editor** (PR 7, beat 2) and the
 dashboard's live view (PR 8, beat 9). A first cut can be made once its PR 3 has shipped, with today's **Open in IDE**
 in place of **Debug in my editor** and the run page's **Live activity** in place of the live view. The release cut is
