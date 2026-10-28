@@ -24,7 +24,9 @@
  * (`RunStop.by`). Every surface can end the test at a stop (`end`, for a worker that takes it). A run started in a
  * terminal attaches as the editor's own do, under a ref the host never built (`terminal`): it starts with the editor's
  * breakpoints (`setEditorBreakpoints`), ends 5 s after its last worker left, and holds a failure only while a Runs
- * window follows the runs.
+ * window follows the runs. A person shares a run live on the team instance its reporter reports to (`share`, **Share
+ * live**, never an agent): each worker that takes it opens its live view stream there, a worker that connects later
+ * too, and says how it stands (`live`), which the session sums up (`RunSession.live`).
  */
 import * as path from 'node:path';
 import type * as net from 'node:net';
@@ -46,6 +48,7 @@ import {
   type RunEvent,
   type RunHold,
   type RunIntent,
+  type RunLiveState,
   type RunQuery,
   type RunTake,
   type RunToHub,
@@ -60,11 +63,13 @@ import type {
   PickAtResult,
   RunControlParams,
   RunControlResult,
+  RunLive,
   RunSession,
   RunStop,
   RunTest,
   SetBreakpointsParams,
   SetRunBreakpointsParams,
+  ShareRunParams,
 } from './protocol.js';
 import type { HubAction } from '@piwitests/core/run-hub';
 import { relativeTo } from './workspace.js';
@@ -216,6 +221,18 @@ const QUERY_WORDS: Record<Query, string> = {
 /** Why the input of a viewer that does not watch the stop is refused. */
 const NEEDS_VIEW = 'The input needs the live view of this stop: watch it first.';
 
+/** Why a run none of whose workers said how it stands on the instance yet is not shared. */
+const NOT_SAID = "The run's workers have not said yet whether it can be shared live: try again in a moment.";
+
+/** The host of a run page's address, as a sentence names the instance; the address itself when it has none. */
+function instanceOf(page: string): string {
+  try {
+    return new URL(page).host || page;
+  } catch {
+    return page;
+  }
+}
+
 export interface RunSessionsOptions {
   /** A session changed, or ended: the client hears it. */
   notify(session: RunSession): void;
@@ -301,6 +318,8 @@ interface Worker {
   requests: Map<number, { what: Asked; settle(value: Answered): void }>;
   /** An agent asked the worker to stop (Pause, Step, Run to), and it has not stopped since, nor anyone asked otherwise. */
   askedBy: 'agent' | null;
+  /** How its run stands on the team instance's live view, as it last said (`live`); null before it said. */
+  live: RunLiveState | null;
   /**
    * The live view of its stop while viewers watch it: the stop, its viewers, the worker's answer to starting it, and
    * whether it started. Null when nobody watches, and as the stop ends.
@@ -327,13 +346,17 @@ interface Session {
   stoppedAt: number;
   /** The client heard that a stop of this run was resumed for it. */
   resumedSaid: boolean;
+  /** Whether a person shared the run live (`share`), or stopped; null while nobody asked. */
+  share: boolean | null;
+  /** The run's live view as it was last summed up, kept while no worker that says it is connected. */
+  live: RunLive | null;
 }
 
 /**
  * What a request asks a worker: an image, what it takes but the click counts its input carries, its events, the
  * agent's requests and End the test (a control), and each of the agent's requests.
  */
-type Asked = 'image' | Exclude<RunTake, 'input-clicks' | 'events' | 'agent' | 'end'> | AgentQuery;
+type Asked = 'image' | Exclude<RunTake, 'input-clicks' | 'events' | 'agent' | 'end' | 'share'> | AgentQuery;
 
 /** The request asking a worker `what`, at the stop `stop` but for an image. */
 function requestOf(request: number, what: Asked, stop: number, extra: RequestExtra): HubToRun {
@@ -455,6 +478,8 @@ export class RunSessions {
         linger: null,
         stoppedAt: 0,
         resumedSaid: false,
+        share: null,
+        live: null,
       };
       this.sessions.set(attach.ref, session);
       // A terminal's run starts with the editor's breakpoints, as lines of its code: the files as they stand now.
@@ -476,6 +501,7 @@ export class RunSessions {
       requests: new Map(),
       view: null,
       askedBy: null,
+      live: null,
     };
     session.workers.set(worker.index, worker);
     // A worker of that index whose connection closed, before its close was heard.
@@ -492,6 +518,8 @@ export class RunSessions {
     if (breakpoints) this.sendBreakpoints(worker, breakpoints, session.root);
     if (this.followedRuns.has(attach.ref) && worker.takes.has('events'))
       this.send(worker, { type: 'events', on: true });
+    // A worker that comes later follows the sharing as a person left it.
+    if (session.share !== null && worker.takes.has('share')) this.send(worker, { type: 'share', on: session.share });
     this.changed(session);
     this.options.heard?.(attach.ref, worker.index, { type: 'joined' }, session.root);
     return (line) => this.read(own, worker, line);
@@ -521,6 +549,54 @@ export class RunSessions {
     for (const worker of this.sessions.get(ref)?.workers.values() ?? []) {
       if (worker.takes.has('events')) this.send(worker, { type: 'events', on });
     }
+  }
+
+  /**
+   * `piwi/shareRun`: share the run of `ref` live on the team instance its reporter reports to (`on`), or stop: each
+   * worker that takes it opens or closes its stream there, and a worker that connects later follows. Refused, with
+   * why, for a run whose reporter predates it, or none of whose workers can be shared.
+   */
+  share(params: ShareRunParams): RunControlResult {
+    const refuse = (message: string): RunControlResult => ({ ok: false, message });
+    const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
+    if (!session?.workers.size) return refuse(`No worker of this run is connected to ${this.host}.`);
+    if (typeof params.on !== 'boolean') return refuse('Share live needs on: true to share the run, false to stop.');
+    const workers = [...session.workers.values()].filter((w) => w.takes.has('share'));
+    if (!workers.length) {
+      const reporter = [...session.workers.values()][0]!.reporter;
+      return refuse(`@piwitests/reporter ${reporter}`.trimEnd() + ' cannot share a run live: update it.');
+    }
+    const live = this.liveOf(session);
+    if (params.on && !workers.some((w) => w.live?.can)) return refuse(live?.refused ?? NOT_SAID);
+    session.share = params.on;
+    for (const worker of workers) this.send(worker, { type: 'share', on: params.on });
+    this.changed(session, true);
+    const instance = live?.page ? instanceOf(live.page) : 'the instance';
+    return {
+      ok: true,
+      message: params.on
+        ? `Sharing the run live on ${instance}: whoever may open it there can watch its tests' pages while someone does.`
+        : `Stopped sharing the run: nothing more goes to ${instance}.`,
+    };
+  }
+
+  /**
+   * How the run stands on the team instance's live view, summed up from what its workers said: shared as a person
+   * left it (a CI run's as its workers stream), why it cannot be when none of them can, its page, and the people who
+   * watch. Kept as it was while no worker that says it is connected; none for a run whose reporter predates it.
+   */
+  private liveOf(session: Session): RunLive | undefined {
+    const states = [...session.workers.values()].flatMap((w) => (w.takes.has('share') && w.live ? [w.live] : []));
+    if (!states.length) return session.live ? { ...session.live, viewers: 0 } : undefined;
+    const can = states.some((state) => state.can);
+    const on = states.some((state) => state.on);
+    session.live = {
+      shared: session.share === null ? on : session.share && can,
+      refused: can ? null : (states.find((state) => state.why)?.why ?? NOT_SAID),
+      page: states.find((state) => state.page)?.page ?? null,
+      viewers: states.reduce((sum, state) => sum + (state.on ? state.viewers : 0), 0),
+    };
+    return session.live;
   }
 
   /**
@@ -1208,6 +1284,16 @@ export class RunSessions {
       }
       case 'notice':
         return this.options.notice(session.root ?? worker.cwd, 'warning', message.message);
+      case 'live': {
+        const before = worker.live;
+        const { type: _type, ...state } = message;
+        worker.live = state;
+        // A sharing that stopped though nobody asked says why, once, where the person shared it.
+        if (session.share && before?.on && !state.on && state.why && state.why !== before.why) {
+          this.options.notice(session.root ?? worker.cwd, 'warning', state.why);
+        }
+        return this.changed(session, true);
+      }
     }
   }
 
@@ -1290,7 +1376,7 @@ export class RunSessions {
 
   /** A session as the client hears it. */
   private view(session: Session): RunSession {
-    return {
+    const view: RunSession = {
       ref: session.ref,
       root: session.root,
       workers: [...session.workers.values()]
@@ -1307,6 +1393,8 @@ export class RunSessions {
       ended: session.ended,
       ...(session.terminal ? { terminal: true } : {}),
     };
+    const live = this.liveOf(session);
+    return live ? { ...view, live } : view;
   }
 
   private flush(session: Session): void {

@@ -219,6 +219,7 @@ import {
   AGENTS_CHANGED_NOTIFICATION,
   STOP_BIND_REQUEST,
   RUN_CONTROL_REQUEST,
+  SHARE_RUN_REQUEST,
   RUN_SESSION_NOTIFICATION,
   SET_BREAKPOINTS_NOTIFICATION,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
@@ -265,6 +266,7 @@ import {
   type StopBindParams,
   type StopBindResult,
   type RunControlParams,
+  type ShareRunParams,
   type RunControlResult,
   type SetBreakpointsParams,
   type SetRunBreakpointsParams,
@@ -3555,6 +3557,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   connection.onRequest(RUN_CONTROL_REQUEST, (params: RunControlParams): RunControlResult =>
     runSessions.control(params),
   );
+
+  connection.onRequest(SHARE_RUN_REQUEST, (params: ShareRunParams): RunControlResult => runSessions.share(params));
 
   connection.onNotification(SET_RUN_BREAKPOINTS_NOTIFICATION, (params: SetRunBreakpointsParams) =>
     runSessions.setBreakpoints(debugRuns.breakpoints(params)),
