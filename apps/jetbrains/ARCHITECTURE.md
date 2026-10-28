@@ -767,6 +767,14 @@ gutter popup, at a stop whose worker takes `bind`: `Glue.canShare`) asks first (
 the browser (`Glue.sharedText`), with **Copy the Command** and **Stop Sharing**. A stop an agent asked for reads
 `Paused by the agent · …` (`RunStop.by`, `Glue.pausedText`).
 
+**Share the Run Live** (`ShareRunLiveAction`, `Piwi.ShareRunLive`, while a run is live) shares a run on the team
+instance its reporter reports to (`piwi/shareRun` through `RunRemote.shareRun`, `RunSession.live`): the only run it
+fits, else the one chosen (`Glue.liveTarget`). The first share in the project's session of the IDE asks what goes out
+and to whom (`MessageDialogBuilder.yesNo`, `Glue.shareLiveWarning`); a run that cannot be shared is asked without it,
+and the service says why. Shared, the notification offers **Copy the Run Page's Link** and **Stop Sharing**, as does
+**Stop Sharing the Run Live** (`StopSharingRunAction`, while one is shared). The status bar item says how many watch
+(`Glue.liveStatus`, `Glue.runControlStatus` at a stop), its tooltip where (`Glue.sharedLiveText`).
+
 ## Platform compatibility
 
 **The oldest supported platform is 2024.1** (`pluginSinceBuild=241`): the first whose LSP API sends requests through

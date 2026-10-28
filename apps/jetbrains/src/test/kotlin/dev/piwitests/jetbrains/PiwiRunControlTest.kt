@@ -27,6 +27,7 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.RegisterToolWindowTask
 import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.TestDialog
 import com.intellij.openapi.ui.TestDialogManager
 import com.intellij.testFramework.PlatformTestUtil
@@ -62,6 +63,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private var image: PausedImage? = null
     private val picks = CopyOnWriteArrayList<PickAtParams>()
     private val binds = CopyOnWriteArrayList<StopBindParams>()
+    private val shares = CopyOnWriteArrayList<ShareRunParams>()
     private var picked = PickAtResult(true, "getByRole('button', { name: 'Pay now' }) went to the editor, in place of the locator on the stopped line.", "getByRole('button', { name: 'Pay now' })")
     /** The version of a document the IDE gave the service: none until the platform tells it the document opened. */
     private var version: (Document) -> Int? = { (it as DocumentEx).modificationSequence }
@@ -75,6 +77,15 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             override fun control(params: RunControlParams): RunControlResult {
                 controls += params
                 return RunControlResult(true, "Asked.")
+            }
+
+            override fun shareRun(params: ShareRunParams): RunControlResult {
+                shares += params
+                return if (params.ref == "ed-off") {
+                    RunControlResult(false, "This run cannot be shared live: its project's live view is off on the instance.")
+                } else {
+                    RunControlResult(true, if (params.on) "Sharing the run live on piwi.example.com." else "Stopped sharing the run.")
+                }
             }
 
             override fun pausedPage(params: PausedPageParams): PausedPageResult {
@@ -424,6 +435,53 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         // A stop whose reporter does not take it offers none.
         hear(taking("ed-9", file, 4, "2026-10-25T10:00:09.500Z"))
         assertFalse(myFixture.testAction(share).isEnabled)
+    }
+
+    /**
+     * Share the Run Live asks what it sends the first time in the IDE's session alone, and shares nothing on a no; a
+     * run that cannot be shared is asked without the warning, and the service says why; Stop Sharing applies once a run
+     * is.
+     */
+    fun testARunIsSharedLiveOnlyOnceThePersonSaidYesTheFirstTime() {
+        val page = "https://piwi.example.com/test-runs/42"
+        val share = ActionManager.getInstance().getAction("Piwi.ShareRunLive")
+        val stop = ActionManager.getInstance().getAction("Piwi.StopSharingRun")
+        hear(running("ed-live").copy(live = RunLive(false, null, page, 0)))
+        assertFalse(myFixture.testAction(stop).isEnabled)
+        // The warning names what goes out, and to whom.
+        val asked = mutableListOf<String>()
+        TestDialogManager.setTestDialog { message ->
+            asked += message
+            Messages.NO
+        }
+        try {
+            assertTrue(myFixture.testAction(share).isEnabled)
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(listOf(Glue.shareLiveWarning(page)), asked)
+        assertTrue(shares.isEmpty())
+        TestDialogManager.setTestDialog(TestDialog.OK)
+        try {
+            myFixture.testAction(share)
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        assertEquals(ShareRunParams("ed-live", true), waitFor("the share") { shares.firstOrNull() })
+        // Shared once, the IDE asks no more in this session.
+        hear(running("ed-live").copy(live = RunLive(false, null, page, 0)))
+        TestDialogManager.setTestDialog { throw AssertionError("asked again") }
+        try {
+            myFixture.testAction(share)
+            waitFor("the second share") { shares.getOrNull(1) }
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        hear(running("ed-live").copy(live = RunLive(true, null, page, 2)))
+        assertEquals("Piwi: shared live · 2 watching", Glue.liveStatus(sessions.controls()))
+        assertTrue(myFixture.testAction(stop).isEnabled)
+        assertEquals(ShareRunParams("ed-live", false), waitFor("the stop") { shares.getOrNull(2) })
     }
 
     /** A failure the IDE holds: its own icon and words, Resume alone among the controls, then the code actions. */

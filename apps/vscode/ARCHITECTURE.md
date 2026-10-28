@@ -379,6 +379,15 @@ the hover and the palette offer **Piwi: Share the stopped test's browser with Pl
 (`npx playwright cli attach piwi-<ref>-w<n>`), with **Copy the command** and **Stop sharing**. The browser is shared
 until the test ends, never by an agent.
 
+**Share live.** **Piwi: Share the run live on the team instance** (`piwi.shareRunLive`, while a run is live) shares a
+run on the team instance its reporter reports to (`piwi/shareRun`, `RunSession.live`), for a teammate to watch from
+the run page: the command's run, else the only one it fits, else the one chosen (`liveTarget`). The first share in the
+window warns, in a modal, what goes out and to whom (`shareLiveWarning`), and only a yes sends it; a run that cannot be
+shared is asked without it, and the service says why. Shared, the answer offers **Copy the run page's link** and **Stop
+sharing**. The status bar's item (`liveItem`) offers Share live to a run that can be shared (`$(broadcast)`) and says
+how many watch a shared one (`$(broadcast) Live · 2 watching`), whose click stops sharing it
+(`piwi.stopSharingRun`, the `piwi.runSharedLive` context key).
+
 `src/run-control.ts` is the pure half, tested without an editor (`tests/run-control.test.ts`). The API `activate`
 returns gives the sessions (`runSessions`), the lines drawn as the execution point (`executionPoints`), what the
 paused page shows (`pausedPage`) and what the cursor's line says (`caretCount`).

@@ -92,6 +92,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   options (`agentsOptions`), never in `.idea/workspace.xml`, and a token it answers or tells (`piwi/agentsChanged`)
   replaces the one kept (`agentsHeard`); no agent can share a browser (`piwi/stopBind` is the IDE's). Checked by
   `PiwiRunControlTest`. ([MCP server configuration](ARCHITECTURE.md#mcp-server-configuration))
+- **A run is shared live on the team instance only from the person's action, after `Glue.shareLiveWarning` the first
+  time in the project's session**, as the VS Code extension does (`PiwiRunSessions.shareLive`); a run that cannot be
+  shared is asked without it, for the service to say why. Checked by `PiwiRunControlTest`
+  (`testARunIsSharedLiveOnlyOnceThePersonSaidYesTheFirstTime`) and `GlueTest`.
 - **An `mcp-remote` entry runs one exact release over HTTP alone** (`Glue.MCP_REMOTE`, `--transport http-only`), for
   the instance's servers and the runs' alike. Checked by `GlueTest`.
 - **An instance on this machine is never reached through the IDE's proxy.** Connect tries every loopback address

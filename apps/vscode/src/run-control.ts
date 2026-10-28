@@ -4,7 +4,8 @@
  * each stopped worker stands, what the controls and the code actions offer in each state, the line shown above a
  * stop, the stop a control acts on, the breakpoints sent to each run as they change, the page a stop shows as an
  * image, the responses Mock a request lists, the count of the locator at the cursor, the code a stop sends to write,
- * and the edits of the documents since a run started, which map a line of the run's code to the document as it stands
+ * a run shared live on the team instance (Share live: what it sends, how it stands), and the edits of the documents
+ * since a run started, which map a line of the run's code to the document as it stands
  * and back.
  */
 import type {
@@ -12,6 +13,7 @@ import type {
   LocatorAtCaretParams,
   LocatorAtCaretResult,
   PausedImage,
+  RunLive,
   RunSession,
   RunStop,
   RunTake,
@@ -273,7 +275,90 @@ export const RUN_COMMANDS = {
   mock: 'piwi.mockAtStop',
   code: 'piwi.codeAtStop',
   share: 'piwi.shareWithPlaywright',
+  shareLive: 'piwi.shareRunLive',
+  stopSharing: 'piwi.stopSharingRun',
 } as const;
+
+/** A run of the sessions that its reporter can share live on the team instance, and how it stands there. */
+export interface LiveRun {
+  ref: string;
+  live: RunLive;
+}
+
+/** The runs of the sessions whose reporter shares them live, in their order. */
+export function liveRunsOf(sessions: Sessions): LiveRun[] {
+  return [...sessions.values()].flatMap((s) => (s.live ? [{ ref: s.ref, live: s.live }] : []));
+}
+
+/** The instance a run's page is on, as a sentence names it (its host); null without a page. */
+export function liveInstance(live: Pick<RunLive, 'page'>): string | null {
+  if (!live.page) return null;
+  try {
+    return new URL(live.page).host || null;
+  } catch {
+    return null;
+  }
+}
+
+/** What Share live sends, and who sees it, asked before the window shares a run for the first time. */
+export function shareLiveWarning(live: Pick<RunLive, 'page'>): string {
+  const instance = liveInstance(live) ?? 'the Piwi instance it reports to';
+  return (
+    `Share this run live on ${instance}? While someone watches it there, each worker sends images of its test's ` +
+    'page, each with the call it was taken at, and says when its test is paused. Anyone who can open the run on ' +
+    'that instance can watch it. Nothing is stored, and Stop sharing ends it at once.'
+  );
+}
+
+/** How a run shared live stands, as the status bar and the answers say it: where, and how many watch. */
+export function liveText(live: RunLive): string {
+  const instance = liveInstance(live);
+  const where = instance ? `Shared live on ${instance}` : 'Shared live';
+  if (live.viewers === 0) return `${where}: nobody watches yet`;
+  return `${where}: ${live.viewers === 1 ? '1 person watches' : `${live.viewers} people watch`}`;
+}
+
+/**
+ * The status bar item of Share live while a run is live: a shared run says where and how many watch, and stops being
+ * shared on a click; else a run that can be shared offers it. None while no run can be shared: the command says why.
+ */
+export function liveItem(sessions: Sessions): ControlItem | null {
+  const runs = liveRunsOf(sessions);
+  const shared = runs.find((r) => r.live.shared);
+  if (shared) {
+    const { viewers } = shared.live;
+    return {
+      text: viewers > 0 ? `$(broadcast) Live · ${viewers} watching` : '$(broadcast) Live',
+      tooltip: `Piwi: ${liveText(shared.live)}. Click to stop sharing the run.`,
+      command: RUN_COMMANDS.stopSharing,
+    };
+  }
+  const shareable = runs.find((r) => !r.live.refused);
+  if (!shareable) return null;
+  const instance = liveInstance(shareable.live);
+  return {
+    text: '$(broadcast)',
+    tooltip: `Piwi: Share the run live${instance ? ` on ${instance}` : ''}, for a teammate to watch from its page`,
+    command: RUN_COMMANDS.shareLive,
+  };
+}
+
+/**
+ * The run a Share live command acts on: the one it names, else the only one it can act on, else null to choose among
+ * `candidates` (more than one); `none` says why there is nothing to act on.
+ */
+export function liveTarget(
+  sessions: Sessions,
+  on: boolean,
+): { ref: string } | { candidates: string[] } | { none: string } {
+  if (!sessions.size) return { none: 'no run started from the editor is running.' };
+  const runs = liveRunsOf(sessions);
+  const fit = on ? runs.filter((r) => !r.live.shared && !r.live.refused) : runs.filter((r) => r.live.shared);
+  if (!on && !fit.length) return { none: 'no run is shared live.' };
+  // None can be shared: the service says why, for the first run.
+  const candidates = (fit.length ? fit.map((r) => r.ref) : [...sessions.keys()]).slice(0, fit.length ? undefined : 1);
+  return candidates.length === 1 ? { ref: candidates[0]! } : { candidates };
+}
 
 /** A control or a code action offered at a stop: its title above the stopped line, and its command. */
 export interface StopControl {
@@ -401,6 +486,8 @@ export interface ControlState {
   actions: StopActionKind[];
   /** A stop's browser can be shared with Playwright's own tools. */
   shareable: boolean;
+  /** A run is shared live on the team instance: Stop sharing. */
+  liveShared: boolean;
 }
 
 export function controlState(sessions: Sessions): ControlState {
@@ -415,6 +502,7 @@ export function controlState(sessions: Sessions): ControlState {
     endable: stopsOf(sessions).some(canEnd),
     actions: STOP_ACTIONS.filter((a) => offered.has(a.action)).map((a) => a.action),
     shareable: stopsOf(sessions).some(canShare),
+    liveShared: liveRunsOf(sessions).some((r) => r.live.shared),
   };
 }
 

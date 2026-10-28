@@ -17,7 +17,9 @@
  * (`piwi/setBreakpoints`). A run's lines are those of the documents as they stood when it started: the edits since
  * (`EditLog`) bring a stop to the line it stands on now, and a breakpoint or the cursor's line back to the run's. A
  * stop's browser is shared with Playwright's own tools only when asked, each time, after a warning (`piwi/stopBind`).
- * The pure half is `run-control.ts`.
+ * **Share live** shares a run on the team instance its reporter reports to (`piwi/shareRun`), after a warning the first
+ * time in this window, and **Stop sharing** ends it; the status bar says how a shared run stands and offers it to a run
+ * that can be shared. The pure half is `run-control.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
@@ -28,6 +30,7 @@ import {
   PICK_AT_REQUEST,
   RUN_CONTROL_REQUEST,
   SET_BREAKPOINTS_NOTIFICATION,
+  SHARE_RUN_REQUEST,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
   STOP_ACTION_REQUEST,
   STOP_BIND_REQUEST,
@@ -43,6 +46,7 @@ import {
   type RunPlace,
   type RunSession,
   type SetBreakpointsParams,
+  type ShareRunParams,
   type StopActionKind,
   type StopActionParams,
   type StopActionResult,
@@ -67,6 +71,8 @@ import {
   imageClickOf,
   lineEditOf,
   linesAbove,
+  liveItem,
+  liveTarget,
   pagePoint,
   pausedPageHtml,
   pausedText,
@@ -75,6 +81,7 @@ import {
   requestPicks,
   runStarted,
   runTargetArg,
+  shareLiveWarning,
   sharedText,
   spelledSession,
   stopActions,
@@ -149,6 +156,7 @@ const ITEM_ORDER = [
   RUN_COMMANDS.pause,
   'pausing',
   RUN_COMMANDS.stop,
+  'live',
 ];
 
 /** The commands the lens's and the hover's links run. */
@@ -202,6 +210,8 @@ export function registerRunControl(
   let pageShows: ShownStop | null = null;
   /** The images the view showed that a click picks on, counted: a click names the one it was on. */
   let pickable = 0;
+  /** Share live said what it sends in this window: it asks no more. */
+  let liveWarned = false;
 
   /** Where the edits are mapped from for a run: its start, else when it was first heard. */
   const sinceOf = (ref: string) => runs.get(ref)?.since ?? edits.now();
@@ -262,9 +272,11 @@ export function registerRunControl(
       void vscode.commands.executeCommand('setContext', a.key, state.actions.includes(a.action));
     }
     void vscode.commands.executeCommand('setContext', 'piwi.runCanShare', state.shareable);
+    void vscode.commands.executeCommand('setContext', 'piwi.runSharedLive', state.liveShared);
     const shown = new Set<string>();
-    for (const control of controlItems(state)) {
-      const key = control.command ?? 'pausing';
+    const live = liveItem(sessions);
+    for (const control of [...controlItems(state), ...(live ? [{ ...live, key: 'live' }] : [])]) {
+      const key = 'key' in control ? control.key : (control.command ?? 'pausing');
       shown.add(key);
       const i = item(key);
       i.text = control.text;
@@ -569,6 +581,48 @@ export function registerRunControl(
     }
   };
 
+  /**
+   * Share a run live on the team instance (`on`), or stop sharing it: the command's run, else the only one it fits,
+   * else the one chosen. The first share in this window says what goes out and to whom, and waits for a yes; a run
+   * that cannot be shared is asked anyway, and the service says why. Shared, the answer offers the run page's link.
+   */
+  const shareLive = async (arg: unknown, on: boolean) => {
+    const named = runTargetArg(arg);
+    const target = named ? { ref: named.ref } : liveTarget(sessions, on);
+    if ('none' in target) return say(target.none);
+    let ref = 'ref' in target ? target.ref : null;
+    if (!ref && 'candidates' in target) {
+      const picked = await vscode.window.showQuickPick(
+        target.candidates.map((candidate) => ({
+          label: sessions.get(candidate)?.root ?? candidate,
+          description: candidate,
+          ref: candidate,
+        })),
+        { placeHolder: on ? 'Share which run live?' : 'Stop sharing which run?' },
+      );
+      ref = picked?.ref ?? null;
+    }
+    if (!ref) return;
+    const live = sessions.get(ref)?.live;
+    if (on && live && !live.refused && !liveWarned) {
+      const yes = 'Share live';
+      if ((await vscode.window.showWarningMessage(`Piwi: ${shareLiveWarning(live)}`, { modal: true }, yes)) !== yes) {
+        return;
+      }
+      liveWarned = true;
+    }
+    const answer = await lc
+      .sendRequest<RunControlResult>(SHARE_RUN_REQUEST, { ref, on } satisfies ShareRunParams)
+      .catch(() => null);
+    if (!answer) return say('the editor service did not answer.');
+    if (!answer.ok || !on || !live?.page) return say(answer.message);
+    const copy = "Copy the run page's link";
+    const stop = 'Stop sharing';
+    const picked = await vscode.window.showInformationMessage(`Piwi: ${answer.message}`, copy, stop);
+    if (picked === copy) await vscode.env.clipboard.writeText(live.page);
+    if (picked === stop) await shareLive({ ref }, false);
+  };
+
   /** The code actions of a stop, to choose one: the command's stop, the caret's or the one chosen. */
   const chooseAction = async (arg: unknown) => {
     const stop = await chooseStop(arg, (s) => stopActions(s).length > 0);
@@ -776,6 +830,8 @@ export function registerRunControl(
     ),
     vscode.commands.registerCommand(RUN_COMMANDS.code, (arg?: unknown) => chooseAction(arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.share, (arg?: unknown) => share(arg)),
+    vscode.commands.registerCommand(RUN_COMMANDS.shareLive, (arg?: unknown) => shareLive(arg, true)),
+    vscode.commands.registerCommand(RUN_COMMANDS.stopSharing, (arg?: unknown) => shareLive(arg, false)),
     {
       dispose: () => {
         items.forEach((i) => i.dispose());

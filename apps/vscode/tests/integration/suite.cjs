@@ -688,6 +688,27 @@ const tests = {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   },
 
+  async 'a run shared live on the team instance stops being shared from the palette'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const ref = 'ed-5a1e0001';
+    const page = 'https://piwi.example.com/test-runs/42';
+    const { socket, send, heardOne } = runWorker(api.lastRun().env.PIWI_RUN_CHANNEL, ref, ['share']);
+    const sessionOf = () => api.runSessions().find((s) => s.ref === ref);
+    try {
+      // A worker that streams from the start, as a CI run's does: the run reads as shared, with who watches it.
+      send({ type: 'live', can: true, on: true, viewers: 2, page, why: null });
+      await waitFor(() => sessionOf()?.live?.shared, 'the shared run');
+      assert.deepEqual(sessionOf().live, { shared: true, refused: null, page, viewers: 2 });
+      const commands = await vscode.commands.getCommands(true);
+      assert.ok(commands.includes('piwi.stopSharingRun'));
+      await vscode.commands.executeCommand('piwi.stopSharingRun');
+      await heardOne('the end of the sharing', (m) => m.type === 'share' && m.on === false);
+    } finally {
+      socket.destroy();
+    }
+    await waitFor(() => !sessionOf(), 'the end of the shared run');
+  },
+
   async 'code from a stop: Assert and Mock write above the stopped line, the cursor’s locator is counted, and a failure stops'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const run = api.lastRun();
@@ -1072,6 +1093,8 @@ const tests = {
       'piwi.mockAtStop',
       'piwi.codeAtStop',
       'piwi.shareWithPlaywright',
+      'piwi.shareRunLive',
+      'piwi.stopSharingRun',
       'piwi.copyRunsMcpConfiguration',
     ]) {
       assert.ok(commands.includes(id), id);

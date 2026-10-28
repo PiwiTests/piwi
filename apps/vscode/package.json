@@ -446,6 +446,17 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.shareRunLive",
+        "title": "Share the run live on the team instance",
+        "category": "Piwi",
+        "icon": "$(broadcast)"
+      },
+      {
+        "command": "piwi.stopSharingRun",
+        "title": "Stop sharing the run live",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.codeAtStop",
         "title": "Write code at the stop…",
         "category": "Piwi",
@@ -589,6 +600,14 @@
         {
           "command": "piwi.shareWithPlaywright",
           "when": "piwi.runCanShare"
+        },
+        {
+          "command": "piwi.shareRunLive",
+          "when": "piwi.runActive"
+        },
+        {
+          "command": "piwi.stopSharingRun",
+          "when": "piwi.runSharedLive"
         },
         {
           "command": "piwi.codeAtStop",

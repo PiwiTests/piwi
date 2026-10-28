@@ -24,6 +24,10 @@ import {
   imageClickOf,
   lineEditOf,
   linesAbove,
+  liveInstance,
+  liveItem,
+  liveTarget,
+  liveText,
   PICK_HINT,
   pagePoint,
   pausedPageHtml,
@@ -33,6 +37,7 @@ import {
   requestPicks,
   runStarted,
   runTargetArg,
+  shareLiveWarning,
   sharedText,
   sizeText,
   spelledSession,
@@ -158,8 +163,10 @@ describe('what the controls offer', () => {
       endable: false,
       actions: [],
       shareable: false,
+      liveShared: false,
     });
     expect(controlItems(controlState(new Map()))).toEqual([]);
+    expect(liveItem(new Map())).toBeNull();
   });
 
   test('sharing with Playwright tools at a stop whose reporter takes it alone', () => {
@@ -193,6 +200,7 @@ describe('what the controls offer', () => {
         endable: false,
         actions: [],
         shareable: false,
+        liveShared: false,
       });
       expect(controlItems(shown).map((i) => i.command)).toEqual(['piwi.pauseRun', 'piwi.stopRun']);
     }
@@ -209,6 +217,7 @@ describe('what the controls offer', () => {
       endable: false,
       actions: [],
       shareable: false,
+      liveShared: false,
     });
     expect(controlItems(pausing).map((i) => [i.text, i.command])).toEqual([
       ['$(loading~spin) Pausing…', null],
@@ -234,6 +243,7 @@ describe('what the controls offer', () => {
       endable: false,
       actions: [],
       shareable: false,
+      liveShared: false,
     });
     expect(controlItems(shown).map((i) => [i.command, i.tooltip])).toEqual([
       ['piwi.resumeRun', 'Piwi: Resume (F5)'],
@@ -273,6 +283,56 @@ describe('what the controls offer', () => {
     // A run of this window's beside it can be stopped.
     const both = controlState(sessionsOf(terminal, session('ed-1', [worker(0, 'running')])));
     expect(controlItems(both).map((i) => i.command)).toContain('piwi.stopRun');
+  });
+});
+
+describe('Share live', () => {
+  const page = 'https://piwi.example.com/test-runs/42';
+  const live = (ref: string, extra: Partial<NonNullable<RunSession['live']>> = {}): RunSession => ({
+    ...session(ref, [worker(0, 'running', { takes: ['share'] })]),
+    live: { shared: false, refused: null, page, viewers: 0, ...extra },
+  });
+
+  test('says what it sends and to whom before the first share, naming the instance', () => {
+    expect(liveInstance({ page })).toBe('piwi.example.com');
+    expect(liveInstance({ page: null })).toBeNull();
+    const warning = shareLiveWarning({ page });
+    expect(warning).toMatch(/^Share this run live on piwi\.example\.com\? /);
+    expect(warning).toContain("images of its test's page, each with the call it was taken at");
+    expect(warning).toContain('Anyone who can open the run on that instance can watch it.');
+    expect(shareLiveWarning({ page: null })).toContain('the Piwi instance it reports to');
+  });
+
+  test('offers a run that can be shared in the status bar, and none that cannot, whose command says why', () => {
+    expect(liveItem(sessionsOf(live('ed-1')))).toEqual({
+      text: '$(broadcast)',
+      tooltip: 'Piwi: Share the run live on piwi.example.com, for a teammate to watch from its page',
+      command: 'piwi.shareRunLive',
+    });
+    const refused = live('ed-2', { refused: "This run cannot be shared live: its project's live view is off." });
+    expect(liveItem(sessionsOf(refused))).toBeNull();
+    expect(liveItem(sessionsOf(session('ed-3', [worker(0, 'running')])))).toBeNull();
+    // The command asks the service anyway, which says why.
+    expect(liveTarget(sessionsOf(refused), true)).toEqual({ ref: 'ed-2' });
+    expect(liveTarget(new Map(), true)).toEqual({ none: 'no run started from the editor is running.' });
+  });
+
+  test('says how a shared run stands, and stops sharing it from the status bar', () => {
+    const shared = sessionsOf(live('ed-1', { shared: true, viewers: 2 }));
+    expect(controlState(shared).liveShared).toBe(true);
+    expect(liveItem(shared)).toEqual({
+      text: '$(broadcast) Live · 2 watching',
+      tooltip: 'Piwi: Shared live on piwi.example.com: 2 people watch. Click to stop sharing the run.',
+      command: 'piwi.stopSharingRun',
+    });
+    expect(liveText({ shared: true, refused: null, page, viewers: 0 })).toBe(
+      'Shared live on piwi.example.com: nobody watches yet',
+    );
+    expect(liveText({ shared: true, refused: null, page: null, viewers: 1 })).toBe('Shared live: 1 person watches');
+    expect(liveTarget(shared, false)).toEqual({ ref: 'ed-1' });
+    expect(liveTarget(sessionsOf(live('ed-1')), false)).toEqual({ none: 'no run is shared live.' });
+    // Two runs that can be shared: the person chooses.
+    expect(liveTarget(sessionsOf(live('ed-1'), live('ed-2')), true)).toEqual({ candidates: ['ed-1', 'ed-2'] });
   });
 });
 
