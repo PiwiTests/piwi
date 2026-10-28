@@ -122,7 +122,35 @@ export class DeveloperBrowser {
       .locator('body')
       .innerText()
       .catch(() => '');
-    throw new Error(`${error.message}; the Runs window says: ${said.replace(/\s+/g, ' ').trim().slice(0, 400)}`);
+    // What the worker holds of the pairing: the address and the length of the token, never the token.
+    const worker = this.context.serviceWorkers().at(-1) ?? this.worker;
+    const held = await worker
+      .evaluate(async () => {
+        const local = await chrome.storage.local.get(null);
+        const keys = Object.keys(local).filter((key) => /pair/i.test(key));
+        const editor = await new Promise((resolve) => {
+          const request = indexedDB.open('piwi-secrets');
+          request.onerror = () => resolve(`not opened: ${request.error}`);
+          request.onsuccess = () => {
+            try {
+              const read = request.result.transaction('secrets', 'readonly').objectStore('secrets').get('editor');
+              read.onsuccess = () => resolve(read.result);
+              read.onerror = () => resolve(`not read: ${read.error}`);
+            } catch (why) {
+              resolve(`no store: ${why}`);
+            }
+          };
+        });
+        const shown =
+          editor && typeof editor === 'object'
+            ? { url: editor.url, token: typeof editor.token === 'string' ? `${editor.token.length} chars` : null }
+            : editor;
+        return JSON.stringify({ local: keys.map((key) => [key, local[key]]), editor: shown ?? null });
+      })
+      .catch((why) => `the worker did not answer: ${why.message}`);
+    throw new Error(
+      `${error.message}; the Runs window says: ${said.replace(/\s+/g, ' ').trim().slice(0, 400)}; the worker holds ${held}`,
+    );
   }
 
   async close() {
