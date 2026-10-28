@@ -8,7 +8,8 @@ import { recordRouteMeta, underRoutePermission, type RouteAccessState, type Rout
 
 /**
  * Who reaches a run's live view: watching a worker needs what opening the run needs, in a project with the live view
- * on; a worker's stream and posts need a key of that run, while it is live; a post is bounded.
+ * on; a worker's stream and posts need a key of that run, while it is live and its project's live view is on, and an
+ * interrupted run keeps its keys for the worker to try again; a post is bounded.
  */
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
@@ -96,11 +97,12 @@ beforeEach(async () => {
     { id: 20, projectId: 2, status: 'running', startTime: new Date() },
     { id: 30, projectId: 3, status: 'running', startTime: new Date() },
     { id: 11, projectId: 1, status: 'passed', startTime: new Date() },
+    { id: 12, projectId: 1, status: 'interrupted', startTime: new Date() },
   ]);
 });
 
 afterEach(async () => {
-  for (const runId of [10, 11, 20, 30]) liveViewRelay.endRun(runId);
+  for (const runId of [10, 11, 12, 20, 30]) liveViewRelay.endRun(runId);
   await close();
 });
 
@@ -148,5 +150,17 @@ describe("a worker's stream and posts", () => {
     expect(await refusal(post, event(10, {}, { authorization: `Bearer ${key}` }))).toBe(413);
     // Every request is counted, refused ones too.
     expect(liveViewRelay.countsFor(10).requests).toBe(7);
+  });
+
+  test('need the project’s live view on: a key minted as it turned off opens nothing', async () => {
+    const key = liveViewRelay.mintKey(30, 3)!;
+    expect(await refusal(stream, event(30, { worker: '0' }, { authorization: `Bearer ${key}` }))).toBe(404);
+    expect(liveViewRelay.authorize(30, key)).toBeNull();
+  });
+
+  test('are refused for a while as the run is interrupted, its key kept for when it goes on', async () => {
+    const key = liveViewRelay.mintKey(12, 1)!;
+    expect(await refusal(stream, event(12, { worker: '0' }, { authorization: `Bearer ${key}` }))).toBe(409);
+    expect(liveViewRelay.authorize(12, key)).not.toBeNull();
   });
 });

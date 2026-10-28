@@ -3,7 +3,13 @@
  * carries (`live-worker`), and the messages of one worker's view (`/api/test-runs/:id/live-view/watch`). The worker's
  * side of the protocol is `@piwitests/core/live-view`.
  */
-import { readLiveCall, type LiveCall, type LiveStop } from '@piwitests/core/live-view';
+import {
+  readLiveCall,
+  readLiveTestTitle,
+  type LiveCall,
+  type LiveStop,
+  type LiveWorkerId,
+} from '@piwitests/core/live-view';
 
 export { liveWorkerKey, type LiveCall, type LiveStop } from '@piwitests/core/live-view';
 
@@ -15,19 +21,24 @@ export interface LiveWorkerState {
   paused: LiveStop | null;
 }
 
-/** Why a view ended. */
-export type LiveViewEnd = 'test-ended' | 'worker-left' | 'run-ended' | 'off';
+/** How the run page names a worker: its index, and its shard in a sharded run. */
+export function liveWorkerName(id: LiveWorkerId): string {
+  return id.shard === null ? `worker ${id.worker}` : `worker ${id.worker} of shard ${id.shard}`;
+}
+
+/** Why a view ended: the person who watched it opened a further one of the run, past their share, in its place. */
+export type LiveViewEnd = 'test-ended' | 'worker-left' | 'run-ended' | 'off' | 'replaced';
 
 /** A message of one worker's view, to the person watching it. */
 export type LiveViewerMessage =
-  /** A frame of the test's page, a JPEG in base64, and the call it was taken at. */
-  | { type: 'frame'; data: string; call: LiveCall | null }
+  /** A frame of the test's page, a JPEG in base64, the call it was taken at and the title of its test. */
+  | { type: 'frame'; data: string; call: LiveCall | null; test: string | null }
   /** Why no frame shows now. */
   | { type: 'refused'; message: string }
   /** The view ended: the stream closes after it. */
   | { type: 'end'; reason: LiveViewEnd };
 
-const ENDS: readonly string[] = ['test-ended', 'worker-left', 'run-ended', 'off'];
+const ENDS: readonly string[] = ['test-ended', 'worker-left', 'run-ended', 'off', 'replaced'];
 
 /** A message of a view's stream (the `data` of one event); null when it is not one. */
 export function parseLiveViewerMessage(data: string): LiveViewerMessage | null {
@@ -42,7 +53,12 @@ export function parseLiveViewerMessage(data: string): LiveViewerMessage | null {
   switch (message.type) {
     case 'frame':
       if (typeof message.data !== 'string' || !message.data) return null;
-      return { type: 'frame', data: message.data, call: message.call ? readLiveCall(message.call) : null };
+      return {
+        type: 'frame',
+        data: message.data,
+        call: message.call ? readLiveCall(message.call) : null,
+        test: readLiveTestTitle(message.test),
+      };
     case 'refused':
       return typeof message.message === 'string' ? { type: 'refused', message: message.message.slice(0, 500) } : null;
     case 'end':
@@ -58,4 +74,5 @@ export const LIVE_VIEW_END_TEXT: Record<LiveViewEnd, string> = {
   'worker-left': 'The worker left the run.',
   'run-ended': 'The run ended.',
   off: "The project's live view was turned off.",
+  replaced: 'You opened another view of this run in its place.',
 };
