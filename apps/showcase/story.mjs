@@ -67,6 +67,7 @@ const runCard = (runs) => runs.getByRole('region', { name: 'shop' }).and(runs.lo
 export const STORY = [
   beat({
     id: 'title',
+    title: 'Piwi',
     seconds: 4,
     focus: ['card'],
     lines: { en: ['From a red run to a fixed test, without leaving your flow.'] },
@@ -74,6 +75,7 @@ export const STORY = [
 
   beat({
     id: 'red-run',
+    title: 'The red run',
     seconds: 22,
     focus: ['dashboard'],
     lines: {
@@ -150,6 +152,7 @@ export const STORY = [
 
   beat({
     id: 'to-the-editor',
+    title: 'To the editor',
     seconds: 14,
     focus: ['dashboard', 'vscode'],
     lines: {
@@ -183,6 +186,7 @@ export const STORY = [
 
   beat({
     id: 'run-followed',
+    title: 'The run, followed',
     seconds: 10,
     focus: ['test-browser', 'runs'],
     lines: { en: ["The test's browser opens beside the editor,", 'and Piwi Picker follows the run.'] },
@@ -222,6 +226,7 @@ export const STORY = [
 
   beat({
     id: 'paused',
+    title: 'Paused',
     seconds: 14,
     focus: ['vscode', 'test-browser', 'runs'],
     lines: {
@@ -261,6 +266,7 @@ export const STORY = [
 
   beat({
     id: 'right-locator',
+    title: 'The right locator',
     seconds: 18,
     focus: ['runs', 'test-browser', 'vscode'],
     lines: {
@@ -287,6 +293,7 @@ export const STORY = [
 
   beat({
     id: 'missing-step',
+    title: 'The missing step',
     seconds: 18,
     focus: ['vscode', 'test-browser', 'vscode'],
     lines: {
@@ -319,6 +326,7 @@ export const STORY = [
 
   beat({
     id: 'check-order',
+    title: 'Check the order',
     seconds: 18,
     focus: ['runs', 'vscode', 'test-browser', 'vscode'],
     lines: {
@@ -361,6 +369,7 @@ export const STORY = [
 
   beat({
     id: 'green',
+    title: 'Green',
     seconds: 8,
     focus: ['runs', 'vscode'],
     lines: { en: ['Resume: the test passes, and the editor shows it.'] },
@@ -395,6 +404,7 @@ export const STORY = [
 
   beat({
     id: 'back-on-the-team',
+    title: 'Back on the team',
     seconds: 22,
     focus: ['dashboard'],
     budget: 240_000,
@@ -475,6 +485,7 @@ export const STORY = [
 
   beat({
     id: 'coda',
+    title: 'The coding agent',
     seconds: 18,
     focus: ['vscode', 'test-browser', 'runs', 'vscode'],
     budget: 240_000,
@@ -518,7 +529,7 @@ export const STORY = [
         const now = await editor.clipboard();
         return now !== copied && now.includes('piwi-runs') ? now : null;
       }, "the runs' MCP configuration on the clipboard");
-      const agent = new Agent(runsServer(configuration));
+      const agent = new Agent(runsServer(configuration), (call) => gesture.note('an agent calls a run tool', { call }));
       await agent.connect();
       const { piwi: list } = await agent.tool('run_list');
       const stopped = list.runs
@@ -559,6 +570,7 @@ export const STORY = [
 
   beat({
     id: 'end',
+    title: 'Get Piwi',
     seconds: 6,
     focus: ['card'],
     lines: {
