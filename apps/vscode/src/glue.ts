@@ -759,6 +759,22 @@ export function mcpConfiguration(servers: McpServerDefinition[]): string {
   return JSON.stringify({ servers: Object.fromEntries(entries) }, null, 2);
 }
 
+/** How the editor's agent lists the MCP server of the runs this window starts. */
+export const RUNS_MCP_LABEL = 'Piwi runs';
+
+/** The header an agent sends the runs' MCP server: its bearer token. */
+export function runsMcpHeaders(token: string): Record<string, string> {
+  return { Authorization: `Bearer ${token}` };
+}
+
+/**
+ * A VS Code `mcp.json` holding the MCP server of the runs this window starts, for an agent outside the editor (an
+ * agent's CLI in a terminal): the address and the token stay while the window keeps them.
+ */
+export function runsMcpConfiguration(url: string, token: string): string {
+  return JSON.stringify({ servers: { 'piwi-runs': { type: 'http', url, headers: runsMcpHeaders(token) } } }, null, 2);
+}
+
 /** How the agent signs in to an instance's MCP server that is handed no key (`piwi.mcpAuthorization`: `sign-in`). */
 export const MCP_SIGN_IN = 'The first time the agent connects, it opens the instance in your browser to sign in.';
 

@@ -15,6 +15,7 @@ import {
   EditLog,
   MAX_IMAGE_DATA,
   breakpointUpdates,
+  canShare,
   caretText,
   controlItems,
   controlState,
@@ -31,6 +32,7 @@ import {
   requestPicks,
   runStarted,
   runTargetArg,
+  sharedText,
   sizeText,
   spelledSession,
   stopActions,
@@ -152,21 +154,55 @@ describe('what the controls offer', () => {
       pausing: false,
       stopped: false,
       actions: [],
+      shareable: false,
     });
     expect(controlItems(controlState(new Map()))).toEqual([]);
+  });
+
+  test('sharing with Playwright tools at a stop whose reporter takes it alone', () => {
+    const at = (takes: RunTake[]) =>
+      sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5), takes })]));
+    expect(controlState(at(['bind'])).shareable).toBe(true);
+    expect(controlState(at(['pick'])).shareable).toBe(false);
+    expect(canShare(stopsOf(at(['bind']))[0]!)).toBe(true);
+    expect(
+      sharedText({
+        ok: true,
+        message: 'Shared.',
+        name: 'piwi-ed-1-w0',
+        command: 'npx playwright cli attach piwi-ed-1-w0',
+      }),
+    ).toBe('Shared. Join it with: npx playwright cli attach piwi-ed-1-w0');
+    expect(sharedText({ ok: false, message: 'The test went on.', name: null, command: null })).toBe(
+      'The test went on.',
+    );
   });
 
   test('Pause and Stop while a test runs or a worker is between tests', () => {
     for (const state of ['running', 'between'] as const) {
       const shown = controlState(sessionsOf(session('ed-1', [worker(0, state)])));
-      expect(shown).toEqual({ active: true, pausable: true, pausing: false, stopped: false, actions: [] });
+      expect(shown).toEqual({
+        active: true,
+        pausable: true,
+        pausing: false,
+        stopped: false,
+        actions: [],
+        shareable: false,
+      });
       expect(controlItems(shown).map((i) => i.command)).toEqual(['piwi.pauseRun', 'piwi.stopRun']);
     }
   });
 
   test('Pausing… once a Pause reached the worker, and Stop alone while its test cannot stop', () => {
     const pausing = controlState(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true })])));
-    expect(pausing).toEqual({ active: true, pausable: false, pausing: true, stopped: false, actions: [] });
+    expect(pausing).toEqual({
+      active: true,
+      pausable: false,
+      pausing: true,
+      stopped: false,
+      actions: [],
+      shareable: false,
+    });
     expect(controlItems(pausing).map((i) => [i.text, i.command])).toEqual([
       ['$(loading~spin) Pausing…', null],
       ['$(debug-stop)', 'piwi.stopRun'],
@@ -182,7 +218,14 @@ describe('what the controls offer', () => {
     const shown = controlState(
       sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) }), worker(1, 'running')])),
     );
-    expect(shown).toEqual({ active: true, pausable: true, pausing: false, stopped: true, actions: [] });
+    expect(shown).toEqual({
+      active: true,
+      pausable: true,
+      pausing: false,
+      stopped: true,
+      actions: [],
+      shareable: false,
+    });
     expect(controlItems(shown).map((i) => [i.command, i.tooltip])).toEqual([
       ['piwi.resumeRun', 'Piwi: Resume (F5)'],
       ['piwi.stepRun', 'Piwi: Step to the next call (F10)'],
@@ -199,6 +242,10 @@ describe('a stop', () => {
       'Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · attempt 2',
     );
     expect(pausedText(stopAt(spec, 5), null)).toBe('Paused · Fill "WELCOME10" getByLabel(\'Coupon\')');
+    // A stop an agent asked for says so.
+    expect(pausedText({ ...stopAt(spec, 5), by: 'agent' }, null)).toBe(
+      'Paused by the agent · Fill "WELCOME10" getByLabel(\'Coupon\')',
+    );
   });
 
   test('is each stopped worker of each run, told apart by its run, worker and time', () => {

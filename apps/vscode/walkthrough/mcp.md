@@ -8,3 +8,7 @@ Piwi's MCP server lets a coding agent read your suite: the failures of a run, th
   your API key: paste it into your user settings, not into the repository.
 
 In the Failures view, **Copy context for agent** copies one failure, with its healing and fix plan, for any agent.
+
+A second server, **Piwi runs**, gives the agent the test runs this window starts: it can follow a run, stop it, read
+and act on the stopped page, and have Piwi write the code there, which you see in the editor and can undo. VS Code
+lists it too; for an agent in a terminal, **Piwi: Copy the runs' MCP server configuration for agents** copies it.

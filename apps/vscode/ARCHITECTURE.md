@@ -98,6 +98,16 @@ the extension provides Piwi's MCP server through it. The API is looked up at run
 oldest version `vscode-languageclient` supports, for Cursor and VSCodium. Once per machine, a notification says where
 the server went, or, in an editor without that API, offers to copy its configuration (`offerMcp`).
 
+**The runs' MCP server.** The service serves the runs this window starts to the agents of this machine
+([Agents](../../packages/editor/ARCHITECTURE.md#agents)) once the extension asks (`piwi/agents`, with
+`piwi.serveRunsToAgents`): as the service starts and after each of its restarts (`onDidChangeState`), and as the
+setting changes. The extension provides it beside Piwi's own, as the provider `piwi.runs` (**Piwi runs**), an HTTP
+definition with the token as a bearer `Authorization` header (`runsMcpHeaders`), changed as the service answers. The
+token is the window's (`piwi.agentsToken` in `SecretStorage`, made once) and the port the last one the service
+listened at (`piwi.agentsPort`), both in the initialization options (`agents`), so **Piwi: Copy the runs' MCP server
+configuration for agents** (`piwi.copyRunsMcpConfiguration`, `runsMcpConfiguration`) gives an agent outside the
+editor a configuration that still connects after a restart, while the port stays free.
+
 ### Proxy and the log
 
 The service's environment is the extension host's, with the editor's proxy settings on top (`serviceEnvironment` in
@@ -125,23 +135,25 @@ The settings (`contributes.configuration` in `package.json`):
 | `piwi.runNotifications` | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)).                                                |
 | `piwi.failureSeverity`  | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
 | `piwi.mcpAuthorization` | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
+| `piwi.serveRunsToAgents` | `true`, `false`                         | The runs this window starts served to agents (**Piwi runs**).                                   |
 | `piwi.testExplorer`     | `true`, `false`                          | Piwi's tests in the Testing view ([Testing view](#testing-view)).                               |
 | `piwi.trace.server`     | `off`, `messages`, `verbose`             | The traffic with the service in the log.                                                        |
 
 What the extension stores:
 
-- **`SecretStorage`**: the API key of each instance (`piwi.apiKey <url>`) and the Send to editor token
-  (`piwi.sendToken`). The old key slot shared by every instance (`piwi.apiKey`) is deleted once (`forgetSharedKey`).
+- **`SecretStorage`**: the API key of each instance (`piwi.apiKey <url>`), the Send to editor token
+  (`piwi.sendToken`) and the runs' MCP server's token (`piwi.agentsToken`). The old key slot shared by every instance (`piwi.apiKey`) is deleted once (`forgetSharedKey`).
 - **Global state** (this machine): `piwi.walkthroughOpened`, `piwi.mcpOffered`, `piwi.sendPort`,
   `piwi.sharedKeyForgotten`.
 - **Workspace state** (this machine and this workspace, never a file the team shares): the desktop app chosen with
   Connect and its project (`piwi.desktop`, `piwi.desktopProject`, `piwi.desktopOffered`), the baselines
-  (`piwi.baseline`), `piwi.coverageShown`, `piwi.failuresGrouping`, `piwi.followEditor`, and a recording's choices
-  (`piwi.recordStartUrl`, `piwi.recordPage`, `piwi.recordProject`).
+  (`piwi.baseline`), `piwi.coverageShown`, `piwi.failuresGrouping`, `piwi.followEditor`, a recording's choices
+  (`piwi.recordStartUrl`, `piwi.recordPage`, `piwi.recordProject`), and the runs' MCP server's port
+  (`piwi.agentsPort`).
 
 The context keys the extension sets, which `package.json` reads in `when` clauses: `piwi.active`, `piwi.failuresView`,
 `piwi.followEditor`, `piwi.hasCoverage`, `piwi.recording`, `piwi.recordingPaused`, and the run control's
-`piwi.runActive`, `piwi.runPausable`, `piwi.runStopped` and `piwi.runResumed` ([Run control](#run-control)).
+`piwi.runActive`, `piwi.runPausable`, `piwi.runStopped`, `piwi.runResumed` and `piwi.runCanShare` ([Run control](#run-control)).
 
 ## Walkthrough
 
@@ -345,7 +357,14 @@ moved with the edits; another is mapped back through them. They go only to a run
 command started with or was last sent (`breakpointUpdates`), and once to a run as its first worker connects.
 
 **A held failure** (`reason: 'failure'`) is `Failed · <how it failed> · attempt N` after `$(error)`, with Resume alone
-among its controls.
+among its controls. A stop an agent asked for (`RunStop.by: 'agent'`) reads `Paused by the agent · <title>`.
+
+**Share with Playwright tools.** At a stop whose worker takes `bind` (`canShare`, the `piwi.runCanShare` context key),
+the hover and the palette offer **Piwi: Share the stopped test's browser with Playwright tools**
+(`piwi.shareWithPlaywright`). It warns first, in a modal, that any process of the user can then drive the browser
+(`SHARE_WARNING`), and only a yes sends `piwi/stopBind`; the answer names the command that joins it
+(`npx playwright cli attach piwi-<ref>-w<n>`), with **Copy the command** and **Stop sharing**. The browser is shared
+until the test ends, never by an agent.
 
 `src/run-control.ts` is the pure half, tested without an editor (`tests/run-control.test.ts`). The API `activate`
 returns gives the sessions (`runSessions`), the lines drawn as the execution point (`executionPoints`), what the

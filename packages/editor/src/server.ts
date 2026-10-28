@@ -3520,6 +3520,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const opened = await agentOpening;
       if (opened && (shutDown || !agentWanted || (agentServer && agentServer !== opened))) opened.close();
       else if (!agentServer) agentServer = opened;
+      // Turned off and on again, it listens at the same address with the same token.
+      if (agentServer) agentPrefs = { port: agentServer.port, token: agentServer.token };
     }
     return agentServer
       ? {

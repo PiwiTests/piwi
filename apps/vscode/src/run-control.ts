@@ -18,6 +18,7 @@ import type {
   RunTest,
   SetRunBreakpointsParams,
   StopActionKind,
+  StopBindResult,
   StopCode,
   StopRequest,
 } from '@piwitests/editor/protocol';
@@ -214,7 +215,23 @@ export function stopKey(stop: ShownStop): string {
 export function pausedText(stop: RunStop, test: RunTest | null): string {
   const attempt = test && test.retry > 0 ? ` · attempt ${test.retry + 1}` : '';
   if (stop.reason === 'failure') return `Failed · ${stop.title.replace(/^Failed:\s*/, '')}${attempt}`;
-  return `Paused · ${stop.title}${attempt}`;
+  // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching.
+  return `Paused${stop.by === 'agent' ? ' by the agent' : ''} · ${stop.title}${attempt}`;
+}
+
+/** Whether a stop's browser can be shared with Playwright's own tools: its reporter takes `bind`. */
+export function canShare(stop: ShownStop): boolean {
+  return stop.takes.includes('bind');
+}
+
+/** What sharing a stopped browser with Playwright's own tools risks, asked before it is shared. */
+export const SHARE_WARNING =
+  "Share the stopped test's browser with Playwright tools? Until the test ends, any process of yours can then drive it, read its pages and run code in them (playwright-cli attach, Playwright's dashboard).";
+
+/** What a shared browser's answer says, with the command that joins it. */
+export function sharedText(result: StopBindResult): string {
+  if (!result.ok || !result.name) return result.message;
+  return `${result.message} Join it with: ${result.command}`;
 }
 
 /** The icon before a stop's line: a failure's, else the pause's. */
@@ -237,6 +254,7 @@ export const RUN_COMMANDS = {
   assertRegion: 'piwi.assertRegionAtStop',
   mock: 'piwi.mockAtStop',
   code: 'piwi.codeAtStop',
+  share: 'piwi.shareWithPlaywright',
 } as const;
 
 /** A control or a code action offered at a stop: its title above the stopped line, and its command. */
@@ -349,6 +367,8 @@ export interface ControlState {
   stopped: boolean;
   /** The code actions a stop offers, any stop. */
   actions: StopActionKind[];
+  /** A stop's browser can be shared with Playwright's own tools. */
+  shareable: boolean;
 }
 
 export function controlState(sessions: Sessions): ControlState {
@@ -360,6 +380,7 @@ export function controlState(sessions: Sessions): ControlState {
     pausing: workers.some((w) => w.pausing),
     stopped: workers.some((w) => w.state === 'stopped'),
     actions: STOP_ACTIONS.filter((a) => offered.has(a.action)).map((a) => a.action),
+    shareable: stopsOf(sessions).some(canShare),
   };
 }
 

@@ -13,8 +13,9 @@
  * the end of the cursor's line in its file says how many elements the locator there matches on the stopped page
  * (`piwi/locatorAtCaret`). The editor's breakpoints go to each live run as they change
  * (`piwi/setRunBreakpoints`). A run's lines are those of the documents as they stood when it started: the edits since
- * (`EditLog`) bring a stop to the line it stands on now, and a breakpoint or the cursor's line back to the run's. The
- * pure half is `run-control.ts`.
+ * (`EditLog`) bring a stop to the line it stands on now, and a breakpoint or the cursor's line back to the run's. A
+ * stop's browser is shared with Playwright's own tools only when asked, each time, after a warning (`piwi/stopBind`).
+ * The pure half is `run-control.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
@@ -26,6 +27,7 @@ import {
   RUN_CONTROL_REQUEST,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
   STOP_ACTION_REQUEST,
+  STOP_BIND_REQUEST,
   STOP_REQUESTS_REQUEST,
   type LocatorAtCaretResult,
   type PausedPageParams,
@@ -40,6 +42,8 @@ import {
   type StopActionKind,
   type StopActionParams,
   type StopActionResult,
+  type StopBindParams,
+  type StopBindResult,
   type StopCode,
   type StopRequestsParams,
   type StopRequestsResult,
@@ -48,8 +52,10 @@ import {
   CaretCounts,
   EditLog,
   RUN_COMMANDS,
+  SHARE_WARNING,
   STOP_ACTIONS,
   breakpointUpdates,
+  canShare,
   controlItems,
   controlState,
   heardSession,
@@ -64,6 +70,7 @@ import {
   requestPicks,
   runStarted,
   runTargetArg,
+  sharedText,
   spelledSession,
   stopActions,
   stopCodeNotice,
@@ -139,6 +146,7 @@ const STOP_COMMANDS = [
   RUN_COMMANDS.runTo,
   RUN_COMMANDS.finish,
   RUN_COMMANDS.showPage,
+  RUN_COMMANDS.share,
   ...STOP_ACTIONS.map((a) => a.command),
 ];
 
@@ -239,6 +247,7 @@ export function registerRunControl(
     for (const a of STOP_ACTIONS) {
       void vscode.commands.executeCommand('setContext', a.key, state.actions.includes(a.action));
     }
+    void vscode.commands.executeCommand('setContext', 'piwi.runCanShare', state.shareable);
     const shown = new Set<string>();
     for (const control of controlItems(state)) {
       const key = control.command ?? 'pausing';
@@ -264,11 +273,13 @@ export function registerRunControl(
       ...(stop.stop.bar ? [] : [{ title: 'Show the page', command: RUN_COMMANDS.showPage }]),
     ].map(link);
     const actions = stopActions(stop).map(link);
+    const share = canShare(stop) ? [link({ title: 'Share with Playwright tools', command: RUN_COMMANDS.share })] : [];
     const hover = new vscode.MarkdownString(
       [
         markdown(pausedText(stop.stop, stop.test)),
         controls.join(' · '),
         ...(actions.length ? [actions.join(' · ')] : []),
+        ...share,
       ].join('\n\n'),
     );
     hover.isTrusted = { enabledCommands: STOP_COMMANDS };
@@ -495,6 +506,41 @@ export function registerRunControl(
     else if (!answer.ok || action !== 'mock') say(answer.message);
   };
 
+  /**
+   * Share a stop's browser with Playwright's own tools until its test ends: the command's stop, the caret's or the one
+   * chosen, once the person said yes to the warning. The answer names the command that joins it, to copy, and offers
+   * to stop sharing.
+   */
+  const share = async (arg: unknown) => {
+    const stop = await chooseStop(arg, canShare);
+    if (stop === 'went-on') return say('the test went on.');
+    if (!stop) return say('no test is stopped.');
+    if (!canShare(stop))
+      return say('the stopped test’s reporter cannot share its browser: update @piwitests/reporter.');
+    const yes = 'Share';
+    if ((await vscode.window.showWarningMessage(`Piwi: ${SHARE_WARNING}`, { modal: true }, yes)) !== yes) return;
+    const bind = (on: boolean) =>
+      lc
+        .sendRequest<StopBindResult>(STOP_BIND_REQUEST, {
+          ref: stop.ref,
+          worker: stop.worker,
+          since: stop.stop.since,
+          on,
+        } satisfies StopBindParams)
+        .catch(() => null);
+    const shared = await bind(true);
+    if (!shared) return say('the editor service did not answer.');
+    if (!shared.ok || !shared.command) return say(shared.message);
+    const copy = 'Copy the command';
+    const unshare = 'Stop sharing';
+    const picked = await vscode.window.showWarningMessage(`Piwi: ${sharedText(shared)}`, copy, unshare);
+    if (picked === copy) await vscode.env.clipboard.writeText(shared.command);
+    if (picked === unshare) {
+      const stopped = await bind(false);
+      say(stopped?.message ?? 'the editor service did not answer.');
+    }
+  };
+
   /** The code actions of a stop, to choose one: the command's stop, the caret's or the one chosen. */
   const chooseAction = async (arg: unknown) => {
     const stop = await chooseStop(arg, (s) => stopActions(s).length > 0);
@@ -700,6 +746,7 @@ export function registerRunControl(
       vscode.commands.registerCommand(a.command, (arg?: unknown) => startAction(a.action, arg)),
     ),
     vscode.commands.registerCommand(RUN_COMMANDS.code, (arg?: unknown) => chooseAction(arg)),
+    vscode.commands.registerCommand(RUN_COMMANDS.share, (arg?: unknown) => share(arg)),
     {
       dispose: () => {
         items.forEach((i) => i.dispose());

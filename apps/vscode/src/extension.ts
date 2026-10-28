@@ -63,6 +63,7 @@ import {
 import {
   FILE_SUMMARY_REQUEST,
   MCP_REQUEST,
+  AGENTS_REQUEST,
   REFRESH_REQUEST,
   REFRESH_RUN_REQUEST,
   RENDER_STEPS_REQUEST,
@@ -91,6 +92,8 @@ import {
   type SetBaselineParams,
   type FileSummary,
   type McpServersResult,
+  type AgentsParams,
+  type AgentsResult,
   type RenderStepsResult,
   type RunCommand,
   type RunCommandArgs,
@@ -138,6 +141,9 @@ import {
   MCP_SIGN_IN,
   mcpAuthorizationNote,
   mcpConfiguration,
+  RUNS_MCP_LABEL,
+  runsMcpConfiguration,
+  runsMcpHeaders,
   ownLiveRun,
   refreshingText,
   failingRuns,
@@ -199,6 +205,13 @@ const RUN_TASK_TYPE = 'piwi';
 const SHARED_SECRET_KEY = 'piwi.apiKey';
 const SHARED_KEY_FORGOTTEN = 'piwi.sharedKeyForgotten';
 const MCP_OFFERED = 'piwi.mcpOffered';
+/**
+ * The token of the MCP server the service serves the runs of this window's workspace to agents with (`SecretStorage`,
+ * the same on every machine's window), and its port (`workspaceState`): an agent's configuration copied once still
+ * connects after a restart.
+ */
+const AGENTS_TOKEN = 'piwi.agentsToken';
+const AGENTS_PORT = 'piwi.agentsPort';
 const WALKTHROUGH_OPENED = 'piwi.walkthroughOpened';
 const SEND_TOKEN = 'piwi.sendToken';
 const SEND_PORT = 'piwi.sendPort';
@@ -256,6 +269,8 @@ export interface PiwiApi {
   pickOnPage(message: unknown): Promise<void>;
   /** What the end of the cursor's line says of the locator there while a test is stopped; null while it says nothing. */
   caretCount(): CaretShown | null;
+  /** The MCP server the runs are served to agents at, as the service last answered; null while it is off. */
+  agents(): AgentsResult | null;
 }
 
 /** A failures view node, or what a command names it by. */
@@ -349,6 +364,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   });
   const serverOptions = { run: service(), debug: service() } satisfies ServerOptions;
   handed = await credentials(context);
+  const agentsToken = await keptAgentsToken(context);
   let credentialsTimer: ReturnType<typeof setTimeout> | null = null;
   const credentialsChanged = () => {
     if (credentialsTimer) clearTimeout(credentialsTimer);
@@ -385,6 +401,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       credentials: handed ?? undefined,
       runControl: true,
       stopCode: true,
+      // The runs' MCP server for agents listens at the port and with the token this window keeps.
+      agents: { port: context.workspaceState.get<number>(AGENTS_PORT) ?? null, token: agentsToken },
     }),
   };
   const lc = new LanguageClient('piwi', 'Piwi', serverOptions, clientOptions);
@@ -1260,7 +1278,60 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const lm = (vscode as unknown as { lm?: Partial<McpApi> }).lm;
   const McpHttpServerDefinition = (vscode as unknown as { McpHttpServerDefinition?: McpHttpServerDefinitionClass })
     .McpHttpServerDefinition;
+  /**
+   * The runs this window starts, served to the agents of this machine (`piwi/agents`), unless `piwi.serveRunsToAgents`
+   * is off: asked as the service starts, again after each of its restarts and as the setting changes. The port it
+   * listens at is kept for the next start.
+   */
+  let agents: AgentsResult | null = null;
+  const runsMcpChanged = new vscode.EventEmitter<void>();
+  context.subscriptions.push(runsMcpChanged);
+  const agentsChanged = async () => {
+    const enabled = vscode.workspace.getConfiguration('piwi').get<boolean>('serveRunsToAgents') ?? true;
+    const answer = await lc
+      .sendRequest<AgentsResult>(AGENTS_REQUEST, { enabled } satisfies AgentsParams)
+      .catch(() => null);
+    const before = JSON.stringify(agents);
+    agents = answer?.url ? answer : null;
+    if (agents?.url) await context.workspaceState.update(AGENTS_PORT, Number(new URL(agents.url).port));
+    if (JSON.stringify(agents) !== before) runsMcpChanged.fire();
+  };
+  context.subscriptions.push(
+    lc.onDidChangeState((e) => {
+      if (e.newState === State.Running) void agentsChanged();
+      if (e.newState === State.Stopped && agents) {
+        agents = null;
+        runsMcpChanged.fire();
+      }
+    }),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('piwi.serveRunsToAgents')) void agentsChanged();
+    }),
+    vscode.commands.registerCommand('piwi.copyRunsMcpConfiguration', async () => {
+      if (!agents?.url || !agents.token) {
+        void vscode.window.showWarningMessage(
+          "Piwi: this window does not serve its runs to agents: turn on Piwi's Serve Runs To Agents setting.",
+        );
+        return;
+      }
+      await vscode.env.clipboard.writeText(runsMcpConfiguration(agents.url, agents.token));
+      void vscode.window.showInformationMessage(
+        "Piwi: the runs' MCP configuration is on the clipboard. It holds this window's token: paste it in your agent's user settings, not in the repository. It serves while this window is open.",
+      );
+    }),
+  );
+
   if (lm?.registerMcpServerDefinitionProvider && McpHttpServerDefinition) {
+    context.subscriptions.push(
+      lm.registerMcpServerDefinitionProvider('piwi.runs', {
+        onDidChangeMcpServerDefinitions: runsMcpChanged.event,
+        async provideMcpServerDefinitions() {
+          return agents?.url && agents.token
+            ? [new McpHttpServerDefinition(RUNS_MCP_LABEL, vscode.Uri.parse(agents.url), runsMcpHeaders(agents.token))]
+            : [];
+        },
+      }),
+    );
     context.subscriptions.push(
       lm.registerMcpServerDefinitionProvider('piwi.mcp', {
         onDidChangeMcpServerDefinitions: mcpChanged.event,
@@ -1351,7 +1422,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     pausedPage: () => runControl.pausedPage(),
     pickOnPage: (message) => runControl.pickOnPage(message),
     caretCount: () => runControl.caretCount(),
+    agents: () => agents,
   };
+}
+
+/** The token the runs' MCP server takes from agents, kept in `SecretStorage`: a new one the first time. */
+async function keptAgentsToken(context: vscode.ExtensionContext): Promise<string> {
+  const kept = await context.secrets.get(AGENTS_TOKEN);
+  if (kept && /^[A-Za-z0-9_-]{32,256}$/.test(kept)) return kept;
+  const token = randomBytes(32).toString('base64url');
+  await context.secrets.store(AGENTS_TOKEN, token);
+  return token;
 }
 
 /**

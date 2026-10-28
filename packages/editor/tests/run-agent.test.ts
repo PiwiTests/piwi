@@ -471,6 +471,7 @@ describe("an agent's tools for the runs of the editor window", () => {
     await expect(fetch(agents.url!, { method: 'POST' })).rejects.toThrow();
     const on = await ide.client.sendRequest<AgentsResult>('piwi/agents', { enabled: true });
     expect(on.token).toBe(agents.token);
+    expect(on.url).toBe(agents.url);
     agents = on;
   });
 });

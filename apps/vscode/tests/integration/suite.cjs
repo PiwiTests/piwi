@@ -1015,11 +1015,53 @@ const tests = {
       'piwi.assertRegionAtStop',
       'piwi.mockAtStop',
       'piwi.codeAtStop',
+      'piwi.shareWithPlaywright',
+      'piwi.copyRunsMcpConfiguration',
     ]) {
       assert.ok(commands.includes(id), id);
     }
     await vscode.commands.executeCommand('piwi.refresh');
     await vscode.commands.executeCommand('piwi.refreshRun');
+  },
+
+  async 'the runs are served to agents behind the window’s token, and stop with the setting'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const served = await waitFor(() => api.agents(), 'the runs’ MCP server');
+    assert.match(served.url, /^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
+    const ask = (token, body = { jsonrpc: '2.0', id: 1, method: 'tools/list' }) =>
+      fetch(served.url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+    const listed = await (
+      await ask(served.token).catch((e) => {
+        throw new Error(`${served.url}: ${e.cause?.message ?? e.cause ?? e}`);
+      })
+    ).json();
+    assert.deepEqual(
+      listed.result.tools.map((t) => t.name),
+      ['run_list', 'run_follow', 'run_control', 'page_snapshot', 'page_act', 'page_locator', 'code_write'],
+    );
+    assert.equal((await ask('x'.repeat(43))).status, 401);
+    await vscode.commands.executeCommand('piwi.copyRunsMcpConfiguration');
+    const copied = JSON.parse(await vscode.env.clipboard.readText());
+    assert.deepEqual(copied.servers['piwi-runs'], {
+      type: 'http',
+      url: served.url,
+      headers: { Authorization: `Bearer ${served.token}` },
+    });
+    const settings = vscode.workspace.getConfiguration('piwi');
+    await settings.update('serveRunsToAgents', false, vscode.ConfigurationTarget.Workspace);
+    try {
+      await waitFor(() => api.agents() === null, 'the runs’ MCP server to stop');
+      await assert.rejects(ask(served.token));
+    } finally {
+      await settings.update('serveRunsToAgents', undefined, vscode.ConfigurationTarget.Workspace);
+    }
+    const again = await waitFor(() => api.agents(), 'the runs’ MCP server again');
+    assert.equal(again.token, served.token);
+    assert.equal((await ask(again.token)).status, 200);
   },
 };
 
