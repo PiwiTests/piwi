@@ -91,8 +91,8 @@ export function startCapture({ file, display, width, height, fps = MASTER_FPS })
 
 /**
  * The sync flash: a window of its own at the screen's bottom-right corner, black, whose square turns white for a
- * quarter of a second. Resolves with the wall-clock time of the frame that drew it (`t`, ms) and the square's box on
- * the screen (device pixels at `scale`).
+ * second. Resolves with the wall-clock time the square went to the screen (`t`, ms) and its box on the screen (device
+ * pixels at `scale`).
  */
 export async function syncFlash({ scale }) {
   const w = FLASH_WINDOW;
@@ -124,16 +124,18 @@ export async function syncFlash({ scale }) {
     });
     // The black window shows for a few frames first, so the square's first white frame is the flash.
     await sleep(600);
+    // Timed at the frame after the one that drew the square, when that one is on its way to the screen.
     const t = await page.evaluate(
       () =>
         new Promise((resolve) =>
-          requestAnimationFrame((time) => {
+          requestAnimationFrame(() => {
             document.getElementById('square').style.background = '#fff';
-            resolve(performance.timeOrigin + time);
+            requestAnimationFrame((time) => resolve(performance.timeOrigin + time));
           }),
         ),
     );
-    await sleep(250);
+    // Long enough for a busy machine's compositor and the grab to catch it.
+    await sleep(1000);
     const px = (v) => Math.round(v * scale);
     return { t: Math.round(t), box: { x: px(box.x), y: px(box.y), width: px(box.width), height: px(box.height) } };
   } finally {
