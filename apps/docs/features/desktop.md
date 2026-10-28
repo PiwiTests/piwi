@@ -41,9 +41,9 @@ on Linux): `piwi.db` (SQLite) and `storage/`. **Settings → Storage → Data lo
 folder** show it. Back up the parent folder while the app is closed; its `secret.key` decrypts stored AI keys and SCM
 tokens.
 
-Closing the window quits the app unless you turn on **Run in background** in the tray menu; **Start on login** launches it hidden into the tray. While the window is in the background, your
-[notifications](/features/notifications) arrive as OS notifications, with an unread count on the dock icon or in the
-tray tooltip.
+Closing the window quits the app unless you turn on **Run in background** in the tray menu; **Start on login** launches
+it hidden into the tray. In the background, [notifications](/features/notifications) arrive as OS notifications, with an
+unread count on the dock icon or the tray tooltip.
 
 ## Sending results to it
 
@@ -73,7 +73,7 @@ of the repository serves its git history without an [SCM token](/guide/source-co
 ## Running tests from the app
 
 **Run locally**, on a run page or an execution page, re-runs the failed tests on this machine with the folder's own
-Playwright and the app's bundled Node. The first time, it asks you to link the project to its folder.
+Playwright and the app's bundled Node. The first time, it asks for the project's folder.
 
 - **The arrow next to the button** holds the options: headless, headed, the Playwright inspector or UI mode; tests
   by `file:line`, title or file; a forced trace; `--repeat-each` up to 100 times (1,000 in **Run with
@@ -82,9 +82,12 @@ Playwright and the app's bundled Node. The first time, it asks you to link the p
 - **More places to run from:** **Reproduce locally** on a test case (20 times with a trace), **Run locally**
   on a failure cluster, and a [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app)
   sent from Piwi Picker.
-- **Wrong folder?** When none of the tests exist in the linked folder, the button opens the dialog to fix the link.
+- **Wrong folder?** When none of the tests exist in the linked folder, the button opens the link's dialog.
+- **A `page.pause()` shows Piwi's [pause bar](/features/editor-run-control)** in a headed run, as in your editor's
+  runs: the app is the hub of every run it starts, reproductions and bisect steps included. A headless stop, or a
+  failure, goes on at once.
 
-The run uses your project's Playwright config, so its results come here, and the tray links to the new run.
+The run uses your project's Playwright config, so its results come here, and the tray links to it.
 
 ### Reproducing a failure and finding the breaking commit
 
@@ -95,8 +98,9 @@ linked folder, **without touching your checkout**:
   [`git worktree`](https://git-scm.com/docs/git-worktree), installs its dependencies (reusing your `node_modules`
   when the lockfile is unchanged) and the browser if missing, and runs the failing test with that commit's own
   Playwright.
-- **Find the breaking commit here** bisects step by step between the last green commit and the failing one, with live progress and a **Stop** that kills the test and what it started, resets the bisect and removes
-  the worktree. The first bad commit is linked to your SCM host and recorded on the failure cluster.
+- **Find the breaking commit here** bisects step by step between the last green commit and the failing one, with live
+  progress and a **Stop** that kills the test and what it started, resets the bisect and removes the worktree. The
+  first bad commit is linked to your SCM host and recorded on the failure cluster.
 
 It needs `git` and your package manager on this machine, and bisects one repository. The application under test has
 to build from the same checkout, started at each commit by a Playwright `webServer`; without one, a reproduction or
@@ -108,15 +112,14 @@ On a failure of a team instance, the [editor extensions](/features/editor-failur
 **Reproduce in the desktop app** and **Find the breaking commit in the desktop app**; on a flaky test, or a failure
 whose test has an untested suspect, a [Flake Lab](/features/flake-lab#from-the-editor-and-the-failure-pages) run of
 the team instance's plan. The window shows the commits, tests or arms, and runs nothing until you start it. The editor
-gets the verdict and can share a first bad commit, or the lab's results, on the team instance with its own key, which
-the app never holds.
+gets the verdict and can share it on the team instance with its own key, which the app never holds.
 
 ### Reproducing a flake
 
 On a flaky test's Flakiness tab, **Reproduce this flake** runs the [Flake Lab](/features/flake-lab) here: it checks
-out the commit of the test's latest failure in a throwaway worktree, installs, and runs `piwi flake` there, streaming
-into the tray. Its options pick the arms (every suspect, all at once, or one), the runs and the budget. The experiment
-lands on the tab, recorded as run from `desktop`.
+out the commit of the test's latest failure in a throwaway worktree, installs, and runs `piwi flake` there. Its options
+pick the arms (every suspect, all at once, or one), the runs and the budget. The experiment lands on the tab, recorded
+as run from `desktop`.
 
 Once an experiment has reproduced a test, **Find the breaking commit here** on its failure is flake-aware: each step
 runs the reproducing arm (`piwi flake verify --bisect`), bad at a failure with the same error as in CI, good after
@@ -131,21 +134,22 @@ pick the project: it is imported as on the [import page](/guide/importing-runs),
 ## Connecting AI assistants
 
 The app serves the [MCP server](/features/mcp) with three local tools a hosted instance cannot offer:
-`import_local_report` (a local `.zip` into a project), `read_local_source` (the file on disk now) and `apply_locator_fix` (a recommended locator fix applied to the file, previewed by default). It registers as
+`import_local_report` (a local `.zip` into a project), `read_local_source` (the file on disk now) and
+`apply_locator_fix` (a locator fix written to the file, previewed first). It registers as
 `piwi-desktop`, beside a hosted Piwi in the same client.
 
 The **MCP server** page detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI, and
-connects each in one click by writing a `piwi-desktop` entry, with the address and token, into the client's own config file.
-It keeps a backup and rewrites only that entry, at each launch if the port changed. Claude Desktop, which takes only local
-commands, is pointed at the app's built-in bridge (`piwi-desktop mcp-stdio`), so no token is copied; the app has to be
-running for it. Restart the client after connecting. The page also installs the
+connects each in one click, writing a `piwi-desktop` entry with the address and token into its config file.
+It keeps a backup and rewrites only that entry, at each launch if the port changed. Claude Desktop, which takes only
+local commands, is pointed at the app's built-in bridge (`piwi-desktop mcp-stdio`), so no token is copied; the app must
+run. Restart the client after connecting. The page also installs the
 [agent skills](/features/agent-skills) into a linked folder.
 
 ## Updates
 
 **Settings → About → Updates** checks for a newer release, downloads it and applies it on restart, and checks at
-startup unless turned off. The `.exe` updates silently, without admin rights; the `.msi` asks for them. Downloads are verified against the project's signing
-key; a dev build without it says so.
+startup unless turned off. The `.exe` updates silently, without admin rights; the `.msi` asks for them. Downloads are
+verified against the project's signing key.
 
 ## Limits
 

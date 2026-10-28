@@ -39,6 +39,11 @@ shell and are feature-equivalent.
   - Piwi Picker's pairing start, which answers only an extension's JSON request and keeps at most three waiting;
   - the pairing poll, which answers only with the secret the start gave. The token goes out once, after **Allow** in
     the window (`DesktopPickerPairingModal`), behind the guard.
+- **The bundled server is the hub of every Playwright run the shell starts.** Each spawn of a test (`runner.rs`,
+  `repro.rs`, and in `worktree.rs` the reproduce, bisect and `piwi flake` runs) adds `bundled_hub_env`: the server's
+  `PIWI_RUN_CHANNEL`, read from `GET /api/desktop/run-channel` only after `health_ok` proved the launch nonce, and
+  `PIWI_RUN_REF` (`hub_env.rs`, `desktop-<run id>`, which the window knows the run by). The hub's WebSocket takes the
+  desktop token in `hello`; its code is `apps/application/server/utils/desktop-runs.ts`.
 - **One route passes on another token.** An assistant answer's MCP endpoint
   (`POST /api/assistant/conversations/:id/mcp`) is called by the Claude Code CLI the server starts, with the token
   minted for that one answer (`presentsAssistantTurnToken` in `server/utils/assistant/turn-token.ts`). It opens that

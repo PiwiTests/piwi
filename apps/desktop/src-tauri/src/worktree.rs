@@ -335,6 +335,20 @@ pub(crate) fn flake_lab_env(server: &ServerInfo) -> Vec<(&'static str, String)> 
     ]
 }
 
+/// The environment a reproduction, a bisect step and `piwi flake` run with
+/// ([`flake_lab_env`]), with the bundled server as the hub of run `id`
+/// (`PIWI_RUN_CHANNEL`, `PIWI_RUN_REF`), so its window and Piwi Picker can
+/// follow, pause and step it.
+async fn lab_env_with_hub(
+    app: &AppHandle,
+    server: &ServerInfo,
+    id: u32,
+) -> Vec<(&'static str, String)> {
+    let mut env = flake_lab_env(server);
+    env.extend(crate::runner::bundled_hub_env(app, id).await);
+    env
+}
+
 /// The environment a local test runs with: the reporter records the run's
 /// origin (`desktop`, `reproduce`, `bisect`) and, when there is one, its
 /// reference, which the window uses to find the run the reporter recorded.
@@ -1099,7 +1113,7 @@ async fn run_test_phase(
     }
     let mut node_args = vec![node_path(&cli), "test".to_string()];
     node_args.extend(args.iter().cloned());
-    let mut env_with_app = flake_lab_env(&server_info(app));
+    let mut env_with_app = lab_env_with_hub(app, &server_info(app), id).await;
     env_with_app.extend_from_slice(env);
     run_sidecar_streaming(app, id, Some(&cli), worktree, node_args, &env_with_app).await
 }
@@ -1363,7 +1377,8 @@ async fn run_flake_step(
         return None;
     };
     let args = flake_bisect_args(&cli, test_case_id);
-    run_sidecar_streaming(app, id, Some(&cli), worktree, args, &flake_lab_env(server)).await
+    let env = lab_env_with_hub(app, server, id).await;
+    run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env).await
 }
 
 /// Run a Flake Lab session on one test at the commit of its latest failure, in
@@ -1489,7 +1504,8 @@ async fn flake_lab_driver(
 ) -> Option<i32> {
     let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
     let args = flake_lab_args(&cli, test_case_id, options);
-    run_sidecar_streaming(app, id, Some(&cli), worktree, args, &flake_lab_env(server)).await
+    let env = lab_env_with_hub(app, server, id).await;
+    run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env).await
 }
 
 /// The phases before a lab runs in its worktree: checkout, install, and the
@@ -1637,7 +1653,8 @@ async fn lab_job_driver(
 ) -> Option<i32> {
     let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
     let args = lab_job_args(&cli, plan_file);
-    let (code, stdout) = run_sidecar(app, id, worktree, args, &flake_lab_env(server), true).await;
+    let env = lab_env_with_hub(app, server, id).await;
+    let (code, stdout) = run_sidecar(app, id, worktree, args, &env, true).await;
     emit(app, RunEventPayload::lab(id, parse_lab_report(&stdout)));
     code
 }

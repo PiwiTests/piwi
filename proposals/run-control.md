@@ -14,7 +14,8 @@ tools that follow the run, read the stopped page as its accessibility tree and a
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
 (Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2, 3 and 4 are built too (below; PR 4 is
 merged as #932), and so are PR 5's three halves, the service's, the IDE's with the forwarded addresses, and the Runs
-window's (below), while PRs 6 to 9 are not. PR 1 differs from the text in four ways. A headed
+window's, and PR 6's first half, the desktop app's server as the hub of its runs (below), while PR 6's second half and
+PRs 7 to 9 are not. PR 1 differs from the text in four ways. A headed
 browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
@@ -267,6 +268,29 @@ click into the view took the keyboard. Control, Alt and Meta held with a click g
 after it, with no change to the protocol, and Shift+click picks: **Pick on the image** is a toggle
 and a Shift+click on a stop's image, headed or not, or its view. The docs give the window a page of its own,
 [Runs window](../apps/docs/features/runs-window.md).
+PR 6's first half is the desktop app's server as the hub of the runs its shell starts (Part 7), the service's side
+alone: the window's controls and live view, Piwi Picker listing those runs, and Copy are its second half. It differs
+from the text in eight ways. The server runs the editor service's own run control, exported for another host
+(`@piwitests/editor/run-host`: the record channel's socket, `RunSessions`, `RunHub`, `StopActions`, `RunLines`), with
+options a host needs (`declines`, `host`, `token`, `words`) and a hub peer of the host's own transport (`RunHub.join`):
+the app's window is one, through a stream and commands behind the desktop token (`/api/desktop/runs/events`,
+`/api/desktop/runs/commands`), hearing what Piwi Picker hears. A run's name on the channel is `PIWI_RUN_REF`
+(`desktop-<the shell's run id>`), which the reporter reads before `PIWI_ORIGIN_REF`: a reproduction's
+`PIWI_ORIGIN_REF` names its failure cluster, which two runs may share, and the window's own refs (`desktop:…`,
+`job:…`) hold a `:` the channel does not take; an older reporter names its run by `PIWI_ORIGIN_REF` where that fits.
+The shell reads the channel (`PIWI_RUN_CHANNEL`) from a route behind the guard as each run starts, once the readiness
+probe proved the launch nonce, and the route answers no request a browser sends; Piwi Picker reads the hub's address
+from another (`/api/desktop/live`), in the shape of an editor's `…/live`, and its `hello` carries the desktop token it
+holds since **Allow**: the three open routes are unchanged. A failure no pause bar shows is held in a run the window
+shows live (`show { ref, on }`, the window's own command) or while a Runs window follows the runs. Code from a desktop
+run goes to the app's window alone, to copy (`stop-code` on its stream), Piwi Picker hearing only that it was made
+(`…: copy it in the desktop app's window.`): the desktop app holds no editor's pairing nor token, and Send to editor,
+the one way into an IDE that carries code, is Piwi Picker's; the code is made from the file as it is on disk, for a
+file of a linked folder alone (a reproduction's worktree is none), and refused once the file was written since the
+run's first worker connected. Pick a locator and Record here in the test's window, and Assert, end in an editor, and
+the server declines them; a pick on the image answers with its locator, Assert a region and Mock a request make code.
+A headed desktop run's `page.pause()` shows Piwi's pause bar where it showed Playwright's Inspector, as in a run the
+editor starts.
 The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of

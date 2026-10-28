@@ -338,6 +338,7 @@ pub async fn desktop_run_repro(
         }
     };
     let result_file = result_dir.join("result.json");
+    let hub = crate::runner::bundled_hub_env(&app, id).await;
     let command = sidecar
         .args(cmd_args)
         .current_dir(&folder)
@@ -347,7 +348,8 @@ pub async fn desktop_run_repro(
             "PIWI_REPRO_RESULT",
             result_file.to_string_lossy().to_string(),
         )
-        .envs(origin);
+        .envs(origin)
+        .envs(hub);
     let spawned = command.spawn();
     let (mut rx, child) = match spawned {
         Ok(pair) => pair,

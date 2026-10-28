@@ -610,6 +610,39 @@ impl RunEventPayload {
     }
 }
 
+/// The bundled server's run channel, asked of `GET /api/desktop/run-channel`
+/// with the desktop token, once the server at the port proved it is the one
+/// this launch started (the readiness nonce), so the token never goes to
+/// another process that took the port. None when it does not answer one.
+fn bundled_run_channel(port: u16, token: String, nonce: &str) -> Option<String> {
+    if !crate::health_ok(port, nonce) {
+        return None;
+    }
+    let server = crate::mcp_clients::ServerInfo { port, token };
+    let body = crate::repro::local_get_json(&server, "/api/desktop/run-channel").ok()?;
+    body.get("runChannel")?.as_str().map(str::to_string)
+}
+
+/// The environment naming the bundled server as run `id`'s hub
+/// ([`crate::hub_env::hub_env`]), read from the server as the run starts.
+pub(crate) async fn bundled_hub_env(app: &AppHandle, id: u32) -> Vec<(&'static str, String)> {
+    let (port, token, nonce) = {
+        let (Some(server), Some(nonce)) = (
+            app.try_state::<crate::mcp_clients::ServerInfo>(),
+            app.try_state::<crate::LaunchNonce>(),
+        ) else {
+            return Vec::new();
+        };
+        (server.port, server.token.clone(), nonce.0.clone())
+    };
+    let channel =
+        tauri::async_runtime::spawn_blocking(move || bundled_run_channel(port, token, &nonce))
+            .await
+            .ok()
+            .flatten();
+    crate::hub_env::hub_env(channel.as_deref(), id)
+}
+
 /// Run `playwright test <args>` for `project_id` in its linked folder, using the
 /// bundled Node sidecar and the folder's own Playwright package. Returns a run
 /// id; progress arrives as `piwi:local-run` events carrying that id.
@@ -640,6 +673,8 @@ pub async fn desktop_run_local_tests(
     let mut cmd_args: Vec<String> = vec![node_path(&cli), "test".into()];
     cmd_args.extend(args);
 
+    let id = app.state::<LocalRuns>().allocate_id();
+    let hub = bundled_hub_env(&app, id).await;
     let command = app
         .shell()
         .sidecar("node")
@@ -649,12 +684,12 @@ pub async fn desktop_run_local_tests(
         // Plain text for the in-app output pane.
         .env("NO_COLOR", "1")
         .env("FORCE_COLOR", "0")
-        .envs(origin);
+        .envs(origin)
+        .envs(hub);
 
     let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();
-    let id = state.allocate_id();
     state.children.lock().unwrap().insert(id, child);
 
     let emit_app = app.clone();
