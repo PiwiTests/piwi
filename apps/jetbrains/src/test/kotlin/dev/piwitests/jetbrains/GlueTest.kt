@@ -3,7 +3,10 @@ package dev.piwitests.jetbrains
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.file.Files
 import java.nio.file.Path
@@ -410,6 +413,25 @@ class GlueTest {
     }
 
     @Test
+    fun `the runs' MCP configuration bridges the project's server through mcp-remote, its token in env`() {
+        val json = JsonParser.parseString(Glue.runsMcpConfiguration("http://127.0.0.1:41234/mcp", "t0ken"))
+            .asJsonObject.getAsJsonObject("mcpServers").getAsJsonObject("piwi-runs")
+        assertEquals("npx", json.get("command").asString)
+        assertEquals(
+            listOf("-y", "mcp-remote", "http://127.0.0.1:41234/mcp", "--header", "Authorization:\${PIWI_RUNS_AUTH}"),
+            json.getAsJsonArray("args").map { it.asString },
+        )
+        assertEquals("Bearer t0ken", json.getAsJsonObject("env").get("PIWI_RUNS_AUTH").asString)
+        assertEquals(41234, Glue.portOf("http://127.0.0.1:41234/mcp"))
+        assertEquals(null, Glue.portOf("not a url"))
+        val token = Glue.newAgentsToken()
+        assertTrue(Glue.isAgentsToken(token))
+        assertNotEquals(token, Glue.newAgentsToken())
+        assertFalse(Glue.isAgentsToken("short"))
+        assertFalse(Glue.isAgentsToken("a".repeat(40) + " "))
+    }
+
+    @Test
     fun `the copied MCP configuration says whether it holds a key, or that the agent signs in`() {
         val keyed = McpServerDefinition("Piwi (a)", "https://a/mcp", mapOf("Authorization" to "Bearer pd_x"), "key")
         val signIn = McpServerDefinition("Piwi (b)", "http://b/mcp", emptyMap(), "sign-in")
@@ -573,6 +595,16 @@ class GlueTest {
         assertEquals(false, Glue.runControls(ci).pausable)
         val stopped = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4))))
         assertEquals(Glue.RunControls(active = true, pausable = false, pausing = false, stopped = true), Glue.runControls(stopped))
+        // A stop whose reporter takes it can be shared with Playwright's own tools.
+        val sharing = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4), takes = listOf("bind"))))
+        assertEquals(true, Glue.runControls(sharing).shareable)
+        assertTrue(Glue.canShare(Glue.stopsOf(sharing).single()))
+        assertFalse(Glue.canShare(Glue.stopsOf(stopped).single()))
+        assertEquals(
+            "Shared. Join it with: npx playwright cli attach piwi-ed-1-w0",
+            Glue.sharedText(StopBindResult(true, "Shared.", "piwi-ed-1-w0", "npx playwright cli attach piwi-ed-1-w0")),
+        )
+        assertEquals("The test went on.", Glue.sharedText(StopBindResult(false, "The test went on.")))
         assertEquals("Piwi: paused · checkout.page.ts:5", Glue.runControlStatus(Glue.runControls(stopped), Glue.stopsOf(stopped)))
         assertEquals(null, Glue.runControlStatus(Glue.runControls(running), emptyList()))
     }
@@ -581,6 +613,11 @@ class GlueTest {
     fun `a stop says what is about to run, with the attempt after the first`() {
         assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon')", Glue.pausedText(stopAt(specUri, 5), runTest()))
         assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · attempt 2", Glue.pausedText(stopAt(specUri, 5), runTest(retry = 1)))
+        // A stop an agent asked for says so.
+        assertEquals(
+            "Paused by the agent · Fill \"WELCOME10\" getByLabel('Coupon')",
+            Glue.pausedText(stopAt(specUri, 5).copy(by = "agent"), runTest()),
+        )
         val sessions = mapOf(
             "ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5)), RunWorker(1, 1, "running", runTest())),
             "ed-2" to session("ed-2", RunWorker(3, 3, "stopped", runTest(), stopAt(pageUri, 8))),

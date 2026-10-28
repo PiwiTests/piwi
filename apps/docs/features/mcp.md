@@ -202,5 +202,6 @@ The six workflow [agent skills](/features/agent-skills) are prompts too (`invest
 ## Related
 
 - [MCP tools](/reference/mcp-tools): every tool, by module and capability
+- [Run control for agents](/features/agent-run-control): the editor's own MCP server, for the runs it starts
 - [Agent skills](/features/agent-skills): workflows that tell an agent what to do with these tools
 - [Desktop app](/features/desktop#connecting-ai-assistants): one-click client setup

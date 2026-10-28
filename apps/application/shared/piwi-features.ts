@@ -648,6 +648,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/editor-stop-code',
       },
       {
+        title: 'Run control for agents',
+        summary:
+          'The test runs your editor starts, served to a coding agent on your machine as MCP tools: it follows a run, stops it, reads the stopped page as its ARIA snapshot, acts on it by ref and has Piwi write the code there, through the editor.',
+        needs: ['fixtures'],
+        where: 'The Piwi runs MCP server, listed in VS Code; Tools → Piwi in a JetBrains IDE',
+        doc: 'features/agent-run-control',
+      },
+      {
         title: 'Record tests from the editor',
         summary:
           "A browser your project's own Playwright opens from VS Code or a JetBrains IDE, and each step you take there written at the cursor as you go, with verified locators and calls to your page objects.",

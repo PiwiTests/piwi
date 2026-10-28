@@ -83,6 +83,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   and `/api/piwi/live` alone, and leaves the platform's `isAccessible` its check of `Host`. Checked by `PiwiPluginTest`
   (`testPiwiPickersChallengeAloneIsAnsweredWithTheProofOnTheLiveEndpoint`,
   `testPiwiPickerListsTheLiveHubsThroughThePairing`). ([Send to editor](ARCHITECTURE.md#send-to-editor))
+- **The runs' MCP server's token lives in the `PasswordSafe`, and a stop's browser is shared only after the person
+  said yes to `Glue.SHARE_WARNING`, every time.** The service gets the token in its initialization options
+  (`agentsOptions`), never in `.idea/workspace.xml`; no agent can share a browser (`piwi/stopBind` is the IDE's).
+  Checked by `PiwiRunControlTest`. ([MCP server configuration](ARCHITECTURE.md#mcp-server-configuration))
 - **An instance on this machine is never reached through the IDE's proxy.** Connect tries every loopback address
   (`Glue.loopbackAlternatives`) and saves the one that answered. ([Connect](ARCHITECTURE.md#connect))
 

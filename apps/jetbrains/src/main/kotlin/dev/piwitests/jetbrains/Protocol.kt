@@ -659,7 +659,8 @@ data class ShareDesktopJobResult(val ok: Boolean = false, val message: String? =
  * `pause`, `run-to`, `page-pause`, `failure`, `other`), the call about to run as Playwright titles it (at a failure, how
  * the test failed: `Failed: …`, its page held until any answer lets it end as it failed), its file's URI and 0-based
  * line and character, the locator it acts on, whether Piwi's pause bar shows in the page (`bar`, false in a headless
- * run), and when it stopped.
+ * run), when it stopped, and who asked for it (`by`: `agent` for an agent's Pause, Step or Run to through the
+ * service's MCP server; null for a person's or a breakpoint's).
  */
 data class RunStop(
     val reason: String? = null,
@@ -670,6 +671,7 @@ data class RunStop(
     val locator: String? = null,
     val bar: Boolean = false,
     val since: String? = null,
+    val by: String? = null,
 )
 
 /**
@@ -689,8 +691,9 @@ data class RunTest(
 /**
  * A worker of a run, by Playwright's worker index: `running` a test, `stopped` before one of its calls, or `between`
  * tests; `pausing` once a Pause reached it until it stops; what its reporter takes at a stop (`takes`: the intents
- * `pick`, `record`, `assert`, `assert-region`, the queries `requests`, `mock`, `locator`, and for a viewer outside the
- * page `view`, `input`, `input-clicks` and `pick-at`, `piwi/pickAt`), none for an older one.
+ * `pick`, `record`, `assert`, `assert-region`, the queries `requests`, `mock`, `locator`, for a viewer outside the
+ * page `view`, `input`, `input-clicks` and `pick-at`, `piwi/pickAt`, for an agent `snapshot`, `act`, `ref-locator`
+ * and `events`, and `bind`, `piwi/stopBind`), none for an older one.
  */
 data class RunWorker(
     val worker: Int = 0,
@@ -808,8 +811,8 @@ data class LocatorAtCaretParams(val ref: String, val worker: Int? = null, val si
 data class LocatorAtCaretResult(val ok: Boolean = false, val message: String? = null, val locator: String? = null, val count: Int? = null)
 
 /**
- * `piwi/stopCode`: code made at a stop (`assert`, `assert-region`, `mock`), from the IDE or Piwi Picker, for the IDE
- * to write: `edits`, the import lines it needs then the block on a new line above the stopped statement, placed in the
+ * `piwi/stopCode`: code made at a stop (`assert`, `assert-region`, `mock`, and an agent's `steps` and `locator`, whose
+ * edit replaces the stopped line's locator), from the IDE, Piwi Picker or an agent, for the IDE to write: `edits`, the import lines it needs then the block on a new line above the stopped statement, placed in the
  * file's text at `version` (null for the file as saved), made together as one edit; the block as written (`code`),
  * the 0-based line it goes on, the sentence to show and what its reader should check (`warnings`).
  */
@@ -825,6 +828,27 @@ data class StopCode(
     val edits: List<FileEdit>? = null,
     val message: String? = null,
     val warnings: List<String>? = null,
+)
+
+/**
+ * `piwi/agents`: turn the service's MCP server for the agents of this machine on (`enabled`) or off; it answers its
+ * streamable HTTP endpoint (`http://127.0.0.1:<port>/mcp`) and the bearer token an agent sends, null while it is off.
+ */
+data class AgentsParams(val enabled: Boolean)
+
+data class AgentsResult(val url: String? = null, val token: String? = null, val message: String? = null)
+
+/**
+ * `piwi/stopBind`: at the stop `since` names, share the stopped worker's browser with Playwright's own tools until its
+ * test ends (`on`), or stop sharing it; the answer names it and the command that joins it.
+ */
+data class StopBindParams(val ref: String, val worker: Int? = null, val since: String, val on: Boolean)
+
+data class StopBindResult(
+    val ok: Boolean = false,
+    val message: String? = null,
+    val name: String? = null,
+    val command: String? = null,
 )
 
 /** The service's custom requests beside the language server protocol. */
@@ -930,6 +954,12 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/locatorAtCaret")
     fun locatorAtCaret(params: LocatorAtCaretParams): CompletableFuture<LocatorAtCaretResult?>
+
+    @JsonRequest("piwi/agents")
+    fun agents(params: AgentsParams): CompletableFuture<AgentsResult?>
+
+    @JsonRequest("piwi/stopBind")
+    fun stopBind(params: StopBindParams): CompletableFuture<StopBindResult?>
 
     @JsonNotification("piwi/setCredentials")
     fun setCredentials(params: EditorCredentials)

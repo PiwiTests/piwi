@@ -703,7 +703,8 @@ file is opened.
 
 `PiwiLocalSettings` holds the choice of the desktop app and its project, a recording's choices, the failures'
 grouping, the breakpoints setting, the Playwright runner setting, the run notifications, the coverage marks, the
-failure severity, how the agent signs in to Piwi's MCP server, and the baselines.
+failure severity, how the agent signs in to Piwi's MCP server, whether the runs are served to agents and the port
+they were last served at, and the baselines. The runs' MCP server's token is in the `PasswordSafe`.
 
 A project's settings never select another instance's key, and choosing the desktop app never changes the instance, its
 project or its key. The old key entry shared by every instance is deleted once (`forgetSharedKey`).
@@ -716,6 +717,27 @@ entries that run `mcp-remote` (`Glue.mcpConfiguration`), with the key in `env`, 
 With `PiwiLocalSettings.mcpAuthorization` at `sign-in` (`Glue.MCP_AUTHORIZATIONS`, in the AI Assistant group of the
 settings page, sent in `credentials()`), the service hands an instance's server without a key, and `mcp-remote` signs
 in through the instance's OAuth. The notification says which (`Glue.mcpAuthorizationNote`).
+
+**The runs' MCP server.** The editor service serves this project's runs to the agents of this machine as an MCP server
+of its own ([Agents](../../packages/editor/ARCHITECTURE.md#agents) in its reference). The initialization options say
+whether (`agents`, from `PiwiProjectService.agentsOptions`): `PiwiLocalSettings.serveRunsToAgents` (**Serve the test
+runs this project starts to the agents of this machine**, in the AI Assistant group of the settings page, which sends
+`piwi/agents` on a change), the port it listened at last (`agentsPort`) and the token, kept in the `PasswordSafe`
+(`generateServiceName("Piwi", "agentsToken")`, a new one when none is kept: `Glue.newAgentsToken`). So a configuration
+copied once still connects after a restart.
+
+**Copy the Runs' MCP Server Configuration for Agents** (`CopyRunsMcpConfigurationAction`) asks `piwi/agents`, keeps
+the port it answers (`Glue.portOf`) and writes a `piwi-runs` entry bridged by `mcp-remote`
+(`Glue.runsMcpConfiguration`), the token in `env` (`PIWI_RUNS_AUTH`). The AI Assistant (`com.intellij.ml.llm`, not bundled) has no public API to add
+an MCP server, and the MCP Server plugin's `mcpServer.mcpToolset` extension point, which adds tools to the IDE's own
+server, starts at 2025.2 (the plugin compiles against 2024.1, [Platform compatibility](#platform-compatibility)), so
+the person pastes the entry.
+
+**Share with Playwright Tools** (`ShareWithPlaywrightAction`, `Piwi.ShareWithPlaywright`, and the last item of a stop's
+gutter popup, at a stop whose worker takes `bind`: `Glue.canShare`) asks first (`MessageDialogBuilder.yesNo`,
+`Glue.SHARE_WARNING`), then sends `piwi/stopBind` on a pooled thread; the notification names the command that joins
+the browser (`Glue.sharedText`), with **Copy the Command** and **Stop Sharing**. A stop an agent asked for reads
+`Paused by the agent · …` (`RunStop.by`, `Glue.pausedText`).
 
 ## Platform compatibility
 
@@ -847,5 +869,5 @@ session and controls with a fake worker on the run channel among them, and the c
 the actions, the edits above a stop and Run to Caret from them, the paused page of a file the VFS has not loaded, the
 breakpoint listener (a breakpoint moved as the platform moves one outside tests, which a unit test does not), the
 promoter, the runs of the IDE's Playwright runner (a rerun under an ended ref included), the code actions, a failure's
-stop, the code a stop made written in one command (one undo, once the service knows the document) and the count at
-the caret.
+stop, the code a stop made written in one command (one undo, once the service knows the document), the count at the
+caret, and a stop's browser shared only once the person said yes.

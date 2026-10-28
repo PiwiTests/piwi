@@ -105,6 +105,8 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var coverageMarks: Boolean = true,
         var failureSeverity: String = "error",
         var mcpAuthorization: String = "key",
+        var serveRunsToAgents: Boolean = true,
+        var agentsPort: Int = 0,
     )
 
     private var state = State()
@@ -443,6 +445,35 @@ class PiwiProjectService(private val project: Project) : Disposable {
             failureSeverity = local.failureSeverity.takeIf { it in Glue.FAILURE_SEVERITIES },
             mcpAuthorization = local.mcpAuthorization.takeIf { it in Glue.MCP_AUTHORIZATIONS },
         )
+    }
+
+    /**
+     * What the service's MCP server for agents takes as the service starts: whether it serves
+     * (`serveRunsToAgents`), the port it listened at last, and the token this installation keeps in the password safe,
+     * a new one the first time, so an agent's configuration copied once still connects after a restart. Reads the
+     * password safe: never on the event thread.
+     */
+    fun agentsOptions(): Map<String, Any?> {
+        val local = local()
+        return mapOf("enabled" to local.serveRunsToAgents, "port" to local.agentsPort.takeIf { it > 0 }, "token" to agentsToken())
+    }
+
+    private fun agentsToken(): String {
+        val attributes = PiwiCredentials.attributes(generateServiceName("Piwi", "agentsToken"))
+        PasswordSafe.instance.getPassword(attributes)?.takeIf(Glue::isAgentsToken)?.let { return it }
+        val token = Glue.newAgentsToken()
+        PasswordSafe.instance.setPassword(attributes, token)
+        return token
+    }
+
+    /**
+     * Turn the service's MCP server for agents on or off as `serveRunsToAgents` says (`piwi/agents`), keeping the port it
+     * listens at for the next start; null when no service runs. Waits on the service: never on the event thread.
+     */
+    fun agentsChanged(): AgentsResult? {
+        val answer = server()?.agents(AgentsParams(local().serveRunsToAgents))?.orNull()
+        answer?.url?.let(Glue::portOf)?.let { local().agentsPort = it }
+        return answer
     }
 
     /**

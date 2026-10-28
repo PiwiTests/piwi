@@ -29,8 +29,8 @@ In VS Code, the extension also opens a path clicked in the dashboard:
 [Open in IDE](./ide-integration#vs-code-the-piwi-extension).
 
 In VS Code, the first workspace with a Playwright config opens the **Get started with Piwi** walkthrough, once per
-machine, unless `workbench.welcomePage.walkthroughs.openOnInstall` is off; **Piwi: Get started** opens it again. Its
-steps cover the connection, the failures, a run, a recording, the MCP server and the settings. A JetBrains IDE shows one notification instead: [JetBrains plugin](./jetbrains#install-and-start).
+machine, unless `workbench.welcomePage.walkthroughs.openOnInstall` is off; **Piwi: Get started** opens it again. A
+JetBrains IDE shows one notification instead: [JetBrains plugin](./jetbrains#install-and-start).
 
 Nothing from your workspace is sent to the instance: the project's
 [locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are compared with
@@ -94,12 +94,13 @@ a warning, with the chains it breaks on hover, and one quick fix that rewrites e
 In VS Code 1.101 and later, the extension provides Piwi's [MCP server](/features/mcp) to the editor's agent with the
 connection it already has. Elsewhere, **Piwi: Copy the MCP server configuration** puts an entry on the clipboard: for
 `mcp.json` in VS Code, for the AI Assistant's MCP settings in a JetBrains IDE (an `mcpServers` entry running
-`mcp-remote`). It holds your API key, so paste it into your user settings, not into the repository.
+`mcp-remote`). It holds your API key: keep it out of the repository.
 
 The key carries your whole role, write tools included. For a token of the agent's own, set `piwi.mcpAuthorization`
 to `sign-in` (**Settings → Tools → Piwi → AI Assistant** in a JetBrains IDE): the server comes without a key, and the
 agent [signs in](/features/mcp#authentication) in your browser when it first connects. You revoke that token with
-your API keys. The desktop app keeps its own token.
+your API keys. The desktop app keeps its own token. For the runs the editor starts:
+[Run control for agents](./agent-run-control).
 
 ## Commands
 

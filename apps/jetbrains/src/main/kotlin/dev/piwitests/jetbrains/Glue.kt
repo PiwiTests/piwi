@@ -1071,15 +1071,26 @@ object Glue {
      */
     fun mcpConfiguration(servers: List<McpServerDefinition>): String {
         val entries = servers.mapIndexed { i, s ->
-            val name = if (i == 0) "piwi" else "piwi-${i + 1}"
-            val auth = s.headers?.get("Authorization")
-            val args = mutableListOf("\"-y\"", "\"mcp-remote\"", jsonString(s.url ?: ""))
-            if (auth != null) args += listOf("\"--header\"", "\"Authorization:\${PIWI_AUTH}\"")
-            val env = if (auth != null) ",\n      \"env\": { \"PIWI_AUTH\": ${jsonString(auth)} }" else ""
-            "    ${jsonString(name)}: {\n      \"command\": \"npx\",\n      \"args\": [${args.joinToString(", ")}]$env\n    }"
+            mcpEntry(if (i == 0) "piwi" else "piwi-${i + 1}", s.url ?: "", s.headers?.get("Authorization"), "PIWI_AUTH")
         }
         return "{\n  \"mcpServers\": {\n${entries.joinToString(",\n")}\n  }\n}"
     }
+
+    /** An `mcpServers` entry bridged to stdio with `mcp-remote`, its `Authorization` header in the variable `variable`. */
+    private fun mcpEntry(name: String, url: String, auth: String?, variable: String): String {
+        val args = mutableListOf("\"-y\"", "\"mcp-remote\"", jsonString(url))
+        if (auth != null) args += listOf("\"--header\"", "\"Authorization:\${$variable}\"")
+        val env = if (auth != null) ",\n      \"env\": { \"$variable\": ${jsonString(auth)} }" else ""
+        return "    ${jsonString(name)}: {\n      \"command\": \"npx\",\n      \"args\": [${args.joinToString(", ")}]$env\n    }"
+    }
+
+    /**
+     * The `mcpServers` entry of the MCP server the editor service serves this project's runs to agents with, bridged as
+     * the instance's: its bearer token in `env`, never on the command line. The address and the token stay while the
+     * project keeps them (`PiwiLocalSettings.agentsPort`, the password safe).
+     */
+    fun runsMcpConfiguration(url: String, token: String): String =
+        "{\n  \"mcpServers\": {\n${mcpEntry("piwi-runs", url, "Bearer $token", "PIWI_RUNS_AUTH")}\n  }\n}"
 
     /**
      * A script file named in a line of a run's output: the characters `[start, end)` that name it, its path as written,
@@ -1370,8 +1381,32 @@ object Glue {
     fun pausedText(stop: RunStop, test: RunTest?): String {
         val attempt = if (test != null && test.retry > 0) " · attempt ${test.retry + 1}" else ""
         if (isFailure(stop)) return "Failed · ${stop.title.orEmpty().removePrefix("Failed:").trimStart()}$attempt"
-        return "Paused · ${stop.title.orEmpty()}$attempt"
+        // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching.
+        val by = if (stop.by == "agent") " by the agent" else ""
+        return "Paused$by · ${stop.title.orEmpty()}$attempt"
     }
+
+    /** Whether a token kept for the runs' MCP server is one the editor service takes: 32 to 256 characters of base64url. */
+    fun isAgentsToken(token: String): Boolean = Regex("^[A-Za-z0-9_-]{32,256}$").matches(token)
+
+    /** A new token for the runs' MCP server: 32 random bytes, base64url. */
+    fun newAgentsToken(): String =
+        java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also { java.security.SecureRandom().nextBytes(it) })
+
+    /** The port of a loopback address the editor service names (`http://127.0.0.1:41234/mcp`); null for none. */
+    fun portOf(url: String): Int? = runCatching { java.net.URI(url).port }.getOrNull()?.takeIf { it in 1..65535 }
+
+    /** Whether a stop's browser can be shared with Playwright's own tools: its reporter takes `bind`. */
+    fun canShare(stop: ShownStop): Boolean = "bind" in stop.takes
+
+    /** What sharing a stopped browser with Playwright's own tools risks, asked before it is shared. */
+    const val SHARE_WARNING =
+        "Until the test ends, any process of yours can then drive the stopped test's browser, read its pages and run " +
+            "code in them (playwright-cli attach, Playwright's dashboard)."
+
+    /** What a shared browser's answer says, with the command that joins it. */
+    fun sharedText(result: StopBindResult): String =
+        if (!result.ok || result.name == null) result.message.orEmpty() else "${result.message.orEmpty()} Join it with: ${result.command}"
 
     /** Whether a stop holds a failed test's page: any answer lets the test end as it failed. */
     fun isFailure(stop: RunStop): Boolean = stop.reason == "failure"
@@ -1399,6 +1434,8 @@ object Glue {
         val pausing: Boolean,
         val stopped: Boolean,
         val actions: Set<StopAction> = emptySet(),
+        /** A stop's browser can be shared with Playwright's own tools. */
+        val shareable: Boolean = false,
     )
 
     fun runControls(sessions: Map<String, RunSession>): RunControls {
@@ -1409,6 +1446,7 @@ object Glue {
             pausing = workers.any { it.pausing },
             stopped = workers.any { it.state == "stopped" },
             actions = stopsOf(sessions).flatMap(::stopActions).toSet(),
+            shareable = stopsOf(sessions).any(::canShare),
         )
     }
 

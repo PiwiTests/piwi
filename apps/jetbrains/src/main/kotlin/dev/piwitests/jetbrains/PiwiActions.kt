@@ -337,6 +337,46 @@ class CopyMcpConfigurationAction : AnAction(), DumbAware {
     }
 }
 
+/**
+ * Piwi: Copy the runs' MCP server configuration — for an agent of this machine to follow, stop and act on the test
+ * runs this project starts (the editor service's own MCP server, `piwi/agents`). The platform has no public way to
+ * register an MCP server for the AI Assistant, so the person pastes it.
+ */
+class CopyRunsMcpConfigurationAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val service = project.service<PiwiProjectService>()
+            if (!service.local().serveRunsToAgents) {
+                return@executeOnPooledThread PiwiCommands.notify(
+                    project,
+                    "This project's runs are not served to agents: turn it on in Settings → Tools → Piwi.",
+                    NotificationType.WARNING,
+                )
+            }
+            val served = service.agentsChanged()
+            val url = served?.url
+            val token = served?.token
+            if (url == null || token == null) {
+                return@executeOnPooledThread PiwiCommands.notify(
+                    project,
+                    served?.message ?: "The Piwi editor service is not running: open a test file first.",
+                    NotificationType.WARNING,
+                )
+            }
+            CopyPasteManager.getInstance().setContents(StringSelection(Glue.runsMcpConfiguration(url, token)))
+            PiwiCommands.notify(
+                project,
+                "The runs' MCP configuration is on the clipboard: paste it in Settings → Tools → AI Assistant → Model " +
+                    "Context Protocol, or your agent's MCP settings. It holds this installation's token: keep it out of " +
+                    "the repository. It serves while this project is open.",
+            )
+        }
+    }
+}
+
 /** A popup list's cell: the text `label` gives its item. */
 private fun <T> textRenderer(label: (T) -> String): SimpleListCellRenderer<T> = object : SimpleListCellRenderer<T>() {
     override fun customize(list: JList<out T>, value: T?, index: Int, selected: Boolean, hasFocus: Boolean) {

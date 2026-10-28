@@ -130,6 +130,15 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                                 "its own token either way. Kept for you only, in .idea/workspace.xml",
                         )
                 }
+                row {
+                    checkBox("Serve the test runs this project starts to the agents of this machine")
+                        .bindSelected({ local.serveRunsToAgents }, { local.serveRunsToAgents = it })
+                        .comment(
+                            "An MCP server on 127.0.0.1, behind a token: an agent follows a run, stops it, reads and acts on " +
+                                "the stopped page, and has Piwi write the code there. Copy the Runs' MCP Server Configuration " +
+                                "for Agents gives it to the AI Assistant or another agent. Kept for you only, in .idea/workspace.xml",
+                        )
+                }
             }
             group("In use") {
                 row {
@@ -150,7 +159,12 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
     override fun apply() {
         val before = connection()
         val breakpoints = service.local().breakpoints
+        val agents = service.local().serveRunsToAgents
         super.apply()
+        // The service serves the runs to agents, or stops, at once.
+        if (service.local().serveRunsToAgents != agents) {
+            ApplicationManager.getApplication().executeOnPooledThread { service.agentsChanged() }
+        }
         if (connection() != before) service.sendCredentials()
         // The runs going on stop at the breakpoints, or at none, from now on.
         if (service.local().breakpoints != breakpoints) project.getServiceIfCreated(PiwiRunSessions::class.java)?.breakpointsChanged()

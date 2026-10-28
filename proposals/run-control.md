@@ -14,9 +14,9 @@ tools that follow the run, read the stopped page as its accessibility tree and a
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
 (Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2, 3 and 4 are built too (below; PR 4 is
 merged as #932), and so are PR 5's three halves, the service's, the IDE's with the forwarded addresses, and the Runs
-window's, and PR 6's first half, the desktop app's server as the hub of its runs (below), while PR 6's second half and
-PRs 7 to 9 are not. PR 1 differs from the text in four ways. A headed
-browser opens Playwright's Inspector at every stop of
+window's, and PR 6's first half, the desktop app's server as the hub of its runs, and PR 9's tools for the runs an
+editor starts (below), while PR 6's second half, PRs 7 and 8 and the desktop app's tools for agents are not. PR 1
+differs from the text in four ways. A headed browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
 does not see, then stops with neither bar nor Inspector until the test's timeout), and a run under Playwright's own
@@ -291,6 +291,28 @@ run's first worker connected. Pick a locator and Record here in the test's windo
 the server declines them; a pick on the image answers with its locator, Assert a region and Mock a request make code.
 A headed desktop run's `page.pause()` shows Piwi's pause bar where it showed Playwright's Inspector, as in a run the
 editor starts.
+PR 9 is Part 9 for the runs an editor starts: the editor service's MCP server, its seven tools, both IDEs' side,
+and bind on request (9.3, listed in PR 7). It differs from the text in eight ways. The editor service serves it, for
+the runs its window built (`src/agent-server.ts`, `src/run-agent.ts`), not a hub of every run: the desktop app's tools
+for its own runs come after PR 6's second half, in the MCP server it serves already. It is MCP's streamable HTTP on
+`127.0.0.1` (a POST answered with JSON, no stream), at a port the IDE keeps, behind a bearer token the IDE keeps
+(VS Code's `SecretStorage`, the JetBrains `PasswordSafe`); it answers only its own `Host` and no request that carries
+an `Origin`, and bounds a body, a batch and the requests at once. VS Code lists it beside `piwi.mcp` as a second
+provider (`piwi.runs`); a JetBrains IDE has no public way for a plugin to add a server to the AI Assistant (the MCP
+Server plugin's `mcpServer.mcpToolset`, from 2025.2, adds tools to the IDE's own server), so the plugin copies an
+`mcpServers` entry through `mcp-remote`. A setting in each turns it off. The tools that act name the stop they answer
+(`stop`, as the IDE's controls do), and `worker` is optional where one worker is stopped; `run_control` has no **End
+the test** (Part 1.5, PR 7) and `code_write` takes `steps`, `locator` (in place of the stopped line's) or `assertion`.
+The run channel gains `snapshot`, `act`, `ref-locator`, `events` and `bind`: the worker sends the run's events only
+while an agent follows it (`events { on }`, then `event` messages, at most 50 a second, the rest counted as
+`dropped`), each call heard through Playwright's instrumentation (feature-checked, so none of Piwi's own), and acts by
+`page.getByRef` (1.64), each action ranked and kept as a step in the service, rendered by the recorder's generator. An
+image comes only when the agent asks, without the snapshot's boxes, and none comes at a failure. What the page says
+(its snapshot, an element's text, the locators built from it, its console and errors) comes back apart from Piwi's
+answer, between markers that share a random nonce, and a password field's value is hidden in the snapshot and masked
+in the image. A stop an agent asked for says so (`RunStop.by: 'agent'`, `Paused by the agent · …`), its first action
+at a stop is a notice, and the code it has written names it. Bind on request is the IDE's alone (`piwi/stopBind`,
+after a warning each time), never an agent's, and ends with the test.
 The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of

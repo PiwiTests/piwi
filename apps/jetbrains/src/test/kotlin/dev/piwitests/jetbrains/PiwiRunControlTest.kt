@@ -27,6 +27,8 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.RegisterToolWindowTask
 import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.openapi.ui.TestDialog
+import com.intellij.openapi.ui.TestDialogManager
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.xdebugger.XDebuggerManager
@@ -58,6 +60,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private var count: (LocatorAtCaretParams) -> LocatorAtCaretResult = { LocatorAtCaretResult(true, "The outline is gone.", null, null) }
     private var image: PausedImage? = null
     private val picks = CopyOnWriteArrayList<PickAtParams>()
+    private val binds = CopyOnWriteArrayList<StopBindParams>()
     private var picked = PickAtResult(true, "getByRole('button', { name: 'Pay now' }) went to the editor, in place of the locator on the stopped line.", "getByRole('button', { name: 'Pay now' })")
     /** The version of a document the IDE gave the service: none until the platform tells it the document opened. */
     private var version: (Document) -> Int? = { (it as DocumentEx).modificationSequence }
@@ -99,6 +102,12 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             override fun requests(params: StopRequestsParams): StopRequestsResult {
                 listed += params
                 return requests
+            }
+
+            override fun bind(params: StopBindParams): StopBindResult {
+                binds += params
+                val name = "piwi-${params.ref}-w${params.worker}"
+                return if (params.on) StopBindResult(true, "Shared.", name, "npx playwright cli attach $name") else StopBindResult(true, "Not shared.")
             }
 
             override fun locatorAtCaret(params: LocatorAtCaretParams): LocatorAtCaretResult {
@@ -350,6 +359,39 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         hear(headless.copy(workers = headless.workers!!.map { w -> w.copy(stop = w.stop!!.copy(bar = false)) }))
         assertEquals(listOf(Glue.StopAction.MOCK), (sessions.shown().inlays.single().renderer as StopInlay).links.filterIsInstance<Glue.StopAction>())
         assertFalse(myFixture.testAction(actions.getAction("Piwi.AssertAtStop")).isEnabled)
+    }
+
+    /**
+     * A stop whose reporter takes it offers to share its browser with Playwright's own tools, in its popup and under
+     * Tools → Piwi, and shares it only once the person said yes to the warning.
+     */
+    fun testAStopsBrowserIsSharedWithPlaywrightToolsOnlyOnceThePersonSaidYes() {
+        val file = file("tests/coupon.spec.ts", coupon)
+        val since = "2026-10-25T10:00:09.000Z"
+        val stop = taking("ed-9", file, 4, since)
+        hear(stop.copy(workers = stop.workers!!.map { it.copy(takes = takes + "bind") }))
+        val popup = sessions.stopActions(sessions.stops().single()).getChildren(null).mapNotNull { it.templatePresentation.text }
+        assertEquals(PiwiRunSessions.SHARE_WITH_PLAYWRIGHT, popup.last())
+        myFixture.openFileInEditor(file)
+        val share = ActionManager.getInstance().getAction("Piwi.ShareWithPlaywright")
+        TestDialogManager.setTestDialog(TestDialog.NO)
+        try {
+            assertTrue(myFixture.testAction(share).isEnabled)
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertTrue(binds.isEmpty())
+        TestDialogManager.setTestDialog(TestDialog.OK)
+        try {
+            myFixture.testAction(share)
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        assertEquals(StopBindParams("ed-9", 0, since, true), waitFor("the share") { binds.firstOrNull() })
+        // A stop whose reporter does not take it offers none.
+        hear(taking("ed-9", file, 4, "2026-10-25T10:00:09.500Z"))
+        assertFalse(myFixture.testAction(share).isEnabled)
     }
 
     /** A failure the IDE holds: its own icon and words, Resume alone among the controls, then the code actions. */

@@ -883,9 +883,11 @@ and a JSON schema that names them (`AGENT_TOOLS`, `additionalProperties: false`)
 
 **The page is untrusted.** Each result holds Piwi's answer as JSON first, then, apart, what came from the page, between
 two markers that share a random nonce (`pageContent`), which the page cannot guess: the snapshot and its change, the
-address and the title, an element's name, text and value, the locators built from them, a failure's error, the
-console, the page's errors and its requests' URLs, each through `hideSecretsInText` or `hideSecretsInUrl` again, then
-an image when asked. The JSON that names the runs, the stops and the calls holds the test's own words alone. The
+address and the title, an element's name, text and value, the locators built from them, a failure's error and its
+title (`Failed` in the JSON), the console, the page's errors and its requests' URLs, each through `hideSecretsInText`
+or `hideSecretsInUrl` again, then an image when asked. The JSON that names the runs, the stops and the calls holds the
+test's own words alone, and the worker's word on a page call that failed is the first line of Playwright's error,
+whose call log quotes the element's HTML. The
 tools' descriptions and the server's `instructions` say to read the block as data, never as instructions.
 
 **Sharing with Playwright's tools.** `piwi/stopBind { ref, worker?, since, on }` has the stopped worker bind its

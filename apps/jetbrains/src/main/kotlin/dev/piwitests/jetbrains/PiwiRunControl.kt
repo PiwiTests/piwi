@@ -61,6 +61,7 @@ import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.MessageDialogBuilder
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Condition
 import com.intellij.openapi.util.Disposer
@@ -188,6 +189,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         override fun action(params: StopActionParams) = server()?.stopAction(params)?.orNull()
 
         override fun requests(params: StopRequestsParams) = server()?.stopRequests(params)?.orNull()
+
+        override fun bind(params: StopBindParams) = server()?.stopBind(params)?.orNull()
 
         override fun locatorAtCaret(params: LocatorAtCaretParams) = server()?.locatorAtCaret(params)?.orNull()
 
@@ -684,6 +687,47 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 },
             )
         }
+        if (Glue.canShare(stop)) {
+            addSeparator()
+            add(
+                object : DumbAwareAction(SHARE_WITH_PLAYWRIGHT) {
+                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+                    override fun actionPerformed(e: AnActionEvent) = share(stop)
+                },
+            )
+        }
+    }
+
+    /**
+     * Share a stop's browser with Playwright's own tools until its test ends, once the person said yes to the warning,
+     * on the event thread: the answer names the command that joins it, to copy, and offers to stop sharing.
+     */
+    fun share(stop: Glue.ShownStop) {
+        val since = stop.stop.since ?: return PiwiCommands.notify(project, "The test went on.")
+        val yes = MessageDialogBuilder.yesNo("Share the Stopped Browser with Playwright Tools?", Glue.SHARE_WARNING)
+            .yesText("Share")
+            .noText("Cancel")
+            .ask(project)
+        if (!yes) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val shared = remote.bind(StopBindParams(stop.ref, stop.worker, since, true))
+            val command = shared?.command
+            if (shared == null) return@executeOnPooledThread PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
+            if (!shared.ok || command == null) return@executeOnPooledThread PiwiCommands.notify(project, shared.message.orEmpty())
+            NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+                .createNotification(Glue.sharedText(shared), NotificationType.WARNING)
+                .addAction(NotificationAction.createSimpleExpiring("Copy the Command") {
+                    CopyPasteManager.getInstance().setContents(java.awt.datatransfer.StringSelection(command))
+                })
+                .addAction(NotificationAction.createSimpleExpiring("Stop Sharing") {
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        val stopped = remote.bind(StopBindParams(stop.ref, stop.worker, since, false))
+                        PiwiCommands.notify(project, stopped?.message ?: "The editor service did not answer.")
+                    }
+                })
+                .notify(project)
+        }
     }
 
     fun perform(stop: Glue.ShownStop, link: Glue.StopLink, editor: Editor?) {
@@ -866,6 +910,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
         const val PAUSED_PAGE = "Paused Page"
         const val SHOW_PAUSED_PAGE = "Show the Paused Page"
+        const val SHARE_WITH_PLAYWRIGHT = "Share with Playwright Tools"
 
         /** The pause after a breakpoint changes before the runs are sent them: a burst of changes is sent once. */
         private const val BREAKPOINTS_WAIT_MILLIS = 100L
@@ -920,6 +965,8 @@ internal interface RunRemote {
     fun action(params: StopActionParams): RunControlResult?
 
     fun requests(params: StopRequestsParams): StopRequestsResult?
+
+    fun bind(params: StopBindParams): StopBindResult?
 
     fun locatorAtCaret(params: LocatorAtCaretParams): LocatorAtCaretResult?
 
@@ -1286,4 +1333,17 @@ class AssertRegionAtStopAction : StopCodeAction(Glue.StopAction.ASSERT_REGION)
 
 /** **Mock a Request**: a response the test kept, chosen in a list, answered by a route written above the stopped line. */
 class MockAtStopAction : StopCodeAction(Glue.StopAction.MOCK)
+
+/**
+ * **Share the Stopped Browser with Playwright Tools**: the stop at the caret's line among those whose reporter takes it,
+ * else the only one, else the one chosen, shared once the person said yes to the warning, until its test ends.
+ */
+class ShareWithPlaywrightAction : RunControlAction() {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.shareable
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val sessions = sessions(e) ?: return
+        sessions.atCaret(e.getData(CommonDataKeys.EDITOR), Glue::canShare) { sessions.share(it) }
+    }
+}
 
