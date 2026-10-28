@@ -484,6 +484,8 @@ describe("an agent's tools for the runs of the editor window", () => {
     expect(stepped.piwi).toMatchObject({
       ok: true,
       message: 'Stepping to the next call. The run stopped.',
+      // The stop that came answers, whatever the paced session says yet.
+      state: 'stopped',
       worker: 0,
       stop: { reason: 'step', by: 'agent', line: 5 },
       snapshot: 'the change since the last snapshot read',
@@ -925,7 +927,20 @@ describe('what an agent reads of the page', () => {
       ...RUN_TAKES,
     ] as RunTake[]);
     await waitFor(() => ide.latest(run));
+    const cursor = (await call('run_follow', { run, wait: 0 })).piwi.next as number;
     other.begin('adds a mug');
+    // A call's title names what it typed too, as it ends.
+    other.send({
+      type: 'event',
+      event: {
+        kind: 'call',
+        title: `Fill "hunter2" getByLabel('Password')`,
+        place: { file: 'tests/cart.spec.ts', line: 4, column: 3 },
+        ok: true,
+        error: null,
+        ms: 3,
+      },
+    });
     other.send({
       type: 'stopped',
       stop: 1,
@@ -937,8 +952,11 @@ describe('what an agent reads of the page', () => {
     });
     await waitFor(() => ide.latest(run)?.workers[0]?.stop ?? undefined);
     const listed = await call('run_list');
-    const followed = await call('run_follow', { run, wait: 0 });
+    const followed = await call('run_follow', { run, after: cursor, wait: 0 });
     for (const answer of [listed, followed]) expect(JSON.stringify(answer)).not.toContain('hunter2');
+    expect(followed.piwi.events.find((e: { kind: string }) => e.kind === 'call')).toMatchObject({
+      title: 'Fill "<hidden>"',
+    });
     expect(listed.piwi.runs.find((r: { run: string }) => r.run === run).workers[0].stop.title).toBe(
       `Fill "<hidden>" getByLabel('Password')`,
     );

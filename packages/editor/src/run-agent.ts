@@ -57,6 +57,10 @@ const MAX_STEPS = 200;
 const MAX_SNAPSHOTS = 32;
 /** How long an agent follows a run after its last call on that run, in seconds: then its workers stop telling. */
 export const FOLLOW_IDLE_S = 120;
+/** What a person watching hears as a stop an agent asked for goes on with no agent following it (`letsGoOnIdle`). */
+function letGo(idleMs: number): string {
+  return `The agent called on the run no more for ${Math.round(idleMs / 1000)} seconds: the stop it asked for goes on.`;
+}
 /** The events a worker tells while an agent follows its run, whose page text goes once nobody follows it. */
 const TOLD_KINDS: ReadonlySet<string> = new Set(['call', 'navigation', 'console', 'page-error', 'request-failed']);
 
@@ -125,6 +129,16 @@ export interface RunAgentOptions {
    * default).
    */
   refuses?(ref: string): string | null;
+  /**
+   * Why a stop the agent asks for on the run `ref` (a pause, a step, a run to a line) would go on at once, as no one
+   * could answer it; null when it would hold (always, by default).
+   */
+  stopsGoOn?(ref: string): string | null;
+  /**
+   * Whether the stops the agent asked for go on as it stops following their run (`followIdleMs` after its last call on
+   * it): for a host whose window may be out of sight while it holds them, so a run never waits for an agent that left.
+   */
+  letsGoOnIdle?: boolean;
 }
 
 /** A run's event, as an agent reads it: Piwi's own fields, and those of the page apart (`page`). */
@@ -227,7 +241,7 @@ function runEventOf(event: RunEvent): Pick<AgentEvent, 'kind' | 'fields' | 'page
       return {
         kind: 'call',
         fields: {
-          title: event.title,
+          title: stopTitle(event.title, null),
           ...(event.place ? { file: event.place.file, line: event.place.line } : {}),
           ok: event.ok,
           ms: event.ms,
@@ -784,11 +798,21 @@ export class RunAgent {
     this.following.set(ref, timer);
   }
 
-  /** Nobody follows the run `ref` any more: its workers stop telling, and the page's words they told go. */
+  /**
+   * Nobody follows the run `ref` any more: its workers stop telling, and the page's words they told go; with
+   * `letsGoOnIdle`, the stops the agent asked for go on.
+   */
   private unfollow(ref: string): void {
     clearTimeout(this.following.get(ref));
     this.following.delete(ref);
     this.options.sessions.unfollowRun(ref);
+    const session = this.options.letsGoOnIdle ? this.live(ref) : undefined;
+    for (const worker of session?.workers ?? []) {
+      if (worker.stop?.by !== 'agent') continue;
+      const stop = { ref, worker: worker.worker, action: 'resume' as const, since: worker.stop.since };
+      if (!this.options.sessions.control(stop, 'agent').ok) continue;
+      this.options.notice(session!.root, letGo(this.options.followIdleMs ?? FOLLOW_IDLE_S * 1000));
+    }
     for (const event of this.logs.get(ref)?.events ?? []) {
       if (!event.page || !TOLD_KINDS.has(event.kind)) continue;
       delete event.page;
@@ -1040,6 +1064,10 @@ export class RunAgent {
     } else if (args.raw('place') !== undefined) {
       throw new ArgumentError('`place` is for `run-to` alone.');
     }
+    // A stop no one could answer goes on as it comes: the agent hears why, rather than a stop that is gone.
+    const goesOn =
+      chosen === 'pause' || chosen === 'step' || chosen === 'run-to' ? this.options.stopsGoOn?.(ref) : null;
+    if (goesOn) return this.error(goesOn);
     this.startFollowing(ref);
     const mark = log.next - 1;
     // The worker whose test End the test ends: the one named, else the one at the stop named.
@@ -1090,7 +1118,8 @@ export class RunAgent {
       {
         ok: true,
         message: `${answer.message} The run stopped.`,
-        state: this.state(now, log),
+        // The stop that came says so: the session the clients hear is paced, and may not have it yet.
+        state: now?.ended || log.ended ? 'ended' : 'stopped',
         worker: stoppedWorker,
         stop: came.fields,
         next: came.seq,
