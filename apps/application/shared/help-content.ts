@@ -527,13 +527,13 @@ export const HELP_TOPICS = {
   'project.live-view': {
     title: 'Live view',
     text: [
-      'Lets the people who may open a run of this project watch, from the run page, the page each of its workers is on while it runs.',
+      'Lets the people who may open a CI run of this project watch, from the run page, the page each of its workers is on while it runs.',
       '',
-      '- **Sent** — small JPEG images of the test’s page, a few a second, with the call each was taken at, and when a test is paused. Only while someone watches that worker.',
+      '- **Sent** — small JPEG images of the test’s page, a few a second, with the call each was taken at. Only while someone watches that worker.',
       '- **To** — the people who may open the run, over this instance. The images show whatever the page shows.',
       '- **Kept** — nothing: relayed and dropped, never in the database, the logs or an export.',
       '',
-      'The run must be registered by the reporter’s global setup (`wrapConfig`). Turning it off ends every view at once.',
+      'Only a CI run the reporter’s global setup (`wrapConfig`) registers sends it: a run on a developer’s machine sends nothing. Turning it off ends every view at once.',
     ].join('\n'),
     doc: 'features/live-view',
   },

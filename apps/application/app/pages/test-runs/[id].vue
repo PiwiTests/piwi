@@ -70,11 +70,16 @@ const liveResources = ref<RunResourceTimelinePart[]>([]);
 // The workers in the run's live view, by `liveWorkerKey`, from the stream's `live-worker` events: each running row of
 // one offers Watch, and says Paused while its test is stopped.
 const liveWorkers = ref<Record<string, LiveWorkerState>>({});
-// The worker someone opened Watch on, and the test it ran then.
-const watching = ref<{ worker: number; shard: number | null; test: string } | null>(null);
+// The worker someone opened Watch on, and the execution of the row they opened it from: the view is that test's.
+const watching = ref<{ worker: number; shard: number | null; test: string; executionId: number } | null>(null);
 const watchOpen = ref(false);
 function watchWorker(worker: LiveWorkerState, testCase: TestCaseResult) {
-  watching.value = { worker: worker.worker, shard: worker.shard, test: testCase.title };
+  watching.value = {
+    worker: worker.worker,
+    shard: worker.shard,
+    test: testCase.title,
+    executionId: testCase.executionId,
+  };
   watchOpen.value = true;
 }
 let eventSource: EventSource | null = null;
@@ -988,11 +993,14 @@ const moreMenuItems = computed(() => {
   <ClientOnly>
     <RunLiveView
       v-if="watching"
+      :key="`${liveWorkerKey(watching)}:${watching.executionId}`"
       v-model:open="watchOpen"
       :run-id="Number(runId)"
       :worker="watching.worker"
       :shard="watching.shard"
       :test="watching.test"
+      :project-key="testRun?.projectId"
+      :project-name="testRun?.project?.name"
     />
   </ClientOnly>
 

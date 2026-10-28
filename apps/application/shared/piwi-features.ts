@@ -152,7 +152,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Live view of a run',
         summary:
-          'Watch the page each worker of a running run is on, beside its step, and see which test is paused: a few images a second, only while someone watches, to who may open the run, never stored.',
+          'Watch the page each worker of a running CI run is on, beside its step: a few images a second, only while someone watches, to who may open the run, never stored.',
         needs: ['fixtures'],
         where: 'Test run → Tests → Watch; Project → Settings → Live view',
         doc: 'features/live-view',

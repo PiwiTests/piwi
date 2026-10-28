@@ -1,13 +1,23 @@
 <script setup lang="ts">
 /**
- * The live view of one worker of a running run: the images of its test's page the worker sends while this view is
- * open, a few a second, each with the call it was taken at. Watching only: nothing here reaches the test. The view
- * ends as the test ends, the worker leaves, the run ends or the project turns its live view off, and as it closes.
- * Nothing is kept: the latest image alone is in this page's memory, until the view closes.
+ * The live view of one worker of a running run, for the test of the row it was opened from: the images of its page
+ * the worker sends while this view is open, a few a second, each with the call it was taken at. Watching only:
+ * nothing here reaches the test. The view ends as its test ends (the worker says so, or its next test's first image
+ * comes), the worker leaves, the run ends or the project turns its live view off, and as it closes. Nothing is kept:
+ * the latest image alone is in this page's memory, until the view closes.
  */
-import { LIVE_VIEW_END_TEXT, parseLiveViewerMessage, type LiveCall } from '#shared/live-view';
+import { LIVE_VIEW_END_TEXT, liveWorkerName, parseLiveViewerMessage, type LiveCall } from '#shared/live-view';
 
-const props = defineProps<{ runId: number; worker: number; shard: number | null; test: string }>();
+const props = defineProps<{
+  runId: number;
+  worker: number;
+  shard: number | null;
+  /** The title of the test whose row the view was opened from. */
+  test: string;
+  /** Piwi project id + name, for the IDE opener of each call's place. */
+  projectKey?: string | number | null;
+  projectName?: string | null;
+}>();
 const open = defineModel<boolean>('open', { required: true });
 
 const WAITING = 'Waiting for the first image of the page…';
@@ -35,6 +45,8 @@ function connect(): void {
     const message = parseLiveViewerMessage(String(event.data));
     if (!message) return;
     if (message.type === 'frame') {
+      // The worker went on to its next test: the one watched ended.
+      if (message.test !== null && message.test !== props.test) return end(LIVE_VIEW_END_TEXT['test-ended']);
       image.value = `data:image/jpeg;base64,${message.data}`;
       call.value = message.call;
       notice.value = '';
@@ -75,14 +87,15 @@ watch(
 );
 onBeforeUnmount(disconnect);
 
-const where = computed(() => (call.value?.file ? `${call.value.file}:${call.value.line ?? ''}` : ''));
+const name = computed(() => liveWorkerName({ shard: props.shard, worker: props.worker }));
+const title = computed(() => `${name.value.charAt(0).toUpperCase()}${name.value.slice(1)} · live`);
 const alt = computed(
-  () => `The page worker ${props.worker} is on${call.value ? `, at ${call.value.title}` : ''}, as the test sees it`,
+  () => `The page ${name.value} is on${call.value ? `, at ${call.value.title}` : ''}, as the test sees it`,
 );
 </script>
 
 <template>
-  <UModal v-model:open="open" :title="`Worker ${worker} · live`" :description="test" :ui="{ content: 'sm:max-w-3xl' }">
+  <UModal v-model:open="open" :title="title" :description="test" :ui="{ content: 'sm:max-w-3xl' }">
     <template #body>
       <figure class="space-y-2" data-testid="live-view">
         <div class="relative aspect-[16/10] w-full overflow-hidden rounded-md border border-default bg-elevated">
@@ -94,11 +107,11 @@ const alt = computed(
             :class="ended ? 'opacity-40' : ''"
             data-testid="live-frame"
           />
+          <!-- Always in the page, empty while images show, so a screen reader announces each change. -->
           <p
-            v-if="notice"
             role="status"
             aria-live="polite"
-            class="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-highlighted"
+            class="pointer-events-none absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-highlighted"
             data-testid="live-status"
           >
             {{ notice }}
@@ -107,7 +120,15 @@ const alt = computed(
         <figcaption class="min-h-4 text-xs text-muted" data-testid="live-call">
           <template v-if="call">
             At <span class="font-mono">{{ call.title }}</span
-            ><template v-if="where"> · {{ where }}</template>
+            ><template v-if="call.file">
+              ·
+              <OpenInIdeLink
+                :file-path="call.file"
+                :line="call.line"
+                :project-key="projectKey"
+                :project-name="projectName"
+                inline
+            /></template>
           </template>
         </figcaption>
       </figure>

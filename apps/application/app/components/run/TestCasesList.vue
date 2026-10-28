@@ -69,14 +69,36 @@ function liveStep(tc: TestCaseResult): LiveStepInfo | null {
   return liveStepForCase(props.liveSteps, tc);
 }
 
+/** A running row's worker, as the run's live view files it. */
+function workerKeyOf(tc: TestCaseResult): string | null {
+  if (tc.status !== 'running' || tc.workerIndex == null) return null;
+  return liveWorkerKey({ shard: tc.shardIndex ?? null, worker: tc.workerIndex });
+}
+
 /**
- * The running row's worker in the run's live view, matched by its shard and worker index. A stop names its test: one
- * of the worker's next test is not this row's, whose end has not streamed in yet.
+ * The execution each worker in the live view runs now: its running row that began last. A row of the test before,
+ * whose end has not streamed in yet, is not it.
+ */
+const currentExecutionOf = computed(() => {
+  const current = new Map<string, TestCaseResult>();
+  if (!props.liveWorkers) return current;
+  for (const tc of props.testCases) {
+    const key = workerKeyOf(tc);
+    if (!key || !props.liveWorkers[key]) continue;
+    const seen = current.get(key);
+    if (!seen || (tc.startedAt ?? 0) >= (seen.startedAt ?? 0)) current.set(key, tc);
+  }
+  return current;
+});
+
+/**
+ * The row's worker in the run's live view, when the row is the test that worker runs now. A stop names its test: one
+ * of the worker's next test, whose begin has not streamed in yet, is not this row's.
  */
 function liveWorkerOf(tc: TestCaseResult): LiveWorkerState | null {
-  if (!props.liveWorkers || tc.status !== 'running' || tc.workerIndex == null) return null;
-  const worker = props.liveWorkers[liveWorkerKey({ shard: tc.shardIndex ?? null, worker: tc.workerIndex })];
-  if (!worker) return null;
+  const key = workerKeyOf(tc);
+  const worker = key ? props.liveWorkers?.[key] : null;
+  if (!key || !worker || currentExecutionOf.value.get(key)?.executionId !== tc.executionId) return null;
   return worker.paused?.test && worker.paused.test !== tc.title ? { ...worker, paused: null } : worker;
 }
 

@@ -331,7 +331,13 @@ const clusterLabel = computed(() =>
         <div v-if="liveStep || liveWorker" class="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
           <!-- A stopped test shows where it is paused in place of its last step. -->
           <TestRowLiveStep v-if="liveStep && !liveWorker?.paused" :step="liveStep" class="max-w-full" />
-          <TestRowLiveWorker v-if="liveWorker" :worker="liveWorker" @watch="emit('watch')" />
+          <TestRowLiveWorker
+            v-if="liveWorker"
+            :worker="liveWorker"
+            :project-key="projectKey"
+            :project-name="projectName"
+            @watch="emit('watch')"
+          />
         </div>
       </div>
     </div>

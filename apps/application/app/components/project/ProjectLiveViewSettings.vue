@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
- * Project settings → Live view: whether people who may open a live run of the project can watch the page each of its
- * workers is on, from the run page. Off by default; the section says what goes out, to whom, and that nothing is kept.
+ * Project settings → Live view: whether people who may open a live CI run of the project can watch the page each of
+ * its workers is on, from the run page. Off by default; the section says what goes out, from which runs, to whom, and
+ * that nothing is kept.
  */
 import type { ProjectWithTestRuns } from '~~/types/api';
 
@@ -31,14 +32,14 @@ async function submit() {
           <USwitch
             v-model="state.liveView"
             label="Let people who may open a run watch its workers live"
-            description="Each run of this project the reporter's global setup registers, in CI or on a developer's machine, while it runs."
+            description="Each CI run of this project the reporter's global setup registers, while it runs. A run on a developer's machine sends nothing."
           />
         </UFormField>
         <dl class="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[8rem_1fr]">
           <dt class="font-semibold text-highlighted">What goes out</dt>
           <dd class="text-highlighted leading-relaxed">
-            Small images of the test's page, a few a second, each with the call it was taken at, and when a test is
-            paused. Only while someone watches that worker: a run nobody watches sends no image.
+            Small images of the test's page, a few a second, each with the call it was taken at. Only from a CI run, and
+            only while someone watches that worker: a run nobody watches sends no image.
           </dd>
           <dt class="font-semibold text-highlighted">Who sees it</dt>
           <dd class="text-highlighted leading-relaxed">

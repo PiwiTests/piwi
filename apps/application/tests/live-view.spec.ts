@@ -1,43 +1,36 @@
 import { test, expect, type APIRequestContext } from './fixtures';
 import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as http from 'node:http';
 import { createRequire } from 'node:module';
-import * as net from 'node:net';
-import * as os from 'node:os';
 import { join, resolve } from 'node:path';
-import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
-import { parseRunToHub } from '@piwitests/core/run-channel';
+import type { LiveStop } from '@piwitests/core/live-view';
+import { detectCi } from '../../../packages/reporter/src/internal/support/ci';
 import { PROJECT } from '#shared/test-project-names';
 import { resolveE2ETarget } from './desktop-target';
 
 /**
- * The run page's live view against this server: a real Playwright run through the built reporter, in a project with
- * the live view on, shows **Watch** beside its running test; Watch shows the test's page, with the call each image
- * was taken at; a test stopped by `page.pause()` (the editor's run channel holds it) shows **Paused**. In a project
- * with the live view off, the same run's workers send this server nothing.
+ * The run page's live view against this server. A real CI run through the built reporter, in a project with the live
+ * view on, shows **Watch** beside its running test; Watch shows the test's page, with the call each image was taken
+ * at. In a project with the live view off, and for a run outside CI, the run's workers send this server nothing. A
+ * worker of the run's live view, played by this spec, shows **Paused** on the row of the test it stopped, at its call,
+ * and Watch on the test it runs alone; both leave every row as the project turns the live view off.
  */
 
 const target = resolveE2ETarget();
 const reporter = resolve(process.cwd(), '..', '..', 'packages', 'reporter', 'dist', 'index.js');
-const REF = 'ed-11ve0e2e';
-const TOKEN = 'live-view-e2e-token-0123456789';
 const playwrightCli = createRequire(import.meta.url).resolve('@playwright/test/cli');
 
 /** A slow page: a spinner that never stops, and a heading the test clicks. */
 const SLOW_PAGE = `<style>body { font: 16px sans-serif; padding: 24px } #spin { width: 96px; height: 96px; border: 12px solid #ddd; border-top-color: #7c3aed; border-radius: 50%; animation: s 1s linear infinite } @keyframes s { to { transform: rotate(360deg) } }</style><h1>Checkout</h1><p>Paying…</p><div id="spin"></div>`;
 
-/** The suite the run executes: a test that waits on its slow page until told, then one that stops at `page.pause()`. */
+/** The suite the run executes: a test that waits on its slow page until told. */
 const SPEC = (folder: string) => `const fs = require('node:fs');
 const { test, expect } = require('./fixture.cjs');
 test('pays on a slow page', async ({ page }) => {
   await page.setContent(${JSON.stringify(SLOW_PAGE)});
   await page.getByRole('heading', { name: 'Checkout' }).click();
   await expect.poll(() => fs.existsSync(${JSON.stringify(join(folder, 'watched'))}), { timeout: 90000 }).toBe(true);
-});
-test('stops to look', async ({ page }) => {
-  await page.setContent('<h1>Receipt</h1>');
-  await page.pause();
-  await expect(page.getByRole('heading')).toHaveText('Receipt');
 });
 `;
 
@@ -46,33 +39,14 @@ interface Run {
   child: ChildProcess;
   exited: Promise<number | null>;
   output: () => string;
-  hub: net.Server;
-  /** Resume the stop the editor's run channel holds, once there is one. */
-  resume: () => Promise<void>;
+  /** Let the test go on, past its slow page. */
+  release: () => void;
 }
 
-/** Start the suite as a project's run, against this server, with an editor's run channel that holds its stops. */
-async function startRun(projectName: string): Promise<Run> {
+/** Start the suite as a project's run against this server, in a CI job or outside one. */
+async function startRun(projectName: string, ci: boolean): Promise<Run> {
   fs.mkdirSync(join(process.cwd(), '.test-temp'), { recursive: true });
   const folder = fs.mkdtempSync(join(process.cwd(), '.test-temp', 'live-view-'));
-  const socketDir = fs.mkdtempSync(join(os.tmpdir(), 'piwi-live-e2e-'));
-  const socketPath = join(socketDir, 'channel.sock');
-  let held: { socket: net.Socket; stop: number } | null = null;
-  const hub = net.createServer((socket) => {
-    socket.setEncoding('utf8');
-    socket.on('error', () => socket.destroy());
-    socket.on(
-      'data',
-      lineReader(
-        (line) => {
-          const message = parseRunToHub(line);
-          if (message?.type === 'stopped') held = { socket, stop: message.stop };
-        },
-        () => socket.destroy(),
-      ),
-    );
-  });
-  await new Promise<void>((done) => hub.listen(socketPath, done));
   fs.writeFileSync(join(folder, 'live.spec.cjs'), SPEC(folder));
   fs.writeFileSync(
     join(folder, 'fixture.cjs'),
@@ -96,18 +70,13 @@ module.exports = wrapConfig(defineConfig({
 }), { serverUrl: ${JSON.stringify(target.baseUrl)}, projectName: ${JSON.stringify(projectName)}, uploadTraces: false, uploadReport: false });
 `,
   );
-  const channel = formatRecordChannel({ path: socketPath, token: TOKEN });
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    PIWI_RUN_CHANNEL: channel,
-    PIWI_RECORD_CHANNEL: channel,
-    PIWI_ORIGIN: 'editor',
-    PIWI_ORIGIN_REF: REF,
-  };
-  // The editor's stops never hold under CI; the run reports where the config says.
-  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PROJECT_NAME', 'PIWI_LIVE_VIEW']) {
+  // The run reports where the config says; it is a CI run, or no variable a CI provider sets is left.
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PROJECT_NAME', 'PIWI_LIVE_VIEW']) {
     delete env[name];
   }
+  for (const name of Object.keys(env)) if (detectCi({ [name]: env[name] })) delete env[name];
+  if (ci) env.CI = 'true';
   let output = '';
   const child = spawn(process.execPath, [playwrightCli, 'test'], { cwd: folder, env });
   child.stdout?.on('data', (chunk) => (output += String(chunk)));
@@ -118,17 +87,12 @@ module.exports = wrapConfig(defineConfig({
     child,
     exited,
     output: () => output,
-    hub,
-    resume: async () => {
-      await expect.poll(() => held !== null, { timeout: 60_000 }).toBe(true);
-      held!.socket.write(`${JSON.stringify({ type: 'control', action: 'resume', stop: held!.stop })}\n`);
-    },
+    release: () => fs.writeFileSync(join(folder, 'watched'), ''),
   };
 }
 
 async function endRun(run: Run): Promise<void> {
   if (run.child.exitCode === null) run.child.kill();
-  await new Promise<void>((done) => run.hub.close(() => done()));
   fs.rmSync(run.folder, { recursive: true, force: true });
 }
 
@@ -172,21 +136,43 @@ async function liveRunId(request: APIRequestContext, project: number, after: num
   return id;
 }
 
+async function latestRunId(request: APIRequestContext, project: number): Promise<number> {
+  return ((await (await request.get(`/api/projects/${project}/latest-run`)).json()) as { id: number }).id;
+}
+
+type Workers = { enabled: boolean; workers: Array<{ worker: number }>; received: Record<string, number> };
+
+async function liveWorkers(request: APIRequestContext, runId: number): Promise<Workers> {
+  return (await (await request.get(`/api/test-runs/${runId}/live-view/workers`)).json()) as Workers;
+}
+
+/** A worker's stream to the run's live view, held as a test worker holds it, and whether it is still open. */
+function holdWorkerStream(runId: number, key: string): { open: () => boolean; close: () => void } {
+  let open = true;
+  const request = http.request(`${target.baseUrl}/api/test-runs/${runId}/live-view?worker=0`, {
+    headers: { Accept: 'text/event-stream', Authorization: `Bearer ${key}` },
+  });
+  request.on('response', (response) => {
+    response.resume();
+    response.on('close', () => (open = false));
+  });
+  request.on('error', () => (open = false));
+  request.end();
+  return { open: () => open, close: () => request.destroy() };
+}
+
 test.describe('Live view of a run', () => {
   test.skip(target.desktop, 'the desktop app guards every route with its token, which a test worker does not hold');
   test.describe.configure({ mode: 'serial' });
 
-  test('Watch shows the page of a running test with its call, and Paused a test stopped by page.pause()', async ({
-    page,
-    request,
-  }, testInfo) => {
+  test('Watch shows the page of a running CI test with its call', async ({ page, request }, testInfo) => {
     test.setTimeout(240_000);
     const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
     const patched = await request.patch(`/api/projects/${project}`, { data: { liveView: true } });
     expect(patched.ok()).toBeTruthy();
-    const before = ((await (await request.get(`/api/projects/${project}/latest-run`)).json()) as { id: number }).id;
+    const before = await latestRunId(request, project);
 
-    const run = await startRun(PROJECT.LIVE_VIEW_ON);
+    const run = await startRun(PROJECT.LIVE_VIEW_ON, true);
     try {
       const runId = await liveRunId(request, project, before);
       await page.goto(`/test-runs/${runId}`);
@@ -197,10 +183,14 @@ test.describe('Live view of a run', () => {
       await watch.click();
       const view = page.getByRole('dialog');
       await expect(view).toContainText('pays on a slow page');
+      await expect(view.getByRole('heading', { name: /^Worker \d+ · live$/ })).toBeVisible();
       const frame = view.getByTestId('live-frame');
       await expect(frame).toBeVisible({ timeout: 20_000 });
       await expect(frame).toHaveAttribute('src', /^data:image\/jpeg;base64,/);
-      await expect(view.getByTestId('live-call')).toContainText('live.spec.cjs');
+      // The call's place opens in the editor.
+      await expect(view.getByTestId('live-call').getByText(/^live\.spec\.cjs:\d+$/)).toBeVisible();
+      // The status region stays in the page, empty while images show.
+      await expect(view.getByRole('status')).toHaveText('');
       // The image is the page as it paints: a spinner turns, so the image changes.
       const first = await frame.getAttribute('src');
       await expect.poll(() => frame.getAttribute('src'), { timeout: 10_000 }).not.toBe(first);
@@ -210,16 +200,13 @@ test.describe('Live view of a run', () => {
       await page.screenshot({ path: testInfo.outputPath('live-view-watch-narrow.png') });
       await page.setViewportSize(wide);
 
-      type Live = { enabled: boolean; workers: Array<{ worker: number }>; received: { frames: number; bytes: number } };
-      const workers = async () =>
-        (await (await request.get(`/api/test-runs/${runId}/live-view/workers`)).json()) as Live;
-      const from = await workers();
+      const from = await liveWorkers(request, runId);
       const startedAt = Date.now();
       await page.waitForTimeout(3000);
-      const live = await workers();
+      const live = await liveWorkers(request, runId);
       const seconds = (Date.now() - startedAt) / 1000;
-      const frames = live.received.frames - from.received.frames;
-      const bytes = live.received.bytes - from.received.bytes;
+      const frames = live.received.frames! - from.received.frames!;
+      const bytes = live.received.bytes! - from.received.bytes!;
       console.log(
         `[live view] ${frames} frames in ${seconds.toFixed(1)} s: ${(frames / seconds).toFixed(1)} a second, ` +
           `${Math.round(bytes / Math.max(1, frames) / 1024)} KB a frame, ${Math.round(bytes / seconds / 1024)} KB a second`,
@@ -230,27 +217,10 @@ test.describe('Live view of a run', () => {
       expect(frames / seconds).toBeLessThanOrEqual(4.5);
 
       // The test ends: so does its view.
-      fs.writeFileSync(join(run.folder, 'watched'), '');
+      run.release();
       await expect(view.getByTestId('live-status')).toHaveText('The test ended.', { timeout: 20_000 });
       await page.keyboard.press('Escape');
       await expect(view).toBeHidden();
-
-      // The next test stops at page.pause(): its row says it is paused, at that call.
-      const paused = page.getByTestId('live-paused');
-      await expect(paused).toBeVisible({ timeout: 60_000 });
-      // On the stopped test's row, not on the row of the test before it, whose end may stream in later.
-      const row = paused.locator(
-        'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " border-b ")][1]',
-      );
-      await expect(row).toContainText('stops to look');
-      await expect(paused).toContainText('Paused');
-      await expect(paused).toContainText('live.spec.cjs:10');
-      await page.screenshot({ path: testInfo.outputPath('live-view-paused.png') });
-      await page.setViewportSize({ width: 390, height: 844 });
-      await page.screenshot({ path: testInfo.outputPath('live-view-paused-narrow.png') });
-      await page.setViewportSize(wide);
-      await run.resume();
-      await expect(paused).toBeHidden({ timeout: 30_000 });
 
       expect(await run.exited, run.output()).toBe(0);
       expect(run.output()).toContain('Live view on');
@@ -259,11 +229,11 @@ test.describe('Live view of a run', () => {
     }
   });
 
-  test('a project with the live view off: no Watch, and its run sends nothing', async ({ page, request }) => {
+  test('a project with the live view off: no Watch, and its CI run sends nothing', async ({ page, request }) => {
     test.setTimeout(240_000);
     const project = await projectId(request, PROJECT.LIVE_VIEW_OFF);
-    const before = ((await (await request.get(`/api/projects/${project}/latest-run`)).json()) as { id: number }).id;
-    const run = await startRun(PROJECT.LIVE_VIEW_OFF);
+    const before = await latestRunId(request, project);
+    const run = await startRun(PROJECT.LIVE_VIEW_OFF, true);
     try {
       const runId = await liveRunId(request, project, before);
       await page.goto(`/test-runs/${runId}`);
@@ -273,7 +243,7 @@ test.describe('Live view of a run', () => {
       // While the test runs on its slow page, nothing offers to watch it, and nothing reached this server.
       await page.waitForTimeout(3000);
       await expect(page.getByRole('button', { name: /^Watch worker/ })).toHaveCount(0);
-      expect(await (await request.get(`/api/test-runs/${runId}/live-view/workers`)).json()).toEqual({
+      expect(await liveWorkers(request, runId)).toEqual({
         enabled: false,
         workers: [],
         received: { requests: 0, frames: 0, bytes: 0 },
@@ -281,16 +251,142 @@ test.describe('Live view of a run', () => {
       const refused = await request.get(`/api/test-runs/${runId}/live-view/watch?worker=0`);
       expect(refused.status()).toBe(404);
 
-      fs.writeFileSync(join(run.folder, 'watched'), '');
-      await run.resume();
+      run.release();
       expect(await run.exited, run.output()).toBe(0);
       expect(run.output()).not.toContain('Live view on');
-      const after = (await (await request.get(`/api/test-runs/${runId}/live-view/workers`)).json()) as {
-        received: { requests: number };
-      };
-      expect(after.received.requests).toBe(0);
+      expect((await liveWorkers(request, runId)).received.requests).toBe(0);
     } finally {
       await endRun(run);
+    }
+  });
+
+  test('a run outside CI, in a project with the live view on, asks for no key and sends nothing', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(240_000);
+    const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
+    expect((await request.patch(`/api/projects/${project}`, { data: { liveView: true } })).ok()).toBeTruthy();
+    const before = await latestRunId(request, project);
+    const run = await startRun(PROJECT.LIVE_VIEW_ON, false);
+    try {
+      const runId = await liveRunId(request, project, before);
+      await page.goto(`/test-runs/${runId}`);
+      await expect(page.getByTestId('live-step').or(page.getByText('In progress…')).first()).toBeVisible({
+        timeout: 60_000,
+      });
+      await page.waitForTimeout(3000);
+      await expect(page.getByRole('button', { name: /^Watch worker/ })).toHaveCount(0);
+      expect(await liveWorkers(request, runId)).toMatchObject({
+        enabled: true,
+        workers: [],
+        received: { requests: 0, frames: 0, bytes: 0 },
+      });
+
+      run.release();
+      expect(await run.exited, run.output()).toBe(0);
+      expect(run.output()).not.toContain('Live view on');
+      expect((await liveWorkers(request, runId)).received.requests).toBe(0);
+    } finally {
+      await endRun(run);
+    }
+  });
+
+  test('Paused shows on the stopped test’s row at its call, and leaves every row as the setting turns off', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
+    expect((await request.patch(`/api/projects/${project}`, { data: { liveView: true } })).ok()).toBeTruthy();
+
+    // A CI run's setup, as the reporter's global setup asks for it, and its begin.
+    const setup = await request.post('/api/test-runs/setup', {
+      data: { projectName: PROJECT.LIVE_VIEW_ON, startTime: new Date().toISOString(), liveView: true },
+    });
+    expect(setup.ok()).toBeTruthy();
+    const { runId, setupToken, liveView } = (await setup.json()) as {
+      runId: number;
+      setupToken: string;
+      liveView: { key: string };
+    };
+    const begun = await request.post(`/api/test-runs/${runId}/begin`, { data: { setupToken, totalTests: 2 } });
+    expect(begun.ok()).toBeTruthy();
+    const { streamToken } = (await begun.json()) as { streamToken: string };
+    // Worker 0 ran a test whose end has not streamed in yet, and runs the next one now.
+    const now = Date.now();
+    const events = await request.post(`/api/test-runs/${runId}/events`, {
+      data: {
+        streamToken,
+        testCases: [
+          {
+            type: 'begin',
+            title: 'pays on a slow page',
+            location: 'tests/live.spec.ts:3:1',
+            workerIndex: 0,
+            startedAt: now - 2000,
+          },
+          {
+            type: 'begin',
+            title: 'stops to look',
+            location: 'tests/live.spec.ts:8:1',
+            workerIndex: 0,
+            startedAt: now - 1000,
+          },
+        ],
+      },
+    });
+    expect(events.ok()).toBeTruthy();
+
+    const worker = holdWorkerStream(runId, liveView.key);
+    const post = (message: Record<string, unknown>) =>
+      request.post(`/api/test-runs/${runId}/live-view`, {
+        headers: { Authorization: `Bearer ${liveView.key}` },
+        data: { shard: null, worker: 0, ...message },
+      });
+    const stop: LiveStop = {
+      reason: 'page-pause',
+      call: { title: 'Pause', file: 'tests/live.spec.ts', line: 10 },
+      test: 'stops to look',
+    };
+    try {
+      await expect.poll(async () => (await liveWorkers(request, runId)).workers.length).toBe(1);
+      expect((await post({ type: 'stop', stop })).ok()).toBeTruthy();
+      await page.goto(`/test-runs/${runId}`);
+
+      const paused = page.getByTestId('live-paused');
+      await expect(paused).toBeVisible({ timeout: 30_000 });
+      // On the stopped test's row, which alone offers Watch: the row of the test before is not the worker's now.
+      const rowOf = (inner: ReturnType<typeof page.getByTestId>) =>
+        inner.locator('xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " border-b ")][1]');
+      await expect(rowOf(paused)).toContainText('stops to look');
+      const watch = page.getByRole('button', { name: 'Watch worker 0 live' });
+      await expect(watch).toHaveCount(1);
+      await expect(rowOf(page.getByTestId('live-watch'))).toContainText('stops to look');
+      await expect(paused).toContainText('Paused');
+      // The call's place opens in the editor.
+      await expect(paused.getByText('tests/live.spec.ts:10', { exact: true })).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath('live-view-paused.png') });
+      const wide = page.viewportSize()!;
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.screenshot({ path: testInfo.outputPath('live-view-paused-narrow.png') });
+      await page.setViewportSize(wide);
+
+      // The test goes on.
+      expect((await post({ type: 'stop', stop: null })).ok()).toBeTruthy();
+      await expect(paused).toBeHidden({ timeout: 10_000 });
+      expect((await post({ type: 'stop', stop })).ok()).toBeTruthy();
+      await expect(paused).toBeVisible({ timeout: 10_000 });
+
+      // The setting turns off: Paused and Watch leave the open page, and the worker's stream closes.
+      expect((await request.patch(`/api/projects/${project}`, { data: { liveView: false } })).ok()).toBeTruthy();
+      await expect(paused).toBeHidden({ timeout: 10_000 });
+      await expect(watch).toHaveCount(0);
+      await expect.poll(() => worker.open()).toBe(false);
+    } finally {
+      worker.close();
+      await request.patch(`/api/projects/${project}`, { data: { liveView: true } });
+      await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'passed', totalTests: 0 } });
     }
   });
 });
