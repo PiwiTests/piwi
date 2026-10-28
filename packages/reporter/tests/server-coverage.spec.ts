@@ -84,6 +84,14 @@ async function backend(
   return server;
 }
 
+/**
+ * Take a backend down: it drops every new connection unanswered. Its port stays
+ * bound until `close`, so no other server can listen there and answer.
+ */
+function takeDown(server: FakeServer): void {
+  server.server.maxConnections = 0;
+}
+
 function collector(
   baseUrls: string[],
   limits: Partial<CollectorLimits> = {},
@@ -260,11 +268,9 @@ describe('ServerCoverageCollector', () => {
 
   it('marks the tests incomplete when the backend is down', async () => {
     const server = await backend();
-    const origin = server.url;
-    await server.close();
-    servers = servers.filter((s) => s !== server);
+    takeDown(server);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(await collector([origin]).collect({ [origin]: ['p.1'] })).toEqual({ files: [], incomplete: true });
+    expect(await collector([server.url]).collect({ [server.url]: ['p.1'] })).toEqual({ files: [], incomplete: true });
   });
 
   it('marks the tests incomplete when a call times out', async () => {
@@ -528,8 +534,7 @@ describe('ServerCoverageCollector restart detection', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const c = collector([server.url]);
     await c.collect({ [server.url]: [`${FIRST.id}.1`] });
-    await server.close();
-    servers = servers.filter((s) => s !== server);
+    takeDown(server);
 
     const run = await c.fetchRun(server.url);
 
