@@ -1,0 +1,81 @@
+name: Showcase nightly
+
+# The showcase's story in check mode, every night and on demand: apps/showcase builds its set (the dashboard on a seeded
+# database with the shop's CI runs, VS Code with the built extension, Chromium with the built Piwi Picker, paired) and
+# plays each beat on them, from the red run to the green one, asserting what each beat left. It is no pull request
+# check: VS Code's workbench moves on its own, and a take needs a large screen and several minutes. A failure leaves
+# the failing beat's screen, each app's log and the developer's checkout for two weeks.
+on:
+  schedule:
+    - cron: '43 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          playwright: full
+
+      # Keyed by the file that pins the version, as the VS Code nightly's: moving it downloads the new one.
+      - name: Cache VS Code
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/vscode/.vscode-test
+          key: vscode-${{ runner.os }}-${{ hashFiles('apps/vscode/scripts/lib/vscode-window.mjs') }}
+
+      # ImageMagick's `import` writes the whole screen of a beat that fails.
+      - name: Install ImageMagick
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends imagemagick
+
+      - name: Build the reporter
+        working-directory: packages/reporter
+        run: npm run reporter:build
+
+      - name: Build the Nitro integration
+        working-directory: integrations/nitro
+        run: npm run build
+
+      - name: Build the VS Code extension and the editor service
+        working-directory: apps/vscode
+        run: npm run vscode:build
+
+      - name: Build Piwi Picker
+        working-directory: apps/extension
+        run: npm run extension:build
+
+      # The screen the take plays on, for the rest of the job (the runner ends it with the job).
+      - name: Start the screen
+        run: |
+          Xvfb :99 -screen 0 3840x2160x24 -nolisten tcp &
+          for _ in $(seq 100); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
+          test -S /tmp/.X11-unix/X99
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      # VS Code downloads into apps/vscode/.vscode-test on a cache miss. The take is the step's own process (exec):
+      # the runner signals that process alone when the job is cancelled, and xvfb-run would not pass it on.
+      - name: Play the story in check mode
+        working-directory: apps/showcase
+        run: exec node showcase.mjs --mode check
+
+      # What a failure leaves in results/, beside logs/ (every app's log): a beat that fails, or hangs past its budget,
+      # leaves failed-<beat>/, and a set that fails to build failed-set/. A job cancelled, or stopped by its timeout,
+      # sends the take SIGINT: it writes interrupted/ first (the same: the screen, every app's log, the gestures, the
+      # checkout), then ends the set; the kill that ends the runner's grace period can cut that short, never them.
+      - name: Upload the failing beat
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: showcase-nightly-results
+          path: apps/showcase/results
+          retention-days: 14

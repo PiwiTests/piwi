@@ -24,7 +24,8 @@ inputs:
     description: >-
       Chromium build to install: none, shell (the headless shell the suites run on) or full (the build that loads
       extensions). The headless shell is cached by Playwright version; the full build is installed on every run, as
-      the workflows that use it run on pull requests only, where a cache serves its own pull request alone.
+      the workflows that use it run on pull requests, where a cache serves its own pull request alone, or once a
+      night (the showcase's), where a cache would rarely outlive the night.
     default: none
 
 runs:

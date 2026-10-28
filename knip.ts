@@ -19,10 +19,12 @@ const config: KnipConfig = {
   ignoreBinaries: ['tasklist', 'import', 'Xvfb', 'ffprobe'],
   workspaces: {
     '.': {
-      // The JetBrains plugin is not a workspace: its screenshot script is read from the root.
-      entry: ['scripts/*.mjs', 'apps/jetbrains/scripts/*.mjs'],
+      // The JetBrains plugin and the showcase are not workspaces: their scripts are read from the root.
+      entry: ['scripts/*.mjs', 'apps/jetbrains/scripts/*.mjs', 'apps/showcase/*.mts'],
       // Not workspaces: built on their own toolchains (Tauri, VitePress) or resolved from the npm registry.
       ignore: ['apps/desktop/**', 'apps/docs/**', 'examples/sample-app/**'],
+      // The showcase runs Playwright from the workspaces' install.
+      ignoreDependencies: ['playwright'],
     },
     'apps/application': {
       entry: [

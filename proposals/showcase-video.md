@@ -8,14 +8,32 @@ renders the cut: the zooms, a cursor that reads at any size, subtitles and, if a
 one for quick re-films, or a maintainer's own Windows machine for the release (the native take). Played without the
 recording, the same script is a check that the tools still work together, which no test does today.
 
-**Status.** Proposed 2026-10-27. Nothing is built. Two measurements in the [appendix](#appendix-what-was-measured)
-settle how the screen is captured and how the cut is rendered. The story needs pieces of
-[`run-control.md`](../adr/run-control.md) that are not merged yet: the editor's controls (its PR 2, beats 4 and 8), the Runs
-window (PR 3, beats 3 and 5), **Assert a region** (PR 4, beat 7), **Debug in my editor** (PR 7, beat 2) and the
-dashboard's live view (PR 8, beat 9). A first cut can be made once its PR 3 has shipped, with today's **Open in IDE**
-in place of **Debug in my editor** and the run page's **Live activity** in place of the live view. The release cut is
-meant to be filmed as a native take on a maintainer's Windows machine (Part 3, D11); nobody on the project films on a
-Mac. Nothing here is on [`ROADMAP.md`](../ROADMAP.md).
+**Status.** Proposed 2026-10-27. V1 and V4 are built, in check mode: `apps/showcase/` builds the set and plays
+beats 1 to 10 with their checks (`xvfb-run … npm run showcase:check`, about four minutes after the builds), nightly in
+`nightly-showcase.yml`, on the pieces of [`run-control.md`](../adr/run-control.md) the story needs, all merged. Capture
+and the cut (V2, which the two measurements in the [appendix](#appendix-what-was-measured) settle), voice and publishing
+(V3) and the native take (V5) remain. Decided from the open questions: VS Code only, the coding agent as the
+coda, English, the dark look. The build differs from the text in these ways. `apps/showcase/` is a folder of scripts on
+the root's `node_modules`, not yet a workspace, whose `package-lock.json` entry an `npm install` writes (left to a later
+change). The "CI" runs set `CI=true` beside `PIWI_ORIGIN=ci`: the origin alone names the
+run's origin, but the reporter's global setup asks for a live view key only where `detectCi` sees CI. The checkout keeps
+the sample's shop suite alone, so a "CI" run is a full run, and its Playwright config gives actions a 10 s timeout (a
+click cut short by the test timeout has no frame in its stack, so the failure page offers no **Debug in my editor**),
+`SLOW_MO` for the watched CI run, and, outside CI, the test's browser its tile and a debugging port the gestures reach it
+by. Every gesture goes through Playwright (VS Code, Chromium and the test's browser); the script stands in for two
+parts a bare X server lacks, the `vscode://` handler (VS Code's command line with the window's profile) and the host
+grant **Pair** asks for. Beat 6 writes the recorder's `getByRole('checkbox', { name: 'I accept the terms' }).check()`,
+and its recording is stopped from the editor's lens, the page's bar being out of a script's reach. Beat 7 cannot run
+on in the stopped test, which goes on with the code it started with: it ends the test (**End the test**) and runs it
+again to the spec's summary check (a breakpoint at the caret, **Run the test at the cursor**), where **Assert a region**
+reads the order's card. Beat 8's Runs window says the run ended (run-control PR 3 gives it no verdict) and the Testing
+view shows the test passed. In beat 10 the developer pastes a new test and runs it to its last line, and the agent, a
+client of the runs' MCP server configured from **Copy the runs' MCP server configuration**, clicks **Orders** by its
+ref, writes the steps and a check and resumes. Three product bugs found on the way are skipped where the checks meet
+them, and only there ([`apps/showcase/ARCHITECTURE.md`](../apps/showcase/ARCHITECTURE.md#known-bugs)): the healing has
+no candidate for the story's failure (the reporter keeps no element of a click that navigates at once, and an ES module
+suite's call sites lose their leading slash), so **Most likely** does not name **Pay now** either; and a run page opened
+while its run sets up never goes live until reloaded. Nothing here is on [`ROADMAP.md`](../ROADMAP.md).
 
 **Summary.**
 
