@@ -214,7 +214,7 @@ describe('a run started in a terminal', () => {
   it('follows none whose file is another machine’s, another user’s, or holds another workspace', async () => {
     const files: Record<string, EditorDiscovery> = {
       [`${process.pid}.json`]: discovery({ host: 'build-agent' }),
-      '1.json': discovery({ pid: 1, roots: [path.join(folder, 'elsewhere')] }),
+      [`${process.ppid}.json`]: discovery({ pid: process.ppid, roots: [path.join(folder, 'elsewhere')] }),
     };
     // Another user's file, where this one may give a file to another user.
     const root = typeof process.getuid === 'function' && process.getuid() === 0;
@@ -224,6 +224,35 @@ describe('a run started in a terminal', () => {
     const { opened } = await run({ PIWI_EDITOR: 'on' });
     expect(opened).toEqual([]);
   }, 60_000);
+
+  it('follows none whose file was written before this machine started, or whose channel other users reach', async () => {
+    // Its process went with the restart: another process may have its id since.
+    const booted = Date.now() - os.uptime() * 1000;
+    listEditors({ [`${process.pid}.json`]: discovery({ startedAt: new Date(booted - 3_600_000).toISOString() }) });
+    expect((await run({ PIWI_EDITOR: 'on' })).opened).toEqual([]);
+    // A named pipe tells no owner.
+    if (process.platform === 'win32') return;
+    // A socket in a folder other users can enter may be another user's, serving the name a stale file holds.
+    const shared = path.join(folder, 'shared');
+    fs.mkdirSync(shared);
+    fs.chmodSync(shared, 0o755);
+    let reached = 0;
+    const squatter = net.createServer((socket) => {
+      reached++;
+      socket.destroy();
+    });
+    await new Promise<void>((resolve) => squatter.listen(path.join(shared, 'channel.sock'), resolve));
+    try {
+      const runChannel = { path: path.join(shared, 'channel.sock'), token: TOKEN };
+      listEditors({ [`${process.pid}.json`]: discovery({ runChannel }) });
+      const { output, opened } = await run({ PIWI_EDITOR: 'on' });
+      expect(opened).toEqual([]);
+      expect(reached).toBe(0);
+      expect(output).not.toContain('Following this run');
+    } finally {
+      await new Promise<void>((resolve) => squatter.close(() => resolve()));
+    }
+  }, 120_000);
 
   it('looks for no editor where a launcher, a run channel or Playwright’s debugger runs it', () => {
     const gate = (env: NodeJS.ProcessEnv, argv: string[] = ['node', 'cli.js', 'test']) =>
@@ -236,6 +265,10 @@ describe('a run started in a terminal', () => {
     expect(gate({ PWDEBUG: 'console' })).toBeNull();
     expect(gate({}, ['node', 'cli.js', 'test', '--debug=cli'])).toBe("Playwright's debugger or UI mode runs it");
     expect(gate({}, ['node', 'cli.js', 'test', '--ui'])).toBe("Playwright's debugger or UI mode runs it");
+    // Playwright opens UI mode for a UI host or port too.
+    for (const ui of [['--ui-port=0'], ['--ui-port', '0'], ['--ui-host=127.0.0.1']]) {
+      expect(gate({}, ['node', 'cli.js', 'test', ...ui]), ui.join(' ')).toBe("Playwright's debugger or UI mode runs it");
+    }
     expect(gate({}, ['node', 'cli.js', 'merge-reports', 'blob-report'])).toBe('it merges reports, running no test');
     expect(terminalRunSkip({ env: {}, argv: [], terminal: false })).toBe('its output goes to no terminal');
   });

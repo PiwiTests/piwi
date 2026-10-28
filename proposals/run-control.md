@@ -368,10 +368,11 @@ let end runs the next attempt, which stops as the first did. End is the take `en
 `piwi/runControl`, the hub's `runControl`, `run_control`'s `end`, which answers as the test ends), 15 takes within the
 16 an older service reads; a stop's `intents` list it but at a failure, and the pause bar, both IDEs (no default key),
 the Runs window and the desktop app's tray offer it. A run started in a terminal follows an editor when it names no
-`PIWI_RUN_CHANNEL` and no launcher started it, never under CI, `PWDEBUG`, `--debug` or `--ui`, and only with its
-output on a terminal (else `PIWI_EDITOR=on`; `PIWI_EDITOR=off` runs it alone): the reporter's `onBegin` reads the
-discovery files of a folder only this user can enter, those this user owns, of this machine, whose process runs,
-deleting none, and follows the service one of whose roots holds the config's folder or the working directory, real
+`PIWI_RUN_CHANNEL` and no launcher started it, never under CI, `PWDEBUG`, `--debug` or UI mode (`--ui`, `--ui-host`,
+`--ui-port`), and only with its output on a terminal (else `PIWI_EDITOR=on`; `PIWI_EDITOR=off` runs it alone): the
+reporter's `onBegin` reads the discovery files of a folder only this user can enter, those this user owns, of this
+machine, whose process runs as this user, written since the machine started, and but on Windows whose run channel is
+this user's socket in such a folder, deleting none, and follows the service one of whose roots holds the config's folder or the working directory, real
 paths compared, the most specific root first, then the service started last. It hands the workers that service's run
 channel and a ref of the run's own (`terminal-<pid>-<time>`), with one line saying so. The service takes a ref it
 never built as a terminal's run (`RunSession.terminal`, `HubSession.terminal`): shown as one, with no Stop, starting

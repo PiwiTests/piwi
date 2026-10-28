@@ -298,11 +298,13 @@ What the package does to a user's run, process by process.
   `PIWI_COVERAGE_BROWSER` / `PIWI_COVERAGE_SERVER` / `PIWI_COVERAGE_CSS` for the workers.
 - **A run started in a terminal** (`internal/config/editors.ts`, `followEditor`). With
   no `PIWI_RUN_CHANNEL` and no launcher (`PIWI_ORIGIN`), its output going to a terminal
-  (else `PIWI_EDITOR=on`), never under CI, `PWDEBUG`, `--debug`, `--ui` or with
-  `PIWI_EDITOR=off`, `onBegin` reads the editors' discovery files
-  (`@piwitests/core/editor-discovery`, `~/.piwi/editors` or `PIWI_EDITORS_DIR`) from a
-  folder this user owns that no other user can enter, only the files this user owns,
-  of this machine, whose process runs, deleting none. It follows the editor one of whose
+  (else `PIWI_EDITOR=on`), never under CI, `PWDEBUG`, `--debug`, UI mode (`--ui`,
+  `--ui-host`, `--ui-port`) or with `PIWI_EDITOR=off`, `onBegin` reads the editors'
+  discovery files (`@piwitests/core/editor-discovery`, `~/.piwi/editors` or
+  `PIWI_EDITORS_DIR`) from a folder this user owns that no other user can enter, only
+  the files this user owns, of this machine, whose process runs as this user, written
+  since the machine started, and (but on Windows, whose pipes tell no owner) whose run
+  channel is this user's socket in such a folder, deleting none. It follows the editor one of whose
   workspace folders holds the config's folder or the working directory, real paths
   compared (`editorForRun`: the most specific, then the latest started), and sets
   `PIWI_RUN_CHANNEL` to its run channel and `PIWI_RUN_REF` to `terminal-<pid>-<time>`

@@ -26,8 +26,9 @@ It runs as its config says, headless by default, so the editor shows a stop as
 Each editor window's Piwi service writes a file in `~/.piwi/editors` (`PIWI_EDITORS_DIR` names another folder) with
 its workspace folders and where its runs connect. The run follows the window one of whose folders holds its Playwright
 config's folder or its working directory, links resolved: the most specific folder wins, then the window that started
-last. A window of another machine, another user's, or one whose process ended is never followed, nor is any file of a
-folder another user can open.
+last. A window of another machine, another user's, or one whose process ended is never followed, nor is a file
+written before the machine last started, any file of a folder another user can open, or (but on Windows) a window
+whose runs would connect through a folder another user can open.
 
 ## When it follows one
 

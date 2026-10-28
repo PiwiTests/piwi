@@ -47,7 +47,10 @@ export function terminalRunSkip(gate: TerminalRunGate): string | null {
   if (detectCi(env)) return 'running under CI';
   if (env.PWDEBUG && !['0', 'false', 'console'].includes(env.PWDEBUG)) return "Playwright's Inspector runs it";
   const flag = (name: string) => argv.some((arg) => arg === name || arg.startsWith(`${name}=`));
-  if (flag('--debug') || flag('--ui')) return "Playwright's debugger or UI mode runs it";
+  // Playwright opens UI mode for `--ui-host` or `--ui-port` too.
+  if (flag('--debug') || flag('--ui') || flag('--ui-host') || flag('--ui-port')) {
+    return "Playwright's debugger or UI mode runs it";
+  }
   if (argv.slice(2).includes('merge-reports')) return 'it merges reports, running no test';
   if (!gate.terminal && editor !== 'on') return 'its output goes to no terminal';
   return null;
@@ -70,13 +73,42 @@ function privateFolder(dir: string): boolean {
   }
 }
 
-/** Whether a process with this id runs; one of another user's counts. */
+/**
+ * Whether a process of this user runs with this id. A file this user owns was written by a service of this user, so a
+ * process of another user's that took its id since (`EPERM`) is not that service.
+ */
 function processAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  } catch {
+    return false;
+  }
+}
+
+/** The longest a clock may have moved between a service writing its file and this run reading it. */
+const CLOCK_SLACK_MS = 60_000;
+
+/**
+ * Whether a service's file may still be its own, by what the platform tells: written since this machine started (a
+ * file of before, its process gone with the restart, names an id another process may have taken since), and, but on
+ * Windows, naming a run channel in a folder this user owns and no other user can enter, which a socket of another
+ * user's cannot be in. A named pipe tells no owner, and a file with no time passes as far as the time goes.
+ */
+function stillServing(editor: EditorDiscovery, now = Date.now()): boolean {
+  const written = Date.parse(editor.startedAt);
+  if (Number.isFinite(written) && written < now - os.uptime() * 1000 - CLOCK_SLACK_MS) return false;
+  if (!editor.runChannel || process.platform === 'win32') return true;
+  return privateFolder(path.dirname(editor.runChannel.path)) && ownSocket(editor.runChannel.path);
+}
+
+/** Whether `file` is a socket, not a link, that this user owns. */
+function ownSocket(file: string): boolean {
+  try {
+    const stat = fs.lstatSync(file);
+    return stat.isSocket() && (typeof process.getuid !== 'function' || stat.uid === process.getuid());
+  } catch {
+    return false;
   }
 }
 
@@ -138,7 +170,8 @@ export function followEditor(
 ): FollowedEditor | null {
   try {
     if (terminalRunSkip(gate)) return null;
-    const editor = editorForRun(readLiveEditors(folderOnDisk(folder)), dirs, realFolder, process.platform === 'win32');
+    const live = readLiveEditors(folderOnDisk(folder)).filter((editor) => stillServing(editor));
+    const editor = editorForRun(live, dirs, realFolder, process.platform === 'win32');
     if (!editor?.runChannel) return null;
     const ref = `${TERMINAL_REF_PREFIX}${process.pid}-${Date.now()}`;
     gate.env[RUN_CHANNEL_ENV] = formatRecordChannel(editor.runChannel);
