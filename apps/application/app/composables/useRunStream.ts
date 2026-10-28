@@ -42,6 +42,18 @@ const eventListeners = new Set<(event: RunLifecycleEvent) => void>();
 function notifyEventListeners(event: RunLifecycleEvent) {
   for (const fn of eventListeners) fn(event);
 }
+
+/** Called each time the shared connection opens: from then on it hears every event. */
+const openListeners = new Set<() => void>();
+
+function notifyOpenListeners() {
+  for (const fn of openListeners) fn();
+}
+
+function isConnectionOpen(): boolean {
+  if (demoMode) return demoUnsubscribe !== null;
+  return sharedEventSource?.readyState === EventSource.OPEN;
+}
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ── Inactivity-based debounce ─────────────────────────────────────────────────
@@ -90,6 +102,10 @@ function openEventSource() {
   if (sharedEventSource || demoMode) return;
 
   sharedEventSource = new EventSource('/api/stream');
+
+  // Opens once the server has subscribed it (it writes a comment then), on the first connection and on each
+  // reconnection.
+  sharedEventSource.onopen = notifyOpenListeners;
 
   sharedEventSource.onmessage = (event) => {
     try {
@@ -188,16 +204,41 @@ export function useRunStream(refresh: () => Promise<unknown>) {
  * Listen to the global run lifecycle events with their details (which run,
  * which project), on the same shared connection as `useRunStream`. Called
  * for every event as it arrives; the listener does its own throttling.
+ *
+ * `onOpen` is called each time the connection opens, and at once when it is
+ * open already: an event sent while it was closed (before it first opened,
+ * while the tab was hidden) never arrives, so a caller waiting for one reads
+ * the state it would change again then.
  */
-export function useRunEvents(listener: (event: RunLifecycleEvent) => void) {
+export function useRunEvents(listener: (event: RunLifecycleEvent) => void, onOpen?: () => void) {
   if (!import.meta.client) return;
 
   ensureConnection();
 
   eventListeners.add(listener);
+  if (onOpen) {
+    openListeners.add(onOpen);
+    if (isConnectionOpen()) onOpen();
+  }
 
   onUnmounted(() => {
     eventListeners.delete(listener);
+    if (onOpen) openListeners.delete(onOpen);
     closeConnection();
   });
+}
+
+/**
+ * Refetch a run the page shows as initializing once it moves on, so the page
+ * goes live without a reload: on each lifecycle event of the run (its
+ * `run-started`, or a cancel or an end before it began), and each time the
+ * shared connection opens, for an event sent while it was closed.
+ */
+export function useRunStart(runId: number, status: () => string | null | undefined, refresh: () => Promise<unknown>) {
+  const refreshWhileInitializing = () => {
+    if (status() === 'initializing') refresh();
+  };
+  useRunEvents((event) => {
+    if (event.runId === runId) refreshWhileInitializing();
+  }, refreshWhileInitializing);
 }
