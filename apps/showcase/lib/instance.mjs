@@ -129,14 +129,16 @@ export async function startInstance(dir, { logFile }) {
   const env = seedThrowawayDb(path.join(dir, 'data'));
   // The dev server's build needs more than Node's default heap.
   const heap = { NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --max-old-space-size=4096`.trim() };
-  // A signal stops the server and leaves the take to keep its logs, end the set and exit.
+  // A signal stops the server and leaves the take to keep its logs, end the set and exit. It listens on the address
+  // every part of the take reaches it by: on `localhost`, a machine with IPv6 would serve it on `::1` alone.
   const { base, stop } = await startServer({
     port: INSTANCE_PORT,
+    host: '127.0.0.1',
     env: { ...env, ...heap },
     logFile,
     exitOnSignal: false,
   });
-  return new Instance(base.replace('localhost', '127.0.0.1'), stop, logFile, env.PIWI_DATABASE_PATH);
+  return new Instance(base, stop, logFile, env.PIWI_DATABASE_PATH);
 }
 
 /**
