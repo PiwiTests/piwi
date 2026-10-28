@@ -2,18 +2,12 @@ import type { H3Event } from 'h3';
 
 const HEARTBEAT_INTERVAL_MS = 15000;
 
-/**
- * A stream of server-sent events: `onSubscribe` enqueues them and returns its unsubscribe, called once the client
- * leaves. With `strategy`, the queue counts what the client has not read yet as the strategy measures it
- * (`ByteLengthQueuingStrategy`: bytes, read as `-controller.desiredSize` with a high-water mark of 0).
- */
 export function createSSEEndpoint(
   event: H3Event,
   onSubscribe: (controller: ReadableStreamDefaultController, encoder: TextEncoder) => (() => void) | undefined,
-  strategy?: QueuingStrategy<Uint8Array>,
 ): Response {
   const encoder = new TextEncoder();
-  const source: UnderlyingDefaultSource<Uint8Array> = {
+  const stream = new ReadableStream({
     start(controller) {
       const unsubscribe = onSubscribe(controller, encoder) ?? (() => {});
 
@@ -36,8 +30,7 @@ export function createSSEEndpoint(
         }
       });
     },
-  };
-  const stream = new ReadableStream<Uint8Array>(source, strategy);
+  });
 
   return new Response(stream, {
     headers: {

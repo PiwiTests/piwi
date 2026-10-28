@@ -141,12 +141,13 @@ interface Window {
   session(ref: string): HubSession | undefined;
 }
 
-async function openWindow(): Promise<Window> {
+/** A window's stream; `unread` is what it says it holds unsent, as its response's backlog would. */
+async function openWindow(unread: () => number = () => 0): Promise<Window> {
   const events: DesktopRunEvent[] = [];
   const state = { closed: false };
   const opened = await runs.openWindow({
     send: (event) => void events.push(JSON.parse(JSON.stringify(event)) as DesktopRunEvent),
-    buffered: () => 0,
+    buffered: unread,
     close: () => {
       state.closed = true;
     },
@@ -565,6 +566,40 @@ describe('the window', () => {
     const stopped = await worker.request('view', 1);
     expect(stopped).toMatchObject({ on: false });
     other.close();
+    worker.socket.destroy();
+  });
+});
+
+describe('a window that stops reading', () => {
+  it('gets no frame past 1 MB unread, the latest one once it reads, and is let go past 32 MB', async () => {
+    let unread = 0;
+    const window = await openWindow(() => unread);
+    const worker = new Worker(folder).attach('desktop-12');
+    worker.begin();
+    worker.stop(1);
+    const stop = await waitFor(() => window.session('desktop-12')?.workers[0]?.stop ?? undefined);
+    const at = { ref: 'desktop-12', worker: 0, since: stop.since };
+    const watching = window.command({ type: 'view', id: 2, ...at, on: true });
+    const view = await worker.request('view');
+    worker.send({ type: 'answer', request: view.request, what: 'view', value: { ok: true, message: 'Watching.' } });
+    await watching;
+    const frames = () => window.events.filter((e) => e.type === 'frame').length;
+    worker.send({ type: 'frame', stop: 1, width: 800, height: 600, data: '/9j/AA==' });
+    await waitFor(() => frames() === 1);
+    // 1 MB unread: the next frames wait, the latest one alone.
+    unread = 2 * 1024 * 1024;
+    worker.send({ type: 'frame', stop: 1, width: 800, height: 600, data: '/9j/AB==' });
+    worker.send({ type: 'frame', stop: 1, width: 800, height: 600, data: '/9j/AC==' });
+    await sleep(600);
+    expect(frames()).toBe(1);
+    unread = 0;
+    await waitFor(() => frames() === 2);
+    expect(window.events.filter((e) => e.type === 'frame').at(-1)).toMatchObject({ data: '/9j/AC==' });
+    // 32 MB unread: the next message the hub sends lets the window go.
+    unread = 33 * 1024 * 1024;
+    worker.send({ type: 'running', stop: 1 });
+    await waitFor(() => window.closed);
+    expect(await window.command({ type: 'subscribe', id: 3 })).toBeNull();
     worker.socket.destroy();
   });
 });
