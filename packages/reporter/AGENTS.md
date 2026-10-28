@@ -60,8 +60,10 @@ responsibilities.
    hides its credentials by `@piwitests/core/mask`'s rule: a region's snapshot leaves out the value of a field that
    holds a secret (`SECRET_AUTOCOMPLETE`, read through a locator, so in shadow roots too), a kept response's URL goes
    through `hideSecretsInUrl`, and a held failure's title and error through `hideSecretsInText`
-   (`tests/run-channel-code.spec.ts`); an agent's snapshot hides each secret field's value (`withoutFieldSecrets`), its
-   image masks those fields, and an element of `type="password"` sends no value (`tests/run-channel-agent.spec.ts`).
+   (`tests/run-channel-code.spec.ts`); for an agent, the value of a field that holds a secret (`SECRET_FIELDS` in
+   `agent-page.ts`: a password field and `SECRET_AUTOCOMPLETE`'s) is hidden in the snapshot, plain or quoted
+   (`withoutFieldSecrets`), masked in the image, in every frame, and never sent as an element's
+   (`tests/agent-page.spec.ts`).
 4. **The desktop discovery file.** The desktop shell writes `~/.piwi/desktop.json` (`apps/desktop/src-tauri/src/lib.rs`)
    and this package reads its `url`, `token` and `pid` (`internal/config/desktop.ts`); the shell also writes
    `projects` for other readers ([`apps/desktop/AGENTS.md`](../../apps/desktop/AGENTS.md)). The two ship on independent

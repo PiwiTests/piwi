@@ -1,5 +1,5 @@
 import type { Browser, ElementHandle, Locator, Page } from '@playwright/test';
-import { hideSecretsInText, hideSecretsInUrl } from '@piwitests/core/mask';
+import { HIDDEN_VALUE, SECRET_AUTOCOMPLETE, hideSecretsInText, hideSecretsInUrl } from '@piwitests/core/mask';
 import {
   MAX_AGENT_SNAPSHOT,
   type ActAnswer,
@@ -23,14 +23,24 @@ import type { PickerProbe } from './pick-on-failure.js';
  * id attribute and the locator `locator.normalize()` writes among the candidates, and what it holds; an action on that
  * element, one of a closed set, played as trusted input by Playwright's own action; and the worker's browser bound for
  * Playwright's own tools (`browser.bind`, 1.59), until the test ends. The page's text, its address and its errors have
- * their credentials hidden (`@piwitests/core/mask`), and an image masks the page's password fields. Every call is the
- * caller's to make internal.
+ * their credentials hidden (`@piwitests/core/mask`), and the value of a field that holds a secret (`SECRET_FIELDS`) is
+ * never sent: hidden in the snapshot, masked in the image, in every frame, and left out of an element's answer. Every
+ * call is the caller's to make internal.
  */
 
 /** How long an action, and a read of an element, may take on a stopped page. */
 const ACT_MS = 5000;
-/** What an image of the page masks: the fields whose value is a secret. */
-const SECRET_FIELDS = 'input[type="password"], input[autocomplete="cc-number"], input[autocomplete="cc-csc"]';
+/**
+ * The fields whose value is a secret: a password field, and one whose `autocomplete` asks for a password, a one-time
+ * code or a card's number or security code (`SECRET_AUTOCOMPLETE`), in any case.
+ */
+const SECRET_FIELDS = [
+  'input[type="password" i]',
+  ...SECRET_AUTOCOMPLETE.flatMap((token) => [
+    `input[autocomplete~="${token}" i]`,
+    `textarea[autocomplete~="${token}" i]`,
+  ]),
+].join(', ');
 /** The pause bar, hidden in an image of the stopped page. */
 const BAR_HIDDEN = '#__piwi-pause-bar { display: none !important; }';
 
@@ -76,23 +86,56 @@ async function fieldSecrets(page: Page): Promise<string[]> {
   return [...new Set(values.flat().filter((v): v is string => typeof v === 'string' && v.length > 0))];
 }
 
+/** A node of an ARIA snapshot with a value: its role, name and flags, then the value after the colon. */
+const VALUED_NODE = /^(\s*- [\w-]+(?: "(?:[^"\\]|\\.)*")?(?: \[[^\]]*\])*): (.+)$/;
+
+const ESCAPES: Record<string, string> = {
+  '\\': '\\\\',
+  '"': '\\"',
+  '\b': '\\b',
+  '\f': '\\f',
+  '\n': '\\n',
+  '\r': '\\r',
+  '\t': '\\t',
+};
+
+/** A value as a quoted value of an ARIA snapshot escapes it, quotes aside, as Playwright writes it. */
+function escapedInQuotes(value: string): string {
+  let out = '';
+  for (const c of value) {
+    const code = c.charCodeAt(0);
+    const control = code < 0x20 || (code >= 0x7f && code <= 0x9f);
+    out += ESCAPES[c] ?? (control ? `\\x${code.toString(16).padStart(2, '0')}` : c);
+  }
+  return out;
+}
+
 /**
- * A snapshot with the values of the page's secret fields written as `<hidden>`: where a field's line shows its value
- * (`- textbox "Password" [ref=e8]: hunter2`), and anywhere else for a value of 8 characters or more.
+ * A snapshot with the values of the page's secret fields written as `<hidden>`: where a node's line shows one as its
+ * value, plain or quoted (`- textbox "PIN" [ref=e8]: "123456"`), and anywhere else for a value of 8 characters or more,
+ * as written and as a quoted value escapes it (`\"`, `\\`).
  */
 export function withoutFieldSecrets(snapshot: string, secrets: readonly string[]): string {
-  let out = snapshot;
-  for (const secret of secrets) {
-    const escaped = secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    out = out.replace(new RegExp(`(: )${escaped}$`, 'gm'), '$1<hidden>');
-    if (secret.length >= 8) out = out.split(secret).join('<hidden>');
+  const values = [...new Set(secrets.filter(Boolean))];
+  if (!values.length) return snapshot;
+  const shown = new Set(values.flatMap((value) => [value, `"${escapedInQuotes(value)}"`]));
+  let out = snapshot
+    .split('\n')
+    .map((line) => {
+      const node = VALUED_NODE.exec(line);
+      return node && shown.has(node[2]!.trim()) ? `${node[1]}: ${HIDDEN_VALUE}` : line;
+    })
+    .join('\n');
+  for (const value of values) {
+    if (value.length < 8) continue;
+    for (const written of new Set([value, escapedInQuotes(value)])) out = out.split(written).join(HIDDEN_VALUE);
   }
   return out;
 }
 
 /**
  * The stopped page's ARIA snapshot in AI mode, `depth` levels deep at most (the whole tree for null), its address and
- * title, and an image of it when `image` is true, its password fields masked and Piwi's pause bar hidden.
+ * title, and an image of it when `image` is true, its secret fields masked in every frame and Piwi's pause bar hidden.
  */
 export async function readSnapshot(page: Page, depth: number | null, image: boolean): Promise<SnapshotAnswer> {
   const none = { url: '', title: '', snapshot: null, cut: false, image: null };
@@ -105,7 +148,7 @@ export async function readSnapshot(page: Page, depth: number | null, image: bool
   } catch (error) {
     return { ok: false, message: failed('The stopped page could not be read', error), ...none, url, title };
   }
-  const hidden = withoutFieldSecrets(hideSecretsInText(snapshot), await fieldSecrets(page));
+  const hidden = hideSecretsInText(withoutFieldSecrets(snapshot, await fieldSecrets(page)));
   const cut = hidden.length > MAX_AGENT_SNAPSHOT;
   let shot: PausedImage | null = null;
   if (image) {
@@ -114,7 +157,10 @@ export async function readSnapshot(page: Page, depth: number | null, image: bool
         type: 'jpeg',
         quality: 60,
         style: BAR_HIDDEN,
-        mask: [page.locator(SECRET_FIELDS)],
+        mask: page
+          .frames()
+          .slice(0, MAX_FRAMES)
+          .map((frame) => frame.locator(SECRET_FIELDS)),
         timeout: ACT_MS,
       })
       .catch(() => null);
@@ -132,22 +178,27 @@ export async function readSnapshot(page: Page, depth: number | null, image: bool
   };
 }
 
-/** What an element is and holds, read in the page: its type, its value and whether it is checked. */
+/** What an element is and holds, read in the page: whether it holds a secret, its value and whether it is checked. */
 interface Held {
-  type: string | null;
+  secret: boolean;
   value: string | null;
   checked: boolean | null;
 }
 
-/** In the page: an element's input type, its value (a form control's) and whether it is checked. Self-contained. */
-const heldIn = (el: unknown): Held => {
-  const field = el as { type?: unknown; value?: unknown; checked?: unknown; tagName?: string };
+/**
+ * In the page: whether an element is a field that holds a secret (`secretFields`), its value (a form control's, none
+ * of a secret field's) and whether it is checked. Self-contained.
+ */
+const heldIn = (el: unknown, secretFields: string): Held => {
+  type Field = { type?: unknown; value?: unknown; checked?: unknown; tagName?: string; matches?(css: string): boolean };
+  const field = el as Field;
   const tag = (field.tagName ?? '').toLowerCase();
   const control = tag === 'input' || tag === 'textarea' || tag === 'select';
   const type = typeof field.type === 'string' ? field.type.toLowerCase() : null;
+  const secret = typeof field.matches === 'function' && field.matches(secretFields);
   return {
-    type,
-    value: control && typeof field.value === 'string' ? field.value : null,
+    secret,
+    value: control && !secret && typeof field.value === 'string' ? field.value : null,
     checked: tag === 'input' && (type === 'checkbox' || type === 'radio') ? field.checked === true : null,
   };
 };
@@ -161,7 +212,7 @@ async function ranked(
   testIdAttribute: string | null,
 ): Promise<{ element: RefElement; locators: RankedRefLocator[] }> {
   const { attrs, accessibleName, candidates } = await rankedCandidates(probe, locator, handle, testIdAttribute);
-  const held = await handle.evaluate(heldIn);
+  const held = await handle.evaluate(heldIn, SECRET_FIELDS);
   const checked: RankedRefLocator[] = [];
   for (const candidate of candidates.slice(0, MAX_CHECKED)) {
     checked.push({
@@ -172,7 +223,7 @@ async function ranked(
     });
   }
   const locators = [...checked.filter((l) => l.unique), ...checked.filter((l) => !l.unique)];
-  const secret = held.type === 'password';
+  const { secret } = held;
   const text = attrs.textContent ? attrs.textContent.replace(/\s+/g, ' ').trim().slice(0, 120) || null : null;
   const role = resolveAriaRole({ ...attrs, accessibleName });
   return {
