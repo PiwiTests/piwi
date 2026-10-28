@@ -4,9 +4,10 @@
  * server's run channel in each run's environment (`PIWI_RUN_CHANNEL`, read from `GET /api/desktop/run-channel`) and
  * the run's name on it (`PIWI_RUN_REF`, `desktop-<the shell's run id>`): each worker keeps a run connection there.
  * Every piece is the editor service's own run control (`@piwitests/editor/run-host`), wired to the desktop's surfaces:
- *  - the channel is the editor's socket (a Unix socket in a new folder only this user reads, a named pipe on Windows),
- *    which takes a run connection only with its token, compared in constant time; a recording's hand-off is refused,
- *    as no editor here takes one;
+ *  - the channel is the editor's socket (a Unix socket in a new folder only this user reads, `piwi-desktop-run-*` in
+ *    the temporary directory, a named pipe on Windows), which takes a run connection only with its token, compared in
+ *    constant time; a recording's hand-off is refused, as no editor here takes one. The folders a server the shell
+ *    killed left behind are removed as the next one starts (`clearStaleRunChannels`);
  *  - the hub is the editor's WebSocket for Piwi Picker, on `127.0.0.1` alone, with its `Host` and extension `Origin`
  *    checks, its limits, its keepalive and its closed set of commands; `hello` carries the desktop token, which the
  *    paired Piwi Picker holds since **Allow**, and `GET /api/desktop/live` names the hub to a request carrying it;
@@ -26,6 +27,8 @@
  */
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
+import * as net from 'node:net';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseHubCommand, type HubAnswer, type LiveHub } from '@piwitests/core/run-hub';
@@ -59,6 +62,45 @@ export const DESKTOP_HUB_CLIENT = 'Piwi desktop app';
 
 /** The window streams open at once; one more is refused. */
 const MAX_WINDOWS = 16;
+
+/** What the run channel's socket folder is named from, in the temporary directory: this server's alone. */
+export const RUN_CHANNEL_FOLDER_PREFIX = 'piwi-desktop-run-';
+
+/** Whether a process listens on the Unix socket `file`: false only when the connection is refused. */
+function listening(file: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = net.connect(file);
+    const done = (answers: boolean) => {
+      probe.destroy();
+      resolve(answers);
+    };
+    probe.setTimeout(1000, () => done(true));
+    probe.once('connect', () => done(true));
+    probe.once('error', (error: NodeJS.ErrnoException) => done(error.code !== 'ECONNREFUSED'));
+  });
+}
+
+/**
+ * Removes the run channel folders a server of this app left behind as it was killed or crashed (the shell stops the
+ * server at once, so its own cleanup never runs): this user's `piwi-desktop-run-*` folders in `dir`, never a link,
+ * whose socket refuses a connection. A folder whose socket answers, or that holds none, stays. Returns how many went.
+ */
+export async function clearStaleRunChannels(dir = os.tmpdir()): Promise<number> {
+  if (process.platform === 'win32') return 0;
+  const names = await fs.promises.readdir(dir).catch(() => [] as string[]);
+  let removed = 0;
+  for (const name of names) {
+    if (!name.startsWith(RUN_CHANNEL_FOLDER_PREFIX)) continue;
+    const folder = path.join(dir, name);
+    const stat = await fs.promises.lstat(folder).catch(() => null);
+    if (!stat?.isDirectory() || stat.uid !== process.getuid?.()) continue;
+    const socket = await fs.promises.lstat(path.join(folder, 'channel.sock')).catch(() => null);
+    if (!socket?.isSocket() || (await listening(path.join(folder, 'channel.sock')))) continue;
+    await fs.promises.rm(folder, { recursive: true, force: true });
+    removed++;
+  }
+  return removed;
+}
 
 /** A run's name on the channel, as the hub's commands name it. */
 const REF = /^[\w-]{1,64}$/;
@@ -227,10 +269,17 @@ export class DesktopRuns {
   /** Opens the run channel and the hub; either one is null when the machine refuses it. */
   static async start(options: DesktopRunsOptions): Promise<DesktopRuns> {
     const runs = new DesktopRuns(options);
+    void clearStaleRunChannels()
+      .then((removed) => {
+        const folders = removed === 1 ? 'folder' : 'folders';
+        if (removed) options.log?.(`[desktop-runs] Removed ${removed} run channel ${folders} a stopped server left.`);
+      })
+      .catch(() => {});
     const [channel, hub] = await Promise.all([
       RecordChannel.open({
         onAttach: (handoff) => runs.channel?.refuse(handoff.id, DECLINED.record!),
         onRun: (socket, attach) => runs.sessions.attach(socket, attach),
+        folderPrefix: RUN_CHANNEL_FOLDER_PREFIX,
       }),
       RunHub.open({
         sessions: runs.sessions,

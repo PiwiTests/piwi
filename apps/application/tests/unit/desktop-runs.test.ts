@@ -3,6 +3,7 @@
  * channel the shell names in a run's environment, Piwi Picker's WebSocket with the desktop token, and the app's window
  * as a peer of the hub (its stream and its commands).
  */
+import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
@@ -20,7 +21,13 @@ import {
   type HubMessage,
   type HubSession,
 } from '@piwitests/core/run-hub';
-import { DESKTOP_HUB_CLIENT, DesktopRuns, insideFolder } from '../../server/utils/desktop-runs';
+import {
+  DESKTOP_HUB_CLIENT,
+  DesktopRuns,
+  RUN_CHANNEL_FOLDER_PREFIX,
+  clearStaleRunChannels,
+  insideFolder,
+} from '../../server/utils/desktop-runs';
 import {
   desktopPicksToken,
   isBrowserRequest,
@@ -260,8 +267,52 @@ describe('the run channel the shell names in a run', () => {
     if (process.platform !== 'win32') {
       expect(fs.statSync(path.dirname(channel.path)).mode & 0o077).toBe(0);
       expect(fs.statSync(channel.path).isSocket()).toBe(true);
+      expect(path.basename(path.dirname(channel.path))).toMatch(new RegExp(`^${RUN_CHANNEL_FOLDER_PREFIX}`));
     }
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'is cleared as the server starts when a server that was killed left it, and kept while one listens',
+    async () => {
+      const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-tmp-')));
+      onTestFinished(() => fs.rmSync(dir, { recursive: true, force: true }));
+      const folder = (name: string) => {
+        fs.mkdirSync(path.join(dir, name), { mode: 0o700 });
+        return path.join(dir, name, 'channel.sock');
+      };
+      // A server killed while it listened: its socket stays, and nothing answers it.
+      const killed = folder(`${RUN_CHANNEL_FOLDER_PREFIX}killed`);
+      const child = spawn(
+        process.execPath,
+        ['-e', `require('net').createServer().listen(${JSON.stringify(killed)}, () => console.log('up'))`],
+        { stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      await new Promise((resolve) => child.stdout!.once('data', resolve));
+      child.kill('SIGKILL');
+      await new Promise((resolve) => child.once('exit', resolve));
+      expect(fs.statSync(killed).isSocket()).toBe(true);
+      // A server that listens, a folder with no socket yet, another program's folder, and a link: all stay.
+      const live = net.createServer();
+      await new Promise<void>((resolve) => live.listen(folder(`${RUN_CHANNEL_FOLDER_PREFIX}live`), resolve));
+      onTestFinished(() => void live.close());
+      folder(`${RUN_CHANNEL_FOLDER_PREFIX}starting`);
+      const other = folder('piwi-record-other');
+      fs.symlinkSync(path.dirname(killed), path.join(dir, `${RUN_CHANNEL_FOLDER_PREFIX}link`));
+      fs.writeFileSync(path.join(path.dirname(other), 'kept'), '');
+
+      expect(await clearStaleRunChannels(dir)).toBe(1);
+      expect(fs.readdirSync(dir).sort()).toEqual(
+        [
+          `${RUN_CHANNEL_FOLDER_PREFIX}link`,
+          `${RUN_CHANNEL_FOLDER_PREFIX}live`,
+          `${RUN_CHANNEL_FOLDER_PREFIX}starting`,
+          'piwi-record-other',
+        ].sort(),
+      );
+      // A second pass finds nothing more to clear.
+      expect(await clearStaleRunChannels(dir)).toBe(0);
+    },
+  );
 
   it('takes a worker with its token, and closes one with another token or none', async () => {
     const window = await openWindow();
