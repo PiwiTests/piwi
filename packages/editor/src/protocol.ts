@@ -1369,8 +1369,9 @@ export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-p
  * on it (`input`, with the click count of a button's `down` and `up`: `input-clicks`) and the element under a point of
  * an image of it (`pick-at`, `piwi/pickAt`); for an agent, the stopped page read and acted on (`agent`: its ARIA
  * snapshot, an action by an element's ref and that element's ranked locators) and the running tests' events
- * (`events`); its browser shared with Playwright's own tools (`bind`, `piwi/stopBind`); and End the test at a stop
- * (`end`, `piwi/runControl`). A worker lists Pick a locator only where its run names the client's Send to editor
+ * (`events`); its browser shared with Playwright's own tools (`bind`, `piwi/stopBind`); End the test at a stop
+ * (`end`, `piwi/runControl`); and the run shared live on the team instance (`share`, `piwi/shareRun`). A worker lists
+ * Pick a locator only where its run names the client's Send to editor
  * pairing, and Record here and Assert only where it names the record channel, which a run started in a terminal names
  * neither of. An older reporter lists fewer, or none: the service refuses what it does not take.
  */
@@ -1389,7 +1390,8 @@ export type RunTake =
   | 'agent'
   | 'events'
   | 'bind'
-  | 'end';
+  | 'end'
+  | 'share';
 
 /** Where a worker stands stopped: before a call, which runs as soon as the stop is answered. */
 export interface RunStop {
@@ -1494,6 +1496,32 @@ export interface RunSession {
    * started. Its process is the terminal's, which the client cannot stop. Absent for a run the service built.
    */
   terminal?: boolean;
+  /**
+   * **Share live**: how the run stands on the team instance its reporter reports to, for a run whose workers take
+   * `share`; absent for one whose reporter predates it.
+   */
+  live?: RunLive;
+}
+
+/**
+ * A run on the team instance's live view (**Share live**): shared from the editor's surfaces as a person asks
+ * (`piwi/shareRun`), its workers then stream their pages there, while someone watches, to whoever may open the run on
+ * that instance; a CI run's stream from the start.
+ */
+export interface RunLive {
+  /** The run is shared now, as its workers say: they hold their streams to the instance, or open them. */
+  shared: boolean;
+  /** Why the run cannot be shared, in one sentence; null when it can be. */
+  refused: string | null;
+  /**
+   * Why its sharing stopped though nobody asked (the instance stopped answering, the setting turned off), in one
+   * sentence, until a person shares it again or stops it; null otherwise.
+   */
+  stopped: string | null;
+  /** The run's page on the instance (`https://piwi.example.com/test-runs/42`), for a teammate; null without a key. */
+  page: string | null;
+  /** How many people watch its workers on the instance now: 0 unless shared. */
+  viewers: number;
 }
 
 export const RUN_SESSION_NOTIFICATION = 'piwi/runSessionChanged';
@@ -1539,6 +1567,20 @@ export interface RunControlResult {
 }
 
 export const RUN_CONTROL_REQUEST = 'piwi/runControl';
+
+/**
+ * `piwi/shareRun`: **Share live**, a person's own choice, asked after the client's warning: share the run of `ref` on
+ * the team instance its reporter reports to (`on`), so whoever may open the run there watches its pages from the run
+ * page while it runs, and sees when a test is paused; or stop sharing it (`on: false`), which ends the views there. A
+ * worker that connects later follows the choice. Answered with `RunControlResult`: refused, with why, for a run whose
+ * reporter predates it or that cannot be shared (no instance, the project's live view off). No agent asks it.
+ */
+export interface ShareRunParams {
+  ref: string;
+  on: boolean;
+}
+
+export const SHARE_RUN_REQUEST = 'piwi/shareRun';
 
 /**
  * `piwi/setRunBreakpoints` (notification, client to server): the editor's line breakpoints changed while the run of

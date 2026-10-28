@@ -4,6 +4,7 @@ import { MAX_VIEW_EVENTS, MAX_VIEW_FRAME_BASE64 } from '../src/run-view';
 import {
   MAX_KEPT_BODY,
   MAX_KEPT_RESPONSES,
+  MAX_LIVE_WHY,
   MAX_REGION_SNAPSHOT,
   MAX_ACT_VALUE,
   MAX_AGENT_SNAPSHOT,
@@ -59,6 +60,7 @@ describe('the run channel', () => {
         'events',
         'bind',
         'end',
+        'share',
       ],
       holds: ['failure'],
     } satisfies RunToHub;
@@ -688,6 +690,47 @@ describe('the run channel', () => {
         { kind: 'evaluate', code: '1' },
       ]) {
         expect(event(broken), JSON.stringify(broken)).toBeNull();
+      }
+    });
+  });
+
+  describe('Share live', () => {
+    test('turns the sharing on and off', () => {
+      expect(parseHubToRun(line({ type: 'share', on: true }))).toEqual({ type: 'share', on: true });
+      expect(parseHubToRun(line({ type: 'share', on: false }))).toEqual({ type: 'share', on: false });
+      expect(parseHubToRun(line({ type: 'share', on: 'yes' }))).toBeNull();
+      expect(parseHubToRun(line({ type: 'share' }))).toBeNull();
+    });
+
+    test('reads how a worker stands, its sentence cut short, and refuses a page that is no web address', () => {
+      const live = {
+        type: 'live',
+        can: true,
+        on: true,
+        viewers: 2,
+        page: 'https://piwi.example.com/test-runs/42',
+        why: null,
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(live))).toEqual(live);
+      expect(parseRunToHub(line({ ...live, can: false, on: false, page: null, why: 'x'.repeat(900) }))).toEqual({
+        ...live,
+        can: false,
+        on: false,
+        page: null,
+        why: 'x'.repeat(MAX_LIVE_WHY),
+      });
+      expect(parseRunToHub(line({ ...live, why: '  ' }))).toMatchObject({ why: null });
+      for (const broken of [
+        { ...live, can: 1 },
+        { ...live, on: undefined },
+        { ...live, viewers: -1 },
+        { ...live, viewers: 1.5 },
+        { ...live, page: 'javascript:alert(1)' },
+        { ...live, page: 'https://user:pass@piwi.example.com/test-runs/42' },
+        { ...live, page: undefined },
+        { ...live, why: 3 },
+      ]) {
+        expect(parseRunToHub(line(broken)), JSON.stringify(broken)).toBeNull();
       }
     });
   });

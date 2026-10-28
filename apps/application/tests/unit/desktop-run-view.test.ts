@@ -8,10 +8,14 @@ import {
   desktopCodeItem,
   desktopHoldRefusal,
   desktopHoldsByDefault,
+  desktopLiveInstance,
+  desktopLiveText,
   desktopPickItem,
   desktopRunName,
   desktopRunOf,
   desktopRunRef,
+  desktopShareOffered,
+  desktopShareWarning,
   desktopSteering,
   desktopStopPlace,
   desktopWorkerMeta,
@@ -19,6 +23,7 @@ import {
   isDesktopRunImage,
 } from '../../app/utils/desktop-run-view';
 import { isUnattendedDesktopRun } from '#shared/desktop-runs';
+import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 
 /**
  * The desktop window's view of the runs its shell starts: which run of the Local runs tray a hub session is, what a
@@ -454,5 +459,41 @@ describe('the window’s stream of its runs', () => {
     });
     answer = () => ({ type: 'answer', ok: true, message: '' });
     runs.want(false);
+  });
+});
+
+describe('Share live in the window', () => {
+  const live = {
+    shared: true,
+    refused: null,
+    stopped: null,
+    page: 'https://piwi.example.com/test-runs/42',
+    viewers: 0,
+  };
+
+  test('names the instance a run is shared on, and how many views of it are open there', () => {
+    expect(desktopLiveInstance(live)).toBe('piwi.example.com');
+    expect(desktopLiveInstance({ page: null })).toBeNull();
+    expect(desktopLiveText(live)).toBe('Shared live on piwi.example.com · nobody watches yet');
+    expect(desktopLiveText({ ...live, viewers: 1 })).toBe('Shared live on piwi.example.com · 1 view open');
+    expect(desktopLiveText({ ...live, viewers: 3, page: null })).toBe('Shared live · 3 views open');
+  });
+
+  test('says what goes out, and to whom, before the first share', () => {
+    const warning = desktopShareWarning(live);
+    expect(warning).toMatch(/^While this run is shared on piwi\.example\.com, anyone with its page open there /);
+    // Its stops show to whoever has the run page open, watched or not; the images only while someone watches.
+    expect(warning).toContain("each stop of its tests: the call, its file and line, and the test's title, even while");
+    expect(warning).toContain("images of its test's page go there too, each with its call and the test's title");
+    expect(warning).toContain('on an instance with authentication off, anyone who can reach it');
+    expect(warning).toMatch(/Stop sharing ends it within seconds\.$/);
+    expect(desktopShareWarning({ page: null })).toContain('the Piwi instance this run reports to');
+  });
+
+  test('offers no Share live for a run that reports to this app, which no teammate reaches', () => {
+    expect(desktopShareOffered(live)).toBe(true);
+    expect(desktopShareOffered({ refused: LIVE_SHARE_MISSING.off })).toBe(true);
+    expect(desktopShareOffered({ refused: LIVE_SHARE_MISSING.local })).toBe(false);
+    expect(desktopShareOffered(null)).toBe(false);
   });
 });

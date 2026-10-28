@@ -10,7 +10,8 @@
  * started it (`HubCodeMessage`: its sentence, never the code); `follow` says whether a person watches the runs there
  * (a Runs window is open), which holds a failure no pause bar shows; `view` has it push the frames of a stopped page's
  * live view to that connection alone (`HubFrameMessage`), and `input` plays the connection's input on the page it
- * views. The hub sends `keepalive` every `HUB_KEEPALIVE_MS`, and a frame longer than `MAX_HUB_FRAME` closes the
+ * views; `share` shares a run live on the team instance its reporter reports to (**Share live**), or stops, as a person
+ * asks. The hub sends `keepalive` every `HUB_KEEPALIVE_MS`, and a frame longer than `MAX_HUB_FRAME` closes the
  * connection. Messages are text frames of JSON, checked field by field on both sides. Nothing a command asks evaluates
  * code, reads a file or reaches an instance.
  */
@@ -183,6 +184,22 @@ export interface HubWorker {
   intents: HubAction[];
 }
 
+/**
+ * How a run stands on the team instance's live view (**Share live**): whether it is shared now, why it cannot be, why
+ * its sharing stopped though nobody asked, its page on the instance for a teammate to open, and how many views of its
+ * workers are open there.
+ */
+export interface HubLive {
+  shared: boolean;
+  /** One sentence; null when the run can be shared. At most `MAX_HUB_MESSAGE` characters. */
+  refused: string | null;
+  /** One sentence, until a person shares the run again or stops it; null otherwise (and from an older hub). */
+  stopped: string | null;
+  /** The run's page on the instance (`<instance>/test-runs/<id>`); null when the run holds no key. */
+  page: string | null;
+  viewers: number;
+}
+
 /** A run the editor started, with its workers. */
 export interface HubSession {
   /** The ref of the command that started it: the commands name the run by it. */
@@ -204,6 +221,11 @@ export interface HubSession {
    * `command` is null. Absent from a service that predates it, and for a run the editor started.
    */
   terminal?: boolean;
+  /**
+   * How the run stands on the team instance's live view, for a run whose reporter shares it: absent from a service
+   * or a reporter that predates **Share live**.
+   */
+  live?: HubLive;
 }
 
 /**
@@ -286,7 +308,13 @@ export type HubCommand =
    * viewport, as the image's `width` and `height` name it), its locator sent to the editor where a pick goes, in
    * place of the locator on the stopped line; the answer's `locator`.
    */
-  | { type: 'pick-at'; id: number; ref: string; worker: number | null; since: string; x: number; y: number };
+  | { type: 'pick-at'; id: number; ref: string; worker: number | null; since: string; x: number; y: number }
+  /**
+   * Share the run live on the team instance its reporter reports to (`on`), for whoever may open it there, or stop
+   * sharing it: a person's own choice, asked after the surface's warning. Refused, with why, for a run that cannot be
+   * shared.
+   */
+  | { type: 'share'; id: number; ref: string; on: boolean };
 
 /** What `parseHubCommand` reads: a command, or one answered as refused. */
 export type ParsedHubCommand =
@@ -505,6 +533,12 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
   if (value.type === 'follow') {
     return typeof value.on === 'boolean' ? { type: 'follow', id, on: value.on } : invalid('on must be true or false.');
   }
+  if (value.type === 'share') {
+    if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
+    return typeof value.on === 'boolean'
+      ? { type: 'share', id, ref: value.ref, on: value.on }
+      : invalid('share needs on: true to share the run live, false to stop.');
+  }
   if (
     !['runControl', 'pausedPage', 'requests', 'mock', 'view', 'input', 'pick-at', ...HUB_INTENTS].includes(value.type)
   ) {
@@ -709,7 +743,27 @@ function readSession(value: unknown): HubSession | null {
   const workers = value.workers.map(readWorker);
   if (!workers.every((w): w is HubWorker => w !== null)) return null;
   const session: HubSession = { ref: value.ref, root, label, command, project, workers, ended: value.ended };
-  return value.terminal === true ? { ...session, terminal: true } : session;
+  if (value.terminal === true) session.terminal = true;
+  if (value.live === undefined) return session;
+  const live = readLive(value.live);
+  return live ? { ...session, live } : null;
+}
+
+/** A run's live view on the team instance, field by field; null when it is not one. */
+function readLive(value: unknown): HubLive | null {
+  if (!isObject(value)) return null;
+  const { shared, refused, stopped = null, page, viewers } = value;
+  if (typeof shared !== 'boolean' || !isInt(viewers, 0, 1_000_000)) return null;
+  if (refused !== null && str(refused, MAX_HUB_MESSAGE) === null) return null;
+  if (stopped !== null && str(stopped, MAX_HUB_MESSAGE) === null) return null;
+  if (page !== null && (str(page, 2048) === null || !/^https?:\/\//.test(page as string))) return null;
+  return {
+    shared,
+    refused: refused as string | null,
+    stopped: stopped as string | null,
+    page: page as string | null,
+    viewers,
+  };
 }
 
 /** A message from the hub, checked field by field; null when it is not one, or of a type this version does not know. */

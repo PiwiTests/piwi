@@ -2,13 +2,18 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   LIVE_FRAME_BYTE_RATE,
   LIVE_FRAME_FPS,
+  LIVE_SHARE_MISSING,
   MAX_LIVE_FRAME_BASE64,
   formatLiveViewEnv,
+  formatLiveViewMissing,
   isLiveFrameData,
   isLiveViewKey,
+  liveRunPage,
+  liveShareRefusal,
   liveWorkerKey,
   parseInstanceToWorker,
   parseLiveViewEnv,
+  parseLiveViewMissing,
   readLiveCall,
   readLiveWorkerId,
   readWorkerToInstance,
@@ -49,6 +54,35 @@ describe('the live view address', () => {
     ]) {
       expect(parseLiveViewEnv(value), String(value)).toBeNull();
     }
+  });
+
+  test('names the run page beside its endpoint, under a sub-path too', () => {
+    const address = parseLiveViewEnv(formatLiveViewEnv('https://piwi.example.com/team/', 42, KEY))!;
+    expect(liveRunPage(address)).toBe('https://piwi.example.com/team/test-runs/42');
+    expect(liveRunPage(parseLiveViewEnv(formatLiveViewEnv('http://127.0.0.1:7494', 7, KEY))!)).toBe(
+      'http://127.0.0.1:7494/test-runs/7',
+    );
+  });
+
+  test('a run outside CI without a key names why, which no address reads as one', () => {
+    for (const why of ['no-instance', 'unregistered', 'off'] as const) {
+      const value = formatLiveViewMissing(why);
+      expect(value).toBe(`none:${why}`);
+      expect(parseLiveViewMissing(value)).toBe(why);
+      expect(parseLiveViewEnv(value)).toBeNull();
+      expect(LIVE_SHARE_MISSING[why]).toMatch(/^This run cannot be shared live: /);
+    }
+    for (const value of [undefined, '', 'none:', 'none:later', 'off', formatLiveViewEnv('https://x.test', 4, KEY)]) {
+      expect(parseLiveViewMissing(value), String(value)).toBeNull();
+    }
+  });
+
+  test('says why a shared stream was given up, by the instance’s answer', () => {
+    expect(liveShareRefusal(404)).toMatch(/live view was turned off/);
+    expect(liveShareRefusal(401)).toBe(liveShareRefusal(403));
+    expect(liveShareRefusal(410)).toMatch(/no longer live/);
+    expect(liveShareRefusal(409)).toMatch(/holds the run as interrupted/);
+    expect(liveShareRefusal(null)).toMatch(/did not answer/);
   });
 
   test('a key is pdl_ and 43 characters of base64url', () => {
@@ -178,6 +212,11 @@ describe('the messages', () => {
       expect(typeof readWorkerToInstance(value), JSON.stringify(value)).toBe('string');
     }
     expect(readWorkerToInstance({ type: 'ended', worker: 4 })).toEqual({ type: 'ended', shard: null, worker: 4 });
+    expect(readWorkerToInstance({ type: 'unshared', shard: 2, worker: 1 })).toEqual({
+      type: 'unshared',
+      shard: 2,
+      worker: 1,
+    });
   });
 
   test('the instance says how many watch, and nothing else', () => {

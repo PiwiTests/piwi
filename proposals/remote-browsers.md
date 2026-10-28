@@ -106,7 +106,7 @@ checked by the spikes:
 | Identity | `api_keys`, `apps/application/shared/permissions.ts` | Hashed `pd_` keys sent as `Authorization: Bearer`, each carrying its owner's access; five project roles; a CI job holds an Uploader key (`project:read`, `run:submit`). With `PIWI_AUTH_ENABLED` off, every request acts as an administrator. |
 | Capabilities | [`capabilities-opt-out.md`](../adr/capabilities-opt-out.md) | What grids report is one more capability a team can decline. |
 
-Proposed elsewhere and not built: [`run-control.md`](run-control.md)'s live view (Part 8), frames from
+Proposed elsewhere and not built: [`run-control.md`](../adr/run-control.md)'s live view (Part 8), frames from
 `page.screencast` sent by the worker while someone watches. A screencast works through a remote browser
 ([spike I](#i-a-screencast-through-a-remote-browser)), so that view would need nothing from a grid.
 

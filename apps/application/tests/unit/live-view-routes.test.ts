@@ -140,8 +140,10 @@ describe("a worker's stream and posts", () => {
     expect(await refusal(stream, event(10, { worker: '0' }, { authorization: 'Bearer pd_api_key' }))).toBe(401);
     expect(await refusal(stream, event(10, {}, { authorization: `Bearer ${key}` }))).toBe(400);
     expect(await refusal(stream, event(11, { worker: '0' }, { authorization: `Bearer ${ended}` }))).toBe(410);
-    // A run no longer live gives its keys up.
+    // A run no longer live gives its keys up, and says so to the worker that presents one again.
     expect(liveViewRelay.authorize(11, ended)).toBeNull();
+    expect(await refusal(stream, event(11, { worker: '0' }, { authorization: `Bearer ${ended}` }))).toBe(410);
+    expect(await refusal(post, event(11, {}, { authorization: `Bearer ${ended}` }))).toBe(410);
 
     expect(await refusal(post, event(10, {}, { authorization: `Bearer ${otherKey}` }))).toBe(401);
     expect(await refusal(post, event(10, {}, { authorization: `Bearer ${key}`, 'content-length': '999999999' }))).toBe(
@@ -156,6 +158,14 @@ describe("a worker's stream and posts", () => {
     const key = liveViewRelay.mintKey(30, 3)!;
     expect(await refusal(stream, event(30, { worker: '0' }, { authorization: `Bearer ${key}` }))).toBe(404);
     expect(liveViewRelay.authorize(30, key)).toBeNull();
+    expect(await refusal(stream, event(30, { worker: '0' }, { authorization: `Bearer ${key}` }))).toBe(404);
+  });
+
+  test('turned off while a worker streams: the worker that opens its stream again, or posts, hears it is off', async () => {
+    const key = liveViewRelay.mintKey(10, 1)!;
+    liveViewRelay.endProject(1);
+    expect(await refusal(stream, event(10, { worker: '0' }, { authorization: `Bearer ${key}` }))).toBe(404);
+    expect(await refusal(post, event(10, {}, { authorization: `Bearer ${key}` }))).toBe(404);
   });
 
   test('are refused for a while as the run is interrupted, its key kept for when it goes on', async () => {

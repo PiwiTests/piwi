@@ -563,6 +563,21 @@ describe('a hub’s connection', () => {
     expect(await pick).toEqual({ ok: false, message: 'Pick needs the pause bar.' });
   });
 
+  it('passes Share live on for the run it names, and hands back its answer', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    const socket = sockets[0]!;
+    await welcome(socket, [session([STOPPED])]);
+    const shared = hubs.command({ hub: HUB.url, ref: 'r1', worker: null, since: null, what: 'share', on: true });
+    void hubs.command({ hub: HUB.url, ref: 'r1', worker: null, since: null, what: 'share', on: false });
+    expect(socket.sent.slice(2)).toEqual([
+      { type: 'share', id: 2, ref: 'r1', on: true },
+      { type: 'share', id: 3, ref: 'r1', on: false },
+    ]);
+    socket.hear({ type: 'answer', id: 2, ok: true, message: 'Sharing the run live on piwi.example.com.' });
+    expect(await shared).toEqual({ ok: true, message: 'Sharing the run live on piwi.example.com.' });
+  });
+
   it('passes the code a stop can write on, each naming its stop, and hands back the requests the test kept', async () => {
     const { hubs, sockets } = setup();
     await hubs.find();

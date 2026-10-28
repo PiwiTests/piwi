@@ -11,21 +11,26 @@ import {
 } from '@piwitests/core/live-view';
 import { RateWindow } from '@piwitests/core/run-view';
 import type { LiveViewEnd, LiveViewerMessage, LiveWorkerState } from '#shared/live-view';
+import { apiError } from './api-error';
 import type { EventStreamSink } from './event-stream';
 import { runEventBus, type GlobalRunEvent } from './run-events';
 
 /**
- * The run page's live view on this instance: a relay, in memory alone, between the workers of a live run whose
- * project turned it on and the people watching them. Each worker holds one event stream, opened with a key minted
- * for its run (`mintKey`, handed to the run's global setup), on which it hears how many people watch it; a viewer
- * holds one stream per worker it watches. The frames a worker posts go to that worker's viewers and nowhere else: none
- * is kept, written to the database, logged or exported, and a viewer whose stream is backed up gets the latest frame
- * alone once it drains. The worker's stops go to everyone with the run page open, through the run's event stream
- * (`live-worker`), and so does each worker's leaving, whatever ends it. A run's keys, workers and viewers end with the
- * run (its finish or cancel), with the project's setting turned off (`endProject`), and a key after `LIVE_KEY_TTL_MS`
- * at most; an interrupted run's workers and viewers end, its keys stay for the run to go on (`interruptRun`). Bounded
- * throughout: keys per project and in all (the expired ones go first), workers and viewers per run, viewers per person
- * (the oldest replaced), frames a second per worker, and each frame's bytes (the route's).
+ * The run page's live view on this instance: a relay, in memory alone, between the workers of a live run whose project
+ * turned it on (a CI run's, or one a developer shares from their machine) and the people watching them. Each worker
+ * holds one event stream, opened with a key minted for its run (`mintKey`, handed to the run's global setup), on which
+ * it hears how many people watch it; a viewer holds one stream per worker it watches. The frames a worker posts go to
+ * that worker's viewers and nowhere else: none is kept, written to the database, logged or exported, and a viewer whose
+ * stream is backed up gets the latest frame alone once it drains. The worker's stops go to everyone with the run page
+ * open, through the run's event stream (`live-worker`), and so does each worker's leaving, whatever ends it; a
+ * developer who stops sharing their run has each worker's viewers hear so (`unshared`) before its stream closes. A
+ * run's keys, workers and viewers end with the run (its finish or cancel), with the project's setting turned off
+ * (`endProject`), and a key after `LIVE_KEY_TTL_MS` at most; an interrupted run's workers and viewers end, the keys
+ * that opened a stream stay for the run to go on (`interruptRun`). A key that ended with its run or with the setting
+ * is remembered, as long as it would have lived, for the routes to tell its worker why (`endedWhy`). Bounded
+ * throughout: keys per project and in all (the expired ones go first, then those that never opened a stream: a run on
+ * a developer's machine nobody shares), workers and viewers per run, viewers per person (the oldest replaced), frames
+ * a second per worker, and each frame's bytes (the route's).
  */
 
 /** The most workers of one run that hold a stream. */
@@ -59,7 +64,12 @@ interface KeyEntry {
   runId: number;
   projectId: number;
   expiresAt: number;
+  /** A worker opened a stream with it. */
+  streamed: boolean;
 }
+
+/** Why a key that was one opens nothing any more: the project turned its live view off, or the run ended. */
+export type LiveKeyEnd = 'off' | 'run-ended';
 
 interface Viewer {
   sink: EventStreamSink;
@@ -101,6 +111,8 @@ function digest(key: string): string {
 
 export class LiveViewRelay {
   private readonly keys = new Map<string, KeyEntry>();
+  /** The keys that ended, oldest first, as many at most as are held. */
+  private readonly ended = new Map<string, { runId: number; why: LiveKeyEnd; expiresAt: number }>();
   private readonly runs = new Map<number, RunLive>();
   private readonly counts = new Map<number, LiveViewCounts>();
   /** How many viewers came so far, which orders them. */
@@ -114,19 +126,25 @@ export class LiveViewRelay {
 
   /**
    * A key that opens the live view of `runId` alone; null when the run holds as many as it may. A project at its
-   * bound gives up its expired keys, then its oldest; the instance at its bound gives up every expired key, then the
-   * oldest of the project that holds the most, so no project takes another's place.
+   * bound gives up its expired keys, then its oldest that never opened a stream, then its oldest; the instance at its
+   * bound gives up every expired key, then the oldest that never opened a stream of the project that holds the most
+   * of them, then the oldest of the project that holds the most, so no project takes another's place and a run that
+   * streams keeps its key.
    */
   mintKey(runId: number, projectId: number): string | null {
     const ofRun = [...this.keys.values()].filter((entry) => entry.runId === runId).length;
     if (ofRun >= MAX_KEYS_PER_RUN) return null;
     if (this.keysOf(projectId).length >= MAX_LIVE_KEYS_PER_PROJECT) this.dropExpired(projectId);
-    const ofProject = this.keysOf(projectId);
-    if (ofProject.length >= MAX_LIVE_KEYS_PER_PROJECT) this.keys.delete(ofProject[0]!);
+    if (this.keysOf(projectId).length >= MAX_LIVE_KEYS_PER_PROJECT) {
+      this.keys.delete(this.keysOf(projectId, false)[0] ?? this.keysOf(projectId)[0]!);
+    }
     if (this.keys.size >= MAX_LIVE_KEYS) this.dropExpired(null);
-    while (this.keys.size >= MAX_LIVE_KEYS) this.keys.delete(this.keysOf(this.largestProject())[0]!);
+    while (this.keys.size >= MAX_LIVE_KEYS) {
+      const idle = this.largestProject(false);
+      this.keys.delete(idle === null ? this.keysOf(this.largestProject(null)!)[0]! : this.keysOf(idle, false)[0]!);
+    }
     const key = `${LIVE_VIEW_KEY_PREFIX}${randomBytes(32).toString('base64url')}`;
-    this.keys.set(digest(key), { runId, projectId, expiresAt: this.now() + LIVE_KEY_TTL_MS });
+    this.keys.set(digest(key), { runId, projectId, expiresAt: this.now() + LIVE_KEY_TTL_MS, streamed: false });
     return key;
   }
 
@@ -141,6 +159,17 @@ export class LiveViewRelay {
       return null;
     }
     return entry;
+  }
+
+  /**
+   * Why a key of the run that `authorize` refuses opens nothing any more, for the worker that presents it to say:
+   * the setting turned off, or the run ended; null for a key that never was one, expired, or was given up.
+   */
+  endedWhy(runId: number, presented: string | null | undefined): LiveKeyEnd | null {
+    if (!isLiveViewKey(presented)) return null;
+    const ended = this.ended.get(digest(presented));
+    if (!ended || ended.runId !== runId || ended.expiresAt <= this.now()) return null;
+    return ended.why;
   }
 
   /** Count a request to the run's live view endpoint, refused or not. */
@@ -167,6 +196,7 @@ export class LiveViewRelay {
     }
     const run = known ?? { projectId: entry.projectId, workers: new Map<string, WorkerLink>() };
     this.runs.set(entry.runId, run);
+    entry.streamed = true;
     const sink = open();
     const link: WorkerLink = {
       id,
@@ -211,6 +241,9 @@ export class LiveViewRelay {
         return null;
       case 'ended':
         this.endViewers(link, 'test-ended');
+        return null;
+      case 'unshared':
+        this.endViewers(link, 'unshared');
         return null;
     }
   }
@@ -265,15 +298,20 @@ export class LiveViewRelay {
 
   /** The run's live view ends: its keys open nothing more, its workers' and viewers' streams close. */
   endRun(runId: number, reason: LiveViewEnd = 'run-ended'): void {
-    for (const [id, entry] of this.keys) if (entry.runId === runId) this.keys.delete(id);
+    const why: LiveKeyEnd = reason === 'off' ? 'off' : 'run-ended';
+    for (const [id, entry] of this.keys) if (entry.runId === runId) this.endKey(id, entry, why);
     this.closeRun(runId, reason);
   }
 
   /**
-   * The run was interrupted: its workers' and viewers' streams close, and the run page hears each worker left. Its
-   * keys stay, until the run ends or they expire, so its workers open their streams again if it goes on.
+   * The run was interrupted: its workers' and viewers' streams close, and the run page hears each worker left. The
+   * keys that opened a stream stay, until the run ends or they expire, so its workers open their streams again if it
+   * goes on; the others end.
    */
   interruptRun(runId: number): void {
+    for (const [id, entry] of this.keys) {
+      if (entry.runId === runId && !entry.streamed) this.endKey(id, entry, 'run-ended');
+    }
     this.closeRun(runId, 'run-ended');
   }
 
@@ -306,10 +344,20 @@ export class LiveViewRelay {
     }
   }
 
-  /** The keys of a project, oldest first. */
-  private keysOf(projectId: number): string[] {
+  /** A key opens nothing more, remembered with why until it would have expired. */
+  private endKey(id: string, entry: KeyEntry, why: LiveKeyEnd): void {
+    this.keys.delete(id);
+    this.ended.delete(id);
+    while (this.ended.size >= MAX_LIVE_KEYS) this.ended.delete(this.ended.keys().next().value!);
+    this.ended.set(id, { runId: entry.runId, why, expiresAt: entry.expiresAt });
+  }
+
+  /** The keys of a project, oldest first: those that opened a stream or not (`streamed`), or all. */
+  private keysOf(projectId: number, streamed: boolean | null = null): string[] {
     const ids: string[] = [];
-    for (const [id, entry] of this.keys) if (entry.projectId === projectId) ids.push(id);
+    for (const [id, entry] of this.keys) {
+      if (entry.projectId === projectId && (streamed === null || entry.streamed === streamed)) ids.push(id);
+    }
     return ids;
   }
 
@@ -321,12 +369,16 @@ export class LiveViewRelay {
     }
   }
 
-  /** The project that holds the most keys. */
-  private largestProject(): number {
+  /** The project that holds the most keys that opened a stream or not (`streamed`), or the most keys; null for none. */
+  private largestProject(streamed: boolean | null): number | null {
     const counts = new Map<number, number>();
-    for (const entry of this.keys.values()) counts.set(entry.projectId, (counts.get(entry.projectId) ?? 0) + 1);
-    let largest = -1;
-    let most = -1;
+    for (const entry of this.keys.values()) {
+      if (streamed === null || entry.streamed === streamed) {
+        counts.set(entry.projectId, (counts.get(entry.projectId) ?? 0) + 1);
+      }
+    }
+    let largest: number | null = null;
+    let most = 0;
     for (const [projectId, count] of counts) {
       if (count > most) [largest, most] = [projectId, count];
     }
@@ -379,6 +431,17 @@ export class LiveViewRelay {
     }
     return counts;
   }
+}
+
+/**
+ * Refuse a worker's request whose key `authorize` refused: 404 for a key that ended as the project turned its live view
+ * off, 410 for one that ended with its run, else 401; so the worker says why its sharing stopped.
+ */
+export function refuseLiveViewKey(runId: number, presented: string | null): never {
+  const why = liveViewRelay.endedWhy(runId, presented);
+  if (why === 'off') throw apiError({ statusCode: 404, message: 'The live view is off for this project' });
+  if (why === 'run-ended') throw apiError({ statusCode: 410, message: 'The run is no longer live' });
+  throw apiError({ statusCode: 401, message: 'A live view key of this run is required' });
 }
 
 /** The live view key a request presents: its `Authorization: Bearer` token, when it is one. */

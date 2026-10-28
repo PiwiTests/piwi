@@ -6,7 +6,8 @@
  * window's own pure half (`apps/extension/src/shared/runs.ts`), which both surfaces share, as they share its live
  * view's input (`view-input.ts`).
  */
-import type { HubAction, HubCodeAction, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
+import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
+import type { HubAction, HubCodeAction, HubLive, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
 import { UNATTENDED_RUN_SUFFIX, isUnattendedDesktopRun, type DesktopRunPick } from '#shared/desktop-runs';
 import type { LocalRunKind } from '~/composables/useDesktopLocalRuns';
@@ -166,6 +167,47 @@ export function desktopCodeActions(worker: HubWorker, stop: HubStop): Array<'ass
 /** A run's name: its Piwi project, else its folder. */
 export function desktopRunName(session: Pick<HubSession, 'project' | 'label'>): string {
   return session.project ?? session.label ?? 'Run';
+}
+
+/**
+ * What Share live sends, and who sees it, asked before the window first shares a run in this session of the app: the
+ * instance's name in it when the run's page names one.
+ */
+export function desktopShareWarning(live: Pick<HubLive, 'page'>): string {
+  const instance = desktopLiveInstance(live) ?? 'the Piwi instance this run reports to';
+  return (
+    `While this run is shared on ${instance}, anyone with its page open there sees each stop of its tests: the ` +
+    "call, its file and line, and the test's title, even while nobody watches. While someone watches a worker, " +
+    "images of its test's page go there too, each with its call and the test's title. Anyone who can open the run " +
+    'there can watch, and on an instance with authentication off, anyone who can reach it. Nothing is stored, and ' +
+    'Stop sharing ends it within seconds.'
+  );
+}
+
+/**
+ * Whether the window offers Share live for a run: one that reports to this app itself never is, since no teammate
+ * reaches the app; any other is, a refusal said once asked.
+ */
+export function desktopShareOffered(live: Pick<HubLive, 'refused'> | null | undefined): boolean {
+  return !!live && live.refused !== LIVE_SHARE_MISSING.local;
+}
+
+/** The instance a run's page is on, as the window names it (its host); null without a page. */
+export function desktopLiveInstance(live: Pick<HubLive, 'page'>): string | null {
+  if (!live.page) return null;
+  try {
+    return new URL(live.page).host || null;
+  } catch {
+    return null;
+  }
+}
+
+/** What the window says of a run shared live: where, and how many views of it are open there. */
+export function desktopLiveText(live: HubLive): string {
+  const instance = desktopLiveInstance(live);
+  const where = instance ? `Shared live on ${instance}` : 'Shared live';
+  if (live.viewers === 0) return `${where} · nobody watches yet`;
+  return `${where} · ${live.viewers === 1 ? '1 view open' : `${live.viewers} views open`}`;
 }
 
 /**

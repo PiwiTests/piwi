@@ -3,7 +3,7 @@ import { readLiveWorkerId } from '@piwitests/core/live-view';
 import { getDatabase } from '../../../database';
 import { projects, testRuns } from '../../../database/schema';
 import { openEventStream } from '../../../utils/event-stream';
-import { liveViewKeyOf, liveViewRelay } from '../../../utils/live-view';
+import { liveViewKeyOf, liveViewRelay, refuseLiveViewKey } from '../../../utils/live-view';
 import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: "Hold a worker's live view stream",
     description:
-      "The event stream a test worker keeps open while its run executes, in a project with the live view on: each event says how many people watch the worker (`{ type: 'viewers', count }`), and the worker sends frames of its test's page only while someone does. Authenticated by the run's live view key (`Authorization: Bearer pdl_…`), which the run's setup received and which opens nothing but this run's live view; a second stream of the same worker replaces the first. 401 without a key of this run, 404 once the project turned its live view off, 409 while the run is interrupted (its key opens the stream again if the run goes on), 410 once the run is no longer live, 429 past 64 workers of one run.",
+      "The event stream a test worker keeps open while its run executes, in a project with the live view on: each event says how many people watch the worker (`{ type: 'viewers', count }`), and the worker sends frames of its test's page only while someone does. Authenticated by the run's live view key (`Authorization: Bearer pdl_…`), which the run's setup received and which opens nothing but this run's live view; a second stream of the same worker replaces the first. 401 without a key of this run, 404 once the project turned its live view off (a key that ended so included), 409 while the run is interrupted (its key opens the stream again if the run goes on), 410 once the run is no longer live (a key that ended with it included), 429 past 64 workers of one run.",
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'worker', in: 'query', required: true, schema: { type: 'integer', minimum: 0 } },
@@ -26,8 +26,9 @@ const LIVE_STATUSES: readonly string[] = ['initializing', 'running'];
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
   liveViewRelay.noteRequest(id);
-  const entry = liveViewRelay.authorize(id, liveViewKeyOf(event));
-  if (!entry) throw apiError({ statusCode: 401, message: 'A live view key of this run is required' });
+  const key = liveViewKeyOf(event);
+  const entry = liveViewRelay.authorize(id, key);
+  if (!entry) refuseLiveViewKey(id, key);
   const query = getQuery(event);
   const worker = readLiveWorkerId(query.shard, query.worker);
   if (!worker)

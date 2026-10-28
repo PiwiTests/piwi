@@ -6664,5 +6664,62 @@
   },
   "runs_failUnwatched": {
     "message": "Mira primero la página en directo: solo entonces las teclas y los clics van a ella."
+  },
+  "runs_shareLive": {
+    "message": "Compartir en directo"
+  },
+  "runs_shareLiveTitle": {
+    "message": "Dejar que quien pueda abrir esta ejecución en la instancia de Piwi de tu equipo vea las páginas de sus tests desde la página de la ejecución"
+  },
+  "runs_shareWarning": {
+    "message": "Mientras esta ejecución está compartida en $instance$, quien tenga su página abierta allí ve cada parada de sus tests: la llamada, su archivo y su línea, y el título del test, aunque nadie mire. Mientras alguien mira un worker, también se envían allí imágenes de la página de su test, cada una con su llamada y el título del test. Quien pueda abrir la ejecución allí puede mirarla y, en una instancia sin autenticación, cualquiera que pueda acceder a ella. No se guarda nada, y Dejar de compartir lo termina en segundos.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_shareInstance": {
+    "message": "la instancia de Piwi a la que informa"
+  },
+  "runs_sharedLive": {
+    "message": "Compartida en directo en $instance$",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_sharedNobody": {
+    "message": "nadie mira todavía"
+  },
+  "runs_sharedViews_one": {
+    "message": "$count$ vista abierta",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_sharedViews_other": {
+    "message": "$count$ vistas abiertas",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_stopSharing": {
+    "message": "Dejar de compartir"
+  },
+  "runs_stopSharingTitle": {
+    "message": "Terminar las vistas de esta ejecución en la instancia: no se envía nada más"
+  },
+  "runs_copyRunPage": {
+    "message": "Copiar el enlace de la página de la ejecución"
   }
 }

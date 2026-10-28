@@ -635,6 +635,55 @@ class GlueTest {
     }
 
     @Test
+    fun `Share live says what it sends, offers a run that can be shared, and says how a shared one stands`() {
+        val page = "https://piwi.example.com/test-runs/42"
+        val warning = Glue.shareLiveWarning(page)
+        assertTrue(warning.startsWith("While this run is shared on piwi.example.com, anyone with its page open there "))
+        // Its stops show to whoever has the run page open, watched or not; the images only while someone watches.
+        assertTrue(warning.contains("each stop of its tests: the call, its file and line, and the test's title, even while nobody watches"))
+        assertTrue(warning.contains("images of its test's page go there too, each with its call and the test's title"))
+        assertTrue(warning.contains("on an instance with authentication off, anyone who can reach it"))
+        assertTrue(warning.endsWith("Stop Sharing ends it within seconds."))
+        assertTrue(Glue.shareLiveWarning(null).contains("the Piwi instance it reports to"))
+        assertEquals("piwi.example.com", Glue.liveInstance(page))
+        assertEquals("127.0.0.1:7494", Glue.liveInstance("http://127.0.0.1:7494/test-runs/5"))
+        assertEquals(null, Glue.liveInstance(null))
+
+        val ready = RunSession("ed-1", workers = listOf(RunWorker(0, 0, "running", runTest())), live = RunLive(false, null, page, 0))
+        val refused = RunSession("ed-2", live = RunLive(false, "This run cannot be shared live: its project's live view is off.", null, 0))
+        val shared = ready.copy(live = RunLive(true, null, page, 2))
+        assertEquals(Glue.LiveTarget.None("No run started from the IDE is running."), Glue.liveTarget(emptyMap(), true))
+        assertEquals(Glue.LiveTarget.One("ed-1"), Glue.liveTarget(mapOf("ed-1" to ready, "ed-2" to refused), true))
+        // A run that cannot be shared is asked when no other can: the service says why.
+        assertEquals(Glue.LiveTarget.One("ed-2"), Glue.liveTarget(mapOf("ed-2" to refused), true))
+        assertEquals(Glue.LiveTarget.None("No run is shared live."), Glue.liveTarget(mapOf("ed-1" to ready), false))
+        assertEquals(
+            Glue.LiveTarget.Choose(listOf("ed-1", "ed-3")),
+            Glue.liveTarget(mapOf("ed-1" to ready, "ed-3" to ready.copy(ref = "ed-3")), true),
+        )
+
+        val controls = Glue.runControls(mapOf("ed-1" to shared))
+        assertTrue(controls.liveShared)
+        assertEquals(2, controls.liveViewers)
+        assertFalse(Glue.runControls(mapOf("ed-1" to ready)).liveShared)
+        // The views open of every shared run, counted as views: one person may hold several.
+        assertEquals("Piwi: shared live · 2 views", Glue.liveStatus(controls))
+        val two = Glue.runControls(mapOf("ed-1" to shared, "ed-3" to shared.copy(ref = "ed-3", live = RunLive(true, null, page, 1))))
+        assertEquals("Piwi: shared live · 3 views", Glue.liveStatus(two))
+        assertEquals("Piwi: shared live · 1 view", Glue.liveStatus(Glue.runControls(mapOf("ed-1" to shared.copy(live = RunLive(true, null, page, 1))))))
+        assertEquals(null, Glue.liveStatus(Glue.runControls(mapOf("ed-1" to ready))))
+        assertEquals(shared.live, Glue.sharedLive(mapOf("ed-1" to shared, "ed-2" to refused)))
+        assertEquals(null, Glue.sharedLive(mapOf("ed-1" to ready)))
+        assertEquals("Shared live on piwi.example.com: 2 views open", Glue.sharedLiveText(shared.live!!))
+        assertEquals("Shared live: nobody watches yet", Glue.sharedLiveText(RunLive(true, null, null, 0)))
+        val stoppedShared = mapOf("ed-1" to shared.copy(workers = listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4)))))
+        assertEquals(
+            "Piwi: paused · checkout.page.ts:5 · shared live · 2 views",
+            Glue.runControlStatus(Glue.runControls(stoppedShared), Glue.stopsOf(stoppedShared)),
+        )
+    }
+
+    @Test
     fun `a stop says what is about to run, with the attempt after the first`() {
         assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon')", Glue.pausedText(stopAt(specUri, 5), runTest()))
         assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · attempt 2", Glue.pausedText(stopAt(specUri, 5), runTest(retry = 1)))

@@ -178,11 +178,12 @@ Each entry names folders under `server/api/`.
   - The streaming protocol: `setup`, `start`, `[id]/begin`, `[id]/events`, `[id]/heartbeat`, `[id]/case-files`,
     `[id]/finish`, and `[id]/live-resources`: a watched run's CPU, memory and open pages, held in memory by
     `server/utils/run-events.ts` until the run ends and merged by `shared/live-resources.ts`.
-  - The run page's live view of a CI run, for a project with `projects.live_view` on: `[id]/live-view` (a test
-    worker's event stream, `GET`, and its frames and stops, `POST`, on the run's live view key,
-    `@piwitests/core/live-view`), `[id]/live-view/watch` (one worker's view, to a person who may open the run) and
-    `[id]/live-view/workers`. All of it is relayed in memory by `server/utils/live-view.ts`, written straight to the
-    response by `server/utils/event-stream.ts` so a slow reader gets the latest frame alone; `setup` mints the key.
+  - The run page's live view of a CI run, or of a run a developer shares (Share live), for a project with
+    `projects.live_view` on: `[id]/live-view` (a test worker's event stream, `GET`, and its frames, stops and the end of
+    its sharing, `POST`, on the run's live view key, `@piwitests/core/live-view`), `[id]/live-view/watch` (one worker's
+    view, to a person who may open the run) and `[id]/live-view/workers`. All of it is relayed in memory by
+    `server/utils/live-view.ts`, written straight to the response by `server/utils/event-stream.ts` so a slow reader
+    gets the latest frame alone; `setup` mints the key.
   - Run detail: `[id]` (read, update, delete), `recent`, the SSE `[id]/stream`, network requests, failure groups,
     `[id]/insights` (the comparison with a baseline that the Changes tab shows), coverage, the Perfetto export.
   - `[id]/resources`: the report each reporter sent (one `test_run_resource_reports` row per shard, rebuilt on ingest
@@ -258,8 +259,9 @@ Each entry names folders under `server/api/`.
   is `server/utils/desktop-runs.ts`, on the editor service's run control). The window's side is the Local runs tray
   (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands, `DesktopRunSession`,
   `DesktopRunWorker` and `DesktopRunStopPage` show each worker, its stop, its page and its live view (with the Runs
-  window's input, `apps/extension/src/shared/view-input.ts`), and `DesktopRunCopyList` the code to copy; the pure half
-  is `app/utils/desktop-run-view.ts`. Agents reach the same runs through `/mcp` (the run tools, below).
+  window's input, `apps/extension/src/shared/view-input.ts`), `DesktopRunShare` a run's Share live, and
+  `DesktopRunCopyList` the code to copy; the pure half is `app/utils/desktop-run-view.ts`. Agents reach the same runs
+  through `/mcp` (the run tools, below).
 - **`flake-lab/inbox`, `gaps/`**: cross-project inboxes of the Flake Lab and the scenario gaps.
 - **`health`, `version`, `capabilities`, `setup-status`, `metrics`, `rollups`, `stream`, `agent-skills`**: the
   readiness probe (200 or 503, with a database check), build info, the instance capabilities, the setup status,

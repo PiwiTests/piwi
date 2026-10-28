@@ -26,8 +26,12 @@ export function liveWorkerName(id: LiveWorkerId): string {
   return id.shard === null ? `worker ${id.worker}` : `worker ${id.worker} of shard ${id.shard}`;
 }
 
-/** Why a view ended: the person who watched it opened a further one of the run, past their share, in its place. */
-export type LiveViewEnd = 'test-ended' | 'worker-left' | 'run-ended' | 'off' | 'replaced';
+/**
+ * Why a view ended: its test ended, its worker left, the run ended, the project's live view was turned off, the person
+ * who watched it opened a further one of the run, past their share, in its place (`replaced`), or the developer who
+ * shared the run from their machine stopped sharing it (`unshared`).
+ */
+export type LiveViewEnd = 'test-ended' | 'worker-left' | 'run-ended' | 'off' | 'replaced' | 'unshared';
 
 /** A message of one worker's view, to the person watching it. */
 export type LiveViewerMessage =
@@ -38,7 +42,7 @@ export type LiveViewerMessage =
   /** The view ended: the stream closes after it. */
   | { type: 'end'; reason: LiveViewEnd };
 
-const ENDS: readonly string[] = ['test-ended', 'worker-left', 'run-ended', 'off', 'replaced'];
+const ENDS: readonly string[] = ['test-ended', 'worker-left', 'run-ended', 'off', 'replaced', 'unshared'];
 
 /** A message of a view's stream (the `data` of one event); null when it is not one. */
 export function parseLiveViewerMessage(data: string): LiveViewerMessage | null {
@@ -75,4 +79,5 @@ export const LIVE_VIEW_END_TEXT: Record<LiveViewEnd, string> = {
   'run-ended': 'The run ended.',
   off: "The project's live view was turned off.",
   replaced: 'You opened another view of this run in its place.',
+  unshared: 'The developer stopped sharing this run from their machine.',
 };

@@ -6664,5 +6664,62 @@
   },
   "runs_failUnwatched": {
     "message": "Regardez d’abord la page en direct : les touches et les clics n’y vont qu’alors."
+  },
+  "runs_shareLive": {
+    "message": "Partager en direct"
+  },
+  "runs_shareLiveTitle": {
+    "message": "Permettre à quiconque peut ouvrir cette exécution sur l’instance Piwi de votre équipe de regarder les pages de ses tests depuis la page de l’exécution"
+  },
+  "runs_shareWarning": {
+    "message": "Tant que cette exécution est partagée sur $instance$, quiconque y a sa page ouverte voit chaque arrêt de ses tests : l’appel, son fichier et sa ligne, et le titre du test, même quand personne ne regarde. Tant que quelqu’un regarde un worker, des images de la page de son test y partent aussi, chacune avec son appel et le titre du test. Quiconque peut y ouvrir l’exécution peut la regarder, et sur une instance sans authentification, quiconque peut l’atteindre. Rien n’est conservé, et Arrêter le partage y met fin en quelques secondes.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_shareInstance": {
+    "message": "l’instance Piwi à laquelle elle rend compte"
+  },
+  "runs_sharedLive": {
+    "message": "Partagée en direct sur $instance$",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_sharedNobody": {
+    "message": "personne ne regarde encore"
+  },
+  "runs_sharedViews_one": {
+    "message": "$count$ vue ouverte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_sharedViews_other": {
+    "message": "$count$ vues ouvertes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_stopSharing": {
+    "message": "Arrêter le partage"
+  },
+  "runs_stopSharingTitle": {
+    "message": "Mettre fin aux vues de cette exécution sur l’instance : plus rien n’y est envoyé"
+  },
+  "runs_copyRunPage": {
+    "message": "Copier le lien de la page de l’exécution"
   }
 }
