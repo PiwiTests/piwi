@@ -20,8 +20,8 @@ While a run goes on, the tray shows each worker's test, its Playwright project a
 and a headed one shows Piwi's [pause bar](./editor-breakpoints#pause-a-run) there.
 
 At a stop, the tray says why the test stopped, the call about to run and its place in your code, with an image of the
-page. **Resume** lets the test go on, **Step** runs one call and stops before the next, and **Finish** runs the test to
-its end without stopping again.
+page. **Resume** lets the test go on, **Step** runs one call and stops before the next, **Finish** runs the test to its
+end without stopping again, and [**End the test**](./end-the-test) skips the rest of it.
 
 **Hold failures**, on each running run in the tray, holds a failing test at its line: **Failed at**, its error under
 it, and **Resume** to let it end as it failed. It is off for a run you start, and on from the start for **Reproduce**,

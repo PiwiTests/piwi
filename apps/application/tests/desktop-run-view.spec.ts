@@ -416,7 +416,7 @@ test.describe('Desktop run live view', () => {
     await expect(worker.getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('shows every stop it hears, a failure with its error, the hub’s text as text, and lets go as it ends', async ({
+  test('shows every stop it hears, ends a test there, a failure with its error, the hub’s text as text, and lets go as it ends', async ({
     page,
   }) => {
     const image = await jpeg(page);
@@ -441,7 +441,7 @@ test.describe('Desktop run live view', () => {
     const markup = "Click getByText('<img src=x onerror=alert(1)>')";
     await page.evaluate(
       (event) => window.__hub.send(event),
-      session(stopped('s2', { reason: 'page-pause', title: markup })),
+      session(stopped('s2', { reason: 'page-pause', title: markup, intents: ['mock', 'view', 'pick-at', 'end'] })),
     );
     await expect(tray(page)).toBeVisible();
     await expect(worker.getByText('Stopped at page.pause()')).toBeVisible();
@@ -453,6 +453,23 @@ test.describe('Desktop run live view', () => {
     await expect(worker.locator('img[src="x"]')).toHaveCount(0);
     expect(commands.filter((c) => c.type === 'show')).toEqual([expect.objectContaining({ ref: REF, on: true })]);
 
+    // End the test, which the stop takes: its reporter ends the test there, skipped.
+    await expect(worker.getByRole('button')).toHaveText([
+      'Watch live',
+      'Pick on the image',
+      'Resume',
+      'Step',
+      'Finish',
+      'End the test',
+      'Mock a request',
+    ]);
+    const end = worker.getByRole('button', { name: 'End the test' });
+    await expect(end).toHaveAttribute('title', 'End the test here: the rest of it is skipped');
+    await end.click();
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'runControl').at(-1))
+      .toMatchObject({ ref: REF, worker: 0, action: 'end', since: 's2' });
+
     // A failure: where it failed and its error, with Resume alone.
     await page.evaluate(
       (event) => window.__hub.send(event),
@@ -461,6 +478,7 @@ test.describe('Desktop run live view', () => {
           reason: 'failure',
           title: 'Failed: Error: expect failed',
           error: 'expect(locator).toBeVisible() failed',
+          intents: ['mock', 'view', 'pick-at', 'end'],
         }),
       ),
     );
@@ -468,6 +486,7 @@ test.describe('Desktop run live view', () => {
     await expect(worker.getByText('expect(locator).toBeVisible() failed')).toBeVisible();
     await expect(worker.getByRole('button', { name: 'Resume' })).toHaveAttribute('title', 'End the test as it failed');
     await expect(worker.getByRole('button', { name: 'Step' })).toHaveCount(0);
+    await expect(worker.getByRole('button', { name: 'End the test' })).toHaveCount(0);
 
     // The run ends: once the hub's run ends too, the window lets the stream go, so no stop waits for it.
     await page.evaluate(() => (window as unknown as { __endRun(): void }).__endRun());

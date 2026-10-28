@@ -126,13 +126,19 @@ export function desktopStopError(stop: Pick<HubStop, 'error' | 'title'>): string
   return stopError(stop);
 }
 
-/** The controls that steer a worker: Pause while it runs, Resume, Step and Finish at a stop, Resume alone at a failure. */
-export type DesktopSteer = 'pause' | 'resume' | 'step' | 'finish';
+/**
+ * The controls that steer a worker: Pause while it runs, Resume, Step and Finish at a stop, and End the test where the
+ * stop takes it (`stop.intents`); Resume alone at a failure, which it ends as it failed.
+ */
+export type DesktopSteer = 'pause' | 'resume' | 'step' | 'finish' | 'end';
 
 export function desktopSteering(worker: HubWorker): DesktopSteer[] {
   const stop = desktopRunStop(worker);
   if (!stop) return worker.pausing || worker.state === 'between' ? [] : ['pause'];
-  return stop.reason === 'failure' ? ['resume'] : ['resume', 'step', 'finish'];
+  if (stop.reason === 'failure') return ['resume'];
+  const steering: DesktopSteer[] = ['resume', 'step', 'finish'];
+  if (stopIntents(worker, stop).includes('end')) steering.push('end');
+  return steering;
 }
 
 /**

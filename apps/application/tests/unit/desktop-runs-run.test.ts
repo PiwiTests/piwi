@@ -343,7 +343,7 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
       const stop = await waitFor(() => (lastWorker()?.state === 'stopped' ? lastWorker()?.stop : undefined));
       expect(stop).toMatchObject({ reason: 'pause', bar: false });
       // Headless: the input and Assert a region wait for the window to watch the stop.
-      expect(stop.intents).toEqual(['mock', 'view', 'pick-at']);
+      expect(stop.intents).toEqual(['mock', 'view', 'pick-at', 'end']);
       const at = { ref: REF, worker: lastWorker()!.worker, since: stop.since };
 
       // Watched live: its frames come to the window, which may now play input there.

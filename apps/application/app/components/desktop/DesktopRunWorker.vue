@@ -2,13 +2,14 @@
 /**
  * Desktop shell only: one worker of a run the shell started, as the bundled server, its hub, tells it. Its test and
  * where it stands; at a stop, the call about to run and its place (a failure's error in their place), its page
- * (`DesktopRunStopPage`), **Resume**, **Step** and **Finish** (Resume alone at a failure), and the code actions the
- * stop takes from the window: **Assert a region** and **Mock a request**, whose code comes to the window to copy;
- * **Pause** while it runs. Every control but Pause names the stop it was drawn for (`since`), so a click made twice
- * never answers the next stop, and while one is on its way the buttons are `aria-disabled`, keeping the focus. A
- * control that goes as the worker runs on gives the keyboard to Pause meanwhile, and takes it back at the next stop
- * (Step, after a step), as the Runs window does. What a command answered, or what a code made at this stop came to,
- * shows under the test, read out, while the worker stands there. Everything the hub sends is shown as text.
+ * (`DesktopRunStopPage`), **Resume**, **Step**, **Finish** and **End the test**, which ends it there, skipped, where
+ * its reporter takes it (Resume alone at a failure), and the code actions the stop takes from the window: **Assert a
+ * region** and **Mock a request**, whose code comes to the window to copy; **Pause** while it runs. Every control but
+ * Pause names the stop it was drawn for (`since`), so a click made twice never answers the next stop, and while one is
+ * on its way the buttons are `aria-disabled`, keeping the focus. A control that goes as the worker runs on gives the
+ * keyboard to Pause meanwhile, and takes it back at the next stop (Step, after a step), as the Runs window does. What a
+ * command answered, or what a code made at this stop came to, shows under the test, read out, while the worker stands
+ * there. Everything the hub sends is shown as text.
  */
 import type { HubKeptRequest, HubSession, HubWorker } from '@piwitests/core/run-hub';
 import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
@@ -50,6 +51,7 @@ const STEER: Record<DesktopSteer, { label: string; title: string; icon: string }
     title: 'Turn the breakpoints off and let the test run to its end',
     icon: 'i-lucide-skip-forward',
   },
+  end: { label: 'End the test', title: 'End the test here: the rest of it is skipped', icon: 'i-lucide-square' },
   pause: {
     label: 'Pause',
     title: 'Stop the test before its next call that acts on or checks the page',

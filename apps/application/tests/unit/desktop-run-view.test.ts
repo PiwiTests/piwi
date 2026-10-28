@@ -134,12 +134,17 @@ describe('a worker of a desktop run', () => {
     expect(desktopWorkerState(stopped, ROOT)).toBe('Stopped at page.pause()');
     expect(desktopSteering(stopped)).toEqual(['resume', 'step', 'finish']);
     expect(desktopStopPlace(stopped.stop!, ROOT)).toBe('tests/checkout.spec.ts:5');
+    // End the test, where the stop takes it: its reporter ends the test there, skipped.
+    const endable = workerOf({ state: 'stopped', stop: stopOf({ intents: ['view', 'end'] }) });
+    expect(desktopSteering(endable)).toEqual(['resume', 'step', 'finish', 'end']);
   });
 
   test('ends a failure as it failed, Resume alone', () => {
     const failed = workerOf({ state: 'stopped', stop: stopOf({ reason: 'failure', error: 'expect failed' }) });
     expect(desktopWorkerState(failed, ROOT)).toBe('Failed at tests/checkout.spec.ts:5');
     expect(desktopSteering(failed)).toEqual(['resume']);
+    const told = workerOf({ state: 'stopped', stop: stopOf({ reason: 'failure', intents: ['end'] }) });
+    expect(desktopSteering(told)).toEqual(['resume']);
   });
 
   test('offers the code actions the stop takes from the window, never those that end in an editor', () => {
