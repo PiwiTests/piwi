@@ -472,6 +472,47 @@ test.describe('Desktop run live view', () => {
     await expect(worker).toHaveCount(0);
   });
 
+  test('keeps the keyboard on the controls: Pause while a step runs, Step again at the next stop', async ({ page }) => {
+    await installBridge(page);
+    const commands = await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: 'Run locally' }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await page.evaluate((event) => window.__hub.send(event), session(stopped('s1')));
+    const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
+    const step = worker.getByRole('button', { name: 'Step' });
+    await step.focus();
+    await page.keyboard.press('Enter');
+    await expect
+      .poll(() => commands.find((c) => c.type === 'runControl'))
+      .toMatchObject({ action: 'step', since: 's1' });
+    // The step runs: Step goes, and Pause holds the keyboard meanwhile.
+    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+    await expect(worker.getByRole('button', { name: 'Pause' })).toBeFocused();
+    // The next stop: Step has it again, and answers that stop.
+    await page.evaluate((event) => window.__hub.send(event), session(stopped('s2', { reason: 'step' })));
+    await expect(worker.getByRole('button', { name: 'Step' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'runControl').at(-1))
+      .toMatchObject({ action: 'step', since: 's2' });
+    // Resume, used at a stop, keeps it at the next one too; a press elsewhere lets it go.
+    await page.evaluate((event) => window.__hub.send(event), session(stopped('s3', { reason: 'step' })));
+    await expect(worker.getByRole('button', { name: 'Step' })).toBeFocused();
+    await worker.getByRole('button', { name: 'Resume' }).focus();
+    await page.keyboard.press('Enter');
+    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+    await expect(worker.getByRole('button', { name: 'Pause' })).toBeFocused();
+    await page.evaluate((event) => window.__hub.send(event), session(stopped('s4', { reason: 'page-pause' })));
+    await expect(worker.getByRole('button', { name: 'Resume' })).toBeFocused();
+    await tray(page).getByRole('heading', { name: 'Local runs' }).click();
+    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+    await page.evaluate((event) => window.__hub.send(event), session(stopped('s5', { reason: 'step' })));
+    await expect(worker.getByRole('button', { name: 'Resume' })).not.toBeFocused();
+  });
+
   test('shows a run the person opened from its start, and tells the system of a failure or a page.pause() once', async ({
     page,
   }) => {

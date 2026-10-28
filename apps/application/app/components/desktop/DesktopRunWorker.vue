@@ -5,9 +5,10 @@
  * (`DesktopRunStopPage`), **Resume**, **Step** and **Finish** (Resume alone at a failure), and the code actions the
  * stop takes from the window: **Assert a region** and **Mock a request**, whose code comes to the window to copy;
  * **Pause** while it runs. Every control but Pause names the stop it was drawn for (`since`), so a click made twice
- * never answers the next stop, and while one is on its way the buttons are `aria-disabled`, keeping the focus. What
- * a command answered, or what a code made at this stop came to, shows under the test, read out, while the worker
- * stands there. Everything the hub sends is shown as text.
+ * never answers the next stop, and while one is on its way the buttons are `aria-disabled`, keeping the focus. A
+ * control that goes as the worker runs on gives the keyboard to Pause meanwhile, and takes it back at the next stop
+ * (Step, after a step), as the Runs window does. What a command answered, or what a code made at this stop came to,
+ * shows under the test, read out, while the worker stands there. Everything the hub sends is shown as text.
  */
 import type { HubKeptRequest, HubSession, HubWorker } from '@piwitests/core/run-hub';
 import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
@@ -164,10 +165,59 @@ function heardPage(result: DesktopRunAnswer, options: { picked?: boolean }): voi
 }
 
 const { copy, copied } = useCopy();
+
+// ── Focus ──
+/** This worker's part of the tray. */
+const root = ref<HTMLElement | null>(null);
+/** The control of this worker the keyboard is on (its `data-focus`), focused again when a redraw takes it away. */
+let focusKey: string | null = null;
+/** While the worker lends the focus to another of its controls, until the one it was on comes back. */
+let lending = false;
+
+function heardFocus(event: FocusEvent): void {
+  if (lending) return;
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  focusKey = target && root.value?.contains(target) ? (target.dataset.focus ?? null) : null;
+}
+
+/** A press anywhere but on a control: the person put the focus there themselves. */
+function heardPress(event: PointerEvent): void {
+  if (!(event.target instanceof Element) || !event.target.closest('[data-focus]')) focusKey = null;
+}
+
+/**
+ * Gives the keyboard back after a redraw took it to the page: to the control it was on (Step, at the next stop), or
+ * meanwhile to the first control left (Pause, while the step runs), whose own focus does not replace it.
+ */
+function restoreFocus(): void {
+  const active = document.activeElement;
+  if (!focusKey || !root.value || (active && active !== document.body)) return;
+  const same = root.value.querySelector<HTMLElement>(`[data-focus="${focusKey}"]`);
+  if (same) {
+    same.focus();
+    return;
+  }
+  const near = root.value.querySelector<HTMLElement>('[data-focus^="steer:"]');
+  if (!near) return;
+  lending = true;
+  near.focus();
+  lending = false;
+}
+
+watch([steering, codeActions], restoreFocus, { flush: 'post' });
+onMounted(() => {
+  document.addEventListener('focusin', heardFocus);
+  document.addEventListener('pointerdown', heardPress, true);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener('focusin', heardFocus);
+  document.removeEventListener('pointerdown', heardPress, true);
+});
 </script>
 
 <template>
   <li
+    ref="root"
     class="rounded-md border border-default p-2 space-y-2"
     :data-state="worker.state"
     :data-failed="failed || undefined"
@@ -227,7 +277,8 @@ const { copy, copied } = useCopy();
     <div v-if="steering.length" class="flex flex-wrap gap-1.5">
       <UButton
         v-for="what in steering"
-        :key="`${what}|${since}`"
+        :key="what"
+        :data-focus="`steer:${what}`"
         size="xs"
         :color="what === 'resume' ? 'primary' : 'neutral'"
         :variant="what === 'resume' ? 'solid' : 'outline'"
@@ -242,7 +293,8 @@ const { copy, copied } = useCopy();
     <div v-if="codeActions.length" role="group" aria-label="Code from this stop" class="flex flex-wrap gap-1.5">
       <UButton
         v-for="what in codeActions"
-        :key="`${what}|${since}`"
+        :key="what"
+        :data-focus="`code:${what}`"
         size="xs"
         color="neutral"
         variant="outline"
