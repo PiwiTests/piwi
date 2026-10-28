@@ -631,8 +631,13 @@ fn bundled_run_channel(port: u16, token: String, nonce: &str) -> Option<(String,
 
 /// The environment naming the bundled server as run `id`'s hub, and as where
 /// its tests' picks go ([`crate::hub_env::hub_env`]), read from the server as
-/// the run starts.
-pub(crate) async fn bundled_hub_env(app: &AppHandle, id: u32) -> Vec<(&'static str, String)> {
+/// the run starts. `attended`: whether a person attends the run, whose
+/// failures the server may then hold for them.
+pub(crate) async fn bundled_hub_env(
+    app: &AppHandle,
+    id: u32,
+    attended: bool,
+) -> Vec<(&'static str, String)> {
     let (port, token, nonce) = {
         let (Some(server), Some(nonce)) = (
             app.try_state::<crate::mcp_clients::ServerInfo>(),
@@ -649,7 +654,7 @@ pub(crate) async fn bundled_hub_env(app: &AppHandle, id: u32) -> Vec<(&'static s
             .flatten();
     match found {
         Some((channel, picks)) => {
-            crate::hub_env::hub_env(Some(channel.as_str()), picks.as_deref(), id)
+            crate::hub_env::hub_env(Some(channel.as_str()), picks.as_deref(), id, attended)
         }
         None => Vec::new(),
     }
@@ -682,11 +687,12 @@ pub async fn desktop_run_local_tests(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
 
+    let attended = crate::hub_env::attended_args(&args);
     let mut cmd_args: Vec<String> = vec![node_path(&cli), "test".into()];
     cmd_args.extend(args);
 
     let id = app.state::<LocalRuns>().allocate_id();
-    let hub = bundled_hub_env(&app, id).await;
+    let hub = bundled_hub_env(&app, id, attended).await;
     let command = app
         .shell()
         .sidecar("node")

@@ -3,11 +3,42 @@
 // connection to, the run's name there, and where its tests' picks go. Pure, so
 // it is tested on its own.
 
+/// What the name of a run nobody attends ends with: the bundled server never
+/// holds its failures, whoever watches it.
+const UNATTENDED: &str = "-unattended";
+
 /// The name a run's workers give the bundled server on its run channel
 /// (`PIWI_RUN_REF`): the shell's id for the run, which the window knows the run
-/// by. `PIWI_ORIGIN_REF` keeps naming what the run was launched for.
-pub(crate) fn run_ref(id: u32) -> String {
-    format!("desktop-{id}")
+/// by, ending in `-unattended` for a run nobody attends (a Flake Lab, a bisect,
+/// a lab job, a run that repeats its tests or runs in UI mode), whose failures
+/// go on at once. `PIWI_ORIGIN_REF` keeps naming what the run was launched for.
+pub(crate) fn run_ref(id: u32, attended: bool) -> String {
+    if attended {
+        format!("desktop-{id}")
+    } else {
+        format!("desktop-{id}{UNATTENDED}")
+    }
+}
+
+/// Whether a person attends a `playwright test` run with these arguments: not
+/// one in UI mode (`--ui`), which runs the tests from its own window, nor one
+/// that repeats each test (`--repeat-each` above 1), which is left to run.
+pub(crate) fn attended_args(args: &[String]) -> bool {
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if arg == "--ui" || arg.starts_with("--ui=") {
+            return false;
+        }
+        let repeat = if arg == "--repeat-each" {
+            args.next().map(String::as_str)
+        } else {
+            arg.strip_prefix("--repeat-each=")
+        };
+        if repeat.is_some_and(|n| n.parse::<u32>().map_or(true, |n| n > 1)) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Whether `value` reads as a run channel's address as the bundled server
@@ -53,21 +84,23 @@ fn is_picks_address(value: &str) -> bool {
 
 /// The environment that makes the bundled server the hub of run `id`: its run
 /// channel (`PIWI_RUN_CHANNEL`), which each worker keeps a connection to, the
-/// run's name there (`PIWI_RUN_REF`), and the address its tests' picks go to
-/// (`PIWI_EDITOR_SEND`, the server's, which shows them in the window to copy),
-/// when the server named one. None when the server named no channel, or
-/// something that is not one: the run then goes as without a hub.
+/// run's name there (`PIWI_RUN_REF`, marked when nobody attends the run), and
+/// the address its tests' picks go to (`PIWI_EDITOR_SEND`, the server's, which
+/// shows them in the window to copy), when the server named one. None when the
+/// server named no channel, or something that is not one: the run then goes as
+/// without a hub.
 pub(crate) fn hub_env(
     channel: Option<&str>,
     picks: Option<&str>,
     id: u32,
+    attended: bool,
 ) -> Vec<(&'static str, String)> {
     let Some(value) = channel.filter(|value| is_run_channel(value)) else {
         return Vec::new();
     };
     let mut env = vec![
         ("PIWI_RUN_CHANNEL", value.to_string()),
-        ("PIWI_RUN_REF", run_ref(id)),
+        ("PIWI_RUN_REF", run_ref(id, attended)),
     ];
     if let Some(address) = picks.filter(|value| is_picks_address(value)) {
         env.push(("PIWI_EDITOR_SEND", address.to_string()));
@@ -85,7 +118,7 @@ mod tests {
     fn names_the_servers_channel_and_the_run_in_the_environment() {
         let channel = format!("/tmp/piwi-record-x1/channel.sock#{TOKEN}");
         assert_eq!(
-            hub_env(Some(&channel), None, 7),
+            hub_env(Some(&channel), None, 7, true),
             vec![
                 ("PIWI_RUN_CHANNEL", channel.clone()),
                 ("PIWI_RUN_REF", "desktop-7".to_string()),
@@ -93,7 +126,7 @@ mod tests {
         );
         let pipe = format!(r"\\.\pipe\piwi-record-0a1b2c#{TOKEN}");
         assert_eq!(
-            hub_env(Some(&pipe), None, 1)[0],
+            hub_env(Some(&pipe), None, 1, true)[0],
             ("PIWI_RUN_CHANNEL", pipe.clone())
         );
     }
@@ -103,7 +136,7 @@ mod tests {
         let channel = format!("/tmp/piwi-record-x1/channel.sock#{TOKEN}");
         let picks = format!("http://127.0.0.1:4318/api/desktop/runs/picks#{TOKEN}");
         assert_eq!(
-            hub_env(Some(&channel), Some(&picks), 2),
+            hub_env(Some(&channel), Some(&picks), 2, true),
             vec![
                 ("PIWI_RUN_CHANNEL", channel.clone()),
                 ("PIWI_RUN_REF", "desktop-2".to_string()),
@@ -111,7 +144,7 @@ mod tests {
             ]
         );
         // Without a channel, no hub and no picks.
-        assert!(hub_env(None, Some(&picks), 2).is_empty());
+        assert!(hub_env(None, Some(&picks), 2, true).is_empty());
         for bad in [
             String::new(),
             format!("https://127.0.0.1:4318/api/desktop/runs/picks#{TOKEN}"),
@@ -125,7 +158,7 @@ mod tests {
             format!("http://127.0.0.1:4318/picks#{TOKEN}\n"),
         ] {
             assert_eq!(
-                hub_env(Some(&channel), Some(&bad), 2).len(),
+                hub_env(Some(&channel), Some(&bad), 2, true).len(),
                 2,
                 "{bad:?} names no picks address"
             );
@@ -136,18 +169,53 @@ mod tests {
     fn names_a_run_as_the_hubs_commands_take_it() {
         // Letters, digits, `_` and `-`, 64 at most: what the hub and the reporter read.
         for id in [0, 1, u32::MAX] {
-            let name = run_ref(id);
-            assert!(name.len() <= 64);
-            assert!(name
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'));
+            for attended in [true, false] {
+                let name = run_ref(id, attended);
+                assert!(name.len() <= 64);
+                assert!(name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'));
+            }
         }
-        assert_ne!(run_ref(1), run_ref(2));
+        assert_ne!(run_ref(1, true), run_ref(2, true));
+        assert_ne!(run_ref(1, true), run_ref(1, false));
+    }
+
+    #[test]
+    fn marks_a_run_nobody_attends() {
+        let channel = format!("/tmp/piwi-record-x1/channel.sock#{TOKEN}");
+        assert_eq!(
+            hub_env(Some(&channel), None, 9, false)[1],
+            ("PIWI_RUN_REF", "desktop-9-unattended".to_string())
+        );
+        assert_eq!(run_ref(9, true), "desktop-9");
+    }
+
+    #[test]
+    fn tells_a_run_a_person_attends_by_its_arguments() {
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        for attended in [
+            args(&[]),
+            args(&["tests/a.spec.ts:3", "--project=chromium", "--headed"]),
+            args(&["--repeat-each=1", "--trace=on"]),
+            args(&["--repeat-each", "1"]),
+        ] {
+            assert!(attended_args(&attended), "{attended:?}");
+        }
+        for unattended in [
+            args(&["--ui"]),
+            args(&["tests/a.spec.ts", "--ui=true"]),
+            args(&["--repeat-each=20", "--trace=on"]),
+            args(&["--repeat-each", "3"]),
+            args(&["--repeat-each=many"]),
+        ] {
+            assert!(!attended_args(&unattended), "{unattended:?}");
+        }
     }
 
     #[test]
     fn names_no_hub_without_a_channel_or_with_something_else() {
-        assert!(hub_env(None, None, 3).is_empty());
+        assert!(hub_env(None, None, 3, true).is_empty());
         for bad in [
             String::new(),
             "/tmp/channel.sock".to_string(),
@@ -159,7 +227,7 @@ mod tests {
             format!("/tmp/channel.sock#{}", "a".repeat(257)),
         ] {
             assert!(
-                hub_env(Some(&bad), None, 3).is_empty(),
+                hub_env(Some(&bad), None, 3, true).is_empty(),
                 "{bad:?} names no channel"
             );
         }

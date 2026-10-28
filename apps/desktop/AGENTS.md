@@ -43,8 +43,10 @@ shell and are feature-equivalent.
   `repro.rs`, and in `worktree.rs` the reproduce, bisect and `piwi flake` runs) adds `bundled_hub_env`: the server's
   `PIWI_RUN_CHANNEL` and the address its picks go to (`PIWI_EDITOR_SEND`, the server's own route), read from
   `GET /api/desktop/run-channel` only after `health_ok` proved the launch nonce, and `PIWI_RUN_REF` (`hub_env.rs`,
-  `desktop-<run id>`, which the window knows the run by). The hub's WebSocket takes the desktop token in `hello`; its
-  code is `apps/application/server/utils/desktop-runs.ts`.
+  `desktop-<run id>`, which the window knows the run by). A run nobody attends (Flake Lab, a bisect, a lab job, one
+  with `--repeat-each` above 1 or `--ui`) ends its ref in `-unattended` (`attended_args`), and the server never holds
+  its failures. The hub's WebSocket takes the desktop token in `hello`; its code is
+  `apps/application/server/utils/desktop-runs.ts`.
 - **One route passes on another token.** An assistant answer's MCP endpoint
   (`POST /api/assistant/conversations/:id/mcp`) is called by the Claude Code CLI the server starts, with the token
   minted for that one answer (`presentsAssistantTurnToken` in `server/utils/assistant/turn-token.ts`). It opens that

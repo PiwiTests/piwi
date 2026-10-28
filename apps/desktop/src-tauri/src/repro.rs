@@ -317,6 +317,7 @@ pub async fn desktop_run_repro(
         .map_err(|e| e.to_string())??
     };
 
+    let attended = crate::hub_env::attended_args(&args);
     let mut cmd_args: Vec<String> = vec![
         node_path(&cli),
         "test".into(),
@@ -338,7 +339,7 @@ pub async fn desktop_run_repro(
         }
     };
     let result_file = result_dir.join("result.json");
-    let hub = crate::runner::bundled_hub_env(&app, id).await;
+    let hub = crate::runner::bundled_hub_env(&app, id, attended).await;
     let command = sidecar
         .args(cmd_args)
         .current_dir(&folder)

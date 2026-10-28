@@ -338,14 +338,16 @@ pub(crate) fn flake_lab_env(server: &ServerInfo) -> Vec<(&'static str, String)> 
 /// The environment a reproduction, a bisect step and `piwi flake` run with
 /// ([`flake_lab_env`]), with the bundled server as the hub of run `id`
 /// (`PIWI_RUN_CHANNEL`, `PIWI_RUN_REF`), so its window and Piwi Picker can
-/// follow, pause and step it.
+/// follow, pause and step it. `attended`: whether a person attends the run (a
+/// reproduction), else its failures go on at once (a bisect, a lab).
 async fn lab_env_with_hub(
     app: &AppHandle,
     server: &ServerInfo,
     id: u32,
+    attended: bool,
 ) -> Vec<(&'static str, String)> {
     let mut env = flake_lab_env(server);
-    env.extend(crate::runner::bundled_hub_env(app, id).await);
+    env.extend(crate::runner::bundled_hub_env(app, id, attended).await);
     env
 }
 
@@ -1086,11 +1088,14 @@ async fn reproduce_driver(
         return None;
     }
     let env = origin_env("reproduce", origin_ref);
-    run_test_phase(app, id, worktree, args, browser, &env, stop).await
+    let attended = crate::hub_env::attended_args(args);
+    run_test_phase(app, id, worktree, args, browser, &env, stop, attended).await
 }
 
 /// The browser + test phases shared by reproduce and each bisect step; the test
 /// runs with this app's server and token ([`flake_lab_env`]) and `env`.
+/// `attended`: whether a person attends the run (a reproduction, not a bisect).
+#[allow(clippy::too_many_arguments)]
 async fn run_test_phase(
     app: &AppHandle,
     id: u32,
@@ -1099,6 +1104,7 @@ async fn run_test_phase(
     browser: Option<&str>,
     env: &[(&'static str, String)],
     stop: &AtomicBool,
+    attended: bool,
 ) -> Option<i32> {
     let cli = resolve_playwright_cli(worktree)?;
 
@@ -1113,7 +1119,7 @@ async fn run_test_phase(
     }
     let mut node_args = vec![node_path(&cli), "test".to_string()];
     node_args.extend(args.iter().cloned());
-    let mut env_with_app = lab_env_with_hub(app, &server_info(app), id).await;
+    let mut env_with_app = lab_env_with_hub(app, &server_info(app), id, attended).await;
     env_with_app.extend_from_slice(env);
     run_sidecar_streaming(app, id, Some(&cli), worktree, node_args, &env_with_app).await
 }
@@ -1302,7 +1308,7 @@ async fn bisect_driver(
             }
         } else {
             let env = origin_env("bisect", origin_ref);
-            let code = run_test_phase(app, id, worktree, args, browser, &env, stop).await;
+            let code = run_test_phase(app, id, worktree, args, browser, &env, stop, false).await;
             if stop.load(Ordering::SeqCst) {
                 return None;
             }
@@ -1377,7 +1383,7 @@ async fn run_flake_step(
         return None;
     };
     let args = flake_bisect_args(&cli, test_case_id);
-    let env = lab_env_with_hub(app, server, id).await;
+    let env = lab_env_with_hub(app, server, id, false).await;
     run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env).await
 }
 
@@ -1504,7 +1510,7 @@ async fn flake_lab_driver(
 ) -> Option<i32> {
     let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
     let args = flake_lab_args(&cli, test_case_id, options);
-    let env = lab_env_with_hub(app, server, id).await;
+    let env = lab_env_with_hub(app, server, id, false).await;
     run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env).await
 }
 
@@ -1653,7 +1659,7 @@ async fn lab_job_driver(
 ) -> Option<i32> {
     let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
     let args = lab_job_args(&cli, plan_file);
-    let env = lab_env_with_hub(app, server, id).await;
+    let env = lab_env_with_hub(app, server, id, false).await;
     let (code, stdout) = run_sidecar(app, id, worktree, args, &env, true).await;
     emit(app, RunEventPayload::lab(id, parse_lab_report(&stdout)));
     code
