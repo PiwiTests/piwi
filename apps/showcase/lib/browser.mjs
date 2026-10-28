@@ -83,7 +83,7 @@ export class DeveloperBrowser {
       },
       "the popup's Runs tile, once Piwi Picker reaches the editor's hub",
       90_000,
-    );
+    ).catch((error) => this.whyNoHub(error));
     try {
       // Waited for together, so a click that fails leaves no wait for the window to reject unheard.
       const [runs] = await Promise.all([
@@ -105,6 +105,24 @@ export class DeveloperBrowser {
     );
     await this.runs.getByText(/Following 1 editor window/).waitFor({ timeout: 30_000 });
     return this.runs;
+  }
+
+  /**
+   * Throws `error` with what the Runs window, opened by its address, says of the editor's hub: searching for it, out
+   * of reach, or no access. The window stays open for the failed set's screen.
+   */
+  async whyNoHub(error) {
+    const runs = await this.context.newPage();
+    await runs.goto(this.url('runs.html')).catch(() => undefined);
+    await runs
+      .locator('html[data-ready]')
+      .waitFor({ state: 'attached', timeout: 10_000 })
+      .catch(() => undefined);
+    const said = await runs
+      .locator('body')
+      .innerText()
+      .catch(() => '');
+    throw new Error(`${error.message}; the Runs window says: ${said.replace(/\s+/g, ' ').trim().slice(0, 400)}`);
   }
 
   async close() {
