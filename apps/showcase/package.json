@@ -1,0 +1,19 @@
+{
+  "name": "@piwitests/showcase",
+  "version": "0.62.0",
+  "private": true,
+  "description": "Piwi's showcase: one story played on the real tools together, as a check and, with capture, as a video",
+  "license": "FSL-1.1-MIT",
+  "type": "module",
+  "scripts": {
+    "showcase": "node showcase.mjs",
+    "showcase:check": "node showcase.mjs --mode check",
+    "showcase:lint": "oxlint --config oxlint.config.mts .",
+    "showcase:lint:fix": "oxlint --config oxlint.config.mts . --fix",
+    "showcase:format": "oxfmt --config oxfmt.config.mts --write .",
+    "showcase:format:check": "oxfmt --config oxfmt.config.mts --check ."
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1"
+  }
+}
