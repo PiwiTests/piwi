@@ -7,7 +7,7 @@
  */
 import { spawn, execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -185,13 +185,13 @@ const SERVER_MODES = {
  * returns { base, stop }. `env` is added to the server's environment; when it
  * names its own database (`PIWI_DATABASE_PATH`, as `seedThrowawayDb` returns)
  * the dev database is left alone, otherwise a missing one is created and
- * seeded first.
+ * seeded first. With `logFile`, the server's output is written there.
  *
  * It refuses a port something already listens on: `nuxt dev` would quietly bind
  * another port, and the health check would then pass against the server that
  * was already there, so the run would drive that server's code and data.
  */
-export async function startServer({ mode = 'web', port = DEFAULT_PORT, env = {} } = {}) {
+export async function startServer({ mode = 'web', port = DEFAULT_PORT, env = {}, logFile = null } = {}) {
   const serverMode = SERVER_MODES[mode];
   if (!serverMode) throw new Error(`unknown server mode "${mode}" — use ${Object.keys(SERVER_MODES).join(', ')}`);
   if (await portInUse(port)) throw new Error(`port ${port} is already in use; stop the server on it first`);
@@ -199,7 +199,7 @@ export async function startServer({ mode = 'web', port = DEFAULT_PORT, env = {} 
   const child = spawn('npx', ['nuxt', 'dev', '--port', String(port)], {
     cwd: APP_DIR,
     env: { ...process.env, NUXT_IGNORE_LOCK: '1', ...serverMode.env, ...env },
-    stdio: 'ignore',
+    stdio: logFile ? ['ignore', openSync(logFile, 'a'), openSync(logFile, 'a')] : 'ignore',
     // Detached puts nuxt in its own process group so stop() can kill the whole
     // tree; on Windows npx needs a shell and group-kill is unsupported anyway.
     detached: process.platform !== 'win32',
