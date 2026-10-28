@@ -637,6 +637,43 @@ describe('the window', () => {
   });
 });
 
+describe('Share live from the window', () => {
+  it('shares a run its worker can share on its instance, and says why one cannot be', async () => {
+    const window = await openWindow();
+    const page = 'https://piwi.example.com/test-runs/42';
+    const worker = new Worker(folder).attach('desktop-13', channel.token, 0, ['share']);
+    worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
+    expect(await waitFor(() => window.session('desktop-13')?.live)).toEqual({
+      shared: false,
+      refused: null,
+      page,
+      viewers: 0,
+    });
+    expect(await window.command({ type: 'share', id: 1, ref: 'desktop-13', on: true })).toMatchObject({
+      ok: true,
+      message: expect.stringContaining('piwi.example.com'),
+    });
+    expect(await worker.next('share')).toEqual({ type: 'share', on: true });
+    worker.send({ type: 'live', can: true, on: true, viewers: 2, page, why: null });
+    await waitFor(() => (window.session('desktop-13')?.live?.viewers === 2 ? true : undefined));
+    expect(await window.command({ type: 'share', id: 2, ref: 'desktop-13', on: false })).toMatchObject({ ok: true });
+    expect(await worker.next('share', 1)).toEqual({ type: 'share', on: false });
+
+    // A run that reports to this app, whose project has the live view off, holds no key: it says why.
+    const local = new Worker(folder).attach('desktop-14', channel.token, 0, ['share']);
+    const why = "This run cannot be shared live: its project's live view is off on the instance.";
+    local.send({ type: 'live', can: false, on: false, viewers: 0, page: null, why });
+    await waitFor(() => window.session('desktop-14')?.live);
+    expect(await window.command({ type: 'share', id: 3, ref: 'desktop-14', on: true })).toMatchObject({
+      ok: false,
+      message: why,
+    });
+    window.close();
+    worker.socket.destroy();
+    local.socket.destroy();
+  });
+});
+
 describe('a window that stops reading', () => {
   it('gets no frame past 1 MB unread, the latest one once it reads, and is let go past 32 MB', async () => {
     let unread = 0;

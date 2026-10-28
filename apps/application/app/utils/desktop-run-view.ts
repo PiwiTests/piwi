@@ -6,7 +6,7 @@
  * window's own pure half (`apps/extension/src/shared/runs.ts`), which both surfaces share, as they share its live
  * view's input (`view-input.ts`).
  */
-import type { HubAction, HubCodeAction, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
+import type { HubAction, HubCodeAction, HubLive, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
 import { UNATTENDED_RUN_SUFFIX, isUnattendedDesktopRun, type DesktopRunPick } from '#shared/desktop-runs';
 import type { LocalRunKind } from '~/composables/useDesktopLocalRuns';
@@ -166,6 +166,37 @@ export function desktopCodeActions(worker: HubWorker, stop: HubStop): Array<'ass
 /** A run's name: its Piwi project, else its folder. */
 export function desktopRunName(session: Pick<HubSession, 'project' | 'label'>): string {
   return session.project ?? session.label ?? 'Run';
+}
+
+/**
+ * What Share live sends, and who sees it, asked before the window first shares a run in this session of the app: the
+ * instance's name in it when the run's page names one.
+ */
+export function desktopShareWarning(live: Pick<HubLive, 'page'>): string {
+  const instance = desktopLiveInstance(live) ?? 'the Piwi instance this run reports to';
+  return (
+    `While someone watches it on ${instance}, each worker of this run sends images of its test's page there, each ` +
+    'with the call it was taken at, and says when its test is paused. Anyone who can open the run on that instance ' +
+    'can watch it. Nothing is stored, and Stop sharing ends it at once.'
+  );
+}
+
+/** The instance a run's page is on, as the window names it (its host); null without a page. */
+export function desktopLiveInstance(live: Pick<HubLive, 'page'>): string | null {
+  if (!live.page) return null;
+  try {
+    return new URL(live.page).host || null;
+  } catch {
+    return null;
+  }
+}
+
+/** What the window says of a run shared live: where, and how many people watch it there. */
+export function desktopLiveText(live: HubLive): string {
+  const instance = desktopLiveInstance(live);
+  const where = instance ? `Shared live on ${instance}` : 'Shared live';
+  if (live.viewers === 0) return `${where} · nobody watches yet`;
+  return `${where} · ${live.viewers === 1 ? '1 person watches' : `${live.viewers} people watch`}`;
 }
 
 /**

@@ -12,7 +12,7 @@ defineRouteMeta({
     tags: ['System'],
     summary: 'Steer the desktop app’s runs from its window (desktop app)',
     description:
-      'Desktop build only — 404 on the server build. Body: one of the hub’s commands (`runControl`, `pausedPage`, `view`, `input`, `pick-at`, `assert-region`, `requests`, `mock`, `follow`, `subscribe`, with an `id`), or `{ type: "show", id, ref, on }`, with `viewer`, the id the stream’s `hello` gave. Answers as the hub answers a command: `{ type: "answer", id, ok, message }`, with `image`, `requests` or `locator` for the commands that carry one. 404 for a stream that is not open; 400 for a body that is no command.',
+      'Desktop build only — 404 on the server build. Body: one of the hub’s commands (`runControl`, `pausedPage`, `view`, `input`, `pick-at`, `assert-region`, `requests`, `mock`, `share`, `follow`, `subscribe`, with an `id`), or `{ type: "show", id, ref, on }`, with `viewer`, the id the stream’s `hello` gave. Answers as the hub answers a command: `{ type: "answer", id, ok, message }`, with `image`, `requests` or `locator` for the commands that carry one. 404 for a stream that is not open; 400 for a body that is no command.',
     'x-required-permission': 'signed-in',
   },
 });

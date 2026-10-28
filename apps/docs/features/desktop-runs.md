@@ -1,6 +1,6 @@
 ---
 title: Desktop app runs
-description: "Pause, step and watch the Playwright runs the desktop app starts, from its Local runs tray: each worker's test, the page at a stop, live, a pick on its image, the code a stop makes, to copy, and the same runs for a coding agent."
+description: "Pause, step and watch the Playwright runs the desktop app starts, from its Local runs tray: each worker's test, the page at a stop, live, a pick on its image, the code a stop makes, to copy, a run shared live with your team, and the same runs for a coding agent."
 lang: en-US
 ---
 
@@ -11,7 +11,7 @@ lang: en-US
 Every Playwright run the [desktop app](./desktop) starts names the app as its hub: **Run locally**, a reproduction, a
 bisect step, a [Flake Lab](./flake-lab) run and a bug report's run. Its **Local runs** tray shows each worker of the
 run beside its output, and steers the test as the editor does: [Pause and step from the editor](./editor-run-control).
-Nothing leaves your machine.
+Nothing leaves your machine unless you [share a run live](#share-live).
 
 ## Each worker
 
@@ -62,6 +62,15 @@ your file:
 
 Each code shows the line it goes above, and its import lines apart, each with **Copy**. The code is made from the file
 as it is on disk, in the folder linked to the project.
+
+## Share live
+
+A run that reports to your team's Piwi instance, as a **Run locally** in a folder whose `.env` or Playwright config
+names it does, can be shared there for a teammate to watch from its page, in a project whose live view is on: **Share
+live**, above the run's workers, any time while it runs. The first time since the app started, it says what goes out and
+to whom, and waits for your yes. Shared, the run says where and how many watch, with **Copy the run page's link** and
+**Stop sharing**. A run that cannot be shared says why: [Share a run from your
+machine](./live-view#share-a-run-from-your-machine).
 
 ## From Piwi Picker
 

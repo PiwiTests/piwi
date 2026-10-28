@@ -8,10 +8,13 @@ import {
   desktopCodeItem,
   desktopHoldRefusal,
   desktopHoldsByDefault,
+  desktopLiveInstance,
+  desktopLiveText,
   desktopPickItem,
   desktopRunName,
   desktopRunOf,
   desktopRunRef,
+  desktopShareWarning,
   desktopSteering,
   desktopStopPlace,
   desktopWorkerMeta,
@@ -454,5 +457,26 @@ describe('the window’s stream of its runs', () => {
     });
     answer = () => ({ type: 'answer', ok: true, message: '' });
     runs.want(false);
+  });
+});
+
+describe('Share live in the window', () => {
+  const live = { shared: true, refused: null, page: 'https://piwi.example.com/test-runs/42', viewers: 0 };
+
+  test('names the instance a run is shared on, and how many people watch it there', () => {
+    expect(desktopLiveInstance(live)).toBe('piwi.example.com');
+    expect(desktopLiveInstance({ page: null })).toBeNull();
+    expect(desktopLiveText(live)).toBe('Shared live on piwi.example.com · nobody watches yet');
+    expect(desktopLiveText({ ...live, viewers: 1 })).toBe('Shared live on piwi.example.com · 1 person watches');
+    expect(desktopLiveText({ ...live, viewers: 3, page: null })).toBe('Shared live · 3 people watch');
+  });
+
+  test('says what goes out, and to whom, before the first share', () => {
+    const warning = desktopShareWarning(live);
+    expect(warning).toContain('piwi.example.com');
+    expect(warning).toContain("images of its test's page");
+    expect(warning).toContain('with the call it was taken at');
+    expect(warning).toContain('Anyone who can open the run on that instance can watch it.');
+    expect(desktopShareWarning({ page: null })).toContain('the Piwi instance this run reports to');
   });
 });
