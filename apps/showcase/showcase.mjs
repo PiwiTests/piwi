@@ -10,10 +10,12 @@
 // VS Code downloaded into apps/vscode/.vscode-test (the extension's suites download it), and Playwright's Chromium.
 // `--until` ends the take after that beat; `--keep` leaves the set's folder in place; `--lint` checks the lines alone.
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Gestures, captureScreen, lintLines, play } from './lib/script.mjs';
-import { SCALE, buildSet } from './lib/set.mjs';
+import { SCALE, buildSet, createSet } from './lib/set.mjs';
+import { REPO_ROOT } from './lib/workspace.mjs';
 import { STORY } from './story.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -27,6 +29,35 @@ const say = (line) => console.log(line);
 /** The variables by which the reporter, Playwright and the sample app tell a CI run (`detectCi` and the CI ids). */
 const CI_VARIABLE =
   /^(CI|CONTINUOUS_INTEGRATION|BUILD_NUMBER|RUN_ID|GITHUB_\w+|RUNNER_\w+|JENKINS_URL|BUILD_ID|GITLAB_CI|CI_\w+|CIRCLECI|CIRCLE_\w+|TRAVIS|TRAVIS_\w+|TF_BUILD|BUILD_\w+|SYSTEM_\w+|BITBUCKET_\w+|TEAMCITY_\w+|CODEBUILD_\w+|bamboo_\w+|BUILDKITE|BUILDKITE_\w+|SEMAPHORE|SEMAPHORE_\w+|APPVEYOR|APPVEYOR_\w+|DRONE|DRONE_\w+)$/;
+
+/** The file that marks a folder as the showcase's results, which a take may empty. */
+const RESULTS_MARKER = '.piwi-showcase-results';
+
+/**
+ * Empties `dir` for a take's results and marks it. A folder the showcase did not make is never emptied: one that holds
+ * files without the marker is refused, and so are the file system's root, the home folder, the repository's root and
+ * the current folder.
+ */
+function prepareOut(dir) {
+  const refused = [path.parse(dir).root, os.homedir(), REPO_ROOT, process.cwd()].map((p) => path.resolve(p));
+  if (refused.includes(dir)) {
+    console.error(`--out ${dir}: a take empties its results folder; name a folder of its own.`);
+    process.exit(2);
+  }
+  if (fs.existsSync(dir)) {
+    const entries = fs.readdirSync(dir);
+    if (entries.length && !entries.includes(RESULTS_MARKER)) {
+      console.error(`--out ${dir}: it holds files a take did not write; name an empty folder or a take's results.`);
+      process.exit(2);
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, RESULTS_MARKER),
+    'The results of a showcase take: the next take empties this folder.\n',
+  );
+}
 
 const problems = lintLines(STORY);
 if (problems.length) {
@@ -52,18 +83,74 @@ for (const name of Object.keys(process.env)) {
   if (CI_VARIABLE.test(name)) delete process.env[name];
 }
 
-fs.rmSync(out, { recursive: true, force: true });
+prepareOut(out);
 const logs = path.join(out, 'logs');
 fs.mkdirSync(logs, { recursive: true });
 
 const started = Date.now();
-let set;
-let outcomes = [];
+const set = createSet({ logs });
+let gesture = null;
+const outcomes = [];
+
+/**
+ * What a take that stops keeps in `dir`, in this order, before anything closes: the whole screen, VS Code's logs (the
+ * extension host's and the Piwi output), every other app's log (the dashboard's, the "CI" runs', Piwi Picker's), the
+ * gestures, and the developer's checkout as the beats left it. Synchronous, so a signal's other handlers come after.
+ */
+function keepEvidence(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  captureScreen(path.join(dir, 'screen.png'));
+  set.editor?.keepLogs(dir);
+  for (const file of fs.readdirSync(logs)) fs.copyFileSync(path.join(logs, file), path.join(dir, file));
+  if (gesture) fs.writeFileSync(path.join(dir, 'gestures.json'), JSON.stringify(gesture.log, null, 2));
+  if (set.repo && fs.existsSync(set.repo.shop)) {
+    fs.cpSync(set.repo.shop, path.join(dir, 'workspace'), {
+      recursive: true,
+      filter: (file) => !/[\\/](node_modules|test-results|\.nitro)([\\/]|$)/.test(file),
+    });
+  }
+}
+
+const teardown = () => set.close({ keep: args.includes('--keep') });
+
+// A take stopped from outside (Ctrl+C, the job's cancel or timeout, a closed terminal) keeps what it had, ends the set
+// and every process it started, and exits with the signal's code.
+let interruption = null;
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(signal, () => {
+    interruption ??= (async () => {
+      say(`${signal}: keeping the screen and the logs in ${path.join(out, 'interrupted')}, then ending the set`);
+      try {
+        keepEvidence(path.join(out, 'interrupted'));
+      } catch (why) {
+        say(`  keeping them failed: ${why}`);
+      }
+      fs.writeFileSync(path.join(out, 'outcomes.json'), JSON.stringify(outcomes, null, 2));
+      await teardown();
+      process.exit(128 + os.constants.signals[signal]);
+    })();
+  });
+}
+
 let failed = false;
 try {
   say('Building the set');
-  set = await buildSet({ say: (step) => say(`  ${step}`), logs });
-  const gesture = new Gestures({
+  try {
+    await buildSet(set, { say: (step) => say(`  ${step}`) });
+  } catch (error) {
+    if (!interruption) {
+      console.error(error);
+      try {
+        keepEvidence(path.join(out, 'failed-set'));
+      } catch (why) {
+        say(`  keeping the logs failed: ${why}`);
+      }
+      say(`  the screen and the logs are in ${path.join(out, 'failed-set')}`);
+    }
+    error.reported = true;
+    throw error;
+  }
+  gesture = new Gestures({
     scale: SCALE,
     windows: {
       vscode: () => set.editor.page,
@@ -97,36 +184,29 @@ try {
     },
   };
   say(`Playing the story in ${mode} mode`);
-  outcomes = await play({
+  await play({
     beats: STORY,
     context,
     out,
     mode,
     until,
     say,
+    outcomes,
+    // A beat that fails as a signal's handler closes the set keeps nothing: the handler kept the take as it stood.
     keep: async (_beat, dir) => {
-      fs.copyFileSync(set.instance.logFile, path.join(dir, 'dashboard.log'));
-      set.editor.keepLogs(dir);
-      for (const file of fs.readdirSync(logs)) fs.copyFileSync(path.join(logs, file), path.join(dir, file));
-      fs.writeFileSync(path.join(dir, 'gestures.json'), JSON.stringify(gesture.log, null, 2));
-      // The developer's checkout as it stood: what the beats wrote into it.
-      fs.cpSync(set.repo.shop, path.join(dir, 'workspace'), {
-        recursive: true,
-        filter: (file) => !/[\\/](node_modules|test-results|\.nitro)([\\/]|$)/.test(file),
-      });
+      if (!interruption) keepEvidence(dir);
     },
   });
   fs.writeFileSync(path.join(out, 'gestures.json'), JSON.stringify(gesture.log, null, 2));
   failed = outcomes.some((o) => o.outcome === 'failed');
 } catch (error) {
   failed = true;
-  console.error(error);
-  fs.mkdirSync(path.join(out, 'failed-set'), { recursive: true });
-  captureScreen(path.join(out, 'failed-set', 'screen.png'));
+  if (!error?.reported && !interruption) console.error(error);
 } finally {
-  await set?.close();
-  if (set && !args.includes('--keep')) fs.rmSync(set.dir, { recursive: true, force: true });
+  if (!interruption) await teardown();
 }
+// A signal's handler ends the take.
+if (interruption) await new Promise(() => {});
 
 fs.writeFileSync(path.join(out, 'outcomes.json'), JSON.stringify(outcomes, null, 2));
 const skipped = outcomes.filter((o) => o.outcome === 'passed-with-skips').length;

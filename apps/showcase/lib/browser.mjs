@@ -103,6 +103,10 @@ export async function launchDeveloperBrowser({ dir, editorOrigin, screen, scale,
   const context = await chromium.launchPersistentContext(profile, {
     headless: false,
     viewport: null,
+    // A signal stops the take through `showcase.mjs`'s handlers, which keep the screen before the browser closes.
+    handleSIGINT: false,
+    handleSIGTERM: false,
+    handleSIGHUP: false,
     args: [
       `--disable-extensions-except=${extension}`,
       `--load-extension=${extension}`,

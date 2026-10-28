@@ -10,6 +10,9 @@ import { launchEditor } from './editor.mjs';
 import { startCiRun, startInstance } from './instance.mjs';
 import { SHOP_PORT, buildWorkspace } from './workspace.mjs';
 
+/** The variable that names the folder of the editors' discovery files (`@piwitests/core/editor-discovery`). */
+const EDITORS_DIR_ENV = 'PIWI_EDITORS_DIR';
+
 /** The scale every app renders at, on a screen of 3840 × 2160 device pixels. */
 export const SCALE = 2;
 
@@ -41,7 +44,8 @@ function listening(port) {
 
 /**
  * Ends every process still working in `dir` (a run the editor started and left stopped, its shop server, its
- * browser): the processes whose working directory is in it, as Linux's `/proc` tells them.
+ * browser): the processes whose working directory is in it, as Linux's `/proc` tells them. Each has two seconds to
+ * end on SIGTERM before SIGKILL.
  */
 async function endStrays(dir) {
   const strays = () =>
@@ -53,16 +57,20 @@ async function endStrays(dir) {
         return false;
       }
     });
-  for (const signal of ['SIGTERM', 'SIGKILL']) {
+  const signal = (name) => {
     for (const pid of strays()) {
       try {
-        process.kill(Number(pid), signal);
+        process.kill(Number(pid), name);
       } catch {
         // Gone already.
       }
     }
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  };
+  signal('SIGTERM');
+  for (let waited = 0; waited < 2_000 && strays().length; waited += 100) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  signal('SIGKILL');
 }
 
 /**
@@ -103,115 +111,134 @@ const HAND_OVER_EDITOR_LINKS = `(() => {
 const IDE_PREFS = { method: 'vscode', vscodeScheme: 'vscode', vscodeExtension: true };
 
 /**
- * Builds the set under a new folder of the temporary directory (short, as VS Code's and the editor service's sockets
- * need) and resolves with what the beats act on, and `close`, which ends every app and process of the set. `say`
- * hears each step; `logs` is where each app writes its log.
+ * The set's folder, new in the temporary directory (short, as VS Code's and the editor service's sockets need), and
+ * `close`, which ends every app and process of the set, then removes the folder unless `keep`. Every app the set
+ * starts has its temporary files there (`TMPDIR`), and its own editors' discovery folder and desktop app's file, so a
+ * developer's own editors and desktop app neither show in the Runs window nor follow the set's runs, and the set's
+ * reach none of theirs.
  */
-export async function buildSet({ say, logs }) {
+export function createSet({ logs }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-showcase-'));
-  // Every app's temporary files (VS Code's profile, the editor service's sockets, the dev server's) go in the set's
-  // folder, which the take removes.
-  const tmpdir = process.env.TMPDIR;
-  process.env.TMPDIR = path.join(dir, 'tmp');
-  fs.mkdirSync(process.env.TMPDIR);
-  const set = { dir, logs, closers: [] };
-  const close = async () => {
-    for (const closer of set.closers.reverse()) await closer().catch(() => {});
-    await endStrays(dir);
-    if (tmpdir === undefined) delete process.env.TMPDIR;
-    else process.env.TMPDIR = tmpdir;
+  const own = {
+    TMPDIR: path.join(dir, 'tmp'),
+    [EDITORS_DIR_ENV]: path.join(dir, 'piwi', 'editors'),
+    PIWI_DESKTOP_CONFIG: path.join(dir, 'piwi', 'desktop.json'),
   };
-  set.close = close;
-  try {
-    for (const port of [SHOP_PORT, TEST_BROWSER_CDP]) {
-      if (await listening(port)) throw new Error(`port ${port} is taken: the set needs it free`);
-    }
-    say('the instance: a fresh database with the demo history');
-    set.instance = await startInstance(path.join(dir, 'instance'));
-    set.closers.push(async () => set.instance.stop());
-    const repo = buildWorkspace(path.join(dir, 'repo'), {
-      instanceUrl: set.instance.base,
-      testBrowser: {
-        position: { x: TILES.testBrowser.x, y: TILES.testBrowser.y },
-        size: { width: TILES.testBrowser.width, height: TILES.testBrowser.height },
-        scale: SCALE,
-        cdpPort: TEST_BROWSER_CDP,
-      },
-    });
-    set.repo = repo;
-    set.projectId = await set.instance.createProject();
-    say('the "CI" runs: the shop as it shipped (green), then the redesign (red)');
-    const ci = (commit, name, extraEnv) =>
-      startCiRun({
-        origin: repo.origin,
-        dir: path.join(dir, 'ci'),
-        commit,
-        instance: set.instance,
-        log: path.join(logs, `${name}.log`),
-        extraEnv,
-      });
-    set.ci = ci;
-    const shipped = await ci(repo.shipped, 'ci-shipped');
-    if (shipped !== 0) throw new Error(`the shipped commit's CI run failed (exit ${shipped}): see ci-shipped.log`);
-    const redesigned = await ci(repo.redesigned, 'ci-redesign');
-    if (redesigned !== 1)
-      throw new Error(`the redesign's CI run did not fail (exit ${redesigned}): see ci-redesign.log`);
-
-    say('VS Code with the built extension, on the developer’s checkout');
-    set.editor = await launchEditor({
-      workspace: repo.shop,
-      env: { SAMPLE_BACKEND: 'nitro', PIWI_DESKTOP_CONFIG: path.join(dir, 'no-desktop.json') },
-      tile: TILES.vscode,
-      scale: SCALE,
-    });
-    set.closers.push(() => set.editor.close());
-    await set.editor.command('Piwi: Pair with Piwi Picker');
-    const pairing = await set.editor.clipboard();
-    await set.editor.command('Notifications: Clear All Notifications');
-
-    say('the developer’s browser with Piwi Picker, paired');
-    set.browser = await launchDeveloperBrowser({
-      dir: path.join(dir, 'browser'),
-      editorOrigin: new URL(pairing).origin,
-      dashboardOrigin: set.instance.base,
-      screen: { width: TILES.dashboard.width, height: TILES.dashboard.height },
-      scale: SCALE,
-      log: path.join(logs, 'piwi-picker.log'),
-    });
-    set.closers.push(() => set.browser.close());
-    await set.browser.pair(pairing);
-    set.runs = await set.browser.openRuns(TILES.runs);
-
-    const { context } = set.browser;
-    set.editorLinks = [];
-    await context.exposeBinding('__showcaseOpenInEditor', (_source, url) => {
-      set.editorLinks.push(url);
-      return set.editor.openUrl(url);
-    });
-    await context.addInitScript(HAND_OVER_EDITOR_LINKS);
-    await context.addInitScript(
-      (prefs) =>
-        localStorage.setItem(
-          'piwi-ide-prefs',
-          JSON.stringify({ ...JSON.parse(localStorage.getItem('piwi-ide-prefs') ?? '{}'), ...prefs }),
-        ),
-      IDE_PREFS,
-    );
-    set.dashboard = context.pages().find((page) => page.url() === 'about:blank') ?? (await context.newPage());
-    await set.dashboard.goto(`${set.instance.base}/projects/${set.projectId}`, { waitUntil: 'domcontentloaded' });
-
-    // The test's browser of the run going on: each run opens its own, on the same port.
-    set.testBrowser = async () => {
-      if (!set.attached?.browser.isConnected() || set.attached.page.isClosed()) {
-        set.attached = await attachTestBrowser(TEST_BROWSER_CDP);
+  const before = Object.fromEntries(Object.keys(own).map((name) => [name, process.env[name]]));
+  fs.mkdirSync(own.TMPDIR);
+  fs.mkdirSync(own[EDITORS_DIR_ENV], { recursive: true, mode: 0o700 });
+  Object.assign(process.env, own);
+  const set = { dir, logs, editorsDir: own[EDITORS_DIR_ENV], closers: [] };
+  let closing = null;
+  set.close = ({ keep = false } = {}) =>
+    (closing ??= (async () => {
+      for (const closer of set.closers.reverse()) await closer().catch(() => {});
+      await endStrays(dir);
+      for (const [name, value] of Object.entries(before)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
       }
-      return set.attached.page;
-    };
-    set.closers.push(async () => set.attached?.browser.close());
-    return set;
-  } catch (error) {
-    await close();
-    fs.rmSync(dir, { recursive: true, force: true });
-    throw error;
+      if (!keep) fs.rmSync(dir, { recursive: true, force: true });
+    })());
+  return set;
+}
+
+/** Builds in `set` (`createSet`) what the beats act on; `say` hears each step. A failure leaves the set to close. */
+export async function buildSet(set, { say }) {
+  const { dir, logs } = set;
+  for (const port of [SHOP_PORT, TEST_BROWSER_CDP]) {
+    if (await listening(port)) throw new Error(`port ${port} is taken: the set needs it free`);
   }
+  say('the instance: a fresh database with the demo history');
+  set.instance = await startInstance(path.join(dir, 'instance'), { logFile: path.join(logs, 'dashboard.log') });
+  set.closers.push(async () => set.instance.stop());
+  const repo = buildWorkspace(path.join(dir, 'repo'), {
+    instanceUrl: set.instance.base,
+    testBrowser: {
+      position: { x: TILES.testBrowser.x, y: TILES.testBrowser.y },
+      size: { width: TILES.testBrowser.width, height: TILES.testBrowser.height },
+      scale: SCALE,
+      cdpPort: TEST_BROWSER_CDP,
+    },
+  });
+  set.repo = repo;
+  set.projectId = await set.instance.createProject();
+  say('the "CI" runs: the shop as it shipped (green), then the redesign (red)');
+  set.ciDir = path.join(dir, 'ci');
+  set.reports = { shipped: path.join(logs, 'ci-shipped.json') };
+  const ci = (commit, name, extraEnv) =>
+    startCiRun({
+      origin: repo.origin,
+      dir: set.ciDir,
+      commit,
+      instance: set.instance,
+      log: path.join(logs, `${name}.log`),
+      extraEnv,
+    });
+  set.ci = ci;
+  const shipped = await ci(repo.shipped, 'ci-shipped');
+  if (shipped !== 0) throw new Error(`the shipped commit's CI run failed (exit ${shipped}): see ci-shipped.log`);
+  const redesigned = await ci(repo.redesigned, 'ci-redesign');
+  if (redesigned !== 1) throw new Error(`the redesign's CI run did not fail (exit ${redesigned}): see ci-redesign.log`);
+
+  say('VS Code with the built extension, on the developer’s checkout');
+  set.closers.push(async () => set.editor?.close());
+  set.editor = await launchEditor({
+    workspace: repo.shop,
+    env: { SAMPLE_BACKEND: 'nitro' },
+    tile: TILES.vscode,
+    scale: SCALE,
+  }).catch((error) => {
+    // A window that did not come up is kept for its screen and logs, and closes with the set.
+    set.editor = error.editor;
+    throw error;
+  });
+  await set.editor.command('Piwi: Pair with Piwi Picker');
+  const pairing = await set.editor.clipboard();
+  // The editor service tells its address in the set's discovery folder, never the developer's.
+  for (let waited = 0; !fs.readdirSync(set.editorsDir).some((name) => name.endsWith('.json')); waited += 250) {
+    if (waited > 30_000) throw new Error(`the editor service wrote no discovery file in ${set.editorsDir}`);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  await set.editor.command('Notifications: Clear All Notifications');
+
+  say('the developer’s browser with Piwi Picker, paired');
+  set.browser = await launchDeveloperBrowser({
+    dir: path.join(dir, 'browser'),
+    editorOrigin: new URL(pairing).origin,
+    screen: { width: TILES.dashboard.width, height: TILES.dashboard.height },
+    scale: SCALE,
+    log: path.join(logs, 'piwi-picker.log'),
+  });
+  set.closers.push(() => set.browser.close());
+  await set.browser.pair(pairing);
+  set.runs = await set.browser.openRuns(TILES.runs);
+
+  const { context } = set.browser;
+  set.editorLinks = [];
+  await context.exposeBinding('__showcaseOpenInEditor', (_source, url) => {
+    set.editorLinks.push(url);
+    return set.editor.openUrl(url);
+  });
+  await context.addInitScript(HAND_OVER_EDITOR_LINKS);
+  await context.addInitScript(
+    (prefs) =>
+      localStorage.setItem(
+        'piwi-ide-prefs',
+        JSON.stringify({ ...JSON.parse(localStorage.getItem('piwi-ide-prefs') ?? '{}'), ...prefs }),
+      ),
+    IDE_PREFS,
+  );
+  set.dashboard = context.pages().find((page) => page.url() === 'about:blank') ?? (await context.newPage());
+  await set.dashboard.goto(`${set.instance.base}/projects/${set.projectId}`, { waitUntil: 'domcontentloaded' });
+
+  // The test's browser of the run going on: each run opens its own, on the same port.
+  set.testBrowser = async () => {
+    if (!set.attached?.browser.isConnected() || set.attached.page.isClosed()) {
+      set.attached = await attachTestBrowser(TEST_BROWSER_CDP);
+    }
+    return set.attached.page;
+  };
+  set.closers.push(async () => set.attached?.browser.close());
+  return set;
 }

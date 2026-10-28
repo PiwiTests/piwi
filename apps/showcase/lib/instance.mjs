@@ -95,13 +95,18 @@ export class Instance {
   }
 }
 
-/** Seeds a database under `dir` and boots the dashboard on it; its output goes to `dir/dashboard.log`. */
-export async function startInstance(dir) {
+/** Seeds a database under `dir` and boots the dashboard on it; its output goes to `logFile`. */
+export async function startInstance(dir, { logFile }) {
   const env = seedThrowawayDb(path.join(dir, 'data'));
-  const logFile = path.join(dir, 'dashboard.log');
   // The dev server's build needs more than Node's default heap.
   const heap = { NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --max-old-space-size=4096`.trim() };
-  const { base, stop } = await startServer({ port: INSTANCE_PORT, env: { ...env, ...heap }, logFile });
+  // A signal stops the server and leaves the take to keep its logs, end the set and exit.
+  const { base, stop } = await startServer({
+    port: INSTANCE_PORT,
+    env: { ...env, ...heap },
+    logFile,
+    exitOnSignal: false,
+  });
   return new Instance(base.replace('localhost', '127.0.0.1'), stop, logFile, env.PIWI_DATABASE_PATH);
 }
 

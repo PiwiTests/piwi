@@ -9,6 +9,9 @@ import { REPO_ROOT } from './workspace.mjs';
 
 const EXTENSION = path.join(REPO_ROOT, 'apps', 'vscode');
 
+/** The signals that stop a take, which `showcase.mjs` handles. */
+const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+
 /** Where VS Code is downloaded and cached: the extension's own `.vscode-test/`, which the nightly job caches. */
 const VSCODE_CACHE = process.env.SHOWCASE_VSCODE_CACHE || path.join(EXTENSION, '.vscode-test');
 
@@ -87,11 +90,17 @@ export class Editor {
   }
 }
 
-/** Opens `workspace` in VS Code at `tile` (CSS pixels), at device scale `scale`, with `env` for its runs. */
+/**
+ * Opens `workspace` in VS Code at `tile` (CSS pixels), at device scale `scale`, with `env` for its runs. When the
+ * window does not come up, the error carries it as `error.editor`, still open, for the caller to close.
+ */
 export async function launchEditor({ workspace, env, tile, scale }) {
   if (!fs.existsSync(path.join(EXTENSION, 'dist', 'extension.cjs'))) {
     throw new Error('The VS Code extension is not built: run `npm run vscode:build` in apps/vscode first.');
   }
+  // Playwright's Electron launch closes the app on a signal, and exits on SIGINT: the showcase's own handlers keep
+  // the screen and the logs first, then close the set, so Playwright's leave.
+  const ours = Object.fromEntries(SIGNALS.map((signal) => [signal, process.listeners(signal)]));
   const window = await launchVSCode({
     extensionPath: EXTENSION,
     workspace,
@@ -99,7 +108,20 @@ export async function launchEditor({ workspace, env, tile, scale }) {
     scale,
     cachePath: VSCODE_CACHE,
     settings: SETTINGS,
-  });
+    keepOnFailure: true,
+  })
+    .catch((error) => {
+      // A window that did not come up stays open for the take to keep its screen and logs, then close.
+      if (error.window) error.editor = new Editor(error.window);
+      throw error;
+    })
+    .finally(() => {
+      for (const signal of SIGNALS) {
+        for (const listener of process.listeners(signal)) {
+          if (!ours[signal].includes(listener)) process.off(signal, listener);
+        }
+      }
+    });
   await window.app.evaluate(({ BrowserWindow }, bounds) => {
     const [win] = BrowserWindow.getAllWindows();
     win.unmaximize();

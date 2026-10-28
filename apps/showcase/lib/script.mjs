@@ -2,7 +2,6 @@
 // beat makes and their log, the lines' lint, and the player that runs the beats in order, each within its budget, and
 // keeps the whole screen and every app's log when one fails.
 import { execFileSync } from 'node:child_process';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 /** A subtitle row's width, and how many rows a line may take. */
@@ -172,12 +171,22 @@ export function captureScreen(file) {
 /**
  * Plays `beats` in order in `mode` (`check`: no capture, no holds, each beat's check), up to the beat `until` when it
  * is given. `hooks.started(beat)` and `hooks.ended(beat)` frame each beat that plays (where a take marks its capture
- * and holds its lines). A beat that throws, or runs past its budget, ends the take: the screen and the logs go to
- * `out` through `keep(beat, dir)`. An assertion a known product bug keeps from passing is left out with
- * `context.skip(bug, what)`, which marks the beat. Resolves with each beat's outcome.
+ * and holds its lines). A beat that throws, or runs past its budget, ends the take: `keep(beat, dir)` writes the
+ * screen and the logs as they stand into `out/failed-<beat>`. An assertion a known product bug keeps from passing is
+ * left out with `context.skip(bug, what)`, which marks the beat. Each beat's outcome goes into `outcomes` as it ends,
+ * which the promise resolves with.
  */
-export async function play({ beats, context, out, mode = 'check', until = null, hooks = {}, keep, say }) {
-  const outcomes = [];
+export async function play({
+  beats,
+  context,
+  out,
+  mode = 'check',
+  until = null,
+  hooks = {},
+  keep,
+  say,
+  outcomes = [],
+}) {
   for (const b of beats) {
     const started = Date.now();
     const skipped = [];
@@ -207,9 +216,7 @@ export async function play({ beats, context, out, mode = 'check', until = null, 
         for (const { bug, what } of skipped) say(`    skipped for a known bug (${bug}): ${what}`);
       } catch (error) {
         const dir = path.join(out, `failed-${b.id}`);
-        fs.mkdirSync(dir, { recursive: true });
-        captureScreen(path.join(dir, 'screen.png'));
-        await keep(b, dir).catch((why) => say(`    keeping the logs failed: ${why}`));
+        await keep(b, dir).catch((why) => say(`    keeping the screen and the logs failed: ${why}`));
         say(`  ✗ ${b.id} (${seconds()} s): ${error.stack ?? error}`);
         say(`    the screen and the logs are in ${dir}`);
         outcomes.push({ id: b.id, outcome: 'failed', error: String(error.message ?? error) });
