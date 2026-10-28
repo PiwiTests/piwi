@@ -234,8 +234,8 @@ export async function startDesktop(dir: string): Promise<Desktop> {
     lineNow: (stop) => ({ line: stop.line }),
     language: () => null,
     words: {
-      wrote: (what, where) => `Piwi made ${what} to write above ${where}.`,
-      sent: (what, where) => `Piwi made ${what} to write above ${where}: copy it in the desktop app's window.`,
+      wrote: (what, at) => `Piwi made ${what} to write ${at}.`,
+      sent: (what, at) => `Piwi made ${what} to write ${at}: copy it in the desktop app's window.`,
       outside: (uri) => `${uri} is not in a folder linked to a project.`,
     },
   });
