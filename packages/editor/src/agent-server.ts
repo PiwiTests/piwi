@@ -3,10 +3,9 @@
  * started, as tools (`run-agent.ts`), over MCP's streamable HTTP transport, each request a POST answered with JSON. It
  * listens on `127.0.0.1` alone, at the port the client keeps when it is free, else a free one with a new token (an
  * agent's copied configuration then reaches whatever holds the kept port, which must not learn a token that works
- * here); it answers only a
- * request whose `Host` is its own (`127.0.0.1` or `localhost` at its port: a page reached under another name, DNS
- * rebinding, is refused), that carries no `Origin` (a browser's request always does, and MCP clients are native), and
- * whose `Authorization` is the bearer token the client keeps, compared in constant time. The token reaches the agent
+ * here); it answers only a request whose `Host` is its own (`127.0.0.1` or `localhost` at its port: a page reached
+ * under another name, DNS rebinding, is refused), that carries no `Origin` (a browser's request always does, and MCP
+ * clients are native), and whose `Authorization` is the bearer token the client keeps, compared in constant time. The token reaches the agent
  * through the IDE's registration of the server, or a configuration the developer copies; this user's own processes
  * are not a boundary, other users and web pages are. A body is 256 KiB at most, a batch 8 requests, and 8 requests
  * run at once: a long poll holds one of them, `MAX_FOLLOW_WAIT_S` at most, and lets go of it as soon as its client

@@ -3513,6 +3513,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    */
   const setAgents = async (enabled: boolean, newToken: boolean, asked: boolean): Promise<AgentsResult> => {
     agentWanted = enabled;
+    const serving = agentServer;
     if (newToken) agentPrefs = { ...agentPrefs, token: agentServer?.newToken() ?? null };
     if (!agentWanted) {
       agentServer?.close();
@@ -3544,6 +3545,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           } satisfies Notice);
         }
       }
+      // A server another call was opening takes the new token too.
+      if (newToken && !serving && agentServer) agentServer.newToken();
       // Turned off and on again, it listens at the same address with the same token.
       if (agentServer) agentPrefs = { ...agentPrefs, port: agentServer.port, token: agentServer.token };
     }
