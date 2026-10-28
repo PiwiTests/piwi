@@ -1,7 +1,16 @@
 import { LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
-import type { HubAction, HubImage, HubKeptRequest, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
+import type {
+  HubAction,
+  HubImage,
+  HubKeptRequest,
+  HubLive,
+  HubSession,
+  HubStop,
+  HubWorker,
+} from '@piwitests/core/run-hub';
 import { isViewFrameData, type ViewButton, type ViewInput } from '@piwitests/core/run-view';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
+import { copyWithFeedback } from '../shared/clipboard.js';
 import { decorateIcons, icon, iconText, setLabel, type IconName } from '../shared/icons.js';
 import { formatUnit, initI18n, localizeDocument, t, tn, tNodes } from '../shared/i18n.js';
 import {
@@ -40,6 +49,10 @@ import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '../s
  * as text, and its image and the frames of a live view as images, the latest frame alone kept, in memory. Each part of
  * the window is drawn again only when what it shows changes (`part`), so a button under the pointer or the keyboard
  * stays the same element while the run goes on around it.
+ *
+ * **Share live** shares a run on the team instance its reporter reports to, for anyone who can open it there: the first
+ * share in this window says what goes out and to whom, and waits for a yes; shared, the run says where and how many
+ * watch, with its page's link to copy and **Stop sharing**; a run that cannot be shared says why when asked.
  *
  * Watch live shows the stop's frames in place of its image, while the window shows that stop: the view ends as the
  * stop does, the window hides or Watch live is turned off, and comes again at the worker's next stop while Watch live
@@ -99,6 +112,12 @@ const requestLists = new Map<string, RequestList>();
 let listSerial = 0;
 /** The workers a command is on its way for: their buttons wait for it. */
 const busy = new Set<string>();
+/** Share live said what it sends in this window: it asks no more. */
+let shareWarned = false;
+/** The runs whose Share live waits for a yes, those a share or its end is on its way for, and what a refusal said. */
+const shareAsking = new Set<string>();
+const sharing = new Set<string>();
+const shareRefusals = new Map<string, string>();
 /** Each worker's state and stop as last shown, and the runs live then, for what the live region says. */
 let seen: Map<string, { state: HubWorker['state']; since: string | null }> | null = null;
 let liveSeen = new Set<string>();
@@ -248,6 +267,44 @@ function heardCode(code: RunsCode): void {
   const key = workerKey(code.hub, code.ref, { worker: code.worker });
   say(key, { ok: code.ok, message: code.message }, code.since, { sent: true, warnings: code.warnings });
   render();
+}
+
+/** The key a run is kept under, by its hub and its ref. */
+function runKeyOf(run: RunsRun): string {
+  return `${run.hub}|${run.session.ref}`;
+}
+
+/** Share a run live (`on`), or stop sharing it, unless a share of it is on its way: a refusal is shown and read out. */
+async function share(run: RunsRun, on: boolean): Promise<void> {
+  const key = runKeyOf(run);
+  if (sharing.has(key)) return;
+  sharing.add(key);
+  shareRefusals.delete(key);
+  render();
+  const answer = await command(run.hub, run.session.ref, null, 'share', null, { on });
+  sharing.delete(key);
+  const text = answer.ok ? answer.message : failureText(answer);
+  if (!answer.ok) shareRefusals.set(key, text);
+  if (text) announce(text);
+  render();
+}
+
+/** Share live: asked first, the first time in this window, for a run that can be shared; the others go at once. */
+function askShare(run: RunsRun): void {
+  const key = runKeyOf(run);
+  if (shareWarned || run.session.live?.refused) return void share(run, true);
+  shareAsking.add(key);
+  focusKey = `${key}|share-yes`;
+  render();
+}
+
+function answerShare(run: RunsRun, yes: boolean): void {
+  const key = runKeyOf(run);
+  shareAsking.delete(key);
+  focusKey = `${key}|share`;
+  if (!yes) return render();
+  shareWarned = true;
+  void share(run, true);
 }
 
 /** A control of the window, for the stop its button was drawn for (`since`, null for Pause). */
@@ -1029,6 +1086,8 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
     children.push(
       part(`${runKey}|ended`, null, () => iconText(element('p', 'run-ended'), 'check-circle', t('runs_ended'))),
     );
+  } else if (session.live) {
+    children.push(renderShare(run, session.live));
   }
   const workers = [...session.workers].sort((a, b) => a.parallelIndex - b.parallelIndex);
   if (workers.length > 0) {
@@ -1041,6 +1100,71 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
   }
   place(section, children);
   return section;
+}
+
+/** The instance a run's page is on, as the window names it (its host); the words for any instance without one. */
+function instanceOf(live: Pick<HubLive, 'page'>): string {
+  try {
+    return (live.page && new URL(live.page).host) || t('runs_shareInstance');
+  } catch {
+    return t('runs_shareInstance');
+  }
+}
+
+/**
+ * A run's Share live, under its heading: shared, where and how many watch, its page's link and Stop sharing; asked,
+ * what it sends and to whom, with Share live and Cancel; else Share live. A refusal shows under it.
+ */
+function renderShare(run: RunsRun, live: HubLive): HTMLElement {
+  const key = runKeyOf(run);
+  const asking = shareAsking.has(key);
+  const waiting = sharing.has(key);
+  const refusal = shareRefusals.get(key) ?? null;
+  return part(`${key}|share`, { live, asking, waiting, refusal }, () => {
+    const box = element('div', 'run-share');
+    const row = element('div', 'piwi-actions');
+    const button = (label: string, onClick: () => void, focus: string, options: Parameters<typeof makeButton>[2]) => {
+      const made = makeButton(label, onClick, options);
+      made.dataset.focus = `${key}|${focus}`;
+      if (waiting) made.setAttribute('aria-disabled', 'true');
+      row.append(made);
+      return made;
+    };
+    if (live.shared) {
+      const watching = live.viewers === 0 ? t('runs_sharedNobody') : tn('runs_sharedWatching', live.viewers);
+      box.append(
+        iconText(
+          element('p', 'shared'),
+          'eye',
+          `${t('runs_sharedLive', { instance: instanceOf(live) })} · ${watching}`,
+        ),
+      );
+      const page = live.page;
+      if (page) {
+        const copy = button(t('runs_copyRunPage'), () => void copyWithFeedback(page, copy), 'copy-page', {
+          icon: 'copy',
+        });
+      }
+      button(t('runs_stopSharing'), () => void share(run, false), 'stop-sharing', {
+        icon: 'eye-off',
+        title: t('runs_stopSharingTitle'),
+      });
+    } else if (asking) {
+      const warning = element('p', 'share-warning', t('runs_shareWarning', { instance: instanceOf(live) }));
+      warning.id = `share-warning-${++headings}`;
+      box.setAttribute('role', 'group');
+      box.setAttribute('aria-label', t('runs_shareLive'));
+      box.setAttribute('aria-describedby', warning.id);
+      box.append(warning);
+      button(t('runs_shareLive'), () => answerShare(run, true), 'share-yes', { icon: 'share', tone: 'primary' });
+      button(t('common_cancel'), () => answerShare(run, false), 'share-no', { icon: 'close' });
+    } else {
+      button(t('runs_shareLive'), () => askShare(run), 'share', { icon: 'share', title: t('runs_shareLiveTitle') });
+    }
+    box.append(row);
+    if (refusal) box.append(iconText(element('p', 'note'), 'info', refusal));
+    return box;
+  });
 }
 
 /** The state line of a stop, by its reason; a failure's names where it failed instead (`runs_failedAt`). */
@@ -1078,7 +1202,7 @@ const CONTROLS = {
   mock: { label: 'runs_mock', title: 'runs_mockTitle', icon: 'network' },
   pause: { label: 'runs_pause', title: 'runs_pauseTitle', icon: 'pause' },
 } as const satisfies Record<
-  Exclude<RunsWhat, 'image' | 'requests' | 'view' | 'input' | 'pick-at'>,
+  Exclude<RunsWhat, 'image' | 'requests' | 'view' | 'input' | 'pick-at' | 'share'>,
   { label: string; title: string; icon: IconName; tone?: 'primary' }
 >;
 

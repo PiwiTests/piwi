@@ -84,7 +84,8 @@ export interface RunsState {
  * What a command of the window asks: a control; at a stop, an intent the test's window runs (the pause bar's Pick and
  * Record, the check panel's Assert, a region's Assert a region), the requests its test kept or the one to mock; an
  * image of the stopped page; or its live view: watching it (`view`), the input played on it (`input`), and the locator
- * of the element under a point of an image of it (`pick-at`).
+ * of the element under a point of an image of it (`pick-at`); or the run shared live on the team instance, or no more
+ * (`share`, Share live).
  */
 export type RunsWhat =
   | HubControlAction
@@ -95,7 +96,8 @@ export type RunsWhat =
   | 'image'
   | 'view'
   | 'input'
-  | 'pick-at';
+  | 'pick-at'
+  | 'share';
 
 const WHATS: readonly string[] = [
   'pause',
@@ -113,6 +115,7 @@ const WHATS: readonly string[] = [
   'view',
   'input',
   'pick-at',
+  'share',
 ];
 
 /** The commands that name a worker and a stop's live view: the frames come to the window that watches it alone. */
@@ -137,7 +140,7 @@ export type RunsRequest =
       what: RunsWhat;
       /** For `mock` alone: the kept response to mock, the `id` of one of those `requests` listed. */
       request?: number;
-      /** For `view` alone: start watching the stop's live view, or stop. */
+      /** For `view`: start watching the stop's live view, or stop; for `share`: share the run live, or stop. */
       on?: boolean;
       /** For `input` alone: the events to play on the page, in CSS pixels of its viewport. */
       events?: ViewInput[];
@@ -231,14 +234,17 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       if (since !== null && (typeof since !== 'string' || !since || since.length > 64)) return null;
       if (typeof what !== 'string' || !WHATS.includes(what)) return null;
       if ((what === 'image' || VIEW_WHATS.includes(what)) && worker === null) return null;
+      // Share live names the run alone.
+      if (what === 'share' && (worker !== null || since !== null)) return null;
       // Every control but Pause names the stop it answers, so a click made twice does not answer the next one.
-      if (what !== 'pause' && what !== 'image' && since === null) return null;
+      if (what !== 'pause' && what !== 'image' && what !== 'share' && since === null) return null;
       const command = { type: 'command', id, hub, ref, worker, since, what: what as RunsWhat } as const;
       // Each field belongs to one command alone: Mock a request names the response, a view whether it is on, an input
       // its events, a pick on the image its point.
       const own: Record<string, readonly string[]> = {
         mock: ['request'],
         view: ['on'],
+        share: ['on'],
         input: ['events'],
         'pick-at': ['x', 'y'],
       };
@@ -248,6 +254,7 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
         case 'mock':
           return isIndex(value.request) && value.request > 0 ? { ...command, request: value.request } : null;
         case 'view':
+        case 'share':
           return typeof value.on === 'boolean' ? { ...command, on: value.on } : null;
         case 'input': {
           const events = readViewInput(value.events);

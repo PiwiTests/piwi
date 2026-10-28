@@ -6664,5 +6664,62 @@
   },
   "runs_failUnwatched": {
     "message": "Mira primero la página en directo: solo entonces las teclas y los clics van a ella."
+  },
+  "runs_shareLive": {
+    "message": "Compartir en directo"
+  },
+  "runs_shareLiveTitle": {
+    "message": "Dejar que quien pueda abrir esta ejecución en la instancia de Piwi de tu equipo vea las páginas de sus tests desde la página de la ejecución"
+  },
+  "runs_shareWarning": {
+    "message": "Mientras alguien la mira en $instance$, cada worker de esta ejecución envía allí imágenes de la página de su test, cada una con la llamada en la que se tomó, y avisa cuando su test está en pausa. Quien pueda abrir la ejecución en esa instancia puede mirarla. No se guarda nada, y Dejar de compartir lo termina al instante.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_shareInstance": {
+    "message": "la instancia de Piwi a la que informa"
+  },
+  "runs_sharedLive": {
+    "message": "Compartida en directo en $instance$",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_sharedNobody": {
+    "message": "nadie mira todavía"
+  },
+  "runs_sharedWatching_one": {
+    "message": "$count$ persona mira",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_sharedWatching_other": {
+    "message": "$count$ personas miran",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_stopSharing": {
+    "message": "Dejar de compartir"
+  },
+  "runs_stopSharingTitle": {
+    "message": "Terminar las vistas de esta ejecución en la instancia: no se envía nada más"
+  },
+  "runs_copyRunPage": {
+    "message": "Copiar el enlace de la página de la ejecución"
   }
 }

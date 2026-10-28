@@ -127,8 +127,9 @@ each rule below ends with the section to read there.
 - **The Runs window talks only to the worker, through the port `RUNS_PORT`:** the worker takes the port from
   `runs.html` alone (`fromRunsPage`) and reads its messages with `parseRunsRequest`. The state the worker posts
   (`RunsState`) carries no token. (see "The Runs window")
-- **Every Runs window control but Pause names the stop shown (`since`),** so a click made twice never answers the next
-  stop; `parseRunsRequest` refuses one without it (`runs.test.ts`). (see "The Runs window")
+- **Every Runs window control but Pause and Share live names the stop shown (`since`),** so a click made twice never
+  answers the next stop; `parseRunsRequest` refuses one without it, and Share live with one (`runs.test.ts`). Share
+  live asks first, the first time in a window (`runs.spec.ts`). (see "The Runs window")
 - **What a hub sends is shown as text (a call's title through `richText`), and its image only as a `data:` JPEG whose
   base64 is checked again.** (see "The Runs window")
 - **The Runs window draws a part again only when what it shows changes (`part`, `place`); a button waiting for its

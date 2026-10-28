@@ -1,6 +1,6 @@
 ---
 title: Runs window
-description: "Piwi Picker's Runs window follows the tests your editor runs, from a window beside them: pause, step, resume and end them, write code from a stop, and watch a headless test's page live, click and type on it, and pick a locator on its image."
+description: "Piwi Picker's Runs window follows the tests your editor runs, from a window beside them: pause, step, resume and end them, write code from a stop, watch a headless test's page live, click and type on it, pick a locator on its image, and share a run live with your team."
 lang: en-US
 ---
 
@@ -30,6 +30,11 @@ stays in the editor.
 A failing test is held at its line, a headless one only while a Runs window is open: **Failed at** in red, its error
 under it. **Resume** lets it end as it failed; **Pick** replaces the failing locator.
 
+**Share live**, under the run's name, lets a teammate watch the run from its page on your team's instance, in a
+project whose live view is on. The first time in a window, it says what goes out and to whom; shared, the run says
+how many watch, with its page's link to copy, until **Stop sharing**:
+[Share a run from your machine](./live-view#share-a-run-from-your-machine).
+
 ## Code from a stop
 
 The other actions send code to the editor, which writes it at the stopped line, when its Piwi extension and your
@@ -48,8 +53,8 @@ what to review in it, or why not.
 ## Watch live
 
 With a reporter newer than 0.61.0 and an editor extension of the same release, a stop has **Watch live** above its
-image. It shows the page as it paints, in place of the image, at most ten frames a second, the window's width and the
-page's proportions kept, with a red **Live** badge. Only the window that asked gets the frames, and nothing stores
+image. It shows the page as it paints, in place of the image, at most ten frames a second, at the window's width, with
+a red **Live** badge. Only the window that asked gets the frames, and nothing stores
 them: they go from the test's worker to the editor service and the extension's background worker, on your machine or
 through the port your IDE forwards from a [remote window](/guide/remote-development).
 
@@ -78,14 +83,13 @@ While you watch, your input on the view goes to the page as a person's would, th
   back to the window and moves the focus to **Watch live**. `Tab` moves the focus on past the view, unless you
   clicked into it: then `Tab` and `Shift+Tab` go to the page too, until `Esc`.
 
-The first time, a hint under the view says so. Whatever you hold down is let go before the test goes on.
+A hint under the view says so the first time. What you hold down is let go before the test goes on.
 
 ## Pick on the image
 
-**Pick on the image**, beside **Watch live**, or a `Shift`+click on the image or the view, names the element under the
-pointer, the one a click there would reach (a dialog or a banner over the page included), without touching the page:
-the locator the pause bar's **Pick a locator** would rank first for it, sent to the editor in place of the one on the
-stopped line. The window shows that locator, or why there is none. It works on a headed stop's image too. `Esc`
+**Pick on the image**, beside **Watch live**, or a `Shift`+click on the image or the view, names the element a click
+under the pointer would reach (a dialog or a banner over the page included), without touching the page: the locator
+the pause bar's **Pick a locator** would rank first for it, sent to the editor in place of the stopped line's. The window shows that locator, or why there is none. It works on a headed stop's image too. `Esc`
 turns it off.
 
 ## The run shortcut
@@ -97,32 +101,30 @@ In Firefox, it works while Firefox has the focus.
 ## The desktop app's runs
 
 [Paired](./bug-reports#running-it-with-playwright-in-the-desktop-app) with the [desktop app](./desktop), the window
-lists the runs the app starts beside your editor's, marked **Desktop app**: reproductions, bisect steps and bug
-reports included, with the same controls and live view. With no editor paired, it follows the app alone. A failure
-of a run nobody attends (a Flake Lab run, a bisect, a lab job, a run with `--repeat-each` above 1, UI mode) goes on
-while the window is open. The app holds no editor, so **Pick**, **Record** and **Assert** in the test's window are not
-offered; the code **Assert a region** and **Mock a request** make goes to the app's window, to copy there, and the
-window here says so: [Desktop app runs](./desktop-runs).
+lists the runs the app starts beside your editor's, marked **Desktop app**: reproductions, bisect steps and bug reports
+included, with the same controls and live view. With no editor paired, it follows the app alone. A failure of a run
+nobody attends (a Flake Lab run, a bisect, a lab job) goes on while the window is open. The app holds no editor, so
+**Pick**, **Record** and **Assert** in the test's window are not offered; the code **Assert a region** and **Mock a
+request** make goes to the app's window, to copy there, and the window here says so: [Desktop app runs](./desktop-runs).
 
 ## How it connects
 
 The background worker reaches the editor's services on `127.0.0.1` only once the paired port proves it holds the
-pairing's token: [how the pieces connect](./editor-run-control#how-it-works). The desktop app proves it holds its
-token the same way before the worker asks it for its runs. The window talks to that worker alone,
-and makes no network call of its own. With an editor extension older than the live view, the window shows the image
-and the controls alone.
+pairing's token ([how the pieces connect](./editor-run-control#how-it-works)), as the desktop app proves it holds its
+own. The window talks to that worker alone, and makes no network call of its own. An older editor extension gives the
+image and the controls alone.
 
 ## Limits
 
 - **The top frame.** Pick on the image refuses an element inside an iframe.
 - **A test's own screencast.** When the test records its own (a video, a trace with screenshots), the view takes its
   size and quality; when none can start, it is an image of the page twice a second.
-- **A heavy page.** A frame over 384 KB (noise, large photos) gives way to a lighter image of the page, twice a
+- **A heavy page.** A frame over 384 KB gives way to a lighter image of the page, twice a
   second; when even that is too heavy, the window says so under the stop's image.
 - **The browser's keys stay its own.** A shortcut of the browser, a function key and `Esc` never reach the page.
 - **No input method.** Characters an input method composes (Chinese, Japanese, Korean) do not reach the page; paste
   them instead.
-- **The test's own page alone.** A page or a popup the page opens (`window.open`, a link with `Ctrl`) is not shown.
+- **The test's own page alone.** A popup the page opens is not shown.
   A download your click starts and a dialog the page opens go to the test as its own would: Playwright deletes the
   download with the test's context, and dismisses the dialog unless the test handles it.
 - **The middle button stays the window's.** It would open a link in a tab the view does not show; `Shift`+click picks

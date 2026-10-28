@@ -279,6 +279,11 @@ export class RunHubs {
           : connection.command({ type: 'mock', ref, worker, since, request: request.request });
       case 'requests':
         return since === null ? Promise.resolve(OFFLINE) : connection.command({ type: 'requests', ref, worker, since });
+      case 'share':
+        // `parseRunsRequest` takes none without whether to share the run.
+        return request.on === undefined
+          ? Promise.resolve(OFFLINE)
+          : connection.command({ type: 'share', ref, on: request.on });
       default:
         // Pick, Record, Assert and Assert a region: an intent started in the test's window, at the stop it names.
         return since === null ? Promise.resolve(OFFLINE) : connection.command({ type: what, ref, worker, since });

@@ -882,6 +882,11 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   state line **Failed at** and the place, the error under it: the stop's `error`, its lines kept, else, from a service
   or a reporter that predates it, read from its title, `stopError`).
 - A run started in a terminal (`HubSession.terminal`) shows **Terminal** beside its name.
+- A run whose reporter shares it live on the team instance (`HubSession.live`) has **Share live** under its name: the
+  hub's `share` with `on`, naming the run alone. The first share in the window shows what goes out and to whom
+  (`runs_shareWarning`, the instance's host in it) with **Share live** and **Cancel** in its place, the focus on the
+  first; a run that cannot be shared (`live.refused`) is asked without it, and the hub's refusal shows under it. Shared,
+  the run says where and how many watch, with **Copy the run page's link** and **Stop sharing**.
 - In a group of their own come the actions the stop takes from this window (`stopIntents`): the hub's `stop.intents`,
   what the reporter and the editor's client take, from this connection now. Pick, Record, Assert and Assert a region
   where the pause bar shows, or at a headless stop while the window watches its live view; Mock a request at any
