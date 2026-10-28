@@ -11,6 +11,7 @@
  * test data: like the Setup page, it is shown to administrators only.
  */
 import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS, type McpToolDef } from '#shared/mcp-tools';
+import { desktopRunTools } from './run-tools';
 import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
 import { CAPABILITIES, CAPABILITY_PRESETS, type CapabilityId, type CapabilityState } from '#shared/capabilities';
 import { PIWI_FEATURE_GROUPS, FEATURE_NEED_LABELS, type FeatureNeed } from '#shared/piwi-features';
@@ -389,9 +390,12 @@ async function mcpTopic(db: DbClient, facts: InstanceFacts) {
     notServedHere: notServed.length ? notServed : null,
     desktopOnly: {
       tools: DESKTOP_MCP_TOOL_DEFS.map((t) => t.name),
-      note: desktop
-        ? 'Served here: this is the desktop app, running on the machine that holds the files.'
-        : 'Served only by the desktop app, which runs on the machine that holds the files.',
+      runTools: desktopRunTools(true).map((t) => t.name),
+      note:
+        (desktop
+          ? 'Served here: this is the desktop app, running on the machine that holds the files.'
+          : 'Served only by the desktop app, which runs on the machine that holds the files.') +
+        ' The run tools steer the Playwright runs the desktop app starts (page "features/agent-run-control").',
     },
     narrowing:
       'Append ?modules=core (any comma-separated set of core, workflow, healing, agents) to the MCP URL to list only those modules; declining a capability drops the tools that need it for every client.',

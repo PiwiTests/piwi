@@ -1,6 +1,6 @@
 ---
 title: Desktop app runs
-description: "Pause, step and watch the Playwright runs the desktop app starts, from its Local runs tray: each worker's test, the page at a stop, live, a pick on its image, and the code a stop makes, to copy."
+description: "Pause, step and watch the Playwright runs the desktop app starts, from its Local runs tray: each worker's test, the page at a stop, live, a pick on its image, the code a stop makes, to copy, and the same runs for a coding agent."
 lang: en-US
 ---
 
@@ -69,6 +69,19 @@ Paired with the app, [Piwi Picker's Runs window](./runs-window#the-desktop-app-s
 editor's, steers them, and watches their pages live. Code it starts at a stop of the app's run comes to the app's tray
 too.
 
+## For agents
+
+The app's [MCP server](./mcp), which its **MCP server** page connects your coding agent to, serves these runs with
+the tools of [Run control for agents](./agent-run-control): `run_list`, `run_follow`, `run_control`,
+`page_snapshot`, `page_act`, `page_locator` and `code_write`. An agent follows a run, pauses or steps it, reads the
+stopped page as its ARIA snapshot and acts on it by ref, as you can and no further: a stopped page alone, the actions
+the tools name, no code to evaluate. What comes from the page reaches it marked as the page's, never as instructions.
+
+What it does shows in the tray: a stop it asked for says so (**Paused by the agent**), and so does its first action
+at a stop. The code `code_write` makes (the steps it took, an assertion, or a locator for the stopped line) comes under
+**Code from the runs**, to copy, and back to the agent in its answer: no file is written. A run nobody attends is not
+served, so an agent sees no Flake Lab run, bisect or lab job.
+
 ## Limits
 
 - **No recording.** **Record here**, and **Pick** and **Assert** in the test's window, end in an editor: run the test
@@ -77,6 +90,8 @@ too.
   stops make no code.
 - **A file changed since the run started** makes no code: run the test again.
 - **Run to cursor** stays in the editor, which has the file.
+- **One call at a time through the bridge.** Claude Desktop reaches the app through `piwi-desktop mcp-stdio`, which
+  passes its calls one by one: a `run_follow` or a `run_control` that waits holds the next call, 30 seconds at most.
 
 ## Related
 
@@ -84,3 +99,4 @@ too.
 - [Pause and step from the editor](./editor-run-control): the same stops, in VS Code and the JetBrains IDEs.
 - [Code from a pause](./editor-stop-code): what each action writes.
 - [Runs window](./runs-window): Piwi Picker's window for the same runs.
+- [Run control for agents](./agent-run-control): the tools an agent steers the runs with.

@@ -15,9 +15,9 @@ tools that follow the run, read the stopped page as its accessibility tree and a
 (Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2, 3 and 4 are built too (below; PR 4 is
 merged as #932), and so are PR 5's three halves, the service's, the IDE's with the forwarded addresses, and the Runs
 window's, and PR 6's two halves, the desktop app's server as the hub of its runs, then its window's controls, live
-view and Copy with Piwi Picker listing those runs, PR 9's tools for the runs an editor starts and PR 7's two halves,
-**End the test** with the runs started in a terminal, and **Debug in my editor** (below), while the desktop app's
-tools for agents are not (PR 8's team-instance half is built on its own branch). PR 1
+view and Copy with Piwi Picker listing those runs, PR 9's tools for the runs an editor starts, then for the desktop
+app's own runs, and PR 7's two halves, **End the test** with the runs started in a terminal, and **Debug in my
+editor** (below); PR 8's team-instance half is built on its own branch. PR 1
 differs from the text in four ways. A headed browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
@@ -398,6 +398,25 @@ asked of the instance as the command is built and again at the stop, counted and
 of Part 5, and said in a notice; while it is outlined, the caret's count on the stopped line answers it without asking
 the worker, so it does not take the outline down. Below the tablet width the button is hidden, as the open link's
 chooser is.
+
+PR 9's desktop half is Part 9.2's last sentence: the desktop app adds the seven tools to the MCP server it serves
+already (`/mcp`, which `piwi-desktop mcp-stdio` bridges for Claude Desktop), for the runs its shell starts, and differs
+from the text in six ways. The tools are the editor service's own (`RunAgent`, through `@piwitests/editor/run-host`),
+in the app's words (`AgentWords`, `agentTools`), on PR 6's hub (`DesktopRuns.agent`); `/mcp` lists and runs them in
+the desktop build alone, in the `agents` module, and passes their answers on as they are (Piwi's JSON, the
+page-content block, the image) rather than as a catalog tool's JSON. A wait ends as its client goes (the response's
+`close`), but `notifications/cancelled` is not read, and the stdio bridge passes one message at a time, so a wait there
+holds the next call. `code_write` writes no file: the code goes to the window under **Code from the runs**, as Assert
+a region's does, and back to the agent between the page-content markers, its import lines apart
+(`StopActions.agentCode` returns the `StopCode` it made; the editor's answer is as it was); a locator for the stopped
+line's is listed as a locator at that line, and its sentences say `in place of the one on …` (`StopCodeWords` takes
+the place, not only the line). A run nobody attends (`-unattended`) is not served: `run_list` leaves it out and says
+why, every tool refuses it, and none of its events is kept (`RunAgentOptions.refuses`). The tray says a stop is the
+agent's (`Paused by the agent`), which needed `HubStop.by` in `@piwitests/core/run-hub`: the editor's hub already sent
+it, and Piwi Picker now reads it, though its Runs window does not show it. The tools prefer none of the suite's own
+locators and name no command, as the window's code does not and the hub has none for the shell's runs. The app's
+**MCP server** page says it serves the runs, with a link to the docs, rather than listing the seven tools, whose
+descriptions are the editor's single paragraphs; `describe_piwi`'s `mcp` topic names them.
 The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of

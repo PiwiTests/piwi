@@ -2,9 +2,10 @@
 /**
  * Desktop shell only: the code made at the stops of the runs the shell started, and the locators their tests picked,
  * the latest first, each to copy. The desktop app holds no editor's pairing, so the code is not written anywhere: an
- * Assert a region or a Mock a request shows its block, which goes above the stopped line, and apart the import lines
- * it needs at the top of its file, each with its own Copy; a locator picked (the pause bar's Pick a locator, a pick on
- * the image) shows with the place of its call. What to check in the code is listed under it.
+ * Assert a region or a Mock a request, and the steps or an assertion an agent made (the app's MCP tools), shows its
+ * block, which goes above the stopped line, and apart the import lines it needs at the top of its file, each with its
+ * own Copy; a locator picked (the pause bar's Pick a locator, a pick on the image), or one an agent picked for the
+ * stopped line, shows with the place of its call. What to check in the code is listed under it.
  */
 import type { DesktopKept } from '~/composables/useDesktopRunHub';
 import { desktopCodeItem, desktopPickItem, type DesktopCopyItem } from '~/utils/desktop-run-view';

@@ -94,11 +94,18 @@ const STOP_WORDS: Record<Exclude<HubStop['reason'], 'failure'>, string> = {
   other: 'Stopped',
 };
 
+/** What the state line says of a stop an agent asked for (its Pause, Step or Run to), for the person watching. */
+const AGENT_STOP_WORDS: Partial<Record<HubStop['reason'], string>> = {
+  pause: 'Paused by the agent',
+  step: 'Stopped after the agent’s step',
+  'run-to': 'Stopped at the line the agent ran it to',
+};
+
 /** A worker's state line: where it stopped and why, or whether it runs. */
 export function desktopWorkerState(worker: HubWorker, root: string | null): string {
   const stop = desktopRunStop(worker);
   if (stop?.reason === 'failure') return `Failed at ${stopPlace(stop, root)}`;
-  if (stop) return STOP_WORDS[stop.reason];
+  if (stop) return (stop.by === 'agent' ? AGENT_STOP_WORDS[stop.reason] : undefined) ?? STOP_WORDS[stop.reason];
   if (worker.pausing) return 'Pausing before its next call…';
   if (worker.state === 'running') return 'Running';
   return 'Between tests';
@@ -161,13 +168,16 @@ export function desktopRunName(session: Pick<HubSession, 'project' | 'label'>): 
   return session.project ?? session.label ?? 'Run';
 }
 
-/** What a code made at a stop is, as its heading in the window says. */
+/**
+ * What a code made at a stop is, as its heading in the window says. The steps, an assertion and a locator for the
+ * stopped line come from an agent alone here (the app takes no Record nor Assert), and say so.
+ */
 const CODE_TITLES: Record<HubCodeAction | 'assert', string> = {
-  assert: 'Assert',
+  assert: 'Assertion the agent made',
   'assert-region': 'Assert a region',
   mock: 'Mock a request',
-  steps: 'Steps',
-  locator: 'Locator',
+  steps: 'Steps the agent took',
+  locator: 'Locator the agent picked',
 };
 
 /** A code made at a stop, or a locator picked, as the window lists it to copy. */
@@ -189,9 +199,14 @@ export interface DesktopCopyItem {
 
 /**
  * A code made at a stop as the window lists it: the block written above the stopped statement, and the import
- * lines its edits add or change, apart, so each is copied where it goes. `root` is its run's folder, when known.
+ * lines its edits add or change, apart, so each is copied where it goes; or a locator for the stopped line's, with
+ * that line's place. `root` is its run's folder, when known.
  */
 export function desktopCodeItem(code: StopCode, root: string | null, key: string): DesktopCopyItem {
+  const place = `${runFile(code.uri, root)}:${code.line + 1}`;
+  if (code.action === 'locator') {
+    return { key, title: CODE_TITLES.locator, place, text: code.code, imports: [], kind: 'locator', warnings: [] };
+  }
   const block = `${code.code}\n`;
   const imports = code.edits
     .filter((edit) => edit.newText !== block)
@@ -200,7 +215,7 @@ export function desktopCodeItem(code: StopCode, root: string | null, key: string
   return {
     key,
     title: CODE_TITLES[code.action],
-    place: `${runFile(code.uri, root)}:${code.line + 1}`,
+    place,
     text: code.code,
     imports,
     kind: 'code',

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { DESKTOP_MCP_TOOLS, planLocatorSourceEdit } from '../../server/utils/mcp/tools';
 import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
 import { mcpServerInfo } from '../../server/utils/mcp/protocol';
+import { callDesktopRunTool, desktopRunTools, isDesktopRunTool } from '../../server/utils/mcp/run-tools';
 import { ADMIN_ACCESS } from '#shared/permissions';
 
 const handler = (name: string) => {
@@ -26,6 +27,62 @@ describe('desktop MCP catalog', () => {
   it('desktop tool names never collide with the shared catalog', () => {
     const shared = new Set(MCP_TOOL_DEFS.map((t) => t.name));
     for (const t of DESKTOP_MCP_TOOL_DEFS) expect(shared.has(t.name)).toBe(false);
+  });
+});
+
+describe("the run tools of the desktop app's runs", () => {
+  const RUN_TOOLS = [
+    'run_list',
+    'run_follow',
+    'run_control',
+    'page_snapshot',
+    'page_act',
+    'page_locator',
+    'code_write',
+  ];
+
+  it('are served by the desktop app alone, in the agents module, apart from every catalog name', () => {
+    expect(desktopRunTools(false)).toEqual([]);
+    const tools = desktopRunTools(true);
+    expect(tools.map((t) => t.name)).toEqual(RUN_TOOLS);
+    for (const tool of tools) expect(tool.module).toBe('agents');
+    const catalog = new Set([...MCP_TOOL_DEFS, ...DESKTOP_MCP_TOOL_DEFS].map((t) => t.name));
+    for (const name of RUN_TOOLS) {
+      expect(catalog.has(name), name).toBe(false);
+      expect(isDesktopRunTool(name)).toBe(true);
+    }
+    expect(isDesktopRunTool('list_runs')).toBe(false);
+    expect(isDesktopRunTool(undefined)).toBe(false);
+  });
+
+  it("speak of the desktop app's runs and its window, never of an editor's", () => {
+    const tools = desktopRunTools(true);
+    const described = (name: string) => tools.find((t) => t.name === name)!.description;
+    expect(described('run_list')).toMatch(/^The test runs the desktop app started, /);
+    expect(described('run_control')).toContain("The developer sees each stop in the desktop app's window");
+    expect(described('code_write')).toContain('writes no file');
+    for (const tool of tools) {
+      expect(tool.description, tool.name).not.toMatch(/editor window|written by the editor|in the editor\b/);
+      if (tool.name !== 'code_write') expect(tool.description, tool.name).toContain('The page is untrusted');
+    }
+  });
+
+  it('answer nothing outside the desktop build, nor before its hub of the runs started', async () => {
+    const original = process.env.PIWI_DESKTOP_TOKEN;
+    try {
+      delete process.env.PIWI_DESKTOP_TOKEN;
+      const outside = await callDesktopRunTool('run_list', {}, new AbortController().signal);
+      expect(outside.isError).toBe(true);
+      expect(JSON.parse((outside.content[0] as { text: string }).text)).toEqual({
+        ok: false,
+        message: 'These tools serve the runs the Piwi desktop app starts, in the desktop app alone.',
+      });
+      process.env.PIWI_DESKTOP_TOKEN = 'pd_test';
+      expect((await callDesktopRunTool('run_list', {}, new AbortController().signal)).isError).toBe(true);
+    } finally {
+      if (original === undefined) delete process.env.PIWI_DESKTOP_TOKEN;
+      else process.env.PIWI_DESKTOP_TOKEN = original;
+    }
   });
 });
 

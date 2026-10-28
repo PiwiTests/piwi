@@ -493,6 +493,15 @@ const windsurfSnippet = computed(() =>
               <div class="flex flex-col gap-1.5 mt-3">
                 <McpToolItem v-for="t in listedDesktopTools" :key="t.name" :tool="t" />
               </div>
+              <p class="text-sm text-highlighted leading-relaxed mt-4">
+                It also serves the Playwright runs it starts: <code class="font-mono">run_list</code>,
+                <code class="font-mono">run_control</code>, <code class="font-mono">page_act</code> and the other run
+                tools follow a run, stop it, act on the stopped page and make the code, which comes to the
+                <strong>Local runs</strong> tray to copy.
+                <DocLink to="features/agent-run-control#in-the-desktop-app" class="text-sm"
+                  >Run control for agents</DocLink
+                >
+              </p>
             </div>
           </SectionCard>
 

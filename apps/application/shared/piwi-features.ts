@@ -683,9 +683,10 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Run control for agents',
         summary:
-          'The test runs your editor starts, served to a coding agent on your machine as MCP tools: it follows a run, stops it, reads the stopped page as its ARIA snapshot, acts on it by ref and has Piwi write the code there, through the editor.',
+          'The test runs your editor or the desktop app starts, served to a coding agent on your machine as MCP tools: it follows a run, stops it, reads the stopped page as its ARIA snapshot, acts on it by ref and has Piwi write the code there, through the editor, or make it to copy in the desktop app.',
         needs: ['fixtures'],
-        where: 'The Piwi runs MCP server, listed in VS Code; Tools → Piwi in a JetBrains IDE',
+        where:
+          'The Piwi runs MCP server, listed in VS Code; Tools → Piwi in a JetBrains IDE; the desktop app’s MCP server',
         doc: 'features/agent-run-control',
       },
       {

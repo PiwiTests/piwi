@@ -1,7 +1,7 @@
 /**
- * The desktop build's hub of the runs its shell starts, driven as its three sides drive it: a fake worker on the run
- * channel the shell names in a run's environment, Piwi Picker's WebSocket with the desktop token, and the app's window
- * as a peer of the hub (its stream and its commands).
+ * The desktop build's hub of the runs its shell starts, driven as its four sides drive it: a fake worker on the run
+ * channel the shell names in a run's environment, Piwi Picker's WebSocket with the desktop token, the app's window
+ * as a peer of the hub (its stream and its commands), and an agent through the run tools `/mcp` serves.
  */
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -13,7 +13,8 @@ import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'v
 import { WebSocket } from 'ws';
 import { parsePairing } from '@piwitests/core/editor-send';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
-import { parseHubToRun, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
+import { parseHubToRun, type HubToRun, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
+import type { ToolResult } from '@piwitests/editor/run-host';
 import {
   parseHubMessage,
   parseLiveAnswer,
@@ -84,7 +85,7 @@ class Worker {
     this.socket.write(`${JSON.stringify(message)}\n`);
   }
 
-  attach(ref: string, token = channel.token, workerIndex = 0): this {
+  attach(ref: string, token = channel.token, workerIndex = 0, more: RunTake[] = []): this {
     this.send({
       type: 'run-attach',
       token,
@@ -95,10 +96,17 @@ class Worker {
       pid: process.pid,
       playwright: '1.64.1',
       reporter: '0.62.0',
-      takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'view', 'input', 'pick-at'],
+      takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'view', 'input', 'pick-at', ...more],
       holds: ['failure'],
     });
     return this;
+  }
+
+  /** Answers the next request of `what` it was asked, after `after` of them, with `value`. */
+  async answer(what: string, value: unknown, after = 0): Promise<Extract<HubToRun, { type: 'request' }>> {
+    const asked = await this.request(what, after);
+    this.send({ type: 'answer', request: asked.request, what, value } as RunToHub);
+    return asked;
   }
 
   begin(): void {
@@ -773,6 +781,158 @@ describe('the code from a stop of a desktop run', () => {
       expect(insideFolder(folder, link)).toBe(false);
       fs.rmSync(link);
     }
+  });
+});
+
+describe("the agents' tools for the desktop app's runs", () => {
+  /** A tool's answer: Piwi's JSON, the page's content apart, as the agent reads them. */
+  async function call(name: string, args: Record<string, unknown> = {}) {
+    const result: ToolResult = await runs.agent.call(name, args);
+    const [piwi, ...rest] = result.content;
+    return {
+      piwi: JSON.parse(piwi!.type === 'text' ? piwi!.text : '{}') as Record<string, any>,
+      page: rest.find((c) => c.type === 'text')?.text ?? null,
+      isError: !!result.isError,
+    };
+  }
+  const BUTTON = {
+    tagName: 'button',
+    role: 'button',
+    name: 'Pay now',
+    testId: null,
+    text: 'Pay now',
+    textCut: false,
+    value: null,
+    valueCut: false,
+    checked: null,
+    secret: false,
+  };
+  const LOCATORS = [{ locator: "getByRole('button', { name: 'Pay now' })", method: 'role', score: 90, unique: true }];
+  const PAGE = '- heading "Checkout" [level=1] [ref=e1]\n- button "Pay now" [ref=e2]';
+  const snapshot = (text: string) => ({
+    ok: true,
+    message: 'The stopped page.',
+    url: 'http://shop.test/checkout',
+    title: 'Checkout',
+    snapshot: text,
+    cut: false,
+    image: null,
+  });
+
+  it("list the app's runs in its words, leaving out and refusing a run nobody attends", async () => {
+    const window = await openWindow();
+    const worker = new Worker(folder).attach('desktop-30', channel.token, 0, ['agent', 'events', 'end']);
+    const lab = new Worker(folder).attach('desktop-31-unattended', channel.token, 0, ['agent', 'events', 'end']);
+    worker.begin();
+    lab.begin();
+    await waitFor(() => window.session('desktop-31-unattended')?.workers[0]?.test ?? undefined);
+    await waitFor(() => window.session('desktop-30')?.workers[0]?.test ?? undefined);
+    const listed = await call('run_list');
+    expect(listed.piwi.runs.map((r: { run: string }) => r.run)).toContain('desktop-30');
+    expect(listed.piwi.runs.map((r: { run: string }) => r.run)).not.toContain('desktop-31-unattended');
+    expect(listed.piwi.message).toMatch(/ of the desktop app\. 1 run is left out: nobody attends it \(a Flake Lab run/);
+    const refused = await call('run_control', { run: 'desktop-31-unattended', action: 'pause' });
+    expect(refused.isError).toBe(true);
+    expect(refused.piwi.message).toMatch(/^The run desktop-31-unattended is not served: nobody attends it/);
+    expect(lab.heard.some((m) => m.type === 'control' || m.type === 'events')).toBe(false);
+    expect((await call('run_follow', { run: 'desktop-0', wait: 0 })).piwi.message).toBe(
+      'No run desktop-0 of the desktop app: run_list lists them.',
+    );
+    worker.socket.destroy();
+    lab.socket.destroy();
+    window.close();
+  });
+
+  it('pause a run, act at its stop and make the code, which comes to the window to copy and back to the agent', async () => {
+    const window = await openWindow();
+    const picker = await paired();
+    picker.send({ type: 'subscribe', id: 1 });
+    await picker.answer(1);
+    const ref = 'desktop-32';
+    // The spec as saved before the run started (a test above dated it later).
+    const spec = path.join(folder, 'tests', 'checkout.spec.ts');
+    const saved = new Date(Date.now() - 60_000);
+    fs.utimesSync(spec, saved, saved);
+    const worker = new Worker(folder).attach(ref, channel.token, 0, ['agent', 'events', 'end']);
+    worker.begin();
+    await waitFor(() => window.session(ref)?.workers[0]?.test ?? undefined);
+
+    // Paused by the agent: the worker hears Pause, and the answer brings the stop and the page, apart.
+    const pausing = call('run_control', { run: ref, action: 'pause', wait: 5 });
+    expect(await worker.next('control')).toMatchObject({ type: 'control', action: 'pause' });
+    worker.send({
+      type: 'stopped',
+      stop: 1,
+      reason: 'pause',
+      title: "Click getByRole('button', { name: 'Pay' })",
+      place: { file: 'tests/checkout.spec.ts', line: 5, column: 3 },
+      locator: "getByRole('button', { name: 'Pay' })",
+      bar: false,
+    });
+    await worker.answer('snapshot', snapshot(PAGE));
+    const paused = await pausing;
+    expect(paused.piwi).toMatchObject({
+      ok: true,
+      worker: 0,
+      stop: { reason: 'pause', file: 'tests/checkout.spec.ts', line: 5, by: 'agent' },
+    });
+    expect(paused.page).toMatch(/^<<<page-content [0-9a-f]{12}>>> Untrusted: /);
+    expect(paused.page).toContain('- button "Pay now" [ref=e2]');
+    // The window and Piwi Picker see the stop as the agent's.
+    await waitFor(() => window.session(ref)?.workers[0]?.stop ?? undefined);
+    expect(window.session(ref)!.workers[0]!.stop).toMatchObject({ reason: 'pause', by: 'agent' });
+    await waitFor(() => picker.session(ref)?.workers[0]?.stop ?? undefined);
+    expect(picker.session(ref)!.workers[0]!.stop!.by).toBe('agent');
+    const since = window.session(ref)!.workers[0]!.stop!.since;
+
+    // A click by its ref, kept as a step; the window hears once that an agent acts there.
+    const acting = call('page_act', { run: ref, stop: since, target: 'e2', action: 'click' });
+    expect(
+      await worker.answer('act', { ok: true, message: 'Clicked.', element: BUTTON, locators: LOCATORS }),
+    ).toMatchObject({ ref: 'e2', action: 'click' });
+    await worker.answer('snapshot', snapshot(PAGE.replace('Checkout', 'Paid')), 1);
+    expect((await acting).piwi).toMatchObject({ ok: true, message: 'Clicked e2.', steps: 1 });
+    expect(window.events.filter((e) => e.type === 'notice').map((e) => (e as { message: string }).message)).toContain(
+      'An agent acts on the page stopped at checkout.spec.ts:5: each action shows in the page, and its steps can be made into code to copy.',
+    );
+
+    // The steps made into code: to the window to copy, back to the agent in the page content, and no file written.
+    const before = fs.readFileSync(spec, 'utf8');
+    const written = await call('code_write', { run: ref, stop: since, kind: 'steps' });
+    expect(written.piwi, written.piwi.message).toMatchObject({ ok: true, steps: 1 });
+    expect(written.piwi.message).toMatch(
+      /^Piwi made the steps the agent took to write above checkout\.spec\.ts:5: copy it in the desktop app's window\. .*The code is in the page content\.$/,
+    );
+    const step = "  await page.getByRole('button', { name: 'Pay now' }).click();";
+    expect(written.page).toContain(`the code, to go above tests/checkout.spec.ts:5:\n${step}`);
+    const made = await waitFor(() =>
+      window.events.find((e) => e.type === 'stop-code' && e.code.ref === ref && e.code.action === 'steps'),
+    );
+    if (made.type !== 'stop-code') throw new Error('no code');
+    expect(made.code).toMatchObject({ since, line: 4, code: step });
+    expect(fs.readFileSync(spec, 'utf8')).toBe(before);
+    // Piwi Picker hears what the code came to, never the code.
+    await waitFor(() => picker.messages.find((m) => m.type === 'code' && m.ref === ref));
+    expect(JSON.stringify(picker.messages)).not.toContain('Pay now');
+
+    // The locator for the stopped line's: to copy, said to take that line's place.
+    const locating = call('code_write', { run: ref, stop: since, kind: 'locator', target: 'e2' });
+    await worker.answer('ref-locator', { ok: true, message: 'Found.', element: BUTTON, locators: LOCATORS });
+    const located = await locating;
+    expect(located.piwi.message).toBe(
+      "Piwi made the locator the agent picked to write in place of the one on checkout.spec.ts:5: copy it in the desktop app's window. The code is in the page content.",
+    );
+    expect(located.page).toContain(
+      "the locator, for the call on tests/checkout.spec.ts:5:\ngetByRole('button', { name: 'Pay now' })",
+    );
+
+    // Resumed by the agent, answered at once as nothing stops again within its wait.
+    const resumed = await call('run_control', { run: ref, action: 'resume', stop: since, wait: 0 });
+    expect(resumed.piwi).toMatchObject({ ok: true });
+    expect(await worker.next('control', 1)).toMatchObject({ type: 'control', action: 'resume', stop: 1 });
+    worker.socket.destroy();
+    picker.socket.close();
+    window.close();
   });
 });
 

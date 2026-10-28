@@ -46,7 +46,8 @@ shell and are feature-equivalent.
   `desktop-<run id>`, which the window knows the run by). A run nobody attends (Flake Lab, a bisect, a lab job, one
   with `--repeat-each` above 1 or `--ui`) ends its ref in `-unattended` (`attended_args`), and the server never holds
   its failures. The hub's WebSocket takes the desktop token in `hello`; its code is
-  `apps/application/server/utils/desktop-runs.ts`.
+  `apps/application/server/utils/desktop-runs.ts`. Agents steer those runs only through `/mcp`, behind the same token
+  (`server/utils/mcp/run-tools.ts`), and never a run nobody attends.
 - **Two routes pass on another token, each for that route alone, from a loopback host, origin and peer.**
   - An assistant answer's MCP endpoint (`POST /api/assistant/conversations/:id/mcp`) is called by the Claude Code CLI
     the server starts, with the token minted for that one answer (`presentsAssistantTurnToken` in

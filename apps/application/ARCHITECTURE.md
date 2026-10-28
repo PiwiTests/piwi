@@ -254,7 +254,7 @@ Each entry names folders under `server/api/`.
   (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands, `DesktopRunSession`,
   `DesktopRunWorker` and `DesktopRunStopPage` show each worker, its stop, its page and its live view (with the Runs
   window's input, `apps/extension/src/shared/view-input.ts`), and `DesktopRunCopyList` the code to copy; the pure half
-  is `app/utils/desktop-run-view.ts`.
+  is `app/utils/desktop-run-view.ts`. Agents reach the same runs through `/mcp` (the run tools, below).
 - **`flake-lab/inbox`, `gaps/`**: cross-project inboxes of the Flake Lab and the scenario gaps.
 - **`health`, `version`, `capabilities`, `setup-status`, `metrics`, `rollups`, `stream`, `agent-skills`**: the
   readiness probe (200 or 503, with a database check), build info, the instance capabilities, the setup status,
@@ -263,9 +263,12 @@ Each entry names folders under `server/api/`.
 ### Other routes
 
 - **`server/routes/mcp.post.ts`**: the MCP server endpoint. Tool definitions in `shared/mcp-tools.ts`, handlers in
-  `server/utils/mcp/`. `describe_piwi` and `get_release_notes` live in `server/utils/mcp/about-piwi.ts`: they read the
-  docs and the CHANGELOG bundled as Nitro server assets, parsed by `shared/docs-corpus.ts` and `shared/changelog.ts`,
-  with the pieces and setup decisions in `shared/piwi-ecosystem.ts`.
+  `server/utils/mcp/`. In the desktop build it also serves the tools for the runs the shell starts
+  (`server/utils/mcp/run-tools.ts`): the editor service's `RunAgent` on the hub of those runs (`DesktopRuns.agent`),
+  its answers passed on as they are, the code it makes sent to the window to copy. `describe_piwi` and
+  `get_release_notes` live in `server/utils/mcp/about-piwi.ts`: they read the docs and the CHANGELOG bundled as Nitro
+  server assets, parsed by `shared/docs-corpus.ts` and `shared/changelog.ts`, with the pieces and setup decisions in
+  `shared/piwi-ecosystem.ts`.
 - **`server/routes/oauth/`, `server/routes/.well-known/`**: the OAuth authorization server MCP clients sign in
   through: discovery metadata (RFC 9728, RFC 8414), dynamic client registration, `authorize` (stores the request and
   redirects to the `/oauth/consent` page, backed by `api/oauth/authorizations/[id]`), `token` (code with PKCE, refresh

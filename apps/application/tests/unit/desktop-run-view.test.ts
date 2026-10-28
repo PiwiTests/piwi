@@ -139,6 +139,16 @@ describe('a worker of a desktop run', () => {
     expect(desktopSteering(endable)).toEqual(['resume', 'step', 'finish', 'end']);
   });
 
+  test('says a stop an agent asked for is the agent’s', () => {
+    const at = (reason: HubStop['reason']) =>
+      desktopWorkerState(workerOf({ state: 'stopped', stop: stopOf({ reason, by: 'agent' }) }), ROOT);
+    expect(at('pause')).toBe('Paused by the agent');
+    expect(at('step')).toBe('Stopped after the agent’s step');
+    expect(at('run-to')).toBe('Stopped at the line the agent ran it to');
+    expect(at('page-pause')).toBe('Stopped at page.pause()');
+    expect(desktopWorkerState(workerOf({ state: 'stopped', stop: stopOf({ reason: 'pause' }) }), ROOT)).toBe('Paused');
+  });
+
   test('ends a failure as it failed, Resume alone', () => {
     const failed = workerOf({ state: 'stopped', stop: stopOf({ reason: 'failure', error: 'expect failed' }) });
     expect(desktopWorkerState(failed, ROOT)).toBe('Failed at tests/checkout.spec.ts:5');
@@ -193,6 +203,36 @@ describe('what the window gives to copy', () => {
     expect(desktopCodeItem({ ...code, edits: [code.edits[1]!] }, null, 'k')).toMatchObject({
       place: `${ROOT}/tests/checkout.spec.ts:5`,
       imports: [],
+    });
+  });
+
+  test('is the steps or the locator an agent made, said to be the agent’s, a locator for its line’s place', () => {
+    const steps = {
+      ...code,
+      action: 'steps' as const,
+      message: 'Piwi made the steps the agent took to write above checkout.spec.ts:5.',
+    };
+    expect(desktopCodeItem(steps, ROOT, 'k')).toMatchObject({ title: 'Steps the agent took', kind: 'code' });
+    const locator: StopCode = {
+      ...code,
+      action: 'locator',
+      code: "getByRole('button', { name: 'Pay now' })",
+      edits: [
+        {
+          range: { start: { line: 4, character: 13 }, end: { line: 4, character: 46 } },
+          newText: "getByRole('button', { name: 'Pay now' })",
+        },
+      ],
+      warnings: [],
+    };
+    expect(desktopCodeItem(locator, ROOT, 'l')).toEqual({
+      key: 'l',
+      title: 'Locator the agent picked',
+      place: 'tests/checkout.spec.ts:5',
+      text: "getByRole('button', { name: 'Pay now' })",
+      imports: [],
+      kind: 'locator',
+      warnings: [],
     });
   });
 

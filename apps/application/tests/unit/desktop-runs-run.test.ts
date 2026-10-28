@@ -5,8 +5,10 @@
  * stops at `page.pause()`, is paused from outside, stepped, clicked through the live view and picked on its image, and
  * a failure is held at its line while the window shows the run. Then the window alone steers a run: it pauses it,
  * watches its live view, picks on its image, the locator coming to it to copy, mocks a request the page made, the code
- * coming to it to copy, and clicks the page through the view. Headless, as the shell runs a reproduction. Skipped when
- * the reporter is not built (`npm run reporter:build`) or Chromium is not installed.
+ * coming to it to copy, and clicks the page through the view. Then an agent steers a run through the run tools `/mcp`
+ * serves: it pauses it, reads the page's snapshot, clicks the button by its ref and has the step made into code, which
+ * comes to the window to copy and back to the agent. Headless, as the shell runs a reproduction. Skipped when the
+ * reporter is not built (`npm run reporter:build`) or Chromium is not installed.
  */
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -149,6 +151,10 @@ beforeAll(async () => {
   fs.mkdirSync(path.join(project, 'tests'), { recursive: true });
   fs.writeFileSync(path.join(project, 'tests', 'shop.spec.cjs'), SPEC(base));
   fs.writeFileSync(path.join(project, 'tests', 'window.spec.cjs'), WINDOW_SPEC(base));
+  fs.writeFileSync(
+    path.join(project, 'tests', 'agent.spec.cjs'),
+    WINDOW_SPEC(base).replace('steered from the window', 'steered by an agent'),
+  );
   fs.writeFileSync(
     path.join(project, 'fixture.cjs'),
     `const { test: base, expect } = require('@playwright/test');
@@ -393,6 +399,62 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
         }),
       ).toMatchObject({ ok: true });
       expect(await send({ type: 'runControl', ...at, action: 'resume' })).toMatchObject({ ok: true });
+      expect(await exited).toBe(0);
+    } catch (error) {
+      throw new Error(`${(error as Error).message}\n${output()}`);
+    } finally {
+      opened.close();
+    }
+  }, 120_000);
+  it('is paused, read, clicked by a ref and made into code by an agent, the code there to copy', async () => {
+    const events: DesktopRunEvent[] = [];
+    const opened = (await runs.openWindow({ send: (e) => void events.push(e), buffered: () => 0, close: () => {} }))!;
+    const tool = async (name: string, args: Record<string, unknown>) => {
+      const result = await runs.agent.call(name, args);
+      const [piwi, ...rest] = result.content as Array<{ type: string; text?: string }>;
+      return {
+        piwi: JSON.parse(piwi!.text!) as Record<string, any>,
+        page: rest.find((c) => c.type === 'text')?.text ?? null,
+      };
+    };
+    const lastWorker = () =>
+      events
+        .filter(
+          (e): e is Extract<DesktopRunEvent, { type: 'session' }> => e.type === 'session' && e.session.ref === REF,
+        )
+        .pop()?.session.workers[0];
+
+    const { exited, output } = runPlaywright('tests/agent.spec.cjs', {});
+    try {
+      await waitFor(
+        () => lastWorker()?.test?.title.at(-1) === 'steered by an agent' && lastWorker()?.state === 'running',
+      );
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Paused by the agent: the answer brings the stop and the page's snapshot in AI mode, apart.
+      const paused = await tool('run_control', { run: REF, action: 'pause', wait: 20 });
+      expect(paused.piwi).toMatchObject({ ok: true, stop: { reason: 'pause', by: 'agent' } });
+      expect(paused.page).toMatch(/^<<<page-content [0-9a-f]{12}>>> Untrusted: /);
+      const target = /button "Go" \[ref=(e\d+)\]/.exec(paused.page ?? '')?.[1];
+      expect(target, paused.page ?? '').toBeTruthy();
+      const since = paused.piwi.stop.stop as string;
+
+      // Clicked by its ref, as trusted input: the page changes, and the answer says how.
+      const clicked = await tool('page_act', { run: REF, stop: since, target, action: 'click' });
+      expect(clicked.piwi, clicked.piwi.message).toMatchObject({ ok: true, steps: 1 });
+      expect(clicked.page).toContain('heading "Clicked"');
+
+      // The step made into code: to the window to copy, and back to the agent.
+      const written = await tool('code_write', { run: REF, stop: since, kind: 'steps' });
+      expect(written.piwi, written.piwi.message).toMatchObject({ ok: true, steps: 1 });
+      expect(written.page).toContain("await page.getByRole('button', { name: 'Go' }).click();");
+      const made = await waitFor(() => events.find((e) => e.type === 'stop-code' && e.code.action === 'steps'));
+      if (made.type !== 'stop-code') throw new Error('no code');
+      // Indented as the stopped line, in the test's loop.
+      expect(made.code.code).toBe("    await page.getByRole('button', { name: 'Go' }).click();");
+      expect(made.code.uri).toBe(pathToFileURL(path.join(fs.realpathSync(project), 'tests', 'agent.spec.cjs')).href);
+
+      // Resumed: the test sees the click and passes.
+      expect((await tool('run_control', { run: REF, action: 'resume', stop: since, wait: 0 })).piwi.ok).toBe(true);
       expect(await exited).toBe(0);
     } catch (error) {
       throw new Error(`${(error as Error).message}\n${output()}`);

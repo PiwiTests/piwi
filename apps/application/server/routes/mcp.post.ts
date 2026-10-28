@@ -14,10 +14,14 @@ import { resolveInstanceStates, getInstanceDecisions } from '#shared/handlers/se
 import { CAPABILITY_MODULES, type CapabilityModule } from '#shared/capabilities';
 import { narrowToolsByModule } from '../utils/mcp/filter';
 import { logMcpToolCall } from '../utils/mcp/write-log';
+import { callDesktopRunTool, desktopRunTools, isDesktopRunTool } from '../utils/mcp/run-tools';
+import { DESKTOP_AGENT_WORDS } from '../utils/desktop-runs';
 
 // The desktop app's bundled server (launched with PIWI_DESKTOP_TOKEN) advertises
 // the shared catalog plus the desktop-only tools that read and write files on the
-// machine it runs on; a hosted/Docker/npx server serves the shared catalog only.
+// machine it runs on, and the tools for the runs its shell starts
+// (`utils/mcp/run-tools.ts`); a hosted/Docker/npx server serves the shared
+// catalog only.
 const IS_DESKTOP = !!process.env.PIWI_DESKTOP_TOKEN;
 const TOOL_BY_NAME = new Map(mcpCatalog(IS_DESKTOP).map((t) => [t.name, t]));
 const MAX_BODY_BYTES = 1_048_576; // 1 MB — reject oversized batches early
@@ -93,7 +97,12 @@ export default eventHandler(async (event) => {
     };
   }
 
-  const responses = await Promise.all(requests.map((req) => handleRequest(ctx, req, event, db)));
+  // A run tool waits for a stop up to half a minute: the wait ends once the client has gone.
+  const gone = new AbortController();
+  event.node.res.on('close', () => {
+    if (!event.node.res.writableFinished) gone.abort();
+  });
+  const responses = await Promise.all(requests.map((req) => handleRequest(ctx, req, event, db, gone.signal)));
 
   // Notifications (no id) have no response — filter them out.
   const toSend = responses.filter((r) => r !== null);
@@ -102,7 +111,7 @@ export default eventHandler(async (event) => {
   return Array.isArray(body) ? toSend : (toSend[0] ?? null);
 });
 
-async function handleRequest(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db: DbClient) {
+async function handleRequest(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db: DbClient, signal: AbortSignal) {
   if (!req || req.jsonrpc !== '2.0' || !req.method) {
     return rpcErr(req?.id, RPC.INVALID_REQUEST, 'Invalid JSON-RPC request');
   }
@@ -114,7 +123,7 @@ async function handleRequest(ctx: McpContext, req: JsonRpcRequest, event: H3Even
   }
 
   try {
-    return await dispatch(ctx, req, event, db);
+    return await dispatch(ctx, req, event, db, signal);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[MCP] error handling', req.method, message);
@@ -124,7 +133,7 @@ async function handleRequest(ctx: McpContext, req: JsonRpcRequest, event: H3Even
 
 // ── JSON-RPC dispatcher ───────────────────────────────────────────────────────
 
-async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db: DbClient) {
+async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db: DbClient, signal: AbortSignal) {
   const { id, method, params } = req;
 
   switch (method) {
@@ -148,7 +157,8 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
           'For questions about Piwi itself — what it is, its pieces, setup choices, configuration, its documentation, where to send feedback — call describe_piwi; get_release_notes says what changed in each release. ' +
           'The setup_piwi prompt (prompts/get) generates a ready-to-run setup for a Playwright project not yet reporting here; the other prompts are the Piwi workflow skills.' +
           (IS_DESKTOP
-            ? ' This is the local desktop app, running on your machine: it adds tools that reach the disk — import_local_report (pull a local blob/trace .zip into a project), read_local_source (read the current on-disk source) and apply_locator_fix (apply a recommended locator fix to the real file).'
+            ? ' This is the local desktop app, running on your machine: it adds tools that reach the disk — import_local_report (pull a local blob/trace .zip into a project), read_local_source (read the current on-disk source) and apply_locator_fix (apply a recommended locator fix to the real file). ' +
+              DESKTOP_AGENT_WORDS.instructions
             : ''),
       });
     }
@@ -160,7 +170,10 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
     // ── Tool listing ─────────────────────────────────────────────────────────
     case 'tools/list': {
       const modules = parseModules(getRequestURL(event).searchParams.get('modules'));
-      const tools = narrowToolsByModule(await toolsForCaller(db, ctx.access, { desktop: IS_DESKTOP }), modules);
+      const tools = narrowToolsByModule(
+        [...(await toolsForCaller(db, ctx.access, { desktop: IS_DESKTOP })), ...desktopRunTools(IS_DESKTOP)],
+        modules,
+      );
       return ok(id, {
         tools: tools.map((t) => ({
           name: t.name,
@@ -173,6 +186,15 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
     // ── Tool execution ───────────────────────────────────────────────────────
     case 'tools/call': {
       const p = params as { name?: string; arguments?: Record<string, unknown> };
+      // A run tool answers with its own content: Piwi's JSON, the page's text apart, an image.
+      if (IS_DESKTOP && isDesktopRunTool(p?.name)) {
+        try {
+          return ok(id, await callDesktopRunTool(p.name, p.arguments, signal));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return ok(id, { content: [{ type: 'text', text: `Error: ${message.slice(0, 400)}` }], isError: true });
+        }
+      }
       // A tool whose capability is declined is dropped from the served set, so it
       // is "Unknown tool" here too — same answer the list gives. `?modules=` only
       // narrows the advertised list, so it does not block a call.
