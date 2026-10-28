@@ -16,8 +16,8 @@
  * runs) is resumed at once, and so is one held when the last of them goes. A failure no pause bar shows is held only
  * in a run started to be watched (`watched`: with the editor's breakpoints or a `page.pause()`) or while a Runs window
  * of Piwi Picker follows the runs, and never in a run its host says holds none (`holdsFailures`), else it goes on at
- * once and no client hears of it. A worker's connection that
- * closes lets a stop no pause bar shows go on; a stop the bar shows waits there for its answer.
+ * once and no client hears of it. A worker's connection that closes lets a stop no pause bar shows go on; a stop the
+ * bar shows waits there for its answer.
  */
 import * as path from 'node:path';
 import type * as net from 'node:net';
