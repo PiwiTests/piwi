@@ -2,6 +2,7 @@
 // without the pointer, and the sync flash, a square that turns white in a window of its own once the recording runs,
 // which ties the master's frames to the take's wall clock.
 import { spawn } from 'node:child_process';
+import * as os from 'node:os';
 import { chromium } from 'playwright';
 import { MASTER_FPS } from './timeline.mjs';
 
@@ -17,18 +18,24 @@ const flags = (text) => text.split(' ');
 /**
  * Starts recording `display` (`width` × `height` device pixels) into `file`: x11grab at `fps`, the pointer left out,
  * H.264 lossless (`-qp 0`, ultrafast), every frame at its wall-clock place (`-fps_mode cfr`: a frame the grab misses
- * is the one before, repeated). At most 64 grabbed frames wait for the encoder, 2 GB at 4K. `stop()` ends it and
+ * is the one before, repeated). At most 128 grabbed frames wait for the encoder, 4 GB at 4K. The capture runs ahead
+ * of the set's apps where the system lets it (root): they wait on state, it keeps real time. `stop()` ends it and
  * resolves with ffmpeg's counts: the frames written, those repeated (`dup`) and dropped.
  */
 export function startCapture({ file, display, width, height, fps = MASTER_FPS }) {
   const args = [
     ...flags('-hide_banner -loglevel error -nostats -progress pipe:1 -stats_period 1'),
-    ...flags(`-f x11grab -draw_mouse 0 -framerate ${fps} -video_size ${width}x${height} -thread_queue_size 64 -i`),
+    ...flags(`-f x11grab -draw_mouse 0 -framerate ${fps} -video_size ${width}x${height} -thread_queue_size 128 -i`),
     display,
     ...flags('-c:v libx264 -preset ultrafast -qp 0 -pix_fmt yuv420p -fps_mode cfr -y'),
     file,
   ];
   const child = spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+  try {
+    os.setPriority(child.pid, -10);
+  } catch {
+    // Not allowed: the capture shares the machine as it is.
+  }
   const progress = {};
   let errors = '';
   child.stdout.on('data', (chunk) => {

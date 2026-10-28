@@ -254,14 +254,16 @@ try {
   if (filming && !interruption) {
     try {
       const counts = await filming.finish({ gestures: gesture?.log ?? [], outcomes });
-      const repeated = counts.frames ? (100 * counts.dup) / counts.frames : 0;
+      // At a constant frame rate, a frame repeated with one dropped is a grab that came late; repeats beyond the drops
+      // are frames the capture missed.
+      const grabbed = counts.frames - counts.dup + counts.drop;
       say(
-        `The master: ${counts.frames} frames, ${repeated.toFixed(1)} % of them repeated (${counts.dup}) and ` +
-          `${counts.drop} dropped, in ${path.join(out, 'master.mkv')}; its log in ${path.join(out, 'take.json')}`,
+        `The master: ${counts.frames} frames at 24 a second, ${grabbed} grabbed (${counts.dup} repeated, ` +
+          `${counts.drop} dropped), in ${path.join(out, 'master.mkv')}; its log in ${path.join(out, 'take.json')}`,
       );
-      // A take that repeats many frames was filmed on a machine too busy for the capture.
-      if (repeated > 5)
-        say('  The capture could not keep up: film the take again on a machine with nothing else running.');
+      if (grabbed < counts.frames * 0.95) {
+        say('  The capture missed frames: film the take again on a machine with nothing else running.');
+      }
     } catch (why) {
       failed = true;
       say(`Ending the capture failed: ${why}`);
