@@ -16,7 +16,7 @@ opens the fix as a pull request.
 ## What it does
 
 While tests run, the [capture fixtures](/guide/capture-fixtures) record a [locator snapshot](/guide/concepts#locator-snapshot)
-after each successful action **or passing web-first assertion** (a passing `expect(locator).toBeVisible()` proves the
+for each successful action **or passing web-first assertion** (a passing `expect(locator).toBeVisible()` proves the
 element resolved just as a click does): the target element's attributes, plus alternative locators ranked by a
 stability score (`data-testid` = 100, role + accessible name ≈ 90, semantic CSS ≈ 35–40, hash-suffixed ≈ 10). Capture
 also generates **rename-proof** alternatives: locators scoped to a stable ancestor

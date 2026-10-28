@@ -142,6 +142,7 @@ export const PROJECT = {
   LIST_VISIBLE: 'list-visible-project',
   LIVE_VIEW_OFF: 'live-view-off-test',
   LIVE_VIEW_ON: 'live-view-on-test',
+  LOCATOR_HEAL_NAVIGATION: 'locator-heal-navigation-test',
   LOCATORS_PAGE: 'locators-page-test',
   MALFORMED: 'malformed-project',
   MARKERS_PANEL: 'markers-panel-test',
