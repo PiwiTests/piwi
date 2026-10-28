@@ -166,8 +166,16 @@ export interface StopRef {
 /** Why an action that writes code is refused when the client writes none. */
 export const NO_CODE = "The editor cannot write code from a stop: update Piwi's extension in the editor.";
 
+/** What an agent asks of a stopped page: all three need the worker to take `agent`. */
+type AgentQuery = 'snapshot' | 'act' | 'ref-locator';
+
 /** What a query asks, as a refusal names it. */
-type Query = RunQuery | 'view' | 'input' | 'pick-at' | 'snapshot' | 'act' | 'ref-locator' | 'bind';
+type Query = RunQuery | 'view' | 'input' | 'pick-at' | AgentQuery | 'bind';
+
+/** What a worker lists in `takes` to answer a query. */
+function takeOf(query: Query): RunTake {
+  return query === 'snapshot' || query === 'act' || query === 'ref-locator' ? 'agent' : query;
+}
 
 /** What each query asks, as a refusal names it. */
 const QUERY_WORDS: Record<Query, string> = {
@@ -256,7 +264,7 @@ interface Worker {
   takes: Set<RunTake>;
   reporter: string;
   /** The requests waiting for the worker's answer, by what they ask. */
-  requests: Map<number, { what: 'image' | RunTake; settle(value: Answered): void }>;
+  requests: Map<number, { what: Asked; settle(value: Answered): void }>;
   /** An agent asked the worker to stop (Pause, Step, Run to), and it has not stopped since, nor anyone asked otherwise. */
   askedBy: 'agent' | null;
   /**
@@ -285,8 +293,11 @@ interface Session {
   resumedSaid: boolean;
 }
 
-/** What a request asks a worker: an image, or what it takes but the click counts its input carries and its events. */
-type Asked = 'image' | Exclude<RunTake, 'input-clicks' | 'events'>;
+/**
+ * What a request asks a worker: an image, what it takes but the click counts its input carries, its events and the
+ * agent's requests, and each of those.
+ */
+type Asked = 'image' | Exclude<RunTake, 'input-clicks' | 'events' | 'agent'> | AgentQuery;
 
 /** The request asking a worker `what`, at the stop `stop` but for an image. */
 function requestOf(request: number, what: Asked, stop: number, extra: RequestExtra): HubToRun {
@@ -755,7 +766,7 @@ export class RunSessions {
 
   /** Why the worker at a stop is not asked `what`; null when it takes it. */
   private refusesQuery(worker: Worker, what: Query): string | null {
-    return worker.takes.has(what)
+    return worker.takes.has(takeOf(what))
       ? null
       : `@piwitests/reporter ${worker.reporter || ''}`.trimEnd() + ` cannot ${QUERY_WORDS[what]}: update it.`;
   }

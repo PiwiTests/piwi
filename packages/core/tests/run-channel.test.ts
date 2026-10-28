@@ -54,9 +54,7 @@ describe('the run channel', () => {
         'input',
         'input-clicks',
         'pick-at',
-        'snapshot',
-        'act',
-        'ref-locator',
+        'agent',
         'events',
         'bind',
       ],
@@ -75,6 +73,8 @@ describe('the run channel', () => {
       expect(parseRunToHub(line({ ...attach, takes: ['dance', 'record'] }))).toMatchObject({ takes: ['record'] });
       expect(parseRunToHub(line({ ...attach, takes: ['mock', 'pick'] }))).toMatchObject({ takes: ['pick', 'mock'] });
       expect(RUN_TAKES).toEqual(attach.takes);
+      // An editor service released before `agent` reads a list of more than 16 as none: the list stays within it.
+      expect(RUN_TAKES.length).toBeLessThanOrEqual(16);
       expect(parseRunToHub(line({ ...attach, takes: 'pick' }))).toMatchObject({ takes: [] });
       // A longer list a newer reporter sends is read for the names this side knows, up to 64 of them.
       const longer = [...RUN_TAKES, ...Array.from({ length: 40 }, (_, i) => `later-${i}`)];

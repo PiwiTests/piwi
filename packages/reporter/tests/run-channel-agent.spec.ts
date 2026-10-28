@@ -290,7 +290,7 @@ describe('a stopped page, for an agent', () => {
     expect(tests.map((t) => [t.title, t.status, t.errors])).toEqual([['stopped for an agent', 'passed', []]]);
     expect(connection!.heard[0]).toMatchObject({
       type: 'run-attach',
-      takes: expect.arrayContaining(['snapshot', 'act', 'ref-locator', 'events', 'bind']),
+      takes: expect.arrayContaining(['agent', 'events', 'bind']),
     });
   });
 

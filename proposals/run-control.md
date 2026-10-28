@@ -303,7 +303,8 @@ Server plugin's `mcpServer.mcpToolset`, from 2025.2, adds tools to the IDE's own
 `mcpServers` entry through `mcp-remote`. A setting in each turns it off. The tools that act name the stop they answer
 (`stop`, as the IDE's controls do), and `worker` is optional where one worker is stopped; `run_control` has no **End
 the test** (Part 1.5, PR 7) and `code_write` takes `steps`, `locator` (in place of the stopped line's) or `assertion`.
-The run channel gains `snapshot`, `act`, `ref-locator`, `events` and `bind`: the worker sends the run's events only
+The run channel gains the takes `agent` (the requests `snapshot`, `act` and `ref-locator`), `events` and `bind`, so
+`takes` stays within the 16 entries an older editor service reads: the worker sends the run's events only
 while an agent follows it (`events { on }`, then `event` messages, at most 50 a second, the rest counted as
 `dropped`), each call heard through Playwright's instrumentation (feature-checked, so none of Piwi's own), and acts by
 `page.getByRef` (1.64), each action ranked and kept as a step in the service, rendered by the recorder's generator. An

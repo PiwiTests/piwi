@@ -1342,10 +1342,10 @@ export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-p
  * `assert-region` (`piwi/stopAction`), the queries `requests` (`piwi/stopRequests`), `mock` and `locator`
  * (`piwi/locatorAtCaret`), and, for a viewer outside the page, the stopped page's live view (`view`), the input played
  * on it (`input`, with the click count of a button's `down` and `up`: `input-clicks`) and the element under a point of
- * an image of it (`pick-at`, `piwi/pickAt`); for an agent, the stopped page's ARIA snapshot (`snapshot`), an action
- * by an element's ref (`act`), the element's ranked locators (`ref-locator`) and the running tests' events (`events`);
- * and its browser shared with Playwright's own tools (`bind`, `piwi/stopBind`). An older reporter lists fewer, or
- * none: the service refuses what it does not take.
+ * an image of it (`pick-at`, `piwi/pickAt`); for an agent, the stopped page read and acted on (`agent`: its ARIA
+ * snapshot, an action by an element's ref and that element's ranked locators) and the running tests' events
+ * (`events`); and its browser shared with Playwright's own tools (`bind`, `piwi/stopBind`). An older reporter lists
+ * fewer, or none: the service refuses what it does not take.
  */
 export type RunTake =
   | 'pick'
@@ -1359,9 +1359,7 @@ export type RunTake =
   | 'input'
   | 'input-clicks'
   | 'pick-at'
-  | 'snapshot'
-  | 'act'
-  | 'ref-locator'
+  | 'agent'
   | 'events'
   | 'bind';
 

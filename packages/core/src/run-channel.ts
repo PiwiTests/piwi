@@ -89,13 +89,13 @@ export type RunQuery = 'requests' | 'mock' | 'locator';
 export type RunViewTake = 'view' | 'input' | 'input-clicks' | 'pick-at';
 
 /**
- * What a stopped worker does for an agent outside the page: read the stopped page's ARIA snapshot in AI mode, to a
- * depth, with an image of it when asked (`snapshot`); act on an element of the snapshot by its ref, as trusted input
- * (`act`); rank the locators of such an element and read what it holds (`ref-locator`); tell a follower what the run
- * does as it goes, each call, navigation, console error and failed request (`events`); and bind its browser for
- * Playwright's own tools (`bind`, `browser.bind`), until the test ends.
+ * What a stopped worker does for an agent outside the page: read the stopped page for it (`agent`: the requests
+ * `snapshot`, its ARIA snapshot in AI mode, to a depth, with an image of it when asked; `act`, an action on an element
+ * of the snapshot by its ref, as trusted input; and `ref-locator`, the locators of such an element ranked, and what it
+ * holds); tell a follower what the run does as it goes, each call, navigation, console error and failed request
+ * (`events`); and bind its browser for Playwright's own tools (`bind`, `browser.bind`), until the test ends.
  */
-export type RunAgentTake = 'snapshot' | 'act' | 'ref-locator' | 'events' | 'bind';
+export type RunAgentTake = 'agent' | 'events' | 'bind';
 
 /** What a worker's `run-attach` lists in `takes`. */
 export type RunTake = RunIntent | RunQuery | RunViewTake | RunAgentTake;
@@ -103,7 +103,11 @@ export type RunTake = RunIntent | RunQuery | RunViewTake | RunAgentTake;
 /** The intents a worker takes. */
 export const RUN_INTENTS: readonly RunIntent[] = ['pick', 'record', 'assert', 'assert-region'];
 
-/** Everything a worker takes, as its `run-attach` lists it: a worker of an older reporter lists fewer, or none. */
+/**
+ * Everything a worker takes, as its `run-attach` lists it: a worker of an older reporter lists fewer, or none. An
+ * editor service released before `agent` reads a list of more than 16 entries as none, so this one holds 16 at most:
+ * a new capability joins an entry (as the agent's requests share `agent`) rather than growing the list past it.
+ */
 export const RUN_TAKES: readonly RunTake[] = [
   ...RUN_INTENTS,
   'requests',
@@ -113,9 +117,7 @@ export const RUN_TAKES: readonly RunTake[] = [
   'input',
   'input-clicks',
   'pick-at',
-  'snapshot',
-  'act',
-  'ref-locator',
+  'agent',
   'events',
   'bind',
 ];

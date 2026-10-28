@@ -107,8 +107,10 @@ What the package does to a user's run, process by process.
 - The first message, `run-attach`, lists what the worker takes (`takes`: the intents
   `pick`, `record`, `assert`, `assert-region`, the queries `requests`, `mock`,
   `locator`, for a viewer outside the page, `view`, `input` and `pick-at`, and for an
-  agent, `snapshot`, `act`, `ref-locator`, `events` and `bind`) and the stops it holds
-  for an editor that shows them (`holds: ['failure']`).
+  agent, `agent` (its requests `snapshot`, `act` and `ref-locator`), `events` and `bind`)
+  and the stops it holds for an editor that shows them (`holds: ['failure']`). The list
+  holds 16 entries at most: an editor service released before `agent` reads a longer one
+  as none.
   The worker then sends each test's begin and end, each stop it shows, and each stop's
   end (`running`).
 - The editor's controls (Pause, Step, Resume, Finish, Run to a line) and its breakpoints,

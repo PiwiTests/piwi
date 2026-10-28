@@ -533,6 +533,32 @@ describe('what an agent reads of the page', () => {
     other.socket.destroy();
   });
 
+  test('reads a stopped page only of a worker whose reporter takes `agent`', async () => {
+    const { ref: run, channel: again } = await ide.command();
+    const older = RUN_TAKES.filter((take) => take !== 'agent') as RunTake[];
+    const other = new FakeWorker(again.path, fs.realpathSync(dir)).attach(again.token, run, 0, older);
+    await waitFor(() => ide.latest(run));
+    other.begin('adds a mug');
+    other.send({
+      type: 'stopped',
+      stop: 1,
+      reason: 'breakpoint',
+      title: "Click getByText('Add')",
+      place: { file: 'tests/cart.spec.ts', line: 5, column: 3 },
+      locator: "getByText('Add')",
+      bar: true,
+    });
+    const since = (await waitFor(() => ide.latest(run)?.workers[0]?.stop ?? undefined)).since;
+    const refused = '@piwitests/reporter 0.60.0 cannot';
+    expect((await call('page_snapshot', { run })).piwi.message).toContain(refused);
+    expect((await call('page_locator', { run, target: 'e2' })).piwi.message).toContain(refused);
+    expect((await call('page_act', { run, stop: since, target: 'e2', action: 'click' })).piwi.message).toContain(
+      refused,
+    );
+    expect(other.heard.some((m) => m.type === 'request')).toBe(false);
+    other.socket.destroy();
+  });
+
   test("names a failure's title and error, which may quote the page, only inside the block", async () => {
     const { ref: run, channel: again } = await ide.command();
     const other = new FakeWorker(again.path, fs.realpathSync(dir)).attach(again.token, run, 0, [
