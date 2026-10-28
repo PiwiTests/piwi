@@ -5405,7 +5405,7 @@ const SCENES = [
   {
     name: 'desktop-run-live',
     description:
-      'Local runs tray (desktop app): a run the shell started, stopped before its click on Pay, watched live, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',
+      'Local runs tray (desktop app): a run the shell started, stopped at its page.pause() before its click on Pay, watched live, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',
     tags: ['docs', 'desktop'],
     out: 'docs',
     outputs: ['desktop-run-live.png', 'desktop-run-live-code.png'],
@@ -5444,7 +5444,7 @@ const SCENES = [
           cannotPause: null,
         },
         stop: {
-          reason: 'breakpoint',
+          reason: 'page-pause',
           title: "Click getByRole('button', { name: 'Pay now' })",
           uri,
           line: 17,

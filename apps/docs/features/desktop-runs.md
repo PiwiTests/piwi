@@ -29,8 +29,8 @@ under it, and **Resume** to let it end as it failed. A run nobody attends never 
 lab job, a run with `--repeat-each` above 1 and UI mode go on past each failure.
 
 <figure>
-  <img src="/screenshots/desktop-run-live.png" alt="The Local runs tray of the desktop app: a checkout test stopped at a breakpoint before its click on Pay now, its page watched live, with Resume, Step, Finish, Assert a region and Mock a request">
-  <figcaption>A run the desktop app started, stopped at a breakpoint and watched live.</figcaption>
+  <img src="/screenshots/desktop-run-live.png" alt="The Local runs tray of the desktop app: a checkout test stopped at its page.pause() before its click on Pay now, its page watched live, with Resume, Step, Finish, Assert a region and Mock a request">
+  <figcaption>A run the desktop app started, stopped at a <code>page.pause()</code> and watched live.</figcaption>
 </figure>
 
 The tray opens at each stop: a headless test waits for you there. While the window is in the background, the system
@@ -42,7 +42,7 @@ on, the window stops listening, and a stop goes on at once.
 **Watch live** shows the stopped page as it paints, in place of its image, and stays on for the worker's next stops
 until you turn it off. Your clicks, the wheel and your keys on the view go to the page. `Esc` gives the keyboard back
 to the tray, and `Tab` leaves the view unless a click into it took the keyboard. The frames go from the test's worker
-to the app's window alone, and nothing keeps them.
+to the windows that watch that stop, the app's and Piwi Picker's Runs window, and nothing keeps them.
 
 **Pick on the image**, or a `Shift`+click on the image or the view, names the element under the pointer: its locator
 shows under the test, with **Copy**.
