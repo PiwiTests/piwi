@@ -150,6 +150,16 @@ function testOf(test: RunTest, root: string | null): Record<string, unknown> {
 }
 
 /**
+ * A stopped call's title as an agent reads it: Playwright writes the text a fill, a typing or an insert types into its
+ * title (`Fill "…" getByLabel('Password')`), which may be a secret the test reads from its environment, so the text
+ * goes, its call and its locator kept.
+ */
+function stopTitle(title: string, locator: string | null): string {
+  const typing = /^(Fill|Type|Insert) "/.exec(title);
+  return typing ? `${typing[1]} "${HIDDEN_VALUE}"${locator ? ` ${locator}` : ''}` : title;
+}
+
+/**
  * A stop as an agent reads it, its error apart: a failure's error may quote the page, and so may the title it gives a
  * failure (`Failed: …`), which comes with the error alone.
  */
@@ -158,7 +168,7 @@ function stopOf(stop: RunStop, root: string | null): { fields: Record<string, un
     fields: {
       stop: stop.since,
       reason: stop.reason,
-      title: stop.reason === 'failure' ? 'Failed' : stop.title,
+      title: stop.reason === 'failure' ? 'Failed' : stopTitle(stop.title, stop.locator),
       file: fileOf(stop.uri, root),
       line: stop.line + 1,
       ...(stop.character === null ? {} : { column: stop.character + 1 }),

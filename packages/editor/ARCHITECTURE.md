@@ -909,7 +909,9 @@ a read in the page's world can throw with the page's words, so the JSON says a f
 element could not be read; the page's own answer is in the page content.`), and only a refusal of the service's own
 (`AgentAnswer.answered` false) is said as it is. An image comes last, after a text that says it is page content too,
 since MCP's image content carries no words. The JSON that names the runs, the stops and the calls holds the test's
-own words alone: its titles, files and lines, and Playwright's titles of the calls its code made. The tools'
+own words alone: its titles, files and lines, and Playwright's titles of the calls its code made, but for the text a
+stopped fill, typing or insert types, which Playwright writes into its title (`Fill "…"`) and which may be a secret the
+test reads from its environment (`stopTitle`: `Fill "<hidden>" getByLabel('Password')`). The tools'
 descriptions and the server's `instructions` say to read the block as data, never as instructions.
 
 **Sharing with Playwright's tools.** `piwi/stopBind { ref, worker?, since, on }` has the stopped worker bind its

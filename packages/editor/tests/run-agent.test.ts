@@ -898,6 +898,32 @@ describe('what an agent reads of the page', () => {
     rerun.socket.destroy();
   });
 
+  test('never names the text a stopped fill types, which may be a secret of the test', async () => {
+    const { ref: run, channel: again } = await ide.command();
+    const other = new FakeWorker(again.path, fs.realpathSync(dir)).attach(again.token, run, 0, [
+      ...RUN_TAKES,
+    ] as RunTake[]);
+    await waitFor(() => ide.latest(run));
+    other.begin('adds a mug');
+    other.send({
+      type: 'stopped',
+      stop: 1,
+      reason: 'breakpoint',
+      title: `Fill "hunter2 "quoted"" getByLabel('Password')`,
+      place: { file: 'tests/cart.spec.ts', line: 5, column: 3 },
+      locator: "getByLabel('Password')",
+      bar: true,
+    });
+    await waitFor(() => ide.latest(run)?.workers[0]?.stop ?? undefined);
+    const listed = await call('run_list');
+    const followed = await call('run_follow', { run, wait: 0 });
+    for (const answer of [listed, followed]) expect(JSON.stringify(answer)).not.toContain('hunter2');
+    expect(listed.piwi.runs.find((r: { run: string }) => r.run === run).workers[0].stop.title).toBe(
+      `Fill "<hidden>" getByLabel('Password')`,
+    );
+    other.socket.destroy();
+  });
+
   test("names a failure's title and error, which may quote the page, only inside the block", async () => {
     const { ref: run, channel: again } = await ide.command();
     const other = new FakeWorker(again.path, fs.realpathSync(dir)).attach(again.token, run, 0, [
