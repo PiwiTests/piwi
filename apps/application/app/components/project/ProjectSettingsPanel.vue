@@ -68,7 +68,13 @@ const sections = computed<Section[]>(() => [
   { id: 'members', label: 'Members', icon: 'i-lucide-users', group: 'project', visible: canSeeMembers.value },
   { id: 'source-control', label: 'Source control', icon: 'i-lucide-git-branch', group: 'project', visible: true },
   { id: 'ai', label: 'AI diagnosis', icon: 'i-lucide-sparkles', group: 'project', visible: true },
-  { id: 'live-view', label: 'Live view', icon: 'i-lucide-monitor-play', group: 'project', visible: canManage.value },
+  {
+    id: 'live-view',
+    label: 'Live view',
+    icon: 'i-lucide-monitor-play',
+    group: 'project',
+    visible: canManage.value && !isDesktop,
+  },
   {
     id: 'capabilities',
     label: 'Capabilities',

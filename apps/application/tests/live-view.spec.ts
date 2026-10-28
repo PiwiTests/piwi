@@ -391,6 +391,37 @@ test.describe('Live view of a run', () => {
     }
   });
 
+  test('a run outside CI its editor shares hears its sharing stopped as the project turns its live view off', async ({
+    request,
+  }) => {
+    test.setTimeout(240_000);
+    const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
+    expect((await request.patch(`/api/projects/${project}`, { data: { liveView: true } })).ok()).toBeTruthy();
+    const before = await latestRunId(request, project);
+    const hub = await startShareHub();
+    const run = await startRun(PROJECT.LIVE_VIEW_ON, false, hub.env);
+    try {
+      const runId = await liveRunId(request, project, before);
+      await expect.poll(() => hub.heard().some((live) => live.on), { timeout: 60_000 }).toBe(true);
+      await expect.poll(async () => (await liveWorkers(request, runId)).workers.length, { timeout: 20_000 }).toBe(1);
+      expect((await request.patch(`/api/projects/${project}`, { data: { liveView: false } })).ok()).toBeTruthy();
+      // Its worker opens its stream again and hears the setting is off: not that its key is unknown.
+      await expect
+        .poll(() => hub.heard().at(-1), { timeout: 20_000 })
+        .toMatchObject({
+          can: false,
+          on: false,
+          why: "Sharing stopped: the project's live view was turned off on the instance.",
+        });
+      run.release();
+      expect(await run.exited, run.output()).toBe(0);
+    } finally {
+      await request.patch(`/api/projects/${project}`, { data: { liveView: true } });
+      await endRun(run);
+      await hub.close();
+    }
+  });
+
   test('Paused shows on the stopped test’s row at its call, and leaves every row as the setting turns off', async ({
     page,
     request,

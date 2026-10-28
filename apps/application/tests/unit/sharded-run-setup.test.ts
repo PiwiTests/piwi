@@ -406,3 +406,19 @@ describe('a batch delivery repeated under its delivery key', () => {
     expect(await db.select().from(schema.testRuns)).toHaveLength(3);
   });
 });
+
+describe("a run's live view key", () => {
+  test('goes to a run of a project with the live view on, asked for, and never from the desktop app, which says why', async () => {
+    await db.update(schema.projects).set({ liveView: true }).where(eq(schema.projects.name, PROJECT));
+    const asked = await setup({ body: { projectName: PROJECT, instanceId: 'dev-1', liveView: true } });
+    expect(asked.liveView?.key).toMatch(/^pdl_/);
+    expect((await setup({ body: { projectName: PROJECT, instanceId: 'dev-2' } })).liveView).toBeUndefined();
+    vi.stubEnv('PIWI_DESKTOP_TOKEN', ['pd', 'desktop'].join('_'));
+    try {
+      const local = await setup({ body: { projectName: PROJECT, instanceId: 'dev-3', liveView: true } });
+      expect(local.liveView).toEqual({ refused: 'local' });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
