@@ -200,6 +200,7 @@ export async function buildSet({ say, logs }) {
     return set;
   } catch (error) {
     await close();
+    fs.rmSync(dir, { recursive: true, force: true });
     throw error;
   }
 }

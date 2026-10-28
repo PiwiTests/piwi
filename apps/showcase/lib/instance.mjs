@@ -61,6 +61,17 @@ export class Instance {
     return { bug: found.map((f) => f.bug).join('; '), detail: found.map((f) => f.detail).join('; ') };
   }
 
+  async api(route, init = {}) {
+    const response = await fetch(`${this.base}${route}`, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...init.headers },
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    });
+    const text = await response.text();
+    if (!response.ok) throw new Error(`${init.method ?? 'GET'} ${route}: ${response.status} ${text.slice(0, 300)}`);
+    return text ? JSON.parse(text) : null;
+  }
+
   /** The shop's project, created with its live view on. */
   async createProject() {
     const project = await this.api('/api/projects', {
