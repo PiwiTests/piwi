@@ -129,10 +129,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   another process the run's environment reached takes no worker's place. Checked by `tests/run-sessions.test.ts`
   ("refuses a second process …"). ([ARCHITECTURE.md](ARCHITECTURE.md#run-sessions))
 - **The hub listens on `127.0.0.1` alone, and opens a WebSocket only for a browser extension that names it as this
-  machine.** A `Host` other than `127.0.0.1:<port>` or `localhost:<port>` (`isHubHost`) or an `Origin` that is not an
-  extension's (`isExtensionOrigin`) gets a 403 first, and commands are read only after `hello` with the hub's token
-  (`sameToken`) within `HUB_HELLO_MS`. Checked by `tests/run-hub.test.ts` ("the handshake").
-  ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
+  machine.** A `Host` other than `127.0.0.1` or `localhost` at its port or at one the client forwards (`piwi/hub`,
+  `isHubHost`), or an `Origin` that is not an extension's (`isExtensionOrigin`), gets a 403 first, and commands are read
+  only after `hello` with the hub's token (`sameToken`) within `HUB_HELLO_MS`. Checked by `tests/run-hub.test.ts` ("the
+  handshake", "takes a loopback Host at a port the client forwards …"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
 - **A hub command is one of a closed set, checked field by field (`parseHubCommand`), and nothing it asks evaluates
   code, reads a file or reaches an instance.** Checked by `tests/run-hub.test.ts` ("the commands").
   ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
@@ -142,6 +142,14 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **What the hub sends must read with `parseHubMessage`, which Piwi Picker uses.** The hub cuts the command line, the
   project and client names and the folders to its limits (`MAX_HUB_COMMAND`, `MAX_HUB_ROOTS`, …). Checked by
   `tests/run-hub.test.ts` ("what the hub sends"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
+- **A live view's frames go only to the hub connections that watch that stop, and never outlive it.** No frame goes to
+  the client, an instance or a file, none of a stop that ended, and the hub keeps none: a viewer that comes to a view on
+  has the worker send its latest frame again (`RunSessions.watch`, `RunHub.frame`). Checked by `tests/run-view.test.ts`.
+  ([ARCHITECTURE.md](ARCHITECTURE.md#the-live-view))
+- **At a stop no pause bar shows, input and the actions in the test's window come only from a connection watching its
+  view.** `stopIntentsOf` offers them so, and `intent` and `input` refuse anyone else; following the runs (`follow`)
+  grants neither. Checked by `tests/run-view.test.ts` ("takes Pick and Record … from a viewer of its view alone",
+  "plays a viewer’s input …"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-live-view))
 - **A failure no pause bar shows is held only where a person can answer it.** In a run the service built to be watched,
   or while a hub connection said `follow` with `on: true` (`followed` in `src/server.ts`), and only for a worker whose
   `run-attach` lists `holds`, answered with `attached` (`SHOWN_HOLDS`). Checked by `tests/run-sessions.test.ts` ("holds
@@ -198,7 +206,8 @@ npm run editor:test         # the Vitest suites of tests/
 - [Breakpoints and picked locators](ARCHITECTURE.md#breakpoints-and-picked-locators): `PIWI_PAUSE_AT`, the reporter
   version check, `piwi/applyPick`.
 - [Run control](ARCHITECTURE.md#run-control): the run sessions, `piwi/runControl` and the paused page, the stops no
-  pause bar shows, the hub Piwi Picker connects to, the code from a stop, and the discovery file.
+  pause bar shows, the hub Piwi Picker connects to, a stopped page's live view, the code from a stop, and the
+  discovery file.
 - [Coverage](ARCHITECTURE.md#coverage): coverage marks and uncovered changes.
 - [Analysis and completion](ARCHITECTURE.md#analysis-and-completion): the diagnostics and their quick fixes, and where
   completion offers locator chains.

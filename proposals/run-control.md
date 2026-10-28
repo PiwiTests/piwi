@@ -12,8 +12,9 @@ stepped it and let it pass. The same session reaches the dashboard, as a live vi
 tools that follow the run, read the stopped page as its accessibility tree and act on it.
 
 **Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
-(Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2, 3 and 4 are built too (below), while PRs
-5 to 9 are not. PR 1 differs from the text in four ways. A headed
+(Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2, 3 and 4 are built too (below; PR 4 is
+merged as #932), and so are PR 5's three halves, the service's, the IDE's with the forwarded addresses, and the Runs
+window's (below), while PRs 6 to 9 are not. PR 1 differs from the text in four ways. A headed
 browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
@@ -92,7 +93,7 @@ refused at a stop that ended or is ending, and at one whose page the worker cann
 page cannot see either. Both IDE clients name their pairing in `PIWI_EDITOR_SEND` for every run that names a run
 channel, since any such run can stop with the bar, Pause included, and the worker takes it out of its environment
 while a test runs, as it does `PIWI_RUN_CHANNEL`, its picks still posted to it.
-The live endpoint lists loopback addresses: a remote window forwards them with Part 6. PR 3's extension half is the
+The live endpoint lists loopback addresses, which a remote window forwards (Part 6). PR 3's extension half is the
 worker's hub connections, the Runs window, the popup's **Runs** tile and the run shortcut (Part 4.1 and 4.4). It differs
 from the text in five ways. The shortcut is assigned by the person, not at install, where the text gives it
 `Ctrl+Shift+5`: a global key is taken from every application on the computer, paired with an editor or not, and the only
@@ -170,6 +171,102 @@ caret settles, one request at a time, at the end of its line; a line holding no 
 answer tells apart from a refusal by naming the chain it read in a refusal too. A failure reads `Failed · <how it
 failed> · attempt N`, with Resume alone among its controls, and one the service lets go at once never reaches a
 client, so a plain Run's headless failure shows nothing.
+PR 5's first half is the worker's, the run channel's, the editor service's and the hub's side of the live view, the
+input on it, Pick on the image, and Pick and Record through the view on a headless page (Part 6), built in
+`@piwitests/core/run-view`, which the Runs window's half builds on (below). A viewer is a hub connection that
+sent `view { id, ref, worker, since, on }`, which is apart from PR 4's `follow`: watching a stop holds no failure, and
+following the runs watches no stop. The worker starts the stopped page's screencast through an internal call
+with the stop's first viewer and stops its own client with the last, as the stop ends (before its `running`), and as
+its page or the connection closes. Each frame (`frame { ref, worker, since, width, height, data }`: a JPEG in base64,
+the viewport scaled to fit 1280 by 800, quality 60, 384 KB at most, `width` and `height` the viewport in CSS pixels;
+in place of a longer one, an image of the page at quality 30, two a second at most, and when that is longer too, once
+until a frame goes again, `frame { ref, worker, since, refused }`, the sentence the Runs window shows in place of the
+view, as a page of noise at 1920 by 1080 with a video of that size gives)
+goes to that stop's viewers alone, ten a second at most at each step: the worker holds one frame's acknowledgment at
+a time, an interval at most, so Chromium and Firefox paint no more while the view is the page's one screencast client;
+a test's video or its trace's images acknowledge each frame at once, and the browser then paints at its own pace,
+up to 60 a second, the worker acknowledging at once each frame that comes while one is held, so it holds none it does
+not send (measured with `video: 'on'` and `trace: 'on'` on an animated page, the worker's `arrayBuffers` stays under
+25 MB in both browsers over 30 s; an acknowledgment for every frame, each an interval after the one before, would hold
+them all, 5 MB more each second). It drops a frame like the one before, keeps the latest alone while its connection holds 1 MB unsent,
+as the hub does for each WebSocket holding 1 MB unread, and sends none of a stop that began to end; nobody stores
+one, and the worker keeps the latest it sent in memory until the view ends, sent again as `view` asks again for a
+viewer that comes later (a still page paints no other), as the extension's worker keeps the latest of each view it
+relays for a second Runs window. A test's video, or its trace's images, starting first gives every later
+client of the page's one screencast its size and quality (800 by 512 at quality 90 for a 1000 by 640 viewport); the
+view stops its own client alone (the disposable `start()` returns), and a run with `video: 'on'` keeps a whole video
+through a watched stop, its duration checked with `ffprobe`. Where the screencast cannot start (the test runs its
+own), the view is an image of the page twice a second. `input { id, ref, worker, since, events }` plays `mouse`
+(`move`, `down`, `up`, `click` with `button` and a `clickCount` of 1 to 3, which `down` and `up` carry too for a worker
+that lists `input-clicks`, played by `page.mouse.down` and `up`), `wheel` and `key` events (`down`, `up`,
+`press`: Playwright's key names or a printable ASCII character, modifiers before a pressed key) and `text` (1,000
+characters, no control character but a tab and a line break), 50 a message and 200 a second, at points in CSS pixels, as trusted input through internal calls, only
+from a connection watching the stop, and lets go of what it holds down before the test goes on; it reaches Piwi's
+overlays as a person's input does, the picker, the recorder and a headed stop's pause bar included. At a headless
+stop, Pick a locator, Record here, Assert and Assert a region start for a connection watching its view, in the page
+as at a headed stop, driven through that input, and end with the view or the stop, leaving nothing in the page (the
+picker's choice list, which had no way out of the page unanswered, now has one); each session tells each connection
+what each stop takes from it (`stop.intents`: Assert, Assert a region and Mock a request still only while the IDE
+writes the code from a stop, as in PR 4). `pick-at { id, ref, worker, since, x, y }` and the IDE's
+`piwi/pickAt { ref, worker?, since, x, y }` read the ARIA snapshot in AI mode with its boxes, and take of the elements
+under the point the innermost that is or holds the element a click there lands on, rather than the smallest box (a
+field overflows its label's box; a dialog, a fixed banner or a sticky header covers what is under it): the page's hit
+test in paint order (`elementsFromPoint`, into open shadow roots), Piwi's overlays left out (each one's root an
+`__piwi` id) and an iframe refused; they rank it as the bar's pick does with `locator.normalize()`'s locator among
+the candidates, and send the
+first that finds it alone where a pick goes (`ok`, `message`, `locator`); an image names the viewport its points are
+in (`width`, `height`), so an image at a device scale factor of 2 maps through it. The worker's `takes` and its
+`intents` on the hub gain `view`, `input`, `input-clicks` and `pick-at`. Measured headless at 1280 by 720 on a page of text, whose
+frames are about 260 KB at quality 60 (a plain form's, about 10 KB): a still page sends one frame (Firefox paints
+about ten a second there, all alike, and sends one too), an animated one ten a second, 1.8 MB a second; the worker's
+CPU, 0.3 % while a stop waits unwatched, is 1.7 % watching the still page and 9 % the animated one in Chromium, 6.7 %
+and 8.7 % in Firefox (acknowledging every frame at once costs 31 % in Chromium); a view starts in 4 to 11 ms and stops
+in 2 to 5 ms, two input events play in 10 to 43 ms, and a pick on the image takes 150 to 260 ms.
+PR 5's IDE half is Pick on the image in both clients and the forwarded addresses of remote development; the IDE shows
+an image at each stop, with no live view, which stays the Runs window's. It differs from the text in five ways. A click
+on a headless stop's image picks only where its worker takes `pick-at` and the image names its viewport, with **Click
+the image to pick a locator** above it and a crosshair over it; the answer shows under the caption, and the locator
+comes back through Send to editor as the bar's pick does. VS Code's paused page view, script-free until then, runs one
+script by the style's nonce (`default-src 'none'`), only where a click picks, which posts the click's offset, the size
+the image is shown at and which image it was on: the image is scaled to fit, so its natural size alone does not map a
+click. A remote VS Code window (Remote SSH, WSL, Dev Containers, a codespace in VS Code desktop) lists its own
+service's hub alone, at the local port `asExternalUri` forwards to it, once the service takes that port in `Host`
+(`piwi/hub { forwarded }`, answered once it does, 8 ports at most, loopback names alone, the token and the extension's
+origin still required), on `127.0.0.1` as the pairing address is, whatever name VS Code gives the forward, and Piwi
+Picker reads any hub named under `localhost` on `127.0.0.1` too: `hello` sends the token before the hub proves
+anything, and `localhost` may resolve to `[::1]`, where another program could listen; the other windows' services on that machine take no port this window forwards, so one
+pairing reaches one remote window's runs. The Send to editor listener takes the port its own pairing is forwarded to
+too, and proves the token for the port the request named: VS Code forwards to another local port when the remote's is
+taken on the browser's machine, as it is while a local window holds the saved pairing port. A codespace in the browser
+forwards to an `https` address behind GitHub's sign-in, which Piwi Picker never pairs with, so it lists nothing there.
+The JetBrains platform has no public API to forward a port of a Gateway backend, nor to tell one from a local IDE:
+`GlobalPortForwardingManager` of the bundled Code With Me plugin is experimental in 2024.1 and 2026.2, with its
+parent's methods scheduled for removal in 2026.2, and `ClientSessionsManager` and `AppMode` are internal. **Pair with
+Piwi Picker** names the IDE's port and its runs' hub ports, to forward under **Ports** in the JetBrains Client at the
+same numbers, which the proof and the `Host` check take unchanged; a hub's port changes as its service starts again.
+PR 5's extension half is the Runs window's live view, the input on it, Pick on the image, and Pick, Record, Assert and
+Assert a region through the view at a headless stop, and differs from the text in six ways. The view is not shown
+whenever the window shows a stop: **Watch live**, a toggle above the image of a stop that takes `view`, asks for it,
+and it ends with the stop, as the window hides or closes, or when it is turned off; left on, it is asked again at the
+worker's next stop and as the window shows again, and a view whose hub connection was lost shows as ended, not asked
+again at that stop. Every button of a stop follows what it takes from this window (`stop.intents`), and a service that
+sends none gets the window as before, the actions in the test's window where the bar shows and no view. The
+background worker's one connection to a hub watches a stop while any window does: each window gets the frames of the
+stops it watches alone, ten a second at most, the latest one waiting, and the state narrowed to it, so a stop another
+window watches takes from it no input and, headless, none of those actions; input goes to the hub only for a stop the
+window watches itself. The input goes in batches about every 50 ms, the moves coalesced. Where the stop takes
+`input-clicks`, each button goes `down` and `up` as it does, with the browser's `detail` as its `clickCount`, so a
+double click is the one the system counts (a slow one at 320 ms included) and a single click waits for nothing;
+elsewhere, as for a worker before it, a drag goes as `down`, moves and `up`, and a click is held 250 ms so a second
+one at the same place makes one `click` of `clickCount` 2. The left and right buttons go to the page, the middle
+one, which opens a link in a new tab the view does not show, never. The keys go to the page
+while the view has the focus, as Playwright's names (Control or `⌘` as `ControlOrMeta`, with A, Y, Z, Enter and the
+editing keys alone), other characters and a paste as text; Escape gives the keyboard back to the window and never
+reaches the page, nor do the function keys and the browser's other shortcuts, and Tab moves the focus out unless a
+click into the view took the keyboard. Control, Alt and Meta held with a click go `key` `down` before it and `up`
+after it, with no change to the protocol, and Shift+click picks: **Pick on the image** is a toggle
+and a Shift+click on a stop's image, headed or not, or its view. The docs give the window a page of its own,
+[Runs window](../apps/docs/features/runs-window.md).
 The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of
@@ -601,9 +698,10 @@ Every protocol change lands with both clients, per the service's rule; the reque
   case) naming the process its name names: another machine's file, in a home folder several machines share, and any
   other file are skipped and left. `GET …/live` answers `{ hubs: [{ url, token, pid, version, client, roots,
   startedAt }] }`, never the run channel's token, and a 401 without the pairing's token; the URL is the pairing's with
-  `send` replaced by `live` (`liveUrlOf`). Its addresses are loopback ones: a remote window forwards them with Part 6,
-  and until then a remote VS Code window lists none (`vscode.env.remoteName`), its services listening on the remote
-  machine; the JetBrains IDEs' public API does not tell a Gateway backend from a local IDE, and it lists them there.
+  `send` replaced by `live` (`liveUrlOf`). Its addresses are loopback ones: a remote VS Code window lists its own
+  service's hub at the local port VS Code forwards to it (Part 6), its services listening on the remote machine; the
+  JetBrains IDEs' public API does not tell a Gateway backend from a local IDE, and it lists them there, at the ports
+  the person forwards at the same numbers.
 
   Before Piwi Picker sends the pairing's token to either endpoint, the program there proves it holds it
   (`@piwitests/core/editor-send`, as the desktop app proves its own): a request with a challenge in

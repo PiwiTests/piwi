@@ -801,7 +801,17 @@ describe('code from a stop, started from Piwi Picker', () => {
           ? heard.session
           : undefined;
       });
-      expect(session.workers[0]!.intents).toEqual(['pick', 'record', 'assert', 'assert-region', 'mock']);
+      expect(session.workers[0]!.intents).toEqual([
+        'pick',
+        'record',
+        'assert',
+        'assert-region',
+        'mock',
+        'view',
+        'input',
+        'input-clicks',
+        'pick-at',
+      ]);
 
       send({ type: 'requests', id: 2, ref, since });
       await answer(worker, 0, 'requests', { ok: true, message: 'The test kept 1 response.', requests: [KEPT] });

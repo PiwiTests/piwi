@@ -786,7 +786,9 @@ and the popup's Runs tile only ask the worker, and the worker handles the run sh
    - One answering 404 without it predates the proof (`outdated`). Send to editor then asks to update the editor's
      Piwi extension or plugin (`common_editorOutdated`).
 4. Then `GET …/live` with the pairing's token as a bearer token. `parseLiveAnswer` reads the answer: each hub's
-   address and token.
+   address and token, the address on 127.0.0.1 whatever loopback name the editor gave it (a remote VS Code window
+   lists its hub at the port it forwards). The token goes in `hello` before the hub proves anything, so a hub named
+   under `localhost` could reach another program on `[::1]`.
 5. The hubs go to the secret area under `hubs`, never to `chrome.storage.local`. Unpair removes them
    (`setEditorPairing(null)`).
 
@@ -808,7 +810,9 @@ An unreachable editor leaves the hubs found last to try.
 
 - It uses the browser's WebSocket (`browserSocket`), which sends the extension's origin.
 - It sends `hello` with the hub's token, then `subscribe` once the hub welcomed it. Each `session` the hub pushes is
-  kept by its ref. `RunHubs` keeps an ended run ten minutes with its last workers (`keepEnded`, five at most), so the
+  kept by its ref. The hub reads as connected to the windows only once the runs live at `subscribe` were heard
+  (`heardRuns`): a window forgets Watch live for a worker a connected hub no longer has, so a reconnection, the
+  worker's restart included, must not show a connected hub without its runs. `RunHubs` keeps an ended run ten minutes with its last workers (`keepEnded`, five at most), so the
   window still names its tests.
 - It sends `follow` with `on: true` while a Runs window is open (`RunHubs.listen`): as the first window's port
   connects, on each connection that opens meanwhile (a reconnection included), and `on: false` as the last one leaves.
@@ -816,6 +820,22 @@ An unreachable editor leaves the hubs found last to try.
   never does.
 - Each `code` the hub sends (what a code written at a stop came to) is passed on to the windows with its hub
   (`RunHubs.listen`, `RunsCode`).
+- A window watches a stop's live view through the hub's `view` (`RunHubs.view`). The connection watches a stop while
+  any window does: the hub hears `view` with `on: true` as the first one asks, and `on: false` as the last one stops,
+  closes (`unwatchAll`, from the port's disconnect) or, with no command, as the stop ends (`prune`, on each session).
+  A window is counted as watching from its ask, so the frames that come before the hub's answer reach it (a still
+  page sends one alone); a refusal takes it off.
+- Each `frame` goes to the windows that watch its stop (`RunsFrame`), while the connection's runs have the worker
+  stopped there: a `LatestPacer` per window and stop sends at most `MAX_VIEW_FPS` a second, the latest one waiting, no
+  other. The latest frame of each view is kept in memory alone, while the view lasts, and goes at once to a window
+  that comes to it: the hub sends this connection none for it, and a still page paints no other. None is stored.
+- A connection lost, or closed as the hubs change, ends the views it carried: each window that watched one hears
+  `view-ended` (`RunsViewer.ended`).
+- A window's `input` goes on only for a stop it watches itself, else the worker answers `unwatched`; `pick-at` from
+  any window, its answer's `locator` passed on.
+- The state each window gets is the hub's as one connection hears it, narrowed to the window (`stateForViewer`): the
+  worker's one connection watches every stop a window does, so a stop another window watches takes from this one no
+  input and, headless, none of the actions in the test's window.
 - Every message goes through `parseHubMessage`; one it cannot read is ignored.
 - A command gets the next `id` and waits for the answer of that `id`. When the connection is closed, or the answer
   does not come in time, the connection answers the command itself (`offline` or `timeout`). The hub's own `id` never
@@ -844,9 +864,11 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
 - At a stop, the test's controls are Resume, Step and Finish; Resume alone where it failed (`reason: 'failure'`, its
   state line **Failed at** and the place, the error under it: the stop's `error`, its lines kept, else, from a service
   or a reporter that predates it, read from its title, `stopError`).
-- In a group of their own come the actions the worker's `intents` list, which the hub fills from what the reporter and
-  the editor's client take: Pick, Record, Assert and Assert a region where the pause bar shows (`stop.bar`), Mock a
-  request at any stop.
+- In a group of their own come the actions the stop takes from this window (`stopIntents`): the hub's `stop.intents`,
+  what the reporter and the editor's client take, from this connection now. Pick, Record, Assert and Assert a region
+  where the pause bar shows, or at a headless stop while the window watches its live view; Mock a request at any
+  stop. A service that predates `stop.intents` gets the window as before it: the worker's `intents` where the pause bar
+  shows (`stop.bar`), Mock a request at any stop, and no live view.
 - No code comes to the window: it goes to the editor, which writes it (`piwi/stopCode`) and says there whether it did.
   The window shows the hub's sentences, read out, while the worker stands at the stop they name: the command's answer,
   then what the code came to (the hub's `code`, whichever surface started it): that it went to the editor to write
@@ -860,6 +882,34 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
 - An answer and a list belong to the stop they were asked at: a stop the worker no longer stands at shows neither, and
   an answer that comes after it is dropped (`send`).
 - The image of a stopped page is asked once per stop. It is shown as a `data:` JPEG, after its base64 is checked again.
+- **Watch live**, a toggle above the image where the stop takes `view`, asks for the stop's live view; its frames take
+  the image's place once one is decoded (aside first, the latest one waiting meanwhile, the others dropped), at the
+  window's width, its aspect kept, with a still **Live** badge. Neither the frames nor the badge are read out: the
+  view's name says it is live. The view ends with its stop, as the window hides (`visibilitychange`) or closes, and
+  when the person turns it off. While it stays on (`watchLive`), each next stop of the worker is watched too, and the
+  window watches again as it shows. A view whose hub's connection was lost shows as ended, with why, and is not asked
+  again at that stop. When the hub says why the view sends no frame (`refused`: the page is too heavy for it), its
+  sentence shows under the stop's image in place of the view's start, and is read out, until a frame comes.
+- Where the stop takes `input` from the window (only while it watches), the view takes `tabindex=0`, a focus ring and
+  the name that says keys and clicks go to the page, and plays them there (`ViewInputBatcher`,
+  `src/shared/view-input.ts`): the points in CSS pixels of the frame's viewport (`pagePoint`, the border left out, the
+  pointer event's own point, a mouse event's being whole pixels), a batch about every 50 ms, one on its way at a time,
+  the moves coalesced, the wheel once the view has the focus, at most 50 events waiting and 200 sent a second. The
+  buttons are read from `mousedown` and `mouseup`, whose `detail` counts a double click as the system does: where the
+  stop takes `input-clicks`, each goes `down` and `up` at once with that count; else a click is held 250 ms so the
+  next one there makes it a double click, and a drag goes as `down`, moves and `up`. The middle button never goes (it
+  opens a link in a new tab). Control, Alt and Meta held with a click go as `key` `down` before it and `up` after it;
+  Shift+click picks. A refusal shows once under the test.
+- The keys go to the page as `keyOnView` reads them: characters typed (printable ASCII as Playwright's key, any other
+  as text), named keys pressed with Shift, Control (`⌘` on macOS) as `ControlOrMeta` with A, Y, Z, Enter and the
+  editing keys, a paste as text, its control characters but a tab and its line breaks left out, as the hub and the
+  worker refuse them (`isViewTextControl`). The browser's other shortcuts, the function keys and Escape stay the window's: Escape
+  gives the keyboard back, on Watch live. Tab moves the focus on unless a click into the view took the keyboard
+  (`captured`), until Escape: a keyboard user never has the focus held there. A hint says so under the first view that
+  takes input.
+- **Pick on the image**, a toggle where the stop takes `pick-at` and the image or a frame names its viewport, or a
+  Shift+click on either, sends `pick-at` with the point; the answer's sentence shows its locator through `richText`,
+  read out. Escape turns the toggle off.
 - A hub's sentences are shown as text; a call's title goes through `richText`.
 - Each part of the window (a run's heading, a worker's state, its test, its stop, its image, its buttons, an answer)
   is kept by key and drawn again only when what it shows changes (`part`, `place`). So a button under the pointer
@@ -891,10 +941,16 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
 ### How the runs are tested
 
 - `run-hubs.test.ts` plays the editor's endpoint and each hub's socket: the proof, discovery, hello, subscribe,
-  `follow` with the windows, answers, what a code came to, keepalive, backoff and the shortcut.
+  `follow` with the windows, answers, what a code came to, keepalive, backoff and the shortcut; and the live view:
+  `view` as the first window asks and the last one leaves, the frames to the windows that watch alone, the latest one
+  at ten a second, input refused to a window that does not watch, a stop that ended, a connection lost, and the state
+  narrowed to each window.
+- `view-input.test.ts` covers which keys go to the page and as what, and the input's batches: coalesced moves, double
+  and triple clicks, drags, the wheel, texts joined, the bound, the rate, a refusal and `dispose`.
 - `editor-pairing.test.ts` checks Send to editor's proof against a JetBrains IDE's routes, and the pairing's address
   and `at`.
-- `runs.test.ts` covers the pure half (`src/shared/runs.ts`).
+- `runs.test.ts` covers the pure half (`src/shared/runs.ts`): the live view's commands field by field,
+  `stopIntents` and its fallback, `stateForViewer`, and `pagePoint`.
 - `runs.spec.ts` runs the real extension against the real editor service, started in-process
   (`tests/e2e/runs-fixtures.ts`, on `packages/editor/tests/run-fixtures.ts`). A stub stands in for the Send to editor
   endpoint, and a fake worker plays a run on the run channel. It covers the popup's tile; the window's Pause, Step
@@ -905,10 +961,15 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   response that states no size, an address whose credential the editor hides) to the route written, with what to
   review in it, and a mock the editor asks for itself; a refusal and a stop the test went on from; a failure held at
   its line with its error, and one an older reporter titles alone; the actions an older reporter or a headless stop
-  leaves out; and a plain run's headless failure, let go with no window open and held while one is.
-- `i18n.spec.ts` checks the window in French and German, the list open, nothing clipping.
+  leaves out; and a plain run's headless failure, let go with no window open and held while one is. The live view,
+  with the fake worker answering `view`, `input` and `pick-at` and sending frames: Watch live showing frames and
+  stopping them; a click, a double and a right click, the wheel and keys at the frame's CSS pixels, Escape and Tab
+  staying the window's; Pick on the image on the image and the view, a locator with markup shown as text; a headless
+  stop's actions once watched; a new stop, a hidden window and a closed one; and an older service (`olderEditor`, a
+  WebSocket server of the spec's own) showing the window as before.
+- `i18n.spec.ts` checks the window in French and German, the list open and the live view on, nothing clipping.
 - `docs-screenshots.spec.ts` captures `picker-runs.png` the same way: the page's image without the pause bar, as the
-  reporter takes it.
+  reporter takes it; and `picker-runs-live.png`, a headless stop watched live, the picker in its frame.
 
 ## Tested elements
 

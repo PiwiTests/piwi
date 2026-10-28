@@ -28,7 +28,7 @@ Every tool below runs on the live page, from the toolbar popup. The last three n
 | [Record actions](./record-actions) | a runnable spec from clicks and fills across pages |
 | [Report a bug](./report-a-bug) | a failing test and a report of a bug you reproduce |
 | [Developer tools](./devtools) | in DevTools: the selected element's locators, the locator console, the session, mocks, viewports |
-| [Runs from the editor](#runs-from-the-editor) | pause, step and resume the tests your editor runs, from a window beside them |
+| [Runs window](./runs-window) | pause, step and resume the tests your editor runs, and watch a headless one live |
 | [Matching functions](./record-actions#matching-functions) | a recording that calls your own functions |
 | [Test functions](#test-functions-against-this-page) | which of your functions work on this page |
 | [Tested elements](#tested-elements) | which elements of this page your tests reach |
@@ -65,33 +65,10 @@ project reaches, lists those tests, and marks the buttons, links and fields no t
 
 ## Runs from the editor
 
-With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-recording#send-from-piwi-picker), the popup shows a
-**Runs** tile under **More tools** while the editor answers. It opens the Runs window, to keep beside the test's
-browser. For each run the editor [started](./editor-runs), it shows the folder and the command, then each worker's
-test and whether it runs or where it stopped: the file and line, the call about to run, and an image of the page.
-
-**Pause** stops a running test before its next call. At a stop, **Resume**, **Step** and **Finish** do what they do
-[in the editor](./editor-run-control#the-controls); Run to cursor stays in the editor. The other actions send code
-to the editor, which writes it at the stopped line, when its Piwi extension and your reporter take them. Where the
-pause bar shows, **Pick** and **Record** start its **Pick a locator** and **Record here**, **Assert** the recorder's
-**Check an element**, and **Assert a region** a pick whose ARIA snapshot becomes `toMatchAriaSnapshot`. **Mock a
-request** lists the page's fetch and XHR requests, credentials hidden: the one you choose becomes a `page.route`.
-Under the test, the window says the code went to the editor, with what to review in it, or why not.
-
-A failing test is held at its line, a headless one only while a Runs window is open: **Failed at** in red, its error
-under it. **Resume** lets it end as it failed; **Pick** replaces the failing locator.
-
-<figure>
-  <img src="/screenshots/picker-runs.png" alt="The Runs window beside a shop page stopped before a click on Checkout: the test, its place, an image of the page, its controls and code actions">
-  <figcaption>The Runs window, beside a test stopped at a breakpoint.</figcaption>
-</figure>
-
-The run shortcut resumes the stopped tests, else pauses every run. It has no key until you set one: **Set a
-shortcut** opens the browser's shortcuts page, where you give it a key and, in Chrome and Edge, the **Global** scope.
-In Firefox, it works while Firefox has the focus.
-
-The background worker reaches the editor's services on `127.0.0.1` only once the paired port proves it holds the
-pairing's token: [how the pieces connect](./editor-run-control#how-it-works).
+With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-recording#send-from-piwi-picker), the popup's
+**Runs** tile, under **More tools**, opens the [Runs window](./runs-window): the tests your editor runs, paused,
+stepped and resumed from a window beside them, code written from a stop, and a headless test's page watched live,
+clicked and typed on, and picked on.
 
 ## Languages
 
@@ -142,5 +119,6 @@ project** select overrides both for the session. See [Extension connection](./ex
 - [Fix a broken locator](/recipes/broken-locator): from a failing locator to the one to use instead
 - [Extension connection](./extension-connection): connecting in one step, and the URL patterns kept on the instance
 - [Tested elements](./tested-elements): the elements your tests reach, drawn on the page
+- [Runs window](./runs-window): the editor's runs, steered and watched from the browser
 - [Test functions catalog](./test-functions): the functions a recording can call
 - [Locator healing](./locator-healing): the replacement Piwi proposes after a failure

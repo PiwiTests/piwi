@@ -436,7 +436,9 @@ VSCode keymaps' `F5`, `Debug`; NetBeans' `F4`, `EditSource`) runs Piwi's while i
 
 **The paused page.** A stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`, at
 most `Glue.MAX_IMAGE_DATA`, decoded only within `Glue.decodableImage`) in the **Paused Page** tab of the Piwi tool
-window, again at each such stop.
+window, again at each such stop. Where its worker takes `pick-at` and the image names its viewport
+(`Glue.picksOnImage`), a click on the image picks the element under it (`piwi/pickAt`, the point scaled to the page's
+CSS pixels by `Glue.pagePoint`), its locator going where a pick goes, the answer said under the image.
 
 **Breakpoints during a run.** An `XBreakpointListener` sends the breakpoints `PiwiProjectService.breakpoints` gives to
 each live run 100 ms after a burst of changes, and the settings page does when the breakpoints checkbox changes. They go
@@ -603,7 +605,9 @@ meanwhile included. `PiwiRecordingTest` drives it with synthetic updates, the ca
 ## Send to editor
 
 `PiwiSendHandler.kt` is the Send to editor endpoint: `POST /api/piwi/send` on the IDE's built-in server, with the token
-from `PasswordSafe`. **Pair with Piwi Picker** copies the pairing address. The handler mirrors
+from `PasswordSafe`. **Pair with Piwi Picker** copies the pairing address, and names the ports a JetBrains Gateway
+backend's person forwards under **Ports** in the JetBrains Client, at the same numbers: the IDE's and the live run
+hubs' (`Glue.forwardingHint`; the platform has no public way to forward one). The handler mirrors
 `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`).
 
 **Threads.** A preflight without a challenge is answered on the I/O thread. Every other request is served on a pooled

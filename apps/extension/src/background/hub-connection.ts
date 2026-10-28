@@ -1,8 +1,8 @@
 /**
  * One connection to an editor service's hub (`@piwitests/core/run-hub`), from the background worker alone: the
  * WebSocket the editor's live endpoint named, `hello` with its token, `subscribe` once welcomed, then each run as the
- * hub pushes it, and what each code written at a stop came to. Every message is read with `parseHubMessage`, field by
- * field; one it cannot read is left aside, as a newer hub's would be. A command waits for the answer of its `id`, and
+ * hub pushes it, what each code written at a stop came to, and the frames of the live views it watches. Every message
+ * is read with `parseHubMessage`, field by field; one it cannot read is left aside, as a newer hub's would be. A command waits for the answer of its `id`, and
  * is answered by the worker itself when the connection closes or the hub stays silent. The hub sends `keepalive` every
  * `keepaliveMs`: a connection that hears nothing for two of them and a bit is closed as silent.
  */
@@ -12,6 +12,8 @@ import {
   type HubAnswer,
   type HubCodeMessage,
   type HubCommand,
+  type HubFrameMessage,
+  type HubFrameRefusal,
   type HubSession,
   type HubWelcome,
   type LiveHub,
@@ -60,12 +62,14 @@ export type HubRequest = HubCommand extends infer C ? (C extends HubCommand ? Om
 export interface HubConnectionEvents {
   /** The hub welcomed it: the connection went from connecting to open. */
   opened(): void;
-  /** Its state or a run changed. */
+  /** A run changed, the runs live at `subscribe` were heard, or the connection closed. */
   changed(): void;
   /** A run ended, as the hub said last; `sessions` still holds it as it was before. */
   ended(session: HubSession): void;
   /** What an action that writes code at a stop came to, as the hub said. */
   code(code: HubCodeMessage): void;
+  /** A frame of a stop's live view the connection watches, or why none comes. */
+  frame(frame: HubFrameMessage | HubFrameRefusal): void;
   /** The connection closed by itself. */
   lost(why: HubLoss): void;
 }
@@ -88,6 +92,11 @@ export class HubConnection {
   welcome: HubWelcome | null = null;
   /** The live runs, by ref. */
   readonly sessions = new Map<string, HubSession>();
+  /**
+   * The runs live at `subscribe` were heard: until then, `sessions` may lack some of them, and the connection is no
+   * hub that answers for its runs yet (`RunHubs` says it is not connected).
+   */
+  heardRuns = false;
   /** Resolves once the runs live at `subscribe` were heard, or the connection closed. */
   readonly ready: Promise<void>;
 
@@ -170,9 +179,14 @@ export class HubConnection {
       this.silenceMs = message.keepaliveMs * 2 + this.timings.silenceSlackMs;
       this.listen();
       this.subscribeId = this.nextId;
-      void this.command({ type: 'subscribe' }).then(() => this.markReady());
+      // A change once the runs live now were heard: before, a run not heard yet would read as gone.
+      void this.command({ type: 'subscribe' }).then(() => {
+        this.markReady();
+        if (this.state !== 'open') return;
+        this.heardRuns = true;
+        this.events.changed();
+      });
       this.events.opened();
-      this.events.changed();
       return;
     }
     switch (message.type) {
@@ -180,6 +194,8 @@ export class HubConnection {
         return this.answered(message);
       case 'code':
         return this.events.code(message);
+      case 'frame':
+        return this.events.frame(message);
       case 'session': {
         const { session } = message;
         if (session.ended) {
@@ -208,12 +224,13 @@ export class HubConnection {
       return;
     }
     // What the window reads of an answer, each part read field by field by `parseHubMessage`; the hub's id stays here.
-    const { ok, message, image, requests } = answer;
+    const { ok, message, image, requests, locator } = answer;
     waiting.resolve({
       ok,
       message,
       ...(image === undefined ? {} : { image }),
       ...(requests === undefined ? {} : { requests }),
+      ...(locator === undefined ? {} : { locator }),
     });
   }
 

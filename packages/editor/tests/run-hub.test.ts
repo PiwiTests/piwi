@@ -152,6 +152,36 @@ describe('the handshake', () => {
     expect(plain.status).toBe(426);
   });
 
+  test('takes a loopback Host at a port the client forwards to it only once named, the origin and token still needed', async () => {
+    const forwarded = hub.port === 65_535 ? hub.port - 1 : hub.port + 1;
+    expect(await open({ host: `127.0.0.1:${forwarded}` })).toBe(403);
+    expect(await svc.client.sendRequest('piwi/hub', { forwarded: [forwarded, 0, 70_000] })).toEqual({
+      url: hub.url,
+      forwarded: [forwarded],
+    });
+    try {
+      const client = (await open({ host: `localhost:${forwarded}` })) as Client;
+      client.send({ type: 'hello', token: 'x'.repeat(32) });
+      expect(await client.closed).toMatchObject({ code: 4001 });
+      const welcomed = (await open({ host: `127.0.0.1:${forwarded}` })) as Client;
+      welcomed.send({ type: 'hello', token: hub.token });
+      expect(await waitFor(() => welcomed.messages[0])).toMatchObject({ type: 'welcome' });
+      welcomed.socket.close();
+      expect(await open({ host: `evil.test:${forwarded}`, origin: ORIGIN })).toBe(403);
+      expect(await open({ host: `127.0.0.1:${forwarded}`, origin: `http://127.0.0.1:${forwarded}` })).toBe(403);
+      expect(await open({ host: `127.0.0.1:${forwarded + 1}` })).toBe(403);
+      // Asking the address alone changes nothing.
+      expect(await svc.client.sendRequest('piwi/hub', {})).toEqual({ url: hub.url, forwarded: [forwarded] });
+    } finally {
+      await svc.client.sendRequest('piwi/hub', { forwarded: [] });
+    }
+    // Forgotten, the port is refused again; the hub's own still opens.
+    expect(await open({ host: `127.0.0.1:${forwarded}` })).toBe(403);
+    const own = await open();
+    expect(typeof own).toBe('object');
+    (own as Client).socket.close();
+  });
+
   test('closes a connection whose first message is not hello with the token, or that says nothing in time', async () => {
     const wrong = (await open()) as Client;
     wrong.send({ type: 'hello', token: 'x'.repeat(32) });
@@ -465,7 +495,12 @@ function ownHub(
   refusal = 'No action here.',
 ): Promise<RunHub | null> {
   const session: RunSession = { ref: 'ed-1', root: '/work/shop', workers: [], ended: false };
-  const sessions = { current: () => [session], intentsOf: () => [] } as unknown as RunSessions;
+  const sessions = {
+    current: () => [session],
+    intentsOf: () => [],
+    stopIntentsOf: () => [],
+    unwatchAll: () => {},
+  } as unknown as RunSessions;
   return RunHub.open({
     sessions,
     actions: {
@@ -555,7 +590,10 @@ describe('a failure held at its line', () => {
         const stop = svc.latest(ref)?.workers[0]?.stop;
         return stop?.since === since ? stop : undefined;
       };
-      expect(await waitFor(() => stopOf(heard.since))).toEqual(heard);
+      // Piwi Picker hears what the stop takes from it, the client what its worker takes.
+      const { intents, ...asTheClientHears } = heard;
+      expect(intents).toEqual(['pick', 'record']);
+      expect(await waitFor(() => stopOf(heard.since))).toEqual(asTheClientHears);
       worker.send({ type: 'running', stop: 1 });
       await waitFor(() => (client.session(ref)?.workers[0]?.stop ? undefined : true));
       failed(2, undefined);

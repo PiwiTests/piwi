@@ -1,36 +1,52 @@
 import { LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
-import type { HubImage, HubKeptRequest, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
+import type { HubAction, HubImage, HubKeptRequest, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
+import { isViewFrameData, type ViewButton, type ViewInput } from '@piwitests/core/run-view';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
-import { decorateIcons, iconText, setLabel, type IconName } from '../shared/icons.js';
+import { decorateIcons, icon, iconText, setLabel, type IconName } from '../shared/icons.js';
 import { formatUnit, initI18n, localizeDocument, t, tn, tNodes } from '../shared/i18n.js';
 import {
+  IN_WINDOW,
   RUNS_PING_MS,
   RUNS_PORT,
   RUN_COMMAND,
+  pagePoint,
   stopError,
+  stopIntents,
   stopPlace,
   testName,
   workerKey,
   type RunsAnswer,
   type RunsCode,
   type RunsEvent,
+  type RunsFrame,
   type RunsRequest,
   type RunsRun,
   type RunsState,
+  type RunsView,
   type RunsWhat,
 } from '../shared/runs.js';
 import { STEP_CSS, richText, urlView } from '../shared/step-view.js';
+import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '../shared/view-input.js';
 
 /**
  * The Runs window: the runs the paired editor started, each worker's test and where it stands, an image of a stopped
- * page, and the controls, with the code a stop can write (Pick, Record, Assert, Assert a region, Mock a request) as the
- * worker's reporter and the editor take them. Opened from the popup's Runs tile in a small window of its own. It reads
- * everything from the background worker through its port (`RUNS_PORT`), and makes no network call: the worker holds the
- * hubs' connections and tokens. The code itself never comes here: it goes to the editor, which writes it and says there
- * whether it did, and the window shows what the hub answered and what each code made at the stop came to (sent to the
- * editor to write, or refused), whoever asked for it. What a hub sends is shown as text, and its image as an image.
- * Each part of the window is drawn again only when what it shows changes (`part`), so a button under the pointer or the
- * keyboard stays the same element while the run goes on around it.
+ * page or its live view, and the controls, with the code a stop can write (Pick, Record, Assert, Assert a region, Mock
+ * a request) as the stop takes them from this window (`stopIntents`). Opened from the popup's Runs tile in a small
+ * window of its own. It reads everything from the background worker through its port (`RUNS_PORT`), and makes no
+ * network call: the worker holds the hubs' connections and tokens. The code itself never comes here: it goes to the
+ * editor, which writes it and says there whether it did, and the window shows what the hub answered and what each code
+ * made at the stop came to (sent to the editor to write, or refused), whoever asked for it. What a hub sends is shown
+ * as text, and its image and the frames of a live view as images, the latest frame alone kept, in memory. Each part of
+ * the window is drawn again only when what it shows changes (`part`), so a button under the pointer or the keyboard
+ * stays the same element while the run goes on around it.
+ *
+ * Watch live shows the stop's frames in place of its image, while the window shows that stop: the view ends as the
+ * stop does, the window hides or Watch live is turned off, and comes again at the worker's next stop while Watch live
+ * stays on. Where the stop takes input from this window (`input`), the pointer and the keys on the live view go to the
+ * page, the left and right buttons with the click count the system gave them where the stop takes it
+ * (`input-clicks`), Control, Alt and Meta held around a click: Tab moves the focus on unless a click into the view
+ * took the keyboard, and Escape gives it back, as it does the browser's shortcuts. Pick on the image, or a Shift+click
+ * on the image or the view, names the element under the pointer.
  */
 
 await initI18n();
@@ -51,8 +67,17 @@ const shortcutText = document.getElementById('shortcut-text') as HTMLElement;
 const shortcutActions = document.getElementById('shortcut-actions') as HTMLElement;
 
 let state: RunsState | null = null;
-/** The image of each stopped worker's page, for the stop it was taken at. */
-const images = new Map<string, { since: string; loading: boolean; img: HTMLImageElement | null; note: string }>();
+/** The image of each stopped worker's page, for the stop it was taken at, with the viewport it shows. */
+const images = new Map<
+  string,
+  {
+    since: string;
+    loading: boolean;
+    img: HTMLImageElement | null;
+    note: string;
+    viewport: { width: number; height: number } | null;
+  }
+>();
 /**
  * What the last command for a worker answered, or what the last code made at its stop came to, when there is
  * something to say, for the stop it was sent at (null for Pause): shown while the worker stands there, and gone with
@@ -60,7 +85,7 @@ const images = new Map<string, { since: string; loading: boolean; img: HTMLImage
  */
 const answers = new Map<
   string,
-  { ok: boolean; text: string; since: string | null; sent: boolean; warnings: string[] }
+  { ok: boolean; text: string; since: string | null; sent: boolean; warnings: string[]; rich: boolean }
 >();
 /** The requests a stopped worker's test kept, listed for Mock a request at the stop they were asked at. */
 interface RequestList {
@@ -105,6 +130,10 @@ function connect(): void {
       showState(event.state);
     } else if (event?.type === 'code') {
       heardCode(event);
+    } else if (event?.type === 'frame') {
+      heardFrame(event);
+    } else if (event?.type === 'view-ended') {
+      heardViewEnded(event);
     } else if (event?.type === 'answer') {
       const { id, type: _type, ...answer } = event;
       waiting.get(id)?.(answer);
@@ -115,6 +144,8 @@ function connect(): void {
     if (port === opened) port = null;
     for (const resolve of waiting.values()) resolve({ ok: false, message: '', failure: 'offline' });
     waiting.clear();
+    // The worker that relayed the views is gone: the next one watches each again that Watch live left on.
+    for (const [key, view] of views) if (isLive(view)) endView(key, false);
     // The worker stopped (it is started again by the connection) or restarted.
     setTimeout(connect, 500);
   });
@@ -126,12 +157,16 @@ function connect(): void {
     .catch(() => undefined);
 }
 
+/** What a command names besides its stop: the response to mock, whether a view is on, the input, a point. */
+type CommandExtra = Pick<Extract<RunsRequest, { type: 'command' }>, 'request' | 'on' | 'events' | 'x' | 'y'>;
+
 function command(
-  run: RunsRun,
+  hub: string,
+  ref: string,
   worker: number | null,
   what: RunsWhat,
   since: string | null,
-  request?: number,
+  extra: CommandExtra = {},
 ): Promise<RunsAnswer> {
   const id = nextId++;
   return new Promise((resolve) => {
@@ -140,14 +175,14 @@ function command(
       return;
     }
     waiting.set(id, resolve);
-    const asked = { type: 'command', id, hub: run.hub, ref: run.session.ref, worker, since, what } as const;
-    post(request === undefined ? asked : { ...asked, request });
+    post({ type: 'command', id, hub, ref, worker, since, what, ...extra });
   });
 }
 
 function failureText(answer: RunsAnswer): string {
   if (answer.failure === 'offline') return t('runs_failOffline');
   if (answer.failure === 'timeout') return t('runs_failTimeout');
+  if (answer.failure === 'unwatched') return t('runs_failUnwatched');
   return answer.message;
 }
 
@@ -169,7 +204,7 @@ async function send(
   worker: number,
   what: RunsWhat,
   since: string | null,
-  request?: number,
+  extra: CommandExtra = {},
 ): Promise<RunsAnswer | null> {
   const key = workerKey(run.hub, run.session.ref, { worker });
   // A command on its way: the buttons say so (`aria-disabled`) and take no other until it is answered.
@@ -179,17 +214,26 @@ async function send(
   busy.add(key);
   answers.delete(key);
   render();
-  const answer = await command(run, worker, what, since, request);
+  const answer = await command(run.hub, run.session.ref, worker, what, since, extra);
   busy.delete(key);
   if (stopNow(run, worker) === since) return answer;
   render();
   return null;
 }
 
-/** Shows what a command answered under the test, or what a code came to, with what to check in it, and reads it out. */
-function say(key: string, answer: RunsAnswer, since: string | null, sent = false, warnings: string[] = []): void {
+/**
+ * Shows what a command answered under the test, or what a code came to, with what to check in it, and reads it out:
+ * `sent` when it went to the editor, `rich` for a sentence whose locators are set apart (a pick on the image's).
+ */
+function say(
+  key: string,
+  answer: RunsAnswer,
+  since: string | null,
+  options: { sent?: boolean; warnings?: string[]; rich?: boolean } = {},
+): void {
+  const { sent = false, warnings = [], rich = false } = options;
   const text = answer.ok ? answer.message : failureText(answer);
-  answers.set(key, { ok: answer.ok, text, since, sent: answer.ok && sent, warnings });
+  answers.set(key, { ok: answer.ok, text, since, sent: answer.ok && sent, warnings, rich });
   if (text) announce([text, ...warnings].join(' '));
 }
 
@@ -201,12 +245,9 @@ function heardCode(code: RunsCode): void {
   const run = state?.runs.find((r) => r.hub === code.hub && r.session.ref === code.ref && !r.session.ended);
   if (!run || stopNow(run, code.worker) !== code.since) return;
   const key = workerKey(code.hub, code.ref, { worker: code.worker });
-  say(key, { ok: code.ok, message: code.message }, code.since, true, code.warnings);
+  say(key, { ok: code.ok, message: code.message }, code.since, { sent: true, warnings: code.warnings });
   render();
 }
-
-/** The intents a stop starts in the test's window, which say there what to do. */
-const IN_WINDOW = ['pick', 'record', 'assert', 'assert-region'] as const;
 
 /** A control of the window, for the stop its button was drawn for (`since`, null for Pause). */
 async function control(run: RunsRun, worker: number, what: Control, since: string | null): Promise<void> {
@@ -244,11 +285,11 @@ async function toggleRequests(run: RunsRun, worker: number, since: string): Prom
 /** Mocks the request chosen in the list: the code goes to the editor to write; the list closes once it went. */
 async function mockRequest(run: RunsRun, worker: number, since: string, request: number): Promise<void> {
   const key = workerKey(run.hub, run.session.ref, { worker });
-  const answer = await send(run, worker, 'mock', since, request);
+  const answer = await send(run, worker, 'mock', since, { request });
   if (!answer) return;
   // The hub said what the code came to before this answer, with what to review in it: the answer says it again.
   const shown = answers.get(key);
-  if (!(answer.ok && shown?.since === since && shown.text === answer.message)) say(key, answer, since, true);
+  if (!(answer.ok && shown?.since === since && shown.text === answer.message)) say(key, answer, since, { sent: true });
   if (answer.ok) closeRequests(key);
   render();
 }
@@ -263,20 +304,31 @@ function closeRequests(key: string): void {
 function wantImage(run: RunsRun, worker: HubWorker, stop: HubStop): void {
   const key = workerKey(run.hub, run.session.ref, worker);
   if (images.get(key)?.since === stop.since) return;
-  images.set(key, { since: stop.since, loading: true, img: null, note: '' });
-  void command(run, worker.worker, 'image', stop.since).then((answer) => {
+  images.set(key, { since: stop.since, loading: true, img: null, note: '', viewport: null });
+  void command(run.hub, run.session.ref, worker.worker, 'image', stop.since).then((answer) => {
     if (images.get(key)?.since !== stop.since) return;
     let img: HTMLImageElement | null = null;
-    if (answer.ok && isImage(answer.image)) {
+    const image = answer.ok && isImage(answer.image) ? answer.image : null;
+    const viewport = image?.width && image.height ? { width: image.width, height: image.height } : null;
+    if (image) {
       // One element per stop, moved into each rendering, so the image is decoded once.
-      img = element('img');
-      img.alt =
+      const made = element('img');
+      made.alt =
         stop.reason === 'failure'
           ? t('runs_imageAltFailure', { error: stopError(stop).split('\n')[0]! })
           : t('runs_imageAlt', { call: stop.title });
-      img.src = `data:image/jpeg;base64,${answer.image.data}`;
+      made.src = `data:image/jpeg;base64,${image.data}`;
+      made.draggable = false;
+      // Pick on the image: a Shift+click, or a click while Pick on the image waits for one.
+      made.addEventListener('pointerdown', (event) => {
+        const kept = images.get(key);
+        if (!(event.shiftKey || picking.has(key)) || kept?.since !== stop.since || !kept.viewport) return;
+        event.preventDefault();
+        void pickOnImage(key, stop.since, made, event, kept.viewport);
+      });
+      img = made;
     }
-    images.set(key, { since: stop.since, loading: false, img, note: img ? '' : failureText(answer) });
+    images.set(key, { since: stop.since, loading: false, img, note: img ? '' : failureText(answer), viewport });
     render();
   });
 }
@@ -285,6 +337,388 @@ function wantImage(run: RunsRun, worker: HubWorker, stop: HubStop): void {
 function isImage(image: HubImage | null | undefined): image is HubImage {
   return !!image && image.mime === 'image/jpeg' && /^[A-Za-z0-9+/]+={0,2}$/.test(image.data);
 }
+
+// ── The live view ───────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A frame of a live view that is an image. */
+type ImageFrame = Extract<RunsFrame, { data: string }>;
+
+/** A stopped worker's live view, for the stop it watches: what the window shows of it, and the input it sends. */
+interface LiveView extends RunsView {
+  /** Asked of the hub and not answered yet; on; ended as the hub's connection was lost; or refused. */
+  status: 'starting' | 'on' | 'ended' | 'refused';
+  /** Why it ended or was refused. */
+  note: string;
+  /** The image the frames are drawn in, one element for the view, and the viewport of the frame it shows. */
+  img: HTMLImageElement;
+  viewport: { width: number; height: number } | null;
+  /** The latest frame not drawn yet, while another one decodes: the others are dropped. */
+  next: ImageFrame | null;
+  decoding: boolean;
+  /** The hub's sentence saying why no frame comes now (the page is too heavy for the view), until one does. */
+  heavy: string;
+  /** Whether the stop takes this window's input now (`input` among its intents), and what sends it. */
+  inputOn: boolean;
+  input: ViewInputBatcher | null;
+  /** Whether a click into the view took the keyboard, Tab included, until Escape gives it back. */
+  captured: boolean;
+}
+
+/** Each stopped worker's live view, by worker. */
+const views = new Map<string, LiveView>();
+/** The workers whose Watch live the person left on, each with its hub: each new stop of theirs is watched too. */
+const watchLive = new Map<string, string>();
+/** The workers whose Pick on the image waits for a click on the image. */
+const picking = new Set<string>();
+/** The view (worker and stop) the hint on its input shows under: the first one this window gave input to. */
+let hintFor: string | null = null;
+
+/** Whether the person's computer is a Mac, whose ⌘ holds the shortcuts. */
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
+/** The buttons that go to the page: the middle one stays the window's, as it opens what it clicks in a new tab. */
+const BUTTONS: Record<number, ViewButton> = { 0: 'left', 2: 'right' };
+
+/** The keys held with a click, which go down around it in the page (Shift+click picks instead). */
+function modifiersOf(event: MouseEvent): ViewModifier[] {
+  const held: ViewModifier[] = [];
+  if (event.ctrlKey) held.push('Control');
+  if (event.altKey) held.push('Alt');
+  if (event.metaKey) held.push('Meta');
+  return held;
+}
+
+function isLive(view: LiveView | undefined): view is LiveView {
+  return !!view && (view.status === 'starting' || view.status === 'on');
+}
+
+/** The run, the worker and the stop a worker of the state stands at, while it does. */
+function stoppedAt(key: string): { run: RunsRun; worker: HubWorker; stop: HubStop } | null {
+  for (const run of state?.runs ?? []) {
+    if (run.session.ended) continue;
+    for (const worker of run.session.workers) {
+      if (workerKey(run.hub, run.session.ref, worker) !== key) continue;
+      return worker.state === 'stopped' && worker.stop ? { run, worker, stop: worker.stop } : null;
+    }
+  }
+  return null;
+}
+
+/** Watch live, on or off for a worker; on, every next stop of the worker is watched too, until it is turned off. */
+function toggleLive(run: RunsRun, worker: number, stop: HubStop): void {
+  const key = workerKey(run.hub, run.session.ref, { worker });
+  const view = views.get(key);
+  if (view?.since === stop.since && isLive(view)) {
+    watchLive.delete(key);
+    endView(key, true);
+  } else {
+    watchLive.set(key, run.hub);
+    startView(run, worker, stop);
+  }
+  render();
+}
+
+/** Asks the hub for a stop's live view; its frames take the image's place once the first one is drawn. */
+function startView(run: RunsRun, worker: number, stop: HubStop): void {
+  const key = workerKey(run.hub, run.session.ref, { worker });
+  endView(key, false);
+  const view: LiveView = {
+    hub: run.hub,
+    ref: run.session.ref,
+    worker,
+    since: stop.since,
+    status: 'starting',
+    note: '',
+    img: element('img', 'live'),
+    viewport: null,
+    next: null,
+    decoding: false,
+    heavy: '',
+    inputOn: false,
+    input: null,
+    captured: false,
+  };
+  liveImage(key, view);
+  views.set(key, view);
+  void command(view.hub, view.ref, worker, 'view', stop.since, { on: true }).then((answer) => {
+    if (views.get(key) !== view || !isLive(view)) return;
+    if (answer.ok) {
+      view.status = 'on';
+    } else {
+      stopInput(view);
+      view.status = 'refused';
+      view.note = failureText(answer);
+      view.next = null;
+      announce(view.note);
+    }
+    render();
+  });
+}
+
+/** A worker's view ends: its input and its frames are dropped; the hub hears it (`tell`) while it was on. */
+function endView(key: string, tell: boolean): void {
+  const view = views.get(key);
+  if (!view) return;
+  views.delete(key);
+  stopInput(view);
+  view.next = null;
+  view.img.removeAttribute('src');
+  if (hintFor === `${key}|${view.since}`) hintFor = '';
+  if (tell && isLive(view)) void command(view.hub, view.ref, view.worker, 'view', view.since, { on: false });
+}
+
+function stopInput(view: LiveView): void {
+  view.input?.dispose();
+  view.input = null;
+  view.inputOn = false;
+  view.captured = false;
+}
+
+/** The input on a view follows what its stop takes from this window: none while it takes none. */
+function syncInput(key: string, view: LiveView, on: boolean, clickCounts: boolean): void {
+  if (on && !view.input) {
+    view.input = new ViewInputBatcher({ send: (events) => sendInput(key, view, events), clickCounts });
+  }
+  if (!on) stopInput(view);
+  view.inputOn = on;
+  if (on && hintFor === null) hintFor = `${key}|${view.since}`;
+}
+
+/** Sends a batch of input for the stop a view watches, while it does; a refusal shows once under the test. */
+async function sendInput(key: string, view: LiveView, events: ViewInput[]): Promise<boolean> {
+  if (views.get(key) !== view || !view.inputOn) return false;
+  const answer = await command(view.hub, view.ref, view.worker, 'input', view.since, { events });
+  if (answer.ok || views.get(key) !== view) return answer.ok;
+  if (answers.get(key)?.text !== failureText(answer)) {
+    say(key, answer, view.since);
+    render();
+  }
+  return false;
+}
+
+/**
+ * A frame of a view this window watches: drawn once decoded, the latest one alone waiting meanwhile. Why no frame
+ * comes, when the hub says so, is shown under the view until one does.
+ */
+function heardFrame(frame: RunsFrame): void {
+  const key = workerKey(frame.hub, frame.ref, frame);
+  const view = views.get(key);
+  // A frame of a stop the window no longer watches, or no longer shows, goes nowhere.
+  if (!isLive(view) || view.since !== frame.since) return;
+  if ('refused' in frame) {
+    if (view.heavy === frame.refused) return;
+    view.heavy = frame.refused;
+    announce(view.heavy);
+    render();
+    return;
+  }
+  if (!isViewFrameData(frame.data)) return;
+  view.next = frame;
+  if (!view.decoding) void drawFrames(key, view);
+}
+
+async function drawFrames(key: string, view: LiveView): Promise<void> {
+  view.decoding = true;
+  while (view.next && views.get(key) === view) {
+    const frame = view.next;
+    view.next = null;
+    const src = `data:image/jpeg;base64,${frame.data}`;
+    // Decoded aside first: the view shows the frame before until this one is whole.
+    const decoded = new Image();
+    decoded.src = src;
+    try {
+      await decoded.decode();
+    } catch {
+      continue;
+    }
+    if (views.get(key) !== view || !isLive(view)) break;
+    const changed = !view.viewport || !!view.heavy;
+    view.img.src = src;
+    view.viewport = { width: frame.width, height: frame.height };
+    view.heavy = '';
+    if (changed) render();
+  }
+  view.decoding = false;
+}
+
+/** A view this window watched ended without its asking: the hub's connection was lost. */
+function heardViewEnded(ended: RunsView): void {
+  const key = workerKey(ended.hub, ended.ref, ended);
+  const view = views.get(key);
+  if (!isLive(view) || view.since !== ended.since) return;
+  stopInput(view);
+  view.status = 'ended';
+  view.note = t('runs_liveLost');
+  view.next = null;
+  view.img.removeAttribute('src');
+  view.viewport = null;
+  announce(view.note);
+  render();
+}
+
+/** Where a pointer event is on an image, in CSS pixels of the viewport it shows. */
+function pointOn(
+  img: HTMLImageElement,
+  event: MouseEvent,
+  viewport: { width: number; height: number },
+): { x: number; y: number } | null {
+  const rect = img.getBoundingClientRect();
+  return pagePoint(
+    { x: event.clientX - rect.left - img.clientLeft, y: event.clientY - rect.top - img.clientTop },
+    { width: img.clientWidth, height: img.clientHeight },
+    viewport,
+  );
+}
+
+/** The live view's image: the pointer, the wheel, the keys and a paste on it go to the page while it takes input. */
+function liveImage(key: string, view: LiveView): void {
+  const { img } = view;
+  img.draggable = false;
+  img.dataset.focus = `${key}|view`;
+  const at = (event: MouseEvent) => (view.viewport ? pointOn(img, event, view.viewport) : null);
+  /** Where the pointer event before a mouse event put the pointer: a mouse event's own point is whole pixels. */
+  let pointed: { x: number; y: number } | null = null;
+  img.addEventListener('pointerdown', (event) => {
+    if (event.shiftKey || picking.has(key)) {
+      // No mouse event follows: the page gets nothing of it.
+      event.preventDefault();
+      if (view.viewport) void pickOnImage(key, view.since, img, event, view.viewport);
+      return;
+    }
+    pointed = at(event);
+    if (!view.input || !BUTTONS[event.button] || !pointed) return;
+    // A click into the view takes the keyboard, Tab included.
+    img.focus({ preventScroll: true });
+    view.captured = true;
+    img.setPointerCapture?.(event.pointerId);
+  });
+  // The buttons as the mouse events name them, which count a double click as the system does (`detail`).
+  img.addEventListener('mousedown', (event) => {
+    if (!view.input) return;
+    // The image is no picture to drag or select, and the middle button scrolls nothing here.
+    event.preventDefault();
+    const button = BUTTONS[event.button];
+    const point = pointed ?? at(event);
+    if (button && point) {
+      view.input.down(button, point.x, point.y, { count: event.detail, modifiers: modifiersOf(event) });
+    }
+  });
+  img.addEventListener('pointermove', (event) => {
+    pointed = at(event);
+    if (view.input && pointed) view.input.move(pointed.x, pointed.y);
+  });
+  img.addEventListener('pointerup', (event) => {
+    pointed = at(event);
+  });
+  img.addEventListener('mouseup', (event) => {
+    const button = BUTTONS[event.button];
+    const point = pointed ?? at(event);
+    if (view.input && button && point) view.input.up(button, point.x, point.y, { count: event.detail });
+  });
+  img.addEventListener('pointercancel', (event) => {
+    const point = at(event);
+    if (view.input && point) view.input.cancel(point.x, point.y);
+  });
+  // A right click goes to the page, not to this window's menu.
+  img.addEventListener('contextmenu', (event) => {
+    if (view.input) event.preventDefault();
+  });
+  // The wheel scrolls the page once the view has the focus; until then it scrolls this window.
+  img.addEventListener(
+    'wheel',
+    (event) => {
+      const point = at(event);
+      if (!view.input || !point || document.activeElement !== img) return;
+      event.preventDefault();
+      const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? (view.viewport?.height ?? 600) : 1;
+      view.input.wheel(point.x, point.y, event.deltaX * scale, event.deltaY * scale);
+    },
+    { passive: false },
+  );
+  img.addEventListener('keydown', (event) => {
+    if (!view.input) return;
+    const decided = keyOnView(
+      {
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        altGraph: event.getModifierState?.('AltGraph') ?? false,
+        isComposing: event.isComposing,
+      },
+      { mac: MAC, captured: view.captured },
+    );
+    if (decided === 'leave') {
+      // The keyboard back to the window, on Watch live; Pick on the image, waiting, stops too.
+      event.preventDefault();
+      view.captured = false;
+      if (picking.delete(key)) render();
+      document.querySelector<HTMLElement>(`[data-focus="${CSS.escape(`${key}|live`)}"]`)?.focus();
+      return;
+    }
+    if (decided === 'window' || decided === 'none') return;
+    event.preventDefault();
+    view.input.key(decided.send);
+  });
+  img.addEventListener('paste', (event) => {
+    const text = event.clipboardData?.getData('text/plain') ?? '';
+    if (!view.input || !text) return;
+    event.preventDefault();
+    for (const typed of pastedText(text)) view.input.key(typed);
+  });
+  img.addEventListener('blur', () => {
+    view.captured = false;
+  });
+}
+
+/** Pick on the image: on, the next click on the stopped page's image or its view picks; Escape turns it off. */
+function togglePicking(key: string): void {
+  if (picking.delete(key)) {
+    render();
+    return;
+  }
+  picking.add(key);
+  announce(t('runs_pickAtOn'));
+  render();
+}
+
+/**
+ * Pick on the image: the element under the pointer on an image of the stopped page, its locator sent to the editor
+ * where a pick goes, as the worker answered; shown under the test and read out.
+ */
+async function pickOnImage(
+  key: string,
+  since: string,
+  img: HTMLImageElement,
+  event: MouseEvent,
+  viewport: { width: number; height: number },
+): Promise<void> {
+  const found = stoppedAt(key);
+  const point = pointOn(img, event, viewport);
+  if (!found || found.stop.since !== since || !point) return;
+  if (!stopIntents(found.worker, found.stop).includes('pick-at')) return;
+  picking.delete(key);
+  const answer = await send(found.run, found.worker.worker, 'pick-at', since, point);
+  if (!answer) return;
+  say(key, answer, since, { sent: true, rich: true });
+  render();
+}
+
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || event.defaultPrevented || picking.size === 0) return;
+  picking.clear();
+  render();
+});
+
+// A window the person cannot see watches nothing: its views stop, and come again as it shows, Watch live left on.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    render();
+    return;
+  }
+  for (const [key, view] of views) if (isLive(view)) endView(key, true);
+  render();
+});
 
 // ── The run shortcut ────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -300,7 +734,7 @@ async function openShortcutSettings(): Promise<void> {
     }
   } catch {
     await chrome.tabs
-      .create({ url: 'https://piwitests.dev/features/extension#runs-from-the-editor' })
+      .create({ url: 'https://piwitests.dev/features/runs-window#the-run-shortcut' })
       .catch(() => undefined);
   }
 }
@@ -440,7 +874,11 @@ function render(): void {
   restoreFocus();
 }
 
-/** Drops what is kept for a stop a worker no longer stands at: its image, its list of requests, an answer for it. */
+/**
+ * Drops what is kept for a stop a worker no longer stands at: its image, its live view, its list of requests, an
+ * answer for it; and Watch live for a worker whose run ended. A view whose hub's connection was lost stays shown as
+ * ended while the hub is away, so the run that comes back at the same stop says so.
+ */
 function forgetGone(current: RunsState): void {
   /** Each live worker's stop, null while it is not stopped. */
   const at = new Map<string, string | null>();
@@ -454,6 +892,14 @@ function forgetGone(current: RunsState): void {
     }
   }
   for (const key of images.keys()) if (!at.get(key)) images.delete(key);
+  const connected = (hub: string) => current.hubs.some((h) => h.id === hub && h.connected);
+  for (const [key, view] of views) {
+    if (at.get(key) === view.since) continue;
+    if (!at.has(key) && view.status === 'ended' && !connected(view.hub)) continue;
+    endView(key, false);
+  }
+  for (const [key, hub] of watchLive) if (!at.has(key) && connected(hub)) watchLive.delete(key);
+  for (const key of picking) if (!at.get(key)) picking.delete(key);
   for (const [key, list] of requestLists) if (at.get(key) !== list.since) requestLists.delete(key);
   for (const [key, answer] of answers) if (!at.has(key) || at.get(key) !== answer.since) answers.delete(key);
 }
@@ -600,7 +1046,7 @@ const CONTROLS = {
   mock: { label: 'runs_mock', title: 'runs_mockTitle', icon: 'network' },
   pause: { label: 'runs_pause', title: 'runs_pauseTitle', icon: 'pause' },
 } as const satisfies Record<
-  Exclude<RunsWhat, 'image' | 'requests'>,
+  Exclude<RunsWhat, 'image' | 'requests' | 'view' | 'input' | 'pick-at'>,
   { label: string; title: string; icon: IconName; tone?: 'primary' }
 >;
 
@@ -611,14 +1057,16 @@ const STEERING: ReadonlySet<Control> = new Set(['resume', 'step', 'finish', 'pau
 
 /**
  * The controls a worker takes now: at a stop, Resume, Step and Finish (Resume alone where the test failed, which ends
- * it as it failed); then the actions its reporter and the editor take (`intents`): Pick, Record, Assert and Assert a
- * region where the pause bar shows, which they start in the test's window, and Mock a request at any stop.
+ * it as it failed); then the actions the stop takes from this window (`stopIntents`): Pick, Record, Assert and Assert
+ * a region, which start in the test's window where the pause bar shows, or through the live view this window watches
+ * at a headless stop, and Mock a request.
  */
 function controlsOf(worker: HubWorker, stop: HubStop | null): Control[] {
   if (!stop) return worker.pausing ? [] : ['pause'];
   const controls: Control[] = stop.reason === 'failure' ? ['resume'] : ['resume', 'step', 'finish'];
-  if (stop.bar) controls.push(...IN_WINDOW.filter((what) => worker.intents.includes(what)));
-  if (worker.intents.includes('mock')) controls.push('mock');
+  const intents = stopIntents(worker, stop);
+  controls.push(...IN_WINDOW.filter((what) => intents.includes(what)));
+  if (intents.includes('mock')) controls.push('mock');
   return controls;
 }
 
@@ -817,9 +1265,7 @@ function renderWorker(run: RunsRun, worker: HubWorker, count: number): HTMLEleme
       const stopShown = { title: stop.title, where, reason: stop.reason, error: stop.error ?? null };
       parts.push(part(`${key}|stop`, stopShown, () => stopView(stop, where)));
       wantImage(run, worker, stop);
-      const kept = images.get(key);
-      const image = kept?.since === stop.since ? { ...kept, img: !!kept.img } : { since: stop.since };
-      parts.push(part(`${key}|image`, image, () => renderImage(key, stop)));
+      parts.push(renderPage(run, worker, stop));
     }
     const since = stop?.since ?? null;
     const list = stop ? requestLists.get(key) : undefined;
@@ -845,7 +1291,8 @@ function renderWorker(run: RunsRun, worker: HubWorker, count: number): HTMLEleme
         : answer.sent
           ? ['note sent', 'send']
           : ['note', 'info'];
-      parts.push(part(`${key}|answer`, answer, () => iconText(element('p', className), icon, answer.text)));
+      const text = answer.rich ? richText(answer.text) : [answer.text];
+      parts.push(part(`${key}|answer`, answer, () => iconText(element('p', className), icon, ...text)));
       if (answer.warnings.length > 0) parts.push(part(`${key}|warnings`, answer.warnings, () => warningList(answer)));
     }
     if (listed) {
@@ -891,17 +1338,125 @@ function stopView(stop: HubStop, where: string): HTMLElement {
   );
 }
 
-function renderImage(key: string, stop: HubStop): HTMLElement {
-  const figure = element('figure', 'page');
+/**
+ * The stopped page: Watch live and Pick on the image where the stop takes them, then its live view once a frame came
+ * (the Live badge on it), else its image; under it, why there is none, or why the view ended, and the first time the
+ * view takes input, how. The image's box stays the same element for the stop, so the live view keeps the focus.
+ */
+function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop): HTMLElement {
+  const key = workerKey(run.hub, run.session.ref, worker);
+  const intents: HubAction[] = stopIntents(worker, stop);
   const kept = images.get(key);
-  if (kept?.since === stop.since && kept.img) {
-    figure.append(kept.img);
-  } else if (kept?.since === stop.since && !kept.loading) {
-    figure.append(element('p', undefined, kept.note || t('runs_imageNone')));
-  } else {
-    figure.append(element('p', undefined, t('runs_imageLoading')));
+  const still = kept?.since === stop.since ? kept : undefined;
+  if (views.get(key)?.since !== stop.since) endView(key, false);
+  const canView = intents.includes('view');
+  if (canView && watchLive.has(key) && !views.has(key) && !document.hidden) startView(run, worker.worker, stop);
+  const view = views.get(key);
+  const live = isLive(view);
+  const framed = live && !!view.viewport;
+  if (view) {
+    syncInput(key, view, framed && view.status === 'on' && intents.includes('input'), intents.includes('input-clicks'));
   }
+  const pickable = intents.includes('pick-at') && (framed || !!still?.viewport);
+  if (!pickable) picking.delete(key);
+
+  const figure = part(`${key}|page`, stop.since, () => element('figure', 'page'));
+  figure.toggleAttribute('data-picking', picking.has(key));
+  const children: HTMLElement[] = [];
+  if (canView || pickable) {
+    const tools = { canView, live, pickable, picking: picking.has(key) };
+    const row = part(`${key}|page-tools`, tools, () => pageTools(run, worker.worker, stop, tools));
+    markBusy(row.querySelectorAll(`[data-focus="${CSS.escape(`${key}|pick-at`)}"]`), busy.has(key));
+    children.push(row);
+  }
+  const shown = framed ? view.img : (still?.img ?? null);
+  if (shown) {
+    const box = part(`${key}|frame`, stop.since, () => element('div', 'page-frame'));
+    if (framed) {
+      view.img.alt = t(view.inputOn ? 'runs_liveAltInput' : 'runs_liveAlt');
+      if (view.inputOn) view.img.tabIndex = 0;
+      else view.img.removeAttribute('tabindex');
+    }
+    place(box, framed ? [shown, part(`${key}|badge`, null, liveBadge)] : [shown]);
+    children.push(box);
+  }
+  const note = pageNote(view, live, framed, shown, still);
+  if (note) {
+    children.push(
+      part(`${key}|page-note`, note, () =>
+        note.icon ? iconText(element('p', 'view-note'), note.icon, note.text) : element('p', undefined, note.text),
+      ),
+    );
+  }
+  if (view?.inputOn && hintFor === `${key}|${view.since}`) {
+    children.push(
+      part(`${key}|hint`, null, () => iconText(element('p', 'view-note hint'), 'info', t('runs_liveHint'))),
+    );
+  }
+  place(figure, children);
   return figure;
+}
+
+/**
+ * What the page's part says under it: why a view ended or was refused, why it sends no frame now, or that it starts
+ * (with an icon), else why there is no image, or that it is on its way.
+ */
+function pageNote(
+  view: LiveView | undefined,
+  live: boolean,
+  framed: boolean,
+  shown: HTMLImageElement | null,
+  still: { loading: boolean; note: string } | undefined,
+): { icon?: IconName; text: string } | null {
+  if (view && !live) return { icon: 'alert', text: view.note };
+  if (live && view?.heavy) return { icon: 'alert', text: view.heavy };
+  if (live && !framed) return { icon: 'clock', text: t('runs_liveStarting') };
+  if (shown) return null;
+  if (still && !still.loading) return { text: still.note || t('runs_imageNone') };
+  return { text: t('runs_imageLoading') };
+}
+
+/** Watch live and Pick on the image, each a toggle saying whether it is on. */
+function pageTools(
+  run: RunsRun,
+  worker: number,
+  stop: HubStop,
+  shown: { canView: boolean; live: boolean; pickable: boolean; picking: boolean },
+): HTMLElement {
+  const key = workerKey(run.hub, run.session.ref, { worker });
+  const row = element('div', 'piwi-actions page-tools');
+  if (shown.canView) {
+    const live = makeButton(t('runs_live'), () => toggleLive(run, worker, stop), {
+      icon: 'eye',
+      small: true,
+      title: t('runs_liveTitle'),
+    });
+    live.setAttribute('aria-pressed', String(shown.live));
+    live.dataset.focus = `${key}|live`;
+    row.append(live);
+  }
+  if (shown.pickable) {
+    const pick = makeButton(
+      t('runs_pickAt'),
+      (event) => {
+        // A command on its way: the button says so (`aria-disabled`) and waits for it.
+        if ((event.currentTarget as HTMLElement).getAttribute('aria-disabled') !== 'true') togglePicking(key);
+      },
+      { icon: 'pointer', small: true, title: t('runs_pickAtTitle') },
+    );
+    pick.setAttribute('aria-pressed', String(shown.picking));
+    pick.dataset.focus = `${key}|pick-at`;
+    row.append(pick);
+  }
+  return row;
+}
+
+/** The badge on a live view: a dot and the word, drawn still (no animation). */
+function liveBadge(): HTMLElement {
+  const badge = element('span', 'live-badge', icon('dot'), t('runs_liveBadge'));
+  // The view's own name says it is live.
+  badge.setAttribute('aria-hidden', 'true');
+  return badge;
 }
 
 // ── Focus ───────────────────────────────────────────────────────────────────────────────────────────────────────────

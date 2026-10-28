@@ -7,19 +7,37 @@
  * whenever a hub's connection fails, with a backoff. What each code written at a stop came to goes to the listeners,
  * with the hub that said it. While a listener (a Runs window) is there, each connection says the runs are followed
  * (`follow`), which holds a failure no pause bar shows for the person watching: as the first window opens, on each
- * connection that opens while one is, and `on: false` as the last one closes. Nothing here runs in a content script or
- * an extension page.
+ * connection that opens while one is, and `on: false` as the last one closes.
+ *
+ * A window watches a stop's live view through the hub's `view`: the worker's one connection to the hub watches a
+ * stop while any window does, and stops as the last one stops, closes or the stop ends. Each frame goes to the windows
+ * that watch its stop alone, at most `MAX_VIEW_FPS` a second to each, the latest one waiting, no other; the latest one
+ * is kept, in memory alone, while the view lasts, for a window that comes to it later. A window's input goes on only
+ * for a stop it watches itself. A connection lost ends the views it carried, and
+ * each window watching one hears so. Nothing here runs in a content script or an extension page.
  */
 import type { EditorPairing } from '@piwitests/core/editor-send';
-import { liveUrlOf, parseLiveAnswer, type HubSession, type LiveHub } from '@piwitests/core/run-hub';
+import {
+  liveUrlOf,
+  parseLiveAnswer,
+  type HubFrameMessage,
+  type HubFrameRefusal,
+  type HubSession,
+  type LiveHub,
+} from '@piwitests/core/run-hub';
+import { LatestPacer, MAX_VIEW_FPS } from '@piwitests/core/run-view';
 import {
   shortcutCommands,
+  stateForViewer,
+  viewKey,
   type RunsAnswer,
   type RunsCode,
   type RunsDiscovery,
+  type RunsFrame,
   type RunsRequest,
   type RunsRun,
   type RunsState,
+  type RunsView,
 } from '../shared/runs.js';
 import { proveEditor } from '../shared/editor-proof.js';
 import { HubConnection, type HubLoss, type HubTimings, type OpenSocket } from './hub-connection.js';
@@ -61,6 +79,27 @@ interface RunsListener {
 
 /** A command that never reached a hub. */
 const OFFLINE: RunsAnswer = { ok: false, message: '', failure: 'offline' };
+/** Input for a stop the window does not watch itself. */
+const UNWATCHED: RunsAnswer = { ok: false, message: '', failure: 'unwatched' };
+/** The least time between two frames of one view to one window. */
+const FRAME_MS = 1000 / MAX_VIEW_FPS;
+
+/** A Runs window, as the live views it watches know it: where their frames go, and where it hears one ended. */
+export interface RunsViewer {
+  frame(frame: RunsFrame): void;
+  /** A view it watched ended without its asking: the hub's connection was lost. */
+  ended(view: RunsView): void;
+}
+
+/**
+ * A stop's live view some window watches: each window that does, with the pace of its frames, and the latest frame,
+ * in memory alone, which a window that comes later gets at once.
+ */
+interface Watch {
+  view: RunsView;
+  viewers: Map<RunsViewer, LatestPacer<RunsFrame>>;
+  latest: RunsFrame | null;
+}
 
 export class RunHubs {
   private discovery: RunsDiscovery = 'searching';
@@ -72,6 +111,8 @@ export class RunHubs {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
   private readonly listeners = new Set<RunsListener>();
+  /** The live views some window watches, by `viewKey`. */
+  private readonly watches = new Map<string, Watch>();
   private readonly now: () => number;
 
   constructor(private readonly deps: RunHubsDeps) {
@@ -98,7 +139,16 @@ export class RunHubs {
     }
   }
 
-  state(): RunsState {
+  /**
+   * The runs, and what the hubs were found to be. For a window (`viewer`), each stop takes from it what it takes from
+   * a hub connection that watches the views that window watches (`stateForViewer`).
+   */
+  state(viewer?: RunsViewer): RunsState {
+    const state = this.allRuns();
+    return viewer ? stateForViewer(state, (view) => this.watching(view, viewer)) : state;
+  }
+
+  private allRuns(): RunsState {
     const live: RunsRun[] = [];
     for (const hub of this.hubs) {
       for (const session of this.connections.get(hub.url)?.sessions.values() ?? [])
@@ -113,7 +163,8 @@ export class RunHubs {
         const connection = this.connections.get(hub.url);
         return {
           id: hub.url,
-          connected: connection?.state === 'open',
+          // Connected once its runs were heard: a window forgets what it keeps for a run gone from a connected hub.
+          connected: connection?.state === 'open' && connection.heardRuns,
           client: connection?.welcome?.client ?? hub.client,
         };
       }),
@@ -153,12 +204,27 @@ export class RunHubs {
     ]);
   }
 
-  /** Passes a command of the window to its hub. */
-  command(request: Omit<CommandRequest, 'type' | 'id'>): Promise<RunsAnswer> {
+  /** Passes a command of a window (`viewer`, for the live view's commands) to its hub. */
+  command(request: Omit<CommandRequest, 'type' | 'id'>, viewer?: RunsViewer): Promise<RunsAnswer> {
     const connection = this.connections.get(request.hub);
     if (!connection) return Promise.resolve(OFFLINE);
     const { ref, worker, since, what } = request;
     switch (what) {
+      case 'view':
+        return this.view(connection, request, viewer);
+      case 'input': {
+        // `parseRunsRequest` takes none without the worker, the stop and its events.
+        if (worker === null || since === null || !request.events) return Promise.resolve(OFFLINE);
+        if (!viewer || !this.watching({ hub: request.hub, ref, worker, since }, viewer)) {
+          return Promise.resolve(UNWATCHED);
+        }
+        return connection.command({ type: 'input', ref, worker, since, events: request.events });
+      }
+      case 'pick-at': {
+        const { x, y } = request;
+        if (since === null || x === undefined || y === undefined) return Promise.resolve(OFFLINE);
+        return connection.command({ type: 'pick-at', ref, worker, since, x, y });
+      }
       case 'image':
         return worker === null ? Promise.resolve(OFFLINE) : connection.command({ type: 'pausedPage', ref, worker });
       case 'pause':
@@ -176,6 +242,99 @@ export class RunHubs {
       default:
         // Pick, Record, Assert and Assert a region: an intent started in the test's window, at the stop it names.
         return since === null ? Promise.resolve(OFFLINE) : connection.command({ type: what, ref, worker, since });
+    }
+  }
+
+  /** Whether a window watches a stop's live view, or asked to and was not answered yet. */
+  private watching(view: RunsView, viewer: RunsViewer): boolean {
+    return !!this.watches.get(viewKey(view))?.viewers.has(viewer);
+  }
+
+  /**
+   * A window starts or stops watching a stop's live view. The hub hears `view` as the first window starts, and as the
+   * last one stops; the frames that come before the hub's answer go to the window already, and a refusal takes it
+   * off.
+   */
+  private async view(
+    connection: HubConnection,
+    request: Omit<CommandRequest, 'type' | 'id'>,
+    viewer: RunsViewer | undefined,
+  ): Promise<RunsAnswer> {
+    const { hub, ref, worker, since, on } = request;
+    if (!viewer || worker === null || since === null || on === undefined) return OFFLINE;
+    const view: RunsView = { hub, ref, worker, since };
+    const key = viewKey(view);
+    if (!on) return (await this.leave(key, viewer)) ?? { ok: true, message: '' };
+    let watch = this.watches.get(key);
+    if (!watch) {
+      watch = { view, viewers: new Map(), latest: null };
+      this.watches.set(key, watch);
+    }
+    if (!watch.viewers.has(viewer)) {
+      const pacer = new LatestPacer<RunsFrame>({ intervalMs: FRAME_MS, send: (frame) => viewer.frame(frame) });
+      watch.viewers.set(viewer, pacer);
+      // The hub sends this connection no frame for it: a still page paints no other.
+      if (watch.latest) pacer.offer(watch.latest);
+    }
+    const answer = await connection.command({ type: 'view', ref, worker, since, on: true });
+    if (!answer.ok && this.watches.get(key) === watch) {
+      watch.viewers.get(viewer)?.close();
+      watch.viewers.delete(viewer);
+      if (watch.viewers.size === 0) this.watches.delete(key);
+    }
+    return answer;
+  }
+
+  /** A window stops watching a view: the last one to go has the hub stop it, while its stop holds. */
+  private leave(key: string, viewer: RunsViewer): Promise<RunsAnswer> | null {
+    const watch = this.watches.get(key);
+    if (!watch?.viewers.has(viewer)) return null;
+    watch.viewers.get(viewer)!.close();
+    watch.viewers.delete(viewer);
+    if (watch.viewers.size > 0) return null;
+    this.watches.delete(key);
+    const { hub, ref, worker, since } = watch.view;
+    const connection = this.connections.get(hub);
+    if (connection?.state !== 'open' || !stopsAt(connection, watch.view)) return null;
+    return connection.command({ type: 'view', ref, worker, since, on: false });
+  }
+
+  /** A window closed: it watches nothing any more. */
+  unwatchAll(viewer: RunsViewer): void {
+    for (const key of this.watches.keys()) void this.leave(key, viewer);
+  }
+
+  /** A frame of a view some window watches, or why none comes, goes to those that watch it, while its stop holds. */
+  private frame(
+    hub: string,
+    connection: HubConnection,
+    { type: _type, ...frame }: HubFrameMessage | HubFrameRefusal,
+  ): void {
+    const view: RunsView = { hub, ref: frame.ref, worker: frame.worker, since: frame.since };
+    const watch = this.watches.get(viewKey(view));
+    if (!watch || !stopsAt(connection, view)) return;
+    watch.latest = { hub, ...frame };
+    for (const pacer of watch.viewers.values()) pacer.offer(watch.latest);
+  }
+
+  /** The views of a hub whose stop ended: the hub ended them with it. */
+  private prune(hub: string, connection: HubConnection): void {
+    for (const [key, watch] of this.watches) {
+      if (watch.view.hub !== hub || stopsAt(connection, watch.view)) continue;
+      for (const pacer of watch.viewers.values()) pacer.close();
+      this.watches.delete(key);
+    }
+  }
+
+  /** The views a hub's connection carried end with it: each window that watched one hears so. */
+  private endViews(hub: string): void {
+    for (const [key, watch] of this.watches) {
+      if (watch.view.hub !== hub) continue;
+      this.watches.delete(key);
+      for (const [viewer, pacer] of watch.viewers) {
+        pacer.close();
+        viewer.ended(watch.view);
+      }
     }
   }
 
@@ -234,6 +393,7 @@ export class RunHubs {
       if (!hubs.some((hub) => hub.url === url && hub.token === connection.hub.token)) {
         this.connections.delete(url);
         connection.close();
+        this.endViews(url);
       }
     }
     for (const hub of hubs) if (!this.connections.has(hub.url)) this.connect(hub);
@@ -254,11 +414,15 @@ export class RunHubs {
           this.retries = 0;
           if (this.listeners.size > 0) void connection.command({ type: 'follow', on: true });
         },
-        changed: () => this.changed(),
+        changed: () => {
+          this.prune(hub.url, connection);
+          this.changed();
+        },
         ended: (session) => this.keepEnded(hub.url, session, connection.sessions.get(session.ref)),
         code: ({ type: _type, warnings = [], ...code }) => {
           for (const listener of this.listeners) listener.code({ hub: hub.url, ...code, warnings });
         },
+        frame: (frame) => this.frame(hub.url, connection, frame),
         lost: (why) => this.lost(hub, connection, why),
       },
       this.deps.timings,
@@ -276,7 +440,10 @@ export class RunHubs {
   }
 
   private lost(hub: LiveHub, connection: HubConnection, why: HubLoss): void {
-    if (this.connections.get(hub.url) === connection) this.connections.delete(hub.url);
+    if (this.connections.get(hub.url) === connection) {
+      this.connections.delete(hub.url);
+      this.endViews(hub.url);
+    }
     if (why === 'refused') {
       // A token the hub no longer takes: the editor names the hubs again.
       this.hubs = this.hubs.filter((h) => h.url !== hub.url);
@@ -300,4 +467,10 @@ export class RunHubs {
   private changed(): void {
     for (const listener of this.listeners) listener.changed();
   }
+}
+
+/** Whether a connection's runs have the view's worker stopped at the view's stop. */
+function stopsAt(connection: HubConnection, view: RunsView): boolean {
+  const worker = connection.sessions.get(view.ref)?.workers.find((w) => w.worker === view.worker);
+  return worker?.state === 'stopped' && worker.stop?.since === view.since;
 }

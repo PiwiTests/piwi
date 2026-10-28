@@ -689,7 +689,8 @@ data class RunTest(
 /**
  * A worker of a run, by Playwright's worker index: `running` a test, `stopped` before one of its calls, or `between`
  * tests; `pausing` once a Pause reached it until it stops; what its reporter takes at a stop (`takes`: the intents
- * `pick`, `record`, `assert`, `assert-region` and the queries `requests`, `mock`, `locator`), none for an older one.
+ * `pick`, `record`, `assert`, `assert-region`, the queries `requests`, `mock`, `locator`, and for a viewer outside the
+ * page `view`, `input`, `input-clicks` and `pick-at`, `piwi/pickAt`), none for an older one.
  */
 data class RunWorker(
     val worker: Int = 0,
@@ -737,11 +738,33 @@ data class SetRunBreakpointsParams(val ref: String, val places: List<EditorBreak
 /** `piwi/pausedPage`: an image of the page of a stopped worker (`what` is `image`). */
 data class PausedPageParams(val ref: String, val worker: Int, val what: String = "image")
 
-/** A JPEG of a stopped page, in base64, without the pause bar. */
-data class PausedImage(val mime: String? = null, val data: String? = null)
+/**
+ * A JPEG of a stopped page, in base64, without the pause bar, and the page's viewport in CSS pixels (`width`,
+ * `height`), which `piwi/pickAt` names a point in; an older reporter names neither.
+ */
+data class PausedImage(val mime: String? = null, val data: String? = null, val width: Int? = null, val height: Int? = null)
 
 /** The image; null when the worker is not stopped, has no page, or did not answer within 10 seconds. */
 data class PausedPageResult(val image: PausedImage? = null)
+
+/**
+ * `piwi/pickAt`: the element under the point `x`, `y` of the page stopped at `since` (CSS pixels of its viewport: a
+ * point of the image is `x * width / naturalWidth`), of the run's one stopped worker or `worker`, its locator sent
+ * where the pause bar's pick goes (the Send to editor endpoint, then `piwi/applyPick`).
+ */
+data class PickAtParams(val ref: String, val worker: Int? = null, val since: String, val x: Int, val y: Int)
+
+/** The locator sent, with `ok`; null with why otherwise (no element there, an iframe, a stop the test went on from). */
+data class PickAtResult(val ok: Boolean = false, val message: String? = null, val locator: String? = null)
+
+/**
+ * `piwi/hub`: the address of the service's hub, and, with `forwarded`, the loopback ports of the browser's machine a
+ * client forwards to it, which it then takes in `Host` beside its own. The plugin names none: the platform has no
+ * public API for Gateway's port forwarding.
+ */
+data class HubParams(val forwarded: List<Int>? = null)
+
+data class HubResult(val url: String? = null, val forwarded: List<Int>? = null)
 
 /**
  * `piwi/stopAction`: start an action at the stop `since` names (`RunStop.since`), of the run's one stopped worker or
@@ -892,6 +915,12 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/pausedPage")
     fun pausedPage(params: PausedPageParams): CompletableFuture<PausedPageResult?>
+
+    @JsonRequest("piwi/pickAt")
+    fun pickAt(params: PickAtParams): CompletableFuture<PickAtResult?>
+
+    @JsonRequest("piwi/hub")
+    fun hub(params: HubParams): CompletableFuture<HubResult?>
 
     @JsonRequest("piwi/stopAction")
     fun stopAction(params: StopActionParams): CompletableFuture<RunControlResult?>

@@ -133,10 +133,16 @@ export function deriveFailedLocator(testInfo: TestInfo): FailedLocatorInfo | nul
   return null;
 }
 
-/** Set in the page by a pick that ended unanswered, so the waits still polling for the overlay's answer stop. */
+/**
+ * Set in the page by a pick that ended unanswered, so the wait still polling for the overlay's answer stops; the wait
+ * takes it out of the page as it sees it.
+ */
 const PICK_ENDED = '__piwiPickEnded';
 
-/** Best-effort in-page cleanup of every picker artifact; `ended` marks the pick as ended unanswered. */
+/**
+ * Best-effort in-page cleanup of every picker artifact; `ended` marks the pick as ended unanswered, for the wait still
+ * polling in the page.
+ */
 async function cleanupPicker(page: Page, ended = false): Promise<void> {
   try {
     await page.evaluate(
@@ -144,8 +150,10 @@ async function cleanupPicker(page: Page, ended = false): Promise<void> {
         const g = globalThis as any;
         if (typeof g.__piwiPickCleanup === 'function') g.__piwiPickCleanup();
         if (typeof g.__piwiAnchorCleanup === 'function') g.__piwiAnchorCleanup();
+        if (typeof g.__piwiChoiceCleanup === 'function') g.__piwiChoiceCleanup();
         delete g.__piwiPickCleanup;
         delete g.__piwiAnchorCleanup;
+        delete g.__piwiChoiceCleanup;
         delete g.__piwiPickState;
         delete g.__piwiPickChoice;
         delete g.__piwiPickedElement;
@@ -192,14 +200,26 @@ export async function pickLocator(
   failing: string | null,
   ended?: AbortSignal,
 ): Promise<PickedLocator | null> {
+  /** A wait for the overlay's answer polls in the page, left there by an `ended` that aborted it. */
+  let polling = false;
   /** Wait for the overlay to set `name`; false once `ended` aborts first. */
   const answered = async (name: string): Promise<boolean> => {
     const wait = page.waitForFunction(
-      ([key, endedKey]) => (globalThis as any)[key] !== undefined || (globalThis as any)[endedKey] === true,
+      ([key, endedKey]) => {
+        const g = globalThis as any;
+        if (g[endedKey] !== true) return g[key] !== undefined;
+        delete g[endedKey];
+        return true;
+      },
       [name, PICK_ENDED] as const,
       { timeout: 0, polling: 250 },
     );
-    await unlessEnded(wait, ended);
+    polling = true;
+    const done = await unlessEnded(
+      wait.then(() => true),
+      ended,
+    );
+    if (done) polling = false;
     return !ended?.aborted;
   };
   try {
@@ -276,7 +296,7 @@ export async function pickLocator(
       ...(anchors.length > 0 ? { anchors } : {}),
     };
   } finally {
-    await cleanupPicker(page, ended?.aborted);
+    await cleanupPicker(page, polling);
   }
 }
 

@@ -6571,5 +6571,41 @@
   },
   "runs_requestNoSize": {
     "message": "tamanho desconhecido"
+  },
+  "runs_live": {
+    "message": "Ver ao vivo"
+  },
+  "runs_liveTitle": {
+    "message": "Mostrar a página do teste enquanto ela é desenhada, no lugar da imagem: seus cliques e teclas nela vão para a página"
+  },
+  "runs_liveBadge": {
+    "message": "Ao vivo"
+  },
+  "runs_liveAlt": {
+    "message": "Visualização ao vivo da página do teste"
+  },
+  "runs_liveAltInput": {
+    "message": "Visualização ao vivo da página do teste: teclas e cliques vão para a página"
+  },
+  "runs_liveStarting": {
+    "message": "Iniciando a visualização ao vivo…"
+  },
+  "runs_liveLost": {
+    "message": "A visualização ao vivo terminou: a conexão com o editor foi perdida. Use Ver ao vivo de novo quando ela voltar."
+  },
+  "runs_liveHint": {
+    "message": "Seus cliques, a roda do mouse e suas teclas na visualização vão para a página do teste. Esc devolve as teclas a esta janela; Shift+clique escolhe um locator."
+  },
+  "runs_pickAt": {
+    "message": "Escolher na imagem"
+  },
+  "runs_pickAtTitle": {
+    "message": "Clique em um elemento da imagem para escolher seu locator sem tocar na página: ele substitui o desta linha. Shift+clique também escolhe"
+  },
+  "runs_pickAtOn": {
+    "message": "Clique no elemento da imagem para escolher seu locator. Esc cancela."
+  },
+  "runs_failUnwatched": {
+    "message": "Veja a página ao vivo primeiro: só então as teclas e os cliques vão para ela."
   }
 }

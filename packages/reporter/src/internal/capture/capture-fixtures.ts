@@ -124,6 +124,7 @@ import {
   stopCallSite,
   stopShown,
   testTimeSlot,
+  viewHere,
   wantsStops,
   watchStops,
   withInspector,
@@ -136,6 +137,8 @@ import {
   type StopReason,
 } from './pause-at.js';
 import { locatorOn } from './chain-locator.js';
+import { pickAtPoint } from './pick-at.js';
+import { errorMessage } from '../support/errors.js';
 import { regionSnapshotWithoutSecrets } from './region-snapshot.js';
 import { keepResponse, startKeeping, stopKeeping } from './kept-responses.js';
 import { PIWI_ORIGIN_ENV } from '../config/env.js';
@@ -150,6 +153,7 @@ import {
   openRunChannel,
   runChannelOpen,
   tellHub,
+  viewEnded,
   type RunControl,
 } from './run-channel.js';
 import {
@@ -157,6 +161,7 @@ import {
   MAX_STOP_ERROR,
   RUN_INTENT_NAMES,
   type IntentAnswer,
+  type PickAtAnswer,
   type RunIntent,
   type RunToHub,
 } from '@piwitests/core/run-channel';
@@ -1653,7 +1658,10 @@ interface FailureStop {
  * the moment it shows, whoever answers it. Where its page is a guess (`StopPage`), the bar shows in the guess, and
  * the editor asks in vain for an image. The editor can start the bar's Pick a locator and Record here, the check
  * panel's Check an element and a region's ARIA snapshot from outside the page (`intentAt`): their results go where the
- * bar's go, the check and the snapshot to the editor, which writes them, each ending with the stop. A stop that must
+ * bar's go, the check and the snapshot to the editor, which writes them, each ending with the stop. At a stop no bar
+ * shows, they run in the page while its live view is watched, driven through the view's input (`viewHere`), and end
+ * with that view too. The editor can also pick the element under a point of an image of the page (`pickAtPoint`),
+ * whose locator goes where the bar's pick goes. A stop that must
  * end unanswered (`endShownStops`) ends at once, the bar, a pick and a recording taken down and the editor told, and
  * its call goes on: as on Resume when its context closed, at once, or a page that ends it closed, once that page is
  * gone; as on Finish when the test ended under it, at once, its call then kept in `released` (`releaseCall`). A stop
@@ -1679,7 +1687,8 @@ async function showStop(
   const place = runChannelOpen() ? callSitePlace(location) : null;
   if (!bar && !place) return undefined;
   const failing = failure?.failed ?? null;
-  const onPick = async (picked: PickedLocator) => {
+  /** A pick, folded into the snapshots, printed and posted to the editor: whether the editor took it. */
+  const pickTaken = async (picked: PickedLocator): Promise<boolean> => {
     if (call) {
       call.picked = true;
       const { method, args } = call.origin;
@@ -1698,11 +1707,14 @@ async function showStop(
       applyPickToSnapshots(sink.capturedLocators, pick);
     }
     console.log(`[piwi] Locator picked at ${callSiteLine(location)}: ${picked.picked.locator}`);
-    await postPickToEditor(editorSendAddress(), pickPayload(picked.picked.locator, location));
+    return postPickToEditor(editorSendAddress(), pickPayload(picked.picked.locator, location));
   };
+  const onPick = async (picked: PickedLocator) => void (await pickTaken(picked));
+  const probe = { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG };
   const handoffReason = reason === 'page-pause' ? 'pause' : 'breakpoint';
-  const onRecord = bar && page ? recorderAt(page, testInfo, location, handoffReason) : undefined;
-  const intents = bar && page ? new BarIntents() : null;
+  // A stop no bar shows starts them in its page while its live view is watched.
+  const onRecord = page ? recorderAt(page, testInfo, location, handoffReason) : undefined;
+  const intents = page ? new BarIntents() : null;
   const record: PauseRecord = { title, location, reason, startedAt: Date.now(), duration: 0 };
   sink.stops.push(record);
   // `end`: the stop ends unanswered, why as its reason (`StopEnd`). `over`: that, or the editor answered; the bar
@@ -1711,6 +1723,29 @@ async function showStop(
   const over = new AbortController();
   end.signal.addEventListener('abort', () => over.abort(), { once: true });
   let fromEditor: PauseAnswer | undefined;
+  const pickAt =
+    page && !guessed
+      ? async (x: number, y: number): Promise<PickAtAnswer> => {
+          try {
+            const found = await internalCall(page, () => pickAtPoint(page, probe, x, y));
+            if ('refusal' in found) return { ok: false, message: found.refusal, locator: null };
+            if (over.signal.aborted) return { ok: false, message: 'The test went on.', locator: null };
+            const locator = found.picked.picked.locator;
+            const sent = await pickTaken(found.picked);
+            return {
+              ok: true,
+              message: sent
+                ? `${locator} went to the editor, in place of the locator on the stopped line.`
+                : `${locator}: no editor took it, as this run names no Send to editor pairing that answers.`,
+              locator,
+            };
+          } catch (error) {
+            // A page's error may name the address it was at: its credentials stay in the worker.
+            const message = hideSecretsInText(`The stopped page could not be read: ${errorMessage(error)}`);
+            return { ok: false, message, locator: null };
+          }
+        }
+      : undefined;
   const held = place
     ? holdStop(
         {
@@ -1734,6 +1769,7 @@ async function showStop(
                   holds: () => !over.signal.aborted && (!!failure || (!sink.ending && stopCanShow(context, of))),
                 })
             : undefined,
+          ...(pickAt ? { pickAt } : {}),
         },
         (answer) => {
           fromEditor = answer;
@@ -1742,7 +1778,7 @@ async function showStop(
       )
     : null;
   const onIntent =
-    bar && page && held
+    page && held
       ? (intent: CodeIntent, ended?: AbortSignal) =>
           intent === 'assert'
             ? checkAt(page, testInfo, location, handoffReason, held.stop, ended)
@@ -1755,7 +1791,14 @@ async function showStop(
           ? `[piwi] The test failed at ${callSiteLine(location)}: Resume in the editor lets it end as it failed.`
           : `[piwi] Paused at ${callSiteLine(location)} before ${title}: Resume, Step or Finish in the editor.`,
       );
-      await abortion(over.signal);
+      if (page && intents && held) {
+        const stop = held.stop;
+        await internalCall(page, () =>
+          viewHere(page, probe, onPick, onRecord, over.signal, intents, onIntent, () => viewEnded(stop)),
+        );
+      } else {
+        await abortion(over.signal);
+      }
       return 'resume';
     }
     return internalCall(page, () =>
@@ -1768,7 +1811,7 @@ async function showStop(
           target: call?.page === page ? call.target : null,
           ...(failure ? { failure: true } : {}),
         },
-        { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG },
+        probe,
         onPick,
         onRecord,
         over.signal,

@@ -31,7 +31,7 @@ import type {
 import type { Handoff } from './recorder/handoff.js';
 import type { RecordingSessions } from './recorder/sessions.js';
 import type { LineNow } from './run-lines.js';
-import { NO_CODE, type RunSessions, type StopRef } from './run-sessions.js';
+import { NO_CODE, type RunSessions, type StopRef, type Viewer } from './run-sessions.js';
 import { caretLocator, renderStopCode, stopCodeRefusal, stopPage, type StopCodeInput } from './stop-code.js';
 
 /** What the code of a file is written from: its text as the editor holds it, and what its rendering reads. */
@@ -113,15 +113,18 @@ export class StopActions {
 
   constructor(private readonly options: StopActionsOptions) {}
 
-  /** `piwi/stopAction`, and the hub's intents and `mock`. */
-  async action(params: StopActionParams): Promise<StopActionResult> {
+  /**
+   * `piwi/stopAction`, and the hub's intents and `mock`, the hub's with the `viewer` that asks: at a stop no pause bar
+   * shows, an intent starts only for a viewer of its live view.
+   */
+  async action(params: StopActionParams, viewer: Viewer | null = null): Promise<StopActionResult> {
     const { sessions } = this.options;
     if (typeof params?.since !== 'string' || !params.since) return refuse(NEEDS_STOP);
     const stop = { ref: params.ref, worker: params.worker ?? null, since: params.since };
     switch (params.action) {
       case 'pick':
       case 'record':
-        return sessions.intent({ ...stop, what: params.action });
+        return sessions.intent({ ...stop, what: params.action, viewer });
       case 'assert':
       case 'assert-region': {
         // Nothing starts in the test's window when its code could not be written.
@@ -132,7 +135,7 @@ export class StopActions {
         if ('refusal' in place) return refuse(place.refusal);
         const cannot = stopCodeRefusal(place.target.text, place.line, at.character);
         if (cannot) return refuse(cannot);
-        return sessions.intent({ ...stop, what: params.action });
+        return sessions.intent({ ...stop, what: params.action, viewer });
       }
       case 'mock': {
         if (!this.options.writesCode()) return refuse(NO_CODE);

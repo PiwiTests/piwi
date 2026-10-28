@@ -77,18 +77,22 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **Open in IDE never opens a file outside the workspace folders** (`resolveOpenFile` in `src/glue.ts`).
   ([Open in IDE](ARCHITECTURE.md#open-in-ide))
 - **The Send to editor endpoint listens on `127.0.0.1` only, with its token in `SecretStorage`** (`piwi.sendToken`,
-  `src/send-listener.ts`). It answers only a `Host` of `127.0.0.1:<port>` or `localhost:<port>`, and every answer to a
-  request carrying `x-piwi-editor-challenge`, whatever its route and status, carries `x-piwi-editor-proof`. Checked by
-  `tests/send-listener.test.ts`. ([Send to editor](ARCHITECTURE.md#send-to-editor))
-- **`GET /piwi/live` lists hubs only, never a run channel's token, and none in a remote window** (`liveHubsHere`).
-  Checked by `tests/send-listener.test.ts` ("… none of the run channels", "lists no hub in a remote window …").
+  `src/send-listener.ts`). It answers only a `Host` of `127.0.0.1` or `localhost` at its port or the one a remote window
+  forwards to it (`forwarded`), and every answer to a request carrying `x-piwi-editor-challenge`, whatever its route and
+  status, carries `x-piwi-editor-proof` for the port the `Host` named. Checked by `tests/send-listener.test.ts`.
   ([Send to editor](ARCHITECTURE.md#send-to-editor))
+- **`GET /piwi/live` lists hubs only, never a run channel's token; a remote window lists its own service's hub alone,
+  at the loopback port `asExternalUri` forwards, on `127.0.0.1` as the pairing address is (`onLoopback`), once
+  `piwi/hub` made the hub take it** (`liveHubsHere`). Checked by `tests/send-listener.test.ts` ("… none of the run
+  channels", "lists a remote window’s own hub …").
   ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **Only the pairing Piwi Picker is given saves the listener's port** (`sendPairing`): a run's pairing takes any free
   port while another window holds the saved one, and leaves it saved. Checked by `tests/send-listener.test.ts` ("keeps
   the port Piwi Picker was given …"). ([Breakpoints](ARCHITECTURE.md#breakpoints))
-- **The paused page webview runs no script.** Its document takes images from `data:` only and its one style by nonce
-  (`pausedPageHtml` in `src/run-control.ts`). ([Run control](ARCHITECTURE.md#run-control))
+- **The paused page webview runs a script only where a click on the image picks, by the style's nonce.** Its document
+  takes images from `data:` only, and the script posts a click's offset alone (`pausedPageHtml`, `imageClickOf` in
+  `src/run-control.ts`). Checked by `tests/run-control.test.ts` ("runs one script …").
+  ([Run control](ARCHITECTURE.md#run-control))
 
 ## Workflow
 

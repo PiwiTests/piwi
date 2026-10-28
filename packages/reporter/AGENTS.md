@@ -41,7 +41,12 @@ responsibilities.
      worker fixture's setup to the worker's end: it reports each test and stop, takes the editor's controls,
      breakpoints, intents and queries (`takes` in its `run-attach`), keeps the test's text responses in memory for
      Mock a request (`kept-responses.ts`), holds a failing test's page for an editor that answered its `holds` with
-     `attached` (`holdFailure`, `editorShows`), and makes a headless run stop too;
+     `attached` (`holdFailure`, `editorShows`), and makes a headless run stop too; for a viewer outside the page, it
+     streams a stopped page's screencast (`view`), plays trusted input there only while that stop's view is watched
+     (`input`, let go before the test goes on), runs the bar's actions in a headless page through it (`viewHere`), and
+     picks under a point of an image (`pick-at.ts`); a frame goes to the editor service alone, never stored nor attached,
+     the latest one sent kept in memory until the view ends, for a viewer that comes later
+     (`tests/run-channel-view.spec.ts`);
    - `PIWI_RUN_CHANNEL` and `PIWI_EDITOR_SEND` taken out of the worker's `process.env` while each test runs
      (`hideRunChannel`; picks still reach the editor through `editorSendAddress`), so a process the test starts gets
      neither, and put back after it, since Playwright passes a worker's environment changes to the projects that

@@ -8,9 +8,10 @@
  * controls and the code actions its worker takes there (Pick a locator, Record here, Assert, Assert a region, Mock a
  * request: `piwi/stopAction`, each in the palette while a stop offers it, the `piwi.runCan…` context keys), which its
  * hover offers too; a stop no pause bar shows (a headless run's) shows an image of its page in a webview beside the
- * editor. The code a stop makes (`piwi/stopCode`) is written as one workspace edit in its document, opened when it is
- * not; while a test is stopped, the end of the cursor's line in its file says how many elements the locator there
- * matches on the stopped page (`piwi/locatorAtCaret`). The editor's breakpoints go to each live run as they change
+ * editor, where a click picks the element under it (`piwi/pickAt`) when its worker takes it. The code a stop makes
+ * (`piwi/stopCode`) is written as one workspace edit in its document, opened when it is not; while a test is stopped,
+ * the end of the cursor's line in its file says how many elements the locator there matches on the stopped page
+ * (`piwi/locatorAtCaret`). The editor's breakpoints go to each live run as they change
  * (`piwi/setRunBreakpoints`). A run's lines are those of the documents as they stood when it started: the edits since
  * (`EditLog`) bring a stop to the line it stands on now, and a breakpoint or the cursor's line back to the run's. The
  * pure half is `run-control.ts`.
@@ -21,6 +22,7 @@ import type { LanguageClient } from 'vscode-languageclient/node';
 import {
   LOCATOR_AT_CARET_REQUEST,
   PAUSED_PAGE_REQUEST,
+  PICK_AT_REQUEST,
   RUN_CONTROL_REQUEST,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
   STOP_ACTION_REQUEST,
@@ -28,6 +30,8 @@ import {
   type LocatorAtCaretResult,
   type PausedPageParams,
   type PausedPageResult,
+  type PickAtParams,
+  type PickAtResult,
   type RunControlAction,
   type RunControlParams,
   type RunControlResult,
@@ -49,10 +53,13 @@ import {
   controlItems,
   controlState,
   heardSession,
+  imageClickOf,
   lineEditOf,
   linesAbove,
+  pagePoint,
   pausedPageHtml,
   pausedText,
+  picksOnImage,
   remember,
   requestPicks,
   runStarted,
@@ -106,6 +113,8 @@ export interface RunControl extends vscode.Disposable {
   executionPoints(uri: string): number[];
   /** What the paused page view shows; null while it is closed. */
   pausedPage(): PausedPageView | null;
+  /** A click on the paused page's image, as the view's script posts it: the pick there, once answered. */
+  pickOnPage(message: unknown): Promise<void>;
   /** Write the code a stop made (`piwi/stopCode`). */
   write(code: StopCode): Promise<void>;
   /** What the end of the cursor's line says of the locator there; null while it says nothing. */
@@ -167,8 +176,11 @@ export function registerRunControl(
   });
   let panel: vscode.WebviewPanel | null = null;
   let page: PausedPageView | null = null;
-  /** The stop the paused page view shows. */
+  /** The stop the paused page view shows, and its key. */
   let pageStop: string | null = null;
+  let pageShows: ShownStop | null = null;
+  /** The images the view showed that a click picks on, counted: a click names the one it was on. */
+  let pickable = 0;
 
   /** Where the edits are mapped from for a run: its start, else when it was first heard. */
   const sinceOf = (ref: string) => runs.get(ref)?.since ?? edits.now();
@@ -295,21 +307,27 @@ export function registerRunControl(
     if (panel) panel.webview.html = pausedPageHtml(view, randomBytes(16).toString('base64'));
   };
 
-  /** The page of a stop in the paused page view, opened beside the editor without focus, asked of its worker. */
+  /**
+   * The page of a stop in the paused page view, opened beside the editor without focus, asked of its worker. The view
+   * runs a script only where a click on the image picks (`pausedPageHtml`), which posts the click (`pickOnPage`).
+   */
   const openPage = async (stop: ShownStop) => {
     const key = stopKey(stop);
     pageStop = key;
+    pageShows = stop;
     if (!panel) {
       panel = vscode.window.createWebviewPanel(
         'piwi.pausedPage',
         'Piwi: paused page',
         { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-        { enableScripts: false, localResourceRoots: [] },
+        { enableScripts: true, localResourceRoots: [] },
       );
+      panel.webview.onDidReceiveMessage((message: unknown) => void pickOnPage(message));
       panel.onDidDispose(() => {
         panel = null;
         page = null;
         pageStop = null;
+        pageShows = null;
       });
     } else {
       panel.reveal(vscode.ViewColumn.Beside, true);
@@ -327,9 +345,32 @@ export function registerRunControl(
     if (pageStop !== key) return;
     showPage(
       answer?.image
-        ? { image: answer.image, caption }
+        ? {
+            image: answer.image,
+            caption,
+            pick: picksOnImage(stop.takes, answer.image) ? { shown: ++pickable } : null,
+          }
         : { image: null, caption: `${caption} · the test sent no image of its page` },
     );
+  };
+
+  /**
+   * A click on the image the view shows: the element under it picked on the stopped page (`piwi/pickAt`, in CSS pixels
+   * of its viewport), its locator going to the editor in place of the one on the stopped line, as the pause bar's pick
+   * does; the answer said under the caption. A click on an image the view no longer shows picks nothing.
+   */
+  const pickOnPage = async (message: unknown) => {
+    const click = imageClickOf(message);
+    const view = page;
+    const stop = pageShows;
+    if (!click || !view?.pick || click.shown !== view.pick.shown || !stop) return;
+    const point = pagePoint(click, view.image);
+    if (!point) return;
+    showPage({ ...view, note: 'Picking the element under the click…' });
+    const params: PickAtParams = { ref: stop.ref, worker: stop.worker, since: stop.stop.since, ...point };
+    const answer = await lc.sendRequest<PickAtResult>(PICK_AT_REQUEST, params).catch(() => null);
+    if (page?.pick?.shown !== click.shown) return;
+    showPage({ ...page, note: answer?.message ?? 'The editor service did not answer.' });
   };
 
   /** The editor's breakpoints to each live run whose breakpoints differ, as lines of its code. */
@@ -355,6 +396,7 @@ export function registerRunControl(
     }
     if (panel && pageStop && !keys.has(pageStop)) {
       pageStop = null;
+      pageShows = null;
       showPage({ image: null, caption: 'The test went on.' });
     }
     if (panel && !pageStop && !sessions.size) showPage({ image: null, caption: 'The run ended.' });
@@ -700,6 +742,7 @@ export function registerRunControl(
     sessions: () => [...sessions.values()],
     executionPoints: (uri) => drawn.get(uri) ?? [],
     pausedPage: () => (panel ? page : null),
+    pickOnPage,
     write,
     caretCount: () => caretShown,
     dispose: () => disposables.forEach((d) => d.dispose()),

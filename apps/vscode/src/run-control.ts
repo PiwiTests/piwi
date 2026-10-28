@@ -718,6 +718,54 @@ export function remember<T>(runs: Map<string, T>, ref: string, value: T): void {
 export interface PausedPageView {
   image: PausedImage | null;
   caption: string;
+  /**
+   * A click on the image picks the element under it (`piwi/pickAt`): its worker takes `pick-at` and the image names
+   * the viewport its points are in. The image a click was on (`shown`, counted as the view shows each) tells a click
+   * on an image the view no longer shows apart.
+   */
+  pick?: { shown: number } | null;
+  /** What the last pick on the image came to: the locator sent to the editor, or why there is none. */
+  note?: string | null;
+}
+
+/** Whether a click on an image of a stop picks there: its worker takes `pick-at`, and the image names its viewport. */
+export function picksOnImage(takes: readonly string[], image: PausedImage | null): boolean {
+  return takes.includes('pick-at') && !!image?.width && !!image.height;
+}
+
+/** A click on the paused page's image, as the view's script posts it: its offset and the size the image is shown at. */
+export interface ImageClick {
+  shown: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** A message of the view's script, read field by field; null for anything else. */
+export function imageClickOf(message: unknown): ImageClick | null {
+  const m = message as Record<string, unknown> | null;
+  if (!m || typeof m !== 'object' || m.type !== 'pick') return null;
+  const values = [m.shown, m.x, m.y, m.width, m.height];
+  if (!values.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  const [shown, x, y, width, height] = values as number[];
+  return { shown: shown!, x: x!, y: y!, width: width!, height: height! };
+}
+
+/**
+ * The point of the stopped page under a click on its image, in CSS pixels of its viewport (`piwi/pickAt`): the click's
+ * offset in the image as shown, scaled by the viewport over the size it is shown at (`x * width / naturalWidth` of the
+ * image's own pixels, whatever its size and the page's device scale factor); null for a click outside the image or an
+ * image that does not name its viewport.
+ */
+export function pagePoint(click: ImageClick, image: PausedImage | null): { x: number; y: number } | null {
+  const { width, height } = image ?? {};
+  if (!width || !height || click.width <= 0 || click.height <= 0) return null;
+  if (click.x < 0 || click.y < 0 || click.x > click.width || click.y > click.height) return null;
+  return {
+    x: Math.min(width - 1, Math.round((click.x * width) / click.width)),
+    y: Math.min(height - 1, Math.round((click.y * height) / click.height)),
+  };
 }
 
 function escapeHtml(text: string): string {
@@ -733,24 +781,35 @@ function imageSource(image: PausedImage | null): string | null {
   return /^[A-Za-z0-9+/]+={0,2}$/.test(image.data) ? `data:image/jpeg;base64,${image.data}` : null;
 }
 
+/** The hint above an image a click picks on. */
+export const PICK_HINT = 'Click the image to pick a locator: it replaces the one on the stopped line.';
+
 /**
- * The paused page view's document: no script, images from `data:` only and its one style by `nonce`, the caption
- * above the image.
+ * The paused page view's document: images from `data:` only, its one style by `nonce`, the caption above the image.
+ * No script, but where a click on the image picks (`view.pick`): then one script, by the same `nonce`, which posts a
+ * click's offset in the image and the size it is shown at, and which image it was on, to the extension; it reaches
+ * nothing else (`default-src 'none'`).
  */
 export function pausedPageHtml(view: PausedPageView, nonce: string): string {
   const src = imageSource(view.image);
-  const csp = `default-src 'none'; img-src data:; style-src 'nonce-${nonce}'`;
+  const pick = src && view.pick ? view.pick : null;
+  const csp = `default-src 'none'; img-src data:; style-src 'nonce-${nonce}'${pick ? `; script-src 'nonce-${nonce}'` : ''}`;
   return [
     '<!DOCTYPE html>',
     '<html lang="en">',
     '<head>',
     '<meta charset="UTF-8">',
     `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
-    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}img{max-width:100%;border:1px solid var(--vscode-panel-border)}</style>`,
+    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}</style>`,
     '</head>',
     '<body>',
     `<p>${escapeHtml(view.caption)}</p>`,
-    src ? `<img src="${src}" alt="The page of the paused test">` : '',
+    pick ? `<p class="hint">${escapeHtml(PICK_HINT)}</p>` : '',
+    view.note ? `<p class="note" role="status">${escapeHtml(view.note)}</p>` : '',
+    src ? `<img${pick ? ' class="pick" id="page"' : ''} src="${src}" alt="The page of the paused test">` : '',
+    pick
+      ? `<script nonce="${nonce}">const vscode=acquireVsCodeApi();const page=document.getElementById('page');page.addEventListener('click',(e)=>vscode.postMessage({type:'pick',shown:${pick.shown},x:e.offsetX,y:e.offsetY,width:page.clientWidth,height:page.clientHeight}));</script>`
+      : '',
     '</body>',
     '</html>',
   ].join('\n');

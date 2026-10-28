@@ -1695,6 +1695,42 @@ object Glue {
     fun decodableImage(width: Int, height: Int): Boolean =
         width in 1..MAX_IMAGE_SIDE && height in 1..MAX_IMAGE_SIDE && width.toLong() * height <= MAX_IMAGE_PIXELS
 
+    /** The hint above an image a click picks on. */
+    const val PICK_HINT = "Click the image to pick a locator: it replaces the one on the stopped line."
+
+    /** Whether a click on an image of a stop picks there: its worker takes `pick-at`, and the image names its viewport. */
+    fun picksOnImage(takes: List<String>, image: PausedImage?): Boolean =
+        "pick-at" in takes && (image?.width ?: 0) > 0 && (image?.height ?: 0) > 0
+
+    /**
+     * The point of the stopped page under a click at `x`, `y` of its image shown `shownWidth` by `shownHeight`, in CSS
+     * pixels of its viewport (`piwi/pickAt`): scaled by the viewport over the size it is shown at, whatever the image's
+     * own size and the page's device scale factor; null for a click outside the image or one that names no viewport.
+     */
+    fun pagePoint(x: Int, y: Int, shownWidth: Int, shownHeight: Int, image: PausedImage?): Pair<Int, Int>? {
+        val width = image?.width?.takeIf { it > 0 } ?: return null
+        val height = image.height?.takeIf { it > 0 } ?: return null
+        if (shownWidth <= 0 || shownHeight <= 0 || x !in 0..shownWidth || y !in 0..shownHeight) return null
+        val pageX = Math.round(x.toDouble() * width / shownWidth).toInt().coerceAtMost(width - 1)
+        val pageY = Math.round(y.toDouble() * height / shownHeight).toInt().coerceAtMost(height - 1)
+        return pageX to pageY
+    }
+
+    /**
+     * What **Pair with Piwi Picker** adds for remote development: the platform gives no public way to forward a port of
+     * a JetBrains Gateway backend, so the person forwards the IDE's port (`pairing`) and the run hubs' (`hubs`) under
+     * **Ports** in the JetBrains Client, at the same numbers, which the pairing's proof and the hubs' `Host` check name.
+     */
+    fun forwardingHint(pairing: Int, hubs: List<Int>): String {
+        val runs = hubs.distinct().sorted()
+        val first = "With JetBrains Gateway, forward port $pairing under Ports in the JetBrains Client first"
+        return when (runs.size) {
+            0 -> "$first, at the same number."
+            1 -> "$first, and ${runs.single()} for the runs, at the same numbers."
+            else -> "$first, and ${runs.dropLast(1).joinToString(", ")} and ${runs.last()} for the runs, at the same numbers."
+        }
+    }
+
     /** The request header carrying Piwi Picker's challenge (`@piwitests/core/editor-send`). */
     const val EDITOR_CHALLENGE_HEADER = "x-piwi-editor-challenge"
 

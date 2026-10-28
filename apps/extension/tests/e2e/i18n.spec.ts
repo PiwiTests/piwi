@@ -8,12 +8,16 @@ import { stubChromeI18n } from './i18n-stub.js';
 import { TRANSLATION_ISSUE_URL } from '../../src/shared/languages.js';
 import {
   answerNext,
+  answerView,
+  jpegOf,
   pairedExtension,
+  sendFrame,
   startEditor,
   startRun,
   stopAtCheckout,
   KEPT,
   RUN_TAKES,
+  VIEWPORT,
   type Editor,
 } from './runs-fixtures.js';
 
@@ -334,12 +338,24 @@ test.describe('the Runs window in another language', () => {
   });
 
   const LANGUAGES = [
-    { language: 'fr', heading: 'Les exécutions de votre éditeur', mock: 'Simuler une requête', failed: 'En échec à' },
-    { language: 'de', heading: 'Die Läufe Ihres Editors', mock: 'Anfrage nachbilden', failed: 'Fehlgeschlagen bei' },
+    {
+      language: 'fr',
+      heading: 'Les exécutions de votre éditeur',
+      mock: 'Simuler une requête',
+      failed: 'En échec à',
+      live: 'Voir en direct',
+    },
+    {
+      language: 'de',
+      heading: 'Die Läufe Ihres Editors',
+      mock: 'Anfrage nachbilden',
+      failed: 'Fehlgeschlagen bei',
+      live: 'Live ansehen',
+    },
   ];
 
-  for (const { language, heading, mock, failed } of LANGUAGES) {
-    test(`is in ${language} at a stop, its actions and the requests to mock included, and nothing in it clips`, async () => {
+  for (const { language, heading, mock, failed, live } of LANGUAGES) {
+    test(`is in ${language} at a stop, its actions, the requests to mock and the live view included, and nothing in it clips`, async () => {
       const { context, extensionId } = await pairedExtension(editor, { language });
       const run = await startRun(editor, 'pays', [...RUN_TAKES]);
       try {
@@ -358,6 +374,22 @@ test.describe('the Runs window in another language', () => {
         stopAtCheckout(run.worker, 2, { reason: 'failure' });
         await expect(runs.locator('.state')).toHaveText(`${failed} tests/checkout.spec.ts:5`);
         expect(await clipped(runs)).toEqual([]);
+        // A headless stop watched live: its tools, its badge, the hint on its input and the actions it takes then.
+        run.worker.send({ type: 'running', stop: 2 });
+        stopAtCheckout(run.worker, 3, { bar: false });
+        const frame = await jpegOf(runs);
+        await answerNext(run.worker, 'image', { mime: 'image/jpeg', data: frame, ...VIEWPORT });
+        await runs.getByRole('button', { name: live }).click();
+        await answerView(run.worker);
+        sendFrame(run.worker, 3, frame);
+        await expect(runs.locator('img.live')).toBeVisible();
+        await expect(runs.locator('.hint')).toBeVisible();
+        await expect(runs.locator('.controls button')).toHaveCount(8);
+        expect(await untranslated(runs)).toEqual([]);
+        expect(await clipped(runs)).toEqual([]);
+        expect(await runs.locator('img.live').getAttribute('alt')).toBe(
+          readCatalog(language).runs_liveAltInput!.message,
+        );
       } finally {
         await editor.svc.client.sendNotification('piwi/commandEnded', { ref: run.ref, exitCode: 1 });
         run.worker.socket.destroy();

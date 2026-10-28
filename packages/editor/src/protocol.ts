@@ -1332,10 +1332,24 @@ export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-p
 
 /**
  * What a worker's reporter takes at a stop, as its run connection lists it: the intents `pick`, `record`, `assert` and
- * `assert-region` (`piwi/stopAction`), and the queries `requests` (`piwi/stopRequests`), `mock` and `locator`
- * (`piwi/locatorAtCaret`). An older reporter lists fewer, or none: the service refuses what it does not take.
+ * `assert-region` (`piwi/stopAction`), the queries `requests` (`piwi/stopRequests`), `mock` and `locator`
+ * (`piwi/locatorAtCaret`), and, for a viewer outside the page, the stopped page's live view (`view`), the input played
+ * on it (`input`, with the click count of a button's `down` and `up`: `input-clicks`) and the element under a point of
+ * an image of it (`pick-at`, `piwi/pickAt`). An older reporter lists fewer, or none: the service refuses what it does
+ * not take.
  */
-export type RunTake = 'pick' | 'record' | 'assert' | 'assert-region' | 'requests' | 'mock' | 'locator';
+export type RunTake =
+  | 'pick'
+  | 'record'
+  | 'assert'
+  | 'assert-region'
+  | 'requests'
+  | 'mock'
+  | 'locator'
+  | 'view'
+  | 'input'
+  | 'input-clicks'
+  | 'pick-at';
 
 /** Where a worker stands stopped: before a call, which runs as soon as the stop is answered. */
 export interface RunStop {
@@ -1490,10 +1504,16 @@ export interface PausedPageParams {
   what: 'image';
 }
 
-/** An image of a stopped page, without the pause bar: a JPEG, base64. */
+/**
+ * An image of a stopped page, without the pause bar: a JPEG, base64, and the page's viewport in CSS pixels (`width`,
+ * `height`), which `piwi/pickAt` names a point in: a point of the image a client shows is `x * width / naturalWidth`,
+ * whatever the image's own size and the page's device scale factor. A reporter that predates them names neither.
+ */
 export interface PausedImage {
   mime: 'image/jpeg';
   data: string;
+  width?: number;
+  height?: number;
 }
 
 /**
@@ -1505,6 +1525,56 @@ export interface PausedPageResult {
 }
 
 export const PAUSED_PAGE_REQUEST = 'piwi/pausedPage';
+
+/**
+ * `piwi/pickAt`: Pick on the image, at the stop `since` names, of the run's one stopped worker or `worker`: the element
+ * under the point `x`, `y` of the stopped page, in CSS pixels of its viewport (a point of the image `piwi/pausedPage`
+ * gave is `x * image.width / naturalWidth`, `y * image.height / naturalHeight`). The worker reads the page's ARIA
+ * snapshot with its boxes and takes, of the elements under the point, the innermost that is or holds the element a
+ * click there lands on (the page's hit test, in paint order: a dialog or a fixed banner over another element is the
+ * one taken; Piwi's own overlays left out), ranks it as the pause bar's Pick a locator does, and sends the first
+ * locator that finds it alone where the bar's pick goes: the client's Send to editor listener, then `piwi/applyPick`,
+ * in place of the locator on the stopped line.
+ */
+export interface PickAtParams {
+  ref: string;
+  worker?: number | null;
+  since: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * The locator sent, with `ok`; null with why otherwise: no element there (the page's background), an iframe, a stop
+ * the test went on from, a Playwright older than 1.64 or a reporter that does not take it.
+ */
+export interface PickAtResult {
+  ok: boolean;
+  message: string;
+  locator: string | null;
+}
+
+export const PICK_AT_REQUEST = 'piwi/pickAt';
+
+/**
+ * `piwi/hub`: the address of the service's hub, Piwi Picker's WebSocket, and, with `forwarded`, the loopback ports of
+ * the browser's machine that the client forwards to it, in place of those it named before (a remote window: VS Code's
+ * `asExternalUri`). The hub then takes a handshake whose `Host` is `127.0.0.1` or `localhost` at one of those ports,
+ * beside its own; the extension's `Origin` and the token are required all the same. Ports that are not ports are left
+ * out, and 8 are kept at most. Answered once the hub takes them, so a client lists a forwarded address only after.
+ */
+export interface HubParams {
+  forwarded?: number[];
+}
+
+export interface HubResult {
+  /** `ws://127.0.0.1:<port>/piwi/hub`; null while the hub does not listen. */
+  url: string | null;
+  /** The forwarded ports the hub takes now. */
+  forwarded: number[];
+}
+
+export const HUB_REQUEST = 'piwi/hub';
 
 /**
  * What a client starts at a stop (`piwi/stopAction`): `pick` and `record` start the pause bar's Pick a locator and

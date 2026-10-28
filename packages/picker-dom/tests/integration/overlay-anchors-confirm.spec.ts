@@ -268,5 +268,55 @@ test.describe('showPickerChoices', () => {
     });
     await page.getByText('Skip — keep the failure as-is').click();
     expect(await page.evaluate(() => (globalThis as any).__piwiPickChoice)).toBe(-1);
+    expect(await page.evaluate(() => typeof (globalThis as any).__piwiChoiceCleanup)).toBe('undefined');
+  });
+
+  test('leaves the page unanswered through its cleanup, its keys with it', async ({ page }) => {
+    await page.setContent('<!doctype html><html><body><p>The page</p></body></html>');
+    await page.evaluate(showPickerChoices, {
+      failing: null,
+      choices: [{ locator: `getByTestId('x')`, score: 100 }],
+    });
+    await expect(page.locator('button')).toHaveCount(2);
+    await page.evaluate(() => (globalThis as any).__piwiChoiceCleanup());
+    await expect(page.locator('button')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    expect(
+      await page.evaluate(() => [(globalThis as any).__piwiPickChoice, typeof (globalThis as any).__piwiChoiceCleanup]),
+    ).toEqual([undefined, 'undefined']);
+    await expect(page.locator('body')).toHaveText('The page');
+  });
+});
+
+test.describe('what the anchors step and the choice list add to the page', () => {
+  test('is each marked as Piwi’s own, with an `__piwi` id, which Pick on the image leaves out', async ({ page }) => {
+    await page.setContent(`<!doctype html><html><body>
+      <form data-testid="signup-form"><button id="target">Join</button></form>
+    </body></html>`);
+    const added = () =>
+      page.evaluate(() =>
+        [...document.body.children].filter((el) => el.tagName !== 'FORM' && el.tagName !== 'SCRIPT').map((el) => el.id),
+      );
+    await page.evaluate(() => {
+      (globalThis as any).__piwiPickedElement = document.getElementById('target');
+    });
+    await page.evaluate(showAnchorPicker, {
+      tagRoles: { button: 'button', form: 'form' },
+      inputRoles: {},
+      roleSources: 'button',
+      leafRole: 'button',
+      leafLevel: null,
+      leafTestId: null,
+    });
+    expect(await added()).toEqual([
+      '__piwi_anchor_picked',
+      '__piwi_anchor_outline',
+      '__piwi_anchor_label',
+      '__piwi_anchor_panel',
+    ]);
+    await page.evaluate(() => (globalThis as any).__piwiAnchorCleanup());
+    expect(await added()).toEqual([]);
+    await page.evaluate(showPickerChoices, { failing: null, choices: [{ locator: `getByTestId('x')`, score: 100 }] });
+    expect(await added()).toEqual(['__piwi_picker_choices']);
   });
 });

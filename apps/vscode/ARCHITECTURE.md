@@ -331,8 +331,12 @@ read change by change in the document after them all (`linesAbove`), so the mark
 
 **The paused page.** A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the
 **Piwi: paused page** webview beside the editor, again at each such stop and on **Piwi: Show the paused page**
-(`piwi.showPausedPage`). The webview runs no script: it takes images from `data:` only (`img-src data:`) and its one
-style by nonce (`pausedPageHtml`).
+(`piwi.showPausedPage`). The webview takes images from `data:` only (`img-src data:`) and its one style by nonce
+(`pausedPageHtml`). Where its worker takes `pick-at` and the image names its viewport (`picksOnImage`), a click on the
+image picks the element under it: a script by the same nonce, the webview's only one, posts the click's offset and the
+size the image is shown at, with which image it was on (`imageClickOf`); the extension maps it to the page's CSS pixels
+(`pagePoint`) and asks `piwi/pickAt`, the locator going where a pick goes and the answer said under the caption. A
+click on an image the view no longer shows picks nothing.
 
 **Breakpoints during a run.** The breakpoints `breakpointsForRun` gives go to each live run as they change
 (`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the
@@ -429,14 +433,17 @@ such file, a warning says so: VS Code hands the link to the window focused last.
 state (`piwi.sendPort`), with the token from `SecretStorage` (`piwi.sendToken`).
 
 - **Piwi: Pair with Piwi Picker** starts it and copies the pairing address as the browser's machine reaches it
-  (`pickerPairing`: `vscode.env.asExternalUri`, which a remote window forwards).
+  (`pickerPairing`: `vscode.env.asExternalUri`, which a remote window forwards), on `127.0.0.1` whatever name VS
+  Code gives it (`onLoopback`): `localhost` may resolve to `[::1]`, where another program could listen.
 - A run's `PIWI_EDITOR_SEND` keeps the loopback address (`runPairing`), since the reporter runs where the extension
   does. Which port it takes: [Breakpoints](#breakpoints).
 
-**Who gets an answer.** The listener answers only a request whose `Host` is `127.0.0.1:<port>` or `localhost:<port>`
-(a 403 otherwise: a page reached under another name). Every answer to a request carrying `x-piwi-editor-challenge`
-(`isEditorChallenge`), whatever its route and status, the 401, the 403, the preflight and a failure's 500 included,
-carries `x-piwi-editor-proof` (`editorTokenProof` of `@piwitests/core/editor-send`, for the port the request reached).
+**Who gets an answer.** The listener answers only a request whose `Host` is `127.0.0.1` or `localhost` at its port, or
+at the port of the browser's machine a remote window forwards to it (`forwarded`, set as the pairing address goes
+through `asExternalUri`; a 403 otherwise: a page reached under another name). Every answer to a request carrying
+`x-piwi-editor-challenge` (`isEditorChallenge`), whatever its route and status, the 401, the 403, the preflight and a
+failure's 500 included, carries `x-piwi-editor-proof` (`editorTokenProof` of `@piwitests/core/editor-send`, for the
+port the request named).
 So Piwi Picker sends the token only to a listener that holds it. The CORS headers allow the challenge header and expose
 the proof's.
 
@@ -445,8 +452,11 @@ the proof's.
 their discovery files (`readLiveHubs` of `@piwitests/editor/discovery`, in `PIWI_EDITORS_DIR` or `~/.piwi/editors`).
 Each hub carries the WebSocket's address and token, the pid, version, client, workspace folders and start, never a run
 channel's token. So the one pairing reaches the runs of every window, the other windows' included. A request without
-the token is a 401. The addresses are loopback ones, which a remote window does not forward: there, the listener
-answers no hubs (`liveHubsHere`, while `vscode.env.remoteName` is set). How the files are read:
+the token is a 401. The addresses are loopback ones: a remote window (`vscode.env.remoteName` set) lists its own
+service's hub alone (`piwi/hub` names its address), at the loopback port of the browser's machine `asExternalUri`
+forwards to it, on `127.0.0.1`, once `piwi/hub` with `forwarded` made the hub take that port in `Host` (`liveHubsHere`); none when
+the forward is not a loopback `http:` address (Codespaces in the browser) or the service does not answer, and the
+other windows' hubs never. How the files are read:
 [The discovery file](../../packages/editor/ARCHITECTURE.md#the-discovery-file) in the editor service's reference.
 
 What it inserts:

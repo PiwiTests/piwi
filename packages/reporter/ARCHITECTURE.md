@@ -102,8 +102,9 @@ What the package does to a user's run, process by process.
   2 seconds at most), and stays connected until the worker ends. The messages are defined
   in `@piwitests/core/run-channel`.
 - The first message, `run-attach`, lists what the worker takes (`takes`: the intents
-  `pick`, `record`, `assert`, `assert-region` and the queries `requests`, `mock`,
-  `locator`) and the stops it holds for an editor that shows them (`holds: ['failure']`).
+  `pick`, `record`, `assert`, `assert-region`, the queries `requests`, `mock`,
+  `locator`, and, for a viewer outside the page, `view`, `input` and `pick-at`) and the
+  stops it holds for an editor that shows them (`holds: ['failure']`).
   The worker then sends each test's begin and end, each stop it shows, and each stop's
   end (`running`).
 - The editor's controls (Pause, Step, Resume, Finish, Run to a line) and its breakpoints,
@@ -126,7 +127,8 @@ What the package does to a user's run, process by process.
   `PIWI_RECORD_CHANNEL`. The test's window is brought to the front, and the pick or the
   recording ends with the stop. The worker answers at once whether it started. It
   refuses at a stop that ended or is ending (its test ended, its page or context began to
-  close), at one no bar shows or whose page it cannot tell, Record here and Assert when
+  close), at one no bar shows whose live view nobody watches, at one whose page it cannot
+  tell, Record here and Assert when
   the run has no `PIWI_RECORD_CHANNEL`, and any intent while a pick, a check or a
   recording runs.
 - **Assert** is the same hand-off in its `check` mode, naming the stop: the editor's
@@ -153,6 +155,47 @@ What the package does to a user's run, process by process.
   alone) on the stopped page, one count after the other, and, where the bar shows,
   outlines its matches with Playwright's highlight, the one before taken down first and
   the last before the stop ends.
+- **The live view**, for a viewer outside the page (Piwi Picker, through the editor's
+  hub). `view` shows the stopped page live: its screencast (`page.screencast.start`
+  through an internal call, at its viewport scaled to fit 1280 by 800, JPEG quality 60,
+  unless a client that came first, the test's video or its trace's images, set its own
+  size and quality, which every later client gets; the view stops its own client alone,
+  and the video stays whole). One frame at a time waits for its acknowledgment, an
+  interval at most (`FrameAcks`), so a browser the view alone holds paints ten a second at
+  most; a frame that comes while one waits (another client acknowledged the one before)
+  is acknowledged at once, so none the view drops is held. Each goes as `frame` with the
+  viewport in CSS pixels; one like
+  the frame before is dropped. One over 384 KB is dropped too, and an image of the page at
+  quality 30 goes in its place, two a second at most; when that one is over 384 KB as well,
+  the viewers hear once why no frame goes (`frame` with `refused`), until one goes again.
+  The latest alone waits while the connection is backed up; the latest sent is kept in
+  memory until the view ends, and sent again as the view is asked again (a viewer that
+  comes later, which a still page paints no other frame for); none is stored nor attached. Where the screencast cannot start (the test
+  runs its own), an image of the page goes twice a second.
+- `input` plays a viewer's mouse, wheel, key and text events (`@piwitests/core/run-view`:
+  Playwright's key names alone, nothing evaluated) with `page.mouse` and `page.keyboard`
+  through internal calls: trusted input that reaches whatever is at the point, Piwi's
+  overlays included (the picker, the recorder, a headed stop's pause bar, whose buttons
+  answer the stop as a click in the window does). Only while that stop's view is watched,
+  200 events a second at most, and what it holds down is let go before the test goes on.
+- At a stop no bar shows, Pick a locator, Record here, Assert and Assert a region run in
+  the page while its view is watched (`viewHere` in `pause-at.ts`), driven through that
+  input. They end with the view or the stop, leaving nothing of theirs in the page (the
+  picker's choice list included, `__piwiChoiceCleanup`).
+- `pick-at` (`pick-at.ts`) reads the page's ARIA snapshot in AI mode with its boxes, and
+  takes, of the elements under a point, the innermost that is or holds the element a click
+  there lands on: the page's hit test in paint order (`elementsFromPoint`, into open shadow
+  roots), so a dialog, a fixed banner or a sticky header over another element is the one
+  taken. Piwi's overlays are left out (each root an `__piwi` id or a `piwi-…-host`), an
+  iframe refused. It ranks it as the bar's pick does, with `locator.normalize()`'s locator
+  among the candidates,
+  and posts the first that finds it alone to `PIWI_EDITOR_SEND` (`page.getByRef` and the
+  boxes feature-checked, refused before Playwright 1.64). An image of a stopped page names
+  its viewport (`width`, `height`), the CSS pixels a point is in.
+- The view stops before the stop's `running`, as its page closes and as the connection
+  does: no frame of a stop goes once it began to end. A frame carries whatever the page
+  shows: it goes to the editor service alone, which sends it to the paired, authenticated
+  viewers that asked for it.
 - One stop shows at a time in a worker. A stop that waits for its turn is decided again
   when its turn comes. It goes on without showing, and the editor never hears of it,
   when the test ended meanwhile (as on Finish), when its page or context began to close,
@@ -358,7 +401,9 @@ src/
                 PIWI_EDITOR_SEND), record-handoff (Record here:
                 the paused page relayed to the editor's recorder, PIWI_RECORD_CHANNEL),
                 run-channel (the worker's run connection to the editor,
-                PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in),
+                PIWI_RUN_CHANNEL: its tests and stops out, the editor's controls in,
+                a stopped page's live view and the input played on it),
+                pick-at (the element under a point of an image of a stopped page),
                 kept-responses (the text bodies an interactive run keeps for
                 Mock a request), chain-locator (a locator chain's source built
                 against a page, for the locator at the editor's caret),

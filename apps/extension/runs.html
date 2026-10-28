@@ -280,6 +280,57 @@
         font-size: 11.5px;
         color: var(--muted);
       }
+      /* Why a live view ended or was refused, that it starts, and how its input works. */
+      .page .view-note {
+        display: flex;
+        gap: 6px;
+        align-items: flex-start;
+        margin-top: 6px;
+        line-height: 16px;
+      }
+      .view-note > .piwi-icon {
+        flex-shrink: 0;
+        width: 12px;
+        height: 12px;
+        margin-top: 2px;
+      }
+      /* Watch live and Pick on the image, above the image. */
+      .page-tools {
+        margin-bottom: 6px;
+      }
+      /* The image, or the live view in its place: the width of the window, its aspect kept. */
+      .page-frame {
+        position: relative;
+      }
+      .page img.live:focus {
+        outline: 2px solid var(--accent-fg);
+        outline-offset: 2px;
+      }
+      /* Pick on the image waits for a click. */
+      .page[data-picking] img {
+        cursor: crosshair;
+      }
+      /* The live view's badge: still, in a red that keeps its white text's contrast in both schemes. */
+      .live-badge {
+        position: absolute;
+        top: 6px;
+        left: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 1px 6px 1px 4px;
+        border-radius: 4px;
+        background: #b91c1c;
+        color: #ffffff;
+        font-size: 10.5px;
+        font-weight: 700;
+        line-height: 16px;
+        pointer-events: none;
+      }
+      .live-badge > .piwi-icon {
+        width: 10px;
+        height: 10px;
+      }
       /* The controls that steer the test, then the code a stop can write, on a row of their own. */
       .controls {
         display: grid;

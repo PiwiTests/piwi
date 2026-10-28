@@ -33,6 +33,7 @@ run control, coverage, the recorder, the build, and the reads and the connection
   - [Controls, breakpoints and the paused page](#controls-breakpoints-and-the-paused-page)
   - [Stops no pause bar shows](#stops-no-pause-bar-shows)
   - [The hub](#the-hub)
+  - [The live view](#the-live-view)
   - [Code from a stop](#code-from-a-stop)
   - [The discovery file](#the-discovery-file)
 - [Coverage](#coverage)
@@ -178,7 +179,8 @@ the custom messages of `src/protocol.ts`:
 - **Requests**, from the client:
   - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/selections`, `piwi/runStatus`, `piwi/refreshRun`, `piwi/runId`;
-  - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`;
+  - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`,
+    `piwi/locatorAtCaret`, `piwi/hub`;
   - failures: `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/applyPick`;
   - connection: `piwi/status`, `piwi/refresh`, `piwi/desktop`, `piwi/mcp`;
   - desktop jobs: `piwi/desktopJob`, `piwi/shareDesktopJob`;
@@ -578,7 +580,13 @@ closing its page, which the worker sends unanswered. A control naming that stop 
 The service keeps the breakpoints of the 50 latest runs.
 
 `piwi/pausedPage` asks a stopped worker for a JPEG of its page. The answer is null after 10 s (`PAUSED_PAGE_WAIT_MS`),
-when the worker leaves, or when it is not stopped.
+when the worker leaves, or when it is not stopped. From a reporter that names it, the image carries the page's viewport
+in CSS pixels (`width`, `height`).
+
+`piwi/pickAt { ref, worker?, since, x, y }` (`RunSessions.pickAt`, the hub's `pick-at` too) has the stopped worker pick
+the element under a point of its page, in those CSS pixels (a point of the image is `x * width / naturalWidth`,
+whatever the device scale factor), and send its locator where a pick goes. It answers `{ ok, message, locator }`, and
+is refused without `since`, for a point outside 0 to 10,000 and for a reporter that does not take `pick-at`.
 
 **Places.** A place a client sends (`run-to`, the breakpoints) is a line of the run's code: the client maps a line of a
 document edited since the run started back to it. A worker names a place relative to the run's working directory
@@ -631,10 +639,12 @@ free port: `ws://127.0.0.1:<port>/piwi/hub` (`HUB_PATH`).
 **The handshake.**
 
 - Any other path is a 404, and a plain HTTP request a 426.
-- A handshake whose `Host` is not `127.0.0.1:<port>` or `localhost:<port>` (`isHubHost`: a page reached under another
-  name, DNS rebinding) is refused with a 403 before any WebSocket opens. So is one whose `Origin` is not a browser
-  extension's (`isExtensionOrigin`: `chrome-extension://` and 32 letters `a` to `p`, `moz-extension://` and a UUID;
-  never `http(s)`, `null`, `file` or none).
+- A handshake whose `Host` is not `127.0.0.1` or `localhost` at its port, or at one the client forwards to it from the
+  browser's machine (`piwi/hub` with `forwarded`, a remote window's; 8 at most, `forwardedPorts`), is refused with a
+  403 before any WebSocket opens (`isHubHost`: a page reached under another name, DNS rebinding). So is one whose
+  `Origin` is not a browser extension's (`isExtensionOrigin`: `chrome-extension://` and 32 letters `a` to `p`,
+  `moz-extension://` and a UUID; never `http(s)`, `null`, `file` or none). `piwi/hub` answers the hub's address and
+  the forwarded ports it takes, once it takes them, so a client lists a forwarded address only after.
 - Past 16 open connections, or 8 open that did not say hello, a handshake gets a 503.
 - A handshake's headers must arrive within 5 s and fit in 8 KiB.
 
@@ -657,13 +667,14 @@ not a boundary.
   (Run to a line stays in the editor);
 - `pausedPage`;
 - the intents `pick`, `record`, `assert` and `assert-region` (`RunSessions.intent`), with `since` too;
-- `requests` and `mock` (`request`, a kept response's id), with `since` too.
+- `requests` and `mock` (`request`, a kept response's id), with `since` too;
+- `view` (`on`), `input` (`events`) and `pick-at` (`x`, `y`), with `since` too ([The live view](#the-live-view)).
 
 The intents, `requests` and `mock` go through the same `StopActions` as the client's `piwi/stopAction`
 ([Code from a stop](#code-from-a-stop)); the code goes to the client alone.
 
-Each command is answered once (`{ type: 'answer', id, ok, message }`, with `image` too for `pausedPage` and `requests`
-for `requests`, the sentence cut at `MAX_HUB_MESSAGE` with the cut marked). A command of
+Each command is answered once (`{ type: 'answer', id, ok, message }`, with `image` too for `pausedPage`, `requests`
+for `requests` and `locator` for `pick-at`, the sentence cut at `MAX_HUB_MESSAGE` with the cut marked). A command of
 another type, with a field it cannot take, or answering a stop without naming it
 (`The command needs the stop it answers.`) is answered `ok: false` with why. A connection has at most 16 commands
 waiting. A message that is no command (not JSON, no `id`) closes the connection (4003), as do a binary frame (1003) and
@@ -671,7 +682,9 @@ a frame over 64 KiB (`MAX_HUB_FRAME`, 1009). Nothing a command asks evaluates co
 instance.
 
 **Intents.** An intent is asked of the one stopped worker (or the one named), at the stop `since` names. It is refused
-at a stop no pause bar shows (`bar: false`), and for a reporter whose `run-attach` does not list it in `takes`.
+at a stop no pause bar shows (`bar: false`) unless the connection watches that stop's live view, which drives it
+there (`IntentParams.viewer`, `StopActions.action`'s `viewer`), and for a reporter whose `run-attach` does not list it
+in `takes`.
 Otherwise it goes to the worker as a `request` naming the stop, and the worker's answer is passed on (10 s at most).
 The worker refuses one at a stop that is ending, or whose page it cannot tell; such a stop has no image either.
 
@@ -682,7 +695,10 @@ client hears, so both show the same. Each run goes as a `session` with:
 - the run's command line, kept by ref for the 50 latest commands the service built, cut at `MAX_HUB_COMMAND` with the
   cut marked;
 - its folder's label and its Piwi project;
-- each worker's `intents` (`RunSessions.intentsOf`).
+- each worker's `intents` (`RunSessions.intentsOf`): Assert, Assert a region and Mock a request only while the
+  client writes the code from a stop;
+- each stop's `intents`, what it takes from that connection now (`RunSessions.stopIntentsOf`): `input` only while it
+  watches the stop's live view; Pick, Record, Assert and Assert a region where the bar shows or while it watches.
 
 What the hub sends fits what `parseHubMessage` reads.
 
@@ -702,7 +718,30 @@ ping is dropped, as is one with 32 MB unread.
 not answered the close. A connection being closed holds none of the places counted above.
 
 A subscribed connection is a surface that answers stops, and one that said `follow` holds failures
-([Stops no pause bar shows](#stops-no-pause-bar-shows)).
+([Stops no pause bar shows](#stops-no-pause-bar-shows)). Watching a stop's live view and following the runs are apart:
+`follow` says a Runs window is open, `view` names one stop.
+
+### The live view
+
+A hub connection watches a stop's live view (`view`, with `since` and `on`; `RunSessions.watch`, the connection being a
+`Viewer`). The worker starts the view as the stop's first viewer comes and stops it as the last goes (a viewer whose
+connection closes goes, `unwatchAll`); a reporter that does not take `view` is refused. A viewer that comes once the
+view is on asks the worker again, which sends the frame it sent last again: a still page paints no other.
+
+- **Frames.** Each `frame` of the stop the worker stands at goes to that stop's viewers alone, none of an older stop:
+  a view ends as its stop does. The hub sends a connection ten a second at most for each worker
+  (`MAX_VIEW_FPS`), the latest one waiting while its socket holds more than 1 MB unread (`LatestPacer`), and none of a
+  stop it no longer watches (`RunSessions.viewing`). It keeps none. Why a view sends no frame (`frame` with
+  `refused`: each image of the page is over 384 KB) goes the same way, as a frame does.
+- **Input.** `input` plays the connection's events (`@piwitests/core/run-view`: mouse, wheel, key and text, checked
+  field by field, Playwright's key names alone) on the page of the stop it watches, 200 events a second at most for
+  each connection (`MAX_VIEW_EVENT_RATE`), and is refused to any other.
+- **Intents.** At a stop no pause bar shows, Pick, Record, Assert and Assert a region start for a connection that
+  watches its view alone, which drives them through it. A connection that starts or stops watching hears the run
+  again, with what its stops take now.
+
+The frames carry whatever the page shows: they reach only the paired, authenticated connections that asked for them,
+never the client, an instance or a file.
 
 ### Code from a stop
 

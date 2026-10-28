@@ -1,10 +1,11 @@
+import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { connect, type AddressInfo, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { BrowserContext, Worker } from '@playwright/test';
+import type { BrowserContext, Page, Worker } from '@playwright/test';
 import {
   EDITOR_CHALLENGE_HEADER,
   EDITOR_PROOF_HEADER,
@@ -14,7 +15,8 @@ import {
 import { lineReader, parseHandoffToTest, type HandoffToTest } from '@piwitests/core/ide-recorder';
 import type { RawCaptureEvent } from '@piwitests/core/recording';
 import { RUN_TAKES, type HubToRun, type KeptResponse, type RunTake } from '@piwitests/core/run-channel';
-import { liveHubsOf, type HubKeptRequest, type LiveHub } from '@piwitests/core/run-hub';
+import { liveHubsOf, type HubKeptRequest, type HubSession, type LiveHub } from '@piwitests/core/run-hub';
+import type { ViewInput } from '@piwitests/core/run-view';
 import {
   FakeWorker,
   service,
@@ -76,11 +78,7 @@ export async function startEditor(): Promise<Editor> {
   const published = await waitFor(() => svc.published[0] ?? undefined);
   const [hub] = liveHubsOf([published]);
   const server: Server = createServer(async (req, res) => {
-    const challenge = req.headers[EDITOR_CHALLENGE_HEADER];
-    if (isEditorChallenge(challenge)) {
-      const port = (server.address() as AddressInfo).port;
-      res.setHeader(EDITOR_PROOF_HEADER, await editorTokenProof(PAIRING_TOKEN, port, challenge));
-    }
+    await proveTo(req, res, (server.address() as AddressInfo).port);
     if (req.url === '/piwi/live' && req.method === 'GET') {
       res.setHeader('Content-Type', 'application/json');
       if (req.headers.authorization !== `Bearer ${PAIRING_TOKEN}`) {
@@ -121,7 +119,7 @@ export async function startEditor(): Promise<Editor> {
  * the secret area).
  */
 export async function pairedExtension(
-  editor: Editor,
+  editor: Pick<Editor, 'origin'>,
   options: { deviceScaleFactor?: number; language?: string } = {},
 ): Promise<{ context: BrowserContext; worker: Worker; extensionId: string }> {
   const dir = mkdtempSync(path.join(tmpdir(), 'piwi-picker-runs-'));
@@ -136,6 +134,17 @@ export async function pairedExtension(
     token: PAIRING_TOKEN,
   });
   return { context, worker, extensionId: worker.url().split('/')[2]! };
+}
+
+/** The proof that the program on the editor's port holds the pairing's token, for a request with a challenge. */
+async function proveTo(
+  req: { headers: Record<string, unknown> },
+  res: { setHeader(n: string, v: string): void },
+  port: number,
+) {
+  const challenge = req.headers[EDITOR_CHALLENGE_HEADER];
+  if (isEditorChallenge(challenge))
+    res.setHeader(EDITOR_PROOF_HEADER, await editorTokenProof(PAIRING_TOKEN, port, challenge));
 }
 
 /** The run channel a run's command names, which a test's hand-off to the editor's recorder reaches too. */
@@ -316,3 +325,164 @@ export const CART_RESPONSE: KeptResponse = {
   type: 'application/json',
   body: '{"items":[]}',
 };
+
+/** The viewport of the page a fake worker's frames show, in CSS pixels. */
+export const VIEWPORT = { width: 1280, height: 800 };
+
+/** A JPEG of a page, as a worker sends a frame or the image of its stopped page: base64. */
+export async function jpegOf(page: Page): Promise<string> {
+  return (await page.screenshot({ type: 'jpeg', quality: 60 })).toString('base64');
+}
+
+/** The worker's reporter starts (`on`) or stops a stop's live view, as asked. */
+export function answerView(worker: FakeWorker, on = true): Promise<Extract<HubToRun, { type: 'request' }>> {
+  return answerNext(worker, 'view', { ok: true, message: on ? 'The live view is on.' : 'The live view is off.' });
+}
+
+/** A frame of the live view of the stop `stop`: the JPEG `data`, of a page of `VIEWPORT`. */
+export function sendFrame(worker: FakeWorker, stop: number, data: string): void {
+  worker.send({ type: 'frame', stop, ...VIEWPORT, data });
+}
+
+/**
+ * The worker's reporter plays the input of the stop's viewers: each `input` it hears is answered as played, and its
+ * events kept, in the order they came.
+ */
+export function playInput(worker: FakeWorker): { events: ViewInput[]; stop(): void } {
+  const events: ViewInput[] = [];
+  const done = new Set<number>();
+  const timer = setInterval(() => {
+    for (const m of worker.heard) {
+      if (m.type !== 'request' || m.what !== 'input' || done.has(m.request)) continue;
+      done.add(m.request);
+      events.push(...m.events);
+      worker.send({ type: 'answer', request: m.request, what: 'input', value: { ok: true, message: 'Played.' } });
+    }
+  }, 10);
+  return { events, stop: () => clearInterval(timer) };
+}
+
+/** The requests of `what` a worker heard. */
+export function heardRequests<W extends string>(
+  worker: FakeWorker,
+  what: W,
+): Array<Extract<HubToRun, { type: 'request' }> & { what: W }> {
+  return worker.heard.filter(
+    (m): m is Extract<HubToRun, { type: 'request' }> & { what: W } => m.type === 'request' && m.what === what,
+  );
+}
+
+/** An older editor: its hub, what it heard, and the address of its Send to editor endpoint. */
+export interface OlderEditor {
+  origin: string;
+  /** The commands the hub heard after `hello`. */
+  heard: Array<Record<string, unknown>>;
+  close(): Promise<void>;
+}
+
+/**
+ * An editor service of a version before the live view, behind its own Send to editor endpoint: a hub that tells each
+ * run as the spec gives it, with no `stop.intents` and no worker taking the view, and answers the image of a stopped
+ * page without its viewport. A WebSocket server of its own, on the handshake and text frames alone.
+ */
+export async function olderEditor(sessions: HubSession[], image: string): Promise<OlderEditor> {
+  const heard: Array<Record<string, unknown>> = [];
+  const token = 'older_hub_token_0123456789';
+  const server: Server = createServer(async (req, res) => {
+    await proveTo(req, res, (server.address() as AddressInfo).port);
+    if (req.url === '/piwi/live' && req.headers.authorization === `Bearer ${PAIRING_TOKEN}`) {
+      res.setHeader('Content-Type', 'application/json');
+      const hub = { url: `ws://127.0.0.1:${(server.address() as AddressInfo).port}/piwi/hub`, token };
+      res.end(
+        JSON.stringify({
+          hubs: [
+            {
+              ...hub,
+              pid: 4242,
+              version: '0.60.0',
+              client: 'Older Editor',
+              roots: [],
+              startedAt: new Date().toISOString(),
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    res.statusCode = 404;
+    res.end();
+  });
+  server.on('upgrade', (req, socket: Socket) => {
+    const accept = createHash('sha1')
+      .update(`${req.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+      .digest('base64');
+    socket.write(
+      `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
+    );
+    const send = (message: unknown) => {
+      const payload = Buffer.from(JSON.stringify(message), 'utf8');
+      const length = payload.length;
+      const header = Buffer.alloc(length < 126 ? 2 : length < 65_536 ? 4 : 10);
+      header[0] = 0x81;
+      if (length < 126) header[1] = length;
+      else if (length < 65_536) {
+        header[1] = 126;
+        header.writeUInt16BE(length, 2);
+      } else {
+        header[1] = 127;
+        header.writeBigUInt64BE(BigInt(length), 2);
+      }
+      socket.write(Buffer.concat([header, payload]));
+    };
+    const hear = (text: string) => {
+      const message = JSON.parse(text) as Record<string, unknown>;
+      if (message.type === 'hello') {
+        send({ type: 'welcome', pid: 4242, version: '0.60.0', client: 'Older Editor', roots: [], keepaliveMs: 20_000 });
+        return;
+      }
+      heard.push(message);
+      const answer = { type: 'answer', id: message.id, ok: true, message: '' };
+      if (message.type === 'pausedPage') send({ ...answer, image: { mime: 'image/jpeg', data: image } });
+      else if (message.type === 'subscribe' || message.type === 'follow') send(answer);
+      else send({ ...answer, ok: false, message: `This editor does not know ${String(message.type)}.` });
+      if (message.type === 'subscribe') for (const session of sessions) send({ type: 'session', session });
+    };
+    let buffer = Buffer.alloc(0);
+    socket.on('data', (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      for (;;) {
+        if (buffer.length < 2) return;
+        const opcode = buffer[0]! & 0x0f;
+        let length = buffer[1]! & 0x7f;
+        let at = 2;
+        if (length === 126) {
+          if (buffer.length < 4) return;
+          length = buffer.readUInt16BE(2);
+          at = 4;
+        } else if (length === 127) {
+          if (buffer.length < 10) return;
+          length = Number(buffer.readBigUInt64BE(2));
+          at = 10;
+        }
+        // A browser masks every frame it sends.
+        if (buffer.length < at + 4 + length) return;
+        const mask = buffer.subarray(at, at + 4);
+        const payload = Buffer.from(buffer.subarray(at + 4, at + 4 + length)).map((byte, i) => byte ^ mask[i % 4]!);
+        buffer = buffer.subarray(at + 4 + length);
+        if (opcode === 1) hear(Buffer.from(payload).toString('utf8'));
+        else if (opcode === 8) socket.end();
+      }
+    });
+    socket.on('error', () => socket.destroy());
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return {
+    origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    heard,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
+  };
+}

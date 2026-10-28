@@ -28,6 +28,7 @@ import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
   FAILURES_NOTIFICATION,
+  HUB_REQUEST,
   NOTICE_NOTIFICATION,
   PAGE_CANDIDATES_REQUEST,
   RUN_ENDED_NOTIFICATION,
@@ -47,6 +48,8 @@ import {
   type DesktopJobUpdate,
   type FailuresResult,
   type FileEdit,
+  type HubParams,
+  type HubResult,
   type InitializationOptions,
   type Notice,
   type PageCandidatesParams,
@@ -166,6 +169,8 @@ import type { CaretShown, PausedPageView, RunBreakpoint } from './run-control';
 import { registerRunControl } from './run-view';
 import {
   liveHubsHere,
+  loopbackPort,
+  onLoopback,
   sendPairing,
   startSendListener,
   type PairingStore,
@@ -247,6 +252,8 @@ export interface PiwiApi {
   executionPoints(uri: string): number[];
   /** What the paused page view shows; null while it is closed. */
   pausedPage(): PausedPageView | null;
+  /** A click on the paused page's image, as the view's script posts it: the pick there, once answered. */
+  pickOnPage(message: unknown): Promise<void>;
   /** What the end of the cursor's line says of the locator there while a test is stopped; null while it says nothing. */
   caretCount(): CaretShown | null;
 }
@@ -790,18 +797,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     saveToken: (token) => context.secrets.store(SEND_TOKEN, token),
     savePort: (port) => context.globalState.update(SEND_PORT, port),
   };
+  /** The address the browser's machine reaches an address of this one at: a remote window forwards a loopback port. */
+  const external = async (address: string) =>
+    (await vscode.env.asExternalUri(vscode.Uri.parse(address))).toString(true);
+  /** The port of the browser's machine a remote window forwards to the listener, which it then takes in `Host`. */
+  let pairingForwarded: number[] = [];
+  const forwardListener = async (url: string) => {
+    const address = onLoopback(await external(url));
+    const port = loopbackPort(address);
+    pairingForwarded = port !== null && port !== loopbackPort(url) ? [port] : [];
+    return address;
+  };
+  const hubOf = (params: HubParams) => lc.sendRequest<HubResult>(HUB_REQUEST, params);
   const listen = async (port: number) => {
     sendListener = await startSendListener({
       port,
       token: () => sendStore.token,
       onPayload: (payload) => insertFromPicker(lc, payload),
-      // A remote window's services listen on the remote machine's loopback interface.
-      live: () => liveHubsHere(vscode.env.remoteName, () => readLiveHubs(editorsDir())),
+      // A remote window's services listen on the remote machine's loopback interface: its own hub is forwarded.
+      live: () =>
+        liveHubsHere(vscode.env.remoteName, () => readLiveHubs(editorsDir()), {
+          own: async () => (await hubOf({})).url,
+          external,
+          forward: async (forwarded) => void (await hubOf({ forwarded: [forwarded] })),
+        }),
+      forwarded: () => pairingForwarded,
     });
     return sendListener;
   };
-  // Another window may hold the port: that window keeps the pairing.
-  if (sendStore.port && sendStore.token) await listen(sendStore.port).catch(() => null);
+  // Another window may hold the port: that window keeps the pairing. A remote window forwards it again, as it was.
+  if (sendStore.port && sendStore.token) {
+    const started = await listen(sendStore.port).catch(() => null);
+    if (started && vscode.env.remoteName) void forwardListener(started.url).catch(() => undefined);
+  }
   const pairing = sendPairing({
     store: sendStore,
     listener: () => sendListener,
@@ -810,12 +838,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   });
   /**
    * The pairing address Piwi Picker pastes: the listener's address as the browser's machine reaches it, which a
-   * remote window (SSH, WSL, a dev container) forwards to the local machine. Its port is saved for the next start.
+   * remote window (SSH, WSL, a dev container) forwards to the local machine, on `127.0.0.1`. Its port is saved for the
+   * next start.
    */
   const pickerPairing = async (): Promise<string> => {
     const { url, token } = await pairing(true);
-    const external = await vscode.env.asExternalUri(vscode.Uri.parse(url));
-    return formatPairing({ url: external.toString(true), token });
+    return formatPairing({ url: await forwardListener(url), token });
   };
   /**
    * The pairing address a run's reporter posts a pick to: the loopback address of the machine the run is on, on a
@@ -1321,6 +1349,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     runSessions: () => runControl.sessions(),
     executionPoints: (uri) => runControl.executionPoints(uri),
     pausedPage: () => runControl.pausedPage(),
+    pickOnPage: (message) => runControl.pickOnPage(message),
     caretCount: () => runControl.caretCount(),
   };
 }

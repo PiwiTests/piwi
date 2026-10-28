@@ -791,9 +791,19 @@ describe('RunSessions', () => {
     let writes = false;
     const { sessions } = harness({ writesCode: () => writes });
     takingWorker(sessions);
-    expect(sessions.intentsOf('ed-1', 0)).toEqual(['pick', 'record']);
+    expect(sessions.intentsOf('ed-1', 0)).toEqual(['pick', 'record', 'view', 'input', 'input-clicks', 'pick-at']);
     writes = true;
-    expect(sessions.intentsOf('ed-1', 0)).toEqual(['pick', 'record', 'assert', 'assert-region', 'mock']);
+    expect(sessions.intentsOf('ed-1', 0)).toEqual([
+      'pick',
+      'record',
+      'assert',
+      'assert-region',
+      'mock',
+      'view',
+      'input',
+      'input-clicks',
+      'pick-at',
+    ]);
     sessions.dispose();
   });
 });

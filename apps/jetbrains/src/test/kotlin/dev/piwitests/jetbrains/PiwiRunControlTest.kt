@@ -57,6 +57,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private var requests = StopRequestsResult(true, "The test kept no response yet.", emptyList())
     private var count: (LocatorAtCaretParams) -> LocatorAtCaretResult = { LocatorAtCaretResult(true, "The outline is gone.", null, null) }
     private var image: PausedImage? = null
+    private val picks = CopyOnWriteArrayList<PickAtParams>()
+    private var picked = PickAtResult(true, "getByRole('button', { name: 'Pay now' }) went to the editor, in place of the locator on the stopped line.", "getByRole('button', { name: 'Pay now' })")
     /** The version of a document the IDE gave the service: none until the platform tells it the document opened. */
     private var version: (Document) -> Int? = { (it as DocumentEx).modificationSequence }
     private lateinit var base: File
@@ -74,6 +76,11 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             override fun pausedPage(params: PausedPageParams): PausedPageResult {
                 pages += params
                 return PausedPageResult(image)
+            }
+
+            override fun pickAt(params: PickAtParams): PickAtResult {
+                picks += params
+                return picked
             }
 
             override fun setBreakpoints(params: SetRunBreakpointsParams) {
@@ -511,6 +518,52 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             hear(RunSession("ed-2", ended = true))
             assertEquals("The run ended.", sessions.shown().pageCaption)
             assertNull(sessions.shown().pageImage)
+        } finally {
+            ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
+    }
+
+    /**
+     * A click on the image of a headless stop whose worker takes `pick-at` picks the element under it: the point in CSS
+     * pixels of the page's viewport, the answer under the caption; an older reporter's image offers no pick.
+     */
+    fun testAClickOnAHeadlessStopsImagePicksThere() {
+        val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        try {
+            // An image taken at a device scale factor of 2: 2560 by 1600 pixels of a 1280 by 800 viewport.
+            val jpeg = ByteArrayOutputStream().also { ImageIO.write(BufferedImage(2560, 1600, BufferedImage.TYPE_INT_RGB), "jpg", it) }
+            image = PausedImage("image/jpeg", Base64.getEncoder().encodeToString(jpeg.toByteArray()), 1280, 800)
+            val pageObject = file("tests/pages/pick.page.ts", page)
+            val since = "2026-10-27T10:00:01.000Z"
+            val stop = RunStop("pause", "Click getByRole('button', { name: 'Pay now' })", uri(pageObject), 3, 4, null, false, since)
+            hear(RunSession("ed-7", base.path, listOf(RunWorker(0, 0, "stopped", test(retry = 1), stop, takes = listOf("pick", "view", "input", "pick-at")))))
+            val shown = waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
+            assertTrue(shown.pagePicks)
+            assertNull(shown.pageNote)
+            // A click outside the image picks nothing.
+            sessions.clickPage(2600, 10)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(emptyList<PickAtParams>(), picks)
+            sessions.clickPage(1300, 400)
+            val note = waitFor("the pick's answer") { sessions.shown().pageNote?.takeIf { it != "Picking the element under the click…" } }
+            assertEquals(listOf(PickAtParams("ed-7", 0, since, 650, 200)), picks)
+            assertEquals(picked.message, note)
+            // A refusal is said the same way.
+            picked = PickAtResult(false, "No element there: pick an element of the page, not its background.", null)
+            sessions.clickPage(10, 10)
+            assertEquals(picked.message, waitFor("the refusal") { sessions.shown().pageNote?.takeIf { it.startsWith("No element") } })
+            assertEquals(PickAtParams("ed-7", 0, since, 5, 5), picks.last())
+            hear(RunSession("ed-7", ended = true))
+            assertFalse(sessions.shown().pagePicks)
+
+            // A reporter that does not take `pick-at`: the image alone, no hint, a click asks nothing.
+            hear(RunSession("ed-8", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop.copy(since = "2026-10-27T10:00:02.000Z"), takes = listOf("pick")))))
+            waitFor("the older reporter's page") { sessions.shown().takeIf { it.pageImage != null } }
+            assertFalse(sessions.shown().pagePicks)
+            sessions.clickPage(1300, 400)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(2, picks.size)
+            hear(RunSession("ed-8", ended = true))
         } finally {
             ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
         }

@@ -7,12 +7,15 @@
  * steers it: pause, step, resume, finish, run to a line, the breakpoints, an image of the stopped page, and, at a stop
  * the pause bar shows, the bar's own **Pick a locator** and **Record here**, the check panel's **Check an element** and
  * a region's ARIA snapshot, started from outside the page; at any stop, the responses the test kept (an interactive
- * run keeps the text bodies of its pages' fetch and XHR answers), one of them to mock, and a locator's matches. A
- * worker holds a failure for the editor only once the service said it shows and answers one (`holds` in its
- * `run-attach`, answered by `attached`): a service that predates it says nothing, and the failure goes on. Each
- * message is one line of JSON, at most `MAX_HANDOFF_LINE` long (`lineReader`), checked field by field on both sides. A
- * side ignores a message it cannot read.
+ * run keeps the text bodies of its pages' fetch and XHR answers), one of them to mock, and a locator's matches; and, for
+ * a viewer outside the page, the stopped page's live view (`@piwitests/core/run-view`: its frames, the input played on
+ * it) and the locator of the element under a point of an image of it. A worker holds a failure for the editor only
+ * once the service said it shows and answers one (`holds` in its `run-attach`, answered by `attached`): a service that
+ * predates it says nothing, and the failure goes on. Each message is one line of JSON, at most `MAX_HANDOFF_LINE` long
+ * (`lineReader`), checked field by field on both sides. A side ignores a message it cannot read.
  */
+import { isViewFrameData, isViewPoint, isViewSize, readViewInput, type ViewInput } from './run-view';
+
 export const RUN_CHANNEL_ENV = 'PIWI_RUN_CHANNEL';
 
 /**
@@ -41,10 +44,15 @@ export type RunHold = 'failure';
 /** The stops this version holds when the service says it shows them. */
 export const RUN_HOLDS: readonly RunHold[] = ['failure'];
 
-/** An image of a stopped page: a JPEG, base64. */
+/**
+ * An image of a stopped page: a JPEG, base64, and the page's viewport in CSS pixels (`width`, `height`), which a point
+ * on the image is mapped to (`x * width / naturalWidth`) for `pick-at`; a reporter that predates them names neither.
+ */
 export interface PausedImage {
   mime: 'image/jpeg';
   data: string;
+  width?: number;
+  height?: number;
 }
 
 /**
@@ -62,14 +70,31 @@ export type RunIntent = 'pick' | 'record' | 'assert' | 'assert-region';
  */
 export type RunQuery = 'requests' | 'mock' | 'locator';
 
+/**
+ * What a stopped worker does for a viewer outside the page: start and stop the stopped page's live view (`view`), play
+ * a viewer's input on it (`input`), with the click count a button's `down` and `up` carry (`input-clicks`, so a double
+ * click is sent as the browser counted it, at once), and find the locator of the element under a point of an image of
+ * it (`pick-at`).
+ */
+export type RunViewTake = 'view' | 'input' | 'input-clicks' | 'pick-at';
+
 /** What a worker's `run-attach` lists in `takes`. */
-export type RunTake = RunIntent | RunQuery;
+export type RunTake = RunIntent | RunQuery | RunViewTake;
 
 /** The intents a worker takes. */
 export const RUN_INTENTS: readonly RunIntent[] = ['pick', 'record', 'assert', 'assert-region'];
 
 /** Everything a worker takes, as its `run-attach` lists it: a worker of an older reporter lists fewer, or none. */
-export const RUN_TAKES: readonly RunTake[] = [...RUN_INTENTS, 'requests', 'mock', 'locator'];
+export const RUN_TAKES: readonly RunTake[] = [
+  ...RUN_INTENTS,
+  'requests',
+  'mock',
+  'locator',
+  'view',
+  'input',
+  'input-clicks',
+  'pick-at',
+];
 
 /** What each intent starts, as a sentence names it. */
 export const RUN_INTENT_NAMES: Record<RunIntent, string> = {
@@ -134,6 +159,14 @@ export interface MockAnswer extends IntentAnswer {
 /** The answer to `locator`: how many elements it matches on the stopped page, null when it could not be counted. */
 export interface LocatorAnswer extends IntentAnswer {
   count: number | null;
+}
+
+/**
+ * The answer to `pick-at`: the locator of the element under the point, which went where a pick of the pause bar goes
+ * (the editor, in place of the locator on the stopped line); null when none was found, and why.
+ */
+export interface PickAtAnswer extends IntentAnswer {
+  locator: string | null;
 }
 
 /** What a worker sends the editor service on its run connection. */
@@ -204,6 +237,23 @@ export type RunToHub =
   | { type: 'answer'; request: number; what: 'mock'; value: MockAnswer }
   /** The answer to `locator`. */
   | { type: 'answer'; request: number; what: 'locator'; value: LocatorAnswer }
+  /** The answer to `view` and to `input`: whether the view started or stopped, the input was played, or why not. */
+  | { type: 'answer'; request: number; what: 'view' | 'input'; value: IntentAnswer }
+  /** The answer to `pick-at`. */
+  | { type: 'answer'; request: number; what: 'pick-at'; value: PickAtAnswer }
+  /**
+   * A frame of the live view of the stop `stop`, while a `view` asked for it: a JPEG as the page painted it, base64, at
+   * most `MAX_VIEW_FRAME` bytes, and the page's viewport in CSS pixels (`width`, `height`), which input and `pick-at`
+   * name their points in. Sent at most `MAX_VIEW_FPS` a second, only while that stop holds, never stored; the latest
+   * one is sent again as `view` asks again for a view on (a viewer that comes later).
+   */
+  | { type: 'frame'; stop: number; width: number; height: number; data: string }
+  /**
+   * The live view of the stop `stop` sends no frame now, and why (`refused`, at most 500 characters): each image of the
+   * page is longer than `MAX_VIEW_FRAME`, a lighter one included. Sent once until a frame goes again; a side that
+   * predates it reads none, and its viewers wait for a frame.
+   */
+  | { type: 'frame'; stop: number; refused: string }
   /**
    * At the stop `stop`, after `assert-region`: the region picked in the test's window, as the locator the person
    * confirmed, and its ARIA snapshot (`locator.ariaSnapshot()`), at most `MAX_REGION_SNAPSHOT` characters; or why no
@@ -248,7 +298,22 @@ export type HubToRun =
    * page) matches on the stopped page and, where the pause bar shows, outline them until the test goes on or the next
    * `locator` request; null takes the outline down.
    */
-  | { type: 'request'; request: number; what: 'locator'; stop: number; locator: string | null };
+  | { type: 'request'; request: number; what: 'locator'; stop: number; locator: string | null }
+  /**
+   * At the stop `stop`: start the live view of its page (`on`), its frames sent as `frame` until a `view` turns it off,
+   * the stop ends, or its page or the connection closes; or stop it.
+   */
+  | { type: 'request'; request: number; what: 'view'; stop: number; on: boolean }
+  /**
+   * At the stop `stop`, while its view is on: play a viewer's input on its page, in order, as trusted input
+   * (`page.mouse`, `page.keyboard`), at most `MAX_VIEW_EVENT_RATE` events a second; answered once it was played.
+   */
+  | { type: 'request'; request: number; what: 'input'; stop: number; events: ViewInput[] }
+  /**
+   * At the stop `stop`: the element under the point `x`, `y` of its page (CSS pixels of its viewport), ranked as the
+   * pause bar's Pick a locator ranks one, its locator sent where a pick goes.
+   */
+  | { type: 'request'; request: number; what: 'pick-at'; stop: number; x: number; y: number };
 
 /** A message of a type, or a control action or request, of a newer side: answered with a `notice`, never applied. */
 export interface UnknownMessage {
@@ -358,6 +423,9 @@ function isLocatorText(value: unknown): value is string {
 /** The most breakpoints one message carries. */
 const MAX_PLACES = 10_000;
 
+/** The requests at a stop that are no intent. */
+const QUERIES = ['requests', 'mock', 'locator', 'view', 'input', 'pick-at'] as const;
+
 /** Base64, as an image's data is written. */
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
@@ -462,11 +530,35 @@ export function parseRunToHub(line: string): RunToHub | null {
         if (!said || (count !== null && !isInt(count, 0))) return null;
         return { type: 'answer', request, what, value: { ...said, count: count as number | null } };
       }
+      if (what === 'view' || what === 'input') {
+        const said = readAnswer(answered);
+        return said ? { type: 'answer', request, what, value: said } : null;
+      }
+      if (what === 'pick-at') {
+        const said = readAnswer(answered);
+        const locator = isObject(answered) ? answered.locator : undefined;
+        if (!said || (locator !== null && !isLocatorText(locator))) return null;
+        return { type: 'answer', request, what, value: { ...said, locator: locator as string | null } };
+      }
       if (what !== 'image') return null;
       if (answered === null) return { type: 'answer', request, what, value: null };
       if (!isObject(answered) || answered.mime !== 'image/jpeg') return null;
       if (typeof answered.data !== 'string' || !answered.data || !BASE64.test(answered.data)) return null;
-      return { type: 'answer', request, what, value: { mime: 'image/jpeg', data: answered.data } };
+      const image: PausedImage = { mime: 'image/jpeg', data: answered.data };
+      // The viewport alone, both or neither.
+      if (isViewSize(answered.width, answered.height)) {
+        image.width = answered.width as number;
+        image.height = answered.height as number;
+      }
+      return { type: 'answer', request, what, value: image };
+    }
+    case 'frame': {
+      const { stop, width, height, data, refused } = value;
+      if (isInt(stop, 1) && typeof refused === 'string' && refused.trim()) {
+        return { type: 'frame', stop, refused: refused.slice(0, 500) };
+      }
+      if (!isInt(stop, 1) || !isViewSize(width, height) || !isViewFrameData(data)) return null;
+      return { type: 'frame', stop, width: width as number, height: height as number, data };
     }
     case 'region': {
       const { stop, locator, snapshot, refused } = value;
@@ -519,14 +611,24 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
       if (!isInt(request, 1)) return null;
       if (what === 'image') return { type: 'request', request, what: 'image' };
       if (typeof what !== 'string') return null;
-      if (!isIntent(what) && what !== 'requests' && what !== 'mock' && what !== 'locator') {
-        return unknown(`request ${what}`);
-      }
+      if (!isIntent(what) && !(QUERIES as readonly string[]).includes(what)) return unknown(`request ${what}`);
       if (!isInt(stop, 1)) return null;
       if (isIntent(what) || what === 'requests') return { type: 'request', request, what, stop };
       if (what === 'mock') return isInt(value.id, 1) ? { type: 'request', request, what, stop, id: value.id } : null;
+      if (what === 'view')
+        return typeof value.on === 'boolean' ? { type: 'request', request, what, stop, on: value.on } : null;
+      if (what === 'input') {
+        const events = readViewInput(value.events);
+        return typeof events === 'string' ? null : { type: 'request', request, what, stop, events };
+      }
+      if (what === 'pick-at') {
+        const { x, y } = value;
+        return isViewPoint(x, y) ? { type: 'request', request, what, stop, x: x as number, y: y as number } : null;
+      }
       const { locator } = value;
-      return locator === null || isLocatorText(locator) ? { type: 'request', request, what, stop, locator } : null;
+      return locator === null || isLocatorText(locator)
+        ? { type: 'request', request, what: 'locator', stop, locator }
+        : null;
     }
     default:
       return typeof value.type === 'string' && value.type ? unknown(value.type) : null;
