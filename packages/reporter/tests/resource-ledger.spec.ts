@@ -518,6 +518,12 @@ describe('userSite', () => {
       'file:///work/app/tests/a.spec.ts',
     );
     expect(userSite(stack, '/work/app', false)).toBe('tests/a.spec.ts:18');
+    const windows = at(
+      'file:///C:/work/app/node_modules/playwright-core/lib/client/page.js',
+      'C:\\work\\app\\node_modules\\playwright-core\\lib\\client\\page.js',
+      'file:///C:/work/app/tests/a.spec.ts',
+    );
+    expect(userSite(windows, 'C:\\work\\app', true)).toBe('tests/a.spec.ts:18');
   });
 });
 

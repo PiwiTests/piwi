@@ -246,8 +246,7 @@ function isLibraryFile(file: string): boolean {
   return (
     file.startsWith('node:') ||
     file.startsWith('internal/') ||
-    file.includes(`${path.sep}node_modules${path.sep}`) ||
-    file.includes('/node_modules/') ||
+    /[\\/]node_modules[\\/]/.test(file) ||
     file === __filename
   );
 }
