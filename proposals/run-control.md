@@ -282,7 +282,11 @@ The shell reads the channel (`PIWI_RUN_CHANNEL`) from a route behind the guard a
 probe proved the launch nonce, and the route answers no request a browser sends; Piwi Picker reads the hub's address
 from another (`/api/desktop/live`), in the shape of an editor's `…/live`, and its `hello` carries the desktop token it
 holds since **Allow**: the three open routes are unchanged. A failure no pause bar shows is held in a run the window
-shows live (`show { ref, on }`, the window's own command) or while a Runs window follows the runs. Code from a desktop
+shows live (`show { ref, on }`, the window's own command) or while a Runs window follows the runs, and never in a run
+nobody attends, as Part 5 holds a failure only in a run started to be watched: the shell ends the ref of a Flake Lab
+run, a bisect, a lab job and a run with `--repeat-each` above 1 or `--ui` in `-unattended`, and the server's sessions
+hold none of its failures whoever watches it (`holdsFailures`), its workers told so in `attached`, which also names the
+host for the reporter's lines (`Resume in the desktop app`). Code from a desktop
 run goes to the app's window alone, to copy (`stop-code` on its stream), Piwi Picker hearing only that it was made
 (`…: copy it in the desktop app's window.`): the desktop app holds no editor's pairing nor token, and Send to editor,
 the one way into an IDE that carries code, is Piwi Picker's; the code is made from the file as it is on disk, for a
@@ -300,13 +304,16 @@ the stop takes them; the input, the points on an image and what a stop takes are
 (`apps/extension/src/shared/view-input.ts`, `runs.ts`), which the app imports from the extension's sources, both under
 the same license, as the editor service bundles the extension's mock generator. The window holds the hub's stream only
 while a run of its tray runs or the hub still has a live run: while it does, every headless stop waits for it, so the
-tray opens on each stop it hears, and the system says so with the window in the background; it says `show` for the runs
-whose part of the tray is open, and closing the stream lets every stop go on. Code from a desktop run never goes to an
+tray opens on each stop it hears, once, and the system says so of a failure or a `page.pause()` with the window in the
+background; it says `show` only for the runs the person opened in the tray themselves, by each step's name as the step
+starts, and closing the stream lets every stop go on. The stream is written to the response itself, so the hub's 1 MB
+frame wait and 32 MB cut count what the window has not read. Code from a desktop run never goes to an
 editor, even a paired one: it comes to the tray under **Code from the runs**, the block apart from the import lines its
 edits add, each with **Copy** through the window's clipboard (`navigator.clipboard`, the app's loopback origin being a
 secure context, so no clipboard command of the shell's). The locators a desktop run picks come back too: the shell
-names the server's `POST /api/desktop/runs/picks` as the run's `PIWI_EDITOR_SEND`, read with the run channel, behind
-the guard with the desktop token, so the pause bar's **Pick a locator** and a pick on the image reach the window to
+names the server's `POST /api/desktop/runs/picks` as the run's `PIWI_EDITOR_SEND`, read with the run channel, with a
+token the server mints for that route alone, never the desktop token, so the pause bar's **Pick a locator** and a pick
+on the image reach the window to
 copy (`pick`), and the hub answers a pick on the image `…: copy it in the desktop app's window.`; Pick in the test's
 window from the hub stays declined. Piwi Picker asks the paired desktop app for its hub beside the editor's
 (`fetchDesktopHubs`, `GET /api/desktop/live` once the app proved its token), connects it with the app's token in
