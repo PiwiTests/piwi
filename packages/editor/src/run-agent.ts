@@ -11,9 +11,9 @@
  * from them, its console, its errors, its requests, and the worker's own words about a page call, which a script of
  * the page can write) goes back apart from Piwi's own answer, between the markers of a page-content block an agent
  * reads as data, never as instructions (`pageContent`), its credentials hidden again (`@piwitests/core/mask`); an image
- * of the page comes last, said to be page content too. What the agent does shows where a person watches: its stops say so in the session
- * (`RunStop.by`), the first action at a stop is a `piwi/notice`, and its code names it in what the client and Piwi
- * Picker hear.
+ * of the page comes last, said to be page content too. What the agent does shows where a person watches: its stops say
+ * so in the session (`RunStop.by`), the first action at a stop is a `piwi/notice`, and its code names it in what the
+ * client and Piwi Picker hear.
  */
 import { randomBytes } from 'node:crypto';
 import * as path from 'node:path';
@@ -583,9 +583,10 @@ function expectedOf(
         'A secret field’s value (a password, a one-time code, a card’s number or security code) is never written down.',
     };
   }
-  const said = element[of];
-  if (said === null || said === '') return { refusal: `The element has no ${of} to assert: choose another assertion.` };
-  if (said.includes(HIDDEN_VALUE) || hideSecretsInText(said) !== said) {
+  const shown = element[of];
+  if (shown === null || shown === '')
+    return { refusal: `The element has no ${of} to assert: choose another assertion.` };
+  if (shown.includes(HIDDEN_VALUE) || hideSecretsInText(shown) !== shown) {
     return {
       refusal: `The element's ${of} holds a credential, which Piwi never writes down: choose another assertion.`,
     };
@@ -593,10 +594,10 @@ function expectedOf(
   if (of === 'value') {
     return element.valueCut
       ? { refusal: `The field's value is longer than ${MAX_ACT_VALUE} characters: choose another assertion.` }
-      : { expected: said, contains: false };
+      : { expected: shown, contains: false };
   }
-  if (!element.textCut) return { expected: said, contains: false };
-  const first = said.slice(0, MAX_CONTAINED_TEXT + 1);
+  if (!element.textCut) return { expected: shown, contains: false };
+  const first = shown.slice(0, MAX_CONTAINED_TEXT + 1);
   const end = first.lastIndexOf(' ', MAX_CONTAINED_TEXT);
   return {
     expected: (end > MAX_CONTAINED_TEXT / 2 ? first.slice(0, end) : first.slice(0, MAX_CONTAINED_TEXT)).trim(),
