@@ -253,6 +253,75 @@ test('End the test ends a stopped test there, and a run started in a terminal sh
   }
 });
 
+test('Share live says what it sends the first time, shares the run, says who watches, and stops sharing', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  try {
+    const runs = await openRuns(context, extensionId);
+    const run = await startRun(editor, 'pays', [...RUN_TAKES]);
+    const page = 'https://piwi.example.com/test-runs/42';
+    const shares = () => run.worker.heard.filter((m) => m.type === 'share');
+    try {
+      const card = liveRun(runs);
+      run.worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
+      const share = card.getByRole('button', { name: 'Share live' });
+      await expect(share).toHaveAttribute('title', /team’s Piwi instance/);
+      await share.click();
+      // The first time in this window, it says what goes out and to whom, and waits for a yes.
+      const asked = card.getByRole('group', { name: 'Share live' });
+      await expect(card.locator('.share-warning')).toContainText(
+        'While this run is shared on piwi.example.com, anyone with its page open there sees each stop of its tests',
+      );
+      await expect(card.locator('.share-warning')).toContainText(
+        'on an instance with authentication off, anyone who can reach it',
+      );
+      await expect(asked.getByRole('button', { name: 'Share live' })).toBeFocused();
+      await asked.getByRole('button', { name: 'Cancel' }).click();
+      await expect(card.locator('.share-warning')).toHaveCount(0);
+      expect(shares()).toEqual([]);
+      await share.click();
+      await card.getByRole('button', { name: 'Share live' }).click();
+      expect(await run.worker.next('share')).toEqual({ type: 'share', on: true });
+      // Shared as its worker says it is.
+      run.worker.send({ type: 'live', can: true, on: true, viewers: 0, page, why: null });
+      await expect(card.getByText('Shared live on piwi.example.com · nobody watches yet')).toBeVisible();
+      run.worker.send({ type: 'live', can: true, on: true, viewers: 2, page, why: null });
+      await expect(card.getByText('Shared live on piwi.example.com · 2 views open')).toBeVisible();
+      await expect(card.getByRole('button', { name: 'Copy the run page’s link' })).toBeVisible();
+      await card.getByRole('button', { name: 'Stop sharing' }).click();
+      expect(await run.worker.next('share', 1)).toEqual({ type: 'share', on: false });
+      run.worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
+      // Asked once in this window: a second share goes at once.
+      await card.getByRole('button', { name: 'Share live' }).click();
+      expect(await run.worker.next('share', 2)).toEqual({ type: 'share', on: true });
+      await expect(card.locator('.share-warning')).toHaveCount(0);
+      run.worker.send({ type: 'live', can: true, on: true, viewers: 1, page, why: null });
+      await expect(card.getByRole('button', { name: 'Stop sharing' })).toBeVisible();
+      // Its stream given up, the run is no longer shared: it says why, and offers Share live again.
+      const lost = 'Sharing stopped: the instance did not answer. Share the run again to try once more.';
+      run.worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: lost });
+      await expect(card.getByText(lost)).toBeVisible();
+      await expect(card.getByRole('button', { name: 'Share live' })).toBeVisible();
+      await expect(card.getByRole('button', { name: 'Stop sharing' })).toHaveCount(0);
+    } finally {
+      await endRun(run);
+    }
+
+    // A run that cannot be shared says why when asked, with no warning, and nothing is asked of its worker.
+    const refused = await startRun(editor, 'pays', [...RUN_TAKES]);
+    try {
+      const why = "This run cannot be shared live: its project's live view is off on the instance.";
+      refused.worker.send({ type: 'live', can: false, on: false, viewers: 0, page: null, why });
+      await liveRun(runs).getByRole('button', { name: 'Share live' }).click();
+      await expect(liveRun(runs).getByText(why)).toBeVisible();
+      expect(refused.worker.heard.filter((m) => m.type === 'share')).toEqual([]);
+    } finally {
+      await endRun(refused);
+    }
+  } finally {
+    await context.close();
+  }
+});
+
 test('a page served from 127.0.0.1 cannot open the hub’s WebSocket, which the extension can', async () => {
   const { context, worker } = await pairedExtension(editor);
   try {

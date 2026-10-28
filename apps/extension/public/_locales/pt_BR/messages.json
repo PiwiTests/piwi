@@ -6664,5 +6664,62 @@
   },
   "runs_failUnwatched": {
     "message": "Veja a página ao vivo primeiro: só então as teclas e os cliques vão para ela."
+  },
+  "runs_shareLive": {
+    "message": "Compartilhar ao vivo"
+  },
+  "runs_shareLiveTitle": {
+    "message": "Deixar quem pode abrir esta execução na instância do Piwi da sua equipe ver as páginas dos testes dela pela página da execução"
+  },
+  "runs_shareWarning": {
+    "message": "Enquanto esta execução está compartilhada em $instance$, quem estiver com a página dela aberta lá vê cada parada dos seus testes: a chamada, o arquivo e a linha, e o título do teste, mesmo quando ninguém assiste. Enquanto alguém assiste um worker, imagens da página do teste dele também vão para lá, cada uma com a sua chamada e o título do teste. Quem pode abrir a execução lá pode assistir e, numa instância com a autenticação desligada, qualquer um que a alcance. Nada é guardado, e Parar de compartilhar encerra tudo em segundos.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_shareInstance": {
+    "message": "a instância do Piwi para a qual ela reporta"
+  },
+  "runs_sharedLive": {
+    "message": "Compartilhada ao vivo em $instance$",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_sharedNobody": {
+    "message": "ninguém assiste ainda"
+  },
+  "runs_sharedViews_one": {
+    "message": "$count$ visualização aberta",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_sharedViews_other": {
+    "message": "$count$ visualizações abertas",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_stopSharing": {
+    "message": "Parar de compartilhar"
+  },
+  "runs_stopSharingTitle": {
+    "message": "Encerrar as visualizações desta execução na instância: nada mais é enviado"
+  },
+  "runs_copyRunPage": {
+    "message": "Copiar o link da página da execução"
   }
 }

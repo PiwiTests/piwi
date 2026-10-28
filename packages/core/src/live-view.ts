@@ -5,9 +5,14 @@
  * watch the worker (`viewers`). While anyone does, the worker posts small JPEG frames of its test's page, each with the
  * call it was taken at and the title of its test, a few a second at most, and the instance relays them to those viewers
  * alone and keeps none.
- * The worker also posts when its test stops and goes on (`stop`), which the run page shows, and when the test watched
- * ended (`ended`). Nothing goes from the instance to the page: the view never steers the run. Each message is JSON,
- * checked field by field (`parseInstanceToWorker`, `readWorkerToInstance`).
+ * The worker also posts when its test stops and goes on (`stop`), which the run page shows, when the test watched
+ * ended (`ended`), and when the run stops being shared (`unshared`). Nothing goes from the instance to the page: the
+ * view never steers the run. Each message is JSON, checked field by field (`parseInstanceToWorker`,
+ * `readWorkerToInstance`).
+ *
+ * A CI run's workers open their streams at once. A run outside CI holds its key too, and its workers open no stream
+ * until a person shares the run (**Share live**, the run channel's `share`), and close it as the sharing stops. Such a
+ * run without a key names why instead (`none:<why>`, `formatLiveViewMissing`), for the surfaces to say.
  */
 import type { StopReason } from './run-channel';
 
@@ -83,6 +88,72 @@ export function parseLiveViewEnv(value: string | undefined): LiveViewAddress | n
   return { url: url.toString(), runId, key };
 }
 
+/** The run's page on the instance (`<instance>/test-runs/<id>`), where a teammate watches it. */
+export function liveRunPage(address: LiveViewAddress): string {
+  const url = new URL(address.url);
+  url.pathname = url.pathname.replace(/\/api\/test-runs\/\d+\/live-view$/, `/test-runs/${address.runId}`);
+  url.hash = '';
+  return url.toString();
+}
+
+/**
+ * Why a run outside CI holds no live view key: it reports to no Piwi instance (`no-instance`), the reporter's global
+ * setup did not register it as it started (`unregistered`: the reporter entry without `wrapConfig`, a run that reports
+ * at its end alone, or an instance the setup could not reach), the instance gave none (`off`: its project has the
+ * live view off, or the instance predates it), or it reports to the desktop app on this machine, which gives none
+ * since no teammate reaches it (`local`: its setup answers `liveView.refused: 'local'`).
+ */
+export type LiveViewMissing = 'no-instance' | 'unregistered' | 'off' | 'local';
+
+const MISSING: readonly string[] = ['no-instance', 'unregistered', 'off', 'local'];
+
+/** The value of `PIWI_LIVE_VIEW` for a run outside CI that holds no key: why. */
+export function formatLiveViewMissing(why: LiveViewMissing): string {
+  return `none:${why}`;
+}
+
+/** Why `PIWI_LIVE_VIEW` says the run holds no key; null when it says nothing of the kind. */
+export function parseLiveViewMissing(value: string | undefined): LiveViewMissing | null {
+  const why = value?.startsWith('none:') ? value.slice(5) : null;
+  return why && MISSING.includes(why) ? (why as LiveViewMissing) : null;
+}
+
+/** What a surface says of a run that cannot be shared live, by why it holds no key. */
+export const LIVE_SHARE_MISSING: Record<LiveViewMissing, string> = {
+  'no-instance':
+    "This run cannot be shared live: it reports to no Piwi instance. Name your team's instance in PIWI_DASHBOARD_URL.",
+  unregistered:
+    "This run cannot be shared live: the reporter's global setup did not register it with the instance as it started (wrapConfig adds it).",
+  off: "This run cannot be shared live: its project's live view is off on the instance. A Project admin turns it on in Project → Settings → Live view.",
+  local:
+    "This run cannot be shared live: it reports to the Piwi desktop app on this machine, which no teammate reaches. Name your team's instance in PIWI_DASHBOARD_URL to share a run there.",
+};
+
+/** What a surface says of a run whose workers name no live view at all: a reporter that set nothing for them. */
+export const LIVE_SHARE_UNKNOWN =
+  'This run cannot be shared live: the Piwi reporter gave its workers no live view key.';
+
+/**
+ * Why a worker's shared stream was given up, by the instance's answer: the setting turned off (404), the key no longer
+ * taken (401, 403: the instance started again, or gave the key up), the run no longer live (410), the run held as
+ * interrupted after the retries (409); and the instance that did not answer after them.
+ */
+export function liveShareRefusal(status: number | null): string {
+  switch (status) {
+    case 404:
+      return "Sharing stopped: the project's live view was turned off on the instance.";
+    case 401:
+    case 403:
+      return "Sharing stopped: the instance no longer takes this run's live view key (it started again, or gave the key up).";
+    case 410:
+      return 'Sharing stopped: the run is no longer live on the instance.';
+    case 409:
+      return 'Sharing stopped: the instance holds the run as interrupted, having heard nothing from it for a while. Share the run again once it reports there again.';
+    default:
+      return 'Sharing stopped: the instance did not answer. Share the run again to try once more.';
+  }
+}
+
 /** A call of the test, as the run page names it: its title and its place in the user's code, when known. */
 export interface LiveCall {
   title: string;
@@ -121,7 +192,9 @@ export type WorkerToInstance =
   /** The worker's test stopped (its call), or went on (null). */
   | (LiveWorkerId & { type: 'stop'; stop: LiveStop | null })
   /** The test the viewers watched ended, or none runs: their view closes. */
-  | (LiveWorkerId & { type: 'ended' });
+  | (LiveWorkerId & { type: 'ended' })
+  /** The person who shared the run stopped sharing it: the viewers' views close, and the worker's stream after them. */
+  | (LiveWorkerId & { type: 'unshared' });
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -199,8 +272,10 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
     }
     case 'ended':
       return { type: 'ended', ...id };
+    case 'unshared':
+      return { type: 'unshared', ...id };
     default:
-      return 'The message is of a type other than frame, stop or ended.';
+      return 'The message is of a type other than frame, stop, ended or unshared.';
   }
 }
 

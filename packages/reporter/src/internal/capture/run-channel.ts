@@ -45,6 +45,7 @@ import { getReporterVersion } from '../support/reporter-version.js';
 import { bindBrowser } from './agent-page.js';
 import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
+import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
 import { openPageView, viewportOf } from './page-view.js';
 import type { PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
@@ -70,8 +71,10 @@ import { internalCall } from './quiet-capture.js';
  * in AI mode (`snapshot`), acts on one of its elements by its ref as trusted input (`act`) and ranks that element's
  * locators (`ref-locator`, `agent-page.ts`), one at a time, at the stop held alone; it tells what the running test does
  * (`events`, `run-events.ts`) while the editor asks, at most `MAX_RUN_EVENT_RATE` a second; and it binds its browser for
- * Playwright's own tools at a stop on request (`bind`), until the test ends. A test never waits on it but while
- * stopped, and a connection that does not open, or closes, leaves the run as without it: a stop no pause bar can
+ * Playwright's own tools at a stop on request (`bind`), until the test ends. For the team instance, it shares the run's
+ * live view as a person asks (`share`, `live-view.ts`), and says how that stands (`live`) after its attach and as it
+ * changes; a run this connection shared stops being shared as the connection closes. A test never waits on it but
+ * while stopped, and a connection that does not open, or closes, leaves the run as without it: a stop no pause bar can
  * answer then goes on at once.
  */
 
@@ -238,6 +241,11 @@ let droppedEvents = 0;
 let agentTurn: Promise<unknown> = Promise.resolve();
 /** The browser shared with Playwright's own tools, until the test ends, and its endpoint. */
 let bound: { browser: Browser; endpoint: string | null } | null = null;
+/** The run was shared through this connection: it stops being shared as the connection closes. */
+let sharedHere = false;
+/** The run's live view as the editor last heard it, as text; and what stops hearing its changes. */
+let liveSaid = '';
+let unhearLive: (() => void) | null = null;
 /** Why an agent's request at a stop whose page is not known is refused. */
 const NO_AGENT_PAGE = "This stop has no page an agent can read: its call does not name one among its context's pages.";
 
@@ -301,6 +309,11 @@ export async function openRunChannel(
   opening.on('error', () => opening.destroy());
   opening.on('close', () => {
     if (socket === opening) socket = null;
+    unhearLive?.();
+    unhearLive = null;
+    // Nobody can stop the sharing any more: it stops.
+    if (sharedHere) void shareLiveView(false);
+    sharedHere = false;
     // Nobody hears the view any more.
     if (view) void stopView();
     if (!held || held.bar) return;
@@ -321,7 +334,21 @@ export async function openRunChannel(
     takes: workerTakes(env),
     holds: [...RUN_HOLDS],
   });
+  liveSaid = '';
+  tellLive();
+  unhearLive?.();
+  unhearLive = onLiveViewChange(tellLive);
   return true;
+}
+
+/** Tell the editor how the run stands on the instance's live view, when that changed since it last heard. */
+function tellLive(): void {
+  if (!runChannelOpen()) return;
+  const state = liveViewState();
+  const said = JSON.stringify(state);
+  if (said === liveSaid) return;
+  liveSaid = said;
+  tellHub({ type: 'live', ...state });
 }
 
 /**
@@ -762,6 +789,11 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
       eventsOn = message.on;
       eventRate = new RateWindow(MAX_RUN_EVENT_RATE);
       droppedEvents = 0;
+      return;
+    case 'share':
+      sharedHere = message.on;
+      // A worker without a key, or one the instance refused, stays as it was: its `live` says why.
+      void shareLiveView(message.on).then(tellLive);
       return;
     case 'breakpoints':
       control?.breakpoints(message.places);

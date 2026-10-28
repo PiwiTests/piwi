@@ -127,7 +127,9 @@ import javax.swing.SwingConstants
  * run's start filters them. A run's lines are those of the documents as they stood when it started: the edits since
  * (`Glue.EditLog`) bring a stop to the line it stands on now, and a breakpoint or the caret's line back to the run's.
  * **Stop** ends the process of the run, which Piwi started, in the console or the IDE's Playwright runner, whose reruns
- * and debug runs it follows too. The pure half is `Glue.withSession`, `Glue.runControls` and their kin.
+ * and debug runs it follows too. **Share the Run Live** shares a run on the team instance its reporter reports to
+ * (`piwi/shareRun`), after a warning the first time in the project, and **Stop Sharing the Run Live** ends it;
+ * the status bar says how a shared run stands. The pure half is `Glue.withSession`, `Glue.runControls` and their kin.
  */
 @Service(Service.Level.PROJECT)
 class PiwiRunSessions(private val project: Project) : Disposable {
@@ -185,6 +187,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
         override fun control(params: RunControlParams) = server()?.runControl(params)?.orNull()
 
+        override fun shareRun(params: ShareRunParams) = server()?.shareRun(params)?.orNull()
+
         override fun pausedPage(params: PausedPageParams) = server()?.pausedPage(params)?.orNull()
 
         override fun pickAt(params: PickAtParams) = server()?.pickAt(params)?.orNull()
@@ -216,6 +220,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             if (!project.isDisposed) project.getServiceIfCreated(PiwiProjectService::class.java)?.server()?.commandEnded(params)
         }
     }
+
+    /** Share live said what it sends in this project since it opened: it asks no more. */
+    @Volatile internal var liveWarned = false
 
     /** How Mock a Request has the response to mock chosen among those a stop lists: a popup, which the tests replace. */
     internal var chooseRequest: (List<StopRequest>, (StopRequest) -> Unit) -> Unit = { requests, chosen ->
@@ -641,6 +648,59 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }
     }
 
+    /**
+     * Share a run live on the team instance (`on`), or stop sharing it: the run `ref` names, else the only one it fits,
+     * else the one chosen. The first share in this project since it opened says what goes out and to whom, and waits
+     * for a yes, unless the run is known to be one that cannot be shared: it is asked anyway, and the service says why.
+     * Shared, the answer offers the run page's link and Stop Sharing. On the event thread.
+     */
+    fun shareLive(on: Boolean, ref: String? = null) {
+        when (val target = if (ref != null) Glue.LiveTarget.One(ref) else Glue.liveTarget(sessions, on)) {
+            is Glue.LiveTarget.None -> PiwiCommands.notify(project, target.why)
+            is Glue.LiveTarget.One -> shareLiveRun(target.ref, on)
+            is Glue.LiveTarget.Choose -> JBPopupFactory.getInstance()
+                .createPopupChooserBuilder(target.refs)
+                .setRenderer(
+                    object : SimpleListCellRenderer<String>() {
+                        override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
+                            text = value?.let { sessions[it]?.root ?: it }.orEmpty()
+                        }
+                    },
+                )
+                .setTitle(if (on) "Share Which Run Live?" else "Stop Sharing Which Run?")
+                .setItemChosenCallback { shareLiveRun(it, on) }
+                .createPopup()
+                .showCenteredInCurrentWindow(project)
+        }
+    }
+
+    private fun shareLiveRun(ref: String, on: Boolean) {
+        val live = sessions[ref]?.live
+        if (on && live?.refused == null && !liveWarned) {
+            val yes = MessageDialogBuilder.yesNo("Share the Run Live?", Glue.shareLiveWarning(live?.page))
+                .yesText("Share Live")
+                .noText("Cancel")
+                .ask(project)
+            if (!yes) return
+            liveWarned = true
+        }
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val answer = remote.shareRun(ShareRunParams(ref, on))
+            val page = live?.page
+            when {
+                answer == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
+                !answer.ok || !on || page == null -> PiwiCommands.notify(project, answer.message.orEmpty())
+                else -> NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+                    .createNotification(answer.message.orEmpty(), NotificationType.INFORMATION)
+                    .addAction(NotificationAction.createSimpleExpiring("Copy the Run Page's Link") {
+                        CopyPasteManager.getInstance().setContents(StringSelection(page))
+                    })
+                    .addAction(NotificationAction.createSimpleExpiring("Stop Sharing") { shareLive(false, ref) })
+                    .notify(project)
+            }
+        }
+    }
+
     /** End the process of the run of `ref`; false when no run of this IDE runs it. */
     fun stopRun(ref: String): Boolean = processes[ref]?.let {
         it.destroyProcess()
@@ -980,6 +1040,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 /** What a run's controls and code actions ask of the editor service. */
 internal interface RunRemote {
     fun control(params: RunControlParams): RunControlResult?
+
+    fun shareRun(params: ShareRunParams): RunControlResult?
 
     fun pausedPage(params: PausedPageParams): PausedPageResult?
 
@@ -1370,6 +1432,28 @@ class AssertRegionAtStopAction : StopCodeAction(Glue.StopAction.ASSERT_REGION)
 
 /** **Mock a Request**: a response the test kept, chosen in a list, answered by a route written above the stopped line. */
 class MockAtStopAction : StopCodeAction(Glue.StopAction.MOCK)
+
+/**
+ * **Share the Run Live**: the run on the team instance its reporter reports to, for anyone who can open it there, once
+ * the person said yes to what it sends (the first time in the project since it opened); a run that cannot be shared
+ * says why.
+ */
+class ShareRunLiveAction : RunControlAction() {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.active
+
+    override fun actionPerformed(e: AnActionEvent) {
+        sessions(e)?.shareLive(true)
+    }
+}
+
+/** **Stop Sharing the Run Live**: the views of the run on the team instance end, and nothing more goes there. */
+class StopSharingRunAction : RunControlAction() {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.liveShared
+
+    override fun actionPerformed(e: AnActionEvent) {
+        sessions(e)?.shareLive(false)
+    }
+}
 
 /**
  * **Share the Stopped Browser with Playwright Tools**: the stop at the caret's line among those whose reporter takes it,

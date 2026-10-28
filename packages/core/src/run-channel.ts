@@ -14,7 +14,9 @@
  * element's ranked locators, what the run does as it goes (`events`), and its browser bound for Playwright's own tools
  * on request (`bind`). A worker holds a failure for the editor only once the service said it shows and answers one
  * (`holds` in its `run-attach`, answered by `attached`): a service that predates it says nothing, and the failure goes
- * on. Each message is one line of JSON, at most `MAX_HANDOFF_LINE` long (`lineReader`), checked field by field on both
+ * on. A person shares the run on the team instance's run page from the editor's surfaces (`share`, **Share live**):
+ * each worker then opens its live view stream there (`@piwitests/core/live-view`), and says how it stands (`live`).
+ * Each message is one line of JSON, at most `MAX_HANDOFF_LINE` long (`lineReader`), checked field by field on both
  * sides. A side ignores a message it cannot read.
  */
 import { isViewFrameData, isViewKeyCombo, isViewPoint, isViewSize, readViewInput, type ViewInput } from './run-view';
@@ -109,8 +111,15 @@ export type RunAgentTake = 'agent' | 'events' | 'bind';
  */
 export type RunControlTake = 'end';
 
+/**
+ * What a worker does for the team instance: share its run's live view there (`share`), on the run page, for whoever may
+ * open the run, opening its live view stream as a person shares the run and closing it as they stop; it says how it
+ * stands (`live`) after its `run-attach` and as that changes.
+ */
+export type RunShareTake = 'share';
+
 /** What a worker's `run-attach` lists in `takes`. */
-export type RunTake = RunIntent | RunQuery | RunViewTake | RunAgentTake | RunControlTake;
+export type RunTake = RunIntent | RunQuery | RunViewTake | RunAgentTake | RunControlTake | RunShareTake;
 
 /** The intents a worker takes. */
 export const RUN_INTENTS: readonly RunIntent[] = ['pick', 'record', 'assert', 'assert-region'];
@@ -133,6 +142,7 @@ export const RUN_TAKES: readonly RunTake[] = [
   'events',
   'bind',
   'end',
+  'share',
 ];
 
 /** The most entries a `run-attach` lists in `takes` that this side reads; a longer list is read as none. */
@@ -317,6 +327,23 @@ export type RunEvent =
   | { kind: 'request-failed'; method: string; url: string; status: number | null; failure: string | null }
   | { kind: 'dropped'; count: number };
 
+/** The longest sentence a `live` carries, in characters: a longer one is cut. */
+export const MAX_LIVE_WHY = 500;
+
+/**
+ * How a worker's run stands on the team instance's live view (`live`): whether it can be shared (`can`: it holds the
+ * run's live view key), whether its stream to the instance is open or opening now (`on`), how many people watch this
+ * worker there (`viewers`), the run's page on the instance (`page`, null without a key), and why it cannot be shared,
+ * or why its sharing stopped (`why`, at most `MAX_LIVE_WHY` characters; null when nothing went wrong).
+ */
+export interface RunLiveState {
+  can: boolean;
+  on: boolean;
+  viewers: number;
+  page: string | null;
+  why: string | null;
+}
+
 /** What a worker sends the editor service on its run connection. */
 export type RunToHub =
   /**
@@ -420,7 +447,12 @@ export type RunToHub =
   | { type: 'region'; stop: number; locator: string; snapshot: string }
   | { type: 'region'; stop: number; refused: string }
   /** Something the person should know: a message of the editor's this worker did not apply, and why. */
-  | { type: 'notice'; message: string };
+  | { type: 'notice'; message: string }
+  /**
+   * How the run stands on the team instance's live view, for a worker that takes `share`: sent after its `run-attach`
+   * and each time it changes.
+   */
+  | ({ type: 'live' } & RunLiveState);
 
 /** What the editor service sends a worker on its run connection. */
 export type HubToRun =
@@ -501,7 +533,12 @@ export type HubToRun =
    */
   | { type: 'request'; request: number; what: 'bind'; stop: number; on: boolean }
   /** Send the running tests' events from now on (`on`), or stop. */
-  | { type: 'events'; on: boolean };
+  | { type: 'events'; on: boolean }
+  /**
+   * Share the run on the team instance from now on (`on`): open the live view stream with the run's key, or close it,
+   * the people watching hearing that the sharing stopped. A worker without a key answers with its `live`.
+   */
+  | { type: 'share'; on: boolean };
 
 /** A message of a type, or a control action or request, of a newer side: answered with a `notice`, never applied. */
 export interface UnknownMessage {
@@ -915,8 +952,33 @@ export function parseRunToHub(line: string): RunToHub | null {
     }
     case 'notice':
       return typeof value.message === 'string' ? { type: 'notice', message: value.message.slice(0, 500) } : null;
+    case 'live': {
+      const { can, on, viewers, page, why } = value;
+      if (typeof can !== 'boolean' || typeof on !== 'boolean' || !isInt(viewers, 0) || viewers > 1_000_000) return null;
+      if (page !== null && !isPageUrl(page)) return null;
+      if (why !== null && typeof why !== 'string') return null;
+      return {
+        type: 'live',
+        can,
+        on,
+        viewers,
+        page,
+        why: why === null || !why.trim() ? null : why.slice(0, MAX_LIVE_WHY),
+      };
+    }
     default:
       return null;
+  }
+}
+
+/** A run page's address on an instance: an http(s) URL without credentials, at most 2,048 characters. */
+function isPageUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 2048) return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && !url.username && !url.password;
+  } catch {
+    return false;
   }
 }
 
@@ -996,6 +1058,8 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
     }
     case 'events':
       return typeof value.on === 'boolean' ? { type: 'events', on: value.on } : null;
+    case 'share':
+      return typeof value.on === 'boolean' ? { type: 'share', on: value.on } : null;
     default:
       return typeof value.type === 'string' && value.type ? unknown(value.type) : null;
   }

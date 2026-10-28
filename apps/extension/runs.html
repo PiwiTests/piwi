@@ -169,6 +169,29 @@
         overflow: hidden;
         text-overflow: ellipsis;
       }
+      /* Share live, under the run's heading: where it is shared and how many watch, or what sharing it sends. */
+      .run-share {
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .run-share .shared {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0 0 6px;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 16px;
+      }
+      .run-share .shared > .piwi-icon {
+        width: 14px;
+        height: 14px;
+      }
+      .run-share .share-warning {
+        margin: 0 0 8px;
+        font-size: 12px;
+        line-height: 17px;
+      }
       .run-ended {
         display: flex;
         align-items: center;

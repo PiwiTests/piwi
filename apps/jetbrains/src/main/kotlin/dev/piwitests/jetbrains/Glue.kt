@@ -1439,6 +1439,58 @@ object Glue {
         "Until the test ends, any process of yours can then drive the stopped test's browser, read its pages and run " +
             "code in them (playwright-cli attach, Playwright's dashboard)."
 
+    /** A run of the sessions its reporter can share live on the team instance, and how it stands there. */
+    data class SharedRun(val ref: String, val live: RunLive)
+
+    /** The runs of the sessions whose reporter shares them live, in their order. */
+    fun sharedRunsOf(sessions: Map<String, RunSession>): List<SharedRun> =
+        sessions.values.mapNotNull { s -> s.live?.let { live -> s.ref?.let { SharedRun(it, live) } } }
+
+    /** The instance a run's page is on, as a sentence names it (its host); null without a page. */
+    fun liveInstance(page: String?): String? =
+        page?.let { runCatching { java.net.URI(it).authority }.getOrNull() }?.takeIf { it.isNotEmpty() }
+
+    /** What Share live sends, and who sees it, asked before the project shares a run for the first time. */
+    fun shareLiveWarning(page: String?): String {
+        val instance = liveInstance(page) ?: "the Piwi instance it reports to"
+        return "While this run is shared on $instance, anyone with its page open there sees each stop of its tests: " +
+            "the call, its file and line, and the test's title, even while nobody watches. While someone watches a " +
+            "worker, images of its test's page go there too, each with its call and the test's title. Anyone who can " +
+            "open the run there can watch, and on an instance with authentication off, anyone who can reach it. " +
+            "Nothing is stored, and Stop Sharing ends it within seconds."
+    }
+
+    /** The first run of the sessions shared live, as the status bar's tooltip says it; null for none. */
+    fun sharedLive(sessions: Map<String, RunSession>): RunLive? = sharedRunsOf(sessions).firstOrNull { it.live.shared }?.live
+
+    /** How a run shared live stands, as the status bar's tooltip says it: where, and how many views of it are open. */
+    fun sharedLiveText(live: RunLive): String {
+        val where = liveInstance(live.page)?.let { "Shared live on $it" } ?: "Shared live"
+        return if (live.viewers == 0) "$where: nobody watches yet" else "$where: ${views(live.viewers)} open"
+    }
+
+    /** What a Share live action acts on: one run, a choice among several, or why there is none. */
+    sealed class LiveTarget {
+        data class One(val ref: String) : LiveTarget()
+
+        data class Choose(val refs: List<String>) : LiveTarget()
+
+        data class None(val why: String) : LiveTarget()
+    }
+
+    /**
+     * The run Share live (`on`) or Stop Sharing acts on: the only one it fits, else a choice; a run that cannot be
+     * shared is asked anyway when no other can be, and the service says why.
+     */
+    fun liveTarget(sessions: Map<String, RunSession>, on: Boolean): LiveTarget {
+        if (sessions.isEmpty()) return LiveTarget.None("No run started from the IDE is running.")
+        val runs = sharedRunsOf(sessions)
+        val fit = if (on) runs.filter { !it.live.shared && it.live.refused == null } else runs.filter { it.live.shared }
+        if (!on && fit.isEmpty()) return LiveTarget.None("No run is shared live.")
+        val refs = fit.map { it.ref }.ifEmpty { sessions.keys.take(1) }
+        return if (refs.size == 1) LiveTarget.One(refs.single()) else LiveTarget.Choose(refs)
+    }
+
     /** What a shared browser's answer says, with the command that joins it. */
     fun sharedText(result: StopBindResult): String =
         if (!result.ok || result.name == null) result.message.orEmpty() else "${result.message.orEmpty()} Join it with: ${result.command}"
@@ -1474,7 +1526,11 @@ object Glue {
         val shareable: Boolean = false,
         val stoppable: Boolean = active,
         val endable: Boolean = false,
-    )
+        /** A run is shared live (Stop Sharing), and the views open of the shared runs; null for none. */
+        val liveViewers: Int? = null,
+    ) {
+        val liveShared: Boolean get() = liveViewers != null
+    }
 
     fun runControls(sessions: Map<String, RunSession>): RunControls {
         val workers = sessions.values.flatMap { it.workers.orEmpty() }
@@ -1487,16 +1543,30 @@ object Glue {
             shareable = stopsOf(sessions).any(::canShare),
             stoppable = sessions.values.any { !it.terminal },
             endable = stopsOf(sessions).any(::canEnd),
+            liveViewers = sharedRunsOf(sessions).filter { it.live.shared }.takeIf { it.isNotEmpty() }?.sumOf { it.live.viewers },
         )
     }
 
-    /** The status bar's text while a run is stopped or pausing; null otherwise, the run's progress showing. */
-    fun runControlStatus(controls: RunControls, stops: List<ShownStop>): String? = when {
-        stops.size == 1 -> "Piwi: ${if (isFailure(stops.single().stop)) "failed" else "paused"} · ${stopPlace(stops.single().stop)}"
-        stops.size > 1 -> "Piwi: ${stops.size} tests paused"
-        controls.pausing -> "Piwi: pausing…"
-        else -> null
+    /**
+     * The status bar's text while a run is stopped or pausing, saying when it is shared live; null otherwise, the run's
+     * progress showing (`liveStatus` for a shared run).
+     */
+    fun runControlStatus(controls: RunControls, stops: List<ShownStop>): String? {
+        val shared = controls.liveViewers?.let { " · ${liveCount(it)}" }.orEmpty()
+        return when {
+            stops.size == 1 -> "Piwi: ${if (isFailure(stops.single().stop)) "failed" else "paused"} · ${stopPlace(stops.single().stop)}$shared"
+            stops.size > 1 -> "Piwi: ${stops.size} tests paused$shared"
+            controls.pausing -> "Piwi: pausing…$shared"
+            else -> null
+        }
     }
+
+    /** The status bar's text while a run is shared live and none is stopped: the views open of the shared runs. */
+    fun liveStatus(controls: RunControls): String? = controls.liveViewers?.let { "Piwi: ${liveCount(it)}" }
+
+    private fun liveCount(viewers: Int): String = if (viewers > 0) "shared live · ${views(viewers)}" else "shared live"
+
+    private fun views(count: Int): String = if (count == 1) "1 view" else "$count views"
 
     /** Whether two URIs name the same file. */
     private fun sameFile(a: String?, b: String?): Boolean {

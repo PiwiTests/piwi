@@ -34,6 +34,7 @@ run control, coverage, the recorder, the build, and the reads and the connection
   - [Stops no pause bar shows](#stops-no-pause-bar-shows)
   - [The hub](#the-hub)
   - [The live view](#the-live-view)
+  - [Share live](#share-live)
   - [Code from a stop](#code-from-a-stop)
   - [A run that debugs a failure](#a-run-that-debugs-a-failure)
   - [Agents](#agents)
@@ -190,7 +191,7 @@ the custom messages of `src/protocol.ts`:
   - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/selections`, `piwi/runStatus`, `piwi/refreshRun`, `piwi/runId`;
   - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`,
-    `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`, `piwi/agents`;
+    `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`, `piwi/shareRun`, `piwi/agents`;
   - failures: `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/applyPick`;
   - connection: `piwi/status`, `piwi/refresh`, `piwi/desktop`, `piwi/mcp`;
   - desktop jobs: `piwi/desktopJob`, `piwi/shareDesktopJob`;
@@ -770,6 +771,20 @@ view is on asks the worker again, which sends the frame it sent last again: a st
 
 The frames carry whatever the page shows: they reach only the paired, authenticated connections that asked for them,
 never the client, an instance or a file.
+
+### Share live
+
+A person shares a run on the team instance its reporter reports to, for a teammate to watch from the run page there
+(`piwi/shareRun` from a client, `share` from a hub connection, the desktop app's window included; `RunSessions.share`).
+That stream is the reporter's own, from each worker to the instance (`@piwitests/core/live-view`): the service only
+tells each worker that takes `share` to open or close it, and a worker that connects later follows the run's choice
+(`Session.share`). Stopping is never refused, not even while no worker is connected: the next one hears it. Each worker
+says how it stands (`live`: whether it holds a key, whether it streams, the views open of it, the run's page, why not),
+which the session sums up for the client and the hub (`RunSession.live`, `HubSession.live`): shared while a worker
+streams or opens its stream, why it cannot be when no worker can, the views of every worker. A sharing that stops
+though nobody asked (the instance stopped answering, refused the key) ends with the run's last streaming worker: said
+once a run, as a notice, kept as `stopped` until a person shares it again, and a worker that connects later no longer
+shares. Nothing of the stream passes through the service, and no agent's tool shares a run.
 
 ### Code from a stop
 

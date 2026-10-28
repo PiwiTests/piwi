@@ -213,6 +213,24 @@ describe('the live view’s commands, as the worker reads them', () => {
   });
 });
 
+describe('Share live, as the worker reads it', () => {
+  const command = { type: 'command', id: 6, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: null, since: null };
+
+  it('names the run alone, and whether to share it', () => {
+    expect(parseRunsRequest({ ...command, what: 'share', on: true })).toEqual({ ...command, what: 'share', on: true });
+    expect(parseRunsRequest({ ...command, what: 'share', on: false })).toMatchObject({ on: false });
+    for (const bad of [
+      { ...command, what: 'share' },
+      { ...command, what: 'share', on: 'yes' },
+      { ...command, what: 'share', on: true, worker: 0 },
+      { ...command, what: 'share', on: true, since: 's3' },
+      { ...command, what: 'share', on: true, request: 2 },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+});
+
 describe('what a stop takes from the window', () => {
   const at = { ...stop('s1'), intents: undefined };
 

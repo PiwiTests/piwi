@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'v
 import { WebSocket } from 'ws';
 import { parsePairing } from '@piwitests/core/editor-send';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
+import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 import { parseHubToRun, type HubToRun, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
 import type { ToolResult } from '@piwitests/editor/run-host';
 import {
@@ -634,6 +635,44 @@ describe('the window', () => {
     expect(stopped).toMatchObject({ on: false });
     other.close();
     worker.socket.destroy();
+  });
+});
+
+describe('Share live from the window', () => {
+  it('shares a run its worker can share on its instance, and says why one cannot be', async () => {
+    const window = await openWindow();
+    const page = 'https://piwi.example.com/test-runs/42';
+    const worker = new Worker(folder).attach('desktop-13', channel.token, 0, ['share']);
+    worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
+    expect(await waitFor(() => window.session('desktop-13')?.live)).toEqual({
+      shared: false,
+      refused: null,
+      stopped: null,
+      page,
+      viewers: 0,
+    });
+    expect(await window.command({ type: 'share', id: 1, ref: 'desktop-13', on: true })).toMatchObject({
+      ok: true,
+      message: expect.stringContaining('piwi.example.com'),
+    });
+    expect(await worker.next('share')).toEqual({ type: 'share', on: true });
+    worker.send({ type: 'live', can: true, on: true, viewers: 2, page, why: null });
+    await waitFor(() => (window.session('desktop-13')?.live?.viewers === 2 ? true : undefined));
+    expect(await window.command({ type: 'share', id: 2, ref: 'desktop-13', on: false })).toMatchObject({ ok: true });
+    expect(await worker.next('share', 1)).toEqual({ type: 'share', on: false });
+
+    // A run that reports to this app holds no key: it says why.
+    const local = new Worker(folder).attach('desktop-14', channel.token, 0, ['share']);
+    const why = LIVE_SHARE_MISSING.local;
+    local.send({ type: 'live', can: false, on: false, viewers: 0, page: null, why });
+    await waitFor(() => window.session('desktop-14')?.live);
+    expect(await window.command({ type: 'share', id: 3, ref: 'desktop-14', on: true })).toMatchObject({
+      ok: false,
+      message: why,
+    });
+    window.close();
+    worker.socket.destroy();
+    local.socket.destroy();
   });
 });
 

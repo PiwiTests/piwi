@@ -708,8 +708,8 @@ data class RunTest(
  * A worker of a run, by Playwright's worker index: `running` a test, `stopped` before one of its calls, or `between`
  * tests; `pausing` once a Pause reached it until it stops; what its reporter takes at a stop (`takes`: the intents
  * `pick`, `record`, `assert`, `assert-region`, the queries `requests`, `mock`, `locator`, for a viewer outside the
- * page `view`, `input`, `input-clicks` and `pick-at`, `piwi/pickAt`, for an agent `agent` and `events`, and `bind`,
- * `piwi/stopBind`), none for an older one.
+ * page `view`, `input`, `input-clicks` and `pick-at`, `piwi/pickAt`, for an agent `agent` and `events`, `bind`,
+ * `piwi/stopBind`, `end`, and `share`, `piwi/shareRun`), none for an older one.
  */
 data class RunWorker(
     val worker: Int = 0,
@@ -724,7 +724,8 @@ data class RunWorker(
 /**
  * `piwi/runSessionChanged`: a run the IDE started, by the ref of its command, with the folder of its Playwright config
  * and its workers connected now; the last one has `ended`, and a later worker of the ref starts a new session.
- * `terminal` marks a run started in a terminal, which found the service through its discovery file.
+ * `terminal` marks a run started in a terminal, which found the service through its discovery file. `live` says how
+ * the run stands on the team instance's live view (Share live), for a run whose reporter shares it.
  */
 data class RunSession(
     val ref: String? = null,
@@ -732,7 +733,28 @@ data class RunSession(
     val workers: List<RunWorker>? = null,
     val ended: Boolean = false,
     val terminal: Boolean = false,
+    val live: RunLive? = null,
 )
+
+/**
+ * Share live: the run shared on the team instance its reporter reports to, as its workers say (`shared`), why it
+ * cannot be (`refused`, null when it can be), its page there (`page`, for a teammate), how many views of its workers
+ * are open there now (`viewers`), and why its sharing stopped though nobody asked (`stopped`, until it is shared
+ * again).
+ */
+data class RunLive(
+    val shared: Boolean = false,
+    val refused: String? = null,
+    val page: String? = null,
+    val viewers: Int = 0,
+    val stopped: String? = null,
+)
+
+/**
+ * `piwi/shareRun`: Share live, the person's own choice after the plugin's warning: share the run of `ref` on the team
+ * instance (`on`), or stop sharing it. Answered with what was done or why not.
+ */
+data class ShareRunParams(val ref: String, val on: Boolean)
 
 /**
  * `piwi/runControl`: `pause` (every running worker without `worker`), `step`, `resume`, `finish`, `end` (the test
@@ -966,6 +988,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/runControl")
     fun runControl(params: RunControlParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/shareRun")
+    fun shareRun(params: ShareRunParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/pausedPage")
     fun pausedPage(params: PausedPageParams): CompletableFuture<PausedPageResult?>

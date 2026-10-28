@@ -230,6 +230,12 @@
             <action id="Piwi.ShareWithPlaywright" class="dev.piwitests.jetbrains.ShareWithPlaywrightAction"
                     text="Share the Stopped Browser with Playwright Tools"
                     description="Until the test ends, let playwright-cli attach and Playwright's dashboard join the stopped test's browser"/>
+            <!-- Asked with a warning the first time in the IDE's session: the run's pages go to the team instance. -->
+            <action id="Piwi.ShareRunLive" class="dev.piwitests.jetbrains.ShareRunLiveAction" text="Share the Run Live"
+                    description="Let anyone who can open the run on your team's Piwi instance watch its tests' pages from the run page"/>
+            <action id="Piwi.StopSharingRun" class="dev.piwitests.jetbrains.StopSharingRunAction"
+                    text="Stop Sharing the Run Live"
+                    description="End the views of the run on the team instance: nothing more goes there"/>
             <action id="Piwi.StopRun" class="dev.piwitests.jetbrains.StopRunAction" text="Stop the Run"
                     icon="AllIcons.Actions.Suspend"
                     description="End the process of the run started from Piwi"/>

@@ -19,7 +19,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Initialize a streaming test run in setup phase',
     description:
-      'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance. Supports sharded runs: when shardTotal > 1, a shard joins the initializing or running run of its instanceId. With `liveView: true`, a project that turned its live view on also gets `liveView.key`, a key of this run alone that its test workers hold their live view stream with; it opens nothing else and ends with the run.',
+      'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance. Supports sharded runs: when shardTotal > 1, a shard joins the initializing or running run of its instanceId. With `liveView: true`, a project that turned its live view on also gets `liveView.key`, a key of this run alone that its test workers hold their live view stream with: the workers of a CI run at once, those of a run outside CI only once its developer shares it. It opens nothing else and ends with the run. The desktop app, which no teammate reaches, gives none and answers `liveView.refused: local` instead.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -66,9 +66,14 @@ export default eventHandler(async (event) => {
   const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
 
   const instanceId = body.instanceId || null;
-  /** The run's live view key for its workers, when the reporter asks and the project turned the live view on. */
+  /**
+   * The run's live view key for its workers, when the reporter asks and the project turned the live view on. The
+   * desktop app gives none, saying why: no teammate reaches it.
+   */
   const liveViewOf = (runId: number) => {
-    const key = body.liveView === true && project.liveView ? liveViewRelay.mintKey(runId, project.id) : null;
+    if (body.liveView !== true) return {};
+    if (process.env.PIWI_DESKTOP_TOKEN) return { liveView: { refused: 'local' } };
+    const key = project.liveView ? liveViewRelay.mintKey(runId, project.id) : null;
     return key ? { liveView: { key } } : {};
   };
   const shardTotal = body.shardTotal as number | undefined;

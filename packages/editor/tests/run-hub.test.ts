@@ -435,6 +435,43 @@ describe('the commands', () => {
     }
   });
 
+  test('share a run live as the window asks, every connection hearing how it stands on the instance', async () => {
+    const client = await paired();
+    const other = await paired();
+    client.send({ type: 'subscribe', id: 1 });
+    other.send({ type: 'subscribe', id: 1 });
+    await client.answer(1);
+    await other.answer(1);
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    const page = 'https://piwi.example.com/test-runs/42';
+    try {
+      worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
+      expect(await waitFor(() => other.session(ref)?.live)).toEqual({
+        shared: false,
+        refused: null,
+        stopped: null,
+        page,
+        viewers: 0,
+      });
+      client.send({ type: 'share', id: 2, ref, on: true });
+      expect(await client.answer(2)).toMatchObject({
+        ok: true,
+        message: expect.stringMatching(/^Sharing the run live/),
+      });
+      expect(await worker.next('share')).toEqual({ type: 'share', on: true });
+      worker.send({ type: 'live', can: true, on: true, viewers: 1, page, why: null });
+      await waitFor(() => (other.session(ref)?.live?.viewers === 1 ? true : undefined));
+      expect(other.session(ref)?.live).toEqual({ shared: true, refused: null, stopped: null, page, viewers: 1 });
+      client.send({ type: 'share', id: 3, ref });
+      expect(await client.answer(3)).toMatchObject({ ok: false, message: expect.stringMatching(/^share needs on/) });
+    } finally {
+      worker.socket.destroy();
+      client.socket.close();
+      other.socket.close();
+    }
+  });
+
   test('end a stop the worker ended unanswered, refusing what names it, and say why a stop has no image', async () => {
     const client = await paired();
     client.send({ type: 'subscribe', id: 1 });

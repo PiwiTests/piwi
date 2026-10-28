@@ -166,6 +166,54 @@ describe('the live view key', () => {
     expect(others.map((key, i) => live.authorize(i + 1, key) !== null)).toEqual([false, false]);
   });
 
+  test('a project at its bound keeps the key of a run that streams, giving up first those that never opened a stream', () => {
+    let now = 1_000_000;
+    const { live } = relay(() => now);
+    // A CI run starts and streams; a minute later, the same project's developers start runs nobody shares.
+    const ci = live.mintKey(1, 10)!;
+    live.connectWorker(live.authorize(1, ci)!, { shard: null, worker: 0 }, () => new FakeSink());
+    now += 60_000;
+    const local = Array.from({ length: MAX_LIVE_KEYS_PER_PROJECT }, (_, i) => live.mintKey(100 + i, 10)!);
+    expect(live.authorize(1, ci)).not.toBeNull();
+    expect(live.authorize(100, local[0])).toBeNull();
+    expect(live.authorize(101, local[1])).not.toBeNull();
+  });
+
+  test('the instance at its bound gives up first the keys that never opened a stream, of the project that holds most', () => {
+    const { live } = relay();
+    const streams = live.mintKey(1, 200)!;
+    live.connectWorker(live.authorize(1, streams)!, { shard: null, worker: 0 }, () => new FakeSink());
+    const small = live.mintKey(2, 100)!;
+    for (let i = 0; i < MAX_LIVE_KEYS + 10; i++) live.mintKey(10 + i, 200 + Math.floor(i / MAX_LIVE_KEYS_PER_PROJECT));
+    expect(live.authorize(1, streams)).not.toBeNull();
+    expect(live.authorize(2, small)).not.toBeNull();
+  });
+
+  test('ends an interrupted run’s keys that never opened a stream, and tells why a key that ended opens nothing', () => {
+    const { live } = relay();
+    const stop = live.followRuns();
+    try {
+      const streams = live.mintKey(12, 1)!;
+      live.connectWorker(live.authorize(12, streams)!, { shard: null, worker: 0 }, () => new FakeSink());
+      const idle = live.mintKey(12, 1)!;
+      runEventBus.publishGlobal({ type: 'run-finished', runId: 12, projectId: 1, status: 'interrupted' });
+      expect(live.authorize(12, streams)).not.toBeNull();
+      expect(live.authorize(12, idle)).toBeNull();
+      expect(live.endedWhy(12, idle)).toBe('run-ended');
+      expect(live.endedWhy(12, streams)).toBeNull();
+      // The project turns its live view off: its keys say so to the workers that present them again.
+      const other = live.mintKey(13, 1)!;
+      live.endProject(1);
+      expect(live.authorize(13, other)).toBeNull();
+      expect(live.endedWhy(13, other)).toBe('off');
+      expect(live.endedWhy(12, streams)).toBe('off');
+      expect(live.endedWhy(14, other)).toBeNull();
+      expect(live.endedWhy(13, `${LIVE_VIEW_KEY_PREFIX}${'x'.repeat(43)}`)).toBeNull();
+    } finally {
+      stop();
+    }
+  });
+
   test('the instance at its bound gives up the oldest key of the project that holds the most', () => {
     const { live } = relay();
     const small = live.mintKey(1, 100)!;
@@ -346,5 +394,23 @@ describe('the relay', () => {
     expect(live.authorize(7, 'x')).toBeNull();
     // The run page hears the worker left: no Watch, and no Paused, stays on its row.
     expect(published.at(-1)?.state).toEqual({ shard: null, worker: 0, connected: false, paused: null });
+  });
+
+  test('ends the views of a run its developer stops sharing, each viewer hearing why, before the worker leaves', () => {
+    const { live, published } = relay();
+    const entry = live.authorize(8, live.mintKey(8, 1))!;
+    const worker = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => worker);
+    const watching = new FakeSink();
+    live.addViewer(8, { shard: null, worker: 0 }, () => watching);
+    live.receive(8, { type: 'stop', shard: null, worker: 0, stop: STOP });
+    expect(live.receive(8, { type: 'unshared', shard: null, worker: 0 })).toBeNull();
+    expect(watching.sent).toEqual([{ type: 'end', reason: 'unshared' }]);
+    expect(watching.closed).toBe(true);
+    expect(worker.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
+    // The worker closes its stream: the run page hears it left, no Paused left on its row.
+    worker.close();
+    expect(published.at(-1)?.state).toEqual({ shard: null, worker: 0, connected: false, paused: null });
+    expect(live.workersOf(8)).toEqual([]);
   });
 });

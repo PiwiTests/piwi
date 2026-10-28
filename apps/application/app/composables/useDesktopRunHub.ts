@@ -11,7 +11,7 @@
  * none is reactive state, and only the latest one of each view is kept, in memory, until the view ends. Commands go to
  * `POST /api/desktop/runs/commands`, naming the stream (`viewer`); `show` says which runs hold their failures (the
  * tray's **Hold failures**), so a failure no pause bar shows is held in them, and is said again as the stream opens
- * again.
+ * again. **Share live** asks what it sends the first time in this session of the app (`shareAsks`).
  */
 import {
   parseHubMessage,
@@ -83,6 +83,8 @@ const stopListeners = new Set<(session: HubSession, worker: HubWorker) => void>(
  */
 const heardAt = new Map<string, Map<number, string>>();
 let toastApi: ReturnType<typeof useToast> | null = null;
+/** The window said what Share live sends since the app started: it asks no more. */
+let shareWarned = false;
 
 function heard(text: string): void {
   let value: Record<string, unknown>;
@@ -242,6 +244,15 @@ export function useDesktopRunHub() {
     show(refs: Iterable<string>): void {
       shown = new Set(refs);
       void tellShown();
+    },
+    /**
+     * Whether Share live still asks what it sends: the first time in this session of the app, until `shareWarned`.
+     */
+    shareAsks(): boolean {
+      return !shareWarned;
+    },
+    shareWarned(): void {
+      shareWarned = true;
     },
     /** Hears each stop as a worker comes to it; returns the unsubscribe. */
     onStop(listener: (session: HubSession, worker: HubWorker) => void): () => void {

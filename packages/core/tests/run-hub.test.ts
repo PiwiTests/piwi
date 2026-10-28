@@ -435,6 +435,63 @@ describe('the hub’s WebSocket', () => {
   });
 });
 
+describe('Share live on the hub', () => {
+  test('reads share, naming the run and whether to share it', () => {
+    expect(parseHubCommand(json({ type: 'share', id: 7, ref: 'ed-1', on: true }))).toEqual({
+      type: 'share',
+      id: 7,
+      ref: 'ed-1',
+      on: true,
+    });
+    expect(parseHubCommand(json({ type: 'share', id: 7, ref: 'ed-1', on: false }))).toMatchObject({ on: false });
+    expect(parseHubCommand(json({ type: 'share', id: 7, ref: 'ed 1', on: true }))).toMatchObject({ type: 'invalid' });
+    expect(parseHubCommand(json({ type: 'share', id: 7, ref: 'ed-1' }))).toEqual({
+      type: 'invalid',
+      id: 7,
+      message: 'share needs on: true to share the run live, false to stop.',
+    });
+  });
+
+  test('has the extension read how a run stands on the instance, and refuse what it cannot read', () => {
+    const live = {
+      shared: true,
+      refused: null,
+      stopped: null,
+      page: 'https://piwi.example.com/test-runs/42',
+      viewers: 3,
+    };
+    const shared = { ...session, live };
+    expect(parseHubMessage(json({ type: 'session', session: shared }))).toEqual({ type: 'session', session: shared });
+    const refused = { ...live, shared: false, refused: 'This run cannot be shared live.', page: null, viewers: 0 };
+    expect(parseHubMessage(json({ type: 'session', session: { ...session, live: refused } }))).toMatchObject({
+      session: { live: refused },
+    });
+    // Why its sharing stopped though nobody asked; an older hub says nothing of it.
+    const stopped = { ...live, shared: false, stopped: 'Sharing stopped: the instance did not answer.', viewers: 0 };
+    expect(parseHubMessage(json({ type: 'session', session: { ...session, live: stopped } }))).toMatchObject({
+      session: { live: stopped },
+    });
+    const { stopped: _stopped, ...older } = live;
+    expect(parseHubMessage(json({ type: 'session', session: { ...session, live: older } }))).toMatchObject({
+      session: { live: { ...older, stopped: null } },
+    });
+    for (const broken of [
+      { ...live, shared: 'yes' },
+      { ...live, viewers: -1 },
+      { ...live, refused: 5 },
+      { ...live, refused: 'x'.repeat(MAX_HUB_MESSAGE + 1) },
+      { ...live, stopped: 5 },
+      { ...live, page: 'javascript:alert(1)' },
+      'shared',
+    ]) {
+      expect(
+        parseHubMessage(json({ type: 'session', session: { ...session, live: broken } })),
+        json(broken),
+      ).toBeNull();
+    }
+  });
+});
+
 describe('the live view on the hub', () => {
   test('reads view, input and pick-at, each naming the stop it is at, field by field', () => {
     expect(parseHubCommand(json({ type: 'view', id: 1, ref: 'ed-1', worker: 0, since: 'S', on: true }))).toEqual({

@@ -21,7 +21,9 @@
  * plays its input on the page it watches (`input`, at most `MAX_VIEW_EVENT_RATE` events a second), and starts there,
  * at a stop no pause bar shows, the intents the bar's buttons start (`stop.intents` in each session it hears says
  * which a stop takes from it). The hub keeps no frame. Any connection picks the element under a point of an image of a
- * stopped page (`pick-at`). A connection the hub closes is cut a second later when the other side does not answer the
+ * stopped page (`pick-at`). A person shares a run live on the team instance from a connection (`share`, after the
+ * window's warning), and every subscribed connection hears how the run stands there (`session.live`). A connection the
+ * hub closes is cut a second later when the other side does not answer the
  * close, and only the open connections count toward its limits. A host may join a peer of its own transport (`join`:
  * the desktop app's window, behind the app's own token), which hears and commands the hub as a WebSocket connection
  * that said hello does, and counts toward none of the WebSocket's limits.
@@ -589,6 +591,8 @@ export class RunHub {
           const picked = await sessions.pickAt({ ref, worker, since, x, y });
           return reply(picked, { locator: picked.locator });
         }
+        case 'share':
+          return reply(sessions.share({ ref: command.ref, on: command.on }));
         default:
           return reply(
             await this.options.actions.action(
@@ -622,6 +626,15 @@ export class RunHub {
       })),
       ended: session.ended,
       ...(session.terminal ? { terminal: true } : {}),
+      ...(session.live
+        ? {
+            live: {
+              ...session.live,
+              refused: cut(session.live.refused, MAX_HUB_MESSAGE),
+              stopped: cut(session.live.stopped, MAX_HUB_MESSAGE),
+            },
+          }
+        : {}),
     };
   }
 

@@ -6664,5 +6664,62 @@
   },
   "runs_failUnwatched": {
     "message": "Sehen Sie die Seite zuerst live an: Erst dann gehen Tasten und Klicks an sie."
+  },
+  "runs_shareLive": {
+    "message": "Live teilen"
+  },
+  "runs_shareLiveTitle": {
+    "message": "Allen, die diesen Lauf auf der Piwi-Instanz Ihres Teams öffnen dürfen, die Seiten seiner Tests auf der Seite des Laufs zeigen"
+  },
+  "runs_shareWarning": {
+    "message": "Solange dieser Lauf auf $instance$ geteilt ist, sieht dort jeder, der seine Seite geöffnet hat, jeden Halt seiner Tests: den Aufruf, seine Datei und Zeile und den Titel des Tests, auch wenn niemand zusieht. Solange jemand einem Worker zusieht, gehen auch Bilder der Seite seines Tests dorthin, jedes mit seinem Aufruf und dem Titel des Tests. Alle, die den Lauf dort öffnen dürfen, können zusehen, und auf einer Instanz ohne Anmeldung alle, die sie erreichen. Nichts wird gespeichert, und Teilen beenden beendet es binnen Sekunden.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_shareInstance": {
+    "message": "der Piwi-Instanz, an die er berichtet"
+  },
+  "runs_sharedLive": {
+    "message": "Live geteilt auf $instance$",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_sharedNobody": {
+    "message": "noch sieht niemand zu"
+  },
+  "runs_sharedViews_one": {
+    "message": "$count$ Ansicht offen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_sharedViews_other": {
+    "message": "$count$ Ansichten offen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_stopSharing": {
+    "message": "Teilen beenden"
+  },
+  "runs_stopSharingTitle": {
+    "message": "Die Ansichten dieses Laufs auf der Instanz beenden: Nichts geht mehr dorthin"
+  },
+  "runs_copyRunPage": {
+    "message": "Link zur Seite des Laufs kopieren"
   }
 }

@@ -7920,5 +7920,73 @@
   "runs_failUnwatched": {
     "message": "Watch the page live first: keys and clicks go to it only then.",
     "description": "Runs window, why the input sent to a stopped page through its live view was refused: the window does not watch that stop."
+  },
+  "runs_shareLive": {
+    "message": "Share live",
+    "description": "Runs window, button on a run: shares it on the team’s Piwi instance it reports to, whose run page then shows its tests’ pages to whoever may open the run there, while someone watches. Short."
+  },
+  "runs_shareLiveTitle": {
+    "message": "Let anyone who can open this run on your team’s Piwi instance watch its tests’ pages from the run page",
+    "description": "Runs window, the Share live button’s tooltip."
+  },
+  "runs_shareWarning": {
+    "message": "While this run is shared on $instance$, anyone with its page open there sees each stop of its tests: the call, its file and line, and the test’s title, even while nobody watches. While someone watches a worker, images of its test’s page go there too, each with its call and the test’s title. Anyone who can open the run there can watch, and on an instance with authentication off, anyone who can reach it. Nothing is stored, and Stop sharing ends it within seconds.",
+    "description": "Runs window, asked the first time a run is shared live in this window: what goes out and who sees it. $instance$ is the host of the Piwi instance (piwi.example.com), or runs_shareInstance. Stop sharing is the button’s name (runs_stopSharing).",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_shareInstance": {
+    "message": "the Piwi instance it reports to",
+    "description": "Runs window, in runs_shareWarning and runs_sharedLive as $instance$ when the run names no instance."
+  },
+  "runs_sharedLive": {
+    "message": "Shared live on $instance$",
+    "description": "Runs window, under a run’s heading while it is shared live. $instance$ is the host of the Piwi instance (piwi.example.com).",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_sharedNobody": {
+    "message": "nobody watches yet",
+    "description": "Runs window, after runs_sharedLive: nobody watches the shared run on the instance now."
+  },
+  "runs_sharedViews_one": {
+    "message": "$count$ view open",
+    "description": "Runs window, after runs_sharedLive: how many views of the shared run are open on the instance (one person may hold several).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_sharedViews_other": {
+    "message": "$count$ views open",
+    "description": "Runs window, after runs_sharedLive: how many views of the shared run are open on the instance (one person may hold several).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_stopSharing": {
+    "message": "Stop sharing",
+    "description": "Runs window, button on a run shared live: the views of it on the instance end, and nothing more goes there. Short."
+  },
+  "runs_stopSharingTitle": {
+    "message": "End the views of this run on the instance: nothing more goes there",
+    "description": "Runs window, the Stop sharing button’s tooltip."
+  },
+  "runs_copyRunPage": {
+    "message": "Copy the run page’s link",
+    "description": "Runs window, button on a run shared live: copies the address of its page on the instance, for a teammate."
   }
 }
