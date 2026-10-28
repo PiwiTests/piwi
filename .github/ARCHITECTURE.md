@@ -29,7 +29,7 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 | `workflows/release-notes.yml`              | published releases, on demand                | tidies the release body from the version's `CHANGELOG.md` section (`scripts/release-notes.mjs`)              |
 | `workflows/live-jira.yml`                  | on demand                                    | the live Jira E2E, against a real Atlassian Cloud site                                                       |
 | `workflows/nightly-vscode.yml`             | every night, on demand                       | the VS Code extension in the real VS Code (`apps/vscode/tests/e2e`), at the pinned release                   |
-| `workflows/nightly-showcase.yml`           | every night, on demand                       | the showcase's story in check mode (`apps/showcase`), every Piwi tool together                               |
+| `workflows/nightly-showcase.yml`           | every night, on demand                       | the showcase's story in check mode (`apps/showcase`); with `film`, filmed and cut, the cut uploaded          |
 | `actions/setup-workspace/action.yml`       | the workflows above                          | Node, the npm cache, `npm ci`, and Playwright's Chromium when asked                                          |
 | `actions/container-health/action.yml`      | `ci.yml`, `reusable-publish-container.yml`   | starts a server image on an empty data folder and waits for `/api/health`                                    |
 
