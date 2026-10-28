@@ -296,7 +296,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.js == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 35
 
     permissions:
       contents: read
