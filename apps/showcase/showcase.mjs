@@ -4,14 +4,15 @@
 // one X screen. In check mode it plays every beat without capture or holds and asserts what each one left: the only
 // run of the dashboard, the editor service, the VS Code extension, Piwi Picker and the reporter together. A virtual
 // take films it: the same beats and checks at a person's pace, the whole screen recorded, each beat held while its
-// lines are read, and the take log the cut reads.
+// lines are read, and the take log the cut reads; the cut renders the video from a take's results.
 //
 //   xvfb-run -a -s "-screen 0 3840x2160x24" node showcase.mjs --mode check [--until <beat>] [--out <dir>] [--keep]
 //   xvfb-run -a -s "-screen 0 3840x2160x24" node showcase.mjs --take virtual [--until <beat>] [--out <dir>]
+//   node showcase.mjs --cut <take's results> [--out <dir>] [--size 1080|2160] [--renderers <n>] [--beats <id,…>]
 //
 // It needs the reporter, the Nitro integration, the VS Code extension (with the editor service) and Piwi Picker built,
 // VS Code downloaded into apps/vscode/.vscode-test (the extension's suites download it), and Playwright's Chromium;
-// a take needs ffmpeg. `--until` ends the take after that beat; `--keep` leaves the set's folder in place;
+// a take and the cut need ffmpeg. `--until` ends the take after that beat; `--keep` leaves the set's folder in place;
 // `--lint` checks the lines alone.
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -27,9 +28,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
 const take = option('--take');
+const cutFrom = option('--cut');
 const mode = option('--mode') ?? (take ? 'film' : 'check');
 const until = option('--until');
-const out = path.resolve(option('--out') ?? path.join(here, 'results'));
+const out = path.resolve(option('--out') ?? (cutFrom ? path.join(cutFrom, 'cut') : path.join(here, 'results')));
 const say = (line) => console.log(line);
 
 /** The variables by which the reporter, Playwright and the sample app tell a CI run (`detectCi` and the CI ids). */
@@ -72,6 +74,24 @@ if (problems.length) {
 }
 if (args.includes('--lint')) {
   say(`${STORY.length} beats, every line within ${2} rows and its reading speed.`);
+  process.exit(0);
+}
+if (cutFrom) {
+  const { cut } = await import('./lib/cut.mjs');
+  prepareOut(out);
+  const size = Number(option('--size') ?? 1080);
+  if (![1080, 2160].includes(size)) {
+    console.error(`--size ${size}: the cut is 1080 (1920 × 1080) or 2160 (3840 × 2160)`);
+    process.exit(2);
+  }
+  await cut({
+    take: path.resolve(cutFrom),
+    out,
+    size,
+    renderers: Number(option('--renderers') ?? 2),
+    beats: option('--beats')?.split(','),
+    say,
+  });
   process.exit(0);
 }
 if (!['check', 'film'].includes(mode)) {
