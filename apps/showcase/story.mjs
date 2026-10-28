@@ -3,6 +3,7 @@
 import { beat, expect, waitFor } from './lib/script.mjs';
 import { TILES } from './lib/set.mjs';
 import { Agent, refOf, runsServer } from './lib/agent.mjs';
+import { ciSnapshots } from './lib/instance.mjs';
 import { PAGE_OBJECT, SPEC, push, read } from './lib/workspace.mjs';
 
 /** The page object's line the test fails at, and the call on it. */
@@ -54,6 +55,9 @@ async function goTo(vscode, gesture, file, line) {
 /** Waits until the Runs window shows no live run of the checkout: the one going on ended. */
 const runEnded = (runs) => waitFor(async () => (await runCard(runs).count()) === 0, 'the run to end', 60_000);
 
+/** The statuses of a test that ended. */
+const FINISHED = new Set(['passed', 'failed', 'timedout', 'skipped', 'interrupted']);
+
 /** A known bug: a run page opened before the run's tests begin stays there until it is reloaded. */
 const RUN_PAGE_STAYS_INITIALIZING = 'the run page of a run still setting up never hears that it started';
 
@@ -94,7 +98,7 @@ export const STORY = [
         .first()
         .waitFor();
     },
-    async check({ dashboard, state, instance, skip }) {
+    async check({ dashboard, set, state, instance, skip }) {
       const run = state.redRun;
       expect(run.status === 'failed', `the latest run is red (${run.status})`);
       expect(run.origin === 'ci', `the latest run is a CI run (${run.origin})`);
@@ -114,10 +118,32 @@ export const STORY = [
         .innerText();
       expect(headline.includes('Place order'), `the headline names the button: ${headline}`);
       const healing = await instance.api(`/api/test-run-cases/${state.failing.executionId}/locator-healing`);
+      expect(
+        healing && 'recommendation' in healing && 'source' in healing && 'failingLocator' in healing,
+        `the healing answers its candidate: ${JSON.stringify(healing).slice(0, 200)}`,
+      );
+      expect(
+        healing.failingLocator?.method === 'getByRole' && healing.failingLocator.args?.name === 'Place order',
+        `the healing reads the broken locator: ${JSON.stringify(healing.failingLocator)}`,
+      );
       const candidate = healing.recommendation?.recommended?.locator ?? null;
-      if (candidate === FIXED) return;
-      const why = await instance.whyNoHealing(state.failing.testCaseId, `${PAGE_OBJECT}:${FAILING_LINE}`);
-      if (!why) throw new Error(`check failed: the healing's candidate is ${candidate}, not ${FIXED}`);
+      if (candidate === FIXED) {
+        const text = (selector) => async () => {
+          const element = dashboard.locator(selector).first();
+          return (await element.isVisible()) ? element.innerText() : null;
+        };
+        const panel = await waitFor(text('[data-shot="alternative-locators"]'), "the failure page's healing panel");
+        expect(panel.includes("'Pay now'"), `the healing panel's candidate is ${FIXED}: ${panel.slice(0, 200)}`);
+        const mostLikely = await waitFor(text('[data-shot="most-likely"]'), "the failure page's Most likely");
+        expect(/Pay now|Place order/.test(mostLikely), `Most likely names the button: ${mostLikely.slice(0, 200)}`);
+        return;
+      }
+      expect(candidate === null, `the healing's candidate is ${candidate}, not ${FIXED}`);
+      const why = await instance.whyNoHealing(state.failing.testCaseId, `${PAGE_OBJECT}:${FAILING_LINE}`, {
+        snapshots: ciSnapshots(set.reports.shipped, 'places an order'),
+        ciDir: set.ciDir,
+      });
+      expect(why, `the healing has no candidate, and no known bug explains it`);
       skip(why.bug, `the healing panel's candidate ${FIXED}, and Most likely naming it (${why.detail})`);
     },
   }),
@@ -395,18 +421,23 @@ export const STORY = [
       await dashboard.goto(`${instance.base}/projects/${set.projectId}`, { waitUntil: 'domcontentloaded' });
       await gesture.click('dashboard', dashboard.getByRole('link', { name: `Run #${live.id}`, exact: true }));
       await dashboard.waitForURL(`**/test-runs/${live.id}`);
+      // What the run was as its page loaded: the known bug is a page that loaded while the run set up.
+      const atLoad = (await instance.run(live.id)).status;
       const watch = dashboard.getByRole('button', { name: /^Watch .* live$/ }).first();
-      // The run page opened while the run sets up must go live once it starts.
-      await waitFor(
-        async () => (await instance.run(live.id)).status !== 'initializing',
-        'the CI run to start',
+      const header = dashboard.locator('[data-shot="run-header"]');
+      // A live page shows Watch while a worker runs a test; a page the run's start never reached still says
+      // Initializing once the instance holds a finished test of the run, which a live page lists.
+      const page = await waitFor(
+        async () => {
+          if (await watch.isVisible()) return 'live';
+          const finished = (await instance.run(live.id)).testCases?.some((c) => FINISHED.has(c.status));
+          return finished && (await header.getByText('Initializing', { exact: true }).isVisible()) ? 'stuck' : null;
+        },
+        'the run page to show its workers',
         120_000,
       );
-      const wentLive = await watch.waitFor({ timeout: 8_000 }).then(
-        () => true,
-        () => false,
-      );
-      if (!wentLive) {
+      if (page === 'stuck') {
+        expect(atLoad === 'initializing', `the run page never went live, though the run was ${atLoad} as it loaded`);
         // Reloaded, as a person does: the bug, when the page then shows the worker.
         await dashboard.reload({ waitUntil: 'domcontentloaded' });
         await watch.waitFor({ timeout: 60_000 });
@@ -435,7 +466,10 @@ export const STORY = [
       expect(run.status === 'passed', `the CI run is green (${run.status})`);
       expect(run.origin === 'ci' && run.branch === 'main', `a CI run on main (${run.origin}, ${run.branch})`);
       expect(run.commit === state.fixCommit, `the run of the pushed fix (${run.commit})`);
-      await waitFor(() => dashboard.getByText('Passed', { exact: true }).first().isVisible(), 'the run page green');
+      await waitFor(
+        () => dashboard.locator('[data-shot="run-header"]').getByText('Passed', { exact: true }).isVisible(),
+        "the run page's status green",
+      );
     },
   }),
 

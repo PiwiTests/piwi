@@ -42,22 +42,28 @@ export class Instance {
   }
 
   /**
-   * Why the healing of the failing click at `place` (`file:line`) of the test `testCaseId` has no candidate, when a
-   * known bug explains it: no element captured at that call site in any run, or captured call sites that are absolute
-   * paths without their leading slash. Null when neither does.
+   * Why the healing of the click at `place` (`file:line`) of the test `testCaseId` has no candidate, when the two known
+   * bugs explain it, read in their exact states: the passing CI run's report (`snapshots`, the reporter's
+   * `piwi-locators` of that test, `ciSnapshots`) holds that call's snapshot without its element, and the instance
+   * keeps no row of it; and the call site reads the CI checkout's absolute path without its leading slash
+   * (`tmp/…/ci/tests/…`). Null when the first state is not there: a missing report, no snapshot of the test, or an
+   * element captured at that place are failures of the check, not this bug.
    */
-  async whyNoHealing(testCaseId, place) {
-    const rows = await this.query('select location, element_tag from locator_snapshots where test_case_id = ?', [
-      testCaseId,
-    ]);
+  async whyNoHealing(testCaseId, place, { snapshots, ciDir }) {
+    if (!Array.isArray(snapshots) || snapshots.length === 0) return null;
     const [file, line] = place.split(':');
-    const found = [];
-    if (!rows.some((r) => r.location?.includes(`${file}:${line}:`) && r.element_tag)) {
-      found.push({ bug: HEALING_BUGS.navigatingClick, detail: `no element was captured at ${place}` });
+    const atPlace = (location) => new RegExp(`(^|/)${escapeRegExp(`${file}:${line}`)}:\\d+$`).test(location ?? '');
+    const call = snapshots.find((snap) => atPlace(snap.location));
+    if (!call || call.element !== null) return null;
+    const rows = await this.query('select location from locator_snapshots where test_case_id = ?', [testCaseId]);
+    if (rows.some((row) => atPlace(row.location))) return null;
+    const found = [
+      { bug: HEALING_BUGS.navigatingClick, detail: `the passing run kept no element of ${call.location}` },
+    ];
+    const slashless = `${ciDir.replace(/^\//, '')}/${file}:${line}:`;
+    if (call.location.startsWith(slashless)) {
+      found.push({ bug: HEALING_BUGS.esmCallSites, detail: `its call site reads ${call.location}` });
     }
-    const slashless = rows.find((r) => /^(tmp|home|Users|var|private|runner)\//.test(r.location ?? ''));
-    if (slashless) found.push({ bug: HEALING_BUGS.esmCallSites, detail: `a call site reads ${slashless.location}` });
-    if (!found.length) return null;
     return { bug: found.map((f) => f.bug).join('; '), detail: found.map((f) => f.detail).join('; ') };
   }
 
@@ -95,6 +101,29 @@ export class Instance {
   }
 }
 
+/** `text` as a regular expression's literal. */
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The locator snapshots the reporter attached to the first result of the test `title` (`piwi-locators`), from a "CI"
+ * run's JSON report; null when the report, the test or the attachment is missing.
+ */
+export function ciSnapshots(reportFile, title) {
+  if (!fs.existsSync(reportFile)) return null;
+  const report = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
+  const specs = [];
+  const walk = (suite) => {
+    specs.push(...(suite.specs ?? []));
+    for (const child of suite.suites ?? []) walk(child);
+  };
+  for (const suite of report.suites ?? []) walk(suite);
+  const result = specs.find((spec) => spec.title === title)?.tests?.[0]?.results?.[0];
+  const attachment = result?.attachments?.find((a) => a.name === 'piwi-locators' && a.body);
+  return attachment ? JSON.parse(Buffer.from(attachment.body, 'base64').toString('utf8')) : null;
+}
+
 /** Seeds a database under `dir` and boots the dashboard on it; its output goes to `logFile`. */
 export async function startInstance(dir, { logFile }) {
   const env = seedThrowawayDb(path.join(dir, 'data'));
@@ -112,7 +141,8 @@ export async function startInstance(dir, { logFile }) {
 
 /**
  * A "CI" run: `origin` cloned into `dir` at `commit` on `main`, the whole suite run headless and reported to the
- * instance. Resolves with the run's exit code once Playwright ends; its output goes to `log`.
+ * instance. Resolves with the run's exit code once Playwright ends; its output goes to `log`, and its JSON report
+ * (`ci-report.json` of the checkout) beside it, as `<log>.json`.
  */
 export function startCiRun({ origin, dir, commit, instance, log, extraEnv = {} }) {
   fs.rmSync(dir, { recursive: true, force: true });
@@ -133,6 +163,10 @@ export function startCiRun({ origin, dir, commit, instance, log, extraEnv = {} }
   });
   return new Promise((resolve, reject) => {
     child.once('error', reject);
-    child.once('exit', (code) => resolve(code));
+    child.once('exit', (code) => {
+      const report = path.join(dir, 'ci-report.json');
+      if (fs.existsSync(report)) fs.copyFileSync(report, log.replace(/\.log$/, '.json'));
+      resolve(code);
+    });
   });
 }

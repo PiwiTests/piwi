@@ -59,7 +59,8 @@ const besideTheEditor = process.env.CI
 
 export default wrapConfig(
   defineConfig(baseConfig, {
-    reporter: [['list']],
+    // CI keeps the run's JSON report beside its output.
+    reporter: process.env.CI ? [['list'], ['json', { outputFile: 'ci-report.json' }]] : [['list']],
     use: {
       actionTimeout: 10_000,
       ...(process.env.CI ? {} : { viewport: null }),
