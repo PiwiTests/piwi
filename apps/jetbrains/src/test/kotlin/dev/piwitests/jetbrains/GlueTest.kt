@@ -393,7 +393,7 @@ class GlueTest {
     }
 
     @Test
-    fun `the MCP configuration bridges each instance through mcp-remote, the key in env`() {
+    fun `the MCP configuration bridges each instance through a pinned mcp-remote over HTTP alone, the key in env`() {
         val json = JsonParser.parseString(
             Glue.mcpConfiguration(
                 listOf(
@@ -405,11 +405,16 @@ class GlueTest {
         val first = json.getAsJsonObject("piwi")
         assertEquals("npx", first.get("command").asString)
         assertEquals(
-            listOf("-y", "mcp-remote", "https://a/mcp", "--header", "Authorization:\${PIWI_AUTH}"),
+            listOf("-y", "mcp-remote@0.15.2", "https://a/mcp", "--transport", "http-only", "--header", "Authorization:\${PIWI_AUTH}"),
             first.getAsJsonArray("args").map { it.asString },
         )
         assertEquals("Bearer pd_x", first.getAsJsonObject("env").get("PIWI_AUTH").asString)
-        assertEquals(listOf("-y", "mcp-remote", "http://b/mcp"), json.getAsJsonObject("piwi-2").getAsJsonArray("args").map { it.asString })
+        assertEquals(
+            listOf("-y", "mcp-remote@0.15.2", "http://b/mcp", "--transport", "http-only"),
+            json.getAsJsonObject("piwi-2").getAsJsonArray("args").map { it.asString },
+        )
+        // An exact release: npx with none runs whatever npm serves that day.
+        assertTrue(Regex("^mcp-remote@\\d+\\.\\d+\\.\\d+$").matches(Glue.MCP_REMOTE))
     }
 
     @Test
@@ -418,7 +423,15 @@ class GlueTest {
             .asJsonObject.getAsJsonObject("mcpServers").getAsJsonObject("piwi-runs")
         assertEquals("npx", json.get("command").asString)
         assertEquals(
-            listOf("-y", "mcp-remote", "http://127.0.0.1:41234/mcp", "--header", "Authorization:\${PIWI_RUNS_AUTH}"),
+            listOf(
+                "-y",
+                "mcp-remote@0.15.2",
+                "http://127.0.0.1:41234/mcp",
+                "--transport",
+                "http-only",
+                "--header",
+                "Authorization:\${PIWI_RUNS_AUTH}",
+            ),
             json.getAsJsonArray("args").map { it.asString },
         )
         assertEquals("Bearer t0ken", json.getAsJsonObject("env").get("PIWI_RUNS_AUTH").asString)
@@ -429,6 +442,18 @@ class GlueTest {
         assertNotEquals(token, Glue.newAgentsToken())
         assertFalse(Glue.isAgentsToken("short"))
         assertFalse(Glue.isAgentsToken("a".repeat(40) + " "))
+    }
+
+    @Test
+    fun `the runs' MCP configuration for Claude Code or Cursor is an http entry, its token a bearer header`() {
+        val json = JsonParser.parseString(Glue.runsMcpHttpConfiguration("http://127.0.0.1:41234/mcp", "t0\"ken"))
+            .asJsonObject.getAsJsonObject("mcpServers").getAsJsonObject("piwi-runs")
+        assertEquals("http", json.get("type").asString)
+        assertEquals("http://127.0.0.1:41234/mcp", json.get("url").asString)
+        assertEquals("Bearer t0\"ken", json.getAsJsonObject("headers").get("Authorization").asString)
+        assertFalse(json.has("command"))
+        assertEquals("agentsToken 1a2b", Glue.agentsTokenEntry("1a2b"))
+        assertNotEquals(Glue.agentsTokenEntry("1a2b"), Glue.agentsTokenEntry("3c4d"))
     }
 
     @Test

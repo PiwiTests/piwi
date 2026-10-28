@@ -16,30 +16,42 @@ service serves the runs of its window (in a JetBrains IDE, its project) as an MC
 
 ## Connect your agent
 
-The server listens on `127.0.0.1` once the editor extension starts, behind a token the extension keeps, at a port it
-keeps when it is free, so a configuration you copy once keeps working after a restart.
+The server listens on `127.0.0.1` once the editor extension starts, behind a token the extension keeps for this
+workspace (in a JetBrains IDE, this project), at a port it keeps when it is free, so a configuration you copy once
+keeps working after a restart. When another program holds that port, the server takes another with a new token and
+says so: copy the configuration again for an agent you set up by hand.
 
-- **VS Code 1.101 and later** lists it for its agent as **Piwi runs**, beside **Piwi**: there is nothing to set.
-- **An agent in a terminal**, from VS Code: **Piwi: Copy the runs' MCP server configuration for agents** copies an
-  `mcp.json` entry:
+| Agent                                                                          | What it takes                                                                           |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| VS Code's own agent (1.101 and later)                                          | Nothing to set: the extension lists the server as **Piwi runs**, beside **Piwi**        |
+| Claude Code, Cursor and other agents that connect over HTTP                    | The `mcpServers` entry of type `http` below, with the token as a bearer header          |
+| The JetBrains AI Assistant, Claude Desktop and agents that only start commands | An `mcpServers` entry that runs `mcp-remote`, a small Node bridge, at one exact release |
+
+- **From VS Code**: **Piwi: Copy the runs' MCP server configuration for agents** asks which, then copies the entry:
 
   ```json
   {
-    "servers": {
+    "mcpServers": {
       "piwi-runs": { "type": "http", "url": "http://127.0.0.1:41234/mcp", "headers": { "Authorization": "Bearer …" } }
     }
   }
   ```
 
-  Claude Code takes the same entry under `mcpServers` in its own settings.
+  Claude Code reads it in your user settings (`~/.claude.json`, or `claude mcp add-json` with `--scope user`), Cursor
+  in `~/.cursor/mcp.json`. The other choice is VS Code's own `mcp.json` (`servers`), for another VS Code.
 
-- **A JetBrains IDE**: **Tools → Piwi → Copy the Runs' MCP Server Configuration for Agents** copies an `mcpServers`
-  entry, bridged through `mcp-remote` as Piwi's own is, for **Settings → Tools → AI Assistant → Model Context
-  Protocol** or another agent's settings. The platform has no public way for a plugin to add a server to the AI
-  Assistant, so you paste it once.
+- **From a JetBrains IDE**: **Tools → Piwi → Copy the Runs' MCP Server Configuration for Claude Code or Cursor**
+  copies the same `type: "http"` entry; **Copy the Runs' MCP Server Configuration for Agents** copies one that runs
+  `npx -y mcp-remote@0.15.2 <url> --transport http-only`, the token in `env`, never on the command line, for
+  **Settings → Tools → AI Assistant → Model Context Protocol** or another agent that only starts commands. The
+  platform has no public way for a plugin to add a server to the AI Assistant, so you paste it once.
 
-The configuration holds the token: keep it in your user settings, out of the repository. **Serve the runs to agents**
-turns the server off at once: `piwi.serveRunsToAgents` in VS Code, **Settings → Tools → Piwi** in a JetBrains IDE.
+**The configuration holds the token.** Keep it in your user settings, never in a file of the repository, such as a
+project's `.mcp.json` or `.cursor/mcp.json`: anyone who reads the file can drive your runs while the editor is open.
+**Reset the token** gives the server a new one at once, and every agent you gave the old one to is refused until you
+copy the configuration again (the editor's own agent follows): **Piwi: Reset the runs' MCP server token** in VS Code,
+**Tools → Piwi → Reset the Runs' MCP Server Token** in a JetBrains IDE. **Serve the runs to agents** turns the server
+off at once: `piwi.serveRunsToAgents` in VS Code, **Settings → Tools → Piwi** in a JetBrains IDE.
 
 ## The tools
 

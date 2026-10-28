@@ -247,6 +247,11 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.resetRunsMcpToken",
+        "title": "Reset the runs' MCP server token",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.pairPicker",
         "title": "Pair with Piwi Picker",
         "category": "Piwi"
@@ -865,7 +870,7 @@
         "piwi.serveRunsToAgents": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Serve the test runs this window starts to the coding agents of this machine, as an MCP server the editor lists for its agent (**Piwi runs**): an agent can follow a run, stop it, read and act on the stopped page, and have Piwi write the code there. It listens on `127.0.0.1` alone, behind a token; **Piwi: Copy the runs' MCP server configuration for agents** gives it to another agent."
+          "markdownDescription": "Serve the test runs this window starts to the coding agents of this machine, as an MCP server the editor lists for its agent (**Piwi runs**): an agent can follow a run, stop it, read and act on the stopped page, and have Piwi write the code there. It listens on `127.0.0.1` alone, behind a token; **Piwi: Copy the runs' MCP server configuration for agents** gives it to another agent, and **Piwi: Reset the runs' MCP server token** gives it a new token."
         },
         "piwi.testExplorer": {
           "type": "boolean",

@@ -135,8 +135,9 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                         .bindSelected({ local.serveRunsToAgents }, { local.serveRunsToAgents = it })
                         .comment(
                             "An MCP server on 127.0.0.1, behind a token: an agent follows a run, stops it, reads and acts on " +
-                                "the stopped page, and has Piwi write the code there. Copy the Runs' MCP Server Configuration " +
-                                "for Agents gives it to the AI Assistant or another agent. Kept for you only, in .idea/workspace.xml",
+                                "the stopped page, and has Piwi write the code there. Tools → Piwi copies its configuration for " +
+                                "the AI Assistant, or for Claude Code or Cursor, and resets its token. Kept for you only, in " +
+                                ".idea/workspace.xml",
                         )
                 }
             }

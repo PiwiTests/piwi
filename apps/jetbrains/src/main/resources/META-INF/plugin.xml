@@ -144,7 +144,13 @@
                     description="An mcpServers entry for the AI Assistant's MCP settings"/>
             <action id="Piwi.CopyRunsMcpConfiguration" class="dev.piwitests.jetbrains.CopyRunsMcpConfigurationAction"
                     text="Copy the Runs' MCP Server Configuration for Agents"
-                    description="An mcpServers entry for an agent to follow, stop and act on the test runs this project starts"/>
+                    description="An mcpServers entry through mcp-remote, for the AI Assistant or another agent that starts commands, to follow, stop and act on the test runs this project starts"/>
+            <action id="Piwi.CopyRunsMcpHttpConfiguration" class="dev.piwitests.jetbrains.CopyRunsMcpHttpConfigurationAction"
+                    text="Copy the Runs' MCP Server Configuration for Claude Code or Cursor"
+                    description="An mcpServers entry of type http, with the token as a bearer header, for an agent that connects to it directly"/>
+            <action id="Piwi.ResetRunsMcpToken" class="dev.piwitests.jetbrains.ResetRunsMcpTokenAction"
+                    text="Reset the Runs' MCP Server Token"
+                    description="A new token for the runs' MCP server: every agent given the one before is refused"/>
             <separator/>
             <action id="Piwi.RecordHere" class="dev.piwitests.jetbrains.RecordHereAction" text="Record Here"
                     icon="AllIcons.Ide.Macro.Recording_1"

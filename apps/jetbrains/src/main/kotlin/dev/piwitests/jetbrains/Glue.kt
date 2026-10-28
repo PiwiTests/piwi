@@ -1065,6 +1065,12 @@ object Glue {
         "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""
 
     /**
+     * The `mcp-remote` release an `mcpServers` entry runs, exactly: `npx` with no version runs whatever npm serves that
+     * day, with the key or the token in its environment. 0.1.16 and later carry the fix for CVE-2025-6514.
+     */
+    const val MCP_REMOTE = "mcp-remote@0.15.2"
+
+    /**
      * An `mcpServers` entry per instance, bridged to stdio with `mcp-remote` so every
      * MCP client takes it (the JetBrains AI Assistant's settings, Junie, Claude Desktop).
      * The key travels in `env`, never on the command line.
@@ -1076,9 +1082,12 @@ object Glue {
         return "{\n  \"mcpServers\": {\n${entries.joinToString(",\n")}\n  }\n}"
     }
 
-    /** An `mcpServers` entry bridged to stdio with `mcp-remote`, its `Authorization` header in the variable `variable`. */
+    /**
+     * An `mcpServers` entry bridged to stdio with `mcp-remote` (`MCP_REMOTE`), over streamable HTTP alone, its
+     * `Authorization` header in the variable `variable`.
+     */
     private fun mcpEntry(name: String, url: String, auth: String?, variable: String): String {
-        val args = mutableListOf("\"-y\"", "\"mcp-remote\"", jsonString(url))
+        val args = mutableListOf("\"-y\"", jsonString(MCP_REMOTE), jsonString(url), "\"--transport\"", "\"http-only\"")
         if (auth != null) args += listOf("\"--header\"", "\"Authorization:\${$variable}\"")
         val env = if (auth != null) ",\n      \"env\": { \"$variable\": ${jsonString(auth)} }" else ""
         return "    ${jsonString(name)}: {\n      \"command\": \"npx\",\n      \"args\": [${args.joinToString(", ")}]$env\n    }"
@@ -1091,6 +1100,20 @@ object Glue {
      */
     fun runsMcpConfiguration(url: String, token: String): String =
         "{\n  \"mcpServers\": {\n${mcpEntry("piwi-runs", url, "Bearer $token", "PIWI_RUNS_AUTH")}\n  }\n}"
+
+    /**
+     * The `mcpServers` entry of type `http` that Claude Code and Cursor read: the runs' server, with no bridge, its token
+     * as a bearer header.
+     */
+    fun runsMcpHttpConfiguration(url: String, token: String): String =
+        "{\n  \"mcpServers\": {\n    \"piwi-runs\": {\n      \"type\": \"http\",\n      \"url\": ${jsonString(url)},\n" +
+            "      \"headers\": { \"Authorization\": ${jsonString("Bearer $token")} }\n    }\n  }\n}"
+
+    /**
+     * The password safe's name for the runs' MCP server's token of a project (`Project.getLocationHash`): each project
+     * keeps its own, so a new token in one leaves the agents of another connected.
+     */
+    fun agentsTokenEntry(project: String): String = "agentsToken $project"
 
     /**
      * A script file named in a line of a run's output: the characters `[start, end)` that name it, its path as written,

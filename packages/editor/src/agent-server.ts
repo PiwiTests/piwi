@@ -1,7 +1,9 @@
 /**
  * The service's MCP server for the agents of this machine (Claude Code, Copilot, Cursor): the runs this editor window
  * started, as tools (`run-agent.ts`), over MCP's streamable HTTP transport, each request a POST answered with JSON. It
- * listens on `127.0.0.1` alone, at the port the client keeps when it is free, else a free one; it answers only a
+ * listens on `127.0.0.1` alone, at the port the client keeps when it is free, else a free one with a new token (an
+ * agent's copied configuration then reaches whatever holds the kept port, which must not learn a token that works
+ * here); it answers only a
  * request whose `Host` is its own (`127.0.0.1` or `localhost` at its port: a page reached under another name, DNS
  * rebinding, is refused), that carries no `Origin` (a browser's request always does, and MCP clients are native), and
  * whose `Authorization` is the bearer token the client keeps, compared in constant time. The token reaches the agent
@@ -48,7 +50,7 @@ export interface AgentServerOptions {
   tools: AgentTools;
   /** The port to listen on, else a free one when it is taken; a free one when null. */
   port?: number | null;
-  /** The token, else a new random one. */
+  /** The token, else a new random one; a new one too when `port` was taken. */
   token?: string | null;
   /** The service's version, as `initialize` names it. */
   version: string;
@@ -87,6 +89,11 @@ function readBody(req: http.IncomingMessage): Promise<string | null> {
   });
 }
 
+/** A new token: 32 random bytes, base64url. */
+function newToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
 export class AgentServer {
   private busy = 0;
   /** The tool calls being answered, by their JSON-RPC id, each with what aborts it: a cancel names them by id. */
@@ -95,18 +102,34 @@ export class AgentServer {
   private constructor(
     private readonly server: http.Server,
     readonly port: number,
-    readonly token: string,
+    private current: string,
+    /** It listens at another port than the one asked, which was taken: with a new token. */
+    readonly moved: boolean,
     private readonly options: AgentServerOptions,
   ) {}
+
+  /** The bearer token an agent sends. */
+  get token(): string {
+    return this.current;
+  }
+
+  /** A new token from now on: the one before is refused, an answer under way aside. */
+  newToken(): string {
+    this.current = newToken();
+    return this.current;
+  }
 
   /** The endpoint an agent is given: `http://127.0.0.1:<port>/mcp`. */
   get url(): string {
     return `http://127.0.0.1:${this.port}${AGENT_PATH}`;
   }
 
-  /** Listen on `127.0.0.1`, at the port asked when it is free, else a free one; null when the machine refuses one. */
+  /**
+   * Listen on `127.0.0.1`, at the port asked when it is free, else a free one with a new token; null when the machine
+   * refuses one.
+   */
   static async open(options: AgentServerOptions): Promise<AgentServer | null> {
-    const token = isAgentToken(options.token) ? options.token : randomBytes(32).toString('base64url');
+    const kept = isAgentToken(options.token) ? options.token : null;
     let ref: AgentServer | null = null;
     const server = http.createServer({ maxHeaderSize: 8192 }, (req, res) => {
       if (ref) ref.handle(req, res);
@@ -127,13 +150,17 @@ export class AgentServer {
         });
       });
     const wanted = Number.isInteger(options.port) && options.port! > 1023 && options.port! < 65536 ? options.port! : 0;
-    if (!(await listen(wanted)) && (wanted === 0 || !(await listen(0)))) {
+    const atWanted = await listen(wanted);
+    if (!atWanted && (wanted === 0 || !(await listen(0)))) {
       server.close();
       return null;
     }
     server.on('error', () => {});
     server.unref();
-    ref = new AgentServer(server, (server.address() as AddressInfo).port, token, options);
+    const moved = !atWanted;
+    // Another program holds the kept port: the token an agent sends there must not open this server.
+    const token = kept && !moved ? kept : newToken();
+    ref = new AgentServer(server, (server.address() as AddressInfo).port, token, moved, options);
     return ref;
   }
 
@@ -159,7 +186,9 @@ export class AgentServer {
     if (req.method !== 'POST') return refuse(res, 405, 'POST only.', { Allow: 'POST' });
     const authorization = req.headers.authorization ?? '';
     const token = /^Bearer (\S+)$/i.exec(authorization)?.[1] ?? '';
-    if (!sameToken(token, this.token)) return refuse(res, 401, 'Not authorized: the bearer token is missing or wrong.');
+    if (!sameToken(token, this.current)) {
+      return refuse(res, 401, 'Not authorized: the bearer token is missing or wrong.');
+    }
     if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) {
       return refuse(res, 415, 'The body is JSON (Content-Type: application/json).');
     }

@@ -215,6 +215,7 @@ import {
   PICK_AT_REQUEST,
   HUB_REQUEST,
   AGENTS_REQUEST,
+  AGENTS_CHANGED_NOTIFICATION,
   STOP_BIND_REQUEST,
   RUN_CONTROL_REQUEST,
   RUN_SESSION_NOTIFICATION,
@@ -2196,7 +2197,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     // A checkout or a commit is read within seconds: the latest run and the diagnostics follow the new `HEAD`.
     void watchRepositories();
     // A client that serves its runs to agents from the start says so as it starts the service.
-    if (agentPrefs?.enabled === true) void setAgents(true);
+    if (agentPrefs?.enabled === true) void setAgents(true, false, false);
     void Promise.all([
       RecordChannel.open({
         onAttach: recordRequested,
@@ -3505,20 +3506,26 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     stopActions.action(params),
   );
 
-  /** The MCP server for agents listens only once the client turns it on, and closes as it turns it off. */
-  const setAgents = async (enabled: boolean): Promise<AgentsResult> => {
+  /**
+   * The MCP server for agents listens only once the client turns it on, and closes as it turns it off; `newToken`
+   * gives it a new token, the one before refused from then on. The client keeps the address and the token it hears:
+   * in the answer when it asked (`asked`), else in `piwi/agentsChanged`, sent only when they differ from what it holds.
+   */
+  const setAgents = async (enabled: boolean, newToken: boolean, asked: boolean): Promise<AgentsResult> => {
     agentWanted = enabled;
+    if (newToken) agentPrefs = { ...agentPrefs, token: agentServer?.newToken() ?? null };
     if (!agentWanted) {
       agentServer?.close();
       agentServer = null;
       // No agent follows a run any more: the workers stop telling, and what the pages said goes.
       runAgent.off();
-      return { url: null, token: null, message: "Piwi's runs are not served to agents." };
+      return toldAgents({ url: null, token: null, message: "Piwi's runs are not served to agents." }, asked);
     }
     if (!agentServer && !shutDown) {
+      const kept = agentPrefs?.port ?? null;
       agentOpening ??= AgentServer.open({
         tools: runAgent,
-        port: agentPrefs?.port ?? null,
+        port: kept,
         token: agentPrefs?.token ?? null,
         version: SERVICE_VERSION,
       }).finally(() => {
@@ -3526,20 +3533,43 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       });
       const opened = await agentOpening;
       if (opened && (shutDown || !agentWanted || (agentServer && agentServer !== opened))) opened.close();
-      else if (!agentServer) agentServer = opened;
+      else if (!agentServer && opened) {
+        agentServer = opened;
+        // Another program holds the port kept for agents: a configuration copied before sends it the old token.
+        if (opened.moved) {
+          void connection.sendNotification(NOTICE_NOTIFICATION, {
+            root: folders[0] ?? '',
+            severity: 'warning',
+            message: `Another program listens at port ${kept}, which Piwi kept for agents: Piwi serves the runs at ${opened.url} with a new token. An agent the editor lists for itself follows; copy the runs' MCP server configuration again for any other.`,
+          } satisfies Notice);
+        }
+      }
       // Turned off and on again, it listens at the same address with the same token.
       if (agentServer) agentPrefs = { ...agentPrefs, port: agentServer.port, token: agentServer.token };
     }
-    return agentServer
-      ? {
-          url: agentServer.url,
-          token: agentServer.token,
-          message: `Piwi serves the runs of this window to agents at ${agentServer.url}.`,
-        }
-      : { url: null, token: null, message: 'Piwi could not listen on this machine for agents.' };
+    return toldAgents(
+      agentServer
+        ? {
+            url: agentServer.url,
+            token: agentServer.token,
+            message: newToken
+              ? `Piwi serves the runs to agents at ${agentServer.url} with a new token: an agent with the one before is refused.`
+              : `Piwi serves the runs of this window to agents at ${agentServer.url}.`,
+          }
+        : { url: null, token: null, message: 'Piwi could not listen on this machine for agents.' },
+      asked,
+    );
+  };
+  /** The address and the token the client holds, as it last heard them: `piwi/agentsChanged` tells it a new one. */
+  let agentsHeld = JSON.stringify([null, null]);
+  const toldAgents = (answer: AgentsResult, asked: boolean): AgentsResult => {
+    const held = JSON.stringify([answer.url, answer.token]);
+    if (held !== agentsHeld && !asked) void connection.sendNotification(AGENTS_CHANGED_NOTIFICATION, answer);
+    agentsHeld = held;
+    return answer;
   };
   connection.onRequest(AGENTS_REQUEST, (params: AgentsParams): Promise<AgentsResult> =>
-    setAgents(params?.enabled === true),
+    setAgents(params?.enabled === true, params?.newToken === true, true),
   );
 
   connection.onRequest(STOP_BIND_REQUEST, async (params: StopBindParams): Promise<StopBindResult> => {

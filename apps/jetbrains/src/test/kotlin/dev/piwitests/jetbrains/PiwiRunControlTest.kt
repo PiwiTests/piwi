@@ -362,6 +362,32 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     }
 
     /**
+     * The runs' MCP server's token is the project's, in the password safe: one the service tells (the kept port was
+     * taken, or the token reset) replaces it, with its port, so the next start sends both.
+     */
+    fun testATokenTheServiceTellsIsKeptForTheProjectsNextStart() {
+        val service = project.service<PiwiProjectService>()
+        val port = service.local().agentsPort
+        val kept = service.agentsOptions()["token"] as String
+        assertTrue(Glue.isAgentsToken(kept))
+        assertEquals(kept, service.agentsOptions()["token"])
+        val told = Glue.newAgentsToken()
+        try {
+            service.agentsHeard(AgentsResult("http://127.0.0.1:41999/mcp", told, "Moved."))
+            val until = System.currentTimeMillis() + 10_000
+            while (service.agentsOptions()["token"] != told && System.currentTimeMillis() < until) Thread.sleep(20)
+            assertEquals(told, service.agentsOptions()["token"])
+            assertEquals(41999, service.agentsOptions()["port"])
+            // A token that is not one the service takes is never kept.
+            service.agentsHeard(AgentsResult("http://127.0.0.1:41999/mcp", "short", "No."))
+            Thread.sleep(200)
+            assertEquals(told, service.agentsOptions()["token"])
+        } finally {
+            service.local().agentsPort = port
+        }
+    }
+
+    /**
      * A stop whose reporter takes it offers to share its browser with Playwright's own tools, in its popup and under
      * Tools → Piwi, and shares it only once the person said yes to the warning.
      */

@@ -1736,6 +1736,11 @@ export const STOP_CODE_NOTIFICATION = 'piwi/stopCode';
  */
 export interface AgentsParams {
   enabled: boolean;
+  /**
+   * Give the server a new token (the client's Reset the token), the one before refused from then on: one a
+   * configuration copied out of the editor may have taken.
+   */
+  newToken?: boolean;
 }
 
 export interface AgentsResult {
@@ -1748,6 +1753,13 @@ export interface AgentsResult {
 }
 
 export const AGENTS_REQUEST = 'piwi/agents';
+
+/**
+ * `piwi/agentsChanged`: the address or the token of the MCP server for agents changed without the client asking (it
+ * listened as the service started, or found the port the client kept taken and took another with a new token): the
+ * client keeps them for the next start, as it keeps `piwi/agents`'s answer, and its own agent's entry follows.
+ */
+export const AGENTS_CHANGED_NOTIFICATION = 'piwi/agentsChanged';
 
 /**
  * `piwi/stopBind`: at the stop `since` names, of the run's one stopped worker or `worker`, share its browser with

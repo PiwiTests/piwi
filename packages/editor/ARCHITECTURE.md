@@ -838,7 +838,13 @@ answered with its address and token), and closes as the client turns it off or t
 
 - `127.0.0.1` alone, at the port the client keeps (`InitializationOptions.agents.port`) when it is free, else a free
   one; the token the client keeps (`agents.token`, 32 to 256 characters of base64url), else a random one. Both clients
-  keep them, so an agent's configuration copied once still connects after a restart.
+  keep them, so an agent's configuration copied once still connects after a restart. When another program holds the
+  kept port, the server takes a free one with a new token (`AgentServer.moved`): an agent's copied entry sends the
+  old token to that program, which must not open this server with it. The service then sends a `piwi/notice` asking
+  to copy the configuration again, and `piwi/agentsChanged` with the new address and token, which the clients keep
+  as they keep `piwi/agents`'s answer; it is sent only when they differ from what the client holds. `piwi/agents`
+  with `newToken` (the clients' Reset the token) gives the server a new token (`AgentServer.newToken`), the one
+  before refused from the next request on.
 - A request whose `Host` is not `127.0.0.1` or `localhost` at its port is a 403 (`isHubHost`: DNS rebinding), and so is
   one that carries an `Origin`: a browser sends one with every POST, MCP clients are native. Another path is a 404,
   another method a 405, a body that is not JSON a 415, and a missing or wrong `Authorization: Bearer` a 401, the token

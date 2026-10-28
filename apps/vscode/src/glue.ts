@@ -768,11 +768,36 @@ export function runsMcpHeaders(token: string): Record<string, string> {
 }
 
 /**
- * A VS Code `mcp.json` holding the MCP server of the runs this window starts, for an agent outside the editor (an
- * agent's CLI in a terminal): the address and the token stay while the window keeps them.
+ * How the configuration of the runs' MCP server is copied: VS Code's `mcp.json` (`servers`), or the `mcpServers` entry
+ * Claude Code (`claude mcp add-json`, `.mcp.json` in the user's settings) and Cursor (`~/.cursor/mcp.json`) read.
  */
-export function runsMcpConfiguration(url: string, token: string): string {
-  return JSON.stringify({ servers: { 'piwi-runs': { type: 'http', url, headers: runsMcpHeaders(token) } } }, null, 2);
+export type RunsMcpFormat = 'vscode' | 'mcpServers';
+
+export const RUNS_MCP_FORMATS: ReadonlyArray<{ format: RunsMcpFormat; label: string; detail: string }> = [
+  {
+    format: 'mcpServers',
+    label: 'Claude Code, Cursor and other agents',
+    detail: 'An mcpServers entry of type http, with the token as a bearer header',
+  },
+  { format: 'vscode', label: "VS Code's mcp.json", detail: "A servers entry, for another VS Code's agent" },
+];
+
+/**
+ * The MCP server of the runs this window starts, for an agent outside the editor (an agent's CLI in a terminal), in
+ * `format`: one `piwi-runs` entry of type `http`, its token as a bearer header. The address and the token stay while
+ * the window keeps them.
+ */
+export function runsMcpConfiguration(url: string, token: string, format: RunsMcpFormat = 'vscode'): string {
+  const entry = { 'piwi-runs': { type: 'http', url, headers: runsMcpHeaders(token) } };
+  return JSON.stringify(format === 'vscode' ? { servers: entry } : { mcpServers: entry }, null, 2);
+}
+
+/**
+ * The `SecretStorage` key of the runs' MCP server's token for a workspace (its file, else its first folder): each
+ * workspace keeps its own, so a new token in one leaves the agents of another connected.
+ */
+export function agentsTokenKey(workspace: string | null): string {
+  return `piwi.agentsToken ${workspace ?? ''}`.trimEnd();
 }
 
 /** How the agent signs in to an instance's MCP server that is handed no key (`piwi.mcpAuthorization`: `sign-in`). */

@@ -712,7 +712,10 @@ project or its key. The old key entry shared by every instance is deleted once (
 ## MCP server configuration
 
 **Copy the MCP Server Configuration** (`CopyMcpConfigurationAction`) writes the servers of `piwi/mcp` as `mcpServers`
-entries that run `mcp-remote` (`Glue.mcpConfiguration`), with the key in `env`, never on the command line.
+entries that run `mcp-remote` (`Glue.mcpConfiguration`), with the key in `env`, never on the command line. Every
+entry runs one exact release, `Glue.MCP_REMOTE` (`npx -y mcp-remote@<version>`, a release with the fix for
+CVE-2025-6514), over streamable HTTP alone (`--transport http-only`): `npx` with no version runs whatever npm serves
+that day, with the key or the token in its environment.
 
 With `PiwiLocalSettings.mcpAuthorization` at `sign-in` (`Glue.MCP_AUTHORIZATIONS`, in the AI Assistant group of the
 settings page, sent in `credentials()`), the service hands an instance's server without a key, and `mcp-remote` signs
@@ -723,12 +726,19 @@ of its own ([Agents](../../packages/editor/ARCHITECTURE.md#agents) in its refere
 whether (`agents`, from `PiwiProjectService.agentsOptions`): `PiwiLocalSettings.serveRunsToAgents` (**Serve the test
 runs this project starts to the agents of this machine**, in the AI Assistant group of the settings page, which sends
 `piwi/agents` on a change), the port it listened at last (`agentsPort`) and the token, kept in the `PasswordSafe`
-(`generateServiceName("Piwi", "agentsToken")`, a new one when none is kept: `Glue.newAgentsToken`). So a configuration
-copied once still connects after a restart.
+per project (`Glue.agentsTokenEntry` of `Project.getLocationHash`, a new one when none is kept: `Glue.newAgentsToken`).
+So a configuration copied once still connects after a restart. When another program holds the kept port, the service
+takes another with a new token, tells it (`piwi/agentsChanged`, `PiwiLsp4jClient.agentsChanged`) and says in a
+`piwi/notice` to copy the configuration again: `PiwiProjectService.agentsHeard` keeps the new port and token, as it
+does for every answer of `piwi/agents`. **Reset the Runs' MCP Server Token** (`ResetRunsMcpTokenAction`, after
+`MessageDialogBuilder.yesNo`) sends `piwi/agents` with `newToken` and keeps the new token the same way.
 
 **Copy the Runs' MCP Server Configuration for Agents** (`CopyRunsMcpConfigurationAction`) asks `piwi/agents`, keeps
 the port it answers (`Glue.portOf`) and writes a `piwi-runs` entry bridged by `mcp-remote`
-(`Glue.runsMcpConfiguration`), the token in `env` (`PIWI_RUNS_AUTH`). The AI Assistant (`com.intellij.ml.llm`, not bundled) has no public API to add
+(`Glue.runsMcpConfiguration`), the token in `env` (`PIWI_RUNS_AUTH`), for an agent that starts only commands; **…for
+Claude Code or Cursor** (`CopyRunsMcpHttpConfigurationAction`) writes the `mcpServers` entry of type `http` they read
+(`Glue.runsMcpHttpConfiguration`), the token as a bearer header. Both notifications say to keep it out of every file
+of the repository. The AI Assistant (`com.intellij.ml.llm`, not bundled) has no public API to add
 an MCP server, and the MCP Server plugin's `mcpServer.mcpToolset` extension point, which adds tools to the IDE's own
 server, starts at 2025.2 (the plugin compiles against 2024.1, [Platform compatibility](#platform-compatibility)), so
 the person pastes the entry.

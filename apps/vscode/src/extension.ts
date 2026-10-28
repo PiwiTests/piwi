@@ -64,6 +64,7 @@ import {
   FILE_SUMMARY_REQUEST,
   MCP_REQUEST,
   AGENTS_REQUEST,
+  AGENTS_CHANGED_NOTIFICATION,
   REFRESH_REQUEST,
   REFRESH_RUN_REQUEST,
   RENDER_STEPS_REQUEST,
@@ -141,8 +142,11 @@ import {
   MCP_SIGN_IN,
   mcpAuthorizationNote,
   mcpConfiguration,
+  RUNS_MCP_FORMATS,
   RUNS_MCP_LABEL,
+  agentsTokenKey,
   runsMcpConfiguration,
+  type RunsMcpFormat,
   runsMcpHeaders,
   ownLiveRun,
   refreshingText,
@@ -206,11 +210,10 @@ const SHARED_SECRET_KEY = 'piwi.apiKey';
 const SHARED_KEY_FORGOTTEN = 'piwi.sharedKeyForgotten';
 const MCP_OFFERED = 'piwi.mcpOffered';
 /**
- * The token of the MCP server the service serves the runs of this window's workspace to agents with (`SecretStorage`,
- * the same on every machine's window), and its port (`workspaceState`): an agent's configuration copied once still
- * connects after a restart.
+ * The port of the MCP server the service serves the runs of this window's workspace to agents with (`workspaceState`),
+ * beside its token (`SecretStorage`, `agentsTokenKey`): an agent's configuration copied once still connects after a
+ * restart.
  */
-const AGENTS_TOKEN = 'piwi.agentsToken';
 const AGENTS_PORT = 'piwi.agentsPort';
 const WALKTHROUGH_OPENED = 'piwi.walkthroughOpened';
 const SEND_TOKEN = 'piwi.sendToken';
@@ -364,7 +367,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   });
   const serverOptions = { run: service(), debug: service() } satisfies ServerOptions;
   handed = await credentials(context);
-  const agentsToken = await keptAgentsToken(context);
+  const agentsKey = agentsTokenKey(
+    vscode.workspace.workspaceFile?.toString() ?? vscode.workspace.workspaceFolders?.[0]?.uri.toString() ?? null,
+  );
+  const agentsToken = await keptAgentsToken(context, agentsKey);
   let credentialsTimer: ReturnType<typeof setTimeout> | null = null;
   const credentialsChanged = () => {
     if (credentialsTimer) clearTimeout(credentialsTimer);
@@ -1290,15 +1296,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   let agents: AgentsResult | null = null;
   const runsMcpChanged = new vscode.EventEmitter<void>();
   context.subscriptions.push(runsMcpChanged);
-  const agentsChanged = async () => {
-    const enabled = vscode.workspace.getConfiguration('piwi').get<boolean>('serveRunsToAgents') ?? true;
-    const answer = await lc
-      .sendRequest<AgentsResult>(AGENTS_REQUEST, { enabled } satisfies AgentsParams)
-      .catch(() => null);
+  /**
+   * What the service says of the server, asked or not (`piwi/agentsChanged`): kept, its port and its token for the
+   * next start (a new token when the kept port was taken, or reset), and the provider's entry follows.
+   */
+  const agentsHeard = async (answer: AgentsResult | null) => {
     const before = JSON.stringify(agents);
     agents = answer?.url ? answer : null;
     if (agents?.url) await context.workspaceState.update(AGENTS_PORT, Number(new URL(agents.url).port));
+    if (agents?.token && agents.token !== (await context.secrets.get(agentsKey))) {
+      await context.secrets.store(agentsKey, agents.token);
+    }
     if (JSON.stringify(agents) !== before) runsMcpChanged.fire();
+  };
+  const agentsChanged = async (newToken = false) => {
+    const enabled = vscode.workspace.getConfiguration('piwi').get<boolean>('serveRunsToAgents') ?? true;
+    const answer = await lc
+      .sendRequest<AgentsResult>(AGENTS_REQUEST, { enabled, ...(newToken ? { newToken } : {}) } satisfies AgentsParams)
+      .catch(() => null);
+    await agentsHeard(answer);
+    return answer;
   };
   context.subscriptions.push(
     lc.onDidChangeState((e) => {
@@ -1311,16 +1328,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('piwi.serveRunsToAgents')) void agentsChanged();
     }),
-    vscode.commands.registerCommand('piwi.copyRunsMcpConfiguration', async () => {
+    lc.onNotification(AGENTS_CHANGED_NOTIFICATION, (told: AgentsResult) => void agentsHeard(told)),
+    // The format the configuration is copied in: chosen, or named by the command's argument.
+    vscode.commands.registerCommand('piwi.copyRunsMcpConfiguration', async (asked?: unknown) => {
       if (!agents?.url || !agents.token) {
         void vscode.window.showWarningMessage(
           "Piwi: this window does not serve its runs to agents: turn on Piwi's Serve Runs To Agents setting.",
         );
         return;
       }
-      await vscode.env.clipboard.writeText(runsMcpConfiguration(agents.url, agents.token));
+      const format: RunsMcpFormat | undefined = RUNS_MCP_FORMATS.some((f) => f.format === asked)
+        ? (asked as RunsMcpFormat)
+        : (
+            await vscode.window.showQuickPick(
+              RUNS_MCP_FORMATS.map((f) => ({ label: f.label, detail: f.detail, format: f.format })),
+              { title: "Piwi: copy the runs' MCP server configuration for" },
+            )
+          )?.format;
+      if (!format || !agents?.url || !agents.token) return;
+      await vscode.env.clipboard.writeText(runsMcpConfiguration(agents.url, agents.token, format));
       void vscode.window.showInformationMessage(
-        "Piwi: the runs' MCP configuration is on the clipboard. It holds this window's token: paste it in your agent's user settings, not in the repository. It serves while this window is open.",
+        "Piwi: the runs' MCP configuration is on the clipboard. It holds this window's token: paste it in your agent's user settings, never in a file of the repository such as a project's .mcp.json. It serves while this window is open.",
+      );
+    }),
+    // A token copied where it should not be: a new one, the one before refused from then on.
+    vscode.commands.registerCommand('piwi.resetRunsMcpToken', async (confirmed?: unknown) => {
+      const reset = 'Reset the token';
+      if (
+        confirmed !== true &&
+        (await vscode.window.showWarningMessage(
+          "Piwi: give the runs' MCP server a new token? Every agent you copied its configuration to is refused until you copy it again; the editor's own agent follows.",
+          { modal: true },
+          reset,
+        )) !== reset
+      ) {
+        return;
+      }
+      const answer = await agentsChanged(true);
+      // Served or not, the token kept for the next start is a new one.
+      if (!answer?.token) await context.secrets.store(agentsKey, randomBytes(32).toString('base64url'));
+      void vscode.window.showInformationMessage(
+        answer?.token
+          ? "Piwi: the runs' MCP server has a new token. The editor's agent uses it already; copy the runs' MCP server configuration again for any other agent."
+          : "Piwi: the runs' MCP server takes a new token from its next start.",
       );
     }),
   );
@@ -1430,12 +1480,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
 }
 
-/** The token the runs' MCP server takes from agents, kept in `SecretStorage`: a new one the first time. */
-async function keptAgentsToken(context: vscode.ExtensionContext): Promise<string> {
-  const kept = await context.secrets.get(AGENTS_TOKEN);
+/** The token the runs' MCP server takes from agents, kept in `SecretStorage` under `key`: a new one the first time. */
+async function keptAgentsToken(context: vscode.ExtensionContext, key: string): Promise<string> {
+  const kept = await context.secrets.get(key);
   if (kept && /^[A-Za-z0-9_-]{32,256}$/.test(kept)) return kept;
   const token = randomBytes(32).toString('base64url');
-  await context.secrets.store(AGENTS_TOKEN, token);
+  await context.secrets.store(key, token);
   return token;
 }
 

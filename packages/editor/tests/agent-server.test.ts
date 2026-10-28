@@ -281,14 +281,22 @@ describe("the agents' MCP server", () => {
     expect(JSON.parse((await other).body).result.content[0].text).toBe('waited');
   });
 
-  test('takes the port it is given when free, another when it is taken, and a new token for one too short', async () => {
+  test('takes the port it is given when free, another with a new token when it is taken, and a new token for one too short', async () => {
     const taken = net.createServer();
     await new Promise<void>((resolve) => taken.listen(0, '127.0.0.1', resolve));
     const port = (taken.address() as net.AddressInfo).port;
     try {
-      const other = await AgentServer.open({ tools: { call: async () => ({ content: [] }) }, port, version: '1' });
+      // What holds the kept port hears an agent's old entry: the token it sends must not open the server.
+      const other = await AgentServer.open({
+        tools: { call: async () => ({ content: [] }) },
+        port,
+        token: TOKEN,
+        version: '1',
+      });
       expect(other!.port).not.toBe(port);
+      expect(other!.moved).toBe(true);
       expect(other!.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(other!.token).not.toBe(TOKEN);
       other!.close();
     } finally {
       await new Promise((resolve) => taken.close(resolve));
@@ -300,8 +308,24 @@ describe("the agents' MCP server", () => {
       version: '1',
     });
     expect(kept!.port).toBe(port);
+    expect(kept!.moved).toBe(false);
     expect(kept!.token).not.toBe('short');
     kept!.close();
+    const same = await AgentServer.open({
+      tools: { call: async () => ({ content: [] }) },
+      port,
+      token: TOKEN,
+      version: '1',
+    });
+    expect([same!.port, same!.token, same!.moved]).toEqual([port, TOKEN, false]);
+    // A new token: the one before is refused from then on.
+    const before = same!.token;
+    expect(same!.newToken()).not.toBe(before);
+    expect((await request(port, { body: rpc('ping') })).status).toBe(401);
+    expect(
+      (await request(port, { body: rpc('ping'), headers: { authorization: `Bearer ${same!.token}` } })).status,
+    ).toBe(200);
+    same!.close();
   });
 
   test('names each tool with a closed set of arguments, and says the page is untrusted where it reads it', () => {

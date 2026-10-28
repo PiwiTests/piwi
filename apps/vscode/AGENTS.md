@@ -89,10 +89,12 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **Only the pairing Piwi Picker is given saves the listener's port** (`sendPairing`): a run's pairing takes any free
   port while another window holds the saved one, and leaves it saved. Checked by `tests/send-listener.test.ts` ("keeps
   the port Piwi Picker was given …"). ([Breakpoints](ARCHITECTURE.md#breakpoints))
-- **The runs' MCP server's token lives in `SecretStorage` (`piwi.agentsToken`), and reaches an agent only through the
-  provider `piwi.runs` or the configuration the person copies, which says it holds it** (`keptAgentsToken`,
-  `runsMcpConfiguration`). `piwi.serveRunsToAgents` off turns the server off at once (`piwi/agents`). Checked by the
-  integration suite ("the runs are served to agents …").
+- **The runs' MCP server's token lives in `SecretStorage`, one per workspace (`agentsTokenKey`), and reaches an agent
+  only through the provider `piwi.runs` or the configuration the person copies, which says it holds it**
+  (`keptAgentsToken`, `runsMcpConfiguration`). A token the service answers or tells (`piwi/agentsChanged`) replaces the
+  one kept, and **Piwi: Reset the runs' MCP server token** asks the service for a new one (`newToken`).
+  `piwi.serveRunsToAgents` off turns the server off at once (`piwi/agents`). Checked by the integration suite ("the
+  runs are served to agents …").
   ([Service, lenses and credentials](ARCHITECTURE.md#service-lenses-and-credentials))
 - **A stop's browser is shared with Playwright's tools only after a modal warning, each time it is asked**
   (`share` in `src/run-view.ts`, `SHARE_WARNING`), never on an agent's word.

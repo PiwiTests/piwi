@@ -246,6 +246,15 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.service<PiwiRunSessions>().write(code)
     }
 
+    /**
+     * The address or the token of the runs' MCP server changed without the plugin asking (it listened as the service
+     * started, or found the kept port taken and took another with a new token): kept for the next start.
+     */
+    @JsonNotification("piwi/agentsChanged")
+    fun agentsChanged(told: AgentsResult) {
+        project.service<PiwiProjectService>().agentsHeard(told)
+    }
+
     /** A sentence on a run the editor started, such as one that never reached the instance: a balloon, once. */
     @JsonNotification("piwi/notice")
     fun notice(notice: NoticeParams) {

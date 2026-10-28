@@ -1044,13 +1044,12 @@ const tests = {
       ['run_list', 'run_follow', 'run_control', 'page_snapshot', 'page_act', 'page_locator', 'code_write'],
     );
     assert.equal((await ask('x'.repeat(43))).status, 401);
-    await vscode.commands.executeCommand('piwi.copyRunsMcpConfiguration');
+    await vscode.commands.executeCommand('piwi.copyRunsMcpConfiguration', 'vscode');
     const copied = JSON.parse(await vscode.env.clipboard.readText());
-    assert.deepEqual(copied.servers['piwi-runs'], {
-      type: 'http',
-      url: served.url,
-      headers: { Authorization: `Bearer ${served.token}` },
-    });
+    const entry = { type: 'http', url: served.url, headers: { Authorization: `Bearer ${served.token}` } };
+    assert.deepEqual(copied.servers['piwi-runs'], entry);
+    await vscode.commands.executeCommand('piwi.copyRunsMcpConfiguration', 'mcpServers');
+    assert.deepEqual(JSON.parse(await vscode.env.clipboard.readText()).mcpServers['piwi-runs'], entry);
     const settings = vscode.workspace.getConfiguration('piwi');
     await settings.update('serveRunsToAgents', false, vscode.ConfigurationTarget.Workspace);
     try {
@@ -1062,6 +1061,12 @@ const tests = {
     const again = await waitFor(() => api.agents(), 'the runs’ MCP server again');
     assert.equal(again.token, served.token);
     assert.equal((await ask(again.token)).status, 200);
+    // Reset the token: a new one, served at once, the one before refused.
+    await vscode.commands.executeCommand('piwi.resetRunsMcpToken', true);
+    const reset = await waitFor(() => (api.agents()?.token !== served.token ? api.agents() : null), 'a new token');
+    assert.equal(reset.url, served.url);
+    assert.equal((await ask(served.token)).status, 401);
+    assert.equal((await ask(reset.token)).status, 200);
   },
 };
 

@@ -834,7 +834,11 @@ data class StopCode(
  * `piwi/agents`: turn the service's MCP server for the agents of this machine on (`enabled`) or off; it answers its
  * streamable HTTP endpoint (`http://127.0.0.1:<port>/mcp`) and the bearer token an agent sends, null while it is off.
  */
-data class AgentsParams(val enabled: Boolean)
+data class AgentsParams(
+    val enabled: Boolean,
+    /** A new token (Reset the Runs' MCP Server Token), the one before refused from then on. */
+    val newToken: Boolean? = null,
+)
 
 data class AgentsResult(val url: String? = null, val token: String? = null, val message: String? = null)
 

@@ -103,11 +103,15 @@ the server went, or, in an editor without that API, offers to copy its configura
 initialization options' `agents.enabled`), and as the setting changes (`piwi/agents`, sent too after each start of the
 service for its address: `onDidChangeState`). The extension provides it beside Piwi's own, as the provider
 `piwi.runs` (**Piwi runs**), an HTTP definition with the token as a bearer `Authorization` header (`runsMcpHeaders`),
-changed as the service answers. The
-token is the window's (`piwi.agentsToken` in `SecretStorage`, made once) and the port the last one the service
+changed as the service answers or tells (`piwi/agentsChanged`, `agentsHeard`). The token is the workspace's
+(`agentsTokenKey`: `piwi.agentsToken <workspace>` in `SecretStorage`, made once) and the port the last one the service
 listened at (`piwi.agentsPort`), both in the initialization options (`agents`), so **Piwi: Copy the runs' MCP server
-configuration for agents** (`piwi.copyRunsMcpConfiguration`, `runsMcpConfiguration`) gives an agent outside the
-editor a configuration that still connects after a restart, while the port stays free.
+configuration for agents** (`piwi.copyRunsMcpConfiguration`, `runsMcpConfiguration`, as an `mcpServers` entry for
+Claude Code and Cursor or VS Code's `mcp.json`, `RUNS_MCP_FORMATS`) gives an agent outside the editor a configuration
+that still connects after a restart, while the port stays free. When another program holds that port, the service
+takes another with a new token and says so: the extension keeps both, and the provider's entry follows. **Piwi: Reset
+the runs' MCP server token** (`piwi.resetRunsMcpToken`, after a modal warning) has the service take a new token
+(`piwi/agents` with `newToken`), kept the same way.
 
 ### Proxy and the log
 
@@ -143,8 +147,8 @@ The settings (`contributes.configuration` in `package.json`):
 What the extension stores:
 
 - **`SecretStorage`**: the API key of each instance (`piwi.apiKey <url>`), the Send to editor token
-  (`piwi.sendToken`) and the runs' MCP server's token (`piwi.agentsToken`). The old key slot shared by every
-  instance (`piwi.apiKey`) is deleted once (`forgetSharedKey`).
+  (`piwi.sendToken`) and the runs' MCP server's token of each workspace (`piwi.agentsToken <workspace>`). The old key
+  slot shared by every instance (`piwi.apiKey`) is deleted once (`forgetSharedKey`).
 - **Global state** (this machine): `piwi.walkthroughOpened`, `piwi.mcpOffered`, `piwi.sendPort`,
   `piwi.sharedKeyForgotten`.
 - **Workspace state** (this machine and this workspace, never a file the team shares): the desktop app chosen with
