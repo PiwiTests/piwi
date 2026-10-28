@@ -24,7 +24,8 @@ import { jsonRes, startServer, type FakeServer } from './_helpers.js';
  * frames of the running test's page, each with its call and its test, a few a second at most, which stop as nobody
  * watches or the test ends. A suite that records video keeps its video, and sends fewer, heavier frames; a test that
  * starts its own screencast while watched gets it, and the view goes on with images. With the live view off, the
- * instance gives no key and no worker sends anything; a run outside CI asks for none.
+ * instance gives no key and no worker sends anything; a run outside CI holds its key and sends nothing, as nobody
+ * shares it (`live-view-share.spec.ts` shares one).
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -558,13 +559,15 @@ describe('the live view of a run on the instance', () => {
     expect(off.output).not.toContain('Live view on');
   });
 
-  it('asks for no key in a run outside CI, in a project with the live view on', () => {
+  it('sends nothing from a run outside CI nobody shares, in a project with the live view on, its key held', () => {
     const { local } = runs;
     expect(local.exitCode, local.output).toBe(0);
     expect(local.tests.map((t) => t.status)).toEqual(TITLES.map(() => 'passed'));
     expect(local.heard.setups).toHaveLength(1);
-    expect(local.heard.setups[0]).not.toHaveProperty('liveView');
+    expect(local.heard.setups[0]).toMatchObject({ liveView: true });
     expect(local.heard.liveRequests).toBe(0);
     expect(local.output).not.toContain('Live view on');
+    // No editor follows the run: nobody can share it, and the reporter says nothing of it.
+    expect(local.output).not.toContain('Live view ready');
   });
 });

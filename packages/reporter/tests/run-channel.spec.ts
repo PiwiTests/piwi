@@ -19,6 +19,8 @@ import {
   type StopToHold,
 } from '../src/internal/capture/run-channel.js';
 import { keepResponse, startKeeping, stopKeeping } from '../src/internal/capture/kept-responses.js';
+import { closeLiveView, openLiveView } from '../src/internal/capture/live-view.js';
+import { LIVE_SHARE_MISSING, LIVE_VIEW_ENV, formatLiveViewEnv, formatLiveViewMissing } from '@piwitests/core/live-view';
 
 /** A finished request of the page, as Playwright hands it. */
 function fakeRequest(resourceType: string, method: string, url: string) {
@@ -207,6 +209,53 @@ describe('the worker’s run connection', () => {
     }
   });
 
+  it('says after its attach how the run stands on the live view, and again as the editor shares it', async () => {
+    const hub = await startHub();
+    const key = `pdl_${'r'.repeat(43)}`;
+    try {
+      // A run outside CI whose project has the live view off: the worker says why it cannot be shared.
+      openLiveView(WORKER, { [LIVE_VIEW_ENV]: formatLiveViewMissing('off') }, false);
+      expect(await openRunChannel(WORKER, handlers().control, hub.env)).toBe(true);
+      expect(await until(() => hub.heard[1])).toEqual({
+        type: 'live',
+        can: false,
+        on: false,
+        viewers: 0,
+        page: null,
+        why: LIVE_SHARE_MISSING.off,
+      });
+      // Asked to share anyway, it shares nothing and says nothing new.
+      hub.send({ type: 'share', on: true });
+      await new Promise((r) => setTimeout(r, 100));
+      expect(hub.heard.filter((m) => m.type === 'live')).toHaveLength(1);
+      closeRunChannel();
+      closeLiveView();
+
+      // With a key (an instance that does not answer here), the run can be shared; shared, it says so.
+      const instance = 'http://127.0.0.1:9';
+      openLiveView(WORKER, { [LIVE_VIEW_ENV]: formatLiveViewEnv(instance, 7, key) }, false);
+      const before = hub.heard.length;
+      expect(await openRunChannel(WORKER, handlers().control, hub.env)).toBe(true);
+      expect(await until(() => hub.heard.slice(before).find((m) => m.type === 'live'))).toEqual({
+        type: 'live',
+        can: true,
+        on: false,
+        viewers: 0,
+        page: `${instance}/test-runs/7`,
+        why: null,
+      });
+      hub.send({ type: 'share', on: true });
+      expect(await until(() => hub.heard.slice(before).find((m) => m.type === 'live' && m.on))).toMatchObject({
+        can: true,
+        on: true,
+      });
+    } finally {
+      closeRunChannel();
+      closeLiveView();
+      await hub.close();
+    }
+  });
+
   it('attaches first, holds a stop until the editor answers it, once, and says when it ended', async () => {
     const hub = await startHub();
     try {
@@ -222,7 +271,7 @@ describe('the worker’s run connection', () => {
         pid: process.pid,
         playwright: '1.64.1',
         reporter: expect.any(String),
-        takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', 'pick-at', 'agent', 'events', 'bind', 'end'],
+        takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', 'pick-at', 'agent', 'events', 'bind', 'end', 'share'],
         holds: ['failure'],
       });
       const answers: string[] = [];

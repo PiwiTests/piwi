@@ -34,7 +34,8 @@ import { readSelectionStamp } from '../internal/support/selection-env.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { isListMode } from '../internal/support/run-mode.js';
 import { peekSetupInfo } from '../internal/support/setup-file.js';
-import { LIVE_VIEW_ENV, formatLiveViewEnv } from '@piwitests/core/live-view';
+import { LIVE_VIEW_ENV, formatLiveViewEnv, formatLiveViewMissing } from '@piwitests/core/live-view';
+import { RUN_CHANNEL_ENV } from '@piwitests/core/run-channel';
 import { createGlobalSetup } from './global-setup.js';
 import { wrapConfig } from './config-wrapper.js';
 import { toWireTestCase } from '../internal/submit/serializer.js';
@@ -281,6 +282,8 @@ export class PiwiDashboardReporter {
     }
     if (!this.enabled) {
       this.logger.info('Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
+      // A run the editor follows says why it cannot be shared live.
+      if (!detectCi(process.env)) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing('no-instance');
       return;
     }
     // Nothing in the config pointed at a server, so results are going to the
@@ -453,17 +456,28 @@ export class PiwiDashboardReporter {
 
   /**
    * Name the run's live view on the instance for the workers, which Playwright starts after this hook with this
-   * environment: the key the instance gave the global setup of a CI run, for a project that turned its live view on,
-   * for this run alone. Read before the stream starts, which takes the setup file.
+   * environment: the key the instance gave the global setup, for a project that turned its live view on, for this run
+   * alone. A CI run's workers stream with it at once; a run outside CI's hold it until a person shares the run (Share
+   * live), and such a run without a key names why instead, for the surfaces that would share it. Read before the
+   * stream starts, which takes the setup file.
    */
   private shareLiveView(): void {
-    if (!this.streamManager || !detectCi(process.env)) return;
-    const setup = peekSetupInfo(this.options.projectName!);
-    if (!setup?.liveViewKey) return;
+    const ci = detectCi(process.env);
+    const setup = this.streamManager ? peekSetupInfo(this.options.projectName!) : null;
+    if (!setup?.liveViewKey) {
+      if (!ci) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing(setup ? 'off' : 'unregistered');
+      return;
+    }
     process.env[LIVE_VIEW_ENV] = formatLiveViewEnv(this.httpClient.baseUrl, setup.runId, setup.liveViewKey);
-    this.logger.info(
-      "Live view on: people who may open this run can watch its tests' pages on the dashboard while it runs. Nothing is stored.",
-    );
+    if (ci) {
+      this.logger.info(
+        "Live view on: people who may open this run can watch its tests' pages on the dashboard while it runs. Nothing is stored.",
+      );
+    } else if (process.env[RUN_CHANNEL_ENV]) {
+      this.logger.info(
+        'Live view ready: this run can be shared live from the editor or Piwi Picker. Nothing is sent until it is.',
+      );
+    }
   }
 
   /**

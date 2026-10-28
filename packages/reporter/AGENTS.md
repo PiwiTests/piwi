@@ -44,25 +44,27 @@ responsibilities.
      fixture's setup to the worker's end: it reports each test and stop, takes the editor's controls, breakpoints,
      intents and queries (`takes` in its `run-attach`), ends the test at a stop (`end`: the held locator call given up
      through Playwright's own `signal` option, `withEndSignal`, and the attempt skipped by `testInfo.skip` with
-     `ENDED_REASON`, `tests/run-channel-end.spec.ts`), keeps the test's text responses in memory for Mock a request
-     (`kept-responses.ts`), holds a failing test's page for an editor that answered its `holds` with `attached`
-     (`holdFailure`, `editorShows`), and makes a headless run stop too; for a viewer outside the page, it streams a
-     stopped page's screencast (`view`), plays trusted input there only while that stop's view is watched (`input`, let
-     go before the test goes on), runs the bar's actions in a headless page through it (`viewHere`), and picks under a
-     point of an image (`pick-at.ts`); a frame goes to the editor service alone, never stored nor attached, the latest
-     one sent kept in memory until the view ends, for a viewer that comes later (`tests/run-channel-view.spec.ts`); for
-     an agent, at the stop held alone, it reads the page's AI snapshot, acts on an element by its ref with Playwright's
-     own action and ranks its locators (`agent-page.ts`), tells the test's calls and page events while asked (`events`,
-     `run-events.ts`, Playwright's `_instrumentation`, feature-checked), and binds the browser for Playwright's tools on
-     request until the test ends (`tests/run-channel-agent.spec.ts`);
-   - with `PIWI_LIVE_VIEW` (set in `onBegin` from the key the global setup's `/setup` gave, asked in a CI run alone,
-     `detectCi` as the run's origin, for a project with the live view on), each worker's event stream to the instance
-     (`internal/capture/live-view.ts`, framed as `@piwitests/core/live-view`), opened in the background by the
-     `piwiResources` worker fixture and dropped quietly after bounded retries: only while the instance says someone
-     watches does it post frames of the test's page, through the screencast helper the editor's view shares
-     (`page-view.ts`), each with its call (through `hideSecretsInText`) and its test; it always posts its test's stops
-     (`showStop`). Never a frame while nobody watches, never stored, nothing from a run outside CI
-     (`tests/live-view.spec.ts`, `tests/live-view-worker.spec.ts`). The key is out of the worker's `process.env` from
+     `ENDED_REASON`, `tests/run-channel-end.spec.ts`), shares the run live as asked (`share`, below), keeps the test's
+     text responses in memory for Mock a request (`kept-responses.ts`), holds a failing test's page for an editor that
+     answered its `holds` with `attached` (`holdFailure`, `editorShows`), and makes a headless run stop too; for a
+     viewer outside the page, it streams a stopped page's screencast (`view`), plays trusted input there only while that
+     stop's view is watched (`input`, let go before the test goes on), runs the bar's actions in a headless page through
+     it (`viewHere`), and picks under a point of an image (`pick-at.ts`); a frame goes to the editor service alone,
+     never stored nor attached, the latest one sent kept in memory until the view ends, for a viewer that comes later
+     (`tests/run-channel-view.spec.ts`); for an agent, at the stop held alone, it reads the page's AI snapshot, acts on
+     an element by its ref with Playwright's own action and ranks its locators (`agent-page.ts`), tells the test's calls
+     and page events while asked (`events`, `run-events.ts`, Playwright's `_instrumentation`, feature-checked), and
+     binds the browser for Playwright's tools on request until the test ends (`tests/run-channel-agent.spec.ts`);
+   - with `PIWI_LIVE_VIEW` (set in `onBegin` from the key the global setup's `/setup` gave, asked in any run, for a
+     project with the live view on; outside CI, `none:<why>` for a run without one), each worker's event stream to
+     the instance (`internal/capture/live-view.ts`, framed as `@piwitests/core/live-view`): in a CI run (`detectCi`,
+     as the run's origin) opened in the background by the `piwiResources` worker fixture, outside CI only while the
+     run channel shares the run (`share`, **Share live**, the state told back as `live`), and dropped quietly after
+     bounded retries: only while the instance says someone watches does it post frames of the test's page, through
+     the screencast helper the editor's view shares (`page-view.ts`), each with its call (through `hideSecretsInText`)
+     and its test; it always posts its test's stops (`showStop`). Never a frame while nobody watches, never stored,
+     nothing from a run outside CI unless it is shared (`tests/live-view.spec.ts`, `tests/live-view-share.spec.ts`,
+     `tests/live-view-worker.spec.ts`). The key is out of the worker's `process.env` from
      that fixture's setup to its teardown, put back only as Playwright's `__stop__` message compares the environment,
      so the projects that depend on the worker's keep it; in a worker that can open a view, the test gets
      `page.screencast` behind a guard whose `start` and `stop` first end a view's client (`guardScreencast`);

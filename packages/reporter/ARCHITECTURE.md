@@ -289,19 +289,26 @@ What the package does to a user's run, process by process.
 
 **The instance's live view** (`internal/capture/live-view.ts`, with `PIWI_LIVE_VIEW`)
 
-- The global setup's `/setup` of a CI run (`detectCi`, which the run's origin reads too)
-  asks for a live view key (`liveView: true`); the instance gives one for a project with
-  the live view on, for that run alone, and the setup file keeps it. In `onBegin` the
-  reporter of a CI run names it in `PIWI_LIVE_VIEW`
+- The global setup's `/setup` of any run asks for a live view key (`liveView: true`); the
+  instance gives one for a project with the live view on, for that run alone, and the setup
+  file keeps it. In `onBegin` the reporter names it in `PIWI_LIVE_VIEW`
   (`<instance>/api/test-runs/<id>/live-view#<key>`, `@piwitests/core/live-view`), which
-  Playwright hands the workers it starts after, and says so in its `Live view on` line.
-  A run outside CI asks for none; a run the reporter registers itself, without the global
-  setup, has none.
-- Each worker opens an event stream to that URL in the `piwiResources` worker fixture,
-  without waiting for it, and keeps it until the worker ends. It never keeps the worker
-  alive; a failed stream is opened again after 1, 2, 4, 8 and 16 seconds, 20 times at most
-  over the worker's life (a 409 while the run is interrupted included), and a 401, 403,
-  404 or 410 gives it up at once.
+  Playwright hands the workers it starts after: a CI run (`detectCi`, which the run's origin
+  reads too) says so in its `Live view on` line, a run outside CI that a run channel follows
+  in its `Live view ready` line. A run outside CI with no key names why instead
+  (`none:no-instance`, `none:unregistered`, `none:off`); a run the reporter registers
+  itself, without the global setup, has none.
+- In a CI run, each worker opens an event stream to that URL in the `piwiResources` worker
+  fixture, without waiting for it, and keeps it until the worker ends. Outside CI, it holds
+  the key and opens nothing until the run channel says `share` with `on: true` (**Share
+  live**, `shareLiveView`), and closes the stream as it says `on: false`, posting `unshared`
+  first so each viewer hears why; the run channel hears how it stands (`liveViewState`:
+  `live`) after its attach and as that changes, and a sharing that connection asked for
+  stops as it closes. Nothing goes to the instance while the run is not shared, its stops
+  included. The stream never keeps the worker alive; a failed one is opened again after 1,
+  2, 4, 8 and 16 seconds, 20 times at most over the worker's life (a 409 while the run is
+  interrupted included), then given up until the run is shared again, and a 401, 403, 404
+  or 410 gives the key up at once, the run channel hearing why.
 - The same fixture takes `PIWI_LIVE_VIEW` out of the worker's `process.env` until its
   teardown, so no process the worker's fixtures, hooks or tests start gets the key. A
   listener put before Playwright's own on the worker's IPC puts it back for the
@@ -328,8 +335,9 @@ What the package does to a user's run, process by process.
   test runs (a `beforeAll`, between tests) hears why no image shows. Each stop the
   fixtures show (`showStop`, at the bar or for the editor) is posted as it starts and ends
   (`stop`), with the test's title and the call's through `hideSecretsInText`, whoever
-  watches, and the stop held is posted again on each stream the worker opens; a CI run
-  never stops, so this is for the run a person shares.
+  watches, and the stop held is posted again on each stream the worker opens, so a run
+  shared during a stop shows it; a CI run never stops, so this is for the run a person
+  shares.
 
 **In the reporter process**
 

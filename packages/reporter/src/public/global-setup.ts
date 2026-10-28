@@ -5,7 +5,7 @@ import { resolveOptions } from '../internal/config/env.js';
 import { HttpClient } from '../internal/transport/http-client.js';
 import { Logger } from '../internal/support/logger.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
-import { detectCi, resolveRunLabel } from '../internal/support/ci.js';
+import { resolveRunLabel } from '../internal/support/ci.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { isLiveViewKey } from '@piwitests/core/live-view';
@@ -150,9 +150,9 @@ export function createGlobalSetup(
           instanceId: computeInstanceId(opts.projectName!, resolveRunLabel(opts.runLabel, shard !== null)),
           shardIndex: shard?.current,
           shardTotal: shard?.total,
-          // A key for the run's live view, asked in a CI run alone (the run's origin reads the same): the instance
-          // hands one out only for a project that turned the live view on.
-          ...(detectCi(process.env) ? { liveView: true } : {}),
+          // A key for the run's live view: the instance hands one out only for a project that turned it on. A CI run's
+          // workers stream with it at once; a run outside CI sends nothing with it until a person shares the run.
+          liveView: true,
         },
         auth,
       );

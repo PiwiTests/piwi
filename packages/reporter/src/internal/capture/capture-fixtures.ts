@@ -3652,9 +3652,10 @@ export const piwiFixtures: Fixtures<
   // ledger and records the calls the tests make through it, and torn down after
   // the browser closed, so its census sees what only the worker's shutdown
   // closed. Depends on `playwright` alone, which launches nothing. The worker's
-  // run connection to the editor (`PIWI_RUN_CHANNEL`) and its connection to the
-  // instance's live view (`PIWI_LIVE_VIEW`) open here, before the first test,
-  // and close as the worker ends.
+  // connection to the instance's live view (`PIWI_LIVE_VIEW`) and its run
+  // connection to the editor (`PIWI_RUN_CHANNEL`), which says how the first
+  // stands and shares it, open here, before the first test, and close as the
+  // worker ends.
   piwiResources: [
     async ({ playwright }: PlaywrightWorkerArgs, use: UseFn<void>, workerInfo: WorkerInfo) => {
       // A browser launched in the first `beforeAll` goes through the ledger's
@@ -3662,8 +3663,8 @@ export const piwiFixtures: Fixtures<
       boxCaptureFrames();
       startResourceLedger(playwright, workerInfo.workerIndex);
       observeApiRequests(playwright, apiCallRecorder);
-      if (await openRunChannel(workerInfo, runControl)) watchCalls(playwright);
       openLiveView(workerInfo);
+      if (await openRunChannel(workerInfo, runControl)) watchCalls(playwright);
       try {
         await use();
       } finally {
