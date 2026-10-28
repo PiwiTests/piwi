@@ -8,6 +8,7 @@
  * what enabling tracing would add; the trace is never a requirement.
  */
 import type { TestSourceFrame } from '~~/types/api';
+import type { DebugInIdeTarget } from '~/composables/useOpenInIde';
 import SectionCard from '../shared/SectionCard.vue';
 import CollapsibleSectionCard from '../shared/CollapsibleSectionCard.vue';
 
@@ -25,6 +26,8 @@ const props = defineProps<{
   defaultFolded?: boolean;
   /** Drop the card frame and padding — render a plain heading row over the body. */
   embedded?: boolean;
+  /** Debug in my editor's target, offered beside the failing line's frame in either view. */
+  debugTarget?: DebugInIdeTarget | null;
 }>();
 
 const cardComponent = computed(() =>
@@ -109,10 +112,21 @@ defineExpose({ reveal });
           <UIcon name="i-lucide-info" class="size-3.5 shrink-0" />
           Trace recorded without sources — frame list only.
         </p>
-        <TraceCallStack :frames="traceFrames" :project-key="projectKey" :project-name="projectName" />
+        <TraceCallStack
+          :frames="traceFrames"
+          :project-key="projectKey"
+          :project-name="projectName"
+          :debug-target="debugTarget"
+        />
       </template>
       <template v-else>
-        <TestSourceStack v-if="frames?.length" :frames="frames" :project-key="projectKey" :project-name="projectName" />
+        <TestSourceStack
+          v-if="frames?.length"
+          :frames="frames"
+          :project-key="projectKey"
+          :project-name="projectName"
+          :debug-target="debugTarget"
+        />
         <MarkdownPreview v-else-if="testSource" :text="'```typescript\n' + testSource + '\n```'" />
         <LoadingState v-else-if="hasTrace && stackPending" text="Loading call stack from trace…" />
       </template>

@@ -27,7 +27,7 @@ stop, the editor also writes code from the page: [Code from a pause](./editor-st
 | **Stop** | Ends the run's process | `Shift+F5` | the Run tool window's Stop |
 
 The keys are the IDE's own debugger keys (in a JetBrains IDE, your keymap's), Piwi's only while their control applies
-and no debug session runs, and first while it applies where a JetBrains keymap gives one to another action too. On
+and no debug session runs, and first where a JetBrains keymap gives one to another action too. On
 macOS, `Cmd+F10` runs to the cursor in VS Code. **Pause** has no key in VS Code: bind one in
 **Preferences: Open Keyboard Shortcuts** (search `piwi`). There, `F5` pressed again within two seconds of an answer
 waits for the next stop rather than start a debug session.
@@ -53,7 +53,7 @@ controls:
 
 `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`  Resume  Step  Run to cursor  Finish
 
-`attempt 2` shows on a retry. In VS Code the line is a CodeLens, and the marked line's hover has the same controls;
+`attempt 2` shows on a retry. In VS Code the line is a CodeLens, the marked line's hover holding the controls;
 the color is `piwi.executionPointBackground`. In a JetBrains IDE the line is an inlay whose words are links,
 the arrow's click lists the controls, and the color is **Settings → Editor → Color Scheme → Piwi → Line a run is
 stopped at**. The mark goes when the test goes on (from the editor or the bar), ends, or closes its page.
@@ -75,14 +75,13 @@ has none.
 
 A run Piwi starts with breakpoints is headed, so the pause bar answers its stops too. One started without runs as its
 config says, headless by default: when you pause it, or it reaches a breakpoint set since, no bar shows, and the editor
-shows an image of the page at the stop: in VS Code in a **Piwi: paused page** tab beside the editor, in a JetBrains IDE
+shows an image of the page: in VS Code in a **Piwi: paused page** tab beside the editor, in a JetBrains IDE
 in the Piwi tool window's **Paused Page** tab. It is taken again at each such stop; **Piwi: Show the paused page**
 (**Tools → Piwi → Show the Paused Page**) asks for it at any stop.
 
 With a reporter newer than 0.61.0, the image says **Click the image to pick a locator**. A click picks the element
 under it, as the bar's **Pick a locator** does, without touching the page: its locator replaces the one on the stopped
-line, and the tab says so, or why not. In VS Code, a script in the tab sends the click's position to the editor, and
-nothing else.
+line, and the tab says so, or why not. In VS Code, a script in the tab sends the editor the click's position alone.
 
 A stop counts as one at the bar: the test's duration leaves it out, and the dashboard's timelines draw it as a
 **Paused** band, with [why it stopped](./editor-breakpoints#pause-a-run).
@@ -126,5 +125,6 @@ IDE, closes the connections: a stop with no pause bar then goes on, and one the 
 
 - [Breakpoints in the browser](./editor-breakpoints): the breakpoints a run starts with, and the pause bar.
 - [Runs from the editor](./editor-runs): the commands that start a run, and how the editor follows it.
+- [Debug in my editor](./debug-in-editor): such a run, started from a failure's page.
 - [Editor extensions](./editors): what the editor shows from your suite, in both editors.
 - [Remote development](/guide/remote-development): remote windows and JetBrains Gateway.

@@ -656,6 +656,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/editor-stop-code',
       },
       {
+        title: 'Debug in my editor',
+        summary:
+          "From a failure's page, the failing line opened in VS Code or a JetBrains IDE and, once you say yes there, the test run headed with one worker to stop at that line, the locator healing's suggestion outlined on the page.",
+        needs: ['fixtures'],
+        where: "Execution → Source, beside the failing line's frame",
+        doc: 'features/debug-in-editor',
+      },
+      {
         title: 'Run control for agents',
         summary:
           'The test runs your editor starts, served to a coding agent on your machine as MCP tools: it follows a run, stops it, reads the stopped page as its ARIA snapshot, acts on it by ref and has Piwi write the code there, through the editor.',

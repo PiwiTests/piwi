@@ -12,6 +12,9 @@
  *    a repo-relative path itself
  *  - JetBrains via the `jetbrains://<product>/navigate/reference` URL scheme
  *  - JetBrains via the built-in local web server / IDE Remote Control plugin
+ *
+ * Debug in my editor goes through the two links Piwi's own IDE clients answer,
+ * the extension's and the plugin's, with `debug=1` (`DebugTarget`).
  */
 import { JETBRAINS_PORTS } from '#shared/jetbrains-ports';
 import { toPosixPath } from './retry-command';
@@ -87,11 +90,41 @@ export function buildVscodeUrl(o: {
 export const VSCODE_EXTENSION_ID = 'piwitests.piwi';
 
 /**
+ * What Debug in my editor names beside the failing line, on the IDE's open
+ * link with `debug=1`: the test's spec as the run reported it, its title after
+ * its describe blocks' (joined by `TITLE_SEPARATOR`), the Playwright project it
+ * failed in, and the failed execution, whose suggested locator the IDE outlines
+ * at the stop.
+ */
+export interface DebugTarget {
+  spec: string;
+  title: string;
+  project?: string | null;
+  execution?: number | null;
+}
+
+/** How a debug link joins a test's describe blocks' titles and its own: the editor service splits them alike. */
+export const TITLE_SEPARATOR = ' › ';
+
+/** The fields `debug=1` adds to an open link, in order, unencoded. */
+function debugFields(debug: DebugTarget): Array<[string, string]> {
+  return [
+    ['debug', '1'],
+    ['spec', toPosixPath(debug.spec)],
+    ['test', debug.title],
+    ...(debug.project ? [['playwrightProject', debug.project] as [string, string]] : []),
+    ...(debug.execution != null ? [['execution', String(debug.execution)] as [string, string]] : []),
+  ];
+}
+
+/**
  * `vscode://piwitests.piwi/open?file=<path>&line=&column=&root=` (and the
  * insiders/vscodium/cursor variants): the Piwi extension finds the path as the
  * run reported it under its workspace's folders, so no workspace root is
  * needed. `root`, when known, is the folder the path is relative to. Line and
  * column are 1-based. Each value is percent-encoded whole, a space as `%20`.
+ * With `debug` (a line is then required), the link is Debug in my editor's:
+ * `&debug=1&spec=&test=&playwrightProject=&execution=`.
  */
 export function buildVscodeExtensionUrl(o: {
   scheme: VscodeScheme;
@@ -99,11 +132,15 @@ export function buildVscodeExtensionUrl(o: {
   line?: number | null;
   column?: number | null;
   root?: string | null;
+  debug?: DebugTarget | null;
 }): string {
   const query = [`file=${encodeURIComponent(toPosixPath(o.path))}`];
   if (o.line != null) query.push(`line=${o.line}`);
   if (o.line != null && o.column != null) query.push(`column=${o.column}`);
   if (o.root) query.push(`root=${encodeURIComponent(toPosixPath(o.root))}`);
+  if (o.debug && o.line != null) {
+    for (const [name, value] of debugFields(o.debug)) query.push(`${name}=${encodeURIComponent(value)}`);
+  }
   return `${o.scheme}://${VSCODE_EXTENSION_ID}/open?${query.join('&')}`;
 }
 
@@ -145,7 +182,9 @@ export function jetbrainsPorts(configured: number): number[] {
  * Open in IDE endpoint. `path` is the run's repo-relative path (or an absolute
  * one); `root`, when known, is the folder it is relative to. Line and column are
  * 1-based. With `check`, the IDE only says whether one of its open projects
- * holds the file.
+ * holds the file. With `debug` (a line is then required, and never with
+ * `check`), the request is Debug in my editor's, as `buildVscodeExtensionUrl`
+ * names its fields.
  */
 export function buildPiwiPluginOpenUrl(o: {
   port: number;
@@ -155,6 +194,7 @@ export function buildPiwiPluginOpenUrl(o: {
   column?: number | null;
   project?: string | null;
   check?: boolean;
+  debug?: DebugTarget | null;
 }): string {
   const query = new URLSearchParams({ file: toPosixPath(o.path) });
   if (o.root) query.set('root', toPosixPath(o.root));
@@ -162,14 +202,17 @@ export function buildPiwiPluginOpenUrl(o: {
   if (o.line != null && o.column != null) query.set('column', String(o.column));
   if (o.project) query.set('project', o.project);
   if (o.check) query.set('check', '1');
+  else if (o.debug && o.line != null) for (const [name, value] of debugFields(o.debug)) query.set(name, value);
   return `http://127.0.0.1:${o.port}/api/piwi/open?${query}`;
 }
 
 /** What the Piwi JetBrains plugin answers (`found: false` comes with a 404). */
 export interface PiwiPluginAnswer {
   found: boolean;
-  /** The file is being opened (false for a `check`). */
+  /** The file is being opened (false for a `check`, and for a debug request the IDE refused, with `error`). */
   opened?: boolean;
+  /** A debug request the IDE took: it opened the failing line and asks before it runs the test. */
+  debug?: 'asked';
   /** The IDE's name: `Rider`, `WebStorm`, `IntelliJ IDEA`. */
   ide?: string;
   /** The IDE project that holds the file. */
@@ -213,4 +256,68 @@ export function buildJetbrainsHttpUrl(o: {
 }): string {
   const encoded = encodePathForUrl(toPosixPath(o.path));
   return `http://localhost:${o.port}/api/file/${encoded}${positionSuffix(o.line, o.column)}`;
+}
+
+/** What `failurePlace` reads of an execution. */
+export interface FailedExecution {
+  id?: number | null;
+  title?: string | null;
+  /** The test's spec and its declaration's line, as the run reported them. */
+  filePath?: string | null;
+  line?: number | null;
+  suitePath?: readonly string[] | null;
+  /** The failure's in-project call stack, innermost first (a page object's frames included). */
+  testSourceFrames?: ReadonlyArray<{ file?: string | null; line?: number | null }> | null;
+  browser?: { projectName?: string | null } | null;
+}
+
+/**
+ * Where a failure enters the test's code, as the editor stops a held failure:
+ * the innermost frame of its in-project call stack that is not the test's own
+ * declaration (a page object's line included). Null when the stack names no
+ * other line, such as a test timeout.
+ */
+export function failurePlace(tc: FailedExecution | null | undefined): { filePath: string; line: number } | null {
+  for (const frame of tc?.testSourceFrames ?? []) {
+    if (!frame?.file || !frame.line || frame.line < 1) continue;
+    if (frame.file === tc?.filePath && frame.line === tc?.line) continue;
+    return { filePath: frame.file, line: frame.line };
+  }
+  return null;
+}
+
+/**
+ * Whether a stack frame stands at a failure's place (`failurePlace`): the same
+ * line of the same file, one path ending with the other, since a trace names a
+ * file relative to another folder than the run's frames do.
+ */
+export function atFailurePlace(
+  frame: { file?: string | null; line?: number | null },
+  place: { filePath: string; line: number } | null | undefined,
+): boolean {
+  if (!place || !frame.file || frame.line !== place.line) return false;
+  const a = toPosixPath(frame.file).replace(/^\.\//, '');
+  const b = toPosixPath(place.filePath).replace(/^\.\//, '');
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+}
+
+/**
+ * Debug in my editor's target for a failed execution: its failing line
+ * (`failurePlace`) and what the IDE needs to run the test there, or null when
+ * the failure has no place in the test's code or the test no spec or title.
+ */
+export function debugTargetOf(
+  tc: FailedExecution | null | undefined,
+): { filePath: string; line: number; debug: DebugTarget } | null {
+  const place = failurePlace(tc);
+  if (!place || !tc?.filePath || !tc.title) return null;
+  return {
+    ...place,
+    debug: {
+      spec: tc.filePath,
+      title: [...(tc.suitePath ?? []), tc.title].join(TITLE_SEPARATOR),
+      project: tc.browser?.projectName || null,
+      execution: tc.id ?? null,
+    },
+  };
 }

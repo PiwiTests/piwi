@@ -42,7 +42,7 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
   (passwords masked), scroll, open dialogs, shadow DOM, the action's target outlined, the mouse and what it hovers,
   the focus. **Open in picker** finds a
   locator on that DOM.
-- **Source**: the test source as a call stack (the line that threw plus its callers), deepened
+- **Source**: the test source as a call stack (the line that threw, with [Debug in my editor](./debug-in-editor), plus its callers), deepened
   [with a trace](#trace-powered-deep-views), then, with [coverage](./code-reach#on-the-execution-page), what the test
   ran.
 - **Network**: the requests, API calls through Playwright's `request` fixture included, with inline
@@ -105,7 +105,7 @@ Failure screenshots come from Playwright's `screenshot: 'only-on-failure'` [opti
 
 With an uploaded trace (`trace: 'retain-on-failure'` or `'on-first-retry'`), two views go deeper:
 
-- **Source → Full stack**: the failing action's whole call stack, each frame with its source from the trace,
+- **Source → Full stack**: the failing action's whole call stack, each frame with its source,
   dependency frames folded, Open in IDE on your project's frames.
 - **Network → Full trace**: every request the page made, on a waterfall with the failing action's window shaded, with
   timing phases, headers and a capped body preview. Sensitive headers and token-shaped strings are masked on the server.
@@ -134,7 +134,7 @@ block uses the same words.
 
 ## Trace viewer
 
-**Open trace**, atop the evidence card on every tab, opens the Playwright trace viewer; the Screen tab lists each trace with **Open trace** and **Download**. The dashboard serves the viewer at `/trace-viewer/`, so traces stay on your
+**Open trace**, atop the evidence card, opens the Playwright trace viewer; the Screen tab lists each trace with **Open trace** and **Download**. The dashboard serves the viewer at `/trace-viewer/`, so traces stay on your
 server, with or without [authentication](/operate/authentication). The hosted
 `trace.playwright.dev` can't send your session cookie, so it needs authentication off.
 
