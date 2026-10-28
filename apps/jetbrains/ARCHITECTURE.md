@@ -391,7 +391,9 @@ session. The initialization options say so (`runControl`). What the service does
 
 **Sessions.** The plugin keeps the latest `piwi/runSessionChanged` of each ref (`PiwiLsp4jClient.runSessionChanged`,
 `Glue.withSession`) until one says `ended`, or the service's process ends (`watch`, from
-`PiwiLspServerDescriptor.startServerProcess`).
+`PiwiLspServerDescriptor.startServerProcess`). A run started in a terminal (`RunSession.terminal`) is one too: its
+stops say `run in a terminal` (`Glue.pausedText`), and it has no Stop, its process being the terminal's
+(`RunControls.stoppable`).
 
 **A stop.** A stop opens its file at its line once (`Glue.stopKey`), at the line it stands on now. It is drawn as the
 execution point:
@@ -402,7 +404,8 @@ execution point:
   (`stopActions`);
 - a block inlay above the line in each editor of the file (`StopInlay`, added again in an editor opened later:
   `EditorFactoryListener`): `Glue.pausedText` (`Paused · <title> · attempt N`, the attempt on a retry only), then
-  **Resume**, **Step**, **Run to Caret** and **Finish** as links. An `EditorMouseListener` on the multicaster clicks
+  **Resume**, **Step**, **Run to Caret** and **Finish** as links, and **End Test** at a stop whose worker takes `end`
+  and is no failure (`Glue.canEnd`, `Glue.stopControls`). An `EditorMouseListener` on the multicaster clicks
   them in the editors of its own project (`StopInlay.controlAt`, the hand cursor over one).
 
 A stop in a file the VFS has not loaded is looked for on disk off the event thread, once
@@ -415,7 +418,8 @@ caret's match, `Glue.stopsFor`), and the caret's line back to the run's for Run 
 written since.
 
 **The actions** (`RunControlAction`): `Piwi.PauseRun`, `Piwi.ResumeRun`, `Piwi.StepRun`, `Piwi.RunToCaret`,
-`Piwi.FinishRun`, `Piwi.ShowPausedPage` and `Piwi.StopRun`.
+`Piwi.FinishRun`, `Piwi.EndTest` (**End the Test**, `end`, enabled where `Glue.canEnd`), `Piwi.ShowPausedPage` and
+`Piwi.StopRun`.
 
 - They are under **Tools → Piwi**, and first in the status bar item's menu while a run is live; the item reads
   `Piwi: paused · checkout.page.ts:12` while one is stopped (`Glue.runControlStatus`).
@@ -428,7 +432,8 @@ written since.
   Stop and Close) takes no other action.
 
 **Shortcuts.** The actions use the debugger actions' shortcuts, in every keymap (`use-shortcut-of`): Pause and Resume
-`Resume`'s (`F9` in the default keymap), Step `StepOver`'s, Run to Caret `RunToCursor`'s, Finish `StepOut`'s. They are
+`Resume`'s (`F9` in the default keymap), Step `StepOver`'s, Run to Caret `RunToCursor`'s, Finish `StepOut`'s; End the
+Test has none, the debugger having no action it stands for. They are
 enabled only while they apply, and from the keyboard only while no debug session runs (`ActionPlaces.KEYBOARD_SHORTCUT`,
 `XDebuggerManager.debugSessions`), so the debugger keeps its keys. While a run is live, `PiwiRunActionPromoter` (an
 `ActionPromoter`) puts them first among the actions a key runs: a keymap that gives the key to another action too (the
@@ -445,7 +450,9 @@ each live run 100 ms after a burst of changes, and the settings page does when t
 as lines of the run's code (`Glue.runPlaces`): a breakpoint the run was given, known by the `XLineBreakpoint` itself,
 keeps its line while it only moved with the edits (`XLineBreakpointImpl.updatePosition` firing `breakpointChanged`);
 one added or dragged is mapped back through them. They go only to a run whose places differ from those its command
-started with or was last sent (`Glue.breakpointUpdates`, `PiwiCommands.startRun` recording the first).
+started with or was last sent (`Glue.breakpointUpdates`, `PiwiCommands.startRun` recording the first). The service
+hears them as they stand too (`piwi/setBreakpoints`, from `PiwiRunSessions.breakpointsChanged`, also as the status
+changes, only when they differ): a run started in a terminal starts with them.
 
 **A held failure** (`reason: 'failure'`, `Glue.isFailure`) is `Failed · <how it failed> · attempt N`, with
 `AllIcons.RunConfigurations.TestError` in the gutter, **Resume** alone among its controls (`Glue.stopControls`), and

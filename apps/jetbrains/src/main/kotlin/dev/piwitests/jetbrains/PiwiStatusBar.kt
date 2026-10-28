@@ -233,8 +233,8 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     companion object {
         /** The controls and code actions of a run started here, as the popup lists them while one is live. */
         val RUN_ACTIONS = arrayOf(
-            "Piwi.ResumeRun", "Piwi.StepRun", "Piwi.RunToCaret", "Piwi.FinishRun", "Piwi.ShowPausedPage", "Piwi.PickAtStop",
-            "Piwi.RecordAtStop", "Piwi.AssertAtStop", "Piwi.AssertRegionAtStop", "Piwi.MockAtStop",
+            "Piwi.ResumeRun", "Piwi.StepRun", "Piwi.RunToCaret", "Piwi.FinishRun", "Piwi.EndTest", "Piwi.ShowPausedPage",
+            "Piwi.PickAtStop", "Piwi.RecordAtStop", "Piwi.AssertAtStop", "Piwi.AssertRegionAtStop", "Piwi.MockAtStop",
             "Piwi.ShareWithPlaywright", "Piwi.PauseRun", "Piwi.StopRun",
         )
 

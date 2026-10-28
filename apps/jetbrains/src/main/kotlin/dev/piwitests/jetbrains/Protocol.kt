@@ -708,19 +708,21 @@ data class RunWorker(
 /**
  * `piwi/runSessionChanged`: a run the IDE started, by the ref of its command, with the folder of its Playwright config
  * and its workers connected now; the last one has `ended`, and a later worker of the ref starts a new session.
+ * `terminal` marks a run started in a terminal, which found the service through its discovery file.
  */
 data class RunSession(
     val ref: String? = null,
     val root: String? = null,
     val workers: List<RunWorker>? = null,
     val ended: Boolean = false,
+    val terminal: Boolean = false,
 )
 
 /**
- * `piwi/runControl`: `pause` (every running worker without `worker`), `step`, `resume`, `finish`, or `run-to` with
- * `place`, a line of the run's code (the stopped worker, which `worker` names when several are). `since` names the
- * stop it answers (`RunStop.since`): a worker past it is not asked, `The test went on.` Answered with what was asked
- * or why not.
+ * `piwi/runControl`: `pause` (every running worker without `worker`), `step`, `resume`, `finish`, `end` (the test
+ * ends there, skipped, for a worker that takes it), or `run-to` with `place`, a line of the run's code (the stopped
+ * worker, which `worker` names when several are). `since` names the stop it answers (`RunStop.since`): a worker past
+ * it is not asked, `The test went on.` Answered with what was asked or why not.
  */
 data class RunControlParams(
     val ref: String,
@@ -737,6 +739,12 @@ data class RunControlResult(val ok: Boolean = false, val message: String? = null
  * run's code.
  */
 data class SetRunBreakpointsParams(val ref: String, val places: List<EditorBreakpoint>)
+
+/**
+ * `piwi/setBreakpoints`: the IDE's line breakpoints as it holds them now, sent as the service starts and as they
+ * change: a run started in a terminal starts with them.
+ */
+data class SetBreakpointsParams(val places: List<EditorBreakpoint>)
 
 /** `piwi/pausedPage`: an image of the page of a stopped worker (`what` is `image`). */
 data class PausedPageParams(val ref: String, val worker: Int, val what: String = "image")
@@ -982,4 +990,7 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonNotification("piwi/setRunBreakpoints")
     fun setRunBreakpoints(params: SetRunBreakpointsParams)
+
+    @JsonNotification("piwi/setBreakpoints")
+    fun setBreakpoints(params: SetBreakpointsParams)
 }

@@ -621,6 +621,7 @@ export class RunHub {
         intents: this.options.sessions.intentsOf(session.ref, worker.worker),
       })),
       ended: session.ended,
+      ...(session.terminal ? { terminal: true } : {}),
     };
   }
 

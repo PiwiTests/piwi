@@ -1,19 +1,19 @@
 /**
  * The tools the service's MCP server gives the agents of this machine (`agent-server.ts`) for the runs it started, as
  * the IDE and Piwi Picker steer them: follow a run as its events (`run_follow`), pause, step, run it to a line, resume
- * or finish it, the answer waiting for its next stop (`run_control`), read a stopped page as its ARIA snapshot in AI
- * mode and its change since the last one read (`page_snapshot`), act on an element of it by its ref, as trusted input
- * (`page_act`), rank that element's locators as Pick ranks them (`page_locator`), and have the steps taken, a locator or
- * an assertion written at the stopped line by the IDE, as an edit the developer sees and can undo (`code_write`,
- * through `piwi/stopCode`). Each tool takes a closed set of arguments, checked one by one, and acts only at a stop of a
- * run of this editor window; nothing evaluates code, reads a file or reaches an instance. The page is untrusted: every
- * text that comes from it (its snapshot, its address and title, an element's name, text and value, the locators built
- * from them, its console, its errors, its requests, and the worker's own words about a page call, which a script of
- * the page can write) goes back apart from Piwi's own answer, between the markers of a page-content block an agent
- * reads as data, never as instructions (`pageContent`), its credentials hidden again (`@piwitests/core/mask`); an image
- * of the page comes last, said to be page content too. What the agent does shows where a person watches: its stops say
- * so in the session (`RunStop.by`), the first action at a stop is a `piwi/notice`, and its code names it in what the
- * client and Piwi Picker hear.
+ * or finish it, or end the test at a stop, the answer waiting for its next stop or the test's end (`run_control`), read
+ * a stopped page as its ARIA snapshot in AI mode and its change since the last one read (`page_snapshot`), act on an
+ * element of it by its ref, as trusted input (`page_act`), rank that element's locators as Pick ranks them
+ * (`page_locator`), and have the steps taken, a locator or an assertion written at the stopped line by the IDE, as an
+ * edit the developer sees and can undo (`code_write`, through `piwi/stopCode`). Each tool takes a closed set of
+ * arguments, checked one by one, and acts only at a stop of a run of this editor window; nothing evaluates code, reads
+ * a file or reaches an instance. The page is untrusted: every text that comes from it (its snapshot, its address and
+ * title, an element's name, text and value, the locators built from them, its console, its errors, its requests, and
+ * the worker's own words about a page call, which a script of the page can write) goes back apart from Piwi's own
+ * answer, between the markers of a page-content block an agent reads as data, never as instructions (`pageContent`),
+ * its credentials hidden again (`@piwitests/core/mask`); an image of the page comes last, said to be page content too.
+ * What the agent does shows where a person watches: its stops say so in the session (`RunStop.by`), the first action at
+ * a stop is a `piwi/notice`, and its code names it in what the client and Piwi Picker hear.
  */
 import { randomBytes } from 'node:crypto';
 import * as path from 'node:path';
@@ -339,13 +339,13 @@ export const AGENT_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'run_control',
-    description: `Pause a run, or answer a stop: step to the next call, run to a line, resume to the next breakpoint, or finish the test without stopping at a breakpoint. It answers when the run stops again, with the stop and its page's snapshot (its change since the last one read), or when the run ends, or after \`wait\` seconds. \`pause\` stops every worker that runs at its next call; the other actions answer the stop \`stop\` names. A line is one of the run's code, as the stops and the events name it. The developer sees each stop in the editor, said to be the agent's. ${UNTRUSTED}`,
+    description: `Pause a run, or answer a stop: step to the next call, run to a line, resume to the next breakpoint, finish the test without stopping at a breakpoint, or end the test there (\`end\`: it is reported as skipped, and the stopped call never runs where Piwi holds it, a locator call or a \`page.pause()\`; another call runs first, and the test ends before its next locator call; at a failure, or once the test's function ended, the test ends as it is). It answers when the run stops again, with the stop and its page's snapshot (its change since the last one read), when the test it ended ends, or when the run ends, or after \`wait\` seconds. \`pause\` stops every worker that runs at its next call; the other actions answer the stop \`stop\` names. A line is one of the run's code, as the stops and the events name it. The developer sees each stop in the editor, said to be the agent's. ${UNTRUSTED}`,
     inputSchema: {
       type: 'object',
       properties: {
         run: RUN,
         worker: WORKER,
-        action: { type: 'string', enum: ['pause', 'step', 'run-to', 'resume', 'finish'] },
+        action: { type: 'string', enum: ['pause', 'step', 'run-to', 'resume', 'finish', 'end'] },
         stop: STOP,
         place: {
           type: 'object',
@@ -921,13 +921,7 @@ export class RunAgent {
   private async control(args: Args, signal?: AbortSignal): Promise<ToolResult> {
     const ref = args.run();
     const worker = args.worker();
-    const action = args.raw('action');
-    if (action === 'end') {
-      return this.error(
-        'Ending a test from a stop is not built yet: resume or finish the test, or let the developer stop the run.',
-      );
-    }
-    const chosen = args.oneOf('action', ['pause', 'step', 'run-to', 'resume', 'finish'] as const, true)!;
+    const chosen = args.oneOf('action', ['pause', 'step', 'run-to', 'resume', 'finish', 'end'] as const, true)!;
     const wait = (args.seconds('wait', MAX_CONTROL_WAIT_S) ?? MAX_CONTROL_WAIT_S) * 1000;
     const { session, log } = this.known(ref);
     if (!session || session.ended) return this.error(`The run ${ref} ended.`);
@@ -948,12 +942,21 @@ export class RunAgent {
     }
     this.startFollowing(ref);
     const mark = log.next - 1;
+    // The worker whose test End the test ends: the one named, else the one at the stop named.
+    const ending =
+      chosen === 'end'
+        ? (worker ?? this.live(ref)?.workers.find((w) => w.stop?.since === since)?.worker ?? null)
+        : null;
     const answer = this.options.sessions.control(
       { ref, worker, action: chosen, ...(since ? { since } : {}), ...(place ? { place } : {}) },
       'agent',
     );
     if (!answer.ok) return this.error(answer.message);
-    const next = () => log.events.find((e) => e.seq > mark && (e.kind === 'stopped' || e.kind === 'run-ended'));
+    // A test ended at its stop stops no more: its end answers.
+    const ends = (e: { kind: string; worker: number | null }) =>
+      chosen === 'end' && e.kind === 'test-end' && (ending === null || e.worker === ending);
+    const next = () =>
+      log.events.find((e) => e.seq > mark && (e.kind === 'stopped' || e.kind === 'run-ended' || ends(e)));
     await this.waitFor(
       log,
       Math.min(wait, this.options.controlMs ?? MAX_CONTROL_WAIT_S * 1000),
@@ -972,6 +975,14 @@ export class RunAgent {
     }
     if (came.kind === 'run-ended') {
       return this.result({ ok: true, message: `${answer.message} The run ended.`, state: 'ended', next: came.seq });
+    }
+    if (came.kind === 'test-end') {
+      return this.result({
+        ok: true,
+        message: `${answer.message} The test ended: ${String(came.fields.status)}.`,
+        state: this.state(now, log),
+        next: came.seq,
+      });
     }
     const stoppedWorker = came.worker!;
     const page = await this.pageNow(ref, stoppedWorker, String(came.fields.stop), null);

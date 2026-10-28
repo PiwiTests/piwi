@@ -15,8 +15,9 @@ tools that follow the run, read the stopped page as its accessibility tree and a
 (Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2, 3 and 4 are built too (below; PR 4 is
 merged as #932), and so are PR 5's three halves, the service's, the IDE's with the forwarded addresses, and the Runs
 window's, and PR 6's two halves, the desktop app's server as the hub of its runs, then its window's controls, live
-view and Copy with Piwi Picker listing those runs, and PR 9's tools for the runs an editor starts (below), while
-PR 7 and the desktop app's tools for agents are not (PR 8's team-instance half is built on its own branch). PR 1
+view and Copy with Piwi Picker listing those runs, PR 9's tools for the runs an editor starts and PR 7's first half,
+**End the test** and the runs started in a terminal (below), while the rest of PR 7 and the desktop app's tools for
+agents are not (PR 8's team-instance half is built on its own branch). PR 1
 differs from the text in four ways. A headed browser opens Playwright's Inspector at every stop of
 `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
@@ -351,6 +352,33 @@ page call) comes back apart from Piwi's answer, between markers that share a ran
 every frame. A stop an agent asked for says so (`RunStop.by: 'agent'`, `Paused by the agent · …`), its first action
 at a stop is a notice, and the code it has written names it. Bind on request is the IDE's alone (`piwi/stopBind`,
 after a warning each time), never an agent's, and ends with the test.
+
+PR 7's first half is **End the test** (Part 1.5) and the runs started in a terminal (D5). End the test differs from
+the text in how the stopped call is given up: the race alone lets it run, since closing a context first lets the call
+its debugger holds go on (PR 2). So each locator call the proxy delegates while the test can stop carries an end
+signal of the attempt in Playwright's own `signal` option, beside a signal of the test's (`AbortSignal.any`), and End
+aborts it before the debugger lets the call go: Playwright gives the call up before it runs. The test is skipped by
+`testInfo.skip(true, 'Ended from Piwi')` as that call rejects, at its next locator call, as a `page.pause()` it stopped
+at goes on, or as its function ends (`_onDidFinishTestFunctionCallbacks`, feature-checked, only when it passed); a
+call the proxy does not delegate runs first, as the text says, and a `notice` says so. A failure keeps its result: End
+is not offered there, and one sent ends the test as it failed, as Resume does. A hook: in a `beforeEach` End skips the
+test; once the test function ended (an `afterEach`, a fixture's teardown) it goes on as Resume, the result kept; Piwi
+stops in no `beforeAll` nor `afterAll`, so End never applies there. Playwright retries no skipped test, and a failure
+let end runs the next attempt, which stops as the first did. End is the take `end` (the run channel's control,
+`piwi/runControl`, the hub's `runControl`, `run_control`'s `end`, which answers as the test ends), 15 takes within the
+16 an older service reads; a stop's `intents` list it but at a failure, and the pause bar, both IDEs (no default key),
+the Runs window and the desktop app's tray offer it. A run started in a terminal follows an editor when it names no
+`PIWI_RUN_CHANNEL` and no launcher started it, never under CI, `PWDEBUG`, `--debug` or `--ui`, and only with its
+output on a terminal (else `PIWI_EDITOR=on`; `PIWI_EDITOR=off` runs it alone): the reporter's `onBegin` reads the
+discovery files of a folder only this user can enter, those this user owns, of this machine, whose process runs,
+deleting none, and follows the service one of whose roots holds the config's folder or the working directory, real
+paths compared, the most specific root first, then the service started last. It hands the workers that service's run
+channel and a ref of the run's own (`terminal-<pid>-<time>`), with one line saying so. The service takes a ref it
+never built as a terminal's run (`RunSession.terminal`, `HubSession.terminal`): shown as one, with no Stop, starting
+with the editor's breakpoints, which the clients send as they stand (`piwi/setBreakpoints`), and holding a failure only
+while a Runs window follows the runs, so it never waits for nobody. Its workers take no Pick, Record or Assert, which
+need the pairing and the record channel only a command the editor builds carries.
+
 The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of

@@ -1,18 +1,20 @@
 /**
- * The runs the editor started, as their workers tell them (`piwi/runSessionChanged`), shown and steered from the
- * editor with Piwi's own commands, no debug session: **Pause** and **Stop** while a run is live, **Resume**, **Step**,
- * **Run to cursor** and **Finish** while a worker is stopped, in the status bar beside the run's progress, in the
+ * The runs the editor started, and those started in a terminal that follow this window's service, as their workers tell
+ * them (`piwi/runSessionChanged`), shown and steered from the editor with Piwi's own commands, no debug session:
+ * **Pause** while a run is live and **Stop** while one this window started is, **Resume**, **Step**, **Run to cursor**,
+ * **Finish** and **End the test** while a worker is stopped, in the status bar beside the run's progress, in the
  * palette and with keys that apply only then (the `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped` context
- * keys). A stop opens its file at its line, marked as the execution point (an arrow in the gutter and the line's
- * background), with a CodeLens above it saying what is about to run, or how the test failed, and offering the
- * controls and the code actions its worker takes there (Pick a locator, Record here, Assert, Assert a region, Mock a
- * request: `piwi/stopAction`, each in the palette while a stop offers it, the `piwi.runCan…` context keys), which its
- * hover offers too; a stop no pause bar shows (a headless run's) shows an image of its page in a webview beside the
- * editor, where a click picks the element under it (`piwi/pickAt`) when its worker takes it. The code a stop makes
- * (`piwi/stopCode`) is written as one workspace edit in its document, opened when it is not; while a test is stopped,
- * the end of the cursor's line in its file says how many elements the locator there matches on the stopped page
- * (`piwi/locatorAtCaret`). The editor's breakpoints go to each live run as they change
- * (`piwi/setRunBreakpoints`). A run's lines are those of the documents as they stood when it started: the edits since
+ * keys; End the test has no key). A stop opens its file at its line, marked as the execution point (an arrow in the
+ * gutter and the line's background), with a CodeLens above it saying what is about to run, or how the test failed, and
+ * offering the controls and the code actions its worker takes there (Pick a locator, Record here, Assert, Assert a
+ * region, Mock a request: `piwi/stopAction`, each in the palette while a stop offers it, the `piwi.runCan…` context
+ * keys), which its hover offers too; a stop no pause bar shows (a headless run's) shows an image of its page in a
+ * webview beside the editor, where a click picks the element under it (`piwi/pickAt`) when its worker takes it. The
+ * code a stop makes (`piwi/stopCode`) is written as one workspace edit in its document, opened when it is not; while a
+ * test is stopped, the end of the cursor's line in its file says how many elements the locator there matches on the
+ * stopped page (`piwi/locatorAtCaret`). The editor's breakpoints go to each live run as they change
+ * (`piwi/setRunBreakpoints`), and to the service as they stand, which a run a terminal starts takes
+ * (`piwi/setBreakpoints`). A run's lines are those of the documents as they stood when it started: the edits since
  * (`EditLog`) bring a stop to the line it stands on now, and a breakpoint or the cursor's line back to the run's. A
  * stop's browser is shared with Playwright's own tools only when asked, each time, after a warning (`piwi/stopBind`).
  * The pure half is `run-control.ts`.
@@ -25,6 +27,7 @@ import {
   PAUSED_PAGE_REQUEST,
   PICK_AT_REQUEST,
   RUN_CONTROL_REQUEST,
+  SET_BREAKPOINTS_NOTIFICATION,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
   STOP_ACTION_REQUEST,
   STOP_BIND_REQUEST,
@@ -39,6 +42,7 @@ import {
   type RunControlResult,
   type RunPlace,
   type RunSession,
+  type SetBreakpointsParams,
   type StopActionKind,
   type StopActionParams,
   type StopActionResult,
@@ -55,6 +59,7 @@ import {
   SHARE_WARNING,
   STOP_ACTIONS,
   breakpointUpdates,
+  canEnd,
   canShare,
   controlItems,
   controlState,
@@ -89,6 +94,7 @@ import {
   type RunTarget,
   type ShownStop,
 } from './run-control';
+import { placesOf } from './breakpoints';
 
 /** What the run controls need of the rest of the extension. */
 export interface RunControlOptions {
@@ -112,6 +118,11 @@ export interface RunControl extends vscode.Disposable {
   heard(session: RunSession): void;
   /** A run started with these breakpoints: they are not sent to it again, and its lines are the documents' now. */
   started(ref: string, breakpoints: readonly RunBreakpoint[]): void;
+  /**
+   * The breakpoints may read otherwise (the service started, the Playwright configs changed): the service hears them,
+   * as each live run does where they differ.
+   */
+  breakpointsChanged(): void;
   /** The service stopped: its runs' sessions with it. */
   clear(): void;
   /** The sessions kept, which the integration suite reads. */
@@ -133,6 +144,7 @@ const ITEM_ORDER = [
   RUN_COMMANDS.resume,
   RUN_COMMANDS.step,
   RUN_COMMANDS.finish,
+  RUN_COMMANDS.end,
   RUN_COMMANDS.code,
   RUN_COMMANDS.pause,
   'pausing',
@@ -145,6 +157,7 @@ const STOP_COMMANDS = [
   RUN_COMMANDS.step,
   RUN_COMMANDS.runTo,
   RUN_COMMANDS.finish,
+  RUN_COMMANDS.end,
   RUN_COMMANDS.showPage,
   RUN_COMMANDS.share,
   ...STOP_ACTIONS.map((a) => a.command),
@@ -244,6 +257,7 @@ export function registerRunControl(
     void vscode.commands.executeCommand('setContext', 'piwi.runActive', state.active);
     void vscode.commands.executeCommand('setContext', 'piwi.runPausable', state.pausable);
     void vscode.commands.executeCommand('setContext', 'piwi.runStopped', state.stopped);
+    void vscode.commands.executeCommand('setContext', 'piwi.runCanEnd', state.endable);
     for (const a of STOP_ACTIONS) {
       void vscode.commands.executeCommand('setContext', a.key, state.actions.includes(a.action));
     }
@@ -269,14 +283,14 @@ export function registerRunControl(
     const target = encodeURIComponent(JSON.stringify([targetOf(stop)]));
     const link = (c: { title: string; command: string }) => `[${c.title}](command:${c.command}?${target})`;
     const controls = [
-      ...stopControls(stop.stop),
+      ...stopControls(stop),
       ...(stop.stop.bar ? [] : [{ title: 'Show the page', command: RUN_COMMANDS.showPage }]),
     ].map(link);
     const actions = stopActions(stop).map(link);
     const share = canShare(stop) ? [link({ title: 'Share with Playwright tools', command: RUN_COMMANDS.share })] : [];
     const hover = new vscode.MarkdownString(
       [
-        markdown(pausedText(stop.stop, stop.test)),
+        markdown(pausedText(stop.stop, stop.test, stop.terminal)),
         controls.join(' · '),
         ...(actions.length ? [actions.join(' · ')] : []),
         ...share,
@@ -344,7 +358,7 @@ export function registerRunControl(
       panel.reveal(vscode.ViewColumn.Beside, true);
     }
     const file = decodeURIComponent(stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1));
-    const caption = `${pausedText(stop.stop, stop.test)} · ${file}:${stop.stop.line + 1}`;
+    const caption = `${pausedText(stop.stop, stop.test, stop.terminal)} · ${file}:${stop.stop.line + 1}`;
     showPage({ image: null, caption: `${caption} · asking the test for its page…` });
     const answer = await lc
       .sendRequest<PausedPageResult>(PAUSED_PAGE_REQUEST, {
@@ -384,11 +398,25 @@ export function registerRunControl(
     showPage({ ...page, note: answer?.message ?? 'The editor service did not answer.' });
   };
 
-  /** The editor's breakpoints to each live run whose breakpoints differ, as lines of its code. */
+  /** The editor's breakpoints as last sent to the service (`piwi/setBreakpoints`), as text. */
+  let editorSent = '';
+  /**
+   * The editor's breakpoints to each live run whose breakpoints differ, as lines of its code, and to the service as
+   * they stand, for a run a terminal starts.
+   */
   const sendBreakpoints = () => {
-    for (const update of breakpointUpdates(sessions, options.breakpoints(), runs, edits)) {
+    const breakpoints = options.breakpoints();
+    for (const update of breakpointUpdates(sessions, breakpoints, runs, edits)) {
       void lc.sendNotification(SET_RUN_BREAKPOINTS_NOTIFICATION, update);
     }
+    const editor: SetBreakpointsParams = { places: placesOf(breakpoints) };
+    const text = JSON.stringify(editor);
+    if (text === editorSent) return;
+    editorSent = text;
+    // A service that did not hear them (stopped meanwhile) hears them as it runs again.
+    lc.sendNotification(SET_BREAKPOINTS_NOTIFICATION, editor).catch(() => {
+      if (editorSent === text) editorSent = '';
+    });
   };
 
   const changed = () => {
@@ -462,7 +490,7 @@ export function registerRunControl(
     arg: unknown,
     placeOf?: (stop: ShownStop) => RunPlace | string,
   ) => {
-    const stop = await chooseStop(arg);
+    const stop = await chooseStop(arg, action === 'end' ? canEnd : undefined);
     if (stop === 'went-on') return say('the test went on.');
     if (!stop) {
       // A key pressed again after an answer, before the next stop: nothing to do.
@@ -550,7 +578,7 @@ export function registerRunControl(
     if (!offered.length) return say('no code can be written from this stop.');
     const picked = await vscode.window.showQuickPick(
       offered.map((a) => ({ label: a.title, detail: a.detail, action: a.action })),
-      { placeHolder: `${pausedText(stop.stop, stop.test)}: write what?` },
+      { placeHolder: `${pausedText(stop.stop, stop.test, stop.terminal)}: write what?` },
     );
     if (picked) await startAction(picked.action, targetOf(stop));
   };
@@ -694,11 +722,11 @@ export function registerRunControl(
               const target = [targetOf(s)];
               return [
                 new vscode.CodeLens(range, {
-                  title: `${stopIcon(s.stop)} ${pausedText(s.stop, s.test)}`,
+                  title: `${stopIcon(s.stop)} ${pausedText(s.stop, s.test, s.terminal)}`,
                   command: s.stop.bar ? '' : RUN_COMMANDS.showPage,
                   arguments: target,
                 }),
-                ...[...stopControls(s.stop), ...stopActions(s).map((a) => ({ ...a, title: a.lens }))].map(
+                ...[...stopControls(s), ...stopActions(s).map((a) => ({ ...a, title: a.lens }))].map(
                   (c) => new vscode.CodeLens(range, { title: c.title, command: c.command, arguments: target }),
                 ),
               ];
@@ -720,6 +748,7 @@ export function registerRunControl(
       }
       if (!options.terminate(ref)) say('the run was not started in this window: stop it in its terminal.');
     }),
+    vscode.commands.registerCommand(RUN_COMMANDS.end, (arg?: unknown) => answerStop('end', arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.resume, (arg?: unknown) => answerStop('resume', arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.step, (arg?: unknown) => answerStop('step', arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.finish, (arg?: unknown) => answerStop('finish', arg)),
@@ -783,9 +812,12 @@ export function registerRunControl(
     },
     clear() {
       sessions = new Map();
+      // A service started again holds none of the editor's breakpoints.
+      editorSent = '';
       forgetEdits();
       changed();
     },
+    breakpointsChanged: () => sendBreakpoints(),
     sessions: () => [...sessions.values()],
     executionPoints: (uri) => drawn.get(uri) ?? [],
     pausedPage: () => (panel ? page : null),

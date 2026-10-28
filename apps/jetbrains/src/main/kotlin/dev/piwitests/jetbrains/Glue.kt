@@ -1383,13 +1383,23 @@ object Glue {
         return if (session.ended) sessions - ref else sessions + (ref to session)
     }
 
-    /** A worker stopped: its run, the worker, where it stands, the test it runs and what its reporter takes there. */
-    data class ShownStop(val ref: String, val worker: Int, val stop: RunStop, val test: RunTest?, val takes: List<String> = emptyList())
+    /**
+     * A worker stopped: its run, the worker, where it stands, the test it runs, what its reporter takes there, and
+     * whether its run was started in a terminal (`RunSession.terminal`).
+     */
+    data class ShownStop(
+        val ref: String,
+        val worker: Int,
+        val stop: RunStop,
+        val test: RunTest?,
+        val takes: List<String> = emptyList(),
+        val terminal: Boolean = false,
+    )
 
     /** Every stopped worker of the sessions, in their order. */
     fun stopsOf(sessions: Map<String, RunSession>): List<ShownStop> = sessions.values.flatMap { session ->
         session.workers.orEmpty().mapNotNull { w ->
-            w.stop?.let { ShownStop(session.ref ?: "", w.worker, it, w.test, w.takes.orEmpty()) }
+            w.stop?.let { ShownStop(session.ref ?: "", w.worker, it, w.test, w.takes.orEmpty(), session.terminal) }
         }
     }
 
@@ -1401,12 +1411,14 @@ object Glue {
      * or, at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in
      * plain text: the gutter's icon marks the stop.
      */
-    fun pausedText(stop: RunStop, test: RunTest?): String {
+    fun pausedText(stop: RunStop, test: RunTest?, terminal: Boolean = false): String {
         val attempt = if (test != null && test.retry > 0) " · attempt ${test.retry + 1}" else ""
-        if (isFailure(stop)) return "Failed · ${stop.title.orEmpty().removePrefix("Failed:").trimStart()}$attempt"
+        // A run started in a terminal says so: its process is the terminal's.
+        val where = if (terminal) " · run in a terminal" else ""
+        if (isFailure(stop)) return "Failed · ${stop.title.orEmpty().removePrefix("Failed:").trimStart()}$attempt$where"
         // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching.
         val by = if (stop.by == "agent") " by the agent" else ""
-        return "Paused$by · ${stop.title.orEmpty()}$attempt"
+        return "Paused$by · ${stop.title.orEmpty()}$attempt$where"
     }
 
     /** Whether a token kept for the runs' MCP server is one the editor service takes: 32 to 256 characters of base64url. */
@@ -1443,13 +1455,14 @@ object Glue {
     /** A stop as the choice among several names it: what it runs, its test, its place and its worker. */
     fun stopLabel(stop: ShownStop): String {
         val test = stop.test?.title?.joinToString(" › ")?.let { "$it · " }.orEmpty()
-        return "${pausedText(stop.stop, stop.test)} · $test${stopPlace(stop.stop)} · worker ${stop.worker}"
+        return "${pausedText(stop.stop, stop.test, stop.terminal)} · $test${stopPlace(stop.stop)} · worker ${stop.worker}"
     }
 
     /**
-     * What the controls offer: Stop while a run is live (`active`), Pause while a worker runs a test or is between
-     * tests and no Pause reached it (`pausable`), `pausing` once one did, Resume, Step, Run to Caret and Finish while a
-     * worker is stopped, and the code actions some stop offers (`actions`).
+     * What the controls offer: while a run is live (`active`), Stop for one this IDE started (`stoppable`; a run
+     * started in a terminal is the terminal's to stop), Pause while a worker runs a test or is between tests and no
+     * Pause reached it (`pausable`), `pausing` once one did, Resume, Step, Run to Caret and Finish while a worker is
+     * stopped, End the Test where a stop takes it (`endable`), and the code actions some stop offers (`actions`).
      */
     data class RunControls(
         val active: Boolean,
@@ -1459,6 +1472,8 @@ object Glue {
         val actions: Set<StopAction> = emptySet(),
         /** A stop's browser can be shared with Playwright's own tools. */
         val shareable: Boolean = false,
+        val stoppable: Boolean = active,
+        val endable: Boolean = false,
     )
 
     fun runControls(sessions: Map<String, RunSession>): RunControls {
@@ -1470,6 +1485,8 @@ object Glue {
             stopped = workers.any { it.state == "stopped" },
             actions = stopsOf(sessions).flatMap(::stopActions).toSet(),
             shareable = stopsOf(sessions).any(::canShare),
+            stoppable = sessions.values.any { !it.terminal },
+            endable = stopsOf(sessions).any(::canEnd),
         )
     }
 
@@ -1517,14 +1534,19 @@ object Glue {
         STEP("Step", "step"),
         RUN_TO_CARET("Run to Caret", "run-to"),
         FINISH("Finish", "finish"),
+        END("End Test", "end"),
     }
 
     /**
-     * The controls a stop offers: all of them; at a failure, Resume alone, which lets the test end as it failed (Step
-     * and Finish do the same).
+     * The controls a stop offers: all of them, End Test where its reporter takes it (`canEnd`); at a failure, Resume
+     * alone, which lets the test end as it failed (Step, Finish and End do the same).
      */
-    fun stopControls(stop: RunStop): List<StopControl> =
-        if (isFailure(stop)) listOf(StopControl.RESUME) else StopControl.entries
+    fun stopControls(stop: ShownStop): List<StopControl> =
+        if (isFailure(stop.stop)) listOf(StopControl.RESUME)
+        else StopControl.entries.filter { it != StopControl.END || canEnd(stop) }
+
+    /** Whether a stop can end its test (End the Test, `end`): its reporter takes it, and it is no failure. */
+    fun canEnd(stop: ShownStop): Boolean = !isFailure(stop.stop) && "end" in stop.takes
 
     /**
      * The code actions at a stop, in the order it offers them (`piwi/stopAction`): the pause bar's Pick a locator and

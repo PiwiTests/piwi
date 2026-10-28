@@ -207,6 +207,10 @@
             <action id="Piwi.FinishRun" class="dev.piwitests.jetbrains.FinishRunAction" text="Finish the Test"
                     icon="AllIcons.Actions.StepOut" use-shortcut-of="StepOut"
                     description="Run the stopped test on without stopping at a breakpoint again in this attempt"/>
+            <!-- No shortcut: the debugger has no action it stands for. -->
+            <action id="Piwi.EndTest" class="dev.piwitests.jetbrains.EndTestAction" text="End the Test"
+                    icon="AllIcons.RunConfigurations.TestIgnored"
+                    description="End the stopped test there, reported as skipped: the rest of it never runs"/>
             <action id="Piwi.ShowPausedPage" class="dev.piwitests.jetbrains.ShowPausedPageAction" text="Show the Paused Page"
                     icon="AllIcons.Actions.Preview"
                     description="An image of the stopped test's page, in the Piwi tool window"/>

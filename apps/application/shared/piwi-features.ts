@@ -647,6 +647,23 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/editor-run-control',
       },
       {
+        title: 'End the test',
+        summary:
+          "End a stopped test where it stands, from the editor, the pause bar, Piwi Picker, the desktop app or an agent: the call it stopped before never runs, and Playwright reports the test as skipped.",
+        needs: ['fixtures'],
+        where:
+          "End test on the stopped line's CodeLens, Piwi: End the test here; Tools → Piwi → End the Test in a JetBrains IDE",
+        doc: 'features/end-the-test',
+      },
+      {
+        title: 'Runs started in a terminal',
+        summary:
+          "A Playwright run you start in a terminal, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does.",
+        needs: ['fixtures'],
+        where: 'npx playwright test in a terminal of the workspace; PIWI_EDITOR=off runs it alone',
+        doc: 'features/terminal-runs',
+      },
+      {
         title: 'Code from a pause',
         summary:
           "At a test paused or failed in a run Piwi started, an assertion, a region's ARIA snapshot or a mock of a request the page made written above the stopped line, a locator picked or steps recorded there, and the count of the locator at the cursor on the stopped page.",

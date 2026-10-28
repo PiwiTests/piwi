@@ -193,7 +193,7 @@ the custom messages of `src/protocol.ts`:
   - desktop jobs: `piwi/desktopJob`, `piwi/shareDesktopJob`;
   - recorder: `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`, `piwi/pageCandidates`, `piwi/renderSteps`.
 - **Notifications from the client**: `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`,
-  `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`.
+  `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
   `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/stopCode`.
@@ -545,6 +545,15 @@ worker of a run tells the service over the run channel what it runs and where it
 
 `src/run-sessions.ts` (`RunSessions`) keeps one session per run, by the ref of its command (`PIWI_ORIGIN_REF`).
 
+A run started in a terminal attaches the same way, its reporter having read the run channel from the discovery file
+([The discovery file](#the-discovery-file)), under a ref of its own (`terminal-<pid>-<time>`, `TERMINAL_REF_PREFIX`)
+that no command of the service's names (`terminal` in `RunSessionsOptions`; the server's test is the prefix and a ref
+it never built). Its session says so (`RunSession.terminal`, the hub's `HubSession.terminal`), so the clients show it
+as one and offer no Stop, the terminal's to give. It starts with the editor's breakpoints as the client last sent them
+(`piwi/setBreakpoints`, kept as `setEditorBreakpoints`), as lines of its code: the files as they stand when its first
+worker connects. A worker of it holds a failure only while a Runs window of Piwi Picker follows the runs as it attaches
+(`followed`): nobody may be there to answer it otherwise. It ends 5 s after its last worker left, having no command.
+
 Each worker of a run keeps a connection to the record channel's socket for its whole life (`run-attach`,
 `@piwitests/core/run-channel`), opened with the channel's token, compared in constant time (`sameToken`). The session
 files it by Playwright's worker index, with:
@@ -577,15 +586,21 @@ the run's stop before it, so it names that stop alone.
 
 - `pause` goes to the workers that run a test or are between tests. Each stops at its next call, or at the next test's
   first.
-- `step`, `resume`, `finish` and `run-to` go to the one stopped worker, naming its stop, which a worker past it
+- `step`, `resume`, `finish`, `run-to` and `end` go to the one stopped worker, naming its stop, which a worker past it
   ignores. With `since` (the stop the client showed), they go only to the worker stopped there, else the answer is
   `The test went on.`
+- `end` (End the test) is refused for a worker whose `run-attach` does not take it. Its worker ends the test there,
+  skipped, or, at a failure or once the test function ended, lets it end as it is; the answer says which
+  (`Ending the test: it is reported as skipped.`, `The test failed already: it ends as it failed.`). The stop's
+  `intents` list `end` but at a failure, for every viewer (`stopIntentsOf`).
 
 A worker's stop ends with its `running`, whoever ended it: the pause bar, the editor, or the test ending under it or
 closing its page, which the worker sends unanswered. A control naming that stop afterwards is refused the same way.
 
 `piwi/setRunBreakpoints` replaces the run's breakpoints in each of its workers, and in each one that connects later.
-The service keeps the breakpoints of the 50 latest runs.
+The service keeps the breakpoints of the 50 latest runs. `piwi/setBreakpoints { places }` is the editor's breakpoints as
+they stand, sent as the service starts and as they change (only when they differ): a run started in a terminal starts
+with them.
 
 `piwi/pausedPage` asks a stopped worker for a JPEG of its page. The answer is null after 10 s (`PAUSED_PAGE_WAIT_MS`),
 when the worker leaves, or when it is not stopped. From a reporter that names it, the image carries the page's viewport
@@ -873,10 +888,10 @@ and a JSON schema that names them (`AGENT_TOOLS`, `additionalProperties: false`)
   { run, after?, wait? }` answers the events after the cursor, 200 at most (`more`), waiting up to `wait` seconds (25
   at most, `MAX_FOLLOW_WAIT_S`) for a stop or the run's end, and at once while the run is stopped or ended.
 - **Controlling it.** `run_control { run, worker?, action, stop?, place?, wait? }` is `piwi/runControl` with
-  `by: 'agent'` (`pause`, and `step`, `run-to`, `resume`, `finish` naming the stop they answer), then waits up to
-  `wait` seconds (30 at most) for the run's next stop or its end. The stop a Pause, a Step or a Run to the agent
-  asked for carries `RunStop.by: 'agent'`, which the clients show. `end` is refused: ending a test from a stop is not
-  built yet. A `place` is a line of the run's code, relative to the run's folder.
+  `by: 'agent'` (`pause`, and `step`, `run-to`, `resume`, `finish`, `end` naming the stop they answer), then waits up
+  to `wait` seconds (30 at most) for the run's next stop or its end, and after `end` for the end of the test it ended
+  too (`The test ended: skipped.`). The stop a Pause, a Step or a Run to the agent asked for carries
+  `RunStop.by: 'agent'`, which the clients show. A `place` is a line of the run's code, relative to the run's folder.
 - **Reading the page.** The answer to a stop, `page_snapshot { run, worker?, image?, depth? }` and `page_act` read
   the page's ARIA snapshot in AI mode through the worker (`RunSessions.snapshot`). The service keeps the last snapshot
   read of each worker (32 at most) and answers with its change since (a line diff, `snapshotChange`) when it is
@@ -954,7 +969,8 @@ could), `startServer` hands `publish` what the file says:
 - its version (written in by `build.mjs`, `0.0.0-dev` unbundled) and its client (`initialize`'s `clientInfo`);
 - `startedAt` and the workspace's folders (`roots`);
 - the hub's address and token;
-- the run channel's socket and token, for a run started in a terminal;
+- the run channel's socket and token, for a run started in a terminal (the reporter's `internal/config/editors.ts`
+  follows the service one of whose `roots` holds the run, `editorForRun`);
 - the recorder bundle's path.
 
 It hands `publish` null as it stops (`shutdown`, `exit`, the function `startServer` returns).

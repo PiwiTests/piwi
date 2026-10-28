@@ -1344,8 +1344,10 @@ export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-p
  * on it (`input`, with the click count of a button's `down` and `up`: `input-clicks`) and the element under a point of
  * an image of it (`pick-at`, `piwi/pickAt`); for an agent, the stopped page read and acted on (`agent`: its ARIA
  * snapshot, an action by an element's ref and that element's ranked locators) and the running tests' events
- * (`events`); and its browser shared with Playwright's own tools (`bind`, `piwi/stopBind`). An older reporter lists
- * fewer, or none: the service refuses what it does not take.
+ * (`events`); its browser shared with Playwright's own tools (`bind`, `piwi/stopBind`); and End the test at a stop
+ * (`end`, `piwi/runControl`). A worker lists Pick a locator only where its run names the client's Send to editor
+ * pairing, and Record here and Assert only where it names the record channel, which a run started in a terminal names
+ * neither of. An older reporter lists fewer, or none: the service refuses what it does not take.
  */
 export type RunTake =
   | 'pick'
@@ -1361,7 +1363,8 @@ export type RunTake =
   | 'pick-at'
   | 'agent'
   | 'events'
-  | 'bind';
+  | 'bind'
+  | 'end';
 
 /** Where a worker stands stopped: before a call, which runs as soon as the stop is answered. */
 export interface RunStop {
@@ -1445,7 +1448,10 @@ export interface RunWorker {
  * keeps the latest of each `ref`.
  */
 export interface RunSession {
-  /** The ref of the command that started it (`RunCommand.ref`), or of the terminal it ran in (`terminalRef`). */
+  /**
+   * The ref of the command that started it (`RunCommand.ref`), of the terminal it ran in (`terminalRef`), or one of
+   * its own for a run started in a terminal (`terminal`).
+   */
   ref: string;
   /** The folder of the Playwright config it runs in, as `piwi/status` names it; null when no context holds it. */
   root: string | null;
@@ -1457,6 +1463,12 @@ export interface RunSession {
    * session.
    */
   ended: boolean;
+  /**
+   * The run was started in a terminal, not by the client: it found this service through its discovery file and runs
+   * under a ref of its own (`terminal-<pid>-<time>`), with the editor's breakpoints (`piwi/setBreakpoints`) as it
+   * started. Its process is the terminal's, which the client cannot stop. Absent for a run the service built.
+   */
+  terminal?: boolean;
 }
 
 export const RUN_SESSION_NOTIFICATION = 'piwi/runSessionChanged';
@@ -1465,9 +1477,12 @@ export const RUN_SESSION_NOTIFICATION = 'piwi/runSessionChanged';
  * What `piwi/runControl` asks: `pause` stops before the next call (of every running worker without `worker`); the
  * others answer a stop: `step` goes on and stops before the next call, `resume` goes on to the next breakpoint,
  * `finish` goes on with no breakpoint more in this attempt, `run-to` goes on and stops at the first call on `place`'s
- * line (or at a breakpoint before it).
+ * line (or at a breakpoint before it), `end` ends the test there, reported as skipped (for a worker that takes `end`):
+ * the stopped call never runs where the worker holds it (a locator call, a `page.pause()`), else it runs first and the
+ * test ends before its next locator call. At a failure, or once the test function ended (an `afterEach` hook), `end`
+ * lets the test end as Resume does, its result kept.
  */
-export type RunControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'run-to';
+export type RunControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'run-to' | 'end';
 
 /**
  * `piwi/runControl`: steer a run the editor started. Without `worker`, `pause` goes to every worker that runs or is
@@ -1513,6 +1528,18 @@ export interface SetRunBreakpointsParams {
 }
 
 export const SET_RUN_BREAKPOINTS_NOTIFICATION = 'piwi/setRunBreakpoints';
+
+/**
+ * `piwi/setBreakpoints` (notification, client to server): the editor's line breakpoints as the editor holds them now,
+ * sent as the client starts and whenever they change. A run started in a terminal (`RunSession.terminal`) starts with
+ * them: its code is the files as they stand as it attaches. After that, the client sends it `piwi/setRunBreakpoints`
+ * as for its own runs.
+ */
+export interface SetBreakpointsParams {
+  places: RunPlace[];
+}
+
+export const SET_BREAKPOINTS_NOTIFICATION = 'piwi/setBreakpoints';
 
 /** `piwi/pausedPage`: what the page of a stopped worker shows: an image of it (`what: 'image'`). */
 export interface PausedPageParams {

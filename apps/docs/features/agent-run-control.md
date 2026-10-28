@@ -56,7 +56,7 @@ an agent with the old one is refused until you copy the configuration again. `pi
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `run_list`      | The runs of the window, their workers, the test each one runs and where it stands stopped                                                                                                                                                                                                                                     |
 | `run_follow`    | The run's events since a cursor: each test's start and end, each call as it ends with its place in your code and whether it passed, the stops, and the page's navigations, console errors and warnings, uncaught errors and failed requests. It waits up to 25 seconds, and answers at once while the run is stopped or ended |
-| `run_control`   | Pause, Step, Run to a line, Resume or Finish, answered when the run stops again, with the page's snapshot, or when it ends                                                                                                                                                                                                    |
+| `run_control`   | Pause, Step, Run to a line, Resume, Finish or [End the test](./end-the-test), answered when the run stops again, with the page's snapshot, when the test it ended ends, or when the run ends                                                                                                                                  |
 | `page_snapshot` | The stopped page's ARIA snapshot in AI mode, a ref per element (`[ref=e5]`), to a depth you choose, with an image of the page when asked                                                                                                                                                                                      |
 | `page_act`      | Click, fill, press a key, check, uncheck or select an option on an element by its ref, answered with the page's change                                                                                                                                                                                                        |
 | `page_locator`  | Piwi's locators for an element by its ref, ranked as [Pick a locator](./pick-an-element) ranks them, each checked to find it alone                                                                                                                                                                                            |
@@ -80,8 +80,9 @@ characters). Piwi refuses to write a secret field's value, and a text or a value
 ## What keeps it safe
 
 - **Only this machine, only this window.** The server answers a request to its own address on `127.0.0.1` with the
-  token, and refuses any other name for the machine and any request a browser sends (it carries an `Origin`). It
-  serves the runs this window started, and nothing of an instance.
+  token, and refuses any other name for the machine and any request a browser sends (it carries an `Origin`). It serves
+  the runs this window started, and those [started in a terminal](./terminal-runs) that follow it, and nothing of an
+  instance.
 - **Only a stopped page, only the actions named.** An action needs the stop it answers, and goes nowhere once the test
   went on. The tools take a closed set of arguments; none evaluates code, reads a file or runs a command. Code reaches
   your files only through the editor, as an edit you see.
@@ -108,7 +109,6 @@ its pages and run code in them. It is shared until the test ends, and no agent c
 
 ## Limits
 
-- **Ending a test from a stop** is not one of the actions: resume, finish, or stop the run from the editor.
 - **The desktop app's runs** are its own, and its window steers them: this server serves the editor's runs alone.
 - **A remote window** (SSH, a dev container, Gateway) runs the server on the remote machine: an agent there reaches it.
 - An action needs Playwright 1.64 or later and a `@piwitests/reporter` at least as recent as the editor extension; at

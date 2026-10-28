@@ -15,6 +15,7 @@ import {
   EditLog,
   MAX_IMAGE_DATA,
   breakpointUpdates,
+  canEnd,
   canShare,
   caretText,
   controlItems,
@@ -150,9 +151,11 @@ describe('what the controls offer', () => {
   test('nothing without a run', () => {
     expect(controlState(new Map())).toEqual({
       active: false,
+      stoppable: false,
       pausable: false,
       pausing: false,
       stopped: false,
+      endable: false,
       actions: [],
       shareable: false,
     });
@@ -183,9 +186,11 @@ describe('what the controls offer', () => {
       const shown = controlState(sessionsOf(session('ed-1', [worker(0, state)])));
       expect(shown).toEqual({
         active: true,
+        stoppable: true,
         pausable: true,
         pausing: false,
         stopped: false,
+        endable: false,
         actions: [],
         shareable: false,
       });
@@ -197,9 +202,11 @@ describe('what the controls offer', () => {
     const pausing = controlState(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true })])));
     expect(pausing).toEqual({
       active: true,
+      stoppable: true,
       pausable: false,
       pausing: true,
       stopped: false,
+      endable: false,
       actions: [],
       shareable: false,
     });
@@ -220,9 +227,11 @@ describe('what the controls offer', () => {
     );
     expect(shown).toEqual({
       active: true,
+      stoppable: true,
       pausable: true,
       pausing: false,
       stopped: true,
+      endable: false,
       actions: [],
       shareable: false,
     });
@@ -232,6 +241,38 @@ describe('what the controls offer', () => {
       ['piwi.finishRun', 'Piwi: Finish the test without stopping again (Shift+F11)'],
       ['piwi.stopRun', 'Piwi: Stop the run (Shift+F5)'],
     ]);
+  });
+
+  test('End the test at a stop whose reporter takes it, never at a failure, with no key', () => {
+    const at = (stop: RunStop, takes: RunTake[] = ['end']) =>
+      sessionsOf(session('ed-1', [worker(0, 'stopped', { stop, takes })]));
+    const ending = controlState(at(stopAt(spec, 5)));
+    expect(ending.endable).toBe(true);
+    expect(controlItems(ending).map((i) => [i.command, i.tooltip])).toContainEqual([
+      'piwi.endTest',
+      'Piwi: End the test here: the rest of it is skipped',
+    ]);
+    const [stop] = stopsOf(at(stopAt(spec, 5)));
+    expect(canEnd(stop!)).toBe(true);
+    expect(stopControls(stop!).map((c) => c.title)).toEqual(['Resume', 'Step', 'Run to cursor', 'Finish', 'End test']);
+    expect(controlState(at(stopAt(spec, 5), [])).endable).toBe(false);
+    expect(controlState(at({ ...stopAt(spec, 5), reason: 'failure' })).endable).toBe(false);
+  });
+
+  test('no Stop for a run started in a terminal, which says so where it stops', () => {
+    const terminal = { ...session('terminal-41-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) })]), terminal: true };
+    const state = controlState(sessionsOf(terminal));
+    expect(state.stoppable).toBe(false);
+    expect(controlItems(state).map((i) => i.command)).not.toContain('piwi.stopRun');
+    const [stop] = stopsOf(sessionsOf(terminal));
+    expect(stop!.terminal).toBe(true);
+    expect(pausedText(stop!.stop, stop!.test, stop!.terminal)).toBe(
+      'Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · run in a terminal',
+    );
+    expect(stopPick(stop!).label).toContain('· run in a terminal');
+    // A run of this window's beside it can be stopped.
+    const both = controlState(sessionsOf(terminal, session('ed-1', [worker(0, 'running')])));
+    expect(controlItems(both).map((i) => i.command)).toContain('piwi.stopRun');
   });
 });
 
@@ -573,8 +614,13 @@ describe('a failure held for the editor', () => {
     expect(pausedText(failed, runTest(1))).toBe('Failed · Timed out 5000ms waiting for click · attempt 2');
     expect(stopIcon(failed)).toBe('$(error)');
     expect(stopIcon(stopAt(spec, 5))).toBe('$(debug-pause)');
-    expect(stopControls(failed).map((c) => c.title)).toEqual(['Resume']);
-    expect(stopControls(stopAt(spec, 5)).map((c) => c.title)).toEqual(['Resume', 'Step', 'Run to cursor', 'Finish']);
+    expect(stopControls(shown(failed)).map((c) => c.title)).toEqual(['Resume']);
+    expect(stopControls(shown(stopAt(spec, 5))).map((c) => c.title)).toEqual([
+      'Resume',
+      'Step',
+      'Run to cursor',
+      'Finish',
+    ]);
     expect(stopPick(shown(failed)).label).toBe('$(error) Failed · Timed out 5000ms waiting for click');
   });
 

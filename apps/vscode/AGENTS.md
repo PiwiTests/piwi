@@ -31,11 +31,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **`src/glue.ts`, `src/connect.ts`, `src/breakpoints.ts`, `src/send-listener.ts` and `src/run-control.ts` use no
   VS Code API.** Put logic that needs no editor there, so the unit tests (`npm run vscode:test`) cover it.
   ([The pure half](ARCHITECTURE.md#the-pure-half))
-- **A run control names the stop it answers, and a line sent for a run is a line of the run's code.** Resume, Step,
-  Run to the cursor and Finish pass the stop's `since`; Run to the cursor and `piwi/setRunBreakpoints` map the editor's
-  lines back through `EditLog` (`runPlaces` for the breakpoints). Checked by `tests/run-control.test.ts`.
-  ([Run control](ARCHITECTURE.md#run-control); the service's side:
-  [Controls, breakpoints and the paused page](../../packages/editor/ARCHITECTURE.md#controls-breakpoints-and-the-paused-page))
+- **A run control names the stop it answers, and a line sent for a run is a line of the run's code.** Resume, Step, Run
+  to the cursor, Finish and End the test pass the stop's `since`; Run to the cursor and `piwi/setRunBreakpoints` map the
+  editor's lines back through `EditLog` (`runPlaces` for the breakpoints). Checked by `tests/run-control.test.ts`.
+  ([Run control](ARCHITECTURE.md#run-control); the service's side: [Controls, breakpoints and the paused
+  page](../../packages/editor/ARCHITECTURE.md#controls-breakpoints-and-the-paused-page))
 - **The code a stop makes is one workspace edit, made only in the version of its document the service placed it in**
   (else the file as saved; otherwise a warning offers **Copy the code**), so it never lands on a line the service did
   not choose. Checked by `tests/run-control.test.ts` ("the code a stop makes") and the integration suite.

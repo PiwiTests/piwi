@@ -633,6 +633,61 @@ const tests = {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   },
 
+  async 'a run started in a terminal follows the window with its breakpoints, and ends there at End the test'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const channel = api.lastRun().env.PIWI_RUN_CHANNEL;
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
+    const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(spec, new vscode.Position(2, 0)));
+    vscode.debug.addBreakpoints([breakpoint]);
+    // The run a terminal started names itself, on the channel of the window's discovery file.
+    const ref = 'terminal-4242-1730000000000';
+    // Once the service heard the breakpoint.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const { socket, send, heardOne } = runWorker(channel, ref, ['end']);
+    const sessionOf = () => api.runSessions().find((s) => s.ref === ref);
+    try {
+      // It starts with the editor's breakpoints, as lines of the files as they stand.
+      await heardOne(
+        'the editor’s breakpoints',
+        (m) => m.type === 'breakpoints' && m.places.some((p) => p.file === 'tests/checkout.spec.ts' && p.line === 3),
+      );
+      assert.equal((await waitFor(() => sessionOf(), 'the terminal’s run')).terminal, true);
+      send({
+        type: 'test-begin',
+        testId: 't1',
+        title: ['pays'],
+        file: 'tests/checkout.spec.ts',
+        line: 3,
+        project: 'chromium',
+        retry: 0,
+        cannotPause: null,
+      });
+      send({
+        type: 'stopped',
+        stop: 1,
+        reason: 'breakpoint',
+        title: 'Fill "one" locator(\'input\')',
+        place: { file: 'tests/checkout.spec.ts', line: 3 },
+        locator: "locator('input')",
+        bar: true,
+      });
+      const lenses = await waitFor(async () => {
+        const titles = await stopLenses(spec, '$(debug-pause) Paused · ');
+        return titles.length ? titles : null;
+      }, 'the terminal run’s lenses');
+      const title = '$(debug-pause) Paused · Fill "one" locator(\'input\') · run in a terminal';
+      assert.ok(lenses.includes(title), lenses.join(' | '));
+      assert.ok(lenses.includes('End test'), lenses.join(' | '));
+      await vscode.commands.executeCommand('piwi.endTest');
+      await heardOne('End the test', (m) => m.type === 'control' && m.action === 'end' && m.stop === 1);
+    } finally {
+      vscode.debug.removeBreakpoints([breakpoint]);
+      socket.destroy();
+    }
+    await waitFor(() => !sessionOf(), 'the end of the terminal’s run');
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  },
+
   async 'code from a stop: Assert and Mock write above the stopped line, the cursor’s locator is counted, and a failure stops'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const run = api.lastRun();
@@ -1008,6 +1063,7 @@ const tests = {
       'piwi.stepRun',
       'piwi.runToCursor',
       'piwi.finishRun',
+      'piwi.endTest',
       'piwi.showPausedPage',
       'piwi.pickAtStop',
       'piwi.recordAtStop',

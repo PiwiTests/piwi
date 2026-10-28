@@ -46,7 +46,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
-import { RUN_CHANNEL_ENV } from '@piwitests/core/run-channel';
+import { RUN_CHANNEL_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
 import { forwardedPorts } from '@piwitests/core/run-hub';
 import type { EditorDiscovery } from '@piwitests/core/editor-discovery';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
@@ -219,6 +219,7 @@ import {
   STOP_BIND_REQUEST,
   RUN_CONTROL_REQUEST,
   RUN_SESSION_NOTIFICATION,
+  SET_BREAKPOINTS_NOTIFICATION,
   SET_RUN_BREAKPOINTS_NOTIFICATION,
   LOCATOR_AT_CARET_REQUEST,
   STOP_ACTION_REQUEST,
@@ -264,6 +265,7 @@ import {
   type StopBindResult,
   type RunControlParams,
   type RunControlResult,
+  type SetBreakpointsParams,
   type SetRunBreakpointsParams,
   type PageCandidatesParams,
   type PageCandidatesResult,
@@ -1724,6 +1726,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     // The client, or a Piwi Picker subscribed to the hub.
     answersStops: () => answersStops || !!runHub?.answersStops(),
     watched: (ref) => watchedRuns.has(ref),
+    // A run started in a terminal names itself so, by no command the service built.
+    terminal: (ref) => ref.startsWith(TERMINAL_REF_PREFIX) && !runCommands.has(ref),
     // A Runs window open in Piwi Picker: its connection says it follows the runs.
     followed: () => !!runHub?.follows(),
     // A run's code is the files as they stood when its command was built, or, for a rerun, as they stand now.
@@ -3489,6 +3493,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   connection.onNotification(SET_RUN_BREAKPOINTS_NOTIFICATION, (params: SetRunBreakpointsParams) =>
     runSessions.setBreakpoints(params),
+  );
+
+  connection.onNotification(SET_BREAKPOINTS_NOTIFICATION, (params: SetBreakpointsParams) =>
+    runSessions.setEditorBreakpoints(params),
   );
 
   connection.onRequest(PAUSED_PAGE_REQUEST, (params: PausedPageParams): Promise<PausedPageResult> =>

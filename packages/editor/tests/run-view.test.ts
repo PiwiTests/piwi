@@ -248,7 +248,7 @@ describe('a stopped page’s live view, in the run sessions', () => {
       ok: false,
       message: NEEDS_BAR,
     });
-    expect(sessions.stopIntentsOf('ed-1', 0, a)).toEqual(['view', 'pick-at']);
+    expect(sessions.stopIntentsOf('ed-1', 0, a)).toEqual(['view', 'pick-at', 'end']);
     const watched = sessions.watch({ ref: 'ed-1', since, on: true }, a);
     answer(requests('view')[0]!.request, 'view', { ok: true, message: 'The live view is on.' });
     await watched;
@@ -259,9 +259,10 @@ describe('a stopped page’s live view, in the run sessions', () => {
       'input',
       'input-clicks',
       'pick-at',
+      'end',
     ]);
-    expect(sessions.stopIntentsOf('ed-1', 0, b)).toEqual(['view', 'pick-at']);
-    expect(sessions.stopIntentsOf('ed-1', 0, null)).toEqual(['view', 'pick-at']);
+    expect(sessions.stopIntentsOf('ed-1', 0, b)).toEqual(['view', 'pick-at', 'end']);
+    expect(sessions.stopIntentsOf('ed-1', 0, null)).toEqual(['view', 'pick-at', 'end']);
     // Someone who does not watch is refused, as without a view.
     expect(await sessions.intent({ ref: 'ed-1', since, what: 'pick', viewer: b })).toEqual({
       ok: false,
@@ -278,7 +279,7 @@ describe('a stopped page’s live view, in the run sessions', () => {
   test('offers the actions in the window at a stop the pause bar shows, and the input to its viewers alone', async () => {
     const { sessions, stopAt } = harness();
     await stopAt(1, true);
-    expect(sessions.stopIntentsOf('ed-1', 0, viewer())).toEqual(['pick', 'record', 'view', 'pick-at']);
+    expect(sessions.stopIntentsOf('ed-1', 0, viewer())).toEqual(['pick', 'record', 'view', 'pick-at', 'end']);
     expect(sessions.stopIntentsOf('ed-9', 0, null)).toEqual([]);
     sessions.dispose();
   });
@@ -449,8 +450,8 @@ describe('the live view on the hub', () => {
           const stop = client.session(ref)?.workers[0]?.stop;
           return stop?.intents?.includes('input') || client === b ? stop?.intents : undefined;
         });
-      expect(await intentsOf(a)).toEqual(['pick', 'record', 'view', 'input', 'input-clicks', 'pick-at']);
-      expect(await intentsOf(b)).toEqual(['view', 'pick-at']);
+      expect(await intentsOf(a)).toEqual(['pick', 'record', 'view', 'input', 'input-clicks', 'pick-at', 'end']);
+      expect(await intentsOf(b)).toEqual(['view', 'pick-at', 'end']);
 
       const started = Date.now();
       for (let i = 0; i < 30; i++)

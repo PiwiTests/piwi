@@ -1416,7 +1416,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
 
   context.subscriptions.push(
     lc.onNotification(RUN_STATUS_NOTIFICATION, (next: RunStatusResult) => void updateStatus(next)),
-    lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus()),
+    // The Playwright configs the breakpoints are read under may change with the status.
+    lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus().then(() => runControl.breakpointsChanged())),
     // A failure moved with an edit, or its line changed since the run: the lenses, the decorations and the view again.
     lc.onNotification(FAILURES_NOTIFICATION, (failures: FailuresResult) => {
       filesChanged();
@@ -1447,6 +1448,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     // A service that stops closes its runs' connections: their sessions end with it.
     lc.onDidChangeState((e) => {
       if (e.newState === State.Stopped) runControl.clear();
+      // A service started again hears the editor's breakpoints, for a run a terminal starts.
+      else if (e.newState === State.Running) runControl.breakpointsChanged();
     }),
     lc.onNotification(NOTICE_NOTIFICATION, (notice: Notice) => {
       const text = `Piwi: ${notice.message}`;
@@ -1461,6 +1464,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   await lc.start();
   showTestExplorer();
   await updateStatus();
+  runControl.breakpointsChanged();
   const tick = setInterval(render, STATUS_TICK_MS);
   context.subscriptions.push({ dispose: () => clearInterval(tick) });
   return {

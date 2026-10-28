@@ -670,11 +670,35 @@ class GlueTest {
     fun `a failure held for the IDE says how the test failed and offers Resume alone among the controls`() {
         val failed = stopAt(specUri, 5).copy(reason = "failure", title = "Failed: Timed out 5000ms waiting for click")
         assertEquals("Failed · Timed out 5000ms waiting for click · attempt 2", Glue.pausedText(failed, runTest(retry = 1)))
-        assertEquals(listOf(Glue.StopControl.RESUME), Glue.stopControls(failed))
-        assertEquals(Glue.StopControl.entries, Glue.stopControls(stopAt(specUri, 5)))
+        val shown = { stop: RunStop, takes: List<String> -> Glue.ShownStop("ed-1", 0, stop, runTest(), takes) }
+        assertEquals(listOf(Glue.StopControl.RESUME), Glue.stopControls(shown(failed, listOf("end"))))
+        assertEquals(Glue.StopControl.entries - Glue.StopControl.END, Glue.stopControls(shown(stopAt(specUri, 5), allTakes)))
         val stopped = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), failed, takes = allTakes)))
         assertEquals("Piwi: failed · checkout.spec.ts:6", Glue.runControlStatus(Glue.runControls(stopped), Glue.stopsOf(stopped)))
         assertEquals(Glue.StopAction.entries.toSet(), Glue.runControls(stopped).actions)
+    }
+
+    @Test
+    fun `a stop ends its test where its reporter takes it, never at a failure`() {
+        val stopped = { stop: RunStop, takes: List<String> ->
+            mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "stopped", runTest(), stop, takes = takes)))
+        }
+        val ending = stopped(stopAt(specUri, 5), listOf("end"))
+        assertTrue(Glue.runControls(ending).endable)
+        assertEquals(Glue.StopControl.entries, Glue.stopControls(Glue.stopsOf(ending).single()))
+        assertFalse(Glue.runControls(stopped(stopAt(specUri, 5), emptyList())).endable)
+        assertFalse(Glue.runControls(stopped(stopAt(specUri, 5).copy(reason = "failure"), listOf("end"))).endable)
+    }
+
+    @Test
+    fun `a run started in a terminal is none to stop, and says so where it stops`() {
+        val terminal = RunSession("terminal-41-1", "/work/shop", listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5))), terminal = true)
+        val sessions = mapOf("terminal-41-1" to terminal)
+        assertFalse(Glue.runControls(sessions).stoppable)
+        assertTrue(Glue.runControls(sessions + ("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), null)))).stoppable)
+        val stop = Glue.stopsOf(sessions).single()
+        assertTrue(stop.terminal)
+        assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · run in a terminal", Glue.pausedText(stop.stop, stop.test, stop.terminal))
     }
 
     @Test

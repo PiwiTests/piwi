@@ -117,6 +117,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A rerun under the ref of a run that ended maps its lines from when it is first heard**, never from the ended run's
   start. Checked by `PiwiRunControlTest` (`testARerunUnderTheRefOfARunThatEndedMapsItsLinesFromItsOwnStart`).
   ([Run control](ARCHITECTURE.md#run-control))
+- **A run started in a terminal has the controls but Stop, and starts with the IDE's breakpoints**
+  (`piwi/setBreakpoints`, sent as they change). Checked by `PiwiRunControlTest`
+  (`testARunStartedInATerminalTakesTheBreakpointsAndEndsThere`). ([Run control](ARCHITECTURE.md#run-control))
 - **Every run of a Playwright run configuration Piwi made is followed** (`PiwiRunSessions.followRunner`), its Rerun,
   Rerun Failed Tests and Debug included, so Stop ends it and the service hears its end. Checked by
   `PiwiRunControlTest`. ([Playwright runner](ARCHITECTURE.md#playwright-runner))

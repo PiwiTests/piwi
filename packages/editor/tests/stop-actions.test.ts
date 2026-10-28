@@ -811,6 +811,7 @@ describe('code from a stop, started from Piwi Picker', () => {
         'input',
         'input-clicks',
         'pick-at',
+        'end',
       ]);
 
       send({ type: 'requests', id: 2, ref, since });

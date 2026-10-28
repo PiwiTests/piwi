@@ -405,6 +405,12 @@
         "icon": "$(debug-step-out)"
       },
       {
+        "command": "piwi.endTest",
+        "title": "End the test here, skipping the rest of it",
+        "category": "Piwi",
+        "icon": "$(circle-slash)"
+      },
+      {
         "command": "piwi.showPausedPage",
         "title": "Show the paused page",
         "category": "Piwi"
@@ -551,6 +557,10 @@
         {
           "command": "piwi.finishRun",
           "when": "piwi.runStopped"
+        },
+        {
+          "command": "piwi.endTest",
+          "when": "piwi.runCanEnd"
         },
         {
           "command": "piwi.showPausedPage",

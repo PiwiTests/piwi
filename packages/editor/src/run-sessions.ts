@@ -10,18 +10,21 @@
  * the hub) watches a stopped page's live view (`view`): the worker starts it with the first viewer of a stop and stops
  * it with the last, and its frames go to that stop's viewers alone, none of an older stop; a viewer plays its input on
  * the page it watches (`input`), and the intents a stop no pause bar shows takes from a viewer of its view. Any client
- * picks the element under a point of an image of a stopped page (`pickAt`). A worker names places relative to the
- * run's working directory; the client, by their file's URI as the workspace names it: the session converts both ways.
- * A stop that shows no pause bar while no surface can answer stops (the client does not, and no Piwi Picker hears the
- * runs) is resumed at once, and so is one held when the last of them goes. A failure no pause bar shows is held only
- * in a run started to be watched (`watched`: with the editor's breakpoints or a `page.pause()`) or while a Runs window
- * of Piwi Picker follows the runs, and never in a run its host says holds none (`holdsFailures`), else it goes on at
- * once and no client hears of it. A worker's connection that closes lets a stop no pause bar shows go on; a stop the
- * bar shows waits there for its answer. An agent (the service's MCP server, `run-agent.ts`) hears what each worker
- * says (`heard`), has a run's workers tell what their tests do (`followRun`), and, at a stop, reads the page's ARIA
- * snapshot (`snapshot`), acts on an element of it by its ref (`act`), ranks an element's locators (`refLocator`) and
- * shares the browser with Playwright's own tools (`bind`); a stop it asked for (Pause, Step, Run to) is said to be the
- * agent's (`RunStop.by`).
+ * picks the element under a point of an image of a stopped page (`pickAt`). A worker names places relative to the run's
+ * working directory; the client, by their file's URI as the workspace names it: the session converts both ways. A stop
+ * that shows no pause bar while no surface can answer stops (the client does not, and no Piwi Picker hears the runs) is
+ * resumed at once, and so is one held when the last of them goes. A failure no pause bar shows is held only in a run
+ * started to be watched (`watched`: with the editor's breakpoints or a `page.pause()`) or while a Runs window of Piwi
+ * Picker follows the runs, and never in a run its host says holds none (`holdsFailures`), else it goes on at once and
+ * no client hears of it. A worker's connection that closes lets a stop no pause bar shows go on; a stop the bar shows
+ * waits there for its answer. An agent (the service's MCP server, `run-agent.ts`) hears what each worker says
+ * (`heard`), has a run's workers tell what their tests do (`followRun`), and, at a stop, reads the page's ARIA snapshot
+ * (`snapshot`), acts on an element of it by its ref (`act`), ranks an element's locators (`refLocator`) and shares the
+ * browser with Playwright's own tools (`bind`); a stop it asked for (Pause, Step, Run to) is said to be the agent's
+ * (`RunStop.by`). Every surface can end the test at a stop (`end`, for a worker that takes it). A run started in a
+ * terminal attaches as the editor's own do, under a ref the host never built (`terminal`): it starts with the editor's
+ * breakpoints (`setEditorBreakpoints`), ends 5 s after its last worker left, and holds a failure only while a Runs
+ * window follows the runs.
  */
 import * as path from 'node:path';
 import type * as net from 'node:net';
@@ -60,6 +63,7 @@ import type {
   RunSession,
   RunStop,
   RunTest,
+  SetBreakpointsParams,
   SetRunBreakpointsParams,
 } from './protocol.js';
 import type { HubAction } from '@piwitests/core/run-hub';
@@ -254,6 +258,12 @@ export interface RunSessionsOptions {
    */
   sessionStarted?(ref: string, again: boolean): void;
   /**
+   * Whether the run of `ref` was started in a terminal, by no command of the host's (a ref it never built): it is shown
+   * as one (`RunSession.terminal`), starts with the editor's breakpoints (`setEditorBreakpoints`), and holds a failure
+   * only while a person follows the runs in Piwi Picker (`followed`), so it never waits for nobody. False by default.
+   */
+  terminal?(ref: string): boolean;
+  /**
    * Why this host does not start an intent at any stop, whatever the worker takes (the desktop app's server, which no
    * editor records into nor checks with); null for one it starts. Such an intent is refused, and left out of
    * `intentsOf`.
@@ -303,6 +313,8 @@ interface Session {
   root: string | null;
   workers: Map<number, Worker>;
   ended: boolean;
+  /** Started in a terminal (`RunSessionsOptions.terminal`). */
+  terminal: boolean;
   /** What the client last heard of it, as sent and as text, and when; null before it heard anything. */
   heard: RunSession | null;
   sent: string;
@@ -318,10 +330,10 @@ interface Session {
 }
 
 /**
- * What a request asks a worker: an image, what it takes but the click counts its input carries, its events and the
- * agent's requests, and each of those.
+ * What a request asks a worker: an image, what it takes but the click counts its input carries, its events, the
+ * agent's requests and End the test (a control), and each of the agent's requests.
  */
-type Asked = 'image' | Exclude<RunTake, 'input-clicks' | 'events' | 'agent'> | AgentQuery;
+type Asked = 'image' | Exclude<RunTake, 'input-clicks' | 'events' | 'agent' | 'end'> | AgentQuery;
 
 /** The request asking a worker `what`, at the stop `stop` but for an image. */
 function requestOf(request: number, what: Asked, stop: number, extra: RequestExtra): HubToRun {
@@ -374,6 +386,15 @@ interface RequestExtra {
   value?: string | null;
 }
 
+/** The lines a client names, as files and 0-based lines: a place that names no file's line is left out. */
+function filesOf(places: readonly unknown[]): Array<{ file: string; line: number }> {
+  return places.flatMap((place) => {
+    const { uri, line } = (place ?? {}) as { uri?: unknown; line?: unknown };
+    const file = typeof uri === 'string' ? uriToPath(uri) : null;
+    return file && typeof line === 'number' && Number.isInteger(line) && line >= 0 ? [{ file, line }] : [];
+  });
+}
+
 function uriToPath(uri: string): string | null {
   try {
     return fileURLToPath(uri);
@@ -386,6 +407,10 @@ export class RunSessions {
   private readonly sessions = new Map<string, Session>();
   /** The breakpoints a client sent for each run, as files and 0-based lines, newest last. */
   private readonly breakpoints = new Map<string, Array<{ file: string; line: number }>>();
+  /**
+   * The editor's breakpoints as the client last sent them (`setEditorBreakpoints`): a terminal's run starts with them.
+   */
+  private editorBreakpoints: Array<{ file: string; line: number }> = [];
   /** The refs whose command ended (`commandEnded`), the latest 50: a session of one is a rerun's. */
   private readonly endedCommands = new Set<string>();
   /** The runs an agent follows (`followRun`), whose workers tell what their tests do, the latest 50. */
@@ -415,11 +440,13 @@ export class RunSessions {
       return () => {};
     }
     if (!session) {
+      const terminal = !!this.options.terminal?.(attach.ref);
       session = {
         ref: attach.ref,
         root: this.options.rootOf(attach.cwd),
         workers: new Map(),
         ended: false,
+        terminal,
         heard: null,
         sent: '',
         sentAt: 0,
@@ -430,6 +457,8 @@ export class RunSessions {
         resumedSaid: false,
       };
       this.sessions.set(attach.ref, session);
+      // A terminal's run starts with the editor's breakpoints, as lines of its code: the files as they stand now.
+      if (terminal && !this.breakpoints.has(attach.ref)) this.keepBreakpoints(attach.ref, this.editorBreakpoints);
       this.options.sessionStarted?.(attach.ref, this.endedCommands.delete(attach.ref));
     }
     if (session.linger) clearTimeout(session.linger);
@@ -454,7 +483,9 @@ export class RunSessions {
     const own = session;
     socket.on('close', () => this.detach(own, worker));
     if (attach.holds) {
-      const holds = SHOWN_HOLDS.filter((h) => attach.holds!.includes(h) && (h !== 'failure' || this.holds(attach.ref)));
+      // A terminal's run holds a failure only while someone follows the runs: nobody may be there to answer it.
+      const failures = this.holds(attach.ref) && (!session.terminal || !!this.options.followed?.());
+      const holds = SHOWN_HOLDS.filter((h) => attach.holds!.includes(h) && (h !== 'failure' || failures));
       this.send(worker, { type: 'attached', holds, ...(this.options.host ? { host: this.options.host } : {}) });
     }
     const breakpoints = this.breakpoints.get(attach.ref);
@@ -528,10 +559,25 @@ export class RunSessions {
       case 'step':
       case 'resume':
       case 'finish':
-      case 'run-to': {
+      case 'run-to':
+      case 'end': {
         const worker = this.stoppedWorker(workers, named, params.since);
         if ('message' in worker) return worker;
         const stop = worker.stop!.id;
+        if (params.action === 'end') {
+          if (!worker.takes.has('end')) {
+            return refuse(`@piwitests/reporter ${worker.reporter || ''}`.trimEnd() + ' cannot end a test: update it.');
+          }
+          this.send(worker, { type: 'control', action: 'end', stop });
+          worker.askedBy = null;
+          return {
+            ok: true,
+            message:
+              worker.stop!.view.reason === 'failure'
+                ? 'The test failed already: it ends as it failed.'
+                : 'Ending the test: it is reported as skipped.',
+          };
+        }
         if (params.action === 'run-to') {
           const file = typeof params.place?.uri === 'string' ? uriToPath(params.place.uri) : null;
           const line = params.place?.line;
@@ -894,14 +940,15 @@ export class RunSessions {
     if (code && found.takes.has('requests') && found.takes.has('mock')) intents.push('mock');
     return [
       ...intents,
-      ...(['view', 'input', 'input-clicks', 'pick-at'] as const).filter((what) => found.takes.has(what)),
+      ...(['view', 'input', 'input-clicks', 'pick-at', 'end'] as const).filter((what) => found.takes.has(what)),
     ];
   }
 
   /**
    * What the stop of a run's worker takes from `viewer` now, of `intentsOf`: the input (and the click counts it carries,
-   * `input-clicks`) only while `viewer` watches its live view, and, at a stop no pause bar shows, the actions in the
-   * test's window (Pick, Record, Assert, Assert a region) only then too, driven through that view.
+   * `input-clicks`) only while `viewer` watches its live view, at a stop no pause bar shows the actions in the test's
+   * window (Pick, Record, Assert, Assert a region) only then too, driven through that view, and End the test but at a
+   * failure, which Resume ends as it failed.
    */
   stopIntentsOf(ref: string, worker: number, viewer: Viewer | null): HubAction[] {
     const found = this.sessions.get(ref)?.workers.get(worker);
@@ -911,7 +958,9 @@ export class RunSessions {
     return this.intentsOf(ref, worker).filter((what) =>
       what === 'input' || what === 'input-clicks'
         ? watching
-        : what === 'mock' || what === 'view' || what === 'pick-at' || inWindow,
+        : what === 'end'
+          ? found.stop!.view.reason !== 'failure'
+          : what === 'mock' || what === 'view' || what === 'pick-at' || inWindow,
     );
   }
 
@@ -964,18 +1013,25 @@ export class RunSessions {
   /** `piwi/setRunBreakpoints`: the run's workers stop at these lines from now on, a worker that starts later too. */
   setBreakpoints(params: SetRunBreakpointsParams): void {
     if (typeof params?.ref !== 'string' || !Array.isArray(params.places)) return;
-    const files = params.places.flatMap((place) => {
-      const file = typeof place?.uri === 'string' ? uriToPath(place.uri) : null;
-      return file && Number.isInteger(place.line) && place.line >= 0 ? [{ file, line: place.line }] : [];
-    });
-    this.breakpoints.delete(params.ref);
-    this.breakpoints.set(params.ref, files);
+    const files = filesOf(params.places);
+    this.keepBreakpoints(params.ref, files);
+    const session = this.sessions.get(params.ref);
+    for (const worker of session?.workers.values() ?? []) this.sendBreakpoints(worker, files, session!.root);
+  }
+
+  /** `piwi/setBreakpoints`: the editor's breakpoints as it holds them now, which a terminal's run starts with. */
+  setEditorBreakpoints(params: SetBreakpointsParams): void {
+    if (Array.isArray(params?.places)) this.editorBreakpoints = filesOf(params.places);
+  }
+
+  /** Keep a run's breakpoints, for its workers that connect later, those of the 50 latest runs. */
+  private keepBreakpoints(ref: string, files: Array<{ file: string; line: number }>): void {
+    this.breakpoints.delete(ref);
+    this.breakpoints.set(ref, files);
     for (const oldest of this.breakpoints.keys()) {
       if (this.breakpoints.size <= MAX_KEPT_RUNS) break;
       this.breakpoints.delete(oldest);
     }
-    const session = this.sessions.get(params.ref);
-    for (const worker of session?.workers.values() ?? []) this.sendBreakpoints(worker, files, session!.root);
   }
 
   /** `piwi/pausedPage`: an image of a stopped worker's page, null when there is none. */
@@ -1249,6 +1305,7 @@ export class RunSessions {
           takes: [...worker.takes],
         })),
       ended: session.ended,
+      ...(session.terminal ? { terminal: true } : {}),
     };
   }
 

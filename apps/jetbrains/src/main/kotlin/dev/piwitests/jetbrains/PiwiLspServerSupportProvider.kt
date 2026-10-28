@@ -197,6 +197,8 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     @JsonNotification("piwi/statusChanged")
     fun statusChanged(status: StatusResult) {
         project.service<PiwiProjectService>().statusChanged(status)
+        // The breakpoints are read under the Playwright configs the status names: the service hears them as they stand.
+        project.service<PiwiRunSessions>().breakpointsChanged()
     }
 
     /** A failure moved with an edit, or its line changed since the run: the tool window's list. */

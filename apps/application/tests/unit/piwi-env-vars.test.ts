@@ -207,6 +207,9 @@ describe('PIWI_ENV_VARS registry', () => {
       'PIWI_RUN_CHANNEL',
       'PIWI_RUN_REF',
       'PIWI_EDITOR_SEND',
+      // Read by the reporter of a run started in a terminal, which follows an editor unless it is `off`; the feature
+      // catalog names it.
+      'PIWI_EDITOR',
     ]);
     const realMissing = missing.filter((v) => !knownFalsePositives.has(v));
     expect(realMissing.sort()).toEqual([]);

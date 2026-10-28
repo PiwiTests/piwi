@@ -499,9 +499,10 @@ describe("an agent's tools for the runs of the editor window", () => {
       ok: false,
       message: 'The test went on.',
     });
-    expect((await call('run_control', { run: ref, action: 'end', stop: since })).piwi.message).toContain(
-      'Ending a test from a stop is not built yet',
-    );
+    expect((await call('run_control', { run: ref, action: 'end', stop: since })).piwi).toEqual({
+      ok: false,
+      message: 'The test went on.',
+    });
     expect((await call('run_control', { run: ref, action: 'resume' })).piwi.message).toBe(
       '`stop` names the stop it answers.',
     );
@@ -650,6 +651,26 @@ describe('what an agent reads of the page', () => {
     const rest = await call('run_follow', { run, after: followed.piwi.next, wait: 0 });
     expect(rest.piwi.more).toBe(false);
     other.socket.destroy();
+  });
+
+  test('ends the test at a stop, answered as the test ends, for a reporter that takes it', async () => {
+    const { run, since, other } = await stoppedRun({});
+    const ending = call('run_control', { run, action: 'end', stop: since, wait: 10 });
+    await waitFor(() => other.heard.find((m) => m.type === 'control' && m.action === 'end'));
+    other.send({ type: 'running', stop: 1 });
+    other.send({ type: 'test-end', testId: 'id-adds a mug', status: 'skipped', pausedMs: 10 });
+    expect((await ending).piwi).toMatchObject({
+      ok: true,
+      message: 'Ending the test: it is reported as skipped. The test ended: skipped.',
+    });
+    other.socket.destroy();
+    const older = await stoppedRun({}, RUN_TAKES.filter((take) => take !== 'end') as RunTake[]);
+    expect((await call('run_control', { run: older.run, action: 'end', stop: older.since })).piwi).toEqual({
+      ok: false,
+      message: '@piwitests/reporter 0.60.0 cannot end a test: update it.',
+    });
+    expect(older.other.heard.some((m) => m.type === 'control' && m.action === 'end')).toBe(false);
+    older.other.socket.destroy();
   });
 
   test('reads a stopped page only of a worker whose reporter takes `agent`', async () => {

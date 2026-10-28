@@ -198,6 +198,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   `writeDiscovery` renames a 0600 file into a 0700 folder this user owns, never a link; a reader skips a folder that is
   a link, another user's or open to others, reads only files this user owns, and deletes only a file naming this
   machine (`host`) and a process that is gone. Checked by `tests/discovery.test.ts`.
+- **A run started in a terminal never waits for nobody, and its Stop stays the terminal's.** Its session (a
+  `terminal-` ref the service never built, `RunSession.terminal`) holds a failure only while a Runs window follows the
+  runs, and the clients offer no Stop for it. Checked by `tests/run-sessions.test.ts` ("takes a run started in a
+  terminal …"). ([ARCHITECTURE.md](ARCHITECTURE.md#run-sessions))
   ([ARCHITECTURE.md](ARCHITECTURE.md#the-discovery-file))
 - **Every way the service stops removes its discovery file**: `shutdown`, `exit` and the function `startServer`
   returns, and in `src/main.ts` the process's `exit`, `SIGINT`, `SIGTERM` and `SIGHUP`. Checked by

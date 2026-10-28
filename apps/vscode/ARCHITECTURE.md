@@ -159,7 +159,7 @@ What the extension stores:
 
 The context keys the extension sets, which `package.json` reads in `when` clauses: `piwi.active`, `piwi.failuresView`,
 `piwi.followEditor`, `piwi.hasCoverage`, `piwi.recording`, `piwi.recordingPaused`, and the run control's
-`piwi.runActive`, `piwi.runPausable`, `piwi.runStopped`, `piwi.runResumed` and `piwi.runCanShare`
+`piwi.runActive`, `piwi.runPausable`, `piwi.runStopped`, `piwi.runResumed`, `piwi.runCanShare` and `piwi.runCanEnd`
 ([Run control](#run-control)).
 
 ## Walkthrough
@@ -318,16 +318,19 @@ session. The initialization options say so (`runControl: true`). What the servic
 [Run control](../../packages/editor/ARCHITECTURE.md#run-control) in the editor service's reference.
 
 **Sessions.** The extension keeps the latest `piwi/runSessionChanged` of each ref until one says `ended`, or the service
-stops (`onDidChangeState`).
+stops (`onDidChangeState`). A run started in a terminal (`RunSession.terminal`) is one too: its stops say `run in a
+terminal` (`pausedText`), and it has no Stop, its process being the terminal's (`ControlState.stoppable`).
 
 **Commands.**
 
 - **Pause** (`piwi.pauseRun`: the running workers of every run of the window) and **Stop** (`piwi.stopRun`, which
   terminates the ref's task), while a run is live;
 - **Resume**, **Step**, **Run to the cursor** (`run-to` the caret's line) and **Finish** (`piwi.resumeRun`,
-  `piwi.stepRun`, `piwi.runToCursor`, `piwi.finishRun`), while a worker is stopped.
+  `piwi.stepRun`, `piwi.runToCursor`, `piwi.finishRun`), while a worker is stopped;
+- **End the test** (`piwi.endTest`, `end`), at a stop whose worker takes `end` and is no failure (`canEnd`, the
+  `piwi.runCanEnd` context key), with no key.
 
-All but Stop send `piwi/runControl`, the four that answer a stop naming it (`since`); an answer with `ok: false` shows
+All but Stop send `piwi/runControl`, those that answer a stop naming it (`since`); an answer with `ok: false` shows
 as an information message. The commands show in the status bar beside the run's progress (`controlItems`), and in the
 palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped`, and
 `piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The keys: [Keybindings](#keybindings).
@@ -335,11 +338,11 @@ palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.r
 **A stop.** A stop opens its file at its line once (`stopKey`). It is drawn as the execution point:
 `media/execution-point.svg` in the gutter, and the line's background in `piwi.executionPointBackground` (the debugger's
 stack frame color by default), with a hover that holds the controls. A CodeLens above it reads `pausedText`
-(`Paused · <title> · attempt N`, the attempt on a retry only) after `$(debug-pause)`, then Resume, Step, Run to cursor
-and Finish, each naming its worker and its stop; one whose stop went on says `the test went on.` (`targetStop`). The
-choice among several stops shows the same text after `$(debug-pause)`; the hover and the paused page's caption show it
-as plain text. A key or a palette command acts on the stop at the caret's line, else the only one, else asks
-(`stopsFor`).
+(`Paused · <title> · attempt N`, the attempt on a retry only) after `$(debug-pause)`, then Resume, Step, Run to cursor,
+Finish and, where `canEnd`, End test, each naming its worker and its stop; one whose stop went on says `the test went
+on.` (`targetStop`). The choice among several stops shows the same text after `$(debug-pause)`; the hover and the paused
+page's caption show it as plain text. A key or a palette command acts on the stop at the caret's line, else the only
+one, else asks (`stopsFor`).
 
 **Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when it
 is first heard, a rerun under the ref of a run that ended included: `heardSession`). `EditLog` keeps the edits that
@@ -361,7 +364,9 @@ click on an image the view no longer shows picks nothing.
 (`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the
 run's code (`runPlaces`). A breakpoint the run was given, known by `vscode.Breakpoint.id`, keeps its line while it only
 moved with the edits; another is mapped back through them. They go only to a run whose places differ from those its
-command started with or was last sent (`breakpointUpdates`), and once to a run as its first worker connects.
+command started with or was last sent (`breakpointUpdates`), and once to a run as its first worker connects. The service
+hears them as they stand too (`piwi/setBreakpoints`, as the service starts, as the Playwright configs change and as they
+change, only when they differ): a run started in a terminal starts with them.
 
 **A held failure** (`reason: 'failure'`) is `Failed · <how it failed> · attempt N` after `$(error)`, with Resume alone
 among its controls. A stop an agent asked for (`RunStop.by: 'agent'`) reads `Paused by the agent · <title>`.

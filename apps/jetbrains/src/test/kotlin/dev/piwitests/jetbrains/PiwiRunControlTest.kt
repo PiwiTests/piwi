@@ -51,6 +51,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private lateinit var remote: RunRemote
     private val controls = CopyOnWriteArrayList<RunControlParams>()
     private val breakpoints = CopyOnWriteArrayList<SetRunBreakpointsParams>()
+    private val editorBreakpoints = CopyOnWriteArrayList<SetBreakpointsParams>()
     private val pages = CopyOnWriteArrayList<PausedPageParams>()
     private val ended = CopyOnWriteArrayList<CommandEndedParams>()
     private val started = CopyOnWriteArrayList<StopActionParams>()
@@ -88,6 +89,11 @@ class PiwiRunControlTest : BasePlatformTestCase() {
 
             override fun setBreakpoints(params: SetRunBreakpointsParams) {
                 breakpoints += params
+            }
+
+            override fun setEditorBreakpoints(params: SetBreakpointsParams): Boolean {
+                editorBreakpoints += params
+                return true
             }
 
             override fun commandEnded(params: CommandEndedParams) {
@@ -331,7 +337,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         hear(taking("ed-7", file, 4, since))
         val inlay = sessions.shown().inlays.single()
         val renderer = inlay.renderer as StopInlay
-        assertEquals(Glue.StopControl.entries + Glue.StopAction.entries, renderer.links)
+        assertEquals((Glue.StopControl.entries - Glue.StopControl.END) + Glue.StopAction.entries, renderer.links)
         assertEquals(Glue.StopAction.MOCK, renderer.controlAt(inlay, renderer.calcWidthInPixels(inlay) - 1))
         val popup = sessions.stopActions(sessions.stops().single()).getChildren(null).mapNotNull { it.templatePresentation.text }
         assertEquals(listOf("Resume", "Step", "Run to Caret", "Finish", PiwiRunSessions.SHOW_PAUSED_PAGE) + Glue.StopAction.entries.map { it.label }, popup)
@@ -684,6 +690,43 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         } finally {
             WriteAction.runAndWait<Throwable> { manager.allBreakpoints.filter { it.type === type }.forEach { manager.removeBreakpoint(it) } }
             // No service runs here: a read leaves nothing of the pushed status to the next tests.
+            service.refreshStatus()
+            val deadline = System.currentTimeMillis() + 10_000
+            while (service.status != null && System.currentTimeMillis() < deadline) Thread.sleep(20)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+    }
+
+    /**
+     * A run started in a terminal: the service hears the IDE's breakpoints as they stand, which such a run starts with;
+     * its stop says where it runs, offers End the Test, which answers it, and no Stop, which is the terminal's.
+     */
+    fun testARunStartedInATerminalTakesTheBreakpointsAndEndsThere() {
+        val type = TestLineBreakpointType()
+        XBreakpointType.EXTENSION_POINT_NAME.point.registerExtension(type, testRootDisposable)
+        val spec = file("tests/checkout.spec.ts", "test('pays', async ({ page }) => {\n  await page.goto('/');\n});\n")
+        val service = project.service<PiwiProjectService>()
+        service.statusChanged(StatusResult(listOf(ContextStatus(root = base.path, connected = true))))
+        val manager = XDebuggerManager.getInstance(project).breakpointManager
+        try {
+            WriteAction.runAndWait<Throwable> { manager.addLineBreakpoint(type, spec.url, 1, null) }
+            assertEquals(
+                SetBreakpointsParams(listOf(EditorBreakpoint(uri(spec), 1))),
+                waitFor("the IDE's breakpoints") { editorBreakpoints.lastOrNull()?.takeIf { it.places.isNotEmpty() } },
+            )
+            val since = "2026-10-25T10:00:21.000Z"
+            val stop = RunStop("breakpoint", "Fill \"one\" locator('input')", uri(spec), 1, 2, null, true, since)
+            hear(RunSession("terminal-41-1", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, takes = listOf("end"))), terminal = true))
+            val renderer = sessions.shown().inlays.single().renderer as StopInlay
+            assertEquals("Paused · Fill \"one\" locator('input') · run in a terminal", renderer.text)
+            assertEquals(Glue.StopControl.END, renderer.links.last())
+            myFixture.openFileInEditor(spec)
+            val actions = ActionManager.getInstance()
+            assertFalse("a terminal's run is the terminal's to stop", myFixture.testAction(actions.getAction("Piwi.StopRun")).isEnabled)
+            assertTrue(myFixture.testAction(actions.getAction("Piwi.EndTest")).isEnabled)
+            assertEquals(RunControlParams("terminal-41-1", 0, "end", since = since), waitFor("End the Test") { controls.firstOrNull() })
+        } finally {
+            WriteAction.runAndWait<Throwable> { manager.allBreakpoints.filter { it.type === type }.forEach { manager.removeBreakpoint(it) } }
             service.refreshStatus()
             val deadline = System.currentTimeMillis() + 10_000
             while (service.status != null && System.currentTimeMillis() < deadline) Thread.sleep(20)
