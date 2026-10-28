@@ -169,7 +169,6 @@ export async function buildSet(set, { say }) {
   set.projectId = await set.instance.createProject();
   say('the "CI" runs: the shop as it shipped (green), then the redesign (red)');
   set.ciDir = path.join(dir, 'ci');
-  set.reports = { shipped: path.join(logs, 'ci-shipped.json') };
   const ci = (commit, name, extraEnv) =>
     startCiRun({
       origin: repo.origin,

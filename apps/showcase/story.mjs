@@ -3,7 +3,6 @@
 import { beat, expect, waitFor } from './lib/script.mjs';
 import { TILES } from './lib/set.mjs';
 import { Agent, refOf, runsServer } from './lib/agent.mjs';
-import { ciSnapshots } from './lib/instance.mjs';
 import { PAGE_OBJECT, SPEC, push, read } from './lib/workspace.mjs';
 
 /** The page object's line the test fails at, and the call on it. */
@@ -98,7 +97,7 @@ export const STORY = [
         .first()
         .waitFor();
     },
-    async check({ dashboard, set, state, instance, skip }) {
+    async check({ dashboard, state, instance }) {
       const run = state.redRun;
       expect(run.status === 'failed', `the latest run is red (${run.status})`);
       expect(run.origin === 'ci', `the latest run is a CI run (${run.origin})`);
@@ -127,24 +126,15 @@ export const STORY = [
         `the healing reads the broken locator: ${JSON.stringify(healing.failingLocator)}`,
       );
       const candidate = healing.recommendation?.recommended?.locator ?? null;
-      if (candidate === FIXED) {
-        const text = (selector) => async () => {
-          const element = dashboard.locator(selector).first();
-          return (await element.isVisible()) ? element.innerText() : null;
-        };
-        const panel = await waitFor(text('[data-shot="alternative-locators"]'), "the failure page's healing panel");
-        expect(panel.includes("'Pay now'"), `the healing panel's candidate is ${FIXED}: ${panel.slice(0, 200)}`);
-        const mostLikely = await waitFor(text('[data-shot="most-likely"]'), "the failure page's Most likely");
-        expect(/Pay now|Place order/.test(mostLikely), `Most likely names the button: ${mostLikely.slice(0, 200)}`);
-        return;
-      }
-      expect(candidate === null, `the healing's candidate is ${candidate}, not ${FIXED}`);
-      const why = await instance.whyNoHealing(state.failing.testCaseId, `${PAGE_OBJECT}:${FAILING_LINE}`, {
-        snapshots: ciSnapshots(set.reports.shipped, 'places an order'),
-        ciDir: set.ciDir,
-      });
-      expect(why, `the healing has no candidate, and no known bug explains it`);
-      skip(why.bug, `the healing panel's candidate ${FIXED}, and Most likely naming it (${why.detail})`);
+      expect(candidate === FIXED, `the healing's candidate is ${FIXED}: ${candidate}`);
+      const text = (selector) => async () => {
+        const element = dashboard.locator(selector).first();
+        return (await element.isVisible()) ? element.innerText() : null;
+      };
+      const panel = await waitFor(text('[data-shot="alternative-locators"]'), "the failure page's healing panel");
+      expect(panel.includes("'Pay now'"), `the healing panel's candidate is ${FIXED}: ${panel.slice(0, 200)}`);
+      const mostLikely = await waitFor(text('[data-shot="most-likely"]'), "the failure page's Most likely");
+      expect(/Pay now|Place order/.test(mostLikely), `Most likely names the button: ${mostLikely.slice(0, 200)}`);
     },
   }),
 

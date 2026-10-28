@@ -22,8 +22,8 @@ How the set, the script and the beats work is in [`ARCHITECTURE.md`](ARCHITECTUR
 - **Every beat with a `run` has a `check` that fails when its feature breaks**, read from what the feature left: the
   file on disk, the instance's API, the editor's or the Runs window's DOM.
 - **A check skips an assertion only for a known product bug, and only once it has seen that bug's state**
-  (`context.skip(bug, what)`, e.g. `instance.whyNoHealing`), never unconditionally: the skip goes away by itself when
-  the bug is fixed. Each one is listed in [Known bugs](ARCHITECTURE.md#known-bugs).
+  (`context.skip(bug, what)`, as beat 9 does once its run page stayed at `Initializing`), never unconditionally: the
+  skip goes away by itself when the bug is fixed. Each one is listed in [Known bugs](ARCHITECTURE.md#known-bugs).
 - **A line is at most two rows of 42 characters, and a beat's lines read at 17 characters a second at most**
   (`lintLines`; `node showcase.mjs --lint`). The lines are the subtitles.
 - **The set lives in a new folder of the temporary directory, which every app's temporary files, the editors'
