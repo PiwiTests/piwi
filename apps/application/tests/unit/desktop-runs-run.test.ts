@@ -1,10 +1,12 @@
 /**
  * A real Playwright run under the desktop build's hub, through the built reporter: the environment the desktop shell
  * gives a run it starts (`PIWI_RUN_CHANNEL` from the server, `PIWI_RUN_REF`, `PIWI_ORIGIN_REF` naming a failure
- * cluster), and Piwi Picker on the hub with the desktop token. The run stops at `page.pause()`, is paused from
- * outside, stepped, clicked through the live view and picked on its image, and a failure is held at its line while
- * the window shows the run. Headless, as the shell runs a reproduction. Skipped when the reporter is not built
- * (`npm run reporter:build`) or Chromium is not installed.
+ * cluster, `PIWI_EDITOR_SEND` naming where its picks go), and Piwi Picker on the hub with the desktop token. The run
+ * stops at `page.pause()`, is paused from outside, stepped, clicked through the live view and picked on its image, and
+ * a failure is held at its line while the window shows the run. Then the window alone steers a run: it pauses it,
+ * watches its live view, picks on its image, the locator coming to it to copy, mocks a request the page made, the code
+ * coming to it to copy, and clicks the page through the view. Headless, as the shell runs a reproduction. Skipped when
+ * the reporter is not built (`npm run reporter:build`) or Chromium is not installed.
  */
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -22,6 +24,7 @@ import {
   type HubStop,
   type HubWorker,
 } from '@piwitests/core/run-hub';
+import { parseSendPayload } from '@piwitests/core/editor-send';
 import { DesktopRuns } from '../../server/utils/desktop-runs';
 import type { DesktopRunEvent } from '#shared/desktop-runs';
 
@@ -41,10 +44,29 @@ const chromium = (() => {
 })();
 const runnable = fs.existsSync(reporter) && chromium;
 
-/** The page: a button at a place a click and a pick on the image name, and the heading it changes. */
+/**
+ * The page: a button at a place a click and a pick on the image name, the heading it changes, and the cart it fetches,
+ * whose response an interactive run keeps for Mock a request.
+ */
 const PAGE = `<!doctype html><meta charset="utf-8"><title>Shop</title>
 <style>body { margin: 0; font: 16px sans-serif } h1 { margin: 20px } #go { position: absolute; left: 100px; top: 100px; width: 120px; height: 40px }</style>
-<h1>Shop</h1><button id="go" onclick="document.querySelector('h1').textContent = 'Clicked'">Go</button>`;
+<h1>Shop</h1><button id="go" onclick="document.querySelector('h1').textContent = 'Clicked'">Go</button>
+<p id="cart"></p><script>fetch('/api/cart').then((r) => r.json()).then((c) => { document.getElementById('cart').textContent = c.items.length + ' items'; });</script>`;
+
+const CART = JSON.stringify({ items: [{ name: 'Mug', price: 12 }] });
+
+/** A test the window alone steers: it waits for a click on Go, which the window plays through the live view. */
+const WINDOW_SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
+test('steered from the window', async ({ page }) => {
+  await page.goto('${base}');
+  await expect(page.locator('#cart')).toHaveText('1 items');
+  for (let i = 0; i < 800; i++) {
+    if ((await page.locator('h1').textContent()) === 'Clicked') return;
+    await page.waitForTimeout(25);
+  }
+  throw new Error('nobody clicked');
+});
+`;
 
 const SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
 test('paused in its page', async ({ page }) => {
@@ -74,6 +96,7 @@ module.exports = class {
 `;
 
 let server: http.Server;
+let picks: http.Server;
 let runs: DesktopRuns;
 let picker: WebSocket;
 const messages: HubMessage[] = [];
@@ -115,12 +138,16 @@ const at = (stop: HubStop) => ({ ref: REF, worker: worker()!.worker, since: stop
 
 beforeAll(async () => {
   if (!runnable) return;
-  server = http.createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end(PAGE));
+  server = http.createServer((req, res) => {
+    if (req.url === '/api/cart') return void res.writeHead(200, { 'content-type': 'application/json' }).end(CART);
+    res.writeHead(200, { 'content-type': 'text/html' }).end(PAGE);
+  });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
   fs.rmSync(project, { recursive: true, force: true });
   fs.mkdirSync(path.join(project, 'tests'), { recursive: true });
   fs.writeFileSync(path.join(project, 'tests', 'shop.spec.cjs'), SPEC(base));
+  fs.writeFileSync(path.join(project, 'tests', 'window.spec.cjs'), WINDOW_SPEC(base));
   fs.writeFileSync(
     path.join(project, 'fixture.cjs'),
     `const { test: base, expect } = require('@playwright/test');
@@ -156,8 +183,57 @@ afterAll(async () => {
   picker?.close();
   runs?.close();
   await new Promise((resolve) => (server ? server.close(resolve) : resolve(null)));
+  await new Promise((resolve) => (picks ? picks.close(resolve) : resolve(null)));
   fs.rmSync(project, { recursive: true, force: true });
 });
+
+/**
+ * The server's route for the runs' picks (`POST /api/desktop/runs/picks`), as the reporter reaches it through
+ * `PIWI_EDITOR_SEND`: Send to editor's body, behind the desktop token, passed to the windows. Its address.
+ */
+async function picksRoute(): Promise<string> {
+  picks = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => (body += chunk));
+    req.on('end', () => {
+      if (req.headers.authorization !== `Bearer ${TOKEN}`) return void res.writeHead(401).end();
+      const payload = parseSendPayload(JSON.parse(body || 'null'));
+      if ('error' in payload || payload.kind !== 'locator') return void res.writeHead(400).end();
+      runs.picked({ locator: payload.text, file: payload.at?.file ?? null, line: payload.at?.line ?? null });
+      res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
+    });
+  });
+  await new Promise<void>((resolve) => picks.listen(0, '127.0.0.1', resolve));
+  return runs.picksAddress((picks.address() as AddressInfo).port)!;
+}
+
+/** Runs Playwright on one spec of the project, in the environment the desktop shell gives a run. */
+function runPlaywright(spec: string, extra: NodeJS.ProcessEnv): { exited: Promise<number | null>; output(): string } {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PIWI_RUN_CHANNEL: runs.runChannel!,
+    PIWI_RUN_REF: REF,
+    PIWI_ORIGIN: 'reproduce',
+    PIWI_ORIGIN_REF: '42',
+    PIWI_DESKTOP_CONFIG: path.join(project, 'no-desktop.json'),
+    ...extra,
+  };
+  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PAUSE_AT']) delete env[name];
+  if (!extra.PIWI_EDITOR_SEND) delete env.PIWI_EDITOR_SEND;
+  let output = '';
+  const exited = new Promise<number | null>((resolve) => {
+    const child = execFile(
+      process.execPath,
+      [requireHere.resolve('@playwright/test/cli'), 'test', spec],
+      { cwd: project, env, timeout: 90_000 },
+      () => {},
+    );
+    child.stdout?.on('data', (chunk) => (output += chunk));
+    child.stderr?.on('data', (chunk) => (output += chunk));
+    child.on('exit', (code) => resolve(code));
+  });
+  return { exited, output: () => output };
+}
 
 describe.skipIf(!runnable)('a run the desktop shell starts', () => {
   it('stops at page.pause() and at a failure, steered from Piwi Picker with the desktop token', async () => {
@@ -169,29 +245,7 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
       ok: true,
     });
 
-    const env: NodeJS.ProcessEnv = {
-      ...process.env,
-      PIWI_RUN_CHANNEL: runs.runChannel!,
-      PIWI_RUN_REF: REF,
-      PIWI_ORIGIN: 'reproduce',
-      PIWI_ORIGIN_REF: '42',
-      PIWI_DESKTOP_CONFIG: path.join(project, 'no-desktop.json'),
-    };
-    for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PAUSE_AT', 'PIWI_EDITOR_SEND']) {
-      delete env[name];
-    }
-    let output = '';
-    const exited = new Promise<number | null>((resolve) => {
-      const child = execFile(
-        process.execPath,
-        [requireHere.resolve('@playwright/test/cli'), 'test'],
-        { cwd: project, env, timeout: 90_000 },
-        () => {},
-      );
-      child.stdout?.on('data', (chunk) => (output += chunk));
-      child.stderr?.on('data', (chunk) => (output += chunk));
-      child.on('exit', (code) => resolve(code));
-    });
+    const { exited, output } = runPlaywright('tests/shop.spec.cjs', {});
 
     try {
       // page.pause() in a headless run: the image of the stop, its live view and a pick on the image.
@@ -241,7 +295,7 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
 
       expect(await exited).toBe(1);
     } catch (error) {
-      throw new Error(`${(error as Error).message}\n${output}`);
+      throw new Error(`${(error as Error).message}\n${output()}`);
     } finally {
       opened?.close();
     }
@@ -256,5 +310,90 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
     ]);
     // The window heard the run as Piwi Picker did.
     expect(window.some((e) => e.type === 'session' && e.session.ref === REF)).toBe(true);
+  }, 120_000);
+
+  it('is paused, watched, picked on its image and mocked from the window alone, its code there to copy', async () => {
+    picker.close();
+    const events: DesktopRunEvent[] = [];
+    const opened = (await runs.openWindow({ send: (e) => void events.push(e), buffered: () => 0, close: () => {} }))!;
+    let id = 0;
+    const send = (body: Record<string, unknown>) => runs.command({ viewer: opened.viewer, id: ++id, ...body });
+    const lastWorker = () =>
+      events
+        .filter(
+          (e): e is Extract<DesktopRunEvent, { type: 'session' }> => e.type === 'session' && e.session.ref === REF,
+        )
+        .pop()?.session.workers[0];
+    expect(await send({ type: 'show', ref: REF, on: true })).toMatchObject({ ok: true });
+
+    const { exited, output } = runPlaywright('tests/window.spec.cjs', { PIWI_EDITOR_SEND: await picksRoute() });
+    try {
+      // Paused from the window while the test waits for its click.
+      await waitFor(
+        () => lastWorker()?.test?.title.at(-1) === 'steered from the window' && lastWorker()?.state === 'running',
+      );
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(await send({ type: 'runControl', ref: REF, worker: null, action: 'pause', since: null })).toMatchObject({
+        ok: true,
+      });
+      const stop = await waitFor(() => (lastWorker()?.state === 'stopped' ? lastWorker()?.stop : undefined));
+      expect(stop).toMatchObject({ reason: 'pause', bar: false });
+      // Headless: the input and Assert a region wait for the window to watch the stop.
+      expect(stop.intents).toEqual(['mock', 'view', 'pick-at']);
+      const at = { ref: REF, worker: lastWorker()!.worker, since: stop.since };
+
+      // Watched live: its frames come to the window, which may now play input there.
+      expect(await send({ type: 'view', ...at, on: true })).toMatchObject({ ok: true });
+      const frame = await waitFor(() => events.find((e) => e.type === 'frame'));
+      expect(frame).toMatchObject({ ref: REF, since: stop.since, width: 800, height: 600 });
+      await waitFor(() => lastWorker()?.stop?.intents?.includes('input'));
+      expect(lastWorker()!.stop!.intents).toEqual(expect.arrayContaining(['assert-region', 'input', 'pick-at']));
+
+      // Picked on its image: the locator comes to the window, to copy, and the answer says so.
+      const picked = await send({ type: 'pick-at', ...at, x: 160, y: 120 });
+      expect(picked).toMatchObject({
+        ok: true,
+        locator: "getByRole('button', { name: 'Go' })",
+        message: "getByRole('button', { name: 'Go' }): copy it in the desktop app's window.",
+      });
+      const pick = await waitFor(() => events.find((e) => e.type === 'pick'));
+      expect(pick).toMatchObject({
+        type: 'pick',
+        pick: { locator: "getByRole('button', { name: 'Go' })", file: 'tests/window.spec.cjs' },
+      });
+
+      // Mock a request: the cart the page fetched, made into a route to copy in the window.
+      const listed = await send({ type: 'requests', ...at });
+      const cart = listed?.requests?.find((r) => r.url.endsWith('/api/cart'));
+      expect(cart).toMatchObject({ method: 'GET', status: 200 });
+      const mocked = await send({ type: 'mock', ...at, request: cart!.id });
+      expect(mocked).toMatchObject({
+        ok: true,
+        message: expect.stringMatching(/copy it in the desktop app's window\./),
+      });
+      const made = await waitFor(() => events.find((e) => e.type === 'stop-code'));
+      if (made.type !== 'stop-code') throw new Error('no code');
+      expect(made.code).toMatchObject({ ref: REF, action: 'mock', since: stop.since });
+      expect(made.code.code).toContain('page.route(');
+      expect(made.code.code).toContain('Mug');
+
+      // Clicked through the view: the test sees the click once it goes on.
+      expect(
+        await send({
+          type: 'input',
+          ...at,
+          events: [
+            { type: 'mouse', action: 'move', x: 160, y: 120 },
+            { type: 'mouse', action: 'click', x: 160, y: 120, button: 'left', clickCount: 1 },
+          ],
+        }),
+      ).toMatchObject({ ok: true });
+      expect(await send({ type: 'runControl', ...at, action: 'resume' })).toMatchObject({ ok: true });
+      expect(await exited).toBe(0);
+    } catch (error) {
+      throw new Error(`${(error as Error).message}\n${output()}`);
+    } finally {
+      opened.close();
+    }
   }, 120_000);
 });

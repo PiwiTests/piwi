@@ -3,7 +3,8 @@
  * the bundled server is the hub of (`server/utils/desktop-runs.ts`). The window is a peer of the same hub Piwi Picker
  * reaches over its WebSocket, through two routes behind the desktop guard: a stream (`GET /api/desktop/runs/events`)
  * of the hub's own messages and of the code made at a stop, and the hub's commands (`POST /api/desktop/runs/commands`),
- * each naming the stream it is from. Code from a stop comes to the window alone, for it to copy, never to Piwi Picker.
+ * each naming the stream it is from. Code from a stop, and the locators the runs' tests pick (`DESKTOP_PICKS_PATH`),
+ * come to the window alone, for it to copy, never to Piwi Picker.
  */
 import type {
   HubCommand,
@@ -14,8 +15,25 @@ import type {
 } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
 
-/** The most codes made at stops the server keeps, the latest, for a window that opens its stream later. */
+/** The most codes made at stops and locators picked the server keeps, the latest, for a window that opens later. */
 export const MAX_KEPT_STOP_CODES = 20;
+
+/**
+ * Where a run the shell starts sends the locators its tests pick (`PIWI_EDITOR_SEND`, as an editor's Send to editor
+ * pairing names its endpoint): the pause bar's **Pick a locator**, and a pick on the image of a stop. The server, which
+ * the shell asks for the address with the run channel, passes each one to the window, to copy.
+ */
+export const DESKTOP_PICKS_PATH = '/api/desktop/runs/picks';
+
+/**
+ * A locator a test of a run picked, as the window shows it to copy: the locator, and the file, relative to the run's
+ * folder, and the 1-based line of the call it was picked for, when the test named one.
+ */
+export interface DesktopRunPick {
+  locator: string;
+  file: string | null;
+  line: number | null;
+}
 
 /** What the window's stream sends. */
 export type DesktopRunEvent =
@@ -33,6 +51,8 @@ export type DesktopRunEvent =
   | HubCodeMessage
   /** The code itself, made at a stop of a run, for the window to copy; the latest ones again as the stream opens. */
   | { type: 'stop-code'; code: StopCode }
+  /** A locator a test of a run picked, for the window to copy; the latest ones again as the stream opens, with the codes. */
+  | { type: 'pick'; pick: DesktopRunPick }
   /** A sentence about a run, to show once: a stop that went on, a code that could not be made. */
   | { type: 'notice'; root: string | null; severity: 'information' | 'warning'; message: string };
 

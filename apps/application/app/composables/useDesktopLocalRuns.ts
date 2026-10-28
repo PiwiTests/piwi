@@ -29,6 +29,7 @@ import { commitUrl } from '#shared/scm-urls';
 import { specRunVerdict, type SpecRunResult, type SpecRunVerdict } from '@piwitests/core/bug-report';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { desktopJobVerdict, flakeLabJobReport, localRunOriginKind, newLocalRunRef } from '~/utils/desktop-job';
+import { desktopRunRef } from '~/utils/desktop-run-view';
 import type { ReproRequestView } from '#shared/desktop-repro';
 import type { FlakeLabJobReport } from '@piwitests/core/desktop-job';
 
@@ -208,6 +209,11 @@ export interface LocalRun {
   originRef: string | null;
   /** Shell id of the step currently spawned, for stopping it. */
   shellId: number | null;
+  /**
+   * The names its steps gave the bundled server, their hub, on its run channel (`desktop-<shell id>`), the latest
+   * last: the tray shows the hub's runs of these names in the run, live.
+   */
+  hubRefs: string[];
   stopRequested: boolean;
   /** Tests announced by Playwright's "Running N tests" lines, across steps. */
   progressTotal: number | null;
@@ -298,6 +304,8 @@ const MAX_LINES = 2000;
 const STOP_EXIT_FALLBACK_MS = 15_000;
 /** Finished runs kept in the tray; running ones are never dropped. */
 const MAX_FINISHED = 15;
+/** The names on the hub kept per run: one per step of its plan. */
+const MAX_HUB_REFS = 20;
 const OPTIONS_STORAGE_KEY = 'piwi:desktop-local-run-options';
 
 // Client-only plumbing shared by every composable instance. Runs are driven
@@ -448,6 +456,9 @@ export function useDesktopLocalRuns() {
     const exit = new Promise<number | null>((resolve) => exitResolvers.set(shellId, resolve));
     runByShellId.set(shellId, run);
     run.shellId = shellId;
+    run.hubRefs = [...run.hubRefs.filter((ref) => ref !== desktopRunRef(shellId)), desktopRunRef(shellId)].slice(
+      -MAX_HUB_REFS,
+    );
     const mine = pendingEvents.filter((p) => p.id === shellId);
     pendingEvents = startingSteps > 1 ? pendingEvents.filter((p) => p.id !== shellId) : [];
     startingSteps -= 1;
@@ -855,6 +866,7 @@ export function useDesktopLocalRuns() {
       startedAt: Date.now(),
       finishedAt: null,
       shellId: null,
+      hubRefs: [],
       stopRequested: false,
       progressTotal: null,
       progressDone: 0,

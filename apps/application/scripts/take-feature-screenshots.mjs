@@ -904,6 +904,61 @@ const REPRO_SCENE_STEPS = (() => {
  *                 so the hint never lands in an illustration by chance
  */
 /**
+ * The bundled server's hub of the runs the desktop shell starts, played in the page for a desktop scene: its stream
+ * (`/api/desktop/runs/events`) is an EventSource of the scene's, which `window.__hub.send` speaks on, every other
+ * stream the browser's own; its commands (`/api/desktop/runs/commands`) are answered by `answer`. Installed before the
+ * page loads.
+ */
+async function playDesktopRunHub(page, answer) {
+  await page.addInitScript(() => {
+    const Real = window.EventSource;
+    const open = [];
+    function HubStream(url, init) {
+      if (!String(url).includes('/api/desktop/runs/events')) return new Real(url, init);
+      const stream = { readyState: 1, closed: false, onmessage: null, onerror: null };
+      stream.close = () => {
+        stream.closed = true;
+        stream.readyState = 2;
+      };
+      open.push(stream);
+      return stream;
+    }
+    Object.assign(HubStream, { CONNECTING: 0, OPEN: 1, CLOSED: 2 });
+    window.EventSource = HubStream;
+    window.__hub = {
+      send: (event) => {
+        for (const stream of open) if (!stream.closed) stream.onmessage?.({ data: JSON.stringify(event) });
+      },
+      open: () => open.filter((stream) => !stream.closed).length,
+    };
+  });
+  await page.route('**/api/desktop/runs/commands', async (route) => {
+    const command = route.request().postDataJSON();
+    await route.fulfill({ json: { type: 'answer', id: command.id, ok: true, message: '', ...answer(command) } });
+  });
+}
+
+/** A JPEG of the shop page a desktop scene's run stops on, as a worker sends the image of a stop or a frame. */
+async function shopPageJpeg(context) {
+  const shot = await context.newPage();
+  await shot.setViewportSize({ width: 1280, height: 800 });
+  await shot.setContent(`<!doctype html><style>
+    body { margin: 0; font: 22px system-ui, sans-serif; color: #1f2937; background: #f9fafb }
+    header { background: #4c1d95; color: #fff; padding: 22px 40px; font-weight: 700; font-size: 28px; text-align: center }
+    main { padding: 40px; display: grid; grid-template-columns: 1fr 380px; gap: 40px }
+    .item { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; margin-bottom: 18px; display: flex; justify-content: space-between }
+    aside { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 28px }
+    button { margin-top: 24px; width: 100%; padding: 18px; font: inherit; font-weight: 600; color: #fff; background: #6d28d9; border: 0; border-radius: 10px }
+  </style><header>Acme shop</header><main><section><h1>Your cart</h1>
+    <div class="item"><span>Blue mug</span><span>€12.00</span></div>
+    <div class="item"><span>Coffee beans, 1 kg</span><span>€24.00</span></div></section>
+    <aside><h2>Total</h2><p>€36.00</p><button>Pay now</button></aside></main>`);
+  const data = (await shot.screenshot({ type: 'jpeg', quality: 70 })).toString('base64');
+  await shot.close();
+  return data;
+}
+
+/**
  * Opens a cluster page's Diagnosis: it is the card under the situation block when
  * the next step comes from the diagnosis, and otherwise a folded section of More
  * ways to fix, which this unfolds.
@@ -5345,6 +5400,125 @@ const SCENES = [
       await page.getByRole('textbox', { name: 'Team server URL' }).fill('https://piwi.acme.dev');
       await settle();
       await shoot('team-server', { of: wizard, pad: 12 });
+    },
+  },
+  {
+    name: 'desktop-run-live',
+    description:
+      'Local runs tray (desktop app): a run the shell started, stopped before its click on Pay, watched live, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',
+    tags: ['docs', 'desktop'],
+    out: 'docs',
+    outputs: ['desktop-run-live.png', 'desktop-run-live-code.png'],
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    localRunId: 41,
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, goto, settle, shoot }) {
+      const image = await shopPageJpeg(page.context());
+      await playDesktopRunHub(page, (command) => {
+        if (command.type === 'pausedPage')
+          return { image: { mime: 'image/jpeg', data: image, width: 1280, height: 800 } };
+        return {};
+      });
+      await goto('/test-runs/2');
+      await page.getByRole('button', { name: 'Run locally' }).first().click();
+      const tray = page.getByRole('region', { name: 'Local runs' });
+      await tray.waitFor();
+      await page.waitForFunction(() => window.__hub?.open() === 1);
+      const root = '/home/dev/code/acme-checkout';
+      const uri = `file://${root}/tests/checkout.spec.ts`;
+      const worker = {
+        worker: 0,
+        parallelIndex: 0,
+        state: 'stopped',
+        pausing: false,
+        intents: ['assert-region', 'mock', 'view', 'input', 'pick-at'],
+        test: {
+          id: 't1',
+          title: ['checkout', 'pays with a saved card'],
+          uri,
+          line: 11,
+          project: 'chromium',
+          retry: 0,
+          cannotPause: null,
+        },
+        stop: {
+          reason: 'breakpoint',
+          title: "Click getByRole('button', { name: 'Pay now' })",
+          uri,
+          line: 17,
+          character: 4,
+          locator: "getByRole('button', { name: 'Pay now' })",
+          bar: false,
+          since: 's1',
+          intents: ['assert-region', 'mock', 'view', 'input', 'pick-at'],
+        },
+      };
+      const session = {
+        ref: 'desktop-41',
+        root,
+        label: 'acme-checkout',
+        command: null,
+        project: 'checkout-web',
+        workers: [worker],
+        ended: false,
+      };
+      await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
+      await page.evaluate((s) => window.__hub.send({ type: 'session', session: s }), session);
+      const shown = tray.locator('[data-shot="desktop-run-worker"]');
+      await shown.getByRole('img', { name: /stopped before/ }).waitFor();
+      await shown.getByRole('button', { name: 'Watch live' }).click();
+      await page.evaluate(
+        (data) =>
+          window.__hub.send({
+            type: 'frame',
+            ref: 'desktop-41',
+            worker: 0,
+            since: 's1',
+            width: 1280,
+            height: 800,
+            data,
+          }),
+        image,
+      );
+      await shown.getByRole('img', { name: /The page, live/ }).waitFor();
+      await settle();
+      await shoot('', { of: '[aria-label="Local runs"]', pad: 0 });
+
+      // A Mock a request made at the stop: its block and its imports, each to copy.
+      const code = [
+        "    await page.route('**/api/cards', (route) =>",
+        '      route.fulfill({',
+        "        json: { cards: [{ last4: '4242' }] },",
+        '      }),',
+        '    );',
+      ].join('\n');
+      await page.evaluate(
+        ({ uri, code }) =>
+          window.__hub.send({
+            type: 'stop-code',
+            code: {
+              ref: 'desktop-41',
+              worker: 0,
+              since: 's1',
+              action: 'mock',
+              uri,
+              version: null,
+              line: 17,
+              code,
+              edits: [
+                { range: { start: { line: 17, character: 0 }, end: { line: 17, character: 0 } }, newText: `${code}\n` },
+              ],
+              message: 'Piwi made the mock to write above checkout.spec.ts:18.',
+              warnings: [],
+            },
+          }),
+        { uri, code },
+      );
+      await tray.locator('[data-shot="desktop-run-copy"]').waitFor();
+      await settle();
+      await shoot('code', { of: '[data-shot="desktop-run-copy"]', pad: 8 });
     },
   },
   {

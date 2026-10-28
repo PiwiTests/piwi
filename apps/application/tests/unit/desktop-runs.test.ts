@@ -10,6 +10,7 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { WebSocket } from 'ws';
+import { parsePairing } from '@piwitests/core/editor-send';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import { parseHubToRun, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
 import {
@@ -21,7 +22,7 @@ import {
 } from '@piwitests/core/run-hub';
 import { DESKTOP_HUB_CLIENT, DesktopRuns, insideFolder } from '../../server/utils/desktop-runs';
 import { isBrowserRequest, isOpenDesktopRoute } from '../../server/utils/desktop-access';
-import type { DesktopRunCommand, DesktopRunEvent } from '#shared/desktop-runs';
+import { DESKTOP_PICKS_PATH, type DesktopRunCommand, type DesktopRunEvent } from '#shared/desktop-runs';
 
 const TOKEN = `pd_${'ab'.repeat(32)}`;
 const ORIGIN = `chrome-extension://${'a'.repeat(32)}`;
@@ -519,7 +520,12 @@ describe('the window', () => {
       what: 'pick-at',
       value: { ok: true, message: 'Picked.', locator: "getByRole('button', { name: 'Pay' })" },
     });
-    expect(await picking).toMatchObject({ ok: true, locator: "getByRole('button', { name: 'Pay' })" });
+    // Its locator goes where the run's picks go, the window, never to an editor.
+    expect(await picking).toMatchObject({
+      ok: true,
+      locator: "getByRole('button', { name: 'Pay' })",
+      message: "getByRole('button', { name: 'Pay' }): copy it in the desktop app's window.",
+    });
 
     // The window closing ends its view: the worker stops it.
     window.close();
@@ -606,6 +612,23 @@ describe('the code from a stop of a desktop run', () => {
     window.close();
   });
 
+  it('takes the locators the runs pick at the address the shell names, for the window to copy', async () => {
+    const address = runs.picksAddress(4318)!;
+    // The address reads as an editor's Send to editor pairing, which the reporter posts a pick to with its token.
+    expect(parsePairing(address)).toEqual({ url: `http://127.0.0.1:4318${DESKTOP_PICKS_PATH}`, token: TOKEN });
+    const window = await openWindow();
+    runs.picked({ locator: "getByRole('button', { name: 'Go' })", file: 'tests/shop.spec.ts', line: 3 });
+    expect(window.events.filter((e) => e.type === 'pick')).toEqual([
+      { type: 'pick', pick: { locator: "getByRole('button', { name: 'Go' })", file: 'tests/shop.spec.ts', line: 3 } },
+    ]);
+    // A window that opens later is given the picks kept, with the codes, in the order they came.
+    const later = await openWindow();
+    const kept = later.events.filter((e) => e.type === 'pick' || e.type === 'stop-code').map((e) => e.type);
+    expect(kept.at(-1)).toBe('pick');
+    later.close();
+    window.close();
+  });
+
   it('reads a file of a linked folder alone, a link out of it included', () => {
     const outside = path.join(worktree, 'tests', 'checkout.spec.ts');
     expect(insideFolder(folder, path.join(folder, 'tests', 'checkout.spec.ts'))).toBe(true);
@@ -633,6 +656,7 @@ describe('the routes', () => {
       ['GET', '/api/desktop/live'],
       ['GET', '/api/desktop/runs/events'],
       ['POST', '/api/desktop/runs/commands'],
+      ['POST', '/api/desktop/runs/picks'],
     ] as const) {
       expect(isOpenDesktopRoute(route[0], route[1])).toBe(false);
     }

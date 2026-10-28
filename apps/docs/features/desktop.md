@@ -83,9 +83,8 @@ Playwright and the app's bundled Node. The first time, it asks for the project's
   on a failure cluster, and a [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app)
   sent from Piwi Picker.
 - **Wrong folder?** When none of the tests exist in the linked folder, the button opens the link's dialog.
-- **A `page.pause()` shows Piwi's [pause bar](/features/editor-run-control)** in a headed run, as in your editor's
-  runs: the app is the hub of every run it starts, reproductions and bisect steps included. A headless stop, or a
-  failure, goes on at once.
+- **Pause, step and watch** each worker from the tray, at a `page.pause()` or a failure too: [Desktop app
+  runs](/features/desktop-runs).
 
 The run uses your project's Playwright config, so its results come here, and the tray links to it.
 
@@ -164,3 +163,4 @@ verified against the project's signing key.
 - [MCP server](/features/mcp): the tools the assistants get
 - [Fix plans, reproduce & bisect](/features/fix-plans): the recipes the app runs
 - [Importing runs](/guide/importing-runs): the same import from the dashboard
+- [Desktop app runs](/features/desktop-runs): pause, step and watch the runs the app starts

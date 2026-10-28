@@ -221,3 +221,7 @@ runs (`@piwitests/editor/run-host`), plus these:
 - **Pick and Record in the test's window, and Assert, are declined**: they end in an editor (its Send to editor pairing,
   its recorder), which this server has none of. A failure no pause bar shows is held only in a run a window `show`s, or
   while Piwi Picker `follow`s the runs.
+- **A run's picks come back to this server, behind the guard.** The run channel's route also names
+  `POST /api/desktop/runs/picks` with the desktop token (`picksAddress`), which the shell gives each run as
+  `PIWI_EDITOR_SEND`: the pause bar's pick and a pick on the image reach the window to copy (`pick`), and a pick on the
+  image answers that it goes there (`DesktopRunSessions`).

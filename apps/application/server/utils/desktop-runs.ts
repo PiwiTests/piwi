@@ -18,7 +18,8 @@
  *    linked folder alone, and refused once the file was written since the run's first worker connected (`RunLines`).
  * Pick and Record in the test's window, and Assert, end in an editor (its Send to editor pairing, its recorder), which
  * this server has none of: they are refused here, and a pick on an image of the stop (`pick-at`) answers with the
- * locator it found.
+ * locator it found. The runs name this server as where their picks go (`PIWI_EDITOR_SEND`, `DESKTOP_PICKS_PATH`): a
+ * locator the pause bar's **Pick a locator** or a pick on the image picked comes to the window, to copy (`pick`).
  */
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -37,10 +38,15 @@ import {
   siblingSpecs,
   type DiskFile,
   type HubPeer,
-  type StopCode,
   type StopTarget,
 } from '@piwitests/editor/run-host';
-import { MAX_KEPT_STOP_CODES, isDesktopRunViewer, type DesktopRunEvent } from '#shared/desktop-runs';
+import {
+  DESKTOP_PICKS_PATH,
+  MAX_KEPT_STOP_CODES,
+  isDesktopRunViewer,
+  type DesktopRunEvent,
+  type DesktopRunPick,
+} from '#shared/desktop-runs';
 import { desktopLinkedFolders, type DesktopLink } from './desktop-links';
 
 /** What the hub's `welcome` and `GET /api/desktop/live` call this server. */
@@ -139,9 +145,25 @@ function diskFile(file: string): DiskFile {
   }
 }
 
+/** What the window keeps of a stop's code or a pick, to send again to a window that opens later. */
+type Kept = Extract<DesktopRunEvent, { type: 'stop-code' | 'pick' }>;
+
+/**
+ * The editor's sessions, with the sentence a pick on the image answers with: its locator goes where the run's picks
+ * go, this server's window, never to an editor.
+ */
+class DesktopRunSessions extends RunSessions {
+  override async pickAt(params: Parameters<RunSessions['pickAt']>[0]): ReturnType<RunSessions['pickAt']> {
+    const picked = await super.pickAt(params);
+    return picked.ok && picked.locator
+      ? { ...picked, message: `${picked.locator}: copy it in the desktop app's window.` }
+      : picked;
+  }
+}
+
 export class DesktopRuns {
   private readonly windows = new Map<string, RunWindow>();
-  private readonly codes: StopCode[] = [];
+  private readonly kept: Kept[] = [];
   /** The Piwi project of each linked folder a run ran in, by folder: null until its name is read. */
   private readonly projects = new Map<string, string | null>();
   private readonly lines = new RunLines();
@@ -152,7 +174,7 @@ export class DesktopRuns {
   private readonly startedAt = new Date().toISOString();
 
   private constructor(private readonly options: DesktopRunsOptions) {
-    this.sessions = new RunSessions({
+    this.sessions = new DesktopRunSessions({
       notify: (session) => this.hub?.push(session),
       // The window's stream and Piwi Picker's subscribed connections are the hub's peers alike.
       answersStops: () => !!this.hub?.answersStops(),
@@ -176,7 +198,7 @@ export class DesktopRuns {
     this.actions = new StopActions({
       sessions: this.sessions,
       writesCode: () => true,
-      notify: (code) => this.keep(code),
+      notify: (code) => this.keep({ type: 'stop-code', code }),
       notice: (root, message) => this.notice(root, 'warning', message),
       outcome: (outcome) => this.hub?.code(outcome),
       target: (file) => this.target(file),
@@ -237,6 +259,21 @@ export class DesktopRuns {
     return this.channel?.value ?? null;
   }
 
+  /**
+   * Where the runs the shell starts send the locators their tests pick (`PIWI_EDITOR_SEND`), as an editor's pairing
+   * address names its Send to editor endpoint: this server's route on `port`, with the desktop token, which its guard
+   * asks of every request. Null while the run channel does not listen.
+   */
+  picksAddress(port: number | string): string | null {
+    if (!this.channel) return null;
+    return `http://127.0.0.1:${port}${DESKTOP_PICKS_PATH}#${this.options.token}`;
+  }
+
+  /** A locator a test of a run picked (`POST DESKTOP_PICKS_PATH`): every window hears it, to copy, and it is kept. */
+  picked(pick: DesktopRunPick): void {
+    this.keep({ type: 'pick', pick });
+  }
+
   /** The hub as `GET /api/desktop/live` names it, in the shape an editor's `GET …/live` gives (`LiveAnswer`). */
   live(): LiveHub[] {
     if (!this.hub) return [];
@@ -255,7 +292,7 @@ export class DesktopRuns {
 
   /**
    * A window's stream opens: it is a peer of the hub, subscribed at once, and hears first the id its commands name
-   * it by, then the codes kept, then each run. Null while the hub does not listen, or past `MAX_WINDOWS`.
+   * it by, then the codes and the picks kept, then each run. Null while the hub does not listen, or past `MAX_WINDOWS`.
    */
   async openWindow(sink: DesktopRunSink): Promise<{ viewer: string; close(): void } | null> {
     if (!this.hub || this.windows.size >= MAX_WINDOWS) return null;
@@ -280,7 +317,7 @@ export class DesktopRuns {
     };
     this.windows.set(viewer, window);
     sink.send({ type: 'hello', viewer });
-    for (const code of this.codes) sink.send({ type: 'stop-code', code });
+    for (const kept of this.kept) sink.send(kept);
     await window.peer.command({ type: 'subscribe', id: 1 });
     return { viewer, close: () => this.closeWindow(viewer) };
   }
@@ -367,11 +404,14 @@ export class DesktopRuns {
     };
   }
 
-  /** A code made at a stop: every window hears it, to copy, and the latest are kept for a window that opens later. */
-  private keep(code: StopCode): void {
-    this.codes.push(code);
-    if (this.codes.length > MAX_KEPT_STOP_CODES) this.codes.shift();
-    for (const window of this.windows.values()) window.sink.send({ type: 'stop-code', code });
+  /**
+   * A code made at a stop, or a locator picked: every window hears it, to copy, and the latest are kept for a window
+   * that opens later.
+   */
+  private keep(kept: Kept): void {
+    this.kept.push(kept);
+    if (this.kept.length > MAX_KEPT_STOP_CODES) this.kept.shift();
+    for (const window of this.windows.values()) window.sink.send(kept);
   }
 
   private notice(root: string | null, severity: 'information' | 'warning', message: string): void {

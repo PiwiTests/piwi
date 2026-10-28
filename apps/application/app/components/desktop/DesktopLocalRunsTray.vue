@@ -5,8 +5,20 @@
  * desktop cousin of a browser's downloads tray. Mounted once in the default
  * layout; runs keep going while it is closed, and closing it never stops
  * anything. Renders nothing without the IPC bridge.
+ *
+ * Each run shows its workers live, as the bundled server, the hub of the runs
+ * the shell starts, tells them (`useDesktopRunHub`): the test each one runs
+ * and, at a stop, the page, the controls and the code a stop can make, to copy
+ * (`DesktopRunCopyList`). The window holds the hub's stream only while a run
+ * of the tray runs or the hub still has a live run: while it does, a headless
+ * stop waits for the window, so the tray opens on every stop it hears, and a
+ * notification says so when the window is in the background. A run whose
+ * part of the tray is open is shown live (`show`), so a failure no pause bar
+ * shows waits there too.
  */
+import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { flakeLabOutcome, type LocalRun } from '~/composables/useDesktopLocalRuns';
+import { desktopRunName, desktopStopPlace, desktopWorkerTest } from '~/utils/desktop-run-view';
 
 const store = useDesktopLocalRuns();
 const { runs, trayOpen, activeCount } = store;
@@ -14,6 +26,64 @@ const { runs, trayOpen, activeCount } = store;
 const available = ref(false);
 onMounted(() => {
   available.value = !!tauriCore();
+});
+
+const hub = useDesktopRunHub();
+const liveSessions = computed(() => Object.values(hub.state.sessions) as HubSession[]);
+
+/** The hub's live runs of a run of the tray: those of its steps' names. */
+function sessionsOf(run: LocalRun): HubSession[] {
+  return liveSessions.value.filter((session) => run.hubRefs.includes(session.ref));
+}
+
+/** The hub's live runs no run of the tray names: another window of the app started them. */
+const otherSessions = computed(() =>
+  liveSessions.value.filter((session) => !runs.value.some((run) => run.hubRefs.includes(session.ref))),
+);
+
+// The stream, only while it has something to show: a run of the tray runs, or the hub still has a live one.
+watch(
+  () => available.value && (activeCount.value > 0 || liveSessions.value.length > 0),
+  (on) => hub.want(on),
+  { immediate: true },
+);
+
+/** What the live region reads out: a test stopped, what a command answered. */
+const announcement = ref('');
+function announce(text: string) {
+  announcement.value = '';
+  requestAnimationFrame(() => {
+    announcement.value = text;
+  });
+}
+
+/** Every stop the window hears is shown: the tray opens on its run, and the system says so in the background. */
+function heardStop(session: HubSession, worker: HubWorker) {
+  const stop = worker.stop;
+  if (!stop) return;
+  trayOpen.value = true;
+  const run = runs.value.find((r) => r.hubRefs.includes(session.ref));
+  if (run) expandedByKey.value = { ...expandedByKey.value, [run.key]: true };
+  const test = desktopWorkerTest(worker) ?? desktopRunName(session);
+  const place = desktopStopPlace(stop, session.root);
+  const said = stop.reason === 'failure' ? `${test} failed at ${place}.` : `${test} stopped at ${place}.`;
+  announce(said);
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  if (!document.hidden && document.hasFocus()) return;
+  try {
+    new Notification(stop.reason === 'failure' ? 'A test failed and waits' : 'A test stopped', { body: said });
+  } catch {
+    // Notifications unavailable in this webview — the tray still shows the stop.
+  }
+}
+
+let stopListening: (() => void) | null = null;
+onMounted(() => {
+  stopListening = hub.onStop(heardStop);
+});
+onBeforeUnmount(() => {
+  stopListening?.();
+  hub.want(false);
 });
 
 // This component is mounted once in the layout, which makes it the natural
@@ -31,6 +101,18 @@ function isExpanded(run: LocalRun): boolean {
 function toggleExpanded(run: LocalRun) {
   expandedByKey.value = { ...expandedByKey.value, [run.key]: !isExpanded(run) };
 }
+
+/** The runs the window shows live: those of an open part of the open tray, and the others' while the tray is open. */
+const shownRefs = computed(() => {
+  if (!trayOpen.value) return [];
+  const refs = runs.value.filter(isExpanded).flatMap((run) => sessionsOf(run).map((session) => session.ref));
+  return [...refs, ...otherSessions.value.map((session) => session.ref)].sort();
+});
+watch(
+  () => shownRefs.value.join(' '),
+  () => hub.show(shownRefs.value),
+  { immediate: true },
+);
 
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
 
@@ -66,6 +148,8 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
 
 <template>
   <Teleport to="body">
+    <!-- Outside the tray, so a stop that opens it is read out from a region already there. -->
+    <p v-if="available" class="sr-only" aria-live="polite">{{ announcement }}</p>
     <section
       v-if="available && trayOpen"
       aria-label="Local runs"
@@ -96,10 +180,22 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
         />
       </header>
 
-      <div class="max-h-[60vh] overflow-y-auto divide-y divide-default">
-        <p v-if="runs.length === 0" class="px-3 py-6 text-sm text-muted text-center">
+      <div class="max-h-[70vh] overflow-y-auto divide-y divide-default">
+        <p v-if="runs.length === 0 && otherSessions.length === 0" class="px-3 py-6 text-sm text-muted text-center">
           No local runs yet — start one from a “Run locally” button.
         </p>
+
+        <DesktopRunCopyList :kept="hub.state.kept" :roots="hub.state.roots" />
+
+        <section v-if="otherSessions.length" aria-label="Other runs of the desktop app" class="px-3 py-2 space-y-2">
+          <DesktopRunSession
+            v-for="session in otherSessions"
+            :key="session.ref"
+            :session="session"
+            named
+            @announce="announce"
+          />
+        </section>
 
         <article v-for="run in runs" :key="run.key" class="px-3 py-2">
           <div class="flex items-center gap-2 min-w-0">
@@ -159,7 +255,16 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
               Live in Piwi — Run #{{ run.piwiRunId }}
             </UButton>
           </div>
-          <DesktopLocalRunConsole v-if="isExpanded(run)" :lines="run.lines" class="mt-2" />
+          <template v-if="isExpanded(run)">
+            <DesktopRunSession
+              v-for="session in sessionsOf(run)"
+              :key="session.ref"
+              :session="session"
+              class="mt-2"
+              @announce="announce"
+            />
+            <DesktopLocalRunConsole :lines="run.lines" class="mt-2" />
+          </template>
         </article>
       </div>
     </section>

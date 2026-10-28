@@ -474,6 +474,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/desktop',
       },
       {
+        title: 'Desktop app runs',
+        summary:
+          "The tests the desktop app runs, paused, stepped and watched live from its window, with a pick on the stopped page's image and the code a stop makes, to copy.",
+        needs: ['desktop', 'fixtures'],
+        where: 'Desktop app → Local runs',
+        doc: 'features/desktop-runs',
+      },
+      {
         title: 'Browser extension',
         summary: 'Record actions, build and lint locators, and copy context for an agent, straight from the page.',
         needs: ['extension'],
