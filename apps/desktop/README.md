@@ -49,8 +49,8 @@ channel, so a per-user install pulls a per-user update.
    window in its Local runs tray. A run nobody attends (Flake Lab, a bisect,
    a lab job, a run repeating its tests or in UI mode) is named apart
    (`-unattended`), and its failures never wait. The locators the tests pick
-   go back to the server (`PIWI_EDITOR_SEND`), which shows them in the window
-   to copy.
+   go back to the server (`PIWI_EDITOR_SEND`, with a token that opens that
+   route alone), which shows them in the window to copy.
 5. Files the OS hands to the app (drag & drop, "Open with", second-launch
    file arguments, macOS open events) are queued shell-side and drained by the
    dashboard over IPC (`desktop_take_pending_open_files` + a `piwi:open-files`

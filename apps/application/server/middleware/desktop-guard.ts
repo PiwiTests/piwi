@@ -16,11 +16,14 @@
 // only by the app itself and by tools the user has given the token to — not by
 // other local processes or web pages open in the user's browser.
 //
-// One route takes another token instead: an assistant answer's MCP endpoint,
+// Two routes take another token instead: an assistant answer's MCP endpoint,
 // which the Claude Code CLI this server starts calls with the token minted for
-// that answer, never the desktop token (see utils/assistant/turn-token.ts).
+// that answer (see utils/assistant/turn-token.ts), and the route the runs the
+// shell starts post their picks to, with the token minted for it
+// (`desktopPicksToken` in utils/desktop-access.ts). Neither is ever given the
+// desktop token.
 import { presentsAssistantTurnToken } from '../utils/assistant/turn-token';
-import { isOpenDesktopRoute, presentsDesktopToken } from '../utils/desktop-access';
+import { isOpenDesktopRoute, presentsDesktopPicksToken, presentsDesktopToken } from '../utils/desktop-access';
 
 export default defineEventHandler((event) => {
   const token = process.env.PIWI_DESKTOP_TOKEN;
@@ -32,6 +35,8 @@ export default defineEventHandler((event) => {
   if (isOpenDesktopRoute(event.method, path)) return;
   // A running answer's MCP endpoint, on that answer's token, from this machine.
   if (presentsAssistantTurnToken(event)) return;
+  // A run's pick, on the picks token, from this machine.
+  if (presentsDesktopPicksToken(event)) return;
 
   if (presentsDesktopToken(event, token)) return;
 

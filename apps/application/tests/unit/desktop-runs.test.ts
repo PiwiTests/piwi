@@ -8,7 +8,7 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { parsePairing } from '@piwitests/core/editor-send';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
@@ -21,7 +21,12 @@ import {
   type HubSession,
 } from '@piwitests/core/run-hub';
 import { DESKTOP_HUB_CLIENT, DesktopRuns, insideFolder } from '../../server/utils/desktop-runs';
-import { isBrowserRequest, isOpenDesktopRoute } from '../../server/utils/desktop-access';
+import {
+  desktopPicksToken,
+  isBrowserRequest,
+  isOpenDesktopRoute,
+  presentsDesktopPicksToken,
+} from '../../server/utils/desktop-access';
 import { DESKTOP_PICKS_PATH, type DesktopRunCommand, type DesktopRunEvent } from '#shared/desktop-runs';
 
 const TOKEN = `pd_${'ab'.repeat(32)}`;
@@ -682,8 +687,14 @@ describe('the code from a stop of a desktop run', () => {
 
   it('takes the locators the runs pick at the address the shell names, for the window to copy', async () => {
     const address = runs.picksAddress(4318)!;
-    // The address reads as an editor's Send to editor pairing, which the reporter posts a pick to with its token.
-    expect(parsePairing(address)).toEqual({ url: `http://127.0.0.1:4318${DESKTOP_PICKS_PATH}`, token: TOKEN });
+    // The address reads as an editor's Send to editor pairing, which the reporter posts a pick to with its token: one
+    // of its own, never the desktop token.
+    expect(parsePairing(address)).toEqual({
+      url: `http://127.0.0.1:4318${DESKTOP_PICKS_PATH}`,
+      token: desktopPicksToken(),
+    });
+    expect(desktopPicksToken()).toMatch(/^pdp_[0-9a-f]{64}$/);
+    expect(address).not.toContain(TOKEN);
     const window = await openWindow();
     runs.picked({ locator: "getByRole('button', { name: 'Go' })", file: 'tests/shop.spec.ts', line: 3 });
     expect(window.events.filter((e) => e.type === 'pick')).toEqual([
@@ -728,6 +739,51 @@ describe('the routes', () => {
     ] as const) {
       expect(isOpenDesktopRoute(route[0], route[1])).toBe(false);
     }
+  });
+
+  it('open the picks route alone with the picks token, from this machine, and nothing else with it', async () => {
+    vi.stubGlobal('defineEventHandler', (handler: unknown) => handler);
+    vi.stubGlobal('apiError', (opts: { statusCode: number; statusMessage?: string }) =>
+      Object.assign(new Error(opts.statusMessage), opts),
+    );
+    vi.stubEnv('PIWI_DESKTOP_TOKEN', TOKEN);
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    });
+    const guard = (await import('../../server/middleware/desktop-guard')).default as unknown as (e: never) => void;
+    const picks = desktopPicksToken();
+    const request = (method: string, path: string, headers: Record<string, string>, peer = '127.0.0.1') =>
+      ({
+        method,
+        path,
+        context: {},
+        node: { req: { headers: { host: '127.0.0.1:4318', ...headers }, socket: { remoteAddress: peer } }, res: {} },
+      }) as never;
+    const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
+    const refused = /Desktop access token required/;
+    expect(() => guard(request('POST', DESKTOP_PICKS_PATH, bearer(picks)))).not.toThrow();
+    expect(presentsDesktopPicksToken(request('POST', `${DESKTOP_PICKS_PATH}?x=1`, bearer(picks)))).toBe(true);
+    for (const [method, path] of [
+      ['GET', DESKTOP_PICKS_PATH],
+      ['POST', '/api/desktop/runs/commands'],
+      ['GET', '/api/desktop/runs/events'],
+      ['GET', '/api/desktop/run-channel'],
+      ['GET', '/api/projects'],
+      ['POST', '/mcp'],
+    ] as const) {
+      expect(() => guard(request(method, path, bearer(picks))), `${method} ${path}`).toThrow(refused);
+    }
+    // Only as a bearer, only from this machine, and only that token.
+    expect(() => guard(request('POST', DESKTOP_PICKS_PATH, { 'x-piwi-token': picks }))).toThrow(refused);
+    expect(() => guard(request('POST', DESKTOP_PICKS_PATH, { cookie: `piwi_token=${picks}` }))).toThrow(refused);
+    expect(() => guard(request('POST', DESKTOP_PICKS_PATH, bearer(picks), '192.168.1.9'))).toThrow(refused);
+    expect(() =>
+      guard(request('POST', DESKTOP_PICKS_PATH, { ...bearer(picks), origin: 'https://evil.example' })),
+    ).toThrow(refused);
+    expect(() => guard(request('POST', DESKTOP_PICKS_PATH, bearer(`pdp_${'0'.repeat(64)}`)))).toThrow(refused);
+    // The desktop token still opens it, as every route.
+    expect(() => guard(request('POST', DESKTOP_PICKS_PATH, bearer(TOKEN)))).not.toThrow();
   });
 
   it('give the run channel to the shell alone, never to a request a browser sends', () => {

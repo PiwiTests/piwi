@@ -13,7 +13,7 @@ defineRouteMeta({
     tags: ['System'],
     summary: 'The run channel of the runs the shell starts (desktop app)',
     description:
-      'Desktop build only — 404 on the server build. Answers `{ runChannel, picks }`: the socket the desktop shell names in each Playwright run it starts as `PIWI_RUN_CHANNEL` (`<path>#<token>`), the bundled server being the hub of those runs, and the address the shell names as `PIWI_EDITOR_SEND` (`<url>#<token>`), where the runs’ tests send the locators they pick, for the window to copy; both null while the channel does not listen. Refused (403) to a request a browser sends (one carrying `Origin` or `Sec-Fetch-Site`): the shell alone asks.',
+      'Desktop build only — 404 on the server build. Answers `{ runChannel, picks }`: the socket the desktop shell names in each Playwright run it starts as `PIWI_RUN_CHANNEL` (`<path>#<token>`), the bundled server being the hub of those runs, and the address the shell names as `PIWI_EDITOR_SEND` (`<url>#<token>`), where the runs’ tests send the locators they pick, for the window to copy, with a token that opens that route alone, never the desktop token; both null while the channel does not listen. Refused (403) to a request a browser sends (one carrying `Origin` or `Sec-Fetch-Site`): the shell alone asks.',
     'x-required-permission': 'signed-in',
   },
 });

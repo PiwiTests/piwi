@@ -20,8 +20,9 @@
  *    linked folder alone, and refused once the file was written since the run's first worker connected (`RunLines`).
  * Pick and Record in the test's window, and Assert, end in an editor (its Send to editor pairing, its recorder), which
  * this server has none of: they are refused here, and a pick on an image of the stop (`pick-at`) answers with the
- * locator it found. The runs name this server as where their picks go (`PIWI_EDITOR_SEND`, `DESKTOP_PICKS_PATH`): a
- * locator the pause bar's **Pick a locator** or a pick on the image picked comes to the window, to copy (`pick`).
+ * locator it found. The runs name this server as where their picks go (`PIWI_EDITOR_SEND`, `DESKTOP_PICKS_PATH`, with
+ * a token for that route alone): a locator the pause bar's **Pick a locator** or a pick on the image picked comes to
+ * the window, to copy (`pick`).
  */
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -50,6 +51,7 @@ import {
   type DesktopRunEvent,
   type DesktopRunPick,
 } from '#shared/desktop-runs';
+import { desktopPicksToken } from './desktop-access';
 import { desktopLinkedFolders, type DesktopLink } from './desktop-links';
 
 /** What the hub's `welcome` and `GET /api/desktop/live` call this server. */
@@ -265,12 +267,12 @@ export class DesktopRuns {
 
   /**
    * Where the runs the shell starts send the locators their tests pick (`PIWI_EDITOR_SEND`), as an editor's pairing
-   * address names its Send to editor endpoint: this server's route on `port`, with the desktop token, which its guard
-   * asks of every request. Null while the run channel does not listen.
+   * address names its Send to editor endpoint: this server's route on `port`, with the token that opens that route
+   * alone (`desktopPicksToken`), never the desktop token. Null while the run channel does not listen.
    */
   picksAddress(port: number | string): string | null {
     if (!this.channel) return null;
-    return `http://127.0.0.1:${port}${DESKTOP_PICKS_PATH}#${this.options.token}`;
+    return `http://127.0.0.1:${port}${DESKTOP_PICKS_PATH}#${desktopPicksToken()}`;
   }
 
   /** A locator a test of a run picked (`POST DESKTOP_PICKS_PATH`): every window hears it, to copy, and it is kept. */

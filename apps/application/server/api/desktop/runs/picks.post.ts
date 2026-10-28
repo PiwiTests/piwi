@@ -1,9 +1,9 @@
 // Desktop-only: where the runs the desktop shell starts send the locators
 // their tests pick (`PIWI_EDITOR_SEND` names it, as an editor's Send to
 // editor pairing names its endpoint): the pause bar's Pick a locator and a
-// pick on the image of a stop. Behind the desktop token like every other
-// route; each locator goes to the window, to copy. Responds 404 on the normal
-// server build.
+// pick on the image of a stop. The runs post with the token minted for this
+// route alone (`desktopPicksToken`), which opens no other; each locator goes
+// to the window, to copy. Responds 404 on the normal server build.
 import { parseSendPayload } from '@piwitests/core/editor-send';
 import { requireAuth } from '../../../utils/auth';
 import { apiError } from '../../../utils/api-error';

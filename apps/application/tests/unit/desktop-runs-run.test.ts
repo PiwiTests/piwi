@@ -26,6 +26,7 @@ import {
 } from '@piwitests/core/run-hub';
 import { parseSendPayload } from '@piwitests/core/editor-send';
 import { DesktopRuns } from '../../server/utils/desktop-runs';
+import { desktopPicksToken } from '../../server/utils/desktop-access';
 import type { DesktopRunEvent } from '#shared/desktop-runs';
 
 const requireHere = createRequire(import.meta.url);
@@ -189,14 +190,15 @@ afterAll(async () => {
 
 /**
  * The server's route for the runs' picks (`POST /api/desktop/runs/picks`), as the reporter reaches it through
- * `PIWI_EDITOR_SEND`: Send to editor's body, behind the desktop token, passed to the windows. Its address.
+ * `PIWI_EDITOR_SEND`: Send to editor's body, with the token minted for that route alone, passed to the windows. Its
+ * address, which never holds the desktop token.
  */
 async function picksRoute(): Promise<string> {
   picks = http.createServer((req, res) => {
     let body = '';
     req.on('data', (chunk) => (body += chunk));
     req.on('end', () => {
-      if (req.headers.authorization !== `Bearer ${TOKEN}`) return void res.writeHead(401).end();
+      if (req.headers.authorization !== `Bearer ${desktopPicksToken()}`) return void res.writeHead(401).end();
       const payload = parseSendPayload(JSON.parse(body || 'null'));
       if ('error' in payload || payload.kind !== 'locator') return void res.writeHead(400).end();
       runs.picked({ locator: payload.text, file: payload.at?.file ?? null, line: payload.at?.line ?? null });
@@ -204,7 +206,9 @@ async function picksRoute(): Promise<string> {
     });
   });
   await new Promise<void>((resolve) => picks.listen(0, '127.0.0.1', resolve));
-  return runs.picksAddress((picks.address() as AddressInfo).port)!;
+  const address = runs.picksAddress((picks.address() as AddressInfo).port)!;
+  expect(address).not.toContain(TOKEN);
+  return address;
 }
 
 /** Runs Playwright on one spec of the project, in the environment the desktop shell gives a run. */

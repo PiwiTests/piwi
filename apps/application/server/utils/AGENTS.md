@@ -226,7 +226,8 @@ runs (`@piwitests/editor/run-host`), plus these:
   person opened it), or while Piwi Picker `follow`s the runs, and never in a run nobody attends: its ref ends in
   `-unattended` (`isUnattendedDesktopRun`, `holdsFailures`), as the shell names a Flake Lab, a bisect, a lab job, and a
   run with `--repeat-each` above 1 or `--ui`.
-- **A run's picks come back to this server, behind the guard.** The run channel's route also names
-  `POST /api/desktop/runs/picks` with the desktop token (`picksAddress`), which the shell gives each run as
-  `PIWI_EDITOR_SEND`: the pause bar's pick and a pick on the image reach the window to copy (`pick`), and a pick on the
-  image answers that it goes there (`DesktopRunSessions`).
+- **A run's picks come back to this server, with a token for that route alone.** The run channel's route also names
+  `POST /api/desktop/runs/picks` with the picks token (`picksAddress`, `desktopPicksToken`), never the desktop token,
+  which the shell gives each run as `PIWI_EDITOR_SEND`: the pause bar's pick and a pick on the image reach the window to
+  copy (`pick`), and a pick on the image answers that it goes there (`DesktopRunSessions`). The guard takes that token
+  on that route alone (`presentsDesktopPicksToken`).
