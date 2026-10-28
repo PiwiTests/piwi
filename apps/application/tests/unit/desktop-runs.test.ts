@@ -268,8 +268,8 @@ describe('the run channel the shell names in a run', () => {
     expect(window.session('desktop-90')).toBeUndefined();
 
     const worker = new Worker(folder).attach('desktop-1');
-    // The hub shows a failure, so it says so to a worker that holds one only for a hub that does.
-    expect(await worker.next('attached')).toEqual({ type: 'attached', holds: ['failure'] });
+    // The hub shows a failure, so it says so to a worker that holds one only for a hub that does, naming itself.
+    expect(await worker.next('attached')).toEqual({ type: 'attached', holds: ['failure'], host: 'the desktop app' });
     worker.begin();
     const session = await waitFor(() => window.session('desktop-1')?.workers[0]?.test ?? undefined);
     expect(session.title).toEqual(['checkout', 'pays']);
@@ -432,6 +432,39 @@ describe('a failure no pause bar shows', () => {
     expect(await shown.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
     shown.socket.destroy();
     other.socket.destroy();
+    window.close();
+  });
+
+  it('never waits in a run nobody attends, whoever shows or follows it, and tells its workers so', async () => {
+    const window = await openWindow();
+    const picker = await paired();
+    picker.send({ type: 'subscribe', id: 1 });
+    picker.send({ type: 'follow', id: 2, on: true });
+    await picker.answer(2);
+    const lab = 'desktop-8-unattended';
+    expect(await window.command({ type: 'show', id: 1, ref: lab, on: true })).toMatchObject({
+      ok: true,
+      message: 'Nobody attends a run of this kind: its failures go on at once, whoever watches it.',
+    });
+    const worker = new Worker(folder).attach(lab);
+    // Its workers hold no failure, as the host names itself.
+    expect(await worker.next('attached')).toEqual({ type: 'attached', holds: [], host: 'the desktop app' });
+    worker.begin();
+    worker.stop(1, 'failure');
+    expect(await worker.next('control')).toEqual({ type: 'control', action: 'resume', stop: 1 });
+    // A plain run the window shows, at the same time, holds its failure.
+    const plain = new Worker(folder).attach('desktop-9');
+    expect(await plain.next('attached')).toEqual({ type: 'attached', holds: ['failure'], host: 'the desktop app' });
+    expect(await window.command({ type: 'show', id: 2, ref: 'desktop-9', on: true })).toMatchObject({ ok: true });
+    plain.begin();
+    plain.stop(1, 'failure');
+    await waitFor(() => window.session('desktop-9')?.workers[0]?.stop?.reason === 'failure');
+    await sleep(100);
+    expect(plain.heard.some((m) => m.type === 'control')).toBe(false);
+    expect(window.session(lab)?.workers[0]?.stop ?? null).toBeNull();
+    worker.socket.destroy();
+    plain.socket.destroy();
+    picker.socket.close();
     window.close();
   });
 

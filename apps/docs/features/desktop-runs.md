@@ -21,16 +21,21 @@ and a headed one shows Piwi's [pause bar](./editor-breakpoints#pause-a-run) ther
 
 At a stop, the tray says why the test stopped, the call about to run and its place in your code, with an image of the
 page. **Resume** lets the test go on, **Step** runs one call and stops before the next, and **Finish** runs the test to
-its end without stopping again. A failing test is held at its line while its run is open in the tray: **Failed at**,
-its error under it, and **Resume** to let it end as it failed.
+its end without stopping again.
+
+A failing test is held at its line in a run you open in the tray yourself, with **Expand output** (a run starts open:
+collapse it and expand it again), or while [Piwi Picker's Runs window](./runs-window) is open: **Failed at**, its error
+under it, and **Resume** to let it end as it failed. A run nobody attends never holds one: a Flake Lab run, a bisect, a
+lab job, a run with `--repeat-each` above 1 and UI mode go on past each failure.
 
 <figure>
   <img src="/screenshots/desktop-run-live.png" alt="The Local runs tray of the desktop app: a checkout test stopped at a breakpoint before its click on Pay now, its page watched live, with Resume, Step, Finish, Assert a region and Mock a request">
   <figcaption>A run the desktop app started, stopped at a breakpoint and watched live.</figcaption>
 </figure>
 
-The tray opens at each stop, and the system tells you when the window is in the background: a headless test waits for
-you there. When no run of the app is going on, the window stops listening, and a stop goes on at once.
+The tray opens at each stop: a headless test waits for you there. While the window is in the background, the system
+tells you of a failure or a `page.pause()`, never of a step or a pause you asked for. When no run of the app is going
+on, the window stops listening, and a stop goes on at once.
 
 ## Watch live
 

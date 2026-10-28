@@ -12,8 +12,10 @@
  *    paired Piwi Picker holds since **Allow**, and `GET /api/desktop/live` names the hub to a request carrying it;
  *  - the app's window is a peer of that hub (`RunHub.join`) through routes behind the desktop guard: it hears what
  *    Piwi Picker hears, sends the same commands, and alone receives the code made at a stop, to copy (`stop-code`);
- *  - a failure no pause bar shows is held in a run the window shows live (`show`), or while a Runs window of Piwi
- *    Picker follows the runs (`follow`); otherwise it goes on at once;
+ *  - a failure no pause bar shows is held in a run the person opened in the window (`show`), or while a Runs window of
+ *    Piwi Picker follows the runs (`follow`); otherwise it goes on at once, and always in a run nobody attends (a Flake
+ *    Lab, a bisect, a lab job, a run repeating its tests or in UI mode: its ref ends in `-unattended`), whose workers
+ *    hear that they hold no failure;
  *  - the code from a stop is rendered by the editor's generator from the file as it is on disk, for a file of a
  *    linked folder alone, and refused once the file was written since the run's first worker connected (`RunLines`).
  * Pick and Record in the test's window, and Assert, end in an editor (its Send to editor pairing, its recorder), which
@@ -44,6 +46,7 @@ import {
   DESKTOP_PICKS_PATH,
   MAX_KEPT_STOP_CODES,
   isDesktopRunViewer,
+  isUnattendedDesktopRun,
   type DesktopRunEvent,
   type DesktopRunPick,
 } from '#shared/desktop-runs';
@@ -98,7 +101,7 @@ export interface DesktopRunsOptions {
 interface RunWindow {
   peer: HubPeer;
   sink: DesktopRunSink;
-  /** The runs it shows live: a failure no pause bar shows is held in them. */
+  /** The runs the person opened in it: a failure no pause bar shows is held in them. */
   shows: Set<string>;
 }
 
@@ -187,6 +190,7 @@ export class DesktopRuns {
           : this.actions.region(stop, region.locator, region.snapshot),
       watched: (ref) => [...this.windows.values()].some((window) => window.shows.has(ref)),
       followed: () => !!this.hub?.follows(),
+      holdsFailures: (ref) => !isUnattendedDesktopRun(ref),
       // A run's code is its files as they stood when its first worker connected.
       sessionStarted: (ref, again) => this.lines.started(ref, () => [], !again),
       declines: (what) => DECLINED[what] ?? null,
@@ -341,6 +345,9 @@ export class DesktopRuns {
       if (value.on) window.shows.add(value.ref);
       else window.shows.delete(value.ref);
       if (had !== value.on) this.sessions.surfacesChanged();
+      if (isUnattendedDesktopRun(value.ref)) {
+        return answer(true, 'Nobody attends a run of this kind: its failures go on at once, whoever watches it.');
+      }
       return answer(
         true,
         value.on

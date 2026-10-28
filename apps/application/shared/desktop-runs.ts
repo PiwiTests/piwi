@@ -15,6 +15,18 @@ import type {
 } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
 
+/**
+ * What the shell ends the name of a run nobody attends with (`PIWI_RUN_REF`, `hub_env.rs`): a Flake Lab, a bisect, a
+ * lab job, a run that repeats each test (`--repeat-each` above 1) or runs in UI mode. The server holds no failure of
+ * such a run, whoever watches it.
+ */
+export const UNATTENDED_RUN_SUFFIX = '-unattended';
+
+/** Whether the run `ref` names is one nobody attends: none of its failures waits for an answer. */
+export function isUnattendedDesktopRun(ref: string): boolean {
+  return ref.endsWith(UNATTENDED_RUN_SUFFIX);
+}
+
 /** The most codes made at stops and locators picked the server keeps, the latest, for a window that opens later. */
 export const MAX_KEPT_STOP_CODES = 20;
 
@@ -58,9 +70,9 @@ export type DesktopRunEvent =
 
 /**
  * A command of the window: one of the hub's (`HubCommand`, answered as the hub answers it), or `show`, which only the
- * window sends: the window shows the run `ref` live (`on`), so a failure no pause bar shows is held in it, until it
- * says otherwise or its stream closes. Each names the stream it comes from (`viewer`, the stream's `hello`), whose
- * views it watches and whose input it plays.
+ * window sends: the person opened the run `ref` in the window (`on`), so a failure no pause bar shows is held in it,
+ * until the window says otherwise or its stream closes; never in a run nobody attends. Each names the stream it comes
+ * from (`viewer`, the stream's `hello`), whose views it watches and whose input it plays.
  */
 export type DesktopRunCommand = (HubCommand | { type: 'show'; id: number; ref: string; on: boolean }) & {
   viewer: string;

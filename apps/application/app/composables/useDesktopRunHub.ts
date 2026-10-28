@@ -3,14 +3,14 @@
  * (`server/utils/desktop-runs.ts`). One stream for the whole window (`GET /api/desktop/runs/events`), opened only
  * while the window wants it (`want`): while a run of the Local runs tray runs, or the hub still has a live run. While
  * it is open the window is a surface that answers stops, so a headless stop waits for it: the tray shows every stop
- * it hears (`onStop`) and the stop waits there; closed, nobody here answers and such a stop goes on at once, unless
- * Piwi Picker follows the runs.
+ * it hears (`onStop`), once, a stream that opens again included, and the stop waits there; closed, nobody here answers
+ * and such a stop goes on at once, unless Piwi Picker follows the runs.
  *
  * What it keeps: each live run as the hub last told it, what each code made at a stop came to, and the codes and
  * the locators picked, to copy. The frames of a stop's live view go to whoever listens for that view (`onFrame`):
  * none is reactive state, and only the latest one of each view is kept, in memory, until the view ends. Commands go to
- * `POST /api/desktop/runs/commands`, naming the stream (`viewer`); `show` says which runs the window shows live, so a
- * failure no pause bar shows is held in them, and is said again as the stream opens again.
+ * `POST /api/desktop/runs/commands`, naming the stream (`viewer`); `show` says which runs the person opened in the
+ * window, so a failure no pause bar shows is held in them, and is said again as the stream opens again.
  */
 import {
   parseHubMessage,
@@ -76,6 +76,11 @@ const frameListeners = new Map<string, Set<(frame: DesktopFrame) => void>>();
 /** The latest frame of each view a listener asked for, in memory alone, until the view ends. */
 const latestFrames = new Map<string, DesktopFrame>();
 const stopListeners = new Set<(session: HubSession, worker: HubWorker) => void>();
+/**
+ * The stop each worker of each live run was last heard at (its `since`, by ref and worker), kept while a stream opens
+ * again: the runs it hears again after `hello` bring no stop heard before.
+ */
+const heardAt = new Map<string, Map<number, string>>();
 let toastApi: ReturnType<typeof useToast> | null = null;
 
 function heard(text: string): void {
@@ -137,18 +142,19 @@ function heard(text: string): void {
 }
 
 function heardSession(session: HubSession): void {
-  const before = state.sessions[session.ref];
   state.roots[session.ref] = session.root;
   if (session.ended) {
     delete state.sessions[session.ref];
+    heardAt.delete(session.ref);
     return;
   }
   state.sessions[session.ref] = session;
+  const heard = heardAt.get(session.ref) ?? new Map<number, string>();
+  heardAt.set(session.ref, heard);
   for (const worker of session.workers) {
     const since = worker.state === 'stopped' ? worker.stop?.since : undefined;
-    if (!since) continue;
-    const was = before?.workers.find((w) => w.worker === worker.worker);
-    if (was?.state === 'stopped' && was.stop?.since === since) continue;
+    if (!since || heard.get(worker.worker) === since) continue;
+    heard.set(worker.worker, since);
     for (const listener of stopListeners) listener(session, worker);
   }
 }
@@ -189,6 +195,7 @@ function close(): void {
   viewer = null;
   told = new Set();
   latestFrames.clear();
+  heardAt.clear();
   Object.assign(state, { connected: false, sessions: {}, outcomes: {}, epoch: state.epoch + 1 });
 }
 

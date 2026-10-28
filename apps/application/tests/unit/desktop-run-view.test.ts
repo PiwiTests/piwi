@@ -7,6 +7,7 @@ import {
   desktopCodeItem,
   desktopPickItem,
   desktopRunName,
+  desktopRunOf,
   desktopRunRef,
   desktopSteering,
   desktopStopPlace,
@@ -14,6 +15,7 @@ import {
   desktopWorkerState,
   isDesktopRunImage,
 } from '../../app/utils/desktop-run-view';
+import { isUnattendedDesktopRun } from '#shared/desktop-runs';
 
 /**
  * The desktop window's view of the runs its shell starts: which run of the Local runs tray a hub session is, what a
@@ -68,6 +70,11 @@ function sessionOf(ref: string, workers: HubWorker[], over: Partial<HubSession> 
 describe('a worker of a desktop run', () => {
   test('is a run of the tray by the name its step gave the hub', () => {
     expect(desktopRunRef(7)).toBe('desktop-7');
+    // A run nobody attends is the tray's run of the same step, its mark left out.
+    expect(desktopRunOf('desktop-7-unattended')).toBe('desktop-7');
+    expect(desktopRunOf('desktop-7')).toBe('desktop-7');
+    expect(isUnattendedDesktopRun('desktop-7-unattended')).toBe(true);
+    expect(isUnattendedDesktopRun('desktop-7')).toBe(false);
     expect(desktopRunName({ project: null, label: 'shop' })).toBe('shop');
     expect(desktopRunName({ project: 'Shop', label: 'shop' })).toBe('Shop');
     expect(desktopRunName({ project: null, label: null })).toBe('Run');
@@ -265,6 +272,18 @@ describe('the window’s stream of its runs', () => {
       session: sessionOf('desktop-7', [workerOf({ state: 'stopped', stop: stopOf({ since: 's2' }) })]),
     });
     expect(heard).toEqual(['desktop-7:s1', 'desktop-7:s2']);
+    // The stream opens again: the runs come again, and a stop heard before is not heard again; a new one is.
+    source.send({ type: 'hello', viewer: VIEWER });
+    source.send({
+      type: 'session',
+      session: sessionOf('desktop-7', [workerOf({ state: 'stopped', stop: stopOf({ since: 's2' }) })]),
+    });
+    expect(heard).toEqual(['desktop-7:s1', 'desktop-7:s2']);
+    source.send({
+      type: 'session',
+      session: sessionOf('desktop-7', [workerOf({ state: 'stopped', stop: stopOf({ since: 's3' }) })]),
+    });
+    expect(heard).toEqual(['desktop-7:s1', 'desktop-7:s2', 'desktop-7:s3']);
     source.send({ type: 'session', session: sessionOf('desktop-7', [], { ended: true }) });
     expect(runs.state.sessions).toEqual({});
     // Its folder stays known, for the place of its codes.

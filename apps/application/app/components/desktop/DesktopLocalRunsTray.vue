@@ -12,13 +12,15 @@
  * (`DesktopRunCopyList`). The window holds the hub's stream only while a run
  * of the tray runs or the hub still has a live run: while it does, a headless
  * stop waits for the window, so the tray opens on every stop it hears, and a
- * notification says so when the window is in the background. A run whose
- * part of the tray is open is shown live (`show`), so a failure no pause bar
- * shows waits there too.
+ * notification says so of a failure or a `page.pause()` when the window is in
+ * the background. A run whose part of the tray the person opened themselves
+ * (Expand output) is shown live (`show`), so a failure no pause bar shows
+ * waits there too; one open by default or by a stop is not, and the server
+ * holds no failure of a run nobody attends (a Flake Lab, a bisect).
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { flakeLabOutcome, type LocalRun } from '~/composables/useDesktopLocalRuns';
-import { desktopRunName, desktopStopPlace, desktopWorkerTest } from '~/utils/desktop-run-view';
+import { desktopRunName, desktopRunOf, desktopStopPlace, desktopWorkerTest } from '~/utils/desktop-run-view';
 
 const store = useDesktopLocalRuns();
 const { runs, trayOpen, activeCount } = store;
@@ -31,15 +33,19 @@ onMounted(() => {
 const hub = useDesktopRunHub();
 const liveSessions = computed(() => Object.values(hub.state.sessions) as HubSession[]);
 
+/** The run of the tray a hub's run is, by the name its step gave it; none for a run another window started. */
+function runOf(session: HubSession): LocalRun | undefined {
+  const ref = desktopRunOf(session.ref);
+  return runs.value.find((run) => run.hubRefs.includes(ref));
+}
+
 /** The hub's live runs of a run of the tray: those of its steps' names. */
 function sessionsOf(run: LocalRun): HubSession[] {
-  return liveSessions.value.filter((session) => run.hubRefs.includes(session.ref));
+  return liveSessions.value.filter((session) => run.hubRefs.includes(desktopRunOf(session.ref)));
 }
 
 /** The hub's live runs no run of the tray names: another window of the app started them. */
-const otherSessions = computed(() =>
-  liveSessions.value.filter((session) => !runs.value.some((run) => run.hubRefs.includes(session.ref))),
-);
+const otherSessions = computed(() => liveSessions.value.filter((session) => !runOf(session)));
 
 // The stream, only while it has something to show: a run of the tray runs, or the hub still has a live one.
 watch(
@@ -57,21 +63,36 @@ function announce(text: string) {
   });
 }
 
-/** Every stop the window hears is shown: the tray opens on its run, and the system says so in the background. */
+/**
+ * Every stop the window hears is shown: the tray opens on its run, and the live region reads it out. A failure and a
+ * `page.pause()` are also said by the system while the window is in the background; a step, a pause or a line run to,
+ * which the person's own controls asked for here or in Piwi Picker, is not.
+ */
 function heardStop(session: HubSession, worker: HubWorker) {
   const stop = worker.stop;
   if (!stop) return;
   trayOpen.value = true;
-  const run = runs.value.find((r) => r.hubRefs.includes(session.ref));
-  if (run) expandedByKey.value = { ...expandedByKey.value, [run.key]: true };
+  const run = runOf(session);
+  if (run) {
+    // Open, but not by the person: the run is not shown live for it.
+    if (expandedByKey.value[run.key] === false) {
+      const choices = { ...expandedByKey.value };
+      delete choices[run.key];
+      expandedByKey.value = choices;
+    }
+    openedByStop.value = { ...openedByStop.value, [run.key]: true };
+  }
   const test = desktopWorkerTest(worker) ?? desktopRunName(session);
   const place = desktopStopPlace(stop, session.root);
   const said = stop.reason === 'failure' ? `${test} failed at ${place}.` : `${test} stopped at ${place}.`;
   announce(said);
+  if (stop.reason !== 'failure' && stop.reason !== 'page-pause') return;
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
   if (!document.hidden && document.hasFocus()) return;
   try {
-    new Notification(stop.reason === 'failure' ? 'A test failed and waits' : 'A test stopped', { body: said });
+    new Notification(stop.reason === 'failure' ? 'A test failed and waits' : 'A test waits at page.pause()', {
+      body: said,
+    });
   } catch {
     // Notifications unavailable in this webview — the tray still shows the stop.
   }
@@ -93,20 +114,29 @@ useRunStream(() => store.correlatePiwiRuns());
 
 /** Manual expand/collapse choices; unset falls back to the default below. */
 const expandedByKey = ref<Record<number, boolean>>({});
+/** The runs a stop opened: open, as the person's choice and the default leave them, never shown live for it. */
+const openedByStop = ref<Record<number, true>>({});
 
 function isExpanded(run: LocalRun): boolean {
-  return expandedByKey.value[run.key] ?? (run.status === 'running' || run.key === runs.value[0]?.key);
+  return (
+    expandedByKey.value[run.key] ??
+    (!!openedByStop.value[run.key] || run.status === 'running' || run.key === runs.value[0]?.key)
+  );
 }
 
 function toggleExpanded(run: LocalRun) {
   expandedByKey.value = { ...expandedByKey.value, [run.key]: !isExpanded(run) };
 }
 
-/** The runs the window shows live: those of an open part of the open tray, and the others' while the tray is open. */
+/**
+ * The runs the window shows live, so a failure no pause bar shows is held in them: those the person opened in the open
+ * tray themselves (Expand output), never one open by default or by a stop, nor another window's. Each step's name is
+ * shown as the step starts, before its workers connect, so a failure right after they do waits too.
+ */
 const shownRefs = computed(() => {
   if (!trayOpen.value) return [];
-  const refs = runs.value.filter(isExpanded).flatMap((run) => sessionsOf(run).map((session) => session.ref));
-  return [...refs, ...otherSessions.value.map((session) => session.ref)].sort();
+  const opened = runs.value.filter((run) => expandedByKey.value[run.key] === true);
+  return [...new Set(opened.flatMap((run) => run.hubRefs))].sort();
 });
 watch(
   () => shownRefs.value.join(' '),

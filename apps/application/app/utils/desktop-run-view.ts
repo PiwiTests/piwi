@@ -1,19 +1,27 @@
 /**
  * The desktop app window's view of the Playwright runs its shell starts, the pure half: which run of the Local runs
- * tray a hub session is (`desktopRunRef`), what a worker says and which controls it takes, where a stop stands, and
- * what a code made at a stop or a locator picked reads as, to copy. The hub's shapes are `@piwitests/core/run-hub`'s;
- * the stop's place and error, a test's name and what a stop takes come from the Runs window's own pure half
- * (`apps/extension/src/shared/runs.ts`), which both surfaces share, as they share its live view's input
- * (`view-input.ts`).
+ * tray a hub session is (`desktopRunRef`, `desktopRunOf`), what a worker says and which controls it takes, where a
+ * stop stands, and what a code made at a stop or a locator picked reads as, to copy. The hub's shapes are
+ * `@piwitests/core/run-hub`'s; the stop's place and error, a test's name and what a stop takes come from the Runs
+ * window's own pure half (`apps/extension/src/shared/runs.ts`), which both surfaces share, as they share its live
+ * view's input (`view-input.ts`).
  */
 import type { HubAction, HubCodeAction, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
-import type { DesktopRunPick } from '#shared/desktop-runs';
+import { UNATTENDED_RUN_SUFFIX, isUnattendedDesktopRun, type DesktopRunPick } from '#shared/desktop-runs';
 import { runFile, stopError, stopIntents, stopPlace, testName } from '../../../extension/src/shared/runs';
 
 /** The name a run the shell started gives the bundled server on its run channel (`PIWI_RUN_REF`, `hub_env.rs`). */
 export function desktopRunRef(shellId: number): string {
   return `desktop-${shellId}`;
+}
+
+/**
+ * The name the window knows a hub's run by (`desktopRunRef`): its own, the mark of a run nobody attends left out (a
+ * Flake Lab's `desktop-7-unattended` is the tray's `desktop-7`).
+ */
+export function desktopRunOf(ref: string): string {
+  return isUnattendedDesktopRun(ref) ? ref.slice(0, -UNATTENDED_RUN_SUFFIX.length) : ref;
 }
 
 /** Names a worker of a run, for what the window keeps of it (its answer, its image, its view). */

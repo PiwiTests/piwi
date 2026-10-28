@@ -259,7 +259,9 @@ views are exempt only where a rule says so.
   the IDE Remote Control probe and the `vscode://` / `jetbrains://` launches never report a confirmed "opened".
 - **The desktop window holds the stream of its runs' hub only while it has a run to show** (`useDesktopRunHub.want`,
   from the Local runs tray): while it is open every headless stop waits for the window, so the tray opens on each stop
-  it hears, and it says `show` only for the runs it shows (`tests/desktop-run-view.spec.ts`).
+  it hears, once, and it says `show` only for the runs the person opened in the tray themselves
+  (`expandedByKey[key] === true`, never the default or a stop's), each by its steps' names (`hubRefs`)
+  (`tests/desktop-run-view.spec.ts`).
 - **Anything opened outside `$fetch` carries `useRuntimeConfig().app.baseURL`** (`window.open`, an `href`, a download
   URL): the demo is served from `/demo/` and its service worker only intercepts that prefix, so a root-relative
   `/api/...` 404s there. `fileApiUrl` and `getTraceViewerUrl` do it.

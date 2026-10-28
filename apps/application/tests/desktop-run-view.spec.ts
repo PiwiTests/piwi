@@ -26,6 +26,8 @@ interface Command {
 declare global {
   interface Window {
     __hub: { send(event: unknown): void; open(): number };
+    /** The native notifications the page asked the shell for, as `title | body`. */
+    __notes: string[];
   }
 }
 
@@ -34,13 +36,17 @@ async function installBridge(page: Page) {
   await page.addInitScript(() => {
     const listeners: ((event: { payload: unknown }) => void)[] = [];
     Object.assign(window, {
+      __notes: [],
       __endRun: () => {
         for (const cb of listeners) cb({ payload: { id: 41, kind: 'exit', line: null, code: 0 } });
       },
       __TAURI__: {
         core: {
-          invoke: async (cmd: string) => {
+          invoke: async (cmd: string, args?: Record<string, unknown>) => {
             switch (cmd) {
+              case 'desktop_notify':
+                window.__notes.push(`${String(args?.title)} | ${String(args?.body)}`);
+                return null;
               case 'desktop_get_project_link':
                 return { path: '/home/dev/acme', exists: true };
               case 'desktop_check_local_specs':
@@ -115,6 +121,12 @@ async function playHub(page: Page, answer: (command: Command) => Record<string, 
 
 function tray(page: Page) {
   return page.getByRole('region', { name: 'Local runs' });
+}
+
+/** The person opens the run in the tray themselves: open by default as it runs, it is closed, then opened. */
+async function openRunYourself(page: Page) {
+  await tray(page).getByRole('button', { name: 'Collapse output' }).click();
+  await tray(page).getByRole('button', { name: 'Expand output' }).click();
 }
 
 const TEST = {
@@ -255,6 +267,9 @@ test.describe('Desktop run live view', () => {
     await expect(worker.getByText('Running', { exact: true })).toBeVisible();
     await expect(worker.getByText('checkout › pays')).toBeVisible();
     await expect(worker.getByText('chromium · attempt 1')).toBeVisible();
+    // Open by default, the run is not shown live: a failure no pause bar shows would go on. The person opens it.
+    expect(commands.filter((c) => c.type === 'show')).toEqual([]);
+    await openRunYourself(page);
     await expect
       .poll(() => commands.find((c) => c.type === 'show'))
       .toMatchObject({ ref: REF, on: true, viewer: VIEWER });
@@ -410,6 +425,8 @@ test.describe('Desktop run live view', () => {
     await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
     const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
     await expect(worker.getByText('Running', { exact: true })).toBeVisible();
+    await openRunYourself(page);
+    await expect.poll(() => commands.filter((c) => c.type === 'show').at(-1)).toMatchObject({ on: true });
 
     // The tray closed, a stop opens it again on the run, said in the live region.
     await tray(page).getByRole('button', { name: 'Close local runs' }).click();
@@ -453,5 +470,52 @@ test.describe('Desktop run live view', () => {
     await page.evaluate((event) => window.__hub.send(event), session(RUNNING, true));
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(0);
     await expect(worker).toHaveCount(0);
+  });
+
+  test('shows a run the person opened from its start, and tells the system of a failure or a page.pause() once', async ({
+    page,
+  }) => {
+    await installBridge(page);
+    const commands = await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: 'Run locally' }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    // Opened by the person before its workers connect: the run is shown by the name its step gave the hub.
+    await openRunYourself(page);
+    await expect.poll(() => commands.find((c) => c.type === 'show')).toMatchObject({ ref: REF, on: true });
+    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+    const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
+    await expect(worker.getByText('Running', { exact: true })).toBeVisible();
+
+    // In the background, steps made elsewhere (Piwi Picker's) say nothing to the system; they show in the tray.
+    await page.evaluate(() => {
+      document.hasFocus = () => false;
+    });
+    for (const since of ['s1', 's2']) {
+      await page.evaluate((event) => window.__hub.send(event), session(stopped(since, { reason: 'step' })));
+      await expect(worker.getByText('Stopped after a step')).toBeVisible();
+      await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+      await expect(worker.getByText('Running', { exact: true })).toBeVisible();
+    }
+    expect(await page.evaluate(() => window.__notes)).toEqual([]);
+
+    // A page.pause() is said, once: the stream opening again brings the same stop, which is not said again.
+    await page.evaluate((event) => window.__hub.send(event), session(stopped('s3', { reason: 'page-pause' })));
+    await expect(worker.getByText('Stopped at page.pause()')).toBeVisible();
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await page.evaluate((event) => window.__hub.send(event), session(stopped('s3', { reason: 'page-pause' })));
+    await page.evaluate(
+      (event) => window.__hub.send(event),
+      session(stopped('s4', { reason: 'failure', title: 'Failed: Error', error: 'expect failed' })),
+    );
+    await expect(worker.getByText('Failed at tests/checkout.spec.ts:5')).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => window.__notes))
+      .toEqual([
+        'A test waits at page.pause() | checkout › pays stopped at tests/checkout.spec.ts:5.',
+        'A test failed and waits | checkout › pays failed at tests/checkout.spec.ts:5.',
+      ]);
   });
 });

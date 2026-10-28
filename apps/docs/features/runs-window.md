@@ -96,10 +96,11 @@ In Firefox, it works while Firefox has the focus.
 
 [Paired](./bug-reports#running-it-with-playwright-in-the-desktop-app) with the [desktop app](./desktop), the window
 lists the runs the app starts beside your editor's, marked **Desktop app**: reproductions, bisect steps and bug
-reports included, with the same controls and live view. With no editor paired, it follows the app alone. The app holds
-no editor, so **Pick**, **Record** and **Assert** in the test's window are not offered; the code **Assert a region**
-and **Mock a request** make goes to the app's window, to copy there, and the window here says so:
-[Desktop app runs](./desktop-runs).
+reports included, with the same controls and live view. With no editor paired, it follows the app alone. A failure
+of a run nobody attends (a Flake Lab run, a bisect, a lab job, a run with `--repeat-each` above 1, UI mode) goes on
+while the window is open. The app holds no editor, so **Pick**, **Record** and **Assert** in the test's window are not
+offered; the code **Assert a region** and **Mock a request** make goes to the app's window, to copy there, and the
+window here says so: [Desktop app runs](./desktop-runs).
 
 ## How it connects
 
