@@ -26,9 +26,14 @@ How the set, the script and the beats work is in [`ARCHITECTURE.md`](ARCHITECTUR
   the bug is fixed. Each one is listed in [Known bugs](ARCHITECTURE.md#known-bugs).
 - **A line is at most two rows of 42 characters, and a beat's lines read at 17 characters a second at most**
   (`lintLines`; `node showcase.mjs --lint`). The lines are the subtitles.
-- **The set lives in a new folder of the temporary directory, which every app's temporary files go into
-  (`TMPDIR`), and the take removes it with every process still working there** (`endStrays` in `lib/set.mjs`). Keep
-  its path short: VS Code's and the editor service's sockets must stay under 107 characters.
+- **The set lives in a new folder of the temporary directory, which every app's temporary files, the editors'
+  discovery files and the desktop app's file go into (`TMPDIR`, `PIWI_EDITORS_DIR`, `PIWI_DESKTOP_CONFIG`), and the
+  take removes it with every process still working there** (`createSet` and `endStrays` in `lib/set.mjs`). A process
+  the set starts inherits them; never point one at `~/.piwi`. Keep the folder's path short: VS Code's and the editor
+  service's sockets must stay under 107 characters.
+- **A take that stops keeps what it saw before anything closes**: a failed beat, a set that fails to build, a signal
+  (`keepEvidence` in `showcase.mjs`). A new app of the set leaves its log in `results/logs/` and the signals to the
+  take (Playwright's `handleSIGINT: false`).
 - **The checkout's packages are linked from this repository, never installed** (`linkPackages` in
   `lib/workspace.mjs`): a run tests this commit's reporter.
 - **A label a beat finds by its name is part of the check**: renaming a button or a command title a beat clicks (the
@@ -50,7 +55,9 @@ npm run showcase:format                                          # :check to ver
 
 - VS Code comes from `apps/vscode/.vscode-test/` (the extension's suites download it there), else
   `SHOWCASE_VSCODE_CACHE`. A take needs ports 3077 (the instance), 4173 (the shop) and 9334 (the test's browser) free.
-- A failed beat leaves `results/failed-<beat>/`: the whole screen, every app's log, the gestures and the checkout.
+- A failed beat leaves `results/failed-<beat>/`: the whole screen, every app's log, the gestures and the checkout;
+  a set that fails to build `results/failed-set/`, and a take stopped by Ctrl+C or another signal
+  `results/interrupted/`. `--out <dir>` writes elsewhere: a take empties only a folder it marked as its results.
 
 ## Map
 
