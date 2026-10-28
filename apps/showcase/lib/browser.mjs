@@ -4,6 +4,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { chromium } from 'playwright';
+import { waitFor } from './script.mjs';
 import { REPO_ROOT } from './workspace.mjs';
 
 const PICKER_DIST = path.join(REPO_ROOT, 'apps', 'extension', 'dist');
@@ -62,15 +63,34 @@ export class DeveloperBrowser {
 
   /**
    * Opens the Runs window from the toolbar popup's **Runs** tile, as a person does once, and places it at `tile`
-   * (CSS pixels); resolves with its page once it follows the paired editor.
+   * (CSS pixels); resolves with its page once it follows the paired editor. The popup shows the tile as it opens, once
+   * Piwi Picker's worker reaches the paired editor's hub, which it may not have yet just after the pairing: the popup
+   * is opened again until it shows the tile, as a person does.
    */
   async openRuns(tile) {
-    const popup = await this.context.newPage();
+    const { popup, button } = await waitFor(
+      async () => {
+        const popup = await this.context.newPage();
+        await popup.goto(this.url('popup.html'));
+        const button = popup.getByRole('button', { name: /Runs/ });
+        const shown = await button.waitFor({ timeout: 5_000 }).then(
+          () => true,
+          () => false,
+        );
+        if (shown) return { popup, button };
+        await popup.close();
+        return null;
+      },
+      "the popup's Runs tile, once Piwi Picker reaches the editor's hub",
+      90_000,
+    );
     try {
-      await popup.goto(this.url('popup.html'));
-      const opened = this.context.waitForEvent('page', (page) => page.url().endsWith('/runs.html'));
-      await popup.getByRole('button', { name: /Runs/ }).click({ timeout: 30_000 });
-      this.runs = await opened;
+      // Waited for together, so a click that fails leaves no wait for the window to reject unheard.
+      const [runs] = await Promise.all([
+        this.context.waitForEvent('page', (page) => page.url().endsWith('/runs.html')),
+        button.click(),
+      ]);
+      this.runs = runs;
     } finally {
       await popup.close();
     }
