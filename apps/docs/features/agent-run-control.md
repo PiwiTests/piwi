@@ -40,7 +40,7 @@ another program holds that port, the server moves, with a new token, and says so
   `~/.cursor/mcp.json`; the other choice is VS Code's own `mcp.json`.
 
 - **From a JetBrains IDE**: **Tools → Piwi → Copy the Runs' MCP Server Configuration for Claude Code or Cursor**
-  copies the same entry; **…for Agents** copies one that runs `npx -y mcp-remote@0.15.2 <url> --transport http-only`,
+  copies the same entry; **…for Agents** copies one that runs `npx -y mcp-remote@0.14.3 <url> --transport http-only`,
   the token in `env`, for the AI Assistant (**Settings → Tools → AI Assistant → Model Context Protocol**), which has no
   public way for a plugin to add a server.
 

@@ -405,12 +405,12 @@ class GlueTest {
         val first = json.getAsJsonObject("piwi")
         assertEquals("npx", first.get("command").asString)
         assertEquals(
-            listOf("-y", "mcp-remote@0.15.2", "https://a/mcp", "--transport", "http-only", "--header", "Authorization:\${PIWI_AUTH}"),
+            listOf("-y", "mcp-remote@0.14.3", "https://a/mcp", "--transport", "http-only", "--header", "Authorization:\${PIWI_AUTH}"),
             first.getAsJsonArray("args").map { it.asString },
         )
         assertEquals("Bearer pd_x", first.getAsJsonObject("env").get("PIWI_AUTH").asString)
         assertEquals(
-            listOf("-y", "mcp-remote@0.15.2", "http://b/mcp", "--transport", "http-only"),
+            listOf("-y", "mcp-remote@0.14.3", "http://b/mcp", "--transport", "http-only"),
             json.getAsJsonObject("piwi-2").getAsJsonArray("args").map { it.asString },
         )
         // An exact release: npx with none runs whatever npm serves that day.
@@ -425,7 +425,7 @@ class GlueTest {
         assertEquals(
             listOf(
                 "-y",
-                "mcp-remote@0.15.2",
+                "mcp-remote@0.14.3",
                 "http://127.0.0.1:41234/mcp",
                 "--transport",
                 "http-only",

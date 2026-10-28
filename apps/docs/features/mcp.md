@@ -100,7 +100,7 @@ Windows), then restart Claude Desktop:
       "command": "npx",
       "args": [
         "-y",
-        "mcp-remote@0.15.2",
+        "mcp-remote@0.14.3",
         "<your-piwi-url>/mcp",
         "--transport",
         "http-only",

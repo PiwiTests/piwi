@@ -1068,7 +1068,7 @@ object Glue {
      * The `mcp-remote` release an `mcpServers` entry runs, exactly: `npx` with no version runs whatever npm serves that
      * day, with the key or the token in its environment. 0.1.16 and later carry the fix for CVE-2025-6514.
      */
-    const val MCP_REMOTE = "mcp-remote@0.15.2"
+    const val MCP_REMOTE = "mcp-remote@0.14.3"
 
     /**
      * An `mcpServers` entry per instance, bridged to stdio with `mcp-remote` so every

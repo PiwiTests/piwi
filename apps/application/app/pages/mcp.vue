@@ -181,7 +181,7 @@ const claudeDesktopSnippet = computed(() =>
           args: [
             '-y',
             // An exact release: `npx` without one runs whatever npm serves, the key in its environment.
-            'mcp-remote@0.15.2',
+            'mcp-remote@0.14.3',
             mcpUrl.value,
             '--transport',
             'http-only',
