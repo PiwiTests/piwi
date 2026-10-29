@@ -38,20 +38,24 @@ while its run sets up never goes live until reloaded. Nothing here is on [`ROADM
 showcase:cut`) renders the cut and Part 6's outputs but the voice: the full cut in MP4 and WebM with and without burned
 subtitles, the teaser, a clip per beat, the posters, the `.vtt` and `.srt`, the chapters and the contact sheet ([the
 take and the cut](../apps/showcase/ARCHITECTURE.md#the-take)); `nightly-showcase.yml` run by hand with `film` does both
-and uploads the cut. The build differs from the text in these ways. A take runs each beat's check too, so a filmed story
-is a checked one. Before its capture, a take opens the dashboard's run and failure pages once: the dev server builds a
-page on its first visit, which filmed 20 s of a loading page. The developer's browser runs in the dark scheme, in check
-mode too, so the dashboard and Piwi Picker are dark; the shop stays light. A beat holds until its lines are read from
-its start, one after another, and 1.2 s past its last action. The master is never decoded to files: a decoder per
-renderer streams its frames to the stage as JPEG, in order, so the cut needs no disk but its outputs. A quiet stretch of
-a beat (no line, gesture or window coming up) longer than 3 s plays at 4× with a badge, which the text does not have: a
-run the editor starts takes 7 to 13 s to open its browser. The stage names each window in a frame of its own and cuts VS
-Code's own title bar off, which reads `[Extension Development Host] … [Superuser]` on this set. The camera holds still
-during a line except where a gesture needs another window, zooms only into the dashboard (shown whole at half the
-master's pixels), and never zooms in a 4K cut, whose output pixels are the master's own. The subtitles are the stage's
-own plates, overlaid by ffmpeg, so one render gives the cut with and without them; the cards show their own lines, which
-the burned subtitles leave out. The teaser is 1280 × 720 to stay within 1 MB, and the clips carry no subtitles, as Part
-4 burns them into the social cut only.
+and uploads the cut. Measured here (four cores) on a full take: 3 min 38 s of beats, all checked, the master 187 MB at
+0.8 MB a second, 5316 of its 5318 frames grabbed (24.0 a second, the capture's priority raised); a cut of 3 min 11 s
+(5720 frames) rendered in 586 s by two renderers (103 ms a frame, 312 ms a drawn one), and every output in 34 minutes in
+all, the WebM encodes the longest (6 to 7 minutes each); the full cut 43 MB in MP4 and 34 MB in WebM, the teaser 29 s at
+0.99 MB (MP4) and 0.94 MB (WebM). The build differs from the text in these ways. A take runs each beat's check too, so a
+filmed story is a checked one. Before its capture, a take opens the dashboard's run and failure pages once: the dev
+server builds a page on its first visit, which filmed 20 s of a loading page. The developer's browser runs in the dark
+scheme, in check mode too, so the dashboard and Piwi Picker are dark; the shop stays light. A beat holds until its lines
+are read from its start, one after another, and 1.2 s past its last action. The master is never decoded to files: a
+decoder per renderer streams its frames to the stage as JPEG, in order, so the cut needs no disk but its outputs. A
+quiet stretch of a beat (no line, gesture or window coming up) longer than 3 s plays at 4× with a badge, which the text
+does not have: a run the editor starts takes 7 to 13 s to open its browser. The stage names each window in a frame of
+its own and cuts VS Code's own title bar off, which reads `[Extension Development Host] … [Superuser]` on this set. The
+camera holds still during a line except where a gesture needs another window, zooms only into the dashboard (shown whole
+at half the master's pixels), and never zooms in a 4K cut, whose output pixels are the master's own. The subtitles are
+the stage's own plates, overlaid by ffmpeg, so one render gives the cut with and without them; the cards show their own
+lines, which the burned subtitles leave out. The teaser is 1280 × 720 to stay within 1 MB, and the clips carry no
+subtitles, as Part 4 burns them into the social cut only.
 
 **Summary.**
 

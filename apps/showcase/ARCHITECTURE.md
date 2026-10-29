@@ -126,18 +126,21 @@ The assertions a check skips, each only once it saw the bug's state:
 - starts the capture (`startCapture`, `lib/capture.mjs`): `ffmpeg -f x11grab -draw_mouse 0 -framerate 24` of the
   whole 3840 × 2160 screen into `results/master.mkv`, H.264 lossless (`-qp 0`, ultrafast, 4:2:0, which is 4:4:4 at the
   1080p cut's size), `-fps_mode cfr` so a frame the grab misses is the one before, repeated, and the master's frame `n`
-  is `n / 24` s after its first;
+  is `n / 24` s after its first. Where the system allows it (root), the capture runs at a higher priority than the
+  set's apps, which wait on state and lose nothing by yielding; up to 128 grabbed frames wait for the encoder;
 - shows the sync flash (`syncFlash`): a black window of its own at the screen's bottom-right corner whose square turns
-  white in a frame whose wall-clock time it logs, then closes;
+  white for a second, timed at the frame after the one that drew it, then closes;
 - follows the test's browser: its debugging port polled every 250 ms says when its window is up (`presence`);
 - raises, before each gesture (`prepare`), the layer its window is in: the dashboard's window, which covers the screen,
   or every tile over it (`raise`). Raising needs no window manager. Each raise is logged: the cut shows a window only
   while the master shows it.
 
-Each beat is held (`hooks.ended`) until its lines have been read, one after another from its start, each for its
-length at 15 characters a second plus 0.4 s (`lineMs`), and its last action has shown for `SETTLE_MS` (1.2 s). These
-holds are the take's, never a beat's: a beat still waits on state. `finish` stops the capture (ffmpeg's `q`) and writes
-the take log; a beat that fails ends the take as in check mode, the master and the log kept beside the evidence.
+Each beat is held (`hooks.ended`) until its lines have been read, one after another from its start, each for its length
+at 15 characters a second plus 0.4 s (`lineMs`), and its last action has shown for `SETTLE_MS` (1.2 s). These holds are
+the take's, never a beat's: a beat still waits on state. `finish` stops the capture (ffmpeg's `q`) and writes the take
+log; a beat that fails ends the take as in check mode, the master and the log kept beside the evidence. The take tells
+the frames the capture grabbed against those it wrote: at a constant frame rate a repeated frame matched by a dropped
+one is a grab that came late, and repeats beyond the drops are frames missed (it warns past 5 %).
 
 ### The take log
 
