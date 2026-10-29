@@ -25,7 +25,9 @@ import {
   highlightToSpans,
   isKnownLanguage,
   languageForPath,
+  SCOPE_ROLES,
   type HighlightSpan,
+  type TokenRole,
 } from '#shared/highlight';
 import { parseSourceSnippet } from '#shared/source-snippet';
 import {
@@ -78,33 +80,23 @@ const COLORS = {
   tokBuiltin: rgb(0.012, 0.412, 0.631),
 } as const;
 
-/** highlight.js scope → the color that carries it, mirroring the HTML report's CSS. */
-const TOKEN_COLORS: Record<string, Color> = {
+/** Each token role's color, mirroring the HTML report's CSS. */
+const ROLE_COLORS: Record<TokenRole, Color> = {
   comment: COLORS.faint,
-  quote: COLORS.faint,
   keyword: COLORS.tokKey,
-  'selector-tag': COLORS.tokKey,
-  literal: COLORS.tokKey,
-  type: COLORS.tokKey,
-  meta: COLORS.tokKey,
   string: COLORS.tokStr,
-  regexp: COLORS.tokStr,
-  symbol: COLORS.tokStr,
-  char: COLORS.tokStr,
   number: COLORS.tokNum,
-  bullet: COLORS.tokNum,
-  title: COLORS.tokFn,
-  section: COLORS.tokFn,
-  name: COLORS.tokFn,
-  attr: COLORS.tokAttr,
+  function: COLORS.tokFn,
   attribute: COLORS.tokAttr,
-  property: COLORS.tokAttr,
-  variable: COLORS.tokAttr,
-  'template-variable': COLORS.tokAttr,
-  built_in: COLORS.tokBuiltin,
+  builtin: COLORS.tokBuiltin,
   addition: COLORS.pass,
   deletion: COLORS.fail,
 };
+
+/** highlight.js scope → the color that carries it. */
+const TOKEN_COLORS: Record<string, Color> = Object.fromEntries(
+  Object.entries(SCOPE_ROLES).map(([scope, role]) => [scope, ROLE_COLORS[role]]),
+);
 
 const PAGE_WIDTH = 595.28; // A4 portrait
 const PAGE_HEIGHT = 841.89;

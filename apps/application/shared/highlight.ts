@@ -231,6 +231,46 @@ export function highlightDiffRows(rows: DiffRow[], lang?: string | null): (strin
   return out;
 }
 
+/** What a token is, for its color: every surface paints a role in one color. */
+export type TokenRole =
+  | 'comment'
+  | 'keyword'
+  | 'string'
+  | 'number'
+  | 'function'
+  | 'attribute'
+  | 'builtin'
+  | 'addition'
+  | 'deletion';
+
+/** highlight.js scope → its role, as the HTML report's CSS maps the `hljs-*` classes. */
+export const SCOPE_ROLES: Readonly<Record<string, TokenRole>> = {
+  comment: 'comment',
+  quote: 'comment',
+  keyword: 'keyword',
+  'selector-tag': 'keyword',
+  literal: 'keyword',
+  type: 'keyword',
+  meta: 'keyword',
+  string: 'string',
+  regexp: 'string',
+  symbol: 'string',
+  char: 'string',
+  number: 'number',
+  bullet: 'number',
+  title: 'function',
+  section: 'function',
+  name: 'function',
+  attr: 'attribute',
+  attribute: 'attribute',
+  property: 'attribute',
+  variable: 'attribute',
+  'template-variable': 'attribute',
+  built_in: 'builtin',
+  addition: 'addition',
+  deletion: 'deletion',
+};
+
 /** A run of source text sharing one highlight.js scope, or none for plain text. */
 export interface HighlightSpan {
   text: string;

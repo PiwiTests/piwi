@@ -11,20 +11,32 @@ import {
   buildTopFailures,
   errorExcerpt,
   computePerfBaseline,
+  truncateExcerpt,
   TOP_FAILURES_LIMIT,
   PERF_BASELINE_RUNS,
   PERF_REGRESSION_MIN_PCT,
+  RUN_HISTORY_LIMIT,
 } from '#shared/notification-events';
 import { resolveOwners } from '../scm/ownership';
 import { resolveDefaultBranch } from '../scm/default-branch';
 import { resolveRunBranch } from '../run-branch';
-import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
+import { inlineCasePayloads } from '../case-payloads';
+import { FAILED_STATUS_KEYS, isFailedStatus, testKey, testOutcomes } from '#shared/utils/test-counts';
 import { describeCluster } from '#shared/describe-cluster';
 import { looksFixedTests } from '#shared/status-classify';
-import { isEligibleRun } from '#shared/run-eligibility';
+import { eligibleRunSql, isEligibleRun, runCommit } from '#shared/run-eligibility';
+import { commitUrl } from '#shared/scm-urls';
+import { safeHttpUrl } from '#shared/utils/safe-url';
+import { parseSourceSnippet } from '#shared/source-snippet';
 import { getClusterKnownIssue } from '../integrations/known-issue';
 import type { DbClient } from '../../database';
-import type { LooksFixedTest } from '#shared/notification-events';
+import type {
+  FailureSource,
+  HistoryOutcome,
+  LooksFixedTest,
+  RunCommit,
+  RunHistoryEntry,
+} from '#shared/notification-events';
 import type { TestMetadata } from '#shared/types';
 import { readRunIncident } from '#shared/run-incident';
 
@@ -107,12 +119,166 @@ export async function loadNewlyLooksFixedTests(
   return current.filter((t) => !already.has(t.testCaseId));
 }
 
+/** The run statuses a run notification's history shows: runs that ended. */
+const HISTORY_STATUSES = ['passed', 'failed', 'timedout', 'interrupted'];
+
+/**
+ * The run and the runs before it on its branch and environment that send
+ * notifications, at most {@link RUN_HISTORY_LIMIT}, oldest first.
+ */
+async function loadRunHistory(
+  db: DbClient,
+  run: { id: number; projectId: number; status: string; failedTests: number; environment: string | null },
+  branch: string | undefined,
+): Promise<RunHistoryEntry[]> {
+  const prior = await db
+    .select({
+      id: testRuns.id,
+      status: testRuns.status,
+      failedTests: testRuns.failedTests,
+      branch: testRuns.branch,
+      environment: testRuns.environment,
+      metadata: testRuns.metadata,
+    })
+    .from(testRuns)
+    .where(
+      and(
+        eq(testRuns.projectId, run.projectId),
+        lt(testRuns.id, run.id),
+        inArray(testRuns.status, HISTORY_STATUSES),
+        eligibleRunSql('notifications'),
+      ),
+    )
+    .orderBy(desc(testRuns.id))
+    .limit(BASELINE_FETCH_LIMIT);
+  const earlier = prior
+    .filter((r) => (r.branch ?? resolveRunBranch(r.metadata) ?? undefined) === branch)
+    .filter((r) => (r.environment ?? null) === (run.environment ?? null))
+    .slice(0, RUN_HISTORY_LIMIT - 1)
+    .reverse();
+  return [...earlier, run].map((r) => ({ runId: r.id, status: r.status, failedTests: r.failedTests }));
+}
+
+/** A test's outcome in a run, from its deciding attempt there (`testOutcomes`). */
+function historyOutcome(row: { status: string; retries: number | null } | undefined): HistoryOutcome {
+  if (!row) return null;
+  if (isFailedStatus(row.status)) return 'failed';
+  if (row.status === 'passed') return (row.retries ?? 0) > 0 ? 'flaky' : 'passed';
+  if (row.status === 'skipped' || row.status === 'didnotrun') return row.status;
+  return null;
+}
+
+/** Each test's outcome in each run of the history: `test case id, browser` (`testKey`) to one entry per run. */
+async function loadTestHistories(
+  db: DbClient,
+  history: RunHistoryEntry[],
+  tests: Array<{ testCaseId: number; browserName: string | null }>,
+): Promise<Map<string, HistoryOutcome[]>> {
+  const result = new Map<string, HistoryOutcome[]>();
+  if (tests.length === 0) return result;
+  const rows = await db
+    .select({
+      testRunId: testRunsCases.testRunId,
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
+      retries: testRunsCases.retries,
+      status: testRunsCases.status,
+    })
+    .from(testRunsCases)
+    .where(
+      and(
+        inArray(
+          testRunsCases.testRunId,
+          history.map((h) => h.runId),
+        ),
+        inArray(testRunsCases.testCaseId, [...new Set(tests.map((t) => t.testCaseId))]),
+      ),
+    );
+  const outcomeIn = new Map<string, (typeof rows)[number]>();
+  for (const entry of history) {
+    for (const row of testOutcomes(rows.filter((r) => r.testRunId === entry.runId))) {
+      outcomeIn.set(`${entry.runId}\x00${testKey(row)}`, row);
+    }
+  }
+  for (const test of tests) {
+    const key = testKey(test);
+    result.set(
+      key,
+      history.map((entry) => historyOutcome(outcomeIn.get(`${entry.runId}\x00${key}`))),
+    );
+  }
+  return result;
+}
+
+/**
+ * The code each execution failed at: the innermost in-project frame the
+ * reporter captured, else the snippet of the test file around its failing line.
+ */
+async function loadFailureSources(
+  db: DbClient,
+  failures: Array<{ executionId: number; filePath: string }>,
+): Promise<Map<number, FailureSource>> {
+  const result = new Map<number, FailureSource>();
+  if (failures.length === 0) return result;
+  const rows = await db
+    .select({
+      id: testRunsCases.id,
+      testSource: testRunsCases.testSource,
+      testSourcePayloadId: testRunsCases.testSourcePayloadId,
+      testSourceFrames: testRunsCases.testSourceFrames,
+      testSourceFramesPayloadId: testRunsCases.testSourceFramesPayloadId,
+    })
+    .from(testRunsCases)
+    .where(
+      inArray(
+        testRunsCases.id,
+        failures.map((f) => f.executionId),
+      ),
+    );
+  for (const stored of rows) {
+    const row = await inlineCasePayloads(db, stored);
+    const [frame] = Array.isArray(row.testSourceFrames) ? (row.testSourceFrames as unknown[]) : [];
+    const { file, line, snippet } = (frame ?? {}) as Partial<FailureSource>;
+    if (typeof file === 'string' && typeof line === 'number' && typeof snippet === 'string') {
+      result.set(row.id, { file, line, snippet });
+      continue;
+    }
+    const filePath = failures.find((f) => f.executionId === row.id)?.filePath;
+    const failingLine = row.testSource ? parseSourceSnippet(row.testSource).find((r) => r.failing)?.line : null;
+    if (filePath && row.testSource && failingLine != null) {
+      result.set(row.id, { file: filePath, line: failingLine, snippet: row.testSource });
+    }
+  }
+  return result;
+}
+
+/** The commit a run tested, from its metadata, linked on the project's repository when its host is known. */
+function runCommitOf(metadata: unknown, repositoryUrl: string | null): RunCommit | undefined {
+  const sha = runCommit(metadata);
+  if (!sha) return undefined;
+  const scm = (metadata as { scm?: { author?: unknown; commitMessage?: unknown } } | null)?.scm;
+  const line = (value: unknown, max: number) =>
+    typeof value === 'string' ? truncateExcerpt(value.split('\n')[0], max) : undefined;
+  const message = line(scm?.commitMessage, 120);
+  const author = line(scm?.author, 80);
+  const url = commitUrl(repositoryUrl, sha);
+  return { sha, ...(message ? { message } : {}), ...(author ? { author } : {}), ...(url ? { url } : {}) };
+}
+
+/** The CI build page a run's metadata names. */
+function runCiUrl(metadata: unknown): string | undefined {
+  const ci = (metadata as { ci?: { buildUrl?: unknown; jobUrl?: unknown } } | null)?.ci;
+  const pick = (value: unknown) => (typeof value === 'string' ? safeHttpUrl(value) : null);
+  return pick(ci?.buildUrl) ?? pick(ci?.jobUrl) ?? undefined;
+}
+
 /**
  * The run, its project and the payload every run event carries: counts, branch,
- * environment, the first failures and the owners of every failure. Null when
- * the run or its project is gone.
+ * environment, commit, history, the first failures and the owners of every
+ * failure. Null when the run or its project is gone.
  */
-async function loadRunPayload(db: DbClient, runId: number) {
+export async function loadRunPayload(db: DbClient, runId: number) {
   const [runRow] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
   if (!runRow) return null;
 
@@ -124,34 +290,86 @@ async function loadRunPayload(db: DbClient, runId: number) {
   const defaultBranch = await resolveDefaultBranch(db, project, runRow.metadata);
   const isDefaultBranch = branch ? branch === defaultBranch : false;
 
+  // A failing test is one whose deciding attempt failed: a first attempt that
+  // passed on a retry is flaky, and the attempts before a test's last are no
+  // test of their own.
+  const attempts = await db
+    .select({
+      id: testRunsCases.id,
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
+      retries: testRunsCases.retries,
+      status: testRunsCases.status,
+    })
+    .from(testRunsCases)
+    .where(
+      and(
+        eq(testRunsCases.testRunId, runId),
+        inArray(
+          testRunsCases.testCaseId,
+          db
+            .select({ id: testRunsCases.testCaseId })
+            .from(testRunsCases)
+            .where(and(eq(testRunsCases.testRunId, runId), inArray(testRunsCases.status, [...FAILED_STATUS_KEYS]))),
+        ),
+      ),
+    );
+  const failingIds = testOutcomes(attempts)
+    .filter((row) => isFailedStatus(row.status))
+    .map((row) => row.id)
+    .sort((a, b) => a - b)
+    .slice(0, OWNER_LOOKUP_LIMIT);
+
   // A few failing tests (title + error excerpt + deep-link ids) so a
   // notification carries enough context to start debugging without opening
   // the dashboard first.
   // Each failure is named by its external ID and label, the way the team knows it.
-  const failedRows = (
-    await db
-      .select({
-        title: testCases.title,
-        externalId: testCases.externalId,
-        displayTitle: testCases.displayTitle,
-        filePath: testCases.filePath,
-        error: testRunsCases.error,
-        testCaseId: testRunsCases.testCaseId,
-        executionId: testRunsCases.id,
-        owner: testCases.owner,
-        clusterId: testRunsCases.failureClusterId,
-      })
-      .from(testRunsCases)
-      .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-      .where(and(eq(testRunsCases.testRunId, runId), inArray(testRunsCases.status, [...FAILED_STATUS_KEYS])))
-      .limit(OWNER_LOOKUP_LIMIT)
-  ).map((row) => ({ ...row, title: testTextLabel(row) }));
+  const failedRows =
+    failingIds.length === 0
+      ? []
+      : (
+          await db
+            .select({
+              title: testCases.title,
+              externalId: testCases.externalId,
+              displayTitle: testCases.displayTitle,
+              filePath: testCases.filePath,
+              suitePath: testCases.suitePath,
+              line: testRunsCases.line,
+              browserName: testRunsCases.browserName,
+              error: testRunsCases.error,
+              testCaseId: testRunsCases.testCaseId,
+              executionId: testRunsCases.id,
+              owner: testCases.owner,
+              clusterId: testRunsCases.failureClusterId,
+            })
+            .from(testRunsCases)
+            .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+            .where(inArray(testRunsCases.id, failingIds))
+        )
+          .sort((a, b) => a.executionId - b.executionId)
+          .map((row) => ({ ...row, title: testTextLabel(row) }));
+
+  const history = await loadRunHistory(db, runRow, branch);
 
   // The notification still names only the first few failures, but ownership
   // is resolved across all of them — a subscription scoped to one team must
   // not miss a run just because that team's failure ranked seventh.
-  const topFailures = buildTopFailures(failedRows.slice(0, TOP_FAILURES_LIMIT));
-  const resolvedOwners = await resolveOwners(db, runRow.projectId, failedRows).catch(() => new Map());
+  const top = failedRows.slice(0, TOP_FAILURES_LIMIT);
+  const [resolvedOwners, sources, testHistories] = await Promise.all([
+    resolveOwners(db, runRow.projectId, failedRows).catch(() => new Map()),
+    loadFailureSources(db, top),
+    loadTestHistories(db, history, top),
+  ]);
+  const topFailures = buildTopFailures(
+    top.map((row) => ({
+      ...row,
+      owner: resolvedOwners.get(row)?.owner,
+      source: sources.get(row.executionId),
+      history: testHistories.get(testKey(row)),
+    })),
+  );
   const ownersOf = (rows: typeof failedRows) => [
     ...new Set(rows.map((row) => resolvedOwners.get(row)?.owner).filter((owner): owner is string => Boolean(owner))),
   ];
@@ -159,6 +377,8 @@ async function loadRunPayload(db: DbClient, runId: number) {
   /** The owners of the tests that failed into one cluster in this run. */
   const clusterOwners = (clusterId: number) => ownersOf(failedRows.filter((row) => row.clusterId === clusterId));
 
+  const commit = runCommitOf(runRow.metadata, project.repositoryUrl);
+  const ciUrl = runCiUrl(runRow.metadata);
   const runPayload = {
     runId,
     projectId: runRow.projectId,
@@ -168,6 +388,8 @@ async function loadRunPayload(db: DbClient, runId: number) {
     failedTests: runRow.failedTests,
     passedTests: runRow.passedTests,
     flakyTests: runRow.flakyTests,
+    skippedTests: runRow.skippedTests,
+    didNotRunTests: runRow.didNotRunTests,
     flakinessRate: runRow.totalTests > 0 ? runRow.flakyTests / runRow.totalTests : 0,
     durationMs: runRow.duration ?? undefined,
     branch,
@@ -175,6 +397,9 @@ async function loadRunPayload(db: DbClient, runId: number) {
     isDefaultBranch,
     topFailures,
     owners,
+    ...(commit ? { commit } : {}),
+    ...(ciUrl ? { ciUrl } : {}),
+    history,
   };
   return { runRow, project, runPayload, branch, environment, isDefaultBranch, clusterOwners };
 }
@@ -225,6 +450,8 @@ export async function emitIncidentNotification(db: DbClient, runId: number): Pro
     ...base,
     passedTests: runRow.passedTests,
     flakyTests: runRow.flakyTests,
+    skippedTests: runRow.skippedTests,
+    didNotRunTests: runRow.didNotRunTests,
     durationMs: runRow.duration ?? undefined,
   });
   await emitNotification(db, 'environment.incident', {

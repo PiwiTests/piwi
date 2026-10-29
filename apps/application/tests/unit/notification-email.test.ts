@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { renderNotificationEmail } from '../../server/utils/email';
-import type {
-  ClusterFixedPayload,
-  ClusterNewPayload,
-  ClusterRegressedPayload,
-  RunFinishedPayload,
+import { escapeHtml } from '#shared/email-layout';
+import {
+  NOTIFICATION_EVENTS,
+  renderEventSubject,
+  type ClusterFixedPayload,
+  type ClusterNewPayload,
+  type ClusterRegressedPayload,
+  type NotificationEvent,
+  type NotificationPayload,
 } from '#shared/notification-events';
 
 const SITE = 'https://piwi.example.com';
@@ -60,7 +64,8 @@ describe('cluster.fixed email', () => {
 
   test('names the known issue with a link when the payload has one', () => {
     const { html, text } = renderNotificationEmail('cluster.fixed', { ...fixed, knownIssue });
-    expect(html).toContain(`Tracked in <a href="${knownIssue.url}"`);
+    expect(html).toContain('>Tracked in</td>');
+    expect(html).toContain(`<a href="${knownIssue.url}"`);
     expect(html).toContain('>PAY-17</a>');
     expect(text).toContain(`Tracked in PAY-17: ${knownIssue.url}`);
   });
@@ -157,10 +162,58 @@ describe('notification email escaping', () => {
     expect(html).toContain(`<title>New failure cluster — ${escaped}</title>`);
   });
 
-  test('an event without a template escapes its subject line', () => {
-    const payload = { projectName: hostile, runId: 3 } as RunFinishedPayload;
-    const { html, text } = renderNotificationEmail('flakiness.spike', payload);
-    expect(html).toBe(`<p>Flakiness spike — ${escaped}</p>`);
-    expect(text).toBe(`Flakiness spike — ${hostile}`);
+  test('every event has its own email, which escapes the project in its banner and title', () => {
+    const run = {
+      runId: 3,
+      projectId: 1,
+      projectName: hostile,
+      status: 'failed',
+      totalTests: 4,
+      failedTests: 1,
+      passedTests: 3,
+      flakyTests: 1,
+    };
+    const payloads: Record<NotificationEvent, NotificationPayload> = {
+      'run.finished': run,
+      'run.failed': run,
+      'run.failed.default_branch': run,
+      'run.interrupted': { ...run, status: 'interrupted' },
+      'flakiness.spike': run,
+      'perf.regression': { ...run, durationMs: 9000, baselineDurationMs: 6000, regressionPct: 50 },
+      'cluster.new': { clusterId: 5, projectId: 1, projectName: hostile, signature: hostile, runId: 3 },
+      'cluster.fixed': { ...fixed, projectName: hostile },
+      'cluster.regressed': { ...regressed, projectName: hostile },
+      'diagnosis.completed': { clusterId: 5, projectId: 1, summary: hostile, rootCause: hostile },
+      'auto_heal.pr_opened': {
+        projectId: 1,
+        projectName: hostile,
+        runId: 3,
+        prNumber: 7,
+        prUrl: 'https://example.com/pr/7',
+        branch: hostile,
+        editCount: 2,
+      },
+      'bug.looks_fixed': {
+        projectId: 1,
+        projectName: hostile,
+        runId: 3,
+        tests: [{ title: hostile, filePath: hostile, executionId: 9, testCaseId: 4 }],
+      },
+      'environment.incident': {
+        ...run,
+        rule: 'host-unreachable',
+        reason: hostile,
+        host: hostile,
+        otherProjects: 0,
+        incidentKey: 'k',
+      },
+    };
+    for (const event of NOTIFICATION_EVENTS) {
+      const { html, text } = renderNotificationEmail(event, payloads[event]);
+      expect(html, event).toMatch(/^<!DOCTYPE html>/);
+      expect(html, event).not.toContain('<img src=x');
+      expect(html, event).toContain(`<title>${escapeHtml(renderEventSubject(event, payloads[event]))}</title>`);
+      expect(text, event).toContain(renderEventSubject(event, payloads[event]).split(' — ')[0]);
+    }
   });
 });

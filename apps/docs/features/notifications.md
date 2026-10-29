@@ -59,7 +59,7 @@ notifications** without deleting the subscription.
 
 ### Email
 
-Requires SMTP to be configured (see below). Sends to a destination address. With authentication on, each user with an account email also gets an automatic **Account email** channel.
+Requires SMTP (see below). Sends to a destination address; [what each email shows](/reference/notification-events#emails). With authentication on, each user with an account email also gets an automatic **Account email** channel.
 
 ### Slack
 

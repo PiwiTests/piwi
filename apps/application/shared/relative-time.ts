@@ -48,3 +48,12 @@ export function relativeTimeAgo(
   if (diff < 1000) return 'just now';
   return `${durationApprox(diff)} ago`;
 }
+
+/** A run's or a test's duration as a clock reads it: `850ms`, `12.4s`, `8m 32s`. */
+export function durationShort(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${Math.round(seconds % 60)}s`;
+}
