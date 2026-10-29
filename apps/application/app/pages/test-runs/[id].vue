@@ -873,6 +873,7 @@ const moreMenuItems = computed(() => {
         <template #right>
           <div class="flex items-center shrink-0 min-w-0">
             <ExportMenu
+              :endpoint="`/api/test-runs/${runId}/export`"
               :perfetto-endpoint="`/api/test-runs/${runId}/perfetto`"
               :base-name="`piwi-run-${runId}`"
               class="mr-1"

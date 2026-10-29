@@ -9,8 +9,10 @@ import { testTextLabel } from '#shared/utils/test-label';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { getTestRunCase, getTestRunCaseTraces } from '#shared/handlers/test-cases';
 import { getFailureCluster, getClusterDiagnosis, getExecutionDiagnosis } from '#shared/handlers/failure-clusters';
+import { getFailureGroups, getTestRun } from '#shared/handlers/test-runs';
 import { classifyEvidenceFile, contentTypeForPath } from '#shared/file-classify';
-import type { ExportAsset, ExportBundle, ExportCase } from './types';
+import { isFailedStatus, testOutcomes } from '#shared/utils/test-counts';
+import type { ExportAsset, ExportBundle, ExportCase, ExportRunGroup, ExportRunTest } from './types';
 
 export interface CollectOptions {
   /** Member cases carrying full evidence; the rest are listed only. */
@@ -169,6 +171,90 @@ export async function collectClusterBundle(
       title: String(m.title ?? ''),
       filePath: m.filePath ?? null,
     })),
+    omitted: [],
+  };
+}
+
+/** Whether a test's outcome in a run is a failure: failed, timed out or interrupted. */
+function isFailingOutcome(status: string): boolean {
+  return isFailedStatus(status) || status === 'interrupted';
+}
+
+/**
+ * A whole run: its row, every test once (the attempt that decided its outcome, per test case and browser), its
+ * failures grouped by root cause as the run page groups them, and the failing tests in detail, the largest group
+ * first, up to `maxCases`.
+ */
+export async function collectRunBundle(
+  db: DrizzleDB,
+  runId: number,
+  opts: CollectOptions,
+): Promise<ExportBundle | null> {
+  const run = (await getTestRun(db, runId)) as Record<string, any> | null;
+  if (!run) return null;
+  const { testCases: attempts = [], suites: _suites, links: _links, project, ...detail } = run;
+
+  const rows = (attempts as Record<string, any>[]).map((tc) => ({
+    ...tc,
+    browserName: (tc.browserName ?? tc.browser?.projectName ?? null) as string | null,
+  }));
+  const tests: ExportRunTest[] = testOutcomes(rows)
+    .map((tc) => ({
+      executionId: Number(tc.executionId),
+      testCaseId: Number(tc.testCaseId),
+      title: testTextLabel({ title: String(tc.title ?? ''), displayTitle: tc.displayTitle, externalId: tc.externalId }),
+      suitePath: Array.isArray(tc.suitePath) ? (tc.suitePath as unknown[]).map(String) : [],
+      filePath: tc.filePath ?? null,
+      location: tc.location ?? tc.filePath ?? null,
+      browser: tc.browserName,
+      status: String(tc.status ?? 'unknown'),
+      flaky: tc.status === 'passed' && Number(tc.retries ?? 0) > 0,
+      retries: Number(tc.retries ?? 0),
+      duration: tc.duration == null ? null : Number(tc.duration),
+      error: typeof tc.error === 'string' && tc.error.trim() ? tc.error.trim().split('\n')[0]!.slice(0, 300) : null,
+      failureClusterId: tc.failureClusterId == null ? null : Number(tc.failureClusterId),
+    }))
+    .sort(
+      (a, b) =>
+        String(a.filePath ?? '').localeCompare(String(b.filePath ?? '')) ||
+        [...a.suitePath, a.title].join(' ').localeCompare([...b.suitePath, b.title].join(' ')) ||
+        String(a.browser ?? '').localeCompare(String(b.browser ?? '')),
+    );
+
+  const failing = tests.filter((t) => isFailingOutcome(t.status));
+  const groups: ExportRunGroup[] = ((await getFailureGroups(db, runId)) as Record<string, any>[]).map((g) => ({
+    clusterId: Number(g.clusterId),
+    title: String(g.title || g.signature || `Failure cluster ${g.clusterId}`),
+    status: String(g.status ?? 'open'),
+    isNew: Boolean(g.isNew),
+    flaky: Boolean(g.flaky),
+    testCaseIds: ((g.cases ?? []) as Record<string, any>[]).map((c) => Number(c.testCaseId)),
+    diagnosis: g.diagnosis?.status === 'completed' && g.diagnosis.summary ? String(g.diagnosis.summary) : null,
+  }));
+
+  // The failing tests in the order the groups list them, then those no group holds.
+  const order = new Map<number, number>();
+  groups.forEach((g, gi) => g.testCaseIds.forEach((id, i) => order.set(id, gi * 100_000 + i)));
+  const rank = (t: ExportRunTest) => order.get(t.testCaseId) ?? Number.MAX_SAFE_INTEGER;
+  const ranked = [...failing].sort((a, b) => rank(a) - rank(b));
+  const expanded = ranked.slice(0, Math.max(0, opts.maxCases));
+  const collected = await Promise.all(expanded.map((t) => collectCase(db, t.executionId)));
+  const cases = collected.filter((c): c is ExportCase => c !== null);
+  const included = new Set(cases.map((c) => c.executionId));
+
+  return {
+    kind: 'run',
+    generatedAt: new Date().toISOString(),
+    piwiVersion: opts.piwiVersion ?? null,
+    sourceUrl: opts.sourceUrl ?? null,
+    title: run.label ? `Run #${runId} · ${run.label}` : `Run #${runId}`,
+    project: project ? { id: project.id, name: project.name, label: project.label ?? null } : null,
+    cluster: null,
+    run: { detail, tests, groups },
+    cases,
+    truncatedCases: ranked
+      .filter((t) => !included.has(t.executionId))
+      .map((t) => ({ testCaseId: t.testCaseId, title: t.title, filePath: t.filePath })),
     omitted: [],
   };
 }
