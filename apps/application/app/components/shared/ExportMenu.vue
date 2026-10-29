@@ -4,7 +4,7 @@ import type { ApiResponse } from '~~/types/api';
 const props = defineProps<{
   /**
    * API path of the offline-report endpoint, e.g. `/api/failure-clusters/12/export`.
-   * Omit it (as on the run page) to offer only the Perfetto trace.
+   * Omit it to offer only the Perfetto trace.
    */
   endpoint?: string;
   /** API path of the Perfetto trace endpoint, e.g. `/api/test-runs/12/perfetto`. */

@@ -129,6 +129,7 @@ import {
   apiExecutionBugReport,
   apiExecutionReplaySteps,
   apiExportTestRunCase,
+  apiExportTestRun,
   apiExportFailureCluster,
 } from './export';
 import {
@@ -2020,6 +2021,14 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
       return { items: await getTestRunCaseTraces(await getDemoDb(), +m[1]!) };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/export$/,
+    handler: async (m, _, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return apiExportTestRun(+m[1]!, q as URLSearchParams | undefined);
     },
   },
   {
