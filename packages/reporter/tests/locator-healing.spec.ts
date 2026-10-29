@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { describe, it, expect, vi } from 'vitest';
 import {
+  callSitePath,
   captureCallerLocation,
+  framePath,
   generateAlternatives,
   classifyCssStability,
   dedupeSnapshotsByLocation,
@@ -929,6 +933,75 @@ describe('captureCallerLocation', () => {
       frame(`${process.cwd()}/tests/fixtures.ts`, 88),
     ].join('\n');
     expect(captureCallerLocation(stack)).toBe('tests/fixtures.ts:88:5');
+  });
+
+  it('reads the frames of an ES-module suite, given as file URLs', () => {
+    const stack = [
+      'Error',
+      frame('/pkg/node_modules/@piwitests/reporter/dist/index.js', 3163),
+      frame('/pkg/node_modules/@piwitests/reporter/dist/index.js', 3100),
+      frame('file:///pkg/node_modules/playwright/lib/matchers/matchers.js', 131),
+      frame(pathToFileURL(path.join(process.cwd(), 'tests', 'my cart.spec.ts')).href, 42),
+    ].join('\n');
+    expect(captureCallerLocation(stack)).toBe('tests/my cart.spec.ts:42:5');
+  });
+
+  it('gives no call site for a file URL that names no file', () => {
+    const stack = [
+      'Error',
+      frame('/pkg/node_modules/@piwitests/reporter/dist/index.js', 3163),
+      frame('file:///work/tests/checkout%2Fpay.spec.ts', 42),
+    ].join('\n');
+    expect(captureCallerLocation(stack)).toBeNull();
+  });
+
+  it('gives the absolute call site once the working directory is removed', () => {
+    const spec = path.join(process.cwd(), 'tests', 'checkout.spec.ts');
+    const stack = ['Error', frame('/pkg/node_modules/@piwitests/reporter/dist/index.js', 3163), frame(spec, 42)].join(
+      '\n',
+    );
+    const cwd = vi.spyOn(process, 'cwd').mockImplementation(() => {
+      throw new Error('ENOENT: no such file or directory, uv_cwd');
+    });
+    try {
+      expect(captureCallerLocation(stack)).toBe(`${spec.split(path.sep).join('/')}:42:5`);
+    } finally {
+      cwd.mockRestore();
+    }
+  });
+});
+
+describe('callSitePath', () => {
+  it('reads a POSIX file URL relative to the working directory', () => {
+    expect(callSitePath('file:///work/app/tests/cart.spec.ts', '/work/app', false)).toBe('tests/cart.spec.ts');
+  });
+
+  it('reads a Windows file URL with forward slashes', () => {
+    expect(callSitePath('file:///C:/work/app/tests/cart.spec.ts', 'C:\\work\\app', true)).toBe('tests/cart.spec.ts');
+  });
+
+  it('decodes a percent-encoded file URL', () => {
+    expect(callSitePath('file:///work/my%20app/tests/caf%C3%A9.spec.ts', '/work/my app', false)).toBe(
+      'tests/café.spec.ts',
+    );
+    expect(callSitePath('file:///C:/work/my%20app/tests/cart.spec.ts', 'C:\\work\\my app', true)).toBe(
+      'tests/cart.spec.ts',
+    );
+  });
+
+  it('reads a plain path', () => {
+    expect(callSitePath('/work/app/tests/cart.spec.ts', '/work/app', false)).toBe('tests/cart.spec.ts');
+    expect(callSitePath('C:\\work\\app\\tests\\cart.spec.ts', 'C:\\work\\app', true)).toBe('tests/cart.spec.ts');
+  });
+
+  it('leaves a file outside the working directory relative, and one on another drive absolute', () => {
+    expect(callSitePath('file:///work/shared/steps.ts', '/work/app', false)).toBe('../shared/steps.ts');
+    expect(callSitePath('file:///D:/shared/steps.ts', 'C:\\work\\app', true)).toBe('D:/shared/steps.ts');
+  });
+
+  it('is null for a URL that names no local file', () => {
+    expect(callSitePath('file://server/share/cart.spec.ts', '/work/app', false)).toBeNull();
+    expect(framePath('file://server/share/cart.spec.ts', true)).toBe('\\\\server\\share\\cart.spec.ts');
   });
 });
 

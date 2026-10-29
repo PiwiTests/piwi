@@ -58,15 +58,13 @@ const runEnded = (runs) => waitFor(async () => (await runCard(runs).count()) ===
 /** The statuses of a test that ended. */
 const FINISHED = new Set(['passed', 'failed', 'timedout', 'skipped', 'interrupted']);
 
-/** A known bug: a run page opened before the run's tests begin stays there until it is reloaded. */
-const RUN_PAGE_STAYS_INITIALIZING = 'the run page of a run still setting up never hears that it started';
-
 /** The run card of the developer's checkout in the Runs window. */
 const runCard = (runs) => runs.getByRole('region', { name: 'shop' }).and(runs.locator('.run:not(.ended)'));
 
 export const STORY = [
   beat({
     id: 'title',
+    title: 'Piwi',
     seconds: 4,
     focus: ['card'],
     lines: { en: ['From a red run to a fixed test, without leaving your flow.'] },
@@ -74,6 +72,7 @@ export const STORY = [
 
   beat({
     id: 'red-run',
+    title: 'The red run',
     seconds: 22,
     focus: ['dashboard'],
     lines: {
@@ -141,7 +140,6 @@ export const STORY = [
       expect(candidate === null, `the healing's candidate is ${candidate}, not ${FIXED}`);
       const why = await instance.whyNoHealing(state.failing.testCaseId, `${PAGE_OBJECT}:${FAILING_LINE}`, {
         snapshots: ciSnapshots(set.reports.shipped, 'places an order'),
-        ciDir: set.ciDir,
       });
       expect(why, `the healing has no candidate, and no known bug explains it`);
       skip(why.bug, `the healing panel's candidate ${FIXED}, and Most likely naming it (${why.detail})`);
@@ -150,6 +148,7 @@ export const STORY = [
 
   beat({
     id: 'to-the-editor',
+    title: 'To the editor',
     seconds: 14,
     focus: ['dashboard', 'vscode'],
     lines: {
@@ -183,6 +182,7 @@ export const STORY = [
 
   beat({
     id: 'run-followed',
+    title: 'The run, followed',
     seconds: 10,
     focus: ['test-browser', 'runs'],
     lines: { en: ["The test's browser opens beside the editor,", 'and Piwi Picker follows the run.'] },
@@ -222,6 +222,7 @@ export const STORY = [
 
   beat({
     id: 'paused',
+    title: 'Paused',
     seconds: 14,
     focus: ['vscode', 'test-browser', 'runs'],
     lines: {
@@ -261,6 +262,7 @@ export const STORY = [
 
   beat({
     id: 'right-locator',
+    title: 'The right locator',
     seconds: 18,
     focus: ['runs', 'test-browser', 'vscode'],
     lines: {
@@ -287,6 +289,7 @@ export const STORY = [
 
   beat({
     id: 'missing-step',
+    title: 'The missing step',
     seconds: 18,
     focus: ['vscode', 'test-browser', 'vscode'],
     lines: {
@@ -319,6 +322,7 @@ export const STORY = [
 
   beat({
     id: 'check-order',
+    title: 'Check the order',
     seconds: 18,
     focus: ['runs', 'vscode', 'test-browser', 'vscode'],
     lines: {
@@ -361,6 +365,7 @@ export const STORY = [
 
   beat({
     id: 'green',
+    title: 'Green',
     seconds: 8,
     focus: ['runs', 'vscode'],
     lines: { en: ['Resume: the test passes, and the editor shows it.'] },
@@ -395,6 +400,7 @@ export const STORY = [
 
   beat({
     id: 'back-on-the-team',
+    title: 'Back on the team',
     seconds: 22,
     focus: ['dashboard'],
     budget: 240_000,
@@ -405,7 +411,7 @@ export const STORY = [
         'until the run turns green.',
       ],
     },
-    async run({ set, repo, dashboard, instance, gesture, state, skip }) {
+    async run({ set, repo, dashboard, instance, gesture, state }) {
       gesture.note('the fix is committed and pushed');
       state.fixCommit = push(repo.shop, 'Fix the checkout test for the redesign');
       const before = (await instance.runs()).map((r) => r.id);
@@ -419,12 +425,10 @@ export const STORY = [
       state.liveRun = live.id;
       await dashboard.bringToFront();
       await dashboard.goto(`${instance.base}/projects/${set.projectId}`, { waitUntil: 'domcontentloaded' });
-      // What the run was just before its page opened: the known bug is a page that loaded while the run set up. A
-      // run only moves on, so one still setting up then may have been as the page loaded; one already running was
-      // past it. Read after the load, the run may have started in between.
-      const beforeLoad = (await instance.run(live.id)).status;
       await gesture.click('dashboard', dashboard.getByRole('link', { name: `Run #${live.id}`, exact: true }));
       await dashboard.waitForURL(`**/test-runs/${live.id}`);
+      // What the run was as its page loaded: a page that loaded while the run set up goes live as it starts.
+      const atLoad = (await instance.run(live.id)).status;
       const watch = dashboard.getByRole('button', { name: /^Watch .* live$/ }).first();
       const header = dashboard.locator('[data-shot="run-header"]');
       // A live page shows Watch while a worker runs a test; a page the run's start never reached still says
@@ -438,16 +442,7 @@ export const STORY = [
         'the run page to show its workers',
         120_000,
       );
-      if (page === 'stuck') {
-        expect(
-          beforeLoad === 'initializing',
-          `the run page never went live, though the run was ${beforeLoad} before the page opened`,
-        );
-        // Reloaded, as a person does: the bug, when the page then shows the worker.
-        await dashboard.reload({ waitUntil: 'domcontentloaded' });
-        await watch.waitFor({ timeout: 60_000 });
-        skip(RUN_PAGE_STAYS_INITIALIZING, 'the run page, opened as the run set up, going live once it starts');
-      }
+      expect(page === 'live', `the run page never went live, though the run was ${atLoad} as it loaded`);
       await gesture.click('dashboard', watch);
       const frame = dashboard.getByRole('dialog').getByRole('img', { name: /^The page .* as the test sees it$/ });
       state.watched = await waitFor(
@@ -480,6 +475,7 @@ export const STORY = [
 
   beat({
     id: 'coda',
+    title: 'The coding agent',
     seconds: 18,
     focus: ['vscode', 'test-browser', 'runs', 'vscode'],
     budget: 240_000,
@@ -523,7 +519,7 @@ export const STORY = [
         const now = await editor.clipboard();
         return now !== copied && now.includes('piwi-runs') ? now : null;
       }, "the runs' MCP configuration on the clipboard");
-      const agent = new Agent(runsServer(configuration));
+      const agent = new Agent(runsServer(configuration), (call) => gesture.note('an agent calls a run tool', { call }));
       await agent.connect();
       const { piwi: list } = await agent.tool('run_list');
       const stopped = list.runs
@@ -564,6 +560,7 @@ export const STORY = [
 
   beat({
     id: 'end',
+    title: 'Get Piwi',
     seconds: 6,
     focus: ['card'],
     lines: {

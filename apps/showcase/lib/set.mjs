@@ -31,7 +31,7 @@ export const TILES = {
 export const TEST_BROWSER_CDP = 9334;
 
 /** Whether something listens on `port` on this machine. */
-function listening(port) {
+export function listening(port) {
   return new Promise((resolve) => {
     const socket = net.connect({ port, host: '127.0.0.1' });
     socket.once('connect', () => {

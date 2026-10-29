@@ -10,6 +10,7 @@ import {
   probeElementAttrs,
   CAPTURED_ATTRS_ARG,
   configuredCodeReachRoots,
+  errorPlace,
   failureError,
 } from '../src/internal/capture/capture-fixtures.js';
 import {
@@ -1979,5 +1980,56 @@ describe('failureError', () => {
     expect(failureError(`Error: ${'x'.repeat(5000)}`)).toHaveLength(1000);
     expect(failureError('Test timeout of 5000ms exceeded.')).toBe('Test timeout of 5000ms exceeded.');
     for (const none of [undefined, '', '  \n ', 'Error: ']) expect(failureError(none)).toBeNull();
+  });
+});
+
+describe('errorPlace', () => {
+  const thrown = (...frames: string[]) => ({ stack: ['Error: the cart is empty', ...frames].join('\n') });
+
+  it('takes the place the runner gives', () => {
+    expect(errorPlace({ location: { file: '/work/app/tests/cart.spec.ts', line: 12 } }, false)).toEqual({
+      file: '/work/app/tests/cart.spec.ts',
+      line: 12,
+      column: 0,
+    });
+  });
+
+  it('reads a POSIX file URL as an absolute path', () => {
+    const error = thrown('    at Context.<anonymous> (file:///work/app/tests/cart.spec.ts:12:7)');
+    expect(errorPlace(error, false)).toEqual({ file: '/work/app/tests/cart.spec.ts', line: 12, column: 7 });
+  });
+
+  it('reads a Windows file URL as a Windows path', () => {
+    const error = thrown('    at Context.<anonymous> (file:///C:/work/app/tests/cart.spec.ts:12:7)');
+    expect(errorPlace(error, true)).toEqual({ file: 'C:\\work\\app\\tests\\cart.spec.ts', line: 12, column: 7 });
+  });
+
+  it('decodes a percent-encoded file URL', () => {
+    const error = thrown('    at file:///work/my%20app/tests/caf%C3%A9.spec.ts:3:1');
+    expect(errorPlace(error, false)).toEqual({ file: '/work/my app/tests/café.spec.ts', line: 3, column: 1 });
+  });
+
+  it('reads a plain path', () => {
+    expect(errorPlace(thrown('    at Context.<anonymous> (/work/app/tests/cart.spec.ts:12:7)'), false)).toEqual({
+      file: '/work/app/tests/cart.spec.ts',
+      line: 12,
+      column: 7,
+    });
+    expect(errorPlace(thrown('    at Context.<anonymous> (C:\\work\\app\\tests\\cart.spec.ts:12:7)'), true)).toEqual({
+      file: 'C:\\work\\app\\tests\\cart.spec.ts',
+      line: 12,
+      column: 7,
+    });
+  });
+
+  it("skips Node's frames, a package's and this package's", () => {
+    const error = thrown(
+      '    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)',
+      '    at Object.click (file:///work/app/node_modules/playwright-core/lib/client/locator.js:40:3)',
+      `    at holdFailure (${path.resolve('src/internal/capture/capture-fixtures.ts')}:2140:5)`,
+      '    at async Context.<anonymous> (file:///work/app/tests/cart.spec.ts:18:21)',
+    );
+    expect(errorPlace(error, false)).toEqual({ file: '/work/app/tests/cart.spec.ts', line: 18, column: 21 });
+    expect(errorPlace(thrown('    at listOnTimeout (node:internal/timers:485:7)'), false)).toBeNull();
   });
 });

@@ -8,8 +8,9 @@ export default defineConfig({
     // `npm run reporter:test:integration` instead. tests/bench/ holds the
     // capture-overhead benchmark: its `.spec.ts` is a Playwright workload
     // driven by `reporter:bench`, and its `.bench.ts` runs under
-    // `reporter:bench:micro`.
-    exclude: ['**/node_modules/**', 'tests/integration/**', 'tests/bench/**'],
+    // `reporter:bench:micro`. The dot folders in tests/ are the transient
+    // Playwright projects the real-run specs write.
+    exclude: ['**/node_modules/**', 'tests/integration/**', 'tests/bench/**', 'tests/.*/**'],
     benchmark: {
       include: ['tests/bench/**/*.bench.ts'],
     },

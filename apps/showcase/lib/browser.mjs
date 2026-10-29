@@ -169,6 +169,8 @@ export async function launchDeveloperBrowser({ dir, editorOrigin, screen, scale,
   const context = await chromium.launchPersistentContext(profile, {
     headless: false,
     viewport: null,
+    // The developer works in the dark: the dashboard and Piwi Picker's pages follow the system's scheme.
+    colorScheme: 'dark',
     // A signal stops the take through `showcase.mjs`'s handlers, which keep the screen before the browser closes.
     handleSIGINT: false,
     handleSIGTERM: false,

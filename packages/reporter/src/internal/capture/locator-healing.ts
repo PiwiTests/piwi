@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { fingerprintPresent, matchRenamedElement, parseAriaCandidates } from '@piwitests/core/locator-fingerprint';
 import type { ElementFingerprint } from '@piwitests/core/locator-fingerprint';
 import { LOCATOR_BUILDER_METHODS } from '@piwitests/core/locator-methods';
@@ -429,6 +430,34 @@ export function suggestLocatorsFromAria(
 // ── Call-site capture ────────────────────────────────────────────────────────
 
 /**
+ * The local path a stack frame's file names: a `file://` URL (an ES-module suite's frames) through `fileURLToPath`,
+ * any other path as it is. `windows` reads the URL as Windows does. Null for a URL that names no local file.
+ */
+export function framePath(file: string, windows: boolean = process.platform === 'win32'): string | null {
+  if (!file.startsWith('file://')) return file;
+  try {
+    return fileURLToPath(file, { windows });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A stack frame's file relative to `cwd`, with forward slashes: the form Playwright writes a location in its error
+ * messages. A file on another drive stays absolute. Null for a URL that names no local file.
+ */
+export function callSitePath(
+  file: string,
+  cwd: string = process.cwd(),
+  windows: boolean = process.platform === 'win32',
+): string | null {
+  const local = framePath(file, windows);
+  if (local === null) return null;
+  const paths = windows ? path.win32 : path.posix;
+  return paths.relative(cwd, local).split(paths.sep).join('/');
+}
+
+/**
  * Capture the calling test's source location (`file:line:col`) from the current
  * stack, for stamping onto a locator snapshot. The path is made cwd-relative so
  * it matches the location format Playwright embeds in error messages — which is
@@ -464,14 +493,9 @@ export function captureCallerLocation(stack: string = new Error().stack ?? ''): 
       prevWasCaptureModule = false;
       continue;
     }
-    let file = m[2]!;
-    if (!file || file.startsWith('node:')) {
-      prevWasCaptureModule = false;
-      continue;
-    }
-    file = file.replace(/^file:\/\/\/?/, '');
+    const file = m[2] ? framePath(m[2]) : null;
     // Must look like a source file (has an extension).
-    if (!/\.[a-z]+$/i.test(file)) {
+    if (!file || file.startsWith('node:') || !/\.[a-z]+$/i.test(file)) {
       prevWasCaptureModule = false;
       continue;
     }
@@ -503,12 +527,10 @@ export function captureCallerLocation(stack: string = new Error().stack ?? ''): 
     }
     let rel = file;
     try {
-      rel = path.relative(process.cwd(), file);
+      rel = callSitePath(file) ?? file;
     } catch {
       /* keep absolute if relative fails */
     }
-    rel = rel.split(path.sep).join('/');
-    if (rel.startsWith('./')) rel = rel.slice(2);
     return `${rel}:${m[3]!}:${m[4]!}`;
   }
   return null;

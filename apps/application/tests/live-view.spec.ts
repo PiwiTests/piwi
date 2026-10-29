@@ -1,7 +1,6 @@
 import { test, expect, type APIRequestContext } from './fixtures';
 import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as http from 'node:http';
 import { createRequire } from 'node:module';
 import * as net from 'node:net';
 import * as os from 'node:os';
@@ -12,6 +11,7 @@ import { parseRunToHub, type RunToHub } from '@piwitests/core/run-channel';
 import { detectCi } from '../../../packages/reporter/src/internal/support/ci';
 import { PROJECT } from '#shared/test-project-names';
 import { resolveE2ETarget } from './desktop-target';
+import { holdWorkerStream } from './utils/live-view';
 
 /**
  * The run page's live view against this server. A real CI run through the built reporter, in a project with the live
@@ -151,21 +151,6 @@ type Workers = { enabled: boolean; workers: Array<{ worker: number }>; received:
 
 async function liveWorkers(request: APIRequestContext, runId: number): Promise<Workers> {
   return (await (await request.get(`/api/test-runs/${runId}/live-view/workers`)).json()) as Workers;
-}
-
-/** A worker's stream to the run's live view, held as a test worker holds it, and whether it is still open. */
-function holdWorkerStream(runId: number, key: string): { open: () => boolean; close: () => void } {
-  let open = true;
-  const request = http.request(`${target.baseUrl}/api/test-runs/${runId}/live-view?worker=0`, {
-    headers: { Accept: 'text/event-stream', Authorization: `Bearer ${key}` },
-  });
-  request.on('response', (response) => {
-    response.resume();
-    response.on('close', () => (open = false));
-  });
-  request.on('error', () => (open = false));
-  request.end();
-  return { open: () => open, close: () => request.destroy() };
 }
 
 /**
@@ -468,7 +453,7 @@ test.describe('Live view of a run', () => {
     });
     expect(events.ok()).toBeTruthy();
 
-    const worker = holdWorkerStream(runId, liveView.key);
+    const worker = holdWorkerStream(target.baseUrl, runId, liveView.key);
     const post = (message: Record<string, unknown>) =>
       request.post(`/api/test-runs/${runId}/live-view`, {
         headers: { Authorization: `Bearer ${liveView.key}` },
