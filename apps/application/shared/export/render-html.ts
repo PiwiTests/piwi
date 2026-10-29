@@ -28,6 +28,9 @@ import {
   clusterFacts,
   clusterHeadline,
   clusterOccurrences,
+  clusterOccurrencesText,
+  clusterOwner,
+  clusterState,
   diagnosisFacts,
   errorRows,
   fmtBytes,
@@ -38,14 +41,21 @@ import {
   OMISSION_REASONS,
   projectLabel,
   runFacts,
-  runOutcome,
+  runFailureGroups,
+  runHeadline,
+  runSummaryFacts,
+  runTestsByOutcome,
+  runTestDuration,
+  runTestStatus,
+  slowestTests,
   statusTone,
+  statusLabel,
   stepBars,
   type Fact,
 } from './fields';
 import { piwiCreditHtml, piwiMarkSvg } from '#shared/brand';
 import { STATUS_COLORS as C, type StatusColorKey } from '#shared/status-colors';
-import type { ExportAsset, ExportBundle, ExportCase } from './types';
+import type { ExportAsset, ExportBundle, ExportCase, ExportRun, ExportRunTest } from './types';
 
 interface RenderOptions {
   /** Resolves an asset to a URL usable from the rendered document, or null to omit it. */
@@ -96,6 +106,8 @@ h1 { font-size:1.6rem; line-height:1.2; margin:.35rem 0 .3rem; overflow-wrap:any
 h2 { font-size:1.25rem; line-height:1.25; margin:.35rem 0 .3rem; overflow-wrap:anywhere; }
 h3 { font-size:.7rem; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:.9rem 0 .35rem; }
 h3.file { font:600 12px/1.4 var(--mono); letter-spacing:0; text-transform:none; overflow-wrap:anywhere; }
+.panel-title { font-size:.7rem; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 .35rem; }
+h2.section-title { font-size:1.15rem; margin:2rem 0 .2rem; }
 p { margin:.4rem 0; }
 .meta { color:var(--muted); font-size:.8rem; margin:.15rem 0; }
 .meta code { font-family:var(--mono); overflow-wrap:anywhere; }
@@ -111,6 +123,7 @@ p { margin:.4rem 0; }
 .hero.t-warn { --tone:var(--warn); --tone-bg:var(--warn-bg); }
 .hero.t-flaky { --tone:var(--flaky); --tone-bg:var(--flaky-bg); }
 .hero.t-skip { --tone:var(--skip); --tone-bg:var(--skip-bg); }
+.hero.t-info { --tone:var(--info); --tone-bg:var(--accent-bg); }
 .hero .labels { display:flex; flex-wrap:wrap; gap:.35rem; align-items:center; }
 .hero .path { color:var(--muted); font-size:.92rem; margin:.1rem 0; overflow-wrap:anywhere; }
 .hero .loc { font:12.5px/1.4 var(--mono); color:var(--muted); margin:.15rem 0 0; overflow-wrap:anywhere; }
@@ -234,7 +247,8 @@ th, td { text-align:left; padding:.35rem .5rem; border-bottom:1px solid var(--li
 th { font-size:.64rem; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); font-weight:650; white-space:nowrap; }
 tbody tr:last-child td { border-bottom:0; }
 td.num { font-family:var(--mono); white-space:nowrap; }
-td a { color:inherit; }
+td a, ul.tests a { color:inherit; }
+td.nowrap { white-space:nowrap; overflow-wrap:normal; }
 .sub { color:var(--muted); font-family:var(--mono); font-size:.92em; }
 .cat { color:var(--muted); font-size:.78rem; }
 
@@ -249,7 +263,14 @@ tr.slowest td.num { font-weight:700; }
 
 section.case { padding-top:.2rem; }
 section.case + section.case { margin-top:2rem; }
-.case-head { display:flex; gap:.6rem; align-items:baseline; color:var(--muted); font-size:.75rem; letter-spacing:.06em; text-transform:uppercase; font-weight:650; margin:1.6rem 0 0; }
+.case-head { color:var(--muted); font-size:.75rem; letter-spacing:.06em; text-transform:uppercase; font-weight:650; margin:0; }
+.group + .group { border-top:1px solid var(--line); margin-top:.7rem; padding-top:.7rem; }
+.group-head { margin:0 0 .25rem; font-size:.92rem; overflow-wrap:anywhere; }
+.group-head b { font-weight:650; }
+ul.tests { list-style:none; margin:.3rem 0 0; padding:0; }
+ul.tests li { margin:.25rem 0; overflow-wrap:anywhere; }
+ul.tests .err { display:block; font:12px/1.45 var(--mono); color:var(--fail); margin:.1rem 0 0 0; overflow-wrap:anywhere; }
+.bar-cell { width:35%; min-width:8rem; }
 .foot { color:var(--faint); font-size:.78rem; margin:1.2rem 0 0; }
 
 @media (max-width:30rem) {
@@ -257,7 +278,7 @@ section.case + section.case { margin-top:2rem; }
   .hero { padding:.9rem .9rem 1rem; }
   h1 { font-size:1.3rem; }
   dl.facts { grid-template-columns:repeat(auto-fill,minmax(8rem,1fr)); }
-  .steps td.tl { display:none; }
+  .steps .tl, .bar-cell { display:none; }
 }
 
 @media print {
@@ -307,12 +328,12 @@ const TONE_CLASSES: Record<StatusColorKey, string> = {
   skipped: 't-skip',
   fixme: 't-skip',
   didnotrun: 't-warn',
-  running: 't-skip',
+  running: 't-info',
 };
 
 /** A status → the tone of a header's edge and tint. */
-function toneClass(value: unknown): string {
-  return TONE_CLASSES[statusTone(value)];
+function toneClass(value: unknown, retries?: number | null): string {
+  return TONE_CLASSES[statusTone(value, retries)];
 }
 
 function httpClass(status: unknown): string {
@@ -406,7 +427,7 @@ function prose(markdown: string): RawHtml {
 }
 
 /** A run's tests as one bar split by outcome, then the same counts in words. */
-function outcomeBar(outcome: NonNullable<ReturnType<typeof runOutcome>>): RawHtml {
+function outcomeBar(outcome: NonNullable<ReturnType<typeof runTestsByOutcome>>): RawHtml {
   const { segments, total } = outcome;
   return html`<div class="bar" role="img" aria-label="${outcomeText(segments, total)}">
       ${segments.map(
@@ -455,7 +476,8 @@ function renderDiagnosis(diagnosis: Record<string, any> | null): RawHtml {
   return details('AI diagnosis', joinHtml(parts, '\n'), { kind: 'diagnosis', open: true });
 }
 
-function renderAssets(exportCase: ExportCase, assetUrl: RenderOptions['assetUrl']): RawHtml {
+/** A case's evidence, and how many items it shows. */
+function renderAssets(exportCase: ExportCase, assetUrl: RenderOptions['assetUrl']): { html: RawHtml; count: number } {
   const pick = (kind: string) => exportCase.assets.filter((a) => a.kind === kind);
   const out: (RawHtml | string)[] = [];
 
@@ -527,7 +549,7 @@ function renderAssets(exportCase: ExportCase, assetUrl: RenderOptions['assetUrl'
     );
   }
 
-  return joinHtml(out, '\n');
+  return { html: joinHtml(out, '\n'), count: shots.length + videos.length + fileRows.length };
 }
 
 /** The steps on the test's timeline: each one's bar where it ran, the slowest in bold, a failed one in red. */
@@ -535,19 +557,18 @@ function renderSteps(steps: unknown, pauses: unknown): RawHtml {
   if (!Array.isArray(steps) || !steps.length) return raw('');
   const list = steps as Record<string, any>[];
   const bars = stepBars(list);
-  const slowest = list.reduce(
-    (best, s, i) => ((Number(s.duration) || 0) > (Number(list[best]?.duration) || 0) ? i : best),
-    0,
-  );
+  let slowest = -1;
+  list.forEach((s, i) => {
+    if ((Number(s.duration) || 0) > (Number(list[slowest]?.duration) || 0)) slowest = i;
+  });
   const rows = list.map((step, i) => {
     const { title, subtitle } = stepLabelParts(step);
     const bar = bars[i]!;
-    const state = [step.failed ? 'failed' : step.recovered ? 'recovered' : '', i === slowest ? 'slowest' : '']
-      .filter(Boolean)
-      .join(' ');
+    const outcome = step.failed ? 'failed' : step.recovered ? 'recovered' : '';
+    const state = [outcome, i === slowest ? 'slowest' : ''].filter(Boolean).join(' ');
     return html`<tr class="${state}">
       <td>${title}${subtitle ? html` <span class="sub">${subtitle}</span>` : ''}</td>
-      <td class="cat">${String(step.category ?? '')}</td>
+      <td class="cat">${[String(step.category ?? ''), outcome].filter(Boolean).join(' · ')}</td>
       <td class="tl">
         <span class="track"
           ><span style="left:${(bar.offset * 100).toFixed(2)}%;width:${(bar.width * 100).toFixed(2)}%"></span
@@ -562,7 +583,7 @@ function renderSteps(steps: unknown, pauses: unknown): RawHtml {
         <tr>
           <th>Step</th>
           <th>Category</th>
-          <th>Timeline</th>
+          <th class="tl">Timeline</th>
           <th>Duration</th>
         </tr>
       </thead>
@@ -631,7 +652,8 @@ function caseHero(exportCase: ExportCase, heading: 'h1' | 'h2'): RawHtml {
   const headline = caseHeadline(exportCase);
   const labels = caseLabels(exportCase);
   const title = heading === 'h1' ? html`<h1>${exportCase.title}</h1>` : html`<h2>${exportCase.title}</h2>`;
-  return html`<div class="hero ${toneClass(exportCase.status)}">
+  const retries = Number((exportCase.detail as Record<string, any>).retries ?? 0);
+  return html`<div class="hero ${toneClass(exportCase.status, retries)}">
     <div class="labels">
       <span class="badge ${statusClass(exportCase.status)}">${exportCase.status}</span>
       ${labels.map((label) => html`<span class="chip ${label.news ? 'new' : ''}">${label.text}</span>`)}
@@ -648,24 +670,34 @@ function caseHero(exportCase: ExportCase, heading: 'h1' | 'h2'): RawHtml {
   </div>`;
 }
 
-/** The run an execution belongs to: its context in one line, then its tests by outcome. */
-function runPanel(exportCase: ExportCase): RawHtml {
-  const context = runFacts(exportCase);
-  const outcome = runOutcome(exportCase);
+/** A run: its context in one line, then its tests by outcome. */
+function runPanel(run: Record<string, any> | null | undefined): RawHtml {
+  const context = runFacts(run ?? {});
+  const outcome = runTestsByOutcome(run);
   if (!context.some(([, v]) => v) && !outcome) return raw('');
   return html`<div class="panel">
-    <h3>The run</h3>
+    <h2 class="panel-title">The run</h2>
     ${inlineFacts(context)} ${outcome ? outcomeBar(outcome) : ''}
   </div>`;
 }
 
-function renderCase(exportCase: ExportCase, opts: RenderOptions, standalone: boolean): RawHtml {
+interface CaseOptions {
+  /** The case is the document's subject: its title is the page's `h1`. */
+  standalone: boolean;
+  /** The line above a case among several (`Test 2 of 5`). */
+  label?: string;
+  /** Leave out the run panel, which a run export shows once at its top. */
+  withoutRun?: boolean;
+}
+
+function renderCase(exportCase: ExportCase, opts: RenderOptions, caseOpts: CaseOptions): RawHtml {
   const d = exportCase.detail as Record<string, any>;
   const parts: (RawHtml | string)[] = [];
 
-  parts.push(caseHero(exportCase, standalone ? 'h1' : 'h2'));
+  if (caseOpts.label) parts.push(html`<p class="case-head">${caseOpts.label}</p>`);
+  parts.push(caseHero(exportCase, caseOpts.standalone ? 'h1' : 'h2'));
   parts.push(facts(caseFacts(exportCase)));
-  parts.push(runPanel(exportCase));
+  if (!caseOpts.withoutRun) parts.push(runPanel(d.testRun));
 
   if (d.error) parts.push(details('Error', errorBlock(String(d.error)), { kind: 'error', open: true }));
 
@@ -688,9 +720,9 @@ function renderCase(exportCase: ExportCase, opts: RenderOptions, standalone: boo
 
   parts.push(renderDiagnosis(exportCase.diagnosis));
 
-  const assetsHtml = renderAssets(exportCase, opts.assetUrl);
-  if (toHtmlString(assetsHtml).trim()) {
-    parts.push(details('Evidence', assetsHtml, { kind: 'evidence', open: true, count: exportCase.assets.length }));
+  const evidence = renderAssets(exportCase, opts.assetUrl);
+  if (toHtmlString(evidence.html).trim()) {
+    parts.push(details('Evidence', evidence.html, { kind: 'evidence', open: true, count: evidence.count }));
   }
 
   const count = (v: unknown) => (Array.isArray(v) ? v.length : undefined);
@@ -716,10 +748,10 @@ function occurrenceStrip(cluster: Record<string, any>): RawHtml {
   const points = clusterOccurrences(cluster);
   if (points.length < 2) return raw('');
   const max = Math.max(1, ...points.map((p) => p.count));
-  const hits = points.filter((p) => p.count > 0).length;
+  const sentence = clusterOccurrencesText(points)!;
   return html`<div class="panel">
-    <h3>Recent runs</h3>
-    <div class="occ" role="img" aria-label="${`Failed in ${hits} of the last ${points.length} runs`}">
+    <h2 class="panel-title">Recent runs</h2>
+    <div class="occ" role="img" aria-label="${sentence}">
       ${points.map(
         (p) =>
           html`<span
@@ -729,7 +761,7 @@ function occurrenceStrip(cluster: Record<string, any>): RawHtml {
           ></span>`,
       )}
     </div>
-    <p class="meta">Failed in ${hits} of the last ${points.length} runs, oldest on the left.</p>
+    <p class="meta">${sentence}, oldest on the left.</p>
   </div>`;
 }
 
@@ -737,7 +769,7 @@ function occurrenceStrip(cluster: Record<string, any>): RawHtml {
 function membersTable(bundle: ExportBundle): RawHtml {
   if (bundle.cases.length < 2) return raw('');
   return html`<div class="panel">
-    <h3>Affected tests in this export</h3>
+    <h2 class="panel-title">Affected tests in this export</h2>
     <div class="scroll">
       <table>
         <tbody>
@@ -759,16 +791,23 @@ function renderClusterHeader(bundle: ExportBundle): RawHtml {
   const c = bundle.cluster as Record<string, any> | null;
   if (!c) return raw('');
   const headline = clusterHeadline(c);
-  const state = typeof c.clusterState?.sentence === 'string' ? c.clusterState.sentence : null;
-  const owner = c.owner?.name ?? null;
+  const state = clusterState(c);
+  const owner = clusterOwner(c);
   const parts: (RawHtml | string)[] = [
     html`<div class="hero ${toneClass(c.status)}">
       <div class="labels">
         ${c.status ? html`<span class="badge ${statusClass(c.status)}">${String(c.status)}</span>` : ''}
-        ${owner ? html`<span class="chip">${String(owner)}</span>` : ''}
+        ${owner ? html`<span class="chip">Owner ${owner}</span>` : ''}
       </div>
       <h1>${bundle.title}</h1>
-      ${headline ? html`<p class="headline">${headline}</p>` : ''} ${state ? html`<p class="state">${state}</p>` : ''}
+      ${
+        headline
+          ? html`<p class="headline">
+              ${headline.headline}${headline.detail ? html`<span class="detail">${headline.detail}</span>` : ''}
+            </p>`
+          : ''
+      }
+      ${state ? html`<p class="state">${state}</p>` : ''}
     </div>`,
     facts(clusterFacts(c)),
     occurrenceStrip(c),
@@ -791,6 +830,178 @@ function renderClusterHeader(bundle: ExportBundle): RawHtml {
     );
   }
   return joinHtml(parts, '\n');
+}
+
+/** A test of a run in a list: its outcome, its name linked to its detail when the export holds it, and where it is. */
+function runTestLine(test: ExportRunTest, detailed: Set<number>, withError: boolean): RawHtml {
+  const status = runTestStatus(test);
+  const name = detailed.has(test.executionId)
+    ? html`<a href="#case-${test.executionId}">${test.title}</a>`
+    : test.title;
+  return html`<li>
+    <span class="tag ${statusClass(status)}">${statusLabel(status)}</span> ${name}
+    <span class="sub">${test.location ?? ''}</span>
+    ${test.browser ? html`<span class="meta">${test.browser}</span>` : ''}
+    ${withError && test.error ? html`<span class="err">${test.error}</span>` : ''}
+  </li>`;
+}
+
+/** A run's failing and flaky tests by root cause, each failure cluster with its tests. */
+function runFailures(bundle: ExportBundle, run: ExportRun): RawHtml {
+  const groups = runFailureGroups(run);
+  if (!groups.length) return raw('');
+  const detailed = new Set(bundle.cases.map((c) => c.executionId));
+  const count = groups.reduce((n, g) => n + g.tests.length, 0);
+  return details(
+    'Failures by root cause',
+    joinHtml(
+      groups.map(
+        (g) =>
+          html`<div class="group">
+            <p class="group-head">
+              <b>${g.title}</b>${g.isNew ? html` <span class="chip new">New</span>` : ''}
+              <span class="meta"
+                >${[g.status, `${g.tests.length} ${g.tests.length === 1 ? 'test' : 'tests'}`].filter(Boolean).join(' · ')}</span
+              >
+            </p>
+            ${g.diagnosis ? html`<p class="meta">${g.diagnosis}</p>` : ''}
+            <ul class="tests">
+              ${g.tests.map((t) => runTestLine(t, detailed, true))}
+            </ul>
+          </div>`,
+      ),
+      '\n',
+    ),
+    { kind: 'error', open: true, count },
+  );
+}
+
+/** The tests of a run that passed only on a retry. */
+function runFlaky(run: ExportRun): RawHtml {
+  const flaky = run.tests.filter((t) => t.flaky);
+  if (!flaky.length) return raw('');
+  return details(
+    'Flaky tests',
+    html`<div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Test</th>
+            <th>Location</th>
+            <th>Browser</th>
+            <th>Retries</th>
+            <th>Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${flaky.map(
+            (t) =>
+              html`<tr>
+                <td>${t.title}</td>
+                <td class="sub">${t.location ?? ''}</td>
+                <td class="nowrap">${t.browser ?? ''}</td>
+                <td class="num">${t.retries}</td>
+                <td class="num">${runTestDuration(t)}</td>
+              </tr>`,
+          )}
+        </tbody>
+      </table>
+    </div>`,
+    { kind: 'source', open: true, count: flaky.length },
+  );
+}
+
+/** The tests of a run that took longest, each with a bar against the longest. */
+function runSlowest(run: ExportRun): RawHtml {
+  const slowest = slowestTests(run.tests);
+  if (!slowest.length) return raw('');
+  const longest = slowest[0]!.duration ?? 1;
+  return details(
+    'Slowest tests',
+    html`<div class="scroll">
+      <table class="steps">
+        <tbody>
+          ${slowest.map(
+            (t) =>
+              html`<tr>
+                <td>${t.title} <span class="sub">${t.location ?? ''}</span></td>
+                <td class="nowrap">${t.browser ?? ''}</td>
+                <td class="bar-cell">
+                  <span class="track"
+                    ><span style="left:0;width:${(((t.duration ?? 0) / longest) * 100).toFixed(2)}%"></span
+                  ></span>
+                </td>
+                <td class="num">${runTestDuration(t)}</td>
+              </tr>`,
+          )}
+        </tbody>
+      </table>
+    </div>`,
+    { open: true, count: slowest.length },
+  );
+}
+
+/** Every test of a run once, by file: its outcome, name, browser, duration and retries. */
+function runAllTests(run: ExportRun): RawHtml {
+  if (!run.tests.length) return raw('');
+  return details(
+    'All tests',
+    html`<div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Test</th>
+            <th>Browser</th>
+            <th>Duration</th>
+            <th>Retries</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${run.tests.map((t) => {
+            const status = runTestStatus(t);
+            return html`<tr>
+              <td class="${statusClass(status)} nowrap"><span class="tag">${statusLabel(status)}</span></td>
+              <td>${[...t.suitePath, t.title].join(' › ')}<br /><span class="sub">${t.location ?? ''}</span></td>
+              <td class="nowrap">${t.browser ?? ''}</td>
+              <td class="num">${runTestDuration(t)}</td>
+              <td class="num">${t.retries}</td>
+            </tr>`;
+          })}
+        </tbody>
+      </table>
+    </div>`,
+    { open: run.tests.length <= 300, count: run.tests.length },
+  );
+}
+
+/** The top of a run export: the run's header, figures, context and tests, then its failures, flaky and slowest tests. */
+function renderRunHeader(bundle: ExportBundle): RawHtml {
+  const run = bundle.run;
+  if (!run) return raw('');
+  const d = run.detail as Record<string, any>;
+  const where = [d.branch, d.environment].filter(Boolean).join(' · ');
+  const headline = runHeadline(d);
+  const labels = [d.isFullRun === false ? 'Partial run' : null, d.origin ? String(d.origin) : null].filter(Boolean);
+  return joinHtml(
+    [
+      html`<div class="hero ${toneClass(d.status)}">
+        <div class="labels">
+          ${d.status ? html`<span class="badge ${statusClass(d.status)}">${String(d.status)}</span>` : ''}
+          ${labels.map((label) => html`<span class="chip">${label}</span>`)}
+        </div>
+        <h1>${bundle.title}</h1>
+        ${where ? html`<p class="path">${where}</p>` : ''} ${headline ? html`<p class="headline">${headline}</p>` : ''}
+      </div>`,
+      facts(runSummaryFacts(run)),
+      runPanel(d),
+      runFailures(bundle, run),
+      runFlaky(run),
+      runSlowest(run),
+      runAllTests(run),
+    ],
+    '\n',
+  );
 }
 
 function renderOmissions(bundle: ExportBundle): RawHtml {
@@ -827,9 +1038,11 @@ function renderOmissions(bundle: ExportBundle): RawHtml {
 
 export function renderExportHtml(bundle: ExportBundle, opts: RenderOptions): string {
   const isCluster = bundle.kind === 'cluster';
-  const kindLabel = isCluster ? 'Failure cluster' : 'Test execution';
+  const isRun = bundle.kind === 'run';
+  const kindLabel = isRun ? 'Test run' : isCluster ? 'Failure cluster' : 'Test execution';
   const label = projectLabel(bundle);
-  const standalone = !isCluster && bundle.cases.length === 1;
+  const standalone = bundle.kind === 'execution' && bundle.cases.length === 1;
+  const caseWord = isRun ? 'Failure' : 'Test';
 
   const head = joinHtml([
     raw('<meta charset="utf-8">'),
@@ -860,16 +1073,26 @@ export function renderExportHtml(bundle: ExportBundle, opts: RenderOptions): str
           <button type="button" data-action="expand">Expand all</button>
         </div>
       </header>`,
-      standalone ? '' : !isCluster ? html`<h1>${bundle.title}</h1>` : '',
+      bundle.kind === 'execution' && !standalone ? html`<h1>${bundle.title}</h1>` : '',
       renderClusterHeader(bundle),
-      ...bundle.cases.map((c, i) => {
-        const section = renderCase(c, opts, standalone);
-        return bundle.cases.length > 1
-          ? html`<p class="case-head">Test ${i + 1} of ${bundle.cases.length}</p>
-              ${section}`
-          : section;
-      }),
-      bundle.cases.length === 0 ? html`<p class="note">No executions were included in this export.</p>` : '',
+      renderRunHeader(bundle),
+      isRun && bundle.cases.length ? html`<h2 class="section-title">Failures in detail</h2>` : '',
+      ...bundle.cases.map((c, i) =>
+        renderCase(c, opts, {
+          standalone,
+          label: bundle.cases.length > 1 ? `${caseWord} ${i + 1} of ${bundle.cases.length}` : undefined,
+          withoutRun: isRun,
+        }),
+      ),
+      isRun && bundle.truncatedCases.length
+        ? details(
+            `Other failing tests (${bundle.truncatedCases.length}, evidence not included)`,
+            html`<ul>
+              ${bundle.truncatedCases.map((t) => html`<li>${t.title} <span class="meta">${t.filePath ?? ''}</span></li>`)}
+            </ul>`,
+          )
+        : '',
+      bundle.cases.length === 0 && !isRun ? html`<p class="note">No executions were included in this export.</p>` : '',
       renderOmissions(bundle),
       html`<p class="foot">Self-contained, no network connection required.</p>`,
       raw(piwiCreditHtml('Generated by Piwi')),

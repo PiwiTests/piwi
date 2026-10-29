@@ -36,7 +36,7 @@ const TONE: Record<ReportTone, Color> = {
   bad: hex(STATUS_COLORS.failed.text),
   neutral: MUTED,
 };
-/** The top edge of a tile: the outcome color of its change, or a hairline for a change that is neither good nor bad. */
+/** The top edge of a tile: the outcome color of its change, or a grey hairline without a change or for one that is neither good nor bad news. */
 const TILE_EDGE: Record<ReportTone, Color> = {
   good: hex(STATUS_COLORS.passed.fill),
   bad: hex(STATUS_COLORS.failed.fill),
@@ -95,16 +95,26 @@ class Layout {
 
   /** Clip a string to a width, ending with an ellipsis. */
   fit(text: string, size: number, width: number, font = this.font): string {
-    let t = winAnsiSafe(text);
+    const t = winAnsiSafe(text);
     if (font.widthOfTextAtSize(t, size) <= width) return t;
-    while (t.length > 1 && font.widthOfTextAtSize(`${t}…`, size) > width) t = t.slice(0, -1);
-    return `${t}…`;
+    let lo = 1;
+    let hi = t.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (font.widthOfTextAtSize(`${t.slice(0, mid)}…`, size) <= width) lo = mid;
+      else hi = mid - 1;
+    }
+    return `${t.slice(0, lo)}…`;
   }
 
-  paragraph(text: string, opts: { size?: number; font?: PDFFont; color?: Color; indent?: number; gap?: number } = {}) {
+  /** Wrapped text from `indent`, leaving `right` points free on the right. */
+  paragraph(
+    text: string,
+    opts: { size?: number; font?: PDFFont; color?: Color; indent?: number; right?: number; gap?: number } = {},
+  ) {
     const size = opts.size ?? 10;
     const indent = opts.indent ?? 0;
-    for (const line of this.wrap(text, size, WIDTH - indent, opts.font)) {
+    for (const line of this.wrap(text, size, WIDTH - indent - (opts.right ?? 0), opts.font)) {
       this.ensure(size + 4);
       this.page.drawText(line, {
         x: MARGIN + indent,
@@ -133,7 +143,7 @@ function drawStats(l: Layout, block: Extract<ReportBlock, { kind: 'stats' }>) {
   const perRow = 3;
   const gap = 8;
   const w = (WIDTH - gap * (perRow - 1)) / perRow;
-  const h = 66;
+  const h = 60;
   for (let i = 0; i < block.tiles.length; i += perRow) {
     l.ensure(h + gap);
     block.tiles.slice(i, i + perRow).forEach((tile, j) => {
@@ -145,7 +155,7 @@ function drawStats(l: Layout, block: Extract<ReportBlock, { kind: 'stats' }>) {
       l.page.drawText(l.fit(tile.label, 8, w - 16), { x: x + 8, y: top - 16, size: 8, font: l.font, color: MUTED });
       l.page.drawText(l.fit(tile.value, 18, w - 16, l.bold), {
         x: x + 8,
-        y: top - 38,
+        y: top - 36,
         size: 18,
         font: l.bold,
         color: INK,
@@ -181,23 +191,36 @@ function drawStats(l: Layout, block: Extract<ReportBlock, { kind: 'stats' }>) {
 
 function drawSeries(l: Layout, block: Extract<ReportBlock, { kind: 'series' }>, f: ValueFormatter, colon: string) {
   if (block.summary) l.paragraph(block.summary, { size: 9, color: MUTED });
-  const chartH = 150;
+  const chartH = 140;
   const left = 36;
-  l.ensure(chartH + 40);
   const g = seriesGeometry(block, WIDTH - left - 4, chartH);
-  const ox = MARGIN + left;
-  const oy = l.y - 16;
-  const X = (x: number) => ox + x;
-  const Y = (y: number) => oy - y;
 
-  // Legend
+  // The legend, wrapped onto as many rows as its labels need.
+  const legend: Array<Array<{ label: string; color: string; x: number }>> = [[]];
   let lx = MARGIN;
   for (const line of g.lines) {
-    l.page.drawCircle({ x: lx + 3.5, y: l.y - 5, size: 3.5, color: hex(line.color) });
     const label = l.fit(line.label, 8, 160);
-    l.page.drawText(label, { x: lx + 10, y: l.y - 8, size: 8, font: l.font, color: MUTED });
-    lx += 22 + l.font.widthOfTextAtSize(label, 8);
+    const width = 22 + l.font.widthOfTextAtSize(label, 8);
+    if (lx > MARGIN && lx + width > MARGIN + WIDTH) {
+      legend.push([]);
+      lx = MARGIN;
+    }
+    legend[legend.length - 1]!.push({ label, color: line.color, x: lx });
+    lx += width;
   }
+  const legendHeight = legend.length * 12;
+  l.ensure(chartH + 28 + legendHeight);
+  legend.forEach((row, i) => {
+    for (const item of row) {
+      const y = l.y - i * 12;
+      l.page.drawCircle({ x: item.x + 3.5, y: y - 5, size: 3.5, color: hex(item.color) });
+      l.page.drawText(item.label, { x: item.x + 10, y: y - 8, size: 8, font: l.font, color: MUTED });
+    }
+  });
+  const ox = MARGIN + left;
+  const oy = l.y - 4 - legendHeight;
+  const X = (x: number) => ox + x;
+  const Y = (y: number) => oy - y;
 
   for (const t of g.ticks) {
     l.page.drawLine({
@@ -217,7 +240,7 @@ function drawSeries(l: Layout, block: Extract<ReportBlock, { kind: 'series' }>, 
       color: MUTED,
     });
   }
-  // A lone series gets a light area under its line, as in the HTML report.
+  // A light area lies under the line of the one series drawn in full, as in the HTML report.
   const shaded = g.lines.filter((line) => !line.faint).length === 1;
   for (const line of g.lines) {
     if (!shaded || line.faint) continue;
@@ -325,7 +348,7 @@ function drawList(l: Layout, block: Extract<ReportBlock, { kind: 'list' }>) {
     const toned = item.tone && item.tone !== 'neutral';
     const lines = l.wrap(item.text, 9.5, WIDTH - 20);
     const details = item.detail ? l.wrap(item.detail, 8, WIDTH - 20) : [];
-    const height = lines.length * 13.5 + details.length * 12 + (toned ? 10 : 2);
+    const height = lines.length * 13.5 + details.length * 12 + (toned ? 7 : 2);
     l.ensure(height + 4);
     const top = l.y;
     if (toned) {
@@ -342,16 +365,16 @@ function drawList(l: Layout, block: Extract<ReportBlock, { kind: 'list' }>) {
     } else {
       l.page.drawCircle({ x: MARGIN + 5, y: top - 5.5, size: 1.8, color: MUTED });
     }
-    l.y -= toned ? 5 : 1;
-    l.paragraph(item.text, { size: 9.5, indent: 12, gap: 0 });
-    if (item.detail) l.paragraph(item.detail, { size: 8, indent: 12, color: MUTED, gap: 0 });
-    l.y = top - height - 4;
+    l.y -= toned ? 3.5 : 1;
+    l.paragraph(item.text, { size: 9.5, indent: 12, right: 8, gap: 0 });
+    if (item.detail) l.paragraph(item.detail, { size: 8, indent: 12, right: 8, color: MUTED, gap: 0 });
+    l.y = top - height - 3;
   }
   l.y -= 4;
 }
 
 function drawVerdict(l: Layout, text: string, tone: keyof typeof VERDICT) {
-  const lines = l.wrap(text, 11, WIDTH - 40);
+  const lines = l.wrap(text, 11, WIDTH - 42);
   const height = lines.length * 15 + 20;
   l.ensure(height + 8);
   const top = l.y;
@@ -359,7 +382,7 @@ function drawVerdict(l: Layout, text: string, tone: keyof typeof VERDICT) {
   l.rounded(MARGIN + 4, top, WIDTH - 4, height, 6, tint(VERDICT[tone], 0.1));
   l.page.drawCircle({ x: MARGIN + 18, y: top - 17.5, size: 4, color: hex(VERDICT[tone]) });
   l.y -= 10;
-  l.paragraph(text, { size: 11, indent: 30, gap: 0 });
+  l.paragraph(text, { size: 11, indent: 30, right: 12, gap: 0 });
   l.y = top - height - 10;
 }
 
@@ -376,21 +399,18 @@ function drawBandTitle(l: Layout, index: number, title: string, description: str
     font: l.bold,
     color: WHITE,
   });
-  l.page.drawText(l.fit(title, size, WIDTH - box - 10, l.bold), {
-    x: MARGIN + box + 9,
-    y: l.y - 15,
-    size,
-    font: l.bold,
-    color: INK,
+  const lines = l.wrap(title, size, WIDTH - box - 9, l.bold);
+  lines.forEach((line, i) => {
+    l.page.drawText(line, { x: MARGIN + box + 9, y: l.y - 15 - i * 19, size, font: l.bold, color: INK });
   });
-  l.y -= box + 6;
+  l.y -= box + 6 + (lines.length - 1) * 19;
   if (description) l.paragraph(description, { size: 9, color: MUTED, indent: box + 9, gap: 8 });
   else l.y -= 6;
 }
 
-/** A widget's title over a hairline. */
-function drawWidgetTitle(l: Layout, title: string) {
-  l.ensure(48);
+/** A widget's title over a hairline, kept on one page with the `keepWith` points of what follows it. */
+function drawWidgetTitle(l: Layout, title: string, keepWith = 0) {
+  l.ensure(48 + keepWith);
   l.y -= 6;
   l.paragraph(title, { size: 11, font: l.bold, gap: 2 });
   l.page.drawLine({ start: { x: MARGIN, y: l.y }, end: { x: MARGIN + WIDTH, y: l.y }, thickness: 0.4, color: LINE });
@@ -430,7 +450,8 @@ export async function renderReportPdf(bundle: ReportBundle): Promise<Uint8Array>
     if (i > 0) l.newPage();
     drawBandTitle(l, i, band.title, band.description);
     for (const widget of band.widgets) {
-      drawWidgetTitle(l, widget.title);
+      const first = widget.blocks[0]?.kind;
+      drawWidgetTitle(l, widget.title, first === 'series' ? 190 : first === 'stats' ? 70 : 20);
       for (const note of widget.notes) l.paragraph(note, { size: 8, color: MUTED });
       for (const block of widget.blocks) {
         if (block.kind === 'text') {
@@ -455,28 +476,25 @@ export async function renderReportPdf(bundle: ReportBundle): Promise<Uint8Array>
     [sentencesFor(bundle.language).metricLabel('runs', 'Runs'), bundle.scopeText.runs],
     ...(bundle.scopeText.tests ? ([[L.testFilter, bundle.scopeText.tests]] as Array<[string, string]>) : []),
   ];
-  const labelWidth = 110;
+  const labelWidth = 130;
   const pair = (label: string, value: string, size: number) => {
+    const labels = l.wrap(label, size, labelWidth - 10, bold);
     const lines = l.wrap(value, size, WIDTH - labelWidth);
-    l.ensure(lines.length * (size + 4));
-    l.page.drawText(l.fit(label, size, labelWidth - 10, bold), {
-      x: MARGIN,
-      y: l.y - size,
-      size,
-      font: bold,
-      color: INK,
-    });
-    for (const line of lines) {
-      l.page.drawText(line, { x: MARGIN + labelWidth, y: l.y - size, size, font, color: MUTED });
-      l.y -= size + 4;
+    const rows = Math.max(labels.length, lines.length);
+    l.ensure(rows * (size + 4));
+    for (let i = 0; i < rows; i++) {
+      const y = l.y - size - i * (size + 4);
+      if (labels[i]) l.page.drawText(labels[i]!, { x: MARGIN, y, size, font: bold, color: INK });
+      if (lines[i]) l.page.drawText(lines[i]!, { x: MARGIN + labelWidth, y, size, font, color: MUTED });
     }
-    l.y -= 2;
+    l.y -= rows * (size + 4) + 2;
   };
   for (const [k, v] of facts) pair(k, v, 9);
   if (bundle.targets.length) {
     drawWidgetTitle(l, L.targets);
     for (const t of bundle.targets) {
       const color = t.met === true ? TONE.good : t.met === false ? TONE.bad : FAINT;
+      l.ensure(13);
       l.page.drawCircle({ x: MARGIN + 3, y: l.y - 5.5, size: 2.5, color });
       l.paragraph(t.text, { size: 8.5, indent: 10 });
     }

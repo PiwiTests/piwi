@@ -7,7 +7,7 @@ import {
   errorRows,
   fmtDate,
   runFacts,
-  runOutcome,
+  runTestsByOutcome,
   statusTone,
   stepBars,
 } from '../../shared/export/fields';
@@ -61,7 +61,7 @@ function exportCase(overrides: Partial<ExportCase> = {}): ExportCase {
         didNotRunTests: 0,
         metadata: {
           scm: { commitMessage: 'Paginate on the server\n\nbody', author: 'Eva' },
-          ci: { provider: 'GitHub Actions', buildNumber: '1192' },
+          ci: { provider: 'GitHub Actions', runNumber: '1192' },
         },
       },
       steps: [
@@ -105,7 +105,7 @@ describe('the facts an export states', () => {
   });
 
   it('names the run with its branch, environment, commit and CI build', () => {
-    expect(runFacts(exportCase())).toEqual([
+    expect(runFacts(exportCase().detail.testRun as Record<string, unknown>)).toEqual([
       ['Run', '#4'],
       ['Branch', 'main'],
       ['Environment', 'staging'],
@@ -116,7 +116,7 @@ describe('the facts an export states', () => {
   });
 
   it("splits the run's tests by outcome, flaky ones apart from the passed", () => {
-    expect(runOutcome(exportCase())).toEqual({
+    expect(runTestsByOutcome(exportCase().detail.testRun as Record<string, unknown>)).toEqual({
       total: 12,
       segments: [
         { key: 'passed', label: 'passed', count: 6 },
@@ -125,14 +125,15 @@ describe('the facts an export states', () => {
         { key: 'skipped', label: 'skipped', count: 2 },
       ],
     });
-    expect(runOutcome(exportCase({ detail: {} }))).toBeNull();
+    expect(runTestsByOutcome(undefined)).toBeNull();
+    expect(runTestsByOutcome({ totalTests: 0 })).toBeNull();
   });
 
   it('names the test by its describe blocks, and labels what is new about it', () => {
     expect(casePath(exportCase())).toBe('Users › Table › paginates the users');
     expect(caseLabels(exportCase())).toEqual([
       { text: 'New regression', news: true },
-      { text: '@admin-team', news: false },
+      { text: 'Owner @admin-team', news: false },
       { text: 'smoke', news: false },
     ]);
   });
@@ -163,15 +164,17 @@ describe('the facts an export states', () => {
   });
 
   it('colors a status as the dashboard does', () => {
-    expect(['failed', 'timedOut', 'open', 'passed', 'flaky', 'didNotRun', 'skipped'].map(statusTone)).toEqual([
-      'failed',
-      'failed',
-      'failed',
+    const tones = (statuses: string[]) => statuses.map((status) => statusTone(status));
+    expect(tones(['failed', 'timedOut', 'interrupted', 'open'])).toEqual(['failed', 'failed', 'failed', 'failed']);
+    expect(tones(['passed', 'resolved', 'flaky', 'didNotRun', 'running'])).toEqual([
+      'passed',
       'passed',
       'flaky',
       'didnotrun',
-      'skipped',
+      'running',
     ]);
+    expect(statusTone('passed', 2)).toBe('flaky');
+    expect(tones(['skipped', 'unknown', 'cancelled', ''])).toEqual(['skipped', 'skipped', 'skipped', 'skipped']);
   });
 
   it("orders a cluster's recent runs oldest first", () => {
@@ -266,5 +269,39 @@ describe('the PDF export', () => {
     expect(pdf).toContain('0.995686274509804 0.9247058823529413 0.9368627450980392 rg');
     // Standard fonts write text as hex: `1 / 1`.
     expect(pdf).toContain(`<${Buffer.from('1 / 1', 'latin1').toString('hex').toUpperCase()}> Tj`);
+  });
+});
+
+/** The text a PDF draws, from its inflated content streams: standard fonts write each string as hex. */
+function pdfText(bytes: Uint8Array): string[] {
+  const raw = Buffer.from(bytes).toString('latin1');
+  const out: string[] = [];
+  for (const m of raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)) {
+    let content = '';
+    try {
+      content = zlib.inflateSync(Buffer.from(m[1]!, 'latin1')).toString('latin1');
+    } catch {
+      continue;
+    }
+    for (const t of content.matchAll(/<([0-9A-F]*)> Tj/g)) out.push(Buffer.from(t[1]!, 'hex').toString('latin1'));
+  }
+  return out;
+}
+
+describe('the PDF export, at its limits', () => {
+  it('wraps a long row of labels instead of dropping the ones past the first line', async () => {
+    const tags = Array.from({ length: 14 }, (_, i) => `tag-number-${i}`);
+    const many = bundle({ cases: [exportCase({ detail: { ...exportCase().detail, tags } })] });
+    const text = pdfText(await renderExportPdf(many, { imageFor: () => null }));
+    for (const tag of tags) expect(text).toContain(tag);
+  });
+
+  it('keeps a header with a very long title to one page, its title ending with an ellipsis', async () => {
+    const title = Array.from({ length: 400 }, (_, i) => `word${i}`).join(' ');
+    const long = bundle({ title, cases: [exportCase({ title })] });
+    const text = pdfText(await renderExportPdf(long, { imageFor: () => null }));
+    // WinAnsi writes the ellipsis as 0x85.
+    expect(text.some((t) => t.endsWith('\x85') && t.startsWith('word'))).toBe(true);
+    expect(text).not.toContain('word399');
   });
 });

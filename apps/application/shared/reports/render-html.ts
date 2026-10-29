@@ -13,7 +13,7 @@ import { sentencesFor } from './sentences';
 import { hasVerdictWidget, type ReportBlock, type ReportBundle, type ReportTone } from './types';
 
 const TONE_COLOR: Record<ReportTone, string> = { good: C.passed.text, bad: C.failed.text, neutral: '#71717a' };
-/** The edge of a tile: the outcome color of its change, or none for a change that is neither good nor bad news. */
+/** The top edge of a tile: the outcome color of its change, or a grey hairline without a change or for one that is neither good nor bad news. */
 const TILE_EDGE: Record<ReportTone, string> = { good: C.passed.fill, bad: C.failed.fill, neutral: '#e4e4e9' };
 const VERDICT_COLOR = {
   good: PASS_RATE_COLORS.good.fill,
@@ -24,15 +24,15 @@ const VERDICT_COLOR = {
 const STYLES = `
 :root {
   color-scheme: light; --bg:#f6f6f8; --paper:#fff; --fg:#1c1c20; --muted:#5f5f6b; --faint:#8b8b96; --line:#e4e4e9;
-  --card:#fafafb; --accent:${REPORT_ACCENT}; --good:${C.passed.text}; --bad:${C.failed.text};
+  --card:#fafafb; --accent:${REPORT_ACCENT};
 }
 * { box-sizing:border-box; }
 body { margin:0; padding:0 1rem 3rem; background:var(--bg); color:var(--fg); font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
 .wrap { max-width:62rem; margin:0 auto; }
 header { margin:1.5rem 0 1rem; padding:1.4rem 1.5rem 1.3rem; background:var(--paper); border:1px solid var(--line); border-top:4px solid var(--accent); border-radius:12px; }
-.kicker { display:flex; align-items:center; gap:.45rem; margin:0 0 .35rem; font-size:.75rem; font-weight:650; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); }
-h1 { font-size:1.75rem; line-height:1.2; letter-spacing:-.01em; margin:0 0 .35rem; }
-h2 { display:flex; align-items:center; gap:.6rem; font-size:1.2rem; margin:2.2rem 0 .2rem; }
+.kicker { display:flex; align-items:center; gap:.45rem; margin:0 0 .35rem; font-size:.75rem; font-weight:650; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); overflow-wrap:anywhere; min-width:0; }
+h1 { font-size:1.75rem; line-height:1.2; letter-spacing:-.01em; margin:0 0 .35rem; overflow-wrap:anywhere; }
+h2 { display:flex; align-items:center; gap:.6rem; font-size:1.2rem; margin:2.2rem 0 .2rem; overflow-wrap:anywhere; }
 h2 .num { display:inline-flex; align-items:center; justify-content:center; width:1.6rem; height:1.6rem; border-radius:7px; background:var(--accent); color:#fff; font-size:.85rem; flex:none; }
 h3 { font-size:.95rem; margin:0 0 .6rem; }
 .meta, .desc, .note { color:var(--muted); font-size:.85rem; margin:0; }
@@ -41,17 +41,17 @@ h3 { font-size:.95rem; margin:0 0 .6rem; }
 .verdict p { margin:0; }
 .dot { width:.75rem; height:.75rem; border-radius:50%; flex:none; margin-top:.42rem; background:var(--tone); }
 .widget { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:1rem 1.1rem 1.05rem; margin:.8rem 0; }
-.widget > .verdict { margin:0; border-left-width:5px; }
+.widget > .verdict { margin:0; }
 .widget > .note { margin:-.3rem 0 .6rem; }
 .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr)); gap:.6rem; }
-.tile { background:var(--card); border:1px solid var(--line); border-top:3px solid var(--tone, var(--line)); border-radius:9px; padding:.65rem .8rem .7rem; }
+.tile { background:var(--card); border:1px solid var(--line); border-top:3px solid var(--tone); border-radius:9px; padding:.65rem .8rem .7rem; }
 .tile .label { font-size:.75rem; color:var(--muted); }
-.tile .value { font-size:1.6rem; font-weight:650; line-height:1.2; margin:.15rem 0 .2rem; letter-spacing:-.01em; }
+.tile .value { font-size:1.45rem; font-weight:650; line-height:1.2; margin:.15rem 0 .2rem; letter-spacing:-.01em; overflow-wrap:anywhere; }
 .tile .change { display:inline-block; font-size:.75rem; font-weight:650; padding:0 .45rem; border-radius:999px; border:1px solid currentColor; }
 .tile .extra { font-size:.75rem; color:var(--muted); margin-top:.25rem; }
 table { width:100%; border-collapse:collapse; font-size:.85rem; }
 th, td { text-align:left; padding:.45rem .6rem; border-bottom:1px solid var(--line); vertical-align:top; }
-th { font-weight:650; color:var(--faint); font-size:.7rem; letter-spacing:.05em; text-transform:uppercase; background:var(--card); }
+th { font-weight:650; color:var(--muted); font-size:.7rem; letter-spacing:.05em; text-transform:uppercase; background:var(--card); }
 tbody tr:last-child td { border-bottom:0; }
 td.r, th.r { text-align:right; font-variant-numeric:tabular-nums; }
 .scroll { overflow-x:auto; border:1px solid var(--line); border-radius:8px; margin-top:.6rem; }
@@ -79,7 +79,8 @@ footer dd { margin:0; }
   body { padding:0; background:#fff; }
   header, .widget, footer, .verdict, .tile, ul.items li.toned { background:transparent; }
   section.band { break-inside:avoid-page; }
-  .widget { break-inside:avoid; }
+  h2, .desc, h3 { break-after:avoid-page; }
+  .widget:not(:has(table)) { break-inside:avoid; }
 }
 `;
 
@@ -102,7 +103,7 @@ function chartSvg(block: Extract<ReportBlock, { kind: 'series' }>, f: ValueForma
           >${chartTickLabel(block, t.value, f)}</text
         >`,
   );
-  // A lone series gets a light area under its line; several would only muddy each other.
+  // A light area lies under the line of the one series drawn in full, never with two or more; a faint comparison line gets none.
   const shaded = g.lines.filter((line) => !line.faint).length === 1;
   const areas = g.lines.flatMap((line) =>
     shaded && !line.faint

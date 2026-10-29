@@ -45,6 +45,9 @@ import {
   clusterFacts,
   clusterHeadline,
   clusterOccurrences,
+  clusterOccurrencesText,
+  clusterOwner,
+  clusterState,
   diagnosisFacts,
   errorRows,
   fmtBytes,
@@ -55,8 +58,15 @@ import {
   OMISSION_REASONS,
   projectLabel,
   runFacts,
-  runOutcome,
+  runFailureGroups,
+  runHeadline,
+  runSummaryFacts,
+  runTestsByOutcome,
+  runTestDuration,
+  runTestStatus,
+  slowestTests,
   statusTone,
+  statusLabel,
   stepBars,
   type CaseLabel,
   type ErrorRowKind,
@@ -64,7 +74,7 @@ import {
 } from './fields';
 import { drawPiwiCredit, PDF_CREDIT_HEIGHT } from '#shared/brand';
 import { STATUS_COLORS, hexToRgb, type StatusColorKey } from '#shared/status-colors';
-import type { ExportAsset, ExportBundle, ExportCase } from './types';
+import type { ExportAsset, ExportBundle, ExportCase, ExportRun } from './types';
 
 export interface PdfRenderOptions {
   /** Bytes for an embeddable screenshot, or null to leave it out. */
@@ -169,10 +179,10 @@ const REPLACEMENTS: Record<string, string> = {
   '└': '`',
   '▶': '>',
   // French puts a narrow no-break space before % and between thousands; the font has the plain one.
-  ' ': ' ',
-  ' ': ' ',
+  '\u202f': '\u00a0',
+  '\u2009': ' ',
   // The minus sign of a report's changes (−2.1 pts).
-  '−': '-',
+  '\u2212': '-',
 };
 
 /**
@@ -408,10 +418,22 @@ class PdfBuilder {
 
   /** Clip a string to a width, ending with an ellipsis. */
   fit(text: string, font: PDFFont, size: number, width: number): string {
-    let t = winAnsiSafe(text);
+    const t = winAnsiSafe(text);
     if (font.widthOfTextAtSize(t, size) <= width) return t;
-    while (t.length > 1 && font.widthOfTextAtSize(`${t}…`, size) > width) t = t.slice(0, -1);
-    return `${t}…`;
+    let lo = 1;
+    let hi = t.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (font.widthOfTextAtSize(`${t.slice(0, mid)}…`, size) <= width) lo = mid;
+      else hi = mid - 1;
+    }
+    return `${t.slice(0, lo)}…`;
+  }
+
+  /** Wrapped lines kept to `max`, the last one ending with an ellipsis when some were left out. */
+  clamp(lines: string[], max: number, font: PDFFont, size: number, width: number): string[] {
+    if (lines.length <= max) return lines;
+    return [...lines.slice(0, max - 1), this.fit(`${lines[max - 1]} ${lines[max]}`, font, size, width)];
   }
 
   /** A flowing paragraph; wraps, paginates and returns the cursor below it. */
@@ -452,9 +474,14 @@ class PdfBuilder {
   /** The first line of the document: what it is and the project, then when it was exported. */
   docHeader(kind: string, stamp: string, sourceUrl: string | null): void {
     const size = 7.5;
-    const label = winAnsiSafe(kind.toUpperCase());
+    const right = this.fit(stamp, this.regular, size, CONTENT_WIDTH / 2);
+    const label = this.fit(
+      kind.toUpperCase(),
+      this.bold,
+      size,
+      CONTENT_WIDTH - this.regular.widthOfTextAtSize(right, size) - 16,
+    );
     this.page.drawText(label, { x: MARGIN, y: this.y - size, size, font: this.bold, color: COLORS.accent });
-    const right = this.fit(stamp, this.regular, size, CONTENT_WIDTH - this.bold.widthOfTextAtSize(label, size) - 16);
     this.page.drawText(right, {
       x: MARGIN + CONTENT_WIDTH - this.regular.widthOfTextAtSize(right, size),
       y: this.y - size,
@@ -496,17 +523,41 @@ class PdfBuilder {
     const edge = 4;
     const innerX = MARGIN + edge + pad;
     const innerWidth = CONTENT_WIDTH - edge - pad * 2;
-    const titleLines = this.wrap(opts.title, this.bold, opts.titleSize, innerWidth);
-    const pathLines = opts.path ? this.wrap(opts.path, this.regular, 9, innerWidth) : [];
-    const locationLines = opts.location ? this.wrap(opts.location, this.mono, 8, innerWidth) : [];
-    const headlineLines = opts.headline ? this.wrap(opts.headline, this.bold, 10, innerWidth) : [];
-    const detailLines = opts.detail ? this.wrap(opts.detail, this.regular, 9, innerWidth) : [];
-    const pills: CaseLabel[] = [...(opts.status ? [{ text: opts.status, news: false }] : []), ...opts.labels];
+    // Each block is kept to a few lines, so the box always fits on one page.
+    const lines = (text: string | null | undefined, font: PDFFont, size: number, max: number) =>
+      text ? this.clamp(this.wrap(text, font, size, innerWidth), max, font, size, innerWidth) : [];
+    const titleLines = lines(opts.title, this.bold, opts.titleSize, 6);
+    const pathLines = lines(opts.path, this.regular, 9, 3);
+    const locationLines = lines(opts.location, this.mono, 8, 2);
+    const headlineLines = lines(opts.headline, this.bold, 10, 4);
+    const detailLines = lines(opts.detail, this.regular, 9, 8);
+
+    // The status and labels as pills, wrapped onto as many rows as they need.
     const pillHeight = 13;
+    const pillGap = 5;
+    const pillSize = 7;
+    const pills = [...(opts.status ? [{ text: opts.status, news: false, status: true }] : []), ...opts.labels].map(
+      (pill) => {
+        const status = 'status' in pill;
+        const font = status || pill.news ? this.bold : this.regular;
+        const text = this.fit(status ? pill.text.toUpperCase() : pill.text, font, pillSize, innerWidth - 12);
+        return { text, font, status, news: pill.news, width: font.widthOfTextAtSize(text, pillSize) + 12 };
+      },
+    );
+    const pillRows: (typeof pills)[] = [];
+    let rowWidth = Infinity;
+    for (const pill of pills) {
+      if (rowWidth + pill.width > innerWidth) {
+        pillRows.push([]);
+        rowWidth = 0;
+      }
+      pillRows[pillRows.length - 1]!.push(pill);
+      rowWidth += pill.width + pillGap;
+    }
     const titleLine = opts.titleSize * 1.25;
     const height =
       pad * 2 +
-      (pills.length ? pillHeight + 7 : 0) +
+      (pillRows.length ? pillRows.length * (pillHeight + 4) + 3 : 0) +
       titleLines.length * titleLine +
       pathLines.length * 12.5 +
       locationLines.length * 11 +
@@ -520,32 +571,18 @@ class PdfBuilder {
     this.rounded(MARGIN + edge, top, CONTENT_WIDTH - edge, height, 6, tint(tone.fill, 0.08));
 
     let cursor = top - pad;
-    if (pills.length) {
+    for (const row of pillRows) {
       let x = innerX;
-      pills.forEach((pill, i) => {
-        const isStatus = i === 0 && opts.status != null;
-        const isNews = pill.news;
-        const font = isStatus || isNews ? this.bold : this.regular;
-        const text = winAnsiSafe(isStatus ? pill.text.toUpperCase() : pill.text);
-        const size = 7;
-        const w = font.widthOfTextAtSize(text, size) + 12;
-        if (x + w > innerX + innerWidth) return;
-        const color = isStatus ? hexColor(tone.text) : isNews ? COLORS.fail : COLORS.muted;
-        this.rounded(
-          x,
-          cursor,
-          w,
-          pillHeight,
-          pillHeight / 2,
-          COLORS.white,
-          isStatus || isNews ? color : COLORS.lineStrong,
-          isStatus ? 1 : 0.6,
-        );
-        this.page.drawText(text, { x: x + 6, y: cursor - pillHeight + 4, size, font, color });
-        x += w + 5;
-      });
-      cursor -= pillHeight + 7;
+      for (const pill of row) {
+        const color = pill.status ? hexColor(tone.text) : pill.news ? COLORS.fail : COLORS.muted;
+        const border = pill.status || pill.news ? color : COLORS.lineStrong;
+        this.rounded(x, cursor, pill.width, pillHeight, pillHeight / 2, COLORS.white, border, pill.status ? 1 : 0.6);
+        this.page.drawText(pill.text, { x: x + 6, y: cursor - pillHeight + 4, size: pillSize, font: pill.font, color });
+        x += pill.width + pillGap;
+      }
+      cursor -= pillHeight + 4;
     }
+    if (pillRows.length) cursor -= 3;
     for (const line of titleLines) {
       this.page.drawText(line, {
         x: innerX,
@@ -603,7 +640,7 @@ class PdfBuilder {
       const width = row.length === 1 && row[0]![1].length > 48 ? CONTENT_WIDTH : narrow;
       const cells = row.map(([label, value]) => ({
         label,
-        lines: this.wrap(value, this.bold, valueSize, width - 14).slice(0, 8),
+        lines: this.clamp(this.wrap(value, this.bold, valueSize, width - 14), 12, this.bold, valueSize, width - 14),
       }));
       const height = 8 + labelSize + 5 + Math.max(...cells.map((c) => c.lines.length)) * valueLine + 4;
       this.ensure(height + gap);
@@ -612,7 +649,7 @@ class PdfBuilder {
         const x = MARGIN + idx * (width + gap);
         this.rounded(x, top, width, height, 5, COLORS.white, COLORS.line);
         let cursor = top - 8 - labelSize;
-        this.page.drawText(winAnsiSafe(cell.label).toUpperCase(), {
+        this.page.drawText(winAnsiSafe(cell.label.toUpperCase()), {
           x: x + 7,
           y: cursor,
           size: labelSize,
@@ -636,10 +673,10 @@ class PdfBuilder {
     this.space(2);
   }
 
-  /** A small uppercase label over a block of a panel. */
-  label(value: string): void {
-    this.ensure(14);
-    this.page.drawText(winAnsiSafe(value).toUpperCase(), {
+  /** A small uppercase label over a block, kept on one page with the `keepWith` points that follow it. */
+  label(value: string, keepWith = 0): void {
+    this.ensure(14 + keepWith);
+    this.page.drawText(winAnsiSafe(value.toUpperCase()), {
       x: MARGIN,
       y: this.y - 7,
       size: 7,
@@ -684,13 +721,17 @@ class PdfBuilder {
     const height = 7;
     this.ensure(height + 24);
     this.space(3);
+    // Every outcome keeps a sliver, and the rest of the bar is shared by count.
+    const sum = segments.reduce((n, segment) => n + segment.count, 0) || 1;
+    const sliver = 2;
+    const free = Math.max(0, CONTENT_WIDTH - sliver * segments.length);
     let x = MARGIN;
     for (const segment of segments) {
-      const width = Math.max(2, (segment.count / total) * CONTENT_WIDTH);
+      const width = sliver + (free * segment.count) / sum;
       this.page.drawRectangle({
         x,
         y: this.y - height,
-        width: Math.min(width, MARGIN + CONTENT_WIDTH - x),
+        width,
         height,
         color: hexColor(STATUS_COLORS[segment.key].fill),
       });
@@ -752,9 +793,9 @@ class PdfBuilder {
    * The heading of a section (Error, Steps, Console…): a colored mark, its name and a count, kept with the first lines
    * of what follows it.
    */
-  section(title: string, opts: { color?: Color; count?: number; aside?: string | null } = {}): void {
+  section(title: string, opts: { color?: Color; count?: number; aside?: string | null; keepWith?: number } = {}): void {
     this.space(10);
-    this.ensure(60);
+    this.ensure(Math.max(60, 22 + (opts.keepWith ?? 0)));
     const size = 10.5;
     this.page.drawRectangle({
       x: MARGIN,
@@ -853,6 +894,7 @@ class PdfBuilder {
 
   bullets(items: string[]): void {
     for (const item of items) {
+      this.ensure(14);
       const top = this.y;
       this.text(item, { x: MARGIN + 12, maxWidth: CONTENT_WIDTH - 12, size: 9 });
       this.page.drawCircle({ x: MARGIN + 4, y: top - 6, size: 1.6, color: COLORS.muted });
@@ -879,7 +921,7 @@ class PdfBuilder {
       this.page.drawRectangle({ x: MARGIN, y: top - height, width: CONTENT_WIDTH, height, color: COLORS.sunken });
       let x = MARGIN;
       headers.forEach((header, idx) => {
-        this.page.drawText(winAnsiSafe(header).toUpperCase(), {
+        this.page.drawText(winAnsiSafe(header.toUpperCase()), {
           x: x + padX,
           y: top - size - 1,
           size: 6.5,
@@ -1006,10 +1048,12 @@ class PdfBuilder {
   footers(title: string): void {
     const pages = this.doc.getPages();
     const size = 7;
+    const widest = this.regular.widthOfTextAtSize(`${pages.length} / ${pages.length}`, size);
+    const name = this.fit(`Piwi · ${title}`, this.regular, size, CONTENT_WIDTH - widest - 20);
     pages.forEach((page, i) => {
       const number = `${i + 1} / ${pages.length}`;
       const numberWidth = this.regular.widthOfTextAtSize(number, size);
-      page.drawText(this.fit(`Piwi · ${title}`, this.regular, size, CONTENT_WIDTH - numberWidth - 20), {
+      page.drawText(name, {
         x: MARGIN,
         y: FOOTER_Y,
         size,
@@ -1061,17 +1105,39 @@ function renderDiagnosis(b: PdfBuilder, diagnosis: Record<string, unknown> | nul
   }
 }
 
+/** A run: its context on wrapping lines, then its tests by outcome. */
+function renderRunPanel(b: PdfBuilder, run: Record<string, any> | null | undefined): void {
+  const context = runFacts(run ?? {});
+  const outcome = runTestsByOutcome(run);
+  if (!context.some(([, v]) => v) && !outcome) return;
+  b.space(4);
+  b.label('The run');
+  b.inlineFacts(context);
+  if (outcome) b.outcomeBar(outcome.segments, outcome.total);
+}
+
+interface CaseOptions {
+  /** The case is the document's subject: its title is the largest. */
+  standalone: boolean;
+  /** The line above a case among several (`Test 2 of 5`). */
+  label?: string;
+  /** Leave out the run panel, which a run export shows once at its top. */
+  withoutRun?: boolean;
+}
+
 async function renderCase(
   b: PdfBuilder,
   exportCase: ExportCase,
   opts: PdfRenderOptions,
-  standalone: boolean,
+  caseOpts: CaseOptions,
 ): Promise<void> {
   const d = exportCase.detail as Record<string, any>;
   const headline = caseHeadline(exportCase);
+  const standalone = caseOpts.standalone;
 
+  if (caseOpts.label) b.label(caseOpts.label, 120);
   b.hero({
-    tone: statusTone(exportCase.status),
+    tone: statusTone(exportCase.status, Number(d.retries ?? 0)),
     status: exportCase.status,
     labels: caseLabels(exportCase),
     title: exportCase.title,
@@ -1083,14 +1149,7 @@ async function renderCase(
   });
   b.tiles(caseFacts(exportCase));
 
-  const context = runFacts(exportCase);
-  const outcome = runOutcome(exportCase);
-  if (context.some(([, v]) => v) || outcome) {
-    b.space(4);
-    b.label('The run');
-    b.inlineFacts(context);
-    if (outcome) b.outcomeBar(outcome.segments, outcome.total);
-  }
+  if (!caseOpts.withoutRun) renderRunPanel(b, d.testRun);
 
   if (d.error) {
     b.section('Error', { color: COLORS.fail });
@@ -1113,12 +1172,13 @@ async function renderCase(
   renderDiagnosis(b, exportCase.diagnosis);
 
   const screenshots = exportCase.assets.filter((a) => a.kind === 'screenshot');
-  let shown = 0;
+  let headed = false;
   for (const asset of screenshots) {
     const bytes = opts.imageFor(asset);
     if (!bytes) continue;
-    if (shown === 0) b.section('Screenshots', { color: COLORS.info });
-    if (await b.image(bytes, asset.contentType, asset.name)) shown++;
+    if (!headed) b.section('Screenshots', { color: COLORS.info, keepWith: (PAGE_HEIGHT - MARGIN * 2) / 3 });
+    headed = true;
+    await b.image(bytes, asset.contentType, asset.name);
   }
 
   const steps = (d.steps ?? []) as Record<string, any>[];
@@ -1136,7 +1196,12 @@ async function renderCase(
             : COLORS.accent;
         return [
           { text: subtitle ? `${title} ${subtitle}` : title, color: step.failed ? COLORS.fail : undefined },
-          { text: String(step.category ?? ''), color: COLORS.muted },
+          {
+            text: [String(step.category ?? ''), step.failed ? 'failed' : step.recovered ? 'recovered' : '']
+              .filter(Boolean)
+              .join(' · '),
+            color: COLORS.muted,
+          },
           { text: '', bar: { ...bars[i]!, color } },
           { text: fmtStepDuration(step, d.pauses), font: b.mono },
         ];
@@ -1188,14 +1253,17 @@ function renderClusterHeader(b: PdfBuilder, bundle: ExportBundle): void {
   const cluster = bundle.cluster as Record<string, any> | null;
   if (!cluster) return;
 
+  const headline = clusterHeadline(cluster);
+  const state = clusterState(cluster);
+  const owner = clusterOwner(cluster);
   b.hero({
     tone: statusTone(cluster.status),
     status: cluster.status ? String(cluster.status) : null,
-    labels: cluster.owner?.name ? [{ text: String(cluster.owner.name), news: false }] : [],
+    labels: owner ? [{ text: `Owner ${owner}`, news: false }] : [],
     title: bundle.title,
     titleSize: 16,
-    headline: clusterHeadline(cluster),
-    detail: typeof cluster.clusterState?.sentence === 'string' ? cluster.clusterState.sentence : null,
+    headline: headline?.headline,
+    detail: [headline?.detail, state].filter(Boolean).join('\n') || null,
   });
   b.tiles(clusterFacts(cluster));
 
@@ -1204,8 +1272,7 @@ function renderClusterHeader(b: PdfBuilder, bundle: ExportBundle): void {
     b.space(4);
     b.label('Recent runs');
     b.occurrenceBars(points);
-    const hits = points.filter((p) => p.count > 0).length;
-    b.meta(`Failed in ${hits} of the last ${points.length} runs, oldest on the left.`);
+    b.meta(`${clusterOccurrencesText(points)}, oldest on the left.`);
   }
 
   if (cluster.sampleError) {
@@ -1231,6 +1298,91 @@ function renderClusterHeader(b: PdfBuilder, bundle: ExportBundle): void {
   if (bundle.truncatedCases.length) {
     b.section(`Other affected tests (${bundle.truncatedCases.length}, evidence not included)`);
     b.bullets(bundle.truncatedCases.map((t) => `${t.title}${t.filePath ? `  ${t.filePath}` : ''}`));
+  }
+}
+
+/** The top of a run export: the run's header, figures, context and tests, then its failures, flaky and slowest tests. */
+function renderRunHeader(b: PdfBuilder, bundle: ExportBundle, run: ExportRun): void {
+  const d = run.detail as Record<string, any>;
+  b.hero({
+    tone: statusTone(d.status),
+    status: d.status ? String(d.status) : null,
+    labels: [d.isFullRun === false ? 'Partial run' : null, d.origin ? String(d.origin) : null]
+      .filter((text): text is string => Boolean(text))
+      .map((text) => ({ text, news: false })),
+    title: bundle.title,
+    titleSize: 16,
+    path: [d.branch, d.environment].filter(Boolean).join(' · ') || null,
+    headline: runHeadline(d),
+  });
+  b.tiles(runSummaryFacts(run));
+  renderRunPanel(b, d);
+
+  const groups = runFailureGroups(run);
+  if (groups.length) {
+    b.section('Failures by root cause', { color: COLORS.fail, count: groups.reduce((n, g) => n + g.tests.length, 0) });
+    for (const g of groups) {
+      b.space(2);
+      b.text(g.title, { font: b.bold, size: 9.5, lineGap: 3 });
+      const meta = [g.isNew ? 'New' : null, g.status, `${g.tests.length} ${g.tests.length === 1 ? 'test' : 'tests'}`];
+      b.meta(meta.filter(Boolean).join(' · '));
+      if (g.diagnosis) b.meta(g.diagnosis);
+      b.table(
+        ['Status', 'Test', 'Browser'],
+        g.tests.map((t) => [
+          { text: statusLabel(runTestStatus(t)), color: statusColor(runTestStatus(t)), font: b.bold },
+          { text: [t.title, t.location, t.flaky ? null : t.error].filter(Boolean).join('\n') },
+          { text: t.browser ?? '', color: COLORS.muted },
+        ]),
+        [1.1, 6.5, 1.6],
+      );
+    }
+  }
+
+  const flaky = run.tests.filter((t) => t.flaky);
+  if (flaky.length) {
+    b.section('Flaky tests', { color: hexColor(STATUS_COLORS.flaky.fill), count: flaky.length });
+    b.table(
+      ['Test', 'Browser', 'Retries', 'Duration'],
+      flaky.map((t) => [
+        { text: [t.title, t.location].filter(Boolean).join('\n') },
+        { text: t.browser ?? '', color: COLORS.muted },
+        { text: String(t.retries), font: b.mono },
+        { text: runTestDuration(t), font: b.mono },
+      ]),
+      [6, 1.6, 1, 1.4],
+    );
+  }
+
+  const slowest = slowestTests(run.tests);
+  if (slowest.length) {
+    const longest = slowest[0]!.duration ?? 1;
+    b.section('Slowest tests', { count: slowest.length });
+    b.table(
+      ['Test', 'Browser', '', 'Duration'],
+      slowest.map((t) => [
+        { text: t.title },
+        { text: t.browser ?? '', color: COLORS.muted },
+        { text: '', bar: { offset: 0, width: (t.duration ?? 0) / longest, color: COLORS.accent } },
+        { text: runTestDuration(t), font: b.mono },
+      ]),
+      [5, 1.5, 2.4, 1.4],
+    );
+  }
+
+  if (run.tests.length) {
+    b.section('All tests', { count: run.tests.length });
+    b.table(
+      ['Status', 'Test', 'Browser', 'Duration', 'Retries'],
+      run.tests.map((t) => [
+        { text: statusLabel(runTestStatus(t)), color: statusColor(runTestStatus(t)), font: b.bold },
+        { text: [[...t.suitePath, t.title].join(' › '), t.location].filter(Boolean).join('\n') },
+        { text: t.browser ?? '', color: COLORS.muted },
+        { text: runTestDuration(t), font: b.mono },
+        { text: String(t.retries), font: b.mono },
+      ]),
+      [1.1, 6, 1.5, 1.2, 0.9],
+    );
   }
 }
 
@@ -1264,28 +1416,41 @@ export async function renderExportPdf(bundle: ExportBundle, opts: PdfRenderOptio
   const b = new PdfBuilder(doc, regular, bold, mono, monoBold);
 
   const isCluster = bundle.kind === 'cluster';
+  const isRun = bundle.kind === 'run';
   const label = projectLabel(bundle);
-  const standalone = !isCluster && bundle.cases.length === 1;
+  const standalone = bundle.kind === 'execution' && bundle.cases.length === 1;
   const exported = fmtDate(bundle.generatedAt) ?? bundle.generatedAt;
+  const kindLabel = isRun ? 'Test run' : isCluster ? 'Failure cluster' : 'Test execution';
   b.docHeader(
-    `${isCluster ? 'Failure cluster' : 'Test execution'}${label ? ` · ${label}` : ''}`,
+    `${kindLabel}${label ? ` · ${label}` : ''}`,
     `Exported ${exported}${bundle.piwiVersion ? ` · Piwi ${bundle.piwiVersion}` : ''}`,
     bundle.sourceUrl,
   );
 
   if (isCluster) renderClusterHeader(b, bundle);
+  else if (isRun && bundle.run) renderRunHeader(b, bundle, bundle.run);
   else if (!standalone) b.text(bundle.title, { font: bold, size: 18, lineGap: 5 });
 
+  if (isRun && bundle.cases.length) {
+    b.newPage();
+    b.text('Failures in detail', { font: bold, size: 15, lineGap: 6 });
+  }
+  const caseWord = isRun ? 'Failure' : 'Test';
   for (let i = 0; i < bundle.cases.length; i++) {
     const exportCase = bundle.cases[i];
     if (!exportCase) continue;
-    if (bundle.cases.length > 1 || isCluster) {
-      b.space(14);
-      if (bundle.cases.length > 1) b.label(`Test ${i + 1} of ${bundle.cases.length}`);
-    }
-    await renderCase(b, exportCase, opts, standalone);
+    if (bundle.cases.length > 1 || isCluster) b.space(14);
+    await renderCase(b, exportCase, opts, {
+      standalone,
+      label: bundle.cases.length > 1 ? `${caseWord} ${i + 1} of ${bundle.cases.length}` : undefined,
+      withoutRun: isRun,
+    });
   }
-  if (bundle.cases.length === 0) {
+  if (isRun && bundle.truncatedCases.length) {
+    b.section(`Other failing tests (${bundle.truncatedCases.length}, evidence not included)`);
+    b.bullets(bundle.truncatedCases.map((t) => `${t.title}${t.filePath ? `  ${t.filePath}` : ''}`));
+  }
+  if (bundle.cases.length === 0 && !isRun) {
     b.text('No executions were included in this export.', { color: COLORS.muted });
   }
 

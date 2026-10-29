@@ -1,3 +1,4 @@
+import { inflateSync } from 'node:zlib';
 import { describe, expect, test } from 'vitest';
 import { renderReportHtml } from '../../shared/reports/render-html';
 import { renderReportMarkdown } from '../../shared/reports/render-markdown';
@@ -5,6 +6,7 @@ import { renderReportPdf } from '../../shared/reports/render-pdf';
 import { buildReport } from '../../shared/reports/build';
 import { reportFacts } from '../../shared/reports/facts';
 import { fixtureBundle, HOSTILE } from './report-fixture';
+import { PASS_RATE_COLORS } from '../../shared/status-colors';
 
 /**
  * The HTML and Markdown renderings of a quality report state the same facts:
@@ -88,7 +90,7 @@ describe('quality report parity', () => {
   test('the HTML numbers each band and edges the verdict in its tone', () => {
     const html = renderReportHtml(bundle);
     bundle.bands.forEach((band, i) => expect(html).toContain(`<span class="num">${i + 1}</span>${band.title}`));
-    expect(html).toMatch(/class="verdict" data-verdict="mixed" style="--tone:#[0-9a-f]{6}"/);
+    expect(html).toContain(`class="verdict" data-verdict="mixed" style="--tone:${PASS_RATE_COLORS.fair.fill}"`);
   });
 
   test('the HTML shades the area under a lone series, never under a lone point', () => {
@@ -101,6 +103,31 @@ describe('quality report parity', () => {
     if (series?.kind !== 'series') throw new Error('the fixture has a series');
     series.series[0]!.points[1]!.value = 90;
     expect(renderReportHtml(joined)).toContain('fill-opacity="0.09"');
+  });
+
+  test('the PDF writes a long definition label whole, wrapped in its column', async () => {
+    const long = fixtureBundle();
+    long.definitions = [
+      {
+        id: 'test-pass-rate',
+        label: 'Taux de réussite des tests sur la branche principale',
+        definition: 'Tests réussis.',
+      },
+    ];
+    const raw = Buffer.from(await renderReportPdf(long)).toString('latin1');
+    const content = [...raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)]
+      .map((m) => {
+        try {
+          return inflateSync(Buffer.from(m[1]!, 'latin1')).toString('latin1');
+        } catch {
+          return '';
+        }
+      })
+      .join('\n');
+    const drawn = [...content.matchAll(/<([0-9A-F]*)> Tj/g)].map((m) => Buffer.from(m[1]!, 'hex').toString('latin1'));
+    expect(drawn).toEqual(expect.arrayContaining(['Taux de réussite des tests', 'sur la branche principale']));
+    // WinAnsi writes the ellipsis as 0x85.
+    expect(drawn.some((t) => t.endsWith('\x85'))).toBe(false);
   });
 
   test('the fixture carries the hostile string into the facts', () => {

@@ -1,6 +1,6 @@
 ---
 title: Offline export
-description: "Export a failing execution or a whole failure cluster as HTML, ZIP, PDF, Markdown or JSON that opens with no network and no Piwi server, plus a Perfetto trace of a run."
+description: "Export a failing execution, a whole failure cluster or a whole run as HTML, ZIP, PDF, Markdown or JSON that opens with no network and no Piwi server, plus a Perfetto trace of a run."
 lang: en-US
 ---
 
@@ -8,12 +8,12 @@ lang: en-US
 
 <Needs reporter />
 
-An investigation is only useful while someone can open it. Piwi can write a failing execution or a
-whole failure cluster to a file that opens with **no network and no Piwi server** — for a ticket
+An investigation is only useful while someone can open it. Piwi can write a failing execution, a
+whole failure cluster or a whole run to a file that opens with **no network and no Piwi server** — for a ticket
 attachment, a mail to someone without an account, or an archive that outlives your retention window.
 
-The **Export** button sits on a test-case execution (`/test-run-cases/:id`) and on a failure cluster
-(`/failure-clusters/:id`). A run (`/test-runs/:id`) and an execution also offer a **Perfetto trace**
+The **Export** button sits on a test-case execution (`/test-run-cases/:id`), on a failure cluster
+(`/failure-clusters/:id`) and on a run (`/test-runs/:id`). A run and an execution also offer a **Perfetto trace**
 (see [below](#perfetto-trace)).
 
 ## Formats
@@ -26,6 +26,10 @@ The **Export** button sits on a test-case execution (`/test-run-cases/:id`) and 
 | **Markdown / JSON** | Text only, for pasting into an issue or feeding an agent. |
 
 A cluster export carries the most recent failing execution of each affected test.
+
+A run export opens on the run: its status, branch, commit and CI build, its tests as a bar split by outcome, its
+failures grouped by root cause (each failure cluster, then the failures no cluster holds), its flaky tests, its ten
+slowest tests and every test once, by file. Its failing executions follow in detail, the largest group first.
 
 The HTML and PDF reports read the same way. They open on a header colored by the outcome, with the test's full name
 (describe blocks, then title), its location and Piwi's one-line reading of the failure, then the execution's figures and
@@ -52,7 +56,7 @@ Exports are bounded so one download cannot exhaust the server:
 |---|---|---|
 | `PIWI_EXPORT_MAX_INLINE_BYTES` | 8 MB | What a single HTML file will embed as a `data:` URI. Larger files stay out of the one-file HTML; the ZIP still carries them at full size. |
 | `PIWI_EXPORT_MAX_BYTES` | 500 MB | The whole export. Evidence is added in order — each execution's attachments, then its trace archives — and a file that would pass the budget is left out. The archive is built in memory, so this also bounds what one export costs the server. |
-| `PIWI_EXPORT_MAX_CASES` | 25 | Member executions carrying full evidence in a cluster export. Remaining affected tests are listed by name. |
+| `PIWI_EXPORT_MAX_CASES` | 25 | Executions carrying full evidence in a cluster export (its affected tests) or a run export (its failing tests). The rest are listed by name. |
 
 Anything left out is listed in an **Omitted from this export** table in the report and in the ZIP's
 `README.txt` — an export never drops evidence silently. Defaults and tuning:

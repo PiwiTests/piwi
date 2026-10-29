@@ -194,8 +194,17 @@ export async function collectRunBundle(
   if (!run) return null;
   const { testCases: attempts = [], suites: _suites, links: _links, project, ...detail } = run;
 
-  const rows = (attempts as Record<string, any>[]).map((tc) => ({
+  type AttemptRow = Record<string, any> & {
+    testCaseId: number;
+    repeatEachIndex: number | null;
+    status: string;
+    browserName: string | null;
+  };
+  const rows = (attempts as Record<string, any>[]).map((tc): AttemptRow => ({
     ...tc,
+    testCaseId: Number(tc.testCaseId),
+    repeatEachIndex: tc.repeatEachIndex ?? null,
+    status: String(tc.status ?? 'unknown'),
     browserName: (tc.browserName ?? tc.browser?.projectName ?? null) as string | null,
   }));
   const tests: ExportRunTest[] = testOutcomes(rows)

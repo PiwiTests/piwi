@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { renderExportHtml } from '../../shared/export/render-html';
 import { renderExportMarkdown } from '../../shared/export/render-markdown';
 import { caseFacts, clusterFacts, diagnosisFacts } from '../../shared/export/fields';
-import type { ExportBundle, ExportCase } from '../../shared/export/types';
+import type { ExportBundle, ExportCase, ExportRunTest } from '../../shared/export/types';
 
 /**
  * The HTML report and the Markdown export must state the same facts — someone
@@ -173,5 +173,177 @@ describe('format-specific behavior', () => {
       ],
     });
     expect(piped).toContain('/a\\|b');
+  });
+});
+
+describe('HTML and Markdown state the same reading of a failure', () => {
+  const richCase: ExportCase = {
+    ...fullCase,
+    detail: {
+      ...fullCase.detail,
+      title: 'checkout shows the total',
+      suitePath: ['Checkout', 'Total'],
+      verdict: {
+        headline: 'Clicked a button that never enabled',
+        detail: 'element is not enabled',
+        owner: { name: '@pay' },
+      },
+      quarantined: true,
+      tags: ['smoke'],
+      steps: [{ title: 'Click', subtitle: "getByRole('button')", category: 'action', duration: 120, failed: true }],
+    },
+  };
+  const cluster: ExportBundle = {
+    ...clusterBundle,
+    cases: [richCase],
+    cluster: {
+      ...(clusterBundle.cluster as Record<string, unknown>),
+      latestHeadline: { parts: [{ kind: 'text', text: 'Expected 26 rows, found 51' }], detail: 'rows in the table' },
+      clusterState: { sentence: 'Fixed in run #62 and verified, still marked open.' },
+      owner: { name: '@admin' },
+      occurrenceSeries: [
+        { runId: 1, startedAt: '2026-10-27T00:00:00Z', occurrences: 0 },
+        { runId: 2, startedAt: '2026-10-28T00:00:00Z', occurrences: 3 },
+      ],
+    },
+  };
+  const decode = (s: string) =>
+    s
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&');
+  const htmlOut = decode(renderExportHtml(cluster, { assetUrl: () => null }));
+  const mdOut = renderExportMarkdown(cluster);
+
+  it.each([
+    ['full name', 'Checkout › Total › checkout shows the total'],
+    ['headline', 'Clicked a button that never enabled'],
+    ['headline detail', 'element is not enabled'],
+    ['owner', 'Owner @pay'],
+    ['quarantine', 'Quarantined'],
+    ['tag', 'smoke'],
+    ['step target', "Click getByRole('button')"],
+    ['failed step', 'action · failed'],
+    ['cluster headline', 'Expected 26 rows, found 51'],
+    ['cluster headline detail', 'rows in the table'],
+    ['cluster state', 'Fixed in run #62 and verified, still marked open.'],
+    ['cluster owner', 'Owner @admin'],
+    ['recent runs', 'Failed in 1 of the last 2 runs'],
+  ])('both state the %s', (_what, needle) => {
+    expect(htmlOut.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ')).toContain(needle);
+    expect(mdOut.replace(/\s+/g, ' ')).toContain(needle);
+  });
+});
+
+describe('HTML and Markdown state the same run', () => {
+  const tests: ExportRunTest[] = [
+    {
+      executionId: 1,
+      testCaseId: 1,
+      title: 'pays',
+      suitePath: ['Checkout'],
+      filePath: 'tests/pay.spec.ts',
+      location: 'tests/pay.spec.ts:4:3',
+      browser: 'chromium',
+      status: 'failed',
+      flaky: false,
+      retries: 1,
+      duration: 30_000,
+      error: 'TimeoutError: Timeout 5000ms exceeded',
+      failureClusterId: 3,
+    },
+    {
+      executionId: 2,
+      testCaseId: 2,
+      title: 'adds to cart',
+      suitePath: [],
+      filePath: 'tests/cart.spec.ts',
+      location: 'tests/cart.spec.ts:8:3',
+      browser: 'firefox',
+      status: 'passed',
+      flaky: true,
+      retries: 1,
+      duration: 900,
+      error: null,
+      failureClusterId: null,
+    },
+    {
+      executionId: 3,
+      testCaseId: 3,
+      title: 'logs in',
+      suitePath: [],
+      filePath: 'tests/login.spec.ts',
+      location: 'tests/login.spec.ts:2:3',
+      browser: 'chromium',
+      status: 'failed',
+      flaky: false,
+      retries: 0,
+      duration: 1200,
+      error: 'Error: boom',
+      failureClusterId: null,
+    },
+  ];
+  const run: ExportBundle = {
+    kind: 'run',
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    piwiVersion: '0.62.0',
+    sourceUrl: null,
+    title: 'Run #7',
+    project: { id: 1, name: 'web', label: 'Web' },
+    cluster: null,
+    run: {
+      detail: {
+        id: 7,
+        status: 'failed',
+        branch: 'main',
+        environment: 'staging',
+        startTime: '2026-10-28T13:04:00Z',
+        duration: 64_000,
+        totalTests: 3,
+        passedTests: 1,
+        failedTests: 2,
+        flakyTests: 1,
+      },
+      tests,
+      groups: [
+        {
+          clusterId: 3,
+          title: 'Timeout 5000ms exceeded',
+          status: 'open',
+          isNew: true,
+          flaky: false,
+          testCaseIds: [1],
+          diagnosis: 'The pay button waits on a slow quote.',
+        },
+      ],
+    },
+    cases: [{ ...fullCase, executionId: 1 }],
+    truncatedCases: [{ testCaseId: 3, title: 'logs in', filePath: 'tests/login.spec.ts' }],
+    omitted: [],
+  };
+  const htmlText = renderExportHtml(run, { assetUrl: () => null })
+    .replace(/<[^>]+>/g, '')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ');
+  const md = renderExportMarkdown(run).replace(/\s+/g, ' ');
+
+  it.each([
+    ['headline', '2 of 3 tests failed, 1 flaky'],
+    ['branch', 'main'],
+    ['root cause', 'Timeout 5000ms exceeded'],
+    ['diagnosis', 'The pay button waits on a slow quote.'],
+    ['failing test error', 'TimeoutError: Timeout 5000ms exceeded'],
+    ['failure no cluster holds', 'Not grouped'],
+    ['flaky test', 'adds to cart'],
+    ['full name in the list of tests', 'Checkout › pays'],
+    ['tests by outcome', '2 failed (67%)'],
+    ['detail section', 'Failures in detail'],
+    ['failing test past the cap', 'Other failing tests (1, evidence not included)'],
+  ])('both state the %s', (_what, needle) => {
+    expect(htmlText).toContain(needle);
+    expect(md).toContain(needle);
   });
 });

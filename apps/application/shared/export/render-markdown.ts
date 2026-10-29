@@ -7,9 +7,18 @@
  * listed by name instead.
  */
 import { stripAnsi } from '#shared/error-fingerprint';
+import { stepLabel } from '@piwitests/core/step-analysis';
 import {
   caseFacts,
+  caseHeadline,
+  caseLabels,
+  casePath,
   clusterFacts,
+  clusterHeadline,
+  clusterOccurrences,
+  clusterOccurrencesText,
+  clusterOwner,
+  clusterState,
   consoleLine,
   diagnosisFacts,
   fmtBytes,
@@ -20,12 +29,19 @@ import {
   OMISSION_REASONS,
   projectLabel,
   runFacts,
-  runOutcome,
+  runFailureGroups,
+  runHeadline,
+  runSummaryFacts,
+  runTestsByOutcome,
+  runTestDuration,
+  runTestStatus,
+  slowestTests,
+  statusLabel,
   type Fact,
 } from './fields';
 import { outcomeText } from '#shared/notifications/message-parts';
 import { piwiCreditMarkdown } from '#shared/brand';
-import type { ExportBundle, ExportCase } from './types';
+import type { ExportBundle, ExportCase, ExportRun } from './types';
 
 function fence(text: string, lang = ''): string {
   return `\`\`\`${lang}\n${stripAnsi(text).replace(/```/g, '\\`\\`\\`')}\n\`\`\``;
@@ -69,24 +85,32 @@ function diagnosisMarkdown(diagnosis: Record<string, any> | null, heading: strin
   return out;
 }
 
-function caseMarkdown(exportCase: ExportCase, headingLevel: '##' | '###'): string[] {
+/** A run's context and its tests by outcome, under `heading`. */
+function runMarkdown(run: Record<string, any> | null | undefined, heading: string): string[] {
+  const facts = factList(runFacts(run ?? {}));
+  const outcome = runTestsByOutcome(run);
+  if (!facts.length && !outcome) return [];
+  return [heading, '', ...facts, ...(outcome ? [outcomeText(outcome.segments, outcome.total), ''] : [])];
+}
+
+function caseMarkdown(exportCase: ExportCase, headingLevel: '##' | '###', withRun = true): string[] {
   const d = exportCase.detail as Record<string, any>;
   const sub = headingLevel === '##' ? '###' : '####';
+  const path = casePath(exportCase);
+  const headline = caseHeadline(exportCase);
+  const labels = caseLabels(exportCase);
 
   const out: string[] = [
     `${headingLevel} ${exportCase.title}`,
     '',
     `\`${exportCase.location ?? exportCase.filePath ?? ''}\` — **${exportCase.status}**`,
     '',
-    ...factList(caseFacts(exportCase)),
   ];
-
-  const run = factList(runFacts(exportCase));
-  const outcome = runOutcome(exportCase);
-  if (run.length || outcome) {
-    out.push(`${sub} The run`, '', ...run);
-    if (outcome) out.push(outcomeText(outcome.segments, outcome.total), '');
-  }
+  if (path) out.push(path, '');
+  if (labels.length) out.push(labels.map((l) => l.text).join(' · '), '');
+  if (headline) out.push(`**${headline.headline}**${headline.detail ? `  \n${headline.detail}` : ''}`, '');
+  out.push(...factList(caseFacts(exportCase)));
+  if (withRun) out.push(...runMarkdown(d.testRun, `${sub} The run`));
 
   if (d.error) out.push(`${sub} Error`, '', fence(String(d.error)), '');
   out.push(...diagnosisMarkdown(exportCase.diagnosis, `${sub} AI diagnosis`));
@@ -98,8 +122,8 @@ function caseMarkdown(exportCase: ExportCase, headingLevel: '##' | '###'): strin
       ...table(
         ['Step', 'Category', 'Duration'],
         (d.steps as Record<string, any>[]).map((s) => [
-          String(s.title ?? ''),
-          String(s.category ?? ''),
+          stepLabel(s),
+          [String(s.category ?? ''), s.failed ? 'failed' : s.recovered ? 'recovered' : ''].filter(Boolean).join(' · '),
           fmtStepDuration(s, d.pauses),
         ]),
       ),
@@ -152,14 +176,91 @@ function caseMarkdown(exportCase: ExportCase, headingLevel: '##' | '###'): strin
   return out;
 }
 
+/** The top of a run export: the run, its failures by root cause, its flaky and slowest tests, and every test. */
+function runSummaryMarkdown(run: ExportRun): string[] {
+  const d = run.detail as Record<string, any>;
+  const out: string[] = [];
+  const where = [d.branch, d.environment].filter(Boolean).join(' · ');
+  const headline = runHeadline(d);
+  out.push(`**${String(d.status ?? 'unknown')}**${where ? ` · ${where}` : ''}${headline ? ` · ${headline}` : ''}`, '');
+  out.push(...factList(runSummaryFacts(run)));
+  out.push(...runMarkdown(d, '## The run'));
+
+  const groups = runFailureGroups(run);
+  if (groups.length) {
+    out.push('## Failures by root cause', '');
+    for (const g of groups) {
+      const meta = [g.isNew ? 'new' : null, g.status, `${g.tests.length} ${g.tests.length === 1 ? 'test' : 'tests'}`];
+      out.push(`### ${g.title}`, '', `_${meta.filter(Boolean).join(' · ')}_`, '');
+      if (g.diagnosis) out.push(g.diagnosis, '');
+      for (const t of g.tests) {
+        out.push(
+          `- **${statusLabel(runTestStatus(t))}** ${t.title} — \`${t.location ?? ''}\`${t.browser ? ` (${t.browser})` : ''}`,
+          ...(t.error && !t.flaky ? [`  \`${t.error.replace(/`/g, "'")}\``] : []),
+        );
+      }
+      out.push('');
+    }
+  }
+
+  const flaky = run.tests.filter((t) => t.flaky);
+  if (flaky.length) {
+    out.push(
+      '## Flaky tests',
+      '',
+      ...table(
+        ['Test', 'Location', 'Browser', 'Retries', 'Duration'],
+        flaky.map((t) => [t.title, t.location ?? '', t.browser ?? '', String(t.retries), runTestDuration(t)]),
+      ),
+    );
+  }
+
+  const slowest = slowestTests(run.tests);
+  if (slowest.length) {
+    out.push(
+      '## Slowest tests',
+      '',
+      ...table(
+        ['Test', 'Browser', 'Duration'],
+        slowest.map((t) => [t.title, t.browser ?? '', runTestDuration(t)]),
+      ),
+    );
+  }
+
+  if (run.tests.length) {
+    out.push(
+      `## All tests (${run.tests.length})`,
+      '',
+      ...table(
+        ['Status', 'Test', 'Location', 'Browser', 'Duration', 'Retries'],
+        run.tests.map((t) => [
+          statusLabel(runTestStatus(t)),
+          [...t.suitePath, t.title].join(' › '),
+          t.location ?? '',
+          t.browser ?? '',
+          runTestDuration(t),
+          String(t.retries),
+        ]),
+      ),
+    );
+  }
+  return out;
+}
+
+const KIND_LABELS: Record<ExportBundle['kind'], string> = {
+  execution: 'Test execution',
+  cluster: 'Failure cluster',
+  run: 'Test run',
+};
+
 export function renderExportMarkdown(bundle: ExportBundle): string {
-  const isCluster = bundle.kind === 'cluster';
+  const isRun = bundle.kind === 'run';
   const label = projectLabel(bundle);
 
   const out: string[] = [
     `# ${bundle.title}`,
     '',
-    `_${isCluster ? 'Failure cluster' : 'Test execution'} exported ${fmtDate(bundle.generatedAt) ?? bundle.generatedAt}${
+    `_${KIND_LABELS[bundle.kind]} exported ${fmtDate(bundle.generatedAt) ?? bundle.generatedAt}${
       bundle.piwiVersion ? ` · Piwi ${bundle.piwiVersion}` : ''
     }_`,
     '',
@@ -169,16 +270,28 @@ export function renderExportMarkdown(bundle: ExportBundle): string {
 
   const c = bundle.cluster as Record<string, any> | null;
   if (c) {
-    out.push('## Cluster', '', ...factList(clusterFacts(c)));
+    out.push('## Cluster', '');
+    const headline = clusterHeadline(c);
+    const state = clusterState(c);
+    const owner = clusterOwner(c);
+    const occurrences = clusterOccurrencesText(clusterOccurrences(c));
+    if (headline) out.push(`**${headline.headline}**${headline.detail ? `  \n${headline.detail}` : ''}`, '');
+    if (state) out.push(state, '');
+    if (owner) out.push(`Owner ${owner}`, '');
+    if (occurrences) out.push(`${occurrences}.`, '');
+    out.push(...factList(clusterFacts(c)));
     if (c.sampleError) out.push('### Representative error', '', fence(String(c.sampleError)), '');
     out.push(...diagnosisMarkdown((c.diagnosis ?? null) as Record<string, any> | null, '### AI diagnosis'));
   }
 
-  for (const exportCase of bundle.cases) out.push(...caseMarkdown(exportCase, isCluster ? '##' : '##'));
+  if (isRun && bundle.run) out.push(...runSummaryMarkdown(bundle.run));
+  if (isRun && bundle.cases.length) out.push('## Failures in detail', '');
+  for (const exportCase of bundle.cases) out.push(...caseMarkdown(exportCase, isRun ? '###' : '##', !isRun));
 
   if (bundle.truncatedCases.length) {
+    const others = isRun ? 'Other failing tests' : 'Other affected tests';
     out.push(
-      `## Other affected tests (${bundle.truncatedCases.length}, evidence not included)`,
+      `## ${others} (${bundle.truncatedCases.length}, evidence not included)`,
       '',
       ...bundle.truncatedCases.map((t) => `- ${t.title} — \`${t.filePath ?? ''}\``),
       '',
