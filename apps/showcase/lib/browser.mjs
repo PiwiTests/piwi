@@ -67,9 +67,24 @@ export class DeveloperBrowser {
   async openRuns(tile) {
     const popup = await this.context.newPage();
     try {
-      await popup.goto(this.url('popup.html'));
+      // The popup shows its Runs tile once the paired editor's hub answers, as it opens: it is opened again, as a
+      // person does, until the tile shows.
+      const tile = popup.getByRole('button', { name: /Runs/ });
+      for (const deadline = Date.now() + 45_000; ;) {
+        await popup.goto(this.url('popup.html'));
+        if (
+          await tile.waitFor({ timeout: 5_000 }).then(
+            () => true,
+            () => false,
+          )
+        )
+          break;
+        if (Date.now() > deadline) throw new Error('Piwi Picker’s popup never showed its Runs tile');
+      }
       const opened = this.context.waitForEvent('page', (page) => page.url().endsWith('/runs.html'));
-      await popup.getByRole('button', { name: /Runs/ }).click({ timeout: 30_000 });
+      // A click that fails throws here; the wait it leaves must not end the process when it times out after.
+      opened.catch(() => {});
+      await tile.click({ timeout: 30_000 });
       this.runs = await opened;
     } finally {
       await popup.close();
