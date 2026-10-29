@@ -1,5 +1,7 @@
 import { extractMessageHead, stripAnsi } from '#shared/error-fingerprint';
 import { describeFailureText } from '#shared/describe-failure';
+import { parseSourceSnippet } from '#shared/source-snippet';
+import { splitSuitePath } from '#shared/utils/suites';
 
 /** All notification event keys supported by the subscription system. */
 export const NOTIFICATION_EVENTS = [
@@ -52,6 +54,11 @@ export interface ReportReadyPayload {
 export const TOP_FAILURES_LIMIT = 3;
 /** Max characters kept from an error message embedded in a notification. */
 export const ERROR_EXCERPT_MAX = 300;
+/** How many runs a run notification's history holds, the run itself included. */
+export const RUN_HISTORY_LIMIT = 10;
+/** Source lines kept before and after the failing line of a {@link FailureSource}. */
+export const SOURCE_LINES_BEFORE = 4;
+export const SOURCE_LINES_AFTER = 2;
 /** How many prior completed runs the perf-regression baseline is computed from. */
 export const PERF_BASELINE_RUNS = 5;
 /** Minimum prior runs required before a perf-regression baseline is trusted. */
@@ -59,16 +66,57 @@ export const PERF_BASELINE_MIN_RUNS = 2;
 /** How much slower than baseline (percent) a run must be to emit perf.regression. */
 export const PERF_REGRESSION_MIN_PCT = 20;
 
+/** The source lines around the line a failure threw at, as the reporter captured them. */
+export interface FailureSource {
+  /** Project-relative path of the file the lines come from: the test file, or a helper it called. */
+  file: string;
+  /** The 1-based line the failure threw at. */
+  line: number;
+  /** Rows `<marker><line no> | <code>`, `>` on the failing line (`shared/source-snippet.ts`). */
+  snippet: string;
+}
+
+/** A test's outcome in one run: a status key of `STATUS_COLORS`, or null when the run did not report the test. */
+export type HistoryOutcome = 'passed' | 'flaky' | 'failed' | 'skipped' | 'didnotrun' | null;
+
 /** A single failing test embedded in a run notification for debugging context. */
 export interface TopFailure {
   title: string;
   filePath?: string;
+  /** The describe blocks the test is declared in, outermost first. */
+  suitePath?: string[];
+  /** The line the test is declared on. */
+  line?: number;
+  /** The Playwright project the test failed in (`chromium`). */
+  browserName?: string;
+  /** The test's owner, from `piwi:owner` or CODEOWNERS. */
+  owner?: string;
   /** The one-line failure headline (`getByLabel('Email') was not found on the page — fill timed out after 10 s`). */
   headline?: string;
   /** The error's message head, ANSI-stripped and capped at {@link ERROR_EXCERPT_MAX} characters. */
   errorExcerpt?: string;
+  /** The code around the line the failure threw at, cut to a few lines. */
+  source?: FailureSource;
+  /** The test's outcome in each run of the payload's `history`, in the same order. */
+  history?: HistoryOutcome[];
   testCaseId?: number;
   executionId?: number;
+}
+
+/** One run of a run notification's history. */
+export interface RunHistoryEntry {
+  runId: number;
+  status: string;
+  failedTests: number;
+}
+
+/** The commit a run tested, as the reporter recorded it. */
+export interface RunCommit {
+  sha: string;
+  message?: string;
+  author?: string;
+  /** The commit's page on the project's repository host. */
+  url?: string;
 }
 
 /**
@@ -87,8 +135,11 @@ export interface RunFinishedPayload extends RunScope {
   status: string;
   totalTests: number;
   failedTests: number;
+  /** Passed tests, flaky ones included. */
   passedTests: number;
   flakyTests: number;
+  skippedTests?: number;
+  didNotRunTests?: number;
   isDefaultBranch?: boolean;
   flakinessRate?: number; // 0-1
   /** Duration of the run in milliseconds. */
@@ -99,11 +150,26 @@ export interface RunFinishedPayload extends RunScope {
   regressionPct?: number;
   topFailures?: TopFailure[];
   /**
+   * How many failing tests `topFailures` was chosen from: each test once per
+   * Playwright project, however many of its repetitions failed, where
+   * `failedTests` counts every failed repetition.
+   */
+  failingTestCount?: number;
+  /**
    * Distinct owners of the run's failing tests — from `piwi:owner` where a test
    * declares one, otherwise CODEOWNERS. Lets a subscription route a run only to
    * the team responsible for what broke.
    */
   owners?: string[];
+  /** The commit the run tested. */
+  commit?: RunCommit;
+  /** The CI build that ran the tests. */
+  ciUrl?: string;
+  /**
+   * The last {@link RUN_HISTORY_LIMIT} runs on the run's branch and environment
+   * that send notifications, oldest first, this run last.
+   */
+  history?: RunHistoryEntry[];
 }
 
 export interface ClusterNewPayload extends RunScope {
@@ -184,26 +250,70 @@ export function failureTargetPath(failure: Pick<TopFailure, 'testCaseId' | 'exec
 export interface TopFailureInput {
   title: string;
   filePath?: string | null;
+  /** The describe blocks, `\x1f`-delimited as stored. */
+  suitePath?: string | null;
+  line?: number | null;
+  browserName?: string | null;
+  owner?: string | null;
   error?: string | null;
+  /** The whole captured snippet; {@link buildTopFailures} cuts it. */
+  source?: FailureSource | null;
+  history?: HistoryOutcome[] | null;
   testCaseId?: number | null;
   executionId?: number | null;
+}
+
+/** The longest code line a payload keeps; a longer one ends in an ellipsis. */
+export const SOURCE_LINE_MAX = 200;
+
+function capLine(code: string): string {
+  return code.length > SOURCE_LINE_MAX ? `${code.slice(0, SOURCE_LINE_MAX - 1)}…` : code;
+}
+
+/**
+ * The rows of a captured snippet from {@link SOURCE_LINES_BEFORE} lines before
+ * its `>`-marked line to {@link SOURCE_LINES_AFTER} lines after it, with the
+ * caret row under a kept line, each line cut to {@link SOURCE_LINE_MAX}
+ * characters. Null when no row is marked.
+ */
+export function cutSourceSnippet(snippet: string): string | null {
+  const rows = parseSourceSnippet(stripAnsi(snippet));
+  const failing = rows.find((row) => row.failing)?.line;
+  if (failing == null) return null;
+  const kept: string[] = [];
+  let keepingRow = false;
+  for (const row of rows) {
+    if (row.line != null)
+      keepingRow = row.line >= failing - SOURCE_LINES_BEFORE && row.line <= failing + SOURCE_LINES_AFTER;
+    if (keepingRow) kept.push(`${row.gutter}${capLine(row.code)}`.trimEnd());
+  }
+  return kept.join('\n');
 }
 
 /**
  * Map raw failing-case rows to the compact {@link TopFailure} shape embedded in
  * run notifications: capped to `limit` entries, each error described by its
- * headline and cut to its {@link errorExcerpt}.
+ * headline and cut to its {@link errorExcerpt}, its source cut by
+ * {@link cutSourceSnippet}.
  */
 export function buildTopFailures(rows: TopFailureInput[], limit: number = TOP_FAILURES_LIMIT): TopFailure[] {
   return rows.slice(0, limit).map((r) => {
     const failure: TopFailure = { title: r.title };
     if (r.filePath) failure.filePath = r.filePath;
+    const suitePath = splitSuitePath(r.suitePath);
+    if (suitePath.length) failure.suitePath = suitePath;
+    if (r.line != null) failure.line = r.line;
+    if (r.browserName) failure.browserName = r.browserName;
+    if (r.owner) failure.owner = r.owner;
     if (r.testCaseId != null) failure.testCaseId = r.testCaseId;
     if (r.executionId != null) failure.executionId = r.executionId;
     const headline = describeFailureText(r.error)?.headline;
     if (headline) failure.headline = headline;
     const excerpt = errorExcerpt(r.error);
     if (excerpt) failure.errorExcerpt = excerpt;
+    const snippet = r.source ? cutSourceSnippet(r.source.snippet) : null;
+    if (r.source && snippet) failure.source = { file: r.source.file, line: r.source.line, snippet };
+    if (r.history?.length) failure.history = r.history;
     return failure;
   });
 }

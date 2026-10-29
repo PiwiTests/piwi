@@ -12,6 +12,7 @@ import { findingView } from '#shared/resource-copy';
 import { lineRangesText, unreachedLinesText, type ChangedLines, type PatchCoverage } from '#shared/patch-coverage';
 import type { ChangeReach, NotCountedChanges } from '#shared/handlers/change-coverage';
 import { coveragePercent } from '#shared/coverage-combine';
+import { durationShort } from '#shared/relative-time';
 
 /** `app_settings` key holding the resolved `PrFeedbackSettings`. */
 export const PR_FEEDBACK_KEY = 'pr_feedback';
@@ -448,15 +449,6 @@ function escapeInline(text: string): string {
   return escapeCell(text).replace(/([\\`*_[\]<>])/g, '\\$1');
 }
 
-function formatDuration(ms: number | null): string {
-  if (ms == null) return '—';
-  if (ms < 1000) return `${ms}ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}m ${Math.round(seconds % 60)}s`;
-}
-
 /** Coarse age for a cluster's lifetime — days, hours, or minutes. */
 function formatAge(ms: number): string {
   const minutes = Math.round(ms / 60000);
@@ -531,7 +523,7 @@ export function buildPrComment(input: PrSummaryInput): string {
     `**${input.passedTests}** passed`,
     `**${input.failedTests}** failed`,
     input.flakyTests > 0 ? `**${input.flakyTests}** flaky` : null,
-    `${formatDuration(input.durationMs)}`,
+    `${input.durationMs == null ? '—' : durationShort(input.durationMs)}`,
   ].filter(Boolean);
   sections.push(`${counters.join(' · ')} — [full run](${input.runUrl})`);
 

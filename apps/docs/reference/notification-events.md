@@ -46,14 +46,41 @@ For run events the payload includes up to three failing tests, so you can act wi
     "status": "failed",
     "totalTests": 120,
     "failedTests": 3,
+    "passedTests": 114,
+    "flakyTests": 2,
+    "skippedTests": 3,
+    "didNotRunTests": 0,
+    "failingTestCount": 3,
     "branch": "main",
     "environment": "staging",
+    "commit": {
+      "sha": "3f9c2a1d8e7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d",
+      "message": "Validate the card number before enabling Pay",
+      "author": "Alex Martin",
+      "url": "https://github.com/acme/checkout/commit/3f9c2a1d8e7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d"
+    },
+    "ciUrl": "https://github.com/acme/checkout/actions/runs/123",
+    "history": [
+      { "runId": 40, "status": "passed", "failedTests": 0 },
+      { "runId": 41, "status": "passed", "failedTests": 0 },
+      { "runId": 42, "status": "failed", "failedTests": 3 }
+    ],
     "topFailures": [
       {
         "title": "applies discount code",
+        "suitePath": ["Checkout", "Payment"],
         "filePath": "tests/checkout.spec.ts",
+        "line": 38,
+        "browserName": "chromium",
+        "owner": "@acme/payments",
         "headline": "getByRole('button', { name: 'Pay' }) never became enabled, click timed out after 30 s",
         "errorExcerpt": "TimeoutError: locator.click: Timeout 30000ms exceeded.\nlocator resolved to <button disabled>Pay</button>",
+        "source": {
+          "file": "tests/checkout.spec.ts",
+          "line": 42,
+          "snippet": "    41 |   await page.getByLabel('Code').fill('SAVE10');\n>   42 |   await page.getByRole('button', { name: 'Pay' }).click();\n    43 | });"
+        },
+        "history": ["passed", "passed", "failed"],
         "testCaseId": 815,
         "executionId": 9001
       }
@@ -69,6 +96,43 @@ absent when the case carries no error. `errorExcerpt` is the error's message hea
 log and the stack trace, capped at 300 characters, plus the last `waiting for …` line when the head is only a bare
 timeout. Slack and email messages lead with the headline, quote the excerpt and link each failure to its execution.
 The [pull-request comment](/features/pr-feedback) quotes failures the same way.
+
+A test is failing when the last attempt of one of its repetitions failed: a test that passed on a retry counts as flaky,
+never as a failure. `topFailures` names the first three, `failingTestCount` counts them all, each test once per
+Playwright project however many of its `--repeat-each` repetitions failed (`failedTests` counts each failed repetition),
+and `owners` covers every failed attempt, so a team hears of its flaky test's failed first attempt. Each failure names its describe blocks (`suitePath`), the line it is declared on, its Playwright project
+(`browserName`) and its `owner`. `source` holds the lines around the line the failure threw at, as the reporter
+captured them: the test file, or the helper the error's stack points at, from four lines before it to two after, the
+failing line marked `>`.
+
+`history` lists the run and up to nine runs before it on the same branch and environment, oldest first: the ended runs
+that would send notifications themselves (no lab run, no run from an editor, no partial local run, no environment
+incident). Each failure's `history` gives that test's outcome in each of those runs (`passed`, `flaky`, `failed`,
+`skipped`, `didnotrun` for a test that did not run or was interrupted, or `null` when the run did not report it). `commit`
+comes from the run's Git metadata, linked when the project's repository host is known, and `ciUrl` from its CI
+metadata.
+
+## Emails
+
+Every event has its own email. A run's email opens with its outcome in large type, then a bar of its tests by outcome,
+its `history` as a row of squares with what it says (_First failure after 6 passing runs_), the commit and the CI
+build. Each failure in `topFailures` shows its full name with its describe blocks, its file and line, its `source`
+syntax-highlighted with the failing line marked, its error with the expected and received values in color, and its own
+`history`, which tells a new failure from one that keeps coming back. A digest lists each event with its run's outcome
+bar.
+
+## Slack and Microsoft Teams
+
+A Slack message heads with the email's headline and keeps the rest in an attachment whose side stripe takes the
+event's color: the run's tests by outcome and its `history` as rows of colored squares, the commit, the CI build and the
+owners as fields, then each failure with its describe blocks, its file and line, its `source` with the failing line
+marked, its error and its own `history`, and buttons to the run and the build. A Slack-compatible server (Mattermost,
+Rocket.Chat) shows the message's text line, and none of its blocks.
+
+A Microsoft Teams card sets the headline on a band of the event's color and draws the outcomes as a stacked bar chart.
+Each failure's code goes in a code block Teams colors by language, and its error's expected and received lines are green
+and red. Where a Teams client draws no chart or code block (the mobile app), the card shows the same squares and
+numbered lines instead.
 
 ## Payload fields by event
 
