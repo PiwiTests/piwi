@@ -5,6 +5,7 @@ import {
   chaptersText,
   chaptersVtt,
   cueTime,
+  foldChapters,
   frameCount,
   lineMs,
   masterFrame,
@@ -13,6 +14,7 @@ import {
   teaserParts,
   toSrt,
   toVtt,
+  vttText,
 } from '../lib/timeline.mjs';
 
 describe('a line’s hold', () => {
@@ -92,19 +94,64 @@ describe('the subtitles', () => {
 
 describe('the chapters', () => {
   const chapters = [
-    { start: 0, title: 'Piwi' },
+    { start: 0, title: 'Piwi', card: true },
     { start: 4.3, title: 'The red run' },
-    { start: 3661, title: 'Long' },
+    { start: 20, title: 'Paused' },
+    { start: 26, title: 'The right locator' },
+    { start: 40, title: 'Get Piwi', card: true },
   ];
 
   test('the list starts at 0:00, minutes and seconds, hours past the hour', () => {
     assert.equal(chapterTime(65.9), '1:05');
-    assert.equal(chaptersText(chapters), '0:00 Piwi\n0:04 The red run\n1:01:01 Long\n');
+    assert.equal(chapterTime(3661), '1:01:01');
   });
 
-  test('WebVTT chapters end where the next starts', () => {
-    assert.match(chaptersVtt(chapters, 3700), /2\n00:00:04.300 --> 01:01:01.000\nThe red run/);
-    assert.match(chaptersVtt(chapters, 3700), /3\n01:01:01.000 --> 01:01:40.000\nLong\n$/);
+  test('a card joins the beat beside it, under the beat’s title, from 0:00', () => {
+    const folded = foldChapters(chapters, 46);
+    assert.deepEqual(folded[0], { start: 0, title: 'The red run', card: false });
+    assert.equal(folded.at(-1).title.endsWith('The right locator'), true, 'the end card joins the last beat');
+  });
+
+  test('a short beat joins its shorter neighbour, their titles joined, and none is left under 10 s', () => {
+    const folded = foldChapters(chapters, 46);
+    assert.deepEqual(
+      folded.map((c) => [c.start, c.title]),
+      [
+        [0, 'The red run'],
+        [20, 'Paused, The right locator'],
+      ],
+    );
+    folded.forEach((c, i) => assert.ok((folded[i + 1]?.start ?? 46) - c.start >= 10));
+  });
+
+  test('chapters long enough stay as they are', () => {
+    const long = [
+      { start: 0, title: 'One' },
+      { start: 12, title: 'Two' },
+    ];
+    assert.deepEqual(foldChapters(long, 30), long);
+  });
+
+  test('the text list is the folded chapters', () => {
+    assert.equal(chaptersText(chapters, 46), '0:00 The red run\n0:20 Paused, The right locator\n');
+  });
+
+  test('WebVTT chapters keep every chapter, each ending where the next starts', () => {
+    const vtt = chaptersVtt(chapters, 46);
+    assert.match(vtt, /2\n00:00:04.300 --> 00:00:20.000\nThe red run/);
+    assert.match(vtt, /5\n00:00:40.000 --> 00:00:46.000\nGet Piwi\n$/);
+  });
+});
+
+describe('WebVTT’s text', () => {
+  test('escapes what would read as markup', () => {
+    assert.equal(vttText('Tom & Jerry <b>'), 'Tom &amp; Jerry &lt;b&gt;');
+    assert.match(toVtt([{ start: 0, end: 1, text: 'a < b & c' }]), /\na &lt; b &amp; c\n$/);
+    assert.match(chaptersVtt([{ start: 0, title: 'R&D' }], 2), /\nR&amp;D\n$/);
+  });
+
+  test('SubRip keeps it as it is', () => {
+    assert.match(toSrt([{ start: 0, end: 1, text: 'a < b & c' }]), /\na < b & c\n$/);
   });
 });
 

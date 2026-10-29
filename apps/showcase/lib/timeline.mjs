@@ -65,10 +65,16 @@ export function cueTime(seconds, separator = '.') {
   return `${pad(h)}:${pad(m)}:${pad(s)}${separator}${pad(ms % 1000, 3)}`;
 }
 
+/** `text` as a WebVTT cue holds it: `&`, `<` and `>` as their character references. */
+export function vttText(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 /** WebVTT of `cues` (`{ start, end, text }`, seconds), each line in its subtitle rows. */
 export function toVtt(cues) {
   const blocks = cues.map(
-    (cue, i) => `${i + 1}\n${cueTime(cue.start)} --> ${cueTime(cue.end)}\n${subtitleRows(cue.text).join('\n')}`,
+    (cue, i) =>
+      `${i + 1}\n${cueTime(cue.start)} --> ${cueTime(cue.end)}\n${subtitleRows(cue.text).map(vttText).join('\n')}`,
   );
   return `WEBVTT\n\n${blocks.join('\n\n')}\n`;
 }
@@ -91,15 +97,54 @@ export function chapterTime(seconds) {
   return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
 }
 
-/** The chapter list video sites read (`0:00 Title`, one a line, from 0:00) of `chapters` (`{ start, title }`). */
-export function chaptersText(chapters) {
-  return `${chapters.map((c) => `${chapterTime(c.start)} ${c.title}`).join('\n')}\n`;
+/** The shortest chapter a video site lists (YouTube's), in seconds. */
+export const CHAPTER_MIN_S = 10;
+
+/**
+ * `chapters` (`{ start, title, card }`, in order, the cut ending at `end`) with none shorter than `min`: a card joins
+ * the beat beside it, under the beat's title; another short chapter joins its shorter neighbour, their titles joined.
+ * The first starts at 0.
+ */
+export function foldChapters(chapters, end, min = CHAPTER_MIN_S) {
+  let list = chapters.map((c) => ({ ...c }));
+  const length = (i) => (list[i + 1]?.start ?? end) - list[i].start;
+  for (;;) {
+    if (list.length < 2) break;
+    const lengths = list.map((_, i) => length(i));
+    const short = lengths.findIndex((l) => l < min);
+    if (short < 0) break;
+    // The neighbour it joins: the one beside a card, else the shorter of the two.
+    const before = short - 1;
+    const after = short + 1 < list.length ? short + 1 : -1;
+    const into = before < 0 ? after : after < 0 ? before : lengths[before] <= lengths[after] ? before : after;
+    const [first, second] = into < short ? [into, short] : [short, into];
+    const a = list[first];
+    const b = list[second];
+    const title = a.card ? b.title : b.card ? a.title : `${a.title}, ${b.title}`;
+    list = [
+      ...list.slice(0, first),
+      { start: a.start, title, card: Boolean(a.card && b.card) },
+      ...list.slice(second + 1),
+    ];
+  }
+  if (list.length) list[0].start = 0;
+  return list;
+}
+
+/**
+ * The chapter list video sites read (`0:00 Title`, one a line, from 0:00) of `chapters` (`{ start, title, card }`),
+ * the cut ending at `end`, folded so that none is shorter than `CHAPTER_MIN_S`.
+ */
+export function chaptersText(chapters, end) {
+  return `${foldChapters(chapters, end)
+    .map((c) => `${chapterTime(c.start)} ${c.title}`)
+    .join('\n')}\n`;
 }
 
 /** WebVTT chapters (a `<track kind="chapters">`) of `chapters`, each ending where the next starts, the last at `end`. */
 export function chaptersVtt(chapters, end) {
   const blocks = chapters.map(
-    (c, i) => `${i + 1}\n${cueTime(c.start)} --> ${cueTime(chapters[i + 1]?.start ?? end)}\n${c.title}`,
+    (c, i) => `${i + 1}\n${cueTime(c.start)} --> ${cueTime(chapters[i + 1]?.start ?? end)}\n${vttText(c.title)}`,
   );
   return `WEBVTT\n\n${blocks.join('\n\n')}\n`;
 }
