@@ -131,4 +131,43 @@ test.describe('Admin Cleanup API', () => {
     expect(data.success).toBe(true);
     expect(data.deletedRuns).toBe(0);
   });
+
+  test('leaves the database writable: runs submitted right after it are stored', async ({ request }) => {
+    const run = (cases: number, prefix: string) => ({
+      projectName: PROJECT.CLEANUP_WRITES,
+      status: 'failed',
+      startTime: new Date().toISOString(),
+      duration: 1000,
+      totalTests: cases,
+      passedTests: 0,
+      failedTests: cases,
+      skippedTests: 0,
+      testCases: Array.from({ length: cases }, (_, i) => ({
+        title: `${prefix} ${i}`,
+        status: 'failed',
+        duration: 10,
+        location: `tests/cleanup-writes.spec.ts:${i + 1}:1`,
+        error: `Error: ${prefix} ${i} failed\n${'at step '.repeat(200)}`,
+      })),
+    });
+
+    // A deleted run leaves free pages for the cleanup to give back.
+    const freed = await request.post('/api/test-runs/submit', { data: run(80, 'freed') });
+    expect(freed.ok()).toBeTruthy();
+    expect((await request.delete(`/api/test-runs/${(await freed.json()).runId}`)).ok()).toBeTruthy();
+
+    const cleanup = await request.delete('/api/admin/cleanup', { data: { olderThanDays: 365 * 100 } });
+    expect(cleanup.ok()).toBeTruthy();
+
+    // Submitted together, the runs reach both of the server's SQLite connections.
+    const submits = await Promise.all(
+      Array.from({ length: 4 }, (_, i) => request.post('/api/test-runs/submit', { data: run(3, `after ${i}`) })),
+    );
+    expect(submits.map((response) => response.status())).toEqual([200, 200, 200, 200]);
+
+    // Read together too, so each connection reads the runs: they were committed.
+    const runIds = await Promise.all(submits.map(async (response) => (await response.json()).runId as number));
+    const reads = await Promise.all([...runIds, ...runIds].map((runId) => request.get(`/api/test-runs/${runId}`)));
+    expect(reads.map((response) => response.status())).toEqual(Array(8).fill(200));
+  });
 });
