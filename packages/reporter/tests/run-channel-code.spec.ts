@@ -122,6 +122,13 @@ test('checks an element', async ({ page }) => {
 });
 test('takes every outline down', async ({ page }) => {
   await page.goto('${base}/a');
+  // A window just opened has no image to take until it shows a frame: its first contentful paint, which Chromium
+  // marks once that frame is shown.
+  await page.evaluate(() => new Promise((resolve) => new PerformanceObserver((list, observer) => {
+    if (!list.getEntriesByName('first-contentful-paint').length) return;
+    observer.disconnect();
+    resolve();
+  }).observe({ type: 'paint', buffered: true })));
   const before = await page.screenshot();
   await expect(page.getByTestId('go')).toBeVisible(); // bp
   const after = await page.screenshot();
@@ -174,7 +181,7 @@ test('times out in a click', async ({ page }) => {
 });
 `;
 
-/** Each test's steps, annotations and attachments, as the run's own reporter writes them. */
+/** Each test's steps, annotations, attachments and errors, as the run's own reporter writes them. */
 const STEPS_REPORTER = `const fs = require('node:fs');
 module.exports = class {
   constructor(options) { this.file = options.outputFile; this.tests = []; }
@@ -187,6 +194,7 @@ module.exports = class {
       annotations: test.annotations.concat(result.annotations ?? []),
       attachments: result.attachments.map((a) => ({ name: a.name, body: a.body ? a.body.toString('utf8') : (a.path && fs.existsSync(a.path) ? fs.readFileSync(a.path, 'latin1') : '') })),
       steps: result.steps.map(step),
+      errors: result.errors.map((e) => e.stack ?? e.message ?? String(e.value)),
     });
   }
   onStdOut(chunk) { process.stdout.write(chunk); }
@@ -206,6 +214,7 @@ interface DumpedTest {
   annotations: Array<{ type: string; description?: string }>;
   attachments: Array<{ name: string; body: string }>;
   steps: DumpedStep[];
+  errors: string[];
 }
 
 /** A worker's run connection, as the fake editor service holds it. */
@@ -509,7 +518,9 @@ const lineOf = (spec: string, marker: string) => spec.split('\n').findIndex((lin
 describe('code from a stop, the worker’s part', () => {
   it('lets the tests end as they would, the failures as failures, and says what the worker takes', () => {
     expect(exitCode, output).toBe(1);
-    expect(tests.map((t) => [t.title, t.status])).toEqual([
+    // Each test's errors, which say why a test that should pass did not.
+    const errors = tests.flatMap((t) => t.errors.map((error) => `${t.title}: ${error}`)).join('\n');
+    expect(tests.map((t) => [t.title, t.status]), errors).toEqual([
       ['keeps the text bodies', 'passed'],
       ['keeps nothing of the test before', 'passed'],
       ['asserts a region', 'passed'],
@@ -609,6 +620,8 @@ describe('code from a stop, the worker’s part', () => {
   });
 
   it('takes the outlines of two locators counted at once down, the page as it was before the stop', () => {
+    // Counted at the test's breakpoint, its one stop.
+    expect(stops['takes every outline down']?.map((s) => s.reason)).toEqual(['breakpoint']);
     expect(heard['takes every outline down']).toEqual([
       { ok: true, message: '1 element matches.', count: 1 },
       { ok: true, message: '1 element matches.', count: 1 },
