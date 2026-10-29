@@ -5,6 +5,9 @@ const rootDir = fileURLToPath(new URL('.', import.meta.url)).replace(/\/$/, '');
 const appDir = fileURLToPath(new URL('./app', import.meta.url)).replace(/\/$/, '');
 
 export default defineConfig({
+  // Nuxt's `import.meta.client` is false under Vitest; a test runs a composable's
+  // browser branch with `vi.stubGlobal('__IMPORT_META_CLIENT__', true)`.
+  define: { 'import.meta.client': 'globalThis.__IMPORT_META_CLIENT__ === true' },
   test: {
     include: ['tests/unit/**/*.test.ts'],
     // @piwitests/core and @piwitests/editor ship TS source; inline them so

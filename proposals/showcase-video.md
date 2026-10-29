@@ -28,11 +28,11 @@ again to the spec's summary check (a breakpoint at the caret, **Run the test at 
 reads the order's card. Beat 8's Runs window says the run ended (run-control PR 3 gives it no verdict) and the Testing
 view shows the test passed. In beat 10 the developer pastes a new test and runs it to its last line, and the agent, a
 client of the runs' MCP server configured from **Copy the runs' MCP server configuration**, clicks **Orders** by its
-ref, writes the steps and a check and resumes. Three product bugs found on the way are skipped where the checks meet
+ref, writes the steps and a check and resumes. Two product bugs found on the way are skipped where the checks meet
 them, and only there ([`apps/showcase/ARCHITECTURE.md`](../apps/showcase/ARCHITECTURE.md#known-bugs)): the healing has
 no candidate for the story's failure (the reporter keeps no element of a click that navigates at once, and an ES module
-suite's call sites lose their leading slash), so **Most likely** does not name **Pay now** either; and a run page opened
-while its run sets up never goes live until reloaded. Nothing here is on [`ROADMAP.md`](../ROADMAP.md).
+suite's call sites lose their leading slash), so **Most likely** does not name **Pay now** either. Nothing here is on
+[`ROADMAP.md`](../ROADMAP.md).
 
 **V2, as built.** `--take virtual` (`npm run showcase:film`) films the story on the same set, and `--cut` (`npm run
 showcase:cut`) renders the cut and Part 6's outputs but the voice: the full cut in MP4 and WebM with and without burned

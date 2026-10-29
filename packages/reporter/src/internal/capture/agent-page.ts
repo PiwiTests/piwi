@@ -335,6 +335,15 @@ async function play(locator: Locator, action: RunActAction, value: string | null
   }
 }
 
+/**
+ * Runs in the page: lets an action through the pause bar to what it covers, which the agent's image of the page leaves
+ * out, or (`through` false) makes the bar take the pointer again. Self-contained.
+ */
+function barLetsThrough(through: boolean): void {
+  const bar = (globalThis as any).document?.getElementById('__piwi-pause-bar');
+  if (bar) bar.style.pointerEvents = through ? 'none' : '';
+}
+
 /** What an action did, as its answer says it. */
 const PLAYED: Record<RunActAction, string> = {
   click: 'Clicked',
@@ -348,7 +357,7 @@ const PLAYED: Record<RunActAction, string> = {
 /**
  * Act on the element `ref` names, as trusted input (Playwright's own action, scrolled into view, waiting for the
  * element to take it, `ACT_MS` at most), with the element as it stood before, ranked, for the step it makes; why not
- * otherwise.
+ * otherwise. The pause bar lets the action through to what it covers, and takes the pointer again after.
  */
 export async function actOnRef(
   page: Page,
@@ -368,9 +377,13 @@ export async function actOnRef(
     await handle.dispose().catch(() => undefined);
   }
   try {
+    await page.evaluate(barLetsThrough, true).catch(() => undefined);
     await play(byRef(page, act.ref), act.action, act.value);
   } catch (error) {
     return { ok: false, message: failed(`${PLAYED[act.action]} ${act.ref} failed`, error), ...before };
+  } finally {
+    // A page the action navigated has no bar: the stop shows it again there.
+    await page.evaluate(barLetsThrough, false).catch(() => undefined);
   }
   return { ok: true, message: `${PLAYED[act.action]} ${act.ref}.`, ...before };
 }
