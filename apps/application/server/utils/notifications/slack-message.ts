@@ -22,6 +22,7 @@ import {
   type TopFailure,
 } from '#shared/notification-events';
 import {
+  DIGEST_ITEMS_LIMIT,
   DashboardLinks,
   INCIDENT_NOTE,
   codeRows,
@@ -30,8 +31,11 @@ import {
   eventFacts,
   eventHeadline,
   eventSentences,
+  digestRun,
   eventTone,
+  failingTests,
   failureHeadline,
+  failureMeta,
   headlineText,
   historyLabel,
   historySentence,
@@ -41,7 +45,7 @@ import {
   percent,
   plural,
   runSegments,
-  testHistorySentence,
+  sourceIsTestFile,
   testHistorySquares,
   testLocation,
   type Fact,
@@ -56,8 +60,8 @@ type Block = Record<string, unknown>;
 const SECTION_MAX = 2900;
 const HEADER_MAX = 150;
 const FIELDS_MAX = 10;
-/** Digest messages list at most this many items; the rest are counted. */
-const DIGEST_MAX_ITEMS = 20;
+/** The longest raw text a code block or a paragraph quotes, leaving room for its escaping and fences. */
+const QUOTE_MAX = 2000;
 
 /** The side stripe of each tone. */
 const TONE_COLORS: Record<Tone, string> = {
@@ -90,27 +94,38 @@ function eventEmoji(event: NotificationEvent, tone: Tone): string {
   }
 }
 
-const clip = (text: string, max = SECTION_MAX) => (text.length > max ? `${text.slice(0, max)}…` : text);
+/** At most `max` characters, the last an ellipsis when cut, never splitting a character in two. */
+function clip(text: string, max = SECTION_MAX): string {
+  const chars = Array.from(text);
+  return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : text;
+}
+
+/**
+ * mrkdwn with Slack's automatic parsing off: a plain `@channel` or a bare
+ * address in a test title stays text, and only the message's own `<…>` links
+ * and formatting apply.
+ */
+function mrkdwn(text: string): Block {
+  return { type: 'mrkdwn', text, verbatim: true };
+}
 
 function section(text: string): Block {
-  return { type: 'section', text: { type: 'mrkdwn', text: clip(text) } };
+  return { type: 'section', text: mrkdwn(clip(text)) };
 }
 
 function context(text: string): Block {
-  return { type: 'context', elements: [{ type: 'mrkdwn', text: clip(text) }] };
+  return { type: 'context', elements: [mrkdwn(clip(text))] };
 }
 
-/** Text in a code block, a triple backtick inside it broken so it cannot end the block. */
+/** Text in a code block, cut before it is escaped, every run of backticks broken so none can end the block. */
 function codeBlock(text: string): string {
-  return `\`\`\`${slackEscape(text).replace(/```/g, '`​`​`')}\`\`\``;
+  const safe = slackEscape(clip(text, QUOTE_MAX)).replace(/`{3,}/g, (run) => run.split('').join('\u200b'));
+  return `\`\`\`${safe}\`\`\``;
 }
 
 function factField(f: Fact): Block {
   const value = f.url ? slackLink(f.url, f.value) : f.code ? `\`${slackEscape(f.value)}\`` : slackEscape(f.value);
-  return {
-    type: 'mrkdwn',
-    text: clip(`*${slackEscape(f.label)}*\n${value}${f.note ? ` ${slackEscape(f.note)}` : ''}`, 1900),
-  };
+  return mrkdwn(clip(`*${slackEscape(f.label)}*\n${value}${f.note ? ` ${slackEscape(f.note)}` : ''}`, 1900));
 }
 
 function factsBlocks(facts: Fact[]): Block[] {
@@ -137,11 +152,8 @@ function historyBlocks(p: RunFinishedPayload): Block[] {
 
 /** One failing test: who and where, what it says, the code it threw at, the error, its own history. */
 function failureBlocks(f: TopFailure, url: string): Block[] {
-  const story = f.history ? testHistorySentence(f.history) : null;
-  const meta = [
-    ...(story?.isNew ? [':new: *New failure*'] : []),
-    ...[f.browserName, f.owner].filter((m): m is string => Boolean(m)).map(slackEscape),
-  ].join('  ·  ');
+  const { isNew, story, labels } = failureMeta(f);
+  const meta = [...(isNew ? [':new: *New failure*'] : []), ...labels.map(slackEscape)].join('  ·  ');
   const suites = f.suitePath?.length ? `${slackEscape(f.suitePath.join(' › '))} › ` : '';
   const location = testLocation(f);
   const headline = failureHeadline(f);
@@ -155,12 +167,12 @@ function failureBlocks(f: TopFailure, url: string): Block[] {
   const code = f.source ? codeRows(f.source) : [];
   if (f.source && code.length) {
     // The failing line is marked in the code; a helper's file is named above it.
-    const where = f.source.file === f.filePath ? '' : `${slackEscape(`${f.source.file}:${f.source.line}`)}\n`;
+    const where = sourceIsTestFile(f) ? '' : `${slackEscape(`${f.source.file}:${f.source.line}`)}\n`;
     blocks.push(section(`${where}${codeBlock(codeRowsText(code))}`));
   }
   if (f.errorExcerpt) blocks.push(section(codeBlock(f.errorExcerpt)));
   if (f.history && f.history.length > 1) {
-    blocks.push(context(`${testHistorySquares(f.history)}   ${story ? slackEscape(story.text) : ''}`));
+    blocks.push(context(`${testHistorySquares(f.history)}   ${story ? slackEscape(story) : ''}`));
   }
   return blocks;
 }
@@ -170,7 +182,7 @@ function failuresBlocks(p: RunFinishedPayload, links: DashboardLinks): Block[] {
   if (failures.length === 0) return [];
   const more = moreFailures(p);
   return [
-    section(`*What failed*${more > 0 ? `  ${failures.length} of ${p.failedTests}` : ''}`),
+    section(`*What failed*${more > 0 ? `  ${failures.length} of ${failingTests(p)}` : ''}`),
     ...failures.flatMap((f) => failureBlocks(f, links.failure(f, p.runId))),
     ...(more > 0
       ? [{ type: 'divider' }, context(slackLink(links.run(p.runId), `${plural(more, 'more failing test')} in the run`))]
@@ -215,13 +227,14 @@ function detailBlocks(event: NotificationEvent, payload: NotificationPayload, li
     case 'diagnosis.completed': {
       const p = payload as DiagnosisCompletedPayload;
       return [
-        ...(p.summary ? [section(slackEscape(p.summary))] : []),
-        ...(p.rootCause ? [section(`*Root cause*\n${slackEscape(p.rootCause)}`)] : []),
+        ...(p.summary ? [section(slackEscape(clip(p.summary, QUOTE_MAX)))] : []),
+        ...(p.rootCause ? [section(`*Root cause*\n${slackEscape(clip(p.rootCause, QUOTE_MAX))}`)] : []),
       ];
     }
     case 'bug.looks_fixed': {
       const p = payload as BugLooksFixedPayload;
-      return p.tests.slice(0, DIGEST_MAX_ITEMS).map((t) => {
+      const more = p.tests.length - DIGEST_ITEMS_LIMIT;
+      const tests = p.tests.slice(0, DIGEST_ITEMS_LIMIT).map((t) => {
         const refs = [
           t.bugId ? slackLink(links.bugReport(t.bugId), `Bug #${t.bugId}`) : '',
           t.link ? slackLink(t.link, 'ticket') : '',
@@ -230,6 +243,7 @@ function detailBlocks(event: NotificationEvent, payload: NotificationPayload, li
           `:white_check_mark: *${slackLink(links.execution(t.executionId), t.title)}*\n\`${slackEscape(t.filePath)}\`${refs.length ? `  ·  ${refs.join('  ·  ')}` : ''}`,
         );
       });
+      return more > 0 ? [...tests, context(`…and ${more} more`)] : tests;
     }
     case 'environment.incident':
     case 'auto_heal.pr_opened':
@@ -287,19 +301,16 @@ export function slackDigestMessage(items: DigestItem[], base: string): Record<st
   const links = new DashboardLinks(base);
   const failing = items.filter(({ event, payload }) => eventTone(event, payload) === 'failed').length;
   const title = `:bell: ${plural(items.length, 'notification')}`;
-  const blocks: Block[] = items.slice(0, DIGEST_MAX_ITEMS).map(({ event, payload }) => {
+  const blocks: Block[] = items.slice(0, DIGEST_ITEMS_LIMIT).map(({ event, payload }) => {
     const tone = eventTone(event, payload);
     const subject = renderEventSubject(event, payload);
     const path = notificationTargetPath(event, payload);
     const line = path ? slackLink(links.path(path), subject) : slackEscape(subject);
-    const run = payload as RunFinishedPayload;
-    const squares =
-      (event.startsWith('run.') || event === 'flakiness.spike') && run.totalTests > 0
-        ? `\n${outcomeSquares(runSegments(run), run.totalTests)}`
-        : '';
+    const run = digestRun(event, payload);
+    const squares = run ? `\n${outcomeSquares(runSegments(run), run.totalTests)}` : '';
     return section(`${eventEmoji(event, tone)} *${line}*${squares}`);
   });
-  if (items.length > DIGEST_MAX_ITEMS) blocks.push(context(`…and ${items.length - DIGEST_MAX_ITEMS} more`));
+  if (items.length > DIGEST_ITEMS_LIMIT) blocks.push(context(`…and ${items.length - DIGEST_ITEMS_LIMIT} more`));
   return {
     text: `${title}: Piwi digest`,
     blocks: [

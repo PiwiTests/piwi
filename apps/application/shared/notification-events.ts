@@ -150,6 +150,12 @@ export interface RunFinishedPayload extends RunScope {
   regressionPct?: number;
   topFailures?: TopFailure[];
   /**
+   * How many failing tests `topFailures` was chosen from: each test once per
+   * Playwright project, however many of its repetitions failed, where
+   * `failedTests` counts every failed repetition.
+   */
+  failingTestCount?: number;
+  /**
    * Distinct owners of the run's failing tests — from `piwi:owner` where a test
    * declares one, otherwise CODEOWNERS. Lets a subscription route a run only to
    * the team responsible for what broke.
@@ -257,10 +263,18 @@ export interface TopFailureInput {
   executionId?: number | null;
 }
 
+/** The longest code line a payload keeps; a longer one ends in an ellipsis. */
+export const SOURCE_LINE_MAX = 200;
+
+function capLine(code: string): string {
+  return code.length > SOURCE_LINE_MAX ? `${code.slice(0, SOURCE_LINE_MAX - 1)}…` : code;
+}
+
 /**
  * The rows of a captured snippet from {@link SOURCE_LINES_BEFORE} lines before
  * its `>`-marked line to {@link SOURCE_LINES_AFTER} lines after it, with the
- * caret row under a kept line. Null when no row is marked.
+ * caret row under a kept line, each line cut to {@link SOURCE_LINE_MAX}
+ * characters. Null when no row is marked.
  */
 export function cutSourceSnippet(snippet: string): string | null {
   const rows = parseSourceSnippet(stripAnsi(snippet));
@@ -271,7 +285,7 @@ export function cutSourceSnippet(snippet: string): string | null {
   for (const row of rows) {
     if (row.line != null)
       keepingRow = row.line >= failing - SOURCE_LINES_BEFORE && row.line <= failing + SOURCE_LINES_AFTER;
-    if (keepingRow) kept.push(`${row.gutter}${row.code}`.trimEnd());
+    if (keepingRow) kept.push(`${row.gutter}${capLine(row.code)}`.trimEnd());
   }
   return kept.join('\n');
 }

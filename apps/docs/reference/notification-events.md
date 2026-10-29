@@ -50,6 +50,7 @@ For run events the payload includes up to three failing tests, so you can act wi
     "flakyTests": 2,
     "skippedTests": 3,
     "didNotRunTests": 0,
+    "failingTestCount": 3,
     "branch": "main",
     "environment": "staging",
     "commit": {
@@ -77,7 +78,7 @@ For run events the payload includes up to three failing tests, so you can act wi
         "source": {
           "file": "tests/checkout.spec.ts",
           "line": 42,
-          "snippet": "    40 |   await page.getByLabel('Code').fill('SAVE10');\n>   42 |   await page.getByRole('button', { name: 'Pay' }).click();"
+          "snippet": "    41 |   await page.getByLabel('Code').fill('SAVE10');\n>   42 |   await page.getByRole('button', { name: 'Pay' }).click();\n    43 | });"
         },
         "history": ["passed", "passed", "failed"],
         "testCaseId": 815,
@@ -96,15 +97,18 @@ log and the stack trace, capped at 300 characters, plus the last `waiting for â€
 timeout. Slack and email messages lead with the headline, quote the excerpt and link each failure to its execution.
 The [pull-request comment](/features/pr-feedback) quotes failures the same way.
 
-A failing test is one whose last attempt failed: a test that passed on a retry counts as flaky, never as a failure.
-Each failure names its describe blocks (`suitePath`), the line it is declared on, its Playwright project
+A test is failing when the last attempt of one of its repetitions failed: a test that passed on a retry counts as flaky,
+never as a failure. `topFailures` names the first three, `failingTestCount` counts them all, each test once per
+Playwright project however many of its `--repeat-each` repetitions failed (`failedTests` counts each failed repetition),
+and `owners` covers every failed attempt, so a team hears of its flaky test's failed first attempt. Each failure names its describe blocks (`suitePath`), the line it is declared on, its Playwright project
 (`browserName`) and its `owner`. `source` holds the lines around the line the failure threw at, as the reporter
 captured them: the test file, or the helper the error's stack points at, from four lines before it to two after, the
 failing line marked `>`.
 
-`history` lists the run and up to nine runs before it on the same branch and environment, oldest first: the runs that
-send notifications (no lab run, no environment incident). Each failure's `history` gives that test's outcome in each of
-those runs (`passed`, `flaky`, `failed`, `skipped`, `didnotrun`, or `null` when the run did not report it). `commit`
+`history` lists the run and up to nine runs before it on the same branch and environment, oldest first: the ended runs
+that would send notifications themselves (no lab run, no run from an editor, no partial local run, no environment
+incident). Each failure's `history` gives that test's outcome in each of those runs (`passed`, `flaky`, `failed`,
+`skipped`, `didnotrun` for a test that did not run or was interrupted, or `null` when the run did not report it). `commit`
 comes from the run's Git metadata, linked when the project's repository host is known, and `ciUrl` from its CI
 metadata.
 
@@ -123,7 +127,7 @@ A Slack message heads with the email's headline and keeps the rest in an attachm
 event's color: the run's tests by outcome and its `history` as rows of colored squares, the commit, the CI build and the
 owners as fields, then each failure with its describe blocks, its file and line, its `source` with the failing line
 marked, its error and its own `history`, and buttons to the run and the build. A Slack-compatible server (Mattermost,
-Rocket.Chat) shows the message's text line only.
+Rocket.Chat) shows the message's text line, and none of its blocks.
 
 A Microsoft Teams card sets the headline on a band of the event's color and draws the outcomes as a stacked bar chart.
 Each failure's code goes in a code block Teams colors by language, and its error's expected and received lines are green

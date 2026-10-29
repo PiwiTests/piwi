@@ -119,14 +119,14 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
 // ── Email templates ───────────────────────────────────────────────────────────
 
 /** The dashboard's public address, which every link in an email starts with. */
-export const emailSiteUrl = () => process.env.PIWI_SITE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
+const siteUrl = () => process.env.PIWI_SITE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
 
 function emailLayout(title: string, body: string): { html: string; text: string } {
-  return { html: layoutEmail(escapeHtml(title), body, emailSiteUrl()), text: title };
+  return { html: layoutEmail(escapeHtml(title), body, siteUrl()), text: title };
 }
 
 export function renderPasswordResetEmail(token: string): { html: string; text: string } {
-  const url = `${emailSiteUrl()}/reset-password?token=${encodeURIComponent(token)}`;
+  const url = `${siteUrl()}/reset-password?token=${encodeURIComponent(token)}`;
   const body = `
     <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">Reset your password</h2>
     <p style="margin:0 0 24px;color:#52525b;">Click the button below to reset your password. This link expires in 1 hour.</p>
@@ -139,7 +139,7 @@ export function renderPasswordResetEmail(token: string): { html: string; text: s
 }
 
 export function renderInviteEmail(token: string, invitedBy?: string): { html: string; text: string } {
-  const url = `${emailSiteUrl()}/reset-password?token=${encodeURIComponent(token)}&mode=invite`;
+  const url = `${siteUrl()}/reset-password?token=${encodeURIComponent(token)}&mode=invite`;
   const byLine = invitedBy
     ? `<p style="margin:0 0 24px;color:#52525b;">You were invited by <strong>${escapeHtml(invitedBy)}</strong>. Click the button below to set your password and activate your account. This link expires in 72 hours.</p>`
     : `<p style="margin:0 0 24px;color:#52525b;">Click the button below to set your password and activate your account. This link expires in 72 hours.</p>`;
@@ -154,7 +154,7 @@ export function renderInviteEmail(token: string, invitedBy?: string): { html: st
 }
 
 export function renderVerifyEmail(token: string): { html: string; text: string } {
-  const url = `${emailSiteUrl()}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
+  const url = `${siteUrl()}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
   const body = `
     <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">Verify your email</h2>
     <p style="margin:0 0 24px;color:#52525b;">Click the button below to verify your email address.</p>
@@ -177,12 +177,12 @@ export function renderTestEmail(to: string): { html: string; text: string } {
 
 /** The email for one notification event, its links on this instance. */
 export function renderNotificationEmail(event: NotificationEvent, payload: NotificationPayload): RenderedEmail {
-  return renderNotificationEmailAt(event, payload, emailSiteUrl());
+  return renderNotificationEmailAt(event, payload, siteUrl());
 }
 
 /** One email for every notification a digest-mode subscription batched since the previous send. */
 export function renderDigestEmail(items: DigestItem[]): RenderedEmail & { subject: string } {
-  return renderDigestEmailAt(items, emailSiteUrl());
+  return renderDigestEmailAt(items, siteUrl());
 }
 
 export type { DigestItem };
@@ -198,6 +198,6 @@ export function renderQualityReportEmail(
     url: opts.url,
     chartSrc: opts.chartCid ? `cid:${opts.chartCid}` : null,
     shareUrl: opts.shareUrl,
-    siteUrl: emailSiteUrl(),
+    siteUrl: siteUrl(),
   });
 }

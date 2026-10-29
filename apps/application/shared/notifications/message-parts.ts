@@ -120,11 +120,14 @@ function runHeadline(event: NotificationEvent, p: RunFinishedPayload): EventHead
   const outcome = runOutcome(event, p);
   const tone = eventTone(event, p);
   const tests = (n: number) => (n === 1 ? 'test' : 'tests');
+  const defaultBranch = event === 'run.failed.default_branch';
   if (outcome === 'interrupted') {
-    const reported = p.totalTests - (p.didNotRunTests ?? 0);
+    const reported = runSegments(p)
+      .filter((s) => s.key !== NOT_REPORTED)
+      .reduce((sum, s) => sum + s.count, 0);
     return {
       tone,
-      label: `Run interrupted · ${p.projectName}`,
+      label: `${defaultBranch ? 'Default branch broken' : 'Run interrupted'} · ${p.projectName}`,
       lead: 'The run stopped before the end',
       figure: '',
       rest: '',
@@ -132,7 +135,7 @@ function runHeadline(event: NotificationEvent, p: RunFinishedPayload): EventHead
     };
   }
   if (outcome === 'failed') {
-    const label = `${event === 'run.failed.default_branch' ? 'Default branch broken' : 'Run failed'} · ${p.projectName}`;
+    const label = `${defaultBranch ? 'Default branch broken' : 'Run failed'} · ${p.projectName}`;
     return p.failedTests > 0
       ? {
           tone,
@@ -152,22 +155,25 @@ function runHeadline(event: NotificationEvent, p: RunFinishedPayload): EventHead
         };
   }
   const label = `Run passed · ${p.projectName}`;
-  return p.flakyTests > 0
+  if (p.totalTests <= 0)
+    return { tone, label, lead: 'The run passed', figure: '', rest: '', details: ['no tests', ...runParts(p)] };
+  const retried = p.flakyTests > 0 ? [`${p.flakyTests} only on a retry`] : [];
+  return p.passedTests === p.totalTests && p.flakyTests === 0
     ? {
-        tone,
-        label,
-        lead: '',
-        figure: String(p.passedTests),
-        rest: ` ${tests(p.passedTests)} passed`,
-        details: [`${p.flakyTests} only on a retry`, ...runParts(p)],
-      }
-    : {
         tone,
         label,
         lead: 'All ',
         figure: String(p.totalTests),
         rest: ` ${tests(p.totalTests)} passed`,
         details: runParts(p),
+      }
+    : {
+        tone,
+        label,
+        lead: '',
+        figure: String(p.passedTests),
+        rest: ` ${tests(p.passedTests)} passed`,
+        details: [...retried, ...(p.passedTests < p.totalTests ? [`out of ${p.totalTests}`] : []), ...runParts(p)],
       };
 }
 
@@ -278,30 +284,46 @@ export interface OutcomeSegment {
   count: number;
 }
 
+/** The color of the tests a run counted but never reported: an interrupted run's unreached tests. */
+const NOT_REPORTED: StatusColorKey = 'fixme';
+
 /**
  * A run's tests split by outcome, in the dashboard's order, empty outcomes
  * left out. Flaky tests are a part of the passed ones, counted apart from them.
+ * The tests a run counted but never reported (an interrupted run stops before
+ * them) come last, as not reported.
  */
 export function runSegments(counts: {
+  totalTests?: number;
   passedTests: number;
   failedTests: number;
   flakyTests: number;
   skippedTests?: number;
   didNotRunTests?: number;
 }): OutcomeSegment[] {
-  return [
-    { key: 'passed' as const, label: 'passed', count: Math.max(0, counts.passedTests - counts.flakyTests) },
-    { key: 'failed' as const, label: 'failed', count: counts.failedTests },
-    { key: 'flaky' as const, label: 'flaky', count: counts.flakyTests },
-    { key: 'skipped' as const, label: 'skipped', count: counts.skippedTests ?? 0 },
-    { key: 'didnotrun' as const, label: "didn't run", count: counts.didNotRunTests ?? 0 },
-  ].filter((s) => s.count > 0);
+  const reported: OutcomeSegment[] = [
+    { key: 'passed', label: 'passed', count: Math.max(0, (counts.passedTests ?? 0) - (counts.flakyTests ?? 0)) },
+    { key: 'failed', label: 'failed', count: counts.failedTests ?? 0 },
+    { key: 'flaky', label: 'flaky', count: counts.flakyTests ?? 0 },
+    { key: 'skipped', label: 'skipped', count: counts.skippedTests ?? 0 },
+    { key: 'didnotrun', label: "didn't run", count: counts.didNotRunTests ?? 0 },
+  ];
+  const sum = reported.reduce((total, s) => total + s.count, 0);
+  const missing = (counts.totalTests ?? 0) - sum;
+  return [...reported, { key: NOT_REPORTED, label: 'not reported', count: missing }].filter((s) => s.count > 0);
 }
 
-/** `92%`, `3.3%`: whole above 10%, one decimal below. */
+/**
+ * `92%`, `3.3%`: whole from 10%, one decimal below. A share that is neither
+ * all nor nothing never reads as `100%` or `0%`.
+ */
 export function percent(count: number, total: number): string {
+  if (total <= 0) return '0%';
   const pct = (count / total) * 100;
-  return `${pct >= 10 || pct === 0 ? Math.round(pct) : pct.toFixed(1)}%`;
+  if (count > 0 && pct < 0.1) return '<0.1%';
+  if (count < total && pct >= 99.5) return `${Math.min(99.9, Math.floor(pct * 10) / 10)}%`;
+  const tenths = Math.round(pct * 10) / 10;
+  return `${tenths >= 10 ? Math.round(pct) : tenths.toFixed(1)}%`;
 }
 
 /** The segments in words: `197 passed (92%) · 7 failed (3.3%)`. */
@@ -383,10 +405,12 @@ export function historySentence(history: RunHistoryEntry[]): string | null {
         : `Failing for ${runs(failing)} in a row`;
     }
     const green = streak(earlier, (e) => e.status === 'passed');
+    if (green === earlier.length) return `First failure in the last ${runs(history.length)}`;
     return green > 0 ? `First failure after ${runs(green, 'passing')}` : null;
   }
   if (current.status === 'passed') {
     const red = streak(earlier, isFailingRun);
+    if (red > 0 && red === earlier.length) return `First pass in the last ${runs(history.length)}`;
     if (red > 0) return `Back to green after ${runs(red, 'failing')}`;
     const green = streak(history, (e) => e.status === 'passed');
     if (green < 2) return null;
@@ -417,17 +441,22 @@ export function historyText(history: RunHistoryEntry[]): string {
   return `Last ${runs(history.length)}: ${history.map((e) => RUN_SYMBOLS[runStatusKey(e.status)]).join(' ')}${sentence ? ` (${sentence})` : ''}`;
 }
 
-/** What a test's own history says about its failure in the last run, and whether that failure is new. */
+/**
+ * What a test's own history says about its failure in the last run, and
+ * whether that failure is new: only the runs that ran it count (a skipped or
+ * did-not-run result is no pass), and the failure is new when the last of them
+ * passed.
+ */
 export function testHistorySentence(outcomes: HistoryOutcome[]): { text: string; isNew: boolean } | null {
-  const known = outcomes.slice(0, -1).filter((o): o is Exclude<HistoryOutcome, null> => o !== null);
   if (outcomes[outcomes.length - 1] !== 'failed') return null;
-  if (known.length === 0) return { text: 'No earlier result here', isNew: false };
-  const failing = streak(outcomes, (o) => o === 'failed');
-  if (failing > 1) return { text: `Failed in the last ${runs(failing)}`, isNew: false };
-  const before = known.filter((o) => o === 'failed').length;
-  if (before > 0) return { text: `Also failed in ${before} of the ${runs(known.length)} before`, isNew: false };
+  const ran = outcomes.slice(0, -1).filter((o) => o === 'passed' || o === 'flaky' || o === 'failed');
+  if (ran.length === 0) return { text: 'No earlier result here', isNew: false };
+  const failing = streak([...ran, 'failed'], (o) => o === 'failed');
+  if (failing > 1) return { text: `Failed the last ${failing} times it ran`, isNew: false };
+  const before = ran.filter((o) => o === 'failed').length;
+  if (before > 0) return { text: `Also failed ${before} of the ${ran.length} times it ran before`, isNew: false };
   return {
-    text: known.length === 1 ? 'Passed in the previous run' : `Passed in each of the ${runs(known.length)} before`,
+    text: ran.length === 1 ? 'Passed the previous time it ran' : `Passed the ${ran.length} times it ran before`,
     isNew: true,
   };
 }
@@ -470,6 +499,18 @@ export interface CodeRow {
   failing: boolean;
 }
 
+/**
+ * Whether a failure's source is its test's own file. The reporter writes a
+ * stack frame's path from the working directory and a test's from the
+ * Playwright config's folder, so either can end with the other.
+ */
+export function sourceIsTestFile(failure: Pick<TopFailure, 'source' | 'filePath'>): boolean {
+  const a = failure.source?.file;
+  const b = failure.filePath;
+  if (!a || !b) return false;
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+}
+
 /** How many leading spaces every non-blank line shares. */
 function commonIndent(lines: string[]): number {
   const indents = lines.filter((line) => line.trim()).map((line) => /^ */.exec(line)![0].length);
@@ -504,6 +545,28 @@ export function errorLines(excerpt: string): Array<{ text: string; kind: ErrorLi
     if (/^\s*Received\b/.test(text)) return { text, kind: 'received' };
     return { text, kind: i === 0 ? 'head' : 'body' };
   });
+}
+
+/** The labels shown beside a failing test's name: whether its failure is new, its project and its owner. */
+export function failureMeta(failure: TopFailure): { isNew: boolean; story: string | null; labels: string[] } {
+  const story = failure.history ? testHistorySentence(failure.history) : null;
+  return {
+    isNew: Boolean(story?.isNew),
+    story: story?.text ?? null,
+    labels: [failure.browserName, failure.owner].filter((label): label is string => Boolean(label)),
+  };
+}
+
+// ── Digests ───────────────────────────────────────────────────────────────────
+
+/** A digest message lists at most this many notifications; the rest are counted. */
+export const DIGEST_ITEMS_LIMIT = 20;
+
+/** The run whose tests a digest item draws by outcome, for the events about a whole run that carry its counts. */
+export function digestRun(event: NotificationEvent, payload: NotificationPayload): RunFinishedPayload | null {
+  if (!event.startsWith('run.') && event !== 'flakiness.spike') return null;
+  const run = payload as RunFinishedPayload;
+  return run.totalTests > 0 && run.passedTests != null ? run : null;
 }
 
 // ── Links, facts, sentences and actions ───────────────────────────────────────
@@ -705,13 +768,22 @@ export interface MessageAction {
   url: string;
 }
 
-/** The buttons of an event's message, the main one first; only http(s) addresses, which every channel accepts. */
+/** The longest button address Slack accepts. */
+const ACTION_URL_MAX = 3000;
+
+/**
+ * The buttons of an event's message, the main one first: normalized http(s)
+ * addresses within the length every channel accepts.
+ */
 export function eventActions(
   event: NotificationEvent,
   payload: NotificationPayload,
   links: DashboardLinks,
 ): MessageAction[] {
-  return actionsOf(event, payload, links).filter((a) => safeHttpUrl(a.url));
+  return actionsOf(event, payload, links).flatMap((a) => {
+    const url = safeHttpUrl(a.url) ? new URL(a.url).href : null;
+    return url && url.length <= ACTION_URL_MAX ? [{ label: a.label, url }] : [];
+  });
 }
 
 function actionsOf(event: NotificationEvent, payload: NotificationPayload, links: DashboardLinks): MessageAction[] {
@@ -756,7 +828,12 @@ function actionsOf(event: NotificationEvent, payload: NotificationPayload, links
   }
 }
 
+/** How many failing tests a run has, each counted once however many of its repetitions failed. */
+export function failingTests(p: RunFinishedPayload): number {
+  return p.failingTestCount ?? p.failedTests;
+}
+
 /** How many failing tests a run has beyond the ones its payload names. */
 export function moreFailures(p: RunFinishedPayload): number {
-  return Math.max(0, p.failedTests - (p.topFailures?.length ?? 0));
+  return Math.max(0, failingTests(p) - (p.topFailures?.length ?? 0));
 }

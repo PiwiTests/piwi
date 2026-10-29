@@ -20,6 +20,7 @@ import {
   type TopFailure,
 } from '#shared/notification-events';
 import {
+  DIGEST_ITEMS_LIMIT,
   DashboardLinks,
   INCIDENT_NOTE,
   codeRows,
@@ -29,8 +30,11 @@ import {
   eventFacts,
   eventHeadline,
   eventSentences,
+  digestRun,
   eventTone,
+  failingTests,
   failureHeadline,
+  failureMeta,
   historyLabel,
   historySentence,
   historySquares,
@@ -39,7 +43,7 @@ import {
   percent,
   plural,
   runSegments,
-  testHistorySentence,
+  sourceIsTestFile,
   testHistorySquares,
   testLocation,
   type ErrorLineKind,
@@ -57,15 +61,16 @@ import { reportWidgets, type ReportBundle } from '#shared/reports/types';
 import type { DigestItem } from '../email';
 import { emailTrendBlock } from '#shared/reports/render-email';
 
-/** Cards list at most this many items; the rest are counted. */
-const MAX_ITEMS = 20;
 const TEXT_MAX = 600;
 
 type Element = Record<string, unknown>;
 
 /** Markdown-escape run-derived text, so a test title cannot turn into a link or a heading. */
 export function teamsEscape(text: string): string {
-  return text.replace(/[\\`*_[\]()#<>~|]/g, (ch) => `\\${ch}`);
+  return text
+    .replace(/[\\`*_[\]()#<>~|]/g, (ch) => `\\${ch}`)
+    .replace(/^(\s*)([-+])(?=\s|$)/gm, '$1\\$2')
+    .replace(/^(\s*\d+)\.(?=\s|$)/gm, '$1\\.');
 }
 
 const clip = (text: string, max = TEXT_MAX) => (text.length > max ? `${text.slice(0, max)}…` : text);
@@ -75,9 +80,9 @@ const clip = (text: string, max = TEXT_MAX) => (text.length > max ? `${text.slic
  * address encoded; the label alone for an address that is not http(s).
  */
 export function teamsLink(label: string, url: string): string {
-  const href = safeHttpUrl(url);
-  if (!href) return teamsEscape(label);
-  return `[${teamsEscape(label)}](${href.replace(/[()\s<>]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`)})`;
+  if (!safeHttpUrl(url)) return teamsEscape(label);
+  const href = new URL(url).href.replace(/[()\\]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `[${teamsEscape(label)}](${href})`;
 }
 
 function textBlock(text: string, extra: Element = {}): Element {
@@ -240,7 +245,9 @@ function codeElements(source: FailureSource, testFile: string | undefined): Elem
   const rows = codeRows(source);
   if (rows.length === 0) return [];
   const language = CODE_LANGUAGES[languageForPath(source.file) ?? ''] ?? 'PlainText';
-  const where = source.file === testFile ? `Failed at line ${source.line}` : `${source.file}:${source.line}`;
+  const where = sourceIsTestFile({ source, filePath: testFile })
+    ? `Failed at line ${source.line}`
+    : `${source.file}:${source.line}`;
   return [
     textBlock(teamsEscape(where), { fontType: 'Monospace', size: 'Small', isSubtle: true }),
     {
@@ -256,11 +263,8 @@ function codeElements(source: FailureSource, testFile: string | undefined): Elem
 
 /** One failing test: who and where, what it says, the code it threw at, the error, its own history. */
 function failureContainer(f: TopFailure, url: string): Element {
-  const story = f.history ? testHistorySentence(f.history) : null;
-  const meta = [
-    ...(story?.isNew ? ['🆕 **New failure**'] : []),
-    ...[f.browserName, f.owner].filter((m): m is string => Boolean(m)).map(teamsEscape),
-  ].join(' · ');
+  const { isNew, story, labels } = failureMeta(f);
+  const meta = [...(isNew ? ['🆕 **New failure**'] : []), ...labels.map(teamsEscape)].join(' · ');
   const location = testLocation(f);
   const headline = failureHeadline(f);
   return {
@@ -281,7 +285,7 @@ function failureContainer(f: TopFailure, url: string): Element {
       ...(f.source ? codeElements(f.source, f.filePath) : []),
       ...(f.errorExcerpt ? errorElements(f.errorExcerpt) : []),
       ...(f.history && f.history.length > 1
-        ? [textBlock(`${testHistorySquares(f.history)}   ${story ? teamsEscape(story.text) : ''}`, { size: 'Small' })]
+        ? [textBlock(`${testHistorySquares(f.history)}   ${story ? teamsEscape(story) : ''}`, { size: 'Small' })]
         : []),
     ],
   };
@@ -292,7 +296,7 @@ function failureElements(p: RunFinishedPayload, links: DashboardLinks): Element[
   if (failures.length === 0) return [];
   const more = moreFailures(p);
   return [
-    textBlock(`**What failed**${more > 0 ? ` ${failures.length} of ${p.failedTests}` : ''}`, {
+    textBlock(`**What failed**${more > 0 ? ` ${failures.length} of ${failingTests(p)}` : ''}`, {
       size: 'Medium',
       spacing: 'Large',
     }),
@@ -367,7 +371,8 @@ function detailElements(event: NotificationEvent, payload: NotificationPayload, 
     }
     case 'bug.looks_fixed': {
       const p = payload as BugLooksFixedPayload;
-      return p.tests.slice(0, MAX_ITEMS).map((t) => {
+      const more = p.tests.length - DIGEST_ITEMS_LIMIT;
+      const tests = p.tests.slice(0, DIGEST_ITEMS_LIMIT).map((t) => {
         const refs = [
           t.bugId ? teamsLink(`Bug #${t.bugId}`, links.bugReport(t.bugId)) : '',
           t.link ? teamsLink('ticket', t.link) : '',
@@ -377,6 +382,7 @@ function detailElements(event: NotificationEvent, payload: NotificationPayload, 
           { separator: true },
         );
       });
+      return more > 0 ? [...tests, textBlock(`…and ${more} more`, { isSubtle: true })] : tests;
     }
     case 'environment.incident':
     case 'auto_heal.pr_opened':
@@ -416,20 +422,19 @@ export function teamsDigestMessage(items: DigestItem[], base: string): Element {
   const links = new DashboardLinks(base);
   const failing = items.filter(({ event, payload }) => eventTone(event, payload) === 'failed').length;
   const header = `Piwi digest: ${plural(items.length, 'notification')}`;
-  const rows = items.slice(0, MAX_ITEMS).map(({ event, payload }, i) => {
+  const rows = items.slice(0, DIGEST_ITEMS_LIMIT).map(({ event, payload }, i) => {
     const subject = renderEventSubject(event, payload);
     const path = notificationTargetPath(event, payload);
-    const run = payload as RunFinishedPayload;
-    const squares =
-      (event.startsWith('run.') || event === 'flakiness.spike') && run.totalTests > 0
-        ? `\n\n${outcomeSquares(runSegments(run), run.totalTests)}`
-        : '';
+    const run = digestRun(event, payload);
+    const squares = run ? `\n\n${outcomeSquares(runSegments(run), run.totalTests)}` : '';
     return textBlock(
       `${TONE_DOTS[eventTone(event, payload)]} ${path ? teamsLink(subject, links.path(path)) : teamsEscape(subject)}${squares}`,
       { separator: i > 0 },
     );
   });
-  if (items.length > MAX_ITEMS) rows.push(textBlock(`…and ${items.length - MAX_ITEMS} more`, { isSubtle: true }));
+  if (items.length > DIGEST_ITEMS_LIMIT) {
+    rows.push(textBlock(`…and ${items.length - DIGEST_ITEMS_LIMIT} more`, { isSubtle: true }));
+  }
   return teamsMessage([
     {
       type: 'Container',

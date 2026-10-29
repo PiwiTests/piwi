@@ -144,7 +144,7 @@ describe('the Slack message of a failed run', () => {
   test('draws the outcomes and the history as squares', () => {
     expect(json).toContain(outcomeSquares(runSegments(failedRun), 20));
     expect(json).toContain('*15* passed 75%');
-    expect(json).toContain('🟩🟩🟥   *First failure after 2 passing runs*');
+    expect(json).toContain('🟩🟩🟥   *First failure in the last 3 runs*');
   });
 
   test('lists the commit, the build and the owners as fields', () => {
@@ -166,7 +166,7 @@ describe('the Slack message of a failed run', () => {
     expect(text).toContain('`tests/pay.spec.ts:40`');
     expect(text).toContain("```  41 │ await page.goto('/pay');\n› 42 │ await page.getByRole('button').click();```");
     expect(text).toContain('Expected: "Paid"');
-    expect(text).toContain('🟩🟩🟥   Passed in each of the 2 runs before');
+    expect(text).toContain('🟩🟩🟥   Passed the 2 times it ran before');
   });
 
   test('ends with buttons to the run and the build', () => {
@@ -283,5 +283,58 @@ describe('every Teams card', () => {
   test('a link to an address that is not http(s) keeps its label alone', () => {
     expect(teamsLink('ticket', 'javascript:alert(1)')).toBe('ticket');
     expect(teamsLink('a [b]', 'https://x.example/a(b) c')).toBe('[a \\[b\\]](https://x.example/a%28b%29%20c)');
+  });
+});
+
+describe('Slack and Teams in edge cases', () => {
+  test('Slack reads every text as written: a plain @channel stays text', () => {
+    const json = JSON.stringify(slackEventMessage('run.failed', failedRun, BASE));
+    const objects = [...json.matchAll(/"type":"mrkdwn","text":"(?:[^"\\]|\\.)*"(,"verbatim":true)?/g)];
+    expect(objects.length).toBeGreaterThan(0);
+    expect(objects.every((m) => m[1])).toBe(true);
+  });
+
+  test('no run of backticks in an error ends its Slack code block early', () => {
+    const run = {
+      ...failedRun,
+      topFailures: [{ ...failedRun.topFailures![0]!, errorExcerpt: 'Error: got ````` and ``` here' }],
+    };
+    const text = slackBlocks(slackEventMessage('run.failed', run, BASE)).find((b) =>
+      b.text?.text?.startsWith('```Error'),
+    )!.text.text as string;
+    expect(text.slice(3, -3)).not.toContain('```');
+  });
+
+  test("Teams keeps a diff's - and + signs instead of drawing bullets", () => {
+    const run = {
+      ...failedRun,
+      topFailures: [
+        {
+          ...failedRun.topFailures![0]!,
+          errorExcerpt: 'Error: expect(received).toEqual(expected)\n- Expected  - 1\n+ Received  + 1',
+        },
+      ],
+    };
+    const json = JSON.stringify(card(teamsEventMessage('run.failed', run, BASE)));
+    expect(json).toContain('"text":"\\\\- Expected  - 1"');
+    expect(json).toContain('"text":"\\\\+ Received  + 1"');
+  });
+
+  test('a Teams link is normalized and its parentheses encoded', () => {
+    expect(teamsLink('build', 'https://ci.example/a\\')).toBe('[build](https://ci.example/a/)');
+    expect(teamsLink('build', ' https://ci.example/run (1)')).toBe('[build](https://ci.example/run%20%281%29)');
+  });
+
+  test('a button whose address is too long for Slack is left out', () => {
+    const run = { ...failedRun, ciUrl: `https://ci.example.com/${'a'.repeat(3100)}` };
+    const actions = slackBlocks(slackEventMessage('run.failed', run, BASE)).find((b) => b.type === 'actions');
+    expect(actions.elements.map((e: any) => e.url)).toEqual([`${BASE}/test-runs/12`]);
+  });
+
+  test("counts each failing test once, whatever its repetitions, in 'What failed'", () => {
+    const run = { ...failedRun, failedTests: 9, failingTestCount: 2 };
+    const text = JSON.stringify(slackEventMessage('run.failed', run, BASE));
+    expect(text).toContain('*What failed*  1 of 2');
+    expect(text).toContain('1 more failing test in the run');
   });
 });

@@ -68,7 +68,7 @@ export function emailLayout(title: string, body: string, siteUrl: string, frame:
   const width = frame.width ?? DEFAULT_WIDTH;
   return `<!DOCTYPE html>
 <html lang="${escapeHtml(frame.lang)}">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>@media (max-width:600px){.${EMAIL_PAD_CLASS}{padding-left:16px!important;padding-right:16px!important}.${EMAIL_TIGHT_CLASS}{padding-left:12px!important;padding-right:12px!important}}</style></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>@media (max-width:599px){.${EMAIL_PAD_CLASS}{padding-left:16px!important;padding-right:16px!important}.${EMAIL_TIGHT_CLASS}{padding-left:12px!important;padding-right:12px!important}}</style></head>
 <body style="margin:0;padding:0;background:#f4f4f5;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#18181b;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:24px 12px;">
     <tr><td align="center">

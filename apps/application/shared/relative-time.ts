@@ -1,8 +1,9 @@
 /**
- * Small, deterministic relative-time and duration wording shared by the
- * situation lines and the cluster-state sentence. Pure: no locale, no
- * Nuxt, no date library — one dominant unit, plainly spelled, so two callers
- * phrase "1 day ago" and "2 days" the same way.
+ * Small, deterministic relative-time and duration wording shared by every
+ * surface that writes one in plain words or as a clock (the situation lines,
+ * the cluster-state sentence, notifications, the pull-request comment). Pure:
+ * no locale, no Nuxt, no date library, so two callers phrase "1 day ago" and
+ * "2 days" the same way.
  */
 
 /** Coerce a stored timestamp (epoch ms number, Date, or ISO string) to epoch ms. */
@@ -52,8 +53,8 @@ export function relativeTimeAgo(
 /** A run's or a test's duration as a clock reads it: `850ms`, `12.4s`, `8m 32s`. */
 export function durationShort(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}m ${Math.round(seconds % 60)}s`;
+  const tenths = Math.round(ms / 100) / 10;
+  if (tenths < 60) return `${tenths.toFixed(1)}s`;
+  const seconds = Math.round(ms / 1000);
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }

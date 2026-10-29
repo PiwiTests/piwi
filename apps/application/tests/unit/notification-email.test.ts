@@ -58,7 +58,8 @@ describe('cluster.fixed email', () => {
     expect(html).toContain('TimeoutError: locator.click');
     expect(html).toContain(`href="${SITE}/failure-clusters/42"`);
     expect(text).toContain('Cluster stopped failing — checkout');
-    expect(text).toContain('Pay button never enables\nTimeoutError: locator.click');
+    expect(occurrences(text, 'Pay button never enables')).toBe(1);
+    expect(text).toContain('TimeoutError: locator.click');
     expect(text).toContain(`Open the cluster: ${SITE}/failure-clusters/42`);
   });
 

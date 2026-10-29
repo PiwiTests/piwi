@@ -1,8 +1,10 @@
 /**
  * The pieces a notification email is built from: the banner, the outcome bar,
  * the run history, a failing test's card with its highlighted code. Each
- * returns HTML made of tables and inline styles only, the subset mail clients
- * render, and escapes every value it is given.
+ * returns HTML made of tables and inline styles, the subset mail clients
+ * render; the layout's `<style>` only narrows the padding on a phone. A text
+ * argument is escaped here; an argument named `html` is HTML its caller built
+ * from escaped values.
  */
 import { STATUS_COLORS } from '#shared/status-colors';
 import { BRAND_VIOLET } from '#shared/brand';
@@ -18,7 +20,7 @@ import {
   historySentence,
   percent,
   runStatusKey,
-  testHistorySentence,
+  failureMeta,
   testLocation,
   testPath,
   type ErrorLineKind,
@@ -30,12 +32,21 @@ import {
 /** The card width of a notification email. */
 export const NOTIFICATION_EMAIL_WIDTH = 680;
 
-const INK = '#18181b';
-const BODY = '#3f3f46';
-const MUTED = '#71717a';
-const LINE = '#e4e4e7';
-const SUNKEN = '#f4f4f5';
-const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+/** The neutral colors and the code font every notification email paints with. */
+export const EMAIL_COLORS = {
+  ink: '#18181b',
+  body: '#3f3f46',
+  muted: '#71717a',
+  line: '#e4e4e7',
+  sunken: '#f4f4f5',
+} as const;
+export const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+
+const INK = EMAIL_COLORS.ink;
+const BODY = EMAIL_COLORS.body;
+const MUTED = EMAIL_COLORS.muted;
+const LINE = EMAIL_COLORS.line;
+const SUNKEN = EMAIL_COLORS.sunken;
 
 interface ToneColors {
   /** The banner's background, and text on a light background. */
@@ -54,8 +65,19 @@ const TONES: Record<Tone, ToneColors> = {
   brand: { strong: '#6d28d9', fill: BRAND_VIOLET, tint: '#f5f3ff' },
 };
 
-export function toneColor(tone: Tone): string {
-  return TONES[tone].strong;
+/** The color a tone marks with: a card's edge, a bar. */
+export function toneFill(tone: Tone): string {
+  return TONES[tone].fill;
+}
+
+/** A framed row: `html` in a bordered card whose left edge carries the tone. */
+export function cardRow(html: string, tone: Tone, padding = '12px 14px'): string {
+  return `<tr><td class="${EMAIL_TIGHT_CLASS}" style="padding:${padding};border:1px solid ${LINE};border-left:4px solid ${TONES[tone].fill};border-radius:8px;">${html}</td></tr><tr><td height="10" style="height:10px;font-size:1px;line-height:10px;">&nbsp;</td></tr>`;
+}
+
+/** Framed rows, one under the other. */
+export function cards(rows: string): string {
+  return table(rows, 'margin:0 0 12px;');
 }
 
 /** A table with no spacing of its own, the base of every block. */
@@ -344,14 +366,10 @@ export function failureCard(
   failure: TopFailure,
   opts: { url: string; history?: RunHistoryEntry[]; runUrl: (runId: number) => string },
 ): string {
-  const story = failure.history ? testHistorySentence(failure.history) : null;
-  const meta = [
-    story?.isNew ? badge('New failure', 'failed') : '',
-    failure.browserName ? escapeHtml(failure.browserName) : '',
-    failure.owner ? escapeHtml(failure.owner) : '',
-  ]
-    .filter(Boolean)
-    .join(`<span style="color:#d4d4d8;">&nbsp;&nbsp;·&nbsp;&nbsp;</span>`);
+  const { isNew, story, labels } = failureMeta(failure);
+  const meta = [...(isNew ? [badge('New failure', 'failed')] : []), ...labels.map(escapeHtml)].join(
+    `<span style="color:#d4d4d8;">&nbsp;&nbsp;·&nbsp;&nbsp;</span>`,
+  );
   const suites = failure.suitePath?.length
     ? `<div style="font-size:13px;line-height:18px;color:${MUTED};">${failure.suitePath.map(escapeHtml).join(' › ')} ›</div>`
     : '';
@@ -380,25 +398,23 @@ export function failureCard(
             })),
             10,
             3,
-          )}</td><td valign="middle" style="font-size:13px;line-height:18px;color:${BODY};">${story ? escapeHtml(story.text) : ''}</td></tr>`,
+          )}</td><td valign="middle" style="font-size:13px;line-height:18px;color:${BODY};">${story ? escapeHtml(story) : ''}</td></tr>`,
           'margin:4px 0 2px;',
         )
       : '';
   const open = `<div style="margin-top:10px;font-size:13px;line-height:20px;"><a href="${escapeHtml(opts.url)}" style="color:${TONES.brand.strong};font-weight:600;text-decoration:none;">Open the failure &rarr;</a></div>`;
-  return table(
-    `<tr><td class="${EMAIL_TIGHT_CLASS}" style="padding:16px 18px;border:1px solid ${LINE};border-left:4px solid ${TONES.failed.fill};border-radius:8px;">${head}${headline}${source}${error}${own}${open}</td></tr>`,
-    'margin:0 0 14px;',
-  );
+  return cards(cardRow(`${head}${headline}${source}${error}${own}${open}`, 'failed', '16px 18px'));
 }
 
 /** One failing test in the plain-text part. */
 export function failureText(failure: TopFailure, url: string): string {
   const location = testLocation(failure);
-  const story = failure.history ? testHistorySentence(failure.history) : null;
+  const { isNew, story, labels } = failureMeta(failure);
   const lines = [`✗ ${testPath(failure)}`];
-  if (location) lines.push(`  ${location}${failure.browserName ? ` (${failure.browserName})` : ''}`);
+  const facts = [...(isNew ? ['New failure'] : []), ...labels];
+  if (location || facts.length) lines.push(`  ${[location, ...facts].filter(Boolean).join(' · ')}`);
   if (failure.headline) lines.push(`  ${failure.headline}`);
-  if (story) lines.push(`  ${story.text}`);
+  if (story) lines.push(`  ${story}`);
   if (failure.source) lines.push(`\n${codeText(failure.source).replace(/^/gm, '    ')}\n`);
   if (failure.errorExcerpt) lines.push(failure.errorExcerpt.replace(/^/gm, '    '));
   lines.push(`  ${url}`);
