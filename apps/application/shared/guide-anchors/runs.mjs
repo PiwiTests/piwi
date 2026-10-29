@@ -316,6 +316,12 @@ export const RUNS_EXEMPTIONS = [
   },
   {
     rule: 'help',
+    key: 'run.live-unshared',
+    reason:
+      'Not shared live shows only on a live run outside CI that holds a live view key, and the demo runs no test worker.',
+  },
+  {
+    rule: 'help',
     key: 'run.shuffle',
     reason: 'The Order line shows only for a run Playwright ran with --shuffle, and the seed has no shuffled run.',
   },

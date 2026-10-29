@@ -28,7 +28,9 @@ export interface RunEvent {
     | 'case-files'
     | 'resources'
     /** A worker of the run's live view connected, stopped, went on or left (`LiveWorkerState`, `#shared/live-view`). */
-    | 'live-worker';
+    | 'live-worker'
+    /** Whether the run holds a live view key (`LiveViewRunState`, `#shared/live-view`). */
+    | 'live-view';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: Record<string, any>;
   seq: number;

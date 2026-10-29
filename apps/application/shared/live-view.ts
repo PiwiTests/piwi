@@ -1,6 +1,6 @@
 /**
- * What the run page reads of a live run's live view: each connected worker's state, which the run's event stream
- * carries (`live-worker`), and the messages of one worker's view (`/api/test-runs/:id/live-view/watch`). The worker's
+ * What the run page reads of a live run's live view: whether the run holds a key (`live-view`), each connected worker's
+ * state, which the run's event stream carries (`live-worker`), and the messages of one worker's view (`/api/test-runs/:id/live-view/watch`). The worker's
  * side of the protocol is `@piwitests/core/live-view`.
  */
 import {
@@ -19,6 +19,15 @@ export interface LiveWorkerState {
   worker: number;
   connected: boolean;
   paused: LiveStop | null;
+}
+
+/**
+ * Whether a live run holds a live view key on the instance, as its event stream says it (`live-view`): its project's
+ * live view applies to it. A CI run's workers stream with it at once; those of a run outside CI only once its
+ * developer shares it, so until then the run page says how (**Not shared live**).
+ */
+export interface LiveViewRunState {
+  keyed: boolean;
 }
 
 /** How the run page names a worker: its index, and its shard in a sharded run. */
