@@ -267,10 +267,21 @@ export const SETTINGS_ANCHORS = [
     pages: ['/settings/notifications'],
     describes:
       'The SMTP email delivery card: whether outbound email is configured, and the environment variables that configure it.',
+    shownWhen: 'Always in a browser; in the desktop app only once SMTP is set in its environment.',
     requires: { capability: 'notifications' },
     help: 'settings.smtp',
     doc: 'features/notifications#smtp-configuration',
     sample: { route: '/settings/notifications' },
+  },
+  {
+    id: 'desktop-notifications',
+    kind: 'block',
+    pages: ['/settings/notifications'],
+    describes:
+      'The desktop app’s built-in system notifications: on with no setup for each project’s default events, with a button that sends a test.',
+    requires: { capability: 'notifications', desktop: true },
+    doc: 'features/notifications#browser',
+    sample: { route: '/settings/notifications', surface: 'desktop' },
   },
   {
     id: 'notification-channels',

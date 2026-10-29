@@ -118,8 +118,8 @@ Three ways, in increasing order of automation:
 
 - **Settings → About** shows the running version, the build SHA, the Node.js version, the database backend, the
   operating system, and the latest run's reporter and Playwright versions.
-- The version endpoint returns the version, build SHA and database backend as JSON, along with the
-  Node.js version actually running — no authentication required:
+- The version endpoint returns the version, build SHA, database backend, platform and architecture as JSON, along
+  with the Node.js version actually running — no authentication required:
 
   ```bash
   curl -s http://localhost:3000/api/version

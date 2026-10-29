@@ -71,10 +71,7 @@ export interface CapabilityDef {
   passiveData?: boolean;
   /** A capability that is declined whenever this one is (rides on it). */
   follows?: CapabilityId;
-  /**
-   * The desktop build never offers it: it posts to pull requests, whose links
-   * need an address other people can open, and a desktop app has none.
-   */
+  /** The desktop build never offers it: every surface hides it there (`capabilityHidden`). */
   hiddenOnDesktop?: boolean;
   /** Release that introduced it; the Setup ladder marks entries newer than the instance's first run. */
   since: string;
@@ -348,6 +345,8 @@ export interface CapabilityPreset {
   module: CapabilityModule;
   label: string;
   description: string;
+  /** The description in the desktop build, when the module holds a capability it does not offer. */
+  desktopDescription?: string;
 }
 
 export const CAPABILITY_PRESETS: CapabilityPreset[] = [
@@ -360,8 +359,14 @@ export const CAPABILITY_PRESETS: CapabilityPreset[] = [
     module: 'workflow',
     label: 'Triage as a team',
     description: 'Notifications, quarantine, pull-request feedback, issue tracking and the Test Map.',
+    desktopDescription: 'Notifications, quarantine, issue tracking and the Test Map.',
   },
-  { module: 'healing', label: 'Fix faster', description: 'Locator healing and auto-heal pull requests.' },
+  {
+    module: 'healing',
+    label: 'Fix faster',
+    description: 'Locator healing and auto-heal pull requests.',
+    desktopDescription: 'Locator healing.',
+  },
   { module: 'agents', label: 'Let agents in', description: 'AI diagnosis over your real diff, and the assistant.' },
 ];
 

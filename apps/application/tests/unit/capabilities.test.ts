@@ -236,8 +236,10 @@ describe('capabilityHidden', () => {
   test('the desktop build hides pull-request feedback and auto-heal, whatever their state', () => {
     expect([...DESKTOP_HIDDEN_CAPABILITIES].sort()).toEqual(['auto-heal', 'pr-feedback']);
     for (const id of ['pr-feedback', 'auto-heal'] as const) {
-      expect(capabilityHidden(id, 'active', true)).toBe(true);
-      expect(capabilityHidden(id, 'active', false)).toBe(false);
+      for (const state of ['active', 'available', 'undecided'] as const) {
+        expect(capabilityHidden(id, state, true)).toBe(true);
+        expect(capabilityHidden(id, state, false)).toBe(false);
+      }
     }
   });
 });

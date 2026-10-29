@@ -39,33 +39,35 @@ function parseConfig(raw: string): StoredConfig {
 
 const _scope = effectScope(true);
 
-let _cookieRef: any = null;
 let _stored: WritableComputedRef<StoredConfig> | null = null;
 
-function ensureInit() {
-  if (_stored) return;
-
-  _scope.run(() => {
-    _cookieRef = useCookie<string>(COOKIE_KEY, {
-      default: () => '',
-      maxAge: 60 * 60 * 24 * 365,
-      sameSite: 'lax',
-      path: '/',
-      secure: import.meta.client ? location.protocol === 'https:' : false,
-      encode: (v: string) => encodeURIComponent(v),
-      decode: (v: string) => decodeURIComponent(v),
-    });
-
-    _stored = computed<StoredConfig>({
-      get: () => {
-        const raw = _cookieRef!.value;
-        return raw ? parseConfig(raw) : defaultStored();
-      },
-      set: (value: StoredConfig) => {
-        _cookieRef!.value = JSON.stringify(value);
-      },
-    });
+/** The stored choices, read from and written to the cookie of the current request or browser. */
+function cookieConfig(): WritableComputedRef<StoredConfig> {
+  const cookie = useCookie<string>(COOKIE_KEY, {
+    default: () => '',
+    maxAge: 60 * 60 * 24 * 365,
+    sameSite: 'lax',
+    path: '/',
+    secure: import.meta.client ? location.protocol === 'https:' : false,
+    encode: (v: string) => encodeURIComponent(v),
+    decode: (v: string) => decodeURIComponent(v),
   });
+  return computed<StoredConfig>({
+    get: () => (cookie.value ? parseConfig(cookie.value) : defaultStored()),
+    set: (value: StoredConfig) => {
+      cookie.value = JSON.stringify(value);
+    },
+  });
+}
+
+/**
+ * One instance per browser, kept for the page's life; one per call on the
+ * server, where module state would carry one request's cookie into the next.
+ */
+function storedConfig(): WritableComputedRef<StoredConfig> {
+  if (import.meta.server) return cookieConfig();
+  _stored ??= _scope.run(cookieConfig)!;
+  return _stored;
 }
 
 /**
@@ -76,9 +78,7 @@ function ensureInit() {
  * empty list, which keeps them off.
  */
 export function useBrowserNotificationCookie() {
-  ensureInit();
-
-  const stored = _stored!;
+  const stored = storedConfig();
   const desktop = useIsDesktop();
 
   function getProject(projectId: number): ProjectNotifyConfig {

@@ -457,6 +457,7 @@ export async function emitIncidentNotification(db: DbClient, runId: number): Pro
     branch,
     environment: runRow.environment ?? undefined,
     isDefaultBranch: branch ? branch === defaultBranch : false,
+    origin: runRow.origin,
   };
   await emitNotification(db, 'run.finished', {
     ...base,

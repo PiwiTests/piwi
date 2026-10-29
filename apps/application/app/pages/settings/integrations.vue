@@ -107,8 +107,7 @@ async function testConnection(conn: ConnectionSummary) {
 }
 
 // ── Inbound webhook token ────────────────────────────────────────────────────
-// The desktop build listens on a loopback address no Jira can call, so it
-// offers no webhook: the status sync keeps the statuses current.
+// The desktop build offers no Jira webhook: the status sync keeps the statuses current.
 const isDesktop = useIsDesktop();
 const webhooking = ref<number | null>(null);
 const webhookUrls = reactive<Record<number, string>>({});

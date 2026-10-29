@@ -220,6 +220,7 @@ const eventLabel = notificationEventLabel;
         icon="i-lucide-monitor"
         title="Desktop notifications"
         data-shot="desktop-notifications"
+        data-tour="desktop-notifications"
       >
         <template #subtitle>Built in: no setup needed.</template>
         <p class="text-sm text-highlighted leading-relaxed">

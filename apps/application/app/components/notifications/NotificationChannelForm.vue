@@ -183,7 +183,7 @@ async function requestPermission() {
 
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <UFormField label="Type">
-        <USelect v-model="form.type" :items="typeItems" value-key="value" class="w-full" />
+        <USelect v-model="form.type" :items="typeItems" value-key="value" class="w-full" data-testid="channel-type" />
       </UFormField>
       <UFormField label="Name">
         <UInput v-model="form.name" :placeholder="suggestedName" class="w-full" data-testid="channel-name" />

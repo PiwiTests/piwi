@@ -360,10 +360,6 @@ test.describe.serial('Integrations — keep the ticket honest', () => {
   });
 
   test('Disable webhook on the settings page turns the inbound webhook off', async ({ page, request }) => {
-    test.skip(
-      resolveE2ETarget().desktop,
-      'the desktop app offers no Jira webhook: no Jira can call its loopback address',
-    );
     await page.goto('/settings/integrations');
     await waitForHydration(page);
     const card = page
@@ -376,7 +372,8 @@ test.describe.serial('Integrations — keep the ticket honest', () => {
       .getByRole('button', { name: 'Disable webhook' })
       .click();
     await expect(page.getByText('Webhook disabled', { exact: true })).toBeVisible();
-    await expect(card.getByRole('button', { name: 'Enable webhook' })).toBeVisible();
+    // The desktop app offers no webhook to turn back on.
+    await expect(card.getByRole('button', { name: 'Enable webhook' })).toHaveCount(resolveE2ETarget().desktop ? 0 : 1);
     await expect(card.getByRole('button', { name: 'Disable webhook' })).toHaveCount(0);
 
     const { connection } = await (await request.get(`/api/integrations/connections/${connectionId}`)).json();

@@ -43,7 +43,7 @@ const shortSha = computed(() => (buildSha ? buildSha.slice(0, 7) : null));
 const { data: recentRuns, status: recentRunsStatus } = useFetch<
   ApiResponse<typeof import('~~/server/api/test-runs/recent.get').default>
 >('/api/test-runs/recent', { server: false, lazy: true });
-const runsLoaded = computed(() => recentRunsStatus.value === 'success' || recentRunsStatus.value === 'error');
+const runsLoaded = computed(() => recentRunsStatus.value === 'success');
 const reporterVersion = computed(
   () => recentRuns.value?.items.find((run) => run.reporterVersion)?.reporterVersion ?? null,
 );
@@ -128,7 +128,9 @@ const dbBackendLabel = computed(() => {
     >
       <p class="mb-3 text-sm text-muted">
         From triage verdicts: accepted and covered-by count for a detector, dismissed-as-wrong against. A detector below
-        60% over 20+ verdicts mutes itself on that project and drops out of the PR comment first.
+        60% over 20+ verdicts mutes itself on that project<template v-if="!instCapHidden('pr-feedback')">
+          and drops out of the PR comment first</template
+        >.
       </p>
       <div v-for="proj in precisionProjects" :key="proj.projectId" class="mb-4">
         <p class="text-xs font-medium text-muted">{{ proj.projectName }}</p>

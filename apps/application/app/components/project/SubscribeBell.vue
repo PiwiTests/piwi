@@ -287,8 +287,8 @@ const bellSubscribed = computed(() =>
     <UButton
       :icon="bellSubscribed ? 'i-lucide-bell-ring' : 'i-lucide-bell'"
       size="sm"
-      :color="bellSubscribed ? 'primary' : 'neutral'"
-      :variant="bellSubscribed ? 'soft' : 'outline'"
+      color="neutral"
+      variant="outline"
       title="Notification subscriptions for this project"
       data-tour="subscribe-bell"
     />

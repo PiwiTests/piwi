@@ -86,7 +86,7 @@ Playwright and the app's bundled Node. The first time, it asks for the project's
 - **Pause, step and watch** each worker from the tray, at a `page.pause()` or a failure too: [Desktop app
   runs](/features/desktop-runs).
 
-Its results come here, and the tray links to them.
+A local run's results come here, and the tray links to them.
 
 ### Reproducing a failure and finding the breaking commit
 
@@ -154,7 +154,7 @@ verified against the project's signing key.
 - **One machine, one user.** The app accepts results only from this machine; a team needs the
   [Docker image](/operate/deployment).
 - **Local runs need the checkout**: a linked folder with Playwright installed, and `git` and your package manager for
-  reproduce, bisect and the lab.
+  reproduce, bisect (one repository) and the lab.
 - **No public address**: no [pull-request feedback](/features/pr-feedback), [auto-heal](/features/auto-heal) or Jira
   webhook, and email only with SMTP set.
 

@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, afterEach } from 'vitest';
 import { ref } from 'vue';
-import { DEFAULT_SUBSCRIPTION_EVENTS } from '#shared/notification-events';
+import { DEFAULT_SUBSCRIPTION_EVENTS, isDesktopAppRunEvent } from '#shared/notification-events';
 
 /**
  * The project bell's per-browser choices. The composable keeps its cookie in
@@ -17,6 +17,23 @@ async function load(desktop: boolean) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe('isDesktopAppRunEvent', () => {
+  test('leaves the run events of the runs the desktop app started to the app', () => {
+    for (const origin of ['desktop', 'reproduce', 'bisect']) {
+      expect(isDesktopAppRunEvent('run.failed', origin)).toBe(true);
+      expect(isDesktopAppRunEvent('run.finished', origin)).toBe(true);
+    }
+  });
+
+  test('keeps the run events of other runs, and every other event', () => {
+    expect(isDesktopAppRunEvent('run.failed', 'local')).toBe(false);
+    expect(isDesktopAppRunEvent('run.failed', 'ci')).toBe(false);
+    expect(isDesktopAppRunEvent('run.failed', undefined)).toBe(false);
+    expect(isDesktopAppRunEvent('environment.incident', 'desktop')).toBe(false);
+    expect(isDesktopAppRunEvent('cluster.new', 'desktop')).toBe(false);
+  });
 });
 
 describe('useBrowserNotificationCookie', () => {
