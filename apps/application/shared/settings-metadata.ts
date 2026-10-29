@@ -344,7 +344,10 @@ export interface SettingsNavContext {
   isDesktop: boolean;
   /** Pages currently pinned by env, which get a trailing lock badge. */
   envManaged?: Partial<Record<SettingsPageId, boolean>>;
-  /** Capabilities declined at instance level; their pages drop out of the nav. */
+  /**
+   * Capabilities hidden at instance level (declined, or never offered by the
+   * desktop build); their pages drop out of the nav.
+   */
   declinedCapabilities?: Set<CapabilityId>;
 }
 

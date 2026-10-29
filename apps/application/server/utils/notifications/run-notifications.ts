@@ -410,6 +410,7 @@ export async function loadRunPayload(db: DbClient, runId: number) {
     owners,
     ...(commit ? { commit } : {}),
     ...(ciUrl ? { ciUrl } : {}),
+    origin: runRow.origin,
     history,
   };
   return { runRow, project, runPayload, branch, environment, isDefaultBranch, clusterOwners };

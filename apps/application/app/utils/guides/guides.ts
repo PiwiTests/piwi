@@ -316,6 +316,7 @@ export const AUTHORED_GUIDES: readonly AuthoredGuide[] = [
         body: '**SMTP email delivery** says whether this instance can send email. It is configured through environment variables such as PIWI_SMTP_HOST, never on this page; Slack, Microsoft Teams and webhook channels work without it.',
         side: 'bottom',
         align: 'start',
+        hiddenOnDesktop: true,
       },
       {
         id: 'channel',

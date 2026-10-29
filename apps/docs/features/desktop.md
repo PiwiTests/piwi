@@ -42,8 +42,8 @@ folder** show it. Back up the parent folder while the app is closed; its `secret
 tokens.
 
 Closing the window quits the app unless you turn on **Run in background** in the tray menu; **Start on login** launches
-it hidden into the tray. In the background, [notifications](/features/notifications) arrive as OS notifications, with an
-unread count on the dock icon or the tray tooltip.
+it hidden into the tray. In the background, [notifications](/features/notifications#browser) arrive as OS notifications,
+with no setup, and an unread count on the dock icon or the tray tooltip.
 
 ## Sending results to it
 
@@ -86,7 +86,7 @@ Playwright and the app's bundled Node. The first time, it asks for the project's
 - **Pause, step and watch** each worker from the tray, at a `page.pause()` or a failure too: [Desktop app
   runs](/features/desktop-runs).
 
-The run uses your project's Playwright config, so its results come here, and the tray links to it.
+Its results come here, and the tray links to them.
 
 ### Reproducing a failure and finding the breaking commit
 
@@ -101,8 +101,7 @@ linked folder, **without touching your checkout**:
   progress and a **Stop** that kills the test and what it started, resets the bisect and removes the worktree. The
   first bad commit is linked to your SCM host and recorded on the failure cluster.
 
-It needs `git` and your package manager on this machine, and bisects one repository. The application under test has
-to build from the same checkout, started at each commit by a Playwright `webServer`; without one, a reproduction or
+The application under test has to build from the same checkout, started at each commit by a Playwright `webServer`; without one, a reproduction or
 bisect exercises test changes only.
 
 ### Jobs from your editor
@@ -139,7 +138,7 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 
 The **MCP server** page detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI, and
 connects each in one click, writing a `piwi-desktop` entry with the address and token into its config file.
-It keeps a backup and rewrites only that entry, at each launch if the port changed. Claude Desktop, which takes only
+It keeps a backup and rewrites only that entry, again when the port changes. Claude Desktop, which takes only
 local commands, is pointed at the app's built-in bridge (`piwi-desktop mcp-stdio`), so no token is copied; the app must
 run. Restart the client after connecting. The page also installs the
 [agent skills](/features/agent-skills) into a linked folder.
@@ -154,8 +153,10 @@ verified against the project's signing key.
 
 - **One machine, one user.** The app accepts results only from this machine; a team needs the
   [Docker image](/operate/deployment).
-- **Local runs need the checkout**: a linked folder with Playwright installed, and `git` for reproduce, bisect and
-  the lab.
+- **Local runs need the checkout**: a linked folder with Playwright installed, and `git` and your package manager for
+  reproduce, bisect and the lab.
+- **No public address**: no [pull-request feedback](/features/pr-feedback), [auto-heal](/features/auto-heal) or Jira
+  webhook, and email only with SMTP set.
 
 ## Related
 

@@ -22,6 +22,12 @@ export const NOTIFICATION_EVENTS = [
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
 
+/**
+ * The events a new subscription starts with, and the events the desktop app
+ * notifies on for a project whose events nobody chose.
+ */
+export const DEFAULT_SUBSCRIPTION_EVENTS: readonly NotificationEvent[] = ['run.failed', 'environment.incident'];
+
 const EVENT_LABELS: Partial<Record<NotificationEvent, string>> = {
   'auto_heal.pr_opened': 'Auto-heal › PR opened',
   'bug.looks_fixed': 'Bug › looks fixed',
@@ -165,6 +171,8 @@ export interface RunFinishedPayload extends RunScope {
   commit?: RunCommit;
   /** The CI build that ran the tests. */
   ciUrl?: string;
+  /** What launched the run, as `test_runs.origin` stores it: `ci`, `local`, `desktop`, `reproduce`, … */
+  origin?: string;
   /**
    * The last {@link RUN_HISTORY_LIMIT} runs on the run's branch and environment
    * that send notifications, oldest first, this run last.

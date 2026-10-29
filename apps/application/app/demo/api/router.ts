@@ -3710,6 +3710,8 @@ const routes: RouteEntry[] = [
         buildSha: null,
         buildTime: null,
         node: 'N/A (browser demo)',
+        platform: 'N/A (browser demo)',
+        arch: null,
         dbBackend: 'sql.js (in-browser)',
       }),
   },

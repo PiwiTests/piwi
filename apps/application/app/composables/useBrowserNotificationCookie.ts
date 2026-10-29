@@ -1,5 +1,5 @@
 import { effectScope, computed, type WritableComputedRef } from 'vue';
-import type { NotificationEvent } from '#shared/notification-events';
+import { DEFAULT_SUBSCRIPTION_EVENTS, type NotificationEvent } from '#shared/notification-events';
 
 const COOKIE_KEY = 'piwi-browser-notify';
 
@@ -68,17 +68,25 @@ function ensureInit() {
   });
 }
 
+/**
+ * The per-browser notification events of each project, kept in a cookie: the
+ * project bell's choices when authentication is off. In the desktop app, a
+ * project whose events nobody chose notifies on `DEFAULT_SUBSCRIPTION_EVENTS`,
+ * so its notifications work with no setup; turning every event off stores an
+ * empty list, which keeps them off.
+ */
 export function useBrowserNotificationCookie() {
   ensureInit();
 
   const stored = _stored!;
+  const desktop = useIsDesktop();
 
   function getProject(projectId: number): ProjectNotifyConfig {
-    return stored.value.projects[projectId] ?? { events: [] };
+    return stored.value.projects[projectId] ?? { events: desktop ? [...DEFAULT_SUBSCRIPTION_EVENTS] : [] };
   }
 
   function setEvents(projectId: number, events: NotificationEvent[]) {
-    if (events.length === 0) {
+    if (events.length === 0 && !desktop) {
       const next = { ...stored.value };
       delete next.projects[projectId];
       stored.value = next;

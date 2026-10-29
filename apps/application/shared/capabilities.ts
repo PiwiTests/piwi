@@ -71,6 +71,11 @@ export interface CapabilityDef {
   passiveData?: boolean;
   /** A capability that is declined whenever this one is (rides on it). */
   follows?: CapabilityId;
+  /**
+   * The desktop build never offers it: it posts to pull requests, whose links
+   * need an address other people can open, and a desktop app has none.
+   */
+  hiddenOnDesktop?: boolean;
   /** Release that introduced it; the Setup ladder marks entries newer than the instance's first run. */
   since: string;
   doc: string;
@@ -175,6 +180,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     levels: ['instance'],
     needs: ['scm'],
     detection: null,
+    hiddenOnDesktop: true,
     since: '0.19.0',
     doc: 'features/pr-feedback',
   },
@@ -184,6 +190,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     levels: ['instance'],
     needs: ['fixtures', 'scm'],
     detection: null,
+    hiddenOnDesktop: true,
     since: '0.26.0',
     doc: 'features/auto-heal',
   },
@@ -309,6 +316,20 @@ export const CAPABILITIES: CapabilityDef[] = [
 export const CAPABILITY_BY_ID: Record<CapabilityId, CapabilityDef> = Object.fromEntries(
   CAPABILITIES.map((c) => [c.id, c]),
 ) as Record<CapabilityId, CapabilityDef>;
+
+/** The ids of the capabilities the desktop build never offers (`hiddenOnDesktop`). */
+export const DESKTOP_HIDDEN_CAPABILITIES: ReadonlySet<string> = new Set(
+  CAPABILITIES.filter((c) => c.hiddenOnDesktop).map((c) => c.id),
+);
+
+/**
+ * Whether a surface hides a capability: declined, not applicable, or one the
+ * desktop build never offers. The one rule `useInstanceCapabilities` and
+ * `useProjectCapabilities` apply.
+ */
+export function capabilityHidden(id: CapabilityId, state: CapabilityState, desktop: boolean): boolean {
+  return state === 'declined' || state === 'not-applicable' || (desktop && DESKTOP_HIDDEN_CAPABILITIES.has(id));
+}
 
 /** Every module, in the order the presets ask about them. */
 export const CAPABILITY_MODULES: CapabilityModule[] = ['core', 'workflow', 'healing', 'agents'];

@@ -107,6 +107,9 @@ async function testConnection(conn: ConnectionSummary) {
 }
 
 // ── Inbound webhook token ────────────────────────────────────────────────────
+// The desktop build listens on a loopback address no Jira can call, so it
+// offers no webhook: the status sync keeps the statuses current.
+const isDesktop = useIsDesktop();
 const webhooking = ref<number | null>(null);
 const webhookUrls = reactive<Record<number, string>>({});
 async function generateWebhook(conn: ConnectionSummary) {
@@ -330,7 +333,7 @@ function errorMessage(err: unknown): string {
                   />
                 </template>
                 <UButton
-                  v-if="provider.name === 'jira'"
+                  v-if="provider.name === 'jira' && !isDesktop"
                   color="neutral"
                   variant="ghost"
                   size="sm"

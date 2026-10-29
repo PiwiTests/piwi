@@ -153,6 +153,11 @@ describe('the payload of a run notification', () => {
     expect(payload.ciUrl).toBe('https://ci.example.com/build/9');
   });
 
+  test('names what launched the run', async () => {
+    expect((await loadRunPayload(db as never, 5))!.runPayload.origin).toBe('local');
+    expect((await loadRunPayload(db as never, 4))!.runPayload.origin).toBe('probe');
+  });
+
   test('a run with no failure carries none, and its counts', async () => {
     const payload = (await loadRunPayload(db as never, 3))!.runPayload;
     expect(payload.topFailures).toEqual([]);

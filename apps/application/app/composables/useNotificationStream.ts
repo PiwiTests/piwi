@@ -1,3 +1,4 @@
+import type { RunOriginKind } from '@piwitests/core/wire';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useDiagnosisNotification } from './useDiagnosisNotification';
 import { useBrowserNotificationCookie } from './useBrowserNotificationCookie';
@@ -20,6 +21,10 @@ if (import.meta.client) {
   _windowFocused = document.hasFocus();
 }
 let _cookie: ReturnType<typeof useBrowserNotificationCookie> | null = null;
+let _desktop = false;
+
+/** The runs the desktop app starts itself, whose end it announces with its own notification. */
+const DESKTOP_APP_RUN_ORIGINS: ReadonlySet<string> = new Set<RunOriginKind>(['desktop', 'reproduce', 'bisect']);
 
 interface NotificationEventData {
   type: string;
@@ -33,6 +38,7 @@ interface NotificationEventData {
   signature?: string;
   title?: string | null;
   verification?: string;
+  origin?: string;
   clusterId?: number;
   executionId?: number;
   summary?: string | null;
@@ -125,6 +131,8 @@ function handleEvent(data: NotificationEventData) {
     return;
   }
 
+  if (_desktop && data.type.startsWith('run.') && data.origin && DESKTOP_APP_RUN_ORIGINS.has(data.origin)) return;
+
   if (_cookie && data.projectId != null) {
     if (!_cookie.isEventSubscribed(data.projectId, data.type)) return;
   }
@@ -216,6 +224,7 @@ export function useNotificationStream() {
   const config = useRuntimeConfig();
   _router = useRouter();
   _baseURL = config.app.baseURL || '/';
+  _desktop = useIsDesktop();
 
   if (!config.public.authEnabled) {
     _cookie = useBrowserNotificationCookie();

@@ -16,6 +16,7 @@ import { PROJECT } from '#shared/test-project-names';
 import { ProjectRole } from '#shared/permissions';
 import { createMember } from './utils/access';
 import { waitForHydration } from './utils';
+import { resolveE2ETarget } from './desktop-target';
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -359,6 +360,10 @@ test.describe.serial('Integrations — keep the ticket honest', () => {
   });
 
   test('Disable webhook on the settings page turns the inbound webhook off', async ({ page, request }) => {
+    test.skip(
+      resolveE2ETarget().desktop,
+      'the desktop app offers no Jira webhook: no Jira can call its loopback address',
+    );
     await page.goto('/settings/integrations');
     await waitForHydration(page);
     const card = page

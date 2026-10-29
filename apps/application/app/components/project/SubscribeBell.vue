@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { NotificationEvent, SubscriptionFilters } from '#shared/notification-events';
 import {
+  DEFAULT_SUBSCRIPTION_EVENTS,
   NOTIFICATION_EVENTS,
   describeSubscriptionFilters,
   notificationEventLabel as eventLabel,
@@ -17,6 +18,7 @@ const props = defineProps<{
 
 const config = useRuntimeConfig();
 const isDemoMode = config.public.demoMode;
+const isDesktop = useIsDesktop();
 const authEnabled = computed(() => config.public.authEnabled);
 const { authState, canSeeAdmin } = useAuth();
 const isAuthenticated = computed(() => authState.value.authenticated);
@@ -114,7 +116,7 @@ const channels = computed(() => channelsData.value?.items ?? []);
 // ── New subscription form ─────────────────────────────────────────────────────
 const showForm = ref(false);
 const selectedChannelId = ref<number | undefined>(undefined);
-const selectedEvents = ref<string[]>(['run.failed', 'environment.incident']);
+const selectedEvents = ref<string[]>([...DEFAULT_SUBSCRIPTION_EVENTS]);
 const selectedBranches = ref<string[]>([]);
 const selectedEnvironments = ref<string[]>([]);
 const subscribeGlobal = ref(false);
@@ -294,7 +296,7 @@ const bellSubscribed = computed(() =>
       <!-- Cookie-based UI (no auth) -->
       <div v-if="cookie" class="p-3 space-y-3">
         <div class="flex items-center justify-between">
-          <span class="font-medium text-sm">Browser notifications</span>
+          <span class="font-medium text-sm">{{ isDesktop ? 'Desktop notifications' : 'Browser notifications' }}</span>
         </div>
 
         <p v-if="supported && permission === 'default'" class="text-xs text-gray-500">

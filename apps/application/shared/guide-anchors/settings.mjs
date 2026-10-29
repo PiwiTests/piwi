@@ -783,7 +783,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'page',
     pages: ['/settings/about'],
     describes:
-      'Settings → About: the version this instance runs, its build and build date, then its Node.js version, database and docs links.',
+      'Settings → About: the version and build, the Node.js, database and platform, the reporter and Playwright of the latest run, and docs links.',
     doc: 'operate/upgrading#verifying-the-upgrade-landed',
     sample: { route: '/settings/about' },
   },
