@@ -178,7 +178,7 @@ others, and the work folder goes once their encoders have ended.
   (`masterFrame`).
 - **The world.** Each window is drawn at its place on the screen, in a frame of the stage's own (a bar naming it, its
   corners rounded, a shadow): the right column moved off VS Code and the Runs window off the test's browser by a gap
-  (`world`). VS Code's own title bar is cut off: the stage's frame stands in. A beat shows the windows of its focus and
+  (`world`). VS Code keeps its own title bar: its command center drops Quick Open and the command palette over it. A beat shows the windows of its focus and
   of its gestures, each while the master shows it (its layer raised, the test's browser up), fading in and out.
 - **The camera** (`lib/camera.mjs`): a view of the world at 16:9, eased (cubic, in and out) over 0.6 to 0.9 s from
   wherever it is, never closer than one output pixel a master pixel. A beat starts on its first window; a raise brings

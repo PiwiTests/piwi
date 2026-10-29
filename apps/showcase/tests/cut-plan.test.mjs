@@ -61,10 +61,8 @@ describe('the stage’s world', () => {
     assert.deepEqual(placed.runs.crop, WINDOWS.runs);
   });
 
-  test('cuts VS Code’s own title bar off', () => {
-    const { crop } = world(WINDOWS, 2).vscode;
-    assert.equal(crop.y, 70);
-    assert.equal(crop.height, 1440 - 70);
+  test('keeps VS Code’s own title bar, where Quick Open and the command palette drop', () => {
+    assert.deepEqual(world(WINDOWS).vscode.crop, WINDOWS.vscode);
   });
 
   test('gives a test’s browser no beat reached its tile', () => {

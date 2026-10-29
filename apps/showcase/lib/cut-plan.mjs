@@ -9,9 +9,6 @@ import { OUTPUT_FPS, frameCount, lineMs, masterFrame } from './timeline.mjs';
 export const TITLE_BAR = 64;
 const GAP = 80;
 
-/** VS Code's own title bar (its menus, its window's title and buttons), in CSS pixels: the stage's frame stands in. */
-const VSCODE_TITLE_BAR = 35;
-
 /** What the stage's frame names each window. */
 export const WINDOW_NAMES = {
   dashboard: 'Piwi dashboard',
@@ -49,15 +46,13 @@ function lastAt(events, t) {
 }
 
 /**
- * The stage's world: each window's content as the master holds it (`crop`, VS Code's without its own title bar), and
- * where the stage draws its frame and content (`frame`, `content`, in master pixels): the right column moved off VS
- * Code, and the Runs window off the test's browser, by `GAP` and the frame's bar. A test's browser the take never
- * reached takes its tile. `scale` is the master's device pixels a CSS pixel.
+ * The stage's world: each window's content as the master holds it (`crop`; VS Code's with its own title bar, as its
+ * command center drops Quick Open and the command palette over it), and where the stage draws its frame and content
+ * (`frame`, `content`, in master pixels): the right column moved off VS Code, and the Runs window off the test's
+ * browser, by `GAP` and the frame's bar. A test's browser the take never reached takes its tile.
  */
-export function world(windows, scale = 2) {
+export function world(windows) {
   const crop = { ...windows };
-  const bar = VSCODE_TITLE_BAR * scale;
-  crop.vscode = { ...windows.vscode, y: windows.vscode.y + bar, height: windows.vscode.height - bar };
   crop['test-browser'] ??= {
     x: windows.vscode.x + windows.vscode.width,
     y: windows.dashboard.y,
@@ -155,7 +150,7 @@ function strip(g) {
 export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only = null }) {
   const fps = log.master.fps;
   const masterSeconds = (w) => (flashFrame - 0.5) / fps + (w - log.flash.t) / 1000;
-  const placed = world(log.windows, log.screen.scale);
+  const placed = world(log.windows);
   const limits = { minWidth: width * dpr };
   const span = viewRect(fit(union(Object.values(placed).map((p) => p.frame)))).width;
   const raises = log.raises ?? [];

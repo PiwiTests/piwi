@@ -158,10 +158,16 @@ export class Gestures {
           width: Math.round(rect.width * s),
           height: Math.round(rect.height * s),
         };
-        // Where Playwright acts: the given position, else the box's middle, within the window.
+        // Where Playwright acts: the given position, else the middle of the box's part inside the window (an editor's
+        // lines run far past it), within the window.
+        const middle = (start, size, limit) => {
+          const from = Math.max(start, 0);
+          const to = Math.min(start + size, limit);
+          return to > from ? (from + to) / 2 : start + size / 2;
+        };
         const at = options.position
           ? { x: rect.x + options.position.x, y: rect.y + options.position.y }
-          : { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+          : { x: middle(rect.x, rect.width, view.width / s), y: middle(rect.y, rect.height, view.height / s) };
         const inside = (v, size) => Math.min(Math.max(v, 0), size);
         point = {
           x: Math.round(view.x + inside(at.x * s, view.width)),
