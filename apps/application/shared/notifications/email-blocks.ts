@@ -4,13 +4,28 @@
  * returns HTML made of tables and inline styles only, the subset mail clients
  * render, and escapes every value it is given.
  */
-import { STATUS_COLORS, type StatusColorKey } from '#shared/status-colors';
+import { STATUS_COLORS } from '#shared/status-colors';
 import { BRAND_VIOLET } from '#shared/brand';
 import { EMAIL_PAD_CLASS, EMAIL_TIGHT_CLASS, emailButton, escapeHtml } from '#shared/email-layout';
 import { highlightLines, languageForPath, SCOPE_ROLES, type TokenRole } from '#shared/highlight';
-import { parseSourceSnippet } from '#shared/source-snippet';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import type { FailureSource, HistoryOutcome, RunHistoryEntry, TopFailure } from '#shared/notification-events';
+import {
+  codeRows,
+  errorLines,
+  failureHeadline,
+  historyLabel,
+  historySentence,
+  percent,
+  runStatusKey,
+  testHistorySentence,
+  testLocation,
+  testPath,
+  type ErrorLineKind,
+  type EventHeadline,
+  type OutcomeSegment,
+  type Tone,
+} from './message-parts';
 
 /** The card width of a notification email. */
 export const NOTIFICATION_EMAIL_WIDTH = 680;
@@ -21,9 +36,6 @@ const MUTED = '#71717a';
 const LINE = '#e4e4e7';
 const SUNKEN = '#f4f4f5';
 const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
-
-/** What a message is about, for its colors: an outcome, or the brand for news that is neither good nor bad. */
-export type Tone = 'failed' | 'passed' | 'warning' | 'flaky' | 'brand';
 
 interface ToneColors {
   /** The banner's background, and text on a light background. */
@@ -113,27 +125,18 @@ export function actions(
 
 // ── Banner ────────────────────────────────────────────────────────────────────
 
-export interface BannerOptions {
-  tone: Tone;
-  /** A short line above the headline: what kind of message this is, and where from. */
-  label: string;
-  /** The headline, HTML: the number that matters, large. */
-  headline: string;
-  /** A line under the headline, HTML. */
-  subline?: string;
-}
-
-/** The headline of a notification, white on its tone, edge to edge atop the card. */
-export function banner(opts: BannerOptions): string {
-  const t = TONES[opts.tone];
-  const subline = opts.subline
-    ? `<div style="margin-top:8px;font-size:14px;line-height:1.5;color:#ffffff;">${opts.subline}</div>`
+/** The headline of a notification, white on its tone, edge to edge atop the card, its figure set large. */
+export function banner(h: EventHeadline): string {
+  const t = TONES[h.tone];
+  const headline = `${escapeHtml(h.lead)}${h.figure ? bigNumber(h.figure) : ''}${escapeHtml(h.rest)}`;
+  const details = h.details.length
+    ? `<div style="margin-top:8px;font-size:14px;line-height:1.5;color:#ffffff;">${escapeHtml(h.details.join(' · '))}</div>`
     : '';
   return table(
     `<tr><td class="${EMAIL_PAD_CLASS}" bgcolor="${t.strong}" style="padding:24px 32px 22px;background:${t.strong};background-image:linear-gradient(115deg,${t.strong} 0%,${t.strong} 50%,${t.fill} 100%);color:#ffffff;">` +
-      `<div style="font-size:12px;line-height:16px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#ffffff;opacity:.85;">${escapeHtml(opts.label)}</div>` +
-      `<div style="margin-top:6px;font-size:28px;line-height:1.2;font-weight:800;color:#ffffff;">${opts.headline}</div>` +
-      subline +
+      `<div style="font-size:12px;line-height:16px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#ffffff;opacity:.85;">${escapeHtml(h.label)}</div>` +
+      `<div style="margin-top:6px;font-size:28px;line-height:1.2;font-weight:800;color:#ffffff;">${headline}</div>` +
+      details +
       `</td></tr>`,
   );
 }
@@ -145,42 +148,11 @@ export function bigNumber(value: string | number): string {
 
 // ── Outcome bar ───────────────────────────────────────────────────────────────
 
-export interface BarSegment {
-  key: StatusColorKey;
-  label: string;
-  count: number;
-}
-
 /** The narrowest share a segment is drawn at, so a single skipped test still shows. */
 const MIN_SEGMENT_PCT = 1.5;
 
-/**
- * A run's tests split by outcome, in the dashboard's order. Flaky tests are a
- * part of the passed ones, drawn apart from them.
- */
-export function runSegments(counts: {
-  passedTests: number;
-  failedTests: number;
-  flakyTests: number;
-  skippedTests?: number;
-  didNotRunTests?: number;
-}): BarSegment[] {
-  return [
-    { key: 'passed' as const, label: 'passed', count: Math.max(0, counts.passedTests - counts.flakyTests) },
-    { key: 'failed' as const, label: 'failed', count: counts.failedTests },
-    { key: 'flaky' as const, label: 'flaky', count: counts.flakyTests },
-    { key: 'skipped' as const, label: 'skipped', count: counts.skippedTests ?? 0 },
-    { key: 'didnotrun' as const, label: "didn't run", count: counts.didNotRunTests ?? 0 },
-  ].filter((s) => s.count > 0);
-}
-
-function percent(count: number, total: number): string {
-  const pct = (count / total) * 100;
-  return `${pct >= 10 || pct === 0 ? Math.round(pct) : pct.toFixed(1)}%`;
-}
-
 /** The segments as one horizontal bar, each as wide as its share, with a legend under it. */
-export function outcomeBar(segments: BarSegment[], total: number): string {
+export function outcomeBar(segments: OutcomeSegment[], total: number): string {
   if (total <= 0 || segments.length === 0) return '';
   const shares = segments.map((s) => Math.max(MIN_SEGMENT_PCT, (s.count / total) * 100));
   const scale = 100 / shares.reduce((sum, share) => sum + share, 0);
@@ -205,66 +177,7 @@ export function outcomeBar(segments: BarSegment[], total: number): string {
   );
 }
 
-/** The bar's segments in words, for the plain-text part. */
-export function outcomeText(segments: BarSegment[], total: number): string {
-  if (total <= 0) return 'No tests';
-  return segments.map((s) => `${s.count} ${s.label} (${percent(s.count, total)})`).join(' · ');
-}
-
 // ── History ───────────────────────────────────────────────────────────────────
-
-/** A run's status as an outcome color: interrupted in the did-not-run amber. */
-function runStatusKey(status: string): StatusColorKey {
-  if (status === 'passed') return 'passed';
-  if (status === 'failed' || status === 'timedout') return 'failed';
-  if (status === 'interrupted') return 'didnotrun';
-  return 'skipped';
-}
-
-function isFailingRun(entry: RunHistoryEntry): boolean {
-  return runStatusKey(entry.status) === 'failed';
-}
-
-/** How many entries at the end of a list in a row match, the last one included. */
-function streak<T>(items: T[], match: (item: T) => boolean): number {
-  let n = 0;
-  for (let i = items.length - 1; i >= 0 && match(items[i]!); i--) n++;
-  return n;
-}
-
-/** `3 runs`, `1 passing run`. */
-function runs(n: number, adjective = ''): string {
-  return `${n} ${adjective ? `${adjective} ` : ''}run${n === 1 ? '' : 's'}`;
-}
-
-/**
- * What the history says about the last run: a first failure after a green
- * streak, a failure that keeps going, a return to green. Null with no earlier
- * run, and for a run that neither passed nor failed.
- */
-export function historySentence(history: RunHistoryEntry[]): string | null {
-  const current = history[history.length - 1];
-  if (!current || history.length < 2) return null;
-  const earlier = history.slice(0, -1);
-  if (isFailingRun(current)) {
-    const failing = streak(history, isFailingRun);
-    if (failing > 1) {
-      return failing === history.length
-        ? `Failed in all of the last ${runs(failing)}`
-        : `Failing for ${runs(failing)} in a row`;
-    }
-    const green = streak(earlier, (e) => e.status === 'passed');
-    return green > 0 ? `First failure after ${runs(green, 'passing')}` : null;
-  }
-  if (current.status === 'passed') {
-    const red = streak(earlier, isFailingRun);
-    if (red > 0) return `Back to green after ${runs(red, 'failing')}`;
-    const green = streak(history, (e) => e.status === 'passed');
-    if (green < 2) return null;
-    return green === history.length ? `Green in all of the last ${runs(green)}` : `Passing for ${runs(green)} in a row`;
-  }
-  return null;
-}
 
 /** The width of a strip of `count` squares. */
 function stripWidth(count: number, size: number, gap: number): number {
@@ -298,11 +211,12 @@ function squares(
   return `<table role="presentation" width="${width}" cellpadding="0" cellspacing="0" border="0" style="width:${width}px;border-collapse:separate;table-layout:fixed;"><tr>${top}</tr><tr><td colspan="${cells.length * 2 - 1}" height="3" style="height:3px;line-height:3px;font-size:1px;">&nbsp;</td></tr><tr>${under}</tr></table>`;
 }
 
-/**
- * The run history as a strip of squares linking to each run, with its sentence
- * beside it. `scope` follows the run count: ` on main in staging`.
- */
-export function historyStrip(history: RunHistoryEntry[], runUrl: (runId: number) => string, scope: string): string {
+/** The run history as a strip of squares linking to each run, with its sentence beside it. */
+export function historyStrip(
+  history: RunHistoryEntry[],
+  runUrl: (runId: number) => string,
+  scope: { branch?: string; environment?: string },
+): string {
   if (history.length < 2) return '';
   const strip = squares(
     history.map((entry) => ({
@@ -315,44 +229,12 @@ export function historyStrip(history: RunHistoryEntry[], runUrl: (runId: number)
   );
   const sentence = historySentence(history);
   return (
-    `<div style="margin:0 0 8px;font-size:13px;line-height:20px;color:${MUTED};">Last ${runs(history.length)}${escapeHtml(scope)}, oldest first</div>` +
+    `<div style="margin:0 0 8px;font-size:13px;line-height:20px;color:${MUTED};">${escapeHtml(historyLabel(history, scope))}, oldest first</div>` +
     table(
       `<tr><td valign="middle" width="${stripWidth(history.length, 18, 4)}" style="width:${stripWidth(history.length, 18, 4)}px;padding-right:16px;">${strip}</td><td valign="middle" style="font-size:14px;line-height:20px;color:${INK};font-weight:600;">${sentence ? escapeHtml(sentence) : ''}</td></tr>`,
       'margin:0 0 24px;',
     )
   );
-}
-
-const RUN_SYMBOLS: Record<StatusColorKey, string> = {
-  passed: '✓',
-  failed: '✗',
-  flaky: '~',
-  skipped: '-',
-  fixme: '-',
-  didnotrun: '!',
-  running: '…',
-};
-
-/** The history in the plain-text part: one symbol per run, then its sentence. */
-export function historyText(history: RunHistoryEntry[]): string {
-  if (history.length < 2) return '';
-  const sentence = historySentence(history);
-  return `Last ${runs(history.length)}: ${history.map((e) => RUN_SYMBOLS[runStatusKey(e.status)]).join(' ')}${sentence ? ` (${sentence})` : ''}`;
-}
-
-/** What a test's own history says about its failure in the last run. */
-export function testHistorySentence(outcomes: HistoryOutcome[]): { text: string; isNew: boolean } | null {
-  const known = outcomes.slice(0, -1).filter((o): o is Exclude<HistoryOutcome, null> => o !== null);
-  if (outcomes[outcomes.length - 1] !== 'failed') return null;
-  if (known.length === 0) return { text: 'No earlier result here', isNew: false };
-  const failing = streak(outcomes, (o) => o === 'failed');
-  if (failing > 1) return { text: `Failed in the last ${runs(failing)}`, isNew: false };
-  const before = known.filter((o) => o === 'failed').length;
-  if (before > 0) return { text: `Also failed in ${before} of the ${runs(known.length)} before`, isNew: false };
-  return {
-    text: known.length === 1 ? 'Passed in the previous run' : `Passed in each of the ${runs(known.length)} before`,
-    isNew: true,
-  };
 }
 
 const OUTCOME_COLORS: Record<Exclude<HistoryOutcome, null>, string> = {
@@ -398,27 +280,16 @@ function inlineTokenColors(html: string): string {
   });
 }
 
-/** How many leading spaces every non-blank line shares. */
-function commonIndent(lines: string[]): number {
-  const indents = lines.filter((line) => line.trim()).map((line) => /^ */.exec(line)![0].length);
-  return indents.length ? Math.min(...indents) : 0;
-}
-
-/**
- * The lines a failure threw at, syntax-highlighted on a dark background, the
- * failing line marked. The indentation the lines share is dropped, so the code
- * keeps the card's width; rows that are not numbered lines are left out.
- */
+/** The lines a failure threw at, syntax-highlighted on a dark background, the failing line marked. */
 export function codeBlock(source: FailureSource): string {
-  const rows = parseSourceSnippet(source.snippet).filter((row) => row.line != null);
-  const indent = commonIndent(rows.map((row) => row.code));
+  const rows = codeRows(source);
   const highlighted = highlightLines(
-    rows.map((row) => row.code.slice(indent)),
+    rows.map((row) => row.code),
     languageForPath(source.file),
   );
   const body = rows
     .map((row, i) => {
-      const code = inlineTokenColors(highlighted[i] ?? escapeHtml(row.code.slice(indent)));
+      const code = inlineTokenColors(highlighted[i] ?? escapeHtml(row.code));
       const failing = row.failing;
       const background = failing ? ` bgcolor="${CODE.failingBackground}"` : '';
       const fill = failing ? `background:${CODE.failingBackground};` : '';
@@ -441,21 +312,19 @@ export function codeText(source: FailureSource): string {
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 
-/** The color of one line of a Playwright error: the expected value green, the received one red. */
-function errorLineStyle(line: string, first: boolean): string {
-  if (/^\s*Expected\b/.test(line)) return `color:${STATUS_COLORS.passed.text};`;
-  if (/^\s*Received\b/.test(line)) return `color:${STATUS_COLORS.failed.text};`;
-  if (first) return `color:${INK};font-weight:700;`;
-  return `color:${BODY};`;
-}
+const ERROR_LINE_STYLES: Record<ErrorLineKind, string> = {
+  head: `color:${INK};font-weight:700;`,
+  expected: `color:${STATUS_COLORS.passed.text};`,
+  received: `color:${STATUS_COLORS.failed.text};`,
+  body: `color:${BODY};`,
+};
 
 /** A Playwright error's message head as Playwright prints it, the expected and received lines in color. */
 export function errorBlock(excerpt: string, tone: Tone = 'failed'): string {
-  const lines = excerpt.split('\n');
-  const html = lines
-    .map((line, i) =>
-      line.trim()
-        ? `<div style="${errorLineStyle(line, i === 0)}white-space:pre-wrap;word-break:break-word;">${escapeHtml(line)}</div>`
+  const html = errorLines(excerpt)
+    .map((line) =>
+      line.text.trim()
+        ? `<div style="${ERROR_LINE_STYLES[line.kind]}white-space:pre-wrap;word-break:break-word;">${escapeHtml(line.text)}</div>`
         : spacer(8),
     )
     .join('');
@@ -466,26 +335,6 @@ export function errorBlock(excerpt: string, tone: Tone = 'failed'): string {
 }
 
 // ── A failing test ────────────────────────────────────────────────────────────
-
-/** Whether an error's first line already says what its headline says (`Error: page.goto: …` under `page.goto: …`). */
-function repeatsHeadline(excerpt: string | undefined, headline: string): boolean {
-  const first = excerpt
-    ?.split('\n')[0]
-    ?.replace(/^\w*Error:\s*/, '')
-    .trim();
-  return Boolean(first && first.startsWith(headline.trim()));
-}
-
-/** A failing test's full name: its describe blocks, then its title. */
-export function testPath(failure: Pick<TopFailure, 'title' | 'suitePath'>): string {
-  return [...(failure.suitePath ?? []), failure.title].join(' › ');
-}
-
-/** Where a test is declared: `tests/a.spec.ts:12`. */
-export function testLocation(failure: Pick<TopFailure, 'filePath' | 'line'>): string | null {
-  if (!failure.filePath) return null;
-  return failure.line != null ? `${failure.filePath}:${failure.line}` : failure.filePath;
-}
 
 /**
  * One failing test as a card: its full name and location, what the failure
@@ -514,10 +363,10 @@ export function failureCard(
     (location
       ? `<div style="margin-top:2px;font-family:${MONO};font-size:12px;line-height:18px;color:${MUTED};">${escapeHtml(location)}</div>`
       : '');
-  const headline =
-    failure.headline && !repeatsHeadline(failure.errorExcerpt, failure.headline)
-      ? `<div style="margin:14px 0 12px;font-size:14px;line-height:21px;color:${INK};">${escapeHtml(failure.headline)}</div>`
-      : spacer(14);
+  const shown = failureHeadline(failure);
+  const headline = shown
+    ? `<div style="margin:14px 0 12px;font-size:14px;line-height:21px;color:${INK};">${escapeHtml(shown)}</div>`
+    : spacer(14);
   const source = failure.source ? codeBlock(failure.source) : '';
   const error = failure.errorExcerpt ? errorBlock(failure.errorExcerpt) : '';
   const own =

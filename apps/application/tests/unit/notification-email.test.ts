@@ -57,9 +57,9 @@ describe('cluster.fixed email', () => {
     expect(html).toContain('Pay button never enables');
     expect(html).toContain('TimeoutError: locator.click');
     expect(html).toContain(`href="${SITE}/failure-clusters/42"`);
-    expect(text).toContain('Cluster stopped failing in checkout');
+    expect(text).toContain('Cluster stopped failing — checkout');
     expect(text).toContain('Pay button never enables\nTimeoutError: locator.click');
-    expect(text).toContain(`View: ${SITE}/failure-clusters/42`);
+    expect(text).toContain(`Open the cluster: ${SITE}/failure-clusters/42`);
   });
 
   test('names the known issue with a link when the payload has one', () => {
@@ -67,7 +67,7 @@ describe('cluster.fixed email', () => {
     expect(html).toContain('>Tracked in</td>');
     expect(html).toContain(`<a href="${knownIssue.url}"`);
     expect(html).toContain('>PAY-17</a>');
-    expect(text).toContain(`Tracked in PAY-17: ${knownIssue.url}`);
+    expect(text).toContain(`Tracked in: PAY-17 (${knownIssue.url})`);
   });
 
   test('omits the known-issue line when the payload has none', () => {
@@ -91,7 +91,7 @@ describe('cluster.fixed email', () => {
   test('shows the signature once when there is no title, or the title is the signature', () => {
     const noTitle = renderNotificationEmail('cluster.fixed', { ...fixed, title: null });
     expect(occurrences(noTitle.html, fixed.signature)).toBe(1);
-    expect(noTitle.text).toContain('checkout\n\nTimeoutError: locator.click\n\nView:');
+    expect(occurrences(noTitle.text, fixed.signature)).toBe(1);
     const same = renderNotificationEmail('cluster.fixed', { ...fixed, title: fixed.signature });
     expect(occurrences(same.html, fixed.signature)).toBe(1);
     expect(same.text).not.toContain(`${fixed.signature}\n${fixed.signature}`);
@@ -107,8 +107,8 @@ describe('cluster.regressed email', () => {
     expect(html).toContain('>PAY-17</a>');
     expect(html).toContain(`href="${SITE}/failure-clusters/42"`);
     expect(html).not.toContain('Triage status');
-    expect(text).toContain('Fix regressed in checkout');
-    expect(text).toContain(`Tracked in PAY-17: ${knownIssue.url}`);
+    expect(text).toContain('Fix regressed — checkout');
+    expect(text).toContain(`Tracked in: PAY-17 (${knownIssue.url})`);
   });
 
   test('says when the regression reopened the cluster', () => {

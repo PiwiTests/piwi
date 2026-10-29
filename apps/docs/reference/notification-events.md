@@ -117,6 +117,19 @@ syntax-highlighted with the failing line marked, its error with the expected and
 `history`, which tells a new failure from one that keeps coming back. A digest lists each event with its run's outcome
 bar.
 
+## Slack and Microsoft Teams
+
+A Slack message heads with the email's headline and keeps the rest in an attachment whose side stripe takes the
+event's color: the run's tests by outcome and its `history` as rows of colored squares, the commit, the CI build and the
+owners as fields, then each failure with its describe blocks, its file and line, its `source` with the failing line
+marked, its error and its own `history`, and buttons to the run and the build. A Slack-compatible server (Mattermost,
+Rocket.Chat) shows the message's text line only.
+
+A Microsoft Teams card sets the headline on a band of the event's color and draws the outcomes as a stacked bar chart.
+Each failure's code goes in a code block Teams colors by language, and its error's expected and received lines are green
+and red. Where a Teams client draws no chart or code block (the mobile app), the card shows the same squares and
+numbered lines instead.
+
 ## Payload fields by event
 
 Every event that comes from a run carries that run's `branch` and `environment` when the run reported them: the

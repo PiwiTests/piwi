@@ -1,12 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { renderNotificationEmailAt, renderDigestEmailAt } from '#shared/notifications/render-email';
-import {
-  codeBlock,
-  historySentence,
-  outcomeBar,
-  runSegments,
-  testHistorySentence,
-} from '#shared/notifications/email-blocks';
+import { codeBlock, outcomeBar } from '#shared/notifications/email-blocks';
+import { historySentence, runSegments, testHistorySentence } from '#shared/notifications/message-parts';
 import type { RunFinishedPayload, RunHistoryEntry } from '#shared/notification-events';
 
 const SITE = 'https://piwi.example.com';
@@ -114,7 +109,7 @@ describe('the run.failed email', () => {
     expect(text).toContain('✗ Checkout › Payment › pays with a saved card');
     expect(text).toContain('  tests/pay.spec.ts:40 (chromium)');
     expect(text).toContain("await page.getByRole('button', { name: 'Pay' }).click();");
-    expect(text).toContain(`View run: ${SITE}/test-runs/104`);
+    expect(text).toContain(`Open the run: ${SITE}/test-runs/104`);
   });
 
   test('is wider than the account emails', () => {
