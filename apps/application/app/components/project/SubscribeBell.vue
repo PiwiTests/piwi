@@ -181,10 +181,11 @@ const channelItems = computed(() =>
   })),
 );
 
-const eventItems = NOTIFICATION_EVENTS.map((e) => ({
-  label: eventLabel(e),
-  value: e,
-}));
+// The auto-heal event is offered only where auto-heal is: not declined, and not the desktop build.
+const { isHidden } = await useInstanceCapabilities();
+const eventItems = NOTIFICATION_EVENTS.filter((e) => !(e === 'auto_heal.pr_opened' && isHidden('auto-heal'))).map(
+  (e) => ({ label: eventLabel(e), value: e }),
+);
 
 watch(open, (val) => {
   if (val) {

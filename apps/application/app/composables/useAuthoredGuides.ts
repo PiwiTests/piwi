@@ -15,8 +15,8 @@ import type { AuthoredGuide } from '~/utils/guides/types';
 export async function useAuthoredGuides() {
   const guide = useGuide();
   const { canAnywhere } = useAuth();
-  const { isHidden } = await useInstanceCapabilities();
   const isDesktop = useIsDesktop();
+  const { isHidden } = await useInstanceCapabilities();
 
   const guides = computed(() =>
     AUTHORED_GUIDES.filter((authored) => guideAvailable(authored, { isHidden, holds: canAnywhere })),

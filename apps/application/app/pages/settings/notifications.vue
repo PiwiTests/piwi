@@ -225,8 +225,10 @@ const eventLabel = notificationEventLabel;
         <p class="text-sm text-highlighted leading-relaxed">
           The app shows a system notification when one of your projects has news while its window is not in front, also
           when it runs in the background. Every project notifies on
-          <span class="font-semibold">{{ defaultDesktopEvents.join(' and ') }}</span> until you choose its events with
-          the bell on its page.
+          <template v-for="(label, i) in defaultDesktopEvents" :key="label"
+            >{{ i ? ' and ' : '' }}<span class="font-semibold">{{ label }}</span></template
+          >
+          until you choose its events with the bell on its page.
         </p>
         <template #footer>
           <UButton color="neutral" variant="outline" icon="i-lucide-send" @click="sendTestNotification">
