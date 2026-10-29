@@ -1,15 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, expect as expectPage, type Browser, type Page } from '@playwright/test';
 import { MAX_ELEMENT_TEXT } from '@piwitests/core/run-channel';
-import { probeElementAttrs } from '@piwitests/picker-dom';
+import { probeElementAttrs, showPauseBar } from '@piwitests/picker-dom';
 import { CAPTURED_ATTRS_ARG } from '../src/internal/capture/capture-fixtures.js';
-import { readSnapshot, refLocators, withoutFieldSecrets } from '../src/internal/capture/agent-page.js';
+import { actOnRef, readSnapshot, refLocators, withoutFieldSecrets } from '../src/internal/capture/agent-page.js';
 
 /**
  * What an agent reads of a stopped page holding secrets: the value of a password field, a card's number or security
  * code and a one-time code, short or long, plain or quoted in the snapshot, in the main frame or an iframe, is hidden in
  * the snapshot, masked in the image and left out of the element's answer. And an element's text, read whole up to its
- * limit, as Playwright's text assertions compare it.
+ * limit, as Playwright's text assertions compare it. And an action on an element under the pause bar, which the
+ * agent's image leaves out.
  */
 
 describe('a snapshot without the secret fields’ values', () => {
@@ -149,4 +150,43 @@ describe('an element’s text, for an assertion', () => {
       await page.close();
     }
   });
+});
+
+describe('an action under the pause bar', () => {
+  let browser: Browser;
+  const PROBE = { fn: probeElementAttrs, arg: { ...CAPTURED_ATTRS_ARG, testIdAttribute: null } };
+
+  beforeAll(async () => {
+    browser = await chromium.launch();
+  });
+  afterAll(async () => browser?.close());
+
+  it('lands on the element the bar covers, and leaves the bar as it was', async () => {
+    const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+    try {
+      await page.setContent(
+        `<nav style="padding:8px"><a href="#orders" onclick="document.title = 'Orders'">Orders</a></nav><main>Shop</main>`,
+      );
+      await page.evaluate(showPauseBar, {
+        place: 'shop.spec.ts:44',
+        attempt: null,
+        action: 'Expect "toHaveText"',
+        locator: null,
+        end: true,
+      });
+      const bar = page.locator('#__piwi-pause-bar');
+      const link = await page.getByRole('link', { name: 'Orders' }).boundingBox();
+      const covered = await bar.boundingBox();
+      expect(link!.y + link!.height).toBeLessThan(covered!.y + covered!.height);
+      const read = await readSnapshot(page, null, false);
+      const ref = /link "Orders" \[ref=(e\d+)\]/.exec(read.snapshot!)![1]!;
+      const acted = await actOnRef(page, PROBE, { ref, action: 'click', value: null }, null);
+      expect(acted, acted.message).toMatchObject({ ok: true });
+      expect(await page.title()).toBe('Orders');
+      await expectPage(bar).toBeVisible();
+      await expectPage(bar).toHaveCSS('pointer-events', 'auto');
+    } finally {
+      await page.close();
+    }
+  }, 15_000);
 });
