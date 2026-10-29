@@ -94,9 +94,9 @@ under **CI re-run**. Turn it on and fill in the block for your provider:
 | **GitLab** | A ref and the pipeline variable name that receives the arguments | `api` |
 | **Bitbucket** | The `custom:` pipeline name and the variable name that receives the arguments | `pipeline:write` |
 
-The dispatch uses the project's SCM token, which needs the write scope above. The button is disabled with an
-explanatory tooltip when the feature is off, no target is configured for the repository's provider, or no token is set.
-Only Maintainers and Project admins see these buttons.
+The dispatch uses the project's SCM token, which needs the write scope above. Its buttons, and a next step that runs in
+CI, show to people with [`run:control`](/operate/project-access#what-each-role-can-do) once the feature is on, a target
+is set for the provider and a token is set.
 
 An optional **Flake Lab** block names a second workflow or pipeline that runs `piwi flake` for one flaky test, started
 from that test's next step: [Run it in CI](./flake-lab#run-it-in-ci) shows the workflow.
