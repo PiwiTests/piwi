@@ -42,6 +42,14 @@ const flags = (text) => text.split(' ');
 /** The cut's ffmpeg processes still running, which a stopped cut ends. */
 const running = new Set();
 
+/** Ends `child` at once, its pipes too: a paused pipe would keep it from ever closing. */
+function end(child) {
+  child.stdin?.destroy();
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  child.kill('SIGKILL');
+}
+
 /** Spawns `command`, kept in `running` until it closes. */
 function track(command, args, options) {
   const child = spawn(command, args, options);
@@ -156,7 +164,7 @@ class Decoder {
 
   close() {
     this.closing = true;
-    this.child.kill();
+    end(this.child);
   }
 }
 
@@ -269,7 +277,7 @@ async function renderRange({ browser, server, plan, id, from, to, master, frames
     }
   } catch (error) {
     halt.reason ??= error.message;
-    encoder.kill();
+    end(encoder);
     throw error;
   } finally {
     decoder.close();
@@ -339,7 +347,7 @@ export async function cut({ take, out, size = 1080, renderers = 2, beats = null,
   const halt = { reason: null };
   const stop = () => {
     halt.reason ??= `stopped by ${signal.reason}`;
-    for (const child of running) child.kill('SIGKILL');
+    for (const child of running) end(child);
     browser.close().catch(() => {});
   };
   signal?.addEventListener('abort', stop, { once: true });
@@ -533,7 +541,7 @@ export async function cut({ take, out, size = 1080, renderers = 2, beats = null,
     await Promise.all(
       [...running].map((child) => {
         const closed = once(child, 'close');
-        child.kill('SIGKILL');
+        end(child);
         return closed;
       }),
     );

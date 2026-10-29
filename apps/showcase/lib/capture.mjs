@@ -112,6 +112,7 @@ export function startCapture({ file, display, width, height, fps = MASTER_FPS })
     drop: Number(progress.values.drop_frames ?? 0),
   });
   let stopping = null;
+  let first = null;
   return {
     file,
     fps,
@@ -126,14 +127,24 @@ export function startCapture({ file, display, width, height, fps = MASTER_FPS })
         if (Date.now() > deadline) throw new Error(`the capture wrote no frame in ${ms / 1000} s: ${errors.trim()}`);
         await sleep(100);
       }
-      return Date.now();
+      first = Date.now();
+      return first;
     },
     /** Whether ffmpeg ended before it was stopped. */
     ended: () => ended,
-    /** Ends the recording (ffmpeg's `q`, then SIGINT, then SIGKILL) and resolves with its counts, exit and errors. */
+    /**
+     * Ends the recording once it holds what the screen showed until now: ffmpeg's `q` drops the grabbed frames still
+     * waiting for the encoder, so it waits, 30 s at most, for the encoder to reach this time (a second past it, as
+     * its first frame came before `running` saw it). Then `q`, SIGINT, SIGKILL; resolves with its counts, exit and
+     * errors.
+     */
     stop() {
       stopping ??= (async () => {
         const early = ended;
+        const until = Date.now();
+        const target = first ? (until - first) / 1000 + 1 : 0;
+        const written = () => Number(progress.values.out_time_us ?? 0) / 1e6;
+        while (!ended && written() < target && Date.now() < until + 30_000) await sleep(200);
         if (!ended) child.stdin.end('q');
         const done = await Promise.race([exit, sleep(60_000).then(() => null)]);
         if (!done) {
