@@ -1,16 +1,13 @@
 // The cut's plan, without I/O: from a take's log, the cut's timeline (the title card, each beat the take played, the
 // end card), each window's place on the stage, the camera's shots, the pointer's moves, the key strip, the cues and
 // the chapters; and, for every output frame, what the stage draws and which master frame it draws from.
-import { around, fit, union, viewAt, viewRect } from './camera.mjs';
+import { CALM, around, calmShots, clamp, fit, union, viewAt, viewRect } from './camera.mjs';
 import { keyCaps, keysAt, pointerAt, ringsAt } from './cursor.mjs';
 import { OUTPUT_FPS, frameCount, lineMs, masterFrame } from './timeline.mjs';
 
 /** The stage's frame above each window's content, and the gap it leaves between windows, in master pixels. */
 export const TITLE_BAR = 64;
 const GAP = 80;
-
-/** VS Code's own title bar (its menus, its window's title and buttons), in CSS pixels: the stage's frame stands in. */
-const VSCODE_TITLE_BAR = 35;
 
 /** What the stage's frame names each window. */
 export const WINDOW_NAMES = {
@@ -49,15 +46,13 @@ function lastAt(events, t) {
 }
 
 /**
- * The stage's world: each window's content as the master holds it (`crop`, VS Code's without its own title bar), and
- * where the stage draws its frame and content (`frame`, `content`, in master pixels): the right column moved off VS
- * Code, and the Runs window off the test's browser, by `GAP` and the frame's bar. A test's browser the take never
- * reached takes its tile. `scale` is the master's device pixels a CSS pixel.
+ * The stage's world: each window's content as the master holds it (`crop`; VS Code's with its own title bar, as its
+ * command center drops Quick Open and the command palette over it), and where the stage draws its frame and content
+ * (`frame`, `content`, in master pixels): the right column moved off VS Code, and the Runs window off the test's
+ * browser, by `GAP` and the frame's bar. A test's browser the take never reached takes its tile.
  */
-export function world(windows, scale = 2) {
+export function world(windows) {
   const crop = { ...windows };
-  const bar = VSCODE_TITLE_BAR * scale;
-  crop.vscode = { ...windows.vscode, y: windows.vscode.y + bar, height: windows.vscode.height - bar };
   crop['test-browser'] ??= {
     x: windows.vscode.x + windows.vscode.width,
     y: windows.dashboard.y,
@@ -155,7 +150,7 @@ function strip(g) {
 export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only = null }) {
   const fps = log.master.fps;
   const masterSeconds = (w) => (flashFrame - 0.5) / fps + (w - log.flash.t) / 1000;
-  const placed = world(log.windows, log.screen.scale);
+  const placed = world(log.windows);
   const limits = { minWidth: width * dpr };
   const span = viewRect(fit(union(Object.values(placed).map((p) => p.frame)))).width;
   const raises = log.raises ?? [];
@@ -224,6 +219,14 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
   if (last && last === log.story.at(-1)) card(last);
   const duration = t;
   const beats = segments.filter((s) => s.kind === 'beat');
+  // A master that stopped early would freeze the cut on its last frame: it is refused.
+  const needed = beats.length ? masterSeconds(beats.at(-1).wall.end) * fps : 0;
+  if (needed > frames + 1) {
+    throw new Error(
+      `the master holds ${frames} frames, ${(frames / fps).toFixed(1)} s, but the take's last beat ends at its ` +
+        `${(needed / fps).toFixed(1)} s: its capture stopped early`,
+    );
+  }
 
   // The camera's shots, the pointer's moves and the key strip, in the cut's seconds.
   const shots = [];
@@ -240,9 +243,12 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
       const next = view.key ?? ids.join('+');
       if (next === key) return;
       key = next;
-      shots.push({ t: time, view });
+      // What the shot shows: its windows, or a zoom's region.
+      const rect = view.key ? viewRect(view) : union(ids.map((id) => placed[id].frame));
+      shots.push({ t: time, view, rect, ids, beat: segment.id });
     };
-    shots.push({ t: segment === beats[0] ? 0 : segment.start, view: fitOf([first]) });
+    const start = segment === beats[0] ? 0 : segment.start;
+    shots.push({ t: start, view: fitOf([first]), rect: placed[first].frame, ids: [first], beat: segment.id });
 
     // What a beat's camera follows: its gestures, the window a raise brings up (before the gesture that needs it
     // waits for its element), the windows that come up in it, and, in a beat without gestures, its lines, each
@@ -315,6 +321,19 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
   }
 
   shots.sort((a, b) => a.t - b.t);
+  // A window reads at the cut's size when a CSS pixel of its page takes an output pixel or more.
+  const dprOf = (id) => log.windows[id]?.dpr ?? log.screen.scale;
+  const readable = (view, ids) => (width / view.width) * Math.min(...ids.map(dprOf)) >= CALM.readable;
+  const camera = calmShots(shots, { limits, readable });
+  /** The camera's moves along `list`: each shot whose view differs from the one before, with both scales. */
+  const movesOf = (list) =>
+    list.slice(1).flatMap((shot, i) => {
+      const from = clamp(list[i].view, limits);
+      const to = clamp(shot.view, limits);
+      const same =
+        Math.abs(from.cx - to.cx) < 1 && Math.abs(from.cy - to.cy) < 1 && Math.abs(from.width - to.width) < 1;
+      return same ? [] : [{ t: shot.t, beat: shot.beat, from: width / from.width, to: width / to.width }];
+    });
 
   // Every output frame, in order: what the stage draws.
   const count = frameCount(duration);
@@ -334,7 +353,7 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
       if (segment.kind === 'beat') ({ w: wall, rate } = wallAt(beat, time));
       else wall = segment === titleCard ? beat.wall.start : beat.wall.end;
     }
-    const view = viewAt(shots, time, { limits, span });
+    const view = viewAt(camera, time, { limits, span });
     const fastStep = 1 / OUTPUT_FPS / FADE.fast;
     fast = Math.min(1, Math.max(0, fast + (rate > 1 ? fastStep : -fastStep)));
     const s = width / view.width;
@@ -394,10 +413,16 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
   const cues = segments.flatMap((segment) =>
     segment.lines.map((line) => ({ ...line, card: segment.kind === 'card', beat: segment.id })),
   );
-  const chapters = segments.map((segment) => ({ start: segment.start, title: segment.title, id: segment.id }));
+  const chapters = segments.map((segment) => ({
+    start: segment.start,
+    title: segment.title,
+    id: segment.id,
+    card: segment.kind === 'card',
+  }));
   return {
     duration,
     frames: states,
+    moves: { planned: movesOf(shots), kept: movesOf(camera) },
     cues,
     chapters,
     segments: segments.map((segment) => ({

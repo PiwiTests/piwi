@@ -39,17 +39,40 @@ const AHEAD = 8;
 /** A command line's flags, written as one string. */
 const flags = (text) => text.split(' ');
 
-/** Runs ffmpeg with `args`; rejects with its errors. */
+/** The cut's ffmpeg processes still running, which a stopped cut ends. */
+const running = new Set();
+
+/** Ends `child` at once, its pipes too: a paused pipe would keep it from ever closing. */
+function end(child) {
+  child.stdin?.destroy();
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  child.kill('SIGKILL');
+}
+
+/** Spawns `command`, kept in `running` until it closes. */
+function track(command, args, options) {
+  const child = spawn(command, args, options);
+  running.add(child);
+  child.once('close', () => running.delete(child));
+  child.once('error', () => running.delete(child));
+  return child;
+}
+
+/** Runs ffmpeg with `args`; rejects with its errors, or when it does not run. */
 function ffmpeg(args) {
   return new Promise((resolve, reject) => {
-    const child = spawn('ffmpeg', ['-hide_banner', '-v', 'error', '-y', ...args], {
+    const child = track('ffmpeg', ['-hide_banner', '-v', 'error', '-y', ...args], {
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     let errors = '';
     child.stderr.on('data', (chunk) => {
       errors += chunk;
     });
-    child.once('exit', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg ${args.join(' ')}: ${errors}`))));
+    child.once('error', (error) => reject(new Error(`ffmpeg does not run: ${error.message}`)));
+    child.once('close', (code, signal) =>
+      code === 0 ? resolve() : reject(new Error(`ffmpeg ${args.join(' ')} (exit ${code ?? signal}): ${errors}`)),
+    );
   });
 }
 
@@ -65,24 +88,32 @@ function frameCountOf(master) {
 /**
  * The master's frames from `from` on, decoded in order to JPEG (ffmpeg's MJPEG, whose headers never hold an end
  * marker, so each frame ends at its first one). `get(n)` resolves with frame `n`'s bytes; the frames before `n - 1`
- * are dropped, and the stream waits while `AHEAD` frames wait to be drawn.
+ * are dropped, and the stream waits while `AHEAD` frames wait to be drawn. A decoder that fails, or ends before a
+ * frame the master holds (`total`), throws.
  */
 class Decoder {
-  constructor(master, from, fps) {
+  constructor(master, from, fps, total) {
     this.next = from;
+    this.total = total;
     this.frames = new Map();
     this.ended = false;
+    this.failure = null;
+    this.closing = false;
     this.wake = () => {};
     const seek = Math.max(0, (from - 0.5) / fps);
-    this.child = spawn(
+    this.child = track(
       'ffmpeg',
       [
         ...flags(`-v error -ss ${seek} -i`),
         master,
         ...flags('-f image2pipe -c:v mjpeg -q:v 2 -pix_fmt yuvj420p pipe:1'),
       ],
-      { stdio: ['ignore', 'pipe', 'ignore'] },
+      { stdio: ['ignore', 'pipe', 'pipe'] },
     );
+    let errors = '';
+    this.child.stderr.on('data', (chunk) => {
+      errors += chunk;
+    });
     let pending = Buffer.alloc(0);
     let searched = 0;
     const end = Buffer.from([0xff, 0xd9]);
@@ -101,10 +132,16 @@ class Decoder {
       if (this.frames.size > AHEAD) this.child.stdout.pause();
       this.wake();
     });
-    this.child.once('exit', () => {
+    const done = (failure) => {
       this.ended = true;
+      if (!this.closing) this.failure ??= failure;
       this.wake();
-    });
+    };
+    this.child.once('error', (error) => done(`ffmpeg does not run: ${error.message}`));
+    // Its output read to the end, unlike at its exit.
+    this.child.once('close', (code, signal) =>
+      done(code === 0 ? null : `decoding the master failed (exit ${code ?? signal}): ${errors.trim()}`),
+    );
   }
 
   async get(n) {
@@ -113,6 +150,8 @@ class Decoder {
       if (this.frames.size <= AHEAD) this.child.stdout.resume();
       if (this.frames.has(n)) return this.frames.get(n);
       if (this.ended) {
+        if (this.failure) throw new Error(this.failure);
+        if (n < this.total) throw new Error(`the master's decoding ended at frame ${this.next - 1}, before frame ${n}`);
         const last = Math.max(...this.frames.keys());
         if (Number.isFinite(last)) return this.frames.get(last);
         throw new Error(`the master has no frame ${n}`);
@@ -124,7 +163,8 @@ class Decoder {
   }
 
   close() {
-    this.child.kill();
+    this.closing = true;
+    end(this.child);
   }
 }
 
@@ -173,14 +213,16 @@ async function stagePage(browser, server, id, { dpr, title }) {
 
 /**
  * Renders the plan's frames `from` to `to` into `file` (H.264, near lossless): each state drawn on the stage and
- * screenshotted, or the last screenshot sent again when neither the state nor the master's frame changed.
+ * screenshotted, or the last screenshot sent again when neither the state nor the master's frame changed. It stops,
+ * throwing, once `halt.reason` is set (another range failed, or the cut was stopped), and returns only once its
+ * encoder has ended.
  */
-async function renderRange({ browser, server, plan, id, from, to, master, fps, dpr, title, file }) {
+async function renderRange({ browser, server, plan, id, from, to, master, frames, fps, dpr, title, file, halt }) {
   const { page } = await stagePage(browser, server, id, { dpr, title });
   const cdp = await page.context().newCDPSession(page);
   const first = plan.frames.slice(from, to).find((s) => s.frame !== null)?.frame ?? 0;
-  const decoder = new Decoder(master, first, fps);
-  const encoder = spawn(
+  const decoder = new Decoder(master, first, fps, frames);
+  const encoder = track(
     'ffmpeg',
     [
       ...flags(`-hide_banner -v error -y -f image2pipe -framerate ${OUTPUT_FPS} -c:v png -i -`),
@@ -193,12 +235,30 @@ async function renderRange({ browser, server, plan, id, from, to, master, fps, d
   encoder.stderr.on('data', (chunk) => {
     errors += chunk;
   });
-  const exit = once(encoder, 'exit');
+  // The encoder's end, however it comes: a spawn that fails, or its close.
+  let failure = null;
+  const exit = new Promise((resolve) => {
+    encoder.once('error', (error) => {
+      failure ??= `ffmpeg does not run: ${error.message}`;
+      resolve(null);
+    });
+    encoder.once('close', (code, signal) => resolve(code ?? signal));
+  });
+  encoder.stdin.on('error', (error) => {
+    failure ??= `the encoder stopped reading (${error.code ?? error.message}): ${errors}`;
+  });
+  const write = async (shot) => {
+    if (failure) throw new Error(failure);
+    if (!encoder.stdin.write(shot)) await Promise.race([once(encoder.stdin, 'drain'), exit]);
+    if (failure) throw new Error(failure);
+  };
   let last = null;
   let drawn = 0;
   const started = Date.now();
+  let code;
   try {
     for (let i = from; i < to; i++) {
+      if (halt.reason) throw new Error(`the range from frame ${from} stopped: ${halt.reason}`);
       const state = plan.frames[i];
       const jpeg = state.frame === null ? null : await decoder.get(state.frame);
       const key = JSON.stringify({ ...state, t: 0, frame: 0 });
@@ -213,15 +273,19 @@ async function renderRange({ browser, server, plan, id, from, to, master, fps, d
         drawn++;
       }
       last = { key, jpeg, shot };
-      if (!encoder.stdin.write(shot)) await once(encoder.stdin, 'drain');
+      await write(shot);
     }
+  } catch (error) {
+    halt.reason ??= error.message;
+    end(encoder);
+    throw error;
   } finally {
     decoder.close();
     encoder.stdin.end();
-    await page.close();
+    code = await exit;
+    await page.close().catch(() => {});
   }
-  const [code] = await exit;
-  if (code !== 0) throw new Error(`encoding the frames ${from} to ${to} failed: ${errors}`);
+  if (failure || code !== 0) throw new Error(`encoding the frames ${from} to ${to} failed: ${failure ?? errors}`);
   return { frames: to - from, drawn, ms: Date.now() - started };
 }
 
@@ -251,7 +315,7 @@ const sizeOf = (file) => fs.statSync(file).size;
  * its frames rendered by `renderers` stage pages side by side, the beats `beats` alone when given. `say` hears each
  * step. Resolves with the summary it writes to `out/cut.json`.
  */
-export async function cut({ take, out, size = 1080, renderers = 2, beats = null, say = () => {} }) {
+export async function cut({ take, out, size = 1080, renderers = 2, beats = null, say = () => {}, signal = null }) {
   const started = Date.now();
   const log = JSON.parse(fs.readFileSync(path.join(take, 'take.json'), 'utf8'));
   const master = path.join(take, log.master.file);
@@ -272,13 +336,22 @@ export async function cut({ take, out, size = 1080, renderers = 2, beats = null,
   const cues = plan.cues.map(({ start, end, text }) => ({ start, end, text }));
   fs.writeFileSync(path.join(out, `${NAME}.en.vtt`), toVtt(cues));
   fs.writeFileSync(path.join(out, `${NAME}.en.srt`), toSrt(cues));
-  fs.writeFileSync(path.join(out, `${NAME}.chapters.txt`), chaptersText(plan.chapters));
+  fs.writeFileSync(path.join(out, `${NAME}.chapters.txt`), chaptersText(plan.chapters, plan.duration));
   fs.writeFileSync(path.join(out, `${NAME}.chapters.vtt`), chaptersVtt(plan.chapters, plan.duration));
 
   const work = path.join(out, '.work');
   fs.mkdirSync(path.join(work, 'plates'), { recursive: true });
   const server = await serve();
-  const browser = await chromium.launch();
+  // A signal stops the cut through `showcase.mjs`'s handlers, which abort `signal`: every ffmpeg ends, and the browser.
+  const browser = await chromium.launch({ handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false });
+  const halt = { reason: null };
+  const stop = () => {
+    halt.reason ??= `stopped by ${signal.reason}`;
+    for (const child of running) end(child);
+    browser.close().catch(() => {});
+  };
+  signal?.addEventListener('abort', stop, { once: true });
+  if (signal?.aborted) stop();
   const summary = { take, size, duration: plan.duration, frames: plan.frames.length, flashFrame, master: log.master };
   try {
     // The frames, in `renderers` ranges side by side.
@@ -289,11 +362,16 @@ export async function cut({ take, out, size = 1080, renderers = 2, beats = null,
     ]).filter(([a, b]) => b > a);
     say(`  rendering ${count} frames in ${ranges.length} ranges`);
     const parts = ranges.map((_, i) => path.join(work, `stage-${i}.mkv`));
-    const renders = await Promise.all(
+    // Every range ends, its encoder too, before a failure of one goes on: the work folder is removed after.
+    const fps = log.master.fps;
+    const settled = await Promise.allSettled(
       ranges.map(([from, to], id) =>
-        renderRange({ browser, server, plan, id, from, to, master, fps: log.master.fps, dpr, title, file: parts[id] }),
+        renderRange({ browser, server, plan, id, from, to, master, frames, dpr, title, halt, fps, file: parts[id] }),
       ),
     );
+    const failed = settled.find((r) => r.status === 'rejected');
+    if (failed) throw failed.reason;
+    const renders = settled.map((r) => r.value);
     const ms = Math.max(...renders.map((r) => r.ms));
     summary.render = {
       ms,
@@ -456,12 +534,22 @@ export async function cut({ take, out, size = 1080, renderers = 2, beats = null,
     await contact.close();
     summary.outputs = outputs;
   } finally {
-    await browser.close();
+    signal?.removeEventListener('abort', stop);
+    await browser.close().catch(() => {});
     server.close();
+    // What still runs (an output's encoder, when the cut failed) ends before its folder goes.
+    await Promise.all(
+      [...running].map((child) => {
+        const closed = once(child, 'close');
+        end(child);
+        return closed;
+      }),
+    );
     fs.rmSync(work, { recursive: true, force: true });
   }
   summary.seconds = Math.round((Date.now() - started) / 1000);
   summary.segments = plan.segments;
+  summary.camera = plan.moves;
   fs.writeFileSync(path.join(out, 'cut.json'), JSON.stringify(summary, null, 2));
   say(`The cut is in ${out}, in ${summary.seconds} s`);
   return summary;

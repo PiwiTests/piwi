@@ -386,7 +386,7 @@ jobs:
 
       # The story itself plays nightly (nightly-showcase.yml): here, its script, its lines, and the cut's timing, camera,
       # pointer and subtitles.
-      - name: Lint the showcase and its lines
+      - name: Lint the showcase and its lines, and test its cut
         working-directory: apps/showcase
         run: |
           npm run showcase:lint

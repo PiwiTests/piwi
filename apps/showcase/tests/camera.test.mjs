@@ -1,6 +1,19 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { ASPECT, MOVE_S, between, clamp, ease, fit, moveSeconds, union, viewAt, viewRect } from '../lib/camera.mjs';
+import {
+  ASPECT,
+  CALM,
+  MOVE_S,
+  between,
+  calmShots,
+  clamp,
+  ease,
+  fit,
+  moveSeconds,
+  union,
+  viewAt,
+  viewRect,
+} from '../lib/camera.mjs';
 
 const close = (actual, expected, epsilon = 1e-6) =>
   assert.ok(Math.abs(actual - expected) < epsilon, `${actual} is not ${expected}`);
@@ -97,5 +110,50 @@ describe('the camera', () => {
 
   test('between keeps the zoom even: the width in proportion, not in a line', () => {
     close(between({ cx: 0, cy: 0, width: 1000 }, { cx: 0, cy: 0, width: 4000 }, 0.5).width, 2000);
+  });
+});
+
+describe('when the camera moves', () => {
+  const limits = { minWidth: 1920 };
+  const never = () => false;
+  const whole = { x: 0, y: 0, width: 3840, height: 2160 };
+  const shot = (t, rect, beat = 'a', ids = ['w']) => ({ t, view: fit(rect, 0), rect, ids, beat });
+
+  test('stays wide for a closer framing of what is on screen, under the least ratio', () => {
+    const closer = { x: 400, y: 200, width: 3840 / (CALM.minRatio - 0.05), height: 2160 / (CALM.minRatio - 0.05) };
+    assert.equal(calmShots([shot(0, whole), shot(5, closer)], { limits, readable: never }).length, 1);
+    const much = { x: 400, y: 200, width: 3840 / (CALM.minRatio + 0.2), height: 2160 / (CALM.minRatio + 0.2) };
+    assert.equal(calmShots([shot(0, whole), shot(5, much)], { limits, readable: never }).length, 2);
+  });
+
+  test('stays wide when the wide framing already reads', () => {
+    const much = { x: 400, y: 200, width: 2000, height: 1125 };
+    assert.equal(calmShots([shot(0, whole), shot(5, much)], { limits, readable: () => true }).length, 1);
+  });
+
+  test('moves to what is off screen, whatever its scale', () => {
+    const far = { x: 8000, y: 0, width: 3840, height: 2160 };
+    assert.equal(calmShots([shot(0, whole), shot(5, far)], { limits, readable: () => true }).length, 2);
+  });
+
+  test('joins moves close in time into one, holding both, and drops a zoom straight back out', () => {
+    const left = { x: 0, y: 0, width: 2000, height: 1125 };
+    const right = { x: 6000, y: 0, width: 2000, height: 1125 };
+    const kept = calmShots([shot(0, whole), shot(5, left), shot(5 + CALM.mergeS - 0.5, right)], {
+      limits,
+      readable: never,
+    });
+    assert.equal(kept.length, 2);
+    assert.ok(kept[1].view.width >= 8000, 'one view holds both');
+    const zoom = { x: 400, y: 200, width: 1920, height: 1080 };
+    const back = calmShots([shot(0, whole), shot(5, zoom), shot(6, whole)], { limits, readable: never });
+    assert.equal(back.length, 1, 'in and straight out is no move');
+  });
+
+  test('joins moves of one beat only', () => {
+    const left = { x: 0, y: 0, width: 2000, height: 1125 };
+    const right = { x: 6000, y: 0, width: 2000, height: 1125 };
+    const kept = calmShots([shot(0, whole), shot(5, left, 'a'), shot(6, right, 'b')], { limits, readable: never });
+    assert.equal(kept.length, 3);
   });
 });

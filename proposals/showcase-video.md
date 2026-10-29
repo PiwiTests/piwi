@@ -54,7 +54,11 @@ camera holds still during a line except where a gesture needs another window, zo
 at half the master's pixels), and never zooms in a 4K cut, whose output pixels are the master's own. The subtitles are
 the stage's own plates, overlaid by ffmpeg, so one render gives the cut with and without them; the cards show their own
 lines, which the burned subtitles leave out. The teaser is 1280 × 720 to stay within 1 MB, and the clips carry no
-subtitles, as Part 4 burns them into the social cut only.
+subtitles, as Part 4 burns them into the social cut only. After the first cut was watched, the camera moves only when
+the move earns it (64 moves of the first take's cut come down to 21, and 61 of the second's to 18): never to come closer
+by less than 1.35×, nor closer when the wide view already reads, and moves 2.5 s apart join into one. The dashboard,
+which read tiny at 2× across the whole screen, is zoomed to 125 % (a 1536 × 794 viewport at 2.5 device pixels a CSS
+pixel); a device scale factor of 2.5 would also have shrunk the Runs window, which the same browser holds.
 
 **Summary.**
 

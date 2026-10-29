@@ -108,6 +108,17 @@ export class DeveloperBrowser {
   }
 
   /**
+   * Zooms the tab of the browser's first window (the dashboard's) to `factor`, as a person does with Ctrl and +: the
+   * zoom holds for every page of its origin, the Runs window's pages left as they are.
+   */
+  async zoomDashboard(factor) {
+    await this.worker.evaluate(async (zoom) => {
+      const [tab] = await chrome.tabs.query({ windowType: 'normal' });
+      await chrome.tabs.setZoom(tab.id, zoom);
+    }, factor);
+  }
+
+  /**
    * Throws `error` with what the Runs window, opened by its address, says of the editor's hub: searching for it, out
    * of reach, or no access. The window stays open for the failed set's screen.
    */

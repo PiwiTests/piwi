@@ -61,10 +61,8 @@ describe('the stage’s world', () => {
     assert.deepEqual(placed.runs.crop, WINDOWS.runs);
   });
 
-  test('cuts VS Code’s own title bar off', () => {
-    const { crop } = world(WINDOWS, 2).vscode;
-    assert.equal(crop.y, 70);
-    assert.equal(crop.height, 1440 - 70);
+  test('keeps VS Code’s own title bar, where Quick Open and the command palette drop', () => {
+    assert.deepEqual(world(WINDOWS).vscode.crop, WINDOWS.vscode);
   });
 
   test('gives a test’s browser no beat reached its tile', () => {
@@ -102,10 +100,11 @@ describe('the plan', () => {
     assert.equal(at(0).frame, 48, 'the title card holds the beat’s first frame');
   });
 
-  test('zooms on a click at the beat’s start, then shows the window whole', () => {
-    assert.ok(at(3).scale < 0.5, `the dashboard whole under the title card (${at(3).scale})`);
-    assert.ok(Math.abs(at(5.1).scale - 0.75) < 0.01, `zoomed in as it clicks (${at(5.1).scale})`);
-    assert.ok(at(7.5).scale < 0.5, `whole again (${at(7.5).scale})`);
+  test('shows the window whole for a click whose zoom it would leave at once', () => {
+    // The zoom in, and back out 1.4 s after the click, are one move at most: the window whole.
+    for (const t of [3, 5.1, 7.5]) assert.ok(at(t).scale < 0.5, `the dashboard whole at ${t} s (${at(t).scale})`);
+    assert.equal(plan.moves.kept.length, 0);
+    assert.ok(plan.moves.planned.length >= 2, 'the plan had the zoom in and out');
   });
 
   test('draws the pointer to the click, a ring as it clicks, and the window over the card’s fade', () => {
@@ -123,6 +122,11 @@ describe('the plan', () => {
     assert.equal(at(4.5).fast, null);
     assert.equal(at(5).chapter.title, 'The red run');
     assert.equal(at(1).chapter, null);
+  });
+
+  test('refuses a master that ends before the take’s last beat', () => {
+    assert.throws(() => planCut(take(), { flashFrame: 24, frames: 200 }), /its capture stopped early/);
+    assert.doesNotThrow(() => planCut(take(), { flashFrame: 24, frames: 288 }));
   });
 
   test('times the cues, the cards’ marked as such', () => {

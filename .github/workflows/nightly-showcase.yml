@@ -80,16 +80,19 @@ jobs:
         working-directory: apps/showcase
         run: exec node showcase.mjs --mode check
 
-      # The take writes the master and its log (take.json) in results/, which the cut reads.
+      # The take writes the master and its log (take.json) in results/, which the cut reads. The runner's passwordless
+      # sudo runs the capture ahead of the set's apps, which wait on state, so that it keeps real time.
       - name: Film the virtual take
         if: ${{ inputs.film }}
         working-directory: apps/showcase
+        env:
+          SHOWCASE_CAPTURE_SUDO: '1'
         run: exec node showcase.mjs --take virtual
 
       - name: Render the cut
         if: ${{ inputs.film }}
         working-directory: apps/showcase
-        run: node showcase.mjs --cut results --out results/cut
+        run: exec node showcase.mjs --cut results --out results/cut
 
       - name: Upload the cut
         if: ${{ inputs.film }}
@@ -103,7 +106,7 @@ jobs:
       # leaves failed-<beat>/, and a set that fails to build failed-set/. A job cancelled, or stopped by its timeout,
       # sends the take SIGINT: it writes interrupted/ first (the same: the screen, every app's log, the gestures, the
       # checkout), then ends the set; the kill that ends the runner's grace period can cut that short, never them.
-      # A take's master, hundreds of megabytes, stays out.
+      # A take's master, hundreds of megabytes, stays out, and so does a cut's partial output.
       - name: Upload the failing beat
         if: failure() || cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -112,4 +115,5 @@ jobs:
           path: |
             apps/showcase/results
             !apps/showcase/results/master.mkv
+            !apps/showcase/results/cut
           retention-days: 14

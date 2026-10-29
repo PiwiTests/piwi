@@ -4,8 +4,8 @@
 // raised and when, when the test's browser was open, and the capture's frames. Every time is the wall clock's, in ms.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { startCapture, syncFlash } from './capture.mjs';
-import { waitFor } from './script.mjs';
+import { captureProblem, startCapture, syncFlash } from './capture.mjs';
+import { contentOnScreen, screenMetrics, waitFor } from './script.mjs';
 import { TEST_BROWSER_CDP, listening } from './set.mjs';
 import { MASTER_FPS, scheduleLines } from './timeline.mjs';
 
@@ -27,20 +27,9 @@ const TILE_WINDOWS = ['vscode', 'runs', 'test-browser'];
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** A page's content on the screen, in device pixels at `scale`, from its window's place and its viewport. */
+/** A page's content on the screen, in device pixels (`contentOnScreen`), with its device pixel ratio. */
 async function contentRect(page, scale) {
-  const r = await page.evaluate(() => ({
-    x: window.screenX + (window.outerWidth - window.innerWidth),
-    y: window.screenY + (window.outerHeight - window.innerHeight),
-    width: window.innerWidth,
-    height: window.innerHeight,
-  }));
-  return {
-    x: Math.round(r.x * scale),
-    y: Math.round(r.y * scale),
-    width: Math.round(r.width * scale),
-    height: Math.round(r.height * scale),
-  };
+  return contentOnScreen(await screenMetrics(page), scale);
 }
 
 /**
@@ -111,8 +100,9 @@ export async function startFilming({ set, out, story, scale, width, height, take
   say('the capture: the whole screen, lossless, and the sync flash');
   const capture = startCapture({ file: path.join(out, MASTER_FILE), display: process.env.DISPLAY, width, height });
   set.closers.push(() => capture.stop());
-  await capture.running();
-  log.master = { file: MASTER_FILE, fps: MASTER_FPS, spawned: capture.spawned };
+  const running = await capture.running();
+  log.master = { file: MASTER_FILE, fps: MASTER_FPS, spawned: capture.spawned, running, raised: capture.raised };
+  if (!capture.raised) say('  the capture runs at the set’s priority: nothing here lets it run ahead (root, or sudo)');
   log.flash = await syncFlash({ scale });
 
   // When the test's browser is open, as its debugging port tells: the cut shows its window only then.
@@ -150,6 +140,9 @@ export async function startFilming({ set, out, story, scale, width, height, take
     },
     /** The hold: the beat stays until its lines are read, and its last action's result `SETTLE_MS` more. */
     async ended() {
+      // A capture that ended before the take has nothing left to film it with.
+      const ended = capture.ended();
+      if (ended) throw new Error(`the capture ended mid-take (${ended.error ?? `exit ${ended.code ?? ended.signal}`})`);
       const last = current.lines.at(-1);
       const due = Math.max(last ? last.start + last.ms : 0, Date.now() + SETTLE_MS);
       await sleep(due - Date.now());
@@ -165,11 +158,16 @@ export async function startFilming({ set, out, story, scale, width, height, take
       if (TILE_WINDOWS.includes(window) === (up === 'tiles')) return;
       await raise(window);
     },
-    /** Ends the capture and writes the take log with the `gestures` and the `outcomes`; resolves with its counts. */
+    /**
+     * Ends the capture and writes the take log with the `gestures` and the `outcomes`; resolves with its counts and
+     * `problem`, what is wrong with the master (`captureProblem`), or null.
+     */
     async finish({ gestures, outcomes }) {
       clearInterval(follow);
+      const stopped = Date.now();
       const counts = await capture.stop();
-      Object.assign(log.master, counts, { stopped: Date.now() });
+      const problem = captureProblem(counts, { running, stopped });
+      Object.assign(log.master, counts, { stopped, problem });
       log.story = story.map((b) => ({
         id: b.id,
         title: b.title,
@@ -181,7 +179,7 @@ export async function startFilming({ set, out, story, scale, width, height, take
       log.outcomes = outcomes;
       log.gestures = gestures;
       fs.writeFileSync(path.join(out, TAKE_FILE), JSON.stringify(log, null, 2));
-      return counts;
+      return { ...counts, problem };
     },
   };
 }
