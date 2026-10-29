@@ -68,9 +68,9 @@ export class DeveloperBrowser {
     const popup = await this.context.newPage();
     try {
       // The popup shows its Runs tile once the paired editor's hub answers, as it opens: it is opened again, as a
-      // person does, until the tile shows.
+      // person does, until the tile shows. The worker asks an editor that did not answer again after up to 30 s.
       const tile = popup.getByRole('button', { name: /Runs/ });
-      for (const deadline = Date.now() + 45_000; ;) {
+      for (const deadline = Date.now() + 90_000; ;) {
         await popup.goto(this.url('popup.html'));
         if (
           await tile.waitFor({ timeout: 5_000 }).then(
@@ -79,7 +79,12 @@ export class DeveloperBrowser {
           )
         )
           break;
-        if (Date.now() > deadline) throw new Error('Piwi Picker’s popup never showed its Runs tile');
+        if (Date.now() > deadline) {
+          const summary = await popup
+            .evaluate(() => chrome.runtime.sendMessage({ type: 'piwi-runs-summary' }))
+            .catch((why) => why.message);
+          throw new Error(`Piwi Picker’s popup never showed its Runs tile; its worker says ${JSON.stringify(summary)}`);
+        }
       }
       const opened = this.context.waitForEvent('page', (page) => page.url().endsWith('/runs.html'));
       // A click that fails throws here; the wait it leaves must not end the process when it times out after.
