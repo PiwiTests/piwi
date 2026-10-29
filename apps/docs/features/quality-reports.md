@@ -55,7 +55,7 @@ days). The dialog previews the report; pick another dashboard or the language, t
 
 | Format | What you get |
 |---|---|
-| PDF | Vector text and charts, one band per page so pages drop into a slide deck |
+| PDF | Vector text and charts, one band per page so pages drop into a slide deck; each page names the report and is numbered |
 | HTML | One self-contained file: inline charts, no script, no remote resource |
 | Markdown | Tables, and a text sparkline (`▁▂▃▅▇`) under each series; pastes into Confluence, Jira or a pull request |
 | Excel | An .xlsx workbook, a sheet per table named after its widget; numbers and dates are real cells, text never runs as a formula. Each section's **Excel** button downloads just that section |

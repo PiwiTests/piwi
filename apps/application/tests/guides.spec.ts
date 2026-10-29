@@ -11,6 +11,7 @@ import type { Page } from '@playwright/test';
 import type { AssistantStatus } from '#shared/assistant';
 import { findGuideAnchor } from '../shared/guide-anchors/index.mjs';
 import { waitForHydration } from './utils';
+import { resolveE2ETarget } from './desktop-target';
 
 // One test declines a capability every test reads.
 test.describe.configure({ mode: 'serial', timeout: 90_000 });
@@ -108,6 +109,7 @@ test.describe('Guides', () => {
   });
 
   test('a guide whose capability is declined is not listed', async ({ page, request }) => {
+    test.skip(resolveE2ETarget().desktop, 'the desktop app never lists the pull-request feedback guide');
     const title = /^Turn on pull-request feedback/;
     await openWithoutModel(page);
     let guides = await searchPalette(page, 'pull-request feedback');

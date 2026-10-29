@@ -6,7 +6,7 @@
  * shared by the server and the demo; only asset bytes are fetched differently.
  */
 
-export type ExportKind = 'execution' | 'cluster';
+export type ExportKind = 'execution' | 'cluster' | 'run';
 
 export const EXPORT_FORMATS = ['html', 'zip', 'pdf', 'json', 'md'] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -49,6 +49,49 @@ export interface ExportCase {
   assets: ExportAsset[];
 }
 
+/** One test result of a run export: the final attempt of a repetition of a test, per test case and browser. */
+export interface ExportRunTest {
+  executionId: number;
+  testCaseId: number;
+  title: string;
+  suitePath: string[];
+  filePath: string | null;
+  location: string | null;
+  /** The Playwright project the test ran in. */
+  browser: string | null;
+  /** The `--repeat-each` repetition, from 1, in a run that repeats its tests; null otherwise. */
+  repetition: number | null;
+  status: string;
+  /** Passed only on a retry. */
+  flaky: boolean;
+  retries: number;
+  duration: number | null;
+  /** The first line of the error of a failing test. */
+  error: string | null;
+  failureClusterId: number | null;
+}
+
+/** The failing results of a run that share a root cause: a failure cluster, as the run page groups them. */
+export interface ExportRunGroup {
+  clusterId: number;
+  title: string;
+  status: string;
+  /** First seen in this run. */
+  isNew: boolean;
+  /** The failing results whose final attempt this cluster holds. */
+  executionIds: number[];
+  /** The AI diagnosis's one-line summary, when one completed. */
+  diagnosis: string | null;
+}
+
+/** Present for `kind: 'run'`: the run, its tests and its failures grouped by root cause. */
+export interface ExportRun {
+  /** The run fields the export states: status, branch, commit, CI build, counts and timing. */
+  detail: Record<string, unknown>;
+  tests: ExportRunTest[];
+  groups: ExportRunGroup[];
+}
+
 export interface ExportBundle {
   kind: ExportKind;
   /** ISO timestamp of generation. */
@@ -61,9 +104,11 @@ export interface ExportBundle {
   project: { id: number; name: string; label: string | null } | null;
   /** Present for `kind: 'cluster'` — the cluster row plus its diagnosis. */
   cluster: Record<string, unknown> | null;
+  /** Present for `kind: 'run'`. */
+  run?: ExportRun | null;
   cases: ExportCase[];
-  /** Member cases beyond the export's case cap, listed but not expanded. */
-  truncatedCases: { testCaseId: number; title: string; filePath: string | null }[];
+  /** Member cases (a run's failing tests) beyond the export's case cap, listed but not expanded. */
+  truncatedCases: { testCaseId: number; title: string; filePath: string | null; browser?: string | null }[];
   omitted: ExportOmission[];
 }
 

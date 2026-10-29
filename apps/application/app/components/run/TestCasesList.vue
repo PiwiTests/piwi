@@ -44,6 +44,8 @@ const props = defineProps<{
   liveResources?: RunResourceTimelinePart[] | null;
   /** The workers in the run's live view, by `liveWorkerKey`: each running row of one offers Watch, and says Paused. */
   liveWorkers?: Record<string, LiveWorkerState> | null;
+  /** The run holds a live view key and is not shared from the developer's machine: its running rows say how to. */
+  liveUnshared?: boolean;
   clusterMeta?: RunClusterMeta | null;
   /** Stable test-case ids currently quarantined — marks the matching rows. */
   quarantinedCaseIds?: Set<number> | null;
@@ -992,6 +994,7 @@ defineExpose({ scrollToCase });
                       liveResourcesOf(item.tc) !== null,
                       liveWorkerOf(item.tc)?.paused?.call.title,
                       liveWorkerOf(item.tc) !== null,
+                      liveUnshared && item.tc.status === 'running',
                       showSuitePath,
                       item.tc.suitePath,
                     ]
@@ -1026,6 +1029,7 @@ defineExpose({ scrollToCase });
                 :live-step="liveStep(item.tc)"
                 :live-resources="liveResourcesOf(item.tc)"
                 :live-worker="liveWorkerOf(item.tc)"
+                :live-unshared="liveUnshared && item.tc.status === 'running'"
                 :highlighted="highlightedCaseId === item.tc.executionId"
                 :indent="(item.depth ?? 0) * 16"
                 :suite-path="showSuitePath ? item.tc.suitePath : null"

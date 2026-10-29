@@ -60,6 +60,7 @@ For run events the payload includes up to three failing tests, so you can act wi
       "url": "https://github.com/acme/checkout/commit/3f9c2a1d8e7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d"
     },
     "ciUrl": "https://github.com/acme/checkout/actions/runs/123",
+    "origin": "ci",
     "history": [
       { "runId": 40, "status": "passed", "failedTests": 0 },
       { "runId": 41, "status": "passed", "failedTests": 0 },
@@ -104,6 +105,8 @@ and `owners` covers every failed attempt, so a team hears of its flaky test's fa
 (`browserName`) and its `owner`. `source` holds the lines around the line the failure threw at, as the reporter
 captured them: the test file, or the helper the error's stack points at, from four lines before it to two after, the
 failing line marked `>`.
+
+`origin` is what launched the run: `ci`, `local`, `desktop`, … ([run origin](/reference/test-metadata#run-origin)).
 
 `history` lists the run and up to nine runs before it on the same branch and environment, oldest first: the ended runs
 that would send notifications themselves (no lab run, no run from an editor, no partial local run, no environment

@@ -15,7 +15,7 @@ import { summarizeRunCases } from '#shared/utils/test-counts';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import type { WireLiveResources } from '#shared/types';
-import { liveWorkerKey, type LiveWorkerState } from '#shared/live-view';
+import { liveWorkerKey, type LiveViewRunState, type LiveWorkerState } from '#shared/live-view';
 
 const route = useRoute();
 const router = useRouter();
@@ -70,6 +70,14 @@ const liveResources = ref<RunResourceTimelinePart[]>([]);
 // The workers in the run's live view, by `liveWorkerKey`, from the stream's `live-worker` events: each running row of
 // one offers Watch, and says Paused while its test is stopped.
 const liveWorkers = ref<Record<string, LiveWorkerState>>({});
+// Whether the run holds a live view key, from the stream's `live-view` events: its project's live view applies to it.
+const liveViewKeyed = ref(false);
+// A run outside CI that holds a key and has no worker in its view is not shared: its running rows say how to share it,
+// where Watch shows once it is. A CI run's workers join at once.
+const liveUnshared = computed(
+  () =>
+    isLive.value && liveViewKeyed.value && !testRun.value?.metadata?.ci && Object.keys(liveWorkers.value).length === 0,
+);
 // The worker someone opened Watch on, and the execution of the row they opened it from: the view is that test's.
 const watching = ref<{ worker: number; shard: number | null; test: string; executionId: number } | null>(null);
 const watchOpen = ref(false);
@@ -330,6 +338,8 @@ function flushPendingEvents() {
       if (worker.connected) next[liveWorkerKey(worker)] = worker;
       else delete next[liveWorkerKey(worker)];
       liveWorkers.value = next;
+    } else if (parsed.type === 'live-view') {
+      liveViewKeyed.value = (data as unknown as LiveViewRunState).keyed === true;
     } else if (parsed.type === 'resources') {
       liveResources.value = applyLiveResourcesToParts(liveResources.value, data as unknown as WireLiveResources);
     } else if (parsed.type === 'run-finalizing') {
@@ -339,6 +349,7 @@ function flushPendingEvents() {
       isFinalizing.value = false;
       liveSteps.value = {};
       liveWorkers.value = {};
+      liveViewKeyed.value = false;
       disconnectStream();
       refresh();
       // Nudge the Changes tab to refetch — it keeps its own fetch state and
@@ -873,6 +884,7 @@ const moreMenuItems = computed(() => {
         <template #right>
           <div class="flex items-center shrink-0 min-w-0">
             <ExportMenu
+              :endpoint="`/api/test-runs/${runId}/export`"
               :perfetto-endpoint="`/api/test-runs/${runId}/perfetto`"
               :base-name="`piwi-run-${runId}`"
               class="mr-1"
@@ -922,6 +934,7 @@ const moreMenuItems = computed(() => {
             :live-steps="liveSteps"
             :live-resources="liveResources"
             :live-workers="liveWorkers"
+            :live-unshared="liveUnshared"
             :cluster-meta="clusterMeta"
             :quarantined-case-ids="quarantinedCaseIds"
             :project-key="testRun?.projectId"

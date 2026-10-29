@@ -1,5 +1,5 @@
 import { effectScope, computed, type WritableComputedRef } from 'vue';
-import type { NotificationEvent } from '#shared/notification-events';
+import { DEFAULT_SUBSCRIPTION_EVENTS, type NotificationEvent } from '#shared/notification-events';
 
 const COOKIE_KEY = 'piwi-browser-notify';
 
@@ -39,46 +39,54 @@ function parseConfig(raw: string): StoredConfig {
 
 const _scope = effectScope(true);
 
-let _cookieRef: any = null;
 let _stored: WritableComputedRef<StoredConfig> | null = null;
 
-function ensureInit() {
-  if (_stored) return;
-
-  _scope.run(() => {
-    _cookieRef = useCookie<string>(COOKIE_KEY, {
-      default: () => '',
-      maxAge: 60 * 60 * 24 * 365,
-      sameSite: 'lax',
-      path: '/',
-      secure: import.meta.client ? location.protocol === 'https:' : false,
-      encode: (v: string) => encodeURIComponent(v),
-      decode: (v: string) => decodeURIComponent(v),
-    });
-
-    _stored = computed<StoredConfig>({
-      get: () => {
-        const raw = _cookieRef!.value;
-        return raw ? parseConfig(raw) : defaultStored();
-      },
-      set: (value: StoredConfig) => {
-        _cookieRef!.value = JSON.stringify(value);
-      },
-    });
+/** The stored choices, read from and written to the cookie of the current request or browser. */
+function cookieConfig(): WritableComputedRef<StoredConfig> {
+  const cookie = useCookie<string>(COOKIE_KEY, {
+    default: () => '',
+    maxAge: 60 * 60 * 24 * 365,
+    sameSite: 'lax',
+    path: '/',
+    secure: import.meta.client ? location.protocol === 'https:' : false,
+    encode: (v: string) => encodeURIComponent(v),
+    decode: (v: string) => decodeURIComponent(v),
+  });
+  return computed<StoredConfig>({
+    get: () => (cookie.value ? parseConfig(cookie.value) : defaultStored()),
+    set: (value: StoredConfig) => {
+      cookie.value = JSON.stringify(value);
+    },
   });
 }
 
-export function useBrowserNotificationCookie() {
-  ensureInit();
+/**
+ * One instance per browser, kept for the page's life; one per call on the
+ * server, where module state would carry one request's cookie into the next.
+ */
+function storedConfig(): WritableComputedRef<StoredConfig> {
+  if (import.meta.server) return cookieConfig();
+  _stored ??= _scope.run(cookieConfig)!;
+  return _stored;
+}
 
-  const stored = _stored!;
+/**
+ * The per-browser notification events of each project, kept in a cookie: the
+ * project bell's choices when authentication is off. In the desktop app, a
+ * project whose events nobody chose notifies on `DEFAULT_SUBSCRIPTION_EVENTS`,
+ * so its notifications work with no setup; turning every event off stores an
+ * empty list, which keeps them off.
+ */
+export function useBrowserNotificationCookie() {
+  const stored = storedConfig();
+  const desktop = useIsDesktop();
 
   function getProject(projectId: number): ProjectNotifyConfig {
-    return stored.value.projects[projectId] ?? { events: [] };
+    return stored.value.projects[projectId] ?? { events: desktop ? [...DEFAULT_SUBSCRIPTION_EVENTS] : [] };
   }
 
   function setEvents(projectId: number, events: NotificationEvent[]) {
-    if (events.length === 0) {
+    if (events.length === 0 && !desktop) {
       const next = { ...stored.value };
       delete next.projects[projectId];
       stored.value = next;

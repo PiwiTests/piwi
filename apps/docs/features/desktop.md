@@ -42,8 +42,8 @@ folder** show it. Back up the parent folder while the app is closed; its `secret
 tokens.
 
 Closing the window quits the app unless you turn on **Run in background** in the tray menu; **Start on login** launches
-it hidden into the tray. There, [notifications](/features/notifications) arrive as OS notifications, with an unread
-count on the dock icon or the tray tooltip.
+it hidden into the tray. In the background, [notifications](/features/notifications#browser) arrive as OS notifications,
+with no setup, and an unread count on the dock icon or the tray tooltip.
 
 ## Sending results to it
 
@@ -72,21 +72,19 @@ of the repository serves its git history without an [SCM token](/guide/source-co
 
 ## Running tests from the app
 
-A run, an execution, a cluster or a test runs again here with the folder's own Playwright and the bundled Node, and
-its button says what: **Re-run 3 failed tests**, **Re-run this test**, or on a test case **Run this test** (20 times,
-with a trace).
+A run, an execution, a cluster or a test runs again here, with the folder's own Playwright, and its button says what:
+**Re-run 3 failed tests**, **Re-run this test**, or **Run this test** (20 times, traced) on a test case.
 
-- **The arrow next to the button** shows the command, runs it once headed, in the inspector or UI mode, and sets the
-  button's options: tests by `file:line`, title or file, a trace, `--repeat-each` (up to 1,000 in **Run with
-  options…**). The button names what differs from Playwright's defaults (**· headed · ×5**); the project's defaults
-  are under **Settings → Local folder**.
-- **On a run**, the arrow also re-runs the flaky tests or all of them, and the **Tests** tab the failing tests you
-  select.
-- **Runs keep going while you browse**, in the **Local runs** tray, each under what it runs, then **Compare with run
-  #N**. A [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app) from Piwi Picker runs
-  there too.
-- **Wrong folder?** When none of the tests are in the linked folder, the button opens the link's dialog.
-- **Pause, step and watch** each worker from the tray, at a `page.pause()` or a failure too: [Desktop app
+- **The arrow next to the button** shows the command, runs it once headed, in the inspector or UI mode, and sets its
+  options: tests by `file:line`, title or file, a trace, `--repeat-each` (up to 1,000 in **Run with
+  options…**). The button names what differs from Playwright's defaults (**· headed · ×5**); set the project's in
+  **Settings → Local folder**.
+- **On a run**, the arrow also re-runs its flaky tests or all of them, and the **Tests** tab a selection.
+- **Runs keep going while you browse**, in the **Local runs** tray, each under what it runs; its results come here,
+  with **Compare with run #N**. A [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app)
+  from Piwi Picker runs there too.
+- **Wrong folder?** With none of the tests in it, the button opens the link's dialog.
+- **Pause, step and watch** each worker from the tray, at a `page.pause()` or a failure: [Desktop app
   runs](/features/desktop-runs).
 
 ### Reproducing a failure and finding the breaking commit
@@ -102,8 +100,7 @@ linked folder, **without touching your checkout**:
   progress and a **Stop** that kills the test and what it started, resets the bisect and removes the worktree. The
   first bad commit is linked to your SCM host and recorded on the failure cluster.
 
-It needs `git` and your package manager on this machine, and bisects one repository. The application under test has
-to build from the same checkout, started at each commit by a Playwright `webServer`; without one, a reproduction or
+The application under test has to build from the same checkout, started at each commit by a Playwright `webServer`; without one, a reproduction or
 bisect exercises test changes only.
 
 ### Jobs from your editor
@@ -140,7 +137,7 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 
 The **MCP server** page detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI, and
 connects each in one click, writing a `piwi-desktop` entry with the address and token into its config file.
-It keeps a backup and rewrites only that entry, at each launch if the port changed. Claude Desktop, which takes only
+It keeps a backup and rewrites only that entry, again when the port changes. Claude Desktop, which takes only
 local commands, is pointed at the app's built-in bridge (`piwi-desktop mcp-stdio`), so no token is copied; the app must
 run. Restart the client after connecting. The page also installs the
 [agent skills](/features/agent-skills) into a linked folder.
@@ -155,8 +152,10 @@ verified against the project's signing key.
 
 - **One machine, one user.** The app accepts results only from this machine; a team needs the
   [Docker image](/operate/deployment).
-- **Local runs need the checkout**: a linked folder with Playwright installed, and `git` for reproduce, bisect and
-  the lab.
+- **Local runs need the checkout**: a linked folder with Playwright installed, and `git` and your package manager for
+  reproduce, bisect (one repository) and the lab.
+- **No public address**: no [pull-request feedback](/features/pr-feedback), [auto-heal](/features/auto-heal) or Jira
+  webhook, and email only with SMTP set.
 
 ## Related
 

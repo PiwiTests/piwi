@@ -23,8 +23,7 @@ dashboard.
 ## Where it is
 
 **Settings → Notifications** manages channels and subscriptions, and the **bell** on a project page subscribes to that
-project. The new-channel form shows where to get each destination, flags a URL that belongs to another type (a Slack
-URL pasted under Teams offers to switch), and can **send a test** before saving: a channel whose test went through is
+project. The new-channel form shows where to get each destination, offers the right type for a URL pasted under another, and can **send a test** before saving: a channel whose test went through is
 saved as verified. Email goes only to a verified address: an email channel once a test reached it, the account email
 once its owner verified it. Notifications need no authentication: with it off, the instance is single-tenant and every
 channel and subscription is **global**. With `PIWI_AUTH_ENABLED=true` ([authentication](/operate/authentication)), each user keeps
@@ -53,9 +52,10 @@ Sends native OS notifications to any open Piwi tab, even in the background, thro
 
 - **With authentication**: create a channel of type `browser` in **Settings → Notifications** and subscribe it to events; the stream then delivers exactly the events and projects your subscriptions cover.
 - **Without authentication**: no channel is needed; the **bell** on each project page stores per-browser preferences (a cookie) for which events raise notifications.
+- **In the [desktop app](./desktop)**: on with no setup for failed runs and environment incidents; a project's bell changes them.
 
 Diagnosis-completion notifications can be switched off per browser in **Settings → AI → Diagnosis
-notifications** without deleting the subscription.
+notifications**.
 
 ### Email
 

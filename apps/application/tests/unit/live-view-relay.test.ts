@@ -101,9 +101,26 @@ describe('the live view key', () => {
     expect(new Set(keys).size).toBe(64);
     expect(live.mintKey(3, 2)).toBeNull();
     const elsewhere = live.mintKey(4, 5)!;
-    live.endProject(2);
+    expect(live.endProject(2)).toEqual([3]);
     expect(keys.some((key) => live.authorize(3, key))).toBe(false);
     expect(live.authorize(4, elsewhere)).not.toBeNull();
+  });
+
+  test('says whether a run holds one, for its page: not once it expired, the run ended or the view turned off', () => {
+    let now = 1_000_000;
+    const { live } = relay(() => now);
+    expect(live.holdsKey(7)).toBe(false);
+    live.mintKey(7, 1);
+    live.mintKey(8, 1);
+    live.mintKey(9, 2);
+    expect(live.holdsKey(7)).toBe(true);
+    live.endRun(7);
+    expect(live.holdsKey(7)).toBe(false);
+    live.endProject(1);
+    expect(live.holdsKey(8)).toBe(false);
+    expect(live.holdsKey(9)).toBe(true);
+    now += LIVE_KEY_TTL_MS;
+    expect(live.holdsKey(9)).toBe(false);
   });
 
   test('ends with its run, as the run finishes or is cancelled', () => {

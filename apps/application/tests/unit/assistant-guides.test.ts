@@ -89,6 +89,14 @@ describe('anchorUnavailable', () => {
     expect(guides.anchorUnavailable(desktopOnly, { ...facts(ADMIN_ACCESS), desktop: true }, null)).toBeNull();
   });
 
+  test('the desktop app hides the anchors of a capability it does not offer, whatever its state', () => {
+    const prFeedback = { ...anchor('run-incident'), requires: { capability: 'pr-feedback' as const } };
+    expect(guides.anchorUnavailable(prFeedback, { ...facts(ADMIN_ACCESS), desktop: true }, null)).toBe(
+      'it needs the pr-feedback capability, which the desktop app does not offer',
+    );
+    expect(guides.anchorUnavailable(prFeedback, facts(ADMIN_ACCESS), null)).toBeNull();
+  });
+
   test('a capability declined or not applicable hides it; undecided does not', () => {
     const leaks = anchor('run-leaks');
     expect(leaks.requires?.capability).toBe('resources');

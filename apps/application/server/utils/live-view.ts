@@ -289,6 +289,13 @@ export class LiveViewRelay {
     return null;
   }
 
+  /** Whether the run holds a key that opens its live view, for a run page that opens its stream. */
+  holdsKey(runId: number): boolean {
+    const now = this.now();
+    for (const entry of this.keys.values()) if (entry.runId === runId && entry.expiresAt > now) return true;
+    return false;
+  }
+
   /** The run's connected workers, for a run page that opens its stream. */
   workersOf(runId: number): LiveWorkerState[] {
     const run = this.runs.get(runId);
@@ -315,12 +322,13 @@ export class LiveViewRelay {
     this.closeRun(runId, 'run-ended');
   }
 
-  /** The project turned its live view off: every run of it ends its view. */
-  endProject(projectId: number): void {
+  /** The project turned its live view off: every run of it ends its view. Returns those runs. */
+  endProject(projectId: number): number[] {
     const runIds = new Set<number>();
     for (const entry of this.keys.values()) if (entry.projectId === projectId) runIds.add(entry.runId);
     for (const [runId, run] of this.runs) if (run.projectId === projectId) runIds.add(runId);
     for (const runId of runIds) this.endRun(runId, 'off');
+    return [...runIds];
   }
 
   /** End the relay's part in each run that ends, as the run's lifecycle says; an interrupted run's keys stay. */

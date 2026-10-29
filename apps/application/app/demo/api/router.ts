@@ -129,6 +129,7 @@ import {
   apiExecutionBugReport,
   apiExecutionReplaySteps,
   apiExportTestRunCase,
+  apiExportTestRun,
   apiExportFailureCluster,
 } from './export';
 import {
@@ -2024,6 +2025,14 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/export$/,
+    handler: async (m, _, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return apiExportTestRun(+m[1]!, q as URLSearchParams | undefined);
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/test-run-cases\/(\d+)\/export$/,
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
@@ -3736,6 +3745,8 @@ const routes: RouteEntry[] = [
         buildSha: null,
         buildTime: null,
         node: 'N/A (browser demo)',
+        platform: 'N/A (browser demo)',
+        arch: null,
         dbBackend: 'sql.js (in-browser)',
       }),
   },

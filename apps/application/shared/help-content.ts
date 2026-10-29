@@ -567,6 +567,18 @@ export const HELP_TOPICS = {
     text: 'This run is still streaming results in real time. Results and counts update as each test finishes.',
     doc: 'guide/reporter#live-streaming',
   },
+  'run.live-unshared': {
+    title: 'Not shared live',
+    text: [
+      'This run is on a developer’s machine: its workers send nothing until the developer shares it, and its running tests then offer **Watch**. Sharing is theirs to start:',
+      '',
+      '- **VS Code** — `Piwi: Share the run live on the team instance`, or the status bar’s broadcast icon.',
+      '- **JetBrains IDEs** — **Tools → Piwi → Share the Run Live**.',
+      '- **Piwi Picker** — **Share live** under the run’s name, in the Runs window.',
+      '- **Desktop app** — **Share live** above the run’s workers, in the Local runs tray.',
+    ].join('\n'),
+    doc: 'features/live-view#share-a-run-from-your-machine',
+  },
   'run.reports': {
     title: 'Storage & reports',
     text: 'HTML reports, traces and attachments uploaded with this run. A run can carry several reports (e.g. per shard).',
@@ -837,7 +849,7 @@ export const HELP_TOPICS = {
     // Deliberately avoids the word "Export": the hint sits beside a button with
     // that label, and a substring role query would match both.
     title: 'Reading this offline',
-    text: 'Takes this investigation out of the dashboard as a file that needs no network and no Piwi server. HTML is one self-contained page with screenshots and video embedded; ZIP adds the raw artifacts — trace archives, full-size video, logs — plus a machine-readable data.json; PDF is a formatted document with screenshots embedded, generated directly with no browser print. Evidence past the size budget is listed in the report as omitted rather than dropped quietly.',
+    text: 'Takes this investigation out of the dashboard as a file that needs no network and no Piwi server. A run’s export holds its summary, its failures grouped by root cause, every test, and its failing tests in detail. HTML is one self-contained page with screenshots and video embedded; ZIP adds the raw artifacts — trace archives, full-size video, logs — plus a machine-readable data.json; PDF is a formatted document with screenshots embedded, generated directly with no browser print. Evidence past the size budget is listed in the report as omitted rather than dropped quietly.',
     doc: 'features/offline-export',
     envVars: ['PIWI_EXPORT_MAX_INLINE_BYTES', 'PIWI_EXPORT_MAX_BYTES', 'PIWI_EXPORT_MAX_CASES'],
   },

@@ -1,4 +1,4 @@
-import type { CapabilityId, CapabilityState, ProjectDecision } from '#shared/capabilities';
+import { capabilityHidden, type CapabilityId, type CapabilityState, type ProjectDecision } from '#shared/capabilities';
 import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/capabilities';
 
 /**
@@ -13,8 +13,8 @@ import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/cap
  * render instead of flashing in and disappearing after hydration. Repeated calls
  * for the same project share one fetch through the key.
  *
- * `state(id)` is the resolved state, `isHidden(id)` is true when declined or not
- * applicable, `canDecide` gates the controls to holders of `project:manage` on
+ * `state(id)` is the resolved state, `isHidden(id)` is true when declined, not
+ * applicable or never offered by the desktop build, `canDecide` gates the controls to holders of `project:manage` on
  * the project, `decide` writes one decision and `decideMany` writes several at
  * once (`enabled` overrides an instance decline; `null` clears a decision). A
  * read failure resolves to an empty list.
@@ -22,6 +22,7 @@ import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/cap
 export async function useProjectCapabilities(projectId: number) {
   const { can } = useAuth();
   const requestFetch = useRequestFetch();
+  const isDesktop = useIsDesktop();
 
   const { data: items } = await useAsyncData<CapabilityStateItem[]>(
     `capabilities-project-${projectId}`,
@@ -39,7 +40,7 @@ export async function useProjectCapabilities(projectId: number) {
   });
 
   const state = (id: CapabilityId): CapabilityState => stateMap.value.get(id) ?? 'undecided';
-  const isHidden = (id: CapabilityId): boolean => state(id) === 'declined' || state(id) === 'not-applicable';
+  const isHidden = (id: CapabilityId): boolean => capabilityHidden(id, state(id), isDesktop);
 
   async function decideMany(decisions: Partial<Record<CapabilityId, ProjectDecision | null>>) {
     const res = await $fetch<CapabilityStates>(`/api/projects/${projectId}/capabilities`, {

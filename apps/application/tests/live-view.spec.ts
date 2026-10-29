@@ -218,6 +218,8 @@ test.describe('Live view of a run', () => {
 
       const watch = page.getByRole('button', { name: /^Watch worker \d+ live$/ });
       await expect(watch).toBeVisible({ timeout: 60_000 });
+      // A CI run's workers join at once: nothing says it is not shared.
+      await expect(page.getByTestId('live-unshared')).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath('live-view-row.png') });
       await watch.click();
       const view = page.getByRole('dialog');
@@ -282,6 +284,7 @@ test.describe('Live view of a run', () => {
       // While the test runs on its slow page, nothing offers to watch it, and nothing reached this server.
       await page.waitForTimeout(3000);
       await expect(page.getByRole('button', { name: /^Watch worker/ })).toHaveCount(0);
+      await expect(page.getByTestId('live-unshared')).toHaveCount(0);
       expect(await liveWorkers(request, runId)).toEqual({
         enabled: false,
         workers: [],
@@ -299,10 +302,10 @@ test.describe('Live view of a run', () => {
     }
   });
 
-  test('a run outside CI nobody shares, in a project with the live view on, sends nothing', async ({
+  test('a run outside CI nobody shares, in a project with the live view on, says how to share it and sends nothing', async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(240_000);
     const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
     expect((await request.patch(`/api/projects/${project}`, { data: { liveView: true } })).ok()).toBeTruthy();
@@ -316,17 +319,36 @@ test.describe('Live view of a run', () => {
       });
       await page.waitForTimeout(3000);
       await expect(page.getByRole('button', { name: /^Watch worker/ })).toHaveCount(0);
+      // Its running row says it is not shared, where Watch would be, and how to share it.
+      const unshared = page.getByTestId('live-unshared');
+      await expect(unshared).toHaveText('Not shared live');
+      await page.screenshot({ path: testInfo.outputPath('live-view-unshared.png') });
+      const wide = page.viewportSize()!;
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect(unshared).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath('live-view-unshared-narrow.png') });
+      await page.setViewportSize(wide);
+      await unshared.getByRole('button').click();
+      const hint = page.getByRole('dialog');
+      await expect(hint).toContainText('Tools → Piwi → Share the Run Live');
+      await expect(hint).toContainText('Piwi: Share the run live on the team instance');
+      await page.screenshot({ path: testInfo.outputPath('live-view-unshared-hint.png') });
+      await page.keyboard.press('Escape');
       expect(await liveWorkers(request, runId)).toMatchObject({
         enabled: true,
         workers: [],
         received: { requests: 0, frames: 0, bytes: 0 },
       });
+      // Turned off, the project's live view no longer applies to the run: nothing says to share it.
+      expect((await request.patch(`/api/projects/${project}`, { data: { liveView: false } })).ok()).toBeTruthy();
+      await expect(unshared).toHaveCount(0, { timeout: 10_000 });
 
       run.release();
       expect(await run.exited, run.output()).toBe(0);
       expect(run.output()).not.toContain('Live view on');
       expect((await liveWorkers(request, runId)).received.requests).toBe(0);
     } finally {
+      await request.patch(`/api/projects/${project}`, { data: { liveView: true } });
       await endRun(run);
     }
   });
@@ -352,6 +374,7 @@ test.describe('Live view of a run', () => {
       await page.goto(`/test-runs/${runId}`);
       const watch = page.getByRole('button', { name: /^Watch worker \d+ live$/ });
       await expect(watch).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId('live-unshared')).toHaveCount(0);
       await watch.click();
       const view = page.getByRole('dialog');
       await expect(view.getByTestId('live-frame')).toBeVisible({ timeout: 20_000 });
@@ -365,6 +388,8 @@ test.describe('Live view of a run', () => {
       );
       await page.keyboard.press('Escape');
       await expect(watch).toHaveCount(0, { timeout: 10_000 });
+      // No longer shared, its running row says so again.
+      await expect(page.getByTestId('live-unshared')).toHaveText('Not shared live');
       await expect.poll(async () => (await liveWorkers(request, runId)).workers.length).toBe(0);
 
       run.release();
