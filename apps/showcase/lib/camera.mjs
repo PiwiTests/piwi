@@ -80,3 +80,48 @@ export function viewRect(view) {
   const height = view.width / ASPECT;
   return { x: view.cx - view.width / 2, y: view.cy - height / 2, width: view.width, height };
 }
+
+/**
+ * When the camera moves. A move to what is already on screen (`onScreen` of the windows it frames, or of a zoom's
+ * region, inside the current view) is left out when it would come closer by less than `minRatio`, or when the current
+ * view already shows those windows at `readable` output pixels a page's CSS pixel or more: the camera stays at the
+ * wider framing. A move `mergeS` or less after the last kept one, in the same beat, joins it: one move, at the first's
+ * time, to a view holding both, itself left out when it comes out barely different from the view before it.
+ */
+export const CALM = { minRatio: 1.35, onScreen: 0.85, readable: 1.0, mergeS: 2.5 };
+
+/** The fraction of `inner`'s area inside `outer`. */
+export function overlap(inner, outer) {
+  const w = Math.max(0, Math.min(inner.x + inner.width, outer.x + outer.width) - Math.max(inner.x, outer.x));
+  const h = Math.max(0, Math.min(inner.y + inner.height, outer.y + outer.height) - Math.max(inner.y, outer.y));
+  return (w * h) / (inner.width * inner.height);
+}
+
+/**
+ * The shots (`{ t, view, rect, ids, beat }`, in order: `rect` what the shot shows, `ids` its windows) the camera
+ * keeps (`CALM`), each view clamped by `limits`; `readable(view, ids)` tells whether `view` shows the windows `ids`
+ * readably.
+ */
+export function calmShots(shots, { limits, readable }) {
+  const kept = [];
+  // Whether moving from `from` to `shot` gains nothing: what it shows is on screen, and close enough or readable.
+  const idle = (from, shot, view) =>
+    overlap(shot.rect, viewRect(from)) >= CALM.onScreen &&
+    (from.width / view.width < CALM.minRatio || readable(from, shot.ids));
+  for (const shot of shots) {
+    const view = clamp(shot.view, limits);
+    const current = kept.at(-1)?.view;
+    if (current && idle(current, shot, view)) continue;
+    const last = kept.at(-1);
+    if (kept.length > 1 && last.beat === shot.beat && shot.t - last.t <= CALM.mergeS) {
+      const rect = union([last.rect, shot.rect]);
+      const merged = { ...last, rect, view: clamp(fit(union([viewRect(last.view), viewRect(view)]), 0), limits) };
+      merged.ids = [...new Set([...last.ids, ...shot.ids])];
+      kept.pop();
+      if (!idle(kept.at(-1).view, merged, merged.view)) kept.push(merged);
+      continue;
+    }
+    kept.push({ ...shot, view });
+  }
+  return kept;
+}

@@ -549,6 +549,7 @@ export async function cut({ take, out, size = 1080, renderers = 2, beats = null,
   }
   summary.seconds = Math.round((Date.now() - started) / 1000);
   summary.segments = plan.segments;
+  summary.camera = plan.moves;
   fs.writeFileSync(path.join(out, 'cut.json'), JSON.stringify(summary, null, 2));
   say(`The cut is in ${out}, in ${summary.seconds} s`);
   return summary;
