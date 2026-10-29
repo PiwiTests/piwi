@@ -4,6 +4,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { chromium } from 'playwright';
+import { waitFor } from './script.mjs';
 import { REPO_ROOT } from './workspace.mjs';
 
 const PICKER_DIST = path.join(REPO_ROOT, 'apps', 'extension', 'dist');
@@ -62,35 +63,34 @@ export class DeveloperBrowser {
 
   /**
    * Opens the Runs window from the toolbar popup's **Runs** tile, as a person does once, and places it at `tile`
-   * (CSS pixels); resolves with its page once it follows the paired editor.
+   * (CSS pixels); resolves with its page once it follows the paired editor. The popup shows the tile as it opens, once
+   * Piwi Picker's worker reaches the paired editor's hub, which it may not have yet just after the pairing: the popup
+   * is opened again until it shows the tile, as a person does.
    */
   async openRuns(tile) {
-    const popup = await this.context.newPage();
-    try {
-      // The popup shows its Runs tile once the paired editor's hub answers, as it opens: it is opened again, as a
-      // person does, until the tile shows. The worker asks an editor that did not answer again after up to 30 s.
-      const tile = popup.getByRole('button', { name: /Runs/ });
-      for (const deadline = Date.now() + 90_000; ;) {
+    const { popup, button } = await waitFor(
+      async () => {
+        const popup = await this.context.newPage();
         await popup.goto(this.url('popup.html'));
-        if (
-          await tile.waitFor({ timeout: 5_000 }).then(
-            () => true,
-            () => false,
-          )
-        )
-          break;
-        if (Date.now() > deadline) {
-          const summary = await popup
-            .evaluate(() => chrome.runtime.sendMessage({ type: 'piwi-runs-summary' }))
-            .catch((why) => why.message);
-          throw new Error(`Piwi Picker’s popup never showed its Runs tile; its worker says ${JSON.stringify(summary)}`);
-        }
-      }
-      const opened = this.context.waitForEvent('page', (page) => page.url().endsWith('/runs.html'));
-      // A click that fails throws here; the wait it leaves must not end the process when it times out after.
-      opened.catch(() => {});
-      await tile.click({ timeout: 30_000 });
-      this.runs = await opened;
+        const button = popup.getByRole('button', { name: /Runs/ });
+        const shown = await button.waitFor({ timeout: 5_000 }).then(
+          () => true,
+          () => false,
+        );
+        if (shown) return { popup, button };
+        await popup.close();
+        return null;
+      },
+      "the popup's Runs tile, once Piwi Picker reaches the editor's hub",
+      90_000,
+    ).catch((error) => this.whyNoHub(error));
+    try {
+      // Waited for together, so a click that fails leaves no wait for the window to reject unheard.
+      const [runs] = await Promise.all([
+        this.context.waitForEvent('page', (page) => page.url().endsWith('/runs.html')),
+        button.click(),
+      ]);
+      this.runs = runs;
     } finally {
       await popup.close();
     }
@@ -116,6 +116,52 @@ export class DeveloperBrowser {
       const [tab] = await chrome.tabs.query({ windowType: 'normal' });
       await chrome.tabs.setZoom(tab.id, zoom);
     }, factor);
+  }
+
+  /**
+   * Throws `error` with what the Runs window, opened by its address, says of the editor's hub: searching for it, out
+   * of reach, or no access. The window stays open for the failed set's screen.
+   */
+  async whyNoHub(error) {
+    const runs = await this.context.newPage();
+    await runs.goto(this.url('runs.html')).catch(() => undefined);
+    await runs
+      .locator('html[data-ready]')
+      .waitFor({ state: 'attached', timeout: 10_000 })
+      .catch(() => undefined);
+    const said = await runs
+      .locator('body')
+      .innerText()
+      .catch(() => '');
+    // What the worker holds of the pairing: the address and the length of the token, never the token.
+    const worker = this.context.serviceWorkers().at(-1) ?? this.worker;
+    const held = await worker
+      .evaluate(async () => {
+        const local = await chrome.storage.local.get(null);
+        const keys = Object.keys(local).filter((key) => /pair/i.test(key));
+        const editor = await new Promise((resolve) => {
+          const request = indexedDB.open('piwi-secrets');
+          request.onerror = () => resolve(`not opened: ${request.error}`);
+          request.onsuccess = () => {
+            try {
+              const read = request.result.transaction('secrets', 'readonly').objectStore('secrets').get('editor');
+              read.onsuccess = () => resolve(read.result);
+              read.onerror = () => resolve(`not read: ${read.error}`);
+            } catch (why) {
+              resolve(`no store: ${why}`);
+            }
+          };
+        });
+        const shown =
+          editor && typeof editor === 'object'
+            ? { url: editor.url, token: typeof editor.token === 'string' ? `${editor.token.length} chars` : null }
+            : editor;
+        return JSON.stringify({ local: keys.map((key) => [key, local[key]]), editor: shown ?? null });
+      })
+      .catch((why) => `the worker did not answer: ${why.message}`);
+    throw new Error(
+      `${error.message}; the Runs window says: ${said.replace(/\s+/g, ' ').trim().slice(0, 400)}; the worker holds ${held}`,
+    );
   }
 
   async close() {

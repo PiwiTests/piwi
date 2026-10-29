@@ -584,7 +584,12 @@ export async function reclaimSpace(db: DbClient, options: { full?: boolean } = {
   await db.run(sql`PRAGMA wal_checkpoint(TRUNCATE)`);
   const autoVacuum = await db.get<{ auto_vacuum: number }>(sql`PRAGMA auto_vacuum`);
   if (autoVacuum?.auto_vacuum) {
-    await db.run(sql`PRAGMA incremental_vacuum`);
+    // The pragma frees one page per step and holds the write lock until its
+    // statement ends, so it runs through `executeMultiple`, which steps it to
+    // the end. `execute` steps a statement whose rows have no columns once:
+    // it would free one page and keep the lock until the statement is
+    // garbage-collected.
+    await db.$client.executeMultiple('PRAGMA incremental_vacuum');
     return { attempted: true, note: 'incremental vacuum completed' };
   }
   return {

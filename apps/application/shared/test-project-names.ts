@@ -35,6 +35,7 @@ export const PROJECT = {
   CAPABILITY_OPT_OUT: 'capability-opt-out-test',
   CAPABILITY_ROLE_GATING: 'capability-role-gating-test',
   CASE_FILES_LIVE: 'case-files-live-test',
+  CLEANUP_WRITES: 'cleanup-writes-test',
   CLUSTER_MERGE: 'cluster-merge-test',
   CLUSTER_NAMING: 'cluster-naming-test',
   CLUSTER_PAGE_LAYOUT: 'cluster-page-layout-test',
