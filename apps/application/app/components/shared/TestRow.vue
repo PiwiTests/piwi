@@ -77,6 +77,8 @@ const props = withDefaults(
     liveResources?: LiveWorkerResources | null;
     /** This row's worker in the run's live view: Watch, and Paused while its test is stopped (live runs only). */
     liveWorker?: LiveWorkerState | null;
+    /** A running row of a run its developer has not shared live: says so, and how to share it (live runs only). */
+    liveUnshared?: boolean;
     highlighted?: boolean;
     projectKey?: string | number | null;
     projectName?: string | null;
@@ -114,6 +116,7 @@ const props = withDefaults(
     liveStep: null,
     liveResources: null,
     liveWorker: null,
+    liveUnshared: false,
     highlighted: false,
     projectKey: null,
     projectName: null,
@@ -328,7 +331,7 @@ const clusterLabel = computed(() =>
 
         <slot name="subline" />
 
-        <div v-if="liveStep || liveWorker" class="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+        <div v-if="liveStep || liveWorker || liveUnshared" class="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
           <!-- A stopped test shows where it is paused in place of its last step. -->
           <TestRowLiveStep v-if="liveStep && !liveWorker?.paused" :step="liveStep" class="max-w-full" />
           <TestRowLiveWorker
@@ -338,6 +341,16 @@ const clusterLabel = computed(() =>
             :project-name="projectName"
             @watch="emit('watch')"
           />
+          <span
+            v-else-if="liveUnshared"
+            class="inline-flex items-center gap-1 text-xs text-muted"
+            data-testid="live-unshared"
+            @click.stop
+          >
+            <UIcon name="i-lucide-radio" class="size-3 shrink-0" />
+            Not shared live
+            <HelpHint topic="run.live-unshared" />
+          </span>
         </div>
       </div>
     </div>

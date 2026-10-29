@@ -15,6 +15,8 @@ import { resolveCiRerunSettings, type CiRerunSettings } from '#shared/ci-rerun';
 import { resolveServerProbeSettings } from '#shared/server-probes';
 import { projectTargetsSchema } from '#shared/analytics/targets';
 import { liveViewRelay } from '../../utils/live-view';
+import { runEventBus } from '../../utils/run-events';
+import type { LiveViewRunState } from '#shared/live-view';
 
 defineRouteMeta({
   openAPI: {
@@ -180,8 +182,12 @@ export default eventHandler(async (event) => {
       tagIds,
     }).then(async (project) => {
       if (coverageScope !== undefined || coverageAreas !== undefined) await recountProjectCoverage(db, id);
-      // Off: the views open now end, and the keys of the project's runs open nothing more.
-      if (liveView === false) liveViewRelay.endProject(id);
+      // Off: the views open now end, the keys of the project's runs open nothing more, and their pages hear so.
+      if (liveView === false) {
+        const keyed: LiveViewRunState = { keyed: false };
+        for (const runId of liveViewRelay.endProject(id))
+          runEventBus.publish(runId, { type: 'live-view', data: keyed });
+      }
       return project;
     });
   } catch (e: any) {

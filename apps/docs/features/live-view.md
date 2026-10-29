@@ -31,10 +31,11 @@ off ends every view of the project's runs at once.
 
 ## Watch a worker
 
-On the run page's **Tests** tab, a running test shows the step its worker is on. With the live view on, **Watch**
-beside it opens that worker's view: the test's page as the browser paints it, headless or not, and under it the call
-the image was taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A page that does not
-change sends no new image.
+On the run page's **Tests** tab, a running test shows the step its worker is on. With the live view on, **Watch** beside
+it opens that worker's view: the test's page as the browser paints it, headless or not, and under it the call the image
+was taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A page that does not change sends no
+new image. A run on a developer's machine offers **Watch** only once its developer [shares
+it](#share-a-run-from-your-machine): until then its running tests say **Not shared live**.
 
 A view belongs to the test on whose row you opened it. Opened while the worker runs no test, in a `beforeAll` or between
 two tests, it says so, and shows the test's page once it opens. It ends as its test ends, the worker leaves, the run
@@ -61,12 +62,13 @@ The first share in a window (in a JetBrains IDE, in each project since it opened
 started) says what goes out and to whom, and waits for your yes. Shared, the run says where and how many views of it
 are open (one person may open several), with its page's link to copy for your teammate.
 
-Until then, the run's workers hold their key and send nothing. Once shared, each worker, and one Playwright starts
-later, opens its connection and sends what a CI run's do: its stops, which everyone with the run's page open sees (the
-call, its file and line, and the test's title), even while nobody watches; and images while someone does. **Stop
-sharing** closes the connections within seconds, so nothing more goes to the instance: each view ends saying the
-developer stopped sharing, and **Paused** leaves the rows. Closing the editor, or the desktop app, stops the sharing
-too.
+Until then, the run's workers hold their key and send nothing, and on its page each running test says **Not shared
+live** where **Watch** would be, its help listing where to share the run from. Once shared, each worker, and one
+Playwright starts later, opens its connection and sends what a CI run's do: its stops, which everyone with the run's
+page open sees (the call, its file and line, and the test's title), even while nobody watches; and images while someone
+does. **Stop sharing** closes the connections within seconds, so nothing more goes to the instance: each view ends
+saying the developer stopped sharing, and **Paused** leaves the rows. Closing the editor, or the desktop app, stops the
+sharing too.
 
 A run that cannot be shared says why when you ask: it reports to no instance, its project has the live view off, the
 reporter's global setup did not register it, or it reports to the desktop app on your machine, which hands out no key
