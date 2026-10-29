@@ -319,17 +319,23 @@ pub(crate) fn lab_plan_path(root: &Path, project_id: &str, request_id: &str) -> 
     root.join(project_id).join(format!("lab-{request_id}.json"))
 }
 
-/// The environment a reproduction, a bisect step and `piwi flake` run with:
-/// this app's server and token, which win over a dashboard named in the user's
-/// environment or a `.env` in the worktree, so a run of an old commit reports
-/// to this app only, and plain output for the tray.
-pub(crate) fn flake_lab_env(server: &ServerInfo) -> Vec<(&'static str, String)> {
+/// The environment a reproduction, a bisect step and `piwi flake` run with,
+/// so a run of an old commit reports to this app only, and plain output for
+/// the tray. `PIWI_DESKTOP_APP=prefer` has the reporter and `piwi` take this
+/// app's address and token together from its discovery file, before a server
+/// the Playwright config, the environment or a `.env` names. The connection
+/// variables a launching environment can carry are emptied: the token is in
+/// no run's environment, and no inherited key goes with another server. A
+/// reporter that predates `prefer` reads the discovery file when nothing else
+/// names a server.
+pub(crate) fn flake_lab_env() -> Vec<(&'static str, String)> {
     vec![
-        (
-            "PIWI_DASHBOARD_URL",
-            format!("http://127.0.0.1:{}", server.port),
-        ),
-        ("PIWI_API_KEY", server.token.clone()),
+        ("PIWI_DESKTOP_APP", "prefer".into()),
+        ("PIWI_DESKTOP_CONFIG", String::new()),
+        ("PIWI_DASHBOARD_URL", String::new()),
+        ("PIWI_API_KEY", String::new()),
+        ("PIWI_USERNAME", String::new()),
+        ("PIWI_PASSWORD", String::new()),
         ("NO_COLOR", "1".into()),
         ("FORCE_COLOR", "0".into()),
     ]
@@ -340,13 +346,8 @@ pub(crate) fn flake_lab_env(server: &ServerInfo) -> Vec<(&'static str, String)> 
 /// (`PIWI_RUN_CHANNEL`, `PIWI_RUN_REF`), so its window and Piwi Picker can
 /// follow, pause and step it. `attended`: whether a person attends the run (a
 /// reproduction), else its failures go on at once (a bisect, a lab).
-async fn lab_env_with_hub(
-    app: &AppHandle,
-    server: &ServerInfo,
-    id: u32,
-    attended: bool,
-) -> Vec<(&'static str, String)> {
-    let mut env = flake_lab_env(server);
+async fn lab_env_with_hub(app: &AppHandle, id: u32, attended: bool) -> Vec<(&'static str, String)> {
+    let mut env = flake_lab_env();
     env.extend(crate::runner::bundled_hub_env(app, id, attended).await);
     env
 }
@@ -1093,7 +1094,7 @@ async fn reproduce_driver(
 }
 
 /// The browser + test phases shared by reproduce and each bisect step; the test
-/// runs with this app's server and token ([`flake_lab_env`]) and `env`.
+/// runs with [`flake_lab_env`], reporting to this app, and `env`.
 /// `attended`: whether a person attends the run (a reproduction, not a bisect).
 #[allow(clippy::too_many_arguments)]
 async fn run_test_phase(
@@ -1119,7 +1120,7 @@ async fn run_test_phase(
     }
     let mut node_args = vec![node_path(&cli), "test".to_string()];
     node_args.extend(args.iter().cloned());
-    let mut env_with_app = lab_env_with_hub(app, &server_info(app), id, attended).await;
+    let mut env_with_app = lab_env_with_hub(app, id, attended).await;
     env_with_app.extend_from_slice(env);
     run_sidecar_streaming(app, id, Some(&cli), worktree, node_args, &env_with_app).await
 }
@@ -1144,9 +1145,6 @@ pub async fn desktop_bisect_here(
         return Err("invalid commit".into());
     }
     let origin_ref = origin_reference(cluster_id, origin_ref)?;
-    // A flake-aware bisect asks `piwi flake verify --bisect` at each step, with
-    // this app's server and token.
-    let flake = flake_test_case_id.map(|id| (id, server_info(&app)));
     let (_record, folder, git) = resolve_repo(&app, &project_id)?;
     if !commit_exists(&git, &folder, &good) || !commit_exists(&git, &folder, &bad) {
         return Err(format!(
@@ -1197,7 +1195,7 @@ pub async fn desktop_bisect_here(
             &bad,
             &args,
             browser.as_deref(),
-            flake.as_ref(),
+            flake_test_case_id,
             origin_ref.as_deref(),
             &stop,
         )
@@ -1218,12 +1216,13 @@ async fn bisect_driver(
     bad: &str,
     args: &[String],
     browser: Option<&str>,
-    flake: Option<&(u64, ServerInfo)>,
+    // A flake-aware bisect asks `piwi flake verify --bisect` for this test at each step.
+    flake: Option<u64>,
     origin_ref: Option<&str>,
     stop: &AtomicBool,
 ) -> Option<i32> {
     emit(app, RunEventPayload::phase(id, "bisect"));
-    if let Some((test_case_id, _)) = flake {
+    if let Some(test_case_id) = flake {
         emit_line(
             app,
             id,
@@ -1294,8 +1293,8 @@ async fn bisect_driver(
         // output the loop reads next.
         let verdict = if !installed || !browser_ok {
             "skip"
-        } else if let Some((test_case_id, server)) = flake {
-            let code = run_flake_step(app, id, folder, worktree, *test_case_id, server, stop).await;
+        } else if let Some(test_case_id) = flake {
+            let code = run_flake_step(app, id, folder, worktree, test_case_id, stop).await;
             if stop.load(Ordering::SeqCst) {
                 return None;
             }
@@ -1372,7 +1371,6 @@ async fn run_flake_step(
     folder: &Path,
     worktree: &Path,
     test_case_id: u64,
-    server: &ServerInfo,
     stop: &AtomicBool,
 ) -> Option<i32> {
     if stop.load(Ordering::SeqCst) {
@@ -1383,7 +1381,7 @@ async fn run_flake_step(
         return None;
     };
     let args = flake_bisect_args(&cli, test_case_id);
-    let env = lab_env_with_hub(app, server, id, false).await;
+    let env = lab_env_with_hub(app, id, false).await;
     run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env).await
 }
 
@@ -1413,11 +1411,7 @@ pub async fn desktop_flake_lab_here(
     if test_case_id == 0 {
         return Err("invalid test case".into());
     }
-    let server = server_info(&app);
-    let plan_server = ServerInfo {
-        port: server.port,
-        token: server.token.clone(),
-    };
+    let plan_server = server_info(&app);
     let plan = tauri::async_runtime::spawn_blocking(move || {
         local_get_json(
             &plan_server,
@@ -1476,7 +1470,6 @@ pub async fn desktop_flake_lab_here(
             dirty,
             test_case_id,
             &options,
-            &server,
             &stop,
         )
         .await;
@@ -1505,12 +1498,11 @@ async fn flake_lab_driver(
     dirty: bool,
     test_case_id: u64,
     options: &FlakeLabOptions,
-    server: &ServerInfo,
     stop: &AtomicBool,
 ) -> Option<i32> {
     let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
     let args = flake_lab_args(&cli, test_case_id, options);
-    let env = lab_env_with_hub(app, server, id, false).await;
+    let env = lab_env_with_hub(app, id, false).await;
     run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env).await
 }
 
@@ -1578,11 +1570,7 @@ pub async fn desktop_flake_lab_job(
     if !crate::repro::valid_request_id(&request_id) {
         return Err("invalid repro request id".into());
     }
-    let server = server_info(&app);
-    let read = ServerInfo {
-        port: server.port,
-        token: server.token.clone(),
-    };
+    let read = server_info(&app);
     let path = format!("/api/desktop/repro-requests/{request_id}");
     let request = tauri::async_runtime::spawn_blocking(move || local_get_json(&read, &path))
         .await
@@ -1626,7 +1614,7 @@ pub async fn desktop_flake_lab_job(
 
     tauri::async_runtime::spawn(async move {
         let code = lab_job_driver(
-            &app, id, &folder, &worktree, &commit, dirty, &plan_file, &server, &stop,
+            &app, id, &folder, &worktree, &commit, dirty, &plan_file, &stop,
         )
         .await;
         let _ = std::fs::remove_file(&plan_file);
@@ -1654,12 +1642,11 @@ async fn lab_job_driver(
     commit: &str,
     dirty: bool,
     plan_file: &Path,
-    server: &ServerInfo,
     stop: &AtomicBool,
 ) -> Option<i32> {
     let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
     let args = lab_job_args(&cli, plan_file);
-    let env = lab_env_with_hub(app, server, id, false).await;
+    let env = lab_env_with_hub(app, id, false).await;
     let (code, stdout) = run_sidecar(app, id, worktree, args, &env, true).await;
     emit(app, RunEventPayload::lab(id, parse_lab_report(&stdout)));
     code
@@ -1930,17 +1917,25 @@ mod tests {
     }
 
     #[test]
-    fn piwi_flake_reaches_this_app_with_its_token() {
-        let env = flake_lab_env(&ServerInfo {
-            port: 43210,
-            token: "pd_secret".into(),
-        });
+    fn a_lab_run_finds_this_app_through_its_discovery_file_and_holds_no_connection() {
+        let env = flake_lab_env();
         let get = |key: &str| env.iter().find(|(k, _)| *k == key).map(|(_, v)| v.as_str());
-        assert_eq!(get("PIWI_DASHBOARD_URL"), Some("http://127.0.0.1:43210"));
-        assert_eq!(get("PIWI_API_KEY"), Some("pd_secret"));
+        assert_eq!(get("PIWI_DESKTOP_APP"), Some("prefer"));
+        // Emptied, so an inherited value names neither another server nor its key,
+        // and the reporter reads the discovery file at its default path.
+        for key in [
+            "PIWI_DESKTOP_CONFIG",
+            "PIWI_DASHBOARD_URL",
+            "PIWI_API_KEY",
+            "PIWI_USERNAME",
+            "PIWI_PASSWORD",
+        ] {
+            assert_eq!(get(key), Some(""), "{key}");
+        }
         assert_eq!(get("NO_COLOR"), Some("1"));
+        assert_eq!(get("FORCE_COLOR"), Some("0"));
         // Nothing else: the webview cannot add a variable.
-        assert_eq!(env.len(), 4);
+        assert_eq!(env.len(), 8);
     }
 
     #[test]

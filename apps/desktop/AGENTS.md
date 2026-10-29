@@ -58,7 +58,8 @@ shell and are feature-equivalent.
     one `GET /api/desktop/run-channel` names in `PIWI_EDITOR_SEND`.
 
   Neither the CLI nor a run's environment is ever given the desktop token (`tests/unit/assistant-claude-code.test.ts`,
-  `tests/unit/desktop-runs.test.ts`).
+  `tests/unit/desktop-runs.test.ts`). A reproduction, a bisect step and `piwi flake` find the app through its discovery
+  file instead, with `PIWI_DESKTOP_APP=prefer` and the connection variables emptied (`flake_lab_env` in `worktree.rs`).
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), and deletes it on quit. Its readers:
