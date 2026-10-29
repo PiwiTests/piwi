@@ -70,14 +70,15 @@ function releaseWhenClosed(tx: Transaction, release: () => void): Transaction {
  * holds SQLite's write lock across awaits while the client runs other
  * statements on the other connection, and the driver runs statements
  * synchronously: a write there cannot wait for the lock without blocking the
- * event loop the transaction needs to reach its COMMIT. Writes, batches and
- * other transactions therefore wait for the open transaction to end, so it is
- * the only one, and the other connection is always free. Reads (`select`) run
- * beside it, as WAL allows.
+ * event loop the transaction needs to reach its COMMIT. Writes, batches,
+ * `executeMultiple` scripts and other transactions therefore wait for the open
+ * transaction to end, so it is the only one, and the other connection is
+ * always free. Reads (`select`) run beside it, as WAL allows.
  */
 export async function configureSqliteConnections(client: Client): Promise<void> {
   const execute = client.execute.bind(client);
   const batch = client.batch.bind(client);
+  const executeMultiple = client.executeMultiple.bind(client);
   const transaction = client.transaction.bind(client);
 
   // The pool reuses the connection it has until a transaction holds it, so
@@ -111,6 +112,10 @@ export async function configureSqliteConnections(client: Client): Promise<void> 
   client.batch = async (stmts, mode) => {
     while (open) await transactionEnded();
     return batch(stmts, mode);
+  };
+  client.executeMultiple = async (sql: string) => {
+    while (open) await transactionEnded();
+    return executeMultiple(sql);
   };
   client.transaction = async (mode?: TransactionMode) => {
     while (open) await transactionEnded();
