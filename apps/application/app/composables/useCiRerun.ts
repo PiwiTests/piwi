@@ -1,38 +1,60 @@
 import type { MaybeRefOrGetter } from 'vue';
 
-/** A cluster's CI re-run availability and last dispatch, from `/rerun`. */
+/** A CI re-run's availability and last dispatch, from a cluster's or an execution's `/rerun`. */
 export interface RerunInfo {
   available: boolean;
   reason: string | null;
   provider: string | null;
   enabled: boolean;
   hasToken: boolean;
-  lastDispatch: { provider: string; url: string; args: string; at: number; byName: string | null } | null;
+  lastDispatch: {
+    provider: string;
+    url: string;
+    args: string;
+    at: number;
+    byName: string | null;
+    /** How many tests it re-ran. */
+    tests?: number;
+  } | null;
+}
+
+/** What a last re-run ran, for its "Last re-run of 3 tests" line: ` of N tests`, or nothing when it was not recorded. */
+export function lastRerunScope(dispatch: RerunInfo['lastDispatch']): string {
+  const n = dispatch?.tests;
+  return n ? ` of ${n} test${n === 1 ? '' : 's'}` : '';
 }
 
 /**
- * Dispatch a CI re-run of a cluster's affected tests. Both failure pages fetch
- * the `RerunInfo` themselves (their SSR strategies differ) but share this POST
- * and its toasts; the caller refreshes the info afterwards.
+ * Dispatch a CI re-run through a `/rerun` route (a cluster's affected tests, or
+ * one execution's test). The failure pages fetch the `RerunInfo` themselves
+ * (their SSR strategies differ) but share this POST and its toasts, which say
+ * what re-runs (`started`, one sentence) and link to the provider's runs; the
+ * caller refreshes the info afterwards.
  */
-export function useCiRerun(clusterId: MaybeRefOrGetter<number | null | undefined>, refreshRerun: () => unknown) {
+export function useCiRerun(
+  endpoint: MaybeRefOrGetter<string | null | undefined>,
+  refreshRerun: () => unknown,
+  started: MaybeRefOrGetter<string> = 'The affected tests are re-running in CI.',
+) {
   const toast = useToast();
   const rerunning = ref(false);
 
   async function triggerRerun() {
-    const id = toValue(clusterId);
-    if (id == null || rerunning.value) return;
+    const url = toValue(endpoint);
+    if (!url || rerunning.value) return;
     rerunning.value = true;
     try {
-      const res = await $fetch<{ ok: boolean; message?: string; dispatch?: { url: string } }>(
-        `/api/failure-clusters/${id}/rerun`,
-        { method: 'POST' },
-      );
+      const res = await $fetch<{ ok: boolean; message?: string; dispatch?: { url: string } }>(url, {
+        method: 'POST',
+      });
       if (res.ok && res.dispatch) {
         toast.add({
           title: 'CI re-run dispatched',
-          description: 'The affected tests are re-running.',
+          description: toValue(started),
           color: 'success',
+          actions: [
+            { label: 'Watch it', to: res.dispatch.url, target: '_blank', color: 'neutral', variant: 'outline' },
+          ],
         });
         await refreshRerun();
       } else {

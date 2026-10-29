@@ -5488,7 +5488,10 @@ const SCENES = [
         return {};
       });
       await goto('/test-runs/2');
-      await page.getByRole('button', { name: 'Run locally' }).first().click();
+      await page
+        .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
+        .first()
+        .click();
       const tray = page.getByRole('region', { name: 'Local runs' });
       await tray.waitFor();
       await page.waitForFunction(() => window.__hub?.open() === 1);
@@ -6138,6 +6141,52 @@ const SCENES = [
     inspection: { ...READY_INSPECTION, webServer: false },
     of: '[data-shot="fix-reproduce-body"]',
     pad: 12,
+  },
+  {
+    name: 'desktop-rerun',
+    description:
+      "Re-run buttons in the desktop shell: a red run's header, its menu with the exact command, the tray, an execution's header and a project's default run options",
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 860 },
+    link: { path: READY_INSPECTION.path, exists: true },
+    localRunId: 51,
+    outputs: [
+      'desktop-rerun.png',
+      'desktop-rerun-menu.png',
+      'desktop-rerun-tray.png',
+      'desktop-rerun-execution.png',
+      'desktop-rerun-defaults.png',
+    ],
+    async run({ page, goto, settle, shoot }) {
+      const rerun = page.getByRole('button', { name: /^Re-run \d+ failed tests?/ });
+      await rerun.waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('', { of: '[data-shot="run-header"]', pad: 12 });
+      await page.getByRole('button', { name: 'Run options' }).first().click();
+      await page.getByText(/^Runs (this command|these commands)/).waitFor();
+      await settle();
+      await shoot('menu', { clip: { x: 480, y: 0, width: 800, height: 860 } });
+      await page.keyboard.press('Escape');
+      // The run goes on until the scene ends: the execution page's button, for other tests, stays ready.
+      await rerun.click();
+      const tray = page.getByRole('region', { name: 'Local runs' });
+      await tray.getByText('Running', { exact: false }).first().waitFor();
+      await settle();
+      const box = await tray.boundingBox();
+      await shoot('tray', {
+        clip: { x: box.x - 8, y: box.y - 8, width: box.width + 16, height: box.height + 16 },
+      });
+      await goto('/test-run-cases/37');
+      await page.getByRole('button', { name: 'Re-run this test' }).waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('execution', { clip: { x: 0, y: 0, width: 1280, height: 320 } });
+      await goto('/projects/1?tab=settings&section=local-folder');
+      await page.locator('[data-shot="local-folder-run-defaults"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('defaults', { of: '[data-shot="local-folder-run-defaults"]', pad: 12 });
+    },
   },
   {
     name: 'desktop-nav',

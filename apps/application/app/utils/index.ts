@@ -95,10 +95,9 @@ export function reproduceSectionSummary(steps: number, bisectAvailable: boolean)
   return `${steps} commands · Linux/macOS or Windows · ${bisectAvailable ? 'bisect available' : 'bisect not available'}`;
 }
 
-/** The Toolbox's one-line Verify summary — the `-g` grep of the command, then whether CI can re-run. */
-export function verifySectionSummary(command: string, rerunAvailable: boolean, fallbackLabel: string): string {
-  const g = command.match(/-g\s+(".*?"|'.*?'|\S+)/)?.[1];
-  const parts = [g ? `-g ${g}` : fallbackLabel];
+/** The cluster Toolbox's one-line Verify summary: how many tests the command runs, then whether CI can re-run them. */
+export function verifySectionSummary(testCount: number, rerunAvailable: boolean): string {
+  const parts = [`Runs the ${testCount} affected test${testCount === 1 ? '' : 's'}`];
   if (rerunAvailable) parts.push('Re-run in CI');
   return parts.join(' · ');
 }

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /**
  * Desktop shell only: the project's linked local folder, managed in the
- * project's Settings tab alongside the other project settings. Changes apply
- * immediately — the link lives in the shell's own store on this machine, not
- * in the server database. Renders nothing without the IPC bridge.
+ * project's Settings tab alongside the other project settings, with the
+ * default options every run button of the project starts from. Changes apply
+ * immediately — the link lives in the shell's own store and the defaults in
+ * the app's storage, both on this machine, never in the server database.
+ * Renders nothing without the IPC bridge.
  */
 import type { ComponentPublicInstance } from 'vue';
 import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInspect';
@@ -11,6 +13,13 @@ import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInsp
 const props = defineProps<{ projectId: string | number; projectName?: string | null }>();
 
 const { available, link, busy, pickAndLink, unlink } = useDesktopProjectLink(() => props.projectId);
+const store = useDesktopLocalRuns();
+
+/** The project's default run options: what a run button of the project starts from. */
+const runDefaults = computed({
+  get: () => store.getProjectOptions(props.projectId),
+  set: (value) => store.saveProjectOptions(props.projectId, value),
+});
 const { propose: proposePrevRuns } = useDesktopImportPrevRuns();
 
 const inspection = ref<DesktopFolderInspection | null>(null);
@@ -110,6 +119,14 @@ async function chooseAndPropose() {
       </p>
 
       <DesktopFolderChecklist v-if="inspection" :inspection="inspection" />
+
+      <div class="space-y-2 pt-1" data-shot="local-folder-run-defaults">
+        <h3 class="text-sm font-semibold text-highlighted">Default run options</h3>
+        <p class="text-xs text-muted">
+          What every Re-run button of this project starts from. A button's menu changes them for its own runs only.
+        </p>
+        <DesktopRunOptionsFields v-model="runDefaults" />
+      </div>
     </div>
 
     <div v-else class="flex items-center justify-between gap-3">

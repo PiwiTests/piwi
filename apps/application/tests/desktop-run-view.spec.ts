@@ -3,6 +3,9 @@ import { test, expect } from './fixtures';
 import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 
+/** The run page's desktop re-run button, by what it says it runs. */
+const RERUN_FAILED = /^Re-run \d+ failed tests?/;
+
 /**
  * The desktop window's live view of a run its shell started, in the Local runs tray, driven against the regular web
  * build: a faked Tauri bridge starts the run (as `desktop-local-run.spec.ts` does), and the bundled server's hub of
@@ -255,7 +258,7 @@ test.describe('Desktop run live view', () => {
     });
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     await expect(tray(page)).toBeVisible();
 
     // The run runs: the window holds the hub's stream, and shows the run live once the hub tells it.
@@ -426,7 +429,7 @@ test.describe('Desktop run live view', () => {
     );
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
@@ -502,7 +505,7 @@ test.describe('Desktop run live view', () => {
     const commands = await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await page.evaluate((event) => window.__hub.send(event), session(stopped('s1')));
@@ -545,7 +548,7 @@ test.describe('Desktop run live view', () => {
     const commands = await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     // Turned on before its workers connect: the run is shown by the name its step gave the hub.
@@ -594,7 +597,7 @@ test.describe('Desktop run live view', () => {
     const commands = await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     await holdSwitch(page).click();
