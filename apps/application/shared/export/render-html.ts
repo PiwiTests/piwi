@@ -9,28 +9,42 @@
  * output, page source. The `html` tagged template escapes interpolations by
  * default, so markup has to be opted into explicitly with `raw()`.
  *
- * Color is carried by text and borders, never by a fill behind text, so a
- * printer with background graphics turned off loses decoration but no meaning.
+ * Meaning is carried by text and borders. Fills (the tinted header, the outcome
+ * bar, the step timeline) are decoration a printer with background graphics
+ * turned off may drop: each one has its words beside it.
  */
 import { markdownToHtml } from '#shared/markdown-to-html';
 import { html, joinHtml, raw, toHtmlString, type RawHtml } from './html';
 import { stripAnsi } from '#shared/error-fingerprint';
 import { highlightCode, highlightLines, languageForPath } from '#shared/highlight';
 import { parseSourceSnippet } from '#shared/source-snippet';
+import { stepLabelParts } from '@piwitests/core/step-analysis';
+import { outcomeText, percent } from '#shared/notifications/message-parts';
 import {
   caseFacts,
+  caseHeadline,
+  caseLabels,
+  casePath,
   clusterFacts,
+  clusterHeadline,
+  clusterOccurrences,
   diagnosisFacts,
+  errorRows,
   fmtBytes,
+  fmtDate,
   fmtDuration,
   fmtStepDuration,
   hasDiagnosis,
   OMISSION_REASONS,
   projectLabel,
+  runFacts,
+  runOutcome,
+  statusTone,
+  stepBars,
   type Fact,
 } from './fields';
-import { piwiCreditHtml } from '#shared/brand';
-import { STATUS_COLORS as C } from '#shared/status-colors';
+import { piwiCreditHtml, piwiMarkSvg } from '#shared/brand';
+import { STATUS_COLORS as C, type StatusColorKey } from '#shared/status-colors';
 import type { ExportAsset, ExportBundle, ExportCase } from './types';
 
 interface RenderOptions {
@@ -41,83 +55,153 @@ interface RenderOptions {
 const STYLES = `
 :root {
   color-scheme: light dark;
-  --bg:#fff; --fg:#1c1c20; --muted:#6b6b76; --faint:#8b8b96;
-  --line:#e2e2e7; --line-strong:#c9c9d2; --card:#fafafa; --sunken:#f5f5f8;
-  --accent:#4338ca; --fail:${C.failed.text}; --pass:${C.passed.text}; --warn:${C.didnotrun.text}; --info:#1d4ed8; --skip:${C.skipped.text};
+  --bg:#f6f6f8; --paper:#fff; --fg:#1c1c20; --muted:#5f5f6b; --faint:#8b8b96;
+  --line:#e4e4e9; --line-strong:#c9c9d2; --card:#fafafb; --sunken:#f4f4f7;
+  --accent:#4f46e5; --accent-bg:rgba(79,70,229,.07);
+  --fail:${C.failed.text}; --pass:${C.passed.text}; --warn:${C.didnotrun.text}; --info:#1d4ed8; --skip:${C.skipped.text}; --flaky:${C.flaky.text};
+  --fail-bg:rgba(244,63,94,.07); --pass-bg:rgba(16,185,129,.07); --warn-bg:rgba(245,158,11,.08); --flaky-bg:rgba(217,70,239,.07); --skip-bg:rgba(161,161,170,.1);
   --tok-key:#7c3aed; --tok-str:#0f766e; --tok-num:#b45309; --tok-fn:#1d4ed8; --tok-attr:#a21caf; --tok-builtin:#0369a1;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg:#161619; --fg:#ececf1; --muted:#a0a0ad; --faint:#7e7e8c;
-    --line:#2f2f36; --line-strong:#43434d; --card:#1d1d21; --sunken:#131316;
-    --accent:#a5b4fc; --fail:${C.failed.textDark}; --pass:${C.passed.textDark}; --warn:${C.didnotrun.textDark}; --info:#93c5fd; --skip:${C.skipped.textDark};
+    --bg:#111114; --paper:#18181c; --fg:#ececf1; --muted:#a8a8b5; --faint:#7e7e8c;
+    --line:#2c2c33; --line-strong:#43434d; --card:#1d1d22; --sunken:#131316;
+    --accent:#a5b4fc; --accent-bg:rgba(165,180,252,.08);
+    --fail:${C.failed.textDark}; --pass:${C.passed.textDark}; --warn:${C.didnotrun.textDark}; --info:#93c5fd; --skip:${C.skipped.textDark}; --flaky:${C.flaky.textDark};
+    --fail-bg:rgba(251,113,133,.1); --pass-bg:rgba(52,211,153,.09); --warn-bg:rgba(251,191,36,.09); --flaky-bg:rgba(232,121,249,.09); --skip-bg:rgba(161,161,170,.1);
     --tok-key:#c4b5fd; --tok-str:#5eead4; --tok-num:#fcd34d; --tok-fn:#93c5fd; --tok-attr:#f0abfc; --tok-builtin:#7dd3fc;
   }
 }
 * { box-sizing:border-box; }
 body {
   margin:0; padding:0 1rem 3rem; background:var(--bg); color:var(--fg);
-  font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
 }
-.wrap { max-width:62rem; margin:0 auto; }
+.wrap { max-width:64rem; margin:0 auto; }
 
-header.doc { padding:1.5rem 0 .75rem; border-bottom:2px solid var(--line-strong); }
-.eyebrow { font-size:.7rem; letter-spacing:.09em; text-transform:uppercase; color:var(--accent); font-weight:650; margin:0; }
-h1 { font-size:1.45rem; line-height:1.25; margin:.2rem 0 .3rem; overflow-wrap:anywhere; }
-h2 { font-size:1.05rem; line-height:1.3; margin:0 0 .15rem; overflow-wrap:anywhere; }
-.meta { color:var(--muted); font-size:.78rem; margin:.15rem 0; }
-.meta code { font-family:var(--mono); overflow-wrap:anywhere; }
-.toolbar { display:flex; gap:.4rem; margin-top:.7rem; }
+header.doc { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem 1rem; padding:1.1rem 0 .4rem; }
+.brand { display:flex; align-items:center; gap:.45rem; font-size:.78rem; font-weight:650; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); min-width:0; }
+.brand .project { color:var(--muted); font-weight:600; overflow-wrap:anywhere; }
+.stamp { margin-left:auto; color:var(--faint); font-size:.75rem; text-align:right; }
+.stamp code { font-family:var(--mono); overflow-wrap:anywhere; }
+.toolbar { display:flex; gap:.4rem; width:100%; justify-content:flex-end; }
 button {
-  font:inherit; font-size:.78rem; padding:.3rem .7rem; border:1px solid var(--line-strong);
-  border-radius:5px; background:var(--card); color:var(--fg); cursor:pointer;
+  font:inherit; font-size:.76rem; padding:.28rem .7rem; border:1px solid var(--line-strong);
+  border-radius:6px; background:var(--paper); color:var(--fg); cursor:pointer;
 }
 button:hover { border-color:var(--accent); color:var(--accent); }
 
-section.case { padding-top:1rem; }
-section.case + section.case { border-top:1px solid var(--line); margin-top:1.2rem; }
+h1 { font-size:1.6rem; line-height:1.2; margin:.35rem 0 .3rem; overflow-wrap:anywhere; letter-spacing:-.01em; }
+h2 { font-size:1.25rem; line-height:1.25; margin:.35rem 0 .3rem; overflow-wrap:anywhere; }
+h3 { font-size:.7rem; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:.9rem 0 .35rem; }
+h3.file { font:600 12px/1.4 var(--mono); letter-spacing:0; text-transform:none; overflow-wrap:anywhere; }
+p { margin:.4rem 0; }
+.meta { color:var(--muted); font-size:.8rem; margin:.15rem 0; }
+.meta code { font-family:var(--mono); overflow-wrap:anywhere; }
 
-dl.facts {
-  display:grid; grid-template-columns:repeat(auto-fill,minmax(10.5rem,1fr));
-  gap:.4rem .9rem; margin:.7rem 0;
+/* The header of an execution or a cluster: its outcome as a colored edge and tint. */
+.hero {
+  --tone:var(--fail); --tone-bg:var(--fail-bg);
+  background:var(--paper); background-image:linear-gradient(var(--tone-bg),var(--tone-bg));
+  border:1px solid var(--line); border-left:6px solid var(--tone); border-radius:12px;
+  padding:1.1rem 1.3rem 1.15rem; margin:.6rem 0 1rem;
 }
-dl.facts > div { min-width:0; border-left:2px solid var(--line); padding-left:.5rem; }
-dl.facts dt { font-size:.66rem; letter-spacing:.05em; text-transform:uppercase; color:var(--faint); }
-dl.facts dd { margin:0; font-size:.82rem; overflow-wrap:anywhere; }
+.hero.t-pass { --tone:var(--pass); --tone-bg:var(--pass-bg); }
+.hero.t-warn { --tone:var(--warn); --tone-bg:var(--warn-bg); }
+.hero.t-flaky { --tone:var(--flaky); --tone-bg:var(--flaky-bg); }
+.hero.t-skip { --tone:var(--skip); --tone-bg:var(--skip-bg); }
+.hero .labels { display:flex; flex-wrap:wrap; gap:.35rem; align-items:center; }
+.hero .path { color:var(--muted); font-size:.92rem; margin:.1rem 0; overflow-wrap:anywhere; }
+.hero .loc { font:12.5px/1.4 var(--mono); color:var(--muted); margin:.15rem 0 0; overflow-wrap:anywhere; }
+.hero .headline { margin:.75rem 0 0; font-size:1rem; font-weight:600; overflow-wrap:anywhere; }
+.hero .headline .detail { display:block; font-weight:400; color:var(--muted); font-size:.88rem; }
+.hero .state { margin:.6rem 0 0; font-size:.88rem; }
+
+.badge {
+  display:inline-block; padding:.05rem .55rem; border-radius:999px; font-size:.7rem; line-height:1.5;
+  font-weight:700; letter-spacing:.05em; text-transform:uppercase; border:1.5px solid currentColor; background:var(--paper);
+}
+.chip {
+  display:inline-block; padding:.05rem .5rem; border-radius:999px; font-size:.72rem; line-height:1.5;
+  border:1px solid var(--line-strong); color:var(--muted); background:var(--paper); overflow-wrap:anywhere;
+}
+.chip.new { color:var(--fail); border-color:currentColor; font-weight:650; }
+
+/* Matches getStatusColor in app/utils: timed-out and interrupted read as failed, didn't run as a warning. */
+.s-failed, .s-timedout, .s-interrupted, .s-error, .s-open { color:var(--fail); }
+.s-passed, .s-resolved { color:var(--pass); }
+.s-flaky { color:var(--flaky); }
+.s-skipped, .s-log, .s-debug, .s-ignored { color:var(--skip); }
+.s-didnotrun, .s-warning, .s-warn { color:var(--warn); }
+.s-info { color:var(--info); }
+.tag { font-weight:650; }
+
+dl.facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr)); gap:.5rem; margin:.8rem 0; }
+dl.facts > div { min-width:0; background:var(--paper); border:1px solid var(--line); border-radius:9px; padding:.5rem .7rem; }
+dl.facts > div.wide { grid-column:1 / -1; }
+dl.facts dt { font-size:.64rem; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); font-weight:650; }
+dl.facts dd { margin:.1rem 0 0; font-size:.95rem; font-weight:600; overflow-wrap:anywhere; }
+
+.panel { background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:.75rem .9rem; margin:.6rem 0; }
+.panel > h3:first-child { margin-top:0; }
+dl.inline { display:flex; flex-wrap:wrap; gap:.25rem 1.2rem; margin:0; font-size:.84rem; }
+dl.inline > div { display:flex; gap:.35rem; min-width:0; }
+dl.inline dt { color:var(--faint); }
+dl.inline dd { margin:0; font-weight:600; overflow-wrap:anywhere; }
+
+.bar { display:flex; height:10px; border-radius:999px; overflow:hidden; background:var(--sunken); margin:.7rem 0 .45rem; }
+.bar > span { display:block; height:100%; min-width:3px; }
+.bar > span + span { border-left:2px solid var(--paper); }
+.legend { display:flex; flex-wrap:wrap; gap:.2rem 1rem; font-size:.8rem; color:var(--muted); margin:0; }
+.legend b { color:var(--fg); }
+.dot { display:inline-block; width:.6rem; height:.6rem; border-radius:3px; margin-right:.35rem; vertical-align:-.02em; }
+
+.occ { display:flex; align-items:flex-end; gap:3px; height:42px; margin:.5rem 0 .3rem; }
+.occ > span { flex:1; max-width:22px; border-radius:3px 3px 0 0; background:var(--line-strong); min-height:3px; }
+.occ > span.hit { background:${C.failed.fill}; }
 
 details.card {
-  border:1px solid var(--line); border-left:3px solid var(--line-strong);
-  border-radius:5px; margin:.5rem 0; background:var(--card); overflow:hidden;
+  background:var(--paper); border:1px solid var(--line); border-left:4px solid var(--line-strong);
+  border-radius:10px; margin:.6rem 0; overflow:hidden;
 }
 details.card.k-error { border-left-color:var(--fail); }
 details.card.k-diagnosis { border-left-color:var(--accent); }
 details.card.k-evidence { border-left-color:var(--info); }
+details.card.k-source { border-left-color:var(--flaky); }
 details > summary {
-  cursor:pointer; padding:.4rem .65rem; font-weight:600; font-size:.85rem;
-  list-style:none; display:flex; justify-content:space-between; gap:1rem; align-items:center;
+  cursor:pointer; padding:.55rem .85rem; font-weight:650; font-size:.9rem;
+  list-style:none; display:flex; gap:.6rem; align-items:center;
 }
 details > summary:hover { color:var(--accent); }
 details > summary::-webkit-details-marker { display:none; }
-details > summary::after { content:'+'; color:var(--faint); font-weight:400; font-size:.95rem; }
+details > summary .aside { color:var(--faint); font-weight:500; font-size:.8rem; font-family:var(--mono); overflow-wrap:anywhere; }
+details > summary .count { color:var(--faint); font-weight:500; font-size:.8rem; }
+details > summary::after { content:'+'; margin-left:auto; color:var(--faint); font-weight:400; font-size:1rem; }
 details[open] > summary::after { content:'\\2013'; }
 details[open] > summary { border-bottom:1px solid var(--line); }
-.body { padding:.55rem .65rem .65rem; }
+.body { padding:.7rem .85rem .8rem; }
 .body > :first-child { margin-top:0; }
 .body > :last-child { margin-bottom:0; }
-h3 { font-size:.7rem; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); margin:.8rem 0 .25rem; }
 
 pre {
-  background:var(--sunken); border:1px solid var(--line); border-radius:4px;
-  padding:.5rem .6rem; margin:.35rem 0; overflow-x:auto;
-  font:12px/1.5 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere;
+  background:var(--sunken); border:1px solid var(--line); border-radius:7px;
+  padding:.6rem .75rem; margin:.35rem 0; overflow-x:auto;
+  font:12.5px/1.55 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere;
 }
 code { font-family:var(--mono); font-size:.92em; }
 pre.hljs { position:relative; }
 pre.hljs[data-lang]:not([data-lang=""])::before {
-  content:attr(data-lang); position:absolute; top:0; right:.4rem;
+  content:attr(data-lang); position:absolute; top:.15rem; right:.5rem;
   font-size:.6rem; letter-spacing:.06em; text-transform:uppercase; color:var(--faint);
 }
+pre.error .e-head { color:var(--fail); font-weight:700; }
+pre.error .e-expected { color:var(--pass); font-weight:600; }
+pre.error .e-received { color:var(--fail); font-weight:600; }
+pre.error .e-log { color:var(--muted); }
+pre.error .e-stack { color:var(--faint); }
+.fail-line { display:inline-block; min-width:100%; background:var(--fail-bg); }
+.fail-line .ln { color:var(--fail); font-weight:700; }
 
 /* Token colors only — no fills, so a background-free print keeps every hue. */
 .hljs-comment, .hljs-quote { color:var(--faint); font-style:italic; }
@@ -132,56 +216,64 @@ pre.hljs[data-lang]:not([data-lang=""])::before {
 .hljs-emphasis { font-style:italic; }
 .hljs-strong { font-weight:650; }
 .ln { color:var(--faint); user-select:none; }
-p { margin:.4rem 0; }
 ul { margin:.35rem 0; padding-left:1.1rem; }
-li { margin:.1rem 0; }
+li { margin:.15rem 0; }
 blockquote { margin:.4rem 0; padding-left:.6rem; border-left:2px solid var(--line-strong); color:var(--muted); }
 
-.shots { display:flex; flex-wrap:wrap; gap:.5rem; }
-figure { margin:.35rem 0; flex:1 1 18rem; min-width:0; }
-img.shot, video { max-width:100%; height:auto; border:1px solid var(--line); border-radius:4px; display:block; }
-figcaption { font-size:.7rem; color:var(--faint); margin-top:.2rem; overflow-wrap:anywhere; }
+.diagnosis-summary { font-size:1rem; font-weight:600; margin:.2rem 0 .5rem; }
+.note { border-left:3px solid var(--accent); padding:.45rem .7rem; margin:.7rem 0; font-size:.86rem; background:var(--accent-bg); border-radius:0 7px 7px 0; }
+
+.shots { display:grid; grid-template-columns:repeat(auto-fill,minmax(16rem,1fr)); gap:.7rem; }
+figure { margin:0; min-width:0; }
+img.shot, video { max-width:100%; height:auto; border:1px solid var(--line-strong); border-radius:8px; display:block; background:var(--sunken); }
+figcaption { font-size:.72rem; color:var(--faint); margin-top:.3rem; overflow-wrap:anywhere; }
 
 .scroll { overflow-x:auto; }
-table { border-collapse:collapse; width:100%; font-size:.78rem; }
-th, td { text-align:left; padding:.25rem .45rem; border-bottom:1px solid var(--line); vertical-align:top; overflow-wrap:anywhere; }
-th { font-size:.66rem; letter-spacing:.05em; text-transform:uppercase; color:var(--faint); font-weight:650; white-space:nowrap; }
+table { border-collapse:collapse; width:100%; font-size:.82rem; }
+th, td { text-align:left; padding:.35rem .5rem; border-bottom:1px solid var(--line); vertical-align:top; overflow-wrap:anywhere; }
+th { font-size:.64rem; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); font-weight:650; white-space:nowrap; }
 tbody tr:last-child td { border-bottom:0; }
 td.num { font-family:var(--mono); white-space:nowrap; }
+td a { color:inherit; }
+.sub { color:var(--muted); font-family:var(--mono); font-size:.92em; }
+.cat { color:var(--muted); font-size:.78rem; }
 
-.badge {
-  display:inline-block; padding:0 .4rem; border-radius:3px; font-size:.7rem;
-  font-weight:650; border:1px solid currentColor; vertical-align:.15em;
-}
-/* Matches getStatusColor in app/utils: timed-out and interrupted read as failed, didn't run as a warning. */
-.s-failed, .s-timedout, .s-interrupted, .s-error, .s-open { color:var(--fail); }
-.s-passed, .s-resolved { color:var(--pass); }
-.s-skipped, .s-log, .s-debug, .s-ignored { color:var(--skip); }
-.s-didnotrun, .s-warning, .s-warn { color:var(--warn); }
-.s-info { color:var(--info); }
-.tag { font-weight:650; }
+.steps td { vertical-align:middle; }
+.steps td.tl { width:32%; min-width:8rem; }
+.track { position:relative; display:block; height:8px; border-radius:999px; background:var(--sunken); }
+.track > span { position:absolute; top:0; bottom:0; min-width:3px; border-radius:999px; background:var(--accent); }
+tr.failed .track > span { background:${C.failed.fill}; }
+tr.recovered .track > span { background:${C.didnotrun.fill}; }
+tr.failed td:first-child { color:var(--fail); font-weight:600; }
+tr.slowest td.num { font-weight:700; }
 
-.note { border-left:3px solid var(--accent); padding:.35rem .6rem; margin:.7rem 0; font-size:.82rem; background:var(--card); }
+section.case { padding-top:.2rem; }
+section.case + section.case { margin-top:2rem; }
+.case-head { display:flex; gap:.6rem; align-items:baseline; color:var(--muted); font-size:.75rem; letter-spacing:.06em; text-transform:uppercase; font-weight:650; margin:1.6rem 0 0; }
+.foot { color:var(--faint); font-size:.78rem; margin:1.2rem 0 0; }
 
 @media (max-width:30rem) {
   body { padding:0 .6rem 2.5rem; }
+  .hero { padding:.9rem .9rem 1rem; }
+  h1 { font-size:1.3rem; }
   dl.facts { grid-template-columns:repeat(auto-fill,minmax(8rem,1fr)); }
+  .steps td.tl { display:none; }
 }
 
 @media print {
   :root {
-    --bg:#fff; --fg:#000; --muted:#3f3f46; --faint:#52525b;
+    --bg:#fff; --paper:#fff; --fg:#000; --muted:#3f3f46; --faint:#52525b;
     --line:#b8b8bf; --line-strong:#71717a; --card:transparent; --sunken:transparent;
-    --accent:#3730a3; --fail:${C.failed.print}; --pass:${C.passed.print}; --warn:${C.didnotrun.print}; --info:#1e40af;
+    --accent:#3730a3; --fail:${C.failed.print}; --pass:${C.passed.print}; --warn:${C.didnotrun.print}; --info:#1e40af; --flaky:${C.flaky.print};
     --tok-key:#5b21b6; --tok-str:#115e59; --tok-num:#92400e; --tok-fn:#1e3a8a; --tok-attr:#86198f; --tok-builtin:#075985;
   }
   body { padding:0; font-size:10.5pt; }
   .no-print { display:none !important; }
-  details.card, pre, .note, button { background:transparent !important; }
+  details.card, pre, .note, button, .panel, dl.facts > div { background:transparent !important; }
   /* Fold markers mean nothing on paper; the [open] selector outranks a bare one. */
   details > summary::after, details[open] > summary::after { content:''; }
-  details { break-inside:avoid; }
-  section.case { break-before:page; border-top:0; }
+  details, .hero, .panel { break-inside:avoid; }
+  section.case { break-before:page; }
   section.case:first-of-type { break-before:auto; }
   pre { white-space:pre-wrap; word-break:break-word; }
   a { color:inherit; text-decoration:underline; }
@@ -208,6 +300,21 @@ function statusClass(value: unknown): string {
     .replace(/[^a-z]/g, '')}`;
 }
 
+const TONE_CLASSES: Record<StatusColorKey, string> = {
+  passed: 't-pass',
+  failed: 't-fail',
+  flaky: 't-flaky',
+  skipped: 't-skip',
+  fixme: 't-skip',
+  didnotrun: 't-warn',
+  running: 't-skip',
+};
+
+/** A status → the tone of a header's edge and tint. */
+function toneClass(value: unknown): string {
+  return TONE_CLASSES[statusTone(value)];
+}
+
 function httpClass(status: unknown): string {
   const n = Number(status);
   if (!Number.isFinite(n)) return '';
@@ -224,6 +331,21 @@ function facts(rows: Fact[]): RawHtml {
   return html`<dl class="facts">
     ${present.map(
       ([k, v]) =>
+        html`<div class="${String(v).length > 48 ? 'wide' : ''}">
+          <dt>${k}</dt>
+          <dd>${String(v)}</dd>
+        </div>`,
+    )}
+  </dl>`;
+}
+
+/** Facts on one wrapping line: `Branch main · Environment staging`. */
+function inlineFacts(rows: Fact[]): RawHtml {
+  const present = rows.filter(([, v]) => v != null && v !== '');
+  if (!present.length) return raw('');
+  return html`<dl class="inline">
+    ${present.map(
+      ([k, v]) =>
         html`<div>
           <dt>${k}</dt>
           <dd>${String(v)}</dd>
@@ -232,18 +354,26 @@ function facts(rows: Fact[]): RawHtml {
   </dl>`;
 }
 
-function details(title: string, inner: RawHtml | string, kind = 'data', open = false): RawHtml {
+function details(
+  title: string,
+  inner: RawHtml | string,
+  opts: { kind?: string; open?: boolean; aside?: string | null; count?: number } = {},
+): RawHtml {
   const body = toHtmlString(inner);
   if (!body.trim()) return raw('');
-  return html`<details class="card k-${kind}" ${open ? raw('open') : ''}>
-    <summary>${title}</summary>
+  return html`<details class="card k-${opts.kind ?? 'data'}" ${opts.open ? raw('open') : ''}>
+    <summary>
+      ${title}${opts.count != null ? html`<span class="count">${opts.count}</span>` : ''}
+      ${opts.aside ? html`<span class="aside">${opts.aside}</span>` : ''}
+    </summary>
     <div class="body">${raw(body)}</div>
   </details>`;
 }
 
-/** Plain block — stack traces and logs are not source code. */
-function pre(text: string): RawHtml {
-  return html`<pre>${stripAnsi(text)}</pre>`;
+/** An error with its parts told apart: the first line, the expected and received values, the call log and the stack. */
+function errorBlock(text: string): RawHtml {
+  const rows = errorRows(text).map((row) => toHtmlString(html`<span class="e-${row.kind}">${row.text}</span>`));
+  return html`<pre class="error">${raw(rows.join('\n'))}</pre>`;
 }
 
 /**
@@ -255,7 +385,7 @@ function code(text: string, lang: string): RawHtml {
   return html`<pre class="hljs" data-lang="${language || lang}"><code>${raw(highlighted)}</code></pre>`;
 }
 
-/** A captured source snippet: the line-number gutter kept plain, the code syntax-highlighted. */
+/** A captured source snippet: the line-number gutter kept plain, the code syntax-highlighted, the failing line marked. */
 function snippet(text: string, file: string): RawHtml {
   const rows = parseSourceSnippet(stripAnsi(text));
   const lang = languageForPath(file);
@@ -263,7 +393,10 @@ function snippet(text: string, file: string): RawHtml {
     rows.map((row) => row.code),
     lang,
   );
-  const lines = rows.map((row, i) => toHtmlString(html`<span class="ln">${row.gutter}</span>${raw(code[i] ?? '')}`));
+  const lines = rows.map((row, i) => {
+    const line = html`<span class="ln">${row.gutter}</span>${raw(code[i] ?? '')}`;
+    return toHtmlString(row.failing ? html`<span class="fail-line">${line}</span>` : line);
+  });
   return html`<pre class="hljs" data-lang="${lang ?? ''}"><code>${raw(lines.join('\n'))}</code></pre>`;
 }
 
@@ -272,14 +405,34 @@ function prose(markdown: string): RawHtml {
   return raw(markdownToHtml(markdown, { linkMode: 'text' }));
 }
 
+/** A run's tests as one bar split by outcome, then the same counts in words. */
+function outcomeBar(outcome: NonNullable<ReturnType<typeof runOutcome>>): RawHtml {
+  const { segments, total } = outcome;
+  return html`<div class="bar" role="img" aria-label="${outcomeText(segments, total)}">
+      ${segments.map(
+        (s) => html`<span style="width:${((s.count / total) * 100).toFixed(2)}%;background:${C[s.key].fill}"></span>`,
+      )}
+    </div>
+    <p class="legend">
+      ${segments.map(
+        (s) =>
+          html`<span
+            ><i class="dot" style="background:${C[s.key].fill}"></i><b>${s.count}</b> ${s.label}
+            (${percent(s.count, total)})</span
+          >`,
+      )}
+    </p>`;
+}
+
 function renderDiagnosis(diagnosis: Record<string, any> | null): RawHtml {
   if (!hasDiagnosis(diagnosis)) return raw('');
   const d = diagnosis as Record<string, any>;
   const det = (d.details ?? {}) as Record<string, any>;
-  const parts: (RawHtml | string)[] = [facts(diagnosisFacts(d))];
+  const parts: (RawHtml | string)[] = [];
 
-  if (d.summary) parts.push(html`<p><strong>${String(d.summary)}</strong></p>`);
+  if (d.summary) parts.push(html`<p class="diagnosis-summary">${String(d.summary)}</p>`);
   if (d.rootCause) parts.push(html`<p><span class="tag">Root cause:</span> ${String(d.rootCause)}</p>`);
+  parts.push(facts(diagnosisFacts(d)));
 
   const evidence = (det.evidence ?? []) as unknown[];
   if (evidence.length) {
@@ -299,7 +452,7 @@ function renderDiagnosis(diagnosis: Record<string, any> | null): RawHtml {
     else if (fix.code) parts.push(code(String(fix.code), 'typescript'));
   }
 
-  return details('AI diagnosis', joinHtml(parts, '\n'), 'diagnosis', true);
+  return details('AI diagnosis', joinHtml(parts, '\n'), { kind: 'diagnosis', open: true });
 }
 
 function renderAssets(exportCase: ExportCase, assetUrl: RenderOptions['assetUrl']): RawHtml {
@@ -377,22 +530,39 @@ function renderAssets(exportCase: ExportCase, assetUrl: RenderOptions['assetUrl'
   return joinHtml(out, '\n');
 }
 
+/** The steps on the test's timeline: each one's bar where it ran, the slowest in bold, a failed one in red. */
 function renderSteps(steps: unknown, pauses: unknown): RawHtml {
   if (!Array.isArray(steps) || !steps.length) return raw('');
-  const rows = (steps as Record<string, any>[]).map(
-    (step) =>
-      html`<tr>
-        <td>${String(step.title ?? '')}</td>
-        <td>${String(step.category ?? '')}</td>
-        <td class="num">${fmtStepDuration(step, pauses)}</td>
-      </tr>`,
+  const list = steps as Record<string, any>[];
+  const bars = stepBars(list);
+  const slowest = list.reduce(
+    (best, s, i) => ((Number(s.duration) || 0) > (Number(list[best]?.duration) || 0) ? i : best),
+    0,
   );
+  const rows = list.map((step, i) => {
+    const { title, subtitle } = stepLabelParts(step);
+    const bar = bars[i]!;
+    const state = [step.failed ? 'failed' : step.recovered ? 'recovered' : '', i === slowest ? 'slowest' : '']
+      .filter(Boolean)
+      .join(' ');
+    return html`<tr class="${state}">
+      <td>${title}${subtitle ? html` <span class="sub">${subtitle}</span>` : ''}</td>
+      <td class="cat">${String(step.category ?? '')}</td>
+      <td class="tl">
+        <span class="track"
+          ><span style="left:${(bar.offset * 100).toFixed(2)}%;width:${(bar.width * 100).toFixed(2)}%"></span
+        ></span>
+      </td>
+      <td class="num">${fmtStepDuration(step, pauses)}</td>
+    </tr>`;
+  });
   return html`<div class="scroll">
-    <table>
+    <table class="steps">
       <thead>
         <tr>
           <th>Step</th>
           <th>Category</th>
+          <th>Timeline</th>
           <th>Duration</th>
         </tr>
       </thead>
@@ -455,61 +625,160 @@ function renderNetwork(requests: unknown): RawHtml {
   </div>`;
 }
 
-function renderCase(exportCase: ExportCase, opts: RenderOptions, index: number, total: number): RawHtml {
+/** The header of one execution: its status, name, location and what Piwi read in its failure. */
+function caseHero(exportCase: ExportCase, heading: 'h1' | 'h2'): RawHtml {
+  const path = casePath(exportCase);
+  const headline = caseHeadline(exportCase);
+  const labels = caseLabels(exportCase);
+  const title = heading === 'h1' ? html`<h1>${exportCase.title}</h1>` : html`<h2>${exportCase.title}</h2>`;
+  return html`<div class="hero ${toneClass(exportCase.status)}">
+    <div class="labels">
+      <span class="badge ${statusClass(exportCase.status)}">${exportCase.status}</span>
+      ${labels.map((label) => html`<span class="chip ${label.news ? 'new' : ''}">${label.text}</span>`)}
+    </div>
+    ${title} ${path ? html`<p class="path">${path}</p>` : ''}
+    ${exportCase.location || exportCase.filePath ? html`<p class="loc">${exportCase.location ?? exportCase.filePath}</p>` : ''}
+    ${
+      headline
+        ? html`<p class="headline">
+            ${headline.headline}${headline.detail ? html`<span class="detail">${headline.detail}</span>` : ''}
+          </p>`
+        : ''
+    }
+  </div>`;
+}
+
+/** The run an execution belongs to: its context in one line, then its tests by outcome. */
+function runPanel(exportCase: ExportCase): RawHtml {
+  const context = runFacts(exportCase);
+  const outcome = runOutcome(exportCase);
+  if (!context.some(([, v]) => v) && !outcome) return raw('');
+  return html`<div class="panel">
+    <h3>The run</h3>
+    ${inlineFacts(context)} ${outcome ? outcomeBar(outcome) : ''}
+  </div>`;
+}
+
+function renderCase(exportCase: ExportCase, opts: RenderOptions, standalone: boolean): RawHtml {
   const d = exportCase.detail as Record<string, any>;
   const parts: (RawHtml | string)[] = [];
 
-  parts.push(
-    html`<header>
-      ${total > 1 ? html`<p class="eyebrow">Case ${index + 1} of ${total}</p>` : ''}
-      <h2>
-        ${exportCase.title}
-        <span class="badge ${statusClass(exportCase.status)}">${exportCase.status}</span>
-      </h2>
-      <p class="meta"><code>${exportCase.location ?? exportCase.filePath ?? ''}</code></p>
-    </header>`,
-  );
-
+  parts.push(caseHero(exportCase, standalone ? 'h1' : 'h2'));
   parts.push(facts(caseFacts(exportCase)));
+  parts.push(runPanel(exportCase));
 
-  if (d.error) parts.push(details('Error', pre(String(d.error)), 'error', true));
-  parts.push(renderDiagnosis(exportCase.diagnosis));
+  if (d.error) parts.push(details('Error', errorBlock(String(d.error)), { kind: 'error', open: true }));
 
-  const assetsHtml = renderAssets(exportCase, opts.assetUrl);
-  if (toHtmlString(assetsHtml).trim()) parts.push(details('Evidence', assetsHtml, 'evidence', true));
-
-  parts.push(details('Steps', renderSteps(d.steps, d.pauses)));
-  parts.push(details('Console', renderConsole(d.consoleLogs)));
-  parts.push(details('Network', renderNetwork(d.networkRequests)));
-  if (d.testSource) parts.push(details('Test source', code(String(d.testSource), 'typescript')));
-  if (Array.isArray(d.testSourceFrames) && d.testSourceFrames.length) {
+  const frames = Array.isArray(d.testSourceFrames) ? (d.testSourceFrames as Record<string, any>[]) : [];
+  if (frames.length) {
     parts.push(
       details(
         'Call stack',
         joinHtml(
-          (d.testSourceFrames as Record<string, any>[]).map(
+          frames.map(
             (f) =>
-              html`<h3>${`${f.file ?? ''}:${f.line ?? ''}`}</h3>
+              html`<h3 class="file">${`${f.file ?? ''}:${f.line ?? ''}`}</h3>
                 ${snippet(String(f.snippet ?? ''), String(f.file ?? ''))}`,
           ),
         ),
+        { kind: 'source', open: true, count: frames.length > 1 ? frames.length : undefined },
       ),
+    );
+  }
+
+  parts.push(renderDiagnosis(exportCase.diagnosis));
+
+  const assetsHtml = renderAssets(exportCase, opts.assetUrl);
+  if (toHtmlString(assetsHtml).trim()) {
+    parts.push(details('Evidence', assetsHtml, { kind: 'evidence', open: true, count: exportCase.assets.length }));
+  }
+
+  const count = (v: unknown) => (Array.isArray(v) ? v.length : undefined);
+  parts.push(details('Steps', renderSteps(d.steps, d.pauses), { open: true, count: count(d.steps) }));
+  parts.push(details('Console', renderConsole(d.consoleLogs), { count: count(d.consoleLogs) }));
+  parts.push(details('Network', renderNetwork(d.networkRequests), { count: count(d.networkRequests) }));
+  if (d.testSource) {
+    parts.push(
+      details('Test source', snippet(String(d.testSource), exportCase.filePath ?? 'test.ts'), {
+        aside: exportCase.filePath,
+      }),
     );
   }
   if (d.ariaSnapshot) parts.push(details('ARIA snapshot', code(String(d.ariaSnapshot), 'yaml')));
   if (d.pageState) parts.push(details('Page state', code(JSON.stringify(d.pageState, null, 2), 'json')));
   if (d.webVitals) parts.push(details('Web vitals', code(JSON.stringify(d.webVitals, null, 2), 'json')));
 
-  return html`<section class="case">${joinHtml(parts, '\n')}</section>`;
+  return html`<section class="case" id="case-${exportCase.executionId}">${joinHtml(parts, '\n')}</section>`;
+}
+
+/** A cluster's occurrences per recent run as small bars, then the total in words. */
+function occurrenceStrip(cluster: Record<string, any>): RawHtml {
+  const points = clusterOccurrences(cluster);
+  if (points.length < 2) return raw('');
+  const max = Math.max(1, ...points.map((p) => p.count));
+  const hits = points.filter((p) => p.count > 0).length;
+  return html`<div class="panel">
+    <h3>Recent runs</h3>
+    <div class="occ" role="img" aria-label="${`Failed in ${hits} of the last ${points.length} runs`}">
+      ${points.map(
+        (p) =>
+          html`<span
+            class="${p.count > 0 ? 'hit' : ''}"
+            style="height:${p.count > 0 ? Math.max(18, (p.count / max) * 100).toFixed(0) : 8}%"
+            title="${`Run #${p.runId}: ${p.count}`}"
+          ></span>`,
+      )}
+    </div>
+    <p class="meta">Failed in ${hits} of the last ${points.length} runs, oldest on the left.</p>
+  </div>`;
+}
+
+/** The affected tests of a cluster export, each linked to its section below. */
+function membersTable(bundle: ExportBundle): RawHtml {
+  if (bundle.cases.length < 2) return raw('');
+  return html`<div class="panel">
+    <h3>Affected tests in this export</h3>
+    <div class="scroll">
+      <table>
+        <tbody>
+          ${bundle.cases.map(
+            (c) =>
+              html`<tr>
+                <td class="${statusClass(c.status)}"><span class="tag">${c.status}</span></td>
+                <td><a href="#case-${c.executionId}">${c.title}</a></td>
+                <td class="sub">${c.location ?? c.filePath ?? ''}</td>
+              </tr>`,
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
 }
 
 function renderClusterHeader(bundle: ExportBundle): RawHtml {
   const c = bundle.cluster as Record<string, any> | null;
   if (!c) return raw('');
-  const parts: (RawHtml | string)[] = [facts(clusterFacts(c))];
+  const headline = clusterHeadline(c);
+  const state = typeof c.clusterState?.sentence === 'string' ? c.clusterState.sentence : null;
+  const owner = c.owner?.name ?? null;
+  const parts: (RawHtml | string)[] = [
+    html`<div class="hero ${toneClass(c.status)}">
+      <div class="labels">
+        ${c.status ? html`<span class="badge ${statusClass(c.status)}">${String(c.status)}</span>` : ''}
+        ${owner ? html`<span class="chip">${String(owner)}</span>` : ''}
+      </div>
+      <h1>${bundle.title}</h1>
+      ${headline ? html`<p class="headline">${headline}</p>` : ''} ${state ? html`<p class="state">${state}</p>` : ''}
+    </div>`,
+    facts(clusterFacts(c)),
+    occurrenceStrip(c),
+  ];
 
-  if (c.sampleError) parts.push(details('Representative error', pre(String(c.sampleError)), 'error', true));
+  if (c.sampleError) {
+    parts.push(details('Representative error', errorBlock(String(c.sampleError)), { kind: 'error', open: true }));
+  }
   parts.push(renderDiagnosis((c.diagnosis ?? null) as Record<string, any> | null));
+  parts.push(membersTable(bundle));
 
   if (bundle.truncatedCases.length) {
     parts.push(
@@ -552,15 +821,15 @@ function renderOmissions(bundle: ExportBundle): RawHtml {
         </tbody>
       </table>
     </div>`,
-    'data',
-    true,
+    { open: true },
   );
 }
 
 export function renderExportHtml(bundle: ExportBundle, opts: RenderOptions): string {
-  const kindLabel = bundle.kind === 'cluster' ? 'Failure cluster' : 'Test execution';
+  const isCluster = bundle.kind === 'cluster';
+  const kindLabel = isCluster ? 'Failure cluster' : 'Test execution';
   const label = projectLabel(bundle);
-  const clusterStatus = (bundle.cluster as Record<string, any> | null)?.status;
+  const standalone = !isCluster && bundle.cases.length === 1;
 
   const head = joinHtml([
     raw('<meta charset="utf-8">'),
@@ -574,27 +843,35 @@ export function renderExportHtml(bundle: ExportBundle, opts: RenderOptions): str
     raw(`<style>${STYLES}</style>`),
   ]);
 
+  const exported = fmtDate(bundle.generatedAt) ?? bundle.generatedAt;
   const body = joinHtml(
     [
       raw('<div class="wrap">'),
       html`<header class="doc">
-        <p class="eyebrow">${kindLabel}${label ? ` · ${label}` : ''}</p>
-        <h1>
-          ${bundle.title}
-          ${clusterStatus ? html`<span class="badge ${statusClass(clusterStatus)}">${clusterStatus}</span>` : ''}
-        </h1>
-        <p class="meta">Exported ${bundle.generatedAt}${bundle.piwiVersion ? ` · Piwi ${bundle.piwiVersion}` : ''}</p>
-        ${bundle.sourceUrl ? html`<p class="meta"><code>${bundle.sourceUrl}</code></p>` : ''}
+        <div class="brand">
+          ${raw(piwiMarkSvg(18))}<span>${kindLabel}</span>${label ? html`<span class="project">· ${label}</span>` : ''}
+        </div>
+        <div class="stamp">
+          Exported ${exported}${bundle.piwiVersion ? ` · Piwi ${bundle.piwiVersion}` : ''}
+          ${bundle.sourceUrl ? html`<br /><code>${bundle.sourceUrl}</code>` : ''}
+        </div>
         <div class="toolbar no-print">
           <button type="button" data-action="print">Print / Save as PDF</button>
           <button type="button" data-action="expand">Expand all</button>
         </div>
       </header>`,
+      standalone ? '' : !isCluster ? html`<h1>${bundle.title}</h1>` : '',
       renderClusterHeader(bundle),
-      ...bundle.cases.map((c, i) => renderCase(c, opts, i, bundle.cases.length)),
+      ...bundle.cases.map((c, i) => {
+        const section = renderCase(c, opts, standalone);
+        return bundle.cases.length > 1
+          ? html`<p class="case-head">Test ${i + 1} of ${bundle.cases.length}</p>
+              ${section}`
+          : section;
+      }),
       bundle.cases.length === 0 ? html`<p class="note">No executions were included in this export.</p>` : '',
       renderOmissions(bundle),
-      html`<p class="meta">Self-contained, no network connection required.</p>`,
+      html`<p class="foot">Self-contained, no network connection required.</p>`,
       raw(piwiCreditHtml('Generated by Piwi')),
       raw('</div>'),
       raw(`<script>${SCRIPT}</script>`),

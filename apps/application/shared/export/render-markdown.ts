@@ -13,13 +13,17 @@ import {
   consoleLine,
   diagnosisFacts,
   fmtBytes,
+  fmtDate,
   fmtDuration,
   fmtStepDuration,
   hasDiagnosis,
   OMISSION_REASONS,
   projectLabel,
+  runFacts,
+  runOutcome,
   type Fact,
 } from './fields';
+import { outcomeText } from '#shared/notifications/message-parts';
 import { piwiCreditMarkdown } from '#shared/brand';
 import type { ExportBundle, ExportCase } from './types';
 
@@ -76,6 +80,13 @@ function caseMarkdown(exportCase: ExportCase, headingLevel: '##' | '###'): strin
     '',
     ...factList(caseFacts(exportCase)),
   ];
+
+  const run = factList(runFacts(exportCase));
+  const outcome = runOutcome(exportCase);
+  if (run.length || outcome) {
+    out.push(`${sub} The run`, '', ...run);
+    if (outcome) out.push(outcomeText(outcome.segments, outcome.total), '');
+  }
 
   if (d.error) out.push(`${sub} Error`, '', fence(String(d.error)), '');
   out.push(...diagnosisMarkdown(exportCase.diagnosis, `${sub} AI diagnosis`));
@@ -148,7 +159,7 @@ export function renderExportMarkdown(bundle: ExportBundle): string {
   const out: string[] = [
     `# ${bundle.title}`,
     '',
-    `_${isCluster ? 'Failure cluster' : 'Test execution'} exported ${bundle.generatedAt}${
+    `_${isCluster ? 'Failure cluster' : 'Test execution'} exported ${fmtDate(bundle.generatedAt) ?? bundle.generatedAt}${
       bundle.piwiVersion ? ` · Piwi ${bundle.piwiVersion}` : ''
     }_`,
     '',

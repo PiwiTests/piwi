@@ -27,6 +27,13 @@ The **Export** button sits on a test-case execution (`/test-run-cases/:id`) and 
 
 A cluster export carries the most recent failing execution of each affected test.
 
+The HTML and PDF reports read the same way. They open on a header colored by the outcome, with the test's full name
+(describe blocks, then title), its location and Piwi's one-line reading of the failure, then the execution's figures and
+its run: branch, commit, CI build and the run's tests as a bar split by outcome. The error follows with its expected
+and received values colored and the call log faded, then the call stack with the failing line marked, and the steps
+on the test's timeline, a failed step in red. A cluster export opens on the cluster's state and a bar per recent run.
+Dates are in UTC.
+
 ## Replay the failure in a browser
 
 A failed execution's **Export** also offers **Bug report (.piwibug)**: the failure as the

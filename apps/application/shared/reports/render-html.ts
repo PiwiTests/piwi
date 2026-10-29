@@ -5,7 +5,7 @@
  * title or a branch name is always text.
  */
 import { html, joinHtml, raw, toHtmlString, type RawHtml } from '#shared/export/html';
-import { piwiCreditHtml } from '#shared/brand';
+import { piwiCreditHtml, piwiMarkSvg } from '#shared/brand';
 import { STATUS_COLORS as C, PASS_RATE_COLORS } from '#shared/status-colors';
 import { chartLabelAnchor, chartTickLabel, REPORT_ACCENT, REPORT_GRID, REPORT_MARKER, seriesGeometry } from './chart';
 import { makeFormatter, type ValueFormatter } from './format';
@@ -13,6 +13,8 @@ import { sentencesFor } from './sentences';
 import { hasVerdictWidget, type ReportBlock, type ReportBundle, type ReportTone } from './types';
 
 const TONE_COLOR: Record<ReportTone, string> = { good: C.passed.text, bad: C.failed.text, neutral: '#71717a' };
+/** The edge of a tile: the outcome color of its change, or none for a change that is neither good nor bad news. */
+const TILE_EDGE: Record<ReportTone, string> = { good: C.passed.fill, bad: C.failed.fill, neutral: '#e4e4e9' };
 const VERDICT_COLOR = {
   good: PASS_RATE_COLORS.good.fill,
   mixed: PASS_RATE_COLORS.fair.fill,
@@ -20,39 +22,65 @@ const VERDICT_COLOR = {
 };
 
 const STYLES = `
-:root { color-scheme: light; --fg:#1c1c20; --muted:#6b6b76; --line:#e2e2e7; --card:#fafafa; --accent:${REPORT_ACCENT}; }
+:root {
+  color-scheme: light; --bg:#f6f6f8; --paper:#fff; --fg:#1c1c20; --muted:#5f5f6b; --faint:#8b8b96; --line:#e4e4e9;
+  --card:#fafafb; --accent:${REPORT_ACCENT}; --good:${C.passed.text}; --bad:${C.failed.text};
+}
 * { box-sizing:border-box; }
-body { margin:0; padding:0 1rem 3rem; background:#fff; color:var(--fg); font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-.wrap { max-width:60rem; margin:0 auto; }
-header { padding:2rem 0 1rem; border-bottom:1px solid var(--line); }
-h1 { font-size:1.5rem; margin:0 0 .25rem; }
-h2 { font-size:1.1rem; margin:2rem 0 .25rem; }
-h3 { font-size:.95rem; margin:1.25rem 0 .5rem; }
+body { margin:0; padding:0 1rem 3rem; background:var(--bg); color:var(--fg); font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
+.wrap { max-width:62rem; margin:0 auto; }
+header { margin:1.5rem 0 1rem; padding:1.4rem 1.5rem 1.3rem; background:var(--paper); border:1px solid var(--line); border-top:4px solid var(--accent); border-radius:12px; }
+.kicker { display:flex; align-items:center; gap:.45rem; margin:0 0 .35rem; font-size:.75rem; font-weight:650; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); }
+h1 { font-size:1.75rem; line-height:1.2; letter-spacing:-.01em; margin:0 0 .35rem; }
+h2 { display:flex; align-items:center; gap:.6rem; font-size:1.2rem; margin:2.2rem 0 .2rem; }
+h2 .num { display:inline-flex; align-items:center; justify-content:center; width:1.6rem; height:1.6rem; border-radius:7px; background:var(--accent); color:#fff; font-size:.85rem; flex:none; }
+h3 { font-size:.95rem; margin:0 0 .6rem; }
 .meta, .desc, .note { color:var(--muted); font-size:.85rem; margin:0; }
-.verdict { display:flex; gap:.75rem; align-items:flex-start; margin:1.25rem 0; padding:1rem; background:var(--card); border:1px solid var(--line); border-radius:.5rem; }
-.dot { width:.7rem; height:.7rem; border-radius:50%; flex:none; margin-top:.4rem; }
-.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(9rem,1fr)); gap:.6rem; }
-.tile { background:var(--card); border:1px solid var(--line); border-radius:.5rem; padding:.6rem .75rem; }
+.desc { margin-left:2.2rem; }
+.verdict { display:flex; gap:.8rem; align-items:flex-start; margin:1rem 0; padding:1rem 1.15rem; background:var(--paper); border:1px solid var(--line); border-left:5px solid var(--tone); border-radius:10px; font-size:1.02rem; }
+.verdict p { margin:0; }
+.dot { width:.75rem; height:.75rem; border-radius:50%; flex:none; margin-top:.42rem; background:var(--tone); }
+.widget { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:1rem 1.1rem 1.05rem; margin:.8rem 0; }
+.widget > .verdict { margin:0; border-left-width:5px; }
+.widget > .note { margin:-.3rem 0 .6rem; }
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr)); gap:.6rem; }
+.tile { background:var(--card); border:1px solid var(--line); border-top:3px solid var(--tone, var(--line)); border-radius:9px; padding:.65rem .8rem .7rem; }
 .tile .label { font-size:.75rem; color:var(--muted); }
-.tile .value { font-size:1.25rem; font-weight:600; }
-.tile .change, .tile .extra { font-size:.75rem; }
+.tile .value { font-size:1.6rem; font-weight:650; line-height:1.2; margin:.15rem 0 .2rem; letter-spacing:-.01em; }
+.tile .change { display:inline-block; font-size:.75rem; font-weight:650; padding:0 .45rem; border-radius:999px; border:1px solid currentColor; }
+.tile .extra { font-size:.75rem; color:var(--muted); margin-top:.25rem; }
 table { width:100%; border-collapse:collapse; font-size:.85rem; }
-th, td { text-align:left; padding:.35rem .5rem; border-bottom:1px solid var(--line); vertical-align:top; }
-th { font-weight:600; color:var(--muted); font-size:.75rem; }
+th, td { text-align:left; padding:.45rem .6rem; border-bottom:1px solid var(--line); vertical-align:top; }
+th { font-weight:650; color:var(--faint); font-size:.7rem; letter-spacing:.05em; text-transform:uppercase; background:var(--card); }
+tbody tr:last-child td { border-bottom:0; }
 td.r, th.r { text-align:right; font-variant-numeric:tabular-nums; }
-.scroll { overflow-x:auto; }
+.scroll { overflow-x:auto; border:1px solid var(--line); border-radius:8px; margin-top:.6rem; }
 ul.items { margin:0; padding-left:1.1rem; }
-ul.items li { margin:.25rem 0; }
+ul.items li { margin:.3rem 0; }
+ul.items li.toned { list-style:none; margin-left:-1.1rem; padding:.45rem .7rem; background:var(--card); border:1px solid var(--line); border-left:3px solid var(--tone); border-radius:0 8px 8px 0; }
 a { color:inherit; text-decoration:underline dotted; text-underline-offset:2px; }
 svg { display:block; width:100%; height:auto; }
 .legend { display:flex; flex-wrap:wrap; gap:.25rem 1rem; font-size:.75rem; color:var(--muted); margin:.25rem 0; }
 .legend i { display:inline-block; width:.6rem; height:.6rem; border-radius:50%; margin-right:.3rem; vertical-align:middle; }
-footer { margin-top:2.5rem; padding-top:1rem; border-top:1px solid var(--line); font-size:.8rem; color:var(--muted); }
-footer dl { display:grid; grid-template-columns:max-content 1fr; gap:.2rem 1rem; margin:0 0 1rem; }
-footer dt { font-weight:600; }
+footer { margin-top:2.5rem; padding:1.1rem 1.3rem; background:var(--paper); border:1px solid var(--line); border-radius:12px; font-size:.82rem; color:var(--muted); }
+footer h3 { margin-top:1.2rem; color:var(--fg); }
+footer dl { display:grid; grid-template-columns:max-content 1fr; gap:.25rem 1.2rem; margin:0 0 .5rem; }
+footer dt { font-weight:650; color:var(--fg); }
 footer dd { margin:0; }
-@media (max-width:30rem) { body { padding:0 .6rem 2rem; } footer dl { grid-template-columns:1fr; } }
-@media print { body { padding:0; } section.band { break-inside:avoid-page; } }
+@media (max-width:30rem) {
+  body { padding:0 .6rem 2rem; }
+  header { padding:1.1rem 1rem; }
+  h1 { font-size:1.4rem; }
+  .desc { margin-left:0; }
+  .widget { padding:.85rem .8rem; }
+  footer dl { grid-template-columns:1fr; }
+}
+@media print {
+  body { padding:0; background:#fff; }
+  header, .widget, footer, .verdict, .tile, ul.items li.toned { background:transparent; }
+  section.band { break-inside:avoid-page; }
+  .widget { break-inside:avoid; }
+}
 `;
 
 const CHART_W = 640;
@@ -73,6 +101,26 @@ function chartSvg(block: Extract<ReportBlock, { kind: 'series' }>, f: ValueForma
         /><text x="-6" y="${t.y + 3}" text-anchor="end" font-size="10" fill="#71717a"
           >${chartTickLabel(block, t.value, f)}</text
         >`,
+  );
+  // A lone series gets a light area under its line; several would only muddy each other.
+  const shaded = g.lines.filter((line) => !line.faint).length === 1;
+  const areas = g.lines.flatMap((line) =>
+    shaded && !line.faint
+      ? line.runs
+          .filter((run) => run.length > 1)
+          .map(
+            (run) =>
+              html`<polygon
+                points="${[
+                  `${run[0]![0].toFixed(1)},${g.height}`,
+                  ...run.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`),
+                  `${run[run.length - 1]![0].toFixed(1)},${g.height}`,
+                ].join(' ')}"
+                fill="${line.color}"
+                fill-opacity="0.09"
+              />`,
+          )
+      : [],
   );
   const lines = g.lines.flatMap((line) =>
     line.runs.map((run) =>
@@ -105,8 +153,16 @@ function chartSvg(block: Extract<ReportBlock, { kind: 'series' }>, f: ValueForma
       >`,
   );
   return html`<svg viewBox="0 0 ${CHART_W} ${CHART_H}" role="img" aria-label="${block.summary ?? 'Chart'}">
-    <g transform="translate(${PAD.left},${PAD.top})">${grid}${markers}${lines}${labels}</g>
+    <g transform="translate(${PAD.left},${PAD.top})">${grid}${areas}${markers}${lines}${labels}</g>
   </svg>`;
+}
+
+/** The verdict sentence in a box edged and dotted in its tone. */
+function verdictBox(text: string, tone: keyof typeof VERDICT_COLOR): RawHtml {
+  return html`<div class="verdict" data-verdict="${tone}" style="--tone:${VERDICT_COLOR[tone]}">
+    <span class="dot"></span>
+    <p>${text}</p>
+  </div>`;
 }
 
 function linkOrText(text: string, href: string | null | undefined): RawHtml {
@@ -116,20 +172,19 @@ function linkOrText(text: string, href: string | null | undefined): RawHtml {
 function renderBlock(block: ReportBlock, f: ValueFormatter): RawHtml {
   switch (block.kind) {
     case 'text':
-      return block.tone
-        ? html`<div class="verdict" data-verdict="${block.tone}">
-            <span class="dot" style="background:${VERDICT_COLOR[block.tone]}"></span>
-            <p style="margin:0">${block.text}</p>
-          </div>`
-        : html`<p>${block.text}</p>`;
+      return block.tone ? verdictBox(block.text, block.tone) : html`<p>${block.text}</p>`;
     case 'stats':
       return html`<div class="tiles">
         ${block.tiles.map(
           (t) =>
-            html`<div class="tile" title="${t.definition ?? ''}">
+            html`<div
+              class="tile"
+              title="${t.definition ?? ''}"
+              style="--tone:${t.change ? TILE_EDGE[t.tone] : TILE_EDGE.neutral}"
+            >
               <div class="label">${t.label}</div>
               <div class="value">${t.value}</div>
-              ${t.change ? html`<div class="change" style="color:${TONE_COLOR[t.tone]}">${t.change}</div>` : ''}
+              ${t.change ? html`<span class="change" style="color:${TONE_COLOR[t.tone]}">${t.change}</span>` : ''}
               ${t.note ? html`<div class="extra">${t.note}</div>` : ''}
             </div>`,
         )}
@@ -171,11 +226,8 @@ function renderBlock(block: ReportBlock, f: ValueFormatter): RawHtml {
         ${block.items.map(
           (item) =>
             html`<li
-              style="${
-                item.tone && item.tone !== 'neutral'
-                  ? `border-left:2px solid ${TONE_COLOR[item.tone]};padding-left:.4rem;list-style:none;margin-left:-1.1rem`
-                  : ''
-              }"
+              class="${item.tone && item.tone !== 'neutral' ? 'toned' : ''}"
+              style="${item.tone && item.tone !== 'neutral' ? `--tone:${TONE_COLOR[item.tone]}` : ''}"
             >
               ${linkOrText(item.text, item.link)}${item.detail ? html`<div class="note">${item.detail}</div>` : ''}
             </li>`,
@@ -198,9 +250,9 @@ export function renderReportHtml(bundle: ReportBundle, opts: RenderReportHtmlOpt
   const L = s.labels;
 
   const bands = bundle.bands.map(
-    (band) =>
+    (band, i) =>
       html`<section class="band">
-        <h2>${band.title}</h2>
+        <h2><span class="num">${i + 1}</span>${band.title}</h2>
         ${band.description ? html`<p class="desc">${band.description}</p>` : ''}
         ${band.widgets.map(
           (w) =>
@@ -246,7 +298,7 @@ export function renderReportHtml(bundle: ReportBundle, opts: RenderReportHtmlOpt
       <body>
         <div class="wrap">
           <header>
-            <p class="meta">${L.qualityReport} · ${bundle.dashboard.name}</p>
+            <p class="kicker">${raw(piwiMarkSvg(16))}${L.qualityReport} · ${bundle.dashboard.name}</p>
             <h1>${bundle.title}</h1>
             <p class="meta">
               ${bundle.period.label}${
@@ -255,15 +307,7 @@ export function renderReportHtml(bundle: ReportBundle, opts: RenderReportHtmlOpt
             </p>
             ${opts.banner ? html`<p class="meta" data-banner>${opts.banner}</p>` : ''}
           </header>
-          ${
-            hasVerdictWidget(bundle)
-              ? ''
-              : html`<div class="verdict" data-verdict="${bundle.verdict.tone}">
-                  <span class="dot" style="background:${VERDICT_COLOR[bundle.verdict.tone]}"></span>
-                  <p style="margin:0">${bundle.verdict.sentence}</p>
-                </div>`
-          }
-          ${bands}
+          ${hasVerdictWidget(bundle) ? '' : verdictBox(bundle.verdict.sentence, bundle.verdict.tone)} ${bands}
           <footer>
             <dl>
               ${facts.map(

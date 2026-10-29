@@ -85,6 +85,24 @@ describe('quality report parity', () => {
     expect((await buildReport(bundle, 'pdf')).contentType).toBe('application/pdf');
   });
 
+  test('the HTML numbers each band and edges the verdict in its tone', () => {
+    const html = renderReportHtml(bundle);
+    bundle.bands.forEach((band, i) => expect(html).toContain(`<span class="num">${i + 1}</span>${band.title}`));
+    expect(html).toMatch(/class="verdict" data-verdict="mixed" style="--tone:#[0-9a-f]{6}"/);
+  });
+
+  test('the HTML shades the area under a lone series, never under a lone point', () => {
+    expect(renderReportHtml(bundle)).not.toContain('fill-opacity');
+    const joined = fixtureBundle();
+    const series = joined.bands
+      .flatMap((b) => b.widgets)
+      .flatMap((w) => w.blocks)
+      .find((b) => b.kind === 'series');
+    if (series?.kind !== 'series') throw new Error('the fixture has a series');
+    series.series[0]!.points[1]!.value = 90;
+    expect(renderReportHtml(joined)).toContain('fill-opacity="0.09"');
+  });
+
   test('the fixture carries the hostile string into the facts', () => {
     expect(facts).toContain(HOSTILE);
   });
