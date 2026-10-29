@@ -78,7 +78,7 @@
     "highlight.js": "^11.12.0",
     "marked": "^18.1.1",
     "nodemailer": "^10.2.1",
-    "nuxt": "^4.6.2",
+    "nuxt": "^4.6.3",
     "pdf-lib": "^1.17.1",
     "pixelmatch": "^8.0.0",
     "postgres": "^3.4.9",
