@@ -41,8 +41,8 @@ and others on a flakiness spike, a performance regression, a finished AI diagnos
 Each event, when it fires and the payload it carries are in
 [Notification events & webhooks](/reference/notification-events). A
 [report schedule](./quality-reports#report-schedules) sends its report to the channels it names, with no subscription.
-A run from an editor, or a partial run from a developer's machine or the desktop app, fires no run event and no
-new-cluster, flakiness or performance event ([run origin](/reference/test-metadata#run-origin)).
+A run from an editor, a bisect step, a reproduction or a partial local run fires no run event and no new-cluster,
+flakiness or performance event ([run origin](/reference/test-metadata#run-origin)).
 
 ## Channels
 

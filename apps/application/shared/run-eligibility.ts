@@ -173,12 +173,13 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
   },
   /**
    * A finished run's outbound effects: notifications, the pull-request comment
-   * and commit status, AI diagnosis and auto-heal. An environment incident
-   * sends one `environment.incident` event instead, and the gate reads it as
+   * and commit status, AI diagnosis and auto-heal. Never a run at a commit
+   * chosen to investigate a failure. An environment incident sends one
+   * `environment.incident` event instead, and the gate reads it as
    * inconclusive.
    */
   notifications: {
-    excludes: [...LAB_RUN_ORIGINS, 'editor'],
+    excludes: [...LAB_AND_INVESTIGATION, 'editor'],
     excludesIncidents: true,
     completeOnly: false,
     completeOnlyFor: ['local', 'desktop'],
@@ -187,8 +188,7 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
   /**
    * The writes Piwi makes to an issue tracker on its own: automatic creation,
    * and the comments, transitions and description updates a run's verdicts
-   * trigger. The outbound rule of `notifications`, and never a run at a commit
-   * chosen to investigate a failure.
+   * trigger. The rule of `notifications`.
    */
   tracker: {
     excludes: [...LAB_AND_INVESTIGATION, 'editor'],

@@ -125,14 +125,15 @@ describe('runFinalizeSideEffects', () => {
     await everyEffectOnce();
   });
 
-  test.each(['bisect', 'reproduce'])('a %s run notifies but classifies no flaky root cause', async (kind) => {
-    runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { piwiOrigin: { kind } } });
-    await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
-    await vi.waitFor(() => expect(emitRunNotifications).toHaveBeenCalledTimes(1));
+  test.each(['bisect', 'reproduce'])('a %s run classifies no flaky root cause', async (kind) => {
+    await runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { piwiOrigin: { kind } } });
+    await vi.waitFor(() => expect(inferRunOutcomes).toHaveBeenCalledWith(db, 42));
     expect(classifyRunFlakyTests).not.toHaveBeenCalled();
   });
 
   test.each([
+    ['a bisect step', 'bisect', 1],
+    ['a reproduction', 'reproduce', 1],
     ['an editor run', 'editor', 1],
     ['a partial editor run', 'editor', 0],
     ['a partial local run', 'local', 0],
