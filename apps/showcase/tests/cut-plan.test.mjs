@@ -125,6 +125,11 @@ describe('the plan', () => {
     assert.equal(at(1).chapter, null);
   });
 
+  test('refuses a master that ends before the take’s last beat', () => {
+    assert.throws(() => planCut(take(), { flashFrame: 24, frames: 200 }), /its capture stopped early/);
+    assert.doesNotThrow(() => planCut(take(), { flashFrame: 24, frames: 288 }));
+  });
+
   test('times the cues, the cards’ marked as such', () => {
     assert.deepEqual(
       plan.cues.map((c) => [c.text, c.card]),

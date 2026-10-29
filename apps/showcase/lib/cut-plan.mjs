@@ -224,6 +224,14 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
   if (last && last === log.story.at(-1)) card(last);
   const duration = t;
   const beats = segments.filter((s) => s.kind === 'beat');
+  // A master that stopped early would freeze the cut on its last frame: it is refused.
+  const needed = beats.length ? masterSeconds(beats.at(-1).wall.end) * fps : 0;
+  if (needed > frames + 1) {
+    throw new Error(
+      `the master holds ${frames} frames, ${(frames / fps).toFixed(1)} s, but the take's last beat ends at its ` +
+        `${(needed / fps).toFixed(1)} s: its capture stopped early`,
+    );
+  }
 
   // The camera's shots, the pointer's moves and the key strip, in the cut's seconds.
   const shots = [];
@@ -394,7 +402,12 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
   const cues = segments.flatMap((segment) =>
     segment.lines.map((line) => ({ ...line, card: segment.kind === 'card', beat: segment.id })),
   );
-  const chapters = segments.map((segment) => ({ start: segment.start, title: segment.title, id: segment.id }));
+  const chapters = segments.map((segment) => ({
+    start: segment.start,
+    title: segment.title,
+    id: segment.id,
+    card: segment.kind === 'card',
+  }));
   return {
     duration,
     frames: states,

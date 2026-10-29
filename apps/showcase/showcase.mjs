@@ -18,10 +18,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkTools } from './lib/capture.mjs';
+import { prepareOut } from './lib/results.mjs';
 import { Gestures, captureScreen, lintLines, play } from './lib/script.mjs';
 import { SCALE, TILES, buildSet, createSet } from './lib/set.mjs';
 import { FILM_PACE, startFilming } from './lib/take.mjs';
-import { REPO_ROOT } from './lib/workspace.mjs';
 import { STORY } from './story.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -38,35 +39,6 @@ const say = (line) => console.log(line);
 const CI_VARIABLE =
   /^(CI|CONTINUOUS_INTEGRATION|BUILD_NUMBER|RUN_ID|GITHUB_\w+|RUNNER_\w+|JENKINS_URL|BUILD_ID|GITLAB_CI|CI_\w+|CIRCLECI|CIRCLE_\w+|TRAVIS|TRAVIS_\w+|TF_BUILD|BUILD_\w+|SYSTEM_\w+|BITBUCKET_\w+|TEAMCITY_\w+|CODEBUILD_\w+|bamboo_\w+|BUILDKITE|BUILDKITE_\w+|SEMAPHORE|SEMAPHORE_\w+|APPVEYOR|APPVEYOR_\w+|DRONE|DRONE_\w+)$/;
 
-/** The file that marks a folder as the showcase's results, which a take may empty. */
-const RESULTS_MARKER = '.piwi-showcase-results';
-
-/**
- * Empties `dir` for a take's results and marks it. A folder the showcase did not make is never emptied: one that holds
- * files without the marker is refused, and so are the file system's root, the home folder, the repository's root and
- * the current folder.
- */
-function prepareOut(dir) {
-  const refused = [path.parse(dir).root, os.homedir(), REPO_ROOT, process.cwd()].map((p) => path.resolve(p));
-  if (refused.includes(dir)) {
-    console.error(`--out ${dir}: a take empties its results folder; name a folder of its own.`);
-    process.exit(2);
-  }
-  if (fs.existsSync(dir)) {
-    const entries = fs.readdirSync(dir);
-    if (entries.length && !entries.includes(RESULTS_MARKER)) {
-      console.error(`--out ${dir}: it holds files a take did not write; name an empty folder or a take's results.`);
-      process.exit(2);
-    }
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(
-    path.join(dir, RESULTS_MARKER),
-    'The results of a showcase take: the next take empties this folder.\n',
-  );
-}
-
 const problems = lintLines(STORY);
 if (problems.length) {
   for (const problem of problems) console.error(`line: ${problem}`);
@@ -76,22 +48,62 @@ if (args.includes('--lint')) {
   say(`${STORY.length} beats, every line within ${2} rows and its reading speed.`);
   process.exit(0);
 }
+/** Ends, saying what to install, unless ffmpeg and ffprobe run here. */
+function needTools() {
+  try {
+    checkTools();
+  } catch (error) {
+    console.error(error.message);
+    process.exit(2);
+  }
+}
+
+/** Prepares `dir` for results, or ends with what is wrong with it. */
+function results(dir, options) {
+  try {
+    prepareOut(dir, options);
+  } catch (error) {
+    console.error(error.message);
+    process.exit(2);
+  }
+}
+
 if (cutFrom) {
-  const { cut } = await import('./lib/cut.mjs');
-  prepareOut(out);
   const size = Number(option('--size') ?? 1080);
+  const renderers = Number(option('--renderers') ?? 2);
   if (![1080, 2160].includes(size)) {
     console.error(`--size ${size}: the cut is 1080 (1920 × 1080) or 2160 (3840 × 2160)`);
     process.exit(2);
   }
-  await cut({
-    take: path.resolve(cutFrom),
-    out,
-    size,
-    renderers: Number(option('--renderers') ?? 2),
-    beats: option('--beats')?.split(','),
-    say,
-  });
+  if (!Number.isInteger(renderers) || renderers < 1 || renderers > 8) {
+    console.error(`--renderers ${option('--renderers')}: a whole number from 1 to 8`);
+    process.exit(2);
+  }
+  const takeDir = path.resolve(cutFrom);
+  if (!fs.existsSync(path.join(takeDir, 'take.json'))) {
+    console.error(`--cut ${cutFrom}: no take.json there, which a take writes in its results`);
+    process.exit(2);
+  }
+  needTools();
+  results(out, { keep: takeDir });
+  const { cut } = await import('./lib/cut.mjs');
+  // A cut stopped from outside ends its renderers and encoders and removes its work folder, then exits with the
+  // signal's code.
+  const stop = new AbortController();
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.on(signal, () => {
+      if (stop.signal.aborted) return;
+      say(`${signal}: ending the cut`);
+      stop.abort(signal);
+    });
+  }
+  try {
+    await cut({ take: takeDir, out, size, renderers, beats: option('--beats')?.split(','), say, signal: stop.signal });
+  } catch (error) {
+    if (stop.signal.aborted) process.exit(128 + os.constants.signals[stop.signal.reason]);
+    console.error(error);
+    process.exit(1);
+  }
   process.exit(0);
 }
 if (!['check', 'film'].includes(mode)) {
@@ -113,7 +125,8 @@ for (const name of Object.keys(process.env)) {
   if (CI_VARIABLE.test(name)) delete process.env[name];
 }
 
-prepareOut(out);
+if (mode === 'film') needTools();
+results(out);
 const logs = path.join(out, 'logs');
 fs.mkdirSync(logs, { recursive: true });
 
@@ -261,7 +274,10 @@ try {
         `The master: ${counts.frames} frames at 24 a second, ${grabbed} grabbed (${counts.dup} repeated, ` +
           `${counts.drop} dropped), in ${path.join(out, 'master.mkv')}; its log in ${path.join(out, 'take.json')}`,
       );
-      if (grabbed < counts.frames * 0.95) {
+      if (counts.problem) {
+        failed = true;
+        say(`  The master is not sound: ${counts.problem}`);
+      } else if (grabbed < counts.frames * 0.95) {
         say('  The capture missed frames: film the take again on a machine with nothing else running.');
       }
     } catch (why) {
