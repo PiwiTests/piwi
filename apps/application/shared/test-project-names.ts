@@ -179,6 +179,7 @@ export const PROJECT = {
   RUN_CHANGES_FALLBACK: 'run-changes-fallback-test',
   RUN_COMPARE: 'run-compare',
   RUN_DELETE_MANY: 'run-delete-many-test',
+  RUN_GOES_LIVE: 'run-goes-live-test',
   RUN_KEEP_OTHER: 'run-keep-other-test',
   RUN_KEEP: 'run-keep-test',
   RUN_LABEL: 'run-label-test',

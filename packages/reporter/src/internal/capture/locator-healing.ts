@@ -430,6 +430,34 @@ export function suggestLocatorsFromAria(
 // ── Call-site capture ────────────────────────────────────────────────────────
 
 /**
+ * The local path a stack frame's file names: a `file://` URL (an ES-module suite's frames) through `fileURLToPath`,
+ * any other path as it is. `windows` reads the URL as Windows does. Null for a URL that names no local file.
+ */
+export function framePath(file: string, windows: boolean = process.platform === 'win32'): string | null {
+  if (!file.startsWith('file://')) return file;
+  try {
+    return fileURLToPath(file, { windows });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A stack frame's file relative to `cwd`, with forward slashes: the form Playwright writes a location in its error
+ * messages. A file on another drive stays absolute. Null for a URL that names no local file.
+ */
+export function callSitePath(
+  file: string,
+  cwd: string = process.cwd(),
+  windows: boolean = process.platform === 'win32',
+): string | null {
+  const local = framePath(file, windows);
+  if (local === null) return null;
+  const paths = windows ? path.win32 : path.posix;
+  return paths.relative(cwd, local).split(paths.sep).join('/');
+}
+
+/**
  * Capture the calling test's source location (`file:line:col`) from the current
  * stack, for stamping onto a locator snapshot. The path is made cwd-relative so
  * it matches the location format Playwright embeds in error messages — which is
@@ -465,13 +493,9 @@ export function captureCallerLocation(stack: string = new Error().stack ?? ''): 
       prevWasCaptureModule = false;
       continue;
     }
-    const file = m[2]!;
-    if (!file || file.startsWith('node:')) {
-      prevWasCaptureModule = false;
-      continue;
-    }
+    const file = m[2] ? framePath(m[2]) : null;
     // Must look like a source file (has an extension).
-    if (!/\.[a-z]+$/i.test(file)) {
+    if (!file || file.startsWith('node:') || !/\.[a-z]+$/i.test(file)) {
       prevWasCaptureModule = false;
       continue;
     }
@@ -501,43 +525,13 @@ export function captureCallerLocation(stack: string = new Error().stack ?? ''): 
       prevWasCaptureModule = false;
       continue;
     }
-    const rel = callSitePath(file);
-    return rel === null ? null : `${rel}:${m[3]!}:${m[4]!}`;
+    let rel = file;
+    try {
+      rel = callSitePath(file) ?? file;
+    } catch {
+      /* keep absolute if relative fails */
+    }
+    return `${rel}:${m[3]!}:${m[4]!}`;
   }
   return null;
-}
-
-/**
- * A stack frame's file as a call site names it: relative to `cwd`, with forward
- * slashes, or absolute when there is no working directory. An ES module's frame
- * carries a `file://` URL, read with `fileURLToPath` (`file:///C:/…` on
- * Windows, percent-encoding decoded); a CommonJS frame carries the path itself.
- * Null for a URL that names no local file (an encoded slash, or
- * `file://host/…` outside Windows).
- */
-export function callSitePath(
-  file: string,
-  cwd: string | null = workingDirectory(),
-  windows: boolean = process.platform === 'win32',
-): string | null {
-  const paths = windows ? path.win32 : path.posix;
-  let absolute = file;
-  if (file.startsWith('file:')) {
-    try {
-      absolute = fileURLToPath(file, { windows });
-    } catch {
-      return null;
-    }
-  }
-  const rel = cwd === null ? absolute : paths.relative(cwd, absolute);
-  return rel.split(paths.sep).join('/');
-}
-
-/** The run's working directory; null once it has been removed, which `process.cwd()` throws for. */
-function workingDirectory(): string | null {
-  try {
-    return process.cwd();
-  } catch {
-    return null;
-  }
 }

@@ -10,7 +10,7 @@ import type {
 } from '~~/types/api';
 import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { subscribeDemoEvents } from '~/demo/run-events';
-import { useRunEvents, useRunStream } from '~/composables/useRunStream';
+import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
 import { summarizeRunCases } from '#shared/utils/test-counts';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
@@ -389,14 +389,6 @@ function connectToDemoStream() {
   demoUnsubscribe = subscribeDemoEvents((message) => {
     if (message.scope === 'run' && message.runId === Number(runId)) {
       enqueueEvent(message.event as unknown as Record<string, unknown>);
-    } else if (
-      message.scope === 'global' &&
-      message.event.runId === Number(runId) &&
-      message.event.type === 'run-started'
-    ) {
-      // Run transitioned from 'initializing' to 'running' — refetch so
-      // isLive flips and progress counters appear.
-      refresh();
     }
   });
 }
@@ -444,8 +436,11 @@ function disconnectStream() {
   }
 }
 
-// In demo mode also stream while 'initializing' so the page picks up the
-// transition to 'running' pushed by the simulator.
+// A run shown as initializing is refetched once it starts, and then streams.
+// The demo's run events replay nothing on connect, so in demo mode the page
+// already listens while the run initializes, for the tests that begin before
+// the refetch lands.
+useRunStart(Number(runId), () => testRun.value?.status, refresh);
 const shouldStream = computed(() => isLive.value || (isDemoMode && testRun.value?.status === 'initializing'));
 
 watch(

@@ -98,12 +98,6 @@ The assertions a check skips, each only once it saw the bug's state:
   reads: the shipped run's JSON report (`ci-shipped.json`, its `piwi-locators` attachment) holds the click's snapshot
   at the failing line with `element: null`, and the instance stores no snapshot at that line. A report without
   snapshots, or a click with its element, fails the beat.
-- **A run page opened while its run sets up stays there** (beat 9). Outside the demo, the run page connects to its
-  run's stream only once the run is live, and does not refetch on the global stream's `run-started`, so a page opened
-  between the reporter's global setup and its `onBegin` shows `Initializing` and no test until it is reloaded. The beat
-  records the run's status as its page loads and waits for either **Watch** or the header still at `Initializing`
-  once the instance holds a finished test of the run. It skips only when the run was `initializing` at the load and
-  **Watch** shows after a reload; a page stuck otherwise fails it.
 
 ## Toward the cut
 
