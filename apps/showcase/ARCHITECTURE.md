@@ -117,8 +117,10 @@ The assertions a check skips, each only once it saw the bug's state:
 - starts the capture (`startCapture`, `lib/capture.mjs`): `ffmpeg -f x11grab -draw_mouse 0 -framerate 24` of the
   whole 3840 × 2160 screen into `results/master.mkv`, H.264 lossless (`-qp 0`, ultrafast, 4:2:0, which is 4:4:4 at the
   1080p cut's size), `-fps_mode cfr` so a frame the grab misses is the one before, repeated, and the master's frame `n`
-  is `n / 24` s after its first. Where the system allows it (root), the capture runs at a higher priority than the
-  set's apps, which wait on state and lose nothing by yielding; up to 128 grabbed frames wait for the encoder;
+  is `n / 24` s after its first. Where the system allows it (as root, or through `sudo -n nice` when
+  `SHOWCASE_CAPTURE_SUDO=1` says sudo needs no password, as on CI's runners), the capture runs at a higher priority than
+  the set's apps, which wait on state and lose nothing by yielding; the take says when it cannot. Up to 128 grabbed
+  frames wait for the encoder (4 GB at 4K; 64 measured a capture a quarter of whose frames were repeats);
 - shows the sync flash (`syncFlash`): a black window of its own at the screen's bottom-right corner whose square turns
   white for a second, timed at the frame after the one that drew it, then closes;
 - follows the test's browser: its debugging port polled every 250 ms says when its window is up (`presence`);
@@ -131,30 +133,35 @@ at 15 characters a second plus 0.4 s (`lineMs`), and its last action has shown f
 the take's, never a beat's: a beat still waits on state. `finish` stops the capture (ffmpeg's `q`) and writes the take
 log; a beat that fails ends the take as in check mode, the master and the log kept beside the evidence. The take tells
 the frames the capture grabbed against those it wrote: at a constant frame rate a repeated frame matched by a dropped
-one is a grab that came late, and repeats beyond the drops are frames missed (it warns past 5 %).
+one is a grab that came late, and repeats beyond the drops are frames missed (it warns past 5 %). The take fails when
+the capture did (`captureProblem`): an ffmpeg that did not run, that ended before the take (which the next beat's end
+notices) or with an error, or a master holding fewer than 95 % of the frames of the time since its first.
 
 ### The take log
 
 `results/take.json`, every time the wall clock's in ms, every rectangle in the screen's device pixels:
 
-| Field      | What it holds                                                                                                                                      |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `screen`   | `width`, `height` and `scale` (device pixels a CSS pixel)                                                                                          |
-| `windows`  | each window's content: `vscode`, `dashboard`, `runs`, `test-browser` (null when no beat reached it)                                                |
-| `master`   | the file, its `fps`, when ffmpeg was `spawned` and `stopped`, and its counts: `frames` written, `dup` (repeated) and `drop`                        |
-| `flash`    | `t`, the frame that drew the square, and the square's `box`                                                                                        |
-| `beats`    | each beat played: `id`, `start`, `end` (after its hold), its `lines` with their `text`, `start` and length (`ms`)                                  |
-| `story`    | every beat of the story, cards included: `id`, `title`, `card`, `seconds`, `focus`, its lines' texts                                               |
-| `gestures` | the gestures' log (`t`, `act`, `beat`, `kind`, `window`, `box`, `point`, and the `key`, `text`, `title`, or a note's `what` and an agent's `call`) |
-| `raises`   | `{ t, up, window }`: the layer raised (`dashboard` or `tiles`) and the window it was raised for                                                    |
-| `presence` | `{ t, window, open }`: the test's browser's window coming up or going                                                                              |
-| `outcomes` | each beat's outcome, as `outcomes.json`                                                                                                            |
+| Field      | What it holds                                                                                                                                                                                                                          |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `screen`   | `width`, `height` and `scale` (device pixels a CSS pixel)                                                                                                                                                                              |
+| `windows`  | each window's content: `vscode`, `dashboard`, `runs`, and `test-browser` once a beat reached it                                                                                                                                        |
+| `master`   | the file, its `fps`, when ffmpeg was `spawned`, `running` (its first frame) and `stopped`, whether it was `raised`, its counts (`frames` written, `dup` repeated, `drop`), its exit (`code`, `signal`, `error`, `early`) and `problem` |
+| `flash`    | `t`, the frame after the one that drew the square, and the square's `box`                                                                                                                                                              |
+| `beats`    | each beat played: `id`, `start`, `end` (after its hold), its `lines` with their `text`, `start` and length (`ms`)                                                                                                                      |
+| `story`    | every beat of the story, cards included: `id`, `title`, `card`, `seconds`, `focus`, its lines' texts                                                                                                                                   |
+| `gestures` | the gestures' log (`t`, `act`, `beat`, `kind`, `window`, `box`, `point`, and the `key`, `text`, `title`, or a note's `what` and an agent's `call`)                                                                                     |
+| `raises`   | `{ t, up, window }`: the layer raised (`dashboard` or `tiles`) and the window it was raised for                                                                                                                                        |
+| `presence` | `{ t, window, open }`: the test's browser's window coming up or going                                                                                                                                                                  |
+| `outcomes` | each beat's outcome, as `outcomes.json`                                                                                                                                                                                                |
 
 ## The cut
 
 `--cut <take's results>` (`npm run showcase:cut`) renders the video into `<take>/cut/`, or `--out`. `--size 2160`
 renders the 4K cut (the camera then never zooms: the master's own pixels are the limit), `--renderers` the number of
-stage pages side by side (2), `--beats a,b` those beats alone, without the cards.
+stage pages side by side (2), `--beats a,b` those beats alone, without the cards. The cut refuses an `--out` that is,
+or holds, the take it reads (`refusal`, `lib/results.mjs`), and a master that ends before the take's last beat. A
+signal stops it: every ffmpeg ends, the browser closes and its work folder goes; a renderer that fails stops the
+others, and the work folder goes once their encoders have ended.
 
 `planCut` (`lib/cut-plan.mjs`) reads the take log, pure, and gives every output frame its state:
 
@@ -189,17 +196,17 @@ screenshotted (CDP, PNG), or the last screenshot sent again when neither the sta
 piped into ffmpeg (H.264, CRF 12). No frame is written to disk. The ranges' files, concatenated, are the render, from
 which ffmpeg makes the outputs; the subtitles are the stage's plates (PNG with transparency, one a cue), overlaid.
 
-| Output (in `cut/`)                                   | What it is                                                                         |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `piwi-showcase.mp4`, `piwi-showcase-subtitled.mp4`   | the full cut, H.264 (CRF 20), without and with the subtitles burned in             |
-| `piwi-showcase.webm`, `piwi-showcase-subtitled.webm` | the same, VP9 (CRF 34)                                                             |
-| `piwi-showcase.en.vtt`, `.en.srt`                    | every line, the cards' too (the burned subtitles leave those to the cards)         |
-| `piwi-showcase.chapters.txt`, `.chapters.vtt`        | the chapters, as video sites read them and as a `<track kind="chapters">`          |
-| `teaser.mp4`, `teaser.webm`                          | beats 1, 4, 5 and 8, about 30 s, subtitled, 1280 × 720, within 1 MB                |
-| `clips/<nn>-<beat>.mp4`                              | each beat, muted, without subtitles                                                |
-| `posters/`                                           | the title card's, the teaser's first frame, each clip's at the middle of its lines |
-| `contact-sheet.jpg`                                  | a frame of the subtitled cut per beat and card, at the middle of its lines         |
-| `cut.json`                                           | the summary: the render's time, each output's size and encoding time, the segments |
+| Output (in `cut/`)                                   | What it is                                                                                                  |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `piwi-showcase.mp4`, `piwi-showcase-subtitled.mp4`   | the full cut, H.264 (CRF 20), without and with the subtitles burned in                                      |
+| `piwi-showcase.webm`, `piwi-showcase-subtitled.webm` | the same, VP9 (CRF 34)                                                                                      |
+| `piwi-showcase.en.vtt`, `.en.srt`                    | every line, the cards' too (the burned subtitles leave those to the cards)                                  |
+| `piwi-showcase.chapters.txt`, `.chapters.vtt`        | the chapters as video sites read them, none under 10 s (`foldChapters`), and as a `<track kind="chapters">` |
+| `teaser.mp4`, `teaser.webm`                          | beats 1, 4, 5 and 8, about 30 s, subtitled, 1280 × 720, within 1 MB                                         |
+| `clips/<nn>-<beat>.mp4`                              | each beat, muted, without subtitles                                                                         |
+| `posters/`                                           | the title card's, the teaser's first frame, each clip's at the middle of its lines                          |
+| `contact-sheet.jpg`                                  | a frame of the subtitled cut per beat and card, at the middle of its lines                                  |
+| `cut.json`                                           | the summary: the render's time, each output's size and encoding time, the segments                          |
 
 The teaser takes each of its beats from its start through its lines and 0.6 s more, grown or shrunk evenly to about
 30 s (`teaserParts`), crossfades them, and is encoded in two passes at the bitrate that keeps it within 1 MB, lower
