@@ -12,9 +12,11 @@ export function runsServer(configuration) {
 }
 
 export class Agent {
-  constructor({ url, token }) {
+  /** `told(call)`, when given, hears each tool call as it starts (`{ name, args }`). */
+  constructor({ url, token }, told = null) {
     this.url = url;
     this.token = token;
+    this.told = told;
     this.id = 0;
     this.calls = [];
   }
@@ -55,6 +57,7 @@ export class Agent {
    * agent reads them apart.
    */
   async tool(name, args = {}) {
+    this.told?.({ name, args });
     const answer = await this.post({
       jsonrpc: '2.0',
       id: ++this.id,

@@ -4,20 +4,26 @@ name: Showcase nightly
 # database with the shop's CI runs, VS Code with the built extension, Chromium with the built Piwi Picker, paired) and
 # plays each beat on them, from the red run to the green one, asserting what each beat left. It is no pull request
 # check: VS Code's workbench moves on its own, and a take needs a large screen and several minutes. A failure leaves
-# the failing beat's screen, each app's log and the developer's checkout for two weeks.
+# the failing beat's screen, each app's log and the developer's checkout for two weeks. Run by hand with `film`, it
+# films the virtual take instead (the same beats and checks, recorded) and renders the cut, kept for two weeks.
 on:
   schedule:
     - cron: '43 4 * * *'
   workflow_dispatch:
+    inputs:
+      film:
+        description: Film the virtual take and render the cut (the video, the teaser, the clips), in place of the check
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   check:
-    name: check
+    name: ${{ inputs.film && 'film' || 'check' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: ${{ inputs.film && 150 || 45 }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,6 +43,11 @@ jobs:
       # ImageMagick's `import` writes the whole screen of a beat that fails.
       - name: Install ImageMagick
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends imagemagick
+
+      # ffmpeg records the take and encodes the cut; the stage draws in the docs site's Inter and JetBrains Mono.
+      - name: Install ffmpeg and the stage's fonts
+        if: ${{ inputs.film }}
+        run: sudo apt-get install -y --no-install-recommends ffmpeg fonts-inter fonts-jetbrains-mono
 
       - name: Build the reporter
         working-directory: packages/reporter
@@ -65,17 +76,40 @@ jobs:
       # VS Code downloads into apps/vscode/.vscode-test on a cache miss. The take is the step's own process (exec):
       # the runner signals that process alone when the job is cancelled, and xvfb-run would not pass it on.
       - name: Play the story in check mode
+        if: ${{ !inputs.film }}
         working-directory: apps/showcase
         run: exec node showcase.mjs --mode check
+
+      # The take writes the master and its log (take.json) in results/, which the cut reads.
+      - name: Film the virtual take
+        if: ${{ inputs.film }}
+        working-directory: apps/showcase
+        run: exec node showcase.mjs --take virtual
+
+      - name: Render the cut
+        if: ${{ inputs.film }}
+        working-directory: apps/showcase
+        run: node showcase.mjs --cut results --out results/cut
+
+      - name: Upload the cut
+        if: ${{ inputs.film }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: showcase-cut
+          path: apps/showcase/results/cut
+          retention-days: 14
 
       # What a failure leaves in results/, beside logs/ (every app's log): a beat that fails, or hangs past its budget,
       # leaves failed-<beat>/, and a set that fails to build failed-set/. A job cancelled, or stopped by its timeout,
       # sends the take SIGINT: it writes interrupted/ first (the same: the screen, every app's log, the gestures, the
       # checkout), then ends the set; the kill that ends the runner's grace period can cut that short, never them.
+      # A take's master, hundreds of megabytes, stays out.
       - name: Upload the failing beat
         if: failure() || cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: showcase-nightly-results
-          path: apps/showcase/results
+          path: |
+            apps/showcase/results
+            !apps/showcase/results/master.mkv
           retention-days: 14

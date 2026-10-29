@@ -11,9 +11,10 @@ export const MAX_ROWS = 2;
 export const MAX_READING_CPS = 17;
 
 /**
- * A beat of the story. `lines` are its subtitles, by language; `focus` the windows the camera moves through, in order
- * (`vscode`, `test-browser`, `runs`, `dashboard`, `card`); `seconds` its length in the cut; `run` plays it through the
- * gestures; `check` asserts what it left. A card has no `run`. `budget` bounds `run` and `check` together, in ms.
+ * A beat of the story. `title` names its chapter; `lines` are its subtitles, by language; `focus` the windows the
+ * camera moves through, in order (`vscode`, `test-browser`, `runs`, `dashboard`, `card`); `seconds` its length in the
+ * cut; `run` plays it through the gestures; `check` asserts what it left. A card has no `run`. `budget` bounds `run`
+ * and `check` together, in ms.
  */
 export function beat(definition) {
   return { focus: [], budget: 180_000, ...definition };
@@ -64,6 +65,7 @@ export function lintLines(beats, language = 'en') {
   const problems = [];
   for (const b of beats) {
     const lines = b.lines?.[language] ?? [];
+    if (!b.title) problems.push(`${b.id}: no title, which names its chapter`);
     if (!lines.length) problems.push(`${b.id}: no line in ${language}`);
     for (const line of lines) {
       const rows = wrap(line);
@@ -82,51 +84,71 @@ export function lintLines(beats, language = 'en') {
 }
 
 /**
- * The gestures a beat makes, as a person makes them: each waits for its element, logs its box on the screen (device
- * pixels, from the window's place on the screen and the element's box in it), waits `pace.before` ms as a person
- * would, then acts through Playwright, typing `pace.key` ms a key. The log is the cursor and the click marks of the
- * cut; check mode plays it at no pace.
+ * The gestures a beat makes, as a person makes them: each waits for its element, logs its box and the point it acts at
+ * on the screen (device pixels, from the window's place on the screen and the element's box in it), waits
+ * `pace.before` ms as a person would, then acts through Playwright, typing `pace.key` ms a key. An entry's `t` is when
+ * the gesture starts and `act` when it acts. `prepare(window)`, when given, runs first (a take raises the window
+ * there). The log is the pointer and the click marks of the cut; check mode plays it at no pace.
  */
 export class Gestures {
-  constructor({ windows, scale, pace = { before: 0, key: 0 } }) {
+  constructor({ windows, scale, pace = { before: 0, key: 0 }, prepare = null }) {
     this.windows = windows;
     this.scale = scale;
     this.pace = pace;
+    this.prepare = prepare;
     this.log = [];
     this.beat = null;
   }
 
-  /** The window `name`'s page content origin on the screen, in CSS pixels. */
-  async origin(page) {
+  /** The window's page content on the screen, in CSS pixels: its origin and size. */
+  async view(page) {
     return page.evaluate(() => ({
       x: window.screenX + (window.outerWidth - window.innerWidth),
       y: window.screenY + (window.outerHeight - window.innerHeight),
+      width: window.innerWidth,
+      height: window.innerHeight,
     }));
   }
 
-  async record(kind, window, locator, extra = {}, timeout = undefined) {
+  async record(kind, window, locator, extra = {}, options = {}) {
+    await this.prepare?.(window);
     const page = this.windows[window]();
     let box = null;
+    let point = null;
     if (locator) {
-      await locator.waitFor({ state: 'visible', timeout });
+      await locator.waitFor({ state: 'visible', timeout: options.timeout });
+      // A paced take scrolls the element into view first, as the click does, so its box is where the pointer goes.
+      if (this.pace.before) await locator.scrollIntoViewIfNeeded({ timeout: options.timeout }).catch(() => {});
       const rect = await locator.boundingBox();
-      const origin = await this.origin(page).catch(() => ({ x: 0, y: 0 }));
+      const view = await this.view(page).catch(() => ({ x: 0, y: 0, width: Infinity, height: Infinity }));
       if (rect) {
+        const s = this.scale;
         box = {
-          x: Math.round((origin.x + rect.x) * this.scale),
-          y: Math.round((origin.y + rect.y) * this.scale),
-          width: Math.round(rect.width * this.scale),
-          height: Math.round(rect.height * this.scale),
+          x: Math.round((view.x + rect.x) * s),
+          y: Math.round((view.y + rect.y) * s),
+          width: Math.round(rect.width * s),
+          height: Math.round(rect.height * s),
+        };
+        // Where Playwright acts: the given position, else the box's middle, within the window.
+        const at = options.position
+          ? { x: rect.x + options.position.x, y: rect.y + options.position.y }
+          : { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        const inside = (v, size) => Math.min(Math.max(v, 0), size);
+        point = {
+          x: Math.round((view.x + inside(at.x, view.width)) * s),
+          y: Math.round((view.y + inside(at.y, view.height)) * s),
         };
       }
     }
-    this.log.push({ t: Date.now(), beat: this.beat, kind, window, box, ...extra });
-    if (this.pace.before) await page.waitForTimeout(this.pace.before);
+    const entry = { t: Date.now(), beat: this.beat, kind, window, box, point, ...extra };
+    this.log.push(entry);
+    if (this.pace.before) await new Promise((resolve) => setTimeout(resolve, this.pace.before));
+    entry.act = Date.now();
   }
 
   /** Clicks `locator` in `window`, once it shows within `options.timeout`. */
   async click(window, locator, options = {}) {
-    await this.record('click', window, locator, {}, options.timeout);
+    await this.record('click', window, locator, {}, options);
     await locator.click(options);
   }
 
@@ -142,9 +164,15 @@ export class Gestures {
     await this.windows[window]().keyboard.press(key);
   }
 
-  /** Something the script does off screen that the cut tells (a push, a CI run): logged, not drawn. */
-  note(what) {
-    this.log.push({ t: Date.now(), beat: this.beat, kind: 'note', what });
+  /** Runs the command `title` in `window` through `run` (VS Code's palette, from F1). */
+  async command(window, title, run) {
+    await this.record('command', window, null, { title });
+    await run();
+  }
+
+  /** Something the script does off screen that the cut tells (a push, an agent's call): logged, not drawn. */
+  note(what, extra = {}) {
+    this.log.push({ t: Date.now(), beat: this.beat, kind: 'note', what, ...extra });
   }
 }
 
@@ -169,12 +197,13 @@ export function captureScreen(file) {
 }
 
 /**
- * Plays `beats` in order in `mode` (`check`: no capture, no holds, each beat's check), up to the beat `until` when it
- * is given. `hooks.started(beat)` and `hooks.ended(beat)` frame each beat that plays (where a take marks its capture
- * and holds its lines). A beat that throws, or runs past its budget, ends the take: `keep(beat, dir)` writes the
- * screen and the logs as they stand into `out/failed-<beat>`. An assertion a known product bug keeps from passing is
- * left out with `context.skip(bug, what)`, which marks the beat. Each beat's outcome goes into `outcomes` as it ends,
- * which the promise resolves with.
+ * Plays `beats` in order in `mode` (`check`: no capture, no holds; `film`: the take's capture and holds), each beat's
+ * check in both, up to the beat `until` when it is given. `hooks.started(beat)` and `hooks.ended(beat)` frame each beat
+ * that plays, its check included (where a take marks the beat and holds it while its lines are read). A beat that
+ * throws, or runs past its budget, ends the take: `keep(beat, dir)` writes the screen and the logs as they stand into
+ * `out/failed-<beat>`. An assertion a known product bug keeps from passing is left out with
+ * `context.skip(bug, what)`, which marks the beat. Each beat's outcome goes into `outcomes` as it ends, which the
+ * promise resolves with.
  */
 export async function play({
   beats,
@@ -201,11 +230,11 @@ export async function play({
       try {
         await Promise.race([
           (async () => {
-            await context.raise?.(b.focus[0]);
             await hooks.started?.(b);
+            await context.raise?.(b.focus[0]);
             await b.run(context);
+            if (b.check) await b.check(context);
             await hooks.ended?.(b);
-            if (mode === 'check' && b.check) await b.check(context);
           })(),
           new Promise((_, reject) => {
             timer = setTimeout(() => reject(new Error(`ran past its budget of ${b.budget / 1000} s`)), b.budget);

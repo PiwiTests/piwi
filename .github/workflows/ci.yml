@@ -384,12 +384,14 @@ jobs:
           npm run extension:typecheck
           npm run extension:test
 
-      # The story itself plays nightly (nightly-showcase.yml): here, its script and its lines.
+      # The story itself plays nightly (nightly-showcase.yml): here, its script, its lines, and the cut's timing, camera,
+      # pointer and subtitles.
       - name: Lint the showcase and its lines
         working-directory: apps/showcase
         run: |
           npm run showcase:lint
           node showcase.mjs --lint
+          npm run showcase:test
 
       - name: Test picker-dom integration (drives a real browser)
         working-directory: packages/picker-dom
