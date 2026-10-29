@@ -3,6 +3,9 @@ import { test, expect } from './fixtures';
 import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 
+/** The run page's desktop re-run button, by what it says it runs. */
+const RERUN_FAILED = /^Re-run \d+ failed tests?/;
+
 /**
  * The desktop-only "Run locally" flow, driven against the regular web build
  * with a faked Tauri IPC bridge. The UI gates itself purely on the bridge's
@@ -121,6 +124,7 @@ test.describe('Desktop local run', () => {
   let runId: number;
   let projectId: number;
   let caseId: number;
+  let executionId: number;
 
   test.beforeAll(async ({ request }) => {
     const startTime = Date.now();
@@ -165,6 +169,9 @@ test.describe('Desktop local run', () => {
     projectId = data.projectId;
     const cases = await (await request.get(`/api/projects/${projectId}/test-cases`)).json();
     caseId = cases.items.find((c: { title: string; id: number }) => c.title === 'checkout completes')!.id;
+    const run = await (await request.get(`/api/test-runs/${runId}`)).json();
+    type Case = { title: string; executionId: number };
+    executionId = (run.testCases as Case[]).find((c) => c.title === 'checkout completes')!.executionId;
   });
 
   test('without the bridge the button does not exist', async ({ page }) => {
@@ -173,7 +180,7 @@ test.describe('Desktop local run', () => {
     // The copyable Copy retry command button proves the header (where "Run
     // locally" would sit) has rendered with failed cases.
     await expect(page.getByRole('button', { name: 'Copy retry command' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Run locally' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: RERUN_FAILED })).toHaveCount(0);
   });
 
   test('one click runs the failed tests and streams output into the tray', async ({ page }) => {
@@ -182,13 +189,16 @@ test.describe('Desktop local run', () => {
     await waitForHydration(page);
 
     // A linked, healthy project runs immediately — no dialog in between.
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
     await expect(tray(page)).toBeVisible();
     await expect(tray(page).getByText('Running 1 test using 1 worker')).toBeVisible();
     await expect(tray(page).getByText('1 passed (2.0s)')).toBeVisible();
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
+    // The tray names what ran, and the command under it.
+    await expect(tray(page).getByText(`1 failed test of run #${runId}`, { exact: true })).toBeVisible();
+    await expect(tray(page).getByText('playwright test tests/checkout.spec.ts:42 --project=chromium')).toBeVisible();
 
     const invocations = await runInvocations(page);
     expect(invocations).toHaveLength(1);
@@ -196,12 +206,55 @@ test.describe('Desktop local run', () => {
     expect(String(invocations[0]!.args!.projectId)).toMatch(/^\d+$/);
   });
 
+  test('the button says what it runs, and its menu shows the command', async ({ page }) => {
+    await installFakeBridge(page, { linked: true });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await expect(page.getByRole('button', { name: 'Re-run 1 failed test', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Run options' }).click();
+    await expect(page.getByText('Runs this command')).toBeVisible();
+    await expect(
+      page.getByRole('menu').getByText('playwright test tests/checkout.spec.ts:42 --project=chromium'),
+    ).toBeVisible();
+  });
+
+  test('a failed execution re-runs its test from the page header', async ({ page }) => {
+    await installFakeBridge(page, { linked: true });
+    await page.goto(`/test-run-cases/${executionId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: 'Re-run this test' }).click();
+    await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
+    await expect(tray(page).getByText('checkout completes', { exact: true })).toBeVisible();
+
+    const invocations = await runInvocations(page);
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0]!.args!.args).toEqual(['tests/checkout.spec.ts:42', '--project=chromium']);
+  });
+
+  test("a button shows the progress of its own tests only, never another page's run", async ({ page }) => {
+    await installFakeBridge(page, { linked: true, autoExit: false });
+    await page.goto(`/test-cases/${caseId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: 'Run this test · ×20 · trace', exact: true }).click();
+    await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Running 0/1…' })).toBeVisible();
+
+    // The execution's run (one line, one project) is not the one running: its button stays ready.
+    await page.getByRole('link', { name: 'Latest execution' }).click();
+    await expect(page).toHaveURL(/\/test-run-cases\//);
+    await expect(page.getByRole('button', { name: 'Re-run this test', exact: true })).toBeVisible();
+    await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
+  });
+
   test('a run keeps going across navigation and is never killed by closing UI', async ({ page }) => {
     await installFakeBridge(page, { linked: true, autoExit: false });
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
 
     // Leave the run page entirely — the store, not the page, owns the run.
@@ -224,7 +277,7 @@ test.describe('Desktop local run', () => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
 
     await tray(page).getByRole('button', { name: 'Stop', exact: true }).click();
@@ -246,7 +299,7 @@ test.describe('Desktop local run', () => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     await tray(page).getByRole('button', { name: 'Stop', exact: true }).click();
     await tray(page).getByRole('button', { name: 'Force stop' }).click();
 
@@ -262,6 +315,7 @@ test.describe('Desktop local run', () => {
     await waitForHydration(page);
 
     await page.getByRole('button', { name: 'Run options' }).click();
+    await expect(page.getByText('Run now, and keep as the default')).toBeVisible();
     await page.getByRole('menuitemcheckbox', { name: 'Headed' }).click();
 
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
@@ -269,10 +323,10 @@ test.describe('Desktop local run', () => {
     expect(invocations[0]!.args!.args).toEqual(['tests/checkout.spec.ts:42', '--project=chromium', '--headed']);
 
     // The choice is the new default: a plain one-click run repeats it, even
-    // after a full reload (options are stored per project).
+    // after a full reload (options are stored per project), and the button says so.
     await page.reload();
     await waitForHydration(page);
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: 'Re-run 1 failed test · headed', exact: true }).click();
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
     invocations = await runInvocations(page);
     expect(invocations[0]!.args!.args).toEqual(['tests/checkout.spec.ts:42', '--project=chromium', '--headed']);
@@ -284,7 +338,7 @@ test.describe('Desktop local run', () => {
     await waitForHydration(page);
 
     // A wrong checkout demotes the one-click run to the dialog, which explains.
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     const dialog = page.getByRole('dialog');
 
     await expect(dialog.getByText('None of these tests are in the linked folder')).toBeVisible();
@@ -304,7 +358,7 @@ test.describe('Desktop local run', () => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     await page.evaluate(() => window.__piwiFakeTauri.emitLine('Running 3 tests using 2 workers'));
     // The fake spawn already announced 1 test; the second announcement adds 3.
     await expect(tray(page).getByText('Running 0/4…', { exact: true })).toBeVisible();
@@ -326,7 +380,7 @@ test.describe('Desktop local run', () => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
 
     // The local process reports through the project's own Piwi reporter, with the
@@ -392,7 +446,7 @@ test.describe('Desktop local run', () => {
     await page.goto(`/test-cases/${caseId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Reproduce locally' }).click();
+    await page.getByRole('button', { name: 'Run this test · ×20 · trace', exact: true }).click();
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
 
     const invocations = await runInvocations(page);
@@ -408,12 +462,34 @@ test.describe('Desktop local run', () => {
     expect(saved?.trace ?? false).toBe(false);
   });
 
+  test("a preset button's toggles change that button only", async ({ page }) => {
+    await installFakeBridge(page, { linked: true });
+    await page.goto(`/test-cases/${caseId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: 'Run options' }).click();
+    await expect(page.getByText('Run now', { exact: true })).toBeVisible();
+    await page.getByRole('menuitemcheckbox', { name: 'Record trace' }).click();
+    await page.keyboard.press('Escape');
+
+    await page.getByRole('button', { name: 'Run this test · ×20', exact: true }).click();
+    await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
+    const invocations = await runInvocations(page);
+    expect(invocations[0]!.args!.args).toEqual(['--grep', 'checkout completes', '--repeat-each=20']);
+
+    const saved = await page.evaluate(
+      (id) => JSON.parse(localStorage.getItem('piwi:desktop-local-run-options') ?? '{}')[String(id)],
+      projectId,
+    );
+    expect(saved?.trace ?? false).toBe(false);
+  });
+
   test('raises an OS notification when a run finishes while the window is unfocused', async ({ page }) => {
     await installFakeBridge(page, { linked: true, autoExit: false });
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
 
     // Headless focus reporting is unreliable, so unfocus deterministically;
@@ -436,7 +512,7 @@ test.describe('Desktop local run', () => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
-    await expect(page.getByRole('button', { name: 'Run locally' })).toBeVisible();
+    await expect(page.getByRole('button', { name: RERUN_FAILED })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
   });
 
@@ -450,7 +526,7 @@ test.describe('Desktop local run', () => {
     await page.keyboard.press('Escape');
 
     // The primary click demotes to the dialog, which explains — but never blocks.
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByText('No Playwright installation found')).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Run', exact: true })).toBeEnabled();
@@ -461,7 +537,7 @@ test.describe('Desktop local run', () => {
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Run locally' }).click();
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('button', { name: 'Choose folder…' })).toBeVisible();
 

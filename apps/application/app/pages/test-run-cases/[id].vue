@@ -329,8 +329,8 @@ const { applyingId, applyTriage } = useApplyClusterTriage({
 
 const { rerunning, triggerRerun } = useCiRerun(() => failureCluster.value?.id ?? null, refreshRerun);
 
-/** The Verify section shows when a CI re-run is configured, or in the desktop shell. */
-const showVerify = computed(() => Boolean(rerunInfo.value?.available) || desktopBridge.value);
+/** The Verify section shows when a CI re-run of the cluster is configured; the desktop app re-runs the test from the navbar. */
+const showVerify = computed(() => Boolean(rerunInfo.value?.available));
 
 /** Reproduce shows for a failing execution once its recipe is available. */
 const showReproduce = computed(() => Boolean(verdict.value) && Boolean(reproduceData.value?.reproduce?.steps?.length));
@@ -364,9 +364,7 @@ const reproduceSummary = computed(() =>
     Boolean(reproduceData.value?.bisect?.available),
   ),
 );
-const verifySummary = computed(() =>
-  verifySectionSummary(retryCommand.value ?? '', Boolean(rerunInfo.value?.available), 'Re-run the failing test'),
-);
+const verifySummary = computed(() => "Re-run every test of this failure's cluster in CI");
 
 // ── Header: identity, exceptional badges ─────────────────────────────────────
 // Playwright test marks only — `piwi:` annotations are ownership, not marks.
@@ -762,6 +760,16 @@ const { handle: handleNextStepAction } = useNextStepActions({
         </template>
         <template #right>
           <div class="flex items-center gap-1 shrink-0 min-w-0">
+            <!-- Desktop app only: runs this test again in the project's linked folder -->
+            <DesktopRunLocallyButton
+              v-if="testCase?.filePath"
+              class="mr-2"
+              :project-id="testCase?.testRun?.project?.id"
+              :project-label="testCase?.testRun?.project?.label ?? testCase?.testRun?.project?.name"
+              :cases="retryCases"
+              label="Re-run this test"
+              :run-title="testLabel(testCase)"
+            />
             <NuxtLink
               v-if="testCase?.testCaseId"
               :to="`/test-cases/${testCase.testCaseId}`"
@@ -1049,25 +1057,20 @@ const { handle: handleNextStepAction } = useNextStepActions({
               />
             </template>
 
-            <!-- Re-run in CI, or run locally in the desktop shell -->
+            <!-- Re-run the cluster's tests in CI -->
             <template v-if="showVerify" #verify>
               <div class="flex flex-wrap items-center gap-2">
                 <UButton
-                  v-if="rerunInfo?.available"
                   size="xs"
-                  color="primary"
-                  variant="soft"
+                  color="neutral"
+                  variant="outline"
                   icon="i-lucide-refresh-cw"
+                  title="Dispatches CI to run each test of this failure's cluster at the line of its latest failure"
                   :loading="rerunning"
                   @click="triggerRerun"
                 >
-                  Re-run in CI
+                  Re-run the cluster in CI
                 </UButton>
-                <DesktopRunLocallyButton
-                  :project-id="testCase?.testRun?.project?.id"
-                  :project-label="testCase?.testRun?.project?.label ?? testCase?.testRun?.project?.name"
-                  :cases="retryCases"
-                />
                 <ClientOnly>
                   <span v-if="rerunInfo?.lastDispatch" class="text-xs text-muted">
                     Last re-run {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}

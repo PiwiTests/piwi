@@ -108,6 +108,10 @@ const {
 
 // A red run leads with Copy retry command; a green run leads with its report.
 const retryIsPrimary = computed(() => failedCases.value.length > 0);
+// What the desktop app's re-run runs: the final attempt of each test that failed.
+const failedTestsLabel = computed(
+  () => `${failedCases.value.length} failed test${failedCases.value.length === 1 ? '' : 's'}`,
+);
 
 const desktopBridge = ref(false);
 onMounted(() => {
@@ -221,8 +225,9 @@ function onLabelKeydown(e: KeyboardEvent) {
     </template>
 
     <template #primary>
-      <!-- Copy retry command (with a mode picker) leads on a red run; the report
-           leads on a green one. The other is a secondary button when present. -->
+      <!-- Copy retry command (with a mode picker) leads on a red run, Re-run N failed
+           tests in the desktop app; the report leads on a green one. The other is a
+           secondary button when present. -->
       <UPopover v-if="retryIsPrimary && !desktopBridge">
         <UButton
           size="xs"
@@ -253,9 +258,12 @@ function onLabelKeydown(e: KeyboardEvent) {
 
       <DesktopRunLocallyButton
         v-if="retryIsPrimary"
+        primary
         :project-id="testRun?.project?.id"
         :project-label="testRun?.project?.label ?? testRun?.project?.name"
         :cases="failedCases"
+        :label="`Re-run ${failedTestsLabel}`"
+        :run-title="`${failedTestsLabel} of run #${testRun?.id}`"
       />
 
       <UButton

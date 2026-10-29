@@ -50,6 +50,8 @@ const passRate = computed<number | null>(() => testCase.value?.passRate ?? null)
 
 // Desktop shell: reproduce this test on this machine. Selected by title so no
 // line number is needed; repeat ×20 with a trace is the flake-hunting preset.
+/** The desktop app's run of this test: by its title, 20 times with a trace, to catch a failure that comes and goes. */
+const REPEAT_PRESET = { mode: 'grep', repeatEach: 20, trace: true } as const;
 const reproduceCases = computed(() =>
   testCase.value?.filePath ? [{ filePath: testCase.value.filePath, title: testCase.value.title, line: null }] : [],
 );
@@ -196,8 +198,9 @@ useViewScroll(
               :project-id="testCase?.project?.id"
               :project-label="testCase?.project?.label ?? testCase?.project?.name"
               :cases="reproduceCases"
-              label="Reproduce locally"
-              :preset-options="{ mode: 'grep', repeatEach: 20, trace: true }"
+              label="Run this test"
+              :run-title="testCase ? testLabel(testCase) : null"
+              :preset-options="REPEAT_PRESET"
             />
             <TestCaseMergeButton
               v-if="testCase?.project"

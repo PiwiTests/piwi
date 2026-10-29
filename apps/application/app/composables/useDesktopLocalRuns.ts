@@ -169,6 +169,8 @@ export interface LocalRun {
   projectLabel: string | null;
   /** The cases the run was built from — kept so the tray can re-run it. */
   cases: RetryCase[];
+  /** What the run runs, in words, as the page that started it named it; null to derive it (`localRunTitle`). */
+  title: string | null;
   options: SavedLocalRunOptions;
   steps: LocalRunStep[];
   stepIndex: number;
@@ -248,6 +250,57 @@ export function localRunProgressLabel(run: LocalRun): string {
   if (run.phase && run.phase !== 'test') return `${PHASE_LABEL[run.phase]}…`;
   if (run.progressTotal) return `Running ${run.progressDone}/${run.progressTotal}…`;
   return run.steps.length > 1 ? `Running ${run.stepIndex + 1}/${run.steps.length}…` : 'Running…';
+}
+
+/** `N tests`, or the test's title when there is one. */
+function casesTitle(cases: readonly RetryCase[]): string {
+  if (cases.length === 1 && cases[0]!.title) return cases[0]!.title;
+  return `${cases.length} test${cases.length === 1 ? '' : 's'}`;
+}
+
+/** What a run runs, in words: the tray's row title, the toasts and the Run again tooltip read it. */
+export function localRunTitle(
+  run: Pick<LocalRun, 'kind' | 'title' | 'cases' | 'commit' | 'good' | 'bad' | 'flake'>,
+): string {
+  if (run.title) return run.title;
+  switch (run.kind) {
+    case 'reproduce':
+      return run.commit
+        ? `Reproduce ${casesTitle(run.cases)} at ${run.commit.slice(0, 7)}`
+        : `Reproduce ${casesTitle(run.cases)}`;
+    case 'bisect':
+      return run.good && run.bad
+        ? `Bisect ${casesTitle(run.cases)} between ${run.good.slice(0, 7)} and ${run.bad.slice(0, 7)}`
+        : `Bisect ${casesTitle(run.cases)}`;
+    case 'repro':
+      return 'Bug report steps';
+    case 'flake':
+      return run.flake ? `Flake Lab on test #${run.flake.testCaseId}` : 'Flake Lab plan from your editor';
+    default:
+      return casesTitle(run.cases);
+  }
+}
+
+/** One key per set of cases, whatever their order: a button finds the runs of its own tests by it. */
+function localRunCasesKey(cases: readonly RetryCase[]): string {
+  return cases
+    .map((c) => [c.filePath, c.line ?? '', c.projectName ?? '', c.title].join('\u0000'))
+    .sort()
+    .join('\n');
+}
+
+/**
+ * The options that are not the defaults, in words (`headed · ×20 · trace`), or an empty string: a run button appends
+ * them to its face, so what one click runs is never hidden in a menu.
+ */
+export function localRunOptionsSummary(options: LocalRunOptions): string {
+  const parts: string[] = [];
+  if (options.runMode === 'headed') parts.push('headed');
+  else if (options.runMode === 'debug') parts.push('inspector');
+  else if (options.runMode === 'ui') parts.push('UI mode');
+  if ((options.repeatEach ?? 1) > 1) parts.push(`×${options.repeatEach}`);
+  if (options.trace) parts.push('trace');
+  return parts.join(' · ');
 }
 
 export const DEFAULT_LOCAL_RUN_OPTIONS: SavedLocalRunOptions = {
@@ -691,7 +744,7 @@ export function useDesktopLocalRuns() {
       }
       return;
     }
-    const tests = `${run.cases.length} test${run.cases.length === 1 ? '' : 's'}`;
+    const tests = localRunTitle(run);
     notifyUnfocused(run, label, tests, seconds);
     const viewOutput = {
       label: 'View output',
@@ -725,7 +778,7 @@ export function useDesktopLocalRuns() {
     } else if (run.status === 'failed') {
       toastApi?.add({
         title: 'Local run failed',
-        description: `${label} — exit ${run.exitCode ?? 1} after ${seconds}s`,
+        description: `${label} — ${tests}: exit ${run.exitCode ?? 1} after ${seconds}s`,
         icon: 'i-lucide-x',
         color: 'error',
         actions: [viewOutput, ...openPiwiRun],
@@ -758,7 +811,7 @@ export function useDesktopLocalRuns() {
           : 'Local run could not start';
     const body =
       run.status === 'failed'
-        ? `${label} — exit ${run.exitCode ?? 1} after ${seconds}s`
+        ? `${label} — ${tests}: exit ${run.exitCode ?? 1} after ${seconds}s`
         : `${label} — ${tests} in ${seconds}s`;
     try {
       new Notification(title, { body });
@@ -784,9 +837,11 @@ export function useDesktopLocalRuns() {
     projectId: string | number;
     projectLabel?: string | null;
     cases: RetryCase[];
+    /** What the run runs, in words (`localRunTitle`). */
+    title?: string | null;
     options?: LocalRunOptions;
     /** `false` keeps the merged options out of the project's saved defaults —
-     * for preset entry points like "Reproduce locally". */
+     * for preset entry points like a test case's "Run this test". */
     persistOptions?: boolean;
   }): LocalRun | null {
     if (!tauriCore() || input.cases.length === 0) return null;
@@ -799,6 +854,7 @@ export function useDesktopLocalRuns() {
       projectId: input.projectId,
       projectLabel: input.projectLabel,
       cases: input.cases,
+      title: input.title,
       options,
       steps,
     });
@@ -814,6 +870,7 @@ export function useDesktopLocalRuns() {
     projectId: string | number;
     projectLabel?: string | null;
     cases: RetryCase[];
+    title?: string | null;
     options: SavedLocalRunOptions;
     steps: LocalRunStep[];
     browserName?: string | null;
@@ -843,6 +900,7 @@ export function useDesktopLocalRuns() {
       projectId: String(input.projectId),
       projectLabel: input.projectLabel ?? null,
       cases: input.cases.map((c) => ({ ...c })),
+      title: input.title ?? null,
       options: input.options,
       steps: input.steps,
       stepIndex: 0,
@@ -1164,6 +1222,7 @@ export function useDesktopLocalRuns() {
       projectId: run.projectId,
       projectLabel: run.projectLabel,
       cases: run.cases,
+      title: run.title,
       options: run.options,
       persistOptions: false,
     });
@@ -1195,11 +1254,18 @@ export function useDesktopLocalRuns() {
     runs.value = runs.value.filter((r) => r.status === 'running');
   }
 
-  /** Newest run for a project — what the button reflects. */
-  function latestForProject(projectId: string | number | null | undefined): LocalRun | undefined {
-    if (projectId == null) return undefined;
+  /**
+   * Newest test run of exactly these cases in a project — what a run button reflects, so a button never shows the
+   * progress of another page's tests, a reproduction or a bisect.
+   */
+  function latestForCases(
+    projectId: string | number | null | undefined,
+    cases: readonly RetryCase[],
+  ): LocalRun | undefined {
+    if (projectId == null || cases.length === 0) return undefined;
     const id = String(projectId);
-    return runs.value.find((r) => r.projectId === id);
+    const key = localRunCasesKey(cases);
+    return runs.value.find((r) => r.kind === 'tests' && r.projectId === id && localRunCasesKey(r.cases) === key);
   }
 
   return {
@@ -1215,7 +1281,7 @@ export function useDesktopLocalRuns() {
     rerun,
     stopRun,
     clearFinished,
-    latestForProject,
+    latestForCases,
     getProjectOptions,
     saveProjectOptions,
     correlatePiwiRuns,

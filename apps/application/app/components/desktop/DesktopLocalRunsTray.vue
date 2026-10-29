@@ -20,7 +20,7 @@
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isUnattendedDesktopRun } from '#shared/desktop-runs';
-import { flakeLabOutcome, type LocalRun } from '~/composables/useDesktopLocalRuns';
+import { flakeLabOutcome, localRunTitle, type LocalRun } from '~/composables/useDesktopLocalRuns';
 import {
   desktopHoldRefusal,
   desktopHoldsByDefault,
@@ -188,6 +188,13 @@ function badge(run: LocalRun): { label: string; color: 'info' | 'success' | 'err
 }
 
 const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'));
+
+/** The row's second line: the project, then the command the current step runs, when it has one. */
+function runDetail(run: LocalRun): string {
+  const project = run.projectLabel || `Project ${run.projectId}`;
+  const command = run.steps[run.stepIndex]?.display;
+  return command ? `${project} · ${command}` : project;
+}
 </script>
 
 <template>
@@ -226,7 +233,7 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
 
       <div class="max-h-[70vh] overflow-y-auto divide-y divide-default">
         <p v-if="runs.length === 0 && otherSessions.length === 0" class="px-3 py-6 text-sm text-muted text-center">
-          No local runs yet — start one from a “Run locally” button.
+          No local runs yet — start one from a Re-run button on a run, an execution or a test.
         </p>
 
         <DesktopRunCopyList :kept="hub.state.kept" :roots="hub.state.roots" />
@@ -246,12 +253,9 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
             <UBadge :color="badge(run).color" variant="subtle" size="sm" class="shrink-0">
               {{ badge(run).label }}
             </UBadge>
-            <span class="text-sm font-medium truncate min-w-0 max-w-40">
-              {{ run.projectLabel || `Project ${run.projectId}` }}
+            <span class="text-sm font-medium truncate flex-1 min-w-0" :title="localRunTitle(run)">
+              {{ localRunTitle(run) }}
             </span>
-            <code class="text-[11px] text-muted truncate flex-1 min-w-0" :title="run.steps[run.stepIndex]?.display">
-              {{ run.steps[run.stepIndex]?.display }}
-            </code>
             <span class="text-xs text-muted tabular-nums shrink-0">{{ duration(run) }}</span>
             <UTooltip v-if="run.status === 'running' && run.stopRequested" text="Kill the process without waiting">
               <UButton size="xs" color="error" variant="solid" icon="i-lucide-square" @click="store.stopRun(run)">
@@ -268,7 +272,10 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
             >
               Stop
             </UButton>
-            <UTooltip v-else-if="run.kind !== 'flake' || run.flake" text="Run again with the same options">
+            <UTooltip
+              v-else-if="run.kind !== 'flake' || run.flake"
+              :text="`Run again: ${localRunTitle(run)}, with the same options`"
+            >
               <UButton
                 size="xs"
                 color="neutral"
@@ -287,6 +294,7 @@ const hasFinished = computed(() => runs.value.some((r) => r.status !== 'running'
               @click="toggleExpanded(run)"
             />
           </div>
+          <p class="mt-0.5 font-mono text-[11px] text-muted truncate" :title="runDetail(run)">{{ runDetail(run) }}</p>
           <div
             v-if="run.status === 'running'"
             class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1"

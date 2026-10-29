@@ -72,16 +72,15 @@ of the repository serves its git history without an [SCM token](/guide/source-co
 
 ## Running tests from the app
 
-**Run locally**, on a run page or an execution page, re-runs the failed tests on this machine with the folder's own
-Playwright and the app's bundled Node. The first time, it asks for the project's folder.
+A run, an execution, a cluster or a test runs again here with the folder's own Playwright and the bundled Node, and
+its button says what: **Re-run 3 failed tests**, **Re-run this test**, or on a test case **Run this test** (20 times,
+with a trace). The first time, it asks for the folder.
 
-- **The arrow next to the button** holds the options: headless, headed, the Playwright inspector or UI mode; tests
-  by `file:line`, title or file; a forced trace; `--repeat-each` up to 100 times (1,000 in **Run with
-  options…**, which shows the command). The last choice becomes the project's one-click default.
-- **Runs keep going while you browse.** Output streams into the **Local runs** tray; stopping is always explicit.
-- **More places to run from:** **Reproduce locally** on a test case (20 times with a trace), **Run locally**
-  on a failure cluster, and a [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app)
-  sent from Piwi Picker.
+- **The arrow next to the button** shows the command and holds the options: headless, headed, the inspector or UI
+  mode; tests by `file:line`, title or file; a trace; `--repeat-each` up to 100 (1,000 in **Run with options…**).
+  The last choice becomes the project's default, and the button names it (**· headed · ×5**).
+- **Runs keep going while you browse**, in the **Local runs** tray, each under what it runs. Stopping is explicit. A
+  [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app) from Piwi Picker runs there too.
 - **Wrong folder?** When none of the tests exist in the linked folder, the button opens the link's dialog.
 - **Pause, step and watch** each worker from the tray, at a `page.pause()` or a failure too: [Desktop app
   runs](/features/desktop-runs).

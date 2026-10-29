@@ -82,7 +82,8 @@ Once a cluster is fixed, the fastest way to prove it is to re-run exactly the af
 trigger that run in CI for you: **Re-run in CI**, next to *Copy retry command*, dispatches a workflow or pipeline with
 the cluster's retry arguments (each affected test's `file:line` from its latest failure, `--project` when they share
 one) on the branch of the cluster's latest run, and links to the run it started. The configured ref is used only when
-that run recorded no branch. The last dispatch (when, by whom, and a link) shows under the Test evidence header.
+that run recorded no branch. An execution of the cluster offers the same dispatch in its Verify section, as **Re-run
+the cluster in CI**: it runs every affected test, not only that one. The last dispatch (when, by whom, and a link) shows under the Test evidence header.
 
 It is **off by default** and configured per project in the **Source control** section of the project's **Settings** tab,
 under **CI re-run**. Turn it on and fill in the block for your provider:

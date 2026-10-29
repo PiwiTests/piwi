@@ -304,13 +304,17 @@ function copyCluster() {
 }
 
 // ── Retry command / CI re-run (header primary action) ────────────────────────
+// Each affected test at the line and in the Playwright project of its latest failure, as a CI re-run names them.
 const affectedRetryCases = computed(() =>
   (cluster.value?.affectedTestCases ?? []).map((tc) => ({
     filePath: tc.filePath,
     title: tc.title,
-    line: null,
-    projectName: null,
+    line: tc.line ?? null,
+    projectName: tc.projectName ?? null,
   })),
+);
+const affectedTestsLabel = computed(
+  () => `${affectedRetryCases.value.length} affected test${affectedRetryCases.value.length === 1 ? '' : 's'}`,
 );
 const retryCommand = computed(() => buildRetryCommand(affectedRetryCases.value));
 const { copy: copyRetry } = useCopy();
@@ -958,6 +962,8 @@ const breadcrumbItems = computed(() => [
                   :project-id="cluster.project?.id"
                   :project-label="cluster.project?.label ?? cluster.project?.name"
                   :cases="affectedRetryCases"
+                  :label="`Re-run the ${affectedTestsLabel}`"
+                  :run-title="`${affectedTestsLabel} of cluster #${cluster.id}`"
                 />
                 <ClientOnly>
                   <span v-if="rerunInfo?.lastDispatch" class="text-xs text-muted">

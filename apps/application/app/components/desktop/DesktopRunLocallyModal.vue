@@ -7,7 +7,7 @@
  * one-click runs bypass it entirely (the split button uses the saved options).
  */
 import type { RetryCase } from '~/utils/retry-command';
-import { buildLocalRunPlan } from '~/utils/local-run-args';
+import { buildLocalRunPlan, type LocalRunOptions } from '~/utils/local-run-args';
 
 const props = defineProps<{
   /** Piwi project id owning the linked folder. */
@@ -15,7 +15,15 @@ const props = defineProps<{
   projectLabel?: string | null;
   /** The cases to run. */
   cases: RetryCase[];
+  /** What the run button says it runs; the dialog's title. */
+  label?: string;
+  /** What the Local runs tray calls the run. */
+  runTitle?: string | null;
+  /** A preset button's own options: the form edits them instead of the project's saved defaults. */
+  presetOptions?: LocalRunOptions;
 }>();
+
+const emit = defineEmits<{ 'update:presetOptions': [value: LocalRunOptions] }>();
 
 const open = defineModel<boolean>('open', { default: false });
 
@@ -30,10 +38,14 @@ const { playwrightMissing, checkEnv } = useDesktopEnvCheck(() => props.projectId
 const linked = computed(() => !!link.value?.exists);
 
 // The form edits the project's saved options directly — what runs from here is
-// what the split button's one-click run repeats next time.
+// what the split button's one-click run repeats next time — or, for a preset
+// button, that button's own options.
 const options = computed({
-  get: () => store.getProjectOptions(props.projectId),
-  set: (value) => store.saveProjectOptions(props.projectId, value),
+  get: () => ({ ...store.getProjectOptions(props.projectId), ...props.presetOptions }),
+  set: (value) => {
+    if (props.presetOptions) emit('update:presetOptions', value);
+    else store.saveProjectOptions(props.projectId, value);
+  },
 });
 const mode = computed({
   get: () => options.value.mode,
@@ -69,6 +81,9 @@ function run() {
     projectId: props.projectId,
     projectLabel: props.projectLabel,
     cases: props.cases,
+    title: props.runTitle,
+    options: props.presetOptions ? options.value : undefined,
+    persistOptions: props.presetOptions ? false : undefined,
   });
   open.value = false;
 }
@@ -79,7 +94,7 @@ function run() {
     <template #header>
       <div class="flex items-center gap-2 min-w-0">
         <UIcon name="i-lucide-monitor-play" class="size-5 text-primary shrink-0" />
-        <h2 class="text-base font-semibold truncate">Run tests locally</h2>
+        <h2 class="text-base font-semibold truncate">{{ label ?? 'Run tests locally' }}</h2>
         <UBadge color="neutral" variant="subtle" size="sm"
           >{{ cases.length }} test{{ cases.length === 1 ? '' : 's' }}</UBadge
         >
@@ -192,7 +207,13 @@ function run() {
           </UAlert>
 
           <div class="space-y-1">
-            <div class="text-xs text-muted">Runs in the linked folder</div>
+            <div class="text-xs text-muted">
+              {{
+                presetOptions
+                  ? 'Runs in the linked folder'
+                  : 'Runs in the linked folder; these options become the project’s one-click default'
+              }}
+            </div>
             <CodeBlock :code="preview" lang="sh" />
           </div>
 

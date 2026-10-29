@@ -1149,6 +1149,10 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
     owner?: string | null;
     runCount: number;
     recentTestRunsCaseId: number;
+    /** The line of the test in its latest failure in the cluster, when recorded. */
+    line?: number | null;
+    /** The Playwright project of that failure, when recorded. */
+    projectName?: string | null;
     quarantined: boolean;
   }>;
   /** Known-issue links pinned to this cluster (Jira / GitHub issue, etc.). */
