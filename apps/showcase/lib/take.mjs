@@ -5,7 +5,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { captureProblem, startCapture, syncFlash } from './capture.mjs';
-import { waitFor } from './script.mjs';
+import { contentOnScreen, screenMetrics, waitFor } from './script.mjs';
 import { TEST_BROWSER_CDP, listening } from './set.mjs';
 import { MASTER_FPS, scheduleLines } from './timeline.mjs';
 
@@ -27,20 +27,9 @@ const TILE_WINDOWS = ['vscode', 'runs', 'test-browser'];
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** A page's content on the screen, in device pixels at `scale`, from its window's place and its viewport. */
+/** A page's content on the screen, in device pixels (`contentOnScreen`), with its device pixel ratio. */
 async function contentRect(page, scale) {
-  const r = await page.evaluate(() => ({
-    x: window.screenX + (window.outerWidth - window.innerWidth),
-    y: window.screenY + (window.outerHeight - window.innerHeight),
-    width: window.innerWidth,
-    height: window.innerHeight,
-  }));
-  return {
-    x: Math.round(r.x * scale),
-    y: Math.round(r.y * scale),
-    width: Math.round(r.width * scale),
-    height: Math.round(r.height * scale),
-  };
+  return contentOnScreen(await screenMetrics(page), scale);
 }
 
 /**

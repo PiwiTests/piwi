@@ -83,6 +83,34 @@ export function lintLines(beats, language = 'en') {
   return problems;
 }
 
+/** What a page tells of its window and itself: the window's place and size, its viewport, its device pixel ratio. */
+export function screenMetrics(page) {
+  return page.evaluate(() => ({
+    screenX: window.screenX,
+    screenY: window.screenY,
+    outerWidth: window.outerWidth,
+    outerHeight: window.outerHeight,
+    innerWidth: window.innerWidth,
+    innerHeight: window.innerHeight,
+    dpr: window.devicePixelRatio,
+  }));
+}
+
+/**
+ * A page's content on the screen, in device pixels, from its `screenMetrics` in a browser at `scale`: the window's
+ * place and size count in the browser's own pixels (`scale` device pixels each), the viewport in the page's (`dpr`
+ * each, which a page zoom raises), and the content sits at the window's bottom right, below its toolbar.
+ */
+export function contentOnScreen(m, scale) {
+  return {
+    x: Math.round((m.screenX + m.outerWidth) * scale - m.innerWidth * m.dpr),
+    y: Math.round((m.screenY + m.outerHeight) * scale - m.innerHeight * m.dpr),
+    width: Math.round(m.innerWidth * m.dpr),
+    height: Math.round(m.innerHeight * m.dpr),
+    dpr: m.dpr,
+  };
+}
+
 /**
  * The gestures a beat makes, as a person makes them: each waits for its element, logs its box and the point it acts at
  * on the screen (device pixels, from the window's place on the screen and the element's box in it), waits
@@ -100,14 +128,9 @@ export class Gestures {
     this.beat = null;
   }
 
-  /** The window's page content on the screen, in CSS pixels: its origin and size. */
+  /** The window's page content on the screen (`contentOnScreen`), in device pixels. */
   async view(page) {
-    return page.evaluate(() => ({
-      x: window.screenX + (window.outerWidth - window.innerWidth),
-      y: window.screenY + (window.outerHeight - window.innerHeight),
-      width: window.innerWidth,
-      height: window.innerHeight,
-    }));
+    return contentOnScreen(await screenMetrics(page), this.scale);
   }
 
   async record(kind, window, locator, extra = {}, options = {}) {
@@ -120,12 +143,18 @@ export class Gestures {
       // A paced take scrolls the element into view first, as the click does, so its box is where the pointer goes.
       if (this.pace.before) await locator.scrollIntoViewIfNeeded({ timeout: options.timeout }).catch(() => {});
       const rect = await locator.boundingBox();
-      const view = await this.view(page).catch(() => ({ x: 0, y: 0, width: Infinity, height: Infinity }));
+      const view = await this.view(page).catch(() => ({
+        x: 0,
+        y: 0,
+        width: Infinity,
+        height: Infinity,
+        dpr: this.scale,
+      }));
       if (rect) {
-        const s = this.scale;
+        const s = view.dpr;
         box = {
-          x: Math.round((view.x + rect.x) * s),
-          y: Math.round((view.y + rect.y) * s),
+          x: Math.round(view.x + rect.x * s),
+          y: Math.round(view.y + rect.y * s),
           width: Math.round(rect.width * s),
           height: Math.round(rect.height * s),
         };
@@ -135,8 +164,8 @@ export class Gestures {
           : { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
         const inside = (v, size) => Math.min(Math.max(v, 0), size);
         point = {
-          x: Math.round((view.x + inside(at.x, view.width)) * s),
-          y: Math.round((view.y + inside(at.y, view.height)) * s),
+          x: Math.round(view.x + inside(at.x * s, view.width)),
+          y: Math.round(view.y + inside(at.y * s, view.height)),
         };
       }
     }

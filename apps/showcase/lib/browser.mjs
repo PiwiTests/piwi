@@ -102,6 +102,17 @@ export class DeveloperBrowser {
     return this.runs;
   }
 
+  /**
+   * Zooms the tab of the browser's first window (the dashboard's) to `factor`, as a person does with Ctrl and +: the
+   * zoom holds for every page of its origin, the Runs window's pages left as they are.
+   */
+  async zoomDashboard(factor) {
+    await this.worker.evaluate(async (zoom) => {
+      const [tab] = await chrome.tabs.query({ windowType: 'normal' });
+      await chrome.tabs.setZoom(tab.id, zoom);
+    }, factor);
+  }
+
   async close() {
     await this.context.close().catch(() => {});
   }
