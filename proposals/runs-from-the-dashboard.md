@@ -328,11 +328,16 @@ Debug in my editor, the Runs window, the desktop app and Piwi Picker's connectio
    takes each from the environment only when the Playwright config leaves it unset (`ENV_FALLBACK_SPECS` and
    `resolveOptions` in `packages/reporter/src/internal/config/env.ts`). A config that names `serverUrl` and reads its
    key from the environment reports such a run to its own server with the app's token: the run reaches neither, against
-   `flake_lab_env`'s comment, and the token goes to that server. Found by reading the code; not reproduced.
+   `flake_lab_env`'s comment, and the token goes to that server. Reproduced with the reporter's own resolution code.
+   **Fixed in #965** for a reporter from 0.60: the runs also set `PIWI_DESKTOP_APP=prefer` and the discovery file's
+   path, so the reporter takes the app's address and token together from that file. A reporter older than 0.60, which a
+   reproduction of an old commit installs, still pairs a server its config names with the token.
 2. **Re-run in CI shows to people who cannot use it.** The execution page shows it whenever the cluster can be re-run
    (the `verify` section of `app/pages/test-run-cases/[id].vue`), and the Next row offers **Re-run in CI**, **Reproduce
    in CI** and **Verify in CI** the same way (`shared/next-step.ts`), without the viewer's `run:control`; the server
-   then answers 403. The cluster page's menu checks `can('run:control', …)`.
+   then answers 403. The cluster page's menu checks `can('run:control', …)`. **Fixed in #965**: both pages' endpoints
+   pass the CI signals to the next-step policy only for a viewer with `run:control`, and the execution page shows its
+   re-run buttons to such a viewer alone.
 3. **"Hub" names two things in the user docs**: a node most tests reach, in the Test Map (`guide/concepts.md`, the
    only definition), and the process that holds a run's controls (`features/desktop-runs.md`,
    `guide/remote-development.md`).
