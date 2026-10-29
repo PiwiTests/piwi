@@ -5441,6 +5441,34 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-settings-notifications',
+    description:
+      'Settings → Notifications (desktop app): the built-in desktop notifications with their test button, no SMTP card, and the Settings nav without the pull-request pages',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/notifications',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, settle, shoot }) {
+      await page.locator('[data-shot="desktop-notifications"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'desktop-settings-about',
+    description:
+      'Settings → About (desktop app): Node.js, database, platform, and the reporter and Playwright versions of the latest run',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/about',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, settle, shoot }) {
+      await page.getByText('Playwright', { exact: true }).waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'desktop-run-live',
     description:
       'Local runs tray (desktop app): a run the shell started, stopped at its page.pause() before its click on Pay, watched live, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',

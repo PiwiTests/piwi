@@ -2,6 +2,7 @@
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import { slackDelivery } from '#shared/notifications/channel-setup';
 import {
+  DEFAULT_SUBSCRIPTION_EVENTS,
   describeSubscriptionFilters,
   notificationEventLabel,
   type SubscriptionFilters,
@@ -11,6 +12,19 @@ const toast = useToast();
 const config = useRuntimeConfig();
 const authEnabled = computed(() => config.public.authEnabled);
 const { canSeeAdmin } = useAuth();
+const isDesktop = useIsDesktop();
+
+// ── Desktop notifications ─────────────────────────────────────────────────────
+const defaultDesktopEvents = DEFAULT_SUBSCRIPTION_EVENTS.map(notificationEventLabel);
+
+function sendTestNotification() {
+  try {
+    new Notification('Piwi Dashboard', { body: 'Test notification: alerts from your projects appear like this.' });
+    toast.add({ title: 'Test notification sent', color: 'success' });
+  } catch (e) {
+    toast.add({ title: 'Test failed', description: String((e as Error)?.message ?? e), color: 'error' });
+  }
+}
 
 // SMTP env vars (read-only display) — from the shared registry via the help topic.
 const smtpEnvVars: PiwiEnvVarName[] = [
@@ -200,8 +214,34 @@ const eventLabel = notificationEventLabel;
 <template>
   <CapabilityDeclinedGuard capability="notifications" label="Notifications">
     <div class="space-y-6" data-tour="notifications-page">
-      <!-- SMTP status (read-only; connection details are admin-only) -->
+      <!-- Desktop build: OS notifications, built in. -->
       <SectionCard
+        v-if="isDesktop"
+        icon="i-lucide-monitor"
+        title="Desktop notifications"
+        data-shot="desktop-notifications"
+        data-tour="desktop-notifications"
+      >
+        <template #subtitle>Built in: no setup needed.</template>
+        <p class="text-sm text-highlighted leading-relaxed">
+          The app shows a system notification when one of your projects has news while its window is not in front, also
+          when it runs in the background. Every project notifies on
+          <template v-for="(label, i) in defaultDesktopEvents" :key="label"
+            >{{ i ? ' and ' : '' }}<span class="font-semibold">{{ label }}</span></template
+          >
+          until you choose its events with the bell on its page.
+        </p>
+        <template #footer>
+          <UButton color="neutral" variant="outline" icon="i-lucide-send" @click="sendTestNotification">
+            Send test notification
+          </UButton>
+        </template>
+      </SectionCard>
+
+      <!-- SMTP status (read-only; connection details are admin-only). The
+           desktop build shows it only once SMTP is set. -->
+      <SectionCard
+        v-if="!isDesktop || smtp?.configured"
         icon="i-lucide-mail"
         title="SMTP email delivery"
         help="settings.smtp"
@@ -304,7 +344,10 @@ PIWI_SMTP_PASS=secret"
         />
 
         <div v-if="channels.length === 0 && !showNewChannel" class="text-sm text-muted py-4 text-center">
-          No channels yet. Add one to start receiving notifications.
+          <template v-if="isDesktop"
+            >No channels yet. Add one to also send alerts to Slack, Teams or a webhook.</template
+          >
+          <template v-else>No channels yet. Add one to start receiving notifications.</template>
         </div>
 
         <div class="space-y-2">

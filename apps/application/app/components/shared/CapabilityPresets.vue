@@ -11,30 +11,41 @@
  */
 import type { HelpTopicKey } from '~/utils/help-content';
 import type { CapabilityId, InstanceDecision } from '#shared/capabilities';
-import { CAPABILITY_PRESETS, capabilitiesForModule, type CapabilityModule } from '#shared/capabilities';
+import {
+  CAPABILITY_PRESETS,
+  DESKTOP_HIDDEN_CAPABILITIES,
+  capabilitiesForModule,
+  type CapabilityModule,
+} from '#shared/capabilities';
 
 defineProps<{
   /** Inline-help topic rendered beside the heading. */
   help?: HelpTopicKey;
 }>();
 
+const isDesktop = useIsDesktop();
 const { state, canDecide, decideMany } = await useInstanceCapabilities();
 
 const busy = ref(false);
 
+/** The module's capabilities this build offers. */
+function moduleCapabilities(module: CapabilityModule): CapabilityId[] {
+  return capabilitiesForModule(module).filter((id) => !(isDesktop && DESKTOP_HIDDEN_CAPABILITIES.has(id)));
+}
+
 function declinedCount(module: CapabilityModule): number {
-  return capabilitiesForModule(module).filter((id) => state(id) === 'declined').length;
+  return moduleCapabilities(module).filter((id) => state(id) === 'declined').length;
 }
 
 /** A module is on unless every capability in it is declined. */
 function isOn(module: CapabilityModule): boolean {
-  return declinedCount(module) < capabilitiesForModule(module).length;
+  return declinedCount(module) < moduleCapabilities(module).length;
 }
 
 /** Some capabilities in the module are declined and some are not. */
 function isMixed(module: CapabilityModule): boolean {
   const declined = declinedCount(module);
-  return declined > 0 && declined < capabilitiesForModule(module).length;
+  return declined > 0 && declined < moduleCapabilities(module).length;
 }
 
 async function toggle(module: CapabilityModule, checked: boolean) {
@@ -43,7 +54,7 @@ async function toggle(module: CapabilityModule, checked: boolean) {
   try {
     const decision: InstanceDecision | null = checked ? null : 'declined';
     const decisions: Partial<Record<CapabilityId, InstanceDecision | null>> = {};
-    for (const id of capabilitiesForModule(module)) decisions[id] = decision;
+    for (const id of moduleCapabilities(module)) decisions[id] = decision;
     await decideMany(decisions);
   } finally {
     busy.value = false;
@@ -65,7 +76,9 @@ async function toggle(module: CapabilityModule, checked: boolean) {
         />
         <div class="min-w-0">
           <p class="text-sm text-highlighted leading-relaxed">{{ preset.label }}</p>
-          <p class="text-xs text-muted">{{ preset.description }}</p>
+          <p class="text-xs text-muted">
+            {{ (isDesktop && preset.desktopDescription) || preset.description }}
+          </p>
         </div>
       </div>
     </div>

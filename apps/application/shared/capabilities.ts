@@ -71,6 +71,8 @@ export interface CapabilityDef {
   passiveData?: boolean;
   /** A capability that is declined whenever this one is (rides on it). */
   follows?: CapabilityId;
+  /** The desktop build never offers it: every surface hides it there (`capabilityHidden`). */
+  hiddenOnDesktop?: boolean;
   /** Release that introduced it; the Setup ladder marks entries newer than the instance's first run. */
   since: string;
   doc: string;
@@ -175,6 +177,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     levels: ['instance'],
     needs: ['scm'],
     detection: null,
+    hiddenOnDesktop: true,
     since: '0.19.0',
     doc: 'features/pr-feedback',
   },
@@ -184,6 +187,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     levels: ['instance'],
     needs: ['fixtures', 'scm'],
     detection: null,
+    hiddenOnDesktop: true,
     since: '0.26.0',
     doc: 'features/auto-heal',
   },
@@ -310,6 +314,20 @@ export const CAPABILITY_BY_ID: Record<CapabilityId, CapabilityDef> = Object.from
   CAPABILITIES.map((c) => [c.id, c]),
 ) as Record<CapabilityId, CapabilityDef>;
 
+/** The ids of the capabilities the desktop build never offers (`hiddenOnDesktop`). */
+export const DESKTOP_HIDDEN_CAPABILITIES: ReadonlySet<string> = new Set(
+  CAPABILITIES.filter((c) => c.hiddenOnDesktop).map((c) => c.id),
+);
+
+/**
+ * Whether a surface hides a capability: declined, not applicable, or one the
+ * desktop build never offers. The one rule `useInstanceCapabilities` and
+ * `useProjectCapabilities` apply.
+ */
+export function capabilityHidden(id: CapabilityId, state: CapabilityState, desktop: boolean): boolean {
+  return state === 'declined' || state === 'not-applicable' || (desktop && DESKTOP_HIDDEN_CAPABILITIES.has(id));
+}
+
 /** Every module, in the order the presets ask about them. */
 export const CAPABILITY_MODULES: CapabilityModule[] = ['core', 'workflow', 'healing', 'agents'];
 
@@ -327,6 +345,8 @@ export interface CapabilityPreset {
   module: CapabilityModule;
   label: string;
   description: string;
+  /** The description in the desktop build, when the module holds a capability it does not offer. */
+  desktopDescription?: string;
 }
 
 export const CAPABILITY_PRESETS: CapabilityPreset[] = [
@@ -339,8 +359,14 @@ export const CAPABILITY_PRESETS: CapabilityPreset[] = [
     module: 'workflow',
     label: 'Triage as a team',
     description: 'Notifications, quarantine, pull-request feedback, issue tracking and the Test Map.',
+    desktopDescription: 'Notifications, quarantine, issue tracking and the Test Map.',
   },
-  { module: 'healing', label: 'Fix faster', description: 'Locator healing and auto-heal pull requests.' },
+  {
+    module: 'healing',
+    label: 'Fix faster',
+    description: 'Locator healing and auto-heal pull requests.',
+    desktopDescription: 'Locator healing.',
+  },
   { module: 'agents', label: 'Let agents in', description: 'AI diagnosis over your real diff, and the assistant.' },
 ];
 
