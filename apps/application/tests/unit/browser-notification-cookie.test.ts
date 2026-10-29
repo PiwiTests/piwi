@@ -21,10 +21,8 @@ afterEach(() => {
 
 describe('isDesktopAppRunEvent', () => {
   test('leaves the run events of the runs the desktop app started to the app', () => {
-    for (const origin of ['desktop', 'reproduce', 'bisect']) {
-      expect(isDesktopAppRunEvent('run.failed', origin)).toBe(true);
-      expect(isDesktopAppRunEvent('run.finished', origin)).toBe(true);
-    }
+    expect(isDesktopAppRunEvent('run.failed', 'desktop')).toBe(true);
+    expect(isDesktopAppRunEvent('run.finished', 'desktop')).toBe(true);
   });
 
   test('keeps the run events of other runs, and every other event', () => {

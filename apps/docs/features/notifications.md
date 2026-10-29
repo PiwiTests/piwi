@@ -23,11 +23,11 @@ dashboard.
 ## Where it is
 
 **Settings → Notifications** manages channels and subscriptions, and the **bell** on a project page subscribes to that
-project. The new-channel form shows where to get each destination, offers the right type for a URL pasted under another, and can **send a test** before saving: a channel whose test went through is
-saved as verified. Email goes only to a verified address: an email channel once a test reached it, the account email
-once its owner verified it. Notifications need no authentication: with it off, the instance is single-tenant and every
-channel and subscription is **global**. With `PIWI_AUTH_ENABLED=true` ([authentication](/operate/authentication)), each user keeps
-their own, and administrators can add global ones shared by everyone.
+project. The new-channel form shows where to get each destination, offers the right type for a URL pasted under another, and can **send a test** before saving; a test that goes
+through saves the channel as verified. Email goes only to a verified address: an email channel once a test reached it, the account email
+once its owner verified it. With authentication off, the instance is single-tenant and every channel and subscription is
+**global**. With `PIWI_AUTH_ENABLED=true` ([authentication](/operate/authentication)), each user keeps
+their own, and administrators can add global ones.
 
 <figure>
   <img src="/screenshots/notifications.png" alt="Settings, Notifications: the SMTP status with the environment variables to set, a Slack channel, and its subscription to project 1's failed runs and new clusters">
@@ -41,8 +41,8 @@ and others on a flakiness spike, a performance regression, a finished AI diagnos
 Each event, when it fires and the payload it carries are in
 [Notification events & webhooks](/reference/notification-events). A
 [report schedule](./quality-reports#report-schedules) sends its report to the channels it names, with no subscription.
-A run from an editor, or a partial run from a developer's machine or the desktop app, fires no run event and no
-new-cluster, flakiness or performance event ([run origin](/reference/test-metadata#run-origin)).
+A run from an editor, a bisect step, a reproduction, or a partial run from a developer's machine or the desktop app
+fires no run event and no new-cluster, flakiness or performance event ([run origin](/reference/test-metadata#run-origin)).
 
 ## Channels
 

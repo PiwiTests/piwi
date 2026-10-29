@@ -14,8 +14,8 @@ start the CI run that proves it.
 
 ## What gets posted
 
-Two things get posted when a run finishes, unless it is a run from an editor or a partial run from a developer's
-machine or the desktop app ([run origin](/reference/test-metadata#run-origin)):
+Two things get posted when a run finishes, unless it is a run from an editor, a bisect step, a reproduction, or a
+partial run from a developer's machine or the desktop app ([run origin](/reference/test-metadata#run-origin)):
 
 - **A summary comment** on the branch's open pull request: one comment per pull request, edited on each later run rather than appended, so a busy
   branch doesn't collect a comment per push.

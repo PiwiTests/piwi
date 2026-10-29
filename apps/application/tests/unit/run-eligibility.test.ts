@@ -40,7 +40,7 @@ const EXCLUDED: Record<RunUse, string[]> = {
   'shared-state': ['flake-lab', 'probe', 'bisect', 'reproduce'],
   'auto-heal': ['flake-lab', 'probe', 'bisect', 'reproduce'],
   'bug-lifecycle': ['bug', 'flake-lab', 'probe', 'bisect', 'reproduce'],
-  notifications: ['flake-lab', 'probe', 'editor'],
+  notifications: ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
   tracker: ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
   'run-health': ['flake-lab', 'probe'],
 };
