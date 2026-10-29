@@ -160,7 +160,7 @@ async function removeToken() {
         <UFormField
           name="ciRerun"
           data-tour="project-ci-rerun"
-          description="Let reporters and admins re-run a cluster's affected tests in CI from its page, using the SCM token above. Off by default; fill in the block for your provider."
+          description="Let Maintainers and Project admins re-run a cluster's affected tests, or one test, in CI from their pages, using the SCM token above. Off by default; fill in the block for your provider."
         >
           <template #label>
             <span class="inline-flex items-center gap-1">CI re-run <HelpHint topic="project.ci-rerun" /></span>

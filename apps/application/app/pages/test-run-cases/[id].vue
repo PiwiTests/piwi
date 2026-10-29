@@ -335,8 +335,11 @@ const { rerunning, triggerRerun } = useCiRerun(
   "The cluster's tests are re-running in CI.",
 );
 
-/** The Verify section shows when a CI re-run is configured; the desktop app re-runs the test from the navbar. */
-const showVerify = computed(() => Boolean(rerunInfo.value?.available));
+/**
+ * The Verify section shows when a CI re-run is configured and the viewer may start one; the desktop app re-runs the
+ * test from the navbar.
+ */
+const showVerify = computed(() => canRerun.value && Boolean(rerunInfo.value?.available));
 
 /** Reproduce shows for a failing execution once its recipe is available. */
 const showReproduce = computed(() => Boolean(verdict.value) && Boolean(reproduceData.value?.reproduce?.steps?.length));
@@ -459,6 +462,7 @@ const canQuarantine = computed(() => can('quarantine:write', executionProjectId.
 const canTriage = computed(() => can('triage:write', executionProjectId.value));
 const canCreateIssue = computed(() => can('issue:create', executionProjectId.value));
 const canEditLinks = computed(() => can('link:write', executionProjectId.value));
+const canRerun = computed(() => can('run:control', executionProjectId.value));
 
 // ── Quarantine ──────────────────────────────────────────────────────────────
 const { quarantineOne, releaseOne } = useQuarantine(() => executionProjectId.value);
