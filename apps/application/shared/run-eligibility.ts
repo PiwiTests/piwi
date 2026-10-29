@@ -93,8 +93,9 @@ export interface RunUseRule {
  * (`CI_RUN_ORIGINS`), the runs the editor overlays on that run are the finished
  * runs of its branch started after it, and the bug-report lifecycle reads the
  * default branch. The `notifications` use decides a finished run's outbound
- * effects alone: never for a run from an editor, and for a run from a
- * developer's machine or the desktop app only when it ran the whole suite
+ * effects alone: never for a run from an editor, a bisect step or a
+ * reproduction, and for a run from a developer's machine or the desktop app
+ * only when it ran the whole suite
  * (`completeOnlyFor`); the analysis behind them follows its own uses.
  */
 export const RUN_USES: Record<RunUse, RunUseRule> = {

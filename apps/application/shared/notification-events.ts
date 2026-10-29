@@ -28,12 +28,13 @@ export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
  */
 export const DEFAULT_SUBSCRIPTION_EVENTS: readonly NotificationEvent[] = ['run.failed', 'environment.incident'];
 
-/** The origins of the runs the desktop app starts itself, whose end it announces with its own notification. */
-const DESKTOP_APP_RUN_ORIGINS: ReadonlySet<string> = new Set(['desktop', 'reproduce', 'bisect']);
-
-/** Whether the desktop app leaves an event to its own notification: a `run.*` event of a run it started. */
+/**
+ * Whether the desktop app leaves an event to its own notification: a `run.*`
+ * event of a run it started (`desktop`). Its bisect steps and reproductions
+ * send no run event at all.
+ */
 export function isDesktopAppRunEvent(type: string, origin: string | undefined): boolean {
-  return type.startsWith('run.') && origin !== undefined && DESKTOP_APP_RUN_ORIGINS.has(origin);
+  return type.startsWith('run.') && origin === 'desktop';
 }
 
 const EVENT_LABELS: Partial<Record<NotificationEvent, string>> = {

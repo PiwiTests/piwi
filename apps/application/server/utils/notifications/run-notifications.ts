@@ -419,8 +419,9 @@ export async function loadRunPayload(db: DbClient, runId: number) {
 /**
  * Emit `run.interrupted` for a run the stale-run sweep reaped: its reporter
  * stopped sending before the end. A run the `notifications` use leaves out
- * stays silent, as at finalize: a lab run, a run from an editor, a run of part
- * of the suite from a developer's machine or the desktop app.
+ * stays silent, as at finalize: a lab run, a run from an editor, a bisect step
+ * or a reproduction, a run of part of the suite from a developer's machine or
+ * the desktop app.
  */
 export async function emitRunInterrupted(db: DbClient, runId: number): Promise<void> {
   try {

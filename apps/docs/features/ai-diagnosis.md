@@ -23,8 +23,9 @@ Pairs in the **ambiguous band**, between `PIWI_CLUSTER_SUGGEST_THRESHOLD` (defau
 not merged automatically. When AI is configured, a model judges the pair from its error text, locators, most-affected
 tests and overlap: it merges on a confident yes, turns a less confident yes into a **merge suggestion** on the
 project's Failure clusters tab, for a Maintainer or above to approve or dismiss, and leaves a no apart. Without AI, or
-past five model calls in a run, the pair becomes a suggestion directly. This runs after every finished run
-with an embedding role, independently of auto-diagnose.
+past five model calls in a run, the pair becomes a suggestion directly. This runs after every run
+that [sends notifications](/reference/test-metadata#run-origin), with an embedding role, independently of
+auto-diagnose.
 
 Each pair is judged once: the model's no is kept. A pair that someone dismissed, or that came from [moving tests to a
 new cluster](#split-a-cluster-by-hand), is never merged automatically, however close the two clusters score.
