@@ -319,23 +319,31 @@ pub(crate) fn lab_plan_path(root: &Path, project_id: &str, request_id: &str) -> 
     root.join(project_id).join(format!("lab-{request_id}.json"))
 }
 
-/// The environment a reproduction, a bisect step and `piwi flake` run with,
-/// so a run of an old commit reports to this app only, and plain output for
-/// the tray. `PIWI_DESKTOP_APP=prefer` has the reporter and `piwi` take this
-/// app's address and token together from its discovery file, before a server
-/// the Playwright config, the environment or a `.env` names. The connection
-/// variables a launching environment can carry are emptied: the token is in
-/// no run's environment, and no inherited key goes with another server. A
-/// reporter that predates `prefer` reads the discovery file when nothing else
-/// names a server.
-pub(crate) fn flake_lab_env() -> Vec<(&'static str, String)> {
+/// The environment a reproduction, a bisect step and `piwi flake` run with, so
+/// a run of an old commit reports to this app only, and plain output for the
+/// tray. This app's address and token win over a dashboard named in the user's
+/// environment or a `.env` in the worktree. `PIWI_DESKTOP_APP=prefer`, with the
+/// path of this app's discovery file (`discovery`), has a reporter or a `piwi`
+/// that knows it take the address and the token together from the file, before
+/// a server the Playwright config names, outside CI. A reporter that predates
+/// `prefer` pairs a server its config names with the token.
+pub(crate) fn flake_lab_env(
+    server: &ServerInfo,
+    discovery: Option<&Path>,
+) -> Vec<(&'static str, String)> {
     vec![
+        (
+            "PIWI_DASHBOARD_URL",
+            format!("http://127.0.0.1:{}", server.port),
+        ),
+        ("PIWI_API_KEY", server.token.clone()),
         ("PIWI_DESKTOP_APP", "prefer".into()),
-        ("PIWI_DESKTOP_CONFIG", String::new()),
-        ("PIWI_DASHBOARD_URL", String::new()),
-        ("PIWI_API_KEY", String::new()),
-        ("PIWI_USERNAME", String::new()),
-        ("PIWI_PASSWORD", String::new()),
+        (
+            "PIWI_DESKTOP_CONFIG",
+            discovery
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        ),
         ("NO_COLOR", "1".into()),
         ("FORCE_COLOR", "0".into()),
     ]
@@ -347,7 +355,11 @@ pub(crate) fn flake_lab_env() -> Vec<(&'static str, String)> {
 /// follow, pause and step it. `attended`: whether a person attends the run (a
 /// reproduction), else its failures go on at once (a bisect, a lab).
 async fn lab_env_with_hub(app: &AppHandle, id: u32, attended: bool) -> Vec<(&'static str, String)> {
-    let mut env = flake_lab_env();
+    let discovery = app.try_state::<crate::DiscoveryFile>();
+    let mut env = flake_lab_env(
+        &server_info(app),
+        discovery.as_ref().map(|file| file.0.as_path()),
+    );
     env.extend(crate::runner::bundled_hub_env(app, id, attended).await);
     env
 }
@@ -1346,7 +1358,8 @@ async fn bisect_driver(
     }
 }
 
-/// This app's server address and token, for the `piwi flake` runs it starts.
+/// This app's server address and token: for the shell's own reads of its
+/// server, and for the runs it starts ([`flake_lab_env`]).
 fn server_info(app: &AppHandle) -> ServerInfo {
     let server = app.state::<ServerInfo>();
     ServerInfo {
@@ -1917,25 +1930,28 @@ mod tests {
     }
 
     #[test]
-    fn a_lab_run_finds_this_app_through_its_discovery_file_and_holds_no_connection() {
-        let env = flake_lab_env();
+    fn a_lab_run_reaches_this_app_and_prefers_its_discovery_file() {
+        let server = ServerInfo {
+            port: 43210,
+            token: "pd_secret".into(),
+        };
+        let env = flake_lab_env(&server, Some(Path::new("/home/dev/.piwi/desktop.json")));
         let get = |key: &str| env.iter().find(|(k, _)| *k == key).map(|(_, v)| v.as_str());
+        assert_eq!(get("PIWI_DASHBOARD_URL"), Some("http://127.0.0.1:43210"));
+        assert_eq!(get("PIWI_API_KEY"), Some("pd_secret"));
         assert_eq!(get("PIWI_DESKTOP_APP"), Some("prefer"));
-        // Emptied, so an inherited value names neither another server nor its key,
-        // and the reporter reads the discovery file at its default path.
-        for key in [
-            "PIWI_DESKTOP_CONFIG",
-            "PIWI_DASHBOARD_URL",
-            "PIWI_API_KEY",
-            "PIWI_USERNAME",
-            "PIWI_PASSWORD",
-        ] {
-            assert_eq!(get(key), Some(""), "{key}");
-        }
+        assert_eq!(
+            get("PIWI_DESKTOP_CONFIG"),
+            Some("/home/dev/.piwi/desktop.json")
+        );
         assert_eq!(get("NO_COLOR"), Some("1"));
         assert_eq!(get("FORCE_COLOR"), Some("0"));
         // Nothing else: the webview cannot add a variable.
-        assert_eq!(env.len(), 8);
+        assert_eq!(env.len(), 6);
+        // With no discovery file written, the reporter looks for one at its default path.
+        let without = flake_lab_env(&server, None);
+        let config = without.iter().find(|(k, _)| *k == "PIWI_DESKTOP_CONFIG");
+        assert_eq!(config.map(|(_, v)| v.as_str()), Some(""));
     }
 
     #[test]
