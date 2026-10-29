@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { resolveCiRerunSettings, hasRerunTarget } from '#shared/ci-rerun';
-import { buildRetryArgs } from '#shared/retry-command';
+import { buildRerunCommand, buildRetryArgs } from '#shared/retry-command';
 
 describe('resolveCiRerunSettings', () => {
   test('defaults to disabled with no targets', () => {
@@ -44,6 +44,21 @@ describe('hasRerunTarget', () => {
   });
 });
 
+describe('buildRerunCommand', () => {
+  test('is one command whatever the projects, as a CI re-run runs the cases', () => {
+    expect(
+      buildRerunCommand([
+        { filePath: 'a.spec.ts', title: 'a', line: 1, projectName: 'chromium' },
+        { filePath: 'b.spec.ts', title: 'b', line: 2, projectName: 'firefox' },
+      ]),
+    ).toBe('npx playwright test "a.spec.ts:1" "b.spec.ts:2" --project="chromium" --project="firefox"');
+  });
+
+  test('runs the whole suite without cases', () => {
+    expect(buildRerunCommand([])).toBe('npx playwright test');
+  });
+});
+
 describe('buildRetryArgs', () => {
   test('emits file:line specs and a shared --project, without the runner prefix', () => {
     const args = buildRetryArgs([
@@ -53,12 +68,20 @@ describe('buildRetryArgs', () => {
     expect(args).toBe('"tests/checkout.spec.ts:12" "tests/checkout.spec.ts:40" --project="chromium"');
   });
 
-  test('omits --project when the cases span more than one project', () => {
+  test('names each project when the cases span more than one', () => {
     const args = buildRetryArgs([
       { filePath: 'a.spec.ts', title: 'a', line: 1, projectName: 'chromium' },
       { filePath: 'b.spec.ts', title: 'b', line: 2, projectName: 'firefox' },
     ]);
-    expect(args).toBe('"a.spec.ts:1" "b.spec.ts:2"');
+    expect(args).toBe('"a.spec.ts:1" "b.spec.ts:2" --project="chromium" --project="firefox"');
+  });
+
+  test('names a file without a line once', () => {
+    const args = buildRetryArgs([
+      { filePath: 'tests/x.spec.ts', title: 'x', line: null, projectName: null },
+      { filePath: 'tests/x.spec.ts', title: 'y', line: null, projectName: null },
+    ]);
+    expect(args).toBe('"tests/x.spec.ts"');
   });
 
   test('falls back to the file path when a case has no line', () => {

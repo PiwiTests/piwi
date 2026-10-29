@@ -261,14 +261,11 @@ const showLocatorFix = computed(
   () => isLocatorFailure.value && locatorHealingHasData.value && !capHidden('locator-healing'),
 );
 
-// CI re-run for the cluster this failure belongs to, for the Verify section.
+// CI re-run of this test, or of its cluster's tests, for the Verify section, with the cluster's last re-run.
 const { data: rerunInfo, refresh: refreshRerun } = await useAsyncData<RerunInfo | null>(
   `test-run-case-rerun-${testCaseId}`,
-  () => {
-    const id = failureCluster.value?.id;
-    return id ? requestFetch<RerunInfo>(`/api/failure-clusters/${id}/rerun`) : Promise.resolve(null);
-  },
-  { default: (): RerunInfo | null => null, watch: [() => failureCluster.value?.id] },
+  () => requestFetch<RerunInfo>(`/api/test-run-cases/${testCaseId}/rerun`).catch(() => null),
+  { default: (): RerunInfo | null => null },
 );
 // "Fixed before" for the cluster this failure belongs to.
 const { data: fixedBeforeData, refresh: refreshFixedBefore } = await useAsyncData<FixedBeforeMatch[]>(
@@ -327,9 +324,18 @@ const { applyingId, applyTriage } = useApplyClusterTriage({
   onApplied: () => Promise.all([refresh(), refreshFixedBefore()]),
 });
 
-const { rerunning, triggerRerun } = useCiRerun(() => failureCluster.value?.id ?? null, refreshRerun);
+const { rerunning: rerunningTest, triggerRerun: triggerTestRerun } = useCiRerun(
+  `/api/test-run-cases/${testCaseId}/rerun`,
+  refreshRerun,
+  'This test is re-running in CI.',
+);
+const { rerunning, triggerRerun } = useCiRerun(
+  () => (failureCluster.value ? `/api/failure-clusters/${failureCluster.value.id}/rerun` : null),
+  refreshRerun,
+  "The cluster's tests are re-running in CI.",
+);
 
-/** The Verify section shows when a CI re-run of the cluster is configured; the desktop app re-runs the test from the navbar. */
+/** The Verify section shows when a CI re-run is configured; the desktop app re-runs the test from the navbar. */
 const showVerify = computed(() => Boolean(rerunInfo.value?.available));
 
 /** Reproduce shows for a failing execution once its recipe is available. */
@@ -364,7 +370,9 @@ const reproduceSummary = computed(() =>
     Boolean(reproduceData.value?.bisect?.available),
   ),
 );
-const verifySummary = computed(() => "Re-run every test of this failure's cluster in CI");
+const verifySummary = computed(() =>
+  failureCluster.value ? 'Re-run this test, or every test of its cluster, in CI' : 'Re-run this test in CI',
+);
 
 // ── Header: identity, exceptional badges ─────────────────────────────────────
 // Playwright test marks only — `piwi:` annotations are ownership, not marks.
@@ -722,7 +730,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
   },
   setClusterStatus,
   quarantine: () => toggleQuarantine(),
-  rerunInCi: () => triggerRerun(),
+  rerunInCi: () => triggerTestRerun(),
   whatChanged: () => {
     if (failureCluster.value) navigateTo(`/failure-clusters/${failureCluster.value.id}`);
   },
@@ -769,6 +777,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               :cases="retryCases"
               label="Re-run this test"
               :run-title="testLabel(testCase)"
+              :source-run-id="testCase?.testRun?.id"
             />
             <NuxtLink
               v-if="testCase?.testCaseId"
@@ -1057,10 +1066,22 @@ const { handle: handleNextStepAction } = useNextStepActions({
               />
             </template>
 
-            <!-- Re-run the cluster's tests in CI -->
+            <!-- Re-run this test, or its cluster's tests, in CI -->
             <template v-if="showVerify" #verify>
               <div class="flex flex-wrap items-center gap-2">
                 <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-refresh-cw"
+                  title="Dispatches CI to run this test at its line, in its Playwright project, on the branch of its run"
+                  :loading="rerunningTest"
+                  @click="triggerTestRerun"
+                >
+                  Re-run this test in CI
+                </UButton>
+                <UButton
+                  v-if="failureCluster"
                   size="xs"
                   color="neutral"
                   variant="outline"

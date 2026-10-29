@@ -20,7 +20,7 @@
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isUnattendedDesktopRun } from '#shared/desktop-runs';
-import { flakeLabOutcome, localRunTitle, type LocalRun } from '~/composables/useDesktopLocalRuns';
+import { flakeLabOutcome, localRunCompareTo, localRunTitle, type LocalRun } from '~/composables/useDesktopLocalRuns';
 import {
   desktopHoldRefusal,
   desktopHoldsByDefault,
@@ -313,7 +313,7 @@ function runDetail(run: LocalRun): string {
               {{ holdRefusal(run) ?? 'A failing test waits at its line for you to look at it and resume.' }}
             </p>
           </div>
-          <div v-if="run.piwiRunId != null" class="mt-1.5">
+          <div v-if="run.piwiRunId != null" class="mt-1.5 flex flex-wrap items-center gap-2">
             <UButton
               size="xs"
               color="success"
@@ -323,6 +323,18 @@ function runDetail(run: LocalRun): string {
               @click="trayOpen = false"
             >
               Live in Piwi — Run #{{ run.piwiRunId }}
+            </UButton>
+            <UButton
+              v-if="run.sourceRunId != null && run.sourceRunId !== run.piwiRunId"
+              size="xs"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-git-compare"
+              :to="localRunCompareTo(run)!"
+              :title="`What changed between run #${run.sourceRunId}, where these tests come from, and this one`"
+              @click="trayOpen = false"
+            >
+              Compare with run #{{ run.sourceRunId }}
             </UButton>
           </div>
           <template v-if="isExpanded(run)">

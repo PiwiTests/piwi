@@ -2234,6 +2234,33 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    // CI re-run of one execution's test — always off in the browser demo, like a cluster's.
+    pattern: /^\/api\/test-run-cases\/(\d+)\/rerun$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return {
+        available: false,
+        reason: 'CI re-run is not available in the demo.',
+        provider: null,
+        enabled: false,
+        hasToken: false,
+        clusterId: null,
+        lastDispatch: null,
+      };
+    },
+  },
+  {
+    method: 'POST',
+    // No-op dispatch: the demo has no CI to trigger.
+    pattern: /^\/api\/test-run-cases\/(\d+)\/rerun$/,
+    permission: 'run:control',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return { ok: false, demo: true, message: 'CI re-run is not available in the demo.' };
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/test-run-cases\/(\d+)\/attempt-diff$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);

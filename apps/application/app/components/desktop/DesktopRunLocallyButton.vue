@@ -2,18 +2,21 @@
 /**
  * Desktop shell only: split-button entry point to "run these tests locally".
  * The primary segment says what it runs (`label`, plus the options that are not
- * the defaults: `· headed · ×20 · trace`) and runs it at once with the
- * project's saved options, or opens the setup dialog while configuration is
- * broken. It doubles as the status of a run of these same tests: while one is
- * active (or just finished) clicking it opens the runs tray and never stops
- * anything. The chevron menu shows the exact command and holds run presets,
- * option toggles and fix-it entries. Renders nothing without the IPC bridge
- * (plain browsers, web deployments), so pages can mount it unconditionally
- * next to the copyable retry command.
+ * Playwright's defaults: `· headed · ×20 · trace`) and runs it at once, or
+ * opens the setup dialog while configuration is broken. It doubles as the
+ * status of a run of these same tests: while one is active (or just finished)
+ * clicking it opens the runs tray and never stops anything. The chevron menu
+ * shows the exact command and holds one-off runs, the other test sets of the
+ * page, option toggles and fix-it entries. The options start from the
+ * project's defaults (its Local folder settings) and the button's preset; a
+ * choice here applies to this button only. Renders nothing without the IPC
+ * bridge (plain browsers, web deployments), so pages can mount it
+ * unconditionally next to the copyable retry command.
  */
 import type { DropdownMenuItem } from '@nuxt/ui';
 import type { RetryCase } from '~/utils/retry-command';
 import { buildLocalRunPlan, type LocalRunOptions } from '~/utils/local-run-args';
+import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
 
 const props = defineProps<{
   projectId?: string | number | null;
@@ -23,14 +26,14 @@ const props = defineProps<{
   label?: string;
   /** What the Local runs tray calls a run started here ("Failed tests of run #42"); defaults to the cases. */
   runTitle?: string | null;
-  /**
-   * One-off option overrides for runs started from this button (e.g. repeat
-   * ×20 with trace). Applied on top of the project's saved options; the menu's
-   * toggles change them for this button only, never the project's defaults.
-   */
+  /** Options the button starts with on top of the project's defaults (e.g. repeat ×20 with trace). */
   presetOptions?: LocalRunOptions;
   /** The page's primary action: the idle face takes the accent color. */
   primary?: boolean;
+  /** The Piwi run the cases come from: the Local runs tray compares the run's results with it. */
+  sourceRunId?: number | null;
+  /** Other sets of tests of the page the menu runs instead ("Re-run all 12 tests"), each once. */
+  otherSets?: LocalRunSet[];
 }>();
 
 const available = ref(false);
@@ -64,8 +67,7 @@ watch([available, () => link.value?.path, linked], () => {
   void checkEnv();
 });
 
-/** A preset button keeps its options to itself: its toggles edit these, never the project's saved defaults. */
-const oneOff = computed(() => !!props.presetOptions);
+/** The button's own options, on top of the project's defaults: its menu and its dialog edit these. */
 const overrides = ref<LocalRunOptions>({ ...props.presetOptions });
 // A page may pass a fresh preset object on each render: only a change of its values resets the button's options.
 watch(
@@ -138,15 +140,15 @@ const face = computed(() => {
   };
 });
 
-function runNow(patch?: LocalRunOptions) {
+function runNow(patch?: LocalRunOptions, set?: LocalRunSet) {
   if (props.projectId == null) return;
   store.startRun({
     projectId: props.projectId,
     projectLabel: props.projectLabel,
-    cases: props.cases,
-    title: props.runTitle,
+    cases: set?.cases ?? props.cases,
+    title: set ? set.runTitle : props.runTitle,
+    sourceRunId: props.sourceRunId,
     options: { ...overrides.value, ...patch },
-    persistOptions: oneOff.value ? false : undefined,
   });
 }
 
@@ -162,9 +164,8 @@ function onPrimaryClick() {
   runNow();
 }
 
-function saveOption(patch: LocalRunOptions) {
-  if (oneOff.value) overrides.value = { ...overrides.value, ...patch };
-  else if (props.projectId != null) store.saveProjectOptions(props.projectId, patch);
+function setOption(patch: LocalRunOptions) {
+  overrides.value = { ...overrides.value, ...patch };
 }
 
 const REPEAT_CHOICES = [1, 5, 10, 20, 50, 100];
@@ -218,7 +219,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
     ]);
 
     groups.push([
-      { type: 'label', label: oneOff.value ? 'Run now' : 'Run now, and keep as the default' },
+      { type: 'label', label: 'Run once' },
       ...LOCAL_RUN_MODE_ITEMS.map((mode) => ({
         label: mode.label,
         icon: mode.icon,
@@ -229,7 +230,20 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       })),
     ]);
 
+    const sets = (props.otherSets ?? []).filter((set) => set.cases.length > 0);
+    if (sets.length > 0) {
+      groups.push([
+        { type: 'label', label: 'Run other tests' },
+        ...sets.map((set) => ({
+          label: set.label,
+          icon: 'i-lucide-list-checks',
+          onSelect: () => runNow(undefined, set),
+        })),
+      ]);
+    }
+
     groups.push([
+      { type: 'label', label: 'Options of this button' },
       {
         label: 'Record trace',
         icon: 'i-lucide-film',
@@ -237,7 +251,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         checked: options.value.trace,
         onSelect: (e: Event) => {
           e.preventDefault();
-          saveOption({ trace: !options.value.trace });
+          setOption({ trace: !options.value.trace });
         },
       },
       {
@@ -249,7 +263,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           checked: options.value.repeatEach === n,
           onSelect: (e: Event) => {
             e.preventDefault();
-            saveOption({ repeatEach: n });
+            setOption({ repeatEach: n });
           },
         })),
       },
@@ -262,7 +276,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           checked: options.value.mode === mode.value,
           onSelect: (e: Event) => {
             e.preventDefault();
-            saveOption({ mode: mode.value });
+            setOption({ mode: mode.value });
           },
         })),
       },
@@ -275,6 +289,11 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         icon: 'i-lucide-clipboard',
         onSelect: () =>
           void copy(buildRetryCommand(props.cases, { mode: options.value.mode }), { toast: 'Command copied' }),
+      },
+      {
+        label: 'Project defaults…',
+        icon: 'i-lucide-settings-2',
+        to: `/projects/${props.projectId}?tab=settings&section=local-folder`,
       },
     ]);
   }
@@ -341,8 +360,8 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       :cases="cases"
       :label="idleLabel"
       :run-title="runTitle"
-      :preset-options="oneOff ? overrides : undefined"
-      @update:preset-options="(value: LocalRunOptions) => (overrides = value)"
+      :source-run-id="sourceRunId"
+      v-model:options="overrides"
     />
   </span>
 </template>

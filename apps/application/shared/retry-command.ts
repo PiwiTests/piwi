@@ -152,31 +152,34 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
 
 /**
  * The Playwright *arguments* for re-running these cases — the file:line specs
- * (deduped, POSIX-normalized, quoted) plus a single `--project=` when every case
- * shares one project. Unlike {@link buildRetryCommand} it omits the
+ * (deduped, POSIX-normalized, quoted) plus one `--project=` per Playwright
+ * project they ran in. Unlike {@link buildRetryCommand} it omits the
  * `playwright test` prefix, so it can be handed to CI as the value of a
  * workflow input / pipeline variable that a job appends to its own command.
  * Always `file-line` shaped; a case without a line contributes its file path.
+ * Cases from several projects run each spec in each of those projects.
  */
 export function buildRetryArgs(cases: RetryCase[]): string {
   if (cases.length === 0) return '';
-  const seen = new Set<string>();
-  const specs = cases
-    .filter((c) => {
-      if (!c.line) return true;
-      const key = c.filePath + ':' + c.line;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .map((c) => (c.line ? `${toPosixPath(c.filePath)}:${c.line}` : toPosixPath(c.filePath)));
+  const specs = [
+    ...new Set(cases.map((c) => (c.line ? `${toPosixPath(c.filePath)}:${c.line}` : toPosixPath(c.filePath)))),
+  ];
   const quoted = quoteAll(specs);
   if (quoted.length === 0) return '';
 
-  const projects = new Set(cases.map((c) => c.projectName || '').filter(Boolean));
-  let args = quoted.join(' ');
-  if (projects.size === 1) args += projectFlag([...projects][0]!);
-  return args;
+  const projects = [...new Set(cases.map((c) => c.projectName || '').filter(Boolean))];
+  return quoted.join(' ') + projects.map(projectFlag).join('');
+}
+
+/**
+ * The one `npx playwright test` command that runs these cases as a CI re-run
+ * does ({@link buildRetryArgs}): a single command whatever their projects, so
+ * it can be copied on any shell, handed to `git bisect run` or shown as the
+ * command that verifies a fix. Without cases it runs the whole suite.
+ */
+export function buildRerunCommand(cases: RetryCase[]): string {
+  const args = buildRetryArgs(cases);
+  return args ? `npx playwright test ${args}` : 'npx playwright test';
 }
 
 function dedupeFilePaths(cases: RetryCase[]): string[] {

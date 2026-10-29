@@ -552,7 +552,7 @@ export const HELP_TOPICS = {
   },
   'project.local-folder': {
     title: 'Linked local folder',
-    text: 'The checkout on this machine that produces this project’s runs. Linking it enables running tests from the app and opening files in your IDE. The link is stored on this machine only — never on the server.',
+    text: 'The checkout on this machine that produces this project’s runs. Linking it enables running tests from the app and opening files in your IDE. Its default run options are what each Re-run button of the project starts from. Both stay on this machine, never on the server.',
     doc: 'features/desktop#running-tests-from-the-app',
   },
 

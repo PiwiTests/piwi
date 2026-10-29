@@ -241,17 +241,6 @@ export async function getFailureCluster(
   // chip and the per-test / "Quarantine all affected" actions on the page.
   const quarantinedIds = await getQuarantinedCaseIds(db, cluster.projectId);
 
-  // Where each affected test last failed in the cluster (its line and Playwright
-  // project), so a re-run from the page names the same tests a CI re-run does.
-  const recentIds = affectedTestCases.map((t: any) => Number(t.recentTestRunsCaseId)).filter(Number.isFinite);
-  const recentRows = recentIds.length
-    ? await db
-        .select({ id: testRunsCases.id, line: testRunsCases.line, projectName: testRunsCases.browserName })
-        .from(testRunsCases)
-        .where(inArray(testRunsCases.id, recentIds))
-    : [];
-  const recentById = new Map(recentRows.map((r) => [r.id, r]));
-
   // Known-issue links pinned to this cluster (Jira / GitHub issue, etc.), and
   // whether a filing for it waits on the tracker or failed for good.
   // Newest first, so every reader that takes the first agrees with the known issue.
@@ -443,8 +432,6 @@ export async function getFailureCluster(
       owner: (t.owner as string | null) ?? null,
       runCount: Number(t.runCount),
       recentTestRunsCaseId: t.recentTestRunsCaseId,
-      line: recentById.get(Number(t.recentTestRunsCaseId))?.line ?? null,
-      projectName: recentById.get(Number(t.recentTestRunsCaseId))?.projectName || null,
       quarantined: quarantinedIds.has(t.testCaseId),
     })),
     links,

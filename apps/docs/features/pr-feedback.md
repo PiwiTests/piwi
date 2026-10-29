@@ -80,10 +80,10 @@ Turn it on in **Settings → Pull requests** (off by default). It needs:
 Once a cluster is fixed, the fastest way to prove it is to re-run exactly the affected tests, and a
 [filtered run that passes them all closes the cluster](./failure-clusters#did-the-fix-work). The cluster page can
 trigger that run in CI for you: **Re-run in CI**, next to *Copy retry command*, dispatches a workflow or pipeline with
-the cluster's retry arguments (each affected test's `file:line` from its latest failure, `--project` when they share
-one) on the branch of the cluster's latest run, and links to the run it started. The configured ref is used only when
-that run recorded no branch. An execution of the cluster offers the same dispatch in its Verify section, as **Re-run
-the cluster in CI**: it runs every affected test, not only that one. The last dispatch (when, by whom, and a link) shows under the Test evidence header.
+the cluster's retry arguments (each affected test's `file:line` from its latest failure, with its `--project`) on the
+branch of the cluster's latest run, and links to the run it started. The configured ref is used only when
+that run recorded no branch. An execution's Verify section offers **Re-run this test in CI**, for that one test at its
+line and in its project, beside **Re-run the cluster in CI**; both record the cluster's last re-run. The last dispatch (when, by whom, and a link) shows under the Test evidence header.
 
 It is **off by default** and configured per project in the **Source control** section of the project's **Settings** tab,
 under **CI re-run**. Turn it on and fill in the block for your provider:

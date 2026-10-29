@@ -37,7 +37,7 @@ Both pages carry one **More ways to fix** toolbox, below the evidence and above 
 
 The fix plan also hands back the two things you do next: a copy-paste recipe that reproduces the failure locally, and a generated `git bisect` that finds the commit that broke it. Both sit in the toolbox's **Reproduce and bisect** section, and travel with the plan through `?format=markdown` and the `get_fix_plan` MCP tool. The exact test command leads; **Show the full recipe ▸** unfolds the checkout and installs, and the bisect follows under **Find the breaking commit**.
 
-The **recipe** is the local reproduction, in order: check out the commit the run failed on (`git switch --detach <sha>`), install dependencies, pin Playwright to the run's version, install the browser it ran on, and run exactly the failing test. Each part degrades on its own — no recorded commit skips the checkout and says so, an unknown version drops the pin — and the run's environment is listed beside it. Every command is `git`, `npm` or `npx`, identical on Linux, macOS and Windows; the dashboard still offers **Linux / macOS** and **Windows (PowerShell)** tabs.
+The **recipe** is the local reproduction, in order: check out the commit the run failed on (`git switch --detach <sha>`), install dependencies, pin Playwright to the run's version, install the browser it ran on, and run exactly the failing test. Each part degrades on its own (no recorded commit skips the checkout, an unknown version drops the pin), and the run's environment is listed beside it. Every command is `git`, `npm` or `npx`, identical on every system, in **Linux / macOS** and **Windows (PowerShell)** tabs.
 
 ```bash
 # Check out the failing commit
@@ -49,14 +49,16 @@ npm install -D @playwright/test@1.52.0
 # Install the browser
 npx playwright install chromium
 # Run the failing test
-npx playwright test "tests/admin/users.spec.ts" --project="Chromium"
+npx playwright test "tests/admin/users.spec.ts:42" --project="Chromium"
 ```
 
-The **bisect** walks the commits between the last green run and the failing one, re-running the test at each step — a non-zero exit marks a commit bad — until it names the first commit that broke it, then `git bisect reset` returns you to where you started.
+The verify command, the recipe, the bisect and every re-run name the same tests: each affected test at its latest
+failure's line and project. The **bisect** walks the commits between the last
+green run and the failing one, re-running the test at each step — a non-zero exit marks a commit bad — until it names the first commit that broke it, then `git bisect reset` returns you to where you started.
 
 ```bash
 git bisect start <failing-commit> <last-green-commit>
-git bisect run npx playwright test "tests/admin/users.spec.ts" -g "Users table paginates 25 rows per page"
+git bisect run npx playwright test "tests/admin/users.spec.ts:42" --project="Chromium"
 git bisect reset
 ```
 

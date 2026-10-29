@@ -233,6 +233,29 @@ test.describe('Desktop local run', () => {
     expect(invocations[0]!.args!.args).toEqual(['tests/checkout.spec.ts:42', '--project=chromium']);
   });
 
+  test("the run's menu re-runs every test of the run, and the list re-runs a selection", async ({ page }) => {
+    await installFakeBridge(page, { linked: true });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: 'Run options' }).first().click();
+    await page.getByRole('menuitem', { name: 'Re-run all 2 tests' }).click();
+    await expect(tray(page).getByText(`All 2 tests of run #${runId}`, { exact: true })).toBeVisible();
+    await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
+    let invocations = await runInvocations(page);
+    expect(invocations.map((i) => i.args!.args)).toEqual([
+      ['tests/checkout.spec.ts:42', '--project=chromium'],
+      ['tests/home.spec.ts:5'],
+    ]);
+
+    await page.getByRole('checkbox', { name: 'Select all failing tests' }).check();
+    await page.getByRole('button', { name: 'Re-run 1 selected test', exact: true }).click();
+    await expect(tray(page).getByText(`1 selected test of run #${runId}`, { exact: true })).toBeVisible();
+    await expect.poll(async () => (await runInvocations(page)).length).toBe(3);
+    invocations = await runInvocations(page);
+    expect(invocations[2]!.args!.args).toEqual(['tests/checkout.spec.ts:42', '--project=chromium']);
+  });
+
   test("a button shows the progress of its own tests only, never another page's run", async ({ page }) => {
     await installFakeBridge(page, { linked: true, autoExit: false });
     await page.goto(`/test-cases/${caseId}`);
@@ -309,27 +332,42 @@ test.describe('Desktop local run', () => {
     expect(stops).toEqual([{ runId: 7 }, { runId: 7 }]);
   });
 
-  test('run presets from the dropdown run immediately and persist per project', async ({ page }) => {
+  test('a run from the menu runs once, and leaves the project defaults alone', async ({ page }) => {
     await installFakeBridge(page, { linked: true });
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
     await page.getByRole('button', { name: 'Run options' }).click();
-    await expect(page.getByText('Run now, and keep as the default')).toBeVisible();
+    await expect(page.getByText('Run once', { exact: true })).toBeVisible();
     await page.getByRole('menuitemcheckbox', { name: 'Headed' }).click();
 
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
-    let invocations = await runInvocations(page);
+    const invocations = await runInvocations(page);
     expect(invocations[0]!.args!.args).toEqual(['tests/checkout.spec.ts:42', '--project=chromium', '--headed']);
 
-    // The choice is the new default: a plain one-click run repeats it, even
-    // after a full reload (options are stored per project), and the button says so.
-    await page.reload();
+    const saved = await page.evaluate(
+      (id) => JSON.parse(localStorage.getItem('piwi:desktop-local-run-options') ?? '{}')[String(id)],
+      projectId,
+    );
+    expect(saved?.runMode ?? 'normal').toBe('normal');
+  });
+
+  test("the project's Local folder settings set the defaults every button starts from", async ({ page }) => {
+    await installFakeBridge(page, { linked: true });
+    await page.goto(`/projects/${projectId}?tab=settings&section=local-folder`);
     await waitForHydration(page);
-    await page.getByRole('button', { name: 'Re-run 1 failed test · headed', exact: true }).click();
+
+    const defaults = page.locator('[data-shot="local-folder-run-defaults"]');
+    await defaults.getByRole('switch').click();
+    await expect(defaults.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
+
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    // The button names the option a click runs with.
+    await page.getByRole('button', { name: 'Re-run 1 failed test · trace', exact: true }).click();
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
-    invocations = await runInvocations(page);
-    expect(invocations[0]!.args!.args).toEqual(['tests/checkout.spec.ts:42', '--project=chromium', '--headed']);
+    const invocations = await runInvocations(page);
+    expect(invocations[0]!.args!.args).toEqual(['tests/checkout.spec.ts:42', '--project=chromium', '--trace=on']);
   });
 
   test('warns via the dialog when the linked folder holds none of the tests', async ({ page }) => {
@@ -436,6 +474,11 @@ test.describe('Desktop local run', () => {
     await expect(tray(page).getByRole('link', { name: `Live in Piwi — Run #${testRunId}` })).toBeVisible({
       timeout: 15000,
     });
+    // The run it produced compares with the run its tests come from.
+    await expect(tray(page).getByRole('link', { name: `Compare with run #${runId}` })).toHaveAttribute(
+      'href',
+      `/test-runs/${testRunId}?tab=changes&baseline=${runId}`,
+    );
 
     await page.evaluate(() => window.__piwiFakeTauri.finish(0));
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
@@ -462,13 +505,13 @@ test.describe('Desktop local run', () => {
     expect(saved?.trace ?? false).toBe(false);
   });
 
-  test("a preset button's toggles change that button only", async ({ page }) => {
+  test("a button's toggles change that button only, never the project defaults", async ({ page }) => {
     await installFakeBridge(page, { linked: true });
     await page.goto(`/test-cases/${caseId}`);
     await waitForHydration(page);
 
     await page.getByRole('button', { name: 'Run options' }).click();
-    await expect(page.getByText('Run now', { exact: true })).toBeVisible();
+    await expect(page.getByText('Options of this button', { exact: true })).toBeVisible();
     await page.getByRole('menuitemcheckbox', { name: 'Record trace' }).click();
     await page.keyboard.press('Escape');
 

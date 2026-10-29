@@ -926,6 +926,7 @@ const moreMenuItems = computed(() => {
             :quarantined-case-ids="quarantinedCaseIds"
             :project-key="testRun?.projectId"
             :project-name="testRun?.project?.name"
+            :run-id="Number(runId)"
             class="flex-1 min-h-0"
             @quarantine-changed="refreshQuarantine"
             @watch="watchWorker"

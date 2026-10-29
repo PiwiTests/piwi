@@ -19,7 +19,6 @@ import type { FixSectionKey } from '~/utils/fix-sections';
 import type { RerunInfo } from '~/composables/useCiRerun';
 import { renderAnsi } from '~/utils';
 import { stripAnsi } from '~/utils/text-format';
-import { buildRetryCommand } from '~/utils/retry-command';
 import { coverageLossPreview } from '~/utils/coverage-insights';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
 import { EVIDENCE_SECTION_TAB } from '~/utils/evidence-sections';
@@ -304,25 +303,19 @@ function copyCluster() {
 }
 
 // ── Retry command / CI re-run (header primary action) ────────────────────────
-// Each affected test at the line and in the Playwright project of its latest failure, as a CI re-run names them.
-const affectedRetryCases = computed(() =>
-  (cluster.value?.affectedTestCases ?? []).map((tc) => ({
-    filePath: tc.filePath,
-    title: tc.title,
-    line: tc.line ?? null,
-    projectName: tc.projectName ?? null,
-  })),
-);
+// The tests a re-run of the cluster runs, and the one command that runs them: the
+// fix plan's verify step, the same selection a CI re-run dispatches.
+const affectedRetryCases = computed(() => fixPlan.value?.verify?.cases ?? []);
 const affectedTestsLabel = computed(
   () => `${affectedRetryCases.value.length} affected test${affectedRetryCases.value.length === 1 ? '' : 's'}`,
 );
-const retryCommand = computed(() => buildRetryCommand(affectedRetryCases.value));
+const retryCommand = computed(() => fixPlan.value?.verify?.command ?? '');
 const { copy: copyRetry } = useCopy();
 
 const { data: rerunInfo, refresh: refreshRerun } = await useFetch<RerunInfo>(
   `/api/failure-clusters/${clusterId}/rerun`,
 );
-const { rerunning, triggerRerun } = useCiRerun(clusterId, refreshRerun);
+const { rerunning, triggerRerun } = useCiRerun(`/api/failure-clusters/${clusterId}/rerun`, refreshRerun);
 
 function refresh() {
   refreshCluster();
@@ -409,7 +402,7 @@ const reproduceSummary = computed(() =>
   reproduceSectionSummary(fixPlan.value?.reproduce?.steps?.length ?? 0, Boolean(fixPlan.value?.bisect?.available)),
 );
 const verifySummary = computed(() =>
-  verifySectionSummary(fixPlan.value?.verify?.command ?? '', Boolean(rerunInfo.value?.available), 'The verify command'),
+  verifySectionSummary(affectedRetryCases.value.length, Boolean(rerunInfo.value?.available)),
 );
 
 // ── Apply the same triage ─────────────────────────────────────────────────────
@@ -512,7 +505,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
   const copies: DropdownMenuItem[] = [
     { label: 'Copy summary', icon: 'i-lucide-clipboard-list', onSelect: copyCluster },
   ];
-  if (rerunInfo.value?.available && retryCommand.value)
+  if (retryCommand.value)
     copies.push({
       label: 'Copy retry command',
       icon: 'i-lucide-clipboard',
@@ -964,6 +957,7 @@ const breadcrumbItems = computed(() => [
                   :cases="affectedRetryCases"
                   :label="`Re-run the ${affectedTestsLabel}`"
                   :run-title="`${affectedTestsLabel} of cluster #${cluster.id}`"
+                  :source-run-id="cluster.lastSeenRunId"
                 />
                 <ClientOnly>
                   <span v-if="rerunInfo?.lastDispatch" class="text-xs text-muted">

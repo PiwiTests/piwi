@@ -14,8 +14,9 @@
  * the invoke that started a step resolves with its id, so unattributed events
  * are buffered and replayed once the id is known.
  *
- * Options are remembered per project (localStorage) so the button's primary
- * click repeats the last configuration without a dialog.
+ * A project's default options are kept per project (localStorage) and edited
+ * in its Local folder settings; a run button's own choices apply to the runs it
+ * starts, never to those defaults.
  */
 import {
   buildLocalRunPlan,
@@ -153,6 +154,15 @@ export function bisectCommitUrl(target: BisectTarget | null, sha: string): strin
   return commitUrl(target?.repositoryUrl, sha);
 }
 
+/** A set of tests a run button offers to run instead of its own: the menu's item and the tray's title. */
+export interface LocalRunSet {
+  /** The menu item, saying what it runs ("Re-run all 12 tests"). */
+  label: string;
+  cases: RetryCase[];
+  /** What the Local runs tray calls a run of it. */
+  runTitle: string;
+}
+
 /** Options as stored per project — every field resolved to a concrete value. */
 export type SavedLocalRunOptions = Required<LocalRunOptions>;
 
@@ -171,6 +181,8 @@ export interface LocalRun {
   cases: RetryCase[];
   /** What the run runs, in words, as the page that started it named it; null to derive it (`localRunTitle`). */
   title: string | null;
+  /** The Piwi run its cases come from: the run it produced is compared with this one. */
+  sourceRunId: number | null;
   options: SavedLocalRunOptions;
   steps: LocalRunStep[];
   stepIndex: number;
@@ -279,6 +291,15 @@ export function localRunTitle(
     default:
       return casesTitle(run.cases);
   }
+}
+
+/**
+ * The Changes tab of the Piwi run a local run produced, against the run its tests come from, or null until it
+ * reported or when it has no source run.
+ */
+export function localRunCompareTo(run: Pick<LocalRun, 'piwiRunId' | 'sourceRunId'>): string | null {
+  if (run.piwiRunId == null || run.sourceRunId == null || run.piwiRunId === run.sourceRunId) return null;
+  return `/test-runs/${run.piwiRunId}?tab=changes&baseline=${run.sourceRunId}`;
 }
 
 /** One key per set of cases, whatever their order: a button finds the runs of its own tests by it. */
@@ -754,18 +775,28 @@ export function useDesktopLocalRuns() {
         trayOpen.value = true;
       },
     };
+    const compareTo = localRunCompareTo(run);
     const openPiwiRun =
       run.piwiRunId == null
         ? []
         : [
-            {
-              label: `Open run #${run.piwiRunId}`,
-              color: 'neutral' as const,
-              variant: 'outline' as const,
-              onClick: () => {
-                void routerApi?.push(`/test-runs/${run.piwiRunId}`);
-              },
-            },
+            compareTo
+              ? {
+                  label: `Compare with run #${run.sourceRunId}`,
+                  color: 'neutral' as const,
+                  variant: 'outline' as const,
+                  onClick: () => {
+                    void routerApi?.push(compareTo);
+                  },
+                }
+              : {
+                  label: `Open run #${run.piwiRunId}`,
+                  color: 'neutral' as const,
+                  variant: 'outline' as const,
+                  onClick: () => {
+                    void routerApi?.push(`/test-runs/${run.piwiRunId}`);
+                  },
+                },
           ];
     if (run.status === 'passed') {
       toastApi?.add({
@@ -828,10 +859,9 @@ export function useDesktopLocalRuns() {
   }
 
   /**
-   * Build the plan from the given cases and spawn it. Options fall back to the
-   * project's saved ones and the merged result is saved back, so the next
-   * one-click run repeats this configuration. Returns the tracked run, or
-   * `null` when there is nothing to spawn.
+   * Build the plan from the given cases and spawn it, with the given options on
+   * top of the project's defaults (which it never changes). Returns the tracked
+   * run, or `null` when there is nothing to spawn.
    */
   function startRun(input: {
     projectId: string | number;
@@ -839,22 +869,21 @@ export function useDesktopLocalRuns() {
     cases: RetryCase[];
     /** What the run runs, in words (`localRunTitle`). */
     title?: string | null;
+    /** The Piwi run the cases come from. */
+    sourceRunId?: number | null;
     options?: LocalRunOptions;
-    /** `false` keeps the merged options out of the project's saved defaults —
-     * for preset entry points like a test case's "Run this test". */
-    persistOptions?: boolean;
   }): LocalRun | null {
     if (!tauriCore() || input.cases.length === 0) return null;
     const options = { ...getProjectOptions(input.projectId), ...input.options };
     const steps = buildLocalRunPlan(input.cases, options);
     if (steps.length === 0) return null;
-    if (input.persistOptions !== false) saveProjectOptions(input.projectId, options);
     return spawn({
       kind: 'tests',
       projectId: input.projectId,
       projectLabel: input.projectLabel,
       cases: input.cases,
       title: input.title,
+      sourceRunId: input.sourceRunId,
       options,
       steps,
     });
@@ -871,6 +900,7 @@ export function useDesktopLocalRuns() {
     projectLabel?: string | null;
     cases: RetryCase[];
     title?: string | null;
+    sourceRunId?: number | null;
     options: SavedLocalRunOptions;
     steps: LocalRunStep[];
     browserName?: string | null;
@@ -901,6 +931,7 @@ export function useDesktopLocalRuns() {
       projectLabel: input.projectLabel ?? null,
       cases: input.cases.map((c) => ({ ...c })),
       title: input.title ?? null,
+      sourceRunId: input.sourceRunId ?? null,
       options: input.options,
       steps: input.steps,
       stepIndex: 0,
@@ -1184,8 +1215,7 @@ export function useDesktopLocalRuns() {
       );
       return null;
     }
-    // Re-running repeats the run exactly; only explicit choices change the
-    // project's saved defaults.
+    // Re-running repeats the run exactly.
     if (run.kind === 'reproduce' && run.commit) {
       return startReproduce({
         projectId: run.projectId,
@@ -1223,8 +1253,8 @@ export function useDesktopLocalRuns() {
       projectLabel: run.projectLabel,
       cases: run.cases,
       title: run.title,
+      sourceRunId: run.sourceRunId,
       options: run.options,
-      persistOptions: false,
     });
   }
 
