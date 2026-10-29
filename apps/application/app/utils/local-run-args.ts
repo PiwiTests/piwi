@@ -80,6 +80,23 @@ export function buildReproduceArgs(cases: RetryCase[]): string[] {
   return args;
 }
 
+/**
+ * The argv a bisect runs at each commit: the failing tests' files, their titles
+ * as one `--grep=` pattern, and one `--project=` per project, so a test whose
+ * line moved between commits still matches. A path that starts with `-` would
+ * be read as an option and is left out.
+ */
+export function buildBisectArgs(cases: RetryCase[]): string[] {
+  const files = [...new Set(cases.map((c) => toPosixPath(c.filePath)))].filter((f) => f && !f.startsWith('-'));
+  const titles = [...new Set(cases.map((c) => c.title).filter(Boolean))].map(escapeGrep);
+  const args = [...files];
+  if (titles.length > 0) args.push(`--grep=${titles.length === 1 ? titles[0]! : `(${titles.join('|')})`}`);
+  for (const project of new Set(cases.map((c) => c.projectName || '').filter(Boolean))) {
+    args.push(`--project=${project}`);
+  }
+  return args;
+}
+
 export function buildLocalRunPlan(cases: RetryCase[], options: LocalRunOptions = {}): LocalRunStep[] {
   if (cases.length === 0) return [];
   const mode = options.mode ?? 'file-line';

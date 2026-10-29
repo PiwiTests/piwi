@@ -213,7 +213,7 @@ async function run() {
           variant="soft"
           icon="i-lucide-folder-x"
           title="No project is linked to a folder"
-          description="Link a project to its checkout from its page (Run locally), then send the request again."
+          description="Link a project to its checkout in its Settings, Local folder, then send the request again."
         />
 
         <template v-else>

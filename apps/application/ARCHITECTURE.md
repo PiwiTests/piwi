@@ -692,10 +692,12 @@ How the guide engine plays a guide (`app/composables/useGuide.ts`):
 - **Re-export shims.** `help-content.ts`, `settings-metadata.ts`, `retry-command.ts` and `locator-edit.ts` re-export
   shared modules, so they stay auto-imported in the app while the server and the demo import the same code:
   - `shared/retry-command.ts`: `buildRetryCommand` (`file-line` / `grep` / `file` modes, shell-escaped, capped at 4096
-    chars) and `buildTitleGrepFlag` (the regex-escaped, shell-quoted `-g` flag the fix plan and auto-heal verify
-    commands add);
+    chars), `buildRetryArgs` (the `file:line` and `--project` arguments a CI re-run is handed), `buildRerunCommand`
+    (the one command, by file and title, of the fix plan's verify step and its bisect) and `buildTitleGrepFlag` (the
+    regex-escaped, shell-quoted `-g` flag it and the auto-heal verify command add). A cluster's re-run names the tests
+    `shared/handlers/cluster-rerun-cases.ts` chooses, for CI, the fix plan and the desktop app alike;
   - `shared/locator-edit.ts`, itself a re-export of `@piwitests/core/locator-edit`: `buildLocatorEdit` (rewrites the
-    failing locator call on a source line). The fix plan builds the same verify command and edits.
+    failing locator call on a source line), which the fix plan's edits use too.
 - Locator-line edits become a unified diff `git apply` accepts through `shared/heal-edit.ts` (`buildHealEdit` /
   `buildUnifiedLineDiff`), and `shared/callsite-location.ts` (`parseCallsiteLocation`) parses a captured
   `file:line:col` (safe with Windows drive letters).

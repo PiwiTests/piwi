@@ -8,7 +8,7 @@ lang: en-US
 
 <Needs desktop fixtures />
 
-Every Playwright run the [desktop app](./desktop) starts names the app as its hub: **Run locally**, a reproduction, a
+Every Playwright run the [desktop app](./desktop) starts names the app as its hub: a **Re-run** of tests, a reproduction, a
 bisect step, a [Flake Lab](./flake-lab) run and a bug report's run. Its **Local runs** tray shows each worker of the
 run beside its output, and steers the test as the editor does: [Pause and step from the editor](./editor-run-control).
 Nothing leaves your machine unless you [share a run live](#share-live).
@@ -65,14 +65,14 @@ as it is on disk, in the folder linked to the project.
 
 ## Share live
 
-A run that reports to your team's Piwi instance, as a **Run locally** in a folder whose `.env` or Playwright config
+A run that reports to your team's Piwi instance, as a **Re-run** in a folder whose `.env` or Playwright config
 names it does, can be shared there for a teammate to watch from its page, in a project whose live view is on: **Share
 live**, above the run's workers, any time while it runs. The first time since the app started, it says what goes out and
 to whom, and waits for your yes. Shared, the run says where and how many views are open, with **Copy the run page's
 link** and **Stop sharing**. A run that cannot be shared says why: [Share a run from your
 machine](./live-view#share-a-run-from-your-machine).
 
-A run that reports to the app itself (a reproduction, a bisect, a **Run locally** in a folder that names no instance)
+A run that reports to the app itself (a reproduction, a bisect, a **Re-run** in a folder that names no instance)
 offers no **Share live**: the app hands out no live view key, since no teammate reaches it, and its project settings
 have no **Live view** section.
 

@@ -63,8 +63,8 @@ A dashboard link opened in your browser opens in the app; a tab opened for it cl
 ## Projects from local folders
 
 **Projects → New project → Choose folder…** creates a project from a checkout on this machine. The app detects the
-name it would report under and checks the setup (a Playwright config, Playwright installed, the reporter wired in);
-anything missing is a warning, and `npx @piwitests/reporter init` in the folder fixes it. The link to the folder
+name it would report under and checks the setup (a Playwright config, Playwright, the reporter):
+`npx @piwitests/reporter init` in the folder fixes what is missing. The link to the folder
 stays on this machine, under **project page → Settings → Local folder**, with the same checks and **Change** and
 **Unlink**. Linking a folder offers to import the runs already in its `blob-report/` and `test-results/` folders;
 [Open in IDE](/features/ide-integration) resolves source links against it when no workspace root is set; and a clone
@@ -72,21 +72,20 @@ of the repository serves its git history without an [SCM token](/guide/source-co
 
 ## Running tests from the app
 
-**Run locally**, on a run page or an execution page, re-runs the failed tests on this machine with the folder's own
-Playwright and the app's bundled Node. The first time, it asks for the project's folder.
+A run, an execution, a cluster or a test runs again here, with the folder's own Playwright, and its button says what:
+**Re-run 3 failed tests**, **Re-run this test**, or **Run this test** (20 times, traced) on a test case.
 
-- **The arrow next to the button** holds the options: headless, headed, the Playwright inspector or UI mode; tests
-  by `file:line`, title or file; a forced trace; `--repeat-each` up to 100 times (1,000 in **Run with
-  options…**, which shows the command). The last choice becomes the project's one-click default.
-- **Runs keep going while you browse.** Output streams into the **Local runs** tray; stopping is always explicit.
-- **More places to run from:** **Reproduce locally** on a test case (20 times with a trace), **Run locally**
-  on a failure cluster, and a [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app)
-  sent from Piwi Picker.
-- **Wrong folder?** When none of the tests exist in the linked folder, the button opens the link's dialog.
-- **Pause, step and watch** each worker from the tray, at a `page.pause()` or a failure too: [Desktop app
+- **The arrow next to the button** shows the command, runs it once headed, in the inspector or UI mode, and sets its
+  options: tests by `file:line`, title or file, a trace, `--repeat-each` (up to 1,000 in **Run with
+  options…**). The button names what differs from Playwright's defaults (**· headed · ×5**); set the project's in
+  **Settings → Local folder**.
+- **On a run**, the arrow also re-runs its flaky tests or all of them, and the **Tests** tab a selection.
+- **Runs keep going while you browse**, in the **Local runs** tray, each under what it runs; its results come here,
+  with **Compare with run #N**. A [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app)
+  from Piwi Picker runs there too.
+- **Wrong folder?** With none of the tests in it, the button opens the link's dialog.
+- **Pause, step and watch** each worker from the tray, at a `page.pause()` or a failure: [Desktop app
   runs](/features/desktop-runs).
-
-A local run's results come here, and the tray links to them.
 
 ### Reproducing a failure and finding the breaking commit
 

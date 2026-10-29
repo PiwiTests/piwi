@@ -9,6 +9,7 @@ import { mergeExternalIdDuplicates, type ExternalIdDuplicateTest } from '@piwite
 import { readShuffleSeed } from '#shared/utils/run-metadata';
 import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import { coverageGapDetail } from '~/utils/combined-coverage';
+import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
@@ -101,6 +102,8 @@ const primaryReport = computed(() => props.allReports[0] ?? null);
 const {
   mode: retryMode,
   failedCases,
+  flakyCases,
+  allCases,
   copyCommand: copyRetryCommand,
   copied: retryCopied,
   title: retryTitle,
@@ -108,6 +111,44 @@ const {
 
 // A red run leads with Copy retry command; a green run leads with its report.
 const retryIsPrimary = computed(() => failedCases.value.length > 0);
+
+/** Past this many tests, a re-run of the whole run runs their files rather than naming every test. */
+const MAX_TESTS_IN_A_WHOLE_RUN = 200;
+
+// What the desktop app re-runs: the failed tests, else the flaky ones, else every test; its menu offers the others.
+const rerunSets = computed<LocalRunSet[]>(() => {
+  const runLabel = `run #${props.testRun?.id}`;
+  const count = (n: number, what: string) => `${n} ${what}${n === 1 ? '' : 's'}`;
+  const files = new Set(allCases.value.map((c) => c.filePath)).size;
+  const whole: LocalRunSet =
+    allCases.value.length > MAX_TESTS_IN_A_WHOLE_RUN
+      ? {
+          label: `Re-run the ${count(files, 'file')} of the run`,
+          cases: allCases.value,
+          runTitle: `The ${count(files, 'file')} of ${runLabel}`,
+          options: { mode: 'file' },
+        }
+      : {
+          label: `Re-run all ${count(allCases.value.length, 'test')}`,
+          cases: allCases.value,
+          runTitle: `All ${count(allCases.value.length, 'test')} of ${runLabel}`,
+        };
+  const sets: LocalRunSet[] = [
+    {
+      label: `Re-run ${count(failedCases.value.length, 'failed test')}`,
+      cases: failedCases.value,
+      runTitle: `${count(failedCases.value.length, 'failed test')} of ${runLabel}`,
+    },
+    {
+      label: `Re-run ${count(flakyCases.value.length, 'flaky test')}`,
+      cases: flakyCases.value,
+      runTitle: `${count(flakyCases.value.length, 'flaky test')} of ${runLabel}`,
+    },
+    whole,
+  ];
+  return sets.filter((set) => set.cases.length > 0);
+});
+const rerunMain = computed(() => rerunSets.value[0] ?? null);
 
 const desktopBridge = ref(false);
 onMounted(() => {
@@ -221,8 +262,9 @@ function onLabelKeydown(e: KeyboardEvent) {
     </template>
 
     <template #primary>
-      <!-- Copy retry command (with a mode picker) leads on a red run; the report
-           leads on a green one. The other is a secondary button when present. -->
+      <!-- Copy retry command (with a mode picker) leads on a red run, Re-run N failed
+           tests in the desktop app; the report leads on a green one, where the desktop
+           app offers to re-run the flaky tests, else all of them. -->
       <UPopover v-if="retryIsPrimary && !desktopBridge">
         <UButton
           size="xs"
@@ -252,10 +294,16 @@ function onLabelKeydown(e: KeyboardEvent) {
       </UPopover>
 
       <DesktopRunLocallyButton
-        v-if="retryIsPrimary"
+        v-if="rerunMain"
+        :primary="retryIsPrimary"
         :project-id="testRun?.project?.id"
         :project-label="testRun?.project?.label ?? testRun?.project?.name"
-        :cases="failedCases"
+        :cases="rerunMain.cases"
+        :label="rerunMain.label"
+        :run-title="rerunMain.runTitle"
+        :preset-options="rerunMain.options"
+        :source-run-id="testRun?.id"
+        :other-sets="rerunSets.slice(1)"
       />
 
       <UButton

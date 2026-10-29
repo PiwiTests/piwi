@@ -41,10 +41,23 @@ function quoteAll(values: string[]): string[] {
   return values.map(quoteShellArg).filter((arg): arg is string => arg !== null);
 }
 
+/** The quoted spec paths of `values`: one that starts with `-` would be read as an option, so it is left out too. */
+function quoteSpecs(values: string[]): string[] {
+  return quoteAll(values.filter((value) => !value.startsWith('-')));
+}
+
 /** ` --project="<name>"`, or nothing when the name cannot be quoted safely (the tests then run in every project). */
 function projectFlag(project: string): string {
   const quoted = quoteShellArg(project);
   return quoted ? ` --project=${quoted}` : '';
+}
+
+/**
+ * One ` --project="<name>"` per project, or nothing when one of them cannot be
+ * quoted safely: the tests then run in every project rather than miss that one.
+ */
+function projectFlags(projects: string[]): string {
+  return projects.every((project) => quoteShellArg(project)) ? projects.map(projectFlag).join('') : '';
 }
 
 /**
@@ -99,12 +112,12 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
     let cmd: string;
 
     if (mode === 'file') {
-      const args = quoteAll(dedupeFiles(projectCases).map(toPosixPath));
+      const args = quoteSpecs(dedupeFiles(projectCases).map(toPosixPath));
       if (args.length === 0) continue;
       cmd = `${baseCmd} ${args.join(' ')}`;
     } else if (mode === 'file-line') {
       const seen = new Set<string>();
-      const args = quoteAll(
+      const args = quoteSpecs(
         projectCases
           .filter((c) => {
             const key = c.filePath + ':' + c.line;
@@ -138,7 +151,7 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
     if (mode === 'file-line') {
       return buildRetryCommand(cases, { ...opts, mode: 'file' });
     }
-    const args = quoteAll(dedupeFilePaths(cases).map(toPosixPath));
+    const args = quoteSpecs(dedupeFilePaths(cases).map(toPosixPath));
     if (args.length === 0) return '';
     let cmd = `${baseCmd} ${args.join(' ')}`;
     if (cmd.length > MAX_CMD_LENGTH) {
@@ -152,31 +165,44 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
 
 /**
  * The Playwright *arguments* for re-running these cases — the file:line specs
- * (deduped, POSIX-normalized, quoted) plus a single `--project=` when every case
- * shares one project. Unlike {@link buildRetryCommand} it omits the
+ * (deduped, POSIX-normalized, quoted) plus one `--project=` per Playwright
+ * project they ran in. Unlike {@link buildRetryCommand} it omits the
  * `playwright test` prefix, so it can be handed to CI as the value of a
  * workflow input / pipeline variable that a job appends to its own command.
  * Always `file-line` shaped; a case without a line contributes its file path.
+ * Cases from several projects run each spec in each of those projects.
  */
 export function buildRetryArgs(cases: RetryCase[]): string {
   if (cases.length === 0) return '';
-  const seen = new Set<string>();
-  const specs = cases
-    .filter((c) => {
-      if (!c.line) return true;
-      const key = c.filePath + ':' + c.line;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .map((c) => (c.line ? `${toPosixPath(c.filePath)}:${c.line}` : toPosixPath(c.filePath)));
-  const quoted = quoteAll(specs);
+  const specs = [
+    ...new Set(cases.map((c) => (c.line ? `${toPosixPath(c.filePath)}:${c.line}` : toPosixPath(c.filePath)))),
+  ];
+  const quoted = quoteSpecs(specs);
   if (quoted.length === 0) return '';
+  return quoted.join(' ') + projectFlags(caseProjects(cases));
+}
 
-  const projects = new Set(cases.map((c) => c.projectName || '').filter(Boolean));
-  let args = quoted.join(' ');
-  if (projects.size === 1) args += projectFlag([...projects][0]!);
-  return args;
+/**
+ * The one `npx playwright test` command that runs these cases wherever their
+ * lines moved: their files, their titles (`-g`) and the projects they ran in.
+ * It is the same on every shell and a single command, so it can be copied,
+ * handed to `git bisect run` across commits, or shown as the command that
+ * verifies a fix. Past {@link MAX_CMD_LENGTH} it drops the titles and runs the
+ * files whole. Without cases it runs the whole suite.
+ */
+export function buildRerunCommand(cases: RetryCase[]): string {
+  const base = 'npx playwright test';
+  if (cases.length === 0) return base;
+  const files = quoteSpecs([...new Set(cases.map((c) => toPosixPath(c.filePath)))]);
+  const projects = projectFlags(caseProjects(cases));
+  const head = [base, ...files].join(' ');
+  const withTitles = `${head}${buildTitleGrepFlag([...new Set(cases.map((c) => c.title))])}${projects}`;
+  return withTitles.length <= MAX_CMD_LENGTH ? withTitles : `${head}${projects}`;
+}
+
+/** The distinct Playwright projects of these cases, in their order. */
+function caseProjects(cases: RetryCase[]): string[] {
+  return [...new Set(cases.map((c) => c.projectName || '').filter(Boolean))];
 }
 
 function dedupeFilePaths(cases: RetryCase[]): string[] {

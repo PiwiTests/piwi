@@ -16,7 +16,7 @@ export const TEST_CASES_ANCHORS = [
     kind: 'action',
     pages: ['/test-cases/[id]'],
     describes:
-      'The desktop app’s Reproduce locally button: runs the test 20 times with a trace in the project’s linked folder, to catch a failure that comes and goes.',
+      'The desktop app’s Run this test button: runs the test 20 times with a trace in the project’s linked folder, to catch a failure that comes and goes.',
     requires: { desktop: true },
     doc: 'features/desktop#running-tests-from-the-app',
     sample: {
