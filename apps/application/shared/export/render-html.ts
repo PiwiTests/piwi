@@ -47,6 +47,7 @@ import {
   runTestsByOutcome,
   runTestDuration,
   runTestStatus,
+  runTestWhere,
   slowestTests,
   statusTone,
   statusLabel,
@@ -824,7 +825,7 @@ function renderClusterHeader(bundle: ExportBundle): RawHtml {
       details(
         `Other affected tests (${bundle.truncatedCases.length}, evidence not included)`,
         html`<ul>
-          ${bundle.truncatedCases.map((t) => html`<li>${t.title} <span class="meta">${t.filePath ?? ''}</span></li>`)}
+          ${bundle.truncatedCases.map((t) => html`<li>${t.title} <span class="meta">${[t.filePath, t.browser].filter(Boolean).join(' · ')}</span></li>`)}
         </ul>`,
       ),
     );
@@ -841,7 +842,7 @@ function runTestLine(test: ExportRunTest, detailed: Set<number>, withError: bool
   return html`<li>
     <span class="tag ${statusClass(status)}">${statusLabel(status)}</span> ${name}
     <span class="sub">${test.location ?? ''}</span>
-    ${test.browser ? html`<span class="meta">${test.browser}</span>` : ''}
+    ${runTestWhere(test) ? html`<span class="meta">${runTestWhere(test)}</span>` : ''}
     ${withError && test.error ? html`<span class="err">${test.error}</span>` : ''}
   </li>`;
 }
@@ -899,7 +900,7 @@ function runFlaky(run: ExportRun): RawHtml {
               html`<tr>
                 <td>${t.title}</td>
                 <td class="sub">${t.location ?? ''}</td>
-                <td class="nowrap">${t.browser ?? ''}</td>
+                <td class="nowrap">${runTestWhere(t)}</td>
                 <td class="num">${t.retries}</td>
                 <td class="num">${runTestDuration(t)}</td>
               </tr>`,
@@ -925,7 +926,7 @@ function runSlowest(run: ExportRun): RawHtml {
             (t) =>
               html`<tr>
                 <td>${t.title} <span class="sub">${t.location ?? ''}</span></td>
-                <td class="nowrap">${t.browser ?? ''}</td>
+                <td class="nowrap">${runTestWhere(t)}</td>
                 <td class="bar-cell">
                   <span class="track"
                     ><span style="left:0;width:${(((t.duration ?? 0) / longest) * 100).toFixed(2)}%"></span
@@ -963,7 +964,7 @@ function runAllTests(run: ExportRun): RawHtml {
             return html`<tr>
               <td class="${statusClass(status)} nowrap"><span class="tag">${statusLabel(status)}</span></td>
               <td>${[...t.suitePath, t.title].join(' › ')}<br /><span class="sub">${t.location ?? ''}</span></td>
-              <td class="nowrap">${t.browser ?? ''}</td>
+              <td class="nowrap">${runTestWhere(t)}</td>
               <td class="num">${runTestDuration(t)}</td>
               <td class="num">${t.retries}</td>
             </tr>`;
@@ -1088,7 +1089,7 @@ export function renderExportHtml(bundle: ExportBundle, opts: RenderOptions): str
         ? details(
             `Other failing tests (${bundle.truncatedCases.length}, evidence not included)`,
             html`<ul>
-              ${bundle.truncatedCases.map((t) => html`<li>${t.title} <span class="meta">${t.filePath ?? ''}</span></li>`)}
+              ${bundle.truncatedCases.map((t) => html`<li>${t.title} <span class="meta">${[t.filePath, t.browser].filter(Boolean).join(' · ')}</span></li>`)}
             </ul>`,
           )
         : '',

@@ -307,7 +307,7 @@ export function runTestDuration(test: ExportRunTest): string {
   return test.duration ? fmtDuration(test.duration) : '—';
 }
 
-/** One root cause of a run's failures, with the failing or flaky tests it holds. */
+/** One root cause of a run's failures, with the failing results it holds. */
 export interface RunFailureGroup {
   title: string;
   /** The failure cluster's status, or null for the failures no cluster holds. */
@@ -317,21 +317,25 @@ export interface RunFailureGroup {
   tests: ExportRunTest[];
 }
 
-/** A run's failing and flaky tests by root cause: each failure cluster, then the failures no cluster holds. */
+/** A run's failing results by root cause: each failure cluster, then the failures no cluster holds. */
 export function runFailureGroups(run: ExportRun): RunFailureGroup[] {
-  const failing = (t: ExportRunTest) => statusTone(t.status) === 'failed';
+  const byId = new Map(run.tests.map((t) => [t.executionId, t]));
   const grouped = new Set<number>();
   const groups: RunFailureGroup[] = run.groups.map((g) => {
-    const ids = new Set(g.testCaseIds);
-    const tests = run.tests.filter((t) => ids.has(t.testCaseId) && (failing(t) || t.flaky));
+    const tests = g.executionIds.map((id) => byId.get(id)).filter((t): t is ExportRunTest => Boolean(t));
     for (const t of tests) grouped.add(t.executionId);
     return { title: g.title, status: g.status, isNew: g.isNew, diagnosis: g.diagnosis, tests };
   });
-  const rest = run.tests.filter((t) => failing(t) && !grouped.has(t.executionId));
+  const rest = run.tests.filter((t) => statusTone(t.status) === 'failed' && !grouped.has(t.executionId));
   return [
     ...groups.filter((g) => g.tests.length),
     ...(rest.length ? [{ title: 'Not grouped', status: null, isNew: false, diagnosis: null, tests: rest }] : []),
   ];
+}
+
+/** Where a run's test result ran: its browser, and its repetition in a run that repeats its tests. */
+export function runTestWhere(test: Pick<ExportRunTest, 'browser' | 'repetition'>): string {
+  return [test.browser, test.repetition ? `repetition ${test.repetition}` : null].filter(Boolean).join(' · ');
 }
 
 export function clusterFacts(cluster: Record<string, any>): Fact[] {

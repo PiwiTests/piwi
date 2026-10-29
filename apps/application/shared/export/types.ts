@@ -49,7 +49,7 @@ export interface ExportCase {
   assets: ExportAsset[];
 }
 
-/** One test of a run export: the attempt that decided its outcome, per test case and browser. */
+/** One test result of a run export: the final attempt of a repetition of a test, per test case and browser. */
 export interface ExportRunTest {
   executionId: number;
   testCaseId: number;
@@ -59,6 +59,8 @@ export interface ExportRunTest {
   location: string | null;
   /** The Playwright project the test ran in. */
   browser: string | null;
+  /** The `--repeat-each` repetition, from 1, in a run that repeats its tests; null otherwise. */
+  repetition: number | null;
   status: string;
   /** Passed only on a retry. */
   flaky: boolean;
@@ -69,23 +71,22 @@ export interface ExportRunTest {
   failureClusterId: number | null;
 }
 
-/** The failures of a run that share a root cause: a failure cluster, as the run page groups them. */
+/** The failing results of a run that share a root cause: a failure cluster, as the run page groups them. */
 export interface ExportRunGroup {
   clusterId: number;
   title: string;
   status: string;
   /** First seen in this run. */
   isNew: boolean;
-  /** Every test of the group passed on a retry. */
-  flaky: boolean;
-  testCaseIds: number[];
+  /** The failing results whose final attempt this cluster holds. */
+  executionIds: number[];
   /** The AI diagnosis's one-line summary, when one completed. */
   diagnosis: string | null;
 }
 
 /** Present for `kind: 'run'`: the run, its tests and its failures grouped by root cause. */
 export interface ExportRun {
-  /** The `getTestRun` payload, without its per-attempt test list. */
+  /** The run fields the export states: status, branch, commit, CI build, counts and timing. */
   detail: Record<string, unknown>;
   tests: ExportRunTest[];
   groups: ExportRunGroup[];
@@ -107,7 +108,7 @@ export interface ExportBundle {
   run?: ExportRun | null;
   cases: ExportCase[];
   /** Member cases (a run's failing tests) beyond the export's case cap, listed but not expanded. */
-  truncatedCases: { testCaseId: number; title: string; filePath: string | null }[];
+  truncatedCases: { testCaseId: number; title: string; filePath: string | null; browser?: string | null }[];
   omitted: ExportOmission[];
 }
 

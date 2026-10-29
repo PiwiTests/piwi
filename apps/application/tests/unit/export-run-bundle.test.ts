@@ -54,7 +54,7 @@ beforeEach(async () => {
       status: 'failed',
       retries: 1,
       browserName: 'chromium',
-      error: 'TimeoutError: Timeout 5000ms exceeded\n\nCall log:',
+      error: '\x1b[31mTimeoutError: Timeout 5000ms exceeded\x1b[39m\n\nCall log:',
       failureClusterId: 3,
     },
     // Passed on its retry: flaky, not failing.
@@ -75,7 +75,7 @@ beforeEach(async () => {
 });
 
 describe('the bundle of a run export', () => {
-  test('lists every test once, by the attempt that decided it, and marks a pass on a retry as flaky', async () => {
+  test('lists every test result once, by its final attempt, and marks a pass on a retry as flaky', async () => {
     const bundle = (await collectRunBundle(db as never, 7, { maxCases: 25 }))!;
     expect(bundle.kind).toBe('run');
     expect(bundle.title).toBe('Run #7');
@@ -89,6 +89,7 @@ describe('the bundle of a run export', () => {
       title: 'pays',
       suitePath: ['Checkout'],
       browser: 'chromium',
+      repetition: null,
       error: 'TimeoutError: Timeout 5000ms exceeded',
       failureClusterId: 3,
     });
@@ -102,8 +103,7 @@ describe('the bundle of a run export', () => {
         title: 'Timeout 5000ms exceeded',
         status: 'open',
         isNew: true,
-        flaky: false,
-        testCaseIds: [1],
+        executionIds: [11],
         diagnosis: null,
       },
     ]);
@@ -114,19 +114,61 @@ describe('the bundle of a run export', () => {
   test('lists the failing tests past the cap by name', async () => {
     const bundle = (await collectRunBundle(db as never, 7, { maxCases: 1 }))!;
     expect(bundle.cases.map((c) => c.executionId)).toEqual([11]);
-    expect(bundle.truncatedCases).toEqual([{ testCaseId: 3, title: 'logs in', filePath: 'tests/login.spec.ts' }]);
+    expect(bundle.truncatedCases).toEqual([
+      { testCaseId: 3, title: 'logs in', filePath: 'tests/login.spec.ts', browser: 'chromium' },
+    ]);
   });
 
   test('keeps the run row without its per-attempt list, and names the file after the project and branch', async () => {
     const bundle = (await collectRunBundle(db as never, 7, { maxCases: 25 }))!;
     expect(bundle.run!.detail).toMatchObject({ id: 7, branch: 'main', environment: 'staging' });
-    expect(bundle.run!.detail).not.toHaveProperty('testCases');
-    expect(bundle.run!.detail).not.toHaveProperty('streamToken');
+    for (const key of ['testCases', 'streamToken', 'storageStats', 'reports', 'setupSteps', 'project']) {
+      expect(bundle.run!.detail).not.toHaveProperty(key);
+    }
     expect(bundle.project).toEqual({ id: 1, name: 'shop', label: 'Shop' });
     expect(exportFileName(bundle, 'pdf', 7)).toBe('piwi-run-7-shop-main.pdf');
   });
 
   test('answers null for a run that does not exist', async () => {
     expect(await collectRunBundle(db as never, 99, { maxCases: 25 })).toBeNull();
+  });
+});
+
+describe('the bundle of a run export, across browsers and repetitions', () => {
+  test('groups each failing result under its own failure cluster, browser by browser', async () => {
+    await db.insert(schema.failureClusters).values({
+      id: 4,
+      projectId: 1,
+      fingerprint: 'fp-4',
+      signature: 'Strict mode violation',
+      errorType: 'strict-mode',
+      firstSeenRunId: 7,
+      lastSeenRunId: 7,
+    });
+    await db.insert(schema.testRunsCases).values([
+      { id: 20, testRunId: 7, testCaseId: 1, status: 'failed', browserName: 'firefox', failureClusterId: 4 },
+      { id: 21, testRunId: 7, testCaseId: 3, status: 'failed', browserName: 'firefox', failureClusterId: 4 },
+    ]);
+    const bundle = (await collectRunBundle(db as never, 7, { maxCases: 25 }))!;
+    expect(bundle.run!.groups.map((g) => [g.clusterId, g.executionIds])).toEqual([
+      [4, [21, 20]],
+      [3, [11]],
+    ]);
+    // The largest group first, each in file order, then the failure no cluster holds.
+    expect(bundle.cases.map((c) => c.executionId)).toEqual([21, 20, 11, 14]);
+  });
+
+  test('lists each repetition of a repeated test as a result of its own', async () => {
+    await db.insert(schema.testRunsCases).values([
+      { id: 30, testRunId: 7, testCaseId: 4, status: 'passed', repeatEachIndex: 1, browserName: 'chromium' },
+      { id: 31, testRunId: 7, testCaseId: 4, status: 'failed', repeatEachIndex: 2, browserName: 'chromium' },
+    ]);
+    const bundle = (await collectRunBundle(db as never, 7, { maxCases: 25 }))!;
+    const repeated = bundle.run!.tests.filter((t) => t.testCaseId === 4);
+    expect(repeated.map((t) => [t.executionId, t.status, t.repetition])).toEqual([
+      [15, 'passed', 1],
+      [30, 'passed', 2],
+      [31, 'failed', 3],
+    ]);
   });
 });

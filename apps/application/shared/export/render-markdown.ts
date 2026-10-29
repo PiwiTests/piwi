@@ -35,6 +35,7 @@ import {
   runTestsByOutcome,
   runTestDuration,
   runTestStatus,
+  runTestWhere,
   slowestTests,
   statusLabel,
   type Fact,
@@ -182,7 +183,9 @@ function runSummaryMarkdown(run: ExportRun): string[] {
   const out: string[] = [];
   const where = [d.branch, d.environment].filter(Boolean).join(' · ');
   const headline = runHeadline(d);
-  out.push(`**${String(d.status ?? 'unknown')}**${where ? ` · ${where}` : ''}${headline ? ` · ${headline}` : ''}`, '');
+  const labels = [d.isFullRun === false ? 'Partial run' : null, d.origin ? String(d.origin) : null];
+  const line = [where, headline, ...labels].filter(Boolean).join(' · ');
+  out.push(`**${String(d.status ?? 'unknown')}**${line ? ` · ${line}` : ''}`, '');
   out.push(...factList(runSummaryFacts(run)));
   out.push(...runMarkdown(d, '## The run'));
 
@@ -195,7 +198,7 @@ function runSummaryMarkdown(run: ExportRun): string[] {
       if (g.diagnosis) out.push(g.diagnosis, '');
       for (const t of g.tests) {
         out.push(
-          `- **${statusLabel(runTestStatus(t))}** ${t.title} — \`${t.location ?? ''}\`${t.browser ? ` (${t.browser})` : ''}`,
+          `- **${statusLabel(runTestStatus(t))}** ${t.title}${t.location ? ` — \`${t.location}\`` : ''}${runTestWhere(t) ? ` (${runTestWhere(t)})` : ''}`,
           ...(t.error && !t.flaky ? [`  \`${t.error.replace(/`/g, "'")}\``] : []),
         );
       }
@@ -210,7 +213,7 @@ function runSummaryMarkdown(run: ExportRun): string[] {
       '',
       ...table(
         ['Test', 'Location', 'Browser', 'Retries', 'Duration'],
-        flaky.map((t) => [t.title, t.location ?? '', t.browser ?? '', String(t.retries), runTestDuration(t)]),
+        flaky.map((t) => [t.title, t.location ?? '', runTestWhere(t), String(t.retries), runTestDuration(t)]),
       ),
     );
   }
@@ -222,7 +225,7 @@ function runSummaryMarkdown(run: ExportRun): string[] {
       '',
       ...table(
         ['Test', 'Browser', 'Duration'],
-        slowest.map((t) => [t.title, t.browser ?? '', runTestDuration(t)]),
+        slowest.map((t) => [t.title, runTestWhere(t), runTestDuration(t)]),
       ),
     );
   }
@@ -237,7 +240,7 @@ function runSummaryMarkdown(run: ExportRun): string[] {
           statusLabel(runTestStatus(t)),
           [...t.suitePath, t.title].join(' › '),
           t.location ?? '',
-          t.browser ?? '',
+          runTestWhere(t),
           runTestDuration(t),
           String(t.retries),
         ]),
@@ -293,7 +296,9 @@ export function renderExportMarkdown(bundle: ExportBundle): string {
     out.push(
       `## ${others} (${bundle.truncatedCases.length}, evidence not included)`,
       '',
-      ...bundle.truncatedCases.map((t) => `- ${t.title} — \`${t.filePath ?? ''}\``),
+      ...bundle.truncatedCases.map(
+        (t) => `- ${t.title}${t.filePath ? ` — \`${t.filePath}\`` : ''}${t.browser ? ` (${t.browser})` : ''}`,
+      ),
       '',
     );
   }

@@ -289,7 +289,7 @@ function pdfText(bytes: Uint8Array): string[] {
 }
 
 describe('the PDF export, at its limits', () => {
-  it('wraps a long row of labels instead of dropping the ones past the first line', async () => {
+  it('wraps a long row of labels onto more rows and draws every one', async () => {
     const tags = Array.from({ length: 14 }, (_, i) => `tag-number-${i}`);
     const many = bundle({ cases: [exportCase({ detail: { ...exportCase().detail, tags } })] });
     const text = pdfText(await renderExportPdf(many, { imageFor: () => null }));

@@ -108,14 +108,14 @@ export const RUNS_ANCHORS = [
     kind: 'action',
     pages: ['/test-runs/[id]', '/test-run-cases/[id]', '/failure-clusters/[id]'],
     describes:
-      'The Export button: an execution or a cluster as a file to read without Piwi, a failure for Piwi Picker’s Replay, a run’s or an execution’s Perfetto trace.',
+      'The Export button: a run, execution or cluster as a file to read without Piwi, a failure for Piwi Picker’s Replay, a run’s or an execution’s Perfetto trace.',
     doc: 'features/offline-export',
     sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
   },
   {
     id: 'export-download',
     kind: 'block',
-    pages: ['/test-run-cases/[id]', '/failure-clusters/[id]'],
+    pages: ['/test-runs/[id]', '/test-run-cases/[id]', '/failure-clusters/[id]'],
     reveal: [{ open: 'export-menu' }],
     describes:
       'The Download section of the Export menu: the investigation as one HTML page, a ZIP with every artifact, a PDF, Markdown or JSON.',

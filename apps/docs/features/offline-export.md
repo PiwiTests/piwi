@@ -29,7 +29,7 @@ A cluster export carries the most recent failing execution of each affected test
 
 A run export opens on the run: its status, branch, commit and CI build, its tests as a bar split by outcome, its
 failures grouped by root cause (each failure cluster, then the failures no cluster holds), its flaky tests, its ten
-slowest tests and every test once, by file. Its failing executions follow in detail, the largest group first.
+slowest tests and every test result, by file. Its failing executions follow in detail, the largest group first.
 
 The HTML and PDF reports read the same way. They open on a header colored by the outcome, with the test's full name
 (describe blocks, then title), its location and Piwi's one-line reading of the failure, then the execution's figures and

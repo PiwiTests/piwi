@@ -64,6 +64,7 @@ import {
   runTestsByOutcome,
   runTestDuration,
   runTestStatus,
+  runTestWhere,
   slowestTests,
   statusTone,
   statusLabel,
@@ -215,6 +216,8 @@ function statusColor(value: unknown): Color {
     .toLowerCase()
     .replace(/[^a-z]/g, '');
   if (v === 'passed' || v === 'resolved') return COLORS.pass;
+  if (v === 'flaky') return hexColor(STATUS_COLORS.flaky.text);
+  if (v === 'running' || v === 'initializing' || v === 'finalizing') return COLORS.info;
   if (v === 'didnotrun' || v === 'warning' || v === 'warn') return COLORS.warn;
   if (v === 'skipped' || v === 'log' || v === 'debug' || v === 'ignored') return COLORS.muted;
   if (v === 'info') return COLORS.info;
@@ -944,9 +947,14 @@ class PdfBuilder {
     drawHeader();
 
     for (const row of rows) {
-      const wrapped = row.map((cell, idx) =>
-        cell.bar ? [] : this.wrap(cell.text, cell.font ?? this.regular, size, (widths[idx] ?? 0) - padX * 2),
-      );
+      // A row never runs past one page: a cell taller than that ends with an ellipsis.
+      const maxLines = Math.floor((PAGE_HEIGHT - MARGIN * 2 - (size + padY * 2) * 2) / lineHeight) - 1;
+      const wrapped = row.map((cell, idx) => {
+        if (cell.bar) return [];
+        const font = cell.font ?? this.regular;
+        const width = (widths[idx] ?? 0) - padX * 2;
+        return this.clamp(this.wrap(cell.text, font, size, width), maxLines, font, size, width);
+      });
       const rowHeight = Math.max(1, ...wrapped.map((w) => w.length)) * lineHeight + padY * 2;
       if (this.available < rowHeight) {
         this.newPage();
@@ -1297,7 +1305,7 @@ function renderClusterHeader(b: PdfBuilder, bundle: ExportBundle): void {
 
   if (bundle.truncatedCases.length) {
     b.section(`Other affected tests (${bundle.truncatedCases.length}, evidence not included)`);
-    b.bullets(bundle.truncatedCases.map((t) => `${t.title}${t.filePath ? `  ${t.filePath}` : ''}`));
+    b.bullets(bundle.truncatedCases.map((t) => [t.title, t.filePath, t.browser].filter(Boolean).join('  ')));
   }
 }
 
@@ -1332,7 +1340,7 @@ function renderRunHeader(b: PdfBuilder, bundle: ExportBundle, run: ExportRun): v
         g.tests.map((t) => [
           { text: statusLabel(runTestStatus(t)), color: statusColor(runTestStatus(t)), font: b.bold },
           { text: [t.title, t.location, t.flaky ? null : t.error].filter(Boolean).join('\n') },
-          { text: t.browser ?? '', color: COLORS.muted },
+          { text: runTestWhere(t), color: COLORS.muted },
         ]),
         [1.1, 6.5, 1.6],
       );
@@ -1346,7 +1354,7 @@ function renderRunHeader(b: PdfBuilder, bundle: ExportBundle, run: ExportRun): v
       ['Test', 'Browser', 'Retries', 'Duration'],
       flaky.map((t) => [
         { text: [t.title, t.location].filter(Boolean).join('\n') },
-        { text: t.browser ?? '', color: COLORS.muted },
+        { text: runTestWhere(t), color: COLORS.muted },
         { text: String(t.retries), font: b.mono },
         { text: runTestDuration(t), font: b.mono },
       ]),
@@ -1362,7 +1370,7 @@ function renderRunHeader(b: PdfBuilder, bundle: ExportBundle, run: ExportRun): v
       ['Test', 'Browser', '', 'Duration'],
       slowest.map((t) => [
         { text: t.title },
-        { text: t.browser ?? '', color: COLORS.muted },
+        { text: runTestWhere(t), color: COLORS.muted },
         { text: '', bar: { offset: 0, width: (t.duration ?? 0) / longest, color: COLORS.accent } },
         { text: runTestDuration(t), font: b.mono },
       ]),
@@ -1377,7 +1385,7 @@ function renderRunHeader(b: PdfBuilder, bundle: ExportBundle, run: ExportRun): v
       run.tests.map((t) => [
         { text: statusLabel(runTestStatus(t)), color: statusColor(runTestStatus(t)), font: b.bold },
         { text: [[...t.suitePath, t.title].join(' › '), t.location].filter(Boolean).join('\n') },
-        { text: t.browser ?? '', color: COLORS.muted },
+        { text: runTestWhere(t), color: COLORS.muted },
         { text: runTestDuration(t), font: b.mono },
         { text: String(t.retries), font: b.mono },
       ]),
@@ -1448,7 +1456,7 @@ export async function renderExportPdf(bundle: ExportBundle, opts: PdfRenderOptio
   }
   if (isRun && bundle.truncatedCases.length) {
     b.section(`Other failing tests (${bundle.truncatedCases.length}, evidence not included)`);
-    b.bullets(bundle.truncatedCases.map((t) => `${t.title}${t.filePath ? `  ${t.filePath}` : ''}`));
+    b.bullets(bundle.truncatedCases.map((t) => [t.title, t.filePath, t.browser].filter(Boolean).join('  ')));
   }
   if (bundle.cases.length === 0 && !isRun) {
     b.text('No executions were included in this export.', { color: COLORS.muted });
