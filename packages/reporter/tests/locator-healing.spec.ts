@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   callSitePath,
   captureCallerLocation,
@@ -944,6 +944,30 @@ describe('captureCallerLocation', () => {
       frame(pathToFileURL(path.join(process.cwd(), 'tests', 'my cart.spec.ts')).href, 42),
     ].join('\n');
     expect(captureCallerLocation(stack)).toBe('tests/my cart.spec.ts:42:5');
+  });
+
+  it('gives no call site for a file URL that names no file', () => {
+    const stack = [
+      'Error',
+      frame('/pkg/node_modules/@piwitests/reporter/dist/index.js', 3163),
+      frame('file:///work/tests/checkout%2Fpay.spec.ts', 42),
+    ].join('\n');
+    expect(captureCallerLocation(stack)).toBeNull();
+  });
+
+  it('gives the absolute call site once the working directory is removed', () => {
+    const spec = path.join(process.cwd(), 'tests', 'checkout.spec.ts');
+    const stack = ['Error', frame('/pkg/node_modules/@piwitests/reporter/dist/index.js', 3163), frame(spec, 42)].join(
+      '\n',
+    );
+    const cwd = vi.spyOn(process, 'cwd').mockImplementation(() => {
+      throw new Error('ENOENT: no such file or directory, uv_cwd');
+    });
+    try {
+      expect(captureCallerLocation(stack)).toBe(`${spec.split(path.sep).join('/')}:42:5`);
+    } finally {
+      cwd.mockRestore();
+    }
   });
 });
 

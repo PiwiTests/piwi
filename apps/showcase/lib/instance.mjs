@@ -14,12 +14,11 @@ export const INSTANCE_PORT = 3077;
 const appRequire = createRequire(new URL('../../application/package.json', import.meta.url));
 
 /**
- * The bugs that keep the healing's candidate from a failure on a click: what the instance's store says of the clicked
- * element's capture in the test's passing runs.
+ * The known bugs that keep the healing's candidate from a failure on a click: what the instance's store says of the
+ * clicked element's capture in the test's passing runs.
  */
 export const HEALING_BUGS = {
   navigatingClick: 'the reporter keeps no element of a click that navigates the page at once',
-  esmCallSites: "the reporter's call sites lose their leading slash in an ES module suite",
 };
 
 /** The instance, read through its API, and through its database where no route says what a check needs. */
@@ -42,14 +41,13 @@ export class Instance {
   }
 
   /**
-   * Why the healing of the click at `place` (`file:line`) of the test `testCaseId` has no candidate, when the two known
-   * bugs explain it, read in their exact states: the passing CI run's report (`snapshots`, the reporter's
+   * Why the healing of the click at `place` (`file:line`) of the test `testCaseId` has no candidate, when the known
+   * bug explains it, read in its exact state: the passing CI run's report (`snapshots`, the reporter's
    * `piwi-locators` of that test, `ciSnapshots`) holds that call's snapshot without its element, and the instance
-   * keeps no row of it; and the call site reads the CI checkout's absolute path without its leading slash
-   * (`tmp/…/ci/tests/…`). Null when the first state is not there: a missing report, no snapshot of the test, or an
-   * element captured at that place are failures of the check, not this bug.
+   * keeps no row of it. Null when that state is not there: a missing report, no snapshot of the test, or an element
+   * captured at that place are failures of the check, not this bug.
    */
-  async whyNoHealing(testCaseId, place, { snapshots, ciDir }) {
+  async whyNoHealing(testCaseId, place, { snapshots }) {
     if (!Array.isArray(snapshots) || snapshots.length === 0) return null;
     const [file, line] = place.split(':');
     const atPlace = (location) => new RegExp(`(^|/)${escapeRegExp(`${file}:${line}`)}:\\d+$`).test(location ?? '');
@@ -57,14 +55,7 @@ export class Instance {
     if (!call || call.element !== null) return null;
     const rows = await this.query('select location from locator_snapshots where test_case_id = ?', [testCaseId]);
     if (rows.some((row) => atPlace(row.location))) return null;
-    const found = [
-      { bug: HEALING_BUGS.navigatingClick, detail: `the passing run kept no element of ${call.location}` },
-    ];
-    const slashless = `${ciDir.replace(/^\//, '')}/${file}:${line}:`;
-    if (call.location.startsWith(slashless)) {
-      found.push({ bug: HEALING_BUGS.esmCallSites, detail: `its call site reads ${call.location}` });
-    }
-    return { bug: found.map((f) => f.bug).join('; '), detail: found.map((f) => f.detail).join('; ') };
+    return { bug: HEALING_BUGS.navigatingClick, detail: `the passing run kept no element of ${call.location}` };
   }
 
   async api(route, init = {}) {

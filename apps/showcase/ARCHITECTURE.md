@@ -92,15 +92,12 @@ The assertions a check skips, each only once it saw the bug's state:
 
 - **No healing candidate for the story's failure** (beat 1). The reporter keeps no element of a click whose page
   navigates at once (a form's submit, a `location.assign` in its handler): the element capture runs after the action
-  (`startElementCapture`), and the page is gone, so the passing runs record no fingerprint of **Place order**. And in
-  an ES module suite, the call sites it records lose their leading slash (`captureCallerLocation` strips `file:///`
-  from a POSIX path, then makes `tmp/…` relative to the working directory), so they never match a failure's place.
-  The check first asserts the healing's answer has its fields and reads the broken locator; a candidate other than
-  **Pay now** fails it. It skips the panel's assertions only on the first bug's exact state, which
-  `instance.whyNoHealing` reads: the shipped run's JSON report (`ci-shipped.json`, its `piwi-locators` attachment) holds
-  the click's snapshot at the failing line with `element: null`, and the instance stores no snapshot at that line. A
-  report without snapshots, or a click with its element, fails the beat. The second bug is named when that snapshot's
-  location reads the CI checkout's folder without its leading slash.
+  (`startElementCapture`), and the page is gone, so the passing runs record no fingerprint of **Place order**. The
+  check first asserts the healing's answer has its fields and reads the broken locator; a candidate other than
+  **Pay now** fails it. It skips the panel's assertions only on the bug's exact state, which `instance.whyNoHealing`
+  reads: the shipped run's JSON report (`ci-shipped.json`, its `piwi-locators` attachment) holds the click's snapshot
+  at the failing line with `element: null`, and the instance stores no snapshot at that line. A report without
+  snapshots, or a click with its element, fails the beat.
 
 ## Toward the cut
 

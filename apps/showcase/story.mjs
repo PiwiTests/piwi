@@ -138,7 +138,6 @@ export const STORY = [
       expect(candidate === null, `the healing's candidate is ${candidate}, not ${FIXED}`);
       const why = await instance.whyNoHealing(state.failing.testCaseId, `${PAGE_OBJECT}:${FAILING_LINE}`, {
         snapshots: ciSnapshots(set.reports.shipped, 'places an order'),
-        ciDir: set.ciDir,
       });
       expect(why, `the healing has no candidate, and no known bug explains it`);
       skip(why.bug, `the healing panel's candidate ${FIXED}, and Most likely naming it (${why.detail})`);
