@@ -40,6 +40,7 @@ import {
   TAG_TO_ROLE,
   INPUT_TYPE_TO_ROLE,
   renderFailing,
+  framePath,
   type LocatorSnapshot,
   type FailedLocatorInfo,
 } from './locator-healing.js';
@@ -2192,19 +2193,19 @@ type CodePlace = { file: string; line: number; column: number };
 
 /**
  * Where an error happened in the test's code: the place the runner gives it, else the first frame of its stack in a
- * file of the project, not in a package, Node's own or this package's. Null for an error with no such frame (a test
- * timeout).
+ * file of the project, not in a package, Node's own or this package's, as an absolute path. `windows` reads the frames
+ * as Windows writes them. Null for an error with no such frame (a test timeout).
  */
-function errorPlace(error: unknown): CodePlace | null {
+export function errorPlace(error: unknown, windows: boolean = process.platform === 'win32'): CodePlace | null {
   const given = (error as { location?: Partial<CodePlace> } | undefined)?.location;
   if (typeof given?.file === 'string' && typeof given.line === 'number') {
     return { file: given.file, line: given.line, column: given.column ?? 0 };
   }
   const stack = (error as { stack?: unknown } | undefined)?.stack;
   for (const line of typeof stack === 'string' ? stack.split('\n') : []) {
-    const frame = /^\s*at\s+(?:.*?\s+\()?(?:file:\/\/)?(\/[^():]+|[A-Za-z]:[\\/][^():]+):(\d+):(\d+)\)?$/.exec(line);
-    if (!frame) continue;
-    const file = frame[1]!;
+    const frame = /^\s*at\s+(?:.*?\s+\()?(.+?):(\d+):(\d+)\)?$/.exec(line);
+    const file = frame ? framePath(frame[1]!, windows) : null;
+    if (!frame || !file || !(windows ? path.win32 : path.posix).isAbsolute(file)) continue;
     if (/[\\/]node_modules[\\/]/.test(file) || path.dirname(path.resolve(file)) === __dirname) continue;
     return { file, line: Number(frame[2]), column: Number(frame[3]) };
   }

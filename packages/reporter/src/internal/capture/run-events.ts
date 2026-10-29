@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import type { ConsoleMessage, Page, Request, Response } from '@playwright/test';
 import { hideSecretsInText, hideSecretsInUrl } from '@piwitests/core/mask';
 import { MAX_RUN_EVENT_TEXT, type Place } from '@piwitests/core/run-channel';
+import { callSitePath } from './locator-healing.js';
 import { runEventsWanted, tellEvent } from './run-channel.js';
 
 /**
@@ -36,20 +37,25 @@ const heard = new WeakSet<object>();
 /** The pages whose events are heard: one set of listeners each. */
 const watched = new WeakSet<Page>();
 
-/** A frame's file under the run's working directory, with forward slashes; null for one outside it or in a package. */
-function userFile(file: string | undefined): string | null {
-  if (!file) return null;
-  const absolute = file.startsWith('file://') ? new URL(file).pathname : file;
-  if (/[\\/]node_modules[\\/]/.test(absolute)) return null;
-  const relative = path.relative(process.cwd(), absolute);
-  if (!relative || path.isAbsolute(relative) || relative.startsWith('..')) return null;
-  return relative.split(path.sep).join('/');
+/** A frame's file under `cwd`, with forward slashes; null for one outside it or in a package. */
+function userFile(file: string | undefined, cwd: string, windows: boolean): string | null {
+  if (!file || /[\\/]node_modules[\\/]/.test(file)) return null;
+  const relative = callSitePath(file, cwd, windows);
+  if (!relative || (windows ? path.win32 : path.posix).isAbsolute(relative) || relative.startsWith('..')) return null;
+  return relative;
 }
 
-/** The place in the user's code that made a call: its first frame there. */
-export function callPlace(frames: ApiZone['frames']): Place | null {
+/**
+ * The place in the user's code that made a call: its first frame under `cwd`. `windows` reads the frames as Windows
+ * writes them.
+ */
+export function callPlace(
+  frames: ApiZone['frames'],
+  cwd: string = process.cwd(),
+  windows: boolean = process.platform === 'win32',
+): Place | null {
   for (const frame of frames ?? []) {
-    const file = userFile(frame.file);
+    const file = userFile(frame.file, cwd, windows);
     if (!file || !frame.line || frame.line < 1) continue;
     return { file, line: frame.line, ...(frame.column && frame.column > 0 ? { column: frame.column } : {}) };
   }
