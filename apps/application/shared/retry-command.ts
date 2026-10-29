@@ -41,10 +41,23 @@ function quoteAll(values: string[]): string[] {
   return values.map(quoteShellArg).filter((arg): arg is string => arg !== null);
 }
 
+/** The quoted spec paths of `values`: one that starts with `-` would be read as an option, so it is left out too. */
+function quoteSpecs(values: string[]): string[] {
+  return quoteAll(values.filter((value) => !value.startsWith('-')));
+}
+
 /** ` --project="<name>"`, or nothing when the name cannot be quoted safely (the tests then run in every project). */
 function projectFlag(project: string): string {
   const quoted = quoteShellArg(project);
   return quoted ? ` --project=${quoted}` : '';
+}
+
+/**
+ * One ` --project="<name>"` per project, or nothing when one of them cannot be
+ * quoted safely: the tests then run in every project rather than miss that one.
+ */
+function projectFlags(projects: string[]): string {
+  return projects.every((project) => quoteShellArg(project)) ? projects.map(projectFlag).join('') : '';
 }
 
 /**
@@ -99,12 +112,12 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
     let cmd: string;
 
     if (mode === 'file') {
-      const args = quoteAll(dedupeFiles(projectCases).map(toPosixPath));
+      const args = quoteSpecs(dedupeFiles(projectCases).map(toPosixPath));
       if (args.length === 0) continue;
       cmd = `${baseCmd} ${args.join(' ')}`;
     } else if (mode === 'file-line') {
       const seen = new Set<string>();
-      const args = quoteAll(
+      const args = quoteSpecs(
         projectCases
           .filter((c) => {
             const key = c.filePath + ':' + c.line;
@@ -138,7 +151,7 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
     if (mode === 'file-line') {
       return buildRetryCommand(cases, { ...opts, mode: 'file' });
     }
-    const args = quoteAll(dedupeFilePaths(cases).map(toPosixPath));
+    const args = quoteSpecs(dedupeFilePaths(cases).map(toPosixPath));
     if (args.length === 0) return '';
     let cmd = `${baseCmd} ${args.join(' ')}`;
     if (cmd.length > MAX_CMD_LENGTH) {
@@ -164,22 +177,32 @@ export function buildRetryArgs(cases: RetryCase[]): string {
   const specs = [
     ...new Set(cases.map((c) => (c.line ? `${toPosixPath(c.filePath)}:${c.line}` : toPosixPath(c.filePath)))),
   ];
-  const quoted = quoteAll(specs);
+  const quoted = quoteSpecs(specs);
   if (quoted.length === 0) return '';
-
-  const projects = [...new Set(cases.map((c) => c.projectName || '').filter(Boolean))];
-  return quoted.join(' ') + projects.map(projectFlag).join('');
+  return quoted.join(' ') + projectFlags(caseProjects(cases));
 }
 
 /**
- * The one `npx playwright test` command that runs these cases as a CI re-run
- * does ({@link buildRetryArgs}): a single command whatever their projects, so
- * it can be copied on any shell, handed to `git bisect run` or shown as the
- * command that verifies a fix. Without cases it runs the whole suite.
+ * The one `npx playwright test` command that runs these cases wherever their
+ * lines moved: their files, their titles (`-g`) and the projects they ran in.
+ * It is the same on every shell and a single command, so it can be copied,
+ * handed to `git bisect run` across commits, or shown as the command that
+ * verifies a fix. Past {@link MAX_CMD_LENGTH} it drops the titles and runs the
+ * files whole. Without cases it runs the whole suite.
  */
 export function buildRerunCommand(cases: RetryCase[]): string {
-  const args = buildRetryArgs(cases);
-  return args ? `npx playwright test ${args}` : 'npx playwright test';
+  const base = 'npx playwright test';
+  if (cases.length === 0) return base;
+  const files = quoteSpecs([...new Set(cases.map((c) => toPosixPath(c.filePath)))]);
+  const projects = projectFlags(caseProjects(cases));
+  const head = [base, ...files].join(' ');
+  const withTitles = `${head}${buildTitleGrepFlag([...new Set(cases.map((c) => c.title))])}${projects}`;
+  return withTitles.length <= MAX_CMD_LENGTH ? withTitles : `${head}${projects}`;
+}
+
+/** The distinct Playwright projects of these cases, in their order. */
+function caseProjects(cases: RetryCase[]): string[] {
+  return [...new Set(cases.map((c) => c.projectName || '').filter(Boolean))];
 }
 
 function dedupeFilePaths(cases: RetryCase[]): string[] {

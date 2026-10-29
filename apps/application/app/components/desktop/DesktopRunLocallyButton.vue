@@ -66,8 +66,15 @@ watch([available, () => link.value?.path, linked], () => {
   void checkSpecs(linked.value);
   void checkEnv();
 });
+// A selection's cases change with each click: its spec check follows them.
+watch(
+  () => [...new Set(props.cases.map((c) => c.filePath))].sort().join('\n'),
+  () => {
+    if (available.value) void checkSpecs(linked.value);
+  },
+);
 
-/** The button's own options, on top of the project's defaults: its menu and its dialog edit these. */
+/** The button's own options, on top of the project's defaults: its menu edits these, its dialog starts from them. */
 const overrides = ref<LocalRunOptions>({ ...props.presetOptions });
 // A page may pass a fresh preset object on each render: only a change of its values resets the button's options.
 watch(
@@ -148,7 +155,7 @@ function runNow(patch?: LocalRunOptions, set?: LocalRunSet) {
     cases: set?.cases ?? props.cases,
     title: set ? set.runTitle : props.runTitle,
     sourceRunId: props.sourceRunId,
-    options: { ...overrides.value, ...patch },
+    options: { ...overrides.value, ...set?.options, ...patch },
   });
 }
 
@@ -361,7 +368,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       :label="idleLabel"
       :run-title="runTitle"
       :source-run-id="sourceRunId"
-      v-model:options="overrides"
+      :button-options="overrides"
     />
   </span>
 </template>

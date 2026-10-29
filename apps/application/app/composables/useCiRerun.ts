@@ -7,7 +7,21 @@ export interface RerunInfo {
   provider: string | null;
   enabled: boolean;
   hasToken: boolean;
-  lastDispatch: { provider: string; url: string; args: string; at: number; byName: string | null } | null;
+  lastDispatch: {
+    provider: string;
+    url: string;
+    args: string;
+    at: number;
+    byName: string | null;
+    /** How many tests it re-ran. */
+    tests?: number;
+  } | null;
+}
+
+/** What a last re-run ran, for its "Last re-run of 3 tests" line: ` of N tests`, or nothing when it was not recorded. */
+export function lastRerunScope(dispatch: RerunInfo['lastDispatch']): string {
+  const n = dispatch?.tests;
+  return n ? ` of ${n} test${n === 1 ? '' : 's'}` : '';
 }
 
 /**
@@ -38,7 +52,9 @@ export function useCiRerun(
           title: 'CI re-run dispatched',
           description: toValue(started),
           color: 'success',
-          actions: [{ label: 'Watch it', to: res.dispatch.url, target: '_blank' }],
+          actions: [
+            { label: 'Watch it', to: res.dispatch.url, target: '_blank', color: 'neutral', variant: 'outline' },
+          ],
         });
         await refreshRerun();
       } else {

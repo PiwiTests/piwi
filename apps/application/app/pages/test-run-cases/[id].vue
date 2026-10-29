@@ -1094,7 +1094,8 @@ const { handle: handleNextStepAction } = useNextStepActions({
                 </UButton>
                 <ClientOnly>
                   <span v-if="rerunInfo?.lastDispatch" class="text-xs text-muted">
-                    Last re-run {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}
+                    Last re-run{{ lastRerunScope(rerunInfo.lastDispatch) }}
+                    {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}
                     <template v-if="rerunInfo.lastDispatch.byName">by {{ rerunInfo.lastDispatch.byName }}</template>
                   </span>
                 </ClientOnly>

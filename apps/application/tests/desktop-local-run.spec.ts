@@ -261,7 +261,7 @@ test.describe('Desktop local run', () => {
     await page.goto(`/test-cases/${caseId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Run this test · ×20 · trace', exact: true }).click();
+    await page.getByRole('button', { name: 'Run this test · by title · ×20 · trace', exact: true }).click();
     await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Running 0/1…' })).toBeVisible();
 
@@ -489,7 +489,7 @@ test.describe('Desktop local run', () => {
     await page.goto(`/test-cases/${caseId}`);
     await waitForHydration(page);
 
-    await page.getByRole('button', { name: 'Run this test · ×20 · trace', exact: true }).click();
+    await page.getByRole('button', { name: 'Run this test · by title · ×20 · trace', exact: true }).click();
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
 
     const invocations = await runInvocations(page);
@@ -507,7 +507,7 @@ test.describe('Desktop local run', () => {
 
   test("a button's toggles change that button only, never the project defaults", async ({ page }) => {
     await installFakeBridge(page, { linked: true });
-    await page.goto(`/test-cases/${caseId}`);
+    await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
     await page.getByRole('button', { name: 'Run options' }).click();
@@ -515,16 +515,31 @@ test.describe('Desktop local run', () => {
     await page.getByRole('menuitemcheckbox', { name: 'Record trace' }).click();
     await page.keyboard.press('Escape');
 
-    await page.getByRole('button', { name: 'Run this test · ×20', exact: true }).click();
+    await page.getByRole('button', { name: 'Re-run 1 failed test · trace', exact: true }).click();
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
     const invocations = await runInvocations(page);
-    expect(invocations[0]!.args!.args).toEqual(['--grep', 'checkout completes', '--repeat-each=20']);
+    expect(invocations[0]!.args!.args).toEqual(['tests/checkout.spec.ts:42', '--project=chromium', '--trace=on']);
 
     const saved = await page.evaluate(
       (id) => JSON.parse(localStorage.getItem('piwi:desktop-local-run-options') ?? '{}')[String(id)],
       projectId,
     );
     expect(saved?.trace ?? false).toBe(false);
+  });
+
+  test("a preset button's toggle turns its preset off for its next run", async ({ page }) => {
+    await installFakeBridge(page, { linked: true });
+    await page.goto(`/test-cases/${caseId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: 'Run options' }).click();
+    await page.getByRole('menuitemcheckbox', { name: 'Record trace' }).click();
+    await page.keyboard.press('Escape');
+
+    await page.getByRole('button', { name: 'Run this test · by title · ×20', exact: true }).click();
+    await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
+    const invocations = await runInvocations(page);
+    expect(invocations[0]!.args!.args).toEqual(['--grep', 'checkout completes', '--repeat-each=20']);
   });
 
   test('raises an OS notification when a run finishes while the window is unfocused', async ({ page }) => {

@@ -13,8 +13,9 @@ import type { DrizzleDB } from './db';
 export const MAX_RERUN_TESTS = 100;
 
 /**
- * Each affected test of the cluster at the line and in the Playwright project of
- * its latest failure in the cluster, newest first, at most {@link MAX_RERUN_TESTS}.
+ * Each affected test of the cluster in each Playwright project it failed in, at
+ * the line of its latest failure there, newest first, at most
+ * {@link MAX_RERUN_TESTS} cases.
  */
 export async function clusterRerunCases(db: DrizzleDB, clusterId: number): Promise<RetryCase[]> {
   const rows = await db
@@ -30,10 +31,11 @@ export async function clusterRerunCases(db: DrizzleDB, clusterId: number): Promi
     .where(eq(testRunsCases.failureClusterId, clusterId))
     .orderBy(desc(testRunsCases.id))
     .limit(MAX_RERUN_TESTS * 10);
-  const latest = new Map<number, RetryCase>();
+  const latest = new Map<string, RetryCase>();
   for (const r of rows) {
-    if (r.testCaseId == null || latest.has(r.testCaseId)) continue;
-    latest.set(r.testCaseId, {
+    const key = `${r.testCaseId}|${r.projectName ?? ''}`;
+    if (r.testCaseId == null || latest.has(key)) continue;
+    latest.set(key, {
       filePath: r.filePath,
       title: r.title,
       line: r.line,

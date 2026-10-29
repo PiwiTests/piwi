@@ -1,10 +1,12 @@
 /**
- * CI re-run — server-side settings access and the shared dispatch flow.
+ * CI re-run — server-side settings access and the shared dispatch flow, for a
+ * cluster's affected tests and for one execution's test.
  *
  * The settings live on the project row (`projects.ciRerun`), the token is the
  * project's SCM token, and the provider is decided by the repository URL of the
- * cluster's most recent run. This module ties those together so the availability
- * check (for the button's enabled/disabled state) and the dispatch route agree.
+ * run the tests come from (a cluster's most recent run, or the execution's).
+ * This module ties those together so the availability check (for the button's
+ * enabled/disabled state) and the dispatch route agree.
  */
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
@@ -73,7 +75,7 @@ export async function ciRerunAvailability(
   if (!provider) {
     return {
       available: false,
-      reason: 'This cluster has no supported repository to dispatch to.',
+      reason: 'Its run has no supported repository to dispatch to.',
       provider: null,
       enabled: true,
       hasToken,
@@ -159,6 +161,7 @@ async function dispatchRerunOf(
     args,
     ref: sent.ref ?? ref,
     files,
+    tests: cases.length,
     ...(sent.pipelineId ? { pipelineId: sent.pipelineId } : {}),
     ...(sent.buildNumber ? { buildNumber: sent.buildNumber } : {}),
   };
@@ -246,7 +249,7 @@ async function executionRerunTarget(db: DbClient, executionId: number) {
   return row ?? null;
 }
 
-/** Whether an execution's test can be re-run in CI, and its cluster's last re-run. */
+/** Whether an execution's test can be re-run in CI, and its cluster's last re-run, when it has a cluster. */
 export async function executionRerunInfo(db: DbClient, executionId: number) {
   const target = await executionRerunTarget(db, executionId);
   if (!target) return null;
@@ -259,7 +262,7 @@ export async function executionRerunInfo(db: DbClient, executionId: number) {
       .where(eq(failureClusters.id, target.clusterId));
     lastDispatch = (cluster?.lastRerunDispatch as ClusterRerunDispatch | null) ?? null;
   }
-  return { ...availability, clusterId: target.clusterId, lastDispatch };
+  return { ...availability, lastDispatch };
 }
 
 /**

@@ -2244,7 +2244,6 @@ const routes: RouteEntry[] = [
         provider: null,
         enabled: false,
         hasToken: false,
-        clusterId: null,
         lastDispatch: null,
       };
     },

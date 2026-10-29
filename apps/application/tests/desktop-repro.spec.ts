@@ -299,7 +299,8 @@ test.describe('Desktop repro request', () => {
           good: 'a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0',
           bad: 'b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0',
           browser: 'chromium',
-          args: ['tests/cart.spec.ts:12', '--project=chromium'],
+          // By file and title, so the test still matches at a commit where its line differs.
+          args: ['tests/cart.spec.ts', '--grep=applies the coupon', '--project=chromium'],
           flakeTestCaseId: null,
           clusterId: null,
           originRef: `job:${REQUEST_ID}`,

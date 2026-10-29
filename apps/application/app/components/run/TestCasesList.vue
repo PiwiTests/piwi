@@ -617,12 +617,12 @@ watch([selectableRows, selectionEnabled], () => {
 });
 
 const selectedTestCaseIds = computed(() => [...new Set(selectedRows.value.map((tc) => tc.testCaseId))]);
-/** The selection as the cases a re-run names, one per file, line and project. */
+/** The selection as the cases a re-run names, one per test and project (tests made in a loop share a line). */
 const selectedRetryCases = computed(() => {
   const byKey = new Map<string, RetryCase>();
   for (const tc of selectedRows.value) {
     const c = retryCaseOf(tc);
-    byKey.set(`${c.filePath}:${c.line ?? ''}|${c.projectName ?? ''}`, c);
+    byKey.set(`${c.filePath}:${c.line ?? ''}|${c.projectName ?? ''}|${c.title}`, c);
   }
   return [...byKey.values()];
 });

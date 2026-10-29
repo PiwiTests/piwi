@@ -45,13 +45,38 @@ describe('hasRerunTarget', () => {
 });
 
 describe('buildRerunCommand', () => {
-  test('is one command whatever the projects, as a CI re-run runs the cases', () => {
+  test('names the files, the titles and the projects, so a moved line still matches', () => {
+    expect(
+      buildRerunCommand([
+        { filePath: 'a.spec.ts', title: 'pays', line: 1, projectName: 'chromium' },
+        { filePath: 'b.spec.ts', title: 'refunds', line: 2, projectName: 'firefox' },
+      ]),
+    ).toBe('npx playwright test "a.spec.ts" "b.spec.ts" -g "pays|refunds" --project="chromium" --project="firefox"');
+  });
+
+  test('runs every project when one name cannot be quoted for every shell', () => {
     expect(
       buildRerunCommand([
         { filePath: 'a.spec.ts', title: 'a', line: 1, projectName: 'chromium' },
-        { filePath: 'b.spec.ts', title: 'b', line: 2, projectName: 'firefox' },
+        { filePath: 'b.spec.ts', title: 'b', line: 2, projectName: 'Edge 100%' },
       ]),
-    ).toBe('npx playwright test "a.spec.ts:1" "b.spec.ts:2" --project="chromium" --project="firefox"');
+    ).toBe('npx playwright test "a.spec.ts" "b.spec.ts" -g "a|b"');
+  });
+
+  test('drops the titles when they would make the command too long', () => {
+    const cases = Array.from({ length: 200 }, (_, i) => ({
+      filePath: 'tests/long.spec.ts',
+      title: `a long title for the test number ${i}`,
+      line: i + 1,
+      projectName: null,
+    }));
+    expect(buildRerunCommand(cases)).toBe('npx playwright test "tests/long.spec.ts"');
+  });
+
+  test('never passes a spec that would be read as an option', () => {
+    expect(buildRerunCommand([{ filePath: '-u', title: 't', line: null, projectName: null }])).toBe(
+      'npx playwright test -g "t"',
+    );
   });
 
   test('runs the whole suite without cases', () => {
@@ -74,6 +99,15 @@ describe('buildRetryArgs', () => {
       { filePath: 'b.spec.ts', title: 'b', line: 2, projectName: 'firefox' },
     ]);
     expect(args).toBe('"a.spec.ts:1" "b.spec.ts:2" --project="chromium" --project="firefox"');
+  });
+
+  test('never passes a spec that would be read as an option', () => {
+    expect(
+      buildRetryArgs([
+        { filePath: '-u', title: 'u', line: null, projectName: null },
+        { filePath: 'ok.spec.ts', title: 'ok', line: 3, projectName: null },
+      ]),
+    ).toBe('"ok.spec.ts:3"');
   });
 
   test('names a file without a line once', () => {

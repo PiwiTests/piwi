@@ -83,7 +83,7 @@ async function runFlakeLabInCi(testCaseId: number, kind: string) {
         title: 'Flake Lab dispatched to CI',
         description: 'The experiment shows on the Flakiness tab when it finishes.',
         color: 'success',
-        actions: [{ label: 'Watch it', to: res.dispatch.url, target: '_blank' }],
+        actions: [{ label: 'Watch it', to: res.dispatch.url, target: '_blank', color: 'neutral', variant: 'outline' }],
       });
     } else {
       toast.add({ title: 'Flake Lab not started', description: res.message ?? 'Not available.', color: 'warning' });

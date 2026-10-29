@@ -19,6 +19,7 @@
  * starts, never to those defaults.
  */
 import {
+  buildBisectArgs,
   buildLocalRunPlan,
   buildReproduceArgs,
   type LocalRunMode,
@@ -161,6 +162,8 @@ export interface LocalRunSet {
   cases: RetryCase[];
   /** What the Local runs tray calls a run of it. */
   runTitle: string;
+  /** Options a run of it needs on top of the button's (whole files for a large run). */
+  options?: LocalRunOptions;
 }
 
 /** Options as stored per project — every field resolved to a concrete value. */
@@ -311,11 +314,13 @@ function localRunCasesKey(cases: readonly RetryCase[]): string {
 }
 
 /**
- * The options that are not the defaults, in words (`headed · ×20 · trace`), or an empty string: a run button appends
- * them to its face, so what one click runs is never hidden in a menu.
+ * The options that are not the defaults, in words (`by title · headed · ×20 · trace`), or an empty string: a run button
+ * appends them to its face, so what one click runs is never hidden in a menu.
  */
 export function localRunOptionsSummary(options: LocalRunOptions): string {
   const parts: string[] = [];
+  if (options.mode === 'grep') parts.push('by title');
+  else if (options.mode === 'file') parts.push('whole files');
   if (options.runMode === 'headed') parts.push('headed');
   else if (options.runMode === 'debug') parts.push('inspector');
   else if (options.runMode === 'ui') parts.push('UI mode');
@@ -621,14 +626,13 @@ export function useDesktopLocalRuns() {
         budgetMinutes,
       });
     }
-    const args = buildReproduceArgs(run.cases);
     if (run.kind === 'bisect') {
       return spawnCommand(run, 'desktop_bisect_here', {
         projectId: run.projectId,
         good: run.good,
         bad: run.bad,
         browser: run.browserName,
-        args,
+        args: buildBisectArgs(run.cases),
         flakeTestCaseId: run.flakeTestCaseId,
         clusterId: run.bisectTarget?.clusterId ?? null,
         originRef: run.originRef,
@@ -638,7 +642,7 @@ export function useDesktopLocalRuns() {
       projectId: run.projectId,
       commit: run.commit,
       browser: run.browserName,
-      args,
+      args: buildReproduceArgs(run.cases),
       clusterId: run.clusterId ?? null,
       originRef: run.originRef,
     });

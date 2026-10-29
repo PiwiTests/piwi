@@ -6117,14 +6117,20 @@ const SCENES = [
   {
     name: 'desktop-rerun',
     description:
-      "Re-run buttons in the desktop shell: a red run's header, its menu with the exact command, and an execution's header",
+      "Re-run buttons in the desktop shell: a red run's header, its menu with the exact command, the tray, an execution's header and a project's default run options",
     tags: ['desktop'],
     mode: 'desktop',
     route: '/test-runs/2',
     viewport: { width: 1280, height: 860 },
     link: { path: READY_INSPECTION.path, exists: true },
     localRunId: 51,
-    outputs: ['desktop-rerun.png', 'desktop-rerun-menu.png', 'desktop-rerun-tray.png', 'desktop-rerun-execution.png'],
+    outputs: [
+      'desktop-rerun.png',
+      'desktop-rerun-menu.png',
+      'desktop-rerun-tray.png',
+      'desktop-rerun-execution.png',
+      'desktop-rerun-defaults.png',
+    ],
     async run({ page, goto, settle, shoot }) {
       const rerun = page.getByRole('button', { name: /^Re-run \d+ failed tests?/ });
       await rerun.waitFor({ timeout: 60_000 });
@@ -6133,7 +6139,7 @@ const SCENES = [
       await page.getByRole('button', { name: 'Run options' }).first().click();
       await page.getByText(/^Runs (this command|these commands)/).waitFor();
       await settle();
-      await shoot('menu', { clip: { x: 480, y: 0, width: 800, height: 700 } });
+      await shoot('menu', { clip: { x: 480, y: 0, width: 800, height: 860 } });
       await page.keyboard.press('Escape');
       // The run goes on until the scene ends: the execution page's button, for other tests, stays ready.
       await rerun.click();
@@ -6148,6 +6154,10 @@ const SCENES = [
       await page.getByRole('button', { name: 'Re-run this test' }).waitFor({ timeout: 60_000 });
       await settle();
       await shoot('execution', { clip: { x: 0, y: 0, width: 1280, height: 320 } });
+      await goto('/projects/1?tab=settings&section=local-folder');
+      await page.locator('[data-shot="local-folder-run-defaults"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('defaults', { of: '[data-shot="local-folder-run-defaults"]', pad: 12 });
     },
   },
   {

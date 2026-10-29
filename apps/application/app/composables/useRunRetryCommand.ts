@@ -8,8 +8,8 @@ import { buildRetryCommand, retryCaseOf } from '~/utils/retry-command';
  * same failing set. The mode is page-level state shared by all callers.
  *
  * Each set is one row per test and Playwright project, its final attempt
- * (highest retry index): the failing set takes the ones that failed, timed out
- * or were interrupted, so a test that passed on retry is never re-run; the
+ * (highest retry index): the failing set takes the ones that failed or timed
+ * out, the rows the Tests list selects, so a test that passed on retry is never re-run; the
  * flaky set the ones that passed on a retry; the whole set every test that was
  * not skipped. File, line and project come from the row itself, which makes the
  * command exact.
@@ -29,7 +29,7 @@ export function useRunRetryCommand(testCases: MaybeRefOrGetter<TestCaseResult[] 
   });
 
   const failedCases = computed<RetryCase[]>(() =>
-    finalAttempts.value.filter((tc) => statusPaletteKey(tc.status, tc.retries) === 'failed').map(retryCaseOf),
+    finalAttempts.value.filter((tc) => isFailedStatus(tc.status)).map(retryCaseOf),
   );
   const flakyCases = computed<RetryCase[]>(() =>
     finalAttempts.value.filter((tc) => statusPaletteKey(tc.status, tc.retries) === 'flaky').map(retryCaseOf),

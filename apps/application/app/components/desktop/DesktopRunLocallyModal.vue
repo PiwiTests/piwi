@@ -2,13 +2,15 @@
 /**
  * Desktop shell only: the "run with options" dialog — first-time folder setup,
  * the full options form, the spec check and the exact command preview. The
- * form edits the run button's own options, never the project's defaults (those
- * are in the project's Local folder settings). Running hands the plan to the
+ * form starts from the run button's options and applies to the run it starts
+ * alone: neither the button nor the project's defaults (those are in the
+ * project's Local folder settings) change. Running hands the plan to the
  * app-wide local runs store and closes; progress streams in the runs tray, so
  * this dialog never holds a process hostage.
  */
 import type { RetryCase } from '~/utils/retry-command';
 import { buildLocalRunPlan, type LocalRunOptions } from '~/utils/local-run-args';
+import type { SavedLocalRunOptions } from '~/composables/useDesktopLocalRuns';
 
 const props = defineProps<{
   /** Piwi project id owning the linked folder. */
@@ -22,11 +24,11 @@ const props = defineProps<{
   runTitle?: string | null;
   /** The Piwi run the cases come from, which the tray compares the run's results with. */
   sourceRunId?: number | null;
+  /** The run button's options, on top of the project's defaults: where the form starts. */
+  buttonOptions?: LocalRunOptions;
 }>();
 
 const open = defineModel<boolean>('open', { default: false });
-/** The run button's options, on top of the project's defaults. */
-const overrides = defineModel<LocalRunOptions>('options', { default: () => ({}) });
 
 const store = useDesktopLocalRuns();
 const { link, busy, pickAndLink } = useDesktopProjectLink(() => props.projectId);
@@ -38,10 +40,15 @@ const { playwrightMissing, checkEnv } = useDesktopEnvCheck(() => props.projectId
 
 const linked = computed(() => !!link.value?.exists);
 
-const options = computed({
-  get: () => ({ ...store.getProjectOptions(props.projectId), ...overrides.value }),
-  set: (value) => (overrides.value = value),
-});
+/** This run's options: the button's, each time the dialog opens, then whatever the form changes. */
+const options = ref<SavedLocalRunOptions>({ ...DEFAULT_LOCAL_RUN_OPTIONS });
+watch(
+  open,
+  (isOpen) => {
+    if (isOpen) options.value = { ...store.getProjectOptions(props.projectId), ...props.buttonOptions };
+  },
+  { immediate: true },
+);
 
 watch([open, () => link.value?.path, linked], () => {
   if (!open.value) return;

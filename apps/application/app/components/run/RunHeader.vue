@@ -112,17 +112,27 @@ const {
 // A red run leads with Copy retry command; a green run leads with its report.
 const retryIsPrimary = computed(() => failedCases.value.length > 0);
 
-/** Past this many tests, a re-run of the whole run names their files rather than every test's line. */
-const MAX_LINES_IN_A_WHOLE_RUN = 200;
+/** Past this many tests, a re-run of the whole run runs their files rather than naming every test. */
+const MAX_TESTS_IN_A_WHOLE_RUN = 200;
 
 // What the desktop app re-runs: the failed tests, else the flaky ones, else every test; its menu offers the others.
 const rerunSets = computed<LocalRunSet[]>(() => {
   const runLabel = `run #${props.testRun?.id}`;
   const count = (n: number, what: string) => `${n} ${what}${n === 1 ? '' : 's'}`;
-  const all =
-    allCases.value.length > MAX_LINES_IN_A_WHOLE_RUN
-      ? allCases.value.map((c) => ({ ...c, line: null }))
-      : allCases.value;
+  const files = new Set(allCases.value.map((c) => c.filePath)).size;
+  const whole: LocalRunSet =
+    allCases.value.length > MAX_TESTS_IN_A_WHOLE_RUN
+      ? {
+          label: `Re-run the ${count(files, 'file')} of the run`,
+          cases: allCases.value,
+          runTitle: `The ${count(files, 'file')} of ${runLabel}`,
+          options: { mode: 'file' },
+        }
+      : {
+          label: `Re-run all ${count(allCases.value.length, 'test')}`,
+          cases: allCases.value,
+          runTitle: `All ${count(allCases.value.length, 'test')} of ${runLabel}`,
+        };
   const sets: LocalRunSet[] = [
     {
       label: `Re-run ${count(failedCases.value.length, 'failed test')}`,
@@ -134,11 +144,7 @@ const rerunSets = computed<LocalRunSet[]>(() => {
       cases: flakyCases.value,
       runTitle: `${count(flakyCases.value.length, 'flaky test')} of ${runLabel}`,
     },
-    {
-      label: `Re-run all ${count(allCases.value.length, 'test')}`,
-      cases: all,
-      runTitle: `All ${count(allCases.value.length, 'test')} of ${runLabel}`,
-    },
+    whole,
   ];
   return sets.filter((set) => set.cases.length > 0);
 });
@@ -295,6 +301,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         :cases="rerunMain.cases"
         :label="rerunMain.label"
         :run-title="rerunMain.runTitle"
+        :preset-options="rerunMain.options"
         :source-run-id="testRun?.id"
         :other-sets="rerunSets.slice(1)"
       />

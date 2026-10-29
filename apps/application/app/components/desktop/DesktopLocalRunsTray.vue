@@ -233,7 +233,8 @@ function runDetail(run: LocalRun): string {
 
       <div class="max-h-[70vh] overflow-y-auto divide-y divide-default">
         <p v-if="runs.length === 0 && otherSessions.length === 0" class="px-3 py-6 text-sm text-muted text-center">
-          No local runs yet — start one from a Re-run button on a run, an execution or a test.
+          No local runs yet — start one from the Re-run button of a run, an execution or a cluster, or a test's Run this
+          test.
         </p>
 
         <DesktopRunCopyList :kept="hub.state.kept" :roots="hub.state.roots" />

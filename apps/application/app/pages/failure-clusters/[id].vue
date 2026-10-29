@@ -303,8 +303,8 @@ function copyCluster() {
 }
 
 // ── Retry command / CI re-run (header primary action) ────────────────────────
-// The tests a re-run of the cluster runs, and the one command that runs them: the
-// fix plan's verify step, the same selection a CI re-run dispatches.
+// The tests a re-run of the cluster runs, the selection a CI re-run dispatches,
+// and the fix plan's verify command, which finds them by file and title.
 const affectedRetryCases = computed(() => fixPlan.value?.verify?.cases ?? []);
 const affectedTestsLabel = computed(
   () => `${affectedRetryCases.value.length} affected test${affectedRetryCases.value.length === 1 ? '' : 's'}`,
@@ -961,7 +961,8 @@ const breadcrumbItems = computed(() => [
                 />
                 <ClientOnly>
                   <span v-if="rerunInfo?.lastDispatch" class="text-xs text-muted">
-                    Last re-run {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}
+                    Last re-run{{ lastRerunScope(rerunInfo.lastDispatch) }}
+                    {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}
                     <template v-if="rerunInfo.lastDispatch.byName">by {{ rerunInfo.lastDispatch.byName }}</template>
                   </span>
                 </ClientOnly>

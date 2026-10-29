@@ -48,8 +48,6 @@ useHead(
 
 const passRate = computed<number | null>(() => testCase.value?.passRate ?? null);
 
-// Desktop shell: reproduce this test on this machine. Selected by title so no
-// line number is needed; repeat ×20 with a trace is the flake-hunting preset.
 /** The desktop app's run of this test: by its title, 20 times with a trace, to catch a failure that comes and goes. */
 const REPEAT_PRESET = { mode: 'grep', repeatEach: 20, trace: true } as const;
 const reproduceCases = computed(() =>

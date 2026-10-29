@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { buildLocalRunPlan, buildReproduceArgs } from '../../app/utils/local-run-args';
+import { buildBisectArgs, buildLocalRunPlan, buildReproduceArgs } from '../../app/utils/local-run-args';
 
 const CASE = {
   filePath: 'tests/checkout.spec.ts',
@@ -113,5 +113,25 @@ describe('buildReproduceArgs', () => {
 
   test('omits the project filter when no project is known', () => {
     expect(buildReproduceArgs([{ ...CASE, projectName: null }])).toEqual(['tests/checkout.spec.ts:42']);
+  });
+});
+
+describe('buildBisectArgs', () => {
+  test('finds the tests by file and title, so a line that moved between commits still matches', () => {
+    expect(
+      buildBisectArgs([
+        { filePath: 'tests\\checkout.spec.ts', title: 'pays (card)', line: 42, projectName: 'chromium' },
+        { filePath: 'tests/checkout.spec.ts', title: 'refunds', line: 60, projectName: 'firefox' },
+      ]),
+    ).toEqual([
+      'tests/checkout.spec.ts',
+      '--grep=(pays \\(card\\)|refunds)',
+      '--project=chromium',
+      '--project=firefox',
+    ]);
+  });
+
+  test('never passes a path that would be read as an option', () => {
+    expect(buildBisectArgs([{ filePath: '-u', title: 'u', line: null, projectName: null }])).toEqual(['--grep=u']);
   });
 });

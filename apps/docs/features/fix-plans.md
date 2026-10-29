@@ -18,7 +18,7 @@ The same plan is reachable three ways:
 - **As Markdown**: the REST API returns the same rendering as plain text, so an export or a script can drop it straight into an issue (see the [API docs](https://piwitests.dev/demo/docs)).
 - **For agents** — the `get_fix_plan` [MCP tool](/reference/mcp-tools#get_fix_plan) returns the structured plan, so a coding agent gets in one call what a person reads on the card.
 
-The plan also names a Playwright command scoped to the affected spec files and (up to five) test titles, and Piwi records the fix once they pass.
+The plan also names one Playwright command for the affected tests, by file and title in the projects they failed in, so a moved line still matches; the bisect and every re-run use the same tests, and Piwi records the fix once they pass.
 
 ## The next step
 
@@ -52,13 +52,12 @@ npx playwright install chromium
 npx playwright test "tests/admin/users.spec.ts:42" --project="Chromium"
 ```
 
-The verify command, the recipe, the bisect and every re-run name the same tests: each affected test at its latest
-failure's line and project. The **bisect** walks the commits between the last
+The **bisect** walks the commits between the last
 green run and the failing one, re-running the test at each step — a non-zero exit marks a commit bad — until it names the first commit that broke it, then `git bisect reset` returns you to where you started.
 
 ```bash
 git bisect start <failing-commit> <last-green-commit>
-git bisect run npx playwright test "tests/admin/users.spec.ts:42" --project="Chromium"
+git bisect run npx playwright test "tests/admin/users.spec.ts" -g "Users table paginates 25 rows per page" --project="Chromium"
 git bisect reset
 ```
 
