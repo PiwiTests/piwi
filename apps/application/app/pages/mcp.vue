@@ -117,7 +117,7 @@ const clientItems = [
 const serverKey = isDesktop ? 'piwi-desktop' : 'piwi';
 
 const claudeCodeSnippet = computed(
-  () => `claude mcp add --transport http --scope user ${serverKey} ${mcpUrl.value}${headerFlag.value}`,
+  () => `claude mcp add --transport http --scope user ${serverKey} "${mcpUrl.value}"${headerFlag.value}`,
 );
 
 const opencodeSnippet = computed(() =>
@@ -195,7 +195,9 @@ const claudeDesktopSnippet = computed(() =>
   ),
 );
 
-const geminiSnippet = computed(() => `gemini mcp add --transport http ${serverKey} ${mcpUrl.value}${headerFlag.value}`);
+const geminiSnippet = computed(
+  () => `gemini mcp add --transport http ${serverKey} "${mcpUrl.value}"${headerFlag.value}`,
+);
 
 const windsurfSnippet = computed(() =>
   JSON.stringify(
@@ -342,6 +344,10 @@ const windsurfSnippet = computed(() =>
                       v-if="!withKey"
                       >; pick it and choose <strong>Authenticate</strong> to sign in</template
                     >. Claude will call the tools automatically when you ask about test results or failures.
+                    <template v-if="reporterConfig"
+                      >On this machine, <strong>Connect</strong> above adds the same entry and rewrites it when this
+                      app's port changes.</template
+                    >
                   </p>
                 </div>
               </template>
