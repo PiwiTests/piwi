@@ -165,11 +165,12 @@ jobs:
               - 'integrations/serilog/**'
               - 'examples/sample-app/backends/aspnetcore/**'
               - 'examples/sample-app/backends/aspnetcore.Tests/**'
-            # The Nitro plugin, the sample backend that loads it from source, and the root manifests that pin its
-            # TypeScript, Vitest and peer dependencies.
+            # The Nitro plugin, the sample backend that loads it from source, the reporter's probe signer its
+            # round-trip test imports, and the root manifests that pin its TypeScript, Vitest and peer dependencies.
             nitro:
               - 'integrations/nitro/**'
               - 'examples/sample-app/backends/nitro/**'
+              - 'packages/reporter/src/internal/probe/**'
               - 'package.json'
               - 'package-lock.json'
             smoke:
@@ -292,10 +293,10 @@ jobs:
           path: base/apps/application/.output
           key: perf-base-output-v1-${{ github.sha }}
 
-  # The backend-agnostic checks, in four jobs that run at once, alongside the E2E matrix. Every test job builds the
-  # reporter and installs the full Chromium build beside the cached headless shell: the specs that drive a real run
-  # through the built reporter skip without them (tests/unit/desktop-runs-run.test.ts, the editor service's
-  # tests/agent-run.test.ts), and the reporter's breakpoint run (tests/pause-run.spec.ts) opens Chromium's windows,
+  # The backend-agnostic checks, in four jobs that run at once. Every test job builds the reporter and installs the full
+  # Chromium build beside the cached headless shell: two specs that drive a real run through the built reporter skip
+  # without them (the dashboard's tests/unit/desktop-runs-run.test.ts, the editor service's tests/agent-run.test.ts),
+  # the reporter's own specs load the build, and its breakpoint run (tests/pause-run.spec.ts) opens Chromium's windows,
   # under a display.
   lint:
     name: Format, lint and typecheck
@@ -389,7 +390,7 @@ jobs:
       - name: Install the full Chromium build
         run: npx playwright install chromium --no-shell
 
-      # One worker per core: Vitest keeps one core for its main process by default, which waits on the workers.
+      # One worker per core: Vitest's default leaves one idle.
       - name: Test
         working-directory: apps/application
         run: npm run app:test:unit:coverage -- --maxWorkers=100%

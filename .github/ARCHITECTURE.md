@@ -37,7 +37,7 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 
 - The `changes` job reads which areas a change touches (`dorny/paths-filter`), and each job runs for the areas it
   covers. A change to `.github/workflows/`, `.github/actions/` or `.node-version` runs them all.
-- A change to a JavaScript workspace (`js`) runs the four check jobs at once, alongside the build and the E2E matrix:
+- A change to a JavaScript workspace (`js`) runs the four check jobs at once:
   - `Format, lint and typecheck`: oxfmt, oxlint and the type check of every workspace, then knip;
   - `Dashboard unit tests`, with the coverage comment;
   - `Reporter tests`, under `xvfb-run`, then the AI steps' integration run, with the coverage comment;

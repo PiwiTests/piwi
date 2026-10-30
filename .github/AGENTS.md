@@ -20,8 +20,9 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   the workflows that use it run on pull requests, where a cache serves its own pull request alone, or once a night
   (`nightly-showcase.yml`), where a cache would rarely outlive the night.
 - **Every test job of the checks builds the reporter and installs the full Chromium build** (`app-unit`, `reporter`,
-  `packages` in `ci.yml`), after the shell's cache is saved. The specs that drive a real run through the built reporter
-  skip without them rather than fail (`desktop-runs-run.test.ts`, the editor service's `agent-run.test.ts`).
+  `packages` in `ci.yml`), after the shell's cache is saved. Two specs that drive a real run through the built reporter
+  skip without them rather than fail: the dashboard's `desktop-runs-run.test.ts` and the editor service's
+  `agent-run.test.ts`.
 - **Least privilege.** `permissions: contents: read` at the top of every workflow, anything more on the job that needs
   it. A job that calls a reusable workflow grants the permissions its jobs ask for: a called job asking for more fails
   the run. `id-token: write` only where a step uses it (npm provenance).
