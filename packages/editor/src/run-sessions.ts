@@ -334,6 +334,8 @@ interface Session {
   ended: boolean;
   /** Started in a terminal (`RunSessionsOptions.terminal`). */
   terminal: boolean;
+  /** Of those, one an editor's own test runner started, as its first worker said (`run-attach`'s `runner`). */
+  runner: boolean;
   /** What the client last heard of it, as sent and as text, and when; null before it heard anything. */
   heard: RunSession | null;
   sent: string;
@@ -474,6 +476,7 @@ export class RunSessions {
         workers: new Map(),
         ended: false,
         terminal,
+        runner: terminal && attach.runner === true,
         heard: null,
         sent: '',
         sentAt: 0,
@@ -1411,6 +1414,7 @@ export class RunSessions {
         })),
       ended: session.ended,
       ...(session.terminal ? { terminal: true } : {}),
+      ...(session.runner ? { runner: true } : {}),
     };
     const live = this.liveOf(session);
     return live ? { ...view, live } : view;

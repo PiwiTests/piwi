@@ -327,6 +327,27 @@ What the package does to a user's run, process by process.
   the latest frame alone waiting; each frame carries the call the runner's steps say the
   test is on (`callInProgress`, its title through `hideSecretsInText`) and the test's
   title. Nobody watching, no screencast runs and no frame goes.
+- In a CI run alone, while anyone watches a test nothing may pause (`mayPause`: no
+  `PIWI_PAUSE_AT`, `PWDEBUG` or `--debug`), the worker also follows the call its test is in
+  (`live-call-log.ts`): it listens to the context's call stream, then turns it on
+  (`context.debugger._enable()` through `internalCall`, each member checked first), which
+  tells the calls running then with their log so far. Once on, the stream stays on and moves
+  where the debugger stops an action, so the context's calls are followed from then until it
+  goes, and a viewer who comes later gets the call shown at once, never one that ended before
+  its test began (a context shared by tests). It posts a `call-log`, with
+  the test's title, as the call shown changes, `LIVE_CALL_LOGS_PER_SECOND` at most and one in
+  flight, again after a 429 and never after a 400: the running call told last (else the one
+  that ended last), its status, its log folded by `compressCallLog`, its action point and its
+  error's first line, each text through `hideTypedText` or `hideSecretsInLog`, then
+  `hideSecretsInText`, before it is cut. A listener on the worker's Playwright
+  instrumentation (`trackCalls`, added by `piwiResources` when the live view can open), which
+  never hears an internal call, gives each call's start and selector, matched to the stream by
+  the id the runner gives the call. While the call shown has waited a second, and while the
+  watched page is its context's only one, an internal `evaluateAll` reads, once a second, the
+  elements its selector matches: how many, the first one's box (none for a selector into a
+  frame) and whether it is enabled. A call on a frame's own object (`page.frame(…)`) has a
+  selector of that frame: the read finds nothing then (the call's log says it found its
+  element, so the read is dropped) or another element of the main frame.
 - A page has one screencast client of its own. In a worker that can open a view (a run
   connection or a live view connection), `instrumentPage` hands the test `page.screencast`
   behind a proxy (`guardScreencast`): the test's `start` or `stop` first ends the client a
@@ -353,7 +374,9 @@ What the package does to a user's run, process by process.
   `PIWI_COVERAGE_BROWSER` / `PIWI_COVERAGE_SERVER` / `PIWI_COVERAGE_CSS` for the workers.
 - **A run started in a terminal** (`internal/config/editors.ts`, `followEditor`). With
   no `PIWI_RUN_CHANNEL` and no launcher (`PIWI_ORIGIN`), its output going to a terminal
-  (else `PIWI_EDITOR=on`), never under CI, `PWDEBUG`, `--debug`, UI mode (`--ui`,
+  or an editor's test runner having started it (`startedByTestRunner`: `PW_TEST_REPORTER`
+  names a reporter's file, as a JetBrains IDE's Playwright runner does; else
+  `PIWI_EDITOR=on`), never under CI, `PWDEBUG`, `--debug`, UI mode (`--ui`,
   `--ui-host`, `--ui-port`) or with `PIWI_EDITOR=off`, `onBegin` reads the editors'
   discovery files (`@piwitests/core/editor-discovery`, `~/.piwi/editors` or
   `PIWI_EDITORS_DIR`) from a folder this user owns that no other user can enter, only
@@ -364,7 +387,8 @@ What the package does to a user's run, process by process.
   compared (`editorForRun`: the most specific, then the latest started), and sets
   `PIWI_RUN_CHANNEL` to its run channel and `PIWI_RUN_REF` to `terminal-<pid>-<time>`
   for the workers, which connect as an editor's run's do, with one `[Piwi Dashboard]`
-  line naming the editor and `PIWI_EDITOR=off` (`tests/terminal-run.spec.ts`).
+  line naming the editor and `PIWI_EDITOR=off` (`tests/terminal-run.spec.ts`). A worker
+  of a run a test runner started says so in its `run-attach` (`runner`).
 - With server coverage on, it calls each origin's `/__piwi/coverage/collect` and
   `/__piwi/coverage/run`, and reads the covered files from the checkout for their blob
   ids (`internal/collect/server-coverage.ts`, `test-coverage.ts`).

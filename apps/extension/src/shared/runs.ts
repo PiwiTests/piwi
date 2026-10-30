@@ -5,6 +5,7 @@
  * controls, which the worker passes on. What a hub sends is data from another program: shown as text, an image or a
  * frame of a live view as an image, never as markup. A frame is kept in memory, the latest one alone, never stored.
  */
+import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN, type LiveViewMissing } from '@piwitests/core/live-view';
 import type {
   HubAction,
   HubCodeAction,
@@ -341,6 +342,29 @@ export function pagePoint(
 /** The live runs of a state. */
 export function liveRuns(state: Pick<RunsState, 'runs'>): RunsRun[] {
   return state.runs.filter((run) => !run.session.ended);
+}
+
+/**
+ * Why a run cannot be shared live, as the reporter says it (`LIVE_SHARE_MISSING`, and `unknown` for workers given no
+ * key at all), which the window says in its own words; null for any other sentence of the hub's, shown as it came.
+ */
+export function shareRefusalOf(refused: string): LiveViewMissing | 'unknown' | null {
+  if (refused === LIVE_SHARE_UNKNOWN) return 'unknown';
+  const reasons = Object.keys(LIVE_SHARE_MISSING) as LiveViewMissing[];
+  return reasons.find((why) => LIVE_SHARE_MISSING[why] === refused) ?? null;
+}
+
+/**
+ * Whether a run says where its tests' pages show: a live run none of whose workers stands stopped, with a worker whose
+ * reporter shows a stopped page live (`view`) and whose test can stop. `desktop` for a run of the desktop app's hub,
+ * which sets no breakpoints; null when there is nothing to say.
+ */
+export function pageHintOf(run: RunsRun, hub: Pick<RunsHub, 'desktop'> | undefined): 'editor' | 'desktop' | null {
+  const { session } = run;
+  if (session.ended || session.workers.some((worker) => worker.state === 'stopped')) return null;
+  const stops = session.workers.some((worker) => worker.intents.includes('view') && !worker.test?.cannotPause);
+  if (!stops) return null;
+  return hub?.desktop ? 'desktop' : 'editor';
 }
 
 /** What the global shortcut sends to one run. */

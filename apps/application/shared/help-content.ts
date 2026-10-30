@@ -579,6 +579,19 @@ export const HELP_TOPICS = {
     ].join('\n'),
     doc: 'features/live-view#share-a-run-from-your-machine',
   },
+  'run.live-desktop': {
+    title: 'Live view of a local run',
+    text: [
+      'The desktop app shows each test’s steps as it runs. Its page shows where the run is steered, once the test stops at a breakpoint, a `page.pause()` or **Pause**:',
+      '',
+      '- **Piwi Picker** — the Runs window, where **Watch live** follows it, for a run your editor or this app started.',
+      '- **VS Code or a JetBrains IDE** — the paused page, for a run it started.',
+      '- **Local runs** — this app’s tray, with **Watch live**, for a run it started.',
+      '',
+      'To watch a test without stopping it, run it headed, or report the run to your team’s instance, in a project with its live view on, and share it there.',
+    ].join('\n'),
+    doc: 'features/live-view#where-to-watch-a-run',
+  },
   'run.reports': {
     title: 'Storage & reports',
     text: 'HTML reports, traces and attachments uploaded with this run. A run can carry several reports (e.g. per shard).',

@@ -6,6 +6,7 @@ import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
 import { liveResourcesByWorker, liveResourcesForCase, type LiveWorkerResources } from '~/utils/live-worker-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { liveWorkerKey, type LiveWorkerState } from '#shared/live-view';
+import type { LiveRowNote } from '~/utils/live-row-note';
 import { summarizeRunCases } from '#shared/utils/test-counts';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
@@ -44,8 +45,8 @@ const props = defineProps<{
   liveResources?: RunResourceTimelinePart[] | null;
   /** The workers in the run's live view, by `liveWorkerKey`: each running row of one offers Watch, and says Paused. */
   liveWorkers?: Record<string, LiveWorkerState> | null;
-  /** The run holds a live view key and is not shared from the developer's machine: its running rows say how to. */
-  liveUnshared?: boolean;
+  /** What the run's running rows say where Watch would be: it is not shared live, or where its pages show. */
+  liveNote?: LiveRowNote | null;
   clusterMeta?: RunClusterMeta | null;
   /** Stable test-case ids currently quarantined — marks the matching rows. */
   quarantinedCaseIds?: Set<number> | null;
@@ -994,7 +995,7 @@ defineExpose({ scrollToCase });
                       liveResourcesOf(item.tc) !== null,
                       liveWorkerOf(item.tc)?.paused?.call.title,
                       liveWorkerOf(item.tc) !== null,
-                      liveUnshared && item.tc.status === 'running',
+                      item.tc.status === 'running' ? liveNote : null,
                       showSuitePath,
                       item.tc.suitePath,
                     ]
@@ -1029,7 +1030,7 @@ defineExpose({ scrollToCase });
                 :live-step="liveStep(item.tc)"
                 :live-resources="liveResourcesOf(item.tc)"
                 :live-worker="liveWorkerOf(item.tc)"
-                :live-unshared="liveUnshared && item.tc.status === 'running'"
+                :live-note="item.tc.status === 'running' ? liveNote : null"
                 :highlighted="highlightedCaseId === item.tc.executionId"
                 :indent="(item.depth ?? 0) * 16"
                 :suite-path="showSuitePath ? item.tc.suitePath : null"

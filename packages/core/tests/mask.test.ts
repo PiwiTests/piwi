@@ -3,12 +3,17 @@ import {
   HIDDEN_VALUE,
   hideSecretsInText,
   hideSecretsInUrl,
+  hideTypedText,
+  hideSecretsInError,
+  hideSecretsInLog,
   holdsPersonalData,
+  isSecretLocator,
   isSecretAutocomplete,
   isSecretName,
   isSecretValue,
   maskUrlFragment,
 } from '../src/mask';
+import { extractErrorSignature } from '../src/error-signature';
 
 /** A value in a provider's shape, built from parts so no scanner reads it as a live key. */
 const shaped = (...parts: string[]) => parts.join('');
@@ -209,6 +214,225 @@ describe('the credentials a mock, a list or a snapshot hides', () => {
     }
     for (const text of ['2026-10-27', '1234.5678', '{"total": 40}', 'order 12-34-56']) {
       expect(holdsPersonalData(text), text).toBe(false);
+    }
+  });
+});
+
+describe('the text a fill, a typing or an insert types', () => {
+  test('goes from the titles Playwright gives the step and the call, the verb and the locator kept', () => {
+    // As Playwright 1.64 titles them: the runner's step, then the call with the locator it appends.
+    expect(hideTypedText('Fill "S3cr3t!Passw0rd"')).toBe(`Fill "${HIDDEN_VALUE}"`);
+    expect(hideTypedText(`Fill "S3cr3t!Passw0rd" getByLabel('Password')`)).toBe(
+      `Fill "${HIDDEN_VALUE}" getByLabel('Password')`,
+    );
+    expect(hideTypedText('Type "abc"')).toBe(`Type "${HIDDEN_VALUE}"`);
+    expect(hideTypedText('Insert "typed text"')).toBe(`Insert "${HIDDEN_VALUE}"`);
+    expect(hideTypedText('Fill ""')).toBe(`Fill "${HIDDEN_VALUE}"`);
+  });
+
+  test('goes whole when it holds quotes, or when the title was cut short', () => {
+    expect(hideTypedText('Fill "say "hi" now"')).toBe(`Fill "${HIDDEN_VALUE}"`);
+    expect(hideTypedText(`Fill "a" b" getByLabel('Note')`)).toBe(`Fill "${HIDDEN_VALUE}" getByLabel('Note')`);
+    expect(hideTypedText('Fill "a long secret cut')).toBe(`Fill "${HIDDEN_VALUE}"`);
+  });
+
+  test('leaves every other title as it is', () => {
+    for (const title of [
+      'Press "Enter"',
+      'Click',
+      `Click getByRole('button', { name: 'Fill "x"' })`,
+      'Expect "toHaveValue"',
+      'Fill the form',
+    ]) {
+      expect(hideTypedText(title), title).toBe(title);
+    }
+  });
+
+  test('goes from the call log, in a call and in the "Call log" of its error, colored or not', () => {
+    const error = [
+      'locator.fill: Timeout 1500ms exceeded.',
+      'Call log:',
+      "  - waiting for getByLabel('Password')",
+      '    - locator resolved to <input readonly id="p" type="password"/>',
+      '  - fill("S3cr3t!Passw0rd")',
+      '  - attempting fill action',
+    ].join('\n');
+    const hidden = hideSecretsInLog(error);
+    expect(hidden).not.toContain('S3cr3t');
+    expect(hidden).toContain(`  - fill("${HIDDEN_VALUE}")`);
+    expect(hidden).toContain("waiting for getByLabel('Password')");
+    expect(hideSecretsInLog('elementHandle.type("abc")')).toBe(`elementHandle.type("${HIDDEN_VALUE}")`);
+    expect(hideSecretsInLog('\u001b[2m  - fill("x")\u001b[22m')).toBe(`\u001b[2m  - fill("${HIDDEN_VALUE}")\u001b[22m`);
+    // Playwright writes the text as it is: quotes, a parenthesis and line breaks in it go too.
+    expect(hideSecretsInLog('  - fill("a ") b")\n  - attempting fill action')).toBe(
+      `  - fill("${HIDDEN_VALUE}")\n  - attempting fill action`,
+    );
+    expect(hideSecretsInLog('  - fill("line one\nline two")\n  - done')).toBe(`  - fill("${HIDDEN_VALUE}")\n  - done`);
+    expect(hideSecretsInLog("waiting for locator('#fill')")).toBe("waiting for locator('#fill')");
+  });
+
+  test('goes to the end of the text when the call was cut before its end', () => {
+    expect(hideSecretsInLog(`  - fill("${'S'.repeat(700)}`)).toBe(`  - fill("${HIDDEN_VALUE}")`);
+    expect(hideSecretsInLog('  - type("abc')).toBe(`  - type("${HIDDEN_VALUE}")`);
+  });
+
+  test('takes a time linear in the length of the text, for a call never closed too', () => {
+    const started = Date.now();
+    hideSecretsInLog('fill("x '.repeat(100_000));
+    hideSecretsInLog('fill("x")\n'.repeat(100_000));
+    hideSecretsInLog(`waiting for a${' '.repeat(200_000)}b`);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+});
+
+describe('the other secrets of a call log', () => {
+  // As Playwright 1.64 writes a toHaveValue that timed out on a password field.
+  const assertion = [
+    'Error: expect(locator).toHaveValue(expected) failed',
+    '',
+    "Locator:  getByLabel('Password')",
+    'Expected: \u001b[32m"S3cr3t!Passw0rd"\u001b[39m',
+    'Received: \u001b[31m"S3cr3t!Passw0r"\u001b[39m',
+    'Timeout:  5000ms',
+    '',
+    'Call log:',
+    "\u001b[2m  - waiting for getByLabel('Password')\u001b[22m",
+    '\u001b[2m      - unexpected value "S3cr3t!Passw0r"\u001b[22m',
+  ].join('\n');
+
+  test('an assertion’s values go when its locator names a field that holds a secret, colors kept', () => {
+    const hidden = hideSecretsInLog(assertion);
+    expect(hidden).not.toMatch(/S3cr3t/);
+    expect(hidden).toContain(`Received: \u001b[31m"${HIDDEN_VALUE}"\u001b[39m`);
+    expect(hidden).toContain(`unexpected value "${HIDDEN_VALUE}"`);
+    // In a live call log, as its lines go.
+    expect(hideSecretsInLog(`- waiting for locator('#newpassword')\n  - unexpected value "abc"`)).toContain(
+      `unexpected value "${HIDDEN_VALUE}"`,
+    );
+  });
+
+  test('an assertion’s values stay on any other field', () => {
+    const plain = assertion.replaceAll("getByLabel('Password')", "getByLabel('City')");
+    expect(hideSecretsInLog(plain)).toBe(plain);
+  });
+
+  test('the value of a header named like a credential goes from a request’s log, the others stay', () => {
+    const log = [
+      'apiRequestContext.get: connect ECONNREFUSED',
+      'Call log:',
+      '  - → GET https://api.test/orders',
+      '    - user-agent: Playwright/1.64.1',
+      '    - authorization: Bearer abc.def.ghi',
+      '    - x-api-key: abcd1234efgh5678',
+      '    - private-token: glpat-0123456789',
+    ].join('\n');
+    const hidden = hideSecretsInLog(log);
+    expect(hidden).not.toMatch(/abc\.def|abcd1234|glpat/);
+    expect(hidden).toContain('    - user-agent: Playwright/1.64.1');
+    expect(hidden).toContain(`    - authorization: ${HIDDEN_VALUE}`);
+    expect(hideSecretsInLog('Error: something failed')).toBe('Error: something failed');
+  });
+});
+
+describe('the secrets of an error, its fingerprint kept', () => {
+  // As Playwright 1.64 writes them, and errors of the app under test.
+  const errors = [
+    'TokenExpiredError: jwt expired\n    at verify (src/auth.ts:3:5)',
+    'Error: Auth: login redirect failed\n\nexpect(received).toBe(expected)',
+    'Session: expired before checkout',
+    [
+      'locator.fill: Timeout 1500ms exceeded.',
+      'Call log:',
+      "  - waiting for getByLabel('Password')",
+      '    - locator resolved to <input type="password" value="hunter2" id="p"/>',
+      '  - fill("hunter2")',
+    ].join('\n'),
+    [
+      'Error: expect(locator).not.toHaveValue(expected) failed',
+      '',
+      "Locator:  locator('input').nth(1)",
+      'Expected: not "hunter2"',
+      'Received: "hunter2"',
+      '',
+      'Call log:',
+      "  - waiting for locator('input').nth(1)",
+      '    9 × locator resolved to <input type="password" value="hunter2"/>',
+      '      - unexpected value "hunter2"',
+    ].join('\n'),
+    [
+      'locator.click: Timeout 5000ms exceeded.',
+      'Call log:',
+      `  - waiting for getByText('Choose type("A")')`,
+      '\n---\n',
+      'apiRequestContext.get: connect ECONNREFUSED',
+      'Call log:',
+      '  - → GET https://api.test/orders',
+      '    - authorization: Bearer abc.def.ghi',
+    ].join('\n'),
+  ];
+
+  test('go from its call logs and from the values its assertions read of a secret field', () => {
+    const hidden = errors.map(hideSecretsInError).join('\n');
+    expect(hidden).not.toMatch(/hunter2|abc\.def/);
+    expect(hidden).toContain(`value="${HIDDEN_VALUE}"`);
+    expect(hidden).toContain(`Expected: not "${HIDDEN_VALUE}"`);
+    expect(hidden).toContain(`getByText('Choose type("A")')`);
+  });
+
+  test('leave the rest of its message as it is, so it fingerprints as it did', () => {
+    for (const error of errors) {
+      expect(extractErrorSignature(hideSecretsInError(error)), error).toEqual(extractErrorSignature(error));
+    }
+    expect(hideSecretsInError(errors[0]!)).toBe(errors[0]);
+    expect(hideSecretsInError(errors[2]!)).toBe(errors[2]);
+  });
+
+  test('take a time linear in the length of the text, for a long run of capitals too', () => {
+    const started = Date.now();
+    hideSecretsInLog(`  ${'A'.repeat(200_000)}: x`);
+    hideSecretsInLog(`waiting for ${'A'.repeat(200_000)}`);
+    hideSecretsInError(`Error\nCall log:\n  - waiting for ${'A'.repeat(200_000)}`);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+});
+
+describe('a locator naming a field that holds a secret', () => {
+  test('is one by a credential word, in English and in the languages Piwi speaks, or by a password field', () => {
+    for (const locator of [
+      "getByLabel('Password')",
+      "locator('#pwd')",
+      "getByLabel('PIN')",
+      "getByPlaceholder('API key')",
+      "getByLabel('Mot de passe')",
+      "getByLabel('Passwort')",
+      "getByLabel('Contraseña')",
+      "getByLabel('Senha')",
+      "getByLabel('CVV')",
+      "locator('input[type=password]')",
+      'locator(\'input[type="password"]\')',
+      "getByRole('textbox', { name: 'Code' })",
+      "locator('#newpassword')",
+      "locator('#password1')",
+      "getByLabel('PIN code')",
+      "getByLabel('Verification code')",
+      "getByLabel('One-time code')",
+      "getByTestId('login-pw')",
+    ]) {
+      expect(isSecretLocator(locator), locator).toBe(true);
+    }
+  });
+
+  test('is none otherwise, whatever the field holds', () => {
+    for (const locator of [
+      "getByLabel('Email')",
+      "getByLabel('Coupon')",
+      "getByLabel('Promo code')",
+      "getByLabel('Postal code')",
+      "getByRole('button', { name: 'Spinner' })",
+      "getByRole('searchbox', { name: 'Search keywords' })",
+      "locator('#city')",
+    ]) {
+      expect(isSecretLocator(locator), locator).toBe(false);
     }
   });
 });

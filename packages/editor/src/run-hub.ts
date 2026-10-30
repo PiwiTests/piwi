@@ -626,6 +626,7 @@ export class RunHub {
       })),
       ended: session.ended,
       ...(session.terminal ? { terminal: true } : {}),
+      ...(session.runner ? { runner: true } : {}),
       ...(session.live
         ? {
             live: {

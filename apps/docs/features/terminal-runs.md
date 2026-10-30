@@ -1,25 +1,27 @@
 ---
-title: Runs started in a terminal
-description: "A Playwright run you start in a terminal, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does."
+title: Runs started outside Piwi
+description: "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does."
 lang: en-US
 ---
 
-# Runs started in a terminal
+# Runs started outside Piwi
 
 <Needs fixtures />
 
-A run you start yourself, `npx playwright test` in a terminal, follows the VS Code or JetBrains window whose workspace
-holds it, with a reporter and an editor extension newer than 0.62.0. It stops at the editor's breakpoints, shows in the
-editor and in Piwi Picker's [Runs window](./runs-window) as a run in a terminal, and takes the same controls
-([Pause and step from the editor](./editor-run-control)) but **Stop**: its process is the terminal's. It says so as it
-starts:
+A run you start yourself follows the VS Code or JetBrains window whose workspace holds it: `npx playwright test` in a
+terminal, with a reporter and an editor extension newer than 0.62.0, or a JetBrains IDE's own Playwright run (the
+gutter's **Run** and **Debug**, a Playwright run configuration), with a reporter newer than 0.63.0. It stops at the
+editor's breakpoints, shows in the editor and in Piwi Picker's [Runs window](./runs-window), marked **Terminal** or
+**Test runner**, and takes the same controls ([Pause and step from the editor](./editor-run-control)) but **Stop**: its
+process is the terminal's or the IDE's. It says so as it starts:
 
 ```text
 [Piwi Dashboard] Following this run in Visual Studio Code (pid 41230), whose breakpoints stop it: PIWI_EDITOR=off runs it alone.
 ```
 
 It runs as its config says, headless by default, so the editor shows a stop as
-[a headless run's](./editor-run-control#a-headless-run): an image of its page, which Piwi Picker can watch live.
+[a headless run's](./editor-run-control#a-headless-run): an image of its page, which Piwi Picker can watch live. To see
+the browser, add `--headed` to the command, or to the Playwright options of the run configuration.
 
 ## Which editor
 
@@ -32,8 +34,9 @@ whose runs would connect through a folder another user can open.
 
 ## When it follows one
 
-- **Only a run whose output goes to a terminal.** One whose output goes to a file or a pipe runs alone, unless it sets
-  `PIWI_EDITOR=on`.
+- **Only a run whose output goes to a terminal, or that a test runner started**: one that names its reporter's file
+  in `PW_TEST_REPORTER`, as a JetBrains IDE's Playwright runner does. Any other, whose output goes to a file or a pipe,
+  runs alone unless it sets `PIWI_EDITOR=on`.
 - **Never** under CI, with Playwright's own debugger (`--debug`, `PWDEBUG=1`) or UI mode, when the run names its own
   `PIWI_RUN_CHANNEL`, or when the desktop app or another launcher started it.
 - **`PIWI_EDITOR=off`** runs it alone.
@@ -56,7 +59,10 @@ the editor starts.
 
 - **No Pick, Record or Assert in the test's window.** They need the pairing a run Piwi starts carries: start the test
   from the editor to use them. Pick on the image names the locator, for you to copy, without writing it.
-- **No Stop.** End the run in its terminal.
+- **No Stop.** End the run in its terminal, or with the IDE's own **Stop**.
+- **Debug stops twice.** Under a JetBrains IDE's **Debug**, a breakpoint stops the test in the debugger, then at Piwi's
+  stop, whose controls take no key while the debug session runs. `PIWI_EDITOR=off` in the run configuration's
+  environment leaves the breakpoints to the debugger.
 - **Piwi's reporter in the config.** The run looks for an editor as the reporter starts (`wrapConfig` adds it): with
   the capture fixtures alone, it runs alone.
 - **Your machine.** A run in a dev container or over SSH follows an editor whose service runs there too.

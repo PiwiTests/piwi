@@ -435,6 +435,26 @@ describe('the commands', () => {
     }
   });
 
+  test('name a run the editor’s own test runner started, as its workers say', async () => {
+    const client = await paired();
+    client.send({ type: 'subscribe', id: 1 });
+    await client.answer(1);
+    const channel = (await waitFor(() => svc.published[0] ?? undefined)).runChannel!;
+    const ref = 'terminal-4243-1730000000002';
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES], ['failure'], true);
+    try {
+      expect(await waitFor(() => client.session(ref))).toMatchObject({
+        ref,
+        command: null,
+        terminal: true,
+        runner: true,
+      });
+    } finally {
+      worker.socket.destroy();
+      client.socket.close();
+    }
+  });
+
   test('share a run live as the window asks, every connection hearing how it stands on the instance', async () => {
     const client = await paired();
     const other = await paired();

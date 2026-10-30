@@ -271,8 +271,8 @@ export const failureClusters = pgTable(
     signature: text('signature').notNull(), // normalized first error line — human-readable cluster name
     errorType: text('error_type'), // 'timeout', 'assertion', 'strict-mode', 'navigation', 'crash', 'unknown'
     selector: text('selector'), // locator extracted from the error, if any
-    sampleError: text('sample_error'), // one raw error kept for display; refreshed to a better exemplar as the cluster recurs
-    fingerprintSample: text('fingerprint_sample'), // immutable raw error captured at creation; re-fingerprinting on a version bump reads this so a display-sample refresh can't move the fingerprint source (null on rows created before this column — recluster falls back to sample_error)
+    sampleError: text('sample_error'), // one error, its secrets hidden (`hiddenErrorText`), kept for display; refreshed to a better exemplar as the cluster recurs
+    fingerprintSample: text('fingerprint_sample'), // immutable error captured at creation, its secrets hidden in a way that leaves its fingerprint the same; re-fingerprinting on a version bump reads this so a display-sample refresh can't move the fingerprint source (null on rows created before this column — recluster falls back to sample_error)
     // Run ids are intentionally NOT foreign keys: runs are deleted independently
     // and clusters must survive them (stale ids are tolerated)
     firstSeenRunId: integer('first_seen_run_id').notNull(),

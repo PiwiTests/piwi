@@ -6358,6 +6358,9 @@
   "runs_terminal": {
     "message": "Terminal"
   },
+  "runs_runner": {
+    "message": "Test-Runner"
+  },
   "runs_desktopName": {
     "message": "der Desktop-App"
   },
@@ -6721,5 +6724,26 @@
   },
   "runs_copyRunPage": {
     "message": "Link zur Seite des Laufs kopieren"
+  },
+  "runs_pageAtStop": {
+    "message": "Die Seite eines Tests erscheint hier, wenn er anhält: an einem Haltepunkt, bei page.pause() oder sobald Sie ihn anhalten. „Live ansehen“ zeigt sie dann, wie sie gezeichnet wird."
+  },
+  "runs_pageAtStopDesktop": {
+    "message": "Die Seite eines Tests erscheint hier, wenn er anhält: bei page.pause() oder sobald Sie ihn anhalten. „Live ansehen“ zeigt sie dann, wie sie gezeichnet wird."
+  },
+  "runs_shareRefusedLocal": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Er berichtet an die Piwi-Desktop-App auf diesem Rechner, die kein Teammitglied erreicht. Tragen Sie die Instanz Ihres Teams in PIWI_DASHBOARD_URL ein, um einen Lauf dort zu teilen."
+  },
+  "runs_shareRefusedOff": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Die Live-Ansicht seines Projekts ist auf der Instanz ausgeschaltet. Ein Project admin schaltet sie unter Project → Settings → Live view ein."
+  },
+  "runs_shareRefusedUnregistered": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Das globale Setup des Reporters hat ihn beim Start nicht bei der Instanz angemeldet (wrapConfig fügt es hinzu)."
+  },
+  "runs_shareRefusedNoInstance": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Er berichtet an keine Piwi-Instanz. Tragen Sie die Instanz Ihres Teams in PIWI_DASHBOARD_URL ein."
+  },
+  "runs_shareRefusedUnknown": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Der Piwi-Reporter hat seinen Workern keinen Schlüssel für die Live-Ansicht gegeben."
   }
 }

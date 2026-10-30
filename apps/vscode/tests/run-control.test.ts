@@ -284,6 +284,21 @@ describe('what the controls offer', () => {
     const both = controlState(sessionsOf(terminal, session('ed-1', [worker(0, 'running')])));
     expect(controlItems(both).map((i) => i.command)).toContain('piwi.stopRun');
   });
+
+  test('no Stop for a run the editor’s own test runner started, which says so where it stops', () => {
+    const stopped = [worker(0, 'stopped', { stop: stopAt(spec, 5) })];
+    const runner = { ...session('terminal-42-1', stopped), terminal: true, runner: true };
+    expect(controlState(sessionsOf(runner)).stoppable).toBe(false);
+    const [stop] = stopsOf(sessionsOf(runner));
+    expect(stop).toMatchObject({ terminal: true, runner: true });
+    expect(pausedText(stop!.stop, stop!.test, stop!.terminal, stop!.runner)).toBe(
+      "Paused · Fill \"WELCOME10\" getByLabel('Coupon') · run by the editor's test runner",
+    );
+    expect(stopPick(stop!).label).toContain("· run by the editor's test runner");
+    // Said of a run the editor started, it says nothing.
+    const [own] = stopsOf(sessionsOf({ ...session('ed-1', stopped), runner: true }));
+    expect(own).not.toHaveProperty('runner');
+  });
 });
 
 describe('Share live', () => {

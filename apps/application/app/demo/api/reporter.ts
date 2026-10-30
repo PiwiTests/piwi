@@ -54,6 +54,7 @@ import {
   type TestCoverageCase,
 } from '~~/server/utils/coverage';
 import { sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
+import { hideTypedText } from '@piwitests/core/mask';
 import { upsertCasePayloads } from '~~/server/utils/case-payloads';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
@@ -66,6 +67,7 @@ import {
   countDroppedConsoleEntries,
   capConsoleLogs,
   capErrorText,
+  hiddenErrorText,
   capSourceFrames,
   capText,
   sanitizeAiUsage,
@@ -654,6 +656,8 @@ export async function persistRunCases(
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
+    // Hidden once for all it is kept as; its fingerprint reads the error as it came.
+    const error = hiddenErrorText(c.error);
     const caseId = resolved.caseIds[i];
     if (caseId === undefined) continue;
     await db.update(testCases).set({ updatedAt: new Date() }).where(eq(testCases.id, caseId));
@@ -683,10 +687,10 @@ export async function persistRunCases(
       if (pending) {
         pending.count++;
       } else {
-        // The fingerprint is computed from the raw error above; only storage is capped.
+        // The fingerprint was computed from the error as it came; its secrets hidden leave it the same.
         pendingClusters.set(fingerprint.fingerprint, {
           fp: fingerprint,
-          sampleError: capText(c.error, DEFAULT_INGEST_LIMITS.sampleErrorChars)!,
+          sampleError: capText(error, DEFAULT_INGEST_LIMITS.sampleErrorChars)!,
           count: 1,
         });
       }
@@ -728,7 +732,7 @@ export async function persistRunCases(
       testCaseId: caseId,
       status: c.status,
       duration: c.duration ?? null,
-      error: capErrorText(c.error, DEFAULT_INGEST_LIMITS.errorChars),
+      error: capErrorText(error, DEFAULT_INGEST_LIMITS.errorChars),
       retries: c.retries ?? 0,
       repeatEachIndex: resolveRepeatEachIndex(c.repeatEachIndex),
       attempts: capArray(c.attempts, 30),
@@ -736,7 +740,7 @@ export async function persistRunCases(
       column: c.column,
       steps: cappedSteps,
       stepEvents: capArray(c.stepEvents, DEFAULT_INGEST_LIMITS.stepEvents),
-      slowestStep: c.slowestStep ?? null,
+      slowestStep: typeof c.slowestStep === 'string' ? hideTypedText(c.slowestStep) : null,
       slowestStepDuration: c.slowestStepDuration ?? null,
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,
       pageState: sanitizePageState(c.pageState),
@@ -959,7 +963,7 @@ export async function apiPostRunEvents(
         status: tc.status,
         duration: tc.duration,
         location: tc.location,
-        error: tc.error ?? null,
+        error: hiddenErrorText(tc.error),
         stepEvents: tc.stepEvents ?? null,
         wastedTimeMs: tc.wastedTimeMs ?? null,
         workerIndex: tc.workerIndex ?? null,

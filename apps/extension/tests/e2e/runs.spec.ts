@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { BrowserContext, Page } from '@playwright/test';
+import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 import { test, expect } from './fixtures.js';
 import { localStorageText, storedSecret } from './secrets.js';
 import {
@@ -81,6 +82,8 @@ test('pauses, steps and resumes a run from the Runs window, with the image of th
       await expect(card.getByText('cart › adds a mug')).toBeVisible();
       await expect(card.getByText('chromium · attempt 1')).toBeVisible();
       await expect(card.getByText('Running')).toBeVisible();
+      // A reporter that shows no stopped page live: the run says nothing of where its pages show.
+      await expect(card.locator('.page-hint')).toHaveCount(0);
 
       // Pause: the worker stops before its next call, at a line of a page object.
       await card.getByRole('button', { name: 'Pause' }).click();
@@ -209,7 +212,7 @@ test('the run shortcut pauses the runs, then resumes the stopped test, with no R
   }
 });
 
-test('End the test ends a stopped test there, and a run started in a terminal shows as one', async () => {
+test('End the test ends a stopped test there, and a run started in a terminal or a test runner shows as one', async () => {
   const { context, extensionId } = await pairedExtension(editor);
   try {
     const runs = await openRuns(context, extensionId);
@@ -247,6 +250,25 @@ test('End the test ends a stopped test there, and a run started in a terminal sh
       terminal.socket.destroy();
       // Its session ends a while after its last worker left, with no command to end.
       await waitFor(() => (editor.svc.latest(ref)?.ended ? true : undefined), 10_000);
+    }
+
+    // A run the editor's own test runner started: one of the runs the editor did not build, named as the runner's.
+    const runnerRef = `terminal-4243-${Date.now()}`;
+    const runner = new FakeWorker(channel.path, editor.dir).attach(
+      channel.token,
+      runnerRef,
+      0,
+      [...RUN_TAKES],
+      ['failure'],
+      true,
+    );
+    try {
+      runner.begin('pays');
+      const shown = liveRun(runs).filter({ has: runs.locator('.run-title', { hasText: 'Test runner' }) });
+      await expect(shown.locator('.run-title')).toHaveText(`${path.basename(editor.dir)}Test EditorTest runner`);
+    } finally {
+      runner.socket.destroy();
+      await waitFor(() => (editor.svc.latest(runnerRef)?.ended ? true : undefined), 10_000);
     }
   } finally {
     await context.close();
@@ -306,13 +328,22 @@ test('Share live says what it sends the first time, shares the run, says who wat
       await endRun(run);
     }
 
-    // A run that cannot be shared says why when asked, with no warning, and nothing is asked of its worker.
+    // A run that cannot be shared says why in place of Share live, and nothing is asked of its worker: the reporter's
+    // reasons in the window's words, any other sentence as the hub said it.
     const refused = await startRun(editor, 'pays', [...RUN_TAKES]);
     try {
-      const why = "This run cannot be shared live: its project's live view is off on the instance.";
+      const card = liveRun(runs);
+      const local = LIVE_SHARE_MISSING.local;
+      refused.worker.send({ type: 'live', can: false, on: false, viewers: 0, page: null, why: local });
+      await expect(card.locator('.share-refused')).toHaveText(
+        'This run cannot be shared live: it reports to the Piwi desktop app on this machine, which no teammate ' +
+          'reaches. Name your team’s instance in PIWI_DASHBOARD_URL to share a run there.',
+      );
+      await expect(card.getByRole('button', { name: 'Share live' })).toHaveCount(0);
+      const why = 'This run cannot be shared live: the instance gave its key up.';
       refused.worker.send({ type: 'live', can: false, on: false, viewers: 0, page: null, why });
-      await liveRun(runs).getByRole('button', { name: 'Share live' }).click();
-      await expect(liveRun(runs).getByText(why)).toBeVisible();
+      await expect(card.locator('.share-refused')).toHaveText(why);
+      await expect(card.locator('.run-share')).toHaveCount(0);
       expect(refused.worker.heard.filter((m) => m.type === 'share')).toEqual([]);
     } finally {
       await endRun(refused);
@@ -529,7 +560,7 @@ test.describe('code from a stop', () => {
         // The test goes on: what Assert a region said goes with its stop.
         run.worker.send({ type: 'running', stop: 1 });
         await expect(card.getByText('Running')).toBeVisible();
-        await expect(card.locator('.note')).toHaveCount(0);
+        await expect(card.locator('.worker .note')).toHaveCount(0);
       } finally {
         await endRun(run);
       }
@@ -734,7 +765,7 @@ test.describe('code from a stop', () => {
         });
         await runs.waitForTimeout(300);
         await expect(list).toHaveCount(0);
-        await expect(card.locator('.note, .answer')).toHaveCount(0);
+        await expect(card.locator('.worker').locator('.note, .answer')).toHaveCount(0);
       } finally {
         await endRun(run);
       }
@@ -889,12 +920,19 @@ test.describe('the live view', () => {
       const run = await startRun(editor, 'pays', [...RUN_TAKES]);
       try {
         const card = liveRun(runs);
+        // While the test runs, the run says where its page shows, and how a test stops.
+        const hint = card.locator('.page-hint');
+        await expect(hint).toHaveText(
+          'A test’s page shows here when it stops: at a breakpoint, at page.pause(), or once you pause it. ' +
+            'Watch live then shows it as it paints.',
+        );
         stopAtCheckout(run.worker, 1, { bar: false });
         await answerImage(run.worker, before);
         const still = card.getByRole('img', {
           name: "The test’s page, stopped before: Click getByRole('button', { name: 'Pay' })",
         });
         await expect(still).toBeVisible();
+        await expect(hint).toHaveCount(0);
         const buttons = card.locator('.controls button');
         // Headless, nobody watching: Pick and Record have no page to start in.
         await expect(buttons).toHaveText(['Resume', 'Step', 'Finish', 'End the test', 'Mock a request']);
@@ -1462,6 +1500,11 @@ test.describe('the desktop app’s runs', () => {
         const card = runs.getByRole('region', { name: path.basename(editor.dir) });
         await expect(card.getByText('Desktop app', { exact: true })).toBeVisible();
         await expect(card.getByText('cart › pays')).toBeVisible();
+        // The desktop app sets no breakpoints: its run names the other ways a test stops.
+        await expect(card.locator('.page-hint')).toHaveText(
+          'A test’s page shows here when it stops: at page.pause(), or once you pause it. ' +
+            'Watch live then shows it as it paints.',
+        );
         await card.getByRole('button', { name: 'Pause' }).click();
         expect(await run.next('control')).toEqual({ type: 'control', action: 'pause' });
         stopAtCheckout(run, 1);

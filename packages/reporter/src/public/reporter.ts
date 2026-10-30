@@ -22,7 +22,12 @@ import { FileHandler } from '../internal/files/file-handler.js';
 import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES, findPiwiAttachment } from '../internal/capture/attachments.js';
 import { MetadataCollector, resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
-import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '@piwitests/core/step-analysis';
+import {
+  collectStepMetrics,
+  extractTestStepEvents,
+  extractWaitEvents,
+  hideTypedStepTitle,
+} from '@piwitests/core/step-analysis';
 import { pauseStepEvents, readPauses } from '../internal/collect/pause-events.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
@@ -576,7 +581,7 @@ export class PiwiDashboardReporter {
 
     const event: StreamEvent = {
       type: 'step-begin',
-      title: step.title,
+      title: hideTypedStepTitle(step.title, cat),
       subtitle: typeof step.subtitle === 'string' && step.subtitle.length > 0 ? step.subtitle : null,
       location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : 'unknown',
       stepCategory: cat,
@@ -598,7 +603,7 @@ export class PiwiDashboardReporter {
 
     const event: StreamEvent = {
       type: 'step-end',
-      title: step.title,
+      title: hideTypedStepTitle(step.title, cat),
       subtitle: typeof step.subtitle === 'string' && step.subtitle.length > 0 ? step.subtitle : null,
       location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : 'unknown',
       status: step.error ? 'failed' : 'passed',

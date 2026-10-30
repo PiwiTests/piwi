@@ -172,6 +172,16 @@ export function pauseGateFromTestInfo(testInfo: TestInfo): PauseGate {
   return { ci: process.env.CI, headless: use.headless, pwdebug: process.env.PWDEBUG, debug };
 }
 
+/**
+ * Whether something may pause the test, in CI too: breakpoints from the editor (`PIWI_PAUSE_AT`), or Playwright's
+ * Inspector or debugger (`PWDEBUG`, `--debug`).
+ */
+export function mayPause(gate: PauseGate): boolean {
+  if (process.env.PIWI_PAUSE_AT) return true;
+  if (gate.pwdebug && !['0', 'false', 'console'].includes(gate.pwdebug)) return true;
+  return typeof gate.debug === 'string' && gate.debug.length > 0;
+}
+
 /** Why a run with breakpoints does not pause; null when it does. */
 export function pauseSkipReason(gate: PauseGate): string | null {
   if (isCi(gate.ci)) return 'running under CI — breakpoints pause local runs only';

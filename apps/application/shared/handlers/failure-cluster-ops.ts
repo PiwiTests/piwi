@@ -390,9 +390,11 @@ export async function getOrCreateFailureClusters(
           errorType: p.fp.errorType,
           selector: p.fp.selector,
           sampleError: p.sampleError,
-          // Immutable fingerprint source: seeded from the same raw error as the
-          // display sample, but never refreshed, so re-fingerprinting on a
-          // version bump stays independent of later exemplar refreshes.
+          // Immutable fingerprint source: seeded from the same error as the
+          // display sample, its secrets hidden in a way that leaves its
+          // fingerprint the same (`hideSecretsInError`), but never refreshed, so
+          // re-fingerprinting on a version bump stays independent of later
+          // exemplar refreshes.
           fingerprintSample: p.sampleError,
           firstSeenRunId: testRunId,
           lastSeenRunId: testRunId,

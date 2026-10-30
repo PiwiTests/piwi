@@ -881,13 +881,19 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   (the hub's `runControl` `end`: the test ends there, skipped); Resume alone where it failed (`reason: 'failure'`, its
   state line **Failed at** and the place, the error under it: the stop's `error`, its lines kept, else, from a service
   or a reporter that predates it, read from its title, `stopError`).
-- A run started in a terminal (`HubSession.terminal`) shows **Terminal** beside its name.
+- A run started in a terminal (`HubSession.terminal`) shows **Terminal** beside its name, and one an editor's own test
+  runner started (`HubSession.runner`) **Test runner**.
 - A run whose reporter shares it live on the team instance (`HubSession.live`) has **Share live** under its name: the
   hub's `share` with `on`, naming the run alone. The first share in the window shows what goes out and to whom
   (`runs_shareWarning`, the instance's host in it) with **Share live** and **Cancel** in its place, the focus on the
-  first; a run that cannot be shared (`live.refused`) is asked without it, and the hub's refusal shows under it. Shared,
-  the run says where and how many views are open, with **Copy the run page's link** and **Stop sharing**; a sharing
-  that stopped though nobody asked says why under **Share live** (`live.stopped`).
+  first; a refusal the hub answers shows under it. Shared, the run says where and how many views are open, with **Copy
+  the run page's link** and **Stop sharing**; a sharing that stopped though nobody asked says why under **Share live**
+  (`live.stopped`). A run that cannot be shared (`live.refused`) has no **Share live**: a note under its workers says
+  why, the reporter's reasons (`LIVE_SHARE_MISSING`, read by `shareRefusalOf`) in the window's language, any other
+  sentence as the hub said it.
+- While none of a live run's tests stands stopped, a note under its workers says that a test's page shows in the
+  window at a stop, and how a test stops (`pageHintOf`: a worker whose reporter takes `view` and whose test can stop;
+  for the desktop app's runs, which have no breakpoints, `page.pause()` and **Pause** alone).
 - In a group of their own come the actions the stop takes from this window (`stopIntents`): the hub's `stop.intents`,
   what the reporter and the editor's client take, from this connection now. Pick, Record, Assert and Assert a region
   where the pause bar shows, or at a headless stop while the window watches its live view; Mock a request at any

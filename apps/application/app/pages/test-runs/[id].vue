@@ -9,6 +9,7 @@ import type {
   RunClusterMeta,
 } from '~~/types/api';
 import type { LiveStepsByWorker } from '~/utils/live-steps';
+import { liveRowNote } from '~/utils/live-row-note';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
 import { summarizeRunCases } from '#shared/utils/test-counts';
@@ -21,6 +22,7 @@ const route = useRoute();
 const router = useRouter();
 const runId = route.params.id;
 const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
+const isDesktop = useIsDesktop();
 const { can } = useAuth();
 
 const { data: testRun, error: testRunError, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
@@ -72,11 +74,17 @@ const liveResources = ref<RunResourceTimelinePart[]>([]);
 const liveWorkers = ref<Record<string, LiveWorkerState>>({});
 // Whether the run holds a live view key, from the stream's `live-view` events: its project's live view applies to it.
 const liveViewKeyed = ref(false);
-// A run outside CI that holds a key and has no worker in its view is not shared: its running rows say how to share it,
-// where Watch shows once it is. A CI run's workers join at once.
-const liveUnshared = computed(
-  () =>
-    isLive.value && liveViewKeyed.value && !testRun.value?.metadata?.ci && Object.keys(liveWorkers.value).length === 0,
+// What the running rows say where Watch would be, while no worker is in the run's view: a run outside CI that holds a
+// key is not shared, and says how to share it (a CI run's workers join at once); in the desktop app, which hands out
+// no key, where the tests' pages show.
+const liveNote = computed(() =>
+  liveRowNote({
+    live: isLive.value,
+    desktop: isDesktop,
+    keyed: liveViewKeyed.value,
+    ci: !!testRun.value?.metadata?.ci,
+    workers: Object.keys(liveWorkers.value).length,
+  }),
 );
 // The worker someone opened Watch on, and the execution of the row they opened it from: the view is that test's.
 const watching = ref<{ worker: number; shard: number | null; test: string; executionId: number } | null>(null);
@@ -934,7 +942,7 @@ const moreMenuItems = computed(() => {
             :live-steps="liveSteps"
             :live-resources="liveResources"
             :live-workers="liveWorkers"
-            :live-unshared="liveUnshared"
+            :live-note="liveNote"
             :cluster-meta="clusterMeta"
             :quarantined-case-ids="quarantinedCaseIds"
             :project-key="testRun?.projectId"

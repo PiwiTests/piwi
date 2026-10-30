@@ -132,7 +132,7 @@ const SECRET_NAMES = new Set(['code', 'pin']);
 function nameWords(name: string): string[] {
   return name
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/([A-Z])(?=[A-Z][a-z])/g, '$1 ')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
@@ -439,6 +439,243 @@ export function hideSecretsInText(text: string, count: { n: number } = { n: 0 })
     last = url.index + url[0].length;
   }
   return out + hideInText(text.slice(last), count);
+}
+
+/** How Playwright titles a call that types text: a fill, a typing (`pressSequentially`, `keyboard.type`), an insert. */
+const TYPED_TITLE = /^(?:Fill|Type|Insert) "/;
+
+/**
+ * A call's title with the text it types written as {@link HIDDEN_VALUE}: Playwright writes that text in the title of a
+ * fill, a typing or an insert (`Fill "…"`, and `Fill "…" getByLabel('Password')` with the locator it appends), and it
+ * may be a secret the test reads from its environment. The text runs to the title's last quote, or to the last quote
+ * before the locator; the call's verb and its locator stay. Any other title is returned as it is. Pure.
+ */
+export function hideTypedText(title: string): string {
+  const typing = TYPED_TITLE.exec(title);
+  if (!typing) return title;
+  const start = typing[0].length;
+  const end = title.endsWith('"') ? title.length - 1 : title.lastIndexOf('" ');
+  return end >= start ? `${title.slice(0, start)}${HIDDEN_VALUE}${title.slice(end)}` : `${typing[0]}${HIDDEN_VALUE}"`;
+}
+
+/**
+ * The words naming a secret field in the other languages Piwi speaks, accents left out: French (`mot de passe`,
+ * `mdp`), German (`Passwort`, `Kennwort`), Spanish (`contraseña`, `clave`) and Portuguese (`senha`); a card's security
+ * code (`CVV`, `CVC`, `CSC`); a PIN, a password's short names (`pw`) and a second factor's (`TOTP`, `MFA`, `2FA`).
+ */
+const SECRET_FIELD_WORDS = new Set([
+  'passe',
+  'mdp',
+  'passwort',
+  'kennwort',
+  'contrasena',
+  'clave',
+  'senha',
+  'cvv',
+  'cvc',
+  'csc',
+  'pin',
+  'pw',
+  'totp',
+  'mfa',
+  '2fa',
+]);
+
+/** What names a password inside a longer word: `newpassword`, `password1`, `motdepasse`. */
+const SECRET_STEMS = ['password', 'passwd', 'passwort', 'kennwort', 'contrasena', 'senha', 'motdepasse'];
+
+/** The words that make a code a secret one: a verification, security, one-time or access code. */
+const SECRET_CODE_KINDS = new Set([
+  'verification',
+  'security',
+  'confirmation',
+  'auth',
+  'authentication',
+  'access',
+  'time',
+  'otp',
+  'sms',
+  'login',
+  'mfa',
+  '2fa',
+]);
+
+/**
+ * Whether a locator, as Playwright renders it (`getByLabel('Password')`, `locator('#pwd')`), names a field that holds a
+ * secret: it selects a password field (`type=password`), a string it quotes is named like a credential
+ * (`isSecretName`: `getByLabel('PIN')`), one of its words is a credential's in English or in Piwi's other languages
+ * (`getByLabel('Mot de passe')`, `getByTestId('login-pw')`) or holds a password's (`locator('#newpassword')`), or it
+ * names a code of a kind that is secret (`getByLabel('Verification code')`, not `Promo code`). A field it does not
+ * name so is not one, whatever it holds. Pure.
+ */
+export function isSecretLocator(locator: string): boolean {
+  const plain = locator.normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (/type\s*=\s*["']?password\b/i.test(plain)) return true;
+  for (const quoted of plain.matchAll(/(['"])((?:(?!\1)[^\\]|\\.)*)\1/g)) if (isSecretName(quoted[2]!)) return true;
+  const words = nameWords(plain);
+  return (
+    words.some(
+      (word) =>
+        SECRET_WORDS.has(word) || SECRET_FIELD_WORDS.has(word) || SECRET_STEMS.some((stem) => word.includes(stem)),
+    ) ||
+    (words.includes('code') && words.some((word) => SECRET_CODE_KINDS.has(word)))
+  );
+}
+
+/**
+ * A call of Playwright's call log that types text, an item of the log, up to the quote its text opens with:
+ * `  - fill("`, `elementHandle.type("`. Never one a locator or a message names (`getByText('Choose type("A")')`).
+ */
+const TYPED_CALL =
+  // eslint-disable-next-line no-control-regex -- matches the ESC byte of a color code
+  /^((?:\u001b\[[\d;]*m)*[ \t]*(?:(?:-|\d+ ×)[ \t]+)?(?:\w+\.)?)(fill|type|insertText)\("/gm;
+
+/**
+ * The `")` that ends the text a call types. Playwright writes the text as it is, quotes and line breaks included, so it
+ * is the first `")` that ends a line, a color code of the error's after it or not.
+ */
+// eslint-disable-next-line no-control-regex -- matches the ESC byte of a color code
+const TYPED_END = /"\)(?=(?:\u001b\[[\d;]*m|[ \t])*(?:\r?\n|$))/g;
+
+/** `text` with the text each call types written as {@link HIDDEN_VALUE}; a call cut before its end hides the rest. */
+function hideTypedTextInLog(text: string): string {
+  let out = '';
+  let from = 0;
+  TYPED_CALL.lastIndex = 0;
+  for (let call = TYPED_CALL.exec(text); call; call = TYPED_CALL.exec(text)) {
+    out += `${text.slice(from, call.index)}${call[1]}${call[2]}("${HIDDEN_VALUE}")`;
+    TYPED_END.lastIndex = call.index + call[0].length;
+    const end = TYPED_END.exec(text);
+    if (!end) return out;
+    from = end.index + 2;
+    TYPED_CALL.lastIndex = from;
+  }
+  return out + text.slice(from);
+}
+
+/** A line naming the locator it reads: `waiting for getByLabel('Password')`, an assertion's `Locator: …`. */
+const READ_LOCATOR = /(?:waiting for|Locator:)[ \t]+(.*)$/gm;
+/** A line of a call's log naming the element its locator resolved to as a password field. */
+const RESOLVED_PASSWORD = /resolved to <input\b[^>\n]*\btype="password"/i;
+/**
+ * A value an assertion quotes of its element: `unexpected value "…"`, `Expected: "…"`, `Received string: "…"`, to the
+ * last quote of its line, or to the line's end when it was cut before its quote.
+ */
+const READ_VALUE =
+  // eslint-disable-next-line no-control-regex -- matches the ESC byte of a color code
+  /(unexpected value |(?:Expected|Received)(?: string)?:[ \t]*(?:\u001b\[[\d;]*m)*(?:not[ \t]+)?)"(?:.*"|.*)/g;
+/** An element of the page a call's log shows, a password field or not: `resolved to <input type="password" …>`. */
+const RESOLVED_ELEMENT = /resolved to <[^>\n]*/g;
+/** The value attribute of an element Playwright shows. */
+const VALUE_ATTRIBUTE = /\bvalue="[^"\n]*"/g;
+// eslint-disable-next-line no-control-regex -- matches the ESC byte of a color code
+const COLOR = /\u001b\[[\d;]*m/g;
+
+/**
+ * Whether `text` reads a field that holds a secret: a locator it names as the one it reads (`waiting for …`,
+ * `Locator: …`) names one (`isSecretLocator`), or the element it resolved to is a password field.
+ */
+export function namesSecretField(text: string): boolean {
+  if (RESOLVED_PASSWORD.test(text)) return true;
+  for (const named of text.matchAll(READ_LOCATOR))
+    if (isSecretLocator(named[1]!.replace(COLOR, '').trim())) return true;
+  return false;
+}
+
+/** `text` with each value its assertions quote written as {@link HIDDEN_VALUE}. */
+function hideReadValues(text: string): string {
+  return text.replace(READ_VALUE, (_, before: string) => `${before}"${HIDDEN_VALUE}"`);
+}
+
+/**
+ * `text` with the value attribute of each element its log shows hidden, when that element is a password field or
+ * `secretField` says the call's locator names one: a field's attribute may hold what was typed into it.
+ */
+function hideResolvedValues(text: string, secretField: boolean): string {
+  if (!text.includes('resolved to <')) return text;
+  return text.replace(RESOLVED_ELEMENT, (element) =>
+    secretField || /\btype="password"/i.test(element)
+      ? element.replace(VALUE_ATTRIBUTE, `value="${HIDDEN_VALUE}"`)
+      : element,
+  );
+}
+
+/**
+ * A header a request's log writes, up to its value: an indented line or an item of the log (`  authorization: `,
+ * `    - x-api-key: `), never the first line of an error (`TokenExpiredError: …`).
+ */
+const LOGGED_HEADER =
+  // eslint-disable-next-line no-control-regex -- matches the ESC byte of a color code
+  /^(?:\u001b\[[\d;]*m)*(?:[ \t]+(?:(?:-|\d+ ×)[ \t]+)?|(?:-|\d+ ×)[ \t]+)([A-Za-z][\w-]*): /;
+
+/** Where the color codes that end `line` begin: its length when none does. */
+function colorsAtEnd(line: string): number {
+  let end = line.length;
+  while (end > 0 && line[end - 1] === 'm') {
+    const start = line.lastIndexOf('\u001b[', end - 1);
+    if (start < 0 || !/^[\d;]*$/.test(line.slice(start + 2, end - 1))) break;
+    end = start;
+  }
+  return end;
+}
+
+/** `text` with the value of each header named like a credential hidden (`isSecretName`: `authorization`, `x-api-key`). */
+function hideSecretHeaders(text: string): string {
+  if (!text.includes(': ')) return text;
+  return text
+    .split('\n')
+    .map((line) => {
+      const header = LOGGED_HEADER.exec(line);
+      if (!header || !isSecretName(header[1]!)) return line;
+      const rest = line.slice(header[0].length);
+      const end = colorsAtEnd(rest);
+      return end === 0 ? line : `${header[0]}${HIDDEN_VALUE}${rest.slice(end)}`;
+    })
+    .join('\n');
+}
+
+/**
+ * `text`, a call's log, with what may be a secret written as {@link HIDDEN_VALUE}: the text each call types
+ * (`- fill("…")`, `elementHandle.type("…")`), the values an assertion quotes (`unexpected value "…"`) and the value
+ * attribute of the element it resolved to when it reads a field that holds a secret (`namesSecretField`) or when
+ * `secretField` says the call's locator names one, and the value of each header named like a credential a request's
+ * log writes (`authorization: …`). A text cut short has the rest of
+ * a typed text or a quoted value hidden. Linear in the length of `text`. Pure.
+ */
+export function hideSecretsInLog(text: string, secretField = false): string {
+  const secret = secretField || namesSecretField(text);
+  let hidden = hideResolvedValues(hideTypedTextInLog(text), secret);
+  if (secret) hidden = hideReadValues(hidden);
+  return hideSecretHeaders(hidden);
+}
+
+/** The line that opens an error's call log, as Playwright writes it. */
+const CALL_LOG = '\nCall log:';
+/** Where an error's call log ends: at the stack (`\n    at …`), at the next of several errors joined, or at the end. */
+const CALL_LOG_END = /\n(?:---\n|[ \t]+at )/g;
+
+/**
+ * `text`, an error as Playwright writes it, or several joined (`joinErrorMessages`), with what may be a secret written
+ * as {@link HIDDEN_VALUE}: in each of its call logs, what {@link hideSecretsInLog} hides; in its message, the values an
+ * assertion quotes when it reads a field that holds a secret (`Received: "…"`). The rest of the message stays as it
+ * is, so the error fingerprints as it did (`extractErrorSignature` reads values as values, and its selector from the
+ * message or the call log's locators). Linear in the length of `text`. Pure.
+ */
+export function hideSecretsInError(text: string): string {
+  const secretField = namesSecretField(text);
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const log = text.indexOf(CALL_LOG, from);
+    const message = text.slice(from, log === -1 ? text.length : log);
+    out += secretField ? hideReadValues(message) : message;
+    if (log === -1) return out;
+    const start = log + CALL_LOG.length;
+    CALL_LOG_END.lastIndex = start;
+    const end = CALL_LOG_END.exec(text)?.index ?? text.length;
+    out += CALL_LOG + hideSecretsInLog(text.slice(start, end), secretField);
+    from = end;
+  }
 }
 
 /**

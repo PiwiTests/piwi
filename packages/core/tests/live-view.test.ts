@@ -17,6 +17,8 @@ import {
   readLiveCall,
   readLiveWorkerId,
   readWorkerToInstance,
+  compressCallLog,
+  MAX_LIVE_CALL_LOG_LINES,
 } from '../src/live-view';
 import { LatestPacer, fitViewSize } from '../src/run-view';
 
@@ -113,6 +115,15 @@ describe('the messages', () => {
     }
     expect(liveWorkerKey({ shard: null, worker: 3 })).toBe(':3');
     expect(liveWorkerKey({ shard: 2, worker: 3 })).toBe('2:3');
+  });
+
+  test('a call names no text a fill or a typing typed, from a reporter that hid it or not', () => {
+    expect(readLiveCall({ title: 'Fill "S3cr3t!Passw0rd"', file: 'tests/a.spec.ts', line: 4 })?.title).toBe(
+      'Fill "<hidden>"',
+    );
+    expect(readLiveCall({ title: `Type "abc" getByLabel('Password')`, file: null, line: null })?.title).toBe(
+      `Type "<hidden>" getByLabel('Password')`,
+    );
   });
 
   test('a call keeps its title, and its place only when both are one', () => {
@@ -262,5 +273,107 @@ describe('the pace of frames', () => {
     const bytes = sent.reduce((sum, [, b]) => sum + b, 0);
     const seconds = (sent[sent.length - 1]![0] - start) / 1000 + 1;
     expect(bytes / seconds).toBeLessThanOrEqual(LIVE_FRAME_BYTE_RATE * 1.5);
+  });
+});
+
+describe('the call log a worker posts', () => {
+  const log = {
+    id: 'call@42',
+    call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 12 },
+    status: 'running',
+    lines: [
+      "waiting for getByRole('button', { name: 'Pay' })",
+      '  locator resolved to <button id="pay" disabled>Pay</button>',
+      '  element is not enabled',
+      'retrying click action',
+    ],
+    point: null,
+    target: { count: 1, box: { x: 271, y: 18.5, width: 48, height: 24 }, enabled: false },
+    viewport: { width: 1280, height: 800 },
+    ms: 7400,
+    error: null,
+  };
+
+  test('is read field by field, with its test’s title, and is refused without a log', () => {
+    expect(readWorkerToInstance({ type: 'call-log', worker: 1, log, test: 'pays' })).toEqual({
+      type: 'call-log',
+      shard: null,
+      worker: 1,
+      log,
+      test: 'pays',
+    });
+    expect(readWorkerToInstance({ type: 'call-log', worker: 1, log })).toMatchObject({ test: null });
+    expect(typeof readWorkerToInstance({ type: 'call-log', worker: 1, log: null })).toBe('string');
+  });
+
+  test('keeps its last lines, each cut, and drops a field that is not one', () => {
+    const lines = Array.from({ length: 40 }, (_, i) => `line ${i} ${'x'.repeat(400)}`);
+    const read = readWorkerToInstance({
+      type: 'call-log',
+      worker: 0,
+      log: { ...log, lines, point: { x: 'a', y: 2 }, target: { count: -1 }, viewport: { width: 0, height: 9 }, ms: -5 },
+    });
+    if (typeof read === 'string' || read.type !== 'call-log' || !read.log) throw new Error('not read');
+    expect(read.log.lines).toHaveLength(MAX_LIVE_CALL_LOG_LINES);
+    expect(read.log.lines[0]).toMatch(new RegExp(`^line ${40 - MAX_LIVE_CALL_LOG_LINES} `));
+    expect(read.log.lines.every((line) => line.length <= 300)).toBe(true);
+    expect(read.log).toMatchObject({ point: null, target: null, viewport: null, ms: 0 });
+  });
+
+  test('names no text a call typed and no credential, from a worker that hid them or not', () => {
+    const read = readWorkerToInstance({
+      type: 'call-log',
+      worker: 0,
+      log: {
+        ...log,
+        call: { title: 'Fill "S3cr3t!Passw0rd"', file: null, line: null },
+        lines: [
+          '  fill("S3cr3t!Passw0rd")',
+          'navigating to "https://shop.test/?token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl"',
+        ],
+        status: 'failed',
+        error: 'locator.fill: Timeout 1500ms exceeded.\nCall log:\n  - fill("S3cr3t!Passw0rd")',
+      },
+    });
+    expect(JSON.stringify(read)).not.toMatch(/S3cr3t|eyJhbGci/);
+    if (typeof read === 'string' || read.type !== 'call-log' || !read.log) throw new Error('not read');
+    expect(read.log.error).toBe('locator.fill: Timeout 1500ms exceeded.');
+  });
+
+  test('is refused without a call, a status or an id', () => {
+    for (const bad of [
+      { ...log, id: '' },
+      { ...log, call: null },
+      { ...log, status: 'done' },
+    ]) {
+      expect(typeof readWorkerToInstance({ type: 'call-log', worker: 0, log: bad })).toBe('string');
+    }
+  });
+
+  test('folds the lines a retried action repeats, as Playwright writes a failed call’s log', () => {
+    // As Playwright 1.64 logs a click on a disabled button, retried every half second.
+    const retry = [
+      '  waiting for element to be visible, enabled and stable',
+      '  element is not enabled',
+      'retrying click action',
+      '  waiting 500ms',
+    ];
+    const lines = [
+      "waiting for getByRole('button', { name: 'Pay' })",
+      '  locator resolved to <button disabled>Pay</button>',
+      'attempting click action',
+      ...Array.from({ length: 6 }, () => retry).flat(),
+    ];
+    expect(compressCallLog(lines)).toEqual([
+      "- waiting for getByRole('button', { name: 'Pay' })",
+      '  - locator resolved to <button disabled>Pay</button>',
+      '- attempting click action',
+      '  6 × waiting for element to be visible, enabled and stable',
+      '    - element is not enabled',
+      '  - retrying click action',
+      '    - waiting 500ms',
+    ]);
+    expect(compressCallLog(['a', 'b', 'a', 'b', 'c'])).toEqual(['2 × a', '  - b', '- c']);
+    expect(compressCallLog([])).toEqual([]);
   });
 });

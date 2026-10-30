@@ -1105,9 +1105,19 @@ describe('RunSessions', () => {
       { type: 'attached', holds: ['failure'] },
       { type: 'breakpoints', places: [{ file: 'tests/a.spec.ts', line: 4 }] },
     ]);
-    // A run the editor started is none.
-    attach(0, { ref: 'ed-1' });
-    expect((await waitFor(() => sent.find((s) => s.ref === 'ed-1'))).terminal).toBeUndefined();
+    // A terminal's run is no test runner's.
+    expect(shown).not.toHaveProperty('runner');
+    // A run the editor's own test runner started is one too, which its workers say.
+    attach(0, { ref: 'terminal-42-1', runner: true });
+    expect(await waitFor(() => sent.find((s) => s.ref === 'terminal-42-1'))).toMatchObject({
+      terminal: true,
+      runner: true,
+    });
+    // A run the editor started is none, whatever its workers say of a test runner.
+    attach(0, { ref: 'ed-1', runner: true });
+    const own = await waitFor(() => sent.find((s) => s.ref === 'ed-1'));
+    expect(own.terminal).toBeUndefined();
+    expect(own).not.toHaveProperty('runner');
     // It ends a while after its last worker left: no command of the editor's ends it.
     first.socket.destroy();
     second.socket.destroy();

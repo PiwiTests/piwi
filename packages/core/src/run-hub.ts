@@ -222,6 +222,12 @@ export interface HubSession {
    */
   terminal?: boolean;
   /**
+   * Of the runs `terminal` names, one the editor's own test runner started (a JetBrains IDE's Playwright run
+   * configuration, its gutter's Run included) rather than a terminal. Absent otherwise, and from a service or a
+   * reporter that predates it.
+   */
+  runner?: boolean;
+  /**
    * How the run stands on the team instance's live view, for a run whose reporter shares it: absent from a service
    * or a reporter that predates **Share live**.
    */
@@ -744,6 +750,7 @@ function readSession(value: unknown): HubSession | null {
   if (!workers.every((w): w is HubWorker => w !== null)) return null;
   const session: HubSession = { ref: value.ref, root, label, command, project, workers, ended: value.ended };
   if (value.terminal === true) session.terminal = true;
+  if (value.terminal === true && value.runner === true) session.runner = true;
   if (value.live === undefined) return session;
   const live = readLive(value.live);
   return live ? { ...session, live } : null;

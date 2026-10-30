@@ -15,11 +15,12 @@ import { detectCi } from '../support/ci.js';
 import { PIWI_ORIGIN_ENV } from './env.js';
 
 /**
- * A run started in a terminal follows the editor whose workspace holds it: each editor service writes its discovery
- * file (`@piwitests/core/editor-discovery`: `~/.piwi/editors/<pid>.json`, or the folder `PIWI_EDITORS_DIR` names),
- * which names its run channel, and the reporter hands that channel to the run's workers (`PIWI_RUN_CHANNEL`) under a
- * ref of the run's own (`PIWI_RUN_REF`, `terminal-<pid>-<time>`): they connect to it as the workers of a run the editor
- * started do. Only a run whose output goes to a terminal (else `PIWI_EDITOR=on`), never under CI nor Playwright's own
+ * A run started in a terminal, or by an editor's own test runner (`startedByTestRunner`), follows the editor whose
+ * workspace holds it: each editor service writes its discovery file (`@piwitests/core/editor-discovery`:
+ * `~/.piwi/editors/<pid>.json`, or the folder `PIWI_EDITORS_DIR` names), which names its run channel, and the reporter
+ * hands that channel to the run's workers (`PIWI_RUN_CHANNEL`) under a ref of the run's own (`PIWI_RUN_REF`,
+ * `terminal-<pid>-<time>`): they connect to it as the workers of a run the editor started do. Only a run whose output
+ * goes to a terminal or that a test runner started (else `PIWI_EDITOR=on`), never under CI nor Playwright's own
  * debugger or UI mode, never one that names its run channel itself or that a launcher started (`PIWI_ORIGIN`);
  * `PIWI_EDITOR=off` runs it alone. The files are read only from a folder this user owns, not a link, that no other user
  * can enter, and only those this user owns in it; none is deleted here.
@@ -27,6 +28,21 @@ import { PIWI_ORIGIN_ENV } from './env.js';
 
 /** `PIWI_EDITOR`: `off` never follows an editor; `on` follows one when the run's output goes to no terminal too. */
 export const PIWI_EDITOR_ENV = 'PIWI_EDITOR';
+
+/**
+ * The variable through which an editor's own test runner adds its reporter to a run, Playwright loading it beside the
+ * config's: a file of the runner's own (JetBrains IDEs' Playwright run configurations name theirs there).
+ */
+export const TEST_RUNNER_REPORTER_ENV = 'PW_TEST_REPORTER';
+
+/**
+ * Whether an editor's own test runner started the run, its output going to the runner's view rather than a terminal:
+ * `PW_TEST_REPORTER` names a reporter file. The name of one of Playwright's own reporters (`dot`) says nothing.
+ */
+export function startedByTestRunner(env: NodeJS.ProcessEnv): boolean {
+  const reporter = env[TEST_RUNNER_REPORTER_ENV]?.trim();
+  return !!reporter && /[\\/]/.test(reporter);
+}
 
 /** What decides whether a run looks for an editor to follow. */
 export interface TerminalRunGate {
@@ -52,7 +68,7 @@ export function terminalRunSkip(gate: TerminalRunGate): string | null {
     return "Playwright's debugger or UI mode runs it";
   }
   if (argv.slice(2).includes('merge-reports')) return 'it merges reports, running no test';
-  if (!gate.terminal && editor !== 'on') return 'its output goes to no terminal';
+  if (!gate.terminal && editor !== 'on' && !startedByTestRunner(env)) return 'its output goes to no terminal';
   return null;
 }
 

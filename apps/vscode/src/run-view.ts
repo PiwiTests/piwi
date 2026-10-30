@@ -302,7 +302,7 @@ export function registerRunControl(
     const share = canShare(stop) ? [link({ title: 'Share with Playwright tools', command: RUN_COMMANDS.share })] : [];
     const hover = new vscode.MarkdownString(
       [
-        markdown(pausedText(stop.stop, stop.test, stop.terminal)),
+        markdown(pausedText(stop.stop, stop.test, stop.terminal, stop.runner)),
         controls.join(' · '),
         ...(actions.length ? [actions.join(' · ')] : []),
         ...share,
@@ -370,7 +370,7 @@ export function registerRunControl(
       panel.reveal(vscode.ViewColumn.Beside, true);
     }
     const file = decodeURIComponent(stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1));
-    const caption = `${pausedText(stop.stop, stop.test, stop.terminal)} · ${file}:${stop.stop.line + 1}`;
+    const caption = `${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${file}:${stop.stop.line + 1}`;
     showPage({ image: null, caption: `${caption} · asking the test for its page…` });
     const answer = await lc
       .sendRequest<PausedPageResult>(PAUSED_PAGE_REQUEST, {
@@ -632,7 +632,7 @@ export function registerRunControl(
     if (!offered.length) return say('no code can be written from this stop.');
     const picked = await vscode.window.showQuickPick(
       offered.map((a) => ({ label: a.title, detail: a.detail, action: a.action })),
-      { placeHolder: `${pausedText(stop.stop, stop.test, stop.terminal)}: write what?` },
+      { placeHolder: `${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)}: write what?` },
     );
     if (picked) await startAction(picked.action, targetOf(stop));
   };
@@ -776,7 +776,7 @@ export function registerRunControl(
               const target = [targetOf(s)];
               return [
                 new vscode.CodeLens(range, {
-                  title: `${stopIcon(s.stop)} ${pausedText(s.stop, s.test, s.terminal)}`,
+                  title: `${stopIcon(s.stop)} ${pausedText(s.stop, s.test, s.terminal, s.runner)}`,
                   command: s.stop.bar ? '' : RUN_COMMANDS.showPage,
                   arguments: target,
                 }),

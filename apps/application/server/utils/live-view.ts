@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { getRequestHeader, type H3Event } from 'h3';
 import {
+  LIVE_CALL_LOGS_PER_SECOND,
   LIVE_FRAME_FPS,
   LIVE_VIEW_KEY_PREFIX,
   isLiveViewKey,
@@ -21,7 +22,8 @@ import { runEventBus, type GlobalRunEvent } from './run-events';
  * holds one event stream, opened with a key minted for its run (`mintKey`, handed to the run's global setup), on which
  * it hears how many people watch it; a viewer holds one stream per worker it watches. The frames a worker posts go to
  * that worker's viewers and nowhere else: none is kept, written to the database, logged or exported, and a viewer whose
- * stream is backed up gets the latest frame alone once it drains. The worker's stops go to everyone with the run page
+ * stream is backed up gets the latest frame alone once it drains. A CI run's worker posts the call its test is in as
+ * Playwright logs it (`call-log`), which goes to the same viewers the same way, the latest kept apart from the frame. The worker's stops go to everyone with the run page
  * open, through the run's event stream (`live-worker`), and so does each worker's leaving, whatever ends it; a
  * developer who stops sharing their run has each worker's viewers hear so (`unshared`) before its stream closes. A
  * run's keys, workers and viewers end with the run (its finish or cancel), with the project's setting turned off
@@ -30,7 +32,7 @@ import { runEventBus, type GlobalRunEvent } from './run-events';
  * is remembered, as long as it would have lived, for the routes to tell its worker why (`endedWhy`). Bounded
  * throughout: keys per project and in all (the expired ones go first, then those that never opened a stream: a run on
  * a developer's machine nobody shares), workers and viewers per run, viewers per person (the oldest replaced), frames
- * a second per worker, and each frame's bytes (the route's).
+ * and call logs a second per worker, and each message's bytes (the route's).
  */
 
 /** The most workers of one run that hold a stream. */
@@ -39,6 +41,8 @@ export const MAX_LIVE_WORKERS_PER_RUN = 64;
 export const MAX_LIVE_VIEWERS_PER_RUN = 16;
 /** The most frames a second relayed of one worker: twice what a worker sends, for the jitter of the way. */
 export const MAX_RELAYED_FPS = LIVE_FRAME_FPS * 2;
+/** The most call logs a worker's view relays a second: twice what a worker posts, for posts the network brings together. */
+export const MAX_RELAYED_CALL_LOGS = LIVE_CALL_LOGS_PER_SECOND * 2;
 /** How long a key opens a stream at most, whatever its run does. */
 export const LIVE_KEY_TTL_MS = 24 * 60 * 60 * 1000;
 /** The most viewers one person holds in one run: a further one replaces their oldest. */
@@ -73,8 +77,11 @@ export type LiveKeyEnd = 'off' | 'run-ended';
 
 interface Viewer {
   sink: EventStreamSink;
-  /** The latest message waiting while the viewer's stream is backed up. */
-  pending: LiveViewerMessage | null;
+  /**
+   * The latest message of each kind waiting while the viewer's stream is backed up, so the one never pushes the other
+   * out: an image or why none shows (`frame`, `refused`), and a call log.
+   */
+  pending: Map<'image' | 'call-log', LiveViewerMessage>;
   /** The signed-in person watching, null when the instance knows nobody (authentication off). */
   person: number | null;
   /** When it came, in the order of all viewers. */
@@ -87,6 +94,8 @@ interface WorkerLink {
   viewers: Set<Viewer>;
   paused: LiveStop | null;
   rate: RateWindow;
+  /** The call logs it posted in the last second. */
+  logRate: RateWindow;
 }
 
 interface RunLive {
@@ -204,6 +213,7 @@ export class LiveViewRelay {
       viewers: new Set(),
       paused: before?.paused ?? null,
       rate: new RateWindow(MAX_RELAYED_FPS, this.now),
+      logRate: new RateWindow(MAX_RELAYED_CALL_LOGS, this.now),
     };
     run.workers.set(key, link);
     if (before) {
@@ -235,6 +245,12 @@ export class LiveViewRelay {
         this.deliver(link, { type: 'frame', data: message.data, call: message.call, test: message.test });
         return null;
       }
+      case 'call-log':
+        if (!link.logRate.take(1)) {
+          return { status: 429, message: `${MAX_RELAYED_CALL_LOGS} call logs a second at most.` };
+        }
+        this.deliver(link, { type: 'call-log', log: message.log, test: message.test });
+        return null;
       case 'stop':
         link.paused = message.stop;
         this.publish(runId, { ...link.id, connected: true, paused: message.stop });
@@ -272,13 +288,14 @@ export class LiveViewRelay {
     }
     if (replaced) this.endViewer(replaced.worker, replaced.viewer, 'replaced');
     const sink = open();
-    const viewer: Viewer = { sink, pending: null, person, since: this.viewersCame++ };
+    const viewer: Viewer = { sink, pending: new Map(), person, since: this.viewersCame++ };
     link.viewers.add(viewer);
     sink.onDrain(() => {
-      const waiting = viewer.pending;
-      if (!waiting || sink.backedUp()) return;
-      viewer.pending = null;
-      sink.send(waiting);
+      for (const [type, waiting] of viewer.pending) {
+        if (sink.backedUp()) return;
+        viewer.pending.delete(type);
+        sink.send(waiting);
+      }
     });
     sink.onClose(() => {
       // The link the viewer watches now, should its worker have opened its stream again.
@@ -393,11 +410,15 @@ export class LiveViewRelay {
     return largest;
   }
 
-  /** Send a message to a worker's viewers: one whose stream is backed up gets the latest alone, once it drains. */
+  /**
+   * Send a message to a worker's viewers: one whose stream is backed up, or still has messages waiting, gets the
+   * latest of each kind alone, once it drains, so a newer message never goes before an older one.
+   */
   private deliver(link: WorkerLink, message: LiveViewerMessage): void {
     for (const viewer of link.viewers) {
-      if (viewer.sink.backedUp()) viewer.pending = message;
-      else viewer.sink.send(message);
+      if (viewer.sink.backedUp() || viewer.pending.size) {
+        viewer.pending.set(message.type === 'call-log' ? 'call-log' : 'image', message);
+      } else viewer.sink.send(message);
     }
   }
 

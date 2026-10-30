@@ -5,13 +5,15 @@
  */
 import {
   readLiveCall,
+  readLiveCallLog,
   readLiveTestTitle,
   type LiveCall,
+  type LiveCallLog,
   type LiveStop,
   type LiveWorkerId,
 } from '@piwitests/core/live-view';
 
-export { liveWorkerKey, type LiveCall, type LiveStop } from '@piwitests/core/live-view';
+export { liveWorkerKey, type LiveCall, type LiveCallLog, type LiveStop } from '@piwitests/core/live-view';
 
 /** A worker of a live run as the run page knows it: whether it is connected, and its test's stop while it holds. */
 export interface LiveWorkerState {
@@ -46,6 +48,8 @@ export type LiveViewEnd = 'test-ended' | 'worker-left' | 'run-ended' | 'off' | '
 export type LiveViewerMessage =
   /** A frame of the test's page, a JPEG in base64, the call it was taken at and the title of its test. */
   | { type: 'frame'; data: string; call: LiveCall | null; test: string | null }
+  /** The call the test is in, as Playwright logs it, in a CI run, and the title of its test. */
+  | { type: 'call-log'; log: LiveCallLog; test: string | null }
   /** Why no frame shows now. */
   | { type: 'refused'; message: string }
   /** The view ended: the stream closes after it. */
@@ -72,6 +76,10 @@ export function parseLiveViewerMessage(data: string): LiveViewerMessage | null {
         call: message.call ? readLiveCall(message.call) : null,
         test: readLiveTestTitle(message.test),
       };
+    case 'call-log': {
+      const log = readLiveCallLog(message.log);
+      return log ? { type: 'call-log', log, test: readLiveTestTitle(message.test) } : null;
+    }
     case 'refused':
       return typeof message.message === 'string' ? { type: 'refused', message: message.message.slice(0, 500) } : null;
     case 'end':

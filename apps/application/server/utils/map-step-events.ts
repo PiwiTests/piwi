@@ -1,3 +1,4 @@
+import { hideTypedStepTitle } from '@piwitests/core/step-analysis';
 import type { StreamEventPayload } from '#shared/types';
 
 /**
@@ -34,7 +35,7 @@ function stepBeginRunEvent(tc: StreamEventPayload): StepRunEvent {
     return {
       type: 'step-begin',
       data: {
-        title: tc.title,
+        title: hideTypedStepTitle(tc.title, tc.stepCategory),
         subtitle: tc.subtitle ?? null,
         parentTitle: tc.parentTitle,
         stepCategory: tc.stepCategory ?? null,
@@ -47,7 +48,7 @@ function stepBeginRunEvent(tc: StreamEventPayload): StepRunEvent {
   return {
     type: 'test-begin',
     data: {
-      title: tc.title,
+      title: hideTypedStepTitle(tc.title, tc.stepCategory),
       filePath: 'hooks',
       parentTitle: null,
       stepCategory: tc.stepCategory ?? null,
@@ -63,7 +64,7 @@ function stepEndRunEvent(tc: StreamEventPayload): StepRunEvent {
     return {
       type: 'step-end',
       data: {
-        title: tc.title,
+        title: hideTypedStepTitle(tc.title, tc.stepCategory),
         subtitle: tc.subtitle ?? null,
         parentTitle: tc.parentTitle,
         stepCategory: tc.stepCategory ?? null,
@@ -78,7 +79,7 @@ function stepEndRunEvent(tc: StreamEventPayload): StepRunEvent {
   return {
     type: 'test-completed',
     data: {
-      title: tc.title,
+      title: hideTypedStepTitle(tc.title, tc.stepCategory),
       filePath: 'hooks',
       parentTitle: null,
       stepCategory: tc.stepCategory ?? null,

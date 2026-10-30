@@ -664,11 +664,12 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/end-the-test',
       },
       {
-        title: 'Runs started in a terminal',
+        title: 'Runs started outside Piwi',
         summary:
-          "A Playwright run you start in a terminal, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does.",
+          "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does.",
         needs: ['fixtures'],
-        where: 'npx playwright test in a terminal of the workspace; PIWI_EDITOR=off runs it alone',
+        where:
+          "npx playwright test in a terminal of the workspace, or a JetBrains IDE's gutter Run and Playwright run configurations; PIWI_EDITOR=off runs it alone",
         doc: 'features/terminal-runs',
       },
       {
