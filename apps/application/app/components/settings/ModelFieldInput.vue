@@ -30,7 +30,8 @@ const placeholder = computed(() => {
     <UButton
       v-if="providerResolved && providerResolved !== 'codex-cli' && providerResolved !== 'deepseek-cli'"
       size="sm"
-      variant="soft"
+      color="neutral"
+      variant="outline"
       @click="
         emit('loadModels');
         pickerOpen = true;

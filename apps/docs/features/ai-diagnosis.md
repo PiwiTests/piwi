@@ -11,7 +11,7 @@ LLM to explain why each broke, against the code that changed.
 
 ## Semantic merging (optional)
 
-If an **embedding** model role is configured (Settings → AI), Piwi adds a semantic layer on top of the deterministic
+If **Semantic clustering** is on (Settings → AI), Piwi adds a semantic layer on top of the deterministic
 fingerprint. After a run, the clusters first seen in it are embedded and compared (cosine similarity) against the
 project's other open clusters; near-duplicates above `PIWI_CLUSTER_SIMILARITY_THRESHOLD` (default `0.92`) are merged
 into the longest-lived cluster, and a fingerprint alias sends future occurrences to the survivor. This catches one root

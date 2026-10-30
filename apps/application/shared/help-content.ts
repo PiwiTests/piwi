@@ -116,7 +116,7 @@ export const HELP_TOPICS = {
   },
   'cluster.scm-fetch-failed': {
     title: 'Changes not read',
-    text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM token (**Settings → AI → Repository access**, or the project’s **Source control** settings). On the desktop app, run `git fetch` in the linked folder.',
+    text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM token (**Settings → AI → What the model receives → Repository access token**, or the project’s **Source control** settings). On the desktop app, run `git fetch` in the linked folder.',
     doc: 'guide/source-control#troubleshooting',
   },
   'cluster.scm-host-error': {
@@ -1052,7 +1052,7 @@ export const HELP_TOPICS = {
   },
   'settings.ai-provider': {
     title: 'AI provider',
-    text: 'Configure the model providers behind the four AI roles — diagnosis, research, embedding and assistant. Each role has its own provider config, or reuses another role’s provider and credentials. Keys are stored encrypted and never returned by the API.',
+    text: 'The service the AI runs on: a cloud API (with an API key), a self-hosted OpenAI-compatible server such as Ollama, or a command-line tool installed where Piwi runs (Claude Code, Codex, DeepSeek Harness). Each feature uses it unless you give it another. Keys are stored encrypted and never returned by the API.',
     doc: 'guide/ai-provider',
     envVars: ['PIWI_AI_PROVIDER', 'PIWI_AI_MODEL', 'PIWI_AI_API_KEY', 'PIWI_AI_BASE_URL', 'PIWI_AI_TEMPERATURE'],
   },
@@ -1062,8 +1062,8 @@ export const HELP_TOPICS = {
     doc: 'features/ai-diagnosis#custom-instructions',
   },
   'settings.ai-research': {
-    title: 'Research model',
-    text: 'An optional cheaper/faster model that pre-analyzes the failure (on a lean view) before the main model writes the final diagnosis. It can use its own provider, and the costly SCM diff is only fetched when it flags a likely regression. It also handles cluster naming and merge adjudication, so configuring a cheap research model routes those utility calls away from the expensive diagnosis model.',
+    title: 'Two-stage diagnosis',
+    text: 'A cheaper, faster model pre-analyzes the failure (on a lean view) before the diagnosis model writes the answer, on the same provider or another. The costly SCM diff is only fetched when it flags a likely regression. It also names and merges clusters, so those calls leave the expensive diagnosis model.',
     doc: 'guide/ai-provider#model-roles',
     envVars: [
       'PIWI_AI_RESEARCH_PROVIDER',
@@ -1075,7 +1075,7 @@ export const HELP_TOPICS = {
   },
   'settings.ai-assistant': {
     title: 'Assistant model',
-    text: 'The model the in-app assistant answers questions with. Unset, it uses the diagnosis model; set it to point the assistant at a faster, cheaper model while diagnosis keeps the strong one. Like research, it can reuse another role’s provider and key with a model of its own.',
+    text: 'The model the in-app assistant answers questions with. Unset, it uses the diagnosis model; set it to point the assistant at a faster, cheaper model while diagnosis keeps the strong one, on the same provider or another.',
     doc: 'features/assistant#the-model',
     envVars: [
       'PIWI_AI_ASSISTANT_PROVIDER',
@@ -1087,7 +1087,7 @@ export const HELP_TOPICS = {
   },
   'settings.ai-limits': {
     title: 'Diagnosis context limits',
-    text: 'Caps on how much evidence (and how many tokens) go into each diagnosis. Higher limits give the model more to work with but cost more. Each field can be pinned individually by its env var.',
+    text: 'Caps on how much evidence (and how many tokens) goes into each diagnosis, one group per kind of evidence. Higher limits give the model more to work with but cost more. Each field can be pinned individually by its env var.',
     doc: 'guide/ai-provider#context-limits-and-token-cost',
     envVars: [
       'PIWI_AI_MAX_SAMPLE_ERROR_CHARS',
@@ -1201,7 +1201,7 @@ export const HELP_TOPICS = {
   },
   'settings.auto-diagnose': {
     title: 'Auto-diagnose',
-    text: 'When a run finishes, up to 3 new failure clusters are diagnosed automatically — each diagnosis is one research call (when a research model is configured) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires the diagnosis model to be configured.',
+    text: 'When a run finishes, up to 3 new failure clusters are diagnosed automatically — each diagnosis is one research call (with two-stage diagnosis on) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires a provider.',
     doc: 'guide/ai-provider#enabling-ai-diagnosis',
     envVars: ['PIWI_AI_AUTO_DIAGNOSE'],
   },
@@ -1210,8 +1210,8 @@ export const HELP_TOPICS = {
     text: 'Show a browser notification when a diagnosis finishes. This is a per-browser preference stored on this device only — it is not shared with other users or saved on the server, and it needs the browser’s notification permission.',
   },
   'settings.embedding-model': {
-    title: 'Embedding model',
-    text: 'Embeds failures so semantically-similar errors group together (used by failure clustering). Can reuse another role’s provider or configure its own.',
+    title: 'Semantic clustering',
+    text: 'An embeddings model groups failures whose errors mean the same thing into one cluster. It needs an OpenAI-compatible provider with an embeddings API: the diagnosis provider when it has one, otherwise a provider of its own, such as Ollama.',
     doc: 'guide/ai-provider#model-roles',
     envVars: [
       'PIWI_AI_EMBEDDING_PROVIDER',
@@ -1221,8 +1221,8 @@ export const HELP_TOPICS = {
     ],
   },
   'settings.privacy': {
-    title: 'Privacy notice',
-    text: 'What data is sent to the configured LLM provider when diagnosing a failure, and how secrets are stored. API keys are encrypted at rest; env vars keep them out of the DB entirely.',
+    title: 'What the model receives',
+    text: 'Where the evidence of a diagnosis goes, and what it holds, grouped by kind with its limits. API keys are encrypted at rest; env vars keep them out of the database entirely.',
     doc: 'features/ai-diagnosis#what-a-diagnosis-contains',
   },
   'settings.storage-backend': {
