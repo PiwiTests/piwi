@@ -3,6 +3,7 @@ package dev.piwitests.jetbrains
 import com.intellij.codeInsight.hints.codeVision.DaemonBoundCodeVisionProvider
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.components.service
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.platform.lsp.api.LspServerSupportProvider
@@ -159,6 +160,25 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals(listOf("Acme Mugs"), PiwiInstance.projects(url, approved.apiKey).map { it.name })
         } finally {
             server.stop(0)
+        }
+    }
+
+    /** Connect's choice beside the desktop app: one radio button per connection, one of them selected at a time. */
+    fun testConnectOffersTheConnectionsAsOneGroupOfRadioButtons() {
+        val choices = listOf(
+            Glue.ConnectChoice(Glue.ConnectTarget.DESKTOP, "The Piwi desktop app", "Runs on this machine.", "http://127.0.0.1:7495", true),
+            Glue.ConnectChoice(Glue.ConnectTarget.INSTANCE, "https://a.example", "From the settings.", "https://a.example", false),
+            Glue.ConnectChoice(Glue.ConnectTarget.OTHER, "Another instance…", "A Piwi server, by its address.", null, false),
+        )
+        val dialog = PiwiConnectFlow.ChooseConnectionDialog(project, choices)
+        try {
+            assertEquals(listOf("The Piwi desktop app (in use)", "https://a.example", "Another instance…"), dialog.buttons.map { it.text })
+            assertEquals(Glue.ConnectTarget.INSTANCE, dialog.picked()?.target)
+            dialog.buttons[2].isSelected = true
+            assertEquals(listOf(false, false, true), dialog.buttons.map { it.isSelected })
+            assertEquals(Glue.ConnectTarget.OTHER, dialog.picked()?.target)
+        } finally {
+            Disposer.dispose(dialog.disposable)
         }
     }
 
