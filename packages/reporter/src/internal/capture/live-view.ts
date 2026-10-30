@@ -30,6 +30,7 @@ import { fitViewSize } from '@piwitests/core/run-view';
 import { detectCi } from '../support/ci.js';
 import { resolveShardInfo } from '../support/shard-info.js';
 import { followCallLog } from './live-call-log.js';
+import { maskSecretFields } from './live-mask.js';
 import { openPageView, type PageFrame, type PageView } from './page-view.js';
 
 /**
@@ -44,7 +45,8 @@ import { openPageView, type PageFrame, type PageView } from './page-view.js';
  * its screencast (`page-view.ts`, through internal calls: nothing shows among the test's steps), at most
  * `LIVE_FRAME_WIDTH` by `LIVE_FRAME_HEIGHT` at `LIVE_FRAME_QUALITY`, `LIVE_FRAME_FPS` frames a second and
  * `LIVE_FRAME_BYTE_RATE` bytes, each frame posted with the call it was taken at, one post in flight, the latest frame
- * alone waiting. Nobody watching, no screencast runs and no frame goes. The view stops as nobody watches any more, as
+ * alone waiting. Before a frame goes, the page's secret fields and the elements its project masks (`masks`, which the
+ * instance sends on the stream) are painted over in it, or it does not go (`live-mask.ts`). Nobody watching, no screencast runs and no frame goes. The view stops as nobody watches any more, as
  * the test ends (the viewers hear it, `ended`) and as its page closes; someone who watches while no test runs hears
  * why no image shows. Each frame names its test, so a view opened from one test's row ends at the next test's first
  * frame. The worker also posts when its test stops and goes on (`stop`), and the stop it holds again on each stream
@@ -122,6 +124,8 @@ interface Link {
   logTimer: ReturnType<typeof setTimeout> | null;
   /** The instance does not take call logs (it answered 400): none goes any more. */
   logRefused: boolean;
+  /** The project's own locators masked in each image, beside the secret fields, as the instance last said. */
+  masks: string[];
 }
 
 let link: Link | null = null;
@@ -267,6 +271,7 @@ export function openLiveView(
     logSentAt: 0,
     logTimer: null,
     logRefused: false,
+    masks: [],
   };
   if (ci) connect(link);
   changed();
@@ -455,7 +460,8 @@ function connect(own: Link): void {
           .map((line) => line.slice(5).trimStart())
           .join('\n');
         const message = data ? parseInstanceToWorker(data) : null;
-        if (message) setViewers(own, message.count);
+        if (message?.type === 'masks') own.masks = message.locators;
+        else if (message) setViewers(own, message.count);
       }
     });
     response.on('error', () => drop(null));
@@ -527,6 +533,11 @@ function startView(): void {
     return;
   }
   const live = (): boolean => view?.page === page && link === own && active(own) && own.viewers > 0;
+  const mask = maskSecretFields(page, {
+    masks: () => own.masks,
+    quality: LIVE_FRAME_QUALITY,
+    maxBytes: MAX_LIVE_FRAME,
+  });
   const opened = openPageView(page, {
     size: (viewport) => fitViewSize(viewport, LIVE_FRAME_WIDTH, LIVE_FRAME_HEIGHT),
     quality: LIVE_FRAME_QUALITY,
@@ -535,10 +546,11 @@ function startView(): void {
     maxFrameBytes: MAX_LIVE_FRAME,
     lightQuality: LIGHT_QUALITY,
     shotMs: SHOT_MS,
-    busy: () => own.posting,
+    busy: () => own.posting || mask.resting,
     live,
+    screen: (frame) => mask.screen(frame),
     send: (frame) => postFrame(own, frame),
-    refuse: () => void post(own, { type: 'frame', ...own.id, refused: TOO_HEAVY }),
+    refuse: (why) => void post(own, { type: 'frame', ...own.id, refused: why ?? TOO_HEAVY }),
   }).catch(() => null);
   const onClose = (): void => {
     if (view?.page === page) void stopView();

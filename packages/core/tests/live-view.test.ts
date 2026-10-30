@@ -12,6 +12,10 @@ import {
   liveShareRefusal,
   liveWorkerKey,
   parseInstanceToWorker,
+  parseLiveMasks,
+  liveMaskProblem,
+  MAX_LIVE_MASKS,
+  MAX_LIVE_MASK_LENGTH,
   parseLiveViewEnv,
   parseLiveViewMissing,
   readLiveCall,
@@ -238,9 +242,25 @@ describe('the messages', () => {
       '{"type":"viewers","count":-1}',
       '{"type":"viewers"}',
       '{"type":"input","events":[]}',
+      '{"type":"masks","locators":"getByLabel(\'IBAN\')"}',
+      '{"type":"masks","locators":["#iban"]}',
     ]) {
       expect(parseInstanceToWorker(data), data).toBeNull();
     }
+  });
+
+  test('reads the elements a project masks: Playwright locators, trimmed, each once, 20 at most', () => {
+    expect(
+      parseInstanceToWorker(
+        JSON.stringify({ type: 'masks', locators: [" getByLabel('IBAN') ", "getByLabel('IBAN')", "locator('#card')"] }),
+      ),
+    ).toEqual({ type: 'masks', locators: ["getByLabel('IBAN')", "locator('#card')"] });
+    expect(parseLiveMasks([])).toEqual([]);
+    expect(parseLiveMasks(Array.from({ length: MAX_LIVE_MASKS + 1 }, (_, i) => `getByTestId('f${i}')`))).toBeNull();
+    expect(parseLiveMasks([`getByLabel('${'x'.repeat(MAX_LIVE_MASK_LENGTH)}')`])).toBeNull();
+    expect(liveMaskProblem("getByRole('textbox', { name: 'IBAN' })")).toBeNull();
+    expect(liveMaskProblem('#iban')).toBe("`#iban` is not a Playwright locator, such as getByLabel('IBAN').");
+    expect(liveMaskProblem('  ')).toBe('A masked element needs a locator.');
   });
 });
 

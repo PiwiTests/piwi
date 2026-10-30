@@ -65,9 +65,13 @@ responsibilities.
      the screencast helper the editor's view shares (`page-view.ts`), each with its call (through `hideSecretsInText`)
      and its test, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
      `live-call-log.ts`: the context's call stream turned on through `context.debugger._enable()`, which stays on, and a
-     listener on the worker's Playwright instrumentation); it always posts its test's stops (`showStop`). Never a frame while nobody watches, never
-     stored, nothing from a run outside CI unless it is shared (`tests/live-view.spec.ts`,
-     `tests/live-view-share.spec.ts`, `tests/live-view-worker.spec.ts`, `tests/live-view-call-log.spec.ts`). The key is
+     listener on the worker's Playwright instrumentation); it always posts its test's stops (`showStop`). Each frame
+     has the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over before it goes, read
+     through `internalCall` before and after it and painted with the `jpeg-js` of `playwright-core/lib/utilsBundle`,
+     feature-checked: without it, a frame that shows one does not go (`live-mask.ts`). Never a frame while nobody
+     watches, never stored, nothing from a run outside CI unless it is shared (`tests/live-view.spec.ts`,
+     `tests/live-view-share.spec.ts`, `tests/live-view-worker.spec.ts`, `tests/live-view-call-log.spec.ts`,
+     `tests/live-view-mask.spec.ts`). The key is
      out of the worker's `process.env` from that fixture's setup to its teardown, put back only as Playwright's
      `__stop__` message compares the environment,
      so the projects that depend on the worker's keep it; in a worker that can open a view, the test gets
