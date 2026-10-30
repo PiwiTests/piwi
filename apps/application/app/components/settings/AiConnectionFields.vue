@@ -59,12 +59,21 @@ const title = computed(() => {
 const hasKeyField = computed(() => {
   if (isCli.value || !tile.value) return false;
   if (tile.value.key !== 'none') return true;
-  return keyStored.value || addingKey.value || Boolean(r.value.apiKey) || Boolean(stored.value?.hasApiKey);
+  return keyStored.value || addingKey.value || Boolean(r.value.apiKey);
 });
 
-/** The stored key belongs to another provider or address: the server asks for it again. */
+/**
+ * The stored key belongs to another provider or address, and this one needs a
+ * key: the server asks for it again. Where a key is optional, saving drops it.
+ */
 const keyNeedsReentry = computed(
-  () => !keyStored.value && Boolean(stored.value?.hasApiKey) && !stored.value?.reuse && !r.value.apiKey,
+  () =>
+    tile.value?.key === 'required' &&
+    !keyStored.value &&
+    stored.value?.provider === r.value.provider &&
+    Boolean(stored.value?.hasApiKey) &&
+    !stored.value?.reuse &&
+    !r.value.apiKey,
 );
 
 /** A cloud tile's address is its own; it shows read-only until changed. */
@@ -82,7 +91,6 @@ const secretKeyCommand = `node -e "console.log(require('node:crypto').randomByte
 <template>
   <div class="space-y-4 rounded-lg border border-default bg-elevated/25 p-4">
     <p class="flex items-center gap-2 text-sm font-semibold text-highlighted">
-      <UIcon v-if="tile" :name="tile.icon" class="size-4" />
       {{ title }}
     </p>
 
@@ -113,9 +121,7 @@ const secretKeyCommand = `node -e "console.log(require('node:crypto').randomByte
           <CodeBlock :code="secretKeyCommand" lang="bash" />
         </div>
         <div v-else-if="keyStored && !replacingKey" class="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span class="flex items-center gap-1.5 text-sm text-highlighted">
-            <UIcon name="i-lucide-lock" class="size-3.5 text-muted" />A key is stored, encrypted.
-          </span>
+          <span class="flex items-center gap-1.5 text-sm text-highlighted"> A key is stored, encrypted. </span>
           <UButton color="neutral" variant="link" size="sm" class="px-0" @click="replacingKey = true">Replace</UButton>
         </div>
         <div v-else class="space-y-1">
@@ -212,12 +218,13 @@ const secretKeyCommand = `node -e "console.log(require('node:crypto').randomByte
           description="Blank uses the model's default. Reasoning models (o1, o3, GPT-5 class) accept no other value."
         >
           <UInput
-            v-model="r.temperature"
+            :model-value="String(r.temperature ?? '')"
             type="number"
             step="0.1"
             min="0"
             max="2"
             placeholder="Model default"
+            @update:model-value="(value: string | number) => (r.temperature = value ?? '')"
             class="w-40"
           />
         </SettingsField>

@@ -6,7 +6,6 @@
  * with a model of their own, or on another provider.
  */
 import { isLocalCliProvider, providerLabel } from '~/utils/ai-provider-catalog';
-import { SEGMENTED_SELECTED_CLASS } from '~/utils';
 
 const form = useAiSettingsForm();
 const roles = form.roles;
@@ -66,7 +65,7 @@ const assistantCliLabel = computed(() => (assistantCli.value ? providerLabel(ass
               :disabled="form.envManaged.value || !configured"
               aria-label="Auto-diagnose"
             />
-            <span class="text-sm text-muted">
+            <span class="text-xs text-muted">
               When a run finishes, diagnose up to 3 of its new failure clusters and title them. Each diagnosis takes one
               or two model calls.
             </span>
@@ -95,7 +94,7 @@ const assistantCliLabel = computed(() => (assistantCli.value ? providerLabel(ass
                 >
                   Enable notifications
                 </UButton>
-                <span class="text-sm text-muted">A browser notification when a diagnosis finishes.</span>
+                <span class="text-xs text-muted">A browser notification when a diagnosis finishes.</span>
               </template>
               <template v-else>
                 <USwitch
@@ -103,7 +102,7 @@ const assistantCliLabel = computed(() => (assistantCli.value ? providerLabel(ass
                   aria-label="Diagnosis notifications"
                   @update:model-value="toggleNotifEnabled"
                 />
-                <span class="text-sm text-muted">
+                <span class="text-xs text-muted">
                   A browser notification when a diagnosis finishes. Applies right away, to this browser only.
                 </span>
               </template>
@@ -119,12 +118,15 @@ const assistantCliLabel = computed(() => (assistantCli.value ? providerLabel(ass
         data-tour="ai-research-model"
       >
         <template #control>
-          <USwitch
-            :model-value="roles.research.enabled"
-            :disabled="!configured"
-            aria-label="Two-stage diagnosis"
-            @update:model-value="(on: boolean) => form.setFeature('research', on)"
-          />
+          <span class="flex items-center gap-2">
+            <EnvManagedBadge v-if="form.envDefined('research')" :env-vars="['PIWI_AI_RESEARCH_PROVIDER']" />
+            <USwitch
+              :model-value="roles.research.enabled"
+              :disabled="!configured || form.envDefined('research')"
+              aria-label="Two-stage diagnosis"
+              @update:model-value="(on: boolean) => form.setFeature('research', on)"
+            />
+          </span>
         </template>
         <AiSecondaryModel v-if="roles.research.enabled && configured" role="research" />
       </AiFeatureRow>
@@ -136,48 +138,45 @@ const assistantCliLabel = computed(() => (assistantCli.value ? providerLabel(ass
         data-tour="ai-embedding-model"
       >
         <template #control>
-          <USwitch
-            :model-value="roles.embedding.enabled"
-            :disabled="!configured"
-            aria-label="Semantic clustering"
-            @update:model-value="(on: boolean) => form.setFeature('embedding', on)"
-          />
+          <span class="flex items-center gap-2">
+            <EnvManagedBadge v-if="form.envDefined('embedding')" :env-vars="['PIWI_AI_EMBEDDING_PROVIDER']" />
+            <USwitch
+              :model-value="roles.embedding.enabled"
+              :disabled="
+                !configured ||
+                form.envDefined('embedding') ||
+                (form.embeddingUnavailable.value && !roles.embedding.enabled)
+              "
+              aria-label="Semantic clustering"
+              @update:model-value="(on: boolean) => form.setFeature('embedding', on)"
+            />
+          </span>
         </template>
+        <p v-if="form.embeddingUnavailable.value && !roles.embedding.enabled" class="text-xs text-muted">
+          {{ mainLabel }} has no embeddings API. Set an embedding provider on the server with
+          <code class="font-mono">PIWI_AI_EMBEDDING_PROVIDER</code> to turn it on.
+        </p>
         <AiSecondaryModel v-if="roles.embedding.enabled && configured" role="embedding" />
       </AiFeatureRow>
 
       <AiFeatureRow
-        title="Assistant"
+        title="Assistant model"
         help="settings.ai-assistant"
         description="Ask Piwi, the in-app assistant: it answers questions about your runs, failures and tests."
         data-tour="ai-assistant-model"
       >
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span id="ai-assistant-answers-with" class="text-xs text-muted">Answers with</span>
-          <div
-            role="radiogroup"
-            aria-labelledby="ai-assistant-answers-with"
-            class="inline-flex max-w-full flex-wrap gap-0.5 rounded-md bg-elevated/60 p-0.5"
-          >
-            <button
-              v-for="option in [
-                { on: false, label: 'The diagnosis model' },
-                { on: true, label: 'A different model' },
-              ]"
-              :key="option.label"
-              type="button"
-              role="radio"
-              :aria-checked="roles.assistant.enabled === option.on ? 'true' : 'false'"
-              :disabled="!configured"
-              class="rounded px-2.5 py-1 text-sm whitespace-nowrap outline-none transition-colors focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50"
-              :class="
-                roles.assistant.enabled === option.on ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-default'
-              "
-              @click="form.setFeature('assistant', option.on)"
-            >
-              {{ option.label }}
-            </button>
-          </div>
+          <AiSegmentedChoice
+            :model-value="roles.assistant.enabled"
+            :options="[
+              { value: false, label: 'The diagnosis model' },
+              { value: true, label: 'A different model' },
+            ]"
+            labelledby="ai-assistant-answers-with"
+            :disabled="!configured || form.envDefined('assistant')"
+            @update:model-value="(on: boolean) => form.setFeature('assistant', on)"
+          />
         </div>
         <AiSecondaryModel v-if="roles.assistant.enabled && configured" role="assistant" />
         <p v-if="assistantCli" class="text-xs text-muted">

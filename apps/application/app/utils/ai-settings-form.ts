@@ -25,8 +25,11 @@ export interface RoleForm {
   model: string;
   baseUrl: string;
   apiKey: string;
-  /** OpenAI-compat only: sampling temperature override, kept as a string like the other inputs. Empty means "provider default". */
-  temperature: string;
+  /**
+   * OpenAI-compat only: sampling temperature override. Empty means "provider default"; a number input
+   * may hand over a number.
+   */
+  temperature: string | number;
 }
 
 export type RoleForms = Record<AiModelRole, RoleForm>;
@@ -114,8 +117,8 @@ export function isRoleConfigured(roles: RoleForms, role: AiModelRole): boolean {
  * Parse the free-text temperature field; blank means "provider default". Range
  * (0-2) is enforced server-side too — this only guards obviously bad input.
  */
-export function parseRoleTemperature(role: AiModelRole, raw: string): number | undefined {
-  const trimmed = raw.trim();
+export function parseRoleTemperature(role: AiModelRole, raw: string | number | null | undefined): number | undefined {
+  const trimmed = String(raw ?? '').trim();
   if (trimmed === '') return undefined;
   const n = Number(trimmed);
   if (!Number.isFinite(n) || n < 0 || n > 2) {
@@ -124,8 +127,12 @@ export function parseRoleTemperature(role: AiModelRole, raw: string): number | u
   return n;
 }
 
-/** The PUT body fragment for one role, or `null` when the role is not configured. */
-export function roleSaveBody(roles: RoleForms, role: AiModelRole): AiRoleConfigInput | null {
+/**
+ * The PUT body fragment for one role, or `null` when the role is not configured.
+ * With `dropStoredKey`, a role with no key typed removes its stored one: the
+ * server refuses to keep a key for a provider or address it was not saved for.
+ */
+export function roleSaveBody(roles: RoleForms, role: AiModelRole, dropStoredKey = false): AiRoleConfigInput | null {
   if (!isRoleConfigured(roles, role)) return null;
   const r = roles[role];
   const temperature = parseRoleTemperature(role, r.temperature);
@@ -137,6 +144,7 @@ export function roleSaveBody(roles: RoleForms, role: AiModelRole): AiRoleConfigI
     temperature,
   };
   if (r.apiKey !== '') body.apiKey = r.apiKey;
+  else if (dropStoredKey) body.apiKey = null;
   return body;
 }
 
@@ -147,7 +155,7 @@ export function roleSaveBody(roles: RoleForms, role: AiModelRole): AiRoleConfigI
  */
 export function buildAiSaveBody(
   roles: RoleForms,
-  opts: { envManaged: boolean; autoDiagnose: boolean },
+  opts: { envManaged: boolean; autoDiagnose: boolean; dropStoredKeys?: AiModelRole[] },
 ): SaveAiSettingsBody {
   // Non-env-managed with no diagnosis provider → the user is turning AI off, so
   // clear the whole config. When env-managed we keep sending roles so per-role
@@ -157,10 +165,10 @@ export function buildAiSaveBody(
   }
   return {
     roles: {
-      diagnosis: roleSaveBody(roles, 'diagnosis'),
-      research: roleSaveBody(roles, 'research'),
-      embedding: roleSaveBody(roles, 'embedding'),
-      assistant: roleSaveBody(roles, 'assistant'),
+      diagnosis: roleSaveBody(roles, 'diagnosis', opts.dropStoredKeys?.includes('diagnosis')),
+      research: roleSaveBody(roles, 'research', opts.dropStoredKeys?.includes('research')),
+      embedding: roleSaveBody(roles, 'embedding', opts.dropStoredKeys?.includes('embedding')),
+      assistant: roleSaveBody(roles, 'assistant', opts.dropStoredKeys?.includes('assistant')),
     },
     autoDiagnose: opts.autoDiagnose,
   };

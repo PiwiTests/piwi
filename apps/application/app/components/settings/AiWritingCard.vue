@@ -25,6 +25,7 @@ const LANGUAGES = ['French', 'German', 'Spanish', 'Italian', 'Portuguese', 'Dutc
       >
         <UInput
           v-model="form.language.value"
+          :disabled="form.languageEnvManaged.value"
           list="ai-response-languages"
           placeholder="English"
           autocomplete="off"

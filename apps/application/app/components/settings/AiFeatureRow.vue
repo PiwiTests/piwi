@@ -16,7 +16,7 @@ defineProps<{ title: string; description: string; help?: HelpTopicKey }>();
         <p class="inline-flex items-center gap-1 text-sm font-semibold text-highlighted">
           {{ title }} <HelpHint v-if="help" :topic="help" />
         </p>
-        <p class="text-sm text-muted leading-relaxed">{{ description }}</p>
+        <p class="text-xs text-muted">{{ description }}</p>
       </div>
       <div class="shrink-0 pt-0.5">
         <slot name="control" />

@@ -37,7 +37,7 @@ popover, and pointing at a line enlarges its number on the page.
 | Guide | What it shows | Listed for |
 |---|---|---|
 | **Report a first run** | Install the reporter, send a run, and find it in its project | Administrators |
-| **Configure AI** | Choose the models behind diagnosis and the assistant | Administrators |
+| **Configure AI** | Choose where the AI runs and what it does | Administrators |
 | **Add the SCM token** | Let Piwi read the commits behind a failure | Project admins |
 | **Set up CI and sharding** | Report from CI, merge shards into one run, re-run from a cluster | Administrators |
 | **Turn on pull-request feedback** | Post each run's result on its pull request | Administrators |

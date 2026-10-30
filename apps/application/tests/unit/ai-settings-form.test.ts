@@ -138,6 +138,26 @@ describe('ai-settings-form', () => {
     it('returns null for an unconfigured role', () => {
       expect(roleSaveBody(forms(), 'embedding')).toBeNull();
     });
+
+    it('reads a temperature a number input handed over as a number', () => {
+      const body = roleSaveBody(
+        forms({ diagnosis: { provider: 'openai', model: 'm', baseUrl: 'u', temperature: 0.2 } }),
+        'diagnosis',
+      );
+      expect(body?.temperature).toBe(0.2);
+    });
+
+    it('removes the stored key of a role moved to another provider with no key typed', () => {
+      const moved = forms({
+        diagnosis: { provider: 'openai', model: 'llama3.1', baseUrl: 'http://localhost:11434/v1' },
+      });
+      expect(roleSaveBody(moved, 'diagnosis', true)).toMatchObject({ apiKey: null });
+      expect(roleSaveBody(moved, 'diagnosis')).not.toHaveProperty('apiKey');
+      const typed = forms({ diagnosis: { provider: 'openai', model: 'm', baseUrl: 'u', apiKey: 'sk-new' } });
+      expect(roleSaveBody(typed, 'diagnosis', true)).toMatchObject({ apiKey: 'sk-new' });
+      const body = buildAiSaveBody(moved, { envManaged: false, autoDiagnose: false, dropStoredKeys: ['diagnosis'] });
+      expect(body.roles!.diagnosis).toMatchObject({ apiKey: null });
+    });
   });
 
   describe('tiles', () => {

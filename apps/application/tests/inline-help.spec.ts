@@ -15,8 +15,8 @@ import { DOCS_BASE_URL } from '#shared/docs';
  */
 async function openHint(page: Page, name: string) {
   // Some help topics are shared by a card header and a field label (e.g. the
-  // AI provider and wasted-time topics), so the same accessible name resolves to
-  // several buttons. Target the first visible one — the card header hint.
+  // wasted-time topic), so the same accessible name resolves to several
+  // buttons. Target the first visible one — the card header hint.
   const trigger = page.getByRole('button', { name }).first();
   await trigger.waitFor({ state: 'visible', timeout: 15000 });
   await expect(async () => {

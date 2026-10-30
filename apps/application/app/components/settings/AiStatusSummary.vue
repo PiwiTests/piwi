@@ -10,23 +10,34 @@ import { providerLabel } from '~/utils/ai-provider-catalog';
 const form = useAiSettingsForm();
 const saved = computed(() => form.settings.value);
 const main = computed(() => saved.value?.roles.diagnosis ?? null);
-const test = computed(() => form.tests.diagnosis);
+/** The diagnosis test of this visit, shown only while the provider section holds what was saved. */
+const test = computed(() => (form.providerChanged.value ? null : form.tests.diagnosis));
 
-function featureModel(role: AiRoleSettings | null): string {
-  if (!role) return 'Off';
-  const model = role.model || 'the default model';
-  if (role.reuse || !role.provider || role.provider === main.value?.provider) return model;
-  return `${model}, ${providerLabel(role.provider, role.baseUrl)}`;
+const sameUrl = (a: string | null, b: string | null) => (a ?? '').replace(/\/+$/, '') === (b ?? '').replace(/\/+$/, '');
+
+/** A feature's model, with its provider when it is not the diagnosis one; `mono` when the value is a model id. */
+function featureModel(role: AiRoleSettings | null): { value: string; mono: boolean } {
+  if (!role) return { value: 'Off', mono: false };
+  if (!role.model) {
+    if (role.reuse) return { value: `The ${role.reuse === 'research' ? 'two-stage' : 'diagnosis'} model`, mono: false };
+    return { value: `The default model of ${providerLabel(role.provider, role.baseUrl)}`, mono: false };
+  }
+  const own = !role.reuse && role.provider && main.value;
+  const elsewhere = own && (role.provider !== main.value!.provider || !sameUrl(role.baseUrl, main.value!.baseUrl));
+  return { value: elsewhere ? `${role.model}, ${providerLabel(role.provider, role.baseUrl)}` : role.model, mono: true };
 }
 
 const rows = computed(() => {
   const s = saved.value;
   if (!s) return [];
   return [
-    { label: 'Auto-diagnose', value: s.autoDiagnose ? 'On' : 'Off' },
-    { label: 'Two-stage diagnosis', value: featureModel(s.roles.research) },
-    { label: 'Semantic clustering', value: featureModel(s.roles.embedding) },
-    { label: 'Assistant', value: s.roles.assistant ? featureModel(s.roles.assistant) : 'The diagnosis model' },
+    { label: 'Auto-diagnose', value: s.autoDiagnose ? 'On' : 'Off', mono: false },
+    { label: 'Two-stage diagnosis', ...featureModel(s.roles.research) },
+    { label: 'Semantic clustering', ...featureModel(s.roles.embedding) },
+    {
+      label: 'Assistant model',
+      ...(s.roles.assistant ? featureModel(s.roles.assistant) : { value: 'The diagnosis model', mono: false }),
+    },
   ];
 });
 </script>
@@ -50,13 +61,13 @@ const rows = computed(() => {
         <span class="font-mono">{{ main.model || 'the default model' }}</span>
         <template v-if="form.envManaged.value">, set by environment variables</template>
       </p>
-      <p v-if="test.status === 'ok' || test.status === 'error'" class="mt-1 text-xs text-muted">
+      <p v-if="test && (test.status === 'ok' || test.status === 'error')" class="mt-1 text-xs text-muted">
         {{ test.status === 'ok' ? 'Its connection test passed on this visit.' : 'Its last connection test failed.' }}
       </p>
       <dl class="mt-3 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-1">
         <template v-for="row in rows" :key="row.label">
           <dt class="text-xs text-muted">{{ row.label }}</dt>
-          <dd class="font-mono text-xs text-highlighted">{{ row.value }}</dd>
+          <dd class="text-xs text-highlighted" :class="row.mono ? 'font-mono' : ''">{{ row.value }}</dd>
         </template>
       </dl>
     </template>

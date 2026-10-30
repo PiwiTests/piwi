@@ -310,7 +310,7 @@ export const SETUP_DECISIONS: SetupDecision[] = [
         when: 'Ollama, LM Studio, vLLM and the like: `PIWI_AI_PROVIDER=openai` with `PIWI_AI_BASE_URL` pointing at that server and `PIWI_AI_MODEL`, so nothing leaves your network.',
       },
       {
-        option: 'Claude Code (local)',
+        option: 'Claude Code CLI',
         when: 'The desktop app, or a server with `PIWI_CLAUDE_CLI_PATH` set, runs the local `claude` CLI on its own sign-in, with no API key (`PIWI_AI_PROVIDER=claude-cli`).',
       },
     ],
@@ -325,7 +325,7 @@ export const SETUP_DECISIONS: SetupDecision[] = [
       { option: 'No token', when: 'History, clusters, flaky scores and locator healing are unaffected.' },
       {
         option: 'A GitHub, GitLab or Bitbucket token',
-        when: 'Set instance-wide (Settings → AI → Repository access) or per project. Read access opens private repositories to the diff in AI diagnosis, What changed, uncovered changes and CODEOWNERS ownership. Write access adds pull-request comments and commit statuses (GitHub, GitLab) and auto-heal pull requests (GitHub, GitLab, Bitbucket Cloud), both with `PIWI_SITE_URL` set, and CI re-runs from the dashboard.',
+        when: 'Set instance-wide (Settings → AI → What the model receives) or per project. Read access opens private repositories to the diff in AI diagnosis, What changed, uncovered changes and CODEOWNERS ownership. Write access adds pull-request comments and commit statuses (GitHub, GitLab) and auto-heal pull requests (GitHub, GitLab, Bitbucket Cloud), both with `PIWI_SITE_URL` set, and CI re-runs from the dashboard.',
       },
     ],
     doc: 'guide/source-control',

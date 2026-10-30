@@ -15,7 +15,7 @@ API key. The CLI must be installed on the machine running Piwi.
 2. Choose **Codex** under **Command-line tools** in **Settings → AI**. The desktop app finds `codex` on PATH; a self-hosted server enables it
    with `PIWI_CODEX_CLI_PATH` pointing to the executable's absolute path. Alternatively, set `PIWI_AI_PROVIDER=codex-cli`
    for environment-managed settings.
-3. Use **Recheck** in the status card to check availability, version and authentication. Sign-in and sign-out stay in
+3. Pick the **Codex** tile, then use **Recheck** under it to check availability, version and authentication. Sign-in and sign-out stay in
    Codex. No API key or Piwi secret-encryption key is needed for this provider.
 
 Piwi reuses the file-backed login at `CODEX_HOME/auth.json` (default: `.codex/auth.json` in your home directory).

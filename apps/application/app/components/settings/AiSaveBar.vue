@@ -22,7 +22,7 @@ const summary = computed(() => {
       aria-label="Save AI settings"
     >
       <div class="min-w-0 flex-1">
-        <p class="text-sm text-highlighted" :class="changed.length ? 'font-semibold' : ''">{{ summary }}</p>
+        <p class="text-sm text-highlighted">{{ summary }}</p>
         <p v-if="form.saveError.value" class="text-xs text-error">{{ form.saveError.value }}</p>
       </div>
       <div class="flex items-center gap-2">

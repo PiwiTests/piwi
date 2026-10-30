@@ -7,7 +7,6 @@
  */
 import type { ProviderTileId } from '~/utils/ai-provider-catalog';
 import { providerLabel, suggestedModel } from '~/utils/ai-provider-catalog';
-import { SEGMENTED_SELECTED_CLASS } from '~/utils';
 import { FEATURE_LABEL, ROLE_PURPOSE, type OptionalAiRole, type RoleSource } from '~/composables/useAiSettingsForm';
 
 const props = defineProps<{ role: OptionalAiRole }>();
@@ -51,25 +50,12 @@ const placeholder = computed(() => (suggestion.value ? `e.g. ${suggestion.value}
       none.
     </p>
     <template v-else>
-      <div
-        role="radiogroup"
-        :aria-label="`Provider for ${FEATURE_LABEL[role].toLowerCase()}`"
-        class="inline-flex max-w-full flex-wrap gap-0.5 rounded-md bg-elevated/60 p-0.5"
-      >
-        <button
-          v-for="option in options"
-          :key="option.value"
-          type="button"
-          role="radio"
-          :aria-checked="source === option.value ? 'true' : 'false'"
-          :disabled="option.disabled"
-          class="rounded px-2.5 py-1 text-sm whitespace-nowrap outline-none transition-colors focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50"
-          :class="source === option.value ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-default'"
-          @click="form.setSource(role, option.value)"
-        >
-          {{ option.label }}<span v-if="option.detail" class="text-muted"> · {{ option.detail }}</span>
-        </button>
-      </div>
+      <AiSegmentedChoice
+        :model-value="source"
+        :options="options"
+        :label="`Provider for ${FEATURE_LABEL[role].toLowerCase()}`"
+        @update:model-value="(value: RoleSource) => form.setSource(role, value)"
+      />
       <UAlert
         v-if="!sameAllowed"
         color="neutral"

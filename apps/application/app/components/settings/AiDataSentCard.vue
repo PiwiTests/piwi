@@ -39,14 +39,20 @@ function hostOf(url: string): string {
 }
 
 /**
- * Where a role's evidence goes, as a phrase, and whether it stays on this
- * network: the API of a cloud tile, else the host of the address.
+ * Where a role's evidence goes, as a phrase: the host of its own address (a
+ * self-hosted server, a gateway in front of a cloud API), else the API of its
+ * tile. `private` when the address is on this network; `known` when Piwi can
+ * name the destination at all.
  */
-function destination(r: RoleDraft): { text: string; private: boolean } {
+function destination(r: RoleDraft): { text: string; private: boolean; known: boolean } {
   const tile = providerTile(r.tile);
-  const ownAddress = r.provider === 'openai' && (tile?.group !== 'cloud' || r.baseUrl !== tile.baseUrl);
-  if (ownAddress) return { text: hostOf(r.baseUrl) || 'your server', private: isPrivateUrl(r.baseUrl) };
-  return { text: CLOUD_NAMES[r.tile ?? r.provider] ?? providerLabel(r.provider, r.baseUrl), private: false };
+  const ownAddress =
+    Boolean(r.baseUrl) && !isLocalCliProvider(r.provider) && (tile?.group !== 'cloud' || r.baseUrl !== tile.baseUrl);
+  if (ownAddress || (r.provider === 'openai' && !r.baseUrl)) {
+    return { text: hostOf(r.baseUrl) || 'your server', private: isPrivateUrl(r.baseUrl), known: true };
+  }
+  const name = CLOUD_NAMES[r.tile ?? r.provider];
+  return name ? { text: name, private: false, known: true } : { text: 'the provider', private: false, known: false };
 }
 
 const main = computed(() => (roles.diagnosis.provider ? destination(roles.diagnosis) : null));
@@ -65,10 +71,14 @@ const mainLabel = computed(() => providerLabel(roles.diagnosis.provider, roles.d
 const open = ref<string | null>(null);
 const defaults = computed(() => form.limitsData.value?.defaults);
 
+/** The limits of a group set here away from their default; a limit pinned by the environment is not counted. */
 function changedCount(group: ContextLimitGroup): number {
   const d = defaults.value;
   if (!d) return 0;
-  return group.fields.filter((k) => form.limits[k] !== '' && form.limits[k] != null && form.limits[k] !== d[k]).length;
+  return group.fields.filter(
+    (k) =>
+      !form.envManagedLimits.value.has(k) && form.limits[k] !== '' && form.limits[k] != null && form.limits[k] !== d[k],
+  ).length;
 }
 
 function resetGroup(group: ContextLimitGroup) {
@@ -108,14 +118,13 @@ watch(
       <div class="rounded-md px-3 py-2 text-sm" :class="main?.private ? 'bg-success/10' : 'bg-elevated/50'">
         <p v-if="!main" class="text-highlighted">Nothing leaves this server until you choose a provider.</p>
         <p v-else-if="main.private" class="text-highlighted">
-          <span class="font-semibold">Stays on your network.</span> {{ mainLabel }} runs at
-          <code class="font-mono text-xs">{{ main.text }}</code
+          Stays on your network: {{ mainLabel }} runs at <code class="font-mono text-xs">{{ main.text }}</code
           >.
         </p>
-        <p v-else class="text-highlighted">
-          <span class="font-semibold">Sent to {{ main.text }}.</span> Check its data retention terms before you turn on
-          auto-diagnose.
+        <p v-else-if="main.known" class="text-highlighted">
+          Sent to {{ main.text }}. Check its data retention terms before you turn on auto-diagnose.
         </p>
+        <p v-else class="text-highlighted">Sent to the provider set on the server.</p>
         <p v-for="line in others" :key="line" class="mt-1 text-xs text-muted">{{ line }}</p>
       </div>
 
@@ -129,9 +138,7 @@ watch(
           Needs <code class="font-mono text-xs">PIWI_SECRET_KEY</code> on the server to be stored.
         </p>
         <div v-else-if="hasToken && !replacingToken" class="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span class="flex items-center gap-1.5 text-sm text-highlighted">
-            <UIcon name="i-lucide-lock" class="size-3.5 text-muted" />A token is stored, encrypted.
-          </span>
+          <span class="flex items-center gap-1.5 text-sm text-highlighted"> A token is stored, encrypted. </span>
           <UButton color="neutral" variant="link" size="sm" class="px-0" @click="replacingToken = true"
             >Replace</UButton
           >

@@ -116,7 +116,7 @@ export const HELP_TOPICS = {
   },
   'cluster.scm-fetch-failed': {
     title: 'Changes not read',
-    text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM token (**Settings → AI → Repository access**, or the project’s **Source control** settings). On the desktop app, run `git fetch` in the linked folder.',
+    text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM token (**Settings → AI → What the model receives → Repository access token**, or the project’s **Source control** settings). On the desktop app, run `git fetch` in the linked folder.',
     doc: 'guide/source-control#troubleshooting',
   },
   'cluster.scm-host-error': {
@@ -1201,7 +1201,7 @@ export const HELP_TOPICS = {
   },
   'settings.auto-diagnose': {
     title: 'Auto-diagnose',
-    text: 'When a run finishes, up to 3 new failure clusters are diagnosed automatically — each diagnosis is one research call (when a research model is configured) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires a provider.',
+    text: 'When a run finishes, up to 3 new failure clusters are diagnosed automatically — each diagnosis is one research call (with two-stage diagnosis on) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires a provider.',
     doc: 'guide/ai-provider#enabling-ai-diagnosis',
     envVars: ['PIWI_AI_AUTO_DIAGNOSE'],
   },

@@ -74,13 +74,11 @@ async function signOut() {
   else toast.add({ title: 'Sign-out failed', description: res.error || 'Unknown error', color: 'error' });
 }
 
-watch(
-  () => props.provider,
-  (provider) => {
-    if (allowed.value && !cli.view(provider).checked) cli.refresh(provider);
-  },
-  { immediate: true },
-);
+function check(provider: LocalCliProvider) {
+  if (form.cliAllowed(provider) && !cli.view(provider).checked) cli.refresh(provider);
+}
+onMounted(() => check(props.provider));
+watch(() => props.provider, check);
 </script>
 
 <template>

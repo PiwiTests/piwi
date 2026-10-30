@@ -52,7 +52,7 @@ export const FEATURE_LABEL: Record<AiModelRole, string> = {
   diagnosis: 'Provider',
   research: 'Two-stage diagnosis',
   embedding: 'Semantic clustering',
-  assistant: 'Assistant',
+  assistant: 'Assistant model',
 };
 
 const idleTest = (): AiTestState => ({ status: 'idle', message: '' });
@@ -61,9 +61,10 @@ const perRole = <T>(make: () => T) =>
 
 /** The saved state of one section of the page, compared to tell what changed. */
 function connectionPart(r: RoleDraft) {
+  const temperature = String(r.temperature ?? '').trim();
   return r.reuse
-    ? { reuse: r.reuse, model: r.model, temperature: r.temperature }
-    : { provider: r.provider, model: r.model, baseUrl: r.baseUrl, apiKey: r.apiKey, temperature: r.temperature };
+    ? { reuse: r.reuse, model: r.model, temperature }
+    : { provider: r.provider, model: r.model, baseUrl: r.baseUrl, apiKey: r.apiKey, temperature };
 }
 
 /**
@@ -131,11 +132,32 @@ export function createAiSettingsForm(
     mainTile.value ? mainTile.value.embeddings : roles.diagnosis.provider === 'openai',
   );
 
-  /** The role whose provider a role runs on. */
+  /** The role whose provider a role runs on, through every reuse. */
   function sourceRole(role: AiModelRole): AiModelRole {
-    const r = roles[role];
-    return r.reuse && r.reuse !== role ? r.reuse : role;
+    let current = role;
+    for (let hops = 0; hops < ROLES.length; hops++) {
+      const reuse = roles[current].reuse;
+      if (!reuse || reuse === current) break;
+      current = reuse;
+    }
+    return current;
   }
+
+  /** The connection a role runs on, as one string: a request answers for it only while it is unchanged. */
+  function connectionKey(role: AiModelRole): string {
+    const r = roles[role];
+    const src = roles[sourceRole(role)];
+    return [r.reuse, r.model, String(r.temperature ?? ''), src.provider, src.baseUrl, src.apiKey].join('\u0000');
+  }
+
+  /** Env-managed, a feature the environment sets has its own provider and cannot be turned off here. */
+  function envDefined(role: OptionalAiRole): boolean {
+    const s = stored(role);
+    return envManaged.value && Boolean(s) && !s?.reuse;
+  }
+
+  /** Env-managed, semantic clustering cannot start when the server's provider has no embeddings API. */
+  const embeddingUnavailable = computed(() => envManaged.value && !mainHasEmbeddings.value && !envDefined('embedding'));
 
   function resolvedProvider(role: AiModelRole): string {
     return roles[sourceRole(role)].provider;
@@ -183,12 +205,16 @@ export function createAiSettingsForm(
     };
   }
 
+  const savedRoles = computed(() => {
+    const out = perRole(blankRoleDraft);
+    for (const role of ROLES) Object.assign(out[role], roleDraftFromSettings(settings.value?.roles[role]));
+    return out;
+  });
+
   const baseline = computed(() => {
     const s = settings.value;
-    const savedRoles = perRole(blankRoleDraft);
-    for (const role of ROLES) Object.assign(savedRoles[role], roleDraftFromSettings(s?.roles[role]));
     return snapshot({
-      roles: savedRoles,
+      roles: savedRoles.value,
       autoDiagnose: s?.autoDiagnose ?? false,
       language: s?.language || '',
       instructions: s?.customInstructions || '',
@@ -215,9 +241,11 @@ export function createAiSettingsForm(
   const SECTIONS: { label: string; parts: Part[] }[] = [
     { label: 'Provider', parts: ['provider'] },
     { label: 'Features', parts: ['features'] },
-    { label: 'Writing', parts: ['writing'] },
+    { label: 'How the AI writes', parts: ['writing'] },
     { label: 'What the model receives', parts: ['limits', 'scm'] },
   ];
+  /** Whether the provider section differs from what was saved. */
+  const providerChanged = computed(() => changed('provider'));
   /** The sections of the page with unsaved changes, by label. */
   const changedSections = computed(() =>
     SECTIONS.filter((section) => section.parts.some(changed)).map((section) => section.label),
@@ -226,11 +254,7 @@ export function createAiSettingsForm(
   // A test result describes the connection it ran on: any change to it clears the result.
   for (const role of ROLES) {
     watch(
-      () => {
-        const r = roles[role];
-        const src = roles[sourceRole(role)];
-        return [r.reuse, r.model, r.temperature, src.provider, src.baseUrl, src.apiKey].join('\u0000');
-      },
+      () => connectionKey(role),
       () => {
         if (tests[role].status !== 'testing') tests[role] = idleTest();
       },
@@ -244,7 +268,8 @@ export function createAiSettingsForm(
     applyTile(roles[role], tile, ROLE_PURPOSE[role], stored(role));
     models[role] = [];
     if (role !== 'diagnosis') return;
-    // Features that reuse the diagnosis provider follow it to the new one.
+    // Features that reuse the diagnosis provider follow it to the new one, or back to their stored model.
+    const backToStored = savedRoles.value.diagnosis.tile === id;
     for (const r of OPTIONAL_ROLES) {
       const f = roles[r];
       if (f.reuse !== 'diagnosis') continue;
@@ -252,7 +277,8 @@ export function createAiSettingsForm(
         Object.assign(f, { ...blankRoleDraft(), enabled: f.enabled });
         continue;
       }
-      f.model = suggestedModel(id, ROLE_PURPOSE[r]);
+      const s = stored(r);
+      f.model = backToStored && s?.reuse === 'diagnosis' ? (s.model ?? '') : suggestedModel(id, ROLE_PURPOSE[r]);
       models[r] = [];
     }
   }
@@ -264,6 +290,7 @@ export function createAiSettingsForm(
   }
 
   function setSource(role: OptionalAiRole, source: RoleSource) {
+    if (roleSource(role) === source) return;
     const f = roles[role];
     const s = stored(role);
     models[role] = [];
@@ -278,16 +305,19 @@ export function createAiSettingsForm(
 
   /** Turn a feature on or off. On, it starts on the diagnosis provider when it can. */
   function setFeature(role: OptionalAiRole, on: boolean) {
+    if (envDefined(role)) return;
+    if (on && role === 'embedding' && embeddingUnavailable.value) return;
     const f = roles[role];
     f.enabled = on;
     if (!on || f.reuse || f.provider) return;
-    if (role === 'embedding' && !mainHasEmbeddings.value && !envManaged.value) return;
+    if (role === 'embedding' && !mainHasEmbeddings.value) return;
     f.reuse = 'diagnosis';
     f.model = suggestedModel(roles.diagnosis.tile, ROLE_PURPOSE[role]);
   }
 
   async function loadModels(role: AiModelRole) {
     const src = roles[sourceRole(role)];
+    const key = connectionKey(role);
     loadingModels[role] = true;
     try {
       const res = await $fetch<{ models: ModelInfo[] }>('/api/settings/ai/models', {
@@ -295,9 +325,10 @@ export function createAiSettingsForm(
         // role lets the server fall back to the stored key when the form key is blank
         body: { role, provider: src.provider, baseUrl: src.baseUrl || undefined, apiKey: src.apiKey || undefined },
       });
-      models[role] = res.models;
+      // A list for a connection changed since the request belongs to no one.
+      if (connectionKey(role) === key) models[role] = res.models;
     } catch {
-      models[role] = [];
+      if (connectionKey(role) === key) models[role] = [];
     } finally {
       loadingModels[role] = false;
     }
@@ -306,6 +337,7 @@ export function createAiSettingsForm(
   async function testRole(role: AiModelRole) {
     const r = roles[role];
     const src = roles[sourceRole(role)];
+    const key = connectionKey(role);
     tests[role] = { status: 'testing', message: 'Testing the connection…' };
     try {
       const res = await $fetch<{ success: boolean; model?: string; error?: string }>('/api/settings/ai/test', {
@@ -320,11 +352,14 @@ export function createAiSettingsForm(
           temperature: parseRoleTemperature(role, r.temperature),
         },
       });
-      tests[role] = res.success
-        ? { status: 'ok', message: `Connected. ${res.model || 'The model'} answered.` }
-        : { status: 'error', message: res.error || 'The provider did not answer.' };
+      tests[role] =
+        connectionKey(role) !== key
+          ? idleTest()
+          : res.success
+            ? { status: 'ok', message: `Connected. ${res.model || 'The model'} answered.` }
+            : { status: 'error', message: res.error || 'The provider did not answer.' };
     } catch (err) {
-      tests[role] = { status: 'error', message: errorMessage(err) };
+      tests[role] = connectionKey(role) !== key ? idleTest() : { status: 'error', message: errorMessage(err) };
     }
   }
 
@@ -339,8 +374,20 @@ export function createAiSettingsForm(
 
   /** The first thing that keeps the page from saving, or null. */
   function saveProblem(): string | null {
-    if (envManaged.value) return null;
+    if (!changed('provider') && !changed('features')) return null;
     const d = roles.diagnosis;
+    const e = roles.embedding;
+    if (d.provider && e.enabled && e.reuse && !e.model.trim()) return 'Semantic clustering: enter an embedding model.';
+    for (const role of OPTIONAL_ROLES) {
+      const f = roles[role];
+      if (d.provider && f.enabled && f.reuse && f.reuse !== 'diagnosis' && !roles[f.reuse].enabled) {
+        return `${FEATURE_LABEL[role]}: it uses the provider of ${FEATURE_LABEL[f.reuse].toLowerCase()}, which is off. Choose another.`;
+      }
+    }
+    if (envManaged.value) return null;
+    if (d.provider && e.enabled && roles[sourceRole('embedding')].provider !== 'openai') {
+      return 'Semantic clustering: its provider has no embeddings API.';
+    }
     if (d.provider) {
       if (isLocalCliProvider(d.provider) && !cliAllowed(d.provider))
         return `Provider: this server is not allowed to run ${providerTile(d.tile)?.label ?? d.provider}.`;
@@ -369,7 +416,21 @@ export function createAiSettingsForm(
     try {
       const body: SaveAiSettingsBody = {};
       if (changed('provider') || changed('features')) {
-        Object.assign(body, buildAiSaveBody(roles, { envManaged: envManaged.value, autoDiagnose: autoDiagnose.value }));
+        // A role pointed at another provider or address with no key typed drops the stored key.
+        const dropStoredKeys = ROLES.filter(
+          (role) => !roles[role].reuse && Boolean(stored(role)?.hasApiKey) && !keyStored(role),
+        );
+        Object.assign(
+          body,
+          buildAiSaveBody(roles, { envManaged: envManaged.value, autoDiagnose: autoDiagnose.value, dropStoredKeys }),
+        );
+        // Env-managed, an unchanged role is left out so the server keeps the environment's model for it.
+        if (envManaged.value && body.roles) {
+          for (const role of ROLES) {
+            const same = (r: RoleDraft) => (r.enabled || role === 'diagnosis' ? JSON.stringify(connectionPart(r)) : '');
+            if (same(roles[role]) === same(savedRoles.value[role])) delete body.roles[role];
+          }
+        }
       }
       if (changed('writing')) {
         body.customInstructions = instructions.value.trim() || null;
@@ -390,8 +451,12 @@ export function createAiSettingsForm(
           body: { limits: values },
         });
       }
+      // The connections just saved are the ones tested: their results stay once the typed keys are cleared.
+      const tested = { ...tests };
       await refresh();
       load();
+      await nextTick();
+      Object.assign(tests, tested);
       toast.add({ title: 'AI settings saved', color: 'success' });
     } catch (err) {
       saveError.value = errorMessage(err);
@@ -436,7 +501,10 @@ export function createAiSettingsForm(
     mainHasEmbeddings,
     showCliTiles,
     changedSections,
+    providerChanged,
     stored,
+    envDefined,
+    embeddingUnavailable,
     sourceRole,
     resolvedProvider,
     keyStored,
