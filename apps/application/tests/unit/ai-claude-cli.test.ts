@@ -8,6 +8,7 @@ import {
   cliCommand,
   cliEnv,
   cmdShimTarget,
+  fallbackDirs,
   getClaudeCliRateLimit,
   getClaudeCliStatus,
   claudeCliRunsAgents,
@@ -513,6 +514,24 @@ describe("the subscription's usage limit", () => {
     });
     // Once its window has reset, the report says nothing.
     expect(getClaudeCliRateLimit(reset)).toBeNull();
+  });
+});
+
+describe('where the CLI is looked for off the PATH', () => {
+  it("looks first in the Windows native installer's folder, then winget's, npm's and the others", () => {
+    const dirs = fallbackDirs('win32', 'C:\\Users\\ada', {
+      APPDATA: 'C:\\Users\\ada\\AppData\\Roaming',
+      LOCALAPPDATA: 'C:\\Users\\ada\\AppData\\Local',
+    });
+    expect(dirs.slice(0, 3)).toEqual([
+      'C:\\Users\\ada\\.local\\bin',
+      'C:\\Users\\ada\\AppData\\Local\\Microsoft\\WinGet\\Links',
+      'C:\\Users\\ada\\AppData\\Roaming\\npm',
+    ]);
+  });
+
+  it('derives the Windows app data folders from the home folder when the environment has none', () => {
+    expect(fallbackDirs('win32', 'C:\\Users\\ada', {})).toContain('C:\\Users\\ada\\AppData\\Roaming\\npm');
   });
 });
 
