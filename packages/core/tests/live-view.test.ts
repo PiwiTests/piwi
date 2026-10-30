@@ -294,19 +294,16 @@ describe('the call log a worker posts', () => {
     error: null,
   };
 
-  test('is read field by field, between two calls too', () => {
-    expect(readWorkerToInstance({ type: 'call-log', worker: 1, log })).toEqual({
+  test('is read field by field, with its test’s title, and is refused without a log', () => {
+    expect(readWorkerToInstance({ type: 'call-log', worker: 1, log, test: 'pays' })).toEqual({
       type: 'call-log',
       shard: null,
       worker: 1,
       log,
+      test: 'pays',
     });
-    expect(readWorkerToInstance({ type: 'call-log', worker: 1, log: null })).toEqual({
-      type: 'call-log',
-      shard: null,
-      worker: 1,
-      log: null,
-    });
+    expect(readWorkerToInstance({ type: 'call-log', worker: 1, log })).toMatchObject({ test: null });
+    expect(typeof readWorkerToInstance({ type: 'call-log', worker: 1, log: null })).toBe('string');
   });
 
   test('keeps its last lines, each cut, and drops a field that is not one', () => {

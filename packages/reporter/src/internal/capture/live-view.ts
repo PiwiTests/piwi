@@ -2,6 +2,7 @@ import * as http from 'node:http';
 import * as https from 'node:https';
 import type { Page, WorkerInfo } from '@playwright/test';
 import {
+  LIVE_CALL_LOGS_PER_SECOND,
   LIVE_FRAME_BYTE_RATE,
   LIVE_FRAME_FPS,
   LIVE_FRAME_HEIGHT,
@@ -72,8 +73,8 @@ const MAX_STATES_WAITING = 8;
 /** The JPEG quality of the image sent in place of a frame longer than `MAX_LIVE_FRAME`, and how often at most. */
 const LIGHT_QUALITY = 30;
 const SHOT_MS = 1000;
-/** The least time between two call logs a worker posts: under the instance's `LIVE_CALL_LOGS_PER_SECOND`. */
-const LOG_SPACING_MS = 300;
+/** The least time between two call logs a worker posts: `LIVE_CALL_LOGS_PER_SECOND` at most. */
+const LOG_SPACING_MS = Math.ceil(1000 / LIVE_CALL_LOGS_PER_SECOND);
 /** How long ending the view may take before the test goes on without waiting for it. */
 const VIEW_END_MS = 1000;
 /** The statuses that give the connection up: the key or the run is no longer one, or the instance has no live view. */
@@ -119,6 +120,8 @@ interface Link {
   logPosting: boolean;
   logSentAt: number;
   logTimer: ReturnType<typeof setTimeout> | null;
+  /** The instance does not take call logs (it answered 400): none goes any more. */
+  logRefused: boolean;
 }
 
 let link: Link | null = null;
@@ -134,6 +137,8 @@ interface RunningTest {
   title: string;
   page: Page | null;
   call: () => LiveCall | null;
+  /** Something may pause it: its call log is not followed, which would move where the debugger stops. */
+  mayPause: boolean;
 }
 
 let running: RunningTest | null = null;
@@ -260,6 +265,7 @@ export function openLiveView(
     logPosting: false,
     logSentAt: 0,
     logTimer: null,
+    logRefused: false,
   };
   if (ci) connect(link);
   changed();
@@ -321,10 +327,10 @@ async function stopSharing(): Promise<void> {
   changed();
 }
 
-/** A test titled `title` begins: `call` names the call it is on, for each frame. */
-export function liveViewTestBegan(title: string, call: () => LiveCall | null): void {
+/** A test titled `title` begins: `call` names the call it is on, for each frame; `mayPause` when it may pause. */
+export function liveViewTestBegan(title: string, call: () => LiveCall | null, mayPause = false): void {
   if (!link) return;
-  running = { title, page: null, call };
+  running = { title, page: null, call, mayPause };
 }
 
 /** The running test's page: watched from now on, at once when someone already watches. */
@@ -537,8 +543,11 @@ function startView(): void {
     if (view?.page === page) void stopView();
   };
   page.once('close', onClose);
-  // In a CI run, nothing pauses: the call log Playwright keeps can be followed (it moves where its debugger stops).
-  const following = own.ci ? followCallLog(page, (log) => postLog(own, log)).catch(() => null) : null;
+  // The call log Playwright keeps moves where its debugger stops: it is followed in a CI run that nothing pauses.
+  const following =
+    own.ci && !running?.mayPause && !own.logRefused
+      ? followCallLog(page, (log) => postLog(own, log)).catch(() => null)
+      : null;
   view = { page, opened, onClose, following };
 }
 
@@ -588,7 +597,7 @@ function postFrame(own: Link, frame: PageFrame): void {
 
 /**
  * Post the call log shown now, `LOG_SPACING_MS` after the one before it at the soonest, one in flight: a newer one
- * replaces the one waiting.
+ * replaces the one waiting, and one the instance had no room for (429) goes again unless a newer one came.
  */
 function postLog(own: Link, log: LiveCallLog): void {
   own.log = log;
@@ -608,15 +617,20 @@ function nextLog(own: Link): void {
     return;
   }
   const log = own.log;
-  if (!active(own) || !view || !log) return;
+  if (!active(own) || !view || !log || own.logRefused) return;
   own.logPosting = true;
   own.logSentAt = Date.now();
-  void post(own, { type: 'call-log', ...own.id, log })
+  let again = false;
+  void post(own, { type: 'call-log', ...own.id, log, test: running?.title ?? null })
+    .then((status) => {
+      if (status === 400) own.logRefused = true;
+      again = status === 429;
+    })
     .catch(() => undefined)
     .finally(() => {
       own.logPosting = false;
-      // A newer call log came while this one went.
-      if (own.log && own.log !== log) nextLog(own);
+      // A newer call log came while this one went, or this one found no room.
+      if (own.log && (own.log !== log || again)) nextLog(own);
     });
 }
 

@@ -10,7 +10,13 @@ import {
   stepPhases,
   type TreeStepLike,
 } from '../src/step-tree';
-import { categorizeStep, collectStepMetrics, flattenSteps, markRecoveredSteps } from '../src/step-analysis';
+import {
+  categorizeStep,
+  collectStepMetrics,
+  flattenSteps,
+  hideTypedStepTitle,
+  markRecoveredSteps,
+} from '../src/step-analysis';
 import {
   afterAllFailure,
   beforeAllFailure,
@@ -447,5 +453,26 @@ describe('the text a fill or a typing typed, in the stored steps', () => {
       },
     ]);
     expect(step).toMatchObject({ title: 'Fill "WELCOME10"', params: { value: 'WELCOME10' } });
+  });
+
+  test('goes from a typing Playwright titles bare, into the element it was called on', () => {
+    // `elementHandle.type`, as Playwright 1.64 titles it: its text in its params alone.
+    const [step] = flattenSteps([{ title: 'Type', category: 'pw:api', duration: 5, params: { text: 'hunter2' } }]);
+    expect(step).toMatchObject({ title: 'Type', params: { text: '<hidden>' } });
+  });
+
+  test('goes when the locator names a secret past the length its param is cut at', () => {
+    const locator = `locator('main').locator('section.account-settings').${"locator('div.row')".repeat(8)}.getByLabel('Current password')`;
+    const [step] = flattenSteps([
+      { title: 'Fill "hunter2"', category: 'pw:api', duration: 5, params: { locator, value: 'hunter2' } },
+    ]);
+    expect(JSON.stringify(step)).not.toContain('hunter2');
+  });
+
+  test('stays in the title of a step the test names itself', () => {
+    const [step] = flattenSteps([{ title: 'Fill "Shipping address"', category: 'test.step', duration: 5 }]);
+    expect(step!.title).toBe('Fill "Shipping address"');
+    expect(hideTypedStepTitle('Fill "Shipping address"', 'test.step')).toBe('Fill "Shipping address"');
+    expect(hideTypedStepTitle('Fill "hunter2"', 'pw:api')).toBe('Fill "<hidden>"');
   });
 });

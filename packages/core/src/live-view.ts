@@ -16,7 +16,7 @@
  * until a person shares the run (**Share live**, the run channel's `share`), and close it as the sharing stops. Such a
  * run without a key names why instead (`none:<why>`, `formatLiveViewMissing`), for the surfaces to say.
  */
-import { hideSecretsInText, hideTypedText, hideTypedTextInLog } from './mask';
+import { hideSecretsInText, hideTypedText, hideSecretsInLog } from './mask';
 import type { StopReason } from './run-channel';
 
 /** The variable that names the instance's live view endpoint of the run and its key, for the workers. */
@@ -199,7 +199,7 @@ export interface LiveBox {
 
 /**
  * The call a worker's test is in, as Playwright logs it while it runs: in a CI run, while anyone watches the worker.
- * Every text has the text a call types hidden (`hideTypedText`, `hideTypedTextInLog`) and its credentials too
+ * Every text has the text a call types hidden (`hideTypedText`, `hideSecretsInLog`) and its credentials too
  * (`hideSecretsInText`).
  */
 export interface LiveCallLog {
@@ -238,8 +238,8 @@ export type WorkerToInstance =
   | (LiveWorkerId & { type: 'frame'; refused: string })
   /** The worker's test stopped (its call), or went on (null). */
   | (LiveWorkerId & { type: 'stop'; stop: LiveStop | null })
-  /** The call the worker's test is in, as Playwright logs it; null between two calls of a test or two tests. */
-  | (LiveWorkerId & { type: 'call-log'; log: LiveCallLog | null })
+  /** The call the worker's test is in, as Playwright logs it, and the test's title, as a frame names it. */
+  | (LiveWorkerId & { type: 'call-log'; log: LiveCallLog; test: string | null })
   /** The test the viewers watched ended, or none runs: their view closes. */
   | (LiveWorkerId & { type: 'ended' })
   /** The person who shared the run stopped sharing it: the viewers' views close, and the worker's stream after them. */
@@ -284,7 +284,7 @@ export function readLiveCall(value: unknown): LiveCall | null {
   const { file, line } = value;
   const named = typeof file === 'string' && file.length > 0 && file.length <= 1024 && !/[\0\r\n]/.test(file);
   return {
-    title: hideTypedText(value.title.slice(0, MAX_TITLE)),
+    title: hideTypedText(value.title).slice(0, MAX_TITLE),
     file: named ? file : null,
     line: named && isInt(line, 1, 10_000_000) ? line : null,
   };
@@ -334,9 +334,9 @@ export function compressCallLog(lines: readonly string[]): string[] {
   return out;
 }
 
-/** A line of a call's log or its error, as a viewer may read it: cut, the text it types and its credentials hidden. */
+/** A call's log or its error, as a viewer may read it: what may be a secret in it hidden, then cut. */
 function logText(value: string): string {
-  return hideSecretsInText(hideTypedTextInLog(value.slice(0, MAX_LOG_LINE * 2))).slice(0, MAX_LOG_LINE);
+  return hideSecretsInText(hideSecretsInLog(value)).slice(0, MAX_LOG_LINE);
 }
 
 /** A call's log, checked field by field and its texts hidden again; null when it is not one. */
@@ -345,11 +345,14 @@ export function readLiveCallLog(value: unknown): LiveCallLog | null {
   const call = readLiveCall(value.call);
   if (!call) return null;
   if (value.status !== 'running' && value.status !== 'passed' && value.status !== 'failed') return null;
+  // Hidden as one text, so a value an assertion quotes goes when an earlier line names a secret field.
   const lines = Array.isArray(value.lines)
-    ? value.lines
-        .filter((line): line is string => typeof line === 'string')
+    ? hideSecretsInText(
+        hideSecretsInLog(value.lines.filter((line): line is string => typeof line === 'string').join('\n')),
+      )
+        .split('\n')
         .slice(-MAX_LIVE_CALL_LOG_LINES)
-        .map(logText)
+        .map((line) => line.slice(0, MAX_LOG_LINE))
     : [];
   const point =
     isObject(value.point) && isCoordinate(value.point.x) && isCoordinate(value.point.y)
@@ -421,11 +424,10 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
       return { type: 'stop', ...id, stop: { reason, call, test: readLiveTestTitle(value.stop.test) } };
     }
     case 'call-log': {
-      if (value.log === null) return { type: 'call-log', ...id, log: null };
       const log = readLiveCallLog(value.log);
       return log
-        ? { type: 'call-log', ...id, log }
-        : 'A call log names its call, its status and its lines, or is null.';
+        ? { type: 'call-log', ...id, log, test: readLiveTestTitle(value.test) }
+        : 'A call log names its call, its status and its lines.';
     }
     case 'ended':
       return { type: 'ended', ...id };

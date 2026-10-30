@@ -7,7 +7,7 @@
  * from an imported blob report's step events.
  */
 import { stripAnsi } from './error-parse';
-import { HIDDEN_VALUE, hideTypedText, hideTypedTextInLog, isSecretLocator, maskTokenLike } from './mask';
+import { HIDDEN_VALUE, hideTypedText, hideSecretsInLog, isSecretLocator, maskTokenLike } from './mask';
 import { isCaptureStep, sameCodeLocation } from './step-tree';
 import type { TestStepEvent, TestStepEventHook } from './wire';
 
@@ -289,28 +289,44 @@ function firstErrorLine(message: unknown): string {
 /** The parameters in which Playwright passes the text a fill (`value`), a typing or an insert (`text`) types. */
 const TYPED_PARAMS = ['value', 'text'] as const;
 
+/** How Playwright titles a call that types into the element it is called on, its text in its params alone. */
+const BARE_TYPED_TITLE = /^(?:Fill|Type|Insert)$/;
+
+/** The categories of a step a test or a fixture names itself, whose title Playwright does not write. */
+const OWN_CATEGORIES = new Set(['test.step', 'hook', 'fixture']);
+
 /**
  * A step's title and params with the text a fill, a typing or an insert typed hidden, when it went into a field that
- * may hold a secret: one whose locator names a secret (`isSecretLocator`), or none the step names (`keyboard.type`).
- * Playwright writes that text in the title (`Fill "…"`, `hideTypedText`) and passes it as the `value` or `text` param.
- * The locator is the step's `locator` param, else its subtitle, else what the title names after the text. Any other
- * step's title and params are kept: a bug report replays a fill from its value.
+ * may hold a secret: one a locator of the step names as such (`isSecretLocator`), or none the step names
+ * (`keyboard.type`, `elementHandle.type`). Playwright writes that text in the title (`Fill "…"`, `hideTypedText`), and
+ * passes it as the `value` or `text` param, also under a bare `Fill`, `Type` or `Insert`. The step's locators are its
+ * `locator` param, its subtitle and what its title names after the text. A step of the test's own (`test.step`, a hook,
+ * a fixture) and any other step keep their title and params: a bug report replays a fill from its value.
  */
 export function withoutTypedText<P extends Record<string, unknown>>(
   title: string,
   params: P | undefined,
   subtitle?: string | null,
+  category?: string | null,
 ): { title: string; params: P | undefined } {
+  if (category && OWN_CATEGORIES.has(category)) return { title, params };
   const hidden = hideTypedText(title);
-  if (hidden === title) return { title, params };
-  const end = hidden.indexOf(`${HIDDEN_VALUE}"`) + HIDDEN_VALUE.length + 1;
-  const named = hidden.slice(end).trim();
-  const locator = typeof params?.locator === 'string' ? params.locator : subtitle || named || null;
-  if (locator && !isSecretLocator(locator)) return { title, params };
+  const bare = BARE_TYPED_TITLE.test(title.trim());
+  if (hidden === title && !bare) return { title, params };
+  const named = bare ? '' : hidden.slice(hidden.indexOf(`${HIDDEN_VALUE}"`) + HIDDEN_VALUE.length + 1).trim();
+  const locators = [params?.locator, subtitle, named].filter(
+    (locator): locator is string => typeof locator === 'string' && locator.length > 0,
+  );
+  if (locators.length && !locators.some(isSecretLocator)) return { title, params };
   if (!params) return { title: hidden, params };
   const out: Record<string, unknown> = { ...params };
   for (const key of TYPED_PARAMS) if (typeof out[key] === 'string') out[key] = HIDDEN_VALUE;
   return { title: hidden, params: out as P };
+}
+
+/** A step's title with the text it types hidden (`hideTypedText`); a step of the test's own keeps its title. */
+export function hideTypedStepTitle(title: string, category?: string | null): string {
+  return category && OWN_CATEGORIES.has(category) ? title : hideTypedText(title);
 }
 
 /**
@@ -319,15 +335,18 @@ export function withoutTypedText<P extends Record<string, unknown>>(
  * built-in category when available. The text a fill, a typing or an insert
  * typed into a field that may hold a secret is hidden from the title and the
  * params (`withoutTypedText`), and any typed text from the step's error
- * (`hideTypedTextInLog`).
+ * (`hideSecretsInLog`).
  */
 export function flattenSteps(steps: any[], depth = 0): FlatStep[] {
   const result: FlatStep[] = [];
   for (const step of steps) {
+    // The step's subtitle, and its locator as Playwright gave it, before the params are cut short.
+    const named = [step.subtitle, step.params?.locator].filter((v) => typeof v === 'string' && v).join(' ');
     const typed = withoutTypedText(
       typeof step.title === 'string' ? step.title : '',
       normalizeStepParams(step.params),
-      typeof step.subtitle === 'string' ? step.subtitle : null,
+      named || null,
+      step.category,
     );
     const flat: FlatStep = {
       title: typed.title,
@@ -338,7 +357,7 @@ export function flattenSteps(steps: any[], depth = 0): FlatStep[] {
     if (typeof step.subtitle === 'string' && step.subtitle.length > 0) flat.subtitle = maskTokenLike(step.subtitle);
     if (typed.params) flat.params = typed.params;
     if (step.error?.message) {
-      flat.error = { message: hideTypedTextInLog(step.error.message) };
+      flat.error = { message: hideSecretsInLog(step.error.message) };
       const thrownAt = locationText(step.error.location);
       if (thrownAt) flat.error.location = thrownAt;
       flat.failed = true;

@@ -11,8 +11,9 @@ import { jsonRes, startServer, type FakeServer } from './_helpers.js';
 /**
  * The live view's call log, in a real CI run through the built package against a fake instance: while someone watches
  * a worker, it posts the call its test is in as Playwright logs it (the log's last lines, the point an input action
- * acts on, the elements the call's locator matches while it waits), and nothing while nobody watches. The text a fill
- * types never goes, and nothing of it shows among the test's steps.
+ * acts on, the elements the call's locator matches while it waits), from the moment they come, and nothing while
+ * nobody watches. The text a fill types and a password field's value never go, and nothing of it shows among the
+ * test's steps.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -21,24 +22,34 @@ const project = path.join(pkgRoot, 'tests', `.live-view-call-log-${process.pid}`
 const RUN = 43;
 const KEY = `pdl_${'c'.repeat(43)}`;
 const SECRET = 'S3cr3t!Passw0rd';
+const TEST_TITLE = 'waits on disabled buttons and a missing link while watched';
 const requireHere = createRequire(import.meta.url);
 
-/** A checkout whose Pay button is enabled 3 s after the page opens. */
+/** A checkout whose Pay button is enabled 3 s after Check card is clicked; Confirm and Gift stay disabled. */
 const PAGE = `<!doctype html><meta charset="utf-8"><title>checkout</title>
 <style>body { margin: 0; padding: 20px; font: 16px sans-serif }</style>
 <label>Password <input id="password" type="password"></label>
+<button id="check" onclick="setTimeout(() => { document.getElementById('pay').disabled = false; }, 3000)">Check card</button>
 <button id="pay" disabled>Pay</button>
-<script>setTimeout(() => { document.getElementById('pay').disabled = false; }, 3000);</script>`;
+<button disabled>Confirm</button>
+<button disabled>Gift</button>`;
 
 const SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
-test('waits on a disabled button and a missing link while watched', async ({ page }) => {
+test('${TEST_TITLE}', async ({ page }) => {
   await page.goto('${base}/checkout');
-  await fetch('${base}/watch');
-  await expect.poll(async () => (await (await fetch('${base}/watched')).json()).watched).toBe(true);
+  // Someone comes to watch while the click waits.
+  await fetch('${base}/watch-soon');
+  await page.getByRole('link', { name: 'Missing' }).click({ timeout: 4000 }).catch(() => {});
   await page.getByLabel('Password').fill('${SECRET}');
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  await expect(page.getByLabel('Password')).toHaveValue('not it', { timeout: 1500 }).catch(() => {});
+  await page.getByRole('button', { name: 'Check card' }).click();
   await page.getByRole('button', { name: 'Pay' }).click();
   await new Promise((resolve) => setTimeout(resolve, 1500));
-  await page.getByRole('link', { name: 'Missing' }).click({ timeout: 3000 }).catch(() => {});
+  await Promise.all([
+    page.getByRole('button', { name: 'Confirm' }).click({ timeout: 2500 }).catch(() => {}),
+    page.getByRole('button', { name: 'Gift' }).click({ timeout: 2500 }).catch(() => {}),
+  ]);
   await fetch('${base}/unwatch');
 });
 `;
@@ -60,10 +71,15 @@ const streams: http.ServerResponse[] = [];
 const posts: Array<{ at: number; message: WorkerToInstance }> = [];
 let watchedFrom: number | null = null;
 let watchedTo: number | null = null;
-let run = { exitCode: null as number | null, output: '', tests: [] as Array<{ title: string; status: string; errors: string[]; steps: string[] }> };
+let run = {
+  exitCode: null as number | null,
+  output: '',
+  tests: [] as Array<{ title: string; status: string; errors: string[]; steps: string[] }>,
+};
 
 function sayViewers(count: number): void {
-  for (const res of streams) if (!res.writableEnded) res.write(`data: ${JSON.stringify({ type: 'viewers', count })}\n\n`);
+  for (const res of streams)
+    if (!res.writableEnded) res.write(`data: ${JSON.stringify({ type: 'viewers', count })}\n\n`);
 }
 
 function write(file: string, text: string): void {
@@ -72,8 +88,8 @@ function write(file: string, text: string): void {
 }
 
 /** The call logs the worker posted, in order. */
-const callLogs = (): Array<{ at: number; log: LiveCallLog | null }> =>
-  posts.flatMap((p) => (p.message.type === 'call-log' ? [{ at: p.at, log: p.message.log }] : []));
+const callLogs = (): Array<{ at: number; log: LiveCallLog; test: string | null }> =>
+  posts.flatMap((p) => (p.message.type === 'call-log' ? [{ at: p.at, log: p.message.log, test: p.message.test }] : []));
 
 beforeAll(async () => {
   if (!fs.existsSync(dist)) throw new Error(`${dist} is missing: run \`npm run reporter:build\` before this spec`);
@@ -84,14 +100,12 @@ beforeAll(async () => {
       res.writeHead(200, { 'content-type': 'text/html' });
       return res.end(PAGE);
     }
-    if (route === '/watch') {
-      watchedFrom = Date.now();
-      sayViewers(1);
+    if (route === '/watch-soon') {
+      setTimeout(() => {
+        watchedFrom = Date.now();
+        sayViewers(1);
+      }, 1500);
       return res.end();
-    }
-    if (route === '/watched') {
-      // The worker started its view: its first frame came.
-      return jsonRes(res, 200, { watched: posts.some((p) => p.message.type === 'frame' && 'data' in p.message) });
     }
     if (route === '/unwatch') {
       watchedTo = Date.now();
@@ -99,7 +113,13 @@ beforeAll(async () => {
       return res.end();
     }
     if (route === '/api/test-runs/setup') {
-      return jsonRes(res, 200, { success: true, runId: RUN, projectId: 1, setupToken: 'setup-token', liveView: { key: KEY } });
+      return jsonRes(res, 200, {
+        success: true,
+        runId: RUN,
+        projectId: 1,
+        setupToken: 'setup-token',
+        liveView: { key: KEY },
+      });
     }
     if (route === `/api/test-runs/${RUN}/begin`) {
       return jsonRes(res, 200, { success: true, runId: RUN, streamToken: 'stream-token' });
@@ -177,35 +197,59 @@ afterAll(async () => {
 describe('the live view’s call log', () => {
   it('lets the test pass, as without it', () => {
     expect(run.exitCode, run.output).toBe(0);
-    expect(run.tests.map((t) => [t.title, t.status, t.errors])).toEqual([
-      ['waits on a disabled button and a missing link while watched', 'passed', []],
-    ]);
+    expect(run.tests.map((t) => [t.title, t.status, t.errors])).toEqual([[TEST_TITLE, 'passed', []]]);
+  });
+
+  it('shows a viewer who comes while a call waits that call at once, with its log and its time so far', () => {
+    const [first] = callLogs();
+    expect(first, JSON.stringify(callLogs().map((c) => c.log.call.title))).toBeDefined();
+    expect(first!.at - watchedFrom!).toBeLessThan(1500);
+    expect(first!.log).toMatchObject({
+      call: { title: "Click getByRole('link', { name: 'Missing' })" },
+      status: 'running',
+    });
+    expect(first!.log.lines.join('\n')).toContain("waiting for getByRole('link', { name: 'Missing' })");
+    expect(first!.log.ms).toBeGreaterThanOrEqual(1000);
+    const missing = callLogs().find(({ log }) => log.call.title.includes("'Missing'") && log.target?.count === 0)?.log;
+    expect(missing?.target).toEqual({ count: 0, box: null, enabled: null });
   });
 
   it('tells why a click waits: Playwright’s log, its place, and the element its locator matches, not enabled', () => {
     const waiting = callLogs().find(
-      ({ log }) => log?.status === 'running' && log.call.title.startsWith('Click') && log.target?.enabled === false,
+      ({ log }) =>
+        log.status === 'running' &&
+        log.call.title.startsWith("Click getByRole('button', { name: 'Pay' })") &&
+        log.target?.enabled === false,
     )?.log;
-    expect(waiting, JSON.stringify(callLogs().map((c) => c.log?.call.title))).toBeDefined();
-    expect(waiting!.call).toMatchObject({ title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/live.spec.cjs' });
+    expect(waiting, JSON.stringify(callLogs().map((c) => c.log.call.title))).toBeDefined();
+    expect(waiting!.call).toMatchObject({ file: 'tests/live.spec.cjs' });
     expect(waiting!.lines.join('\n')).toMatch(/element is not enabled/);
     expect(waiting!.target).toMatchObject({ count: 1, enabled: false });
     expect(waiting!.target!.box!.width).toBeGreaterThan(0);
     expect(waiting!.viewport).toEqual({ width: 1280, height: 720 });
     // Once Pay is enabled, the click names the point it acts on, and ends: the test goes on without a call a while.
-    expect(callLogs().some(({ log }) => log?.call.title.startsWith('Click getByRole(\'button\'') && log.point !== null)).toBe(true);
-    expect(callLogs().some(({ log }) => log?.call.title.startsWith('Click getByRole(\'button\'') && log.status === 'passed')).toBe(true);
+    const pay = callLogs().filter(({ log }) => log.call.title.startsWith("Click getByRole('button', { name: 'Pay' })"));
+    expect(pay.some(({ log }) => log.point !== null)).toBe(true);
+    expect(pay.some(({ log }) => log.status === 'passed')).toBe(true);
   });
 
-  it('says a locator matches no element while it waits for one', () => {
-    const missing = callLogs().find(({ log }) => log?.call.title.includes("'Missing'") && log.target?.count === 0)?.log;
-    expect(missing, JSON.stringify(callLogs().map((c) => c.log?.call.title))).toBeDefined();
-    expect(missing!.target).toEqual({ count: 0, box: null, enabled: null });
+  it('keeps each of two calls waiting at once whole: its time and its element', () => {
+    const both = callLogs().filter(({ log }) => /'(Confirm|Gift)'/.test(log.call.title));
+    expect(both.length).toBeGreaterThan(0);
+    expect(Math.max(...both.map(({ log }) => log.ms))).toBeGreaterThanOrEqual(1500);
+    expect(both.some(({ log }) => log.target?.count === 1 && log.target.enabled === false)).toBe(true);
   });
 
-  it('never sends the text a fill types, nor a call log while nobody watches', () => {
-    expect(JSON.stringify(posts)).not.toContain(SECRET);
-    expect(callLogs().some(({ log }) => log?.call.title === `Fill "<hidden>" getByLabel('Password')`)).toBe(true);
+  it('never sends the text a fill types, nor a password field’s value', () => {
+    expect(JSON.stringify(posts)).not.toContain('S3cr3t');
+    expect(callLogs().some(({ log }) => log.call.title === `Fill "<hidden>" getByLabel('Password')`)).toBe(true);
+    expect(callLogs().some(({ log }) => log.lines.some((line) => line.includes('unexpected value "<hidden>"')))).toBe(
+      true,
+    );
+  });
+
+  it('names its test, and goes only while someone watches', () => {
+    expect(new Set(callLogs().map(({ test }) => test))).toEqual(new Set([TEST_TITLE]));
     expect(watchedFrom).not.toBeNull();
     for (const { at } of callLogs()) {
       expect(at).toBeGreaterThanOrEqual(watchedFrom!);

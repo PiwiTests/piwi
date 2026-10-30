@@ -327,19 +327,24 @@ What the package does to a user's run, process by process.
   the latest frame alone waiting; each frame carries the call the runner's steps say the
   test is on (`callInProgress`, its title through `hideSecretsInText`) and the test's
   title. Nobody watching, no screencast runs and no frame goes.
-- In a CI run alone, while anyone watches, the worker also follows the call its test is in
-  (`live-call-log.ts`): it turns the context's call stream on (`context.debugger._enable()`
-  through `internalCall`, each member checked first; once on it stays on, and moves where
-  the debugger stops an action, which nothing does in a CI run), and posts a `call-log` as
-  the call shown changes, 300 ms apart at least, one in flight: the call that began last,
-  its status, its log folded by `compressCallLog`, its action point and its error's first
-  line, each text through `hideTypedText` or `hideTypedTextInLog`, then
-  `hideSecretsInText`. While that call has waited a second, an internal `evaluateAll`
-  reads, once a second, the elements its selector matches: how many, the first one's box
-  and whether it is enabled. The selector comes from a listener on the worker's
-  Playwright instrumentation (`trackLocatorCalls`, added by `piwiResources` when the live
-  view can open), which never hears an internal call. A viewer that joins gets the latest
-  call log again.
+- In a CI run alone, while anyone watches a test nothing may pause (`mayPause`: no
+  `PIWI_PAUSE_AT`, `PWDEBUG` or `--debug`), the worker also follows the call its test is in
+  (`live-call-log.ts`): it listens to the context's call stream, then turns it on
+  (`context.debugger._enable()` through `internalCall`, each member checked first), which
+  tells the calls running then with their log so far. Once on, the stream stays on and moves
+  where the debugger stops an action, so the context's calls are followed from then until it
+  goes, and a viewer who comes later gets the call shown at once. It posts a `call-log`, with
+  the test's title, as the call shown changes, `LIVE_CALL_LOGS_PER_SECOND` at most and one in
+  flight, again after a 429 and never after a 400: the running call told last (else the one
+  that ended last), its status, its log folded by `compressCallLog`, its action point and its
+  error's first line, each text through `hideTypedText` or `hideSecretsInLog`, then
+  `hideSecretsInText`, before it is cut. A listener on the worker's Playwright
+  instrumentation (`trackCalls`, added by `piwiResources` when the live view can open), which
+  never hears an internal call, gives each call's start and selector, matched to the stream by
+  the id the runner gives the call. While the call shown has waited a second, and while the
+  watched page is its context's only one, an internal `evaluateAll` reads, once a second, the
+  elements its selector matches: how many, the first one's box (none for a selector into a
+  frame) and whether it is enabled.
 - A page has one screencast client of its own. In a worker that can open a view (a run
   connection or a live view connection), `instrumentPage` hands the test `page.screencast`
   behind a proxy (`guardScreencast`): the test's `start` or `stop` first ends the client a

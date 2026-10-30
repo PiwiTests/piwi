@@ -113,6 +113,7 @@ import {
   markPausesWrapped,
   NO_BREAKPOINTS,
   pauseGateFromTestInfo,
+  mayPause,
   pauseHere,
   pauseSkipReason,
   pauseState,
@@ -158,7 +159,7 @@ import {
   liveViewTestEnded,
   openLiveView,
 } from './live-view.js';
-import { trackLocatorCalls } from './live-call-log.js';
+import { trackCalls } from './live-call-log.js';
 import { guardScreencast } from './page-view.js';
 import type { LiveCall } from '@piwitests/core/live-view';
 import {
@@ -3667,7 +3668,7 @@ export const piwiFixtures: Fixtures<
       observeApiRequests(playwright, apiCallRecorder);
       openLiveView(workerInfo);
       // The selector of the locator call running, for the live view's call log.
-      if (liveViewOpen()) trackLocatorCalls(playwright);
+      if (liveViewOpen()) trackCalls(playwright);
       if (await openRunChannel(workerInfo, runControl)) watchCalls(playwright);
       try {
         await use();
@@ -3758,7 +3759,7 @@ export const piwiFixtures: Fixtures<
         });
       activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
-      liveViewTestBegan(testInfo.title, () => runningCall(testInfo));
+      liveViewTestBegan(testInfo.title, () => runningCall(testInfo), mayPause(pauseGateFromTestInfo(testInfo)));
       const showRunChannel = hideRunChannel();
       try {
         // The contexts a hook or an earlier test opened stop at this test's breakpoints too.
