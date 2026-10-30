@@ -747,7 +747,25 @@ class GlueTest {
         assertTrue(Glue.runControls(sessions + ("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), null)))).stoppable)
         val stop = Glue.stopsOf(sessions).single()
         assertTrue(stop.terminal)
+        assertFalse(stop.runner)
         assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · run in a terminal", Glue.pausedText(stop.stop, stop.test, stop.terminal))
+    }
+
+    @Test
+    fun `a run the IDE's own test runner started is none to stop, and says so where it stops`() {
+        val stopped = listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 5)))
+        val runner = RunSession("terminal-42-1", "/work/shop", stopped, terminal = true, runner = true)
+        assertFalse(Glue.runControls(mapOf("terminal-42-1" to runner)).stoppable)
+        val stop = Glue.stopsOf(mapOf("terminal-42-1" to runner)).single()
+        assertTrue(stop.terminal)
+        assertTrue(stop.runner)
+        assertEquals(
+            "Paused · Fill \"WELCOME10\" getByLabel('Coupon') · run by the editor's test runner",
+            Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner),
+        )
+        // Said of a run the IDE started, it says nothing.
+        val own = RunSession("ed-1", "/work/shop", stopped, runner = true)
+        assertFalse(Glue.stopsOf(mapOf("ed-1" to own)).single().runner)
     }
 
     @Test

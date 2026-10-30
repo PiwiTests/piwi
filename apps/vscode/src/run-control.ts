@@ -188,7 +188,8 @@ export function spelledSession(session: RunSession, spell: (uri: string) => stri
 
 /**
  * A worker stopped: its run, the worker, where it stands, the test it runs, what its reporter takes there, and whether
- * its run was started in a terminal (`RunSession.terminal`).
+ * its run was started in a terminal (`RunSession.terminal`), and of those by the editor's own test runner
+ * (`RunSession.runner`).
  */
 export interface ShownStop {
   ref: string;
@@ -197,6 +198,7 @@ export interface ShownStop {
   test: RunTest | null;
   takes: readonly RunTake[];
   terminal?: boolean;
+  runner?: boolean;
 }
 
 /** Every stopped worker of the sessions, in their order. */
@@ -212,6 +214,7 @@ export function stopsOf(sessions: Sessions): ShownStop[] {
               test: w.test,
               takes: w.takes ?? [],
               ...(s.terminal ? { terminal: true } : {}),
+              ...(s.terminal && s.runner ? { runner: true } : {}),
             },
           ]
         : [],
@@ -229,10 +232,10 @@ export function stopKey(stop: ShownStop): string {
  * at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in plain
  * text. The lens and the choice among several draw the stop's icon before it (`stopIcon`).
  */
-export function pausedText(stop: RunStop, test: RunTest | null, terminal = false): string {
+export function pausedText(stop: RunStop, test: RunTest | null, terminal = false, runner = false): string {
   const attempt = test && test.retry > 0 ? ` · attempt ${test.retry + 1}` : '';
-  // A run started in a terminal says so: its process is the terminal's.
-  const where = terminal ? ' · run in a terminal' : '';
+  // A run started in a terminal, or by the editor's own test runner, says so: its process is theirs.
+  const where = !terminal ? '' : runner ? " · run by the editor's test runner" : ' · run in a terminal';
   if (stop.reason === 'failure') return `Failed · ${stop.title.replace(/^Failed:\s*/, '')}${attempt}${where}`;
   // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching.
   return `Paused${stop.by === 'agent' ? ' by the agent' : ''} · ${stop.title}${attempt}${where}`;
@@ -626,7 +629,7 @@ export function stopPick(stop: ShownStop): { label: string; description: string 
   const file = stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1);
   const test = stop.test ? `${stop.test.title.join(' › ')} · ` : '';
   return {
-    label: `${stopIcon(stop.stop)} ${pausedText(stop.stop, stop.test, stop.terminal)}`,
+    label: `${stopIcon(stop.stop)} ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)}`,
     description: `${test}${decodeURIComponent(file)}:${stop.stop.line + 1} · worker ${stop.worker}`,
   };
 }

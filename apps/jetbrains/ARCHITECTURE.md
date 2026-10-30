@@ -321,7 +321,8 @@ Playwright run configuration instead of a console (`PiwiPlaywrightRunner.kt`):
   is sent as `piwi/commandEnded`.
 
 The IDE adds its own reporter with `PW_TEST_REPORTER`, which Playwright runs beside the config's, so the Piwi reporter
-still reports.
+still reports. That variable is also how the reporter of a run Piwi did not start (the gutter's Run) knows an editor's
+test runner started it, and follows the IDE ([Run control](#run-control)).
 
 The runner's classes belong to the `JavaScript` plugin (`intellij.aqua.runners.playwright.js`, the same signatures in
 2024.1 and 2026.x). The plugin reaches them only once `PlaywrightRunnerGate.available()`, which names none of them. Any
@@ -393,7 +394,9 @@ session. The initialization options say so (`runControl`). What the service does
 `Glue.withSession`) until one says `ended`, or the service's process ends (`watch`, from
 `PiwiLspServerDescriptor.startServerProcess`). A run started in a terminal (`RunSession.terminal`) is one too: its
 stops say `run in a terminal` (`Glue.pausedText`), and it has no Stop, its process being the terminal's
-(`RunControls.stoppable`).
+(`RunControls.stoppable`). So is a run of a Playwright run configuration Piwi did not make, the gutter's Run included
+(`RunSession.runner`), whose reporter follows the IDE as one in a terminal does: its stops say `run by the editor's
+test runner`, and the Run tool window's Stop ends it.
 
 **A stop.** A stop opens its file at its line once (`Glue.stopKey`), at the line it stands on now. It is drawn as the
 execution point:

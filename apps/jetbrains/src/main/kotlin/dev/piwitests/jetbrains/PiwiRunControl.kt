@@ -593,7 +593,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         window.contentManager.setSelectedContent(content)
         window.show(null)
         val panel = content.component as PausedPagePanel
-        val caption = "${Glue.pausedText(stop.stop, stop.test, stop.terminal)} · ${Glue.stopPlace(stop.stop)}"
+        val caption = "${Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${Glue.stopPlace(stop.stop)}"
         panel.show("$caption · asking the test for its page…", null)
         ApplicationManager.getApplication().executeOnPooledThread {
             val image = remote.pausedPage(PausedPageParams(stop.ref, stop.worker))?.image
@@ -1145,14 +1145,14 @@ private class PausedPagePanel : JPanel(BorderLayout()) {
 private class ExecutionPointGutter(private val sessions: PiwiRunSessions, private val stop: Glue.ShownStop) : GutterIconRenderer(), DumbAware {
     override fun getIcon() = if (Glue.isFailure(stop.stop)) AllIcons.RunConfigurations.TestError else AllIcons.Debugger.NextStatement
 
-    override fun getTooltipText(): String = Glue.htmlTooltip(Glue.pausedText(stop.stop, stop.test, stop.terminal))
+    override fun getTooltipText(): String = Glue.htmlTooltip(Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner))
 
     override fun getPopupMenuActions(): ActionGroup = sessions.stopActions(stop)
 
     override fun getClickAction(): AnAction = object : AnAction() {
         override fun actionPerformed(e: AnActionEvent) {
             val popup = JBPopupFactory.getInstance().createActionGroupPopup(
-                Glue.pausedText(stop.stop, stop.test, stop.terminal),
+                Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner),
                 sessions.stopActions(stop),
                 e.dataContext,
                 JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
@@ -1173,7 +1173,7 @@ private class ExecutionPointGutter(private val sessions: PiwiRunSessions, privat
  * Caret** and **Finish**; **Resume** alone at a failure) and its code actions as links, which [StopInlayMouse] clicks.
  */
 internal class StopInlay(val stop: Glue.ShownStop) : EditorCustomElementRenderer {
-    val text = Glue.pausedText(stop.stop, stop.test, stop.terminal)
+    val text = Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner)
 
     /** The links after the text, in order. */
     val links: List<Glue.StopLink> = Glue.stopControls(stop) + Glue.stopActions(stop)

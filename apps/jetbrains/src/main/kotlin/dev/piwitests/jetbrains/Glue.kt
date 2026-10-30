@@ -1385,7 +1385,8 @@ object Glue {
 
     /**
      * A worker stopped: its run, the worker, where it stands, the test it runs, what its reporter takes there, and
-     * whether its run was started in a terminal (`RunSession.terminal`).
+     * whether its run was started in a terminal (`RunSession.terminal`), and of those by the IDE's own test runner
+     * (`RunSession.runner`).
      */
     data class ShownStop(
         val ref: String,
@@ -1394,12 +1395,23 @@ object Glue {
         val test: RunTest?,
         val takes: List<String> = emptyList(),
         val terminal: Boolean = false,
+        val runner: Boolean = false,
     )
 
     /** Every stopped worker of the sessions, in their order. */
     fun stopsOf(sessions: Map<String, RunSession>): List<ShownStop> = sessions.values.flatMap { session ->
         session.workers.orEmpty().mapNotNull { w ->
-            w.stop?.let { ShownStop(session.ref ?: "", w.worker, it, w.test, w.takes.orEmpty(), session.terminal) }
+            w.stop?.let {
+                ShownStop(
+                    session.ref ?: "",
+                    w.worker,
+                    it,
+                    w.test,
+                    w.takes.orEmpty(),
+                    session.terminal,
+                    session.terminal && session.runner,
+                )
+            }
         }
     }
 
@@ -1411,10 +1423,14 @@ object Glue {
      * or, at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in
      * plain text: the gutter's icon marks the stop.
      */
-    fun pausedText(stop: RunStop, test: RunTest?, terminal: Boolean = false): String {
+    fun pausedText(stop: RunStop, test: RunTest?, terminal: Boolean = false, runner: Boolean = false): String {
         val attempt = if (test != null && test.retry > 0) " · attempt ${test.retry + 1}" else ""
-        // A run started in a terminal says so: its process is the terminal's.
-        val where = if (terminal) " · run in a terminal" else ""
+        // A run started in a terminal, or by the IDE's own test runner, says so: its process is theirs.
+        val where = when {
+            !terminal -> ""
+            runner -> " · run by the editor's test runner"
+            else -> " · run in a terminal"
+        }
         if (isFailure(stop)) return "Failed · ${stop.title.orEmpty().removePrefix("Failed:").trimStart()}$attempt$where"
         // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching.
         val by = if (stop.by == "agent") " by the agent" else ""
@@ -1507,7 +1523,7 @@ object Glue {
     /** A stop as the choice among several names it: what it runs, its test, its place and its worker. */
     fun stopLabel(stop: ShownStop): String {
         val test = stop.test?.title?.joinToString(" › ")?.let { "$it · " }.orEmpty()
-        return "${pausedText(stop.stop, stop.test, stop.terminal)} · $test${stopPlace(stop.stop)} · worker ${stop.worker}"
+        return "${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · $test${stopPlace(stop.stop)} · worker ${stop.worker}"
     }
 
     /**

@@ -1497,6 +1497,12 @@ export interface RunSession {
    */
   terminal?: boolean;
   /**
+   * Of the runs `terminal` names, one the editor's own test runner started (a JetBrains IDE's Playwright run
+   * configuration, its gutter's Run included), as its workers said (`run-attach`'s `runner`): its process is that
+   * runner's, which stops it. Absent otherwise, and from a reporter that predates it.
+   */
+  runner?: boolean;
+  /**
    * **Share live**: how the run stands on the team instance its reporter reports to, for a run whose workers take
    * `share`; absent for one whose reporter predates it.
    */
