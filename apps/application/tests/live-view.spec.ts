@@ -78,7 +78,15 @@ module.exports = wrapConfig(defineConfig({
   );
   // The run reports where the config says; it is a CI run, or no variable a CI provider sets is left.
   const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PROJECT_NAME', 'PIWI_LIVE_VIEW']) {
+  for (const name of [
+    'PWDEBUG',
+    'PIWI_DASHBOARD_URL',
+    'PIWI_API_KEY',
+    'PIWI_PROJECT_NAME',
+    'PIWI_LIVE_VIEW',
+    'PIWI_DESKTOP_APP',
+    'PIWI_DESKTOP_CONFIG',
+  ]) {
     delete env[name];
   }
   for (const name of Object.keys(env)) if (detectCi({ [name]: env[name] })) delete env[name];
