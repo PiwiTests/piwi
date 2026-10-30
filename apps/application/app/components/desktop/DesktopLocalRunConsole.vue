@@ -1,14 +1,27 @@
 <script setup lang="ts">
 /**
- * Streaming output pane for one local run: monospace lines, stderr in red,
- * pinned to the bottom while new lines arrive unless the user scrolled up.
+ * Streaming output pane for one local run: monospace lines in their ANSI
+ * colors, stderr in red, pinned to the bottom while new lines arrive unless the
+ * user scrolled up.
  */
 import type { LocalRunLine } from '~/composables/useDesktopLocalRuns';
+import { renderAnsi } from '~/utils';
 
 const props = defineProps<{ lines: LocalRunLine[] }>();
 
 const el = ref<HTMLElement | null>(null);
 const pinned = ref(true);
+
+/** Each colored line's HTML, rendered once: the whole list re-renders on every new line. */
+const rendered = new WeakMap<LocalRunLine, string>();
+function coloredHtml(line: LocalRunLine): string {
+  let html = rendered.get(line);
+  if (html === undefined) {
+    html = renderAnsi(line.ansi ?? line.text);
+    rendered.set(line, html);
+  }
+  return html;
+}
 
 function onScroll() {
   const node = el.value;
@@ -32,14 +45,18 @@ onMounted(() => {
 
 <template>
   <div ref="el" class="h-56 overflow-y-auto rounded-md bg-zinc-950 p-3" @scroll.passive="onScroll">
-    <p
-      v-for="(line, i) in lines"
-      :key="i"
-      class="font-mono text-xs whitespace-pre-wrap"
-      :class="line.error ? 'text-red-400' : 'text-zinc-300'"
-    >
-      {{ line.text || ' ' }}
-    </p>
+    <template v-for="(line, i) in lines" :key="i">
+      <!-- eslint-disable-next-line vue/no-v-html — renderAnsi escapes the text before wrapping it in styled spans -->
+      <p
+        v-if="line.ansi"
+        class="font-mono text-xs whitespace-pre-wrap"
+        :class="line.error ? 'text-red-400' : 'text-zinc-300'"
+        v-html="coloredHtml(line)"
+      />
+      <p v-else class="font-mono text-xs whitespace-pre-wrap" :class="line.error ? 'text-red-400' : 'text-zinc-300'">
+        {{ line.text || ' ' }}
+      </p>
+    </template>
     <p v-if="lines.length === 0" class="font-mono text-xs text-zinc-500">Waiting for output…</p>
   </div>
 </template>

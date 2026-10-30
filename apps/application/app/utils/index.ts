@@ -664,6 +664,14 @@ const ANSI_FG: Record<number, string> = {
   35: '#9333ea',
   36: '#0891b2',
   37: '#9ca3af',
+  90: '#6b7280',
+  91: '#ef4444',
+  92: '#22c55e',
+  93: '#eab308',
+  94: '#3b82f6',
+  95: '#a855f7',
+  96: '#06b6d4',
+  97: '#e5e7eb',
 };
 
 const ANSI_BG: Record<number, string> = {
@@ -675,9 +683,18 @@ const ANSI_BG: Record<number, string> = {
   45: '#9333ea',
   46: '#0891b2',
   47: '#9ca3af',
+  100: '#6b7280',
+  101: '#ef4444',
+  102: '#22c55e',
+  103: '#eab308',
+  104: '#3b82f6',
+  105: '#a855f7',
+  106: '#06b6d4',
+  107: '#e5e7eb',
 };
 
-const ANSI_SGR_RE = new RegExp(`${ESC}\\[([0-9;]*)m`, 'g');
+/** A CSI escape sequence: its parameters, then its final letter (`m` for SGR, the one that styles text). */
+const ANSI_CSI_RE = new RegExp(`${ESC}\\[([0-9;?]*)([A-Za-z])`, 'g');
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -685,8 +702,9 @@ function escapeHtml(s: string): string {
 
 /**
  * Convert ANSI SGR escape sequences to HTML `<span>` tags with inline styles.
- * Handles bold/dim/italic/underline and standard 30–47 color codes.
- * Unrecognized codes are stripped.
+ * Handles bold/dim/italic/underline, the 30–47 color codes and their bright
+ * 90–107 variants. Unrecognized codes, and CSI sequences other than SGR (cursor
+ * moves, line erases), are stripped.
  */
 export function renderAnsi(text: string): string {
   const parts: string[] = [];
@@ -735,11 +753,11 @@ export function renderAnsi(text: string): string {
         italic = false;
       } else if (c === 24) {
         uline = false;
-      } else if (c >= 30 && c <= 37) {
+      } else if ((c >= 30 && c <= 37) || (c >= 90 && c <= 97)) {
         fg = ANSI_FG[c];
       } else if (c === 39) {
         fg = undefined;
-      } else if (c >= 40 && c <= 47) {
+      } else if ((c >= 40 && c <= 47) || (c >= 100 && c <= 107)) {
         bg = ANSI_BG[c];
       } else if (c === 49) {
         bg = undefined;
@@ -748,9 +766,10 @@ export function renderAnsi(text: string): string {
   };
 
   let m: RegExpExecArray | null;
-  while ((m = ANSI_SGR_RE.exec(text)) !== null) {
+  while ((m = ANSI_CSI_RE.exec(text)) !== null) {
     push(text.slice(last, m.index));
-    last = ANSI_SGR_RE.lastIndex;
+    last = ANSI_CSI_RE.lastIndex;
+    if (m[2] !== 'm') continue;
     const codes = m[1] ? m[1].split(';').map(Number) : [0];
     apply(codes);
   }

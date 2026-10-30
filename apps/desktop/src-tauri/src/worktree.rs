@@ -31,7 +31,7 @@ use crate::node_path;
 use crate::repro::local_get_json;
 use crate::runner::{
     linked_folder, resolve_playwright_cli, validate_args, Job, JobChild, LinkRecord, LocalRuns,
-    RunEventPayload, RUN_EVENT,
+    RunEventPayload, COLOR_ENV, RUN_EVENT,
 };
 
 /// A bisect progress event carried on a `piwi:local-run` event of kind `bisect`.
@@ -320,13 +320,14 @@ pub(crate) fn lab_plan_path(root: &Path, project_id: &str, request_id: &str) -> 
 }
 
 /// The environment a reproduction, a bisect step and `piwi flake` run with, so
-/// a run of an old commit reports to this app only, and plain output for the
-/// tray. This app's address and token win over a dashboard named in the user's
-/// environment or a `.env` in the worktree. `PIWI_DESKTOP_APP=prefer`, with the
-/// path of this app's discovery file (`discovery`), has a reporter or a `piwi`
-/// that knows it take the address and the token together from the file, before
-/// a server the Playwright config names, outside CI. A reporter that predates
-/// `prefer` pairs a server its config names with the token.
+/// a run of an old commit reports to this app only, and colored output for
+/// the tray ([`COLOR_ENV`]). This app's address and token win over a dashboard
+/// named in the user's environment or a `.env` in the worktree.
+/// `PIWI_DESKTOP_APP=prefer`, with the path of this app's discovery file
+/// (`discovery`), has a reporter or a `piwi` that knows it take the address and
+/// the token together from the file, before a server the Playwright config
+/// names, outside CI. A reporter that predates `prefer` pairs a server its
+/// config names with the token.
 pub(crate) fn flake_lab_env(
     server: &ServerInfo,
     discovery: Option<&Path>,
@@ -344,8 +345,7 @@ pub(crate) fn flake_lab_env(
                 .map(|path| path.to_string_lossy().into_owned())
                 .unwrap_or_default(),
         ),
-        ("NO_COLOR", "1".into()),
-        ("FORCE_COLOR", "0".into()),
+        (COLOR_ENV.0, COLOR_ENV.1.into()),
     ]
 }
 
@@ -778,8 +778,7 @@ fn run_std_streaming(
     let mut child = match Command::new(bin)
         .args(args)
         .current_dir(dir)
-        .env("NO_COLOR", "1")
-        .env("FORCE_COLOR", "0")
+        .env(COLOR_ENV.0, COLOR_ENV.1)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -853,8 +852,7 @@ async fn run_sidecar(
         Ok(c) => c
             .args(node_args)
             .current_dir(worktree)
-            .env("NO_COLOR", "1")
-            .env("FORCE_COLOR", "0")
+            .env(COLOR_ENV.0, COLOR_ENV.1)
             .envs(env.iter().map(|(k, v)| (k.to_string(), v.clone()))),
         Err(e) => {
             emit_line(app, id, "error", e.to_string());
@@ -1944,10 +1942,10 @@ mod tests {
             get("PIWI_DESKTOP_CONFIG"),
             Some("/home/dev/.piwi/desktop.json")
         );
-        assert_eq!(get("NO_COLOR"), Some("1"));
-        assert_eq!(get("FORCE_COLOR"), Some("0"));
+        assert_eq!(get("FORCE_COLOR"), Some("1"));
+        assert_eq!(get("NO_COLOR"), None);
         // Nothing else: the webview cannot add a variable.
-        assert_eq!(env.len(), 6);
+        assert_eq!(env.len(), 5);
         // With no discovery file written, the reporter looks for one at its default path.
         let without = flake_lab_env(&server, None);
         let config = without.iter().find(|(k, _)| *k == "PIWI_DESKTOP_CONFIG");

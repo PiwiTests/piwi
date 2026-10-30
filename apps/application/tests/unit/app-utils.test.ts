@@ -418,6 +418,14 @@ describe('renderAnsi', () => {
   test('wraps colored segments in styled spans and resets on code 0', () => {
     expect(renderAnsi('\u001B[31mred\u001B[0m')).toBe('<span style="color:#dc2626">red</span>');
   });
+
+  test('renders the bright colors, as Playwright grays its code frames', () => {
+    expect(renderAnsi('\u001B[90m 3 |\u001B[39m')).toBe('<span style="color:#6b7280"> 3 |</span>');
+  });
+
+  test('drops escape sequences that move the cursor or erase a line', () => {
+    expect(renderAnsi('\u001B[1A\u001B[2K\u001B[?25ldone')).toBe('done');
+  });
 });
 
 describe('copyPreview', () => {

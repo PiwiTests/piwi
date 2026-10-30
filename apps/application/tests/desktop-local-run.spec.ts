@@ -332,6 +332,31 @@ test.describe('Desktop local run', () => {
     expect(stops).toEqual([{ runId: 7 }, { runId: 7 }]);
   });
 
+  test('colored output shows in its colors and still counts the tests', async ({ page }) => {
+    await installFakeBridge(page, { linked: true, autoExit: false });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    // Playwright's list reporter with FORCE_COLOR=1, as the shell runs it.
+    await page.evaluate(() =>
+      window.__piwiFakeTauri.emitLine(
+        '\u001b[2mRunning \u001b[22m3\u001b[2m tests using \u001b[22m2\u001b[2m workers\u001b[22m',
+      ),
+    );
+    await expect(tray(page).getByText('Running 0/4…', { exact: true })).toBeVisible();
+    await page.evaluate(() =>
+      window.__piwiFakeTauri.emitLine(
+        '  \u001b[32m✓\u001b[39m  \u001b[2m1 \u001b[22m[chromium] › tests/checkout.spec.ts:42:18 › checkout completes\u001b[2m (1.2s)\u001b[22m',
+      ),
+    );
+    await expect(tray(page).getByText('Running 1/4…', { exact: true })).toBeVisible();
+
+    await expect(tray(page).getByText('Running 3 tests using 2 workers')).toBeVisible();
+    await expect(tray(page).locator('span', { hasText: /^✓$/ })).toHaveCSS('color', 'rgb(22, 163, 74)');
+    await expect(tray(page).getByText('[22m')).toHaveCount(0);
+  });
+
   test('a run from the menu runs once, and leaves the project defaults alone', async ({ page }) => {
     await installFakeBridge(page, { linked: true });
     await page.goto(`/test-runs/${runId}`);

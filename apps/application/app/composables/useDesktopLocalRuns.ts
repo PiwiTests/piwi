@@ -32,6 +32,7 @@ import { specRunVerdict, type SpecRunResult, type SpecRunVerdict } from '@piwite
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { desktopJobVerdict, flakeLabJobReport, localRunOriginKind, newLocalRunRef } from '~/utils/desktop-job';
 import { desktopRunRef } from '~/utils/desktop-run-view';
+import { stripAnsi } from '~/utils/text-format';
 import type { ReproRequestView } from '#shared/desktop-repro';
 import type { FlakeLabJobReport } from '@piwitests/core/desktop-job';
 
@@ -170,8 +171,11 @@ export interface LocalRunSet {
 export type SavedLocalRunOptions = Required<LocalRunOptions>;
 
 export interface LocalRunLine {
+  /** The line without its ANSI color codes. */
   text: string;
   error: boolean;
+  /** The line as printed, ANSI color codes included; only on a line that has them. */
+  ansi?: string;
 }
 
 export interface LocalRun {
@@ -399,9 +403,10 @@ let toastApi: ReturnType<typeof useToast> | null = null;
 let routerApi: ReturnType<typeof useRouter> | null = null;
 let optionsLoaded = false;
 
-// Playwright's list reporter, as the shell captures it (plain, non-TTY): a
-// "Running N tests using M workers" announcement per step, then one line per
-// finished test starting with a result mark (✓/✘ or the ASCII fallbacks).
+// Playwright's list reporter, as the shell captures it (non-TTY), read without
+// its colors: a "Running N tests using M workers" announcement per step, then
+// one line per finished test starting with a result mark (✓/✘ or the ASCII
+// fallbacks).
 const PROGRESS_TOTAL_RE = /^Running (\d+) tests? using \d+ workers?$/;
 const PROGRESS_RESULT_RE = /^\s{1,6}(?:✓|✘|✗|x|ok|-)\s+\d+\s/;
 
@@ -443,8 +448,9 @@ export function useDesktopLocalRuns() {
     }
   }
 
-  function pushLine(run: LocalRun, text: string, error: boolean) {
-    run.lines.push({ text, error });
+  function pushLine(run: LocalRun, printed: string, error: boolean) {
+    const text = stripAnsi(printed);
+    run.lines.push(text === printed ? { text, error } : { text, error, ansi: printed });
     if (run.lines.length > MAX_LINES) run.lines.splice(0, run.lines.length - MAX_LINES);
     if (error) return;
     const total = PROGRESS_TOTAL_RE.exec(text);
