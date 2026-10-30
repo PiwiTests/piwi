@@ -8,9 +8,11 @@ Someone who opens a slow CI run usually asks something else: what is the test do
 plan adds what explains a running test, then the page as a document rather than an image, then ways to watch a whole run
 from more places. Where it revisits a decision of the [run control ADR](../adr/run-control.md), it says so.
 
-**Status.** Proposed 2026-10-30. Nothing is built. Spikes A to C in the [appendix](#appendix-the-spikes) ran on
-Playwright 1.64.1 and are the evidence for the claims about Playwright; spikes D to H are still to run. None of them is
-part of the repository. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D62
+**Status.** Proposed 2026-10-30. Nothing is built. Spikes A to H in the [appendix](#appendix-the-spikes) ran on
+Playwright 1.64.1 and are the evidence for the claims about Playwright and the costs; none of them is part of the
+repository. Spike D settled that a run Piwi pauses never turns the call stream on (D2), spike F that the runner's own
+trace needs no option to be read as it grows (D6), and spikes E, G and H set the masking rate, the video's settings and
+what a viewer of the DOM receives (D5, D9, D7). Safari is the one browser no spike reached (spike G). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D62
 of [`1.0-stabilization.md`](1.0-stabilization.md).
 
 **Summary.** What the plan delivers, in the order it should be built:
@@ -93,18 +95,24 @@ a slow or stuck test explained while it runs, with Playwright's own words for wh
 - **`context.debugger`**: the public pause (`requestPause`, `next`, `runTo`, `resume`, `pausedDetails`), and an
   internal call stream. `_enable()` makes it emit `apicallsupdated` with each running call's title, its place in the
   user's code, its status, the call log lines added since the last update, the action point of an input action and its
-  error, batched every 500 ms ([spike A](#a-playwrights-call-stream)). The same switch moves the pause: once it is on,
-  `requestPause`, `next` and `runTo` stop an auto-waiting action before its input rather than before its wait
-  (`setPauseBeforeWaitingActions` does nothing).
+  error, batched every 500 ms ([spike A](#a-playwrights-call-stream)). The same switch moves the pause, and nothing
+  turns it off again in that context: once it is on, `requestPause`, `next` and `runTo` stop an auto-waiting action
+  before its input rather than before its wait (`setPauseBeforeWaitingActions` does nothing), so a click whose element
+  never becomes ready never stops ([spike D](#d-the-pause-with-the-call-stream-on)).
 - **`tracing.start({ live: true })`**: the trace written to an unarchived file as the calls happen, flushed with every
   event ([spike B](#b-a-live-traces-size)). With `snapshots`, each call writes DOM snapshots (before it, at its action,
   after it), each one referring to the unchanged nodes of earlier ones; 1.64 adds ARIA snapshots
   (`snapshots: { aria: true }`). Live, Playwright keeps the page's scripts among the trace's resources
-  (`omitScripts: !live`). The test runner's `trace` option takes `live` too, undocumented: Playwright's test server,
-  behind its UI mode, asks for `{ mode: 'on', live: true }`.
+  (`omitScripts: !live`). The resources are files named by their SHA-1 and extension. The test runner's `trace` option
+  takes `live` too, undocumented: Playwright's test server, behind its UI mode, asks for `{ mode: 'on', live: true }`.
+  It is not needed to read a trace as the test runs: the runner's own trace file already grows with each call, its
+  snapshots as they are taken and its call log with the next of them, and `live` changes nothing in the archive it
+  keeps ([spike F](#f-the-runners-own-trace-as-the-test-runs)).
 - **ffmpeg 1013**, which Playwright 1.64 installs with its browsers to record videos: a VP9 encoder (`libvpx-vp9`), the
-  WebM format, JPEG images read from a pipe, no network protocol ([spike C](#c-vp9-from-playwrights-ffmpeg)). Playwright
-  1.63 and earlier install ffmpeg 1011, whose one encoder is VP8.
+  WebM format, JPEG images read from a pipe, no network protocol ([spike C](#c-vp9-from-playwrights-ffmpeg)), and no
+  filter that paints a box nor any raw image input ([spike E](#e-masking-an-image-in-the-worker)). Playwright 1.63 and
+  earlier install ffmpeg 1011, whose one encoder is VP8. `playwright-core/lib/utilsBundle` exports the `jpeg-js` codec
+  Playwright uses for its image comparisons.
 - **`browser.bind` and Playwright's dashboard**: a live view, with Pause and Step, of a browser bound on the same
   machine. Run control's D11 keeps Piwi interoperable with it; it does not reach a CI machine.
 
@@ -113,22 +121,22 @@ a slow or stuck test explained while it runs, with Playwright's own words for wh
 | | Decision | Why |
 | --- | --- | --- |
 | D1 | **The image stays the base of the view, and every new layer belongs to a call**: the call's id from Playwright's call stream, else the step's. | The image shows motion on any page. The call is what the log, the action point, the DOM snapshot and the step have in common, so the viewer lines them up. |
-| D2 | **The call log comes from Playwright's call stream (`context.debugger._enable()`, checked before use), in a CI run, which nothing pauses.** A shared run, which a developer steers, gets it once [spike D](#d-the-pause-with-the-call-stream-on) settles where Pause and Step should stop with the stream on. | The stream gives the log while the call waits, which no public API does; the trace has it only when tracing is on. Turning the stream on moves where Pause and Step stop, which would change the editors' behavior unannounced. |
+| D2 | **The call log comes from Playwright's call stream (`context.debugger._enable()`, checked before use), in a CI run alone, which nothing pauses.** A shared run, which a developer steers, never turns it on: its call log comes from the attempt's own trace when the runner traces it, and is absent otherwise. | The stream gives the log while the call waits, which no public API does. Once on, it stays on in its context and moves the debugger's stops: a breakpoint on a click whose element never becomes ready would never stop ([spike D](#d-the-pause-with-the-call-stream-on)). |
 | D3 | **Nothing is drawn into the page.** The viewer draws the action point and an element's outline over the image. | The reporter's contract 6: nothing the capture does shows up as the test's own. `screencast.showActions` would show in the test's own video and trace. |
 | D4 | **The instance marks a test Stuck? from the test's start, which the reporter always sends, whether or not anyone watches**: the attempt has run longer than both a floor (two minutes by default) and three times the test's longest duration in its last ten passing executions. One `test.stuck` notification per attempt. With the run open, the live steps name the step it is in. | The reporter sends steps only while someone has the run open, but always the test's start; the durations of past executions are stored. The floor keeps short tests from flagging; the live view adds the why. |
-| D5 | **Secret fields are masked in the worker, before an image leaves it**: the fields of `SECRET_FIELDS` and the project's own list, painted over. An image whose page shows none goes as it is. | The instance and the viewers never hold the value. Playwright's `mask` exists for screenshots, not for the screencast. |
-| D6 | **The DOM at each call comes from a live trace.** When the attempt's own trace records, the reporter has it written live (the runner's `trace.live`, checked before use) and reads it; when it does not, the reporter starts a live trace of its own while someone watches, stops it unsaved when the last viewer leaves, and gives way to a test that starts tracing itself, as `guardScreencast` does for the screencast. | A context has one tracing: Piwi must neither start a second one nor change the test's own. The snapshot view and its picker already render and pick from trace snapshots. |
-| D7 | **The relay passes a live trace's snapshots and the resources they name, by SHA-1 and once per run: stylesheets, fonts and images, never a script.** The worker removes the value of a secret field from each snapshot before it leaves. | A viewer cannot reach the CI machine's `localhost`. A live trace keeps the page's scripts, which must never run in the dashboard; the snapshot view masks password fields when it renders, too late for a relay. |
+| D5 | **Secret fields are masked in the worker, before an image leaves it**: the fields of `SECRET_FIELDS` and the project's own list, painted over with `jpeg-js`, at most two images a second while a masked element shows, and only an image whose boxes read the same just before and just after it. An image whose page shows none goes as it is. | The instance and the viewers never hold the value. Playwright's `mask` exists for screenshots, and draws into the page. Masking an image costs about 48 ms of CPU ([spike E](#e-masking-an-image-in-the-worker)), and Playwright's `onFrame` gives no scroll offset to place the boxes by. |
+| D6 | **The DOM at each call comes from a trace read as it grows.** When the runner already traces the attempt, the reporter reads the runner's own trace file, with no option; when it does not, the reporter starts a live trace of its own while a viewer has **Inspect** open, stops it unsaved when the last one closes it, and gives way to a test that starts tracing itself, as `guardScreencast` does for the screencast. | A context has one tracing: a test's own `tracing.start` fails while Piwi's runs ([spike F](#f-the-runners-own-trace-as-the-test-runs)). The snapshot view and its picker already render and pick from trace snapshots. |
+| D7 | **A viewer with Inspect open gets the watched page's snapshots since its last navigation, and the resources they name, once per run: stylesheets, fonts and images, never a script nor a document.** Nothing goes while no viewer has Inspect open. The worker removes the value of a secret field from each snapshot before it leaves. | A snapshot refers to earlier ones back to the page's last full snapshot. On the dashboard, that first snapshot weighs 0.5 to 0.8 MB and the stylesheets 0.6 MB ([spike H](#h-a-real-applications-resources)): too much to send unasked. A viewer cannot reach the CI machine's `localhost`, and the page's scripts must never run in the dashboard. |
 | D8 | **No WebSocket.** An image goes as the binary body of its POST, with a short JSON header; a viewer reads one streamed GET of length-prefixed messages. | Both cross the reverse proxies the event streams already cross (`X-Accel-Buffering: no`, a heartbeat every 15 s); a WebSocket needs an upgrade rule in each proxy. Base64 makes every image a third larger. |
-| D9 | **Video is a form of the same view, not a second one**: VP9 in WebM from Playwright's ffmpeg, when the worker has ffmpeg 1013 and the viewer's browser plays the stream through `MediaSource`; images otherwise. | [Spike C](#c-vp9-from-playwrights-ffmpeg): ten images a second as VP9 took a third fewer bytes than four a second as JPEG, at about 4 ms of CPU an image, the first bytes out within a second. |
+| D9 | **Video is a form of the same view, not a second one**: VP9 in WebM from Playwright's ffmpeg, a keyframe every half second, each cluster opening on one (`-dash 1`), when the worker has ffmpeg 1013 and the viewer's browser shows a frame of it within two seconds; images otherwise. | [Spike C](#c-vp9-from-playwrights-ffmpeg): ten images a second as VP9 took a third fewer bytes than four a second as JPEG, at about 4 ms of CPU an image. [Spike G](#g-the-live-webm-in-three-browsers): Chromium and Firefox play it 0.7 to 1.4 s behind, a late viewer from the last keyframe; WebKit on Linux showed nothing in two runs of three. |
 | D10 | **The last 30 seconds come only from images the test's trace or video already takes**, kept in the worker's memory and sent only to a viewer who asks. | Taking images nobody watches would break the rule the live view keeps: no image is taken while nobody watches. |
 | D11 | **Holding a failing CI test is a project setting, off by default**: a viewer of the worker as its test fails may hold the failing page, five minutes at most. It narrows run control's D8 for that one case, and ships with an ADR that says so. | Inspecting a CI failure where it happened is worth the CI minutes to some teams, not by default. A hold takes no input and runs no code, but it does steer the run. |
 | D12 | **One server still relays a run.** A relay shared between servers is a plan of its own, together with the run's live events. | The run page's live events have the same limit; lifting one without the other changes nothing for a viewer. |
 
 ## Part 1: What the test waits for
 
-**The call log.** While a viewer watches, the worker turns Playwright's call stream on (D2) and sends, for the call
-the test is in: its title, its place in the user's code, its status, the new call log lines, its action point and the
+**The call log.** In a CI run, while a viewer watches, the worker turns Playwright's call stream on (D2) and sends,
+for the call the test is in: its title, its place in the user's code, its status, the new call log lines, its action point and the
 error it ended with, at the stream's own pace (an update at most every 500 ms). Each line goes through
 `hideSecretsInText`, is cut at 500 characters, and one update carries 50 lines at most. Calls of Piwi's own capture
 are internal and never reach the stream.
@@ -152,11 +160,14 @@ takes, from the stored steps of the same executions; with the live view on, the 
 - **What is masked**: the fields of `SECRET_FIELDS` (a password field, and the `autocomplete` values of
   `SECRET_AUTOCOMPLETE`), in every frame of the page, and the project's own list in **Project → Settings → Live view**,
   written as locators (`getByLabel('IBAN')`), read with `@piwitests/core/locator-chain`.
-- **How**: the worker keeps the boxes of the masked elements, read through `internalCall` at most twice a second and
-  again when the page navigates. An image taken after the last read waits for the next one, so no image goes out
-  masked by stale boxes. An image whose page shows a masked element is decoded, painted over and encoded again before
-  it leaves ([spike E](#e-masking-an-image-in-the-worker) measures a JavaScript codec, such as the `jpeg-js` that
-  Playwright itself bundles, at 640×400). With video (Part 7), the boxes are painted before the encoder.
+- **How**: while a masked element shows, the worker reads the boxes of the masked elements through `internalCall` just
+  before and just after it takes an image (5 to 11 ms a read, [spike E](#e-masking-an-image-in-the-worker)), and sends
+  the image only when both reads agree: Playwright's `onFrame` gives the viewport's size but not its scroll offset, so
+  an image taken while the page moves is dropped rather than masked in the wrong place. The image is decoded, painted
+  over and encoded again with `jpeg-js`, as Playwright exports it: about 48 ms of CPU for a 640×400 image, and an image
+  1.5 times larger than Chrome's at the same quality. So a worker sends at most two images a second while a masked
+  element shows, about 10 % of a core while someone watches, and none of this runs while none shows. With video
+  (Part 7), the painted image goes to the encoder, since its ffmpeg paints nothing itself.
 - **Not masked**: a secret that is not a field's value (a token printed in the page's text). The docs say so, as they
   do today for the images and traces a run keeps.
 
@@ -181,20 +192,24 @@ pins one. On a test stuck on a locator, the picker gives the locator to use whil
 
 **Where the snapshots come from** (D6):
 
-- When the runner already traces the attempt (its `trace` mode records this one), it writes the trace live. `wrapConfig` asks for `trace.live` only in the workers of a run that holds a live view key, which the
-  workers find in their environment as they read the config again
-  ([spike F](#f-the-runners-live-trace-from-wrapconfig)).
+- When the runner already traces the attempt (its `trace` mode records this one), the reporter reads the runner's own
+  trace file (`.playwright-artifacts-<n>/traces/` under the output folder), which grows with each call as it is: no
+  option is needed, and the archive the runner keeps is unchanged
+  ([spike F](#f-the-runners-own-trace-as-the-test-runs)).
 - Otherwise, the reporter starts `context.tracing.start({ live: true, snapshots: true })` through `internalCall` when
-  the first viewer asks for **Inspect**, and stops it unsaved when the last one leaves. A test that calls
+  the first viewer opens **Inspect**, and stops it unsaved when the last one closes it. A test that calls
   `tracing.start` itself meanwhile gets it: the reporter's guard stops Piwi's tracing first, as `guardScreencast` does.
-- The worker reads the trace file as it grows, from the offset it last read, and forwards the `frame-snapshot` events of
-  the watched page, the calls' ids and titles, and the resources a snapshot names. It forwards no call's arguments: a
-  `fill` writes its value there.
+- The worker reads the trace file as it grows, from the offset it last read, and keeps the watched page's snapshots
+  since its last navigation. While a viewer has **Inspect** open, it sends them, then each new one, with the calls' ids
+  and titles and the resources the snapshots name (D7). It sends no call's arguments: a `fill` writes its value
+  there.
 
-**What it costs** ([spike B](#b-a-live-traces-size)). On a page of 1,000 table rows, about 6,000 elements, the first
-two snapshots took 108 KB, and each later one 0.5 to 8 KB: three per action, each repeating only what changed. The
-resources a real application loads (its stylesheets, fonts and images) go once per run;
-[spike H](#h-a-real-applications-resources) measures them on `examples/sample-app`.
+**What it costs.** On a page of 1,000 table rows, about 6,000 elements, the first two snapshots took 108 KB, and each
+later one 0.5 to 8 KB: three per action, each repeating only what changed ([spike B](#b-a-live-traces-size)). On five
+pages of the dashboard itself, served by its dev server, a page took 0.5 to 0.8 MB of snapshots, and the stylesheets,
+images and data its snapshots name 0.7 MB once, beside 49 MB of scripts that are never sent
+([spike H](#h-a-real-applications-resources)). The sample application's five pages took 25 KB of snapshots and 9 KB of
+stylesheet.
 
 **The relay** keeps a run's resources in memory, bounded per run (64 MB, the least recently used dropped first), and
 drops them with the run. Nothing is written to the database or the disk. A script is never relayed (D7).
@@ -236,11 +251,13 @@ drops them with the run. Nothing is written to the database or the disk. A scrip
 - **Sizes from the viewer.** A viewer says how wide it shows the image, in device pixels, up to 1280×800; the worker
   asks the screencast for the largest size its viewers asked. A page whose video records keeps the video's size, since
   the first client's size wins.
-- **Video** (D9). The worker pipes its images into Playwright's ffmpeg (VP9, real-time, no look-ahead, WebM with a
-  cluster a second, a keyframe every two seconds), the relay passes the WebM bytes, and the viewer plays them through
-  `MediaSource`. A viewer that joins gets the WebM header and the stream from the next keyframe. The worker falls back
-  to images when ffmpeg 1013 is missing (Playwright 1.63 or earlier), when ffmpeg fails, or for a viewer whose browser
-  cannot play the stream ([spike G](#g-the-live-webm-in-three-browsers)).
+- **Video** (D9). The worker pipes its images into Playwright's ffmpeg (VP9, real-time, no look-ahead, its input read
+  as it comes, a keyframe every half second, WebM with each cluster opening on a keyframe), the relay keeps the WebM
+  header and the stream since the last keyframe, and the viewer plays it through `MediaSource` from its newest frame. A
+  viewer that joins starts from the last keyframe, half a second back at most. The view is 0.7 to 1.4 s behind the
+  page; the call log (Part 1), sent apart, is not held back with it. The worker
+  falls back to images when ffmpeg 1013 is missing (Playwright 1.63 or earlier) or fails, and the viewer asks for
+  images when no frame shows within two seconds, as WebKit on Linux did ([spike G](#g-the-live-webm-in-three-browsers)).
 
 ## Part 8: Holding a failing CI test
 
@@ -310,34 +327,39 @@ PRs 1 to 3 are the first release.
   guard giving the tracing back to a test that starts its own.
 - **The app**: unit tests of the Stuck? rule (once per attempt, the floor, the history), of the binary messages and of
   the relay's bounds; an E2E test of the run page with a simulated worker; the performance suite for the run page.
-- **The spikes** D to H, before the PRs they serve.
+- **Safari**, on a Mac, before the video PR: the one browser spike G could not reach.
 
 ## Risks
 
-- **Playwright's internals.** The call stream (`_enable()`, `apicallsupdated`) and the runner's `trace.live` are
-  undocumented. Each is checked before use and has a fallback: no call log, or Piwi's own live trace. A Playwright
-  release may change them: the reporter's tests cover each one and its fallback, so the upgrade of Playwright in this
-  repository shows it, and the docs name the Playwright versions each part was checked with.
-- **The worker's cost**: the element count once a second while a call waits, the boxes twice a second, the masking
-  codec (spike E), the live trace's writes and reads (spike B: tens of KB per call on a large page), the encoder (about
-  4 ms an image). Each runs only while someone watches.
-- **The pause point** (D2), should the call stream ever run in a run Piwi pauses.
+- **Playwright's internals.** The call stream (`_enable()`, `apicallsupdated`) is undocumented, and the place of the
+  runner's trace files (`.playwright-artifacts-<n>/traces/`) is Playwright's own layout. Each is checked before use and
+  has a fallback: no call log, or Piwi's own live trace. A Playwright release may change them: the reporter's tests
+  cover each one and its fallback, so the upgrade of Playwright in this repository shows it, and the docs name the
+  Playwright versions each part was checked with.
+- **The worker's cost**: the element count once a second while a call waits; while a masked element shows, two box
+  reads an image and about 10 % of a core for the masking (spike E); a trace's writes and reads (spikes B and H: up to
+  0.8 MB a navigation on a heavy page); the encoder (about 4 ms an image). Each runs only while someone watches.
+- **The call stream in a run Piwi pauses** (D2): a breakpoint that never stops. The stream is turned on only where
+  nothing pauses, and only a test of a CI run proves it.
 - **More leaves the worker**: the DOM, the logs, the requests. The masking must be right and the setting's text exact.
-- **The viewer's browser**: `MediaSource` with VP9 differs between browsers (spike G); images stay the fallback.
+- **The viewer's browser**: `MediaSource` with VP9 differs between browsers: WebKit on Linux buffered the stream and
+  showed nothing in two runs of three, and Safari is untested (spike G). Images stay the fallback, chosen by the
+  viewer when no frame shows.
 - **The one server's memory**: a run's resources, up to 64 MB per run with an Inspect open.
 
 ## Open questions
 
 1. **Stuck?**: are two minutes and three times the longest passing duration right, and should a project change them?
-2. **The call stream in a run Piwi pauses**: is stopping before the input, as Playwright's dashboard does, better for
-   Step than stopping before the wait (spike D)?
-3. **The project's masked elements**: locators alone, or CSS selectors too?
+2. **The project's masked elements**: locators alone, or CSS selectors too?
+3. **The masking codec**: is `jpeg-js` enough at two images a second, or is a WebAssembly JPEG codec worth its
+   weight in the published reporter?
 4. **The watch link**: the images alone, or the call log too?
 5. **The hold**: may any viewer hold, or only a project member, and is fifteen minutes the right ceiling?
 6. **Watch all**: for one run, or for every running CI run of a project? And against the bound of sixteen viewers a
    run: does a thumbnail count as a viewer, or does the bound become one of bytes a second?
 7. **The record of a narrowed decision**: `adr/` supersedes a whole ADR; how does it record one decision narrowed by a
    later plan?
+8. **Safari**: does it play the live WebM through `MediaSource`, and how far behind?
 
 ## Not in this plan
 
@@ -358,7 +380,8 @@ PRs 1 to 3 are the first release.
 ## Appendix: the spikes
 
 Run on 2026-10-30 in a sandbox with 4 cores and 15 GB of memory, Node.js 22.22, Playwright 1.64.1 and its Chromium
-156.0.8078.4. The scripts lived outside the repository.
+156.0.8078.4; spike G also with its Firefox 157.0 and WebKit 27.2 (Linux, GStreamer). The scripts lived outside the
+repository.
 
 ### A. Playwright's call stream
 
@@ -417,26 +440,100 @@ which Playwright 1.63 installs, has `libvpx` (VP8) and no VP9; ffmpeg 1013 has `
 
 ### D. The pause with the call stream on
 
-To run: Piwi's Pause, Step and Run to cursor on the editor's fixture project, with the call stream off and on. Where
-each stops, what the paused page shows, and whether the bar's Pick and Record still find the element.
+Run at Playwright's level, armed as the capture fixtures arm a context (`armStops`: `requestPause()`, then `next()` at
+each stop Piwi does not show), not through Piwi's bar. A page with a coupon field, a **Pay** button enabled after
+1.5 s and a text that appears after 3 s; five calls in a row, with the call stream off, then on. The time of each stop
+after its call began:
+
+| Call | Stream off | Stream on |
+| --- | --- | --- |
+| `fill` the coupon | 4 ms | 30 ms, at its input |
+| `click` **Pay**, enabled at 1.5 s | 2 ms, **Pay** still disabled | 1,887 ms, once **Pay** was enabled |
+| `expect(…).toBeVisible()` on the text | 6 ms | 1 ms |
+| `textContent` | 2 ms | 2 ms |
+| `click` on a link that does not exist, 2 s timeout | 0 ms | no stop: the call timed out |
+
+**Pause** asked 500 ms into a click waiting for **Pay**: with the stream off, the test stopped at the next call, after
+the click (1,961 ms); with it on, at the waiting click's input (1,908 ms). An assertion and a read stop before they run
+either way; an input action, with the stream on, only once its element is ready. Nothing turns the stream off: the
+client's `_enable()` sets `_apiCallsEnabled`, which only the debugger's constructor sets to false. At an input stop the
+element exists, which suits Pick; but a breakpoint on an action whose element never comes would never stop, which is
+why D2 keeps the stream out of every run Piwi pauses.
 
 ### E. Masking an image in the worker
 
-To run: decode, paint and encode a 640×400 JPEG at quality 50 with `jpeg-js`, and with Playwright's own codecs; the
-time per image and the CPU at four images a second.
+The 39 images spike C kept at ten a second (640×400, quality 50, 8.8 KB on average), and `jpeg-js` as
+`playwright-core/lib/utilsBundle` exports it:
 
-### F. The runner's live trace from wrapConfig
+- **Decoding** an image took 14.7 ms; decoding, painting a box and encoding again at quality 50, 47.6 ms: 19 % of a core
+  at four images a second, 10 % at two.
+- **Size**: the masked image came out 1.55 times the screencast's at quality 50, 1.51 at 40 and 1.40 at 30 (encoding in
+  29, 23 and 21 ms): Chrome's encoder is more compact than `jpeg-js` at the same quality.
+- **Reading the boxes** of the secret fields through a locator took 4.8 ms a read on a small page and 11.3 ms on the
+  page of 1,000 rows.
+- **A real frame**: a password typed into a field, filmed at 640×400 from a 1280×800 viewport (scale 0.5, as
+  `onFrame`'s `viewportWidth` gives it), its box read, padded by 2 pixels and painted: none of the 1,128 pixels inside
+  it kept a color off the mask's.
+- **ffmpeg 1013** has no filter that paints a box (its video filters are `scale`, `crop`, `pad`, `format`,
+  `transpose`, the flips and `trim`) and reads no raw images, only JPEG: on the video path too, the worker paints a decoded image and encodes it
+  again before ffmpeg.
 
-To run: `use.trace` set to `{ mode: 'on', live: true }` by `wrapConfig` in a worker whose environment holds a live
-view key, and not in the main process. Whether the runner writes the trace live, where, and whether the HTML report
-and the trace attachment are unchanged.
+### F. The runner's own trace as the test runs
+
+A project whose config asks for `trace: { mode: 'on', live: true }` only when a variable is set, and a reporter that
+sets it in `onBegin`; a test of a dozen calls over 5 s, the trace files listed every half second.
+
+- **The config is read twice**: in the main process, without the variable, and in the worker, with it. So the workers
+  of a run can be asked for something the main process does not ask for.
+- **With `live`**, the runner wrote a file of the test's own steps (`<test id>-test.trace`, 1.6 KB growing to 6.2 KB)
+  beside the context's trace file (0.96 KB growing to 21.9 KB), both under
+  `test-results/.playwright-artifacts-0/traces/`. **Without it**, the context's trace file grew the same way (6.1 KB to
+  22.2 KB).
+- **Read from inside the test, mid-run**, the context's trace file held the same events either way: 5 `before`, 5
+  `after`, 9 `frame-snapshot`, 17 `log`, 4 `screencast-frame` and 2 `input`. Playwright writes a call's log lines with
+  the next event it writes at once (`_appendTraceEvent`), so the log of a call still waiting may sit unwritten.
+- **The archives** of the two runs held the same files and the same events, give or take one screencast image, and both
+  runs wrote their HTML report: `live` changes nothing the runner keeps.
+- **Piwi's own trace beside the test's**: with the runner's trace off, a trace started as the reporter would start one
+  made the test's own `tracing.start` fail with `Tracing has been already started`; once that trace was stopped
+  unsaved, the test's start went through and its archive was saved.
 
 ### G. The live WebM in three browsers
 
-To run: the stream of spike C, cut where a viewer would join, played through `MediaSource` in Chromium, Firefox and
-WebKit; the delay from an image to the screen.
+A page whose clock changes every frame, filmed at 640×400 and fed to ffmpeg at ten images a second for 9 s, the WebM
+served to two viewers, one from the start and one joining 3.5 s later, each playing it through `MediaSource` and
+timing each frame it showed with `requestVideoFrameCallback` against when that image was fed. Every browser said it
+supports `video/webm; codecs="vp9"` and has `requestVideoFrameCallback`.
+
+| Browser | Settings | From the start: frames shown of 90, delay (median) | Joining late |
+| --- | --- | --- | --- |
+| Chromium 156 | clusters of 1 s | 84, 1.49 s | 61, 1.84 s, from the keyframe it joined at |
+| Chromium 156 | clusters of 250 ms, late viewer seeks to the newest frame | 88, 0.74 s | 58, 0.76 s |
+| Chromium 156 | clusters of 100 ms | 89, 0.87 s | 60, 0.67 s |
+| Chromium 156 | `-dash 1`, a keyframe every 5 images | 82, 1.42 s | 56, 0.96 s, from 3.1 s |
+| Firefox 157 | clusters of 250 ms | 80, 0.88 s | 51, 0.72 s |
+| Firefox 157 | `-dash 1`, a keyframe every 5 images | 81, 0.91 s | 50, 0.91 s, from 3.6 s |
+| WebKit 27.2 | clusters of 250 ms, three runs | 51, 0.67 s in the first; none in the other two | none |
+
+- **Joining late needs clusters that open on a keyframe.** With a keyframe every 20 images and clusters of 250 ms, two
+  clusters in 9 s opened on one, so the late viewer was sent the stream from its start. With `-dash 1` and a keyframe
+  every 5 images, 18 did, and the late viewer started from the last one. The stream weighed 78.9 KB with `-dash 1` and
+  87.9 KB without: at a capped bit rate, the extra keyframes cost little.
+- **The delay follows the cluster's length** down to about 250 ms: ffmpeg writes a cluster once it closes.
+- **WebKit on Linux**, whose media goes through GStreamer, buffered the whole stream (0.1 to 9.0 s) in every run, and
+  showed frames in one run of three. It says nothing of Safari on macOS, whose media stack differs; no Mac was at
+  hand.
 
 ### H. A real application's resources
 
-To run: a live trace of `examples/sample-app`'s suite. The bytes of its stylesheets, fonts and images on the first
-snapshot, and per test after it.
+`context.tracing.start({ live: true, snapshots: true })`, a page opened, 2.5 s to settle, then one mouse move so the
+trace holds the page as it shows; the trace's snapshots and its `resources/` folder measured after each page.
+
+- **The sample application** (`examples/sample-app`, its pages and assets served as its backends serve them, without a
+  backend): five pages, 32 snapshots, 25 KB in all. Resources: its stylesheet (9 KB), two scripts (13 KB) and the
+  pages' own documents (9 KB).
+- **The dashboard**, Piwi's own, from its dev server with the seeded data, on `/projects/1`, `/test-runs/2`,
+  `/test-run-cases/37`, `/failure-clusters/10` and `/test-cases/1`: 30 snapshots, 2.99 MB, 0.51 to 0.79 MB a page.
+  Resources: 49.4 MB of scripts (the dev server's modules, 1,600 files), and 1.7 MB of the rest: stylesheets 0.64 MB,
+  the pages' own documents 0.97 MB, data 0.07 MB, images 0.03 MB. A production build would serve fewer, larger
+  scripts and its stylesheets as files; it was not measured.
