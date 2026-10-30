@@ -345,8 +345,10 @@ pub(crate) fn flake_lab_env(
                 .map(|path| path.to_string_lossy().into_owned())
                 .unwrap_or_default(),
         ),
-        (COLOR_ENV.0, COLOR_ENV.1.into()),
     ]
+    .into_iter()
+    .chain(COLOR_ENV.map(|(key, value)| (key, value.to_string())))
+    .collect()
 }
 
 /// The environment a reproduction, a bisect step and `piwi flake` run with
@@ -778,7 +780,7 @@ fn run_std_streaming(
     let mut child = match Command::new(bin)
         .args(args)
         .current_dir(dir)
-        .env(COLOR_ENV.0, COLOR_ENV.1)
+        .envs(COLOR_ENV)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -852,7 +854,7 @@ async fn run_sidecar(
         Ok(c) => c
             .args(node_args)
             .current_dir(worktree)
-            .env(COLOR_ENV.0, COLOR_ENV.1)
+            .envs(COLOR_ENV)
             .envs(env.iter().map(|(k, v)| (k.to_string(), v.clone()))),
         Err(e) => {
             emit_line(app, id, "error", e.to_string());
@@ -1943,9 +1945,9 @@ mod tests {
             Some("/home/dev/.piwi/desktop.json")
         );
         assert_eq!(get("FORCE_COLOR"), Some("1"));
-        assert_eq!(get("NO_COLOR"), None);
+        assert_eq!(get("NO_COLOR"), Some(""));
         // Nothing else: the webview cannot add a variable.
-        assert_eq!(env.len(), 5);
+        assert_eq!(env.len(), 6);
         // With no discovery file written, the reporter looks for one at its default path.
         let without = flake_lab_env(&server, None);
         let config = without.iter().find(|(k, _)| *k == "PIWI_DESKTOP_CONFIG");

@@ -6227,7 +6227,7 @@ const SCENES = [
     link: { path: READY_INSPECTION.path, exists: true },
     localRunId: 61,
     outputs: ['desktop-run-output-tray.png', 'desktop-run-output-window.png'],
-    async run({ page, settle, shoot }) {
+    async run({ page, base, settle, shoot }) {
       const rerun = page.getByRole('button', { name: /^Re-run \d+ failed tests?/ });
       await rerun.waitFor({ timeout: 60_000 });
       await rerun.click();
@@ -6242,14 +6242,16 @@ const SCENES = [
       await shoot('tray', {
         clip: { x: box.x - 8, y: box.y - 8, width: box.width + 16, height: box.height + 16 },
       });
-      const [popup] = await Promise.all([
-        page.waitForEvent('popup'),
-        tray.getByRole('button', { name: 'Open the output in a separate window' }).click(),
-      ]);
-      await popup.setViewportSize({ width: 960, height: 640 });
-      await popup.getByRole('region', { name: 'Run output' }).getByText('2 passed').waitFor();
-      await popup.evaluate(() => document.fonts.ready);
-      await shoot('window', { page: popup });
+      // The shell opens the window on the run output page, which the tray feeds over their BroadcastChannel.
+      await tray.getByRole('button', { name: 'Open the output in a separate window' }).click();
+      await page.waitForFunction(() => window.__outputWindowName);
+      const name = await page.evaluate(() => window.__outputWindowName);
+      const outputPage = await page.context().newPage();
+      await outputPage.setViewportSize({ width: 960, height: 640 });
+      await outputPage.goto(`${base}/desktop/run-output?name=${name}`, { waitUntil: 'domcontentloaded' });
+      await outputPage.getByRole('region', { name: 'Run output' }).getByText('2 passed').waitFor({ timeout: 60_000 });
+      await outputPage.evaluate(() => document.fonts.ready);
+      await shoot('window', { page: outputPage });
     },
   },
   {

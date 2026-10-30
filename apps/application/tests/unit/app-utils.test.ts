@@ -426,6 +426,20 @@ describe('renderAnsi', () => {
   test('drops escape sequences that move the cursor or erase a line', () => {
     expect(renderAnsi('\u001B[1A\u001B[2K\u001B[?25ldone')).toBe('done');
   });
+
+  test('reads the 256-color and RGB forms of 38 and 48 whole, never as separate codes', () => {
+    expect(renderAnsi('\u001B[38;2;255;0;0mx')).toBe('<span style="color:rgb(255,0,0)">x</span>');
+    expect(renderAnsi('\u001B[38;5;1mx')).toBe('<span style="color:#dc2626">x</span>');
+    expect(renderAnsi('\u001B[38;5;9mx')).toBe('<span style="color:#ef4444">x</span>');
+    expect(renderAnsi('\u001B[38;5;196mx')).toBe('<span style="color:rgb(255,0,0)">x</span>');
+    expect(renderAnsi('\u001B[38;5;244mx')).toBe('<span style="color:rgb(128,128,128)">x</span>');
+    expect(renderAnsi('\u001B[48;5;31mx')).toBe('<span style="background:rgb(0,135,175)">x</span>');
+  });
+
+  test('picks lighter foreground colors on a dark background', () => {
+    expect(renderAnsi('\u001B[31mred', { onDark: true })).toBe('<span style="color:#f87171">red</span>');
+    expect(renderAnsi('\u001B[90mgray', { onDark: true })).toBe('<span style="color:#a1a1aa">gray</span>');
+  });
 });
 
 describe('copyPreview', () => {

@@ -42,8 +42,8 @@ on, the window stops listening, and a stop goes on at once.
 
 Each run shows its output under its workers, in the colors Playwright prints in a terminal. **Open the output in a
 separate window**, the window button on the run, moves it to a window of its own, to keep beside your editor or on
-another screen: it goes on updating and has the run's **Stop**. Closing that window, or **Show it here** in the tray,
-brings the output back; the window closes with the app.
+another screen: it goes on updating and has the run's **Stop**. Closing that window, or the same button, now **Show
+the output here**, brings the output back; the window closes with the app.
 
 ## Watch live
 

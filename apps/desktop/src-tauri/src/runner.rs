@@ -33,11 +33,12 @@ const PROJECT_LINKS_KEY: &str = "projectLinks";
 /// the webview can tell concurrent runs apart.
 pub(crate) const RUN_EVENT: &str = "piwi:local-run";
 
-/// The color setting of every process whose output goes to the window's run
+/// The color settings of every process whose output goes to the window's run
 /// console, which renders ANSI colors: colors on, as Playwright sets them in
-/// its workers and its web server. Never `NO_COLOR` with it: Node prints a
-/// warning in each process that has both.
-pub(crate) const COLOR_ENV: (&str, &str) = ("FORCE_COLOR", "1");
+/// its workers and its web server, and `NO_COLOR` empty, which every tool
+/// reads as unset, over one inherited from the user's environment: Node prints
+/// a warning in each process that has both set.
+pub(crate) const COLOR_ENV: [(&str, &str); 2] = [("FORCE_COLOR", "1"), ("NO_COLOR", "")];
 
 /// How many ancestors of the linked folder to search for a `node_modules`
 /// containing Playwright — covers monorepos with hoisted installs.
@@ -705,7 +706,7 @@ pub async fn desktop_run_local_tests(
         .map_err(|e| e.to_string())?
         .args(cmd_args)
         .current_dir(folder)
-        .env(COLOR_ENV.0, COLOR_ENV.1)
+        .envs(COLOR_ENV)
         .envs(origin)
         .envs(hub);
 

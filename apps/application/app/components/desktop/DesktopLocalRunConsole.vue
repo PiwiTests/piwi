@@ -2,8 +2,8 @@
 /**
  * Streaming output pane for one local run: monospace lines in their ANSI
  * colors, stderr in red, pinned to the bottom while new lines arrive unless the
- * user scrolled up. `fill` makes it take its container's height (a separate
- * window) instead of its fixed one.
+ * user scrolled up. `fill` makes it take its container's height (a window of
+ * its own) instead of its fixed one.
  */
 import type { LocalRunLine } from '~/composables/useDesktopLocalRuns';
 import { renderAnsi } from '~/utils';
@@ -13,12 +13,12 @@ const props = defineProps<{ lines: LocalRunLine[]; fill?: boolean }>();
 const el = ref<HTMLElement | null>(null);
 const pinned = ref(true);
 
-/** Each colored line's HTML, rendered once: the whole list re-renders on every new line. */
+/** Each colored line's HTML, rendered once. */
 const rendered = new WeakMap<LocalRunLine, string>();
 function coloredHtml(line: LocalRunLine): string {
   let html = rendered.get(line);
   if (html === undefined) {
-    html = renderAnsi(line.ansi ?? line.text);
+    html = renderAnsi(line.ansi ?? line.text, { onDark: true });
     rendered.set(line, html);
   }
   return html;
@@ -30,8 +30,9 @@ function onScroll() {
   pinned.value = node.scrollHeight - node.scrollTop - node.clientHeight < 24;
 }
 
+// The newest line, not the count: a run at its line cap drops one line for each it adds.
 watch(
-  () => props.lines.length,
+  () => props.lines.at(-1)?.id,
   async () => {
     if (!pinned.value) return;
     await nextTick();
@@ -51,7 +52,7 @@ onMounted(() => {
     :class="fill ? 'h-full' : 'h-56'"
     @scroll.passive="onScroll"
   >
-    <template v-for="(line, i) in lines" :key="i">
+    <template v-for="line in lines" :key="line.id">
       <!-- eslint-disable-next-line vue/no-v-html — renderAnsi escapes the text before wrapping it in styled spans -->
       <p
         v-if="line.ansi"
