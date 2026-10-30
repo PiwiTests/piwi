@@ -343,8 +343,7 @@ pub async fn desktop_run_repro(
     let command = sidecar
         .args(cmd_args)
         .current_dir(&folder)
-        .env("NO_COLOR", "1")
-        .env("FORCE_COLOR", "0")
+        .envs(crate::runner::COLOR_ENV)
         .env(
             "PIWI_REPRO_RESULT",
             result_file.to_string_lossy().to_string(),

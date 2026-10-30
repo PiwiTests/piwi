@@ -934,7 +934,7 @@ const REPRO_SCENE_STEPS = (() => {
  *   base     — server origin, e.g. http://localhost:3050
  *   shoot    — (label?, opts?) => save `<file>[-<label>].png`; opts.of / opts.pad
  *              override the scene's, opts.clip / opts.fullPage / opts.mask pass
- *              through to Playwright
+ *              through to Playwright, opts.page captures another page (a popup)
  *   goto     — (path) => navigate, wait for hydration, settle
  *   settle   — (opts?) => fonts loaded, network quiet, nothing still loading
  *   openTab  — (name, opts?) => click a tab and assert it actually opened
@@ -1030,6 +1030,34 @@ async function shopPageJpeg(context) {
   await shot.close();
   return data;
 }
+
+const ESC = '\u001b';
+
+/** Playwright's list reporter output with `FORCE_COLOR=1`, one line per entry, as the desktop shell streams a run. */
+const COLORED_RUN_OUTPUT = [
+  `${ESC}[2mRunning ${ESC}[22m3${ESC}[2m tests using ${ESC}[22m2${ESC}[2m workers${ESC}[22m`,
+  '',
+  `  ${ESC}[32m✓${ESC}[39m  ${ESC}[2m1 [chromium] › ${ESC}[22mtests/cart.spec.ts:8:3 › cart › adds an item${ESC}[2m (1.4s)${ESC}[22m`,
+  `  ${ESC}[31m✘${ESC}[39m  ${ESC}[2m2 [chromium] › ${ESC}[22m${ESC}[31mtests/checkout.spec.ts:11:3 › checkout › pays with a saved card${ESC}[39m${ESC}[2m (5.2s)${ESC}[22m`,
+  `  ${ESC}[32m✓${ESC}[39m  ${ESC}[2m3 [chromium] › ${ESC}[22mtests/home.spec.ts:5:1 › homepage loads${ESC}[2m (812ms)${ESC}[22m`,
+  '',
+  `${ESC}[31m  1) [chromium] › tests/checkout.spec.ts:11:3 › checkout › pays with a saved card ${ESC}[2m${'─'.repeat(24)}${ESC}[22m${ESC}[39m`,
+  '',
+  `    Error: ${ESC}[2mexpect(${ESC}[22m${ESC}[31mlocator${ESC}[39m${ESC}[2m).${ESC}[22mtoHaveText${ESC}[2m(${ESC}[22m${ESC}[32mexpected${ESC}[39m${ESC}[2m)${ESC}[22m failed`,
+  '',
+  `    Locator: getByRole('heading', { level: 1 })`,
+  `    Expected: ${ESC}[32m"Order confirmed"${ESC}[39m`,
+  `    Received: ${ESC}[31m"Payment declined"${ESC}[39m`,
+  '',
+  `     ${ESC}[90m 17 |${ESC}[39m   ${ESC}[36mawait${ESC}[39m page${ESC}[33m.${ESC}[39mgetByRole(${ESC}[32m'button'${ESC}[39m${ESC}[33m,${ESC}[39m { name${ESC}[33m:${ESC}[39m ${ESC}[32m'Pay now'${ESC}[39m })${ESC}[33m.${ESC}[39mclick()${ESC}[33m;${ESC}[39m`,
+  `    ${ESC}[31m${ESC}[1m>${ESC}[22m${ESC}[39m${ESC}[90m 18 |${ESC}[39m   ${ESC}[36mawait${ESC}[39m expect(page${ESC}[33m.${ESC}[39mgetByRole(${ESC}[32m'heading'${ESC}[39m))${ESC}[33m.${ESC}[39mtoHaveText(${ESC}[32m'Order confirmed'${ESC}[39m)${ESC}[33m;${ESC}[39m`,
+  `     ${ESC}[90m    |${ESC}[39m                                            ${ESC}[31m${ESC}[1m^${ESC}[22m${ESC}[39m`,
+  `    ${ESC}[2m    at /home/dev/code/acme-checkout/tests/checkout.spec.ts:18:44${ESC}[22m`,
+  '',
+  `${ESC}[31m  1 failed${ESC}[39m`,
+  `${ESC}[31m    [chromium] › tests/checkout.spec.ts:11:3 › checkout › pays with a saved card ${ESC}[2m${'─'.repeat(8)}${ESC}[22m${ESC}[39m`,
+  `${ESC}[32m  2 passed${ESC}[39m${ESC}[2m (6.9s)${ESC}[22m`,
+];
 
 /**
  * Opens a cluster page's Diagnosis: it is the card under the situation block when
@@ -6580,6 +6608,44 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-run-output',
+    description:
+      "A local run's output in the desktop shell: Playwright's list output in its colors in the tray, then in a separate window",
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 860 },
+    link: { path: READY_INSPECTION.path, exists: true },
+    localRunId: 61,
+    outputs: ['desktop-run-output-tray.png', 'desktop-run-output-window.png'],
+    async run({ page, base, settle, shoot }) {
+      const rerun = page.getByRole('button', { name: /^Re-run \d+ failed tests?/ });
+      await rerun.waitFor({ timeout: 60_000 });
+      await rerun.click();
+      const tray = page.getByRole('region', { name: 'Local runs' });
+      await tray.waitFor();
+      await page.evaluate((lines) => {
+        for (const line of lines) window.__emitTauri('piwi:local-run', { id: 61, kind: 'stdout', line, code: null });
+      }, COLORED_RUN_OUTPUT);
+      await tray.getByText('2 passed').waitFor();
+      await settle();
+      const box = await tray.boundingBox();
+      await shoot('tray', {
+        clip: { x: box.x - 8, y: box.y - 8, width: box.width + 16, height: box.height + 16 },
+      });
+      // The shell opens the window on the run output page, which the tray feeds over their BroadcastChannel.
+      await tray.getByRole('button', { name: 'Open the output in a separate window' }).click();
+      await page.waitForFunction(() => window.__outputWindowName);
+      const name = await page.evaluate(() => window.__outputWindowName);
+      const outputPage = await page.context().newPage();
+      await outputPage.setViewportSize({ width: 960, height: 640 });
+      await outputPage.goto(`${base}/desktop/run-output?name=${name}`, { waitUntil: 'domcontentloaded' });
+      await outputPage.getByRole('region', { name: 'Run output' }).getByText('2 passed').waitFor({ timeout: 60_000 });
+      await outputPage.evaluate(() => document.fonts.ready);
+      await shoot('window', { page: outputPage });
+    },
+  },
+  {
     name: 'desktop-nav',
     description: 'Back/forward pair in the sidebar header (desktop shell)',
     tags: ['desktop'],
@@ -7703,9 +7769,10 @@ async function captureScene(browser, scene, { base, outDir, freezeNow }) {
   const annotate = (shapes, opts = {}) => drawAnnotations(page, shapes, { container: annotationHost, ...opts });
   const clear = () => clearAnnotations(page);
 
-  /** Take one screenshot of whatever the scene targets, as a buffer. */
+  /** Take one screenshot of whatever the scene targets, as a buffer: of the scene's page, or of `opts.page` (a popup). */
   const capture = async (opts = {}) => {
-    const { of: ofOpt, pad: padOpt, ...pwOpts } = opts;
+    const { of: ofOpt, pad: padOpt, page: other, ...pwOpts } = opts;
+    if (other) return other.screenshot({ animations: 'disabled', caret: 'hide', ...pwOpts });
     const of = ofOpt ?? scene.of;
     const pad = padOpt ?? scene.pad ?? 0;
     const common = { animations: 'disabled', caret: 'hide', ...pwOpts };

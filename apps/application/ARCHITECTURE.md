@@ -260,7 +260,9 @@ Each entry names folders under `server/api/`.
   (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands, `DesktopRunSession`,
   `DesktopRunWorker` and `DesktopRunStopPage` show each worker, its stop, its page and its live view (with the Runs
   window's input, `apps/extension/src/shared/view-input.ts`), `DesktopRunShare` a run's Share live, and
-  `DesktopRunCopyList` the code to copy; the pure half is `app/utils/desktop-run-view.ts`. Agents reach the same runs
+  `DesktopRunCopyList` the code to copy, and `DesktopLocalRunConsole` a run's output in its ANSI colors, in the tray
+  or in a window of its own (`DesktopRunOutputWindow` feeds `pages/desktop/run-output.vue` over a `BroadcastChannel`,
+  `app/utils/run-output-channel.ts`); the pure half is `app/utils/desktop-run-view.ts`. Agents reach the same runs
   through `/mcp` (the run tools, below).
 - **`flake-lab/inbox`, `gaps/`**: cross-project inboxes of the Flake Lab and the scenario gaps.
 - **`health`, `version`, `capabilities`, `setup-status`, `metrics`, `rollups`, `stream`, `agent-skills`**: the

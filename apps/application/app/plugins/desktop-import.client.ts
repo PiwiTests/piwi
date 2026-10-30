@@ -10,13 +10,13 @@
  *     pokes; draining over IPC means a poke fired before this plugin ran is
  *     never lost — the initial drain below picks those up.
  *
- * Gated on the IPC bridge alone (not the desktop flag): the bridge exists
- * exactly where these events can occur.
+ * Gated on the IPC bridge (not the desktop flag): the bridge exists exactly
+ * where these events can occur, and only the main window imports.
  */
 export default defineNuxtPlugin(() => {
   const core = tauriCore();
   const events = tauriEvent();
-  if (!core || !events) return;
+  if (!core || !events || tauriWindowLabel() !== 'main') return;
 
   const { addFiles } = useDesktopImportQueue();
 
