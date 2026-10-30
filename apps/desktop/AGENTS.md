@@ -56,10 +56,10 @@ shell and are feature-equivalent.
 
   They ship separately, so changing the path or the shape means changing all of them; a new field is fine, since
   every reader ignores the ones it does not know.
-- **`piwi-desktop mcp-stdio` is a published entry point.** Claude Desktop takes only stdio MCP servers, so its
-  one-click setup writes that command into `claude_desktop_config.json` on the user's machine. Renaming the argument
-  breaks every config already written: it can only be added to, and the bridge must keep speaking newline-delimited
-  JSON-RPC on stdin/stdout.
+- **`piwi-desktop mcp-stdio` is a published entry point.** The one-click setup writes that command into Claude
+  Desktop's `claude_desktop_config.json` (it takes only stdio MCP servers) and Claude Code's `~/.claude.json`. Renaming
+  the argument breaks every config already written: it can only be added to, and the bridge must keep speaking
+  newline-delimited JSON-RPC on stdin/stdout.
 - **Each Windows installer updates from its own manifest.** The `.msi` installs per machine (admin) and reads
   `latest.json`; the NSIS `.exe` installs per user (`installMode: currentUser`, no admin) and reads `latest-nsis.json`.
   The two `tauri.updater*.conf.json` overlays and `reusable-publish-desktop.yml` keep them apart, so a per-user install
