@@ -25,11 +25,13 @@ describe('migrateToLatest', () => {
       migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
     });
     const expected = await observe(migrated);
+    migrated.close();
     expect(expected.rows.__drizzle_migrations!.length).toBeGreaterThan(100);
 
     const replayed = createClient({ url: ':memory:' });
     await migrateToLatest(drizzle(replayed));
     expect(await observe(replayed)).toEqual(expected);
+    replayed.close();
 
     const { db, close } = await openTempDb();
     try {

@@ -5,25 +5,33 @@ import { migrate } from 'drizzle-orm/libsql/migrator';
 import type { TestProject } from 'vitest/node';
 
 /**
- * Runs every SQLite migration once, on an in-memory database, and hands the test files the statements that rebuild
- * it (`migrateToLatest` in `temp-db.ts`).
+ * Runs every SQLite migration once per run, on an in-memory database, and hands the test files the statements that
+ * rebuild it (`migrateToLatest` in `temp-db.ts`). Watch mode migrates again before each rerun, for a new migration.
  */
 export default async function setup(project: TestProject) {
+  project.provide('migratedSchema', await migratedSchema());
+  project.onTestsRerun(async () => project.provide('migratedSchema', await migratedSchema()));
+}
+
+async function migratedSchema(): Promise<string[]> {
   const client = createClient({ url: ':memory:' });
-  await migrate(drizzle(client), {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
-  project.provide('migratedSchema', await readBack(client));
-  client.close();
+  try {
+    await migrate(drizzle(client), {
+      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
+    });
+    return await readBack(client);
+  } finally {
+    client.close();
+  }
 }
 
 /**
- * The database as SQLite's `.dump` writes it: each table followed by its rows (`__drizzle_migrations` included), then
- * the views, indexes and triggers, so no trigger fires on a copied row.
+ * Each table followed by its rows (`__drizzle_migrations` included), then the views, indexes and triggers, so no
+ * trigger fires on a copied row.
  */
 async function readBack(client: Client): Promise<string[]> {
   const objects = await client.execute(
-    `SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'
+    `SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'
      ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'view' THEN 1 WHEN 'index' THEN 2 ELSE 3 END, rowid`,
   );
   const statements: string[] = [];

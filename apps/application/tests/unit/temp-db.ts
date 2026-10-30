@@ -26,7 +26,10 @@ export type TempDb = ReturnType<typeof drizzle<typeof schema>>;
  * themselves run Drizzle's `migrate`.
  */
 export async function migrateToLatest(db: { $client: Client }): Promise<void> {
-  await db.$client.migrate(inject('migratedSchema'));
+  const statements = inject('migratedSchema');
+  if (!statements)
+    throw new Error('migrateToLatest needs the global setup of vitest.config.ts (tests/unit/global-setup.ts)');
+  await db.$client.migrate(statements);
 }
 
 /**
