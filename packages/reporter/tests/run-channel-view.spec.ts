@@ -841,11 +841,10 @@ describe('the live view of a stopped page', () => {
     }
     const seen = watched['recorded on video while watched']!;
     expect(seen.frames).toBeGreaterThan(1);
-    // The video asked first, at its own size: the view's frames come at that size, not the view's. The page's first
-    // frame can predate its viewport, so the size is read from the frames the view watched.
+    // The video asked first, at its own size: the view's frames come at that size, not the view's. A view that joins
+    // the page's screencast first gets the last frame it painted, which can predate the page's viewport: the size is
+    // read from the frames the view watched.
     expect(jpegSize(seen.lastJpeg!)).toEqual({ width: 800, height: 512 });
-    const first = jpegSize(seen.firstJpeg!)!;
-    expect(first.width <= 800 && first.height <= 512).toBe(true);
   });
 
   it('maps a point of an image in device pixels to the page through the viewport the image names', () => {
