@@ -65,6 +65,7 @@ import {
   type TestCoverageCase,
 } from './coverage';
 import { sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
+import { hideTypedText, hideTypedTextInLog } from '@piwitests/core/mask';
 import { sanitizeLocatorPages } from './locator-pages';
 import type { LocatorPageUse } from '@piwitests/core/wire';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
@@ -514,7 +515,7 @@ export async function persistRunCases(
       status: normalizeTestCaseStatus(c.status),
       duration: c.duration ?? null,
       timeout: c.timeout ?? null,
-      error: capErrorText(c.error, limits.errorChars),
+      error: capErrorText(typeof c.error === 'string' ? hideTypedTextInLog(c.error) : c.error, limits.errorChars),
       retries: c.retries ?? 0,
       repeatEachIndex: resolveRepeatEachIndex(c.repeatEachIndex),
       attempts: capArray(normalizeAttemptStatuses(c.attempts), 30),
@@ -522,7 +523,7 @@ export async function persistRunCases(
       column: c.column,
       steps: cappedSteps,
       stepEvents: capArray(c.stepEvents, limits.stepEvents),
-      slowestStep: c.slowestStep ?? null,
+      slowestStep: typeof c.slowestStep === 'string' ? hideTypedText(c.slowestStep) : null,
       slowestStepDuration: c.slowestStepDuration ?? null,
       wastedTimeMs: c.wastedTimeMs ?? null,
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,

@@ -3651,11 +3651,11 @@ export const DEMO_PROJECTS = [
             params: { locator: "getByLabel('Email')", value: 'admin@example.com' },
           },
           {
-            title: 'Fill "********"',
+            title: 'Fill "<hidden>"',
             category: 'input',
             weight: 200,
             subtitle: "getByLabel('Password')",
-            params: { locator: "getByLabel('Password')" },
+            params: { locator: "getByLabel('Password')", value: '<hidden>' },
           },
           {
             title: 'Click',
