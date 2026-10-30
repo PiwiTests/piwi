@@ -4,9 +4,9 @@
 // clients; on this machine the shell can do better and write the client's own
 // config file. Almost every client is configured the same way: a `piwi-desktop`
 // entry inside the client's server map, pointing at this app's /mcp endpoint with
-// the local access token as the Bearer header. Claude Desktop and Claude Code are
-// the exceptions: they get a command that starts this app as the stdio bridge
-// (see `stdio_bridge_entry`), so their entry holds no port and no token.
+// the local access token as the Bearer header. Claude Desktop is the exception —
+// it accepts only stdio servers there, so it gets a command instead (see
+// `stdio_bridge_entry`).
 //
 // The entry is keyed `piwi-desktop`, not `piwi`, so it never collides with a
 // hosted Piwi a user has added by hand under `piwi` — the two coexist in one
@@ -96,12 +96,11 @@ fn entry_for(id: &str, info: &ServerInfo) -> Value {
     let bearer = info.bearer();
     match id {
         "claude-desktop" => stdio_bridge_entry(&bridge_command()),
-        "claude-code" => typed_stdio_bridge_entry(&bridge_command()),
         "cursor" => json!({ "url": url, "headers": { "Authorization": bearer } }),
         "opencode" => json!({ "type": "remote", "url": url, "headers": { "Authorization": bearer } }),
         "windsurf" => json!({ "serverUrl": url, "headers": { "Authorization": bearer } }),
         "gemini-cli" => json!({ "httpUrl": url, "headers": { "Authorization": bearer } }),
-        // VS Code takes the `type: http` shape.
+        // Claude Code and VS Code share the `type: http` shape.
         _ => json!({ "type": "http", "url": url, "headers": { "Authorization": bearer } }),
     }
 }
@@ -117,13 +116,6 @@ fn entry_for(id: &str, info: &ServerInfo) -> Value {
 /// drifts with the port and no token is copied into another app's config.
 fn stdio_bridge_entry(command: &str) -> Value {
     json!({ "command": command, "args": [mcp_stdio::STDIO_ARG] })
-}
-
-/// The same bridge for Claude Code, with the `type` its `~/.claude.json` names.
-/// The entry never changes with the port or the token, so that file, which
-/// Claude Code rewrites as it runs, is written once, at connect.
-fn typed_stdio_bridge_entry(command: &str) -> Value {
-    json!({ "type": "stdio", "command": command, "args": [mcp_stdio::STDIO_ARG] })
 }
 
 /// This executable, as the path another app can spawn it by. `current_exe`
@@ -652,41 +644,9 @@ mod tests {
             entry_for("opencode", &i),
             json!({ "type": "remote", "url": "http://127.0.0.1:3000/mcp", "headers": { "Authorization": "Bearer pd_test" } })
         );
-        assert_eq!(entry_for("vscode", &i)["type"], "http");
-    }
-
-    /// Claude Code gets the bridge too, typed `stdio`: no URL, no port, no
-    /// token, so a port change leaves the entry as it is, while an entry of the
-    /// URL shape is classified stale and rewritten on the next launch.
-    #[test]
-    fn claude_code_gets_the_typed_stdio_bridge() {
-        let entry = typed_stdio_bridge_entry(r"C:\Program Files\Piwi Dashboard\piwi-desktop.exe");
-        assert_eq!(
-            entry,
-            json!({
-                "type": "stdio",
-                "command": r"C:\Program Files\Piwi Dashboard\piwi-desktop.exe",
-                "args": ["mcp-stdio"],
-            })
-        );
-
-        let expected = entry_for("claude-code", &info());
-        assert!(expected.get("url").is_none());
-        assert!(expected.get("headers").is_none());
-        let other_port = entry_for(
-            "claude-code",
-            &ServerInfo {
-                port: 51234,
-                token: "pd_other".into(),
-            },
-        );
-        assert_eq!(expected, other_port);
-
-        let url_shape = json!({
-            "mcpServers": { "piwi-desktop": { "type": "http", "url": "http://127.0.0.1:3000/mcp", "headers": { "Authorization": "Bearer pd_test" } } }
-        });
-        assert_eq!(classify(Some(&url_shape), "mcpServers", &expected), "stale");
-        assert!(is_local_piwi_entry(&expected));
+        for id in ["claude-code", "vscode"] {
+            assert_eq!(entry_for(id, &i)["type"], "http");
+        }
     }
 
     /// Claude Desktop ignores any entry that is not a local command, so it gets
