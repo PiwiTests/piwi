@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { durationStats } from '#shared/utils/stats';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the route modules (which import the barrel) load.
@@ -55,7 +54,7 @@ const METADATA = { scm: { branch: 'feature/pay', commit: 'abc123' } };
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   state.db = db;
   const [project] = await db.insert(schema.projects).values({ name: PROJECT }).returning();
   testCaseCache.invalidate(project!.id);

@@ -1,8 +1,6 @@
 import { beforeAll, describe, expect, test } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { and, eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import {
@@ -11,6 +9,7 @@ import {
   runInProjectScope,
   type ProjectRunScope,
 } from '../../shared/project-run-scope';
+import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 const { projectRunScopeConditions } = await import('../../shared/handlers/project-run-scope');
@@ -86,9 +85,7 @@ describe('the scope in SQL', () => {
 
   beforeAll(async () => {
     db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     await db.insert(schema.projects).values([
       { id: 1, name: 'configured', defaultBranch: 'main' },
       { id: 2, name: 'unconfigured' },

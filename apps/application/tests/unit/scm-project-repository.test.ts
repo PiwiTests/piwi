@@ -2,11 +2,10 @@ import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq, sql } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
-import { openTempDb } from './temp-db';
+import { openTempDb, migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema at import time when
 // PIWI_DATABASE_URL is set, so clear it before importing the helpers.
@@ -27,7 +26,7 @@ let db: ReturnType<typeof drizzle<typeof schema>>;
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values([
     { id: 1, name: 'Alpha', repositoryUrl: 'https://github.com/acme/shop' },
     { id: 2, name: 'Beta' },

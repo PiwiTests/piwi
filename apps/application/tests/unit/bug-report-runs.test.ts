@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { ADMIN_ACCESS } from '#shared/permissions';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
@@ -24,7 +23,7 @@ const stillFailsIn = (browserName: string) => ({ status: 'passed', expectedStatu
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values([
     { id: 1, name: 'shop' },
     { id: 2, name: 'other' },

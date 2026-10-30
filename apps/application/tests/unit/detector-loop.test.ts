@@ -1,12 +1,11 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { computeDetectorPrecision, isDetectorMuted, MUTE_MIN_VERDICTS } from '../../shared/handlers/detector-precision';
 import { detectMatrix, detectEscapedDefect } from '../../shared/handlers/scenario-gaps';
 import { selectWeeklyDigest } from '../../shared/handlers/gap-digest';
+import { migrateToLatest } from './temp-db';
 
 describe('computeDetectorPrecision / isDetectorMuted', () => {
   test('folds for/against into precision and mutes below threshold with enough verdicts', () => {
@@ -158,9 +157,7 @@ describe('loadDetectorPrecision (DB)', () => {
   beforeEach(async () => {
     delete process.env.PIWI_DATABASE_URL;
     db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     await db.insert(schema.projects).values({ id: 1, name: 'p' });
   });
 

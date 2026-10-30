@@ -1,15 +1,14 @@
 import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { mergeRunCoverageGaps, readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import { coverageGapDetail, coverageGapHeadline, dataNoteSentence } from '~/utils/combined-coverage';
+import { migrateToLatest } from './temp-db';
 
 vi.mock('../../server/storage', () => ({
   getStorage: () => ({
@@ -36,7 +35,7 @@ afterAll(() => rmSync(tmpDir, { recursive: true, force: true }));
 let db: Db;
 beforeEach(async () => {
   db = drizzle(createClient({ url: `file:${join(tmpDir, `test-${++dbCount}.db`)}` }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'shop', defaultBranch: 'main' });
   invalidateCommitCoverage(1, COMMIT);
 });

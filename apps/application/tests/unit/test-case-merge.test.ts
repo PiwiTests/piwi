@@ -1,13 +1,12 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 const { persistRunCases } = await import('../../server/utils/persist-run-cases');
@@ -27,7 +26,7 @@ async function freshDb(): Promise<Db> {
   // in-memory database.
   const file = join(mkdtempSync(join(tmpdir(), 'piwi-merge-')), 'piwi.db');
   const db = drizzle(createClient({ url: `file:${file}` }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values([
     { id: 1, name: 'merge-project' },
     { id: 2, name: 'other-project' },
