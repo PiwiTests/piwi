@@ -30,6 +30,28 @@ describe("a worker's view on the run page", () => {
     expect(parseLiveViewerMessage('not json')).toBeNull();
   });
 
+  test('reads a call log, or its absence between two calls, and nothing that is not one', () => {
+    const log = {
+      id: 'call@1',
+      call: { title: 'Fill "S3cr3t"', file: 'tests/a.spec.ts', line: 4 },
+      status: 'running',
+      lines: ['  fill("S3cr3t")'],
+      point: { x: 10, y: 20 },
+      target: null,
+      viewport: { width: 1280, height: 800 },
+      ms: 500,
+      error: null,
+    };
+    const read = parseLiveViewerMessage(JSON.stringify({ type: 'call-log', log }));
+    expect(read).toMatchObject({ type: 'call-log', log: { id: 'call@1', point: { x: 10, y: 20 } } });
+    expect(JSON.stringify(read)).not.toContain('S3cr3t');
+    expect(parseLiveViewerMessage(JSON.stringify({ type: 'call-log', log: null }))).toEqual({
+      type: 'call-log',
+      log: null,
+    });
+    expect(parseLiveViewerMessage(JSON.stringify({ type: 'call-log', log: { ...log, status: 'done' } }))).toBeNull();
+  });
+
   test('says why each view ended, its replacement by another of the same person included', () => {
     for (const reason of ['test-ended', 'worker-left', 'run-ended', 'off', 'replaced'] as const) {
       expect(parseLiveViewerMessage(JSON.stringify({ type: 'end', reason }))).toEqual({ type: 'end', reason });

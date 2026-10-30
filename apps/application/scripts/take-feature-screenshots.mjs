@@ -50,6 +50,7 @@
 import { createRequire } from 'module';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { createHash } from 'node:crypto';
+import http from 'node:http';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -537,6 +538,76 @@ function reportRetriedRun(request, base) {
     return runId;
   })();
   return retriedRun;
+}
+
+/**
+ * The checkout a CI test of `run-live-view` is on: its Pay button stays disabled while the card is checked, so the
+ * test's click on it waits.
+ */
+const LIVE_VIEW_CHECKOUT = `<!doctype html><meta charset="utf-8"><style>
+body { margin: 0; font: 16px system-ui, sans-serif; background: #f6f7f9; color: #1f2933 }
+header { background: #1f2933; color: #fff; padding: 16px 32px; font-weight: 600 }
+main { display: grid; grid-template-columns: 1fr 360px; gap: 32px; padding: 32px }
+section { background: #fff; border-radius: 8px; padding: 8px 24px 24px; box-shadow: 0 1px 2px rgb(0 0 0 / 8%) }
+label { display: block; margin: 14px 0 4px; font-size: 14px }
+input { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; padding: 10px; border: 1px solid #cbd2d9; border-radius: 6px; font: inherit }
+button { margin-top: 24px; width: 100%; padding: 12px; border: 0; border-radius: 6px; background: #9aa5b1; color: #fff; font: 600 16px system-ui, sans-serif }
+.row { display: flex; justify-content: space-between; margin: 10px 0 }
+.note { color: #52606d; font-size: 14px }
+</style>
+<header>Checkout</header>
+<main>
+  <section>
+    <h2>Payment</h2>
+    <label>Email <input value="jo@example.test"></label>
+    <label>Card number <input value="4242 4242 4242 4242"></label>
+    <label>Password <input type="password" value="correct horse"></label>
+    <p class="note">Checking your card…</p>
+    <button disabled>Pay €84.90</button>
+  </section>
+  <section>
+    <h2>Order</h2>
+    <div class="row"><span>Running shoes</span><span>€79.90</span></div>
+    <div class="row"><span>Delivery</span><span>€5.00</span></div>
+    <hr>
+    <div class="row"><b>Total</b><b>€84.90</b></div>
+  </section>
+</main>`;
+
+/**
+ * The call log of the click `run-live-view` shows, as its worker posts it 6.4 s into the wait: Playwright 1.64's log
+ * of a click on a disabled button, folded as the worker folds it.
+ */
+const LIVE_VIEW_CALL_LINES = [
+  "- waiting for getByRole('button', { name: 'Pay' })",
+  '  - locator resolved to <button disabled>Pay €84.90</button>',
+  '- attempting click action',
+  '  2 × waiting for element to be visible, enabled and stable',
+  '    - element is not enabled',
+  '  - retrying click action',
+  '  - waiting 20ms',
+  '  2 × waiting for element to be visible, enabled and stable',
+  '    - element is not enabled',
+  '  - retrying click action',
+  '    - waiting 100ms',
+  '  11 × waiting for element to be visible, enabled and stable',
+  '     - element is not enabled',
+  '   - retrying click action',
+  '     - waiting 500ms',
+];
+
+/**
+ * A worker's stream to the run's live view, held as a CI worker holds it: while it is open, the run page offers Watch
+ * on the test the worker runs.
+ */
+function holdLiveWorkerStream(base, runId, key) {
+  const request = http.request(`${base}/api/test-runs/${runId}/live-view?worker=0`, {
+    headers: { Accept: 'text/event-stream', Authorization: `Bearer ${key}` },
+  });
+  request.on('response', (response) => response.resume());
+  request.on('error', () => {});
+  request.end();
+  return () => request.destroy();
 }
 
 /**
@@ -4588,6 +4659,133 @@ const SCENES = [
       await page.evaluate(() => document.fonts.ready);
       await page.waitForTimeout(400);
       await shoot();
+    },
+  },
+  {
+    name: 'run-live-view',
+    description:
+      'The live view of a CI run’s worker, its click waiting on a disabled Pay button: the page with the button outlined, the call, how long it has run, and Playwright’s log of it, at 1280 and 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 1000 },
+    outputs: ['run-live-view.png', 'run-live-view-narrow.png'],
+    async prepare({ request, base }) {
+      const { items } = await (await request.get(`${base}/api/projects/menu`)).json();
+      this.projectId = items.find((p) => p.name === 'web-dashboard').id;
+      await request.patch(`${base}/api/projects/${this.projectId}`, { data: { liveView: true } });
+      // A CI run's setup and begin, as the reporter's global setup asks for them.
+      const setup = await (
+        await postRetrying(request, base, '/api/test-runs/setup', {
+          data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+        })
+      ).json();
+      this.runId = setup.runId;
+      this.key = setup.liveView.key;
+      const begun = await (
+        await postRetrying(request, base, `/api/test-runs/${this.runId}/begin`, {
+          data: { setupToken: setup.setupToken, totalTests: 6 },
+        })
+      ).json();
+      this.streamToken = begun.streamToken;
+      const now = Date.now();
+      const browser = { projectName: 'chromium', browserName: 'chromium' };
+      await postRetrying(request, base, `/api/test-runs/${this.runId}/events`, {
+        data: {
+          streamToken: this.streamToken,
+          testCases: [
+            {
+              type: 'complete',
+              title: 'guest checkout keeps the cart',
+              location: 'tests/checkout.spec.ts:5:3',
+              status: 'passed',
+              duration: 8_400,
+              workerIndex: 0,
+              startedAt: now - 16_000,
+              browser,
+            },
+            {
+              type: 'begin',
+              title: 'pays with a saved card',
+              location: 'tests/checkout.spec.ts:24:3',
+              workerIndex: 0,
+              startedAt: now - 7_000,
+              browser,
+            },
+            {
+              type: 'step-begin',
+              title: 'Click',
+              subtitle: "getByRole('button', { name: 'Pay' })",
+              location: 'tests/checkout.spec.ts:31:5',
+              stepCategory: 'pw:api',
+              parentTitle: 'pays with a saved card',
+              workerIndex: 0,
+              startedAt: now - 6_400,
+            },
+          ],
+        },
+      });
+      this.closeStream = holdLiveWorkerStream(base, this.runId, this.key);
+    },
+    async run({ page, base, goto, shoot, settle }) {
+      // The image the worker sends: the checkout as the test's page shows it, its button's box measured there.
+      const viewport = { width: 1280, height: 800 };
+      const testPage = await page.context().newPage();
+      await testPage.setViewportSize(viewport);
+      await testPage.setContent(LIVE_VIEW_CHECKOUT);
+      const box = await testPage.getByRole('button', { name: 'Pay' }).boundingBox();
+      const data = (await testPage.screenshot({ type: 'jpeg', quality: 50 })).toString('base64');
+      await testPage.close();
+
+      const call = { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 31 };
+      const post = (message) =>
+        page.request
+          .post(`${base}/api/test-runs/${this.runId}/live-view`, {
+            headers: { Authorization: `Bearer ${this.key}` },
+            data: { shard: null, worker: 0, ...message },
+          })
+          .catch(() => undefined);
+      const send = () =>
+        Promise.all([
+          post({ type: 'frame', data, call, test: 'pays with a saved card' }),
+          post({
+            type: 'call-log',
+            log: {
+              id: 'call@58',
+              call,
+              status: 'running',
+              lines: LIVE_VIEW_CALL_LINES,
+              point: null,
+              target: { count: 1, box, enabled: false },
+              viewport,
+              ms: 6_400,
+              error: null,
+            },
+          }),
+        ]);
+      const sending = setInterval(send, 400);
+      try {
+        await goto(`/test-runs/${this.runId}`);
+        await page.getByRole('button', { name: 'Watch worker 0 live' }).first().click({ timeout: 60_000 });
+        const dialog = page.getByRole('dialog');
+        await dialog.getByTestId('live-frame').waitFor({ timeout: 30_000 });
+        await dialog.getByTestId('live-target-box').waitFor({ state: 'attached', timeout: 30_000 });
+        await dialog.getByTestId('live-call-log').waitFor({ timeout: 30_000 });
+        // The worker's sends stop, so every image is of the same call log.
+        clearInterval(sending);
+        await send();
+        await settle();
+        await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await send();
+        await settle();
+        await shoot('narrow', { of: '[role="dialog"]', pad: 0 });
+      } finally {
+        clearInterval(sending);
+        this.closeStream();
+        await page.request.patch(`${base}/api/projects/${this.projectId}`, { data: { liveView: false } });
+        await page.request.post(`${base}/api/test-runs/${this.runId}/finish`, {
+          data: { streamToken: this.streamToken, status: 'passed', totalTests: 2 },
+        });
+      }
     },
   },
   {

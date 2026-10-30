@@ -27,16 +27,24 @@ const target = resolveE2ETarget();
 const reporter = resolve(process.cwd(), '..', '..', 'packages', 'reporter', 'dist', 'index.js');
 const playwrightCli = createRequire(import.meta.url).resolve('@playwright/test/cli');
 
-/** A slow page: a spinner that never stops, and a heading the test clicks. */
-const SLOW_PAGE = `<style>body { font: 16px sans-serif; padding: 24px } #spin { width: 96px; height: 96px; border: 12px solid #ddd; border-top-color: #7c3aed; border-radius: 50%; animation: s 1s linear infinite } @keyframes s { to { transform: rotate(360deg) } }</style><h1>Checkout</h1><p>Paying…</p><div id="spin"></div>`;
+/** A slow page: a spinner that never stops, a heading the test clicks, and a Pay button that stays disabled. */
+const SLOW_PAGE = `<style>body { font: 16px sans-serif; padding: 24px } #spin { width: 96px; height: 96px; border: 12px solid #ddd; border-top-color: #7c3aed; border-radius: 50%; animation: s 1s linear infinite } @keyframes s { to { transform: rotate(360deg) } }</style><h1>Checkout</h1><p>Paying…</p><div id="spin"></div><button disabled>Pay</button>`;
 
-/** The suite the run executes: a test that waits on its slow page until told. */
+/**
+ * The suite the run executes: a test that waits on its slow page until told, trying meanwhile to click its disabled
+ * Pay button, so the live view's call log says why the click waits.
+ */
 const SPEC = (folder: string) => `const fs = require('node:fs');
 const { test, expect } = require('./fixture.cjs');
 test('pays on a slow page', async ({ page }) => {
   await page.setContent(${JSON.stringify(SLOW_PAGE)});
   await page.getByRole('heading', { name: 'Checkout' }).click();
-  await expect.poll(() => fs.existsSync(${JSON.stringify(join(folder, 'watched'))}), { timeout: 90000 }).toBe(true);
+  const released = () => fs.existsSync(${JSON.stringify(join(folder, 'watched'))});
+  const until = Date.now() + 90000;
+  while (!released() && Date.now() < until) {
+    await page.getByRole('button', { name: 'Pay' }).click({ timeout: 2500 }).catch(() => {});
+  }
+  expect(released()).toBe(true);
 });
 `;
 
@@ -230,6 +238,14 @@ test.describe('Live view of a run', () => {
       await expect(frame).toHaveAttribute('src', /^data:image\/jpeg;base64,/);
       // The call's place opens in the editor.
       await expect(view.getByTestId('live-call').getByText(/^live\.spec\.cjs:\d+$/)).toBeVisible();
+      // A CI run's call log says why the click waits, and the element it waits on is outlined on the image.
+      await expect(view.getByTestId('live-call')).toContainText("Click getByRole('button', { name: 'Pay' })", {
+        timeout: 20_000,
+      });
+      await expect(view.getByTestId('live-call-log')).toContainText('element is not enabled', { timeout: 20_000 });
+      await expect(view.getByTestId('live-call-target')).toHaveText('Its element is not enabled', { timeout: 20_000 });
+      await expect(view.getByTestId('live-call-state')).toContainText('Running for');
+      await expect(view.getByTestId('live-target-box')).toBeAttached();
       // The status region stays in the page, empty while images show.
       await expect(view.getByRole('status')).toHaveText('');
       // The image is the page as it paints: a spinner turns, so the image changes.

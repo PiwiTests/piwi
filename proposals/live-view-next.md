@@ -8,13 +8,15 @@ Someone who opens a slow CI run usually asks something else: what is the test do
 plan adds what explains a running test, then the page as a document rather than an image, then ways to watch a whole run
 from more places. Where it revisits a decision of the [run control ADR](../adr/run-control.md), it says so.
 
-**Status.** Proposed 2026-10-30. Nothing is built. Spikes A to H in the [appendix](#appendix-the-spikes) ran on
+**Status.** Proposed 2026-10-30. PR 1 is built: the call log, the action point and the element count in the view of
+a CI run (Part 1 without **Stuck?**), as Part 1 now describes it. The rest is proposed. Spikes A to H in the [appendix](#appendix-the-spikes) ran on
 Playwright 1.64.1 and are the evidence for the claims about Playwright and the costs; none of them is part of the
 repository. Spike D settled that a run Piwi pauses never turns the call stream on (D2), spike F that the runner's own
 trace needs no option to be read as it grows (D6), and spikes E, G and H set the masking rate, the video's settings and
 what a viewer of the DOM receives (D5, D9, D7). Safari is the one browser no spike reached (spike G). A prototype
 outside the repository then drove the sample shop through Parts 1, 2, 4 and 5 and the video of Part 7; it found the
-defect listed under [Defects found while researching this plan](#defects-found-while-researching-this-plan). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D62
+defect listed under [Defects found while researching this plan](#defects-found-while-researching-this-plan), fixed
+before PR 1. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D62
 of [`1.0-stabilization.md`](1.0-stabilization.md).
 
 **Summary.** What the plan delivers, in the order it should be built:
@@ -138,21 +140,25 @@ a slow or stuck test explained while it runs, with Playwright's own words for wh
 ## Part 1: What the test waits for
 
 **The call log.** In a CI run, while a viewer watches, the worker turns Playwright's call stream on (D2) and sends,
-for the call the test is in: its title, its place in the user's code, its status, the new call log lines, its action point and the
-error it ended with, at the stream's own pace (an update at most every 500 ms). Each line goes through
-`hideSecretsInText`, is cut at 500 characters, and one update carries 50 lines at most. Calls of Piwi's own capture
-are internal and never reach the stream. Playwright names a `fill`, a `type` or a `pressSequentially` by the text it
-types (`Fill "S3cr3t!Passw0rd" getByLabel('Password')`, `fill("S3cr3t!Passw0rd")` in the log), which
-`hideSecretsInText` leaves as it is: when the call's element is a masked one (Part 2), the worker replaces that text in
-the title and in the log (`Type "•••" getByLabel('Password')`).
+for the call the test is in: its title, its place in the user's code, its status, its log, its action point and the
+first line of the error it ended with, at the stream's own pace (an update every 500 ms), 300 ms apart at least
+(`live-call-log.ts`, the `call-log` message of `@piwitests/core/live-view`). The log goes folded as Playwright folds a
+failed call's (`compressCallLog`: `11 × retrying click action`), its last 20 lines, each cut at 300 characters. Calls
+of Piwi's own capture are internal and never reach the stream. Playwright names a `fill`, a `type` or a
+`pressSequentially` by the text it types (`Fill "S3cr3t!Passw0rd" getByLabel('Password')`, `fill("S3cr3t!Passw0rd")`
+in the log): the worker hides that text in every title and log line (`Fill "<hidden>" getByLabel('Password')`), then
+applies `hideSecretsInText`, and the instance applies both again as it reads the message.
 
 **The element.** The call log names the element a locator resolved to, but not where it is, and says nothing while a
 locator matches no element ([spike A](#a-playwrights-call-stream)). While a call waits, the worker reads, once a
 second, the number of elements its locator matches and the box of the first, through `internalCall` (the call's
-selector, as `run-events.ts` reads it). The view outlines the box, or says `0 elements match` or `3 elements match`.
+selector, as `run-events.ts` reads it), and whether that one is enabled. The view outlines the box, and says
+`No element matches its locator yet`, `3 elements match its locator` or `Its element is not enabled`.
 
-**What the view shows.** Under the image, the call's title and line, as today, then its log, newest line last, folded
-to the last five lines. Over the image, the action point as a dot and the element's outline, drawn by the viewer (D3).
+**What the view shows.** Under the image, the call's title and line, as today, how long it has run (or how it ended)
+with the element count, then its log in a box that follows its last line until the reader scrolls up. Over the image,
+the action point as a dot and the element's outline, drawn by the viewer (D3). A shared run shows the call alone: the
+call stream is never on outside CI, and its log from the runner's trace (D2) is not built.
 
 **Stuck?** (D4). The instance compares each running attempt with the test's last ten passing executions. Past the
 threshold, the test's row says **Stuck?** with how long it has run and how long it usually takes, and the instance
@@ -391,9 +397,10 @@ PRs 1 to 3 are the first release.
   (`onStepBegin`, `onStepEnd`). The image shows the field's dots; the caption, beside it, shows the password to anyone
   who may open the run, and so does the run page's Live activity. The trace and Playwright's own report hold the same
   title. The agents' call events are not affected: Playwright's instrumentation gives them no title, and
-  `run-events.ts` falls back to the method and its selector. A fix, separate from this plan: hide the typed text of a
-  `fill`, `type` or `pressSequentially` in every title the reporter sends, since the title does not say whether the
-  field is secret.
+  `run-events.ts` falls back to the method and its selector. **Fixed**: every title the reporter and the editor service
+  send live hides the text a `fill`, `type` or `pressSequentially` types (`hideTypedText` in `@piwitests/core/mask`);
+  the stored steps hide it when the field's locator looks secret or names none, the call log of an error always, and
+  the instance applies the same rules to what an older reporter sends.
 
 ## Appendix: the spikes
 
