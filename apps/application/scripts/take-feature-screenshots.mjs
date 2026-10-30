@@ -4590,6 +4590,68 @@ const SCENES = [
       await shoot();
     },
   },
+  {
+    name: 'run-live-desktop',
+    description:
+      'Run page in the desktop app while live: the running row says where its test’s page shows, and its help lists where',
+    mode: 'desktop',
+    route: '/projects',
+    viewport: { width: 1280, height: 900 },
+    outputs: ['run-live-desktop.png', 'run-live-desktop-help.png'],
+    async prepare({ request, base }) {
+      const started = await (
+        await request.post(`${base}/api/test-runs/start`, {
+          data: { projectName: 'web-dashboard', startTime: new Date().toISOString() },
+        })
+      ).json();
+      this.runId = started.runId;
+      this.streamToken = started.streamToken;
+    },
+    async run({ page, base, shoot, goto, settle }) {
+      await goto(`/test-runs/${this.runId}`);
+      const events = [
+        {
+          type: 'begin',
+          title: 'purchase flow submits the order',
+          location: 'tests/checkout.spec.ts:12:5',
+          workerIndex: 0,
+          startedAt: Date.now(),
+          browser: { projectName: 'chromium' },
+        },
+        {
+          type: 'step-begin',
+          title: 'Click',
+          subtitle: "getByRole('button', { name: 'Place order' })",
+          location: 'tests/checkout.spec.ts:14:5',
+          stepCategory: 'pw:api',
+          parentTitle: 'purchase flow submits the order',
+          workerIndex: 0,
+          startedAt: Date.now(),
+        },
+      ];
+      let pushed = false;
+      for (let attempt = 0; attempt < 5 && !pushed; attempt++) {
+        if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 3000));
+        try {
+          const res = await page.request.post(`${base}/api/test-runs/${this.runId}/events`, {
+            data: { streamToken: this.streamToken, testCases: events },
+          });
+          pushed = res.ok();
+        } catch {
+          // Route still compiling — retry.
+        }
+      }
+      if (!pushed) throw new Error(`could not push step events to run ${this.runId}`);
+      const note = page.locator('[data-testid="live-at-stop"]:visible').first();
+      await note.waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot();
+      await note.getByRole('button').click();
+      await page.getByRole('dialog').waitFor();
+      await settle();
+      await shoot('help');
+    },
+  },
 
   {
     name: 'step-params',

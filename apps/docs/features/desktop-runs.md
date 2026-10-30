@@ -72,9 +72,10 @@ to whom, and waits for your yes. Shared, the run says where and how many views a
 link** and **Stop sharing**. A run that cannot be shared says why: [Share a run from your
 machine](./live-view#share-a-run-from-your-machine).
 
-A run that reports to the app itself (a reproduction, a bisect, a **Re-run** in a folder that names no instance)
-offers no **Share live**: the app hands out no live view key, since no teammate reaches it, and its project settings
-have no **Live view** section.
+A run that reports to the app itself (a reproduction, a bisect, a **Re-run** in a folder that names no instance, a run
+your editor started) cannot be shared: the app hands out no live view key, since no teammate reaches it. The tray
+offers no **Share live** for it, the app's project settings have no **Live view** section, and on the run's page its
+running tests say **See its page at a stop** where **Watch** would be.
 
 ## From Piwi Picker
 

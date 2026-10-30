@@ -14,6 +14,17 @@ gets **Watch**: it opens the page that worker is on, a few images a second, each
 for watching a CI run that seems stuck, or a teammate's test paused at a breakpoint, from the dashboard, without
 waiting for the trace. You watch; nothing you do in the view reaches the test.
 
+## Where to watch a run
+
+| The run | Where its test's page shows |
+|---|---|
+| A CI run, or a run shared from a developer's machine | Its page on the team instance: **Watch** |
+| A run you start from VS Code, a JetBrains IDE or a terminal | Its browser when headed; at a stop, Piwi Picker's [Runs window](./runs-window#watch-live) and the editor's [paused page](./editor-run-control#a-headless-run) |
+| A run the desktop app starts | Its [Local runs](./desktop-runs#watch-live) tray and the Runs window, at a stop |
+
+A stop is a breakpoint, a `page.pause()` or **Pause**. A run that reports to the desktop app gets no **Watch**: the
+app hands out no live view key.
+
 ## Turn it on
 
 The live view is off in every project. A Project admin turns it on in **Project → Settings → Live view**, which says
@@ -26,21 +37,18 @@ job as the run's origin does: by a CI provider's own variable (`GITHUB_ACTIONS`,
 [Piwi Dashboard] Live view on: people who may open this run can watch its tests' pages on the dashboard while it runs. Nothing is stored.
 ```
 
-A run on a developer's machine holds a key too, and sends nothing until its developer shares it. Turning the setting
-off ends every view of the project's runs at once.
+Turning the setting off ends every view of the project's runs at once.
 
 ## Watch a worker
 
 On the run page's **Tests** tab, a running test shows the step its worker is on. With the live view on, **Watch** beside
 it opens that worker's view: the test's page as the browser paints it, headless or not, and under it the call the image
 was taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A page that does not change sends no
-new image. A run on a developer's machine offers **Watch** only once its developer [shares
-it](#share-a-run-from-your-machine): until then its running tests say **Not shared live**.
+new image.
 
 A view belongs to the test on whose row you opened it. Opened while the worker runs no test, in a `beforeAll` or between
 two tests, it says so, and shows the test's page once it opens. It ends as its test ends, the worker leaves, the run
-ends or the project turns the live view off, and when you close it. To watch the worker's next test, click **Watch**
-on its row.
+ends or the project turns the live view off, and when you close it.
 
 A CI run never stops at a breakpoint or a `page.pause()`; a shared run does, and its row then says **Paused** at the
 stopped call, which opens in your editor.
@@ -62,17 +70,16 @@ The first share in a window (in a JetBrains IDE, in each project since it opened
 started) says what goes out and to whom, and waits for your yes. Shared, the run says where and how many views of it
 are open (one person may open several), with its page's link to copy for your teammate.
 
-Until then, the run's workers hold their key and send nothing, and on its page each running test says **Not shared
-live** where **Watch** would be, its help listing where to share the run from. Once shared, each worker, and one
-Playwright starts later, opens its connection and sends what a CI run's do: its stops, which everyone with the run's
-page open sees (the call, its file and line, and the test's title), even while nobody watches; and images while someone
-does. **Stop sharing** closes the connections within seconds, so nothing more goes to the instance: each view ends
+Until then, its workers send nothing, and its running tests say **Not shared live** where **Watch** would be. Once
+shared, each worker, and one Playwright starts later, sends what a CI run's do: its stops, which everyone with the
+run's page open sees (the call, its file and line, and the test's title), even while nobody watches; and images while
+someone does. **Stop sharing** closes the connections within seconds, so nothing more goes to the instance: each view ends
 saying the developer stopped sharing, and **Paused** leaves the rows. Closing the editor, or the desktop app, stops the
 sharing too.
 
-A run that cannot be shared says why when you ask: it reports to no instance, its project has the live view off, the
-reporter's global setup did not register it, or it reports to the desktop app on your machine, which hands out no key
-since no teammate reaches it. A sharing that stops on its own says why, and **Share live** shows again: the project's
+A run that cannot be shared says why, in Piwi Picker's Runs window in place of **Share live**, elsewhere when you ask:
+it reports to no instance or to the desktop app, its project has the live view off, or the reporter's global setup did
+not register it. A sharing that stops on its own says why, and **Share live** shows again: the project's
 live view turned off, the instance restarted (the key lives in its memory), or it stopped answering.
 
 ## What is sent, to whom, and what is kept
@@ -99,14 +106,14 @@ hooks or their fixtures, so a process they start does not get it.
 
 ## Limits
 
-- **Watch only.** The view has no input and no controls; stepping a test is the editor's and Piwi Picker's
-  ([Pause and step from the editor](./editor-run-control), [Runs window](./runs-window)).
+- **Watch only.** No input and no controls: a test is stepped from the [editor](./editor-run-control) or the
+  [Runs window](./runs-window).
 - **The test's `page`.** The view shows the page of Playwright's `page` fixture; a test with no page has nothing to
   show, and a popup or a second page is not shown.
 - **A run the global setup registered.** With the reporter entry alone, which has no global setup, the workers start
   before the run is registered and get no key.
-- **Sixteen views of a run at a time.** With authentication on, four of them one person's: a fifth closes that
-  person's oldest. With it off, the dashboard cannot tell people apart, and the sixteen are anyone's.
+- **Sixteen views of a run at a time**, four of them one person's with authentication on: a fifth closes that
+  person's oldest.
 - **One dashboard server.** The view is relayed in the memory of one server, as the run's live events are, so it needs
   a deployment of one server ([Resource requirements](/operate/deployment#resource-requirements)). Sticky sessions do
   not make up for it: the run's setup, its CI workers and the people watching are separate clients.

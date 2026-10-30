@@ -322,6 +322,11 @@ export const RUNS_EXEMPTIONS = [
   },
   {
     rule: 'help',
+    key: 'run.live-desktop',
+    reason: 'See its page at a stop shows only in the desktop app, on a live run, and the demo is no desktop app.',
+  },
+  {
+    rule: 'help',
     key: 'run.shuffle',
     reason: 'The Order line shows only for a run Playwright ran with --shuffle, and the seed has no shuffled run.',
   },
