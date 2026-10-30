@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel (server/database/schema.ts) picks the PostgreSQL schema at
 // import time when PIWI_DATABASE_URL is set, so clear it before the handler
@@ -75,9 +74,7 @@ const DEFAULT_SCOPE = parseAnalyticsScope({ days: '30' });
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
 
   await db.insert(schema.projects).values([
     { id: 1, name: 'checkout' },
@@ -562,9 +559,7 @@ describe('branch policy and test filters', () => {
 
   beforeAll(async () => {
     fdb = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(fdb, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(fdb);
     await fdb.insert(schema.projects).values([
       { id: 1, name: 'shop', defaultBranch: 'main' },
       { id: 2, name: 'admin' },

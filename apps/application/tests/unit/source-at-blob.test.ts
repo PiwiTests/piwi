@@ -1,9 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 /**
  * A file's source at a git blob: read by the blob's id where the project's
@@ -37,7 +36,7 @@ let BLOB: string;
 beforeAll(async () => {
   BLOB = await gitBlobId(SOURCE);
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values([
     { id: 1, name: 'shop' },
     { id: 2, name: 'no-repo' },

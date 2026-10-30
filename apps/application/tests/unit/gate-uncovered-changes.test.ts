@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
@@ -9,6 +7,7 @@ import type { User } from '../../server/database/schema';
 import { ADMIN_ACCESS, InstanceRole } from '#shared/permissions';
 import type { ChangeCoverage } from '#shared/handlers/change-coverage';
 import { recordRouteMeta, underRoutePermission, type RouteAccessState } from './route-access';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the route modules (which import the barrel) are loaded.
@@ -74,7 +73,7 @@ function changeCoverage(over: Partial<ChangeCoverage> = {}): ChangeCoverage {
 
 beforeEach(async () => {
   const db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'gate-uncovered-changes' });
   await db
     .insert(schema.testRuns)

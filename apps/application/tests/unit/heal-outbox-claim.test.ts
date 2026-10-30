@@ -1,11 +1,10 @@
 import { describe, test, expect, beforeAll, beforeEach, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { HealActionPayload } from '#shared/auto-heal';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Heal actions open one PR each when sweeps overlap: every action is claimed
@@ -110,7 +109,7 @@ async function actionRow(id: number) {
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
   await db.insert(schema.appSettings).values({ key: 'auto_heal', value: { enabled: true, projects: [1] } });
 });

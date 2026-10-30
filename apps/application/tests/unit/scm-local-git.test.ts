@@ -3,16 +3,15 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { GitHubProvider } from '../../server/utils/scm/GitHubProvider';
 import { LocalGitProvider, localGitProvider, remoteKey } from '../../server/utils/scm/local-git';
 import { desktopLinkedFolder } from '../../server/utils/desktop-links';
 import { encryptSecret, getEncryptionKey } from '../../server/utils/crypto';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the SCM index (which imports the barrel) loads.
@@ -274,9 +273,7 @@ describe('createScmProvider on the desktop app', () => {
 
   beforeEach(async () => {
     db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     await db.insert(schema.projects).values({ id: PROJECT_ID, name: 'shop', repositoryUrl: REPO_URL });
   });
 

@@ -1,13 +1,12 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { FailureVerdict } from '#shared/failure-verdict';
 import type { Situation } from '#shared/situation';
 import type { NextStep } from '#shared/next-step';
 import type { DidNotRunExplanation } from '#shared/did-not-run';
+import { migrateToLatest } from './temp-db';
 
 /**
  * The execution detail of a test that is not a plain failure, against an
@@ -45,9 +44,7 @@ async function detail(id: number, opts: { aiConfigured?: boolean } = {}): Promis
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'admin' });
   await db.insert(schema.testCases).values([
     { id: 1, projectId: 1, title: 'toggles dark mode', filePath: 'tests/admin/settings.spec.ts' },

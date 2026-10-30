@@ -75,7 +75,8 @@ its own commands; the dashboard's run from `apps/application/` (`npm run app:dev
 configuration: the SQLite database and `.data/` are created on the first API call).
 
 - `npm run knip` (root) lists unused files, exports, types and dependencies, and undeclared imports, across every JS
-  workspace. A standalone entry point it cannot infer goes in [`knip.ts`](knip.ts). CI's checks job fails on a finding.
+  workspace. A standalone entry point it cannot infer goes in [`knip.ts`](knip.ts). CI's `Format, lint and typecheck`
+  job fails on a finding.
 - `node scripts/package-smoke.mjs <dir>` installs the packed `@piwitests/server` and `@piwitests/reporter` tarballs into
   a new project and reports a run through them (the script header shows how to pack them); CI's `package-smoke` job.
 - From `integrations/aspnetcore/`: `dotnet test PiwiTests.Instrumentation.slnx` (needs the .NET 10 SDK).

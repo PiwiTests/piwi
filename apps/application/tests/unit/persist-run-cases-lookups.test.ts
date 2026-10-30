@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set.
 delete process.env.PIWI_DATABASE_URL;
@@ -37,7 +36,7 @@ let projectId: number;
 beforeEach(async () => {
   queries = [];
   db = drizzle(createClient({ url: ':memory:' }), { schema, logger: { logQuery: (query) => queries.push(query) } });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   const [project] = await db.insert(schema.projects).values({ name: 'lookups' }).returning();
   projectId = project!.id;
   testCaseCache.invalidate(projectId);

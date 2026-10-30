@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { summarizeNewerExecutions, type NewerExecutionRow } from '#shared/latest-execution';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Whether an execution is the latest of its test: the pure summary over the
@@ -162,9 +161,7 @@ describe('getNewerExecutions', () => {
 
   beforeAll(async () => {
     db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     await db.insert(schema.projects).values({ id: 1, name: 'shop' });
     await db.insert(schema.testCases).values([
       { id: 1, projectId: 1, title: 'pays by card', filePath: 'tests/checkout.spec.ts' },

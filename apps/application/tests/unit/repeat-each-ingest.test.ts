@@ -1,13 +1,12 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { asc, eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { durationStats } from '#shared/utils/stats';
 import { testOutcomes } from '#shared/utils/test-counts';
+import { migrateToLatest } from './temp-db';
 
 /**
  * A `--repeat-each` run through the ingest routes: each repetition of a test is
@@ -64,7 +63,7 @@ const ERROR = "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   state.db = db;
   const [project] = await db.insert(schema.projects).values({ name: PROJECT }).returning();
   projectId = project!.id;

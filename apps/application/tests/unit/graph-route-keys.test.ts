@@ -3,13 +3,12 @@
  * rewrite merges what older versions split by it.
  */
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { routeNodeKey } from '../../shared/graph';
+import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 const {
@@ -74,7 +73,7 @@ describe('signatureWithoutRouteQuery', () => {
 let db: ReturnType<typeof drizzle<typeof schema>>;
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'p' });
   await db.insert(schema.testCases).values([
     { id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'pages' },
