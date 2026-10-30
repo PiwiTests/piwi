@@ -7,6 +7,7 @@ import {
   isLiveViewKey,
   liveWorkerKey,
   type LiveStop,
+  type InstanceToWorker,
   type LiveWorkerId,
   type WorkerToInstance,
 } from '@piwitests/core/live-view';
@@ -20,7 +21,8 @@ import { runEventBus, type GlobalRunEvent } from './run-events';
  * The run page's live view on this instance: a relay, in memory alone, between the workers of a live run whose project
  * turned it on (a CI run's, or one a developer shares from their machine) and the people watching them. Each worker
  * holds one event stream, opened with a key minted for its run (`mintKey`, handed to the run's global setup), on which
- * it hears how many people watch it; a viewer holds one stream per worker it watches. The frames a worker posts go to
+ * it hears how many people watch it, and which elements its project masks beside the secret fields (`setMasks` tells
+ * the open workers each change); a viewer holds one stream per worker it watches. The frames a worker posts go to
  * that worker's viewers and nowhere else: none is kept, written to the database, logged or exported, and a viewer whose
  * stream is backed up gets the latest frame alone once it drains. A CI run's worker posts the call its test is in as
  * Playwright logs it (`call-log`), which goes to the same viewers the same way, the latest kept apart from the frame. The worker's stops go to everyone with the run page
@@ -196,7 +198,12 @@ export class LiveViewRelay {
    * and stop it keeps; the run page hears it is connected. Refused past `MAX_LIVE_WORKERS_PER_RUN`, the stream then
    * left unopened.
    */
-  connectWorker(entry: KeyEntry, id: LiveWorkerId, open: () => EventStreamSink): LiveViewRefusal | null {
+  connectWorker(
+    entry: KeyEntry,
+    id: LiveWorkerId,
+    open: () => EventStreamSink,
+    masks: readonly string[] = [],
+  ): LiveViewRefusal | null {
     const key = liveWorkerKey(id);
     const known = this.runs.get(entry.runId);
     const before = known?.workers.get(key);
@@ -223,7 +230,9 @@ export class LiveViewRelay {
       before.sink.close();
     }
     sink.onClose(() => this.disconnectWorker(entry.runId, key, link));
-    sink.send({ type: 'viewers', count: link.viewers.size });
+    // The elements to mask go before anyone watches.
+    sink.send({ type: 'masks', locators: [...masks] } satisfies InstanceToWorker);
+    sink.send({ type: 'viewers', count: link.viewers.size } satisfies InstanceToWorker);
     this.publish(entry.runId, { ...id, connected: true, paused: link.paused });
     return null;
   }
@@ -318,6 +327,15 @@ export class LiveViewRelay {
     const run = this.runs.get(runId);
     if (!run) return [];
     return [...run.workers.values()].map((link) => ({ ...link.id, connected: true, paused: link.paused }));
+  }
+
+  /** The project now masks `locators` beside the secret fields: the workers of its live runs hear so. */
+  setMasks(projectId: number, locators: readonly string[]): void {
+    const message: InstanceToWorker = { type: 'masks', locators: [...locators] };
+    for (const run of this.runs.values()) {
+      if (run.projectId !== projectId) continue;
+      for (const worker of run.workers.values()) worker.sink.send(message);
+    }
   }
 
   /** The run's live view ends: its keys open nothing more, its workers' and viewers' streams close. */

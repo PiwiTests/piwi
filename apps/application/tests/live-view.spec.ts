@@ -11,6 +11,7 @@ import { parseRunToHub, type RunToHub } from '@piwitests/core/run-channel';
 import { detectCi } from '../../../packages/reporter/src/internal/support/ci';
 import { PROJECT } from '#shared/test-project-names';
 import { resolveE2ETarget } from './desktop-target';
+import { waitForHydration } from './utils';
 import { holdWorkerStream } from './utils/live-view';
 
 /**
@@ -292,6 +293,33 @@ test.describe('Live view of a run', () => {
     } finally {
       await endRun(run);
     }
+  });
+
+  test('a Project admin lists the elements each image masks: Playwright locators alone, kept trimmed', async ({
+    page,
+    request,
+  }) => {
+    const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
+    await page.goto(`/projects/${project}?tab=settings&section=live-view`);
+    await waitForHydration(page);
+    const masks = page.getByRole('textbox', { name: 'Masked elements' });
+    const save = page.getByRole('button', { name: 'Save changes' });
+    await masks.fill('#iban');
+    await expect(page.getByText("`#iban` is not a Playwright locator, such as getByLabel('IBAN').")).toBeVisible();
+    await expect(save).toBeDisabled();
+    await masks.fill("  getByLabel('IBAN')  \n\ngetByTestId('balance')");
+    await save.click();
+    await expect(page.getByText('Live view settings saved').first()).toBeVisible();
+    const stored = async () =>
+      ((await (await request.get(`/api/projects/${project}`)).json()) as { liveViewMasks?: string[] | null })
+        .liveViewMasks;
+    expect(await stored()).toEqual(["getByLabel('IBAN')", "getByTestId('balance')"]);
+
+    // The API refuses what is not a locator, and an empty list removes them.
+    const refused = await request.patch(`/api/projects/${project}`, { data: { liveViewMasks: ['#iban'] } });
+    expect(refused.status()).toBe(400);
+    expect((await request.patch(`/api/projects/${project}`, { data: { liveViewMasks: [] } })).ok()).toBeTruthy();
+    expect(await stored()).toBeNull();
   });
 
   test('a project with the live view off: no Watch, and its CI run sends nothing', async ({ page, request }) => {

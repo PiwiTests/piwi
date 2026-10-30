@@ -76,6 +76,7 @@ import {
 import { parseProjectDecisions } from '#shared/capabilities';
 import { normalizeProjectTargets } from '#shared/analytics/targets';
 import { parseCoverageAreas, parseCoverageScope, type CoverageScope } from '@piwitests/core/coverage-scope';
+import { MAX_LIVE_MASKS, MAX_LIVE_MASK_LENGTH, parseLiveMasks } from '@piwitests/core/live-view';
 import { repositoryUrlFromRemote } from '../../server/utils/scm/git-url';
 
 type ProjectScope = 'all' | Set<number>;
@@ -485,6 +486,9 @@ export const INVALID_REPOSITORY_URL = 'repositoryUrl must be a repository URL, s
 export const INVALID_COVERAGE_SCOPE =
   'coverageScope must be { include?: string[], exclude?: string[] }: at most 200 patterns each, 300 characters and 20 "*" a pattern, no "!" negation';
 
+/** The error `updateProject` throws for masked elements `parseLiveMasks` refuses. */
+export const INVALID_LIVE_VIEW_MASKS = `liveViewMasks must be a list of at most ${MAX_LIVE_MASKS} Playwright locators of ${MAX_LIVE_MASK_LENGTH} characters at most, such as getByLabel('IBAN')`;
+
 /** The error `updateProject` throws for coverage areas `parseCoverageAreas` refuses. */
 export const INVALID_COVERAGE_AREAS =
   'coverageAreas must be a list of at most 20 { name, include: string[] }: distinct names of 1 to 40 letters, digits, spaces, ".", "_" or "-", each with at least one pattern';
@@ -524,6 +528,8 @@ export async function updateProject(
     gateStatus?: boolean;
     /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
     liveView?: boolean;
+    /** Playwright locators of the elements the live view paints over, beside the secret fields; null or [] removes them. */
+    liveViewMasks?: unknown;
     /** `GeneratedSpecSettings`; null clears them. */
     generatedSpecs?: unknown;
     /** Per-project targets (`ProjectTargets`); null clears them. */
@@ -555,6 +561,7 @@ export async function updateProject(
     quarantineFailsStatus,
     gateStatus,
     liveView,
+    liveViewMasks,
     generatedSpecs,
     targets,
     coverageScope,
@@ -562,6 +569,8 @@ export async function updateProject(
     statusFilter,
     tagIds: dataTagIds,
   } = data;
+  const masks = liveViewMasks === undefined || liveViewMasks === null ? liveViewMasks : parseLiveMasks(liveViewMasks);
+  if (masks === null && liveViewMasks !== null) throw new Error(INVALID_LIVE_VIEW_MASKS);
   const linkTemplate = externalIdUrl === undefined ? undefined : normalizeExternalIdUrl(externalIdUrl);
   if (externalIdUrl !== undefined && linkTemplate === undefined) throw new Error(INVALID_EXTERNAL_ID_URL);
   // null or '' clears the repository; any other value must name one.
@@ -601,6 +610,7 @@ export async function updateProject(
         quarantineFailsStatus,
         gateStatus,
         liveView,
+        liveViewMasks: masks === undefined ? undefined : masks?.length ? masks : null,
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
         statusFilter: statusFilter === undefined ? undefined : statusFilterToStore(statusFilter),

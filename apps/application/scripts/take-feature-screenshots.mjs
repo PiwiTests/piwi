@@ -2654,7 +2654,7 @@ const SCENES = [
     { name: 'project-live-view-settings-mobile', width: 375, height: 1100 },
   ].map(({ name, width, height }) => ({
     name,
-    description: `Project → Settings → Live view: the switch, and what goes out, to whom and what is kept, at ${width} px`,
+    description: `Project → Settings → Live view: the switch, the masked elements, and what goes out, to whom and what is kept, at ${width} px`,
     route: '/projects/1?tab=settings&section=live-view',
     viewport: { width, height },
     of: '[data-shot="project-live-view-settings"]',

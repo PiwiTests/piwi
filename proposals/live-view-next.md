@@ -8,9 +8,10 @@ Someone who opens a slow CI run usually asks something else: what is the test do
 plan adds what explains a running test, then the page as a document rather than an image, then ways to watch a whole run
 from more places. Where it revisits a decision of the [run control ADR](../adr/run-control.md), it says so.
 
-**Status.** Proposed 2026-10-30. PRs 1 and 2 are built: the call log, the action point and the element count in the
-view of a CI run, and **Stuck?** with `test.stuck` (Part 1, as it now describes them; how long the step a stuck test is
-in usually takes is not built). The rest is proposed. Spikes A to H in the [appendix](#appendix-the-spikes) ran on
+**Status.** Proposed 2026-10-30. PRs 1 to 3 are built: the call log, the action point and the element count in the
+view of a CI run, **Stuck?** with `test.stuck` (Part 1, as it now describes them; how long the step a stuck test is
+in usually takes is not built), and the secret fields masked with the project's own list (Part 2). The rest is
+proposed. Spikes A to H in the [appendix](#appendix-the-spikes) ran on
 Playwright 1.64.1 and are the evidence for the claims about Playwright and the costs; none of them is part of the
 repository. Spike D settled that a run Piwi pauses never turns the call stream on (D2), spike F that the runner's own
 trace needs no option to be read as it grows (D6), and spikes E, G and H set the masking rate, the video's settings and
@@ -181,7 +182,8 @@ why. The demo plays it (the **Stuck test** scenario), checking on the simulator'
   written as locators (`getByLabel('IBAN')`), read with `@piwitests/core/locator-chain`.
 - **How**: while a masked element shows, the worker reads the boxes of the masked elements through `internalCall` just
   before and just after it takes an image (5 to 11 ms a read, [spike E](#e-masking-an-image-in-the-worker)), and sends
-  the image only when both reads agree: Playwright's `onFrame` gives the viewport's size but not its scroll offset, so
+  the image only when both reads agree (`live-mask.ts`: a screencast frame goes on the read made before it came and the
+  one made after; a frame no earlier read brackets is replaced by a screenshot taken between two reads): Playwright's `onFrame` gives the viewport's size but not its scroll offset, so
   an image taken while the page moves is dropped rather than masked in the wrong place. The image is decoded, painted
   over and encoded again with `jpeg-js`, as Playwright exports it: about 48 ms of CPU for a 640×400 image, and an image
   1.5 times larger than Chrome's at the same quality. So a worker sends at most two images a second while a masked
@@ -369,7 +371,7 @@ PRs 1 to 3 are the first release.
 ## Open questions
 
 1. **Stuck?**: are two minutes and three times the longest passing duration right, and should a project change them?
-2. **The project's masked elements**: locators alone, or CSS selectors too?
+2. **The project's masked elements**: settled, locators alone; a CSS selector is written `locator('#iban')`.
 3. **The masking codec**: is `jpeg-js` enough at two images a second, or is a WebAssembly JPEG codec worth its
    weight in the published reporter?
 4. **The watch link**: the images alone, or the call log too?
