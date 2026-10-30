@@ -12,7 +12,9 @@ from more places. Where it revisits a decision of the [run control ADR](../adr/r
 Playwright 1.64.1 and are the evidence for the claims about Playwright and the costs; none of them is part of the
 repository. Spike D settled that a run Piwi pauses never turns the call stream on (D2), spike F that the runner's own
 trace needs no option to be read as it grows (D6), and spikes E, G and H set the masking rate, the video's settings and
-what a viewer of the DOM receives (D5, D9, D7). Safari is the one browser no spike reached (spike G). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D62
+what a viewer of the DOM receives (D5, D9, D7). Safari is the one browser no spike reached (spike G). A prototype
+outside the repository then drove the sample shop through Parts 1, 2, 4 and 5 and the video of Part 7; it found the
+defect listed under [Defects found while researching this plan](#defects-found-while-researching-this-plan). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D62
 of [`1.0-stabilization.md`](1.0-stabilization.md).
 
 **Summary.** What the plan delivers, in the order it should be built:
@@ -139,7 +141,10 @@ a slow or stuck test explained while it runs, with Playwright's own words for wh
 for the call the test is in: its title, its place in the user's code, its status, the new call log lines, its action point and the
 error it ended with, at the stream's own pace (an update at most every 500 ms). Each line goes through
 `hideSecretsInText`, is cut at 500 characters, and one update carries 50 lines at most. Calls of Piwi's own capture
-are internal and never reach the stream.
+are internal and never reach the stream. Playwright names a `fill`, a `type` or a `pressSequentially` by the text it
+types (`Fill "S3cr3t!Passw0rd" getByLabel('Password')`, `fill("S3cr3t!Passw0rd")` in the log), which
+`hideSecretsInText` leaves as it is: when the call's element is a masked one (Part 2), the worker replaces that text in
+the title and in the log (`Type "•••" getByLabel('Password')`).
 
 **The element.** The call log names the element a locator resolved to, but not where it is, and says nothing while a
 locator matches no element ([spike A](#a-playwrights-call-stream)). While a call waits, the worker reads, once a
@@ -376,6 +381,19 @@ PRs 1 to 3 are the first release.
 - **A relay shared between servers** (D12).
 - **Keeping the live view as the run's video**: the trace and video settings keep the record, and the live view keeps
   nothing.
+
+## Defects found while researching this plan
+
+- **A typed password shows in clear in the live view's caption and the run page's live steps.** Playwright titles a
+  `fill` step by the text it types: inside a test, the step of `getByLabel('Password').fill('S3cr3t!Passw0rd')` is
+  titled `Fill "S3cr3t!Passw0rd"`. The live view's caption is that title (`runningCall` in `capture-fixtures.ts`)
+  through `hideSecretsInText`, which leaves it whole, and the reporter streams `pw:api` steps with their raw title
+  (`onStepBegin`, `onStepEnd`). The image shows the field's dots; the caption, beside it, shows the password to anyone
+  who may open the run, and so does the run page's Live activity. The trace and Playwright's own report hold the same
+  title. The agents' call events are not affected: Playwright's instrumentation gives them no title, and
+  `run-events.ts` falls back to the method and its selector. A fix, separate from this plan: hide the typed text of a
+  `fill`, `type` or `pressSequentially` in every title the reporter sends, since the title does not say whether the
+  field is secret.
 
 ## Appendix: the spikes
 
