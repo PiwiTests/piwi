@@ -540,7 +540,7 @@ export const HELP_TOPICS = {
   'project.ci-rerun': {
     title: 'CI re-run',
     text: [
-      'Lets a Maintainer or Project admin re-run a cluster’s affected tests in CI straight from its page, on the branch of the cluster’s latest run, passing each affected test’s file and line through the input/variable you name:',
+      'Lets a Maintainer, Project admin or administrator re-run a cluster’s affected tests in CI straight from its page, on the branch of the cluster’s latest run, passing each affected test’s file and line through the input/variable you name:',
       '',
       '- **GitHub** — a `workflow_dispatch`; the run is recognized by the optional dispatch id input.',
       '- **GitLab** — a pipeline, recognized by its pipeline id.',

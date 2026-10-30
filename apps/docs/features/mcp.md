@@ -90,8 +90,13 @@ writes their entry in one click instead.
 
 ### Claude Desktop
 
-Add to `claude_desktop_config.json` (`~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on
-Windows), then restart Claude Desktop:
+Add to `claude_desktop_config.json`, then restart Claude Desktop. On macOS it is in
+`~/Library/Application Support/Claude/`, on Linux (beta) in `~/.config/Claude/`. On Windows, recent versions keep it in
+`%LOCALAPPDATA%\Claude-Data\claude_pzs8sxrjxfjjc\`. An older install keeps it in one of these folders; a
+`.user-data-left.*` file there means it moved to `Claude-Data`:
+
+- `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\`, an MSIX install (Microsoft Store, WinGet)
+- `%APPDATA%\Claude\`, the classic installer
 
 ```json
 {
@@ -125,10 +130,11 @@ that offer **Settings → Connectors → Add custom connector** take the `/mcp` 
 ### Claude Code (CLI)
 
 ```bash
-claude mcp add --transport http piwi <your-piwi-url>/mcp --header "Authorization: Bearer pd_YOUR_API_KEY"
+claude mcp add --transport http --scope user piwi <your-piwi-url>/mcp --header "Authorization: Bearer pd_YOUR_API_KEY"
 ```
 
-Restart Claude Code, then check with `/mcp` that **piwi** is listed.
+`--scope user` makes the server available in every folder; without it, Claude Code keeps it for the folder the command
+ran in. Restart Claude Code, then check with `/mcp` that **piwi** is listed.
 
 ### Cursor
 
