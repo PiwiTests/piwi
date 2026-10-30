@@ -105,8 +105,10 @@ describe('the stuck check of a live run', () => {
         usualMs: 8000,
       },
     ]);
-    // A page that connects later reads it from the running case.
-    expect(runEventBus.getRunningCases(LIVE_RUN)[0]).toMatchObject({ stuck: { elapsedMs: 5 * 60_000, usualMs: 8000 } });
+    // A page that connects later reads it from the running case, with the time the last check counted.
+    expect(runEventBus.getRunningCases(LIVE_RUN)[0]).toMatchObject({
+      stuck: { elapsedMs: 5 * 60_000 + 30_000, usualMs: 8000 },
+    });
   });
 
   test('tells a retry, another attempt, again', async () => {
@@ -123,15 +125,16 @@ describe('the stuck check of a live run', () => {
     runEventBus.recordRunningCase(LIVE_RUN, 'new', begin({ title: 'pays with a gift card' }));
     expect(await stuckEvents(() => checkStuckTests(db as never, now))).toEqual([]);
 
+    // A run whose status is final forgets its running tests.
     await db.update(schema.testRuns).set({ status: 'interrupted' });
     runEventBus.recordRunningCase(LIVE_RUN, 'k', begin());
     expect(await stuckEvents(() => checkStuckTests(db as never, now))).toEqual([]);
+    expect(runEventBus.getRunningCases(LIVE_RUN)).toEqual([]);
 
-    // Revived, it is looked at again a while later.
+    // Revived, it is looked at again from the next test that begins.
     await db.update(schema.testRuns).set({ status: 'running' });
-    expect(await stuckEvents(() => checkStuckTests(db as never, now + 60_000))).toEqual([]);
-    // By then, the test that was under the floor is past it too.
-    const later = await stuckEvents(() => checkStuckTests(db as never, now + 6 * 60_000));
-    expect(later.map((e) => e.elapsedMs)).toEqual([6 * 60_000 + STUCK_FLOOR_MS - 1000, 11 * 60_000]);
+    runEventBus.recordRunningCase(LIVE_RUN, 'k', begin());
+    const later = await stuckEvents(() => checkStuckTests(db as never, now));
+    expect(later.map((e) => e.elapsedMs)).toEqual([5 * 60_000]);
   });
 });

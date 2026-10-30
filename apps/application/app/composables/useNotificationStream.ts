@@ -152,7 +152,11 @@ function handleEvent(data: NotificationEventData) {
   if (!body) return;
 
   // Use type + key id for dedup tag
-  const dedupKey = data.snapshotId ?? data.executionId ?? data.clusterId ?? data.runId ?? data.signature ?? data.type;
+  // A stuck test is one of several a run may have: each keeps its own notification.
+  const dedupKey =
+    data.type === 'test.stuck'
+      ? `${data.runId}-${data.testTitle}`
+      : (data.snapshotId ?? data.executionId ?? data.clusterId ?? data.runId ?? data.signature ?? data.type);
   const tag = `piwi-${data.type}-${dedupKey}`;
 
   const notification = new Notification('Piwi Dashboard', {

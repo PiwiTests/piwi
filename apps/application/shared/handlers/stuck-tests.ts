@@ -36,6 +36,8 @@ export async function runningTestHistory(db: DrizzleDB, test: RunningTest): Prom
         eq(testCases.title, test.title),
       ),
     )
+    // The test case its external ID names wins over one a rename left under the same key.
+    .orderBy(sql`${testCases.externalId} IS NULL`, desc(testCases.id))
     .limit(1);
   if (!testCase) return { passingDurations: [], owner: null };
   const conds = [

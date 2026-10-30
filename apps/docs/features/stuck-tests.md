@@ -1,6 +1,6 @@
 ---
 title: Stuck tests
-description: "A running test that has run far longer than its passing runs took is marked Stuck? on its run page, and a test.stuck notification goes out once per attempt, with no viewer and no live view needed."
+description: 'A running test that has run far longer than its passing runs took is marked Stuck? on its run page, and a test.stuck notification goes out once per attempt, with no viewer and no live view needed.'
 lang: en-US
 ---
 
@@ -23,7 +23,8 @@ run longer than both:
 
 A test needs two passing executions on that browser before any attempt of it can be stuck: a new test is never
 flagged. The executions read are the ones a baseline reads, so no Flake Lab or investigation run and no environment
-incident. The time counts from the attempt's start as the reporter streams it, or from when the dashboard heard of it.
+incident. The time counts from the start the attempt's begin event names, else from when the dashboard heard it begin; the
+reporter's begin events name none.
 Each attempt is said to be stuck once; a retry is a new attempt.
 
 The question mark is meant: a test can be slow for a good reason, a large import or a cold cache. The rule says only

@@ -491,6 +491,8 @@ export interface TestStuckPayload extends RunScope {
   location?: string;
   /** The Playwright project the attempt runs in. */
   browserName?: string;
+  /** The `--repeat-each` repetition it is. */
+  repeatEachIndex?: number;
   workerIndex?: number;
   shardIndex?: number;
   /** When the attempt began, in epoch milliseconds: one notification per attempt. */
@@ -682,7 +684,7 @@ export function buildNotificationDedupeKey(
   }
   if (event === 'test.stuck') {
     const p = payload as TestStuckPayload;
-    return `${event}:r${p.runId}:${p.startedAt}:${p.location ?? ''}:${p.browserName ?? ''}:${p.testTitle}:${channelId}`;
+    return `${event}:r${p.runId}:${p.startedAt}:${p.location ?? ''}:${p.browserName ?? ''}:${p.repeatEachIndex ?? 0}:${p.testTitle}:${channelId}`;
   }
   const runId = (payload as RunFinishedPayload).runId;
   return `${event}:r${runId ?? 'x'}:${channelId}`;

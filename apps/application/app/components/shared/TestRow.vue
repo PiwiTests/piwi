@@ -265,7 +265,7 @@ const clusterLabel = computed(() =>
             <slot name="metrics">
               <template v-if="tc">
                 <template v-if="tc.status === 'running'">
-                  <TestRowStuck v-if="tc.stuck" :stuck="tc.stuck" :started-at="tc.startedAt" />
+                  <TestRowStuck v-if="tc.stuck" :stuck="tc.stuck" />
                   <span v-else-if="!liveStep && !liveWorker?.paused" class="text-info">In progress…</span>
                   <span
                     v-if="liveResourcesText"

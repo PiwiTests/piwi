@@ -441,12 +441,13 @@ export type StuckTestNotice = Pick<
   | 'suitePath'
   | 'location'
   | 'browserName'
+  | 'repeatEachIndex'
   | 'workerIndex'
   | 'shardIndex'
   | 'startedAt'
   | 'elapsedMs'
   | 'usualMs'
-> & { owner: string | null };
+> & { filePath: string; owner: string | null };
 
 /**
  * Emit `test.stuck` for a running attempt of a live run, once per attempt (its run, its start and its test key its
@@ -455,13 +456,18 @@ export type StuckTestNotice = Pick<
 export async function emitTestStuck(db: DbClient, runId: number, stuck: StuckTestNotice): Promise<void> {
   try {
     const [runRow] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
-    if (!runRow || runRow.status !== 'running' || !isEligibleRun(runRow, 'notifications')) return;
+    // A run that sends notifications once complete: a full run counts as complete while it runs, a partial one never.
+    if (!runRow || runRow.status !== 'running' || !isEligibleRun({ ...runRow, status: 'passed' }, 'notifications')) {
+      return;
+    }
     const [project] = await db.select().from(projects).where(eq(projects.id, runRow.projectId));
     if (!project) return;
     const branch = runRow.branch ?? resolveRunBranch(runRow.metadata) ?? undefined;
     const defaultBranch = await resolveDefaultBranch(db, project, runRow.metadata);
     const ciUrl = runCiUrl(runRow.metadata);
-    const { owner, ...attempt } = stuck;
+    const { owner: declared, filePath, ...attempt } = stuck;
+    const test = { filePath, owner: declared };
+    const owner = (await resolveOwners(db, runRow.projectId, [test])).get(test)?.owner ?? null;
     await emitNotification(db, 'test.stuck', {
       ...attempt,
       runId,

@@ -23,13 +23,18 @@ interface DemoAttempt {
   stuck: boolean;
 }
 
-/** Each live demo run's running tests, and the latest time its events reached. */
-const runs = new Map<number, { now: number; attempts: Map<string, DemoAttempt> }>();
+/** Each live demo run's running tests, the latest time its events reached, and whether a check of it is under way. */
+interface DemoRun {
+  now: number;
+  attempts: Map<string, DemoAttempt>;
+  checking: boolean;
+}
+const runs = new Map<number, DemoRun>();
 
-function runOf(runId: number): { now: number; attempts: Map<string, DemoAttempt> } {
+function runOf(runId: number): DemoRun {
   let run = runs.get(runId);
   if (!run) {
-    run = { now: 0, attempts: new Map() };
+    run = { now: 0, attempts: new Map(), checking: false };
     runs.set(runId, run);
   }
   return run;
@@ -70,6 +75,17 @@ export async function checkDemoStuckTests(
     if (typeof event.startedAt !== 'number') continue;
     state.now = Math.max(state.now, event.startedAt + (typeof event.duration === 'number' ? event.duration : 0));
   }
+  // The service worker answers posts at once: one check of a run at a time, the next one sees what it told.
+  if (state.checking) return;
+  state.checking = true;
+  try {
+    await checkAttempts(db, run, state);
+  } finally {
+    state.checking = false;
+  }
+}
+
+async function checkAttempts(db: DemoDb, run: { id: number; projectId: number }, state: DemoRun): Promise<void> {
   for (const attempt of state.attempts.values()) {
     const elapsedMs = state.now - attempt.startedAt;
     if (attempt.stuck || elapsedMs < STUCK_FLOOR_MS) continue;

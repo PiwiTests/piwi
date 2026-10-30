@@ -216,6 +216,27 @@ function flushPendingEvents() {
           },
         ];
         displayTestCases.value = [...liveTestCases.value];
+      } else {
+        // A known test begins again: a retry starts (its row runs again, unmarked), or a
+        // reconnected stream catches up on a running attempt (its row takes the mark it carries).
+        const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
+        const existing = idx >= 0 ? liveTestCases.value[idx]! : null;
+        if (existing && (existing.status !== 'running' || d.stuck)) {
+          const copy = [...liveTestCases.value];
+          copy[idx] =
+            existing.status === 'running'
+              ? { ...existing, stuck: d.stuck ?? existing.stuck }
+              : {
+                  ...existing,
+                  status: 'running',
+                  workerIndex: d.workerIndex ?? existing.workerIndex,
+                  shardIndex: d.shardIndex ?? existing.shardIndex,
+                  startedAt: d.startedAt ?? Date.now(),
+                  stuck: d.stuck ?? null,
+                };
+          liveTestCases.value = copy;
+          displayTestCases.value = [...copy];
+        }
       }
     } else if (parsed.type === 'test-stuck') {
       // A running test has run far longer than it usually does: its row says so until it completes.
@@ -625,8 +646,17 @@ function buildRunSummary(): string {
 // Test-cases filter state — lifted here so it survives tab switches, and kept
 // for the page so it is still there when the user comes back to the run.
 const testCaseSearch = useViewState('run-tests:search', () => '');
-// A search the address carries (a stuck test's notification opens its row this way) wins over the kept one.
-if (typeof route.query.search === 'string') testCaseSearch.value = route.query.search;
+// A search the address carries (a stuck test's notification opens its row this way) wins over the kept one,
+// then leaves the address, so the user's own searches are not overridden by it later.
+watch(
+  () => route.query.search,
+  (search) => {
+    if (typeof search !== 'string') return;
+    testCaseSearch.value = search;
+    if (import.meta.client) void replaceQuery(router, { search: undefined });
+  },
+  { immediate: true },
+);
 const testCaseActiveStatuses = useViewState<string[]>('run-tests:statuses', () => []);
 
 // The count-bar segments toggle the status filters the Tests list applies, and

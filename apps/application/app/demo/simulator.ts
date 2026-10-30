@@ -536,12 +536,15 @@ interface BaseTestOptions {
   slowNetwork?: boolean;
   slowSteps?: boolean;
   waitHeavy?: boolean;
-  /** The PayPal checkout test waits on a payment that answers only after `STUCK_HANG_MS`. */
+  /**
+   * The PayPal checkout test waits `STUCK_HANG_MS` on a payment that does not answer, then fails with its seeded
+   * story's error: a failure, so it never becomes one of the passes a later stuck check reads.
+   */
   stuck?: boolean;
 }
 
 /** How long the stuck scenario's PayPal test waits: past the stuck threshold of its seeded passes. */
-const STUCK_HANG_MS = 4 * 60_000;
+const STUCK_HANG_MS = 6 * 60_000;
 /** The title of the test the stuck scenario holds. */
 const STUCK_TEST_TITLE = 'should complete checkout with PayPal';
 /** How often, in virtual time, a hanging attempt posts its heartbeat. */
@@ -773,7 +776,16 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
       slowestStepDuration: slowest.duration,
       wastedTimeMs: wastedTimeMs > 0 ? wastedTimeMs : null,
       ...(opts.stuck && t.title === STUCK_TEST_TITLE
-        ? { attempts: [{ status: 'passed' as const, duration: duration + STUCK_HANG_MS, hangMs: STUCK_HANG_MS }] }
+        ? {
+            attempts: [
+              {
+                status: 'failed' as const,
+                duration: duration + STUCK_HANG_MS,
+                hangMs: STUCK_HANG_MS,
+                error: CLUSTER1_STORY.failingCases[1]!.error,
+              },
+            ],
+          }
         : {}),
       networkRequests: buildNetworkRequests({ slow: opts.slowNetwork }),
       webVitals: buildWebVitals(opts.slowNetwork),
@@ -1061,7 +1073,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     description:
       'A PayPal checkout waits on a payment that does not answer: its row turns Stuck? while the other tests go on',
     icon: 'i-lucide-hourglass',
-    speed: 20,
+    speed: 15,
     workers: 3,
     environment: 'staging',
     metadata: () =>
@@ -1465,6 +1477,7 @@ async function runSingleSimulation(
                 await postHeartbeat(virtualNow);
               }
               attemptRemaining -= hung;
+              if (ctl.stopped) return;
             }
             await postEvents([
               {

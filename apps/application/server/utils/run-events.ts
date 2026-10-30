@@ -200,6 +200,11 @@ class RunEventBus {
     cases.set(key, data);
   }
 
+  /** Drop every running case of a run that ended without completing them. */
+  clearRunningCases(runId: number): void {
+    this.runningCases.delete(runId);
+  }
+
   /** Drop a running case once it completes. */
   clearRunningCase(runId: number, key: string): void {
     this.runningCases.get(runId)?.delete(key);

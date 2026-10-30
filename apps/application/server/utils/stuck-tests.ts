@@ -1,7 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { resolveBrowserName } from '#shared/browser-name';
 import { runningTestHistory, type RunningTestHistory } from '#shared/handlers/stuck-tests';
-import { STUCK_FLOOR_MS, stuckAttempt, testStuckEventData } from '#shared/stuck-tests';
+import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
+import { STUCK_FLOOR_MS, stuckAttempt, testStuckEventData, type StuckAttempt } from '#shared/stuck-tests';
 import type { DbClient } from '../database';
 import { testRuns } from '../database/schema';
 import { emitTestStuck } from './notifications/run-notifications';
@@ -12,10 +13,6 @@ export const STUCK_CHECK_MS = 15_000;
 
 /** A running attempt's test history, read once per attempt, by its begin payload: a retry's begin is another. */
 const histories = new WeakMap<object, RunningTestHistory>();
-/** How long a run found not running is left unchecked: an interrupted run keeps its running cases, and may revive. */
-const NOT_RUNNING_RECHECK_MS = 5 * 60_000;
-/** The runs found not running, and when to look at them again. */
-const notRunningUntil = new Map<number, number>();
 
 /**
  * Check the running attempts of this server's live runs (`runEventBus`) against `#shared/stuck-tests`, and tell each
@@ -24,15 +21,16 @@ const notRunningUntil = new Map<number, number>();
  * `STUCK_FLOOR_MS` costs no query; past it, its test's history is read once. Returns how many were found stuck.
  */
 export async function checkStuckTests(db: DbClient, now = Date.now()): Promise<number> {
-  const entries = [...runEventBus.runningCaseEntries()];
-  const live = new Set(entries.map(([runId]) => runId));
-  for (const runId of notRunningUntil.keys()) if (!live.has(runId)) notRunningUntil.delete(runId);
   const projectOf = new Map<number, number | null>();
   let found = 0;
-  for (const [runId, data] of entries) {
+  for (const [runId, data] of [...runEventBus.runningCaseEntries()]) {
     const startedAt = typeof data.startedAt === 'number' ? data.startedAt : null;
-    if (data.stuck || startedAt === null || now - startedAt < STUCK_FLOOR_MS) continue;
-    if ((notRunningUntil.get(runId) ?? 0) > now) continue;
+    if (startedAt === null || now - startedAt < STUCK_FLOOR_MS) continue;
+    if (data.stuck) {
+      // How long it has run now, for a page that connects later.
+      data.stuck = { ...(data.stuck as StuckAttempt), elapsedMs: now - startedAt };
+      continue;
+    }
     let projectId = projectOf.get(runId);
     if (projectId === undefined) {
       const [run] = await db
@@ -40,8 +38,10 @@ export async function checkStuckTests(db: DbClient, now = Date.now()): Promise<n
         .from(testRuns)
         .where(eq(testRuns.id, runId));
       projectId = run?.status === 'running' ? run.projectId : null;
-      if (projectId === null) notRunningUntil.set(runId, now + NOT_RUNNING_RECHECK_MS);
-      else notRunningUntil.delete(runId);
+      // A run that ended without its tests completing (cancelled) leaves them here: they no longer run.
+      if (!run || !(UNFINISHED_RUN_STATUSES as readonly string[]).includes(run.status)) {
+        runEventBus.clearRunningCases(runId);
+      }
       projectOf.set(runId, projectId);
     }
     if (projectId === null) continue;
@@ -68,9 +68,11 @@ export async function checkStuckTests(db: DbClient, now = Date.now()): Promise<n
     found++;
     await emitTestStuck(db, runId, {
       testTitle: title,
+      filePath: typeof data.filePath === 'string' ? data.filePath : '',
       ...(suitePath?.length ? { suitePath } : {}),
       ...(typeof data.location === 'string' ? { location: data.location } : {}),
       ...(browserName ? { browserName } : {}),
+      ...(typeof data.repeatEachIndex === 'number' ? { repeatEachIndex: data.repeatEachIndex } : {}),
       ...(typeof data.workerIndex === 'number' ? { workerIndex: data.workerIndex } : {}),
       ...(typeof data.shardIndex === 'number' ? { shardIndex: data.shardIndex } : {}),
       startedAt,

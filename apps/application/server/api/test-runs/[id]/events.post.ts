@@ -79,6 +79,13 @@ export default eventHandler(async (event) => {
   const completeEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'complete');
   const stepRunEvents = mapStepEventsToRunEvents(validEvents);
 
+  // What each running case's last event in the batch is: a retry's begin may follow its previous attempt's complete,
+  // and a short test's complete its begin, and the running case keeps the last.
+  const lastOf = new Map<string, 'begin' | 'complete'>();
+  for (const tc of validEvents as Array<{ type?: string } & Parameters<typeof runningCaseKey>[0]>) {
+    if (tc.type === 'begin' || tc.type === 'complete') lastOf.set(runningCaseKey(tc), tc.type);
+  }
+
   // --- Handle begin events (test started, no DB persistence needed) ---
   for (const tc of beginEvents) {
     const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
@@ -98,7 +105,7 @@ export default eventHandler(async (event) => {
     runEventBus.publish(id, { type: 'test-begin', data: beginData });
     // A running case has no DB row until it completes, so remember its begin
     // payload for the stream catch-up; the matching complete event clears it.
-    runEventBus.recordRunningCase(id, runningCaseKey(tc), beginData);
+    if (lastOf.get(runningCaseKey(tc)) === 'begin') runEventBus.recordRunningCase(id, runningCaseKey(tc), beginData);
   }
 
   // --- Handle step events (live step readout + suite-level hooks), in batch order ---
@@ -158,7 +165,7 @@ export default eventHandler(async (event) => {
     const persisted = persistedByInputIndex.get(index);
     // The case now has a DB row, so the catch-up will replay it as
     // `test-completed` — drop the running-case entry that stood in for it.
-    runEventBus.clearRunningCase(id, runningCaseKey(tc));
+    if (lastOf.get(runningCaseKey(tc)) === 'complete') runEventBus.clearRunningCase(id, runningCaseKey(tc));
     runEventBus.publish(id, {
       type: 'test-completed',
       data: {

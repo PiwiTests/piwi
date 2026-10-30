@@ -218,6 +218,7 @@ async function cancelInstanceRuns(
   const cancelledRuns = await sharedCancelInstanceRuns(db, projectId, instanceId, excludeRunId, isShardedRun);
   for (const run of cancelledRuns) {
     publishDemoGlobalEvent({ type: 'run-cancelled', runId: run.id, projectId: run.projectId, status: 'cancelled' });
+    forgetDemoRun(run.id);
   }
 }
 
@@ -1298,6 +1299,7 @@ export async function apiCancelStaleSimulatorRuns(body: { instanceId?: string })
 
   for (const run of cancelledRuns) {
     publishDemoGlobalEvent({ type: 'run-cancelled', runId: run.id, projectId: run.projectId, status: 'cancelled' });
+    forgetDemoRun(run.id);
   }
 
   return { success: true, cancelled: cancelledRuns.length };
