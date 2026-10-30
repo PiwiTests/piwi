@@ -85,6 +85,8 @@ function eventEmoji(event: NotificationEvent, tone: Tone): string {
       return ':snail:';
     case 'environment.incident':
       return ':construction:';
+    case 'test.stuck':
+      return ':hourglass_flowing_sand:';
     case 'diagnosis.completed':
       return ':mag:';
     case 'auto_heal.pr_opened':
@@ -247,6 +249,7 @@ function detailBlocks(event: NotificationEvent, payload: NotificationPayload, li
     }
     case 'environment.incident':
     case 'auto_heal.pr_opened':
+    case 'test.stuck':
       return [];
   }
 }

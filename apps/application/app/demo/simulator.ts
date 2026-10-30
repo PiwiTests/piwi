@@ -66,6 +66,11 @@ interface SimAttempt {
   status: 'passed' | 'failed';
   /** Overrides the test duration for this attempt (e.g. a timeout) */
   duration?: number;
+  /**
+   * How long the attempt waits on its last live step, within its duration: the simulator posts a heartbeat with the
+   * virtual time every `HANG_TICK_MS` meanwhile, so the demo checks it for a stuck test (`app/demo/api/stuck-tests.ts`).
+   */
+  hangMs?: number;
   error?: string;
   consoleLogs?: Array<Record<string, unknown>>;
   dialogs?: Array<Record<string, unknown>>;
@@ -531,7 +536,16 @@ interface BaseTestOptions {
   slowNetwork?: boolean;
   slowSteps?: boolean;
   waitHeavy?: boolean;
+  /** The PayPal checkout test waits on a payment that answers only after `STUCK_HANG_MS`. */
+  stuck?: boolean;
 }
+
+/** How long the stuck scenario's PayPal test waits: past the stuck threshold of its seeded passes. */
+const STUCK_HANG_MS = 4 * 60_000;
+/** The title of the test the stuck scenario holds. */
+const STUCK_TEST_TITLE = 'should complete checkout with PayPal';
+/** How often, in virtual time, a hanging attempt posts its heartbeat. */
+const HANG_TICK_MS = 10_000;
 
 /** The `Before Hooks` section: the context and page fixtures, then a `beforeEach` hook. */
 function beforeHooksEvent(
@@ -758,6 +772,9 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
       slowestStep: slowest.title,
       slowestStepDuration: slowest.duration,
       wastedTimeMs: wastedTimeMs > 0 ? wastedTimeMs : null,
+      ...(opts.stuck && t.title === STUCK_TEST_TITLE
+        ? { attempts: [{ status: 'passed' as const, duration: duration + STUCK_HANG_MS, hangMs: STUCK_HANG_MS }] }
+        : {}),
       networkRequests: buildNetworkRequests({ slow: opts.slowNetwork }),
       webVitals: buildWebVitals(opts.slowNetwork),
       pageState: buildPageState(),
@@ -1037,6 +1054,23 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
         commitMessage: 'wip: add temporary waits while debugging flaky checkout',
       }),
     tests: () => baseTests({ waitHeavy: true }),
+  },
+  {
+    id: 'stuck',
+    label: 'Stuck test',
+    description:
+      'A PayPal checkout waits on a payment that does not answer: its row turns Stuck? while the other tests go on',
+    icon: 'i-lucide-hourglass',
+    speed: 20,
+    workers: 3,
+    environment: 'staging',
+    metadata: () =>
+      buildMetadata({
+        branch: 'main',
+        author: 'Priya Natarajan',
+        commitMessage: 'feat(checkout): call the PayPal sandbox through the new payment gateway',
+      }),
+    tests: () => baseTests({ stuck: true }),
   },
   {
     id: 'healing',
@@ -1348,6 +1382,11 @@ async function runSingleSimulation(
     });
   }
 
+  /** The run's heartbeat, with the virtual time a hanging attempt reached (`SimAttempt.hangMs`). */
+  async function postHeartbeat(at: number): Promise<void> {
+    await $fetch(`/api/test-runs/${runId}/heartbeat`, { method: 'POST', body: { streamToken, at } }).catch(() => {});
+  }
+
   // Each simulated worker pulls tests from a shared queue, mirroring how
   // Playwright distributes tests across parallel workers. Timestamps and
   // durations are reported on a virtual clock so the persisted data stays
@@ -1415,13 +1454,25 @@ async function runSingleSimulation(
             await sleep(seg / scenario.speed);
             virtualNow += seg;
             attemptRemaining -= seg;
+            // A hanging attempt waits on its last live step, its heartbeat telling the time.
+            let hung = 0;
+            if (a.hangMs && s === liveSteps[liveSteps.length - 1]) {
+              while (hung < a.hangMs && !ctl.stopped) {
+                const tick = Math.min(HANG_TICK_MS, a.hangMs - hung);
+                await sleep(tick / scenario.speed);
+                virtualNow += tick;
+                hung += tick;
+                await postHeartbeat(virtualNow);
+              }
+              attemptRemaining -= hung;
+            }
             await postEvents([
               {
                 type: 'step-end',
                 title: s.title,
                 location: test.location,
                 status: 'passed',
-                duration: seg,
+                duration: seg + hung,
                 stepCategory: s.category,
                 parentTitle: test.title,
                 workerIndex,

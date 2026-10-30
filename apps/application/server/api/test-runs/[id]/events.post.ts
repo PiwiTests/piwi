@@ -6,7 +6,7 @@ import { runEventBus } from '../../../utils/run-events';
 import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-cases';
 import { mapWireCaseToRunCase } from '../../../utils/map-wire-case';
-import { resolveRepeatEachIndex } from '../../../utils/inserted-run-cases';
+import { resolveRepeatEachIndex, runningCaseKey } from '../../../utils/inserted-run-cases';
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
 import { hiddenErrorText } from '../../../utils/sanitize';
@@ -39,21 +39,6 @@ defineRouteMeta({
 });
 
 const MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024; // 10 MB
-
-/**
- * Stable identity for a test case within a run, used to match a `begin` event
- * to its later `complete`. Mirrors the key the run page builds client-side
- * (title + location + browser + repeat), so recording on begin and clearing on
- * complete target the same running-case entry.
- */
-function runningCaseKey(tc: {
-  title?: string;
-  location?: string | null;
-  browser?: unknown;
-  repeatEachIndex?: unknown;
-}): string {
-  return `${tc.title}\x1f${tc.location ?? ''}\x1f${JSON.stringify(tc.browser ?? null)}\x1f${resolveRepeatEachIndex(tc.repeatEachIndex)}`;
-}
 
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0');
@@ -105,7 +90,8 @@ export default eventHandler(async (event) => {
       location: tc.location,
       workerIndex: tc.workerIndex ?? null,
       shardIndex: tc.shardIndex ?? null,
-      startedAt: tc.startedAt ?? null,
+      // When the reporter sent no start, when the begin came: the run page and the stuck check count from it.
+      startedAt: typeof tc.startedAt === 'number' ? tc.startedAt : Date.now(),
       browser: tc.browser ?? null,
       repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
     };

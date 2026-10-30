@@ -280,6 +280,7 @@ export function renderNotificationEmailAt(
       return eventEmail(event, payload, links, looksFixedDetail(payload as BugLooksFixedPayload, links));
     case 'environment.incident':
     case 'auto_heal.pr_opened':
+    case 'test.stuck':
       return eventEmail(event, payload, links);
   }
 }

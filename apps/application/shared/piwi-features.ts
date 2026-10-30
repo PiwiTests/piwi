@@ -158,6 +158,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/live-view',
       },
       {
+        title: 'Stuck tests',
+        summary:
+          'A running test that has run far longer than its passing runs took is marked Stuck? on its run page, and a test.stuck notification goes out once per attempt, whoever watches.',
+        needs: [],
+        where: 'Test run → Tests; Notifications → test.stuck',
+        doc: 'features/stuck-tests',
+      },
+      {
         title: 'Failure clusters & the inbox',
         summary:
           'Failures sharing an error fingerprint collapsed into one cluster, triaged once with an owner and known-issue link.',

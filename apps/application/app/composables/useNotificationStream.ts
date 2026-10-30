@@ -1,4 +1,5 @@
-import { isDesktopAppRunEvent } from '#shared/notification-events';
+import { isDesktopAppRunEvent, notificationTargetPath, type TestStuckPayload } from '#shared/notification-events';
+import { durationShort } from '#shared/relative-time';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useDiagnosisNotification } from './useDiagnosisNotification';
 import { useBrowserNotificationCookie } from './useBrowserNotificationCookie';
@@ -47,6 +48,9 @@ interface NotificationEventData {
   snapshotId?: number;
   tests?: { title: string }[];
   reason?: string;
+  testTitle?: string;
+  elapsedMs?: number;
+  usualMs?: number;
 }
 
 function renderBody(data: NotificationEventData): string {
@@ -98,6 +102,13 @@ function renderBody(data: NotificationEventData): string {
       lines.push(`${data.projectName ?? `Project #${data.projectId}`}: environment incident`);
       if (data.reason) lines.push(data.reason);
       break;
+    case 'test.stuck':
+      lines.push(`${data.projectName ?? `Project #${data.projectId}`}: a test may be stuck`);
+      if (data.testTitle) lines.push(data.testTitle);
+      if (data.elapsedMs != null && data.usualMs != null) {
+        lines.push(`Running for ${durationShort(data.elapsedMs)}, ${durationShort(data.usualMs)} at most usually`);
+      }
+      break;
     case 'report.ready':
       lines.push(`Your quality report is ready: ${data.title ?? 'open it in Piwi'}`);
       break;
@@ -112,6 +123,9 @@ function renderBody(data: NotificationEventData): string {
 
 function getLink(data: NotificationEventData): string | null {
   if (data.snapshotId) return `/reports/${data.snapshotId}`;
+  if (data.type === 'test.stuck' && data.runId && data.testTitle) {
+    return notificationTargetPath('test.stuck', data as unknown as TestStuckPayload);
+  }
   if (data.type === 'diagnosis.completed' && data.executionId) return `/test-run-cases/${data.executionId}`;
   if (data.clusterId) return `/failure-clusters/${data.clusterId}`;
   if (data.runId && data.projectId) return `/test-runs/${data.runId}`;

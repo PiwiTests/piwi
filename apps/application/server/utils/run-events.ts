@@ -19,6 +19,8 @@ import { matchesShardToken, shardTokenDigest } from './shard-tokens';
 export interface RunEvent {
   type:
     | 'test-begin'
+    /** A running test has run far longer than it usually does (`#shared/stuck-tests`): its key and `StuckAttempt`. */
+    | 'test-stuck'
     | 'test-completed'
     | 'step-begin'
     | 'step-end'
@@ -207,6 +209,11 @@ class RunEventBus {
   getRunningCases(runId: number): Record<string, unknown>[] {
     const cases = this.runningCases.get(runId);
     return cases ? [...cases.values()] : [];
+  }
+
+  /** The runs with a case still running, and each such case's begin payload, kept as recorded. */
+  *runningCaseEntries(): Generator<[runId: number, data: Record<string, unknown>]> {
+    for (const [runId, cases] of this.runningCases) for (const data of cases.values()) yield [runId, data];
   }
 
   /**

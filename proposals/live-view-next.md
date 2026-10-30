@@ -8,8 +8,9 @@ Someone who opens a slow CI run usually asks something else: what is the test do
 plan adds what explains a running test, then the page as a document rather than an image, then ways to watch a whole run
 from more places. Where it revisits a decision of the [run control ADR](../adr/run-control.md), it says so.
 
-**Status.** Proposed 2026-10-30. PR 1 is built: the call log, the action point and the element count in the view of
-a CI run (Part 1 without **Stuck?**), as Part 1 now describes it. The rest is proposed. Spikes A to H in the [appendix](#appendix-the-spikes) ran on
+**Status.** Proposed 2026-10-30. PRs 1 and 2 are built: the call log, the action point and the element count in the
+view of a CI run, and **Stuck?** with `test.stuck` (Part 1, as it now describes them; how long the step a stuck test is
+in usually takes is not built). The rest is proposed. Spikes A to H in the [appendix](#appendix-the-spikes) ran on
 Playwright 1.64.1 and are the evidence for the claims about Playwright and the costs; none of them is part of the
 repository. Spike D settled that a run Piwi pauses never turns the call stream on (D2), spike F that the runner's own
 trace needs no option to be read as it grows (D6), and spikes E, G and H set the masking rate, the video's settings and
@@ -164,11 +165,14 @@ with the element count, then its log in a box that follows its last line until t
 the action point as a dot and the element's outline, drawn by the viewer (D3). A shared run shows the call alone: the
 call stream is never on outside CI, and its log from the runner's trace (D2) is not built.
 
-**Stuck?** (D4). The instance compares each running attempt with the test's last ten passing executions. Past the
-threshold, the test's row says **Stuck?** with how long it has run and how long it usually takes, and the instance
-sends `test.stuck` once per attempt, through the project's notification channels, with a link to the row. It needs no
-viewer and no live view. With the run open, the row also names the step the test is in and how long that step usually
-takes, from the stored steps of the same executions; with the live view on, the row's **Watch** shows the why.
+**Stuck?** (D4). Every 15 seconds the instance compares each running attempt of its live runs with the test's last ten
+passing executions on its browser (`server/utils/stuck-tests.ts`, the rule in `#shared/stuck-tests`), from the start
+the reporter streams or, without one, from when its begin came; a test with fewer than two passes is never stuck. Past
+the threshold, the test's row says **Stuck?** with how long it has run and the longest of those passes, kept with the
+running test for a page opened later, and the instance sends `test.stuck` once per attempt, through the project's
+notification channels, with a link to the run searched for the test (`?search=`). It needs no viewer and no live view.
+With the run open, the row also names the step the test is in; with the live view on, the row's **Watch** shows the
+why. The demo plays it (the **Stuck test** scenario), checking on the simulator's virtual clock.
 
 ## Part 2: Secret fields masked
 

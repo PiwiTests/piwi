@@ -37,8 +37,9 @@ their own, and administrators can add global ones.
 ## Events
 
 Run events fire when a run finishes or fails, cluster events when a failure cluster appears, is fixed or regresses,
-and others on a flakiness spike, a performance regression, a finished AI diagnosis and an auto-heal pull request.
-Each event, when it fires and the payload it carries are in
+and others on a flakiness spike, a performance regression, a [stuck test](./stuck-tests), a finished AI diagnosis and
+an auto-heal pull request.
+When each event fires, and its payload, are in
 [Notification events & webhooks](/reference/notification-events). A
 [report schedule](./quality-reports#report-schedules) sends its report to the channels it names, with no subscription.
 A run from an editor, a bisect step, a reproduction, or a partial run from a developer's machine or the desktop app
@@ -116,7 +117,7 @@ The bell offers the branches and environments the project's runs reported, and t
 any characters, so `release/*` covers every release branch. A subscription delivers only events from runs on one of
 its branches **and** in one of its environments; a run that reported no branch (or environment) matches none, and an
 empty list matches every run. The filters apply to every event that comes from a run: the `run.*` events,
-`flakiness.spike`, `perf.regression`, the `cluster.*` events and `bug.looks_fixed`. `diagnosis.completed` and
+`flakiness.spike`, `perf.regression`, the `cluster.*` events, `bug.looks_fixed` and `test.stuck`. `diagnosis.completed` and
 `auto_heal.pr_opened` are not filtered.
 
 ### Through the API
@@ -125,8 +126,8 @@ The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/docs))
 
 - **Scope**: all projects (`projectId: null`, for a user who can access every project), or a single project.
 - **Filters**: `branches` and `environments` as above; for run events, status; **owner**, which applies to the
-  `run.*` events, `flakiness.spike`, `perf.regression` and `cluster.new` and delivers them only when a failing test
-  behind the event belongs to that team (see [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold`
+  `run.*` events, `flakiness.spike`, `perf.regression`, `cluster.new` and `test.stuck` and delivers them only when a
+  test behind the event belongs to that team (see [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold`
   (a 0–1 rate) and `perfRegressionPct`.
 - **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC), held until then and sent as
   **one combined message** per email, Slack or Teams channel.

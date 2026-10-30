@@ -17,6 +17,7 @@ import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import type { WireLiveResources } from '#shared/types';
 import { liveWorkerKey, type LiveViewRunState, type LiveWorkerState } from '#shared/live-view';
+import type { StuckAttempt } from '#shared/stuck-tests';
 
 const route = useRoute();
 const router = useRouter();
@@ -183,6 +184,7 @@ function flushPendingEvents() {
         repeatEachIndex?: number;
         stepCategory?: string | null;
         shardIndex?: number | null;
+        stuck?: StuckAttempt | null;
       };
       // Hook/fixture step-begin events are published as `test-begin` with a
       // `stepCategory`. They are not test cases — ignore them so they don't
@@ -210,8 +212,24 @@ function flushPendingEvents() {
             startedAt: d.startedAt ?? Date.now(),
             browser: d.browser ?? null,
             repeatEachIndex: d.repeatEachIndex ?? 0,
+            stuck: d.stuck ?? null,
           },
         ];
+        displayTestCases.value = [...liveTestCases.value];
+      }
+    } else if (parsed.type === 'test-stuck') {
+      // A running test has run far longer than it usually does: its row says so until it completes.
+      const d = data as unknown as {
+        title: string;
+        location: string;
+        browser?: { projectName?: string } | null;
+        repeatEachIndex?: number;
+      } & StuckAttempt;
+      const key = liveCaseKey(d);
+      const row = liveTestCases.value.find((tc) => tc.status === 'running' && liveCaseKey(tc) === key);
+      if (row) {
+        row.stuck = { elapsedMs: d.elapsedMs, usualMs: d.usualMs };
+        liveTestCases.value = [...liveTestCases.value];
         displayTestCases.value = [...liveTestCases.value];
       }
     } else if (parsed.type === 'test-completed') {
@@ -253,6 +271,8 @@ function flushPendingEvents() {
             filePath: d.filePath ?? existing.filePath,
             suitePath: d.suitePath ?? existing.suitePath,
             status: d.status,
+            // The attempt said to be stuck ended.
+            stuck: null,
             duration: d.duration,
             error: d.error,
             stepEvents: d.stepEvents ?? existing.stepEvents,
@@ -605,6 +625,8 @@ function buildRunSummary(): string {
 // Test-cases filter state — lifted here so it survives tab switches, and kept
 // for the page so it is still there when the user comes back to the run.
 const testCaseSearch = useViewState('run-tests:search', () => '');
+// A search the address carries (a stuck test's notification opens its row this way) wins over the kept one.
+if (typeof route.query.search === 'string') testCaseSearch.value = route.query.search;
 const testCaseActiveStatuses = useViewState<string[]>('run-tests:statuses', () => []);
 
 // The count-bar segments toggle the status filters the Tests list applies, and
