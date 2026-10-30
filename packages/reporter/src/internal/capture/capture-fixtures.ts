@@ -158,6 +158,7 @@ import {
   liveViewTestEnded,
   openLiveView,
 } from './live-view.js';
+import { trackLocatorCalls } from './live-call-log.js';
 import { guardScreencast } from './page-view.js';
 import type { LiveCall } from '@piwitests/core/live-view';
 import {
@@ -3665,6 +3666,8 @@ export const piwiFixtures: Fixtures<
       startResourceLedger(playwright, workerInfo.workerIndex);
       observeApiRequests(playwright, apiCallRecorder);
       openLiveView(workerInfo);
+      // The selector of the locator call running, for the live view's call log.
+      if (liveViewOpen()) trackLocatorCalls(playwright);
       if (await openRunChannel(workerInfo, runControl)) watchCalls(playwright);
       try {
         await use();

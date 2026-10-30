@@ -6,7 +6,9 @@
  * call it was taken at and the title of its test, a few a second at most, and the instance relays them to those viewers
  * alone and keeps none.
  * The worker also posts when its test stops and goes on (`stop`), which the run page shows, when the test watched
- * ended (`ended`), and when the run stops being shared (`unshared`). Nothing goes from the instance to the page: the
+ * ended (`ended`), and when the run stops being shared (`unshared`). In a CI run, while anyone watches, it posts too
+ * the call its test is in as Playwright logs it (`call-log`): the log's last lines, the point an input action acts on,
+ * and the elements the call's locator matches while it waits. Nothing goes from the instance to the page: the
  * view never steers the run. Each message is JSON, checked field by field (`parseInstanceToWorker`,
  * `readWorkerToInstance`).
  *
@@ -14,7 +16,7 @@
  * until a person shares the run (**Share live**, the run channel's `share`), and close it as the sharing stops. Such a
  * run without a key names why instead (`none:<why>`, `formatLiveViewMissing`), for the surfaces to say.
  */
-import { hideTypedText } from './mask';
+import { hideSecretsInText, hideTypedText, hideTypedTextInLog } from './mask';
 import type { StopReason } from './run-channel';
 
 /** The variable that names the instance's live view endpoint of the run and its key, for the workers. */
@@ -40,6 +42,12 @@ export const MAX_LIVE_FRAME_BASE64 = 4 * Math.ceil(MAX_LIVE_FRAME / 3);
 export const MAX_LIVE_MESSAGE = MAX_LIVE_FRAME_BASE64 + 8 * 1024;
 /** The longest call title a message carries; a longer one is cut. */
 const MAX_TITLE = 500;
+/** The most lines of a call's log a message carries, folded by `compressCallLog`: its last ones. */
+export const MAX_LIVE_CALL_LOG_LINES = 20;
+/** The longest line of a call's log a message carries, and the longest error; a longer one is cut. */
+const MAX_LOG_LINE = 300;
+/** The most call logs a worker posts a second: Playwright tells a call's progress every half second. */
+export const LIVE_CALL_LOGS_PER_SECOND = 4;
 /** The longest refusal a message carries; a longer one is cut. */
 const MAX_REFUSAL = 500;
 /** The longest test title a message carries; a longer one is cut. */
@@ -181,6 +189,44 @@ export interface LiveStop {
   test: string | null;
 }
 
+/** A box on the test's page, in its viewport's pixels. */
+export interface LiveBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The call a worker's test is in, as Playwright logs it while it runs: in a CI run, while anyone watches the worker.
+ * Every text has the text a call types hidden (`hideTypedText`, `hideTypedTextInLog`) and its credentials too
+ * (`hideSecretsInText`).
+ */
+export interface LiveCallLog {
+  /** Playwright's id of the call: another id is another call. */
+  id: string;
+  call: LiveCall;
+  status: 'running' | 'passed' | 'failed';
+  /**
+   * The call log's last lines, oldest first, `MAX_LIVE_CALL_LOG_LINES` at most, written as Playwright writes a failed
+   * call's log (`compressCallLog`).
+   */
+  lines: string[];
+  /** Where an input action acts, once Playwright knows it. */
+  point: { x: number; y: number } | null;
+  /**
+   * While the call waits: how many elements its locator matches, the first one's box, and whether that one is
+   * enabled. Null for a call without a locator, or one that did not wait.
+   */
+  target: { count: number; box: LiveBox | null; enabled: boolean | null } | null;
+  /** The size of the page's viewport, which the point and the box are measured in. */
+  viewport: { width: number; height: number } | null;
+  /** How long the call had run when the worker posted this, in milliseconds. */
+  ms: number;
+  /** The first line of the error the call ended with. */
+  error: string | null;
+}
+
 /** What the instance says on a worker's stream: how many people watch the worker now. */
 export type InstanceToWorker = { type: 'viewers'; count: number };
 
@@ -192,6 +238,8 @@ export type WorkerToInstance =
   | (LiveWorkerId & { type: 'frame'; refused: string })
   /** The worker's test stopped (its call), or went on (null). */
   | (LiveWorkerId & { type: 'stop'; stop: LiveStop | null })
+  /** The call the worker's test is in, as Playwright logs it; null between two calls of a test or two tests. */
+  | (LiveWorkerId & { type: 'call-log'; log: LiveCallLog | null })
   /** The test the viewers watched ended, or none runs: their view closes. */
   | (LiveWorkerId & { type: 'ended' })
   /** The person who shared the run stopped sharing it: the viewers' views close, and the worker's stream after them. */
@@ -242,6 +290,104 @@ export function readLiveCall(value: unknown): LiveCall | null {
   };
 }
 
+function isCoordinate(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 100_000;
+}
+
+/** The longest run of lines `compressCallLog` looks for repeats of: a retry of an action logs four. */
+const LONGEST_REPEAT = 12;
+
+/** Whether the `size` lines from `a` are the `size` lines from `b`. */
+function sameLines(lines: readonly string[], a: number, b: number, size: number): boolean {
+  for (let k = 0; k < size; k++) if (lines[a + k] !== lines[b + k]) return false;
+  return true;
+}
+
+/**
+ * A call's log lines as Playwright writes them in a failed call's error: each line an item (`- `) at its own indent,
+ * and lines repeated in a row written once, the first with its count (`6 × retrying click action`). From each line on,
+ * the repeat covering the most lines wins, as Playwright's `compressCallLog` picks it.
+ */
+export function compressCallLog(lines: readonly string[]): string[] {
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    let size = 1;
+    let count = 1;
+    for (let length = 1; length <= LONGEST_REPEAT && i + length * 2 <= lines.length; length++) {
+      let times = 1;
+      while (i + length * (times + 1) <= lines.length && sameLines(lines, i, i + length * times, length)) times++;
+      if (times > 1 && times * length > count * size) {
+        size = length;
+        count = times;
+      }
+    }
+    for (let k = 0; k < size; k++) {
+      const line = lines[i + k]!;
+      const indent = /^\s*/.exec(line)![0];
+      if (count === 1) out.push(`${indent}- ${line.trim()}`);
+      else if (k === 0) out.push(`${indent}${count} × ${line.trim()}`);
+      else out.push(`${indent}${' '.repeat(`${count} × `.length - 2)}- ${line.trim()}`);
+    }
+    i += size * count;
+  }
+  return out;
+}
+
+/** A line of a call's log or its error, as a viewer may read it: cut, the text it types and its credentials hidden. */
+function logText(value: string): string {
+  return hideSecretsInText(hideTypedTextInLog(value.slice(0, MAX_LOG_LINE * 2))).slice(0, MAX_LOG_LINE);
+}
+
+/** A call's log, checked field by field and its texts hidden again; null when it is not one. */
+export function readLiveCallLog(value: unknown): LiveCallLog | null {
+  if (!isObject(value) || typeof value.id !== 'string' || !value.id || value.id.length > 100) return null;
+  const call = readLiveCall(value.call);
+  if (!call) return null;
+  if (value.status !== 'running' && value.status !== 'passed' && value.status !== 'failed') return null;
+  const lines = Array.isArray(value.lines)
+    ? value.lines
+        .filter((line): line is string => typeof line === 'string')
+        .slice(-MAX_LIVE_CALL_LOG_LINES)
+        .map(logText)
+    : [];
+  const point =
+    isObject(value.point) && isCoordinate(value.point.x) && isCoordinate(value.point.y)
+      ? { x: value.point.x, y: value.point.y }
+      : null;
+  let target: LiveCallLog['target'] = null;
+  if (isObject(value.target) && isInt(value.target.count, 0, 1_000_000)) {
+    const box = value.target.box;
+    target = {
+      count: value.target.count,
+      box:
+        isObject(box) &&
+        isCoordinate(box.x) &&
+        isCoordinate(box.y) &&
+        isCoordinate(box.width) &&
+        isCoordinate(box.height)
+          ? { x: box.x, y: box.y, width: box.width, height: box.height }
+          : null,
+      enabled: typeof value.target.enabled === 'boolean' ? value.target.enabled : null,
+    };
+  }
+  const viewport =
+    isObject(value.viewport) && isInt(value.viewport.width, 1, 20_000) && isInt(value.viewport.height, 1, 20_000)
+      ? { width: value.viewport.width, height: value.viewport.height }
+      : null;
+  return {
+    id: value.id,
+    call: { ...call, title: hideSecretsInText(call.title) },
+    status: value.status,
+    lines,
+    point,
+    target,
+    viewport,
+    ms: isInt(value.ms, 0, 86_400_000) ? value.ms : 0,
+    error: typeof value.error === 'string' && value.error.trim() ? logText(value.error.split('\n')[0]!) : null,
+  };
+}
+
 /** Base64, as a frame's data is written. */
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
@@ -274,12 +420,19 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
         : 'other';
       return { type: 'stop', ...id, stop: { reason, call, test: readLiveTestTitle(value.stop.test) } };
     }
+    case 'call-log': {
+      if (value.log === null) return { type: 'call-log', ...id, log: null };
+      const log = readLiveCallLog(value.log);
+      return log
+        ? { type: 'call-log', ...id, log }
+        : 'A call log names its call, its status and its lines, or is null.';
+    }
     case 'ended':
       return { type: 'ended', ...id };
     case 'unshared':
       return { type: 'unshared', ...id };
     default:
-      return 'The message is of a type other than frame, stop, ended or unshared.';
+      return 'The message is of a type other than frame, stop, call-log, ended or unshared.';
   }
 }
 

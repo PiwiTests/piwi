@@ -494,6 +494,7 @@ export function isSecretLocator(locator: string): boolean {
  * writes the text as it is, quotes and line breaks included, so it runs to the first `")` that ends a line, a color
  * code of the error's after it or not.
  */
+// eslint-disable-next-line no-control-regex -- matches the ESC byte of a color code
 const TYPED_LOG = /\b(fill|type|insertText)\("[\s\S]*?"\)(?=(?:\u001b\[[\d;]*m|[ \t])*$)/gm;
 
 /**

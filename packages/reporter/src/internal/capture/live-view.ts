@@ -17,6 +17,7 @@ import {
   parseLiveViewEnv,
   parseLiveViewMissing,
   type LiveCall,
+  type LiveCallLog,
   type LiveStop,
   type LiveViewAddress,
   type LiveWorkerId,
@@ -27,6 +28,7 @@ import type { RunLiveState } from '@piwitests/core/run-channel';
 import { fitViewSize } from '@piwitests/core/run-view';
 import { detectCi } from '../support/ci.js';
 import { resolveShardInfo } from '../support/shard-info.js';
+import { followCallLog } from './live-call-log.js';
 import { openPageView, type PageFrame, type PageView } from './page-view.js';
 
 /**
@@ -45,7 +47,9 @@ import { openPageView, type PageFrame, type PageView } from './page-view.js';
  * the test ends (the viewers hear it, `ended`) and as its page closes; someone who watches while no test runs hears
  * why no image shows. Each frame names its test, so a view opened from one test's row ends at the next test's first
  * frame. The worker also posts when its test stops and goes on (`stop`), and the stop it holds again on each stream
- * it opens, since the instance forgets a stream's stop as it closes. Every call named goes through
+ * it opens, since the instance forgets a stream's stop as it closes. In a CI run, while someone watches, it also posts
+ * the call its test is in as Playwright logs it (`call-log`, `live-call-log.ts`), a few a second at most, the latest
+ * again for a viewer that comes later. Every call named goes through
  * `hideSecretsInText`. A test never waits on any of it: a connection that fails is tried again a few times, then given
  * up until a person shares the run again, and a refused key gives it up at once, for the worker's life. The key is out
  * of the worker's environment from the connection's opening to its close (`hideKey`).
@@ -68,6 +72,8 @@ const MAX_STATES_WAITING = 8;
 /** The JPEG quality of the image sent in place of a frame longer than `MAX_LIVE_FRAME`, and how often at most. */
 const LIGHT_QUALITY = 30;
 const SHOT_MS = 1000;
+/** The least time between two call logs a worker posts: under the instance's `LIVE_CALL_LOGS_PER_SECOND`. */
+const LOG_SPACING_MS = 300;
 /** How long ending the view may take before the test goes on without waiting for it. */
 const VIEW_END_MS = 1000;
 /** The statuses that give the connection up: the key or the run is no longer one, or the instance has no live view. */
@@ -106,6 +112,13 @@ interface Link {
   stop: LiveStop | null;
   /** Whether a frame's post is in flight. */
   posting: boolean;
+  /** A CI run's: the call log is followed while someone watches (`live-call-log.ts`). */
+  ci: boolean;
+  /** The call log shown now, whether one is posting, when the last one went, and the pause before the next goes. */
+  log: LiveCallLog | null;
+  logPosting: boolean;
+  logSentAt: number;
+  logTimer: ReturnType<typeof setTimeout> | null;
 }
 
 let link: Link | null = null;
@@ -125,7 +138,13 @@ interface RunningTest {
 
 let running: RunningTest | null = null;
 /** The view of the running test's page, while someone watches. */
-let view: { page: Page; opened: Promise<PageView | null>; onClose: () => void } | null = null;
+let view: {
+  page: Page;
+  opened: Promise<PageView | null>;
+  onClose: () => void;
+  /** What stops following the page's call log, in a CI run. */
+  following: Promise<(() => void) | null> | null;
+} | null = null;
 
 /** `PIWI_LIVE_VIEW` while the worker runs without it, and the listener that puts it back for Playwright's look. */
 let hidden: { env: NodeJS.ProcessEnv; value: string; onStop: (message: unknown) => void } | null = null;
@@ -220,7 +239,8 @@ export function openLiveView(
     address,
     id: { shard: resolveShardInfo(worker.config, env)?.current ?? null, worker: worker.workerIndex },
     client,
-    agent: new client.Agent({ keepAlive: true, maxSockets: 2 }),
+    // The stream, and a frame, a call log and a stop or an end in flight at once: none waits behind another.
+    agent: new client.Agent({ keepAlive: true, maxSockets: 4 }),
     stream: null,
     timer: null,
     retries: 0,
@@ -228,6 +248,7 @@ export function openLiveView(
     ended: false,
     refused: null,
     sharing: ci,
+    ci,
     lost: null,
     answered: null,
     viewers: 0,
@@ -235,6 +256,10 @@ export function openLiveView(
     statesWaiting: 0,
     stop: null,
     posting: false,
+    log: null,
+    logPosting: false,
+    logSentAt: 0,
+    logTimer: null,
   };
   if (ci) connect(link);
   changed();
@@ -476,7 +501,10 @@ function setViewers(own: Link, count: number): void {
     return;
   }
   if (view) {
-    if (count > before) void view.opened.then((opened) => opened?.resend());
+    if (count > before) {
+      void view.opened.then((opened) => opened?.resend());
+      if (own.log) postLog(own, own.log);
+    }
     return;
   }
   startView();
@@ -509,7 +537,9 @@ function startView(): void {
     if (view?.page === page) void stopView();
   };
   page.once('close', onClose);
-  view = { page, opened, onClose };
+  // In a CI run, nothing pauses: the call log Playwright keeps can be followed (it moves where its debugger stops).
+  const following = own.ci ? followCallLog(page, (log) => postLog(own, log)).catch(() => null) : null;
+  view = { page, opened, onClose, following };
 }
 
 /** Stop the view, `VIEW_END_MS` at most; one still opening is closed once it opened. */
@@ -518,6 +548,13 @@ async function stopView(): Promise<void> {
   view = null;
   if (!shown) return;
   shown.page.off('close', shown.onClose);
+  void shown.following?.then((stop) => stop?.());
+  const own = link;
+  if (own) {
+    own.log = null;
+    if (own.logTimer) clearTimeout(own.logTimer);
+    own.logTimer = null;
+  }
   const closed = shown.opened.then((opened) => opened?.close());
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
@@ -546,6 +583,40 @@ function postFrame(own: Link, frame: PageFrame): void {
     .catch(() => undefined)
     .finally(() => {
       own.posting = false;
+    });
+}
+
+/**
+ * Post the call log shown now, `LOG_SPACING_MS` after the one before it at the soonest, one in flight: a newer one
+ * replaces the one waiting.
+ */
+function postLog(own: Link, log: LiveCallLog): void {
+  own.log = log;
+  nextLog(own);
+}
+
+/** Post the call log shown now once the one in flight is done and the spacing allows; once for any number asked. */
+function nextLog(own: Link): void {
+  if (own.logPosting || own.logTimer) return;
+  const wait = LOG_SPACING_MS - (Date.now() - own.logSentAt);
+  if (wait > 0) {
+    own.logTimer = setTimeout(() => {
+      own.logTimer = null;
+      nextLog(own);
+    }, wait);
+    own.logTimer.unref?.();
+    return;
+  }
+  const log = own.log;
+  if (!active(own) || !view || !log) return;
+  own.logPosting = true;
+  own.logSentAt = Date.now();
+  void post(own, { type: 'call-log', ...own.id, log })
+    .catch(() => undefined)
+    .finally(() => {
+      own.logPosting = false;
+      // A newer call log came while this one went.
+      if (own.log && own.log !== log) nextLog(own);
     });
 }
 
