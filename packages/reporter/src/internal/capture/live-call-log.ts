@@ -195,10 +195,14 @@ function take(state: ContextCalls, update: CallUpdate): void {
   if (status !== 'running' && call.ended === null) call.ended = Date.now();
 }
 
-/** The call a view shows: the running call told last, else the call told last, ended. */
-function shownCall(state: ContextCalls): Call | null {
+/**
+ * The call a view shows: the running call told last, else the call told last, ended, unless it ended before `since`
+ * (in a test before the view's, of a context the two share).
+ */
+function shownCall(state: ContextCalls, since: number): Call | null {
   let shown: Call | null = null;
   for (const call of state.calls.values()) {
+    if (call.ended !== null && call.ended < since) continue;
     if (!shown) {
       shown = call;
       continue;
@@ -256,9 +260,14 @@ interface Matches {
 
 /**
  * Follow the calls of `page`'s context as Playwright logs them, telling `onLog` the call shown (`shownCall`) at once
- * and at each change. Resolves with what stops following, or null on a Playwright without the call stream.
+ * and at each change, none that ended before `since` (when the view's test began). Resolves with what stops following,
+ * or null on a Playwright without the call stream.
  */
-export async function followCallLog(page: Page, onLog: (log: LiveCallLog) => void): Promise<(() => void) | null> {
+export async function followCallLog(
+  page: Page,
+  since: number,
+  onLog: (log: LiveCallLog) => void,
+): Promise<(() => void) | null> {
   const context = page.context();
   let state = followed.get(context);
   if (!state) {
@@ -276,7 +285,7 @@ export async function followCallLog(page: Page, onLog: (log: LiveCallLog) => voi
   const onThisPage = (): boolean => !page.isClosed() && context.pages().length === 1;
 
   const tell = (): void => {
-    const shown = shownCall(calls);
+    const shown = shownCall(calls, since);
     if (stopped || !shown) return;
     const here = onThisPage();
     onLog({
@@ -296,7 +305,7 @@ export async function followCallLog(page: Page, onLog: (log: LiveCallLog) => voi
 
   // While the call shown has waited a second, the elements its locator matches.
   const timer = setInterval(() => {
-    const shown = shownCall(calls);
+    const shown = shownCall(calls, since);
     const selector = shown?.selector;
     if (stopped || reading || !shown || shown.status !== 'running' || !selector || !onThisPage()) return;
     if (Date.now() - shown.began < TARGET_EVERY_MS) return;
@@ -317,7 +326,7 @@ export async function followCallLog(page: Page, onLog: (log: LiveCallLog) => voi
       }),
     )
       .then((matches) => {
-        if (stopped || shownCall(calls) !== shown || shown.status !== 'running') return;
+        if (stopped || shownCall(calls, since) !== shown || shown.status !== 'running') return;
         // The call found its element where this read found none: it runs in a frame of the page of its own.
         if (!matches.count && shown.lines.some((line) => line.includes('locator resolved to'))) return;
         target = { id: shown.id, matches: framed ? { ...matches, box: null } : matches };

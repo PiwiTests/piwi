@@ -7,7 +7,7 @@
  * from an imported blob report's step events.
  */
 import { stripAnsi } from './error-parse';
-import { HIDDEN_VALUE, hideTypedText, hideSecretsInLog, isSecretLocator, maskTokenLike } from './mask';
+import { HIDDEN_VALUE, hideSecretsInError, hideTypedText, isSecretLocator, maskTokenLike } from './mask';
 import { isCaptureStep, sameCodeLocation } from './step-tree';
 import type { TestStepEvent, TestStepEventHook } from './wire';
 
@@ -357,7 +357,7 @@ export function flattenSteps(steps: any[], depth = 0): FlatStep[] {
     if (typeof step.subtitle === 'string' && step.subtitle.length > 0) flat.subtitle = maskTokenLike(step.subtitle);
     if (typed.params) flat.params = typed.params;
     if (step.error?.message) {
-      flat.error = { message: hideSecretsInLog(step.error.message) };
+      flat.error = { message: hideSecretsInError(step.error.message) };
       const thrownAt = locationText(step.error.location);
       if (thrownAt) flat.error.location = thrownAt;
       flat.failed = true;

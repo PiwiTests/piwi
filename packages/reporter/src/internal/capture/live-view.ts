@@ -139,6 +139,7 @@ interface RunningTest {
   call: () => LiveCall | null;
   /** Something may pause it: its call log is not followed, which would move where the debugger stops. */
   mayPause: boolean;
+  began: number;
 }
 
 let running: RunningTest | null = null;
@@ -330,7 +331,7 @@ async function stopSharing(): Promise<void> {
 /** A test titled `title` begins: `call` names the call it is on, for each frame; `mayPause` when it may pause. */
 export function liveViewTestBegan(title: string, call: () => LiveCall | null, mayPause = false): void {
   if (!link) return;
-  running = { title, page: null, call, mayPause };
+  running = { title, page: null, call, mayPause, began: Date.now() };
 }
 
 /** The running test's page: watched from now on, at once when someone already watches. */
@@ -545,8 +546,10 @@ function startView(): void {
   page.once('close', onClose);
   // The call log Playwright keeps moves where its debugger stops: it is followed in a CI run that nothing pauses.
   const following =
-    own.ci && !running?.mayPause && !own.logRefused
-      ? followCallLog(page, (log) => postLog(own, log)).catch(() => null)
+    own.ci && running && !running.mayPause && !own.logRefused
+      ? followCallLog(page, running.began, (log) => {
+          if (live()) postLog(own, log);
+        }).catch(() => null)
       : null;
   view = { page, opened, onClose, following };
 }

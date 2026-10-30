@@ -4,6 +4,7 @@ import {
   hideSecretsInText,
   hideSecretsInUrl,
   hideTypedText,
+  hideSecretsInError,
   hideSecretsInLog,
   holdsPersonalData,
   isSecretLocator,
@@ -12,6 +13,7 @@ import {
   isSecretValue,
   maskUrlFragment,
 } from '../src/mask';
+import { extractErrorSignature } from '../src/error-signature';
 
 /** A value in a provider's shape, built from parts so no scanner reads it as a live key. */
 const shaped = (...parts: string[]) => parts.join('');
@@ -329,6 +331,68 @@ describe('the other secrets of a call log', () => {
     expect(hidden).toContain('    - user-agent: Playwright/1.64.1');
     expect(hidden).toContain(`    - authorization: ${HIDDEN_VALUE}`);
     expect(hideSecretsInLog('Error: something failed')).toBe('Error: something failed');
+  });
+});
+
+describe('the secrets of an error, its fingerprint kept', () => {
+  // As Playwright 1.64 writes them, and errors of the app under test.
+  const errors = [
+    'TokenExpiredError: jwt expired\n    at verify (src/auth.ts:3:5)',
+    'Error: Auth: login redirect failed\n\nexpect(received).toBe(expected)',
+    'Session: expired before checkout',
+    [
+      'locator.fill: Timeout 1500ms exceeded.',
+      'Call log:',
+      "  - waiting for getByLabel('Password')",
+      '    - locator resolved to <input type="password" value="hunter2" id="p"/>',
+      '  - fill("hunter2")',
+    ].join('\n'),
+    [
+      'Error: expect(locator).not.toHaveValue(expected) failed',
+      '',
+      "Locator:  locator('input').nth(1)",
+      'Expected: not "hunter2"',
+      'Received: "hunter2"',
+      '',
+      'Call log:',
+      "  - waiting for locator('input').nth(1)",
+      '    9 × locator resolved to <input type="password" value="hunter2"/>',
+      '      - unexpected value "hunter2"',
+    ].join('\n'),
+    [
+      'locator.click: Timeout 5000ms exceeded.',
+      'Call log:',
+      `  - waiting for getByText('Choose type("A")')`,
+      '\n---\n',
+      'apiRequestContext.get: connect ECONNREFUSED',
+      'Call log:',
+      '  - → GET https://api.test/orders',
+      '    - authorization: Bearer abc.def.ghi',
+    ].join('\n'),
+  ];
+
+  test('go from its call logs and from the values its assertions read of a secret field', () => {
+    const hidden = errors.map(hideSecretsInError).join('\n');
+    expect(hidden).not.toMatch(/hunter2|abc\.def/);
+    expect(hidden).toContain(`value="${HIDDEN_VALUE}"`);
+    expect(hidden).toContain(`Expected: not "${HIDDEN_VALUE}"`);
+    expect(hidden).toContain(`getByText('Choose type("A")')`);
+  });
+
+  test('leave the rest of its message as it is, so it fingerprints as it did', () => {
+    for (const error of errors) {
+      expect(extractErrorSignature(hideSecretsInError(error)), error).toEqual(extractErrorSignature(error));
+    }
+    expect(hideSecretsInError(errors[0]!)).toBe(errors[0]);
+    expect(hideSecretsInError(errors[2]!)).toBe(errors[2]);
+  });
+
+  test('take a time linear in the length of the text, for a long run of capitals too', () => {
+    const started = Date.now();
+    hideSecretsInLog(`  ${'A'.repeat(200_000)}: x`);
+    hideSecretsInLog(`waiting for ${'A'.repeat(200_000)}`);
+    hideSecretsInError(`Error\nCall log:\n  - waiting for ${'A'.repeat(200_000)}`);
+    expect(Date.now() - started).toBeLessThan(2000);
   });
 });
 

@@ -8,7 +8,7 @@
  * directory of the machine that produced the archive.
  */
 
-import { hideSecretsInLog } from './mask';
+import { hideSecretsInError } from './mask';
 
 /**
  * Concatenate a result's errors into one text, deduped by the first 200
@@ -19,7 +19,7 @@ import { hideSecretsInLog } from './mask';
  * actual error (with its call log, the single most diagnostic fact) lives in
  * the remaining entries. Joining them all ensures the call log survives, so the
  * locator can be extracted and the failure clustered correctly. The text a
- * fill or a typing typed is hidden in each call log (`hideSecretsInLog`).
+ * fill or a typing typed, and what else may be a secret, is hidden in each (`hideSecretsInError`).
  */
 export function joinErrorMessages(errors: ReadonlyArray<{ message?: string }> | null | undefined): string | null {
   if (!errors || errors.length === 0) return null;
@@ -33,7 +33,7 @@ export function joinErrorMessages(errors: ReadonlyArray<{ message?: string }> | 
     const dedupeKey = msg.trim().slice(0, 200);
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
-    parts.push(hideSecretsInLog(msg));
+    parts.push(hideSecretsInError(msg));
   }
 
   return parts.join('\n---\n') || null;

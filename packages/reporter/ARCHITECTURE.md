@@ -333,7 +333,8 @@ What the package does to a user's run, process by process.
   (`context.debugger._enable()` through `internalCall`, each member checked first), which
   tells the calls running then with their log so far. Once on, the stream stays on and moves
   where the debugger stops an action, so the context's calls are followed from then until it
-  goes, and a viewer who comes later gets the call shown at once. It posts a `call-log`, with
+  goes, and a viewer who comes later gets the call shown at once, never one that ended before
+  its test began (a context shared by tests). It posts a `call-log`, with
   the test's title, as the call shown changes, `LIVE_CALL_LOGS_PER_SECOND` at most and one in
   flight, again after a 429 and never after a 400: the running call told last (else the one
   that ended last), its status, its log folded by `compressCallLog`, its action point and its
@@ -344,7 +345,9 @@ What the package does to a user's run, process by process.
   the id the runner gives the call. While the call shown has waited a second, and while the
   watched page is its context's only one, an internal `evaluateAll` reads, once a second, the
   elements its selector matches: how many, the first one's box (none for a selector into a
-  frame) and whether it is enabled.
+  frame) and whether it is enabled. A call on a frame's own object (`page.frame(…)`) has a
+  selector of that frame: the read finds nothing then (the call's log says it found its
+  element, so the read is dropped) or another element of the main frame.
 - A page has one screencast client of its own. In a worker that can open a view (a run
   connection or a live view connection), `instrumentPage` hands the test `page.screencast`
   behind a proxy (`guardScreencast`): the test's `start` or `stop` first ends the client a

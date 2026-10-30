@@ -132,7 +132,7 @@ const SECRET_NAMES = new Set(['code', 'pin']);
 function nameWords(name: string): string[] {
   return name
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/([A-Z])(?=[A-Z][a-z])/g, '$1 ')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
@@ -522,8 +522,13 @@ export function isSecretLocator(locator: string): boolean {
   );
 }
 
-/** A call of Playwright's call log that types text, up to the quote its text opens with: `fill("`, `type("`. */
-const TYPED_CALL = /\b(fill|type|insertText)\("/g;
+/**
+ * A call of Playwright's call log that types text, an item of the log, up to the quote its text opens with:
+ * `  - fill("`, `elementHandle.type("`. Never one a locator or a message names (`getByText('Choose type("A")')`).
+ */
+const TYPED_CALL =
+  // eslint-disable-next-line no-control-regex -- matches the ESC byte of a color code
+  /^((?:\u001b\[[\d;]*m)*[ \t]*(?:(?:-|\d+ ×)[ \t]+)?(?:\w+\.)?)(fill|type|insertText)\("/gm;
 
 /**
  * The `")` that ends the text a call types. Playwright writes the text as it is, quotes and line breaks included, so it
@@ -538,7 +543,7 @@ function hideTypedTextInLog(text: string): string {
   let from = 0;
   TYPED_CALL.lastIndex = 0;
   for (let call = TYPED_CALL.exec(text); call; call = TYPED_CALL.exec(text)) {
-    out += `${text.slice(from, call.index)}${call[1]}("${HIDDEN_VALUE}")`;
+    out += `${text.slice(from, call.index)}${call[1]}${call[2]}("${HIDDEN_VALUE}")`;
     TYPED_END.lastIndex = call.index + call[0].length;
     const end = TYPED_END.exec(text);
     if (!end) return out;
@@ -550,48 +555,127 @@ function hideTypedTextInLog(text: string): string {
 
 /** A line naming the locator it reads: `waiting for getByLabel('Password')`, an assertion's `Locator: …`. */
 const READ_LOCATOR = /(?:waiting for|Locator:)[ \t]+(.*)$/gm;
+/** A line of a call's log naming the element its locator resolved to as a password field. */
+const RESOLVED_PASSWORD = /resolved to <input\b[^>\n]*\btype="password"/i;
 /**
  * A value an assertion quotes of its element: `unexpected value "…"`, `Expected: "…"`, `Received string: "…"`, to the
  * last quote of its line, or to the line's end when it was cut before its quote.
  */
-// eslint-disable-next-line no-control-regex -- matches the ESC byte of a color code
-const READ_VALUE = /(unexpected value |(?:Expected|Received)(?: string)?:[ \t]*(?:\u001b\[[\d;]*m)*)"(?:.*"|.*)/g;
+const READ_VALUE =
+  // eslint-disable-next-line no-control-regex -- matches the ESC byte of a color code
+  /(unexpected value |(?:Expected|Received)(?: string)?:[ \t]*(?:\u001b\[[\d;]*m)*(?:not[ \t]+)?)"(?:.*"|.*)/g;
+/** An element of the page a call's log shows, a password field or not: `resolved to <input type="password" …>`. */
+const RESOLVED_ELEMENT = /resolved to <[^>\n]*/g;
+/** The value attribute of an element Playwright shows. */
+const VALUE_ATTRIBUTE = /\bvalue="[^"\n]*"/g;
 // eslint-disable-next-line no-control-regex -- matches the ESC byte of a color code
 const COLOR = /\u001b\[[\d;]*m/g;
 
-/** Whether a locator `text` names as the one it reads (`waiting for …`, `Locator: …`) names a field that holds a secret. */
+/**
+ * Whether `text` reads a field that holds a secret: a locator it names as the one it reads (`waiting for …`,
+ * `Locator: …`) names one (`isSecretLocator`), or the element it resolved to is a password field.
+ */
 export function namesSecretField(text: string): boolean {
+  if (RESOLVED_PASSWORD.test(text)) return true;
   for (const named of text.matchAll(READ_LOCATOR))
     if (isSecretLocator(named[1]!.replace(COLOR, '').trim())) return true;
   return false;
 }
 
-/** A header a request's log writes, an item of the log or not: `  authorization: Bearer …`, `  - x-api-key: …`. */
-const LOGGED_HEADER =
-  // eslint-disable-next-line no-control-regex -- matches the ESC byte of a color code
-  /^((?:\u001b\[[\d;]*m)*[ \t]*(?:(?:-|\d+ ×)[ \t]+)?)([A-Za-z][\w-]*): (.*?)((?:\u001b\[[\d;]*m)*)$/gm;
+/** `text` with each value its assertions quote written as {@link HIDDEN_VALUE}. */
+function hideReadValues(text: string): string {
+  return text.replace(READ_VALUE, (_, before: string) => `${before}"${HIDDEN_VALUE}"`);
+}
 
-/** `text` with the value of each header named like a credential hidden (`isSecretName`: `authorization`, `x-api-key`). */
-function hideSecretHeaders(text: string): string {
-  return text.replace(LOGGED_HEADER, (line, before: string, name: string, value: string, after: string) =>
-    value && isSecretName(name) ? `${before}${name}: ${HIDDEN_VALUE}${after}` : line,
+/**
+ * `text` with the value attribute of each element its log shows hidden, when that element is a password field or
+ * `secretField` says the call's locator names one: a field's attribute may hold what was typed into it.
+ */
+function hideResolvedValues(text: string, secretField: boolean): string {
+  if (!text.includes('resolved to <')) return text;
+  return text.replace(RESOLVED_ELEMENT, (element) =>
+    secretField || /\btype="password"/i.test(element)
+      ? element.replace(VALUE_ATTRIBUTE, `value="${HIDDEN_VALUE}"`)
+      : element,
   );
 }
 
 /**
- * `text`, a call's log or an error with its "Call log", with what may be a secret written as {@link HIDDEN_VALUE}: the
- * text each call types (`- fill("…")`, `elementHandle.type("…")`), the values an assertion quotes when a locator it
- * reads names a field that holds a secret (`namesSecretField`: `unexpected value "…"`, `Received: "…"`) or when
- * `secretField` says the call's does, and the value of each header named like a credential a request's log writes
- * (`authorization: …`). A text cut short has the rest of a typed text or a quoted value hidden. Linear in the length
- * of `text`. Pure.
+ * A header a request's log writes, up to its value: an indented line or an item of the log (`  authorization: `,
+ * `    - x-api-key: `), never the first line of an error (`TokenExpiredError: …`).
+ */
+const LOGGED_HEADER =
+  // eslint-disable-next-line no-control-regex -- matches the ESC byte of a color code
+  /^(?:\u001b\[[\d;]*m)*(?:[ \t]+(?:(?:-|\d+ ×)[ \t]+)?|(?:-|\d+ ×)[ \t]+)([A-Za-z][\w-]*): /;
+
+/** Where the color codes that end `line` begin: its length when none does. */
+function colorsAtEnd(line: string): number {
+  let end = line.length;
+  while (end > 0 && line[end - 1] === 'm') {
+    const start = line.lastIndexOf('\u001b[', end - 1);
+    if (start < 0 || !/^[\d;]*$/.test(line.slice(start + 2, end - 1))) break;
+    end = start;
+  }
+  return end;
+}
+
+/** `text` with the value of each header named like a credential hidden (`isSecretName`: `authorization`, `x-api-key`). */
+function hideSecretHeaders(text: string): string {
+  if (!text.includes(': ')) return text;
+  return text
+    .split('\n')
+    .map((line) => {
+      const header = LOGGED_HEADER.exec(line);
+      if (!header || !isSecretName(header[1]!)) return line;
+      const rest = line.slice(header[0].length);
+      const end = colorsAtEnd(rest);
+      return end === 0 ? line : `${header[0]}${HIDDEN_VALUE}${rest.slice(end)}`;
+    })
+    .join('\n');
+}
+
+/**
+ * `text`, a call's log, with what may be a secret written as {@link HIDDEN_VALUE}: the text each call types
+ * (`- fill("…")`, `elementHandle.type("…")`), the values an assertion quotes (`unexpected value "…"`) and the value
+ * attribute of the element it resolved to when it reads a field that holds a secret (`namesSecretField`) or when
+ * `secretField` says the call's locator names one, and the value of each header named like a credential a request's
+ * log writes (`authorization: …`). A text cut short has the rest of
+ * a typed text or a quoted value hidden. Linear in the length of `text`. Pure.
  */
 export function hideSecretsInLog(text: string, secretField = false): string {
-  let hidden = hideTypedTextInLog(text);
-  if (secretField || namesSecretField(hidden)) {
-    hidden = hidden.replace(READ_VALUE, (_, before: string) => `${before}"${HIDDEN_VALUE}"`);
-  }
+  const secret = secretField || namesSecretField(text);
+  let hidden = hideResolvedValues(hideTypedTextInLog(text), secret);
+  if (secret) hidden = hideReadValues(hidden);
   return hideSecretHeaders(hidden);
+}
+
+/** The line that opens an error's call log, as Playwright writes it. */
+const CALL_LOG = '\nCall log:';
+/** Where an error's call log ends: at the stack (`\n    at …`), at the next of several errors joined, or at the end. */
+const CALL_LOG_END = /\n(?:---\n|[ \t]+at )/g;
+
+/**
+ * `text`, an error as Playwright writes it, or several joined (`joinErrorMessages`), with what may be a secret written
+ * as {@link HIDDEN_VALUE}: in each of its call logs, what {@link hideSecretsInLog} hides; in its message, the values an
+ * assertion quotes when it reads a field that holds a secret (`Received: "…"`). The rest of the message stays as it
+ * is, so the error fingerprints as it did (`extractErrorSignature` reads values as values, and its selector from the
+ * message or the call log's locators). Linear in the length of `text`. Pure.
+ */
+export function hideSecretsInError(text: string): string {
+  const secretField = namesSecretField(text);
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const log = text.indexOf(CALL_LOG, from);
+    const message = text.slice(from, log === -1 ? text.length : log);
+    out += secretField ? hideReadValues(message) : message;
+    if (log === -1) return out;
+    const start = log + CALL_LOG.length;
+    CALL_LOG_END.lastIndex = start;
+    const end = CALL_LOG_END.exec(text)?.index ?? text.length;
+    out += CALL_LOG + hideSecretsInLog(text.slice(start, end), secretField);
+    from = end;
+  }
 }
 
 /**

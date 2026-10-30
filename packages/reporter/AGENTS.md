@@ -63,9 +63,9 @@ responsibilities.
      run channel shares the run (`share`, **Share live**, the state told back as `live`), and dropped quietly after
      bounded retries: only while the instance says someone watches does it post frames of the test's page, through
      the screencast helper the editor's view shares (`page-view.ts`), each with its call (through `hideSecretsInText`)
-     and its test, and in a CI run nothing may pause (`mayPause`) the call's log (`live-call-log.ts`: the context's call
-     stream turned on through `context.debugger._enable()`, which stays on, and a listener on the worker's Playwright
-     instrumentation); it always posts its test's stops (`showStop`). Never a frame while nobody watches, never
+     and its test, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
+     `live-call-log.ts`: the context's call stream turned on through `context.debugger._enable()`, which stays on, and a
+     listener on the worker's Playwright instrumentation); it always posts its test's stops (`showStop`). Never a frame while nobody watches, never
      stored, nothing from a run outside CI unless it is shared (`tests/live-view.spec.ts`,
      `tests/live-view-share.spec.ts`, `tests/live-view-worker.spec.ts`, `tests/live-view-call-log.spec.ts`). The key is
      out of the worker's `process.env` from that fixture's setup to its teardown, put back only as Playwright's
