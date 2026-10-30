@@ -433,6 +433,8 @@ export async function persistRunCases(
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
+    // Hidden once for all it is kept as; its fingerprint read the error as it came.
+    const error = hiddenErrorText(c.error);
     const fingerprint = fingerprintResults[i] ?? null;
     const caseId = resolved.caseIds[i];
 
@@ -482,10 +484,10 @@ export async function persistRunCases(
       if (pending) {
         pending.count++;
       } else {
-        // The fingerprint is computed from the raw error above; only storage is capped.
+        // The fingerprint was computed from the error as it came; its secrets hidden leave it the same.
         pendingClusters.set(fingerprint.fingerprint, {
           fp: fingerprint,
-          sampleError: capText(hiddenErrorText(c.error), limits.sampleErrorChars)!,
+          sampleError: capText(error, limits.sampleErrorChars)!,
           count: 1,
         });
       }
@@ -516,7 +518,7 @@ export async function persistRunCases(
       status: normalizeTestCaseStatus(c.status),
       duration: c.duration ?? null,
       timeout: c.timeout ?? null,
-      error: capErrorText(hiddenErrorText(c.error), limits.errorChars),
+      error: capErrorText(error, limits.errorChars),
       retries: c.retries ?? 0,
       repeatEachIndex: resolveRepeatEachIndex(c.repeatEachIndex),
       attempts: capArray(normalizeAttemptStatuses(c.attempts), 30),

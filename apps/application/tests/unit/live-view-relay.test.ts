@@ -323,6 +323,16 @@ describe('the relay', () => {
     viewer.drain();
     expect(viewer.sent.slice(1).map((m) => (m as { type: string }).type)).toEqual(['frame', 'call-log']);
 
+    // A message that comes while older ones still wait goes after them: never a stale one after it.
+    viewer.full = true;
+    live.receive(7, { ...callLog(0), log: { ...log, status: 'passed' } } as WorkerToInstance);
+    viewer.full = false;
+    live.receive(7, callLog(0));
+    expect(viewer.sent).toHaveLength(3);
+    viewer.drain();
+    expect(viewer.sent.slice(3)).toEqual([{ type: 'call-log', log, test: 'pays' }]);
+    viewer.sent.splice(3);
+
     // Why no image shows takes the image's place: the latest of the two alone reaches a slow viewer.
     viewer.full = true;
     live.receive(7, frame(0, 'AAAA'));

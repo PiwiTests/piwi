@@ -1,6 +1,6 @@
 import { filterAndCapNetworkRequests } from '#shared/utils/filter-network-requests';
 import { parseRunOrigin, RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
-import { hideSecretsInLog, maskTokenLike, maskUrlFragment } from '@piwitests/core/mask';
+import { hideSecretsInError, maskTokenLike, maskUrlFragment } from '@piwitests/core/mask';
 import { capStepValue, withoutTypedText } from '@piwitests/core/step-analysis';
 import type { IngestLimits } from '#shared/ingest-limits';
 import { withoutIncidentMetadata } from '#shared/run-incident';
@@ -266,10 +266,10 @@ export function capText(text: string | null | undefined, maxChars: number): stri
 
 /**
  * A case's error as it is stored, kept as its cluster's sample and sent to a run's live page: what may be a secret
- * hidden (`hideSecretsInLog`), before any cap cuts it. Its fingerprint reads the error as it came.
+ * hidden (`hideSecretsInError`), before any cap cuts it. Its fingerprint reads the error as it came.
  */
 export function hiddenErrorText(error: unknown): string | null {
-  return typeof error === 'string' ? hideSecretsInLog(error) : null;
+  return typeof error === 'string' ? hideSecretsInError(error) : null;
 }
 
 /**
@@ -392,7 +392,7 @@ function keepSteps(steps: unknown[], limit: number): unknown[] {
  * re-normalize each step's `subtitle` and `params` against the ingest limits,
  * masking token-shaped strings, with the text a fill, a typing or an insert
  * typed into a field that may hold a secret hidden from its title and params
- * (`withoutTypedText`), and what may be a secret from its error (`hideSecretsInLog`).
+ * (`withoutTypedText`), and what may be a secret from its error (`hideSecretsInError`).
  * Applied on ingest, so a payload is bounded and hidden whatever sent it.
  */
 export function capSteps(value: unknown, limits: IngestLimits): unknown {
@@ -421,7 +421,7 @@ export function capSteps(value: unknown, limits: IngestLimits): unknown {
     }
     const error = s.error as Record<string, unknown> | null | undefined;
     if (error && typeof error === 'object' && typeof error.message === 'string') {
-      out.error = { ...error, message: hideSecretsInLog(error.message) };
+      out.error = { ...error, message: hideSecretsInError(error.message) };
     }
     return out;
   });

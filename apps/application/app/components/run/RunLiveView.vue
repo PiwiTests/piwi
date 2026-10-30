@@ -38,6 +38,9 @@ const call = ref<LiveCall | null>(null);
 /** The call log the worker sent last, and when it came, which its time running counts on from. */
 const log = ref<LiveCallLog | null>(null);
 const logAt = ref(0);
+/** When the call log's call was first told ended, and when the last image named its call. */
+const endedAt = ref(0);
+const callAt = ref(0);
 const now = ref(Date.now());
 const notice = ref(WAITING);
 const ended = ref(false);
@@ -50,6 +53,8 @@ function connect(): void {
   image.value = null;
   call.value = null;
   log.value = null;
+  endedAt.value = 0;
+  callAt.value = 0;
   notice.value = WAITING;
   ended.value = false;
   const query = new URLSearchParams({ worker: String(props.worker) });
@@ -63,12 +68,17 @@ function connect(): void {
       if (message.test !== null && message.test !== props.test) return end(LIVE_VIEW_END_TEXT['test-ended']);
       image.value = `data:image/jpeg;base64,${message.data}`;
       call.value = message.call;
+      callAt.value = Date.now();
       notice.value = '';
     } else if (message.type === 'call-log') {
       if (message.test !== null && message.test !== props.test) return end(LIVE_VIEW_END_TEXT['test-ended']);
+      const before = log.value;
       log.value = message.log;
       logAt.value = Date.now();
       now.value = logAt.value;
+      if (message.log.status !== 'running' && (before?.id !== message.log.id || before.status === 'running')) {
+        endedAt.value = logAt.value;
+      }
     } else if (message.type === 'refused') {
       notice.value = message.message;
     } else {
@@ -131,12 +141,13 @@ function sameCall(framed: LiveCall, logged: LiveCall): boolean {
   return logged.title.startsWith(framed.title);
 }
 /**
- * The call log while it is of the call the test is in: running, or ended with no other call named by an image since
- * (a step of the test's own, an assertion of the runner's, between two calls).
+ * The call log while it is of the call the test is in: running, or ended with no image since naming another call (a
+ * step of the test's own, an assertion of the runner's, between two calls). A page that does not change sends no
+ * image, so the last one may be older than the call.
  */
 const currentLog = computed(() => {
   const shown = log.value;
-  if (!shown || shown.status === 'running' || !call.value) return shown;
+  if (!shown || shown.status === 'running' || !call.value || callAt.value <= endedAt.value) return shown;
   return sameCall(call.value, shown.call) ? shown : null;
 });
 /** The call shown: the call log's, fresher than an image's, else the image's. */
@@ -279,7 +290,12 @@ const alt = computed(
               · <span data-testid="live-call-target">{{ targetText }}</span></template
             >
           </p>
-          <ErrorText v-if="!ended && currentLog.error" :text="currentLog.error" data-testid="live-call-error" />
+          <ErrorText
+            v-if="!ended && currentLog.error"
+            :text="currentLog.error"
+            mode="block"
+            data-testid="live-call-error"
+          />
           <pre
             v-if="logLines"
             ref="logBox"

@@ -2509,7 +2509,7 @@ export const FAILURE_STORIES = [
             callLog: [
               "waiting for getByLabel('Delivery notes')",
               'locator resolved to <textarea id="delivery-notes"></textarea>',
-              'fill("Leave at the door")',
+              'fill("<hidden>")',
               'attempting fill action',
             ],
             frames,

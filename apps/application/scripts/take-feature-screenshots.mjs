@@ -4677,7 +4677,8 @@ const SCENES = [
         return response;
       };
       const { items } = await (await ok(await request.get(`${base}/api/projects/menu`), 'projects')).json();
-      const projectId = items.find((p) => p.name === 'web-dashboard').id;
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId) throw new Error('run-live-view needs the seeded web-dashboard project (npm run app:seed:dev)');
       const project = await (await ok(await request.get(`${base}/api/projects/${projectId}`), 'project')).json();
       let run = null;
       let closeStream = () => {};

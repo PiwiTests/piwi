@@ -410,11 +410,15 @@ export class LiveViewRelay {
     return largest;
   }
 
-  /** Send a message to a worker's viewers: one whose stream is backed up gets the latest alone, once it drains. */
+  /**
+   * Send a message to a worker's viewers: one whose stream is backed up, or still has messages waiting, gets the
+   * latest of each kind alone, once it drains, so a newer message never goes before an older one.
+   */
   private deliver(link: WorkerLink, message: LiveViewerMessage): void {
     for (const viewer of link.viewers) {
-      if (viewer.sink.backedUp()) viewer.pending.set(message.type === 'call-log' ? 'call-log' : 'image', message);
-      else viewer.sink.send(message);
+      if (viewer.sink.backedUp() || viewer.pending.size) {
+        viewer.pending.set(message.type === 'call-log' ? 'call-log' : 'image', message);
+      } else viewer.sink.send(message);
     }
   }
 

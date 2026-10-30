@@ -40,7 +40,7 @@ link's title when someone attaches it. Both fail quietly offline; the rest is of
 The **AI provider** is the one worth pausing on, because it alone receives your source code and the full
 failure context. It's opt-in, it goes only to the endpoint *you* set — including a local
 model over Ollama or vLLM, in which case nothing leaves the machine at all — you can preview the exact
-context before it's sent, and you can cap its size. See
+context before it's sent, and cap its size. See
 [AI diagnosis → Privacy](/features/ai-diagnosis#privacy).
 
 ## What never leaves your server
@@ -83,8 +83,8 @@ Some data is skipped at the source, so it never exists to leak:
 - **Input values in locator snapshots.** The [capture fixtures](./capture-fixtures) record what an
   element *is* — role, accessible name, test id — never what was typed into it. Traces and the
   failure-time ARIA snapshot keep typed values, password fields too: don't fill real secrets in tests.
-  Error call logs never keep them, nor a request's credentials, nor steps or an assertion's values on a field
-  whose locator names a secret (`Mot de passe`).
+  Error call logs never keep them, nor a request's credential headers, nor steps or an assertion's values on a
+  password field or one whose locator names a secret (`Mot de passe`).
   The **DOM** view and AI diagnosis show them, passwords masked.
 - **Page-inventory field contents.** The optional [page inventory](./reporter#configuration-options)
   (`capturePageInventory`, **off by default**) records the names of a page's controls and links so the
@@ -116,7 +116,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 API keys are stored as SHA-256 hashes and shown once, at creation. A leaked database gives an
 attacker no usable key.
 
-Secrets provided by environment variable are never written to the database and never returned by the
+Secrets provided by environment variable are never written to the database nor returned by the
 API — the settings UI shows them as read-only with a lock badge.
 
 ## The demo
