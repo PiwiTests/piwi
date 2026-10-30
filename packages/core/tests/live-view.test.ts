@@ -261,6 +261,16 @@ describe('the messages', () => {
     expect(liveMaskProblem("getByRole('textbox', { name: 'IBAN' })")).toBeNull();
     expect(liveMaskProblem('#iban')).toBe("`#iban` is not a Playwright locator, such as getByLabel('IBAN').");
     expect(liveMaskProblem('  ')).toBe('A masked element needs a locator.');
+    // The worker masks elements: a chain that ends on a frame, or that no page can build, masks nothing.
+    expect(liveMaskProblem("frameLocator('#card')")).toBe(
+      "`frameLocator('#card')` ends on a frame, not an element: name the iframe itself, such as locator('iframe#card').",
+    );
+    expect(liveMaskProblem("locator('iframe').contentFrame()")).toMatch(/ends on a frame/);
+    expect(liveMaskProblem("getByLabel('IBAN').owner()")).toMatch(/is not a Playwright locator/);
+    expect(liveMaskProblem('first()')).toMatch(/is not a Playwright locator/);
+    expect(liveMaskProblem("frameLocator('#card').owner()")).toBeNull();
+    expect(liveMaskProblem("frameLocator('#card').getByLabel('Card number')")).toBeNull();
+    expect(liveMaskProblem("locator('iframe').contentFrame().getByLabel('CVC').first()")).toBeNull();
   });
 });
 

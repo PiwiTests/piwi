@@ -394,6 +394,13 @@ describe('the relay', () => {
     expect(other.sent.filter((m) => (m as { type: string }).type === 'masks')).toEqual([
       { type: 'masks', locators: [] },
     ]);
+
+    // A worker whose route read the list before that change gets the change.
+    const late = new FakeSink();
+    live.connectWorker(live.authorize(9, live.mintKey(9, 1))!, { shard: null, worker: 0 }, () => late, [
+      "getByLabel('IBAN')",
+    ]);
+    expect(late.sent[0]).toEqual({ type: 'masks', locators: ["getByLabel('IBAN')", "getByTestId('card')"] });
   });
 
   test('keeps the viewers and the stop of a worker that opens its stream again', () => {

@@ -128,6 +128,8 @@ export class LiveViewRelay {
   private readonly counts = new Map<number, LiveViewCounts>();
   /** How many viewers came so far, which orders them. */
   private viewersCame = 0;
+  /** The elements each project masks, as a project admin last set them on this server. */
+  private readonly projectMasks = new Map<number, string[]>();
 
   constructor(
     private readonly publish: (runId: number, state: LiveWorkerState) => void = (runId, state) =>
@@ -230,8 +232,9 @@ export class LiveViewRelay {
       before.sink.close();
     }
     sink.onClose(() => this.disconnectWorker(entry.runId, key, link));
-    // The elements to mask go before anyone watches.
-    sink.send({ type: 'masks', locators: [...masks] } satisfies InstanceToWorker);
+    // The elements to mask go before anyone watches: the latest a project admin set here, else the route's read.
+    const locators = this.projectMasks.get(entry.projectId) ?? masks;
+    sink.send({ type: 'masks', locators: [...locators] } satisfies InstanceToWorker);
     sink.send({ type: 'viewers', count: link.viewers.size } satisfies InstanceToWorker);
     this.publish(entry.runId, { ...id, connected: true, paused: link.paused });
     return null;
@@ -329,8 +332,12 @@ export class LiveViewRelay {
     return [...run.workers.values()].map((link) => ({ ...link.id, connected: true, paused: link.paused }));
   }
 
-  /** The project now masks `locators` beside the secret fields: the workers of its live runs hear so. */
+  /**
+   * The project now masks `locators` beside the secret fields: the workers of its live runs hear so, and a worker that
+   * connects later gets them, whatever its route read before.
+   */
   setMasks(projectId: number, locators: readonly string[]): void {
+    this.projectMasks.set(projectId, [...locators]);
     const message: InstanceToWorker = { type: 'masks', locators: [...locators] };
     for (const run of this.runs.values()) {
       if (run.projectId !== projectId) continue;

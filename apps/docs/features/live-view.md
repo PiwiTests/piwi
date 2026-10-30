@@ -98,10 +98,10 @@ live view turned off, the instance restarted, or it stopped answering.
   to the database, the logs or an export. A viewer that reads slowly gets the latest image alone. The run's trace stays
   the record.
 
-**Masked in the worker**: before an image leaves it, the worker paints over password fields, fields whose
-`autocomplete` asks for a one-time code or a card's number or code, and the project's **Masked elements** (Playwright
-locators, in **Settings → Live view**). While a masked field shows, two images a second go at most. A secret in the page's own
-text still shows, as in the run's screenshots; the caption and the log hide credentials and typed text. The workers reach the dashboard with a key
+**Masked in the worker**, with `@piwitests/reporter` 0.64.0 or later (an older one masks nothing): before an image
+leaves it, the worker paints over password fields, fields whose `autocomplete` asks for a one-time code or a card's
+number or code, and the project's **Masked elements** (Playwright locators). While one shows, two images a second go at
+most. A secret in the page's own text still shows; the caption and the log hide credentials and typed text. The workers reach the dashboard with a key
 the run got as it registered: it opens this run's live view and nothing else, ends with the run, and is never in the
 environment of the tests, their hooks or their fixtures, so a process they start does not get it.
 

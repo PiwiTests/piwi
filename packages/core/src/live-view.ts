@@ -233,16 +233,48 @@ export const MAX_LIVE_MASKS = 20;
 /** The longest locator a project lists for the live view to mask. */
 export const MAX_LIVE_MASK_LENGTH = 200;
 
+/** What a chain's calls lead to, from the page: elements, or a frame. */
+type ChainEnd = 'page' | 'elements' | 'frame';
+
+/** What `method` leads to from `from`; null when it cannot be called there. */
+function chainStep(from: ChainEnd, method: string): ChainEnd | null {
+  switch (method) {
+    case 'frameLocator':
+      return from === 'page' || from === 'elements' || from === 'frame' ? 'frame' : null;
+    case 'contentFrame':
+      return from === 'elements' ? 'frame' : null;
+    case 'owner':
+      return from === 'frame' ? 'elements' : null;
+    case 'first':
+    case 'last':
+    case 'nth':
+      return from === 'page' ? null : from;
+    case 'filter':
+    case 'and':
+    case 'or':
+    case 'visible':
+      return from === 'elements' ? 'elements' : null;
+    default:
+      return 'elements';
+  }
+}
+
 /**
  * Why `locator` cannot be one of a project's masked elements, as a person reads it; null when it can: a Playwright
- * locator expression (`getByLabel('IBAN')`), as `@piwitests/core/locator-chain` reads it.
+ * locator expression (`getByLabel('IBAN')`), as `@piwitests/core/locator-chain` reads it, that ends on elements.
  */
 export function liveMaskProblem(locator: string): string | null {
   if (!locator.trim()) return 'A masked element needs a locator.';
   if (locator.length > MAX_LIVE_MASK_LENGTH) return `A locator is ${MAX_LIVE_MASK_LENGTH} characters at most.`;
-  if (!tryParseLocatorChain(locator.trim())?.calls.length) {
-    return `\`${locator.trim()}\` is not a Playwright locator, such as getByLabel('IBAN').`;
+  const source = locator.trim();
+  const chain = tryParseLocatorChain(source);
+  if (!chain?.calls.length) return `\`${source}\` is not a Playwright locator, such as getByLabel('IBAN').`;
+  let end: ChainEnd | null = 'page';
+  for (const call of chain.calls) end = end && chainStep(end, call.method);
+  if (end === 'frame') {
+    return `\`${source}\` ends on a frame, not an element: name the iframe itself, such as locator('iframe#card').`;
   }
+  if (end !== 'elements') return `\`${source}\` is not a Playwright locator, such as getByLabel('IBAN').`;
   return null;
 }
 

@@ -15,7 +15,8 @@ import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
  * is replaced by a screenshot taken between two reads, which goes painted over when those agree, and no image goes when
  * they do not (the page moved). Each image keeps the size of the frame it stands for. The paint is `jpeg-js` as
  * Playwright bundles it: an image is decoded, its boxes filled, scaled down to that size and encoded again; with no
- * `jpeg-js` to paint with, an image that shows a masked element never goes, and the viewers hear why. An element the page shows only between two reads, less than a frame's
+ * `jpeg-js` to paint with, an image that shows a masked element never goes, and the viewers hear why, as they do while
+ * a project's locator is one this Playwright cannot build. An element the page shows only between two reads, less than a frame's
  * interval, is not seen.
  */
 
@@ -84,10 +85,15 @@ function maskedIn(frame: Frame, masks: readonly string[]): Locator {
   let locator = frame.locator(SECRET_FIELD_SELECTOR);
   for (const source of masks) {
     const own = locatorOn(frame, source);
-    if (own) locator = locator.or(own);
+    if (!own) throw new Error(`The locator ${source} cannot be built.`);
+    locator = locator.or(own);
   }
   return locator;
 }
+
+/** Why no image goes: a locator of the project's this Playwright cannot build. */
+const unbuilt = (source: string): string =>
+  `The project masks ${source}, which this Playwright cannot find elements by: no image of the page goes.`;
 
 /** The boxes of the masked elements `frame` shows, in the page's viewport; null when they cannot be read. */
 async function readFrame(page: Page, frame: Frame, masks: readonly string[]): Promise<Box[] | null> {
@@ -128,6 +134,7 @@ async function readFrame(page: Page, frame: Frame, masks: readonly string[]): Pr
 async function readBoxes(page: Page, masks: readonly string[]): Promise<Box[] | string | null> {
   const frames = page.frames();
   if (frames.length > MAX_FRAMES) return TOO_MANY_FRAMES;
+  for (const source of masks) if (!locatorOn(page.mainFrame(), source)) return unbuilt(source);
   const read = await Promise.all(frames.map((frame) => readFrame(page, frame, masks)));
   if (read.some((boxes) => boxes === null)) return null;
   return (read as Box[][]).flat();

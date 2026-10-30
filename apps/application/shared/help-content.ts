@@ -531,7 +531,7 @@ export const HELP_TOPICS = {
       '',
       '- **Sent** — small JPEG images of the test’s page, a few a second, with the call each was taken at. Only while someone watches that worker.',
       '- **To** — the people who may open the run, over this instance. The images show what the page shows, the secret fields painted over.',
-      '- **Masked** — before an image leaves the worker: password fields, fields whose `autocomplete` asks for a one-time code or a card’s number or security code, and the **Masked elements** listed here (Playwright locators). A secret in the page’s own text is not masked.',
+      '- **Masked** — before an image leaves the worker: password fields, fields whose `autocomplete` asks for a one-time code or a card’s number or security code, and the **Masked elements** listed here (Playwright locators), by `@piwitests/reporter` 0.64.0 or later: an older one masks nothing. A secret in the page’s own text is not masked.',
       '- **Kept** — nothing: relayed and dropped, never in the database, the logs or an export.',
       '',
       'Only a CI run the reporter’s global setup (`wrapConfig`) registers sends it: a run on a developer’s machine sends nothing unless its developer shares it from the editor, Piwi Picker or the desktop app. Turning it off ends every view at once.',

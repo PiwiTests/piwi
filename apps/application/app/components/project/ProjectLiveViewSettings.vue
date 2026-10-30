@@ -36,12 +36,21 @@ const masksError = computed(() => {
 
 async function submit() {
   if (masksError.value) return;
+  // Only what changed is sent: a switch left as it was keeps what another admin set since.
   const before = stored();
   const on = state.value.liveView;
-  const masksChanged = state.value.masks !== before.masks;
+  const switched = on !== before.liveView;
+  const written = masks.value.join('\n');
+  const masksChanged = written !== before.masks;
+  // The text as the server keeps it: trimmed, without blank lines.
+  state.value.masks = written;
+  if (!switched && !masksChanged) return;
   let message = 'Live view settings saved';
-  if (!masksChanged && on !== before.liveView) message = on ? 'Live view turned on' : 'Live view turned off';
-  const saved = await save({ liveView: on, ...(masksChanged ? { liveViewMasks: masks.value } : {}) }, message);
+  if (!masksChanged) message = on ? 'Live view turned on' : 'Live view turned off';
+  const saved = await save(
+    { ...(switched ? { liveView: on } : {}), ...(masksChanged ? { liveViewMasks: masks.value } : {}) },
+    message,
+  );
   if (saved) emit('saved');
 }
 </script>
@@ -67,7 +76,7 @@ async function submit() {
           label="Masked elements"
           name="masks"
           :error="masksError"
-          description="Painted over in every image before it leaves the worker, beside the fields a browser keeps secret (a password, a one-time code, a card's number or security code). One Playwright locator per line."
+          description="Painted over in every image before it leaves the worker, beside the fields a browser keeps secret (a password, a one-time code, a card's number or security code), by @piwitests/reporter 0.64.0 or later: an older one masks nothing. One Playwright locator per line."
         >
           <UTextarea
             v-model="state.masks"

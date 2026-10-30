@@ -514,7 +514,7 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'live-view' } }],
     describes:
-      'The Live view section: whether people who may open a running run of the project can watch each worker’s page from the run page.',
+      'The Live view section: whether people who may open a running run can watch each worker’s page, and the elements each image masks (Playwright locators).',
     requires: { permission: 'project:manage' },
     help: 'project.live-view',
     doc: 'features/live-view',
