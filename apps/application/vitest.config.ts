@@ -10,6 +10,8 @@ export default defineConfig({
   define: { 'import.meta.client': 'globalThis.__IMPORT_META_CLIENT__ === true' },
   test: {
     include: ['tests/unit/**/*.test.ts'],
+    // Migrates one SQLite database for every test file to copy (`migrateToLatest`, tests/unit/temp-db.ts).
+    globalSetup: ['tests/unit/global-setup.ts'],
     // @piwitests/core and @piwitests/editor ship TS source; inline them so
     // Vitest transpiles them from the workspace instead of trying to load them
     // as built dependencies.

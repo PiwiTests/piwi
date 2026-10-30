@@ -1,14 +1,13 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { locatorSignatureFromExpression } from '#shared/locator-healing';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Hand-back outcomes against an in-memory SQLite database: the write path and
@@ -90,9 +89,7 @@ beforeEach(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), 'piwi-outcomes-'));
   client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
   db = drizzle(client, { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   runSeq = 0;
   await db.insert(schema.projects).values({ id: 1, name: 'shop' });
   await db.insert(schema.users).values({ id: 7, username: 'ada', password: 'x', role: 'member' });

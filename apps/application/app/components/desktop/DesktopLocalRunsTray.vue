@@ -17,10 +17,21 @@
  * and on from the start for a reproduction, makes a failure no pause bar shows
  * wait at its line (`show`); a run nobody attends (a Flake Lab, a bisect, a
  * run repeating its tests or in UI mode) holds none, and its switch says why.
+ *
+ * A run's output can move to a separate window of the app
+ * (`DesktopRunOutputWindow`), which stays open when the tray closes, and
+ * closes with the run's entry, with this component, and when the dashboard
+ * window loads another page.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isUnattendedDesktopRun } from '#shared/desktop-runs';
-import { flakeLabOutcome, localRunCompareTo, localRunTitle, type LocalRun } from '~/composables/useDesktopLocalRuns';
+import {
+  flakeLabOutcome,
+  localRunCompareTo,
+  localRunDuration,
+  localRunTitle,
+  type LocalRun,
+} from '~/composables/useDesktopLocalRuns';
 import {
   desktopHoldRefusal,
   desktopHoldsByDefault,
@@ -32,6 +43,7 @@ import {
 
 const store = useDesktopLocalRuns();
 const { runs, trayOpen, activeCount } = store;
+const toast = useToast();
 
 const available = ref(false);
 onMounted(() => {
@@ -123,6 +135,30 @@ function toggleExpanded(run: LocalRun) {
   expandedByKey.value = { ...expandedByKey.value, [run.key]: !isExpanded(run) };
 }
 
+/** The runs whose output shows in a separate window instead of the tray. */
+const separateByKey = ref<Record<number, boolean>>({});
+const separateRuns = computed(() => runs.value.filter((run) => separateByKey.value[run.key]));
+
+function setSeparate(run: LocalRun, on: boolean) {
+  separateByKey.value = { ...separateByKey.value, [run.key]: on };
+}
+
+/** What the run's window button does: open its output in a separate window, or bring it back here. */
+function separateLabel(run: LocalRun): string {
+  return separateByKey.value[run.key] ? 'Show the output here' : 'Open the output in a separate window';
+}
+
+function separateClosed(run: LocalRun, opened: boolean) {
+  setSeparate(run, false);
+  if (!opened) {
+    toast.add({
+      title: 'Could not open a separate window',
+      description: 'The output stays in the tray.',
+      color: 'error',
+    });
+  }
+}
+
 /** Each run's Hold failures choice; unset falls back to its kind's (`desktopHoldsByDefault`). */
 const holdByKey = ref<Record<number, boolean>>({});
 
@@ -161,10 +197,7 @@ watch(
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
 
 function duration(run: LocalRun): string {
-  const ms = (run.finishedAt ?? now.value) - run.startedAt;
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
+  return localRunDuration(run.startedAt, run.finishedAt, now.value);
 }
 
 function badge(run: LocalRun): { label: string; color: 'info' | 'success' | 'error' | 'neutral' } {
@@ -286,6 +319,16 @@ function runDetail(run: LocalRun): string {
                 @click="store.rerun(run)"
               />
             </UTooltip>
+            <UTooltip :text="separateLabel(run)">
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                :icon="separateByKey[run.key] ? 'i-lucide-panel-bottom-open' : 'i-lucide-app-window'"
+                :aria-label="separateLabel(run)"
+                @click="setSeparate(run, !separateByKey[run.key])"
+              />
+            </UTooltip>
             <UButton
               size="xs"
               color="neutral"
@@ -346,10 +389,22 @@ function runDetail(run: LocalRun): string {
               class="mt-2"
               @announce="announce"
             />
-            <DesktopLocalRunConsole :lines="run.lines" class="mt-2" />
+            <p v-if="separateByKey[run.key]" class="mt-2 text-xs text-muted">The output is in a separate window.</p>
+            <DesktopLocalRunConsole v-else :lines="run.lines" class="mt-2" />
           </template>
         </article>
       </div>
     </section>
+
+    <DesktopRunOutputWindow
+      v-for="run in separateRuns"
+      :key="run.key"
+      :run="run"
+      :title="localRunTitle(run)"
+      :status="badge(run)"
+      :detail="runDetail(run)"
+      @stop="store.stopRun(run)"
+      @closed="(opened: boolean) => separateClosed(run, opened)"
+    />
   </Teleport>
 </template>

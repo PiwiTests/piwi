@@ -1,11 +1,10 @@
 import { describe, test, expect, beforeAll, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import type { GlobalRunEvent } from '../../server/utils/run-events';
+import { migrateToLatest } from './temp-db';
 
 // The finish-time side effects are mocked: only that a settled run fires them matters here.
 const runFinalizeSideEffects = vi.fn(async (_db: unknown, _id: number, _run: unknown) => {});
@@ -34,8 +33,7 @@ const shardsGone = new Date(now - BATCH_SHARD_WAIT_MS - 60_000);
 // quiet past the timeout but within that wait, run 9 past it.
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  const migrationsFolder = fileURLToPath(new URL('../../server/database/migrations', import.meta.url));
-  await migrate(db, { migrationsFolder });
+  await migrateToLatest(db);
 
   await db.insert(schema.projects).values([
     { id: 1, name: 'Alpha' },

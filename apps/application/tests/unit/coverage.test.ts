@@ -1,13 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { and, eq, inArray } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 // Run deletion also clears each run's storage directory; no files exist here.
 vi.mock('../../server/storage', () => ({
@@ -58,7 +57,7 @@ afterAll(() => rmSync(tmpDir, { recursive: true, force: true }));
 /** A migrated file database: libSQL runs a transaction on its own connection, which an in-memory database does not share. */
 async function freshDb(): Promise<Db> {
   const db = drizzle(createClient({ url: `file:${join(tmpDir, `test-${++dbCount}.db`)}` }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'shop', defaultBranch: 'main' });
   testCaseCache.invalidate(1);
   testSuiteCache.invalidate(1);

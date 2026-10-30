@@ -1,17 +1,16 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { ref, watch } from 'vue';
 import * as schema from '../../server/database/schema.sqlite';
 import type { AiConfig, ResolvedAiRole } from '../../types/api';
 import type { DbClient } from '../../server/database';
 import type { DiagnosisStage } from '#shared/ai-diagnosis';
+import { migrateToLatest } from './temp-db';
 
 declare global {
   // Exposed when the test process runs with `--expose-gc` (the unit-test scripts set it).
@@ -174,9 +173,7 @@ beforeEach(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), 'piwi-ai-pipeline-'));
   client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
   db = drizzle(client, { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   dbc = db as unknown as DbClient;
   await db.insert(schema.projects).values({ id: 1, name: 'p1' });
   runIds = [];

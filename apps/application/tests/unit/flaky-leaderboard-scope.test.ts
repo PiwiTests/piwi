@@ -1,9 +1,8 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Which runs the flaky leaderboard reads: with no branch named, those of the
@@ -65,7 +64,7 @@ async function seedRun(
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   // No default branch stored: most of the project's runs are on develop.
   await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
   await db.insert(schema.testCases).values([

@@ -1,12 +1,11 @@
 import { describe, test, expect, beforeAll, beforeEach, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import type { AiConfig, ResolvedAiRole } from '../../types/api';
 import type { DbClient } from '../../server/database';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Re-diagnosing a cluster whose diagnosis was rated: the prompt carries the
@@ -55,9 +54,7 @@ const config: AiConfig = {
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'shop' });
   await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'failed', startTime: new Date() });
   await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'tests/cart.spec.ts', title: 'adds' });

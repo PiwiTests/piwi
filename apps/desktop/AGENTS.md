@@ -19,6 +19,11 @@ shell and are feature-equivalent.
     echoed by `/api/health`) before it loads the session bootstrap.
   - The main window may only navigate to its bundled pages and the sidecar's exact origin
     (`main_window_may_navigate` in `src-tauri/src/lib.rs`).
+  - A run's output window (`desktop_open_output_window`, labeled `output-<name>_<n>`) shows the dashboard's
+    `/desktop/run-output` page, stays on the sidecar's origin and holds no IPC grant: the dashboard window feeds it
+    over a `BroadcastChannel` (`app/utils/run-output-channel.ts`). Never give it the opener link of `window.open()`:
+    on macOS the new web view then shares the main window's script handlers, and closing it drops the main window's
+    IPC.
   - The IPC capability (`src-tauri/runtime-capabilities/remote.json`) is added at startup for that origin only, never
     for a port wildcard, and no capability under `src-tauri/capabilities/` grants remote content.
   - A command that turns webview input into a path or a process takes only known values: digits-only project ids,

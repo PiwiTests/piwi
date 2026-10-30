@@ -1,14 +1,13 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
+import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 process.env.PIWI_SECRET_KEY = 'unit-test-secret-key-not-for-production';
@@ -172,9 +171,7 @@ describe('connections and link resolution', () => {
     tmpDir = mkdtempSync(join(tmpdir(), 'piwi-integrations-'));
     client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
     db = drizzle(client, { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     dbc = db as unknown as DbClient;
   });
 

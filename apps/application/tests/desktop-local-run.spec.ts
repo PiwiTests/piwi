@@ -25,6 +25,7 @@ declare global {
       invocations: FakeInvocation[];
       finish: (code: number | null) => void;
       emitLine: (line: string) => void;
+      emitEvent: (name: string, payload: unknown) => void;
     };
   }
 }
@@ -42,10 +43,11 @@ interface FakeBridgeOptions {
 /** Install a fake `window.__TAURI__` before any app script runs. */
 async function installFakeBridge(page: Page, options: FakeBridgeOptions) {
   await page.addInitScript((opts: FakeBridgeOptions) => {
-    const listeners: ((event: { payload: unknown }) => void)[] = [];
-    const emit = (payload: unknown) => {
-      for (const cb of listeners) cb({ payload });
+    const listeners: Record<string, ((event: { payload: unknown }) => void)[]> = {};
+    const emitEvent = (name: string, payload: unknown) => {
+      for (const cb of listeners[name] ?? []) cb({ payload });
     };
+    const emit = (payload: unknown) => emitEvent('piwi:local-run', payload);
     const state = {
       link: opts.linked ? { path: '/home/dev/acme', exists: true } : null,
       invocations: [] as FakeInvocation[],
@@ -56,6 +58,7 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions) {
       emitLine: (line: string) => {
         emit({ id: state.lastRunId, kind: 'stdout', line, code: null });
       },
+      emitEvent,
     };
     Object.assign(window, { __piwiFakeTauri: state });
     Object.assign(window, {
@@ -93,6 +96,9 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions) {
                 return id;
               }
               case 'desktop_stop_local_tests':
+              case 'desktop_open_output_window':
+                return `output-${String(args?.name)}_0`;
+              case 'desktop_close_output_window':
               case 'desktop_notify':
               case 'desktop_set_activity':
                 return null;
@@ -103,7 +109,7 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions) {
         },
         event: {
           listen: async (name: string, cb: (event: { payload: unknown }) => void) => {
-            if (name === 'piwi:local-run') listeners.push(cb);
+            (listeners[name] ??= []).push(cb);
             return () => {};
           },
         },
@@ -114,6 +120,18 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions) {
 
 function tray(page: Page) {
   return page.getByRole('region', { name: 'Local runs' });
+}
+
+/** The name the tray opened its run's output window under, from its `desktop_open_output_window` call. */
+async function outputWindowName(page: Page): Promise<string> {
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__piwiFakeTauri.invocations.some((i) => i.cmd === 'desktop_open_output_window')),
+    )
+    .toBe(true);
+  return page.evaluate(() =>
+    String(window.__piwiFakeTauri.invocations.find((i) => i.cmd === 'desktop_open_output_window')!.args!.name),
+  );
 }
 
 function runInvocations(page: Page) {
@@ -330,6 +348,92 @@ test.describe('Desktop local run', () => {
       window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').map((i) => i.args),
     );
     expect(stops).toEqual([{ runId: 7 }, { runId: 7 }]);
+  });
+
+  test('colored output shows in its colors and still counts the tests', async ({ page }) => {
+    await installFakeBridge(page, { linked: true, autoExit: false });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    // Playwright's list reporter with FORCE_COLOR=1, as the shell runs it.
+    await page.evaluate(() =>
+      window.__piwiFakeTauri.emitLine(
+        '\u001b[2mRunning \u001b[22m3\u001b[2m tests using \u001b[22m2\u001b[2m workers\u001b[22m',
+      ),
+    );
+    await expect(tray(page).getByText('Running 0/4…', { exact: true })).toBeVisible();
+    await page.evaluate(() =>
+      window.__piwiFakeTauri.emitLine(
+        '  \u001b[32m✓\u001b[39m  \u001b[2m1 \u001b[22m[chromium] › tests/checkout.spec.ts:42:18 › checkout completes\u001b[2m (1.2s)\u001b[22m',
+      ),
+    );
+    await expect(tray(page).getByText('Running 1/4…', { exact: true })).toBeVisible();
+
+    await expect(tray(page).getByText('Running 3 tests using 2 workers')).toBeVisible();
+    await expect(tray(page).locator('span', { hasText: /^✓$/ })).toHaveCSS('color', 'rgb(74, 222, 128)');
+    await expect(tray(page).getByText('[22m')).toHaveCount(0);
+  });
+
+  test("a run's output moves to a separate window, and back when the window closes", async ({ page }) => {
+    await installFakeBridge(page, { linked: true, autoExit: false });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect(tray(page).getByText('Running 1 test using 1 worker')).toBeVisible();
+    await tray(page).getByRole('button', { name: 'Open the output in a separate window' }).click();
+    await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
+    const name = await outputWindowName(page);
+
+    // The shell opens the window on this page; the tray feeds it over their BroadcastChannel.
+    const outputPage = await page.context().newPage();
+    await outputPage.goto(`/desktop/run-output?name=${name}`);
+    await waitForHydration(outputPage);
+    const output = outputPage.getByRole('region', { name: 'Run output' });
+    await expect(output.getByText('Running 1 test using 1 worker')).toBeVisible();
+    await expect(output.getByRole('heading', { name: `1 failed test of run #${runId}` })).toBeVisible();
+    await expect(outputPage).toHaveTitle(`1 failed test of run #${runId} · Piwi Dashboard`);
+
+    // Lines keep arriving in the window, and the run stops from it.
+    await page.evaluate(() => window.__piwiFakeTauri.emitLine('  \u001b[32m1 passed\u001b[39m (2.0s)'));
+    await expect(output.getByText('1 passed (2.0s)')).toBeVisible();
+    await expect(output.locator('span', { hasText: /^1 passed$/ })).toHaveCSS('color', 'rgb(74, 222, 128)');
+    await output.getByRole('button', { name: 'Stop' }).click();
+    await expect(output.getByRole('button', { name: 'Force stop' })).toBeVisible();
+    const stops = await page.evaluate(
+      () => window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').length,
+    );
+    expect(stops).toBe(1);
+
+    // The shell says the window is gone: the output comes back to the tray.
+    await page.evaluate(
+      (label) => window.__piwiFakeTauri.emitEvent('piwi:output-window-closed', label),
+      `output-${name}_0`,
+    );
+    await expect(tray(page).getByText('1 passed (2.0s)')).toBeVisible();
+    await expect(tray(page).getByText('The output is in a separate window.')).toHaveCount(0);
+  });
+
+  test('Show the output here closes the separate window', async ({ page }) => {
+    await installFakeBridge(page, { linked: true });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect(tray(page).getByText('1 passed (2.0s)')).toBeVisible();
+    await tray(page).getByRole('button', { name: 'Open the output in a separate window' }).click();
+    await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
+    const name = await outputWindowName(page);
+
+    const toggle = tray(page).getByRole('button', { name: 'Show the output here' });
+    await toggle.click();
+    await expect(tray(page).getByText('1 passed (2.0s)')).toBeVisible();
+    await expect(tray(page).getByRole('button', { name: 'Open the output in a separate window' })).toBeFocused();
+    const closes = await page.evaluate(() =>
+      window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_close_output_window').map((i) => i.args),
+    );
+    expect(closes).toEqual([{ name }]);
   });
 
   test('a run from the menu runs once, and leaves the project defaults alone', async ({ page }) => {

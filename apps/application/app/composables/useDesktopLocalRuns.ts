@@ -32,6 +32,7 @@ import { specRunVerdict, type SpecRunResult, type SpecRunVerdict } from '@piwite
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { desktopJobVerdict, flakeLabJobReport, localRunOriginKind, newLocalRunRef } from '~/utils/desktop-job';
 import { desktopRunRef } from '~/utils/desktop-run-view';
+import { stripAnsi } from '~/utils/text-format';
 import type { ReproRequestView } from '#shared/desktop-repro';
 import type { FlakeLabJobReport } from '@piwitests/core/desktop-job';
 
@@ -170,8 +171,13 @@ export interface LocalRunSet {
 export type SavedLocalRunOptions = Required<LocalRunOptions>;
 
 export interface LocalRunLine {
+  /** The line's number in its run, from 1: its key while the run keeps its last `LOCAL_RUN_MAX_LINES`. */
+  id: number;
+  /** The line without its ANSI color codes. */
   text: string;
   error: boolean;
+  /** The line as printed, ANSI color codes included; only on a line that has them and has text. */
+  ansi?: string;
 }
 
 export interface LocalRun {
@@ -214,6 +220,8 @@ export interface LocalRun {
   flakeTestCaseId: number | null;
   status: LocalRunStatus;
   lines: LocalRunLine[];
+  /** The lines the run printed so far, its first ones dropped from `lines` included. */
+  linesTotal: number;
   exitCode: number | null;
   startedAt: number;
   finishedAt: number | null;
@@ -271,6 +279,13 @@ export function localRunProgressLabel(run: LocalRun): string {
 function casesTitle(cases: readonly RetryCase[]): string {
   if (cases.length === 1 && cases[0]!.title) return cases[0]!.title;
   return `${cases.length} test${cases.length === 1 ? '' : 's'}`;
+}
+
+/** How long a run has run, or ran: `42s`, `3m 05s`. */
+export function localRunDuration(startedAt: number, finishedAt: number | null, now: number): string {
+  const seconds = Math.max(0, Math.round(((finishedAt ?? now) - startedAt) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
 }
 
 /** What a run runs, in words: the tray's row title, the toasts and the Run again tooltip read it. */
@@ -375,7 +390,7 @@ interface LocalRunEventPayload {
 }
 
 /** Output lines kept per run — a soak run can produce hundreds of thousands. */
-const MAX_LINES = 2000;
+export const LOCAL_RUN_MAX_LINES = 2000;
 /**
  * How long after a stop request a run's step counts as over even with no exit
  * event: the shell's grace period before it kills the process, plus a margin.
@@ -399,9 +414,10 @@ let toastApi: ReturnType<typeof useToast> | null = null;
 let routerApi: ReturnType<typeof useRouter> | null = null;
 let optionsLoaded = false;
 
-// Playwright's list reporter, as the shell captures it (plain, non-TTY): a
-// "Running N tests using M workers" announcement per step, then one line per
-// finished test starting with a result mark (✓/✘ or the ASCII fallbacks).
+// Playwright's list reporter, as the shell captures it (non-TTY), read without
+// its colors: a "Running N tests using M workers" announcement per step, then
+// one line per finished test starting with a result mark (✓/✘ or the ASCII
+// fallbacks).
 const PROGRESS_TOTAL_RE = /^Running (\d+) tests? using \d+ workers?$/;
 const PROGRESS_RESULT_RE = /^\s{1,6}(?:✓|✘|✗|x|ok|-)\s+\d+\s/;
 
@@ -443,9 +459,11 @@ export function useDesktopLocalRuns() {
     }
   }
 
-  function pushLine(run: LocalRun, text: string, error: boolean) {
-    run.lines.push({ text, error });
-    if (run.lines.length > MAX_LINES) run.lines.splice(0, run.lines.length - MAX_LINES);
+  function pushLine(run: LocalRun, printed: string, error: boolean) {
+    const text = stripAnsi(printed);
+    const id = ++run.linesTotal;
+    run.lines.push(text === printed || !text ? { id, text, error } : { id, text, error, ansi: printed });
+    if (run.lines.length > LOCAL_RUN_MAX_LINES) run.lines.splice(0, run.lines.length - LOCAL_RUN_MAX_LINES);
     if (error) return;
     const total = PROGRESS_TOTAL_RE.exec(text);
     if (total) {
@@ -955,6 +973,7 @@ export function useDesktopLocalRuns() {
       originRef,
       status: 'running',
       lines: [],
+      linesTotal: 0,
       exitCode: null,
       startedAt: Date.now(),
       finishedAt: null,

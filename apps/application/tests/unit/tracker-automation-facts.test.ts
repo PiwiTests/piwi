@@ -1,9 +1,8 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Whether automatic creation reads a cluster as tracked: the rule a new filing
@@ -44,9 +43,7 @@ const REGRESSED = new Set([
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'shop', label: 'Shop' });
   await db.insert(schema.testCases).values({ id: 1, projectId: 1, title: 'pays', filePath: 'tests/pay.spec.ts' });
   await db.insert(schema.testRuns).values({

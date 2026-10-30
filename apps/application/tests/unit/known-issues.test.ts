@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq, inArray } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 /**
  * A cluster's known issue — the issue created from (or pinned to) one of its
@@ -27,9 +26,7 @@ const JIRA_URL = 'https://acme.atlassian.net/browse/PIWI-12';
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'shop', label: 'Shop' });
   await db.insert(schema.testCases).values([
     { id: 1, projectId: 1, title: 'pays by card', filePath: 'tests/checkout.spec.ts' },

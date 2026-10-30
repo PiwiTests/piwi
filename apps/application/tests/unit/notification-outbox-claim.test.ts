@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeAll, beforeEach, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 /**
  * The notification outbox sends each delivery once: overlapping sweeps share
@@ -67,7 +66,7 @@ async function statusOf(id: number) {
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   const [channel] = await db
     .insert(schema.notificationChannels)
     .values({ name: 'Hook', type: 'webhook', config: { url: 'https://hooks.example.com/piwi' } })

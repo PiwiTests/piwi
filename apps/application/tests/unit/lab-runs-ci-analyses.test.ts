@@ -1,11 +1,10 @@
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq, inArray } from 'drizzle-orm';
 import sharp from 'sharp';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
@@ -59,7 +58,7 @@ const BROWSE_ERROR = 'Error: expect(locator).toBeVisible() failed\n\n    at /rep
 
 async function freshDb(): Promise<Db> {
   const db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: PROJECT_ID, name: 'lab-runs' });
   testCaseCache.invalidate(PROJECT_ID);
   testSuiteCache.invalidate(PROJECT_ID);
