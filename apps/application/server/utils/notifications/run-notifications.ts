@@ -37,6 +37,7 @@ import type {
   LooksFixedTest,
   RunCommit,
   RunHistoryEntry,
+  TestStuckPayload,
 } from '#shared/notification-events';
 import type { TestMetadata } from '#shared/types';
 import { readRunIncident } from '#shared/run-incident';
@@ -430,6 +431,57 @@ export async function emitRunInterrupted(db: DbClient, runId: number): Promise<v
     await emitNotification(db, 'run.interrupted', loaded.runPayload);
   } catch (e) {
     console.error('[notifications] emitRunInterrupted failed', e);
+  }
+}
+
+/** A running attempt said to be stuck (`#shared/stuck-tests`), as the checker knows it. */
+export type StuckTestNotice = Pick<
+  TestStuckPayload,
+  | 'testTitle'
+  | 'suitePath'
+  | 'location'
+  | 'browserName'
+  | 'repeatEachIndex'
+  | 'workerIndex'
+  | 'shardIndex'
+  | 'startedAt'
+  | 'elapsedMs'
+  | 'usualMs'
+> & { filePath: string; owner: string | null };
+
+/**
+ * Emit `test.stuck` for a running attempt of a live run, once per attempt (its run, its start and its test key its
+ * deliveries): the run must still run and send notifications.
+ */
+export async function emitTestStuck(db: DbClient, runId: number, stuck: StuckTestNotice): Promise<void> {
+  try {
+    const [runRow] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
+    // A run that sends notifications once complete: a full run counts as complete while it runs, a partial one never.
+    if (!runRow || runRow.status !== 'running' || !isEligibleRun({ ...runRow, status: 'passed' }, 'notifications')) {
+      return;
+    }
+    const [project] = await db.select().from(projects).where(eq(projects.id, runRow.projectId));
+    if (!project) return;
+    const branch = runRow.branch ?? resolveRunBranch(runRow.metadata) ?? undefined;
+    const defaultBranch = await resolveDefaultBranch(db, project, runRow.metadata);
+    const ciUrl = runCiUrl(runRow.metadata);
+    const { owner: declared, filePath, ...attempt } = stuck;
+    const test = { filePath, owner: declared };
+    const owner = (await resolveOwners(db, runRow.projectId, [test])).get(test)?.owner ?? null;
+    await emitNotification(db, 'test.stuck', {
+      ...attempt,
+      runId,
+      projectId: runRow.projectId,
+      projectName: project.label || project.name,
+      branch,
+      environment: runRow.environment ?? undefined,
+      isDefaultBranch: branch ? branch === defaultBranch : false,
+      origin: runRow.origin,
+      ...(ciUrl ? { ciUrl } : {}),
+      ...(owner ? { owners: [owner] } : {}),
+    });
+  } catch (e) {
+    console.error('[notifications] emitTestStuck failed', e);
   }
 }
 

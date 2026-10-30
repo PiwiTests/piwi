@@ -49,6 +49,8 @@ function markIcon(type: string): string | undefined {
 
 /** Inputs for a test row's badge list, drawn from one execution. */
 export interface TestRowBadgeInput {
+  /** This running attempt has run far longer than its test usually does (`#shared/stuck-tests`). */
+  stuck?: boolean | null;
   isNewRegression?: boolean | null;
   isNewFlaky?: boolean | null;
   /** This execution failed at least once in the run and then passed. */
@@ -73,6 +75,16 @@ export interface TestRowBadgeInput {
 export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
   const badges: TestRowBadge[] = [];
 
+  if (input.stuck) {
+    badges.push({
+      key: 'stuck',
+      label: 'Stuck?',
+      color: 'warning',
+      variant: 'subtle',
+      icon: 'i-lucide-hourglass',
+      title: 'Running far longer than its last passing runs took: open its live view, or its step, to see why',
+    });
+  }
   if (input.looksFixed) {
     badges.push({
       key: 'looks-fixed',
@@ -180,6 +192,7 @@ export function buildTestRowBadges(input: TestRowBadgeInput): TestRowBadge[] {
 /** Whether a badge is one of the exceptional signals (shown even when others hide). */
 export function badgesFromTestCase(tc: TestCaseResult, opts?: { quarantined?: boolean }): TestRowBadge[] {
   return buildTestRowBadges({
+    stuck: tc.status === 'running' && tc.stuck != null,
     looksFixed: isExpectedFailurePassed(tc.status, tc.expectedStatus),
     isNewRegression: tc.isNewRegression,
     isNewFlaky: tc.isNewFlaky,

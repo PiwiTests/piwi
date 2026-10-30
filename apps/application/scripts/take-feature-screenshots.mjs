@@ -4820,6 +4820,106 @@ const SCENES = [
     },
   },
   {
+    name: 'run-stuck-test',
+    description:
+      'Run page while live: a test running five minutes where its passing runs took seconds is marked Stuck?, with how long it has run against its usual time, at 1280 and 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 720 },
+    outputs: ['run-stuck-test.png', 'run-stuck-test-narrow.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const post = (path, options) => postRetrying(request, base, path, options);
+      const project = 'checkout-stuck';
+      const browser = { projectName: 'chromium' };
+      const tests = [
+        { title: 'pays with PayPal', location: 'tests/checkout.spec.ts:24:3', usual: 6400 },
+        { title: 'pays with a saved card', location: 'tests/checkout.spec.ts:41:3', usual: 5200 },
+        { title: 'keeps the cart after sign-in', location: 'tests/cart.spec.ts:12:3', usual: 3100 },
+      ];
+      // Two earlier runs where every test passed in seconds.
+      for (const day of [2, 1]) {
+        await post('/api/test-runs/submit', {
+          data: {
+            projectName: project,
+            status: 'passed',
+            startTime: new Date(Date.now() - day * 86_400_000).toISOString(),
+            duration: 20_000,
+            totalTests: tests.length,
+            passedTests: tests.length,
+            failedTests: 0,
+            skippedTests: 0,
+            testCases: tests.map((t) => ({
+              title: t.title,
+              status: 'passed',
+              duration: t.usual,
+              location: t.location,
+              browser,
+            })),
+          },
+        });
+      }
+      const { runId, streamToken } = await (
+        await post('/api/test-runs/start', {
+          data: { projectName: project, startTime: new Date(Date.now() - 6 * 60_000).toISOString(), totalTests: 3 },
+        })
+      ).json();
+      const now = Date.now();
+      try {
+        await post(`/api/test-runs/${runId}/events`, {
+          data: {
+            streamToken,
+            testCases: [
+              { ...tests[2], type: 'begin', workerIndex: 1, startedAt: now - 6 * 60_000, browser },
+              {
+                type: 'complete',
+                title: tests[2].title,
+                location: tests[2].location,
+                status: 'passed',
+                duration: 3300,
+                workerIndex: 1,
+                startedAt: now - 6 * 60_000,
+                browser,
+              },
+              { ...tests[0], type: 'begin', workerIndex: 0, startedAt: now - 5 * 60_000, browser },
+              { ...tests[1], type: 'begin', workerIndex: 1, startedAt: now - 2000, browser },
+            ],
+          },
+        });
+        await goto(`/test-runs/${runId}`);
+        // The server checks its live runs every 15 seconds.
+        await page.locator('[data-testid="stuck-time"]:visible').first().waitFor({ timeout: 60_000 });
+        // The step it waits on: live steps reach only the pages open as they stream.
+        await post(`/api/test-runs/${runId}/events`, {
+          data: {
+            streamToken,
+            testCases: [
+              {
+                type: 'step-begin',
+                title: 'Click',
+                subtitle: "getByRole('button', { name: 'Pay with PayPal' })",
+                location: 'tests/checkout.spec.ts:31:5',
+                stepCategory: 'pw:api',
+                parentTitle: tests[0].title,
+                workerIndex: 0,
+                startedAt: now - 4 * 60_000,
+              },
+            ],
+          },
+        });
+        await page.locator('[data-testid="live-step"]:visible').first().waitFor({ timeout: 30_000 });
+        await settle();
+        await shoot();
+        await page.setViewportSize({ width: 390, height: 844 });
+        await settle();
+        await shoot('narrow');
+      } finally {
+        await request.post(`${base}/api/test-runs/${runId}/finish`, {
+          data: { streamToken, status: 'passed', totalTests: 3 },
+        });
+      }
+    },
+  },
+  {
     name: 'run-live-desktop',
     description:
       'Run page in the desktop app while live: the running row says where its test’s page shows, and its help lists where',

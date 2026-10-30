@@ -9,8 +9,10 @@
  * (see app/demo/run-events.ts).
  */
 
+import { resolveBrowserName } from '#shared/browser-name';
 import { eq, and, or, sql } from 'drizzle-orm';
 import { getDemoDb } from '../db.client';
+import { checkDemoStuckTests, forgetDemoRun, noteDemoBegin, noteDemoComplete } from './stuck-tests';
 import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
 import {
   projects,
@@ -216,6 +218,7 @@ async function cancelInstanceRuns(
   const cancelledRuns = await sharedCancelInstanceRuns(db, projectId, instanceId, excludeRunId, isShardedRun);
   for (const run of cancelledRuns) {
     publishDemoGlobalEvent({ type: 'run-cancelled', runId: run.id, projectId: run.projectId, status: 'cancelled' });
+    forgetDemoRun(run.id);
   }
 }
 
@@ -525,16 +528,6 @@ export interface RunCaseInput {
   didNotRunReason?: string | null;
   expectedStatus?: string | null;
   blockedBy?: string | null;
-}
-
-/** Browser identity for the unique (run, case, repeat, retries, browser) key. */
-function resolveBrowserName(browser: unknown): string | null {
-  if (typeof browser === 'string') return browser;
-  if (browser && typeof browser === 'object') {
-    const b = browser as Record<string, unknown>;
-    if (typeof b.projectName === 'string') return b.projectName;
-  }
-  return null;
 }
 
 /**
@@ -885,27 +878,30 @@ export async function apiPostRunEvents(
   for (const tc of beginEvents) {
     const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
     const filePath = loc.filePath;
-    publishDemoRunEvent(id, {
-      type: 'test-begin',
-      data: {
-        title: tc.title,
-        filePath,
-        suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
-        location: tc.location,
-        workerIndex: tc.workerIndex ?? null,
-        shardIndex: tc.shardIndex ?? null,
-        startedAt: tc.startedAt ?? null,
-        browser: tc.browser ?? null,
-        repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
-      },
-    });
+    const beginData = {
+      title: tc.title,
+      filePath,
+      suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
+      location: tc.location,
+      workerIndex: tc.workerIndex ?? null,
+      shardIndex: tc.shardIndex ?? null,
+      startedAt: typeof tc.startedAt === 'number' ? tc.startedAt : Date.now(),
+      browser: tc.browser ?? null,
+      repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
+    };
+    publishDemoRunEvent(id, { type: 'test-begin', data: beginData });
+    noteDemoBegin(id, beginData);
   }
+  for (const tc of completeEvents) noteDemoComplete(id, tc);
 
   // Step events publish in batch order through the helper the server's events
   // handler (server/api/test-runs/[id]/events.post.ts) uses.
   for (const stepEvent of stepRunEvents) {
     publishDemoRunEvent(id, stepEvent);
   }
+
+  // Mirrors the server's stuck check, on the time the run's events reached (`./stuck-tests`).
+  await checkDemoStuckTests(db, testRun, validEvents);
 
   if (completeEvents.length === 0) {
     return { success: true, processed: beginEvents.length + stepRunEvents.length, watched: DEMO_RUN_WATCHED };
@@ -995,7 +991,7 @@ export async function apiPostRunEvents(
 }
 
 /** POST /api/test-runs/:id/heartbeat */
-export async function apiHeartbeatTestRun(id: number, body: { streamToken?: string }) {
+export async function apiHeartbeatTestRun(id: number, body: { streamToken?: string; at?: number }) {
   const db = await getDemoDb();
 
   const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
@@ -1007,6 +1003,8 @@ export async function apiHeartbeatTestRun(id: number, body: { streamToken?: stri
   await validateAndReviveDemoRun(db, testRun, body.streamToken, !!isValidShardToken);
 
   await db.update(testRuns).set({ updatedAt: new Date() }).where(eq(testRuns.id, id));
+  // The simulator's heartbeat carries the virtual time a hanging test reached: the stuck check runs at it.
+  if (typeof body.at === 'number') await checkDemoStuckTests(db, testRun, [{ startedAt: body.at }]);
 
   return { success: true, watched: DEMO_RUN_WATCHED };
 }
@@ -1169,6 +1167,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       });
 
       publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status: finalStatus });
+      forgetDemoRun(id);
 
       await recordRunHealth(db, id).catch(() => {});
       await syncAutoMarkersForRun(db, id).catch(() => {});
@@ -1264,6 +1263,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   });
 
   publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
+  forgetDemoRun(id);
 
   await recordRunHealth(db, id).catch(() => {});
   await syncAutoMarkersForRun(db, id).catch(() => {});
@@ -1299,6 +1299,7 @@ export async function apiCancelStaleSimulatorRuns(body: { instanceId?: string })
 
   for (const run of cancelledRuns) {
     publishDemoGlobalEvent({ type: 'run-cancelled', runId: run.id, projectId: run.projectId, status: 'cancelled' });
+    forgetDemoRun(run.id);
   }
 
   return { success: true, cancelled: cancelledRuns.length };

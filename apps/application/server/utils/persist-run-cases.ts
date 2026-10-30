@@ -1,3 +1,4 @@
+import { resolveBrowserName } from '#shared/browser-name';
 import { projects, testRuns, testRunsCases, testSuites, networkRequests } from '../database/schema';
 import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import {
@@ -161,15 +162,6 @@ export interface RunCaseInput {
   expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
-}
-
-function resolveBrowserName(browser: unknown): string | null {
-  if (typeof browser === 'string') return browser;
-  if (browser && typeof browser === 'object') {
-    const b = browser as Record<string, unknown>;
-    if (typeof b.projectName === 'string') return b.projectName;
-  }
-  return null;
 }
 
 /**

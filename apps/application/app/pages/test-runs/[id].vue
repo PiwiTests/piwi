@@ -17,6 +17,7 @@ import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import type { WireLiveResources } from '#shared/types';
 import { liveWorkerKey, type LiveViewRunState, type LiveWorkerState } from '#shared/live-view';
+import type { StuckAttempt } from '#shared/stuck-tests';
 
 const route = useRoute();
 const router = useRouter();
@@ -183,6 +184,7 @@ function flushPendingEvents() {
         repeatEachIndex?: number;
         stepCategory?: string | null;
         shardIndex?: number | null;
+        stuck?: StuckAttempt | null;
       };
       // Hook/fixture step-begin events are published as `test-begin` with a
       // `stepCategory`. They are not test cases — ignore them so they don't
@@ -210,8 +212,45 @@ function flushPendingEvents() {
             startedAt: d.startedAt ?? Date.now(),
             browser: d.browser ?? null,
             repeatEachIndex: d.repeatEachIndex ?? 0,
+            stuck: d.stuck ?? null,
           },
         ];
+        displayTestCases.value = [...liveTestCases.value];
+      } else {
+        // A known test begins again: a retry starts (its row runs again, unmarked), or a
+        // reconnected stream catches up on a running attempt (its row takes the mark it carries).
+        const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
+        const existing = idx >= 0 ? liveTestCases.value[idx]! : null;
+        if (existing && (existing.status !== 'running' || d.stuck)) {
+          const copy = [...liveTestCases.value];
+          copy[idx] =
+            existing.status === 'running'
+              ? { ...existing, stuck: d.stuck ?? existing.stuck }
+              : {
+                  ...existing,
+                  status: 'running',
+                  workerIndex: d.workerIndex ?? existing.workerIndex,
+                  shardIndex: d.shardIndex ?? existing.shardIndex,
+                  startedAt: d.startedAt ?? Date.now(),
+                  stuck: d.stuck ?? null,
+                };
+          liveTestCases.value = copy;
+          displayTestCases.value = [...copy];
+        }
+      }
+    } else if (parsed.type === 'test-stuck') {
+      // A running test has run far longer than it usually does: its row says so until it completes.
+      const d = data as unknown as {
+        title: string;
+        location: string;
+        browser?: { projectName?: string } | null;
+        repeatEachIndex?: number;
+      } & StuckAttempt;
+      const key = liveCaseKey(d);
+      const row = liveTestCases.value.find((tc) => tc.status === 'running' && liveCaseKey(tc) === key);
+      if (row) {
+        row.stuck = { elapsedMs: d.elapsedMs, usualMs: d.usualMs };
+        liveTestCases.value = [...liveTestCases.value];
         displayTestCases.value = [...liveTestCases.value];
       }
     } else if (parsed.type === 'test-completed') {
@@ -253,6 +292,8 @@ function flushPendingEvents() {
             filePath: d.filePath ?? existing.filePath,
             suitePath: d.suitePath ?? existing.suitePath,
             status: d.status,
+            // The attempt said to be stuck ended.
+            stuck: null,
             duration: d.duration,
             error: d.error,
             stepEvents: d.stepEvents ?? existing.stepEvents,
@@ -605,6 +646,17 @@ function buildRunSummary(): string {
 // Test-cases filter state — lifted here so it survives tab switches, and kept
 // for the page so it is still there when the user comes back to the run.
 const testCaseSearch = useViewState('run-tests:search', () => '');
+// A search the address carries (a stuck test's notification opens its row this way) wins over the kept one,
+// then leaves the address, so the user's own searches are not overridden by it later.
+watch(
+  () => route.query.search,
+  (search) => {
+    if (typeof search !== 'string') return;
+    testCaseSearch.value = search;
+    if (import.meta.client) void replaceQuery(router, { search: undefined });
+  },
+  { immediate: true },
+);
 const testCaseActiveStatuses = useViewState<string[]>('run-tests:statuses', () => []);
 
 // The count-bar segments toggle the status filters the Tests list applies, and

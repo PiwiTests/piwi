@@ -386,6 +386,7 @@ function detailElements(event: NotificationEvent, payload: NotificationPayload, 
     }
     case 'environment.incident':
     case 'auto_heal.pr_opened':
+    case 'test.stuck':
       return [];
   }
 }

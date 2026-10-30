@@ -8,6 +8,7 @@ import { durationApprox, durationShort } from '#shared/relative-time';
 import { parseSourceSnippet } from '#shared/source-snippet';
 import type { StatusColorKey } from '#shared/status-colors';
 import { safeHttpUrl } from '#shared/utils/safe-url';
+import { STUCK_FACTOR, STUCK_FLOOR_MS, STUCK_HISTORY } from '#shared/stuck-tests';
 import {
   clusterOutcome,
   failureTargetPath,
@@ -25,6 +26,7 @@ import {
   type NotificationPayload,
   type RunFinishedPayload,
   type RunHistoryEntry,
+  type TestStuckPayload,
   type TopFailure,
 } from '#shared/notification-events';
 
@@ -98,6 +100,7 @@ export function eventTone(event: NotificationEvent, payload: NotificationPayload
       return 'flaky';
     case 'perf.regression':
     case 'environment.incident':
+    case 'test.stuck':
       return 'warning';
     case 'diagnosis.completed':
     case 'auto_heal.pr_opened':
@@ -263,6 +266,14 @@ export function eventHeadline(event: NotificationEvent, payload: NotificationPay
         figure: `#${p.prNumber}`,
         rest: ' is open',
       };
+    }
+    case 'test.stuck': {
+      const p = payload as TestStuckPayload;
+      return text(`Stuck? · ${p.projectName}`, 'A test may be stuck', [
+        p.testTitle,
+        `${durationShort(p.elapsedMs)}, against ${durationShort(p.usualMs)} at most usually`,
+        ...runParts(p),
+      ]);
     }
     case 'bug.looks_fixed': {
       const p = payload as BugLooksFixedPayload;
@@ -682,6 +693,17 @@ export function eventFacts(event: NotificationEvent, payload: NotificationPayloa
         { label: 'Failed', value: `${p.failedTests} of ${plural(p.totalTests, 'test')}` },
       ];
     }
+    case 'test.stuck': {
+      const p = payload as TestStuckPayload;
+      const where = [p.browserName, p.workerIndex != null ? `worker ${p.workerIndex}` : null].filter(Boolean);
+      return [
+        runFact(links, p),
+        ...(p.location ? [{ label: 'Test', value: p.location, code: true }] : []),
+        ...(where.length ? [{ label: 'Running in', value: where.join(', ') }] : []),
+        ...(p.owners?.length ? [{ label: 'Owners', value: p.owners.join(', ') }] : []),
+        ...(p.ciUrl ? [{ label: 'CI build', value: 'Open the build', url: p.ciUrl }] : []),
+      ];
+    }
     case 'auto_heal.pr_opened': {
       const p = payload as AutoHealPrOpenedPayload;
       return [
@@ -742,6 +764,10 @@ export function eventSentences(event: NotificationEvent, payload: NotificationPa
         INCIDENT_NOTE,
       ];
     }
+    case 'test.stuck':
+      return [
+        `The test has run more than ${STUCK_FACTOR} times as long as its longest pass among its last ${STUCK_HISTORY}, and over ${STUCK_FLOOR_MS / 60_000} minutes. It is still running: the run page shows the step it is in, and its live view, when the project has it on, what it waits for.`,
+      ];
     case 'auto_heal.pr_opened': {
       const p = payload as AutoHealPrOpenedPayload;
       return [
@@ -813,6 +839,13 @@ function actionsOf(event: NotificationEvent, payload: NotificationPayload, links
     case 'environment.incident':
     case 'bug.looks_fixed':
       return [{ label: 'Open the run', url: links.run((payload as EnvironmentIncidentPayload).runId) }];
+    case 'test.stuck': {
+      const p = payload as TestStuckPayload;
+      return [
+        { label: 'Open the test in its run', url: links.path(notificationTargetPath(event, p)!) },
+        ...(p.ciUrl ? [{ label: 'Open the CI build', url: p.ciUrl }] : []),
+      ];
+    }
     case 'diagnosis.completed': {
       const p = payload as DiagnosisCompletedPayload;
       const path = notificationTargetPath(event, p);

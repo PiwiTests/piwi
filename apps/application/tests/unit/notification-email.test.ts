@@ -208,6 +208,17 @@ describe('notification email escaping', () => {
         otherProjects: 0,
         incidentKey: 'k',
       },
+      'test.stuck': {
+        runId: 3,
+        projectId: 1,
+        projectName: hostile,
+        testTitle: hostile,
+        location: hostile,
+        browserName: hostile,
+        startedAt: 1_700_000_000_000,
+        elapsedMs: 300_000,
+        usualMs: 8000,
+      },
     };
     for (const event of NOTIFICATION_EVENTS) {
       const { html, text } = renderNotificationEmail(event, payloads[event]);

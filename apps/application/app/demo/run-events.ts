@@ -17,6 +17,7 @@ const CHANNEL_NAME = 'piwi-demo-run-events';
 export interface DemoRunEvent {
   type:
     | 'test-begin'
+    | 'test-stuck'
     | 'test-completed'
     | 'step-begin'
     | 'step-end'

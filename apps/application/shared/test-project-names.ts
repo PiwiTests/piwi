@@ -204,6 +204,7 @@ export const PROJECT = {
   STREAMING_FLAKY: 'streaming-flaky-test',
   STREAMING_RUNNING_CATCHUP: 'streaming-running-catchup-test',
   STREAMING_TEST: 'streaming-test-project',
+  STUCK_TESTS: 'stuck-tests-test',
   TAG_ASSIGNMENT: 'tag-assignment-test-project',
   TEST_API: 'test-api-project',
   TEST_CASES_CATALOG: 'test-cases-catalog-test',

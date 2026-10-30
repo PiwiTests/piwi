@@ -14,6 +14,7 @@ import type {
   WireExecutionResources,
 } from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
+import type { StuckAttempt } from '#shared/stuck-tests';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
@@ -1017,6 +1018,8 @@ export interface TestCaseResult {
   expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** A running test that has run far longer than it usually does (`#shared/stuck-tests`). */
+  stuck?: StuckAttempt | null;
 }
 
 /** Why a `didnotrun` case never executed — mirrors the reporter's taxonomy. */

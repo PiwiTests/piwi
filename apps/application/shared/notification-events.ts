@@ -2,6 +2,7 @@ import { extractMessageHead, stripAnsi } from '#shared/error-fingerprint';
 import { describeFailureText } from '#shared/describe-failure';
 import { parseSourceSnippet } from '#shared/source-snippet';
 import { splitSuitePath } from '#shared/utils/suites';
+import { formatTestSearchValue } from '#shared/test-search';
 
 /** All notification event keys supported by the subscription system. */
 export const NOTIFICATION_EVENTS = [
@@ -18,6 +19,7 @@ export const NOTIFICATION_EVENTS = [
   'auto_heal.pr_opened',
   'bug.looks_fixed',
   'environment.incident',
+  'test.stuck',
 ] as const;
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
@@ -41,6 +43,7 @@ const EVENT_LABELS: Partial<Record<NotificationEvent, string>> = {
   'auto_heal.pr_opened': 'Auto-heal › PR opened',
   'bug.looks_fixed': 'Bug › looks fixed',
   'environment.incident': 'Environment incident',
+  'test.stuck': 'Test › stuck?',
 };
 
 /** How the subscription pickers name an event. */
@@ -474,6 +477,39 @@ export interface EnvironmentIncidentPayload extends RunScope {
   incidentKey: string;
 }
 
+/**
+ * A running test of a live run that has run far longer than it usually does (`#shared/stuck-tests`): sent once per
+ * attempt, while its run is live, whoever watches the run.
+ */
+export interface TestStuckPayload extends RunScope {
+  runId: number;
+  projectId: number;
+  projectName: string;
+  testTitle: string;
+  suitePath?: string[];
+  /** Where the test is in the code: `file:line:column`. */
+  location?: string;
+  /** The Playwright project the attempt runs in. */
+  browserName?: string;
+  /** The `--repeat-each` repetition it is. */
+  repeatEachIndex?: number;
+  workerIndex?: number;
+  shardIndex?: number;
+  /** When the attempt began, in epoch milliseconds: one notification per attempt. */
+  startedAt: number;
+  /** How long the attempt had run when it was said to be stuck, in milliseconds. */
+  elapsedMs: number;
+  /** The test's longest duration among its last passing executions, in milliseconds. */
+  usualMs: number;
+  isDefaultBranch?: boolean;
+  /** What launched the run, as for {@link RunFinishedPayload}. */
+  origin?: string;
+  /** The CI build that runs the tests. */
+  ciUrl?: string;
+  /** The test's owner (`piwi:owner`, else CODEOWNERS), as the owners filter reads it. */
+  owners?: string[];
+}
+
 export type NotificationPayload =
   | RunFinishedPayload
   | ClusterNewPayload
@@ -482,7 +518,8 @@ export type NotificationPayload =
   | DiagnosisCompletedPayload
   | AutoHealPrOpenedPayload
   | BugLooksFixedPayload
-  | EnvironmentIncidentPayload;
+  | EnvironmentIncidentPayload
+  | TestStuckPayload;
 
 /** Per-subscription delivery filters, stored as JSON on the subscription row. */
 export interface SubscriptionFilters {
@@ -518,6 +555,7 @@ export const RUN_SCOPED_EVENTS: ReadonlySet<NotificationEvent> = new Set<Notific
   'cluster.regressed',
   'bug.looks_fixed',
   'environment.incident',
+  'test.stuck',
 ]);
 
 /**
@@ -532,6 +570,7 @@ export const OWNER_SCOPED_EVENTS: ReadonlySet<NotificationEvent> = new Set<Notif
   'flakiness.spike',
   'perf.regression',
   'cluster.new',
+  'test.stuck',
 ]);
 
 /**
@@ -567,7 +606,7 @@ export function passesSubscriptionFilters(
       return false;
     }
   }
-  if (filters.defaultBranchOnly && event.startsWith('run.')) {
+  if (filters.defaultBranchOnly && (event.startsWith('run.') || event === 'test.stuck')) {
     if (!runPayload.isDefaultBranch) return false;
   }
   if (filters.statuses?.length && event.startsWith('run.') && runPayload.status) {
@@ -617,8 +656,9 @@ export function describeSubscriptionFilters(filters: SubscriptionFilters | null 
  * cluster.new (one run can surface several new clusters), the cluster plus the
  * run for cluster.fixed / cluster.regressed (a cluster can be fixed and regress
  * more than once), the cluster plus completion time for
- * diagnosis.completed (the same cluster can be re-diagnosed), and the incident
- * for environment.incident (one incident can flag runs in several projects).
+ * diagnosis.completed (the same cluster can be re-diagnosed), the incident
+ * for environment.incident (one incident can flag runs in several projects), and
+ * the attempt for test.stuck (its run, its start and its test).
  */
 export function buildNotificationDedupeKey(
   event: NotificationEvent,
@@ -641,6 +681,10 @@ export function buildNotificationDedupeKey(
   if (event === 'environment.incident') {
     const p = payload as EnvironmentIncidentPayload;
     return `${event}:${p.incidentKey}:${channelId}`;
+  }
+  if (event === 'test.stuck') {
+    const p = payload as TestStuckPayload;
+    return `${event}:r${p.runId}:${p.startedAt}:${p.location ?? ''}:${p.browserName ?? ''}:${p.repeatEachIndex ?? 0}:${p.testTitle}:${channelId}`;
   }
   const runId = (payload as RunFinishedPayload).runId;
   return `${event}:r${runId ?? 'x'}:${channelId}`;
@@ -668,6 +712,11 @@ export function computePerfBaseline(
 
 /** Dashboard path the notification links to, or null when it has no target. */
 export function notificationTargetPath(event: NotificationEvent, payload: NotificationPayload): string | null {
+  if (event === 'test.stuck') {
+    // The run's Tests tab, searched for the stuck test's title: its row is the one left.
+    const p = payload as TestStuckPayload;
+    return `/test-runs/${p.runId}?search=${encodeURIComponent(formatTestSearchValue(p.testTitle))}`;
+  }
   if (event === 'diagnosis.completed' && (payload as DiagnosisCompletedPayload).executionId) {
     return `/test-run-cases/${(payload as DiagnosisCompletedPayload).executionId}`;
   }
@@ -743,6 +792,10 @@ export function renderEventSubject(event: NotificationEvent, payload: Notificati
     case 'environment.incident': {
       const p = payload as EnvironmentIncidentPayload;
       return `Environment incident — ${p.projectName}${p.host ? ` (${p.host})` : ''}`;
+    }
+    case 'test.stuck': {
+      const p = payload as TestStuckPayload;
+      return `Test may be stuck — ${p.projectName}${p.branch ? ` (${p.branch})` : ''}`;
     }
     case 'bug.looks_fixed': {
       const p = payload as BugLooksFixedPayload;
