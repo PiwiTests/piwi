@@ -881,7 +881,8 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   (the hub's `runControl` `end`: the test ends there, skipped); Resume alone where it failed (`reason: 'failure'`, its
   state line **Failed at** and the place, the error under it: the stop's `error`, its lines kept, else, from a service
   or a reporter that predates it, read from its title, `stopError`).
-- A run started in a terminal (`HubSession.terminal`) shows **Terminal** beside its name.
+- A run started in a terminal (`HubSession.terminal`) shows **Terminal** beside its name, and one an editor's own test
+  runner started (`HubSession.runner`) **Test runner**.
 - A run whose reporter shares it live on the team instance (`HubSession.live`) has **Share live** under its name: the
   hub's `share` with `on`, naming the run alone. The first share in the window shows what goes out and to whom
   (`runs_shareWarning`, the instance's host in it) with **Share live** and **Cancel** in its place, the focus on the

@@ -7537,6 +7537,10 @@
     "message": "Terminal",
     "description": "Runs window, beside a run’s name: the run was started in a terminal, and follows the editor whose workspace holds it. Short."
   },
+  "runs_runner": {
+    "message": "Test runner",
+    "description": "Runs window, beside a run’s name: the editor’s own test runner started the run (a JetBrains IDE’s Playwright run configuration, its gutter’s Run included), and it follows the editor whose workspace holds it. Short."
+  },
   "runs_desktopName": {
     "message": "the desktop app",
     "description": "Runs window, in runs_reconnecting for the Piwi desktop app’s hub. Lower case, inside a sentence."

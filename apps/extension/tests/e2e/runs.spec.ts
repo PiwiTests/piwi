@@ -212,7 +212,7 @@ test('the run shortcut pauses the runs, then resumes the stopped test, with no R
   }
 });
 
-test('End the test ends a stopped test there, and a run started in a terminal shows as one', async () => {
+test('End the test ends a stopped test there, and a run started in a terminal or a test runner shows as one', async () => {
   const { context, extensionId } = await pairedExtension(editor);
   try {
     const runs = await openRuns(context, extensionId);
@@ -250,6 +250,25 @@ test('End the test ends a stopped test there, and a run started in a terminal sh
       terminal.socket.destroy();
       // Its session ends a while after its last worker left, with no command to end.
       await waitFor(() => (editor.svc.latest(ref)?.ended ? true : undefined), 10_000);
+    }
+
+    // A run the editor's own test runner started: one of the runs the editor did not build, named as the runner's.
+    const runnerRef = `terminal-4243-${Date.now()}`;
+    const runner = new FakeWorker(channel.path, editor.dir).attach(
+      channel.token,
+      runnerRef,
+      0,
+      [...RUN_TAKES],
+      ['failure'],
+      true,
+    );
+    try {
+      runner.begin('pays');
+      const shown = liveRun(runs).filter({ has: runs.locator('.run-title', { hasText: 'Test runner' }) });
+      await expect(shown.locator('.run-title')).toHaveText(`${path.basename(editor.dir)}Test EditorTest runner`);
+    } finally {
+      runner.socket.destroy();
+      await waitFor(() => (editor.svc.latest(runnerRef)?.ended ? true : undefined), 10_000);
     }
   } finally {
     await context.close();

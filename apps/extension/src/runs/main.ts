@@ -1071,20 +1071,30 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
   const hub = current.hubs.find((h) => h.id === run.hub);
   const client = hub?.desktop ? t('runs_desktopApp') : (hub?.client ?? null);
   const children = [
-    part(`${runKey}|head`, { headingId, name, client, command: session.command, terminal: session.terminal }, () => {
-      const heading = element('h2', undefined, name);
-      heading.id = headingId;
-      const title = element('div', 'run-title', heading);
-      if (client) title.append(element('span', 'client', client));
-      if (session.terminal) title.append(iconText(element('span', 'client terminal'), 'terminal', t('runs_terminal')));
-      const head = element('div', 'run-head', title);
-      if (session.command) {
-        const code = element('code', 'command', session.command);
-        code.title = session.command;
-        head.append(code);
-      }
-      return head;
-    }),
+    part(
+      `${runKey}|head`,
+      { headingId, name, client, command: session.command, terminal: session.terminal, runner: session.runner },
+      () => {
+        const heading = element('h2', undefined, name);
+        heading.id = headingId;
+        const title = element('div', 'run-title', heading);
+        if (client) title.append(element('span', 'client', client));
+        // A run the editor did not start: in a terminal, or by the editor's own test runner.
+        if (session.terminal) {
+          const [mark, words] = session.runner
+            ? (['list', 'runs_runner'] as const)
+            : (['terminal', 'runs_terminal'] as const);
+          title.append(iconText(element('span', 'client terminal'), mark, t(words)));
+        }
+        const head = element('div', 'run-head', title);
+        if (session.command) {
+          const code = element('code', 'command', session.command);
+          code.title = session.command;
+          head.append(code);
+        }
+        return head;
+      },
+    ),
   ];
   // A run that cannot be shared says why under its workers, after what steers it.
   const refused = session.ended ? null : (session.live?.refused ?? null);

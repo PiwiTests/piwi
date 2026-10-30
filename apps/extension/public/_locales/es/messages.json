@@ -6358,6 +6358,9 @@
   "runs_terminal": {
     "message": "Terminal"
   },
+  "runs_runner": {
+    "message": "Ejecutor de tests"
+  },
   "runs_desktopName": {
     "message": "la aplicación de escritorio"
   },

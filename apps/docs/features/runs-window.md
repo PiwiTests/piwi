@@ -19,8 +19,8 @@ With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-recording#sen
 **Runs** tile under **More tools** while the editor answers. It opens the Runs window, to keep beside the test's
 browser. For each run the editor [started](./editor-runs), it shows the folder and the command, then each worker's test
 and whether it runs or where it stopped: the file and line, the call about to run, and an image of the page. While
-none of its tests is stopped, the run says how one stops: at a breakpoint, a `page.pause()` or **Pause**. A run you
-[started in a terminal](./terminal-runs) shows too, marked **Terminal**.
+none of its tests is stopped, the run says how one stops: at a breakpoint, a `page.pause()` or **Pause**. A run
+[started outside Piwi](./terminal-runs) shows too, marked **Terminal** or **Test runner**.
 
 ## The controls
 
