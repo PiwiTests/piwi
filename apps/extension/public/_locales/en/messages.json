@@ -7988,5 +7988,33 @@
   "runs_copyRunPage": {
     "message": "Copy the run page’s link",
     "description": "Runs window, button on a run shared live: copies the address of its page on the instance, for a teammate."
+  },
+  "runs_pageAtStop": {
+    "message": "A test’s page shows here when it stops: at a breakpoint, at page.pause(), or once you pause it. Watch live then shows it as it paints.",
+    "description": "Runs window, under a run the editor started, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops. Watch live is the button’s name (runs_live)."
+  },
+  "runs_pageAtStopDesktop": {
+    "message": "A test’s page shows here when it stops: at page.pause(), or once you pause it. Watch live then shows it as it paints.",
+    "description": "Runs window, under a run of the desktop app, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops (the desktop app sets no breakpoints). Watch live is the button’s name (runs_live)."
+  },
+  "runs_shareRefusedLocal": {
+    "message": "This run cannot be shared live: it reports to the Piwi desktop app on this machine, which no teammate reaches. Name your team’s instance in PIWI_DASHBOARD_URL to share a run there.",
+    "description": "Runs window, under a run’s heading in place of Share live: the run reports to the desktop app, which gives no live view key. PIWI_DASHBOARD_URL is a variable’s name: never translated."
+  },
+  "runs_shareRefusedOff": {
+    "message": "This run cannot be shared live: its project’s live view is off on the instance. A Project admin turns it on in Project → Settings → Live view.",
+    "description": "Runs window, under a run’s heading in place of Share live: the run’s project has its live view off on the Piwi instance. Project admin and Project → Settings → Live view are the dashboard’s English words: never translated."
+  },
+  "runs_shareRefusedUnregistered": {
+    "message": "This run cannot be shared live: the reporter’s global setup did not register it with the instance as it started (wrapConfig adds it).",
+    "description": "Runs window, under a run’s heading in place of Share live: the reporter’s global setup, which asks the instance for a live view key, did not register the run. wrapConfig is code: never translated."
+  },
+  "runs_shareRefusedNoInstance": {
+    "message": "This run cannot be shared live: it reports to no Piwi instance. Name your team’s instance in PIWI_DASHBOARD_URL.",
+    "description": "Runs window, under a run’s heading in place of Share live: the run reports to no Piwi instance. PIWI_DASHBOARD_URL is a variable’s name: never translated."
+  },
+  "runs_shareRefusedUnknown": {
+    "message": "This run cannot be shared live: the Piwi reporter gave its workers no live view key.",
+    "description": "Runs window, under a run’s heading in place of Share live: the reporter set nothing for its workers’ live view."
   }
 }

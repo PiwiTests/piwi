@@ -18,7 +18,9 @@ import {
   RUNS_PING_MS,
   RUNS_PORT,
   RUN_COMMAND,
+  pageHintOf,
   pagePoint,
+  shareRefusalOf,
   stopError,
   stopIntents,
   stopPlace,
@@ -39,20 +41,22 @@ import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '../s
 
 /**
  * The Runs window: the runs the paired editor started, and the paired desktop app's beside them (`Desktop app`, their
- * code made there for the app's window to copy), each worker's test and where it stands, an image of a stopped
- * page or its live view, and the controls, with the code a stop can write (Pick, Record, Assert, Assert a region, Mock
- * a request) as the stop takes them from this window (`stopIntents`). Opened from the popup's Runs tile in a small
- * window of its own. It reads everything from the background worker through its port (`RUNS_PORT`), and makes no
- * network call: the worker holds the hubs' connections and tokens. The code itself never comes here: it goes to the
- * editor, which writes it and says there whether it did, and the window shows what the hub answered and what each code
- * made at the stop came to (sent to the editor to write, or refused), whoever asked for it. What a hub sends is shown
- * as text, and its image and the frames of a live view as images, the latest frame alone kept, in memory. Each part of
- * the window is drawn again only when what it shows changes (`part`), so a button under the pointer or the keyboard
- * stays the same element while the run goes on around it.
+ * code made there for the app's window to copy), each worker's test and where it stands, an image of a stopped page or
+ * its live view, and the controls, with the code a stop can write (Pick, Record, Assert, Assert a region, Mock a
+ * request) as the stop takes them from this window (`stopIntents`); while none of a run's tests stands stopped, the run
+ * says that a test's page shows here at a stop, and how a test stops (`pageHintOf`). Opened from the popup's Runs tile
+ * in a small window of its own. It reads everything from the background worker through its port (`RUNS_PORT`), and
+ * makes no network call: the worker holds the hubs' connections and tokens. The code itself never comes here: it goes
+ * to the editor, which writes it and says there whether it did, and the window shows what the hub answered and what
+ * each code made at the stop came to (sent to the editor to write, or refused), whoever asked for it. What a hub sends
+ * is shown as text, and its image and the frames of a live view as images, the latest frame alone kept, in memory. Each
+ * part of the window is drawn again only when what it shows changes (`part`), so a button under the pointer or the
+ * keyboard stays the same element while the run goes on around it.
  *
  * **Share live** shares a run on the team instance its reporter reports to, for anyone who can open it there: the first
  * share in this window says what goes out and to whom, and waits for a yes; shared, the run says where and how many
- * watch, with its page's link to copy and **Stop sharing**; a run that cannot be shared says why when asked.
+ * watch, with its page's link to copy and **Stop sharing**; a run that cannot be shared says why, under its workers, in
+ * place of Share live.
  *
  * Watch live shows the stop's frames in place of its image, while the window shows that stop: the view ends as the
  * stop does, the window hides or Watch live is turned off, and comes again at the worker's next stop while Watch live
@@ -289,10 +293,10 @@ async function share(run: RunsRun, on: boolean): Promise<void> {
   render();
 }
 
-/** Share live: asked first, the first time in this window, for a run that can be shared; the others go at once. */
+/** Share live: asked first, the first time in this window; then each share goes at once. */
 function askShare(run: RunsRun): void {
   const key = runKeyOf(run);
-  if (shareWarned || run.session.live?.refused) return void share(run, true);
+  if (shareWarned) return void share(run, true);
   shareAsking.add(key);
   focusKey = `${key}|share-yes`;
   render();
@@ -1082,11 +1086,13 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
       return head;
     }),
   ];
+  // A run that cannot be shared says why under its workers, after what steers it.
+  const refused = session.ended ? null : (session.live?.refused ?? null);
   if (session.ended) {
     children.push(
       part(`${runKey}|ended`, null, () => iconText(element('p', 'run-ended'), 'check-circle', t('runs_ended'))),
     );
-  } else if (session.live) {
+  } else if (session.live && !refused) {
     children.push(renderShare(run, session.live));
   }
   const workers = [...session.workers].sort((a, b) => a.parallelIndex - b.parallelIndex);
@@ -1098,8 +1104,37 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
     );
     children.push(list);
   }
+  const hint = pageHintOf(run, hub);
+  if (hint) {
+    const words = hint === 'desktop' ? 'runs_pageAtStopDesktop' : 'runs_pageAtStop';
+    children.push(
+      part(`${runKey}|page-hint`, words, () => iconText(element('p', 'note run-note page-hint'), 'info', t(words))),
+    );
+  }
+  if (refused) {
+    children.push(
+      part(`${runKey}|share-refused`, refused, () =>
+        iconText(element('p', 'note run-note share-refused'), 'info', refusalText(refused)),
+      ),
+    );
+  }
   place(section, children);
   return section;
+}
+
+/** What the window says of a run that cannot be shared live, by why the reporter gave it no key. */
+const SHARE_REFUSALS = {
+  'no-instance': 'runs_shareRefusedNoInstance',
+  unregistered: 'runs_shareRefusedUnregistered',
+  off: 'runs_shareRefusedOff',
+  local: 'runs_shareRefusedLocal',
+  unknown: 'runs_shareRefusedUnknown',
+} as const satisfies Record<NonNullable<ReturnType<typeof shareRefusalOf>>, string>;
+
+/** Why a run cannot be shared live, in the window's language when the reporter's reason is known, else as the hub said. */
+function refusalText(refused: string): string {
+  const why = shareRefusalOf(refused);
+  return why ? t(SHARE_REFUSALS[why]) : refused;
 }
 
 /** The instance a run's page is on, as the window names it (its host); the words for any instance without one. */

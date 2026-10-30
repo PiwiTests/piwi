@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN } from '@piwitests/core/live-view';
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { MAX_VIEW_EVENTS } from '@piwitests/core/run-view';
 import {
+  pageHintOf,
   pagePoint,
   parseRunsRequest,
   runFile,
+  shareRefusalOf,
   shortcutCommands,
   stateForViewer,
   stopError,
@@ -228,6 +231,50 @@ describe('Share live, as the worker reads it', () => {
     ]) {
       expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
     }
+  });
+
+  it('reads why a run cannot be shared, as the reporter says it, and no other sentence', () => {
+    expect(shareRefusalOf(LIVE_SHARE_MISSING.local)).toBe('local');
+    expect(shareRefusalOf(LIVE_SHARE_MISSING.off)).toBe('off');
+    expect(shareRefusalOf(LIVE_SHARE_MISSING.unregistered)).toBe('unregistered');
+    expect(shareRefusalOf(LIVE_SHARE_MISSING['no-instance'])).toBe('no-instance');
+    expect(shareRefusalOf(LIVE_SHARE_UNKNOWN)).toBe('unknown');
+    expect(shareRefusalOf('Sharing stopped: the instance restarted.')).toBeNull();
+    expect(shareRefusalOf(`${LIVE_SHARE_MISSING.local} `)).toBeNull();
+  });
+});
+
+describe('where a run says its tests’ pages show', () => {
+  const editorHub = { desktop: false };
+  const viewing = { intents: ['view' as const] };
+
+  it('is said while the run goes on and no test of it stands stopped, by the hub that runs it', () => {
+    expect(pageHintOf(run('r1', [worker(viewing)]), editorHub)).toBe('editor');
+    expect(pageHintOf(run('r1', [worker({ ...viewing, state: 'between' })]), editorHub)).toBe('editor');
+    expect(pageHintOf(run('r1', [worker({ ...viewing, pausing: true })]), editorHub)).toBe('editor');
+    expect(pageHintOf(run('r1', [worker(viewing)]), { desktop: true })).toBe('desktop');
+    expect(pageHintOf(run('r1', [worker(viewing)]), undefined)).toBe('editor');
+  });
+
+  it('is not said once a test stops, the run ends, or nothing could show a stopped page live', () => {
+    const stopped = worker({ ...viewing, worker: 1, state: 'stopped', stop: stop('s1') });
+    expect(pageHintOf(run('r1', [worker(viewing), stopped]), editorHub)).toBeNull();
+    expect(pageHintOf(run('r1', [worker(viewing)], true), editorHub)).toBeNull();
+    expect(pageHintOf(run('r1', []), editorHub)).toBeNull();
+    // A reporter that predates the live view.
+    expect(pageHintOf(run('r1', [worker({ intents: ['pick', 'record'] })]), editorHub)).toBeNull();
+    // A test that never stops, under CI or Playwright's own debugger.
+    const test = {
+      id: 't1',
+      title: ['pays'],
+      uri: 'file:///x.ts',
+      line: 0,
+      project: 'chromium',
+      retry: 0,
+      cannotPause: 'it runs under CI',
+    };
+    expect(pageHintOf(run('r1', [worker({ ...viewing, test })]), editorHub)).toBeNull();
+    expect(pageHintOf(run('r1', [worker({ ...viewing, test }), worker(viewing)]), editorHub)).toBe('editor');
   });
 });
 

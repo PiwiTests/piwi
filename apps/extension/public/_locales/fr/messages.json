@@ -6721,5 +6721,26 @@
   },
   "runs_copyRunPage": {
     "message": "Copier le lien de la page de l’exécution"
+  },
+  "runs_pageAtStop": {
+    "message": "La page d’un test s’affiche ici quand il s’arrête : à un point d’arrêt, à page.pause(), ou une fois que vous le mettez en pause. Activez alors Voir en direct pour la suivre telle qu’elle se dessine."
+  },
+  "runs_pageAtStopDesktop": {
+    "message": "La page d’un test s’affiche ici quand il s’arrête : à page.pause(), ou une fois que vous le mettez en pause. Activez alors Voir en direct pour la suivre telle qu’elle se dessine."
+  },
+  "runs_shareRefusedLocal": {
+    "message": "Cette exécution ne peut pas être partagée en direct : elle rend compte à l’application de bureau Piwi de cet ordinateur, que vos collègues ne peuvent pas joindre. Indiquez l’instance de votre équipe dans PIWI_DASHBOARD_URL pour y partager une exécution."
+  },
+  "runs_shareRefusedOff": {
+    "message": "Cette exécution ne peut pas être partagée en direct : la vue en direct de son projet est désactivée sur l’instance. Un Project admin l’active dans Project → Settings → Live view."
+  },
+  "runs_shareRefusedUnregistered": {
+    "message": "Cette exécution ne peut pas être partagée en direct : le global setup du reporter ne l’a pas enregistrée auprès de l’instance à son démarrage (wrapConfig l’ajoute)."
+  },
+  "runs_shareRefusedNoInstance": {
+    "message": "Cette exécution ne peut pas être partagée en direct : elle ne rend compte à aucune instance Piwi. Indiquez l’instance de votre équipe dans PIWI_DASHBOARD_URL."
+  },
+  "runs_shareRefusedUnknown": {
+    "message": "Cette exécution ne peut pas être partagée en direct : le reporter Piwi n’a donné à ses workers aucune clé de vue en direct."
   }
 }
