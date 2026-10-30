@@ -22,7 +22,6 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
-import javax.swing.ButtonGroup
 import javax.swing.JComponent
 
 /** The instance's side of Connect: its projects, and the browser sign-in (an RFC 8628 device authorization). */
@@ -355,14 +354,15 @@ object PiwiConnectFlow {
         return null
     }
 
-    /** The connections Connect offers when the desktop app runs, one radio button each. */
-    private class ChooseConnectionDialog(project: Project, private val choices: List<Glue.ConnectChoice>) : DialogWrapper(project) {
-        private val buttons = choices.map { JBRadioButton(if (it.inUse) "${it.label} (in use)" else it.label) }
+    /**
+     * The connections Connect offers when the desktop app runs, one radio button each. The UI DSL
+     * accepts a radio button only inside a `buttonsGroup`, which groups them.
+     */
+    internal class ChooseConnectionDialog(project: Project, private val choices: List<Glue.ConnectChoice>) : DialogWrapper(project) {
+        internal val buttons = choices.map { JBRadioButton(if (it.inUse) "${it.label} (in use)" else it.label) }
 
         init {
             title = TITLE
-            val group = ButtonGroup()
-            buttons.forEach(group::add)
             // The one not in use: Connect is run to change something.
             (buttons.getOrNull(choices.indexOfFirst { !it.inUse }) ?: buttons.firstOrNull())?.isSelected = true
             init()
@@ -371,8 +371,9 @@ object PiwiConnectFlow {
         fun picked(): Glue.ConnectChoice? = choices.getOrNull(buttons.indexOfFirst { it.isSelected })
 
         override fun createCenterPanel(): JComponent = panel {
-            row { label("Read this project from:") }
-            buttons.forEachIndexed { i, button -> row { cell(button).comment(choices[i].detail) } }
+            buttonsGroup("Read this project from:") {
+                buttons.forEachIndexed { i, button -> row { cell(button).comment(choices[i].detail) } }
+            }
         }
     }
 
