@@ -134,4 +134,37 @@ test('the dashboard can reach the shell IPC commands', async ({ tauriPage: fixtu
       .catch((e) => ({ ok: false, error: String((e && e.message) || e) }))
   `)) as { ok: boolean; error?: string };
   expect(activity.ok, `desktop_set_activity rejected: ${activity.error ?? 'unknown'}`).toBe(true);
+
+  // `window.open()` of a named blank page opens a window the dashboard renders into (a run's output in a separate
+  // window), titled by its document, and the shell closes it; any other page is refused.
+  const output = (await tauriPage.evaluate(`
+    new Promise((resolve) => {
+      const opened = window.open('about:blank#piwi-e2e-output', 'piwi-e2e-output', 'popup,width=480,height=320');
+      if (!opened) return resolve({ opened: false });
+      opened.document.title = 'Piwi e2e output';
+      opened.document.body.textContent = 'rendered by the dashboard';
+      resolve({
+        opened: true,
+        text: opened.document.body.textContent,
+        refused:
+          window.open('about:blank', '_blank') === null && window.open('https://example.com/', '_blank') === null,
+      });
+    })
+  `)) as { opened: boolean; text?: string; refused?: boolean };
+  expect(output.opened, 'window.open of a named blank page must open a window').toBe(true);
+  expect(output.text).toBe('rendered by the dashboard');
+  expect(output.refused, 'window.open of any other page must be refused').toBe(true);
+  await tauriPage.waitForWindow((w) => w.label.startsWith('output-piwi-e2e-output-') && w.title === 'Piwi e2e output', {
+    timeout: 10_000,
+  });
+
+  const closed = (await tauriPage.evaluate(`
+    window.__TAURI__.core.invoke('desktop_close_output_window', { name: 'piwi-e2e-output' })
+      .then(() => ({ ok: true }))
+      .catch((e) => ({ ok: false, error: String((e && e.message) || e) }))
+  `)) as { ok: boolean; error?: string };
+  expect(closed.ok, `desktop_close_output_window rejected: ${closed.error ?? 'unknown'}`).toBe(true);
+  await expect
+    .poll(async () => (await tauriPage.listWindows()).filter((w) => w.label.startsWith('output-')).length)
+    .toBe(0);
 });

@@ -11,6 +11,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "Piwi Dashboard",
         "width": 1280,
         "height": 860,

@@ -38,6 +38,13 @@ The tray opens at each stop: a headless test waits for you there. While the wind
 tells you of a failure or a `page.pause()`, never of a step or a pause you asked for. When no run of the app is going
 on, the window stops listening, and a stop goes on at once.
 
+## Its output
+
+Each run shows its output under its workers, in the colors Playwright prints in a terminal. **Open the output in a
+separate window**, the window button on the run, moves it to a window of its own, to keep beside your editor or on
+another screen: it goes on updating and has the run's **Stop**. Closing that window, or **Show it here** in the tray,
+brings the output back; the window closes with the app.
+
 ## Watch live
 
 **Watch live** shows the stopped page as it paints, in place of its image, and stays on for the worker's next stops

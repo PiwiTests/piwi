@@ -17,6 +17,10 @@
  * and on from the start for a reproduction, makes a failure no pause bar shows
  * wait at its line (`show`); a run nobody attends (a Flake Lab, a bisect, a
  * run repeating its tests or in UI mode) holds none, and its switch says why.
+ *
+ * A run's output can move to a separate window of the app
+ * (`DesktopSeparateWindow`), which stays open when the tray closes and closes
+ * with the run's entry.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isUnattendedDesktopRun } from '#shared/desktop-runs';
@@ -32,6 +36,7 @@ import {
 
 const store = useDesktopLocalRuns();
 const { runs, trayOpen, activeCount } = store;
+const toast = useToast();
 
 const available = ref(false);
 onMounted(() => {
@@ -121,6 +126,25 @@ function isExpanded(run: LocalRun): boolean {
 
 function toggleExpanded(run: LocalRun) {
   expandedByKey.value = { ...expandedByKey.value, [run.key]: !isExpanded(run) };
+}
+
+/** The runs whose output shows in a separate window instead of the tray. */
+const separateByKey = ref<Record<number, boolean>>({});
+const separateRuns = computed(() => runs.value.filter((run) => separateByKey.value[run.key]));
+
+function setSeparate(run: LocalRun, on: boolean) {
+  separateByKey.value = { ...separateByKey.value, [run.key]: on };
+}
+
+function separateClosed(run: LocalRun, opened: boolean) {
+  setSeparate(run, false);
+  if (!opened) {
+    toast.add({
+      title: 'Could not open a separate window',
+      description: 'The output stays in the tray.',
+      color: 'error',
+    });
+  }
 }
 
 /** Each run's Hold failures choice; unset falls back to its kind's (`desktopHoldsByDefault`). */
@@ -286,6 +310,16 @@ function runDetail(run: LocalRun): string {
                 @click="store.rerun(run)"
               />
             </UTooltip>
+            <UTooltip v-if="!separateByKey[run.key]" text="Open the output in a separate window">
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-app-window"
+                aria-label="Open the output in a separate window"
+                @click="setSeparate(run, true)"
+              />
+            </UTooltip>
             <UButton
               size="xs"
               color="neutral"
@@ -346,10 +380,48 @@ function runDetail(run: LocalRun): string {
               class="mt-2"
               @announce="announce"
             />
-            <DesktopLocalRunConsole :lines="run.lines" class="mt-2" />
+            <p v-if="separateByKey[run.key]" class="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+              The output is in a separate window.
+              <UButton size="xs" color="neutral" variant="outline" @click="setSeparate(run, false)">
+                Show it here
+              </UButton>
+            </p>
+            <DesktopLocalRunConsole v-else :lines="run.lines" class="mt-2" />
           </template>
         </article>
       </div>
     </section>
+
+    <DesktopSeparateWindow
+      v-for="run in separateRuns"
+      :key="run.key"
+      :name="`piwi-run-output-${run.key}`"
+      :title="`${localRunTitle(run)} · Piwi Dashboard`"
+      @closed="(opened: boolean) => separateClosed(run, opened)"
+    >
+      <section aria-label="Run output" class="flex h-full flex-col gap-2 p-3">
+        <header class="flex items-center gap-2 min-w-0">
+          <UBadge :color="badge(run).color" variant="subtle" size="sm" class="shrink-0">
+            {{ badge(run).label }}
+          </UBadge>
+          <h1 class="text-sm font-medium truncate flex-1 min-w-0" :title="localRunTitle(run)">
+            {{ localRunTitle(run) }}
+          </h1>
+          <span class="text-xs text-muted tabular-nums shrink-0">{{ duration(run) }}</span>
+          <UButton
+            v-if="run.status === 'running'"
+            size="xs"
+            color="error"
+            :variant="run.stopRequested ? 'solid' : 'soft'"
+            icon="i-lucide-square"
+            @click="store.stopRun(run)"
+          >
+            {{ run.stopRequested ? 'Force stop' : 'Stop' }}
+          </UButton>
+        </header>
+        <p class="font-mono text-[11px] text-muted truncate" :title="runDetail(run)">{{ runDetail(run) }}</p>
+        <DesktopLocalRunConsole :lines="run.lines" fill class="min-h-0 flex-1" />
+      </section>
+    </DesktopSeparateWindow>
   </Teleport>
 </template>

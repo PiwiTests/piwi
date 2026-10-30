@@ -1167,6 +1167,90 @@ async fn desktop_open_window(app: tauri::AppHandle, url: String) -> Result<(), S
     Ok(())
 }
 
+/// Label prefix of the run output windows ([`output_window`]).
+const OUTPUT_WINDOW_PREFIX: &str = "output-";
+
+/// Whether `name` may name a run output window: 1 to 64 lowercase letters,
+/// digits and dashes.
+fn is_output_window_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// The name of the run output window the dashboard opens with
+/// `window.open('about:blank#<name>')`: a blank page, which the dashboard
+/// fills itself (a run's output in a separate window). None for any other URL,
+/// which opens no window: every other page opens through
+/// `desktop_open_window` or the system browser.
+fn output_window_name(url: &tauri::Url) -> Option<&str> {
+    let blank = url.scheme() == "about" && url.path() == "blank" && url.query().is_none();
+    url.fragment()
+        .filter(|name| blank && is_output_window_name(name))
+}
+
+/// Close the run output windows opened under `name`.
+fn close_output_windows(app: &AppHandle, name: &str) {
+    let prefix = format!("{OUTPUT_WINDOW_PREFIX}{name}-");
+    for (label, window) in app.webview_windows() {
+        if label.starts_with(&prefix) {
+            let _ = window.close();
+        }
+    }
+}
+
+/// The window answering the dashboard's `window.open()` of a named blank page
+/// ([`output_window_name`]): linked to the dashboard window, which renders into
+/// it, and never navigated anywhere else. It holds no IPC grant: the
+/// capabilities name the main window only. A window still open under the same
+/// name closes first. Any other `window.open()` is refused.
+fn output_window(
+    app: &AppHandle,
+    url: tauri::Url,
+    features: tauri::webview::NewWindowFeatures,
+) -> tauri::webview::NewWindowResponse<tauri::Wry> {
+    let Some(name) = output_window_name(&url) else {
+        return tauri::webview::NewWindowResponse::Deny;
+    };
+    close_output_windows(app, name);
+    let label = format!(
+        "{OUTPUT_WINDOW_PREFIX}{name}-{}",
+        AUX_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed)
+    );
+    let built =
+        tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::External(url.clone()))
+            .window_features(features)
+            .title("Piwi Dashboard")
+            .on_document_title_changed(|window, title| {
+                let _ = window.set_title(&title);
+            })
+            .on_navigation(move |to| *to == url)
+            .build();
+    match built {
+        Ok(window) => tauri::webview::NewWindowResponse::Create { window },
+        Err(e) => {
+            if let Some(log) = app.try_state::<LogFile>() {
+                append_log(&log.0, &format!("could not open an output window: {e}"));
+            }
+            tauri::webview::NewWindowResponse::Deny
+        }
+    }
+}
+
+/// Close the run output windows the dashboard opened under `name`
+/// ([`output_window`]): a page's `window.close()` of its window closes the
+/// native window on Windows only.
+#[tauri::command]
+fn desktop_close_output_window(app: tauri::AppHandle, name: String) -> Result<(), String> {
+    if !is_output_window_name(&name) {
+        return Err("invalid output window name".into());
+    }
+    close_output_windows(&app, &name);
+    Ok(())
+}
+
 /// Show a native OS notification (the webview's own Notification API is
 /// unavailable / permission-denied there).
 #[tauri::command]
@@ -1498,6 +1582,7 @@ pub fn run() {
             desktop_open_external,
             desktop_open_in_ide,
             desktop_open_window,
+            desktop_close_output_window,
             desktop_bring_to_front,
             desktop_notify,
             desktop_log,
@@ -1541,6 +1626,21 @@ pub fn run() {
         .manage(updates::UpdaterSupport(updater_supported))
         .manage(updates::PendingUpdate::default())
         .setup(move |app| {
+            // --- the dashboard window: built here, with the handler of its
+            // `window.open()` (`output_window`) ---
+            let main_config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .cloned()
+                .ok_or("tauri.conf.json declares no main window")?;
+            let opener = app.handle().clone();
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &main_config)?
+                .on_new_window(move |url, features| output_window(&opener, url, features))
+                .build()?;
+
             // --- data locations (survive app updates; outside the read-only bundle) ---
             let app_data_dir = app.path().app_data_dir()?;
             // Holds the encryption key, the access token and the database.
@@ -1852,6 +1952,14 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // The output windows the dashboard renders into close with it.
+            if matches!(event, WindowEvent::Destroyed) && window.label() == "main" {
+                for (label, output) in window.app_handle().webview_windows() {
+                    if label.starts_with(OUTPUT_WINDOW_PREFIX) {
+                        let _ = output.close();
+                    }
+                }
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 // The dashboard window is the one whose close ends the app.
                 if window.label() != "main" {
@@ -1898,10 +2006,11 @@ pub fn run() {
 mod tests {
     use super::{
         clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body,
-        health_ok, health_response_proves, ide_launcher_args, is_known_launcher, is_sidecar_url,
-        is_truthy_flag, main_window_may_navigate, prepare_compile_cache, progress_bar_status,
-        remote_capability, remove_other_versions, render_status_dot, splash_status_script,
-        status_dot_color, write_new_download,
+        health_ok, health_response_proves, ide_launcher_args, is_known_launcher,
+        is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
+        output_window_name, prepare_compile_cache, progress_bar_status, remote_capability,
+        remove_other_versions, render_status_dot, splash_status_script, status_dot_color,
+        write_new_download,
     };
     use std::fs;
     use tauri::window::ProgressBarStatus;
@@ -2183,6 +2292,27 @@ mod tests {
         assert!(main_window_may_navigate(&url("http://localhost:1430/index.html"), None, Some(&dev)));
         assert!(!main_window_may_navigate(&url("http://localhost:1431/"), None, Some(&dev)));
         assert!(!main_window_may_navigate(&url("http://localhost:1430/"), None, None));
+    }
+
+    #[test]
+    fn the_dashboard_window_opens_only_named_blank_output_windows() {
+        let url = |s: &str| tauri::Url::parse(s).unwrap();
+        assert_eq!(
+            output_window_name(&url("about:blank#piwi-run-output-7")),
+            Some("piwi-run-output-7")
+        );
+        assert_eq!(output_window_name(&url("about:blank")), None);
+        assert_eq!(output_window_name(&url("about:blank#")), None);
+        assert_eq!(output_window_name(&url("about:blank#Run_7")), None);
+        assert_eq!(output_window_name(&url("about:blank?x=1#run")), None);
+        assert_eq!(output_window_name(&url("about:srcdoc#run")), None);
+        assert_eq!(output_window_name(&url("http://127.0.0.1:3000/#run")), None);
+        assert_eq!(output_window_name(&url("https://evil.example/#run")), None);
+        assert_eq!(output_window_name(&url("data:text/html,x#run")), None);
+        assert_eq!(output_window_name(&url("file:///etc/passwd#run")), None);
+        assert!(is_output_window_name(&"a".repeat(64)));
+        assert!(!is_output_window_name(&"a".repeat(65)));
+        assert!(!is_output_window_name("../main"));
     }
 
     #[test]

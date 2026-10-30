@@ -26,7 +26,8 @@ export const READY_INSPECTION = {
  * `importableRuns` and `pickedFiles` (the archives the folder holds and the
  * native import picker returns, else none), and `localRunId` (the shell's id
  * of a local run `desktop_run_local_tests` starts, which then goes on until
- * the scene ends; else none starts).
+ * the scene ends; else none starts). `window.__emitTauri(name, payload)` plays
+ * an event of the shell, such as a `piwi:local-run` output line.
  */
 export function bridgeScript(shape = {}) {
   const inspection = shape.inspection ?? READY_INSPECTION;
@@ -36,6 +37,10 @@ export function bridgeScript(shape = {}) {
   const localRunId = shape.localRunId ?? null;
   return `
     window.__mockLink = ${JSON.stringify(link)};
+    const listeners = {};
+    window.__emitTauri = (name, payload) => {
+      for (const cb of listeners[name] ?? []) cb({ payload });
+    };
     window.__TAURI__ = {
       core: {
         invoke: (cmd, args) => {
@@ -70,7 +75,12 @@ export function bridgeScript(shape = {}) {
           }
         },
       },
-      event: { listen: () => Promise.resolve(() => {}) },
+      event: {
+        listen: (name, cb) => {
+          (listeners[name] ??= []).push(cb);
+          return Promise.resolve(() => {});
+        },
+      },
       window: { getCurrentWindow: () => ({ label: 'main' }) },
     };
   `;
