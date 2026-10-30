@@ -48,8 +48,8 @@ export type LiveViewEnd = 'test-ended' | 'worker-left' | 'run-ended' | 'off' | '
 export type LiveViewerMessage =
   /** A frame of the test's page, a JPEG in base64, the call it was taken at and the title of its test. */
   | { type: 'frame'; data: string; call: LiveCall | null; test: string | null }
-  /** The call the test is in, as Playwright logs it, in a CI run; null between two calls. */
-  | { type: 'call-log'; log: LiveCallLog | null }
+  /** The call the test is in, as Playwright logs it, in a CI run, and the title of its test. */
+  | { type: 'call-log'; log: LiveCallLog; test: string | null }
   /** Why no frame shows now. */
   | { type: 'refused'; message: string }
   /** The view ended: the stream closes after it. */
@@ -77,9 +77,8 @@ export function parseLiveViewerMessage(data: string): LiveViewerMessage | null {
         test: readLiveTestTitle(message.test),
       };
     case 'call-log': {
-      if (message.log === null) return { type: 'call-log', log: null };
       const log = readLiveCallLog(message.log);
-      return log ? { type: 'call-log', log } : null;
+      return log ? { type: 'call-log', log, test: readLiveTestTitle(message.test) } : null;
     }
     case 'refused':
       return typeof message.message === 'string' ? { type: 'refused', message: message.message.slice(0, 500) } : null;

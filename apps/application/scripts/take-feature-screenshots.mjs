@@ -51,6 +51,7 @@ import { createRequire } from 'module';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { createHash } from 'node:crypto';
 import http from 'node:http';
+import https from 'node:https';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -601,7 +602,8 @@ const LIVE_VIEW_CALL_LINES = [
  * on the test the worker runs.
  */
 function holdLiveWorkerStream(base, runId, key) {
-  const request = http.request(`${base}/api/test-runs/${runId}/live-view?worker=0`, {
+  const client = base.startsWith('https:') ? https : http;
+  const request = client.request(`${base}/api/test-runs/${runId}/live-view?worker=0`, {
     headers: { Accept: 'text/event-stream', Authorization: `Bearer ${key}` },
   });
   request.on('response', (response) => response.resume());
@@ -4668,102 +4670,113 @@ const SCENES = [
     route: '/projects',
     viewport: { width: 1280, height: 1000 },
     outputs: ['run-live-view.png', 'run-live-view-narrow.png'],
-    async prepare({ request, base }) {
-      const { items } = await (await request.get(`${base}/api/projects/menu`)).json();
-      this.projectId = items.find((p) => p.name === 'web-dashboard').id;
-      await request.patch(`${base}/api/projects/${this.projectId}`, { data: { liveView: true } });
-      // A CI run's setup and begin, as the reporter's global setup asks for them.
-      const setup = await (
-        await postRetrying(request, base, '/api/test-runs/setup', {
-          data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
-        })
-      ).json();
-      this.runId = setup.runId;
-      this.key = setup.liveView.key;
-      const begun = await (
-        await postRetrying(request, base, `/api/test-runs/${this.runId}/begin`, {
-          data: { setupToken: setup.setupToken, totalTests: 6 },
-        })
-      ).json();
-      this.streamToken = begun.streamToken;
-      const now = Date.now();
-      const browser = { projectName: 'chromium', browserName: 'chromium' };
-      await postRetrying(request, base, `/api/test-runs/${this.runId}/events`, {
-        data: {
-          streamToken: this.streamToken,
-          testCases: [
-            {
-              type: 'complete',
-              title: 'guest checkout keeps the cart',
-              location: 'tests/checkout.spec.ts:5:3',
-              status: 'passed',
-              duration: 8_400,
-              workerIndex: 0,
-              startedAt: now - 16_000,
-              browser,
-            },
-            {
-              type: 'begin',
-              title: 'pays with a saved card',
-              location: 'tests/checkout.spec.ts:24:3',
-              workerIndex: 0,
-              startedAt: now - 7_000,
-              browser,
-            },
-            {
-              type: 'step-begin',
-              title: 'Click',
-              subtitle: "getByRole('button', { name: 'Pay' })",
-              location: 'tests/checkout.spec.ts:31:5',
-              stepCategory: 'pw:api',
-              parentTitle: 'pays with a saved card',
-              workerIndex: 0,
-              startedAt: now - 6_400,
-            },
-          ],
-        },
-      });
-      this.closeStream = holdLiveWorkerStream(base, this.runId, this.key);
-    },
     async run({ page, base, goto, shoot, settle }) {
-      // The image the worker sends: the checkout as the test's page shows it, its button's box measured there.
-      const viewport = { width: 1280, height: 800 };
-      const testPage = await page.context().newPage();
-      await testPage.setViewportSize(viewport);
-      await testPage.setContent(LIVE_VIEW_CHECKOUT);
-      const box = await testPage.getByRole('button', { name: 'Pay' }).boundingBox();
-      const data = (await testPage.screenshot({ type: 'jpeg', quality: 50 })).toString('base64');
-      await testPage.close();
-
-      const call = { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 31 };
-      const post = (message) =>
-        page.request
-          .post(`${base}/api/test-runs/${this.runId}/live-view`, {
-            headers: { Authorization: `Bearer ${this.key}` },
-            data: { shard: null, worker: 0, ...message },
-          })
-          .catch(() => undefined);
-      const send = () =>
-        Promise.all([
-          post({ type: 'frame', data, call, test: 'pays with a saved card' }),
-          post({
-            type: 'call-log',
-            log: {
-              id: 'call@58',
-              call,
-              status: 'running',
-              lines: LIVE_VIEW_CALL_LINES,
-              point: null,
-              target: { count: 1, box, enabled: false },
-              viewport,
-              ms: 6_400,
-              error: null,
-            },
-          }),
-        ]);
-      const sending = setInterval(send, 400);
+      const request = page.request;
+      const ok = async (response, what) => {
+        if (!response.ok()) throw new Error(`${what}: ${response.status()} ${await response.text()}`);
+        return response;
+      };
+      const { items } = await (await ok(await request.get(`${base}/api/projects/menu`), 'projects')).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard').id;
+      const project = await (await ok(await request.get(`${base}/api/projects/${projectId}`), 'project')).json();
+      let run = null;
+      let closeStream = () => {};
+      let sending = null;
       try {
-        await goto(`/test-runs/${this.runId}`);
+        await ok(
+          await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: true } }),
+          'live view on',
+        );
+        // A CI run's setup and begin, as the reporter's global setup asks for them, and its worker's stream.
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 6 },
+          })
+        ).json();
+        run = { id: setup.runId, key: setup.liveView.key, streamToken: begun.streamToken };
+        const now = Date.now();
+        const browser = { projectName: 'chromium', browserName: 'chromium' };
+        await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: [
+              {
+                type: 'complete',
+                title: 'guest checkout keeps the cart',
+                location: 'tests/checkout.spec.ts:5:3',
+                status: 'passed',
+                duration: 8_400,
+                workerIndex: 0,
+                startedAt: now - 16_000,
+                browser,
+              },
+              {
+                type: 'begin',
+                title: 'pays with a saved card',
+                location: 'tests/checkout.spec.ts:24:3',
+                workerIndex: 0,
+                startedAt: now - 7_000,
+                browser,
+              },
+              {
+                type: 'step-begin',
+                title: 'Click',
+                subtitle: "getByRole('button', { name: 'Pay' })",
+                location: 'tests/checkout.spec.ts:31:5',
+                stepCategory: 'pw:api',
+                parentTitle: 'pays with a saved card',
+                workerIndex: 0,
+                startedAt: now - 6_400,
+              },
+            ],
+          },
+        });
+        closeStream = holdLiveWorkerStream(base, run.id, run.key);
+
+        // The image the worker sends: the checkout as the test's page shows it, its button's box measured there.
+        const viewport = { width: 1280, height: 800 };
+        const testPage = await page.context().newPage();
+        await testPage.setViewportSize(viewport);
+        await testPage.setContent(LIVE_VIEW_CHECKOUT);
+        const box = await testPage.getByRole('button', { name: 'Pay' }).boundingBox();
+        const data = (await testPage.screenshot({ type: 'jpeg', quality: 50 })).toString('base64');
+        await testPage.close();
+
+        const test = 'pays with a saved card';
+        const call = { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 31 };
+        const post = (message) =>
+          request
+            .post(`${base}/api/test-runs/${run.id}/live-view`, {
+              headers: { Authorization: `Bearer ${run.key}` },
+              data: { shard: null, worker: 0, ...message },
+            })
+            .catch(() => undefined);
+        const send = () =>
+          Promise.all([
+            post({ type: 'frame', data, call, test }),
+            post({
+              type: 'call-log',
+              test,
+              log: {
+                id: 'call@58',
+                call,
+                status: 'running',
+                lines: LIVE_VIEW_CALL_LINES,
+                point: null,
+                target: { count: 1, box, enabled: false },
+                viewport,
+                ms: 6_400,
+                error: null,
+              },
+            }),
+          ]);
+        sending = setInterval(send, 400);
+        await goto(`/test-runs/${run.id}`);
         await page.getByRole('button', { name: 'Watch worker 0 live' }).first().click({ timeout: 60_000 });
         const dialog = page.getByRole('dialog');
         await dialog.getByTestId('live-frame').waitFor({ timeout: 30_000 });
@@ -4780,11 +4793,13 @@ const SCENES = [
         await shoot('narrow', { of: '[role="dialog"]', pad: 0 });
       } finally {
         clearInterval(sending);
-        this.closeStream();
-        await page.request.patch(`${base}/api/projects/${this.projectId}`, { data: { liveView: false } });
-        await page.request.post(`${base}/api/test-runs/${this.runId}/finish`, {
-          data: { streamToken: this.streamToken, status: 'passed', totalTests: 2 },
-        });
+        closeStream();
+        await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: project.liveView === true } });
+        if (run) {
+          await request.post(`${base}/api/test-runs/${run.id}/finish`, {
+            data: { streamToken: run.streamToken, status: 'passed', totalTests: 2 },
+          });
+        }
       }
     },
   },

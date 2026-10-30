@@ -102,7 +102,7 @@ live view turned off, the instance restarted, or it stopped answering.
   the record.
 
 The images show whatever the page shows, as the run's screenshots, videos and traces already do; a credential in a
-call's URL and the text a call types are hidden in its caption and its log. The workers reach the dashboard with a key
+call's URL, the text a call types and a password field's value are hidden in its caption and its log. The workers reach the dashboard with a key
 the run got as it registered: it opens this run's live view and nothing else, ends with the run, and is never in the
 environment of the tests, their hooks or their fixtures, so a process they start does not get it.
 

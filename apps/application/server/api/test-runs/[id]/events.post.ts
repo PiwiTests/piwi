@@ -9,6 +9,7 @@ import { mapWireCaseToRunCase } from '../../../utils/map-wire-case';
 import { resolveRepeatEachIndex } from '../../../utils/inserted-run-cases';
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
+import { hiddenErrorText } from '../../../utils/sanitize';
 import type { StreamEventPayload } from '#shared/types';
 import { countFailedFromTally } from '#shared/utils/test-counts';
 
@@ -183,7 +184,7 @@ export default eventHandler(async (event) => {
         status: tc.status,
         duration: tc.duration,
         location: tc.location,
-        error: tc.error ?? null,
+        error: hiddenErrorText(tc.error),
         stepEvents: tc.stepEvents ?? null,
         wastedTimeMs: tc.wastedTimeMs ?? null,
         workerIndex: tc.workerIndex ?? null,

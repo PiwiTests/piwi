@@ -41,6 +41,8 @@ export const MAX_LIVE_WORKERS_PER_RUN = 64;
 export const MAX_LIVE_VIEWERS_PER_RUN = 16;
 /** The most frames a second relayed of one worker: twice what a worker sends, for the jitter of the way. */
 export const MAX_RELAYED_FPS = LIVE_FRAME_FPS * 2;
+/** The most call logs a worker's view relays a second: twice what a worker posts, for posts the network brings together. */
+export const MAX_RELAYED_CALL_LOGS = LIVE_CALL_LOGS_PER_SECOND * 2;
 /** How long a key opens a stream at most, whatever its run does. */
 export const LIVE_KEY_TTL_MS = 24 * 60 * 60 * 1000;
 /** The most viewers one person holds in one run: a further one replaces their oldest. */
@@ -76,10 +78,10 @@ export type LiveKeyEnd = 'off' | 'run-ended';
 interface Viewer {
   sink: EventStreamSink;
   /**
-   * The latest message of each kind waiting while the viewer's stream is backed up (a frame, a call log), so the one
-   * never pushes the other out.
+   * The latest message of each kind waiting while the viewer's stream is backed up, so the one never pushes the other
+   * out: an image or why none shows (`frame`, `refused`), and a call log.
    */
-  pending: Map<LiveViewerMessage['type'], LiveViewerMessage>;
+  pending: Map<'image' | 'call-log', LiveViewerMessage>;
   /** The signed-in person watching, null when the instance knows nobody (authentication off). */
   person: number | null;
   /** When it came, in the order of all viewers. */
@@ -211,7 +213,7 @@ export class LiveViewRelay {
       viewers: new Set(),
       paused: before?.paused ?? null,
       rate: new RateWindow(MAX_RELAYED_FPS, this.now),
-      logRate: new RateWindow(LIVE_CALL_LOGS_PER_SECOND, this.now),
+      logRate: new RateWindow(MAX_RELAYED_CALL_LOGS, this.now),
     };
     run.workers.set(key, link);
     if (before) {
@@ -245,9 +247,9 @@ export class LiveViewRelay {
       }
       case 'call-log':
         if (!link.logRate.take(1)) {
-          return { status: 429, message: `${LIVE_CALL_LOGS_PER_SECOND} call logs a second at most.` };
+          return { status: 429, message: `${MAX_RELAYED_CALL_LOGS} call logs a second at most.` };
         }
-        this.deliver(link, { type: 'call-log', log: message.log });
+        this.deliver(link, { type: 'call-log', log: message.log, test: message.test });
         return null;
       case 'stop':
         link.paused = message.stop;
@@ -411,7 +413,7 @@ export class LiveViewRelay {
   /** Send a message to a worker's viewers: one whose stream is backed up gets the latest alone, once it drains. */
   private deliver(link: WorkerLink, message: LiveViewerMessage): void {
     for (const viewer of link.viewers) {
-      if (viewer.sink.backedUp()) viewer.pending.set(message.type, message);
+      if (viewer.sink.backedUp()) viewer.pending.set(message.type === 'call-log' ? 'call-log' : 'image', message);
       else viewer.sink.send(message);
     }
   }

@@ -12,6 +12,7 @@ import {
   countDroppedConsoleEntries,
   capConsoleLogs,
   capErrorText,
+  hiddenErrorText,
   capSourceFrames,
   capText,
   sanitizeWebVitals,
@@ -65,7 +66,7 @@ import {
   type TestCoverageCase,
 } from './coverage';
 import { sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
-import { hideTypedText, hideTypedTextInLog } from '@piwitests/core/mask';
+import { hideTypedText } from '@piwitests/core/mask';
 import { sanitizeLocatorPages } from './locator-pages';
 import type { LocatorPageUse } from '@piwitests/core/wire';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
@@ -484,7 +485,7 @@ export async function persistRunCases(
         // The fingerprint is computed from the raw error above; only storage is capped.
         pendingClusters.set(fingerprint.fingerprint, {
           fp: fingerprint,
-          sampleError: capText(c.error, limits.sampleErrorChars)!,
+          sampleError: capText(hiddenErrorText(c.error), limits.sampleErrorChars)!,
           count: 1,
         });
       }
@@ -515,7 +516,7 @@ export async function persistRunCases(
       status: normalizeTestCaseStatus(c.status),
       duration: c.duration ?? null,
       timeout: c.timeout ?? null,
-      error: capErrorText(typeof c.error === 'string' ? hideTypedTextInLog(c.error) : c.error, limits.errorChars),
+      error: capErrorText(hiddenErrorText(c.error), limits.errorChars),
       retries: c.retries ?? 0,
       repeatEachIndex: resolveRepeatEachIndex(c.repeatEachIndex),
       attempts: capArray(normalizeAttemptStatuses(c.attempts), 30),

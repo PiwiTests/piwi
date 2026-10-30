@@ -303,12 +303,18 @@ describe('the relay', () => {
       ms: 1200,
       error: null,
     };
-    const callLog = (worker: number): WorkerToInstance => ({ type: 'call-log', shard: null, worker, log });
+    const callLog = (worker: number): WorkerToInstance => ({
+      type: 'call-log',
+      shard: null,
+      worker,
+      log,
+      test: 'pays',
+    });
     const viewer = new FakeSink();
     live.addViewer(7, { shard: null, worker: 0 }, () => viewer);
     expect(live.receive(7, callLog(0))).toBeNull();
     expect(live.receive(7, callLog(1))).toBeNull();
-    expect(viewer.sent).toEqual([{ type: 'call-log', log }]);
+    expect(viewer.sent).toEqual([{ type: 'call-log', log, test: 'pays' }]);
 
     // A viewer that reads slowly gets the latest frame and the latest call log once it drains: neither pushes the other out.
     viewer.full = true;
@@ -317,9 +323,17 @@ describe('the relay', () => {
     viewer.drain();
     expect(viewer.sent.slice(1).map((m) => (m as { type: string }).type)).toEqual(['frame', 'call-log']);
 
+    // Why no image shows takes the image's place: the latest of the two alone reaches a slow viewer.
+    viewer.full = true;
+    live.receive(7, frame(0, 'AAAA'));
+    live.receive(7, { type: 'frame', shard: null, worker: 0, refused: 'The page is too heavy.' });
+    live.receive(7, frame(0, 'BBBB'));
+    viewer.drain();
+    expect(viewer.sent.slice(3)).toEqual([expect.objectContaining({ type: 'frame', data: 'BBBB' })]);
+
     // Past the rate of call logs, one more is refused; frames have their own.
     let refused = null;
-    for (let i = 0; i < 10 && !refused; i++) refused = live.receive(7, callLog(1));
+    for (let i = 0; i < 20 && !refused; i++) refused = live.receive(7, callLog(1));
     expect(refused).toMatchObject({ status: 429 });
     expect(live.receive(7, frame(1, 'BBBB'))).toBeNull();
   });

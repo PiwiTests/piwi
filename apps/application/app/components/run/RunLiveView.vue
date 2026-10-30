@@ -5,8 +5,8 @@
  * worker also sends the call its test is in as Playwright logs it: the log's last lines under the image, how long the
  * call has run and the elements its locator matches beside it, and over the image the first one outlined and the point
  * an input action acts on. Watching only: nothing here reaches the test. The view ends as its test ends (the worker
- * says so, or its next test's first image comes), the worker leaves, the run ends or the project turns its live view
- * off, and as it closes. Nothing is kept: the latest image and call log alone are in this page's memory, until the
+ * says so, or an image or a call log of its next test comes), the worker leaves, the run ends or the project turns its
+ * live view off, and as it closes. Nothing is kept: the latest image and call log alone are in this page's memory, until the
  * view closes.
  */
 import {
@@ -65,6 +65,7 @@ function connect(): void {
       call.value = message.call;
       notice.value = '';
     } else if (message.type === 'call-log') {
+      if (message.test !== null && message.test !== props.test) return end(LIVE_VIEW_END_TEXT['test-ended']);
       log.value = message.log;
       logAt.value = Date.now();
       now.value = logAt.value;
@@ -91,54 +92,70 @@ function disconnect(): void {
   source = null;
 }
 
+// The time a running call has run, counted on between two call logs, while the view is open.
+let clock: ReturnType<typeof setInterval> | null = null;
+function stopClock(): void {
+  if (clock) clearInterval(clock);
+  clock = null;
+}
+
 watch(
   open,
   (isOpen) => {
     if (!import.meta.client) return;
-    if (isOpen) connect();
-    else {
+    if (isOpen) {
+      connect();
+      clock ??= setInterval(() => {
+        if (log.value?.status === 'running' && !ended.value) now.value = Date.now();
+      }, 500);
+    } else {
       disconnect();
+      stopClock();
       image.value = null;
       log.value = null;
     }
   },
   { immediate: true },
 );
-onBeforeUnmount(disconnect);
-
-// The time a running call has run, counted on between two call logs.
-let clock: ReturnType<typeof setInterval> | null = null;
-onMounted(() => {
-  clock = setInterval(() => {
-    if (log.value?.status === 'running' && !ended.value) now.value = Date.now();
-  }, 500);
-});
 onBeforeUnmount(() => {
-  if (clock) clearInterval(clock);
+  disconnect();
+  stopClock();
 });
 
-/** The call shown: the call log's, fresher than a frame's, else the frame's. */
-const shownCall = computed(() => log.value?.call ?? call.value);
-/** How the call stands: running for so long, or how it ended. */
-const callState = computed(() => {
+/**
+ * Whether an image's call is the call log's: the same place in the code, or for a call placed nowhere, a title the
+ * log's begins with (the runner titles a call without its locator).
+ */
+function sameCall(framed: LiveCall, logged: LiveCall): boolean {
+  if (framed.file && logged.file) return framed.file === logged.file && framed.line === logged.line;
+  return logged.title.startsWith(framed.title);
+}
+/**
+ * The call log while it is of the call the test is in: running, or ended with no other call named by an image since
+ * (a step of the test's own, an assertion of the runner's, between two calls).
+ */
+const currentLog = computed(() => {
   const shown = log.value;
-  if (!shown) return '';
-  if (shown.status === 'running') {
-    return `Running for ${formatDuration(Math.floor((shown.ms + Math.max(0, now.value - logAt.value)) / 1000) * 1000)}`;
-  }
-  const ms = Math.round(shown.ms / 100) * 100;
-  if (shown.status === 'failed') return `Failed after ${formatDuration(ms)}${shown.error ? `: ${shown.error}` : ''}`;
-  return `Done in ${formatDuration(ms)}`;
+  if (!shown || shown.status === 'running' || !call.value) return shown;
+  return sameCall(call.value, shown.call) ? shown : null;
+});
+/** The call shown: the call log's, fresher than an image's, else the image's. */
+const shownCall = computed(() => currentLog.value?.call ?? call.value);
+/** How long the running call has run, counted on between two call logs, or how long the call that ended took. */
+const callMs = computed(() => {
+  const shown = currentLog.value;
+  if (!shown) return 0;
+  return shown.status === 'running' ? shown.ms + Math.max(0, now.value - logAt.value) : shown.ms;
 });
 /** What the running call's locator matches, said when it explains a wait. */
 const targetText = computed(() => {
-  const target = log.value?.status === 'running' ? log.value.target : null;
+  const target = currentLog.value?.status === 'running' ? currentLog.value.target : null;
   if (!target) return '';
   if (target.count === 0) return 'No element matches its locator yet';
   if (target.count > 1) return `${target.count} elements match its locator`;
   return target.enabled === false ? 'Its element is not enabled' : '';
 });
-const logLines = computed(() => (log.value?.lines ?? []).join('\n'));
+const logLines = computed(() => (currentLog.value?.lines ?? []).join('\n'));
 /**
  * The log's box follows its last line as each call log comes: from a call's start, until the reader scrolls up in it,
  * and again once they scroll back to its end.
@@ -149,17 +166,31 @@ function onLogScroll(): void {
   const box = logBox.value;
   if (box) followLog = box.scrollHeight - box.scrollTop - box.clientHeight < 8;
 }
-watch(log, async (shown, before) => {
+watch(currentLog, async (shown, before) => {
   if (shown?.id !== before?.id) followLog = true;
   await nextTick();
   if (followLog && logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight;
 });
-/** The overlay's drawing, in the page's viewport pixels: the waiting call's element, and where an input acts. */
+/**
+ * The overlay's drawing, in the page's viewport pixels: the part of the waiting call's element the image shows, and
+ * where an input acts, when the image shows it.
+ */
 const overlay = computed(() => {
-  const shown = log.value;
+  const shown = currentLog.value;
   if (!shown?.viewport || ended.value) return null;
-  const box = shown.status === 'running' ? (shown.target?.box ?? null) : null;
-  return { viewport: shown.viewport, box, point: shown.point, radius: Math.max(6, shown.viewport.width / 120) };
+  const { width, height } = shown.viewport;
+  const target = shown.status === 'running' ? (shown.target?.box ?? null) : null;
+  let box: { x: number; y: number; width: number; height: number } | null = null;
+  if (target) {
+    const x = Math.max(0, target.x);
+    const y = Math.max(0, target.y);
+    const right = Math.min(width, target.x + target.width);
+    const bottom = Math.min(height, target.y + target.height);
+    if (right > x && bottom > y) box = { x, y, width: right - x, height: bottom - y };
+  }
+  const at = shown.point;
+  const point = at && at.x >= 0 && at.x <= width && at.y >= 0 && at.y <= height ? at : null;
+  return { viewport: shown.viewport, box, point, radius: Math.max(6, width / 120) };
 });
 
 const name = computed(() => liveWorkerName({ shard: props.shard, worker: props.worker }));
@@ -238,16 +269,22 @@ const alt = computed(
             /></template>
           </template>
         </figcaption>
-        <template v-if="log">
-          <p class="text-xs text-muted" data-testid="live-call-state">
-            {{ callState
-            }}<template v-if="targetText">
+        <template v-if="currentLog">
+          <p v-if="!ended" class="text-xs text-muted" data-testid="live-call-state">
+            <template v-if="currentLog.status === 'running'">Running for {{ formatLongDuration(callMs) }}</template>
+            <template v-else
+              >{{ currentLog.status === 'failed' ? 'Failed after' : 'Done in' }} <DurationValue :ms="callMs"
+            /></template>
+            <template v-if="targetText">
               · <span data-testid="live-call-target">{{ targetText }}</span></template
             >
           </p>
+          <ErrorText v-if="!ended && currentLog.error" :text="currentLog.error" data-testid="live-call-error" />
           <pre
             v-if="logLines"
             ref="logBox"
+            role="region"
+            tabindex="0"
             class="max-h-48 overflow-auto sm:max-h-72 rounded-md border border-default bg-elevated px-3 py-2 font-mono text-xs text-highlighted whitespace-pre-wrap"
             aria-label="The call's log, as Playwright writes it"
             @scroll="onLogScroll"

@@ -30,7 +30,7 @@ describe("a worker's view on the run page", () => {
     expect(parseLiveViewerMessage('not json')).toBeNull();
   });
 
-  test('reads a call log, or its absence between two calls, and nothing that is not one', () => {
+  test('reads a call log with its test’s title, and nothing that is not one', () => {
     const log = {
       id: 'call@1',
       call: { title: 'Fill "S3cr3t"', file: 'tests/a.spec.ts', line: 4 },
@@ -42,13 +42,10 @@ describe("a worker's view on the run page", () => {
       ms: 500,
       error: null,
     };
-    const read = parseLiveViewerMessage(JSON.stringify({ type: 'call-log', log }));
-    expect(read).toMatchObject({ type: 'call-log', log: { id: 'call@1', point: { x: 10, y: 20 } } });
+    const read = parseLiveViewerMessage(JSON.stringify({ type: 'call-log', log, test: 'pays' }));
+    expect(read).toMatchObject({ type: 'call-log', log: { id: 'call@1', point: { x: 10, y: 20 } }, test: 'pays' });
     expect(JSON.stringify(read)).not.toContain('S3cr3t');
-    expect(parseLiveViewerMessage(JSON.stringify({ type: 'call-log', log: null }))).toEqual({
-      type: 'call-log',
-      log: null,
-    });
+    expect(parseLiveViewerMessage(JSON.stringify({ type: 'call-log', log: null }))).toBeNull();
     expect(parseLiveViewerMessage(JSON.stringify({ type: 'call-log', log: { ...log, status: 'done' } }))).toBeNull();
   });
 

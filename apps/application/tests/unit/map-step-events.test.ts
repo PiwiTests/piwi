@@ -62,7 +62,7 @@ describe('mapStepEventsToRunEvents', () => {
     ]);
   });
 
-  test('names no text a fill typed, from a reporter that predates hiding it', () => {
+  test('names no text a fill typed, whatever reporter sent the step', () => {
     const fill: StreamEventPayload = {
       ...waitBegin,
       title: 'Fill "S3cr3t!Passw0rd"',
@@ -72,6 +72,11 @@ describe('mapStepEventsToRunEvents', () => {
       'step-begin Fill "<hidden>"',
       'step-end Fill "<hidden>"',
     ]);
+  });
+
+  test('keeps the title of a step the test names itself', () => {
+    const own: StreamEventPayload = { ...waitBegin, title: 'Fill "Shipping address"', stepCategory: 'test.step' };
+    expect(sequence([own])).toEqual(['step-begin Fill "Shipping address"']);
   });
 
   test('skips test-case begin and complete events', () => {

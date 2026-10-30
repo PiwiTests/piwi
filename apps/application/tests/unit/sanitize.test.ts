@@ -10,6 +10,7 @@ import {
   sanitizeDialogs,
   capSteps,
   DROPPED_STEPS_CATEGORY,
+  hiddenErrorText,
 } from '../../server/utils/sanitize';
 import { DEFAULT_INGEST_LIMITS } from '#shared/ingest-limits';
 
@@ -174,6 +175,25 @@ describe('sanitizeAiUsage', () => {
     expect(sanitizeAiUsage({ intents: [intent] })).toBeNull();
     expect(sanitizeAiUsage({ entries: [], intents: [intent] })).toBeNull();
     expect(sanitizeAiUsage(null)).toBeNull();
+  });
+});
+
+describe('hiddenErrorText', () => {
+  test('hides what may be a secret in a case’s error, whatever reporter sent it', () => {
+    const error = [
+      'Error: expect(locator).toHaveValue(expected) failed',
+      "Locator:  getByLabel('Password')",
+      'Received: "S3cr3t!Passw0rd"',
+      'Call log:',
+      "  - waiting for getByLabel('Password')",
+      '  - fill("S3cr3t!Passw0rd")',
+    ].join('\n');
+    const hidden = hiddenErrorText(error)!;
+    expect(hidden).not.toContain('S3cr3t');
+    expect(hidden).toContain('Received: "<hidden>"');
+    expect(hidden).toContain('Error: expect(locator).toHaveValue(expected) failed');
+    expect(hiddenErrorText(undefined)).toBeNull();
+    expect(hiddenErrorText({ message: 'x' })).toBeNull();
   });
 });
 

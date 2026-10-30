@@ -141,18 +141,22 @@ a slow or stuck test explained while it runs, with Playwright's own words for wh
 
 **The call log.** In a CI run, while a viewer watches, the worker turns Playwright's call stream on (D2) and sends,
 for the call the test is in: its title, its place in the user's code, its status, its log, its action point and the
-first line of the error it ended with, at the stream's own pace (an update every 500 ms), 300 ms apart at least
-(`live-call-log.ts`, the `call-log` message of `@piwitests/core/live-view`). The log goes folded as Playwright folds a
+first line of the error it ended with, with the test's title, at the stream's own pace (an update every 500 ms), four
+a second at most (`live-call-log.ts`, the `call-log` message of `@piwitests/core/live-view`). The context's calls are
+followed from the first view until the context goes, so a viewer who comes while a call waits sees it at once, and two
+calls waiting together each keep their own log and time. The log goes folded as Playwright folds a
 failed call's (`compressCallLog`: `11 × retrying click action`), its last 20 lines, each cut at 300 characters. Calls
 of Piwi's own capture are internal and never reach the stream. Playwright names a `fill`, a `type` or a
 `pressSequentially` by the text it types (`Fill "S3cr3t!Passw0rd" getByLabel('Password')`, `fill("S3cr3t!Passw0rd")`
-in the log): the worker hides that text in every title and log line (`Fill "<hidden>" getByLabel('Password')`), then
-applies `hideSecretsInText`, and the instance applies both again as it reads the message.
+in the log): the worker hides that text in every title and log line (`Fill "<hidden>" getByLabel('Password')`), and
+the values an assertion quotes of a field whose locator names a secret (`unexpected value "…"`), then applies
+`hideSecretsInText`, and the instance applies the same again as it reads the message.
 
 **The element.** The call log names the element a locator resolved to, but not where it is, and says nothing while a
 locator matches no element ([spike A](#a-playwrights-call-stream)). While a call waits, the worker reads, once a
 second, the number of elements its locator matches and the box of the first, through `internalCall` (the call's
-selector, as `run-events.ts` reads it), and whether that one is enabled. The view outlines the box, and says
+selector, from the worker's instrumentation, matched to the stream by the call's id), and whether that one is
+enabled, while the watched page is its context's only one. The view outlines the box, and says
 `No element matches its locator yet`, `3 elements match its locator` or `Its element is not enabled`.
 
 **What the view shows.** Under the image, the call's title and line, as today, how long it has run (or how it ended)
