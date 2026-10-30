@@ -398,21 +398,24 @@ const windsurfSnippet = computed(() =>
                       <code class="font-mono">~/Library/Application Support/Claude/claude_desktop_config.json</code>
                     </li>
                     <li>
-                      <strong>Windows:</strong> <code class="font-mono">claude_desktop_config.json</code> in the first
-                      of these folders that exists, skipping one that holds a
-                      <code class="font-mono">.user-data-left.*</code> file (Claude Desktop has moved out of it):
+                      <strong>Windows:</strong> <code class="font-mono">claude_desktop_config.json</code> in
+                      <code class="font-mono break-all">%LOCALAPPDATA%\Claude-Data\claude_pzs8sxrjxfjjc\</code> for
+                      recent versions. An older install keeps it in one of these folders; a
+                      <code class="font-mono">.user-data-left.*</code> file there means it moved to
+                      <code class="font-mono">Claude-Data</code>:
                       <ul class="pl-4 space-y-0.5">
-                        <li>
-                          <code class="font-mono break-all">%LOCALAPPDATA%\Claude-Data\claude_pzs8sxrjxfjjc\</code>
-                        </li>
                         <li>
                           <code class="font-mono break-all"
                             >%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\</code
                           >
-                          (an earlier Microsoft Store install)
+                          (an MSIX install: Microsoft Store, WinGet)
                         </li>
                         <li><code class="font-mono break-all">%APPDATA%\Claude\</code> (the classic installer)</li>
                       </ul>
+                    </li>
+                    <li>
+                      <strong>Linux (beta):</strong>{{ ' ' }}
+                      <code class="font-mono">~/.config/Claude/claude_desktop_config.json</code>
                     </li>
                   </ul>
                   <CodeBlock :code="claudeDesktopSnippet" lang="json" />

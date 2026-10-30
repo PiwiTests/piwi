@@ -91,11 +91,11 @@ writes their entry in one click instead.
 ### Claude Desktop
 
 Add to `claude_desktop_config.json`, then restart Claude Desktop. On macOS it is in
-`~/Library/Application Support/Claude/`. On Windows it is in the first of these folders that exists, skipping one that
-holds a `.user-data-left.*` file (Claude Desktop has moved out of it):
+`~/Library/Application Support/Claude/`, on Linux (beta) in `~/.config/Claude/`. On Windows, recent versions keep it in
+`%LOCALAPPDATA%\Claude-Data\claude_pzs8sxrjxfjjc\`. An older install keeps it in one of these folders; a
+`.user-data-left.*` file there means it moved to `Claude-Data`:
 
-- `%LOCALAPPDATA%\Claude-Data\claude_pzs8sxrjxfjjc\`
-- `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\`, an earlier Microsoft Store install
+- `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\`, an MSIX install (Microsoft Store, WinGet)
 - `%APPDATA%\Claude\`, the classic installer
 
 ```json

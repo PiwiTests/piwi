@@ -3932,7 +3932,7 @@ const SCENES = [
     tags: ['docs'],
     out: 'docs',
     route: '/mcp',
-    viewport: { width: 1280, height: 800 },
+    viewport: { width: 1280, height: 1000 },
     of: '[data-shot="mcp-client-setup"]',
     pad: 12,
   },
