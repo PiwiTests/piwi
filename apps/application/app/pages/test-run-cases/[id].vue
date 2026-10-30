@@ -335,8 +335,13 @@ const { rerunning, triggerRerun } = useCiRerun(
   "The cluster's tests are re-running in CI.",
 );
 
-/** The Verify section shows when a CI re-run is configured; the desktop app re-runs the test from the navbar. */
-const showVerify = computed(() => Boolean(rerunInfo.value?.available));
+/**
+ * The Verify section shows when a CI re-run is configured, to a viewer who may start one or once a re-run happened; the
+ * desktop app re-runs the test from the navbar.
+ */
+const showVerify = computed(
+  () => Boolean(rerunInfo.value?.available) && (canRerun.value || Boolean(rerunInfo.value?.lastDispatch)),
+);
 
 /** Reproduce shows for a failing execution once its recipe is available. */
 const showReproduce = computed(() => Boolean(verdict.value) && Boolean(reproduceData.value?.reproduce?.steps?.length));
@@ -370,9 +375,10 @@ const reproduceSummary = computed(() =>
     Boolean(reproduceData.value?.bisect?.available),
   ),
 );
-const verifySummary = computed(() =>
-  failureCluster.value ? 'Re-run this test, or every test of its cluster, in CI' : 'Re-run this test in CI',
-);
+const verifySummary = computed(() => {
+  if (!canRerun.value) return 'When CI last re-ran it';
+  return failureCluster.value ? 'Re-run this test, or every test of its cluster, in CI' : 'Re-run this test in CI';
+});
 
 // ── Header: identity, exceptional badges ─────────────────────────────────────
 // Playwright test marks only — `piwi:` annotations are ownership, not marks.
@@ -459,6 +465,7 @@ const canQuarantine = computed(() => can('quarantine:write', executionProjectId.
 const canTriage = computed(() => can('triage:write', executionProjectId.value));
 const canCreateIssue = computed(() => can('issue:create', executionProjectId.value));
 const canEditLinks = computed(() => can('link:write', executionProjectId.value));
+const canRerun = computed(() => can('run:control', executionProjectId.value));
 
 // ── Quarantine ──────────────────────────────────────────────────────────────
 const { quarantineOne, releaseOne } = useQuarantine(() => executionProjectId.value);
@@ -1070,6 +1077,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
             <template v-if="showVerify" #verify>
               <div class="flex flex-wrap items-center gap-2">
                 <UButton
+                  v-if="canRerun"
                   size="xs"
                   color="neutral"
                   variant="outline"
@@ -1081,7 +1089,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
                   Re-run this test in CI
                 </UButton>
                 <UButton
-                  v-if="failureCluster"
+                  v-if="canRerun && failureCluster"
                   size="xs"
                   color="neutral"
                   variant="outline"

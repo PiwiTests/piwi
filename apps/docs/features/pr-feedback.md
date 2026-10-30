@@ -77,13 +77,13 @@ Turn it on in **Settings → Pull requests** (off by default). It needs:
 
 ## Re-run from the dashboard
 
-Once a cluster is fixed, the fastest way to prove it is to re-run exactly the affected tests, and a
+Once a cluster is fixed, the fastest way to prove it is to re-run the affected tests, and a
 [filtered run that passes them all closes the cluster](./failure-clusters#did-the-fix-work). The cluster page can
-trigger that run in CI for you: **Re-run in CI**, next to *Copy retry command*, dispatches a workflow or pipeline with
+trigger that run in CI: **Re-run in CI**, next to *Copy retry command*, dispatches a workflow or pipeline with
 the cluster's retry arguments (each affected test's `file:line` from its latest failure, and the projects it failed
 in) on the branch of the cluster's latest run, and links to the run it started. The configured ref is used only when
-that run recorded no branch. An execution's Verify section offers **Re-run this test in CI**, for that one test at its
-line and in its project, beside **Re-run the cluster in CI**; both are recorded as the cluster's last re-run. The last dispatch (when, by whom, and a link) shows under the Test evidence header.
+that run recorded no branch. An execution's Verify section offers **Re-run this test in CI**, for that test at its
+line and in its project, beside **Re-run the cluster in CI**; both are recorded as the cluster's last re-run. The last dispatch (when, by whom, and a link) shows under Test evidence.
 
 It is **off by default** and configured per project in the **Source control** section of the project's **Settings** tab,
 under **CI re-run**. Turn it on and fill in the block for your provider:
@@ -94,8 +94,9 @@ under **CI re-run**. Turn it on and fill in the block for your provider:
 | **GitLab** | A ref and the pipeline variable name that receives the arguments | `api` |
 | **Bitbucket** | The `custom:` pipeline name and the variable name that receives the arguments | `pipeline:write` |
 
-The dispatch uses the project's SCM token, so that token needs the write scope above. The button is disabled with an
-explanatory tooltip when the feature is off, no target is configured for the repository's provider, or no token is set.
+The dispatch uses the project's SCM token, which needs the write scope above. Its buttons, and a next step that runs in
+CI, show to people with [`run:control`](/operate/project-access#what-each-role-can-do) once the feature is on, a target
+is set for the provider and a token is set.
 
 An optional **Flake Lab** block names a second workflow or pipeline that runs `piwi flake` for one flaky test, started
 from that test's next step: [Run it in CI](./flake-lab#run-it-in-ci) shows the workflow.

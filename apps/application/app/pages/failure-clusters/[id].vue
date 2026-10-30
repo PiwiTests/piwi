@@ -402,7 +402,7 @@ const reproduceSummary = computed(() =>
   reproduceSectionSummary(fixPlan.value?.reproduce?.steps?.length ?? 0, Boolean(fixPlan.value?.bisect?.available)),
 );
 const verifySummary = computed(() =>
-  verifySectionSummary(affectedRetryCases.value.length, Boolean(rerunInfo.value?.available)),
+  verifySectionSummary(affectedRetryCases.value.length, canRerun.value && Boolean(rerunInfo.value?.available)),
 );
 
 // ── Apply the same triage ─────────────────────────────────────────────────────

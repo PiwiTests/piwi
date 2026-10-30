@@ -37,6 +37,17 @@ if [ -n "$wanted_node" ] && [ "$(node -p 'process.versions.node.split(".")[0]')"
   echo "[session-start] WARNING: Node $(node --version) runs this session; the repository pins Node $wanted_node (.node-version)"
 fi
 
+# Node's default heap limit here is about 2 GB, which `nuxt dev`, `nuxt build` and `nuxt generate` outgrow while they
+# bundle the server. Every later command of the session gets 6 GB, appended to the options the environment already sets
+# (the proxy's `--use-openssl-ca`) rather than replacing them; an explicit limit, either spelling (`--max-old-space-size`,
+# `--max_old_space_size`), still wins, as `app:typecheck`'s does. The line goes into the file once, however often the
+# hook runs in a session.
+heap_line='case " ${NODE_OPTIONS:-} " in *" --max-old-space-size"*|*" --max_old_space_size"*) ;; *) export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=6144" ;; esac'
+if [ -n "${CLAUDE_ENV_FILE:-}" ] && ! grep -qxF "$heap_line" "$CLAUDE_ENV_FILE" 2>/dev/null; then
+  echo "$heap_line" >>"$CLAUDE_ENV_FILE"
+  echo "[session-start] Node heap limit raised to 6 GB for this session"
+fi
+
 # Install exactly what package-lock.json pins, as CI does, without writing it: the
 # container's npm 10 would rewrite the npm 11 lockfile under `npm install`, leaving
 # every session with a lockfile change unrelated to its task. npm ci deletes

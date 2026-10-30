@@ -54,7 +54,8 @@ export const CLUSTERS_ANCHORS = [
     pages: ['/failure-clusters/[id]', '/test-run-cases/[id]'],
     describes:
       'The Verify section of More ways to fix: the command that re-runs the failing tests, the CI re-runs, and on a cluster a run in the desktop app.',
-    shownWhen: 'On a cluster with a verify command; on an execution, when its test can be re-run in CI.',
+    shownWhen:
+      'On a cluster with a verify command; on an execution with CI re-run set up, to a viewer who may start one or after a re-run.',
     doc: 'guide/first-failure#_6-more-ways-to-fix',
     sample: { route: '/failure-clusters/10', expect: USERS_TABLE_CLUSTER },
   },
