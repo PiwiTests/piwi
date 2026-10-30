@@ -1,6 +1,6 @@
 ---
 title: Pause and step from the editor
-description: "Pause a test run Piwi started from VS Code or a JetBrains IDE, or one you started in a terminal, step it call by call, run it to the cursor, resume, finish or end it, with the paused line marked in the editor, your breakpoints applied as you change them, and a headless test's page shown as an image you pick a locator on."
+description: "Pause a test run Piwi started from VS Code or a JetBrains IDE, or one you started yourself, in a terminal or with a JetBrains IDE's own Run, step it call by call, run it to the cursor, resume, finish or end it, with the paused line marked in the editor, your breakpoints applied as you change them, and a headless test's page shown as an image you pick a locator on."
 lang: en-US
 ---
 
@@ -10,7 +10,7 @@ lang: en-US
 
 A test run the [editor extensions](./editors) start can be paused, stepped and resumed from the editor, with Piwi's own
 commands: no debug session starts, and the IDE's debugger works as usual beside it; so can
-[one you start in a terminal](./terminal-runs). The editor marks the line the test stopped at, as a debugger does, and
+[one started outside Piwi](./terminal-runs). The editor marks the line the test stopped at, as a debugger does, and
 the breakpoints you set or remove reach the run while it goes on. The [pause bar](./editor-breakpoints#pause-a-run) in
 the page answers the same stops, as does Piwi Picker's [Runs window](./runs-window). At a stop, the editor also writes
 code from the page: [Code from a pause](./editor-stop-code).
@@ -110,9 +110,9 @@ answers. Closing the IDE closes the connections: a stop with no pause bar then g
 
 ## Limits
 
-- **Runs Piwi can follow.** A run started by the IDE's own Playwright run configuration has no controls in the editor;
-  with **Run the tests in the IDE's Playwright runner** on, a JetBrains IDE's runs keep them, their Rerun, Rerun Failed
-  Tests and Debug included.
+- **The IDE's own runs** (the gutter's Run, a run configuration) are [runs started outside Piwi](./terminal-runs): no
+  Stop, and no Pick, Record or Assert in the test's window. With **Run the tests in the IDE's Playwright runner** on,
+  Piwi's commands run there with every control, the runner's Rerun and Debug included.
 - **No mark on a breakpoint that never stops.** One on a line with no call Playwright's debugger stops at looks like
   any other and does nothing.
 - **Playwright calls, not JavaScript.** **Step** goes from one Playwright call to the next; stepping through the

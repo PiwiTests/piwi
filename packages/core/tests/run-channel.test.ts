@@ -90,6 +90,11 @@ describe('the run channel', () => {
       expect(parseRunToHub(line({ ...attach, holds: ['dance', 'failure'] }))).toMatchObject({ holds: ['failure'] });
       expect(parseRunToHub(line({ ...attach, holds: [] }))).toMatchObject({ holds: [] });
       expect(RUN_HOLDS).toEqual(attach.holds);
+      // An editor's own test runner started the run: said by `true` alone, absent otherwise.
+      expect(parseRunToHub(line({ ...attach, runner: true }))).toEqual({ ...attach, runner: true });
+      for (const runner of [false, 'true', 1, null]) {
+        expect(parseRunToHub(line({ ...attach, runner })), String(runner)).not.toHaveProperty('runner');
+      }
       for (const broken of [
         { ...attach, ref: '' },
         { ...attach, ref: 'ed 1' },

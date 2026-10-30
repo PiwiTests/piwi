@@ -352,6 +352,9 @@ export type RunToHub =
    * `parallelIndex`, its process), the versions of Playwright and of the reporter, the intents and queries it
    * takes (`takes`), none for a worker of a reporter that predates them, and the stops it holds only once the service
    * says it shows them (`holds`), which the service answers with `attached`; absent from a reporter that predates them.
+   * `runner` says an editor's own test runner started the run (the run of a JetBrains IDE's Playwright run
+   * configuration, its gutter's Run included), rather than a terminal or the editor's command; absent otherwise, and
+   * from a reporter that predates it.
    */
   | {
       type: 'run-attach';
@@ -365,6 +368,7 @@ export type RunToHub =
       reporter: string;
       takes?: RunTake[];
       holds?: RunHold[];
+      runner?: true;
     }
   /**
    * A test starts: Playwright's id, its describe blocks' titles and its own, its file and 1-based line, its project,
@@ -818,6 +822,7 @@ export function parseRunToHub(line: string): RunToHub | null {
         reporter: text(value.reporter, 64) ?? '',
         takes: readTakes(value.takes),
         ...(holds === undefined ? {} : { holds }),
+        ...(value.runner === true ? { runner: true as const } : {}),
       };
     }
     case 'test-begin': {

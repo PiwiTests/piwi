@@ -9,6 +9,7 @@ import {
   RUN_INTENT_NAMES,
   RUN_REF_ENV,
   RUN_TAKES,
+  TERMINAL_REF_PREFIX,
   parseHubToRun,
   type ActAnswer,
   type BindAnswer,
@@ -39,6 +40,7 @@ import {
   type ViewButton,
   type ViewInput,
 } from '@piwitests/core/run-view';
+import { startedByTestRunner } from '../config/editors.js';
 import { PIWI_LOCAL_DEBUG_ENV, PIWI_ORIGIN_ENV } from '../config/env.js';
 import { errorMessage } from '../support/errors.js';
 import { getReporterVersion } from '../support/reporter-version.js';
@@ -333,6 +335,8 @@ export async function openRunChannel(
     reporter: getReporterVersion(),
     takes: workerTakes(env),
     holds: [...RUN_HOLDS],
+    // A run the reporter follows from outside the editor, which its own test runner started.
+    ...(ref.startsWith(TERMINAL_REF_PREFIX) && startedByTestRunner(env) ? { runner: true as const } : {}),
   });
   liveSaid = '';
   tellLive();

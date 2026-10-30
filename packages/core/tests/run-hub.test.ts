@@ -313,6 +313,7 @@ describe('the hub’s WebSocket', () => {
         session: { ...session, root: null, label: null, command: null, project: null, workers: [], ended: true },
       },
       { type: 'session', session: { ...session, command: null, terminal: true } },
+      { type: 'session', session: { ...session, command: null, terminal: true, runner: true } },
       { type: 'keepalive' },
     ];
     for (const message of messages) expect(parseHubMessage(json(message))).toEqual(message);
@@ -352,6 +353,15 @@ describe('the hub’s WebSocket', () => {
     expect(parseHubMessage(json({ type: 'session', session: { ...session, terminal: 'yes' } }))).toEqual({
       type: 'session',
       session,
+    });
+    // A test runner's run is one of the runs `terminal` names: `runner` is true, of such a run alone, or left out.
+    expect(parseHubMessage(json({ type: 'session', session: { ...session, runner: true } }))).toEqual({
+      type: 'session',
+      session,
+    });
+    expect(parseHubMessage(json({ type: 'session', session: { ...session, terminal: true, runner: 'yes' } }))).toEqual({
+      type: 'session',
+      session: { ...session, terminal: true },
     });
     // A failure's stop names its error; a hub that predates it names none.
     const failed = { ...worker.stop!, reason: 'failure', error: 'expect(locator).toBeVisible() failed' };
