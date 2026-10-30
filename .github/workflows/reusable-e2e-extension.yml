@@ -1,7 +1,7 @@
 name: Extension E2E
 
 # Drives the real built extension (dist/) with Chromium via --load-extension.
-# Heavier than the unit/lint checks of ci.yml's checks job (needs a build and a
+# Heavier than the unit and lint checks of ci.yml (needs a build and a
 # real browser): ci.yml calls it on pull requests that change the extension or
 # the packages it bundles, and it runs on demand.
 on:
