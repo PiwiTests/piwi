@@ -27,6 +27,7 @@
 // across launches — so `heal_configured_clients` runs at startup and rewrites
 // any entry that no longer matches what this app would write today.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Map, Value};
@@ -122,69 +123,139 @@ fn stdio_bridge_entry(command: &str) -> Value {
 /// fails only in pathological cases (the binary unlinked mid-run); the bare
 /// name is a last resort that at least resolves if the app is on PATH.
 fn bridge_command() -> String {
-    std::env::current_exe()
+    let exe = std::env::current_exe().ok();
+    let appimage = if cfg!(target_os = "linux") {
+        std::env::var_os("APPIMAGE")
+    } else {
+        None
+    };
+    bridge_path(exe.as_deref(), appimage.as_deref(), &std::env::temp_dir())
+}
+
+/// `exe` as a command another app can spawn. An AppImage runs from a mount
+/// (`<temp>/.mount_*`, the check Tauri makes) that gets a new name at each
+/// launch, so an `exe` inside one is replaced by the AppImage file it was
+/// started from (`APPIMAGE`), the path that lasts.
+fn bridge_path(exe: Option<&Path>, appimage: Option<&OsStr>, temp: &Path) -> String {
+    let in_mount = exe
+        .and_then(|exe| exe.strip_prefix(temp).ok())
+        .and_then(|rest| rest.components().next())
+        .is_some_and(|first| first.as_os_str().to_string_lossy().starts_with(".mount_"));
+    match (exe, appimage) {
+        (Some(_), Some(image)) if in_mount => crate::node_path(Path::new(image)),
         // Windows hands paths back with the `\\?\` verbatim prefix, which
         // launchers mishandle — strip it (see `node_path`).
-        .map(|exe| crate::node_path(&exe))
-        .unwrap_or_else(|_| "piwi-desktop".to_string())
+        (Some(exe), _) => crate::node_path(exe),
+        (None, _) => "piwi-desktop".to_string(),
+    }
 }
 
 const CLAUDE_DESKTOP_CONFIG: &str = "claude_desktop_config.json";
 
-/// Claude Desktop config directories, in the order they are preferred.
+/// Claude Desktop config directories, in the order `pick_config_dir` reads them.
 ///
-/// A Windows Store (MSIX) install runs in a package container, and Windows
-/// redirects the writes it aims at `%APPDATA%` into
-/// `%LOCALAPPDATA%\Packages\<package family name>\LocalCache\Roaming\` — so
-/// that container, not `%APPDATA%\Claude`, holds the file that build reads.
-/// Both are offered, container first; on macOS and Linux only the plain
-/// config-dir candidate ever exists.
+/// On Windows, the folder depends on the build:
+///   - `%LOCALAPPDATA%\Packages\Claude_<publisher id>\LocalCache\Roaming\Claude\`
+///     for an MSIX install (Microsoft Store, WinGet, the MSIX installer): it
+///     runs in a package container, and Windows redirects the writes it aims
+///     at `%APPDATA%` there;
+///   - `%APPDATA%\Claude\` for the classic installer;
+///   - `%LOCALAPPDATA%\Claude-Data\claude_<publisher id>\` for recent builds,
+///     which leave a `.user-data-left.claude_<publisher id>` file in the
+///     folders above when they move their data there.
+///
+/// On macOS and Linux only the plain config-dir candidate exists.
 fn claude_desktop_dirs(app: &AppHandle) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    if let Ok(local) = app.path().local_data_dir() {
+    let local = app.path().local_data_dir().ok();
+    if let Some(local) = &local {
         dirs.extend(packaged_claude_dirs(&local.join("Packages")));
     }
     if let Ok(config) = app.path().config_dir() {
         dirs.push(config.join("Claude"));
     }
+    if let Some(local) = &local {
+        dirs.extend(claude_named_dirs(&local.join("Claude-Data")));
+    }
     dirs
 }
 
-/// The `LocalCache\Roaming\Claude` directory of every `Claude_*` package under
-/// the MSIX package root, sorted so the choice never depends on the order the
-/// filesystem happens to list entries in.
+/// The directories under `root` whose name starts with `claude_` in any case,
+/// sorted so the choice never depends on the order the filesystem happens to
+/// list entries in.
 ///
-/// The package family name is matched by prefix: its suffix is a hash of the
-/// publisher identity, so it is the same on every machine but changes with a
-/// re-signed or side-by-side package.
-fn packaged_claude_dirs(packages_root: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(packages_root) else {
+/// The name is matched by prefix: its suffix is a hash of the publisher
+/// identity, so it is the same on every machine but changes with a re-signed
+/// or side-by-side package.
+fn claude_named_dirs(root: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(root) else {
         return Vec::new();
     };
     let mut dirs: Vec<PathBuf> = entries
         .flatten()
         .map(|entry| entry.path())
         .filter(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("Claude_"))
+            path.is_dir()
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.to_ascii_lowercase().starts_with("claude_"))
         })
-        .map(|path| path.join("LocalCache").join("Roaming").join("Claude"))
         .collect();
     dirs.sort();
     dirs
 }
 
-/// The first candidate that exists, else the last — where a fresh install of
-/// the client would create it. Existence beats content: a container that is
-/// present but still empty belongs to the build that is actually installed,
-/// while a config left behind elsewhere belongs to one that is not.
+/// The `LocalCache\Roaming\Claude` directory of every `Claude_*` package under
+/// the MSIX package root.
+fn packaged_claude_dirs(packages_root: &Path) -> Vec<PathBuf> {
+    claude_named_dirs(packages_root)
+        .into_iter()
+        .map(|path| path.join("LocalCache").join("Roaming").join("Claude"))
+        .collect()
+}
+
+/// The folder the client reads its config from, in this order:
+///   1. the candidate a `.user-data-left.<name>` file names: the data moved
+///      there;
+///   2. the first candidate that exists and holds no such file. Existence beats
+///      content: a folder that is present but still empty belongs to the build
+///      that is actually installed, while a config left behind elsewhere
+///      belongs to one that is not;
+///   3. the last candidate, where a fresh install of the client creates it.
 fn pick_config_dir(candidates: &[PathBuf]) -> Option<PathBuf> {
-    candidates
+    let moved_to = candidates
         .iter()
-        .find(|dir| dir.is_dir())
+        .filter_map(|dir| data_moved_to(dir))
+        .find_map(|name| {
+            candidates.iter().find(|dir| {
+                dir.is_dir()
+                    && dir.file_name().is_some_and(|dir_name| {
+                        dir_name.to_string_lossy().eq_ignore_ascii_case(&name)
+                    })
+            })
+        });
+    moved_to
+        .or_else(|| {
+            candidates
+                .iter()
+                .find(|dir| dir.is_dir() && data_moved_to(dir).is_none())
+        })
         .or_else(|| candidates.last())
         .cloned()
+}
+
+/// The folder Claude Desktop moved its data to from `dir`, named by the empty
+/// `.user-data-left.<name>` file it leaves there; it no longer reads the config
+/// beside that file.
+fn data_moved_to(dir: &Path) -> Option<String> {
+    std::fs::read_dir(dir).ok()?.flatten().find_map(|entry| {
+        entry
+            .file_name()
+            .to_str()?
+            .strip_prefix(".user-data-left.")
+            .map(str::to_string)
+    })
 }
 
 /// Where the client keeps the config to edit, and the directory whose presence
@@ -813,6 +884,143 @@ mod tests {
     #[test]
     fn packaged_dirs_are_empty_without_a_package_root() {
         assert!(packaged_claude_dirs(Path::new("/no/such/packages/root")).is_empty());
+    }
+
+    #[test]
+    fn claude_data_dirs_are_the_lowercase_publisher_folders() {
+        let temp = TempDir::new("claude-data");
+        temp.mkdir("claude_pzs8sxrjxfjjc");
+        std::fs::write(temp.join("README.txt"), "").expect("write readme");
+
+        assert_eq!(
+            claude_named_dirs(&temp.0),
+            vec![temp.join("claude_pzs8sxrjxfjjc")]
+        );
+    }
+
+    /// A Windows machine's folders, in the order `claude_desktop_dirs` builds
+    /// them: the package container, `%APPDATA%\Claude`, then `Claude-Data`.
+    struct WindowsDirs {
+        temp: TempDir,
+        container: PathBuf,
+        appdata: PathBuf,
+    }
+
+    impl WindowsDirs {
+        fn new(label: &str) -> Self {
+            let temp = TempDir::new(label);
+            let container =
+                temp.join("Local/Packages/Claude_pzs8sxrjxfjjc/LocalCache/Roaming/Claude");
+            let appdata = temp.join("Roaming/Claude");
+            Self {
+                temp,
+                container,
+                appdata,
+            }
+        }
+
+        fn candidates(&self) -> Vec<PathBuf> {
+            let mut dirs = packaged_claude_dirs(&self.temp.join("Local/Packages"));
+            dirs.push(self.appdata.clone());
+            dirs.extend(claude_named_dirs(&self.temp.join("Local/Claude-Data")));
+            dirs
+        }
+
+        fn data(&self) -> PathBuf {
+            self.temp.mkdir("Local/Claude-Data/claude_pzs8sxrjxfjjc")
+        }
+    }
+
+    fn with_config(dir: &Path) {
+        std::fs::create_dir_all(dir).expect("create dir");
+        std::fs::write(dir.join(CLAUDE_DESKTOP_CONFIG), "{}").expect("write config");
+    }
+
+    fn mark_left(dir: &Path) {
+        with_config(dir);
+        std::fs::write(dir.join(".user-data-left.claude_pzs8sxrjxfjjc"), "").expect("write marker");
+    }
+
+    /// Claude Desktop moved its data from the package container to
+    /// `Claude-Data`: both older folders keep a marker naming it.
+    #[test]
+    fn pick_follows_the_data_to_claude_data() {
+        let dirs = WindowsDirs::new("moved");
+        let data = dirs.data();
+        mark_left(&dirs.container);
+        mark_left(&dirs.appdata);
+
+        assert_eq!(pick_config_dir(&dirs.candidates()), Some(data));
+    }
+
+    /// A config an older install left in `%APPDATA%\Claude`, without a marker,
+    /// does not hide the folder the container's marker names.
+    #[test]
+    fn pick_follows_the_marker_past_an_unmarked_leftover() {
+        let dirs = WindowsDirs::new("leftover");
+        let data = dirs.data();
+        mark_left(&dirs.container);
+        with_config(&dirs.appdata);
+
+        assert_eq!(pick_config_dir(&dirs.candidates()), Some(data));
+    }
+
+    /// A `Claude-Data` folder no older folder names (a move not made, or one
+    /// left by an uninstalled build) loses to the folder that still holds the
+    /// data.
+    #[test]
+    fn pick_keeps_an_older_folder_no_marker_says_was_left() {
+        let dirs = WindowsDirs::new("not-moved");
+        dirs.data();
+        with_config(&dirs.container);
+
+        assert_eq!(
+            pick_config_dir(&dirs.candidates()),
+            Some(dirs.container.clone())
+        );
+    }
+
+    /// A recent build installed on a clean machine has only `Claude-Data`.
+    #[test]
+    fn pick_takes_claude_data_on_a_machine_without_older_folders() {
+        let dirs = WindowsDirs::new("fresh");
+        let data = dirs.data();
+
+        assert_eq!(pick_config_dir(&dirs.candidates()), Some(data));
+    }
+
+    #[test]
+    fn the_bridge_command_is_the_appimage_file_when_run_from_its_mount() {
+        let temp = Path::new("/tmp");
+        let mounted = Path::new("/tmp/.mount_PiwiDaAbC123/usr/bin/piwi-desktop");
+        let image = OsStr::new("/home/ada/Apps/Piwi_Dashboard.AppImage");
+
+        assert_eq!(
+            bridge_path(Some(mounted), Some(image), temp),
+            "/home/ada/Apps/Piwi_Dashboard.AppImage"
+        );
+        // APPIMAGE set while the executable is not in a mount: the executable.
+        assert_eq!(
+            bridge_path(Some(Path::new("/usr/bin/piwi-desktop")), Some(image), temp),
+            "/usr/bin/piwi-desktop"
+        );
+        assert_eq!(
+            bridge_path(Some(mounted), None, temp),
+            mounted.to_string_lossy()
+        );
+        assert_eq!(bridge_path(None, Some(image), temp), "piwi-desktop");
+    }
+
+    #[test]
+    fn pick_passes_over_a_folder_the_data_has_left() {
+        let temp = TempDir::new("left");
+        let container = temp.mkdir("Packages/Claude_x/LocalCache/Roaming/Claude");
+        std::fs::write(container.join(".user-data-left.claude_x"), "").expect("write marker");
+        let appdata = temp.mkdir("Roaming/Claude");
+
+        let picked = pick_config_dir(&[container, appdata.clone()]);
+
+        assert_eq!(picked, Some(appdata));
     }
 
     #[test]

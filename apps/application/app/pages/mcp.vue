@@ -117,7 +117,7 @@ const clientItems = [
 const serverKey = isDesktop ? 'piwi-desktop' : 'piwi';
 
 const claudeCodeSnippet = computed(
-  () => `claude mcp add --transport http ${serverKey} ${mcpUrl.value}${headerFlag.value}`,
+  () => `claude mcp add --transport http --scope user ${serverKey} "${mcpUrl.value}"${headerFlag.value}`,
 );
 
 const opencodeSnippet = computed(() =>
@@ -196,7 +196,9 @@ const claudeDesktopSnippet = computed(() =>
   ),
 );
 
-const geminiSnippet = computed(() => `gemini mcp add --transport http ${serverKey} ${mcpUrl.value}${headerFlag.value}`);
+const geminiSnippet = computed(
+  () => `gemini mcp add --transport http ${serverKey} "${mcpUrl.value}"${headerFlag.value}`,
+);
 
 const windsurfSnippet = computed(() =>
   JSON.stringify(
@@ -343,6 +345,10 @@ const windsurfSnippet = computed(() =>
                       v-if="!withKey"
                       >; pick it and choose <strong>Authenticate</strong> to sign in</template
                     >. Claude will call the tools automatically when you ask about test results or failures.
+                    <template v-if="reporterConfig"
+                      >On this machine, <strong>Connect</strong> above adds the same entry and rewrites it when this
+                      app's port changes.</template
+                    >
                   </p>
                 </div>
               </template>
@@ -399,8 +405,24 @@ const windsurfSnippet = computed(() =>
                       <code class="font-mono">~/Library/Application Support/Claude/claude_desktop_config.json</code>
                     </li>
                     <li>
-                      <strong>Windows:</strong>{{ ' ' }}
-                      <code class="font-mono">%APPDATA%\Claude\claude_desktop_config.json</code>
+                      <strong>Windows:</strong> <code class="font-mono">claude_desktop_config.json</code> in
+                      <code class="font-mono break-all">%LOCALAPPDATA%\Claude-Data\claude_pzs8sxrjxfjjc\</code> for
+                      recent versions. An older install keeps it in one of these folders; a
+                      <code class="font-mono">.user-data-left.*</code> file there means it moved to
+                      <code class="font-mono">Claude-Data</code>:
+                      <ul class="pl-4 space-y-0.5">
+                        <li>
+                          <code class="font-mono break-all"
+                            >%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\</code
+                          >
+                          (an MSIX install: Microsoft Store, WinGet)
+                        </li>
+                        <li><code class="font-mono break-all">%APPDATA%\Claude\</code> (the classic installer)</li>
+                      </ul>
+                    </li>
+                    <li>
+                      <strong>Linux (beta):</strong>{{ ' ' }}
+                      <code class="font-mono">~/.config/Claude/claude_desktop_config.json</code>
                     </li>
                   </ul>
                   <CodeBlock :code="claudeDesktopSnippet" lang="json" />
