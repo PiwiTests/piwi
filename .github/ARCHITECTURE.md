@@ -43,9 +43,6 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
   - `Reporter tests`, under `xvfb-run`, then the AI steps' integration run, with the coverage comment;
   - `Package tests`: core, picker-dom (unit and in a browser), the editor service, the VS Code and browser extensions'
     unit tests, and the showcase's cut.
-
-  The dashboard's and the reporter's Vitest suites run one worker per core (`--maxWorkers=100%`): on the 4-core runner,
-  Vitest's default of one core fewer leaves a quarter of it to a main process that waits on the workers.
 - The agent guides' test (`apps/application/tests/unit/agent-guides.test.ts`) runs in `Dashboard unit tests` with
   every unit test; a change that touches only guides (`AGENTS.md`, `ARCHITECTURE.md`, `CLAUDE.md`), `adr/`,
   `proposals/` or a file the guides link to outside the `js` paths (the root Markdown files,

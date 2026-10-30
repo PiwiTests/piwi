@@ -390,10 +390,10 @@ jobs:
       - name: Install the full Chromium build
         run: npx playwright install chromium --no-shell
 
-      # One worker per core: Vitest's default leaves one idle.
+      # Vitest's default worker count, one fewer than the cores: the main process serves the workers' imports.
       - name: Test
         working-directory: apps/application
-        run: npm run app:test:unit:coverage -- --maxWorkers=100%
+        run: npm run app:test:unit:coverage
 
       - name: Report coverage on the PR
         if: github.event_name == 'pull_request'
@@ -432,10 +432,9 @@ jobs:
       - name: Install the full Chromium build
         run: npx playwright install chromium --no-shell
 
-      # One worker per core, as the dashboard's unit tests.
       - name: Test
         working-directory: packages/reporter
-        run: xvfb-run -a npm run reporter:test:coverage -- --maxWorkers=100%
+        run: xvfb-run -a npm run reporter:test:coverage
 
       # Full AI-step pipeline (resolve → compile → replay) end to end against a
       # real browser, with a stub standing in for the LLM: no network, no tokens.
