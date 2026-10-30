@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { buildAiSaveBody, isRoleConfigured, roleSaveBody, type RoleForms } from '~/utils/ai-settings-form';
+import type { AiRoleSettings } from '~~/types/api';
+import { providerTile } from '~/utils/ai-provider-catalog';
+import {
+  applyTile,
+  blankRoleDraft,
+  buildAiSaveBody,
+  connectionProblem,
+  isRoleConfigured,
+  roleDraftFromSettings,
+  roleSaveBody,
+  storedKeyApplies,
+  type RoleForms,
+} from '~/utils/ai-settings-form';
 
 function blankRole() {
   return { enabled: false, reuse: null, provider: '', model: '', baseUrl: '', apiKey: '', temperature: '' };
@@ -125,6 +137,76 @@ describe('ai-settings-form', () => {
   describe('roleSaveBody', () => {
     it('returns null for an unconfigured role', () => {
       expect(roleSaveBody(forms(), 'embedding')).toBeNull();
+    });
+  });
+
+  describe('tiles', () => {
+    const storedOllama: AiRoleSettings = {
+      provider: 'openai',
+      model: 'qwen2.5-coder:14b',
+      baseUrl: 'http://localhost:11434/v1',
+      reuse: null,
+      hasApiKey: false,
+      temperature: 0.2,
+    };
+
+    it('reads a stored role back into its tile', () => {
+      expect(roleDraftFromSettings(storedOllama)).toMatchObject({ tile: 'ollama', enabled: true, temperature: '0.2' });
+      expect(roleDraftFromSettings({ ...storedOllama, reuse: 'diagnosis' }).tile).toBeNull();
+      expect(roleDraftFromSettings(null)).toEqual(blankRoleDraft());
+    });
+
+    it("fills a new tile's address and suggested model, and drops a typed key", () => {
+      const form = { ...blankRoleDraft(), apiKey: 'typed' };
+      applyTile(form, providerTile('openai')!, 'main', null);
+      expect(form).toMatchObject({
+        tile: 'openai',
+        provider: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-4o',
+        apiKey: '',
+      });
+      applyTile(form, providerTile('openai')!, 'embed', null);
+      expect(form.model).toBe('text-embedding-3-small');
+      applyTile(form, providerTile('ollama')!, 'embed', null);
+      expect(form.model).toBe('nomic-embed-text');
+    });
+
+    it('brings the stored address, model and temperature back on the stored tile', () => {
+      const form = blankRoleDraft();
+      applyTile(form, providerTile('anthropic')!, 'main', storedOllama);
+      applyTile(form, providerTile('ollama')!, 'main', storedOllama);
+      expect(form).toMatchObject({
+        baseUrl: 'http://localhost:11434/v1',
+        model: 'qwen2.5-coder:14b',
+        temperature: '0.2',
+      });
+    });
+
+    it('keeps a stored key only for the provider and address it was saved for', () => {
+      const stored: AiRoleSettings = {
+        ...storedOllama,
+        provider: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+        hasApiKey: true,
+      };
+      const form = roleDraftFromSettings(stored);
+      expect(storedKeyApplies(form, stored)).toBe(true);
+      expect(storedKeyApplies({ ...form, baseUrl: 'https://api.openai.com/v1/' }, stored)).toBe(true);
+      expect(storedKeyApplies({ ...form, baseUrl: 'https://gateway.example.com/v1' }, stored)).toBe(false);
+      expect(storedKeyApplies({ ...form, provider: 'anthropic' }, stored)).toBe(false);
+    });
+
+    it('names what a connection lacks', () => {
+      const anthropic = { ...blankRoleDraft(), tile: 'anthropic' as const, provider: 'anthropic' };
+      expect(connectionProblem(blankRoleDraft(), false)).toBe('Choose a provider.');
+      expect(connectionProblem(anthropic, false)).toBe('Anthropic needs an API key.');
+      expect(connectionProblem(anthropic, true)).toBeNull();
+      expect(connectionProblem({ ...anthropic, apiKey: 'sk-ant-x' }, false)).toBeNull();
+      const custom = { ...blankRoleDraft(), tile: 'openai-compatible' as const, provider: 'openai' };
+      expect(connectionProblem(custom, false)).toBe('Enter the server address.');
+      expect(connectionProblem({ ...custom, baseUrl: 'http://vllm:8000/v1' }, false)).toBe('Enter a model.');
+      expect(connectionProblem({ ...blankRoleDraft(), tile: 'claude-cli', provider: 'claude-cli' }, false)).toBeNull();
     });
   });
 });

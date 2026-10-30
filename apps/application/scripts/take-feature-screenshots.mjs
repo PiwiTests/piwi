@@ -2334,6 +2334,21 @@ const SCENES = [
       await shoot(undefined, { of: '[data-shot="analytics-handbacks"]', pad: 12 });
     },
   })),
+  ...[390, 1280].map((width) => ({
+    name: `ai-settings-${width}`,
+    description: `Settings → AI at ${width} px: the status, the provider tiles and the Anthropic connection, the features`,
+    route: '/settings/ai',
+    viewport: { width, height: width < 640 ? 4200 : 2400 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-provider-tile="anthropic"]').click();
+      await page.getByText('Connect to Anthropic').waitFor();
+      await page.getByRole('switch', { name: 'Two-stage diagnosis' }).click();
+      await page.getByRole('switch', { name: 'Semantic clustering' }).click();
+      await page.locator('[data-tour="ai-embedding-model"] [data-provider-tile="ollama"]').click();
+      await settle();
+      await shoot();
+    },
+  })),
   {
     name: 'ai-usage',
     description: "Settings → AI: the AI usage panel, tokens per model, then how each model's diagnoses fared",
@@ -6218,13 +6233,13 @@ const SCENES = [
     route: '/settings/ai',
     viewport: { width, height: 1800 },
     async run({ page, shoot, settle }) {
-      const card = page.getByText('Uses your local ChatGPT login.').locator('..');
-      await card.waitFor();
-      await card.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
+      const tile = page.locator('[data-provider-tile="codex-cli"]');
+      await tile.waitFor();
+      await tile.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
       await settle();
       await shoot('before');
-      await page.getByRole('combobox').first().click();
-      await page.getByRole('option', { name: 'Codex (local)' }).click();
+      await tile.click();
+      await page.getByText('with its own tools turned off').first().waitFor();
       await settle();
       await shoot();
     },
@@ -6237,13 +6252,13 @@ const SCENES = [
     route: '/settings/ai',
     viewport: { width, height: 1800 },
     async run({ page, shoot, settle }) {
-      const card = page.getByText('Uses official').locator('..');
-      await card.waitFor();
-      await card.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
+      const tile = page.locator('[data-provider-tile="deepseek-cli"]');
+      await tile.waitFor();
+      await tile.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
       await settle();
       await shoot('before');
-      await page.getByRole('combobox').first().click();
-      await page.getByRole('option', { name: 'DeepSeek Harness (local)' }).click();
+      await tile.click();
+      await page.getByText('with its own tools turned off').first().waitFor();
       await settle();
       await shoot();
     },
@@ -6259,19 +6274,17 @@ const SCENES = [
     pad: 12,
     outputs: ['ai-claude-cli.png', 'ai-claude-cli-selected.png'],
     async run({ page, shoot, settle }) {
-      // The status card sits at the top of the providers section and probes the
-      // real `claude` on this machine (installed + signed-in; no tokens spent).
-      // Wait for that probe to resolve before capturing.
-      await page.getByText('billed to your Claude Code sign-in').first().waitFor();
-      await page.getByText('Checking for the Claude CLI…').waitFor({ state: 'hidden' });
+      // The Claude Code tile probes the real `claude` on this machine
+      // (installed + signed-in; no tokens spent): wait for that probe first.
+      const tile = page.locator('[data-provider-tile="claude-cli"]');
+      await tile.waitFor();
+      await tile.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
       await settle();
       await shoot();
 
-      // Select the CLI as the diagnosis provider to reveal the no-API-key role
-      // form (the provider select carries whatever config is stored).
-      await page.getByRole('combobox').first().click();
-      await page.getByRole('option', { name: 'Claude Code (local)' }).click();
-      await page.getByText('it uses your Claude Code sign-in').first().waitFor();
+      // Pick the CLI as the provider to reveal its status, sign-in and usage.
+      await tile.click();
+      await page.getByText('with its own tools turned off').first().waitFor();
       await settle();
       await shoot('selected');
     },

@@ -948,7 +948,7 @@ const setup: LiveQuestion[] = [
     topic: 'setup',
     question: 'How do I give the assistant a cheaper model than diagnosis?',
     tools: [...DOCS_TOOLS, 'find_anchors', 'get_instance_config'],
-    facts: [env('PIWI_AI_ASSISTANT_MODEL', 'PIWI_AI_ASSISTANT_MODEL'), docs('guide/ai-provider', 'Model providers')],
+    facts: [env('PIWI_AI_ASSISTANT_MODEL', 'PIWI_AI_ASSISTANT_MODEL'), docs('guide/ai-provider', 'Features')],
     blocks: ['checklist', 'guide'],
     anchors: ['ai-assistant-model'],
   },

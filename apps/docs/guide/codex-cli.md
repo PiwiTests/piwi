@@ -12,7 +12,7 @@ API key. The CLI must be installed on the machine running Piwi.
 ## Setup
 
 1. Install Codex CLI and run `codex login` with your ChatGPT account.
-2. Choose **Codex (local)** in **Settings → AI**. The desktop app finds `codex` on PATH; a self-hosted server enables it
+2. Choose **Codex** under **Command-line tools** in **Settings → AI**. The desktop app finds `codex` on PATH; a self-hosted server enables it
    with `PIWI_CODEX_CLI_PATH` pointing to the executable's absolute path. Alternatively, set `PIWI_AI_PROVIDER=codex-cli`
    for environment-managed settings.
 3. Use **Recheck** in the status card to check availability, version and authentication. Sign-in and sign-out stay in

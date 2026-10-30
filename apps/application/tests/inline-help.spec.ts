@@ -78,8 +78,7 @@ test.describe('Inline help (HelpHint)', () => {
   test('settings AI provider hint lists the backing PIWI_AI_* env vars', async ({ page }) => {
     await page.goto('/settings/ai');
 
-    // The "AI provider" topic is used by both the "Model providers" card header
-    // and the per-role forms; target the first one (the card header).
+    // The "AI provider" topic is the help of the "Provider" card header.
     await openHint(page, 'Help: AI provider');
 
     // The env vars that override the diagnosis provider are surfaced in the
