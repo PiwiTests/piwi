@@ -117,7 +117,7 @@ const clientItems = [
 const serverKey = isDesktop ? 'piwi-desktop' : 'piwi';
 
 const claudeCodeSnippet = computed(
-  () => `claude mcp add --transport http ${serverKey} ${mcpUrl.value}${headerFlag.value}`,
+  () => `claude mcp add --transport http --scope user ${serverKey} ${mcpUrl.value}${headerFlag.value}`,
 );
 
 const opencodeSnippet = computed(() =>

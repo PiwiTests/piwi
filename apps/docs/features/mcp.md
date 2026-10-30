@@ -128,10 +128,11 @@ that offer **Settings → Connectors → Add custom connector** take the `/mcp` 
 ### Claude Code (CLI)
 
 ```bash
-claude mcp add --transport http piwi <your-piwi-url>/mcp --header "Authorization: Bearer pd_YOUR_API_KEY"
+claude mcp add --transport http --scope user piwi <your-piwi-url>/mcp --header "Authorization: Bearer pd_YOUR_API_KEY"
 ```
 
-Restart Claude Code, then check with `/mcp` that **piwi** is listed.
+`--scope user` makes the server available in every folder; without it, Claude Code keeps it for the folder the command
+ran in. Restart Claude Code, then check with `/mcp` that **piwi** is listed.
 
 ### Cursor
 
