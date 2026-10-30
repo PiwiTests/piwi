@@ -441,6 +441,69 @@ export function hideSecretsInText(text: string, count: { n: number } = { n: 0 })
   return out + hideInText(text.slice(last), count);
 }
 
+/** How Playwright titles a call that types text: a fill, a typing (`pressSequentially`, `keyboard.type`), an insert. */
+const TYPED_TITLE = /^(?:Fill|Type|Insert) "/;
+
+/**
+ * A call's title with the text it types written as {@link HIDDEN_VALUE}: Playwright writes that text in the title of a
+ * fill, a typing or an insert (`Fill "…"`, and `Fill "…" getByLabel('Password')` with the locator it appends), and it
+ * may be a secret the test reads from its environment. The text runs to the title's last quote, or to the last quote
+ * before the locator; the call's verb and its locator stay. Any other title is returned as it is. Pure.
+ */
+export function hideTypedText(title: string): string {
+  const typing = TYPED_TITLE.exec(title);
+  if (!typing) return title;
+  const start = typing[0].length;
+  const end = title.endsWith('"') ? title.length - 1 : title.lastIndexOf('" ');
+  return end >= start ? `${title.slice(0, start)}${HIDDEN_VALUE}${title.slice(end)}` : `${typing[0]}${HIDDEN_VALUE}"`;
+}
+
+/**
+ * The words naming a secret field in the other languages Piwi speaks, accents left out: French (`mot de passe`,
+ * `mdp`), German (`Passwort`, `Kennwort`), Spanish (`contraseña`, `clave`) and Portuguese (`senha`); and a card's
+ * security code (`CVV`, `CVC`, `CSC`).
+ */
+const SECRET_FIELD_WORDS = new Set([
+  'passe',
+  'mdp',
+  'passwort',
+  'kennwort',
+  'contrasena',
+  'clave',
+  'senha',
+  'cvv',
+  'cvc',
+  'csc',
+]);
+
+/**
+ * Whether a locator, as Playwright renders it (`getByLabel('Password')`, `locator('#pwd')`), names a field that holds a
+ * secret: it selects a password field (`type=password`), a string it quotes is named like a credential
+ * (`isSecretName`: `getByLabel('PIN')`), or one of its words is a credential's in English or in Piwi's other languages
+ * (`getByLabel('Mot de passe')`). A field it does not name so is not one, whatever it holds. Pure.
+ */
+export function isSecretLocator(locator: string): boolean {
+  const plain = locator.normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (/type\s*=\s*["']?password\b/i.test(plain)) return true;
+  for (const quoted of plain.matchAll(/(['"])((?:(?!\1)[^\\]|\\.)*)\1/g)) if (isSecretName(quoted[2]!)) return true;
+  return nameWords(plain).some((word) => SECRET_WORDS.has(word) || SECRET_FIELD_WORDS.has(word));
+}
+
+/**
+ * A line of Playwright's call log naming the text a call types: `fill("…")`, `elementHandle.type("…")`. Playwright
+ * writes the text as it is, quotes and line breaks included, so it runs to the first `")` that ends a line, a color
+ * code of the error's after it or not.
+ */
+const TYPED_LOG = /\b(fill|type|insertText)\("[\s\S]*?"\)(?=(?:\u001b\[[\d;]*m|[ \t])*$)/gm;
+
+/**
+ * `text` with the text each call of Playwright's call log types written as {@link HIDDEN_VALUE}: the log of a fill or
+ * a typing quotes it (`- fill("…")`), in a call's log and in the "Call log" of its error. Pure.
+ */
+export function hideTypedTextInLog(text: string): string {
+  return text.replace(TYPED_LOG, (_, call: string) => `${call}("${HIDDEN_VALUE}")`);
+}
+
 /**
  * Whether a text holds what looks like an email address or a phone number: an address, an international number
  * (`+33 6 12 34 56 78`), a North American one (`(555) 123-4567`), or a field named for one (`"phone":`, `email=`).

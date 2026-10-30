@@ -115,6 +115,15 @@ describe('the messages', () => {
     expect(liveWorkerKey({ shard: 2, worker: 3 })).toBe('2:3');
   });
 
+  test('a call names no text a fill or a typing typed, from a reporter that hid it or not', () => {
+    expect(readLiveCall({ title: 'Fill "S3cr3t!Passw0rd"', file: 'tests/a.spec.ts', line: 4 })?.title).toBe(
+      'Fill "<hidden>"',
+    );
+    expect(readLiveCall({ title: `Type "abc" getByLabel('Password')`, file: null, line: null })?.title).toBe(
+      `Type "<hidden>" getByLabel('Password')`,
+    );
+  });
+
   test('a call keeps its title, and its place only when both are one', () => {
     expect(readLiveCall({ title: 'Click', file: 'tests/a.spec.ts', line: 4 })).toEqual({
       title: 'Click',

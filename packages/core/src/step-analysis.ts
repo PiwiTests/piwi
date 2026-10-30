@@ -7,7 +7,7 @@
  * from an imported blob report's step events.
  */
 import { stripAnsi } from './error-parse';
-import { maskTokenLike } from './mask';
+import { HIDDEN_VALUE, hideTypedText, hideTypedTextInLog, isSecretLocator, maskTokenLike } from './mask';
 import { isCaptureStep, sameCodeLocation } from './step-tree';
 import type { TestStepEvent, TestStepEventHook } from './wire';
 
@@ -286,25 +286,59 @@ function firstErrorLine(message: unknown): string {
     .trim();
 }
 
+/** The parameters in which Playwright passes the text a fill (`value`), a typing or an insert (`text`) types. */
+const TYPED_PARAMS = ['value', 'text'] as const;
+
+/**
+ * A step's title and params with the text a fill, a typing or an insert typed hidden, when it went into a field that
+ * may hold a secret: one whose locator names a secret (`isSecretLocator`), or none the step names (`keyboard.type`).
+ * Playwright writes that text in the title (`Fill "…"`, `hideTypedText`) and passes it as the `value` or `text` param.
+ * The locator is the step's `locator` param, else its subtitle, else what the title names after the text. Any other
+ * step's title and params are kept: a bug report replays a fill from its value.
+ */
+export function withoutTypedText<P extends Record<string, unknown>>(
+  title: string,
+  params: P | undefined,
+  subtitle?: string | null,
+): { title: string; params: P | undefined } {
+  const hidden = hideTypedText(title);
+  if (hidden === title) return { title, params };
+  const end = hidden.indexOf(`${HIDDEN_VALUE}"`) + HIDDEN_VALUE.length + 1;
+  const named = hidden.slice(end).trim();
+  const locator = typeof params?.locator === 'string' ? params.locator : subtitle || named || null;
+  if (locator && !isSecretLocator(locator)) return { title, params };
+  if (!params) return { title: hidden, params };
+  const out: Record<string, unknown> = { ...params };
+  for (const key of TYPED_PARAMS) if (typeof out[key] === 'string') out[key] = HIDDEN_VALUE;
+  return { title: hidden, params: out as P };
+}
+
 /**
  * Recursively flatten a nested step tree into a flat list, depth first, each
  * step recording its `depth` so the tree can be rebuilt. Uses Playwright's
- * built-in category when available.
+ * built-in category when available. The text a fill, a typing or an insert
+ * typed into a field that may hold a secret is hidden from the title and the
+ * params (`withoutTypedText`), and any typed text from the step's error
+ * (`hideTypedTextInLog`).
  */
 export function flattenSteps(steps: any[], depth = 0): FlatStep[] {
   const result: FlatStep[] = [];
   for (const step of steps) {
+    const typed = withoutTypedText(
+      typeof step.title === 'string' ? step.title : '',
+      normalizeStepParams(step.params),
+      typeof step.subtitle === 'string' ? step.subtitle : null,
+    );
     const flat: FlatStep = {
-      title: step.title,
+      title: typed.title,
       duration: step.duration,
       category: categorizeStep(step.title, step.category, step.params),
       depth,
     };
     if (typeof step.subtitle === 'string' && step.subtitle.length > 0) flat.subtitle = maskTokenLike(step.subtitle);
-    const params = normalizeStepParams(step.params);
-    if (params) flat.params = params;
+    if (typed.params) flat.params = typed.params;
     if (step.error?.message) {
-      flat.error = { message: step.error.message };
+      flat.error = { message: hideTypedTextInLog(step.error.message) };
       const thrownAt = locationText(step.error.location);
       if (thrownAt) flat.error.location = thrownAt;
       flat.failed = true;

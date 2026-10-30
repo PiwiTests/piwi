@@ -3,7 +3,10 @@ import {
   HIDDEN_VALUE,
   hideSecretsInText,
   hideSecretsInUrl,
+  hideTypedText,
+  hideTypedTextInLog,
   holdsPersonalData,
+  isSecretLocator,
   isSecretAutocomplete,
   isSecretName,
   isSecretValue,
@@ -209,6 +212,97 @@ describe('the credentials a mock, a list or a snapshot hides', () => {
     }
     for (const text of ['2026-10-27', '1234.5678', '{"total": 40}', 'order 12-34-56']) {
       expect(holdsPersonalData(text), text).toBe(false);
+    }
+  });
+});
+
+describe('the text a fill, a typing or an insert types', () => {
+  test('goes from the titles Playwright gives the step and the call, the verb and the locator kept', () => {
+    // As Playwright 1.64 titles them: the runner's step, then the call with the locator it appends.
+    expect(hideTypedText('Fill "S3cr3t!Passw0rd"')).toBe(`Fill "${HIDDEN_VALUE}"`);
+    expect(hideTypedText(`Fill "S3cr3t!Passw0rd" getByLabel('Password')`)).toBe(
+      `Fill "${HIDDEN_VALUE}" getByLabel('Password')`,
+    );
+    expect(hideTypedText('Type "abc"')).toBe(`Type "${HIDDEN_VALUE}"`);
+    expect(hideTypedText('Insert "typed text"')).toBe(`Insert "${HIDDEN_VALUE}"`);
+    expect(hideTypedText('Fill ""')).toBe(`Fill "${HIDDEN_VALUE}"`);
+  });
+
+  test('goes whole when it holds quotes, or when the title was cut short', () => {
+    expect(hideTypedText('Fill "say "hi" now"')).toBe(`Fill "${HIDDEN_VALUE}"`);
+    expect(hideTypedText(`Fill "a" b" getByLabel('Note')`)).toBe(`Fill "${HIDDEN_VALUE}" getByLabel('Note')`);
+    expect(hideTypedText('Fill "a long secret cut')).toBe(`Fill "${HIDDEN_VALUE}"`);
+  });
+
+  test('leaves every other title as it is', () => {
+    for (const title of [
+      'Press "Enter"',
+      'Click',
+      `Click getByRole('button', { name: 'Fill "x"' })`,
+      'Expect "toHaveValue"',
+      'Fill the form',
+    ]) {
+      expect(hideTypedText(title), title).toBe(title);
+    }
+  });
+
+  test('goes from the call log, in a call and in the "Call log" of its error, colored or not', () => {
+    const error = [
+      'locator.fill: Timeout 1500ms exceeded.',
+      'Call log:',
+      "  - waiting for getByLabel('Password')",
+      '    - locator resolved to <input readonly id="p" type="password"/>',
+      '  - fill("S3cr3t!Passw0rd")',
+      '  - attempting fill action',
+    ].join('\n');
+    const hidden = hideTypedTextInLog(error);
+    expect(hidden).not.toContain('S3cr3t');
+    expect(hidden).toContain(`  - fill("${HIDDEN_VALUE}")`);
+    expect(hidden).toContain("waiting for getByLabel('Password')");
+    expect(hideTypedTextInLog('elementHandle.type("abc")')).toBe(`elementHandle.type("${HIDDEN_VALUE}")`);
+    expect(hideTypedTextInLog('\u001b[2m  - fill("x")\u001b[22m')).toBe(
+      `\u001b[2m  - fill("${HIDDEN_VALUE}")\u001b[22m`,
+    );
+    // Playwright writes the text as it is: quotes, a parenthesis and line breaks in it go too.
+    expect(hideTypedTextInLog('  - fill("a ") b")\n  - attempting fill action')).toBe(
+      `  - fill("${HIDDEN_VALUE}")\n  - attempting fill action`,
+    );
+    expect(hideTypedTextInLog('  - fill("line one\nline two")\n  - done')).toBe(
+      `  - fill("${HIDDEN_VALUE}")\n  - done`,
+    );
+    expect(hideTypedTextInLog("waiting for locator('#fill')")).toBe("waiting for locator('#fill')");
+  });
+});
+
+describe('a locator naming a field that holds a secret', () => {
+  test('is one by a credential word, in English and in the languages Piwi speaks, or by a password field', () => {
+    for (const locator of [
+      "getByLabel('Password')",
+      "locator('#pwd')",
+      "getByLabel('PIN')",
+      "getByPlaceholder('API key')",
+      "getByLabel('Mot de passe')",
+      "getByLabel('Passwort')",
+      "getByLabel('Contraseña')",
+      "getByLabel('Senha')",
+      "getByLabel('CVV')",
+      "locator('input[type=password]')",
+      'locator(\'input[type="password"]\')',
+      "getByRole('textbox', { name: 'Code' })",
+    ]) {
+      expect(isSecretLocator(locator), locator).toBe(true);
+    }
+  });
+
+  test('is none otherwise, whatever the field holds', () => {
+    for (const locator of [
+      "getByLabel('Email')",
+      "getByLabel('Coupon')",
+      "getByLabel('Promo code')",
+      "getByRole('searchbox', { name: 'Search keywords' })",
+      "locator('#city')",
+    ]) {
+      expect(isSecretLocator(locator), locator).toBe(false);
     }
   });
 });

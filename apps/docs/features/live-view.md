@@ -100,7 +100,7 @@ live view turned off, the instance restarted (the key lives in its memory), or i
   run's trace stays the record.
 
 The images show whatever the page shows, as the run's screenshots, videos and traces already do; a credential in a
-call's URL is hidden in its caption. The workers reach the dashboard with a key the run got as it registered: it
+call's URL and the text a call types are hidden in its caption. The workers reach the dashboard with a key the run got as it registered: it
 opens this run's live view and nothing else, ends with the run, and is never in the environment of the tests, their
 hooks or their fixtures, so a process they start does not get it.
 

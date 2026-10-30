@@ -397,3 +397,55 @@ describe('flattenSteps and categorizeStep', () => {
     expect(categorizeStep('Attach "trace"', 'test.attach')).toBe('attach');
   });
 });
+
+describe('the text a fill or a typing typed, in the stored steps', () => {
+  test('goes from the title, the params and the error of a step into a field that may hold a secret', () => {
+    const steps = flattenSteps([
+      {
+        title: 'Fill "S3cr3t!Passw0rd"',
+        subtitle: "getByLabel('Password')",
+        category: 'pw:api',
+        duration: 5,
+        params: { locator: "getByLabel('Password')", value: 'S3cr3t!Passw0rd' },
+      },
+      {
+        title: 'Type "123456"',
+        subtitle: "getByLabel('Code de vérification')",
+        category: 'pw:api',
+        duration: 5,
+        params: { locator: "getByLabel('Code de vérification')", text: '123456' },
+      },
+      { title: 'Type "hunter2"', category: 'pw:api', duration: 5, params: { text: 'hunter2' } },
+      {
+        title: 'Fill "S3cr3t"',
+        subtitle: "getByLabel('Mot de passe')",
+        category: 'pw:api',
+        duration: 5,
+        params: { locator: "getByLabel('Mot de passe')", value: 'S3cr3t' },
+        error: {
+          message: 'locator.fill: Timeout 1500ms exceeded.\nCall log:\n  - fill("S3cr3t")\n  - attempting fill action',
+        },
+      },
+    ]);
+    expect(JSON.stringify(steps)).not.toMatch(/S3cr3t|hunter2/);
+    expect(steps[0]).toMatchObject({
+      title: 'Fill "<hidden>"',
+      params: { locator: "getByLabel('Password')", value: '<hidden>' },
+    });
+    expect(steps[2]).toMatchObject({ title: 'Type "<hidden>"', params: { text: '<hidden>' } });
+    expect(steps[3]!.error!.message).toContain('fill("<hidden>")');
+  });
+
+  test('stays in the step of a field no locator names as a secret, for a bug report to replay it', () => {
+    const [step] = flattenSteps([
+      {
+        title: 'Fill "WELCOME10"',
+        subtitle: "getByLabel('Coupon')",
+        category: 'pw:api',
+        duration: 5,
+        params: { locator: "getByLabel('Coupon')", value: 'WELCOME10' },
+      },
+    ]);
+    expect(step).toMatchObject({ title: 'Fill "WELCOME10"', params: { value: 'WELCOME10' } });
+  });
+});

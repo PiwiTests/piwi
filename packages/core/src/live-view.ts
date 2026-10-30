@@ -14,6 +14,7 @@
  * until a person shares the run (**Share live**, the run channel's `share`), and close it as the sharing stops. Such a
  * run without a key names why instead (`none:<why>`, `formatLiveViewMissing`), for the surfaces to say.
  */
+import { hideTypedText } from './mask';
 import type { StopReason } from './run-channel';
 
 /** The variable that names the instance's live view endpoint of the run and its key, for the workers. */
@@ -226,13 +227,16 @@ export function liveWorkerKey(id: LiveWorkerId): string {
 
 const STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'failure', 'other'];
 
-/** A call, checked field by field, its title cut short; null when it is not one. */
+/**
+ * A call, checked field by field, its title cut short and the text a fill, a typing or an insert types hidden
+ * (`hideTypedText`); null when it is not one.
+ */
 export function readLiveCall(value: unknown): LiveCall | null {
   if (!isObject(value) || typeof value.title !== 'string' || !value.title.trim()) return null;
   const { file, line } = value;
   const named = typeof file === 'string' && file.length > 0 && file.length <= 1024 && !/[\0\r\n]/.test(file);
   return {
-    title: value.title.slice(0, MAX_TITLE),
+    title: hideTypedText(value.title.slice(0, MAX_TITLE)),
     file: named ? file : null,
     line: named && isInt(line, 1, 10_000_000) ? line : null,
   };

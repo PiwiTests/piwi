@@ -22,7 +22,7 @@ import {
   type LiveWorkerId,
   type WorkerToInstance,
 } from '@piwitests/core/live-view';
-import { hideSecretsInText } from '@piwitests/core/mask';
+import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import type { RunLiveState } from '@piwitests/core/run-channel';
 import { fitViewSize } from '@piwitests/core/run-view';
 import { detectCi } from '../support/ci.js';
@@ -334,9 +334,12 @@ export function liveViewStopped(stop: LiveStop): () => void {
   };
 }
 
-/** A call as the run page shows it: its title through `hideSecretsInText`, which a URL or a token may hold. */
+/**
+ * A call as the run page shows it: its title without the text a fill, a typing or an insert types (`hideTypedText`),
+ * and through `hideSecretsInText`, which a URL or a token may hold.
+ */
 function hideCallSecrets(call: LiveCall): LiveCall {
-  return { ...call, title: hideSecretsInText(call.title) };
+  return { ...call, title: hideSecretsInText(hideTypedText(call.title)) };
 }
 
 /** Post a stop's start or end after the ones before it, a few waiting at most, while the run is shared. */
