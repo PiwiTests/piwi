@@ -124,8 +124,11 @@ interface Link {
   logTimer: ReturnType<typeof setTimeout> | null;
   /** The instance does not take call logs (it answered 400): none goes any more. */
   logRefused: boolean;
-  /** The project's own locators masked in each image, beside the secret fields, as the instance last said. */
-  masks: string[];
+  /**
+   * The project's own locators masked in each image, beside the secret fields, as the instance last said; null when it
+   * named some this reporter cannot read, and no image goes.
+   */
+  masks: string[] | null;
 }
 
 let link: Link | null = null;
@@ -460,7 +463,7 @@ function connect(own: Link): void {
           .map((line) => line.slice(5).trimStart())
           .join('\n');
         const message = data ? parseInstanceToWorker(data) : null;
-        if (message?.type === 'masks') own.masks = message.locators;
+        if (message?.type === 'masks') setMasks(own, message.locators);
         else if (message) setViewers(own, message.count);
       }
     });
@@ -521,6 +524,16 @@ function setViewers(own: Link, count: number): void {
     return;
   }
   startView();
+}
+
+/**
+ * The project masks `locators` from now on: the image kept for a later viewer was masked without them, so the view
+ * takes one again.
+ */
+function setMasks(own: Link, locators: string[] | null): void {
+  if (JSON.stringify(locators) === JSON.stringify(own.masks)) return;
+  own.masks = locators;
+  if (own === link) void view?.opened.then((opened) => opened?.refresh());
 }
 
 /** Start the view of the running test's page; say why there is none while it has no page. */

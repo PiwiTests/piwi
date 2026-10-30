@@ -98,7 +98,7 @@ function sayViewers(count: number): void {
 function fakePage(): { page: Page; paint: (data: string) => void } {
   let onFrame: ((frame: { data: Buffer; viewportWidth: number; viewportHeight: number }) => unknown) | null = null;
   // One frame, which shows no secret field.
-  const fields = { or: () => fields, evaluateAll: async () => [] };
+  const fields = { or: () => fields, evaluateAll: async () => ({ rects: [], width: 1280, height: 720 }) };
   const frame = { locator: () => fields, isDetached: () => false };
   const page = {
     viewportSize: () => ({ width: 1280, height: 720 }),

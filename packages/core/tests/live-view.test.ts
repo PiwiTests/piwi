@@ -242,8 +242,6 @@ describe('the messages', () => {
       '{"type":"viewers","count":-1}',
       '{"type":"viewers"}',
       '{"type":"input","events":[]}',
-      '{"type":"masks","locators":"getByLabel(\'IBAN\')"}',
-      '{"type":"masks","locators":["#iban"]}',
     ]) {
       expect(parseInstanceToWorker(data), data).toBeNull();
     }
@@ -261,16 +259,24 @@ describe('the messages', () => {
     expect(liveMaskProblem("getByRole('textbox', { name: 'IBAN' })")).toBeNull();
     expect(liveMaskProblem('#iban')).toBe("`#iban` is not a Playwright locator, such as getByLabel('IBAN').");
     expect(liveMaskProblem('  ')).toBe('A masked element needs a locator.');
-    // The worker masks elements: a chain that ends on a frame, or that no page can build, masks nothing.
+    // The worker looks for each mask in every frame: a mask names elements, without entering a frame.
     expect(liveMaskProblem("frameLocator('#card')")).toBe(
-      "`frameLocator('#card')` ends on a frame, not an element: name the iframe itself, such as locator('iframe#card').",
+      "`frameLocator('#card')` enters a frame: masks are looked for in every frame of the page, so name the element alone, such as getByLabel('Card number'), or the iframe, such as locator('iframe#card').",
     );
-    expect(liveMaskProblem("locator('iframe').contentFrame()")).toMatch(/ends on a frame/);
-    expect(liveMaskProblem("getByLabel('IBAN').owner()")).toMatch(/is not a Playwright locator/);
+    expect(liveMaskProblem("frameLocator('#card').getByLabel('Card number')")).toMatch(/enters a frame/);
+    expect(liveMaskProblem("locator('iframe').contentFrame()")).toMatch(/enters a frame/);
     expect(liveMaskProblem('first()')).toMatch(/is not a Playwright locator/);
-    expect(liveMaskProblem("frameLocator('#card').owner()")).toBeNull();
-    expect(liveMaskProblem("frameLocator('#card').getByLabel('Card number')")).toBeNull();
-    expect(liveMaskProblem("locator('iframe').contentFrame().getByLabel('CVC').first()")).toBeNull();
+    expect(liveMaskProblem("locator('iframe#card')")).toBeNull();
+    expect(liveMaskProblem("getByRole('row').filter({ hasText: 'IBAN' }).first()")).toBeNull();
+  });
+
+  test('says a list of masks it cannot read is one, so the worker masks nothing it could trust', () => {
+    for (const locators of ["getByLabel('IBAN')", ['#iban'], [7]]) {
+      expect(parseInstanceToWorker(JSON.stringify({ type: 'masks', locators }))).toEqual({
+        type: 'masks',
+        locators: null,
+      });
+    }
   });
 });
 

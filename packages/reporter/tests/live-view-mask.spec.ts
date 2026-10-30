@@ -11,9 +11,11 @@ import { jsonRes, startServer, type FakeServer } from './_helpers.js';
 /**
  * The live view's masking, in a real CI run through the built package against a fake instance that lists one element
  * of its own to mask (`masks`): every image the worker sends while someone watches has the page's secret fields (a
- * one-time code by its `autocomplete`, a password field in a child frame) and that element painted over, and nothing
- * else. Each image is decoded and its pixels checked. Images that show a masked element go half a second apart at
- * least, and nothing of it shows among the test's steps.
+ * one-time code by its `autocomplete`, a password field in a child frame with a border and padding) and that element
+ * painted over, and nothing else, through the page's screencast, then through images of the page once the test starts
+ * its own screencast and resizes the viewport. Each image is decoded and its pixels checked. Images that show a masked
+ * element go half a second apart at least, and nothing of it shows among the test's steps. A second test's instance
+ * names a mask this reporter cannot read: no image goes, and the viewers hear why.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -22,6 +24,7 @@ const project = path.join(pkgRoot, 'tests', `.live-view-mask-${process.pid}`);
 const RUN = 44;
 const KEY = `pdl_${'m'.repeat(43)}`;
 const TEST_TITLE = 'fills a one-time code while watched';
+const UNREADABLE_TITLE = 'is watched while its project masks what this reporter cannot read';
 const requireHere = createRequire(import.meta.url);
 
 /** Where each field sits in the page, in CSS pixels: all of them green, on a red page. */
@@ -29,18 +32,21 @@ const FIELDS = {
   code: { x: 40, y: 40, width: 360, height: 80 },
   iban: { x: 40, y: 200, width: 360, height: 80 },
   plain: { x: 40, y: 360, width: 360, height: 80 },
-  frame: { x: 600, y: 40, width: 400, height: 200 },
+  /** The child frame's viewport: inside its iframe's 6px border and 12px padding. */
+  frame: { x: 578, y: 58, width: 400, height: 200 },
 };
+const IFRAME_CSS =
+  'position: absolute; left: 560px; top: 40px; width: 400px; height: 200px; border: 6px solid black; padding: 12px; margin: 0; box-sizing: content-box';
 const FIELD_CSS = (box: { x: number; y: number; width: number; height: number }) =>
   `position: absolute; left: ${box.x}px; top: ${box.y}px; width: ${box.width}px; height: ${box.height}px; box-sizing: border-box; border: 0; padding: 0; margin: 0; background: rgb(0, 255, 0); color: rgb(0, 0, 255); font: 48px monospace`;
 /** A password field filling the child frame. */
 const CHILD = `<style>body { margin: 0; background: rgb(255, 0, 0) }</style><input type="password" value="hunter2" style="position: absolute; left: 0; top: 0; width: 400px; height: 200px; border: 0; padding: 0; background: rgb(0, 255, 0); font: 48px monospace">`;
 const PAGE = `<!doctype html><meta charset="utf-8"><title>sign in</title>
-<style>body { margin: 0; background: rgb(255, 0, 0) } #spin { position: absolute; left: 1100px; top: 500px; width: 60px; height: 60px; background: white; animation: s 1s linear infinite } @keyframes s { to { transform: rotate(360deg) } }</style>
+<style>body { margin: 0; background: rgb(255, 0, 0) } #spin { position: absolute; left: 860px; top: 560px; width: 60px; height: 60px; background: white; animation: s 1s linear infinite } @keyframes s { to { transform: rotate(360deg) } }</style>
 <input id="code" autocomplete="one-time-code" style="${FIELD_CSS(FIELDS.code)}">
 <input aria-label="IBAN" value="FR76 3000 6000" style="${FIELD_CSS(FIELDS.iban)}">
 <input aria-label="Name" value="Ada" style="${FIELD_CSS(FIELDS.plain)}">
-<iframe srcdoc='${CHILD}' style="${FIELD_CSS(FIELDS.frame)}"></iframe>
+<iframe srcdoc='${CHILD}' style="${IFRAME_CSS}"></iframe>
 <div id="spin"></div>`;
 
 const SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
@@ -48,9 +54,20 @@ test('${TEST_TITLE}', async ({ page }) => {
   await page.goto('${base}/sign-in');
   await page.locator('#code').fill('424242');
   await fetch('${base}/watch');
+  await new Promise((resolve) => setTimeout(resolve, 2500));
+  // The view goes on with images of the page, the viewport they show changing under it.
+  await page.screencast.start({ onFrame: () => {} });
+  await page.setViewportSize({ width: 1000, height: 800 });
   await new Promise((resolve) => setTimeout(resolve, 3000));
+  await page.screencast.stop();
   await fetch('${base}/unwatch');
   await expect(page.locator('#code')).toHaveValue('424242');
+});
+test('${UNREADABLE_TITLE}', async ({ page }) => {
+  await page.goto('${base}/sign-in');
+  await fetch('${base}/watch?masks=unreadable');
+  await new Promise((resolve) => setTimeout(resolve, 2500));
+  await fetch('${base}/unwatch');
 });
 `;
 
@@ -92,10 +109,10 @@ function write(file: string, text: string): void {
   fs.writeFileSync(path.join(project, file), text);
 }
 
-/** The images the worker posted, decoded, with when each came. */
-const images = (): Array<{ at: number; image: Image }> =>
+/** The images the worker posted for `test`, decoded, with when each came. */
+const images = (test = TEST_TITLE): Array<{ at: number; image: Image }> =>
   posts.flatMap((p) =>
-    p.message.type === 'frame' && 'data' in p.message
+    p.message.type === 'frame' && 'data' in p.message && p.message.test === test
       ? [
           {
             at: p.at,
@@ -105,9 +122,12 @@ const images = (): Array<{ at: number; image: Image }> =>
       : [],
   );
 
-/** The mean color of the inside of `box` (CSS pixels, 1280 wide), a margin left out for the JPEG's blur. */
+/** Image pixels a CSS pixel: the viewport is 1280 by 720 (16:9), then 1000 by 800 (5:4). */
+const scaleOf = (image: Image): number => image.width / (image.width / image.height > 1.5 ? 1280 : 1000);
+
+/** The mean color of the inside of `box` (CSS pixels), a margin left out for the JPEG's blur. */
 function meanColor(image: Image, box: { x: number; y: number; width: number; height: number }): number[] {
-  const scale = image.width / 1280;
+  const scale = scaleOf(image);
   const margin = 8;
   let sum = [0, 0, 0];
   let n = 0;
@@ -123,7 +143,7 @@ function meanColor(image: Image, box: { x: number; y: number; width: number; hei
 
 /** How many pixels inside `box` are a field's green, or its text's blue. */
 function fieldPixels(image: Image, box: { x: number; y: number; width: number; height: number }): number {
-  const scale = image.width / 1280;
+  const scale = scaleOf(image);
   let count = 0;
   for (let y = Math.ceil(box.y * scale); y < Math.floor((box.y + box.height) * scale); y++) {
     for (let x = Math.ceil(box.x * scale); x < Math.floor((box.x + box.width) * scale); x++) {
@@ -145,6 +165,10 @@ beforeAll(async () => {
       return res.end(PAGE);
     }
     if (route === '/watch') {
+      if (url.searchParams.get('masks') === 'unreadable') {
+        for (const stream of streams)
+          stream.write(`data: ${JSON.stringify({ type: 'masks', locators: ["getByLabel('IBAN')", '#iban'] })}\n\n`);
+      }
       sayViewers(1);
       return res.end();
     }
@@ -238,12 +262,17 @@ afterAll(async () => {
 describe('the live view’s masking', () => {
   it('lets the test pass, as without it', () => {
     expect(run.exitCode, run.output).toBe(0);
-    expect(run.tests.map((t) => [t.title, t.status, t.errors])).toEqual([[TEST_TITLE, 'passed', []]]);
+    expect(run.tests.map((t) => [t.title, t.status, t.errors])).toEqual([
+      [TEST_TITLE, 'passed', []],
+      [UNREADABLE_TITLE, 'passed', []],
+    ]);
   });
 
   it('paints over the secret fields and the project’s own element in every image, in every frame', () => {
     const sent = images();
-    expect(sent.length, JSON.stringify(posts.map((p) => p.message.type))).toBeGreaterThanOrEqual(2);
+    expect(sent.length, JSON.stringify(posts.map((p) => p.message.type))).toBeGreaterThanOrEqual(4);
+    // Images of both viewports went.
+    expect(new Set(sent.map(({ image }) => image.width / image.height > 1.5))).toEqual(new Set([true, false]));
     for (const { image } of sent) {
       for (const box of [FIELDS.code, FIELDS.iban, FIELDS.frame]) {
         expect(fieldPixels(image, box)).toBe(0);
@@ -264,10 +293,23 @@ describe('the live view’s masking', () => {
     }
   });
 
-  it('sends the images that show a masked element half a second apart at least, at the view’s size', () => {
+  it('sends the images that show a masked element half a second apart at least, each at its frame’s size', () => {
     const sent = images();
     for (let i = 1; i < sent.length; i++) expect(sent[i]!.at - sent[i - 1]!.at).toBeGreaterThanOrEqual(400);
-    for (const { image } of sent) expect(image.width).toBeLessThanOrEqual(640);
+    // The screencast's frames are the view's size; the images taken in its place, the page's.
+    const screencast = sent.filter(({ image }) => image.width / image.height > 1.5);
+    for (const { image } of screencast) expect(image.width).toBeLessThanOrEqual(640);
+    for (const { image } of sent) expect(image.width).toBeLessThanOrEqual(1000);
+  });
+
+  it('sends no image while its project masks what this reporter cannot read, and says why', () => {
+    expect(images(UNREADABLE_TITLE)).toEqual([]);
+    const refused = posts.flatMap((p) =>
+      p.message.type === 'frame' && 'refused' in p.message ? [p.message.refused] : [],
+    );
+    expect(refused).toContain(
+      'The project masks elements this reporter cannot read: no image goes. Update @piwitests/reporter.',
+    );
   });
 
   it('shows nothing of itself among the test’s steps', () => {

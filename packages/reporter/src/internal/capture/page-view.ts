@@ -22,7 +22,7 @@ import { callMethod, internalCall } from './quiet-capture.js';
  * frame.
  */
 
-/** How long a screencast frame may have taken from the page's paint to its `onFrame`, at most. */
+/** How much earlier than the time Playwright names (its paint, or its dispatch) a screencast frame may show the page. */
 const SCREENCAST_LAG_MS = 100;
 
 type Started = { dispose?: () => Promise<unknown> } | undefined;
@@ -30,7 +30,12 @@ type Screencast = {
   start?: (options: {
     size: { width: number; height: number };
     quality: number;
-    onFrame: (frame: { data: Buffer; viewportWidth: number; viewportHeight: number }) => Promise<void> | void;
+    onFrame: (frame: {
+      data: Buffer;
+      timestamp?: number;
+      viewportWidth: number;
+      viewportHeight: number;
+    }) => Promise<void> | void;
   }) => Promise<Started>;
   stop?: () => Promise<void>;
 };
@@ -92,7 +97,10 @@ export interface PageFrame {
   data: Buffer;
   width: number;
   height: number;
-  /** A screenshot's start, or a screencast frame's arrival less the most it lags (`SCREENCAST_LAG_MS`). */
+  /**
+   * A screenshot's start, or a screencast frame's time as Playwright names it (no later than its arrival) less
+   * `SCREENCAST_LAG_MS`.
+   */
   at: number;
 }
 
@@ -130,6 +138,8 @@ export interface PageView {
   screencast: boolean;
   /** Send the latest frame sent again, or why none goes, for a viewer that came since. */
   resend(): void;
+  /** Forget the latest frame sent, which went through `screen` as it was, and send an image of the page taken now. */
+  refresh(): void;
   close(): Promise<void>;
 }
 
@@ -157,8 +167,9 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
   let sent: PageFrame | { refused: string | undefined } | null = null;
   /** Whether the viewers heard that no frame goes, since the last frame that went. */
   let refused = false;
-  /** Whether a frame is in `screen`. */
+  /** Whether a frame is in `screen`, and its end. */
   let screening = false;
+  let screened: Promise<void> | null = null;
   const interval = 1000 / options.fps;
   const deliver = (frame: PageFrame): void => {
     if (closed || !options.live()) return;
@@ -180,7 +191,7 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
       if (!options.live()) return;
       if (!options.screen) return deliver(frame);
       screening = true;
-      void options
+      screened = options
         .screen(frame)
         .then(
           (shown) => {
@@ -191,6 +202,7 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
         )
         .finally(() => {
           screening = false;
+          screened = null;
         });
     },
   });
@@ -269,7 +281,9 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
         size: options.size(viewport),
         quality: options.quality,
         onFrame: (frame) => {
-          onFrame(frame.data, frame.viewportWidth, frame.viewportHeight, Date.now() - SCREENCAST_LAG_MS);
+          const now = Date.now();
+          const named = typeof frame.timestamp === 'number' && Number.isFinite(frame.timestamp) ? frame.timestamp : now;
+          onFrame(frame.data, frame.viewportWidth, frame.viewportHeight, Math.min(named, now) - SCREENCAST_LAG_MS);
           return acks.next();
         },
       }),
@@ -298,6 +312,18 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
       if ('refused' in sent) options.refuse(sent.refused);
       else options.send(sent);
     },
+    refresh: () => {
+      if (closed) return;
+      sent = null;
+      last = null;
+      const at = Date.now();
+      void internalCall(page, () =>
+        page.screenshot({ type: 'jpeg', quality: options.quality, scale: 'css', caret: 'initial', timeout: 5000 }),
+      ).then(
+        (shot) => onFrame(shot, viewport.width, viewport.height, at),
+        () => undefined,
+      );
+    },
     close: async () => {
       closed = true;
       sent = null;
@@ -305,8 +331,8 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
       pacer.close();
       if (shots) clearTimeout(shots);
       holders.delete(holder);
-      // A lighter image on its way is the view's last call to the page.
-      await lighter;
+      // A lighter image, and a frame in `screen`, on their way are the view's last calls to the page.
+      await Promise.all([lighter, screened]);
       const stop = end;
       end = null;
       if (stop && !page.isClosed()) await stop().catch(() => undefined);

@@ -233,48 +233,27 @@ export const MAX_LIVE_MASKS = 20;
 /** The longest locator a project lists for the live view to mask. */
 export const MAX_LIVE_MASK_LENGTH = 200;
 
-/** What a chain's calls lead to, from the page: elements, or a frame. */
-type ChainEnd = 'page' | 'elements' | 'frame';
-
-/** What `method` leads to from `from`; null when it cannot be called there. */
-function chainStep(from: ChainEnd, method: string): ChainEnd | null {
-  switch (method) {
-    case 'frameLocator':
-      return from === 'page' || from === 'elements' || from === 'frame' ? 'frame' : null;
-    case 'contentFrame':
-      return from === 'elements' ? 'frame' : null;
-    case 'owner':
-      return from === 'frame' ? 'elements' : null;
-    case 'first':
-    case 'last':
-    case 'nth':
-      return from === 'page' ? null : from;
-    case 'filter':
-    case 'and':
-    case 'or':
-    case 'visible':
-      return from === 'elements' ? 'elements' : null;
-    default:
-      return 'elements';
-  }
-}
+/** The calls that enter or leave a frame: a mask names an element, which the worker looks for in every frame. */
+const FRAME_CALLS: ReadonlySet<string> = new Set(['frameLocator', 'contentFrame', 'owner']);
+/** The calls that act on the elements before them, which a chain cannot start with. */
+const NARROWING_CALLS: ReadonlySet<string> = new Set(['filter', 'and', 'or', 'visible', 'first', 'last', 'nth']);
 
 /**
  * Why `locator` cannot be one of a project's masked elements, as a person reads it; null when it can: a Playwright
- * locator expression (`getByLabel('IBAN')`), as `@piwitests/core/locator-chain` reads it, that ends on elements.
+ * locator expression (`getByLabel('IBAN')`), as `@piwitests/core/locator-chain` reads it, that names elements without
+ * entering a frame.
  */
 export function liveMaskProblem(locator: string): string | null {
   if (!locator.trim()) return 'A masked element needs a locator.';
   if (locator.length > MAX_LIVE_MASK_LENGTH) return `A locator is ${MAX_LIVE_MASK_LENGTH} characters at most.`;
   const source = locator.trim();
   const chain = tryParseLocatorChain(source);
-  if (!chain?.calls.length) return `\`${source}\` is not a Playwright locator, such as getByLabel('IBAN').`;
-  let end: ChainEnd | null = 'page';
-  for (const call of chain.calls) end = end && chainStep(end, call.method);
-  if (end === 'frame') {
-    return `\`${source}\` ends on a frame, not an element: name the iframe itself, such as locator('iframe#card').`;
+  if (!chain?.calls.length || NARROWING_CALLS.has(chain.calls[0]!.method)) {
+    return `\`${source}\` is not a Playwright locator, such as getByLabel('IBAN').`;
   }
-  if (end !== 'elements') return `\`${source}\` is not a Playwright locator, such as getByLabel('IBAN').`;
+  if (chain.calls.some((call) => FRAME_CALLS.has(call.method))) {
+    return `\`${source}\` enters a frame: masks are looked for in every frame of the page, so name the element alone, such as getByLabel('Card number'), or the iframe, such as locator('iframe#card').`;
+  }
   return null;
 }
 
@@ -291,9 +270,10 @@ export function parseLiveMasks(value: unknown): string[] | null {
 
 /**
  * What the instance says on a worker's stream: how many people watch the worker now, and the elements its project
- * masks beside the secret fields (`masks`), first as the stream opens and again when the project changes them.
+ * masks beside the secret fields (`masks`), first as the stream opens and again when the project changes them. A list
+ * this reader cannot read (`locators: null`, from an instance newer than it) masks nothing it could trust.
  */
-export type InstanceToWorker = { type: 'viewers'; count: number } | { type: 'masks'; locators: string[] };
+export type InstanceToWorker = { type: 'viewers'; count: number } | { type: 'masks'; locators: string[] | null };
 
 /** What a worker posts to the instance. */
 export type WorkerToInstance =
@@ -512,10 +492,7 @@ export function parseInstanceToWorker(data: string): InstanceToWorker | null {
     return null;
   }
   if (!isObject(value)) return null;
-  if (value.type === 'masks') {
-    const locators = parseLiveMasks(value.locators);
-    return locators ? { type: 'masks', locators } : null;
-  }
+  if (value.type === 'masks') return { type: 'masks', locators: parseLiveMasks(value.locators) };
   if (value.type !== 'viewers' || !isInt(value.count, 0, 1_000_000)) return null;
   return { type: 'viewers', count: value.count };
 }
