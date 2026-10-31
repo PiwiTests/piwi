@@ -21,6 +21,8 @@ function sourceLabel(edit: HealEditPayload): string {
       return 'prior run (line shifted)';
     case 'cross-test':
       return 'another test';
+    case 'diff-rename':
+      return 'rename in the change';
     default:
       return edit.source;
   }
@@ -53,8 +55,9 @@ export function buildHealPrBody(payload: HealActionPayload, siteUrl: string | nu
   );
   lines.push('');
   lines.push(
-    'A selector stopped matching its element. Piwi rewrote the failing line to a higher-stability locator it captured ' +
-      'from a passing run. These are deterministic one-line locator edits — no AI-generated changes.',
+    'A selector stopped matching its element. Piwi rewrote each failing line to a locator a passing run captured, or ' +
+      'to the new string the change itself gave the element. These are deterministic one-line locator edits — no ' +
+      'AI-generated changes.',
   );
   lines.push('');
 
@@ -88,8 +91,8 @@ export function buildHealPrBody(payload: HealActionPayload, siteUrl: string | nu
   lines.push('```');
   lines.push('');
   lines.push(
-    '_Opened automatically by Piwi. Review the diff as you would any change — a stored snapshot said this locator is ' +
-      'more stable, but only your suite proves the fix._',
+    '_Opened automatically by Piwi. Review the diff as you would any change — the evidence points at these ' +
+      'locators, but only your suite proves the fix._',
   );
 
   return lines.join('\n');

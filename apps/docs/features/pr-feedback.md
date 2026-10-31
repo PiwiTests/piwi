@@ -50,6 +50,11 @@ already listed with its failure, a passing one was updated), so it names what th
 the selection, on another shard set, or in a nightly suite. Each comes with its call site and, for a rename, the
 rewritten locator.
 
+<figure>
+  <img src="/screenshots/pr-comment.png" alt="The summary comment on a pull request: the run's counts, one new failure with its headline, owner and suggested locator, a pre-existing failure tracked in Jira, a flaky test also flaky on main, a new cluster, a cluster this change fixed, and the CI minutes wasted">
+  <figcaption>The summary comment on a pull request.</figcaption>
+</figure>
+
 ## The gate verdict
 
 Each [merge gate](/guide/ci#blocking-a-merge) evaluation made with a key that can upload or control the project's runs

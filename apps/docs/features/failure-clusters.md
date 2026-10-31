@@ -156,6 +156,10 @@ have tools: `triage_cluster` sets the status (with a note), assigns, snoozes, qu
 `decide_merge_suggestion` decides a merge suggestion, `move_tests_to_new_cluster` moves tests out of a cluster,
 `rerun_cluster_in_ci` re-runs a cluster's tests in CI, and `link_issue` and `unlink_issue` manage tickets.
 
+## Try it in the demo
+
+<DemoExamples />
+
 ## Related
 
 - [Triage a run gone red](/recipes/mass-failure): the clusters, used to collapse a red run into a few causes

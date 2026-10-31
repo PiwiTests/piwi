@@ -99,9 +99,10 @@ Scripts read and change the same grants, called role bindings, through the API; 
 users; columns are projects, after an **All projects** column. Each cell is a role selector: pick a role to grant it
 there, or none to remove it.
 
-<div class="doc-screenshot">
+<figure>
   <img src="/screenshots/permission-grid.png" alt="Settings → Permissions: groups above users down the side, projects across the top, and a role selector in each cell">
-</div>
+  <figcaption>The permissions grid: a role in each cell, for a group or a user on a project.</figcaption>
+</figure>
 
 - **Every change saves at once.** A change the server refuses is rolled back and reported.
 - **Inherited roles show faint.** A role a user holds only through a group or All projects appears faint, and its

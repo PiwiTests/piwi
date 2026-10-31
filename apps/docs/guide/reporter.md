@@ -16,9 +16,11 @@ command, `npx @piwitests/reporter init`; this page is the manual setup and the s
 npm install --save-dev @piwitests/reporter
 ```
 
+It needs `@playwright/test` 1.64.1 or later and Node.js 20 or later.
+
 ### Try it without editing your config
 
-On **Playwright 1.63 or later**, `--add-reporter` appends this reporter to whatever your config already uses (unlike `--reporter`, which replaces them), so you can send one run to a dashboard with no config edit. Most reporter options have a `PIWI_*` [environment variable](/reference/reporter-options), so point it at your dashboard that way:
+Playwright's `--add-reporter` appends this reporter to whatever your config already uses (unlike `--reporter`, which replaces them), so you can send one run to a dashboard with no config edit. Most reporter options have a `PIWI_*` [environment variable](/reference/reporter-options), so point it at your dashboard that way:
 
 ::: code-group
 
@@ -32,7 +34,7 @@ $env:PIWI_DASHBOARD_URL='http://localhost:3000'; $env:PIWI_API_KEY='your-api-key
 
 :::
 
-This is a trial path: you get results and your configured traces and screenshots, but not the [capture fixtures](#capture-fixtures) or [`wrapConfig`](#installing-via-wrapconfig)'s capture defaults. On Playwright before 1.63 the flag does not exist; configure the reporter normally instead. [`piwi run`](/reference/cli#select-run) makes the same append automatically when the config has no Piwi reporter.
+This is a trial path: you get results and your configured traces and screenshots, but not the [capture fixtures](#capture-fixtures) or [`wrapConfig`](#installing-via-wrapconfig)'s capture defaults. [`piwi run`](/reference/cli#select-run) makes the same append automatically when the config has no Piwi reporter.
 
 ## Installing via wrapConfig
 
@@ -56,7 +58,7 @@ export default wrapConfig(
 
 The first argument is your Playwright config; the second is the [Piwi options](#configuration-options). On top of injecting the reporter, `wrapConfig`:
 
-- Sets `screenshot: 'only-on-failure'` and `trace: 'retain-on-failure'` on the **top-level** `use` block when each is unset (a value you set, `'off'` included, and per-project `use` blocks are kept). They unlock the DOM snapshot, full call stack, full network with bodies and the visual diff **without** the capture fixtures. On Playwright 1.63 or later `trace` becomes `{ mode: 'retain-on-failure', snapshots: { dom: true, aria: true } }`, adding the per-action aria tree for the [Screen tab and the page diff](/features/evidence#aria-and-screen-snapshots). The `screen` snapshot kind stays opt-in; see [what `screen` adds per action](/operate/storage#trace-snapshots). Opt out with `defaultCapture: false` (or `PIWI_DEFAULT_CAPTURE=false`); the reporter logs one line at the start of the run naming whatever it defaulted.
+- Sets `screenshot: 'only-on-failure'` and `trace: { mode: 'retain-on-failure', snapshots: { dom: true, aria: true } }` on the **top-level** `use` block when each is unset (a value you set, `'off'` included, and per-project `use` blocks are kept). They unlock the DOM snapshot, full call stack, full network with bodies and the visual diff **without** the capture fixtures. The trace's aria snapshots feed the [Screen tab and the page diff](/features/evidence#aria-and-screen-snapshots). The `screen` snapshot kind stays opt-in; see [what `screen` adds per action](/operate/storage#trace-snapshots). Opt out with `defaultCapture: false` (or `PIWI_DEFAULT_CAPTURE=false`); the reporter logs one line at the start of the run naming whatever it defaulted.
 - Forwards the CI-gate option `failOnFlakyTests` into Playwright's native config so a flaky-only run exits non-zero locally.
 - Forwards the `PIWI_*` variables into the global setup process, so registering the run uses the reporter's server and credentials.
 

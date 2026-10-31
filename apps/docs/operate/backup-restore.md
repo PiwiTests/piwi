@@ -10,10 +10,12 @@ Piwi's migrations are **forward-only** — once a new version has migrated your 
 
 ## What to back up
 
-Everything lives in two places — back up both, together:
+The data lives in two places — back up both, together:
 
 1. **The database** — the SQLite file `.data/piwi.db` (the default), or your PostgreSQL database.
 2. **File storage** — `.data/storage/` (HTML reports, traces, attachments), unless you keep artifacts in [S3](./storage#s3-compatible-storage), in which case the bucket is your storage backup.
+
+Keep the server's `PIWI_SECRET_KEY` as well, stored apart from the backups (a password manager, your secret store): the AI keys, SCM and Jira tokens and webhook secrets in the database are encrypted with it. Restored under another key, they cannot be read, and each must be entered again. `PIWI_AUTH_SECRET` only signs session cookies: a new one signs everyone out.
 
 The two must be consistent with each other: a database row points at a stored trace, so a backup that captures one without the other can dangle. The simplest way to guarantee consistency is to stop the container before copying; the online methods below avoid the downtime.
 
@@ -47,7 +49,7 @@ Restoring is also how you roll back after an upgrade goes wrong — the rollback
 
 1. **Stop the container.**
 2. **Restore the database and `.data/storage/`** from a backup pair taken at the same time. For SQLite, delete any leftover `.data/piwi.db-wal` and `.data/piwi.db-shm` files (the server runs SQLite in write-ahead-log mode, and a stale log would be replayed onto the restored file), put `piwi-backup.db` back as `.data/piwi.db` and unpack the storage archive; on a Linux host, hand the restored files back to the container's user with `sudo chown -R 1001:1001 .data`. For PostgreSQL, restore the dump into an empty database (`psql "$PIWI_DATABASE_URL" < piwi-db.sql`).
-3. **Start the version the backup was taken on.** A backup from version *N* must be restored under version *N* (or newer, which will migrate it forward) — not an older one.
+3. **Start the version the backup was taken on**, with the same `PIWI_SECRET_KEY`. A backup from version *N* must be restored under version *N* (or newer, which will migrate it forward) — not an older one.
 
 Then confirm the running version at **Settings → About**, and that recent runs are present. See [Upgrading](./upgrading) for the full version-change story and the checks that tell you a migration landed.
 

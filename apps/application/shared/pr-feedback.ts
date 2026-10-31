@@ -136,7 +136,7 @@ export interface PrSummaryInput {
   selection?: { key: string; testCount: number } | null;
   /** Locks held on two shards at once in this run — the guarantee sharding is meant to keep. */
   splitLocks?: string[] | null;
-  /** True when no previous green run existed to compare against. */
+  /** True when a previous green run existed to compare against. */
   hasBaseline: boolean;
   /** Failures of tests that are currently quarantined, counted in `failedTests`. */
   quarantinedFailures?: number;

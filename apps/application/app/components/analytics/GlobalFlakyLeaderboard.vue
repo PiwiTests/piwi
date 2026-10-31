@@ -69,7 +69,7 @@ function flakeSummary(row: AnalyticsFlakyRow): string {
                   : 'text-gray-500'
             "
           >
-            {{ Math.round(row.wastedCiMinutes) }} min
+            {{ formatWastedMinutes(row.wastedCiMinutes) }}
           </p>
           <TagBadge v-if="row.rootCause" :text="row.rootCause" color="neutral" />
         </div>

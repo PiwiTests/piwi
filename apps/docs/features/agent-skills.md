@@ -50,6 +50,11 @@ The skills ship inside the reporter package. `npx @piwitests/reporter init` inst
 of setup (everything but `setup-piwi`, which an agent runs before the reporter exists). The **MCP server** page of the
 dashboard (`/mcp`) lists them next to the tools.
 
+<figure>
+  <img src="/screenshots/mcp-agent-skills.png" alt="The agent skills section of the MCP server page, with the command that installs the skills">
+  <figcaption>The agent skills on the MCP server page, with the command that installs them.</figcaption>
+</figure>
+
 ## Use it
 
 ```bash

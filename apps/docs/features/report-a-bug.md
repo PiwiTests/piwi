@@ -10,9 +10,14 @@ lang: en-US
 
 Reproduce a bug in your browser, say what the page should show, and get the test that proves it. **Report a bug** is
 a tool of the [Piwi Picker extension](./extension): it records your steps with the recorder, lets you mark what is
-wrong ("this should read Total: 45"), collects evidence from the page, and hands you a failing Playwright test, a
+wrong ("this should read Total: 36.00"), collects evidence from the page, and hands you a failing Playwright test, a
 Markdown report and a `.piwibug` file for the developer. Everything is built in your browser; nothing is sent anywhere unless you
 send it to your [Piwi instance](./bug-reports).
+
+<figure>
+  <video src="/videos/picker-report-loop.mp4" autoplay loop muted playsinline controls aria-label="Reporting a bug on a cart page: a coupon applied, the total marked as wrong with what it should read, then Finish opens the report with its five steps, its evidence and a failing test to copy"></video>
+  <figcaption>Reproduce it, mark what's wrong, finish: the report and its failing test.</figcaption>
+</figure>
 
 ## Recording the steps
 
@@ -85,8 +90,8 @@ tab and choose **Take a screenshot**.
   test.fail(); // passes while the bug exists; remove this line with the fix
   await page.goto('/cart');
   await page.getByRole('textbox', { name: 'Coupon' }).fill('SPRING10');
-  await page.getByRole('button', { name: 'Apply' }).click();
-  await expect(page.getByTestId('cart-total')).toHaveText('Total: 45'); // recorded: 'Total: 50'
+  await page.getByRole('button', { name: 'Apply coupon' }).click();
+  await expect(page.getByTestId('cart-total')).toHaveText('Total: 36.00'); // recorded: 'Total: 40.00'
   ```
 
   When the bug is fixed, the test passes and Playwright reports the expected failure as a failure: remove

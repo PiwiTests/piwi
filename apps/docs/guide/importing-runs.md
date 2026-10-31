@@ -1,6 +1,6 @@
 ---
 title: Import past runs
-description: "Backfill the dashboard with past runs from Playwright JSON and blob reports or trace files, and make imported history line up with new runs."
+description: "Backfill the dashboard with past runs from Playwright blob reports or trace files, and make imported history line up with new runs."
 lang: en-US
 ---
 

@@ -34,8 +34,8 @@ green. Open the test case and read its **status history** and **stability trend*
 rate, and duration bucketed over time.
 
 <figure>
-  <img src="/screenshots/test-case-detail.png" alt="Test case detail page with summary stats, duration trend, status history, and recent executions">
-  <figcaption>Test case detail — the run-by-run status history is what separates "this has always been shaky" from "this broke on Tuesday".</figcaption>
+  <img src="/screenshots/tour-test-history.png" alt="A test case page: run stats, the duration trend with a status strip under it, and the recent executions">
+  <figcaption>Test case history: the status strip is what separates "this has always been shaky" from "this broke on Tuesday".</figcaption>
 </figure>
 
 Read it like this:

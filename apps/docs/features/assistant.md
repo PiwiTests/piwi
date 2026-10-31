@@ -24,7 +24,10 @@ From 1280 px wide the panel docks on the right and the page narrows beside it; b
 its icons until it closes. Drag its left edge to widen it, or float it over the page with the panel icon in its
 header; the browser remembers both. Narrower, it opens over the page, full screen on a phone.
 
-![The assistant docked beside Home, the field offering the next question](/screenshots/assistant-docked.png)
+<figure>
+  <img src="/screenshots/assistant-docked.png" alt="The assistant docked beside Home, the field offering the next question">
+  <figcaption>The assistant docked beside Home.</figcaption>
+</figure>
 
 Each question carries the page it was asked on: its address, tab, filters, project and the parts a guide can point
 at, so "Why did this fail?" on an execution needs no ids. The clock lists your conversations; the pen starts a new
@@ -69,6 +72,14 @@ Asked to do something ("resolve this cluster"), the assistant answers with a car
 and reloads the page. The card keeps what became of it, or why it was refused. A card can resolve, ignore or
 reopen a failure cluster, quarantine or release a test, start a diagnosis, keep a run or decline a capability, and
 shows only when you hold the permission it needs; to act on several tests, it first lets you tick them.
+
+<figure>
+  <div class="figure-pair">
+    <img src="/screenshots/assistant-proposal-wide.png" alt="An answer in the assistant panel proposing to resolve the cart cluster once the fix is in, with Dismiss and Apply">
+    <img src="/screenshots/assistant-proposal-wide-applied.png" alt="The same proposal after Apply, marked Applied">
+  </div>
+  <figcaption>A proposed change, before and after Apply.</figcaption>
+</figure>
 
 ## What it reads
 
@@ -133,7 +144,10 @@ The gauge under the question field opens the cap that binds first, yours or the 
 and with the Claude Code CLI on a Claude subscription its 5-hour or weekly window. A line warns from 80%; a spent cap
 stops the field from asking.
 
-![The question field warning at 85% of the daily allowance](/screenshots/assistant-input.png)
+<figure>
+  <img src="/screenshots/assistant-input.png" alt="The question field warning at 85% of the daily allowance">
+  <figcaption>The question field warns at 85% of the daily allowance.</figcaption>
+</figure>
 
 ## Turning it off
 

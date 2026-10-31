@@ -13,15 +13,18 @@ A **dashboard** is a named arrangement of [analytics](./analytics) widgets in ba
 **Overview** dashboard; anyone can keep their own dashboards, share them with the team, schedule them
 as a [quality report](./quality-reports), and put them on a wall screen.
 
-![A shared dashboard: the checkout smoke tests over the current sprint, with a list, the period's releases and a note](/screenshots/saved-dashboard.png)
+<figure>
+  <img src="/screenshots/saved-dashboard.png" alt="A shared dashboard: the checkout smoke tests over the current sprint, with a list, the period's releases and a note">
+  <figcaption>A shared dashboard over the current sprint.</figcaption>
+</figure>
 
 ## Built-in and saved dashboards
 
 The header's switcher lists every dashboard you can open, with a search:
 
-- **Built-in**: Overview (the analytics page, four bands and fifteen widgets), and the report dashboards
-  Executive, Engineering and Gaps digest (the last one only where the [Test Map](./scenario-gaps) is not
-  declined). A built-in dashboard cannot be changed, only duplicated.
+- **Built-in**: Overview (the analytics page, four bands and sixteen widgets), and the report dashboards
+  Executive, Engineering and Gaps digest (only where the [Test Map](./scenario-gaps) is not declined). The Team
+  dashboard is a [quality report](./quality-reports) only, offered when the report's tests have an owner. A built-in dashboard cannot be changed, only duplicated.
 - **Shared**: saved dashboards someone shared with every signed-in user.
 - **Personal**: your private dashboards.
 - **Unused**: shared dashboards nobody opened for 90 days, where their owner or an administrator can
@@ -52,7 +55,10 @@ saw.
 - The **Filters** block, titled *Default filters*, sets the scope the dashboard opens with.
 - Widgets preview from your unsaved changes. *Save* writes them; *Save as…* writes a new dashboard.
 
-![The dashboard editor: band title and description, Add widget, and a widget's menu](/screenshots/dashboard-editor.png)
+<figure>
+  <img src="/screenshots/dashboard-editor.png" alt="The dashboard editor: band title and description, Add widget, and a widget's menu">
+  <figcaption>The dashboard editor: a band, Add widget, and a widget's menu.</figcaption>
+</figure>
 
 If someone saved the dashboard while you were editing it, *Save* says so and offers to reload their
 version or save yours as a copy; nothing is overwritten.

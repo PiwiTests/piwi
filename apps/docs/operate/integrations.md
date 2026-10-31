@@ -8,16 +8,17 @@ lang: en-US
 
 Connect an issue tracker and the external links you pin to a run, execution or failure cluster stop being
 dead URLs: Piwi fetches the ticket's title and status through the connection and keeps the badge current
-when you refresh. Jira Cloud is the supported tracker. This page sets up the connection; filing and syncing
+when you refresh. Jira Cloud is the supported tracker, not Jira Server or Data Center. This page sets up the connection; filing and syncing
 issues from a failure is [Issue tracking (Jira)](/features/issue-tracking).
 
 A connection is instance infrastructure — one row per external system, managed by an administrator, shared
 by every project. Nothing is sent to Jira until a connection exists, and credentials are encrypted at rest
 with `PIWI_SECRET_KEY`.
 
-<div class="doc-screenshot">
+<figure>
   <img src="/screenshots/integrations-settings.png" alt="Settings → Integrations: a Jira card with a connected system, its verified status, and a test-connection button">
-</div>
+  <figcaption>Settings → Integrations: one card per connected tracker.</figcaption>
+</figure>
 
 ## Connecting Jira Cloud
 
@@ -33,12 +34,13 @@ Connect Jira** (administrator only) walks through it:
 4. **Check sign-in** calls `GET /rest/api/3/myself` without saving and shows the account, the token kind and the
    projects the account sees, or what to fix. Then **Connect**.
 
-<div class="doc-screenshot">
+<figure>
   <img src="/screenshots/jira-connect-form.png" alt="The Jira connect form: a pasted board URL read down to the site, the scoped-token steps and a passed sign-in check">
-</div>
+  <figcaption>The Jira connect form: paste a board URL, then sign in with a scoped token.</figcaption>
+</figure>
 
-Once connected, a Jira link — `https://your-team.atlassian.net/browse/PROJ-123`, including a self-hosted
-host once its connection exists — is recognized as a Jira issue, unfurls with the summary and a status
+Once connected, a Jira link — `https://your-team.atlassian.net/browse/PROJ-123`, including a Cloud site on its
+own domain once its connection exists — is recognized as a Jira issue, unfurls with the summary and a status
 badge (colored by the issue's status category), and refreshes through the connection.
 
 ## Permissions the token needs

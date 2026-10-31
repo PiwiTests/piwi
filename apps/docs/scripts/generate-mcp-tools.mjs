@@ -19,7 +19,7 @@ const repoRoot = join(here, '..', '..');
 const require = createRequire(import.meta.url);
 const jiti = createJiti(import.meta.url, { alias: { zod: dirname(require.resolve('zod/package.json')) } });
 
-const { MCP_TOOL_DEFS, toolSummary } = await jiti.import(join(repoRoot, 'application/shared/mcp-tools.ts'));
+const { MCP_TOOL_DEFS, toolSummary, toolParameters } = await jiti.import(join(repoRoot, 'application/shared/mcp-tools.ts'));
 const { CAPABILITY_BY_ID, CAPABILITY_MODULES, CAPABILITY_PRESETS } = await jiti.import(
   join(repoRoot, 'application/shared/capabilities.ts'),
 );
@@ -42,8 +42,15 @@ function capabilityCell(id) {
   return def ? `[\`${id}\`](/${def.doc})` : `\`${id}\``;
 }
 
-const toolRow = ({ name, description, capability }) =>
-  `| <code id="${name}">${name}</code> | ${cell(toolSummary(description))} | ${capabilityCell(capability)} |`;
+/** The tool's parameters by name, the required ones marked. */
+function parametersCell(tool) {
+  const params = toolParameters(tool);
+  if (params.length === 0) return 'none';
+  return params.map((param) => `\`${param.name}\`${param.required ? ' (required)' : ''}`).join(', ');
+}
+
+const toolRow = (tool) =>
+  `| <code id="${tool.name}">${tool.name}</code> | ${cell(toolSummary(tool.description))} | ${parametersCell(tool)} | ${capabilityCell(tool.capability)} |`;
 
 function moduleSection(module) {
   const tools = MCP_TOOL_DEFS.filter((tool) => tool.module === module);
@@ -57,8 +64,8 @@ function moduleSection(module) {
       .filter(Boolean)
       .join(' '),
     '',
-    '| Tool | What it returns or does | Capability |',
-    '|------|-------------------------|------------|',
+    '| Tool | What it returns or does | Parameters | Capability |',
+    '|------|-------------------------|------------|------------|',
     ...tools.map(toolRow),
     '',
   ].join('\n');
@@ -84,9 +91,9 @@ Setup page asks about, and \`?modules=\` on the MCP URL narrows the list to some
 **capability** leaves \`tools/list\` and \`tools/call\` when an administrator declines that capability for the
 instance; a tool without one is always served.
 
-Each entry here is the summary line of the description the server sends to the agent. The **MCP server** page of the
-dashboard (\`/mcp\`) lists the same catalog with each tool's whole description and parameters, and leaves out the
-tools of declined capabilities.
+Each entry here is the summary line of the description the server sends to the agent, and the names of its
+parameters. The **MCP server** page of the dashboard (\`/mcp\`) lists the same catalog with each tool's whole
+description and each parameter's, and leaves out the tools of declined capabilities.
 
 ${CAPABILITY_MODULES.map(moduleSection).filter(Boolean).join('\n')}
 ## Related

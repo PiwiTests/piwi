@@ -30,6 +30,7 @@
         { "type": "json", "path": "apps/extension/manifest.json", "jsonpath": "$.version" },
         { "type": "json", "path": "apps/vscode/package.json", "jsonpath": "$.version" },
         { "type": "generic", "path": "apps/jetbrains/gradle.properties" },
+        { "type": "generic", "path": "apps/docs/operate/deployment.md" },
         {
           "type": "json",
           "path": "examples/sample-app/package.json",

@@ -225,8 +225,12 @@ const SCENES = {
     await shoot(page, 'failures');
   },
 
-  /** The hover on the failing line: the error, its call chain and the failure screenshot. */
-  async hover(page) {
+  /** The hover on the failing line, dragged taller: the error, its call chain and the failure screenshot. */
+  async hover(page, workspace) {
+    // The hover below its line, where the window leaves room to drag it taller.
+    const settingsFile = path.join(workspace, '.vscode', 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    fs.writeFileSync(settingsFile, JSON.stringify({ ...settings, 'editor.hover.above': false }, null, 2));
     await openFile(page, PAGE_OBJECT_FILE);
     await clearNotifications(page);
     await showPanel(page, false);
@@ -239,20 +243,36 @@ const SCENES = {
       .locator('span', { hasText: 'btn-primary' })
       .first();
     const hover = page.locator('.monaco-hover:not(.hidden)').first();
-    // The first hover starts the screenshot's download; the second shows it.
-    await token.hover();
-    await hover.waitFor({ state: 'visible', timeout: 10_000 });
-    await settle(page, 2500);
-    await page.mouse.move(10, 400);
-    await hover.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
-    await token.hover();
-    await hover.waitFor({ state: 'visible', timeout: 10_000 });
-    await hover
-      .locator('img')
-      .waitFor({ state: 'visible', timeout: 10_000 })
-      .catch(() => {});
+    const image = hover.locator('img');
+    // The first hover starts the screenshot's download; a later one shows it.
+    for (let tries = 0; ; tries++) {
+      await token.hover();
+      await hover.waitFor({ state: 'visible', timeout: 10_000 });
+      await settle(page, 2500);
+      if (await image.isVisible()) break;
+      if (tries >= 5) throw new Error('the hover never showed the failure screenshot');
+      await page.mouse.move(10, 400);
+      await hover.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
+    }
+    // A hover opens at most 250 px tall: drag its bottom edge down, as a reader can, so the screenshot shows under the error.
+    const sashes = await page.locator('.monaco-resizable-hover .monaco-sash.horizontal').all();
+    const boxes = (await Promise.all(sashes.map((sash) => sash.boundingBox()))).filter(Boolean);
+    const bottom = boxes.sort((a, b) => b.y - a.y)[0];
+    const editor = await page.locator('.monaco-editor').first().boundingBox();
+    if (bottom && editor) {
+      const x = bottom.x + bottom.width / 2;
+      const y = bottom.y + bottom.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x, editor.y + editor.height - 12, { steps: 12 });
+      await page.mouse.up();
+      // Off the edge, into the hover, so the edge's highlight goes.
+      await page.mouse.move(x, y - 120, { steps: 6 });
+    }
     await settle(page, 1500);
     await shoot(page, 'hover');
+    await page.mouse.move(10, 400);
+    fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
   },
 
   /** The Testing view: the spec's tests with the latest run's results, and a failure's message at its line. */
@@ -307,16 +327,10 @@ const SCENES = {
     fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
   },
 
-  /** A run started here, paused: its line marked, what runs next and the controls above it and in the status bar. */
-  async 'run-control'(page, workspace) {
-    await stopAt(page, workspace, FILL_STOP);
-    await noNotifications(page);
-    await page.mouse.move(10, 400);
-    await settle(page, 800);
-    await shoot(page, 'run-control');
-  },
-
-  /** The hover on the paused line: what runs next and the controls. */
+  /**
+   * A run started here, paused: its line marked, and on its hover what runs next and the controls, also above the line
+   * and in the status bar.
+   */
   async 'run-control-hover'(page, workspace) {
     // The hover below its line, so the line and its lens stay in view.
     const settingsFile = path.join(workspace, '.vscode', 'settings.json');

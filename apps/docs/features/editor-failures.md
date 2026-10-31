@@ -40,6 +40,11 @@ On a failure, the quick fixes are:
 Hover for the error message, its call chain, the failure screenshot, and the tickets linked to its cluster or
 test. Without one, **File an issue** opens the cluster in the dashboard.
 
+<figure>
+  <img src="/screenshots/vscode-hover.png" alt="VS Code: the hover on a failing line, dragged taller: the CI failure with its error, its call log and the chain of calls that reached the line, then the failure screenshot of the checkout page">
+  <figcaption>The hover on a failing line: the error, how the test got there, and the page at the failure.</figcaption>
+</figure>
+
 A failure of a run on the checked-out branch is an error; one from another branch, such as the default branch's while
 yours has no run yet, is a warning; one whose line you changed since the run is an information (a weak warning in a
 JetBrains IDE). The `piwi.failureSeverity` setting (**Settings → Tools → Piwi → Runs** in a JetBrains IDE) chooses
@@ -107,8 +112,9 @@ By default, failures are read against the checked-out branch's latest complete r
 Compare with…** (**Tools → Piwi → Compare With…** in a JetBrains IDE, and the failures view's title bar) chooses another
 run to compare with: a branch's latest complete run, a run by its id, or **My local runs only**, your runs from this
 machine, the desktop app or an editor, without CI. Your runs since are laid over each. The status bar tooltip and the
-failures view name it (`Baseline: CI run #120 on feature/x`), ending with `(no run)` when it found none. The choice is
-kept on this machine, per Playwright config.
+failures view name it (`Baseline: CI run #120 on feature/x`), ending with `(no run)` when it found none. That run need
+not have passed: it is not the dashboard's [baseline](/guide/concepts#baseline-last-green-run), the last passing run.
+The choice is kept on this machine, per Playwright config.
 
 ## Related
 

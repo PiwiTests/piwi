@@ -76,8 +76,8 @@ test('bug: coupon not applied to the total', {
   test.fail(); // passes while the bug exists; remove this line with the fix
   await page.goto('/cart');
   await page.getByLabel('Coupon').fill('SPRING10');
-  await page.getByRole('button', { name: 'Apply' }).click();
-  await expect(page.getByTestId('cart-total')).toHaveText('Total: 42'); // recorded: 'Total: 40'
+  await page.getByRole('button', { name: 'Apply coupon' }).click();
+  await expect(page.getByTestId('cart-total')).toHaveText('Total: 36.00'); // recorded: 'Total: 40.00'
 });
 ```
 
@@ -86,6 +86,11 @@ tab: the folder bug specs go to (`tests/bugs` by default) and the module `test` 
 `../fixtures` when your tests use fixtures of their own.
 
 From a terminal, [`piwi bug 37 --write`](/reference/cli#bug) writes the spec into that folder and runs it once.
+
+<figure>
+  <img src="/screenshots/bug-report-spec.png" alt="A bug report's Spec tab: the failing Playwright test written from the report's steps, ready to commit">
+  <figcaption>A report's Spec tab: the failing test, written with the project's settings.</figcaption>
+</figure>
 
 ## From report to fix
 

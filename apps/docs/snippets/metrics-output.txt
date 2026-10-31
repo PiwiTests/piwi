@@ -1,0 +1,15 @@
+# TYPE piwi_test_pass_rate_percent gauge
+# UNIT piwi_test_pass_rate_percent percent
+# HELP piwi_test_pass_rate_percent Test pass rate, last 7 days: Tests passed divided by tests run, summed over the runs of the period.
+piwi_test_pass_rate_percent{project="checkout",project_id="1"} 97.8
+piwi_test_pass_rate_percent{project="search",project_id="2"} 99.4
+# TYPE piwi_runs gauge
+# HELP piwi_runs Runs, last 7 days: Finished runs in the period.
+piwi_runs{project="checkout",project_id="1"} 42
+piwi_runs{project="search",project_id="2"} 31
+# TYPE piwi_wasted_ci_minutes_minutes gauge
+# UNIT piwi_wasted_ci_minutes_minutes minutes
+# HELP piwi_wasted_ci_minutes_minutes Wasted CI minutes, last 7 days: Minutes spent inside wait steps plus minutes spent executing attempts that ended failed or timed out.
+piwi_wasted_ci_minutes_minutes{project="checkout",project_id="1"} 18.5
+piwi_wasted_ci_minutes_minutes{project="search",project_id="2"} 2
+# EOF

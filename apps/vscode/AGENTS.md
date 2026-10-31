@@ -135,7 +135,7 @@ npm run vscode:package            # dist/piwi.vsix
   `CHANGELOG.md`, so a commit with the `ide` scope is what puts a line in it.
   ([Changelog](ARCHITECTURE.md#changelog))
 - **Screenshots**: `scripts/take-screenshots.mjs` recaptures `apps/docs/public/screenshots/vscode-*.png`; run it under
-  Xvfb at twice the window size. Its fixture is shared with the JetBrains plugin's script, so a change to the fixture
+  Xvfb at twice the window size. `scripts/record-loop.mjs` films the docs' recording loop. Its fixture is shared with the JetBrains plugin's script, so a change to the fixture
   means recapturing both sets. ([Screenshots](ARCHITECTURE.md#screenshots))
 - **Nightly suite** (`tests/e2e/`): find elements by ARIA role and name, and clear the notification toasts before a step
   opens a menu or a hover (`clearNotifications`). ([Nightly suite](ARCHITECTURE.md#nightly-suite))

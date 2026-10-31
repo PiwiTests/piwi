@@ -1,67 +1,115 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 400" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 464" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <style>
+  .bg{fill:#fcfcfd;stroke:#e4e7ec}
+  .t{fill:#101828;font-weight:700;font-size:19px}
+  .s{fill:#475467;font-size:14px}
+  .h{fill:#667085;font-size:12.5px;font-weight:700;letter-spacing:.05em}
+  .lb{fill:#344054;font-size:15px;font-weight:600}
+  .l{fill:#475467;font-size:13.5px}
+  .m{fill:#667085;font-size:12.5px}
+  .b{font-weight:600}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;white-space:pre}
+  .ink{fill:#344054} .numw{fill:#ffffff}
+  .box{fill:#ffffff;stroke:#d0d5dd}
+  .chip{fill:#f9fafb;stroke:#d0d5dd}
+  .hd{fill:#f2f4f7}
+  .cap{fill:#f2f4f7;stroke:#d0d5dd}
+  .rule{fill:none;stroke:#e4e7ec}
+  .edge{fill:none;stroke:#667085;stroke-width:1.4}
+  .dash{fill:none;stroke:#98a2b3;stroke-width:1.3;stroke-dasharray:5 4}
+  .acc{fill:none;stroke:#4353ff;stroke-width:1.6}
+  .accd{fill:none;stroke:#4353ff;stroke-width:1.4;stroke-dasharray:5 4}
+  .acct{fill:#4353ff;font-size:13px} .ac{fill:#4353ff}
+  .et{fill:#475467;font-size:13px}
+  .arr{fill:#667085} .arrd{fill:#98a2b3} .arra{fill:#4353ff}
+  .ab{fill:#eef1ff;stroke:#c7ceff} .abt{fill:#2a3aa8} .abl{fill:#3f4b9e} .abo{fill:none;stroke:#4353ff;stroke-width:1.5}
+  .ok{fill:#ecfdf3;stroke:#75e0a7} .okt{fill:#067647} .okd{fill:#12b76a}
+  .bs{fill:#fffaeb;stroke:#fec84b} .bst{fill:#b54708}
+  .fc{fill:#fef3f2;stroke:#fda29b} .fct{fill:#b42318} .fcd{fill:#f04438}
+  .fr{fill:#fff6ed;stroke:#fd853a} .frt{fill:#c4320a}
+  .mu{fill:#f2f4f7;stroke:#d0d5dd} .mud{fill:#d0d5dd}
+  .dbx{fill:none;stroke:#d0d5dd;stroke-dasharray:5 4}
+  .clu{fill:#4353ff;fill-opacity:.06;stroke:#4353ff;stroke-width:1.8;stroke-dasharray:6 4;stroke-linejoin:round}
+  @media (prefers-color-scheme: dark){
+    .bg{fill:#161b26;stroke:#333741}
+    .t{fill:#f5f5f6} .s{fill:#94969c} .h{fill:#85888e}
+    .lb{fill:#ececed} .l{fill:#cecfd2} .m{fill:#94969c} .ink{fill:#ececed} .numw{fill:#161b26}
+    .box{fill:#1f242f;stroke:#333741} .chip{fill:#262b36;stroke:#333741} .hd{fill:#262b36}
+    .cap{fill:#262b36;stroke:#4a4f5a}
+    .rule{stroke:#333741}
+    .edge{stroke:#94969c} .arr{fill:#94969c}
+    .dash{stroke:#61646c} .arrd{fill:#61646c}
+    .acc,.accd{stroke:#8098f9} .acct,.ac{fill:#8098f9} .arra{fill:#8098f9}
+    .et{fill:#94969c}
+    .ab{fill:#1c2142;stroke:#3b4699} .abt{fill:#c7d0ff} .abl{fill:#a4b0f0} .abo{stroke:#8098f9}
+    .ok{fill:#0b2418;stroke:#079455} .okt{fill:#75e0a7} .okd{fill:#17b26a}
+    .bs{fill:#2b1d07;stroke:#ca8504} .bst{fill:#fec84b}
+    .fc{fill:#2d1210;stroke:#d92d20} .fct{fill:#fda29b} .fcd{fill:#f04438}
+    .fr{fill:#2b170c;stroke:#e04f16} .frt{fill:#f7b27a}
+    .mu{fill:#262b36;stroke:#333741} .mud{fill:#61646c}
+    .dbx{stroke:#61646c}
+    .clu{fill:#8098f9;fill-opacity:.1;stroke:#8098f9}
+  }
+</style>
   <defs>
-    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 1 L 9 5 L 0 9 z" fill="#667085"/>
-    </marker>
-    <marker id="arrAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 1 L 9 5 L 0 9 z" fill="#4353ff"/>
-    </marker>
+    <marker id="lcn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arr" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="lcd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrd" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="lca" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arra" d="M 0 1 L 9 5 L 0 9 z"/></marker>
   </defs>
-
-  <rect x="0" y="0" width="920" height="400" rx="12" fill="#fcfcfd" stroke="#e4e7ec"/>
-  <text x="24" y="36" font-size="16" font-weight="700" fill="#101828">Capture — while the test runs</text>
-  <text x="24" y="56" font-size="12.5" fill="#475467">Every time a locator proves it resolves, its element is recorded — off the test's critical path.</text>
+  <rect class="bg" x="0.5" y="0.5" width="919" height="463" rx="12"/>
+  <text class="t" x="24" y="38">Capture: while the test runs</text>
+  <text class="s" x="24" y="62">Each time a locator proves it resolves, its element is recorded, off the test’s critical path.</text>
 
   <!-- Test code -->
-  <rect x="24" y="84" width="264" height="128" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <rect x="24" y="84" width="264" height="30" rx="8" fill="#f2f4f7"/>
-  <rect x="24" y="106" width="264" height="8" fill="#f2f4f7"/>
-  <text x="40" y="104" font-size="13" font-weight="600" fill="#344054">Test code</text>
-  <text x="40" y="138" font-size="12" font-family="ui-monospace, monospace" fill="#344054">await pay.click()</text>
-  <text x="40" y="156" font-size="11" fill="#667085">successful action</text>
-  <text x="40" y="180" font-size="12" font-family="ui-monospace, monospace" fill="#344054">await expect(email)</text>
-  <text x="76" y="196" font-size="12" font-family="ui-monospace, monospace" fill="#344054">.toBeVisible()</text>
-  <text x="222" y="196" font-size="11" fill="#667085">passing</text>
-  <line x1="288" y1="148" x2="336" y2="148" stroke="#4353ff" stroke-width="1.6" marker-end="url(#arrAccent)"/>
-  <text x="312" y="140" font-size="11" fill="#4353ff" text-anchor="middle">passes</text>
+  <rect class="box" x="22" y="88" width="240" height="150" rx="8"/>
+  <path class="hd" d="M 22.5 120 L 22.5 96 Q 22.5 88.5 30 88.5 L 254 88.5 Q 261.5 88.5 261.5 96 L 261.5 120 Z"/>
+  <text class="lb" x="38" y="109">Test code</text>
+  <text class="mono ink" x="38" y="144">await pay.click()</text>
+  <text class="m" x="38" y="164">a successful action</text>
+  <text class="mono ink" x="38" y="192">await expect(email)</text>
+  <text class="mono ink" x="38" y="212">  .toBeVisible()</text>
+  <text class="m" x="246" y="212" text-anchor="end">passing</text>
+  <path class="acc" d="M 262 163 L 310 163" marker-end="url(#lca)"/>
+  <text class="acct" x="287" y="153" text-anchor="middle">passes</text>
 
-  <!-- Proxy -->
-  <rect x="338" y="106" width="176" height="84" rx="8" fill="#eef1ff" stroke="#c7ceff"/>
-  <text x="426" y="134" font-size="13" font-weight="600" fill="#2a3aa8" text-anchor="middle">Capture proxy</text>
-  <text x="426" y="152" font-size="11.5" fill="#3f4b9e" text-anchor="middle">wraps locator methods +</text>
-  <text x="426" y="167" font-size="11.5" fill="#3f4b9e" text-anchor="middle">expect()'s assertion funnel</text>
-  <line x1="514" y1="148" x2="562" y2="148" stroke="#4353ff" stroke-width="1.6" marker-end="url(#arrAccent)"/>
+  <!-- Capture proxy -->
+  <rect class="ab" x="312" y="113" width="180" height="100" rx="8"/>
+  <text class="lb abt" x="402" y="140" text-anchor="middle">Capture proxy</text>
+  <text class="m abl" x="402" y="162" text-anchor="middle">wraps locator methods</text>
+  <text class="m abl" x="402" y="179" text-anchor="middle">and expect()’s assertion</text>
+  <text class="m abl" x="402" y="196" text-anchor="middle">funnel</text>
+  <path class="acc" d="M 492 163 L 540 163" marker-end="url(#lca)"/>
 
-  <!-- Probe -->
-  <rect x="564" y="84" width="332" height="128" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <rect x="564" y="84" width="332" height="30" rx="8" fill="#f2f4f7"/>
-  <rect x="564" y="106" width="332" height="8" fill="#f2f4f7"/>
-  <text x="580" y="104" font-size="13" font-weight="600" fill="#344054">In-page element probe — bounded 500 ms</text>
-  <text x="580" y="136" font-size="12" fill="#475467">• attributes + accessible name (values never read)</text>
-  <text x="580" y="155" font-size="12" fill="#475467">• uniqueness counts for testid / id / name / classes</text>
-  <text x="580" y="174" font-size="12" fill="#475467">• stable-ancestor anchors + same-role position</text>
-  <text x="580" y="199" font-size="11" fill="#98652b">fire-and-forget · assertions probe once per call site</text>
+  <!-- Element read -->
+  <rect class="box" x="542" y="88" width="356" height="176" rx="8"/>
+  <path class="hd" d="M 542.5 120 L 542.5 96 Q 542.5 88.5 550 88.5 L 890 88.5 Q 897.5 88.5 897.5 96 L 897.5 120 Z"/>
+  <text class="lb" x="558" y="109">Element read in the page, at most 500 ms</text>
+  <text class="l" x="558" y="144">• attributes and accessible name</text>
+  <text class="l" x="558" y="163">• never the value of an input</text>
+  <text class="l" x="558" y="182">• uniqueness of test id, id, name, classes</text>
+  <text class="l" x="558" y="201">• stable-ancestor anchors, same-role position</text>
+  <text class="m bst" x="558" y="230">fire-and-forget; an assertion is read</text>
+  <text class="m bst" x="558" y="247">once per call site</text>
 
   <!-- Alternatives -->
-  <line x1="730" y1="212" x2="730" y2="248" stroke="#667085" stroke-width="1.4" marker-end="url(#arr)"/>
-  <rect x="564" y="250" width="332" height="118" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <rect x="564" y="250" width="332" height="30" rx="8" fill="#f2f4f7"/>
-  <rect x="564" y="272" width="332" height="8" fill="#f2f4f7"/>
-  <text x="580" y="270" font-size="13" font-weight="600" fill="#344054">Ranked alternative locators</text>
-  <text x="580" y="301" font-size="11" font-family="ui-monospace, monospace" fill="#344054">getByTestId('pay')</text>
-  <text x="880" y="301" font-size="12" fill="#027a48" text-anchor="end" font-weight="600">100</text>
-  <text x="580" y="320" font-size="11" font-family="ui-monospace, monospace" fill="#344054">getByRole('button', { name: 'Pay' })</text>
-  <text x="880" y="320" font-size="12" fill="#027a48" text-anchor="end" font-weight="600">90</text>
-  <text x="580" y="339" font-size="11" font-family="ui-monospace, monospace" fill="#344054">locator('#form').getByRole('button')</text>
-  <text x="880" y="339" font-size="12" fill="#4353ff" text-anchor="end" font-weight="600">64</text>
-  <text x="580" y="358" font-size="11" font-family="ui-monospace, monospace" fill="#344054">locator('.pay-btn')</text>
-  <text x="880" y="358" font-size="12" fill="#b54708" text-anchor="end" font-weight="600">40</text>
+  <path class="edge" d="M 720 264 L 720 298" marker-end="url(#lcn)"/>
+  <rect class="box" x="542" y="300" width="356" height="140" rx="8"/>
+  <path class="hd" d="M 542.5 332 L 542.5 308 Q 542.5 300.5 550 300.5 L 890 300.5 Q 897.5 300.5 897.5 308 L 897.5 332 Z"/>
+  <text class="lb" x="558" y="321">Ranked alternative locators</text>
+  <text class="mono ink" x="558" y="356">getByTestId('pay')</text>
+  <text class="l b okt" x="882" y="356" text-anchor="end">100</text>
+  <text class="mono ink" x="558" y="378">getByRole('button', { name: 'Pay' })</text>
+  <text class="l b okt" x="882" y="378" text-anchor="end">90</text>
+  <text class="mono ink" x="558" y="400">locator('#form').getByRole('button')</text>
+  <text class="l b ac" x="882" y="400" text-anchor="end">64</text>
+  <text class="mono ink" x="558" y="422">locator('.pay-btn')</text>
+  <text class="l b bst" x="882" y="422" text-anchor="end">40</text>
 
-  <!-- DB -->
-  <line x1="562" y1="309" x2="416" y2="309" stroke="#667085" stroke-width="1.4" marker-end="url(#arr)"/>
-  <path d="M 168 272 a 120 16 0 0 0 240 0 v 64 a 120 16 0 0 1 -240 0 z" fill="#ffffff" stroke="#d0d5dd"/>
-  <ellipse cx="288" cy="272" rx="120" ry="16" fill="#f2f4f7" stroke="#d0d5dd"/>
-  <text x="288" y="308" font-size="13" font-weight="600" fill="#344054" text-anchor="middle">locator_snapshots</text>
-  <text x="288" y="326" font-size="11.5" fill="#667085" text-anchor="middle">one row per (test case, call site)</text>
-  <text x="288" y="341" font-size="11.5" fill="#667085" text-anchor="middle">upserted every run — latest wins</text>
+  <!-- Storage -->
+  <path class="edge" d="M 542 370 L 424 370" marker-end="url(#lcn)"/>
+  <path class="box" d="M 102 334 a 160 14 0 0 0 320 0 v 76 a 160 14 0 0 1 -320 0 z"/>
+  <ellipse class="cap" cx="262" cy="334" rx="160" ry="14"/>
+  <text class="lb" x="262" y="376" text-anchor="middle">locator_snapshots</text>
+  <text class="m" x="262" y="398" text-anchor="middle">one row per test case and call site,</text>
+  <text class="m" x="262" y="415" text-anchor="middle">upserted every run: the latest wins</text>
 </svg>
