@@ -17,7 +17,7 @@ npm install --save-dev @piwitests/reporter
 ```
 
 It needs `@playwright/test` 1.59 or later and Node.js 20 or later. A feature that needs a later Playwright names the
-version on its page, and stays off on an older one.
+version on its page, and what it does on an older one.
 
 ### Try it without editing your config
 
