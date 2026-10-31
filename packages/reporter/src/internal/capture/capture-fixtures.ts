@@ -2002,10 +2002,10 @@ async function showStop(
  * (`end` aborts before the debugger lets the stopped call go, so that call never runs): the test is skipped
  * (`skipOf`) as such a call rejects, before its next locator call, as a `page.pause()` it stopped at goes on, or as
  * its function ends (`skipAtFunctionEnd`). A stopped call the proxy did not delegate (a navigation, a key press, an
- * assertion on the page), or any call on a Playwright that takes no signal (`takesEndSignal`), runs first, which the
- * editor hears. Once the function ended (an `afterEach` hook, a fixture's teardown, a held failure), the stop ends as
- * Resume does, the test's result kept. Returns how the debugger goes on: as on `end`, or as on `finish` once the
- * function ended.
+ * assertion on the page) runs first, which the editor hears; so does a delegated one on a Playwright that takes no
+ * signal (`takesEndSignal`), the test skipped as it returns. Once the function ended (an `afterEach` hook, a fixture's
+ * teardown, a held failure), the stop ends as Resume does, the test's result kept. Returns how the debugger goes on:
+ * as on `end`, or as on `finish` once the function ended.
  */
 function endTest(
   sink: CaptureSink,
@@ -2033,13 +2033,12 @@ function endTest(
     return 'end';
   }
   // A call's title may name the address it goes to: its credentials stay in the worker.
-  const why =
-    call && !takesEndSignal(sink.testInfo.config?.version)
-      ? 'a locator call is given up from Playwright 1.62 on'
-      : 'Piwi holds no locator call there';
   const said = hideSecretsInText(
-    `${title} at ${line} runs before the test ends: ${why}. ` +
-      'The test is skipped at its next locator call, or as it ends.',
+    call && !takesEndSignal(sink.testInfo.config?.version)
+      ? `${title} at ${line} runs before the test ends: a locator call is given up from Playwright 1.62 on. ` +
+          'The test is skipped as the call returns.'
+      : `${title} at ${line} runs before the test ends: Piwi holds no locator call there. ` +
+          'The test is skipped at its next locator call, or as it ends.',
   );
   console.log(`[piwi] ${said}`);
   tellHub({ type: 'notice', message: said });

@@ -336,7 +336,7 @@ describe('End the test', () => {
     ]);
   });
 
-  it('skips a test stopped at a locator call with Piwi’s reason, and never runs the call', () => {
+  it('skips a test stopped at a locator call with Piwi’s reason, nothing after the call run', () => {
     for (const title of ['ends at a breakpoint', 'ends at an assertion', 'ends in beforeEach', 'the bar ends it']) {
       expect(skippedFromPiwi(result(title)), title).toBe(true);
       expect(result(title).errors, title).toEqual([]);
@@ -345,21 +345,26 @@ describe('End the test', () => {
       ['breakpoint', lines.breakpoint],
     ]);
     expect(clicked).not.toContain('assertion');
-    if (playwrightAtLeast('1.62')) {
-      expect(clicked).not.toContain('breakpoint');
-      expect(clicked).not.toContain('before-each');
-      expect(clicked).not.toContain('bar');
-      expect(output).toContain(`[piwi] Ended the test at tests/headless.spec.cjs:${lines.breakpoint}: Click`);
-    } else {
-      // A Playwright whose calls take no signal runs the stopped call first, and says so.
-      expect(clicked).toEqual(expect.arrayContaining(['breakpoint', 'before-each', 'bar']));
-      expect(noticesIn('ends at a breakpoint')).toEqual([
-        `Click at tests/headless.spec.cjs:${lines.breakpoint} runs before the test ends: a locator call is given up ` +
-          'from Playwright 1.62 on. The test is skipped at its next locator call, or as it ends.',
-      ]);
-    }
     // Nothing after the stop ran: the body after a stopped call, a beforeEach's test.
     expect(bodies).toEqual([]);
+  });
+
+  /** Whether Playwright gives a held locator call up as its signal aborts (1.62). */
+  const TAKES_SIGNAL = playwrightAtLeast('1.62');
+
+  it.runIf(TAKES_SIGNAL)('never runs the locator call it stopped at', () => {
+    expect(clicked).not.toContain('breakpoint');
+    expect(clicked).not.toContain('before-each');
+    expect(clicked).not.toContain('bar');
+    expect(output).toContain(`[piwi] Ended the test at tests/headless.spec.cjs:${lines.breakpoint}: Click`);
+  });
+
+  it.runIf(!TAKES_SIGNAL)('runs that call first on a Playwright whose calls take no signal, and says so', () => {
+    expect(clicked).toEqual(expect.arrayContaining(['breakpoint', 'before-each', 'bar']));
+    expect(noticesIn('ends at a breakpoint')).toEqual([
+      `Click at tests/headless.spec.cjs:${lines.breakpoint} runs before the test ends: a locator call is given up ` +
+        'from Playwright 1.62 on. The test is skipped as the call returns.',
+    ]);
   });
 
   it('ends a test at its page.pause(), nothing after it run', () => {
