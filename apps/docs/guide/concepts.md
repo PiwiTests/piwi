@@ -240,7 +240,9 @@ run that carries it (its commit, a `Piwi-Cluster: <id>` trailer in a commit mess
 When the [capture fixtures](./capture-fixtures) are installed, every successful locator call records
 what the element actually looked like — role, accessible name, test id, structural anchors — keyed by
 the **call site** (`file:line`) rather than the selector text. One row per call site, refreshed on each
-passing run.
+passing run. A click is read as it starts, beside the action, so a **Place order** button that submits
+and leaves the page is kept too; an Enter that submits its form at once can leave before its field is
+read.
 
 When that locator later fails, those snapshots are what Piwi ranks replacement locators from. See
 [Locator healing](/features/locator-healing).

@@ -1208,6 +1208,35 @@ const ACTION_METHOD_SET = new Set(ACTION_METHODS);
 const LOCATOR_METHOD_SET = new Set(LOCATOR_METHODS);
 
 /**
+ * Actions that can take their element away as they run: a click or a key
+ * press that submits and navigates at once, a click that removes what it
+ * clicked. Their element is also read as the action starts, beside it, for
+ * when it is gone once the action ran.
+ */
+const EARLY_READ_ACTIONS = new Set([
+  'click',
+  'dblclick',
+  'tap',
+  'press',
+  'pressSequentially',
+  'type',
+  'check',
+  'uncheck',
+  'selectOption',
+  'dispatchEvent',
+]);
+
+/** How long an element capture waits for each of its page reads. */
+const CAPTURE_DEADLINE_MS = 500;
+
+/**
+ * How long an action of `EARLY_READ_ACTIONS` may run for the read beside it to
+ * stand for its element. One that ran longer may have waited for its element
+ * while the page replaced it.
+ */
+const EARLY_READ_TRUSTED_MS = 250;
+
+/**
  * Everything the in-page probe needs, serialized into the browser on every
  * action. `tagRoles`/`inputRoles` are the shared role maps (single source of
  * truth in `locator-healing.ts`), and `roleSources` is the CSS selector for
@@ -1262,23 +1291,57 @@ const PROBE_INIT_SCRIPT = `(() => {
  */
 const PROBE_UNSEEDED_PAGES = new WeakSet<Page>();
 
+/** How many times each instrumented page's main frame navigated, client-side routes included. */
+const PAGE_NAVIGATIONS = new WeakMap<Page, number>();
+
+/**
+ * Ready the main world of a page's new document for the element probe, in the
+ * background, while a test runs. Playwright sets up its scripts there on the
+ * first read, which a key press that submits its form at once outruns; on a
+ * readied world, a read beside such a press often ends before the page goes.
+ */
+function readyProbeWorld(page: Page): void {
+  if (!currentSink) return;
+  try {
+    const ready = internalCall(page, () =>
+      page
+        .mainFrame()
+        .locator(':root')
+        .evaluate(() => 0, undefined, { timeout: CAPTURE_DEADLINE_MS }),
+    ).then(
+      () => undefined,
+      () => undefined,
+    );
+    PENDING_PROBES.add(ready);
+    void ready.then(() => PENDING_PROBES.delete(ready));
+  } catch {
+    /* a page event handler must never throw */
+  }
+}
+
 /**
  * Read the element through the seeded probe, falling back to shipping the
  * probe's source when the page has none. The stub returns null rather than
  * throwing when the global is absent, so "not seeded" is distinguishable from
  * a genuine probe failure (a detached element, a closing page), which
- * propagates as it would have anyway.
+ * propagates as it would have anyway. `timeout` bounds the wait for the element
+ * on Playwright's side.
  */
-function probeElement(page: Page | null, target: Locator): Promise<ProbedAttrs> {
-  const shipSource = () => target.evaluate(probeElementAttrs, CAPTURED_ATTRS_ARG);
+function probeElement(page: Page | null, target: Locator, timeout?: number): Promise<ProbedAttrs> {
+  const options = timeout != null ? { timeout } : undefined;
+  const shipSource = () => target.evaluate(probeElementAttrs, CAPTURED_ATTRS_ARG, options);
   if (!page || PROBE_UNSEEDED_PAGES.has(page)) return internalCall(page, shipSource);
 
   return internalCall(page, () =>
     target
-      .evaluate((el, name) => {
-        const seeded = (globalThis as Record<string, any>)[name];
-        return typeof seeded === 'function' ? (seeded(el) as ProbedAttrs) : null;
-      }, PROBE_GLOBAL)
+      .evaluate(
+        (el, name) => {
+          const seeded = (globalThis as Record<string, any>)[name];
+          return typeof seeded === 'function' ? (seeded(el) as ProbedAttrs) : null;
+        },
+        PROBE_GLOBAL,
+        options,
+      )
       .then((attrs) => {
         if (attrs) return attrs;
         PROBE_UNSEEDED_PAGES.add(page);
@@ -1339,15 +1402,98 @@ export async function ariaSnapshotJSONBestEffort(target: Locator, timeout?: numb
 }
 
 /**
- * Fire-and-forget element capture for a locator that just proved it resolves —
- * a successful action or a passing presence assertion. Probes the element,
- * generates ranked alternatives, and replaces the placeholder at `seq`. The
- * snapshot wait is bounded by a 500ms deadline (evaluate can hang when the
- * page navigates), but the probe's underlying protocol call is tracked in
+ * Read the element of a locator into its snapshot: probe it and generate
+ * ranked alternatives. Resolves to null, never rejects, when the element is
+ * detached or the probe misses its deadline (evaluate can hang when the page
+ * navigates). The probe's underlying protocol call is tracked in
  * PENDING_PROBES so the close wrappers can drain it — and in capturePromises
  * so flushSink outwaits it — even when the deadline abandons it. An evaluate
  * still in flight when its page closes crashes the connection dispatcher with
- * a global "not bound" error.
+ * a global "not bound" error. The deadline bounds the probe on Playwright's
+ * side too, so a probe whose element is not there ends by itself.
+ */
+async function readElementSnapshot(
+  sink: CaptureSink,
+  page: Page,
+  target: Locator,
+  callerLocation: string | null,
+  used: LocatorSnapshot['used'],
+): Promise<LocatorSnapshot | null> {
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const probe = probeElement(page, target, CAPTURE_DEADLINE_MS);
+    const settledProbe = probe.then(
+      () => undefined,
+      () => undefined,
+    );
+    PENDING_PROBES.add(settledProbe);
+    settledProbe.then(() => PENDING_PROBES.delete(settledProbe));
+    sink.capturePromises.push(settledProbe);
+
+    const attrs = await Promise.race([
+      probe,
+      new Promise<never>((_, reject) => {
+        deadline = setTimeout(() => reject(new Error('locator capture timeout')), CAPTURE_DEADLINE_MS);
+      }),
+    ]);
+
+    // The browser-computed accessible name only feeds role-based and
+    // form-field alternatives, so only pay for the extra ARIA
+    // snapshot when the element actually has a role or is a field —
+    // and, within that, only when the probed attributes have not
+    // already settled the name. The snapshot is a second protocol
+    // round trip on the same locator, which costs more than the whole
+    // probe body; skipping it where it cannot change the answer is
+    // the single cheapest saving on this path.
+    const role = resolveAriaRole({ ...attrs, accessibleName: null });
+    const isFormField = FORM_FIELD_TAGS.has(attrs.tagName);
+    const exactName = exactAccessibleName(attrs, role);
+    // Bound with a timeout: without it, ariaSnapshot waits up to the
+    // test timeout when the page is mid-navigation, which hangs the
+    // teardown that drains these capture promises.
+    // ariaSnapshotBestEffort adapts the options to the installed
+    // Playwright version and never throws (see its doc comment).
+    const aria =
+      exactName === null && (role || isFormField)
+        ? await internalCall(page, () => ariaSnapshotBestEffort(target, CAPTURE_DEADLINE_MS))
+        : null;
+
+    const accessibleName =
+      exactName ?? (extractAccessibleName(aria) || approximateAccessibleName({ ...attrs, accessibleName: null }));
+
+    return {
+      location: callerLocation,
+      used,
+      // hasLabel/selectorCounts inform alternative generation only —
+      // keep the stored element to the wire shape. rolePosition and
+      // ancestors ARE wire fields: the server's renamed-element match
+      // uses them at heal time.
+      element: {
+        tagName: attrs.tagName,
+        attributes: attrs.attributes,
+        textContent: attrs.textContent,
+        accessibleName,
+        center: attrs.center,
+        ...(attrs.rolePosition ? { rolePosition: attrs.rolePosition } : {}),
+        ...(attrs.ancestors && attrs.ancestors.length > 0 ? { ancestors: attrs.ancestors } : {}),
+      },
+      alternatives: generateAlternatives({ ...attrs, accessibleName }),
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(deadline);
+  }
+}
+
+/**
+ * Fire-and-forget element capture for a locator that just proved it resolves —
+ * a successful action or a passing presence assertion: replaces the
+ * placeholder at `seq` with the element's snapshot. `early` is the read an
+ * action of `EARLY_READ_ACTIONS` started beside itself: with `earlyFirst` it is
+ * kept, and the element read now only when it found nothing; otherwise the
+ * element is read now, and `early` kept only when that read finds nothing (the
+ * action removed the element).
  */
 function startElementCapture(
   sink: CaptureSink,
@@ -1356,78 +1502,19 @@ function startElementCapture(
   seq: number,
   callerLocation: string | null,
   used: LocatorSnapshot['used'],
+  early: Promise<LocatorSnapshot | null> | null = null,
+  earlyFirst = false,
 ): void {
-  const probe = probeElement(page, target);
-  const settledProbe = probe.then(
-    () => undefined,
-    () => undefined,
-  );
-  PENDING_PROBES.add(settledProbe);
-  settledProbe.then(() => PENDING_PROBES.delete(settledProbe));
-  sink.capturePromises.push(settledProbe);
-
-  const resolveAttrs = (async () => {
-    let deadline: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const attrs = await Promise.race([
-        probe,
-        new Promise<never>((_, reject) => {
-          deadline = setTimeout(() => reject(new Error('locator capture timeout')), 500);
-        }),
-      ]);
-
-      // The browser-computed accessible name only feeds role-based and
-      // form-field alternatives, so only pay for the extra ARIA
-      // snapshot when the element actually has a role or is a field —
-      // and, within that, only when the probed attributes have not
-      // already settled the name. The snapshot is a second protocol
-      // round trip on the same locator, which costs more than the whole
-      // probe body; skipping it where it cannot change the answer is
-      // the single cheapest saving on this path.
-      const role = resolveAriaRole({ ...attrs, accessibleName: null });
-      const isFormField = FORM_FIELD_TAGS.has(attrs.tagName);
-      const exactName = exactAccessibleName(attrs, role);
-      // Bound with a timeout: without it, ariaSnapshot waits up to the
-      // test timeout when the page is mid-navigation, which hangs the
-      // teardown that drains these capture promises.
-      // ariaSnapshotBestEffort adapts the options to the installed
-      // Playwright version and never throws (see its doc comment).
-      const aria =
-        exactName === null && (role || isFormField)
-          ? await internalCall(page, () => ariaSnapshotBestEffort(target, 500))
-          : null;
-
-      const accessibleName =
-        exactName ?? (extractAccessibleName(aria) || approximateAccessibleName({ ...attrs, accessibleName: null }));
-
-      sink.capturedLocators[seq] = {
-        location: callerLocation,
-        used,
-        // hasLabel/selectorCounts inform alternative generation only —
-        // keep the stored element to the wire shape. rolePosition and
-        // ancestors ARE wire fields: the server's renamed-element match
-        // uses them at heal time.
-        element: {
-          tagName: attrs.tagName,
-          attributes: attrs.attributes,
-          textContent: attrs.textContent,
-          accessibleName,
-          center: attrs.center,
-          ...(attrs.rolePosition ? { rolePosition: attrs.rolePosition } : {}),
-          ...(attrs.ancestors && attrs.ancestors.length > 0 ? { ancestors: attrs.ancestors } : {}),
-        },
-        alternatives: generateAlternatives({ ...attrs, accessibleName }),
-      };
-    } catch {
-      // Element detached or timeout — keep the placeholder, and release the
-      // call site so a later action or assertion on the same line can retry.
-      if (callerLocation) sink.probedLocations.delete(callerLocation);
-    } finally {
-      clearTimeout(deadline);
-    }
+  const capture = (async () => {
+    const readNow = () => readElementSnapshot(sink, page, target, callerLocation, used);
+    const snapshot = earlyFirst ? ((await early) ?? (await readNow())) : ((await readNow()) ?? (await early));
+    if (snapshot) sink.capturedLocators[seq] = snapshot;
+    // Element detached or timeout — keep the placeholder, and release the
+    // call site so a later action or assertion on the same line can retry.
+    else if (callerLocation) sink.probedLocations.delete(callerLocation);
   })();
 
-  sink.capturePromises.push(resolveAttrs);
+  sink.capturePromises.push(capture);
 }
 
 // Chain methods that take args and define a new locator scope (not just narrow).
@@ -2621,11 +2708,19 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
             alternatives: [],
           });
         }
+        // An action that can take its element away also reads it as it starts,
+        // beside the action, for when it is gone once the action succeeded.
+        const early =
+          !alreadyProbed && EARLY_READ_ACTIONS.has(prop as string)
+            ? readElementSnapshot(sink, page, target, callerLocation, used)
+            : null;
 
         // The location is already on record. If the action throws, note the
         // failed locator (so teardown can suggest a fresh one for the element's
         // current identity) and re-throw so the test still fails.
         let result: unknown;
+        const startedAt = Date.now();
+        const navigations = PAGE_NAVIGATIONS.get(page) ?? 0;
         try {
           result = await callMethod(target, prop, ending ?? callArgs);
         } catch (error) {
@@ -2642,7 +2737,11 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         // Fire-and-forget: capture element data without blocking the test.
         if (!alreadyProbed && !call?.picked) {
           if (callerLocation) sink.probedLocations.add(callerLocation);
-          startElementCapture(sink, page, target, seq, callerLocation, used);
+          // The read beside the action stands for its element when the page navigated
+          // meanwhile, or when the action was quick.
+          const earlyFirst =
+            (PAGE_NAVIGATIONS.get(page) ?? 0) !== navigations || Date.now() - startedAt < EARLY_READ_TRUSTED_MS;
+          startElementCapture(sink, page, target, seq, callerLocation, used, early, earlyFirst);
         }
 
         return result;
@@ -2798,11 +2897,15 @@ function instrumentPage(page: Page): void {
     // the init script runs for every navigation, so give each new document a
     // fresh chance at the fast path.
     if (typeof page.on === 'function') {
+      page.on('domcontentloaded', () => readyProbeWorld(page));
       page.on('framenavigated', (frame) => {
         PROBE_UNSEEDED_PAGES.delete(page);
         // A new document or a client-side route: locator calls start over "on arrival".
         try {
-          if (frame === page.mainFrame()) noteNavigation(page);
+          if (frame === page.mainFrame()) {
+            PAGE_NAVIGATIONS.set(page, (PAGE_NAVIGATIONS.get(page) ?? 0) + 1);
+            noteNavigation(page);
+          }
         } catch {
           /* a page event handler must never throw */
         }

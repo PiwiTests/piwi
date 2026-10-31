@@ -145,6 +145,7 @@ export const PROJECT = {
   LIVE_VIEW_ON: 'live-view-on-test',
   LIVE_VIEW_READINESS: 'live-view-readiness-test',
   LIVE_VIEW_STREAM: 'live-view-stream-test',
+  LOCATOR_HEAL_NAVIGATION: 'locator-heal-navigation-test',
   LOCATORS_PAGE: 'locators-page-test',
   MALFORMED: 'malformed-project',
   MARKERS_PANEL: 'markers-panel-test',

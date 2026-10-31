@@ -10,5 +10,7 @@ tests/.flake-run-*/
 tests/.flake-cli-run-*/
 # Transient Playwright projects written by tests/live-view.spec.ts
 tests/.live-view-*/
+# Transient Playwright project written by tests/navigating-action-run.spec.ts
+tests/.navigating-action-run-*/
 # Transient Playwright project written by tests/esm-call-sites-run.spec.ts
 tests/.esm-call-sites-run */
