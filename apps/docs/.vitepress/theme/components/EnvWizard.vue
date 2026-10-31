@@ -10,7 +10,7 @@ import {
   type PiwiEnvVarMeta,
   type PiwiEnvVarName,
 } from '#shared/piwi-env-vars'
-import { ENV_OUTPUT_FORMATS, ENV_OUTPUT_GROUPS, type EnvEntry } from '#shared/env-format'
+import { ENV_OUTPUT_FORMATS, ENV_OUTPUT_GROUPS, imageForVersion, type EnvEntry } from '#shared/env-format'
 import appPackage from '../../../../application/package.json'
 
 const registry = PIWI_ENV_VARS as Record<PiwiEnvVarName, PiwiEnvVarMeta>
@@ -200,6 +200,7 @@ const formatGroups = computed(() =>
 const output = computed(() => {
   if (!entries.value.length) return ''
   return activeFormat.value.emit(entries.value, {
+    image: imageForVersion(serverVersion.value),
     header: [
       'Piwi Dashboard configuration — built with the offline generator',
       `Server ${serverVersion.value} · https://piwitests.dev/configuration`,
