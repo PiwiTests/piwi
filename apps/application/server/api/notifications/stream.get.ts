@@ -127,16 +127,15 @@ export default eventHandler(async (event) => {
     const unsubscribe = runEventBus.subscribeNotifications((notificationEvent) => {
       const type = notificationEvent.type as string | undefined;
       const projectId = notificationEvent.projectId as number | undefined;
-      // The projects the event is about: every one a quality report covers, else its own.
-      const projectIds =
-        type === REPORT_READY_EVENT
-          ? ((notificationEvent.projectIds as number[] | undefined) ?? [])
-          : typeof projectId === 'number'
-            ? [projectId]
-            : [];
       // Whoever the event is addressed to, it reaches only a caller who can open
-      // every project it is about; an event about no project reaches nobody.
-      if (projectIds.length === 0 || !projectIds.every((id) => scopeAllows(scope, id))) return;
+      // every project it is about: every one a quality report covers (a report
+      // about none, like its snapshot, is anyone's), else its own project; any
+      // other event naming no project reaches nobody.
+      const opensEveryProject =
+        type === REPORT_READY_EVENT
+          ? ((notificationEvent.projectIds as number[] | undefined) ?? []).every((id) => scopeAllows(scope, id))
+          : typeof projectId === 'number' && scopeAllows(scope, projectId);
+      if (!opensEveryProject) return;
 
       // A targeted event (e.g. cluster.fixed addressed at the author of the fix)
       // is delivered to that one user regardless of their subscriptions; every
