@@ -14,7 +14,7 @@ const { saving, save } = useProjectPatch(() => props.project.id);
 
 async function submit() {
   const on = state.value.liveView;
-  if (await save({ liveView: on }, on ? 'Live view turned on' : 'Live view turned off')) emit('saved');
+  if (await save({ liveView: on }, on ? 'Live view enabled for new runs' : 'Live view turned off')) emit('saved');
 }
 </script>
 
@@ -32,7 +32,7 @@ async function submit() {
           <USwitch
             v-model="state.liveView"
             label="Let people who may open a run watch its workers live"
-            description="Each CI run of this project the reporter's global setup registers, while it runs. A run on a developer's machine sends nothing unless its developer shares it (Share live)."
+            description="Applies to new runs registered by the reporter's global setup. Restart a run started while this was off to watch it. A local run sends nothing unless its developer chooses Share live."
           />
         </UFormField>
         <dl class="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[8rem_1fr]">

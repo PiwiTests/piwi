@@ -17,6 +17,8 @@ import { projectTargetsSchema } from '#shared/analytics/targets';
 import { liveViewRelay } from '../../utils/live-view';
 import { runEventBus } from '../../utils/run-events';
 import type { LiveViewRunState } from '#shared/live-view';
+import { and, eq, inArray } from 'drizzle-orm';
+import { testRuns } from '../../database/schema';
 
 defineRouteMeta({
   openAPI: {
@@ -182,11 +184,16 @@ export default eventHandler(async (event) => {
       tagIds,
     }).then(async (project) => {
       if (coverageScope !== undefined || coverageAreas !== undefined) await recountProjectCoverage(db, id);
-      // Off: the views open now end, the keys of the project's runs open nothing more, and their pages hear so.
-      if (liveView === false) {
-        const keyed: LiveViewRunState = { keyed: false };
-        for (const runId of liveViewRelay.endProject(id))
-          runEventBus.publish(runId, { type: 'live-view', data: keyed });
+      if (liveView !== undefined) {
+        if (!liveView) liveViewRelay.endProject(id);
+        const activeRuns = await db
+          .select({ id: testRuns.id })
+          .from(testRuns)
+          .where(and(eq(testRuns.projectId, id), inArray(testRuns.status, ['initializing', 'running', 'finalizing'])));
+        for (const run of activeRuns) {
+          const view: LiveViewRunState = { enabled: liveView, keyed: liveViewRelay.holdsKey(run.id) };
+          runEventBus.publish(run.id, { type: 'live-view', data: view });
+        }
       }
       return project;
     });

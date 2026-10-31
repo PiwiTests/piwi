@@ -609,6 +609,28 @@ describe('the paused page view', () => {
     expect(html).not.toContain('<script');
   });
 
+  test('offers live watching only for a capable stop, with interaction disabled and help collapsed', () => {
+    const html = pausedPageHtml(
+      {
+        image: null,
+        caption: '<test>',
+        live: { shown: 7, on: false, input: true, interacting: false, clickCounts: true },
+      },
+      'secure',
+      'https://webview/paused-page.js?a=1&b=2',
+    );
+    expect(html).toContain("script-src 'nonce-secure'");
+    expect(html).toContain('src="https://webview/paused-page.js?a=1&#38;b=2"');
+    expect(html).toContain('data-shown="7"');
+    expect(html).toContain('id="interact" type="checkbox" disabled');
+    expect(html).toContain('<details><summary>');
+    expect(html).not.toContain('<details open');
+    expect(html).not.toContain('<test>');
+    expect(
+      pausedPageHtml({ image: null, caption: 'Still image' }, 'n', 'https://webview/paused-page.js'),
+    ).not.toContain('Watch live');
+  });
+
   test('runs one script, by the style’s nonce, only where a click on the image picks', () => {
     const image = { mime: 'image/jpeg' as const, data: '/9j/4AAQ+w==', width: 1280, height: 800 };
     const html = pausedPageHtml({ image, caption: 'Paused', pick: { shown: 3 }, note: 'Picked <x>.' }, 'n0nce');

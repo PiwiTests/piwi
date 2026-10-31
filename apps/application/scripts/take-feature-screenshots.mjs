@@ -4707,6 +4707,78 @@ const SCENES = [
     },
   },
   {
+    name: 'run-live-view-readiness',
+    description: 'Live-view setup guidance on a running run, with project changes applied live, at 1280 and 375 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 900 },
+    outputs: [
+      'run-live-view-readiness.png',
+      'run-live-view-readiness-help.png',
+      'run-live-view-readiness-unavailable.png',
+      'run-live-view-readiness-waiting.png',
+      'run-live-view-readiness-narrow.png',
+    ],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const { items } = await (await request.get(`${base}/api/projects/menu`)).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId) throw new Error('run-live-view-readiness needs the seeded web-dashboard project');
+      const project = await (await request.get(`${base}/api/projects/${projectId}`)).json();
+      const runs = [];
+      const setting = async (liveView) => {
+        const response = await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView } });
+        if (!response.ok()) throw new Error(`Live-view setting: ${response.status()}`);
+      };
+      const capture = async (state, name = '') => {
+        await page.locator(`[data-shot="run-live-view-status"][data-state="${state}"]`).waitFor();
+        await settle();
+        await shoot(name);
+      };
+      try {
+        await setting(false);
+        const first = await (
+          await postRetrying(request, base, '/api/test-runs/start', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString() },
+          })
+        ).json();
+        runs.push(first);
+        await goto(`/test-runs/${first.runId}`);
+        await capture('disabled');
+        await page
+          .getByTestId('live-view-readiness')
+          .getByRole('button', { name: 'Help: Live view prerequisites' })
+          .click();
+        await page.getByRole('dialog', { name: 'Help: Live view prerequisites' }).waitFor();
+        await capture('disabled', 'help');
+        await page.keyboard.press('Escape');
+        await setting(true);
+        await capture('unavailable', 'unavailable');
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 1, metadata: { ci: { provider: 'github' } } },
+          })
+        ).json();
+        runs.push(begun);
+        await goto(`/test-runs/${setup.runId}`);
+        await capture('waiting', 'waiting');
+        await page.setViewportSize({ width: 375, height: 1000 });
+        await capture('waiting', 'narrow');
+      } finally {
+        for (const run of runs) {
+          await request.post(`${base}/api/test-runs/${run.runId}/finish`, {
+            data: { streamToken: run.streamToken, status: 'passed', totalTests: 0 },
+          });
+        }
+        await setting(project.liveView === true);
+      }
+    },
+  },
+  {
     name: 'run-live-view',
     description:
       'The live view of a CI run’s worker, its click waiting on a disabled Pay button: the page with the button outlined, the call, how long it has run, and Playwright’s log of it, at 1280 and 390 px',

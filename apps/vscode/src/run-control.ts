@@ -898,6 +898,8 @@ export interface PausedPageView {
   pick?: { shown: number } | null;
   /** What the last pick on the image came to: the locator sent to the editor, or why there is none. */
   note?: string | null;
+  /** Local live preview controls, bound to this panel's stop. */
+  live?: { shown: number; on: boolean; input: boolean; interacting: boolean; clickCounts: boolean };
 }
 
 /** Whether a click on an image of a stop picks there: its worker takes `pick-at`, and the image names its viewport. */
@@ -958,30 +960,43 @@ export const PICK_HINT = 'Click the image to pick a locator: it replaces the one
 
 /**
  * The paused page view's document: images from `data:` only, its one style by `nonce`, the caption above the image.
- * No script, but where a click on the image picks (`view.pick`): then one script, by the same `nonce`, which posts a
- * click's offset in the image and the size it is shown at, and which image it was on, to the extension; it reaches
- * nothing else (`default-src 'none'`).
+ * A script by the same nonce posts image picks; a capable stop instead loads the bundled live preview, whose
+ * messages name the shown stop. It reaches nothing else (`default-src 'none'`).
  */
-export function pausedPageHtml(view: PausedPageView, nonce: string): string {
+export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: string): string {
   const src = imageSource(view.image);
   const pick = src && view.pick ? view.pick : null;
-  const csp = `default-src 'none'; img-src data:; style-src 'nonce-${nonce}'${pick ? `; script-src 'nonce-${nonce}'` : ''}`;
+  const live = view.live && scriptUri ? view.live : null;
+  const csp = `default-src 'none'; img-src data:; style-src 'nonce-${nonce}'${pick || live ? `; script-src 'nonce-${nonce}'` : ''}`;
   return [
     '<!DOCTYPE html>',
     '<html lang="en">',
     '<head>',
     '<meta charset="UTF-8">',
     `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
-    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}</style>`,
+    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}img:focus{outline:2px solid var(--vscode-focusBorder)}.tools{display:flex;gap:12px;margin-bottom:8px}details{margin:8px 0;color:var(--vscode-descriptionForeground)}[hidden]{display:none!important}</style>`,
     '</head>',
     '<body>',
-    `<p>${escapeHtml(view.caption)}</p>`,
-    pick ? `<p class="hint">${escapeHtml(PICK_HINT)}</p>` : '',
-    view.note ? `<p class="note" role="status">${escapeHtml(view.note)}</p>` : '',
-    src ? `<img${pick ? ' class="pick" id="page"' : ''} src="${src}" alt="The page of the paused test">` : '',
-    pick
-      ? `<script nonce="${nonce}">const vscode=acquireVsCodeApi();const page=document.getElementById('page');page.addEventListener('click',(e)=>vscode.postMessage({type:'pick',shown:${pick.shown},x:e.offsetX,y:e.offsetY,width:page.clientWidth,height:page.clientHeight}));</script>`
+    `<p${live ? ' id="caption"' : ''}>${escapeHtml(view.caption)}</p>`,
+    live
+      ? `<div class="tools"><label><input id="live" type="checkbox"> Watch live</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch live updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page. Escape releases the keyboard; Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
       : '',
+    pick && !live ? `<p class="hint">${escapeHtml(PICK_HINT)}</p>` : '',
+    live
+      ? '<p id="note" class="note" role="status"></p>'
+      : view.note
+        ? `<p class="note" role="status">${escapeHtml(view.note)}</p>`
+        : '',
+    live
+      ? `<img id="page" tabindex="0"${src ? ` src="${src}"` : ' hidden'} alt="The page of the paused test" data-shown="${live.shown}" data-click-counts="${live.clickCounts}">`
+      : src
+        ? `<img${pick ? ' class="pick" id="page"' : ''} src="${src}" alt="The page of the paused test">`
+        : '',
+    live
+      ? `<script nonce="${nonce}" src="${escapeHtml(scriptUri!)}"></script>`
+      : pick
+        ? `<script nonce="${nonce}">const vscode=acquireVsCodeApi();const page=document.getElementById('page');page.addEventListener('click',(e)=>vscode.postMessage({type:'pick',shown:${pick.shown},x:e.offsetX,y:e.offsetY,width:page.clientWidth,height:page.clientHeight}));</script>`
+        : '',
     '</body>',
     '</html>',
   ].join('\n');

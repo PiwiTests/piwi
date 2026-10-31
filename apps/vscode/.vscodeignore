@@ -1,5 +1,6 @@
 **
 !dist/extension.cjs
+!dist/paused-page.js
 !dist/piwi-language-server.cjs
 !dist/piwi-recorder-launcher.cjs
 !dist/piwi-use-reporter.cjs

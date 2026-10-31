@@ -473,6 +473,11 @@ export async function apiBeginTestRun(
     };
   }
 
+  const [project] = await db
+    .select({ liveView: projects.liveView })
+    .from(projects)
+    .where(eq(projects.id, testRun.projectId));
+  publishDemoRunEvent(id, { type: 'live-view', data: { enabled: project?.liveView === true, keyed: false } });
   return { success: true, runId: testRun.id, projectId: testRun.projectId, streamToken };
 }
 

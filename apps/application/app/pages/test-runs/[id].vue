@@ -23,6 +23,7 @@ const route = useRoute();
 const router = useRouter();
 const runId = route.params.id;
 const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
+const baseURL = useRuntimeConfig().app.baseURL.replace(/\/$/, '');
 const isDesktop = useIsDesktop();
 const { can } = useAuth();
 
@@ -75,6 +76,8 @@ const liveResources = ref<RunResourceTimelinePart[]>([]);
 const liveWorkers = ref<Record<string, LiveWorkerState>>({});
 // Whether the run holds a live view key, from the stream's `live-view` events: its project's live view applies to it.
 const liveViewKeyed = ref(false);
+const liveViewState = ref<LiveViewRunState | null>(null);
+const liveViewConnected = ref(false);
 // What the running rows say where Watch would be, while no worker is in the run's view: a run outside CI that holds a
 // key is not shared, and says how to share it (a CI run's workers join at once); in the desktop app, which hands out
 // no key, where the tests' pages show.
@@ -388,7 +391,11 @@ function flushPendingEvents() {
       else delete next[liveWorkerKey(worker)];
       liveWorkers.value = next;
     } else if (parsed.type === 'live-view') {
-      liveViewKeyed.value = (data as unknown as LiveViewRunState).keyed === true;
+      const state = data as unknown as LiveViewRunState;
+      liveViewKeyed.value = state.keyed === true;
+      liveViewState.value = state;
+      // Catch-up starts with the view state and then its current workers.
+      if (parsed.seq === 0 || !state.keyed) liveWorkers.value = {};
     } else if (parsed.type === 'resources') {
       liveResources.value = applyLiveResourcesToParts(liveResources.value, data as unknown as WireLiveResources);
     } else if (parsed.type === 'run-finalizing') {
@@ -399,6 +406,7 @@ function flushPendingEvents() {
       liveSteps.value = {};
       liveWorkers.value = {};
       liveViewKeyed.value = false;
+      liveViewState.value = null;
       disconnectStream();
       refresh();
       // Nudge the Changes tab to refetch — it keeps its own fetch state and
@@ -470,7 +478,12 @@ function connectToStream() {
     seedLiveFromPersisted(testRun.value.testCases);
   }
 
-  eventSource = new EventSource(`/api/test-runs/${runId}/stream`);
+  eventSource = new EventSource(`${baseURL}/api/test-runs/${runId}/stream`);
+
+  eventSource.onopen = () => {
+    liveViewConnected.value = true;
+    liveViewState.value = null;
+  };
 
   eventSource.onmessage = (event) => {
     try {
@@ -481,11 +494,13 @@ function connectToStream() {
   };
 
   eventSource.onerror = () => {
+    liveViewConnected.value = false;
     // EventSource will auto-reconnect
   };
 }
 
 function disconnectStream() {
+  liveViewConnected.value = false;
   if (eventSource) {
     eventSource.close();
     eventSource = null;
@@ -1003,7 +1018,23 @@ const moreMenuItems = computed(() => {
             class="flex-1 min-h-0"
             @quarantine-changed="refreshQuarantine"
             @watch="watchWorker"
-          />
+          >
+            <template #toolbar-extra>
+              <RunLiveViewStatus
+                v-if="testRun?.status === 'running' && !isFinalizing"
+                :project-id="testRun.projectId"
+                :readiness="{
+                  desktop: isDesktop,
+                  demo: isDemoMode,
+                  connected: liveViewConnected,
+                  state: liveViewState,
+                  enabled: testRun.project?.liveView === true,
+                  ci: !!testRun.metadata?.ci,
+                  workers: Object.keys(liveWorkers).length,
+                }"
+              />
+            </template>
+          </TestCasesList>
         </template>
 
         <template #tab-changes>

@@ -24,9 +24,15 @@
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
+import { isViewFrameData, readViewInput } from '@piwitests/core/run-view';
 import {
   LOCATOR_AT_CARET_REQUEST,
   PAUSED_PAGE_REQUEST,
+  PAGE_VIEW_REQUEST,
+  PAGE_INPUT_REQUEST,
+  PAGE_FRAME_NOTIFICATION,
+  type PageFrame,
+  type PageViewParams,
   PICK_AT_REQUEST,
   RUN_CONTROL_REQUEST,
   SET_BREAKPOINTS_NOTIFICATION,
@@ -210,6 +216,14 @@ export function registerRunControl(
   let pageShows: ShownStop | null = null;
   /** The images the view showed that a click picks on, counted: a click names the one it was on. */
   let pickable = 0;
+  let wantLive = false;
+  let watchingPage: PageViewParams | null = null;
+
+  const stopPageView = () => {
+    const previous = watchingPage;
+    watchingPage = null;
+    if (previous) void lc.sendRequest(PAGE_VIEW_REQUEST, { ...previous, on: false }).catch(() => undefined);
+  };
   /** Share live said what it sends in this window: it asks no more. */
   let liveWarned = false;
 
@@ -340,16 +354,76 @@ export function registerRunControl(
   };
 
   const showPage = (view: PausedPageView) => {
+    const same = view.live && page?.live?.shown === view.live.shown;
     page = view;
-    if (panel) panel.webview.html = pausedPageHtml(view, randomBytes(16).toString('base64'));
+    if (!panel) return;
+    if (same) void panel.webview.postMessage({ type: 'state', view });
+    else
+      panel.webview.html = pausedPageHtml(
+        view,
+        randomBytes(16).toString('base64'),
+        panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'dist', 'paused-page.js')).toString(),
+      );
+  };
+
+  const watchPage = async (on: boolean) => {
+    stopPageView();
+    const stop = pageShows;
+    const current = page;
+    if (!stop || !current?.live || !panel?.visible) return;
+    const shown = current.live.shown;
+    showPage({ ...current, live: { ...current.live, on, interacting: false }, note: null });
+    if (!on) return;
+    const params: PageViewParams = { ref: stop.ref, worker: stop.worker, since: stop.stop.since, on: true };
+    watchingPage = params;
+    const answer = await lc.sendRequest<RunControlResult>(PAGE_VIEW_REQUEST, params).catch(() => null);
+    if (page?.live?.shown !== shown || watchingPage !== params) return;
+    if (!answer?.ok) {
+      stopPageView();
+      showPage({
+        ...page,
+        live: { ...page.live, on: false, interacting: false },
+        note: answer?.message ?? 'The editor service did not answer.',
+      });
+    }
+  };
+
+  const pageMessage = async (message: unknown) => {
+    const m = message as Record<string, unknown> | null;
+    if (!m || !page?.live || m.shown !== page.live.shown) return void pickOnPage(message);
+    if (m.type === 'ready') return void panel?.webview.postMessage({ type: 'state', view: page });
+    if (m.type === 'view' && typeof m.on === 'boolean') {
+      wantLive = m.on;
+      return watchPage(m.on);
+    }
+    if (m.type === 'interact' && typeof m.on === 'boolean' && page.live.on) {
+      showPage({ ...page, live: { ...page.live, interacting: m.on && page.live.input } });
+      return;
+    }
+    if (m.type === 'pick') return pickOnPage(message);
+    const refused = () => {
+      if (m.type === 'input') void panel?.webview.postMessage({ type: 'input-result', id: m.id, ok: false });
+    };
+    if (!watchingPage || !page.live.on || !panel?.visible) return refused();
+    const events =
+      m.type === 'release' ? [] : m.type === 'input' && page.live.interacting ? readViewInput(m.events) : null;
+    if (!events || typeof events === 'string') return refused();
+    const answer = await lc
+      .sendRequest<RunControlResult>(PAGE_INPUT_REQUEST, { ...watchingPage, events, release: m.type === 'release' })
+      .catch(() => null);
+    if (m.type === 'input')
+      void panel?.webview.postMessage({ type: 'input-result', id: m.id, ok: answer?.ok === true });
+    if (!answer?.ok && page?.live?.shown === m.shown)
+      showPage({ ...page, note: answer?.message ?? 'The editor service did not answer.' });
   };
 
   /**
    * The page of a stop in the paused page view, opened beside the editor without focus, asked of its worker. The view
-   * runs a script only where a click on the image picks (`pausedPageHtml`), which posts the click (`pickOnPage`).
+   * uses the stop's live-view capability when offered, with a still image for every reporter.
    */
   const openPage = async (stop: ShownStop) => {
     const key = stopKey(stop);
+    stopPageView();
     pageStop = key;
     pageShows = stop;
     if (!panel) {
@@ -357,10 +431,18 @@ export function registerRunControl(
         'piwi.pausedPage',
         'Piwi: paused page',
         { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-        { enableScripts: true, localResourceRoots: [] },
+        { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist')] },
       );
-      panel.webview.onDidReceiveMessage((message: unknown) => void pickOnPage(message));
+      panel.webview.onDidReceiveMessage((message: unknown) => void pageMessage(message));
+      panel.onDidChangeViewState(() => {
+        if (!panel?.visible) {
+          stopPageView();
+          if (page?.live) showPage({ ...page, live: { ...page.live, on: false, interacting: false } });
+        } else if (wantLive) void watchPage(true);
+      });
       panel.onDidDispose(() => {
+        stopPageView();
+        wantLive = false;
         panel = null;
         page = null;
         pageStop = null;
@@ -371,7 +453,17 @@ export function registerRunControl(
     }
     const file = decodeURIComponent(stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1));
     const caption = `${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${file}:${stop.stop.line + 1}`;
-    showPage({ image: null, caption: `${caption} · asking the test for its page…` });
+    const shown = ++pickable;
+    const live = stop.takes.includes('view')
+      ? {
+          shown,
+          on: false,
+          input: stop.takes.includes('input'),
+          interacting: false,
+          clickCounts: stop.takes.includes('input-clicks'),
+        }
+      : undefined;
+    showPage({ image: null, caption: `${caption} · asking the test for its page…`, live });
     const answer = await lc
       .sendRequest<PausedPageResult>(PAUSED_PAGE_REQUEST, {
         ref: stop.ref,
@@ -380,15 +472,22 @@ export function registerRunControl(
       } satisfies PausedPageParams)
       .catch(() => null);
     if (pageStop !== key) return;
+    if (watchingPage && page?.live?.shown === shown) {
+      showPage({ ...page, caption });
+      return;
+    }
+    const currentLive = page?.live?.shown === shown ? page.live : live;
     showPage(
       answer?.image
         ? {
             image: answer.image,
             caption,
-            pick: picksOnImage(stop.takes, answer.image) ? { shown: ++pickable } : null,
+            pick: picksOnImage(stop.takes, answer.image) ? { shown } : null,
+            live: currentLive,
           }
-        : { image: null, caption: `${caption} · the test sent no image of its page` },
+        : { image: null, caption: `${caption} · the test sent no image of its page`, live: currentLive },
     );
+    if (live && wantLive && !watchingPage) void watchPage(true);
   };
 
   /**
@@ -446,6 +545,7 @@ export function registerRunControl(
       if (!stop.stop.bar) void openPage(stop);
     }
     if (panel && pageStop && !keys.has(pageStop)) {
+      stopPageView();
       pageStop = null;
       pageShows = null;
       showPage({ image: null, caption: 'The test went on.' });
@@ -748,6 +848,32 @@ export function registerRunControl(
   };
 
   const disposables: vscode.Disposable[] = [
+    {
+      dispose: () => {
+        stopPageView();
+        panel?.dispose();
+      },
+    },
+    lc.onNotification(PAGE_FRAME_NOTIFICATION, (frame: PageFrame) => {
+      const stop = pageShows;
+      if (
+        !stop ||
+        !page?.live?.on ||
+        !panel?.visible ||
+        frame.ref !== stop.ref ||
+        frame.worker !== stop.worker ||
+        frame.since !== stop.stop.since
+      )
+        return;
+      if ('refused' in frame) return showPage({ ...page, note: frame.refused });
+      if (!isViewFrameData(frame.data)) return;
+      const image = { mime: 'image/jpeg' as const, data: frame.data, width: frame.width, height: frame.height };
+      showPage({
+        ...page,
+        image,
+        pick: picksOnImage(stop.takes, image) ? { shown: page.live.shown } : null,
+      });
+    }),
     executionPoint,
     lensesChanged,
     caretDecoration,

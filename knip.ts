@@ -76,7 +76,7 @@ const config: KnipConfig = {
     },
     'apps/vscode': {
       // The screenshot script, and the fixture it shares with the JetBrains plugin's.
-      entry: ['src/extension.ts', 'tests/integration/*.cjs', 'scripts/*.mjs', 'scripts/lib/*.mjs'],
+      entry: ['src/extension.ts', 'src/paused-page-client.ts', 'tests/integration/*.cjs', 'scripts/*.mjs', 'scripts/lib/*.mjs'],
     },
     'packages/reporter': {
       entry: ['tests/bench/*.ts', 'tests/integration/**/*.{ts,mjs}'],

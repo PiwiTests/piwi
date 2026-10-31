@@ -268,7 +268,7 @@ export class StreamManager {
         this.streamBuffer.bindRun(response.runId);
         this.logger.info(`Streaming enabled. Run ID: ${response.runId}`);
         if (this.options.serverUrl) {
-          this.logger.info(`Watch live: ${runUrl(this.options.serverUrl, response.runId)}`);
+          this.logger.info(`View live progress: ${runUrl(this.options.serverUrl, response.runId)}`);
         }
         this.lastActivityAt = Date.now();
         this.scheduleHeartbeat();

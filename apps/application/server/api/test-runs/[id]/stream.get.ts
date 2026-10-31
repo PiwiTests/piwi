@@ -1,4 +1,4 @@
-import { testRuns, testCases, testRunsCases } from '../../../database/schema';
+import { testRuns, testCases, testRunsCases, projects } from '../../../database/schema';
 import { eq } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
 import { createSSEEndpoint } from '../../../utils/sse';
@@ -12,7 +12,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Stream test run events via SSE',
     description:
-      'Subscribe to Server-Sent Events for a live test run. Sends an initial catch-up snapshot of current state and existing test cases, then streams real-time events (test-begin, test-completed, run-progress, resources, live-view, live-worker, run-finished) until the run completes. The catch-up includes what the run reporters measured so far (`resources`, one snapshot per reporter) and, in a project with the live view on, whether the run holds a live view key (`live-view`: `keyed`) and each worker in the run’s live view (`live-worker`: its `shard`, `worker`, whether it is `connected`, and its test’s stop in `paused` while it holds).',
+      'Subscribe to Server-Sent Events for a live test run. Sends an initial catch-up snapshot of current state and existing test cases, then streams real-time events (test-begin, test-completed, run-progress, resources, live-view, live-worker, run-finished) until the run completes. The catch-up includes what the run reporters measured so far (`resources`, one snapshot per reporter), whether the project enables live view and the run holds a live view key (`live-view`: `enabled`, `keyed`, including false values), then each worker in the run’s live view (`live-worker`: its `shard`, `worker`, whether it is `connected`, and its test’s stop in `paused` while it holds).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },
@@ -32,6 +32,11 @@ export default eventHandler(async (event) => {
       message: 'Test run not found',
     });
   }
+
+  const [project] = await db
+    .select({ liveView: projects.liveView })
+    .from(projects)
+    .where(eq(projects.id, testRun.projectId));
 
   return createSSEEndpoint(event, (controller, encoder) => {
     // Send initial state as catch-up event
@@ -82,11 +87,9 @@ export default eventHandler(async (event) => {
     }
     // Whether the run holds a live view key, then the workers in its view now and their stops: the live events that
     // follow change them.
-    if (liveViewRelay.holdsKey(id)) {
-      const keyed: LiveViewRunState = { keyed: true };
-      const viewEvent = { type: 'live-view', data: keyed, seq: 0, timestamp: Date.now() };
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify(viewEvent)}\n\n`));
-    }
+    const viewState: LiveViewRunState = { keyed: liveViewRelay.holdsKey(id), enabled: project?.liveView === true };
+    const viewEvent = { type: 'live-view', data: viewState, seq: 0, timestamp: Date.now() };
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify(viewEvent)}\n\n`));
     for (const worker of liveViewRelay.workersOf(id)) {
       const workerEvent = { type: 'live-worker', data: worker, seq: 0, timestamp: Date.now() };
       controller.enqueue(encoder.encode(`data: ${JSON.stringify(workerEvent)}\n\n`));

@@ -448,6 +448,13 @@ window, again at each such stop. Where its worker takes `pick-at` and the image 
 (`Glue.picksOnImage`), a click on the image picks the element under it (`piwi/pickAt`, the point scaled to the page's
 CSS pixels by `Glue.pagePoint`), its locator going where a pick goes, the answer said under the image.
 
+For a stop taking `view`, **Watch live** subscribes through `piwi/pageView` on the existing LSP connection. Frames
+(`piwi/pageFrame`) decode off the event thread, with one decode in flight and only the latest waiting frame. Native
+checkboxes keep **Interact** off until chosen; input goes through `piwi/pageInput`, at most one batch in flight, with
+coalesced pointer moves. Escape releases held input; Shift+click picks. Hiding, closing or resuming ends the watch.
+Watch live is remembered within the tab, while each watch resets Interact. No Picker pairing or port forwarding is
+needed for the panel, and older reporters keep the still image.
+
 **Breakpoints during a run.** An `XBreakpointListener` sends the breakpoints `PiwiProjectService.breakpoints` gives to
 each live run 100 ms after a burst of changes, and the settings page does when the breakpoints checkbox changes. They go
 as lines of the run's code (`Glue.runPlaces`): a breakpoint the run was given, known by the `XLineBreakpoint` itself,
