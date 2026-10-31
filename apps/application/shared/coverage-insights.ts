@@ -27,6 +27,8 @@ import {
   type LineRange,
 } from '@piwitests/core/coverage';
 
+import { innermostRunLines } from './coverage-combine';
+
 export type { CoverageRuntime, LineRange } from '@piwitests/core/coverage';
 
 /** Line ranges listed per file and list, at most; the rest are counted in `moreRanges`. */
@@ -1144,12 +1146,18 @@ export interface CoverageReachAnswer {
   nearest?: NearestTest | null;
 }
 
-/** The target lines a covered file says ran, did not run, or cannot tell. */
+/**
+ * The target lines a covered file says ran, did not run, or cannot tell. At
+ * function granularity a line ran when the innermost function around it ran:
+ * `allFunctions`, every function of the file's version, sets aside the nested
+ * ones that did not run, such as a callback never called.
+ */
 export function reachOfTargets(
   entry: CoverageFile | null,
   complete: boolean,
   target: LineRange[],
   executable: LineRange[] | null,
+  allFunctions: LineRange[] | null = null,
 ): Pick<CoverageReachAnswer, 'ran' | 'notRan' | 'unknown' | 'notExecutable' | 'allRan' | 'granularity'> {
   const notExecutable = executable ? subtractLineRanges(target, executable) : [];
   const relevant = executable ? intersectLineRanges(target, executable) : target;
@@ -1164,7 +1172,7 @@ export function reachOfTargets(
       missing = subtractLineRanges(relevant, entry.lines);
     } else if (entry.functions?.length) {
       granularity = 'functions';
-      const inFunctions = normalizeLineRanges(entry.functions);
+      const inFunctions = innermostRunLines(entry.functions, allFunctions ?? []);
       ran = intersectLineRanges(relevant, inFunctions);
       missing = subtractLineRanges(relevant, inFunctions);
     } else {

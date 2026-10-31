@@ -29,7 +29,7 @@ import {
   testRuns,
   testRunsCases,
 } from '../../server/database/schema';
-import { getExecutableLines, getExecutionsCoverage, getFileCoverage } from '../../server/utils/coverage';
+import { getExecutionsCoverage, getFileCoverage, getFileVersions } from '../../server/utils/coverage';
 import { asRuntime } from '../../server/utils/code-reach';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
 import { notLabRun } from '../run-eligibility';
@@ -780,12 +780,13 @@ export async function getCoverageReach(
     files: [],
   };
   const entry = matchingEntry(capture, input.file);
-  const executable = entry?.blob
+  const version = entry?.blob
     ? ((
-        await getExecutableLines(db, test.projectId, [{ path: entry.path, runtime: entry.runtime, blob: entry.blob }])
-      )[0]?.lines ?? null)
+        await getFileVersions(db, test.projectId, [{ path: entry.path, runtime: entry.runtime, blob: entry.blob }])
+      )[0] ?? null)
     : null;
-  const reach = reachOfTargets(entry, !capture.incomplete, input.lines, executable);
+  const executable = version && version.lines.length > 0 ? version.lines : null;
+  const reach = reachOfTargets(entry, !capture.incomplete, input.lines, executable, version?.functions ?? null);
   const answer: CoverageReachAnswer = {
     available: true,
     ...base,
