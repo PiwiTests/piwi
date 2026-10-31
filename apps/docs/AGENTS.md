@@ -140,9 +140,10 @@ which the drift test also reads.
 
 ### Page types and word budgets
 
-Every page is one type, with one word budget and no allowlist. A page over its budget is cut, or split into two pages;
-it is never excused. The budget counts the page body, code blocks and figure captions included; it leaves out the front
-matter and an image's markup and alt text.
+Every page is one type, with one word budget and no allowlist. The budget counts the page's prose, figure captions
+included; it leaves out the front matter, fenced code blocks and an image's markup and alt text. A page over it is
+split into two pages, or moves a section to the page it belongs on; it is never excused, nor trimmed of true facts
+sentence by sentence.
 
 | Type | Answers | Pages | Budget |
 |---|---|---|---:|

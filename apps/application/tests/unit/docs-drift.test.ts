@@ -533,10 +533,12 @@ describe('word budget per page type', () => {
   test.each(typedPages)('%s is within the budget of its page type', (page) => {
     const type = PAGE_TYPE_EXCEPTIONS[page] ?? FOLDER_TYPES[page.split('/')[0]!];
     expect(type, `apps/docs/${page}.md has no page type: add its folder to FOLDER_TYPES`).toBeDefined();
-    // The page as a reader reads it: the front matter is metadata, and an image's
-    // markup and alt text are not reading; a figure's caption is.
+    // The prose a reader reads: the front matter is metadata, a code block is
+    // copied rather than read, and an image's markup and alt text are not
+    // reading; a figure's caption is.
     const words = read(`apps/docs/${page}.md`)
       .replace(FRONT_MATTER, '')
+      .replace(FENCED_CODE, ' ')
       .replace(IMAGE_MARKUP, ' ')
       .trim()
       .split(/\s+/)
