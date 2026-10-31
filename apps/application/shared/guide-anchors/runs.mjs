@@ -315,6 +315,12 @@ export const RUNS_EXEMPTIONS = [
   },
   {
     rule: 'help',
+    key: 'run.live-no-workers',
+    reason:
+      'Shows only while a CI run’s tests run without a worker in its live view, and the seed has no run in progress.',
+  },
+  {
+    rule: 'help',
     key: 'run.live-view-demo',
     reason: 'Simulated progress shows only during a demo run, and the seed has no run in progress.',
   },

@@ -10,6 +10,7 @@ import type {
 } from '~~/types/api';
 import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { liveRowNote } from '~/utils/live-row-note';
+import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
 import { summarizeRunCases } from '#shared/utils/test-counts';
@@ -81,6 +82,11 @@ const liveViewState = ref<LiveViewRunState | null>(null);
 const liveViewConnected = ref(false);
 // The run finished on the stream: its status leaves the toolbar before the refetched run says so.
 const liveRunEnded = ref(false);
+// Whether a worker of the run's view connected since the page opened, and whether tests have run for
+// `NO_WORKER_GRACE_MS` since the page first heard of one: both, the status says no worker opened the view.
+const liveWorkerSeen = ref(false);
+const testsRanLong = ref(false);
+let testsRanTimer: ReturnType<typeof setTimeout> | null = null;
 // What the running rows say where Watch would be, while no worker is in the run's view: a run outside CI that holds a
 // key is not shared, and says how to share it (a CI run's workers join at once); in the desktop app, which hands out
 // no key, where the tests' pages show.
@@ -197,6 +203,9 @@ function flushPendingEvents() {
       // create phantom rows (which left orphaned "running" dots on the
       // timeline). Hooks render from `stepEvents` once their test completes.
       if (d.stepCategory) continue;
+      if (!testsRanTimer && !testsRanLong.value) {
+        testsRanTimer = setTimeout(() => (testsRanLong.value = true), NO_WORKER_GRACE_MS);
+      }
       const key = liveCaseKey(d);
       if (!liveTestCaseKeys.has(key)) {
         liveTestCaseKeys.set(key, true);
@@ -390,8 +399,10 @@ function flushPendingEvents() {
     } else if (parsed.type === 'live-worker') {
       const worker = data as unknown as LiveWorkerState;
       const next = { ...liveWorkers.value };
-      if (worker.connected) next[liveWorkerKey(worker)] = worker;
-      else delete next[liveWorkerKey(worker)];
+      if (worker.connected) {
+        next[liveWorkerKey(worker)] = worker;
+        liveWorkerSeen.value = true;
+      } else delete next[liveWorkerKey(worker)];
       liveWorkers.value = next;
     } else if (parsed.type === 'live-view') {
       const state = data as unknown as LiveViewRunState;
@@ -559,6 +570,7 @@ watch(
 );
 
 onUnmounted(() => {
+  if (testsRanTimer) clearTimeout(testsRanTimer);
   disconnectStream();
 });
 
@@ -1058,6 +1070,7 @@ const moreMenuItems = computed(() => {
                   state: liveViewState,
                   ci: !!testRun.metadata?.ci,
                   workers: Object.keys(liveWorkers).length,
+                  testsWithoutWorkers: testsRanLong && !liveWorkerSeen,
                 }"
               />
             </template>

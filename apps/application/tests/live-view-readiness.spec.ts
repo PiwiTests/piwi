@@ -65,6 +65,23 @@ test('explains each readiness gate and updates when the project changes', async 
     await page.goto(`/test-runs/${setup.runId}`);
     await expect(readiness).toHaveAttribute('data-state', 'waiting', { timeout: 30_000 });
 
+    // A test starts and no worker opens the view, as when the specs do not import the capture fixtures.
+    const began = await request.post(`/api/test-runs/${setup.runId}/events`, {
+      data: {
+        streamToken: begun.streamToken,
+        testCases: [
+          { type: 'begin', title: 'runs without the fixtures', location: 'tests/plain.spec.ts:3:1', workerIndex: 0 },
+        ],
+      },
+    });
+    expect(began.ok()).toBeTruthy();
+    await expect(readiness).toHaveAttribute('data-state', 'no-workers', { timeout: 20_000 });
+    await readiness.getByRole('button', { name: 'Help: No worker connected' }).click();
+    await expect(page.getByRole('dialog', { name: 'Help: No worker connected' })).toContainText(
+      "import { test, expect } from './fixtures'",
+    );
+    await page.keyboard.press('Escape');
+
     const worker = holdWorkerStream(resolveE2ETarget().baseUrl, setup.runId, setup.liveView.key);
     closeWorker = () => worker.close();
     await expect(readiness).toHaveAttribute('data-state', 'available');

@@ -4708,7 +4708,8 @@ const SCENES = [
   },
   {
     name: 'run-live-view-readiness',
-    description: 'Live-view setup guidance on a running run, with project changes applied live, at 1280 and 375 px',
+    description:
+      'Live-view setup guidance on a running run, with project changes applied live and tests without a worker, at 1280 and 375 px',
     route: '/projects',
     viewport: { width: 1280, height: 900 },
     outputs: [
@@ -4717,6 +4718,7 @@ const SCENES = [
       'run-live-view-readiness-unavailable.png',
       'run-live-view-readiness-waiting.png',
       'run-live-view-readiness-narrow.png',
+      'run-live-view-readiness-no-workers.png',
     ],
     async run({ page, base, goto, shoot, settle }) {
       const request = page.request;
@@ -4768,6 +4770,21 @@ const SCENES = [
         await capture('waiting', 'waiting');
         await page.setViewportSize({ width: 375, height: 1000 });
         await capture('waiting', 'narrow');
+        // A test starts and no worker opens the view: after its grace, the status names the fixtures import.
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await request.post(`${base}/api/test-runs/${setup.runId}/events`, {
+          data: {
+            streamToken: begun.streamToken,
+            testCases: [{ type: 'begin', title: 'checkout', location: 'tests/checkout.spec.ts:3:1', workerIndex: 0 }],
+          },
+        });
+        await page.locator('[data-shot="run-live-view-status"][data-state="no-workers"]').waitFor({ timeout: 20_000 });
+        await page
+          .getByTestId('live-view-readiness')
+          .getByRole('button', { name: 'Help: No worker connected' })
+          .click();
+        await page.getByRole('dialog', { name: 'Help: No worker connected' }).waitFor();
+        await capture('no-workers', 'no-workers');
       } finally {
         for (const run of runs) {
           await request.post(`${base}/api/test-runs/${run.runId}/finish`, {

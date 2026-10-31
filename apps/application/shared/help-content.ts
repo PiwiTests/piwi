@@ -586,6 +586,16 @@ export const HELP_TOPICS = {
     text: 'This run simulates test results. Watching a browser needs a real run connected to your Piwi instance.',
     doc: 'features/live-view#turn-it-on',
   },
+  'run.live-no-workers': {
+    title: 'No worker connected',
+    text: [
+      'This run’s tests have started, but none of its workers opened the live view. A worker opens it from the capture fixtures, before its first test:',
+      '',
+      "- **Import** — every spec imports `test` from your fixtures file (`import { test, expect } from './fixtures'`), not from `@playwright/test`. Creating the fixtures file alone does not activate them.",
+      '- **Fixtures** — the fixtures file extends Playwright’s `test` with the reporter’s (`base.extend(piwiFixtures)`), as `npx @piwitests/reporter init` writes it.',
+    ].join('\n'),
+    doc: 'guide/capture-fixtures',
+  },
   'run.live-unshared': {
     title: 'Not shared live',
     text: [
