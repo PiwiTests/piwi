@@ -49,7 +49,7 @@ import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
 import { openPageView, viewportOf } from './page-view.js';
-import type { PauseAnswer } from './pause-at.js';
+import { takeHighlightDown, type PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
 
 /**
@@ -765,12 +765,7 @@ async function countLocator(holding: HeldStop, source: string | null): Promise<L
     const count = await internalCall(page, () => locator.count());
     if (holding.bar && count > 0 && held === holding) {
       const shown = (await internalCall(page, () => locator.highlight({ style: OUTLINE_STYLE }))) as unknown;
-      const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
-      outline = {
-        stop: holding.stop,
-        remove: () =>
-          internalCall(page, () => (typeof dispose === 'function' ? dispose.call(shown) : page.hideHighlight())),
-      };
+      outline = { stop: holding.stop, remove: () => internalCall(page, () => takeHighlightDown(page, shown)) };
     }
     return {
       ok: true,

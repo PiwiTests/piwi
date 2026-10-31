@@ -181,7 +181,8 @@ export function parseWindowsProcesses(text: string): WindowsProcess[] {
  */
 export function roleOf(comm: string, cmdline: string): ProcessRole | null {
   const command = `${comm} ${cmdline}`;
-  if (/workerProcessEntry/.test(cmdline)) return 'worker';
+  // Playwright's workers run `workerProcessEntry`, and before 1.60 its `lib/common/process.js`.
+  if (/workerProcessEntry|[\\/]playwright[\\/]lib[\\/]common[\\/]process\.js/.test(cmdline)) return 'worker';
   if (/loaderProcessEntry/.test(cmdline)) return 'runner';
   if (/(^|[\s/])ffmpeg/.test(command)) return 'ffmpeg';
   const type = /--type=([\w-]+)/.exec(cmdline)?.[1];

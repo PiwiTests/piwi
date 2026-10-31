@@ -7,6 +7,7 @@ import { isCi } from './inspect-on-failure.js';
 import { pickLocator, unlessEnded, type PickedLocator, type PickerProbe } from './pick-on-failure.js';
 import { internalCall } from './quiet-capture.js';
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
+import { playwrightVersionAtLeast } from '../support/playwright-version.js';
 
 /**
  * Breakpoints from the editor: `PIWI_PAUSE_AT` lists lines (`file:line`,
@@ -298,6 +299,14 @@ export function goOn(state: PauseState, answer?: PauseAnswer): GoOn {
 
 /** Why a test ended at a stop (End the test) is skipped, as its `skip` annotation reads. */
 export const ENDED_REASON = 'Ended from Piwi';
+
+/**
+ * Whether Playwright `version` (`testInfo.config.version`) gives a call up as the `signal` among its options aborts
+ * (1.62): an older one drops the option and runs the call.
+ */
+export function takesEndSignal(version: string | undefined): boolean {
+  return playwrightVersionAtLeast(version, '1.62');
+}
 
 /**
  * Where the locator methods the capture fixtures delegate take their options, when not first: `fill(value,
@@ -713,6 +722,22 @@ export async function viewHere(
   }
 }
 
+/** A selector no element of a page matches. */
+const NO_ELEMENT = '#__piwi_no_element';
+
+/**
+ * Take down what `locator.highlight()` drew in `page`: through the highlight it returned (`shown`, disposable from
+ * Playwright 1.60), else `page.hideHighlight` (1.60), else through an image of the page with a mask in each of its
+ * frames, whose end takes that frame's highlight down. The caller makes the call internal.
+ */
+export async function takeHighlightDown(page: Page, shown: unknown): Promise<void> {
+  const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
+  const hide = (page as unknown as { hideHighlight?: () => Promise<void> }).hideHighlight;
+  if (typeof dispose === 'function') await dispose.call(shown);
+  else if (typeof hide === 'function') await hide.call(page);
+  else await page.screenshot({ mask: page.frames().map((frame) => frame.locator(NO_ELEMENT)), timeout: 5000 });
+}
+
 /**
  * Show the pause bar at a stop: highlight the element, show the bar and wait for its answer. **Pick a locator** runs
  * the picker and shows the bar again; `onPick` receives each confirmed pick. With `onRecord` (the editor that started
@@ -737,9 +762,11 @@ export async function pauseHere(
   onIntent?: (intent: CodeIntent, ended?: AbortSignal) => Promise<void>,
 ): Promise<PauseAnswer> {
   let shown: unknown = null;
+  let drawn = false;
   try {
     const highlight = point.target?.highlight;
     if (typeof highlight === 'function') {
+      drawn = true;
       const highlighted = Promise.resolve()
         .then(() => highlight.call(point.target))
         .catch(() => null);
@@ -814,11 +841,9 @@ export async function pauseHere(
       try {
         // A bar the stop ended under without its answer is taken down here.
         if (ended?.aborted) await page.evaluate(takePauseState);
-        const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
-        // Feature-detected: an older Playwright has neither a disposable highlight nor `page.hideHighlight`.
-        const hide = (page as unknown as { hideHighlight?: () => Promise<void> }).hideHighlight;
-        if (typeof dispose === 'function') await dispose.call(shown);
-        else if (typeof hide === 'function') await hide.call(page);
+        // Every highlight in the page comes down with the bar, its own or not, where `page.hideHighlight` can (1.60).
+        const hides = typeof (page as unknown as { hideHighlight?: unknown }).hideHighlight === 'function';
+        if (drawn || hides) await takeHighlightDown(page, shown);
       } catch {
         // The page may be gone.
       }

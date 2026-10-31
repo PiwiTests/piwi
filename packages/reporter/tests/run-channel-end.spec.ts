@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
-import { startServer, type FakeServer } from './_helpers.js';
+import { playwrightAtLeast, startServer, type FakeServer } from './_helpers.js';
 
 /**
  * End the test in a real Playwright run, through the built package: a fake editor service on the run channel answers
@@ -344,13 +344,22 @@ describe('End the test', () => {
     expect(stopsIn('ends at a breakpoint').map((s) => [s.reason, s.place.line])).toEqual([
       ['breakpoint', lines.breakpoint],
     ]);
-    expect(clicked).not.toContain('breakpoint');
     expect(clicked).not.toContain('assertion');
-    expect(clicked).not.toContain('before-each');
-    expect(clicked).not.toContain('bar');
+    if (playwrightAtLeast('1.62')) {
+      expect(clicked).not.toContain('breakpoint');
+      expect(clicked).not.toContain('before-each');
+      expect(clicked).not.toContain('bar');
+      expect(output).toContain(`[piwi] Ended the test at tests/headless.spec.cjs:${lines.breakpoint}: Click`);
+    } else {
+      // A Playwright whose calls take no signal runs the stopped call first, and says so.
+      expect(clicked).toEqual(expect.arrayContaining(['breakpoint', 'before-each', 'bar']));
+      expect(noticesIn('ends at a breakpoint')).toEqual([
+        `Click at tests/headless.spec.cjs:${lines.breakpoint} runs before the test ends: a locator call is given up ` +
+          'from Playwright 1.62 on. The test is skipped at its next locator call, or as it ends.',
+      ]);
+    }
     // Nothing after the stop ran: the body after a stopped call, a beforeEach's test.
     expect(bodies).toEqual([]);
-    expect(output).toContain(`[piwi] Ended the test at tests/headless.spec.cjs:${lines.breakpoint}: Click`);
   });
 
   it('ends a test at its page.pause(), nothing after it run', () => {

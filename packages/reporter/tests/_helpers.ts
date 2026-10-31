@@ -1,5 +1,6 @@
 ﻿import * as http from 'node:http';
 import { createRequire } from 'node:module';
+import { playwrightVersionAtLeast } from '../src/internal/support/playwright-version.js';
 
 export interface RecordedReq {
   method: string;
@@ -221,7 +222,5 @@ export const PLAYWRIGHT_VERSION: string = (
  * the reporter's floor (the lower bound of its peer range) skips itself below that version.
  */
 export function playwrightAtLeast(minimum: string): boolean {
-  const [major = 0, minor = 0] = PLAYWRIGHT_VERSION.split('.').map(Number);
-  const [wantMajor = 0, wantMinor = 0] = minimum.split('.').map(Number);
-  return major > wantMajor || (major === wantMajor && minor >= wantMinor);
+  return playwrightVersionAtLeast(PLAYWRIGHT_VERSION, minimum);
 }

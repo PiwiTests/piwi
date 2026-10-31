@@ -44,7 +44,7 @@ responsibilities.
      (`internal/capture/run-channel.ts`, framed as `@piwitests/core/run-channel`), open from the `piwiResources` worker
      fixture's setup to the worker's end: it reports each test and stop, takes the editor's controls, breakpoints,
      intents and queries (`takes` in its `run-attach`), ends the test at a stop (`end`: the held locator call given up
-     through Playwright's own `signal` option, `withEndSignal`, and the attempt skipped by `testInfo.skip` with
+     through Playwright's own `signal` option (1.62), `withEndSignal`, and the attempt skipped by `testInfo.skip` with
      `ENDED_REASON`, `tests/run-channel-end.spec.ts`), shares the run live as asked (`share`, below), keeps the test's
      text responses in memory for Mock a request (`kept-responses.ts`), holds a failing test's page for an editor that
      answered its `holds` with `attached` (`holdFailure`, `editorShows`), and makes a headless run stop too; for a

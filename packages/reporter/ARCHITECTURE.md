@@ -130,14 +130,15 @@ What the package does to a user's run, process by process.
 - **End the test** (`end`, the editor's control or the bar's button, `endTest` in
   `capture-fixtures.ts`). While the test function runs (its `beforeEach` hooks and the
   fixtures set up before it included), each locator call the proxy delegates carries the
-  attempt's end signal among its options (`withEndSignal` in `pause-at.ts`, beside a
-  signal the test gave, through `AbortSignal.any`): End aborts it before the debugger
-  lets the held call go, so Playwright gives that call up before it runs. The attempt
-  then stops nowhere more, and is skipped by the runner's own `testInfo.skip(true,
-  ENDED_REASON)` as the call rejects, at its next locator call, as a `page.pause()` it
-  stopped at goes on, or as its function ends (`_onDidFinishTestFunctionCallbacks`,
-  feature-checked, only when it passed). A call the proxy does not delegate (a
-  navigation, a key press, a page's own assertion) runs first, which the editor hears
+  attempt's end signal among its options, on Playwright 1.62 or later (`takesEndSignal`
+  and `withEndSignal` in `pause-at.ts`, beside a signal the test gave, through
+  `AbortSignal.any`): End aborts it before the debugger lets the held call go, so
+  Playwright gives that call up before it runs. The attempt then stops nowhere more, and
+  is skipped by the runner's own `testInfo.skip(true, ENDED_REASON)` as the call
+  rejects, at its next locator call, as a `page.pause()` it stopped at goes on, or as its
+  function ends (`_onDidFinishTestFunctionCallbacks`, feature-checked, only when it
+  passed). A call the proxy does not delegate (a navigation, a key press, a page's own
+  assertion), or any call on an older Playwright, runs first, which the editor hears
   (`notice`). At a failure, or once the function ended (an `afterEach` hook, a fixture's
   teardown), End goes on as Resume does, the result kept; the bar offers it at neither.
   `afterEach` hooks and the fixtures' teardown run as after any skip, and the next
@@ -187,7 +188,10 @@ What the package does to a user's run, process by process.
 - `locator` counts a chain (`chain-locator.ts`, built through the chain grammar's calls
   alone) on the stopped page, one count after the other, and, where the bar shows,
   outlines its matches with Playwright's highlight, the one before taken down first and
-  the last before the stop ends.
+  the last before the stop ends. A highlight comes down through its own `dispose` or
+  `page.hideHighlight` (1.60), and before 1.60 through an image of the page with a mask
+  in each frame, whose end takes the frame's highlight down (`takeHighlightDown` in
+  `pause-at.ts`, for the pause bar's highlight too).
 - **The live view**, for a viewer outside the page (Piwi Picker, through the editor's
   hub). `view` shows the stopped page live: its screencast (`page.screencast.start`
   through an internal call, at its viewport scaled to fit 1280 by 800, JPEG quality 60,

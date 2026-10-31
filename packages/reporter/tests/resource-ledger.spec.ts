@@ -12,6 +12,7 @@ import {
   activeResourceLedger,
   commandOf,
   leakFailureMessage,
+  playwrightGlobalsFile,
   readLeakCheck,
   recordResourceCensus,
   startResourceLedger,
@@ -191,6 +192,10 @@ afterEach(() => {
 });
 
 describe('ResourceLedger', () => {
+  it('finds where the installed Playwright keeps the test its worker runs', () => {
+    expect(playwrightGlobalsFile()).toMatch(/[\\/]playwright[\\/]lib[\\/](common[\\/])?globals\.js$/);
+  });
+
   it('installs only on a Playwright that reports its calls', () => {
     expect(new ResourceLedger({}, 0, 'report', null, () => null).install()).toBe(false);
     const fake = fakePlaywright();
