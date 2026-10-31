@@ -23,9 +23,10 @@ export async function emitNotification(
     /**
      * Deliver the browser (SSE) notification to this user even when they have no
      * matching subscription — per-user targeting for events addressed at one
-     * person, such as the author of a fix. Normal subscription routing is
-     * unaffected: other subscribers still receive the event, and the outbox
-     * (email/Slack/webhook) is untouched by this flag.
+     * person, such as the author of a fix — as long as they can open the event's
+     * project. Normal subscription routing is unaffected: other subscribers still
+     * receive the event, and the outbox (email/Slack/webhook) is untouched by
+     * this flag.
      */
     targetUserId?: number;
   },

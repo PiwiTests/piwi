@@ -206,9 +206,7 @@ test.describe.serial('Bug reports in Jira', () => {
     });
     const { id } = await (await send(request, false)).json();
     const draft = await (
-      await request.get(
-        `/api/integrations/issue-draft?entityType=bug_report&entityId=${id}&connectionId=${connectionId}`,
-      )
+      await request.get(`/api/integrations/issue-draft?entityType=bug_report&entityId=${id}`)
     ).json();
     expect(draft.markdown).toContain('Étapes pour reproduire');
     const res = await request.post('/api/integrations/issues', {

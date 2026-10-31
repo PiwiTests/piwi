@@ -180,8 +180,8 @@ export interface IssueDraft {
   /** `PIWI_SITE_URL` is set, so the issue's body links back to Piwi (and can carry a share link). */
   linksBack: boolean;
   title: string;
+  /** The connection the project is bound to, the only one its issues are filed through; null when it has none usable. */
   connectionId: number | null;
-  connections: TrackerSummary[];
   projectKey: string | null;
   issueType: string | null;
   labels: string[];

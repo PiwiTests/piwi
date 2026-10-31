@@ -188,6 +188,11 @@ test.describe.serial('Integrations — create an issue', () => {
     const failing = cases.find((c) => c.failureClusterId)!;
     clusterId = failing.failureClusterId!;
     executionId = failing.executionId;
+
+    // A project's issues are filed through the connection it is bound to.
+    const projectId = (await (await request.get(`/api/failure-clusters/${clusterId}`)).json()).project.id;
+    const bound = await request.put(`/api/projects/${projectId}/integrations`, { data: { connectionId } });
+    expect(bound.ok()).toBeTruthy();
   });
 
   test.afterAll(async ({ request }) => {
@@ -202,9 +207,7 @@ test.describe.serial('Integrations — create an issue', () => {
   });
 
   test('the draft prefills the body and finds no existing issue yet', async ({ request }) => {
-    const res = await request.get(
-      `/api/integrations/issue-draft?entityType=failure_cluster&entityId=${clusterId}&connectionId=${connectionId}`,
-    );
+    const res = await request.get(`/api/integrations/issue-draft?entityType=failure_cluster&entityId=${clusterId}`);
     expect(res.ok()).toBeTruthy();
     const draft = (await res.json()) as DraftResponse;
     expect(draft.connectionId).toBe(connectionId);
@@ -282,9 +285,7 @@ test.describe.serial('Integrations — create an issue', () => {
   });
 
   test('the draft now suggests the existing issue', async ({ request }) => {
-    const res = await request.get(
-      `/api/integrations/issue-draft?entityType=failure_cluster&entityId=${clusterId}&connectionId=${connectionId}`,
-    );
+    const res = await request.get(`/api/integrations/issue-draft?entityType=failure_cluster&entityId=${clusterId}`);
     const draft = (await res.json()) as DraftResponse;
     expect(draft.existing.some((e) => e.key === createdKey)).toBe(true);
   });
@@ -363,6 +364,65 @@ test.describe.serial('Integrations — create an issue', () => {
     const { actions } = await res.json();
     const action = actions.find((a: { kind: string; status: string }) => a.kind === 'create-issue');
     expect(action?.status).toBe('done');
+  });
+
+  test('a project bound to no connection files nothing, and the dialog says why', async ({ page, request }) => {
+    const filedBefore = mock.created();
+    const projectId = (await (await request.get(`/api/failure-clusters/${clusterId}`)).json()).project.id;
+    const unbound = await request.put(`/api/projects/${projectId}/integrations`, { data: { connectionId: null } });
+    expect(unbound.ok()).toBeTruthy();
+
+    // A distinct failure, so a fresh cluster with no issue yet.
+    const submit = await request.post('/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.INTEGRATIONS_CREATE_ISSUE,
+        status: 'failed',
+        startTime: new Date().toISOString(),
+        duration: 1000,
+        totalTests: 1,
+        passedTests: 0,
+        failedTests: 1,
+        skippedTests: 0,
+        testCases: [
+          {
+            title: 'pays the order',
+            status: 'failed',
+            duration: 300,
+            location: 'payment.spec.ts:4:1',
+            error: `TypeError: Cannot read properties of undefined (reading 'total') [${runTag}]`,
+          },
+        ],
+      },
+    });
+    const run = await (await request.get(`/api/test-runs/${(await submit.json()).runId}`)).json();
+    const unboundClusterId = (run.testCases as { failureClusterId?: number }[]).find(
+      (c) => c.failureClusterId,
+    )!.failureClusterId!;
+
+    await page.goto(`/failure-clusters/${unboundClusterId}`);
+    await waitForHydration(page);
+    const open = page.locator('[data-shot="issue-line-create"]').first();
+    await expect(open).toBeVisible({ timeout: 30_000 });
+    await open.click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByTestId('create-issue-no-connection')).toBeVisible({ timeout: 15_000 });
+    await expect(dialog.getByTestId('create-issue-missing')).toHaveText(
+      'This project has no Jira connection to file through.',
+    );
+    await expect(dialog.getByRole('button', { name: 'Create', exact: true })).toBeDisabled();
+
+    const res = await request.post('/api/integrations/issues', {
+      data: {
+        entityType: 'failure_cluster',
+        entityId: unboundClusterId,
+        connectionId,
+        title: 'Payment fails',
+        projectKey: 'PROJ',
+        issueType: 'Bug',
+      },
+    });
+    expect(res.status()).toBe(403);
+    expect(mock.created()).toBe(filedBefore);
   });
 });
 

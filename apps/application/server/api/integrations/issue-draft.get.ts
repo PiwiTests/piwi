@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Prefilled create-issue draft',
     description:
-      'The prefilled draft for a failure — title, fields, body preview — plus any issue that already tracks it. The preview never creates a share link: with `includeShareLink`, it shows where the link goes, and the link is created when the issue is filed. A caller without `share:create` on the project gets no share link. Requires `issue:create` (Contributor and above on the project).',
+      'The prefilled draft for a failure — title, fields, body preview — plus any issue that already tracks it. `connectionId` is the connection the project is bound to, the only one its issues are filed through, and null when the project is bound to none, or to one without credentials. The preview never creates a share link: with `includeShareLink`, it shows where the link goes, and the link is created when the issue is filed. A caller without `share:create` on the project gets no share link. Requires `issue:create` (Contributor and above on the project).',
     'x-required-permission': 'issue:create',
   },
 });
@@ -54,10 +54,7 @@ export default eventHandler(async (event) => {
   // A share link is public: only a caller who may create one gets it in the ticket.
   if (!(await canAccessProject(db, user, projectId, 'share:create'))) includeOverride.includeShareLink = false;
 
-  const connectionId = query.connectionId ? Number(query.connectionId) : undefined;
-
   const draft = await buildIssueDraft(db, entityType, entityId, {
-    connectionId: connectionId && Number.isInteger(connectionId) ? connectionId : undefined,
     include: includeOverride,
     locale: toIssueLocale(query.locale),
     siteUrl: process.env.PIWI_SITE_URL ?? null,

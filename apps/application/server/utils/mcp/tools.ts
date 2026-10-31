@@ -1987,7 +1987,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       return dropNulls({ key: first.key, url: first.url, existing: draft.existing });
     }
 
-    if (!draft.connectionId || !draft.projectKey || !draft.issueType) {
+    if (!draft.connectionId) {
+      throw new Error(
+        "Bind the project to a Jira connection that holds credentials (the project's Issue tracker settings) before filing issues",
+      );
+    }
+    if (!draft.projectKey || !draft.issueType) {
       throw new Error('Configure a Jira project binding (project key and issue type) before filing issues');
     }
 

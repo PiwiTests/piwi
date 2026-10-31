@@ -115,6 +115,14 @@ The early check only proves the user holds the permission _somewhere_. The proje
 - **The last administrator can be neither demoted nor deleted.**
 - **A Project admin edits role bindings only on projects where they hold `project:members`**, never on all projects
   (that takes `users:manage`, an administrator's).
+- **A Project admin's user list holds only the users who can open a project they can open** (`listUserSummaries`):
+  anyone else is found, and added to a project, only by their whole username, never by id or in a list
+  (`replaceProjectMembers`). `tests/unit/access-management-routes.test.ts`.
+- **A project's issues are filed only through the connection its binding names**: `POST /api/integrations/issues`
+  refuses any other before building anything, and the draft proposes no other. `tests/unit/issue-create-routes.test.ts`.
+- **A notification addressed to one user (`targetUserId`) still needs their access to every project it is about**:
+  `notifyFixAuthor` checks it before the email (`tests/unit/fix-author.test.ts`), the stream before delivering
+  (`tests/unit/notification-stream.test.ts`).
 - **Changing a user's instance role, or signing out, bumps `sessionEpoch`** and so ends their sessions. Project role
   and group changes need no such step: access is loaded on every request.
 

@@ -92,8 +92,6 @@ const assigneeQuery = ref('');
 
 const showAllCreate = ref(false);
 
-const hasMultipleConnections = computed(() => (draft.value?.connections.length ?? 0) > 1);
-const connectionItems = computed(() => (draft.value?.connections ?? []).map((c) => ({ label: c.name, value: c.id })));
 const existing = computed<ExistingIssueCandidate[]>(() => draft.value?.existing ?? []);
 
 // ── Jira fields: what the chosen issue type requires ─────────────────────────
@@ -169,6 +167,7 @@ const missingNames = computed(() => joinFieldNames(missingFields.value.map((f) =
 
 // Why Create is disabled, named in the footer next to the fields Jira still needs.
 const blockedReason = computed(() => {
+  if (draft.value && !draft.value.connectionId) return 'This project has no Jira connection to file through.';
   const need = [
     !title.value.trim() ? 'a title' : null,
     !projectKey.value ? 'a Jira project' : null,
@@ -229,7 +228,6 @@ async function loadDraft() {
   draft.value = null;
   try {
     const params = new URLSearchParams({ entityType: props.entityType, entityId: String(props.entityId) });
-    if (connectionId.value) params.set('connectionId', String(connectionId.value));
     params.set('includeDiagnosis', String(include.value.includeDiagnosis));
     params.set('includePatch', String(include.value.includePatch));
     params.set('includeScreenshot', String(include.value.includeScreenshot));
@@ -250,12 +248,11 @@ async function loadDraft() {
   }
 }
 
-/** Re-fetch only the preview/labels when a toggle or the connection changes. */
+/** Re-fetch only the preview/labels when a toggle or the language changes. */
 async function refreshPreview() {
   if (!draft.value) return;
   try {
     const params = new URLSearchParams({ entityType: props.entityType, entityId: String(props.entityId) });
-    if (connectionId.value) params.set('connectionId', String(connectionId.value));
     params.set('includeDiagnosis', String(include.value.includeDiagnosis));
     params.set('includePatch', String(include.value.includePatch));
     params.set('includeScreenshot', String(include.value.includeScreenshot));
@@ -346,16 +343,6 @@ watch(open, (isOpen) => {
     issueTypes.value = [];
     showAllCreate.value = false;
     void loadDraft();
-  }
-});
-
-watch(connectionId, (id, prev) => {
-  if (prev != null && id !== prev) {
-    projects.value = [];
-    issueTypes.value = [];
-    void loadProjects();
-    void loadIssueTypes();
-    void refreshPreview();
   }
 });
 
@@ -485,8 +472,19 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
         </UAlert>
 
         <template v-if="!existing.length || showAllCreate">
+          <!-- No connection: a project's issues go only through the one it is bound to, with credentials. -->
+          <p v-if="!draft.connectionId" class="text-xs text-muted" data-testid="create-issue-no-connection">
+            This project has no Jira connection to file through: its issues go only through the connection its settings
+            name, once that connection has credentials.
+            <NuxtLink
+              v-if="canBind"
+              :to="`/projects/${draft.projectId}?tab=settings&section=issue-tracker`"
+              :class="SENTENCE_LINK_CLASS"
+              >Open the issue tracker settings</NuxtLink
+            ><template v-else> A project admin sets it in the project settings.</template>
+          </p>
           <!-- No default Jira project for this Piwi project: say so, and where to set one. -->
-          <p v-if="!draft.projectBound" class="text-xs text-muted" data-testid="create-issue-unbound">
+          <p v-else-if="!draft.projectBound" class="text-xs text-muted" data-testid="create-issue-unbound">
             This project has no default Jira project and issue type, so pick them for this issue.
             <NuxtLink
               v-if="canBind"
@@ -499,11 +497,8 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             <UInput v-model="title" class="w-full" />
           </UFormField>
 
-          <UFormField v-if="hasMultipleConnections" label="Connection">
-            <USelect v-model="connectionId" :items="connectionItems" value-key="value" class="w-full" />
-          </UFormField>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- The pickers read the project's connection: none to read without one. -->
+          <div v-if="draft.connectionId" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <UFormField label="Jira project">
               <USelectMenu
                 v-model="projectKey"
@@ -569,7 +564,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             />
           </template>
 
-          <UFormField label="Assignee">
+          <UFormField v-if="draft.connectionId" label="Assignee">
             <USelectMenu
               v-model="assignee"
               :items="assigneeItems"

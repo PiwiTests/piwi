@@ -3124,10 +3124,12 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/users$/,
     permission: ['users:manage', 'project:members'],
-    handler: async (_m, _b, _q, ctx) => {
+    handler: async (_m, _b, query, ctx) => {
       const db = await getDemoDb();
       // The early check let in an administrator or someone holding project:members on a project.
-      const items = demoCan(ctx, 'users:manage') ? await listUserItems(db) : await listUserSummaries(db);
+      const items = demoCan(ctx, 'users:manage')
+        ? await listUserItems(db)
+        : await listUserSummaries(db, demoScope(ctx), query?.get('lookup'));
       return { items, authEnabled: true };
     },
   },
@@ -3439,11 +3441,16 @@ const routes: RouteEntry[] = [
       const b = body as {
         entityType: 'failure_cluster' | 'test_runs_case';
         entityId: number;
+        connectionId?: number;
         title?: string;
         issueType?: string;
         fields?: unknown;
       };
       await assertDemoLinkTargetScope(ctx, b.entityType, b.entityId);
+      // Like the server, a project's issues go through the connection it is bound to.
+      if (b.connectionId !== getDemoProjectIntegration().connectionId) {
+        throw demoHttpError(403, 'This project files its issues through the connection it is bound to');
+      }
       return demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title, {
         issueType: b.issueType,
         fields: b.fields,

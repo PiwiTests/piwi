@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
 import { canAccessProject, resolveLinkEntityProjectId } from '../../utils/project-access';
+import { readProjectIntegration } from '../../utils/integrations/binding';
 import { createIssue } from '../../utils/integrations/create';
 import type { CreateIssueResponse } from '#shared/integrations/types';
 import { normalizeFieldValues } from '#shared/integrations/fields';
@@ -11,7 +12,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Create an issue from a failure or a bug report',
     description:
-      "Enqueues a create-issue action and makes one immediate attempt. A duplicate of an issue already filed for the same cluster (from the cluster or any of its executions) or the same bug report is a no-op answered with `alreadyFiled`; once that issue's link is removed or the issue is Done, the next create files a new one. When the tracker does not answer, the response is `pending` with the tracker's error: the outbox retries it and links the issue once it is created, and creating again retries it at once. `fields` sets tracker fields (field id → `{ value, label }`, the value as the tracker API takes it) over the project's field defaults. When the create screen still has an empty required field, nothing is sent: the response is `failed` with `missingFields`. A refusal from the tracker comes back with `fieldErrors` when it names fields, and is not retried; creating again replaces the refused request. `include.includeShareLink` creates one share link for the issue, recorded as the caller's, and needs `share:create` on the project: without it the issue carries no share link. Requires `issue:create` (Contributor and above on the project).",
+      "Enqueues a create-issue action and makes one immediate attempt. A duplicate of an issue already filed for the same cluster (from the cluster or any of its executions) or the same bug report is a no-op answered with `alreadyFiled`; once that issue's link is removed or the issue is Done, the next create files a new one. When the tracker does not answer, the response is `pending` with the tracker's error: the outbox retries it and links the issue once it is created, and creating again retries it at once. `fields` sets tracker fields (field id → `{ value, label }`, the value as the tracker API takes it) over the project's field defaults. When the create screen still has an empty required field, nothing is sent: the response is `failed` with `missingFields`. A refusal from the tracker comes back with `fieldErrors` when it names fields, and is not retried; creating again replaces the refused request. `include.includeShareLink` creates one share link for the issue, recorded as the caller's, and needs `share:create` on the project: without it the issue carries no share link. `connectionId` must be the connection the project is bound to (its Issue tracker settings): any other connection, or a project bound to none, is refused with 403. Requires `issue:create` (Contributor and above on the project).",
     'x-required-permission': 'issue:create',
   },
 });
@@ -53,6 +54,14 @@ export default eventHandler(async (event): Promise<CreateIssueResponse> => {
   if (!projectId) throw apiError({ statusCode: 404, message: 'Entity not found' });
   if (!(await canAccessProject(db, user, projectId, 'issue:create'))) {
     throw apiError({ statusCode: 403, message: 'No access to this project' });
+  }
+  // A project's issues go through the connection it is bound to, never through another one.
+  const { connectionId: boundConnectionId } = await readProjectIntegration(db, projectId);
+  if (boundConnectionId === null) {
+    throw apiError({ statusCode: 403, message: 'This project is not bound to an issue tracker' });
+  }
+  if (input.connectionId !== boundConnectionId) {
+    throw apiError({ statusCode: 403, message: 'This project files its issues through the connection it is bound to' });
   }
 
   // A share link is public: only a caller who may create one gets it in the ticket.

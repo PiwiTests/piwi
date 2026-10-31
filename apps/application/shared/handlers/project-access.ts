@@ -5,9 +5,9 @@
  * which turn an `AccessError` (or a `GroupError`) into an HTTP error with its
  * status. The shapes are in `#shared/project-access`.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
-import { groups, projects, users } from '../../server/database/schema';
+import { groupMembers, groups, projects, roleBindings, users } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import {
   can,
@@ -15,8 +15,10 @@ import {
   InstanceRole,
   isAdministrator,
   PROJECT_ROLE_LABELS,
+  PROJECT_ROLES,
   ProjectRole,
   projectRolesOf,
+  projectScopeFor,
   type AccessSummary,
 } from '#shared/permissions';
 import {
@@ -95,8 +97,11 @@ export const projectAccessUpdateSchema = z.object({
   role: projectRoleSchema.nullable(),
 });
 
+/** A member to set: a user may carry the whole username they were found by. */
+const memberSubjectSchema = subjectSchema.extend({ username: z.string().max(200).optional() });
+
 export const projectMembersUpdateSchema = z.object({
-  entries: z.array(z.object({ subject: subjectSchema, role: projectRoleSchema })),
+  entries: z.array(z.object({ subject: memberSubjectSchema, role: projectRoleSchema })),
 });
 
 export const userProjectRolesSchema = z.object({
@@ -215,9 +220,71 @@ export async function listUserItems(db: DrizzleDB): Promise<UserListItem[]> {
   return rows.map((row) => toUserListItem(row, groupIdsByUser.get(row.id) ?? []));
 }
 
-/** Every user's id and names: what a project admin needs to add someone to their project. */
-export async function listUserSummaries(db: DrizzleDB): Promise<UserSummary[]> {
-  const rows = await db.select({ id: users.id, username: users.username, name: users.name }).from(users);
+type ProjectScope = 'all' | Set<number>;
+
+/** Account identifiers are compared ignoring ASCII letter case only. */
+const asciiLowerCase = (value: string) => value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+
+/**
+ * The users who can open at least one project of `scope`: the administrators,
+ * and every user holding a project role on one of them or on all projects,
+ * directly or through a group. Undefined for an empty scope.
+ */
+function opensProjectIn(db: DrizzleDB, scope: ProjectScope): SQL | undefined {
+  if (scope !== 'all' && scope.size === 0) return undefined;
+  const binding = and(
+    inArray(roleBindings.role, [...PROJECT_ROLES]),
+    scope === 'all' ? undefined : or(isNull(roleBindings.projectId), inArray(roleBindings.projectId, [...scope])),
+  );
+  const direct = db
+    .select({ id: roleBindings.userId })
+    .from(roleBindings)
+    .where(and(isNotNull(roleBindings.userId), binding));
+  const throughGroups = db
+    .select({ id: groupMembers.userId })
+    .from(groupMembers)
+    .innerJoin(roleBindings, eq(roleBindings.groupId, groupMembers.groupId))
+    .where(binding);
+  return or(eq(users.role, InstanceRole.ADMINISTRATOR), inArray(users.id, direct), inArray(users.id, throughGroups));
+}
+
+/** Of `userIds`, the users `access` may name without their username: everyone for an administrator. */
+async function listableUserIds(db: DrizzleDB, userIds: number[], access: AccessSummary): Promise<Set<number> | 'all'> {
+  if (isAdministrator(access)) return 'all';
+  const sharing = opensProjectIn(db, projectScopeFor(access, 'project:read'));
+  if (!sharing) return new Set();
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(inArray(users.id, userIds), sharing));
+  return new Set(rows.map((row) => row.id));
+}
+
+/**
+ * The users a project admin may pick to add to their project: those who can
+ * open a project the admin can open (`scope`, their `project:read` scope),
+ * and the user whose username is `lookup` ignoring letter case, so someone who
+ * holds no role yet can be added. Nobody else is listed.
+ */
+export async function listUserSummaries(
+  db: DrizzleDB,
+  scope: ProjectScope,
+  lookup?: string | null,
+): Promise<UserSummary[]> {
+  const columns = { id: users.id, username: users.username, name: users.name };
+  const sharing = opensProjectIn(db, scope);
+  const rows = sharing ? await db.select(columns).from(users).where(sharing) : [];
+  const term = lookup?.trim();
+  if (term) {
+    const found = await db
+      .select(columns)
+      .from(users)
+      .where(sql`lower(${users.username}) = lower(${term})`);
+    for (const row of found) {
+      if (asciiLowerCase(row.username) !== asciiLowerCase(term) || rows.some((r) => r.id === row.id)) continue;
+      rows.push(row);
+    }
+  }
   return sortProjectAccessUsers(rows);
 }
 
@@ -515,8 +582,9 @@ export async function getProjectMembersResponse(
  * `entries`; a subject listed twice keeps its last role. An administrator may
  * set any; anyone else only grants, changes and removes the roles
  * `canGrantRole` lets them grant with the roles they hold on this project
- * (403 otherwise). 404 for an unknown project, 400 for an unknown user or
- * group, or for an administrator, who needs no binding.
+ * (403 otherwise), and names only the users `listUserSummaries` lists them,
+ * or others by their whole username. 404 for an unknown project, 400 for an
+ * unknown user or group, or for an administrator, who needs no binding.
  */
 export async function replaceProjectMembers(
   db: DrizzleDB,
@@ -528,11 +596,25 @@ export async function replaceProjectMembers(
   const bySubject = new Map(entries.map((entry) => [accessSubjectKey(entry.subject), entry]));
   const wanted = [...bySubject.values()];
 
-  const userIds = wanted.filter((e) => e.subject.type === 'user').map((e) => e.subject.id);
-  if (userIds.length > 0) {
-    const found = await db.select({ id: users.id, role: users.role }).from(users).where(inArray(users.id, userIds));
-    const foundIds = new Set(found.map((row) => row.id));
-    const missing = userIds.filter((id) => !foundIds.has(id));
+  const userSubjects = wanted.filter((e) => e.subject.type === 'user').map((e) => e.subject);
+  if (userSubjects.length > 0) {
+    const userIds = userSubjects.map((subject) => subject.id);
+    const found = await db
+      .select({ id: users.id, role: users.role, username: users.username })
+      .from(users)
+      .where(inArray(users.id, userIds));
+    // A project admin names a user they may list, or anyone else with their
+    // whole username: any other id is answered like an unknown one.
+    const listable = await listableUserIds(db, userIds, granter.access);
+    const byId = new Map(found.map((row) => [row.id, row]));
+    const missing = userSubjects
+      .filter((subject) => {
+        const row = byId.get(subject.id);
+        if (!row) return true;
+        if (listable === 'all' || listable.has(row.id)) return false;
+        return asciiLowerCase(subject.username?.trim() ?? '') !== asciiLowerCase(row.username);
+      })
+      .map((subject) => subject.id);
     if (missing.length > 0) throw new AccessError(400, `User(s) not found: ${missing.join(', ')}`);
     if (found.some((row) => row.role === InstanceRole.ADMINISTRATOR)) {
       throw new AccessError(400, ADMINISTRATOR_OPENS_EVERYTHING);

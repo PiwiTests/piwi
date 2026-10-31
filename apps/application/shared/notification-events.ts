@@ -341,9 +341,10 @@ export function buildTopFailures(rows: TopFailureInput[], limit: number = TOP_FA
 /**
  * The author of a fixing commit, resolved through the SCM provider when a token
  * exists. Lets the fix outcome reach the person who did the work directly — by
- * email when the address belongs to a registered Piwi user, and as a targeted
- * browser notification for that user — on top of the normal subscription
- * routing. Absent when no token is configured or the host exposes no email.
+ * email when the address belongs to a registered Piwi user who can open the
+ * project, and as a targeted browser notification for that user — on top of the
+ * normal subscription routing. Absent when no token is configured or the host
+ * exposes no email.
  */
 export interface FixAuthor {
   name: string;

@@ -137,7 +137,6 @@ export function dedupeCandidates(lists: ExistingIssueCandidate[][]): ExistingIss
 }
 
 export interface DraftOptions {
-  connectionId?: number | null;
   include?: Partial<IssueIncludeOptions>;
   /** A per-issue language override (the modal's Language select); else resolved. */
   locale?: IssueLocale | null;
@@ -155,6 +154,14 @@ function resolveLocale(
   if (fromBinding) return fromBinding;
   const config = (connection?.config ?? null) as { locale?: string } | null;
   return toIssueLocale(config?.locale) ?? DEFAULT_LOCALE;
+}
+
+/**
+ * The connection a project's issues are filed through: the one its binding
+ * names, when it has usable credentials. Never another one.
+ */
+function boundConnection(connections: TrackerSummary[], binding: { connectionId: number | null }): number | null {
+  return connections.find((c) => c.id === binding.connectionId)?.id ?? null;
 }
 
 /** Build the full draft, or null when no tracker is connected or the entity is gone. */
@@ -182,10 +189,8 @@ export async function buildIssueDraft(
 
   const bindingRow = await getProjectBinding(db, projectId);
   const resolved = bindingRowToResolved(bindingRow);
-  // The requested connection, else the one the project is bound to, else the first.
-  const bound = connections.find((c) => c.id === resolved.connectionId)?.id;
-  const chosenId = opts.connectionId ?? bound ?? connections[0]!.id;
-  const chosenRow = await getConnectionRow(db, chosenId);
+  const chosenId = boundConnection(connections, resolved);
+  const chosenRow = chosenId === null ? null : await getConnectionRow(db, chosenId);
   const include = { ...resolved.include, ...(opts.include ?? {}) };
   const locale = resolveLocale(bindingRow, chosenRow, opts.locale);
 
@@ -236,7 +241,6 @@ export async function buildIssueDraft(
     linksBack: Boolean(opts.siteUrl),
     title: built.title,
     connectionId: chosenId,
-    connections,
     projectKey: route?.projectKey ?? resolved.projectKey,
     issueType: resolved.issueType,
     labels,
@@ -264,9 +268,8 @@ async function buildBugReportDraft(
   if (!report) return null;
   const bindingRow = await getProjectBinding(db, report.projectId);
   const resolved = bindingRowToResolved(bindingRow);
-  const bound = connections.find((c) => c.id === resolved.connectionId)?.id;
-  const chosenId = opts.connectionId ?? bound ?? connections[0]!.id;
-  const chosenRow = await getConnectionRow(db, chosenId);
+  const chosenId = boundConnection(connections, resolved);
+  const chosenRow = chosenId === null ? null : await getConnectionRow(db, chosenId);
   const locale = resolveLocale(bindingRow, chosenRow, opts.locale);
   const built = await buildBugReportIssue(db, bugReportId, { locale, siteUrl: opts.siteUrl });
   if (!built) return null;
@@ -283,7 +286,6 @@ async function buildBugReportDraft(
     linksBack: Boolean(opts.siteUrl),
     title: built.title,
     connectionId: chosenId,
-    connections,
     projectKey: resolved.projectKey,
     issueType: resolved.issueType,
     labels: [...new Set([...resolved.labels, ...built.labels])],

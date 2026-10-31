@@ -194,8 +194,7 @@ export async function demoIssueDraft(
     // The static demo has no public address to link back to.
     linksBack: false,
     title: built.title,
-    connectionId: DEMO_CONNECTION.id,
-    connections: [DEMO_TRACKER],
+    connectionId: getDemoProjectIntegration().connectionId,
     projectKey: DEMO_PROJECT_KEY,
     issueType: DEMO_ISSUE_TYPE,
     labels: built.labels,
