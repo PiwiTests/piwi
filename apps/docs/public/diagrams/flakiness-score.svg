@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 580" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <style>
+  .bg{fill:#fcfcfd;stroke:#e4e7ec}
+  .t{fill:#101828;font-weight:700;font-size:19px}
+  .s{fill:#475467;font-size:14px}
+  .h{fill:#667085;font-size:12.5px;font-weight:700;letter-spacing:.05em}
+  .lb{fill:#344054;font-size:15px;font-weight:600}
+  .l{fill:#475467;font-size:13.5px}
+  .m{fill:#667085;font-size:12.5px}
+  .b{font-weight:600}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;white-space:pre}
+  .ink{fill:#344054} .numw{fill:#ffffff}
+  .box{fill:#ffffff;stroke:#d0d5dd}
+  .chip{fill:#f9fafb;stroke:#d0d5dd}
+  .hd{fill:#f2f4f7}
+  .cap{fill:#f2f4f7;stroke:#d0d5dd}
+  .rule{fill:none;stroke:#e4e7ec}
+  .edge{fill:none;stroke:#667085;stroke-width:1.4}
+  .dash{fill:none;stroke:#98a2b3;stroke-width:1.3;stroke-dasharray:5 4}
+  .acc{fill:none;stroke:#4353ff;stroke-width:1.6}
+  .accd{fill:none;stroke:#4353ff;stroke-width:1.4;stroke-dasharray:5 4}
+  .acct{fill:#4353ff;font-size:13px} .ac{fill:#4353ff}
+  .et{fill:#475467;font-size:13px}
+  .arr{fill:#667085} .arrd{fill:#98a2b3} .arra{fill:#4353ff}
+  .ab{fill:#eef1ff;stroke:#c7ceff} .abt{fill:#2a3aa8} .abl{fill:#3f4b9e} .abo{fill:none;stroke:#4353ff;stroke-width:1.5}
+  .ok{fill:#ecfdf3;stroke:#75e0a7} .okt{fill:#067647} .okd{fill:#12b76a}
+  .bs{fill:#fffaeb;stroke:#fec84b} .bst{fill:#b54708}
+  .fc{fill:#fef3f2;stroke:#fda29b} .fct{fill:#b42318} .fcd{fill:#f04438}
+  .fr{fill:#fff6ed;stroke:#fd853a} .frt{fill:#c4320a}
+  .mu{fill:#f2f4f7;stroke:#d0d5dd} .mud{fill:#d0d5dd}
+  .dbx{fill:none;stroke:#d0d5dd;stroke-dasharray:5 4}
+  .clu{fill:#4353ff;fill-opacity:.06;stroke:#4353ff;stroke-width:1.8;stroke-dasharray:6 4;stroke-linejoin:round}
+  @media (prefers-color-scheme: dark){
+    .bg{fill:#161b26;stroke:#333741}
+    .t{fill:#f5f5f6} .s{fill:#94969c} .h{fill:#85888e}
+    .lb{fill:#ececed} .l{fill:#cecfd2} .m{fill:#94969c} .ink{fill:#ececed} .numw{fill:#161b26}
+    .box{fill:#1f242f;stroke:#333741} .chip{fill:#262b36;stroke:#333741} .hd{fill:#262b36}
+    .cap{fill:#262b36;stroke:#4a4f5a}
+    .rule{stroke:#333741}
+    .edge{stroke:#94969c} .arr{fill:#94969c}
+    .dash{stroke:#61646c} .arrd{fill:#61646c}
+    .acc,.accd{stroke:#8098f9} .acct,.ac{fill:#8098f9} .arra{fill:#8098f9}
+    .et{fill:#94969c}
+    .ab{fill:#1c2142;stroke:#3b4699} .abt{fill:#c7d0ff} .abl{fill:#a4b0f0} .abo{stroke:#8098f9}
+    .ok{fill:#0b2418;stroke:#079455} .okt{fill:#75e0a7} .okd{fill:#17b26a}
+    .bs{fill:#2b1d07;stroke:#ca8504} .bst{fill:#fec84b}
+    .fc{fill:#2d1210;stroke:#d92d20} .fct{fill:#fda29b} .fcd{fill:#f04438}
+    .fr{fill:#2b170c;stroke:#e04f16} .frt{fill:#f7b27a}
+    .mu{fill:#262b36;stroke:#333741} .mud{fill:#61646c}
+    .dbx{stroke:#61646c}
+    .clu{fill:#8098f9;fill-opacity:.1;stroke:#8098f9}
+  }
+</style>
+  <defs>
+    <marker id="fsn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arr" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="fsd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrd" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="fsa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arra" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+  </defs>
+  <rect class="bg" x="0.5" y="0.5" width="919" height="579" rx="12"/>
+  <text class="t" x="24" y="38">Flakiness score, worked through</text>
+  <text class="s" x="24" y="62">Two signals from the runs a test ran in, weighted 60/40, then a ranking by the CI time it wastes.</text>
+  <text class="h" x="22" y="94">ONE TEST’S LAST 10 RUNS, OLDEST FIRST</text>
+  <rect class="chip" x="22" y="108" width="80" height="70" rx="7"/>
+  <text class="m" x="62" y="128" text-anchor="middle">Run 1</text>
+  <rect class="okd" x="54" y="137" width="16" height="16" rx="4"/>
+  <text class="m" x="62" y="170" text-anchor="middle">passed</text>
+  <rect class="bs" x="110.44444444444444" y="108" width="80" height="70" rx="7"/>
+  <text class="m" x="150.44444444444446" y="128" text-anchor="middle">Run 2</text>
+  <rect class="fcd" x="131.94444444444446" y="137" width="16" height="16" rx="4"/>
+  <rect class="okd" x="152.94444444444446" y="137" width="16" height="16" rx="4"/>
+  <text class="m bst" x="150.44444444444446" y="170" text-anchor="middle">retry pass</text>
+  <rect class="chip" x="198.88888888888889" y="108" width="80" height="70" rx="7"/>
+  <text class="m" x="238.88888888888889" y="128" text-anchor="middle">Run 3</text>
+  <rect class="okd" x="230.88888888888889" y="137" width="16" height="16" rx="4"/>
+  <text class="m" x="238.88888888888889" y="170" text-anchor="middle">passed</text>
+  <rect class="fc" x="287.3333333333333" y="108" width="80" height="70" rx="7"/>
+  <text class="m" x="327.3333333333333" y="128" text-anchor="middle">Run 4</text>
+  <rect class="fcd" x="319.3333333333333" y="137" width="16" height="16" rx="4"/>
+  <text class="m fct" x="327.3333333333333" y="170" text-anchor="middle">failed</text>
+  <rect class="chip" x="375.77777777777777" y="108" width="80" height="70" rx="7"/>
+  <text class="m" x="415.77777777777777" y="128" text-anchor="middle">Run 5</text>
+  <rect class="okd" x="407.77777777777777" y="137" width="16" height="16" rx="4"/>
+  <text class="m" x="415.77777777777777" y="170" text-anchor="middle">passed</text>
+  <rect class="chip" x="464.22222222222223" y="108" width="80" height="70" rx="7"/>
+  <text class="m" x="504.22222222222223" y="128" text-anchor="middle">Run 6</text>
+  <rect class="okd" x="496.22222222222223" y="137" width="16" height="16" rx="4"/>
+  <text class="m" x="504.22222222222223" y="170" text-anchor="middle">passed</text>
+  <rect class="bs" x="552.6666666666666" y="108" width="80" height="70" rx="7"/>
+  <text class="m" x="592.6666666666666" y="128" text-anchor="middle">Run 7</text>
+  <rect class="fcd" x="574.1666666666666" y="137" width="16" height="16" rx="4"/>
+  <rect class="okd" x="595.1666666666666" y="137" width="16" height="16" rx="4"/>
+  <text class="m bst" x="592.6666666666666" y="170" text-anchor="middle">retry pass</text>
+  <rect class="fc" x="641.1111111111111" y="108" width="80" height="70" rx="7"/>
+  <text class="m" x="681.1111111111111" y="128" text-anchor="middle">Run 8</text>
+  <rect class="fcd" x="673.1111111111111" y="137" width="16" height="16" rx="4"/>
+  <text class="m fct" x="681.1111111111111" y="170" text-anchor="middle">failed</text>
+  <rect class="chip" x="729.5555555555555" y="108" width="80" height="70" rx="7"/>
+  <text class="m" x="769.5555555555555" y="128" text-anchor="middle">Run 9</text>
+  <rect class="okd" x="761.5555555555555" y="137" width="16" height="16" rx="4"/>
+  <text class="m" x="769.5555555555555" y="170" text-anchor="middle">passed</text>
+  <rect class="chip" x="818" y="108" width="80" height="70" rx="7"/>
+  <text class="m" x="858" y="128" text-anchor="middle">Run 10</text>
+  <rect class="okd" x="850" y="137" width="16" height="16" rx="4"/>
+  <text class="m" x="858" y="170" text-anchor="middle">passed</text>
+
+  <!-- Flips: the final result changes from one run to the next -->
+  <path class="acc" d="M 242.88888888888889 182 Q 283.1111111111111 200 323.3333333333333 182"/>
+  <text class="acct" x="283.1111111111111" y="212" text-anchor="middle">flip</text>
+  <path class="acc" d="M 331.3333333333333 182 Q 371.55555555555554 200 411.77777777777777 182"/>
+  <text class="acct" x="371.55555555555554" y="212" text-anchor="middle">flip</text>
+  <path class="acc" d="M 596.6666666666666 182 Q 636.8888888888889 200 677.1111111111111 182"/>
+  <text class="acct" x="636.8888888888889" y="212" text-anchor="middle">flip</text>
+  <path class="acc" d="M 685.1111111111111 182 Q 725.3333333333333 200 765.5555555555555 182"/>
+  <text class="acct" x="725.3333333333333" y="212" text-anchor="middle">flip</text>
+
+  <!-- The score -->
+  <rect class="box" x="22" y="238" width="280" height="128" rx="8"/>
+  <path class="hd" d="M 22.5 270 L 22.5 246 Q 22.5 238.5 30 238.5 L 294 238.5 Q 301.5 238.5 301.5 246 L 301.5 270 Z"/>
+  <text class="lb" x="38" y="259">Retry passes: 60%</text>
+  <text class="lb" x="38" y="296">2 of 10 runs</text>
+  <text class="l" x="38" y="320">retry rate = 2 / 10 = 0.20</text>
+  <text class="m" x="38" y="346">failed, then passed on retry</text>
+  <rect class="box" x="320" y="238" width="280" height="128" rx="8"/>
+  <path class="hd" d="M 320.5 270 L 320.5 246 Q 320.5 238.5 328 238.5 L 592 238.5 Q 599.5 238.5 599.5 246 L 599.5 270 Z"/>
+  <text class="lb" x="336" y="259">Flips: 40%</text>
+  <text class="lb" x="336" y="296">4 in 9 pairs of runs</text>
+  <text class="l" x="336" y="320">flip rate = 4 / 9 ≈ 0.444</text>
+  <text class="m" x="336" y="346">the final result changes</text>
+  <rect class="ab" x="618" y="238" width="280" height="128" rx="8"/>
+  <text class="lb abt" x="634" y="262">Flakiness score</text>
+  <text class="l abl" x="634" y="288">100 × (0.6 × 0.20 + 0.4 × 0.444)</text>
+  <text class="l abl" x="634" y="310">= 12 + 17.8 = 29.8</text>
+  <text class="m abl" x="634" y="346">rounded, from 1 to 100</text>
+  <text class="abt" x="880" y="350" text-anchor="end" style="font-size:40px;font-weight:700">30</text>
+  <text class="lb" x="311" y="309" text-anchor="middle" style="font-size:20px">+</text>
+  <text class="lb" x="609" y="309" text-anchor="middle" style="font-size:20px">=</text>
+
+  <!-- Impact: what ranks the list -->
+  <rect class="box" x="22" y="390" width="876" height="118" rx="8"/>
+  <path class="hd" d="M 22.5 422 L 22.5 398 Q 22.5 390.5 30 390.5 L 890 390.5 Q 897.5 390.5 897.5 398 L 897.5 422 Z"/>
+  <text class="lb" x="38" y="411">Impact: the order of the list</text>
+  <text class="l ink" x="38" y="446">impact = 0.7 × wasted CI minutes + 0.3 × 30 × retry passes</text>
+  <text class="l" x="38" y="468">wasted CI minutes = 2 retry passes × 1.5 min, the average failed attempt = 3 min</text>
+  <text class="l" x="38" y="488">impact = 0.7 × 3 + 0.3 × 30 × 2 = 20.1 → 20; 3 wasted minutes is under 5, a green dot</text>
+  <text class="m" x="22" y="538">The failure rate, 2 of 10 runs failed, shows beside the score and is not part of it. A test is listed from 3 runs,</text>
+  <text class="m" x="22" y="556">with at least one retry pass or two flips. A run counts once: a retry pass or a failure on any browser marks it.</text>
+</svg>

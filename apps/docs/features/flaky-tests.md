@@ -22,6 +22,11 @@ A test is flaky when its result isn't deterministic. Piwi computes a **flakiness
 
 The **failure rate** is shown but not scored.
 
+<figure>
+  <img src="/diagrams/flakiness-score.svg" alt="A test's last 10 runs with 2 retry passes and 4 flips give a score of 30; its impact is 0.7 times 3 wasted CI minutes plus 0.3 times 30 times 2 retry passes, 20">
+  <figcaption>The score and the impact ranking, computed for one test.</figcaption>
+</figure>
+
 The project's **Failures** tab has a **Flaky** view with a **configurable lookback window**. Each flaky test links to its history and carries a **Quarantine** action.
 
 **Scoping**: only runs within the project's **Filters** count: environment (the [reporter](/guide/reporter)'s `environment` option), branch (the [default branch](./branches#the-default-branch) unless picked) and full runs only.

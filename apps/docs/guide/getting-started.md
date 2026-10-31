@@ -11,6 +11,11 @@ to the server, which keeps every run with its traces and renders the dashboard. 
 vocabulary (*run*, *test case*, *execution*, *cluster*)? [Core concepts](./concepts) defines each term the dashboard
 uses.
 
+<figure>
+  <img src="/diagrams/moving-parts.svg" alt="The reporter, inside a Playwright run on your machine or in CI, streams results and uploads traces to the Piwi server, which keeps them in its database and artifact storage and serves the dashboard to your browser">
+  <figcaption>The same reporter runs locally and in CI; one server keeps every run.</figcaption>
+</figure>
+
 ## 1. Run the dashboard
 
 The dashboard is one Node process. Pick the way to run it that fits:

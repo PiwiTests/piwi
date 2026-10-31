@@ -1,58 +1,106 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 400" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 438" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <style>
+  .bg{fill:#fcfcfd;stroke:#e4e7ec}
+  .t{fill:#101828;font-weight:700;font-size:19px}
+  .s{fill:#475467;font-size:14px}
+  .h{fill:#667085;font-size:12.5px;font-weight:700;letter-spacing:.05em}
+  .lb{fill:#344054;font-size:15px;font-weight:600}
+  .l{fill:#475467;font-size:13.5px}
+  .m{fill:#667085;font-size:12.5px}
+  .b{font-weight:600}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;white-space:pre}
+  .ink{fill:#344054} .numw{fill:#ffffff}
+  .box{fill:#ffffff;stroke:#d0d5dd}
+  .chip{fill:#f9fafb;stroke:#d0d5dd}
+  .hd{fill:#f2f4f7}
+  .cap{fill:#f2f4f7;stroke:#d0d5dd}
+  .rule{fill:none;stroke:#e4e7ec}
+  .edge{fill:none;stroke:#667085;stroke-width:1.4}
+  .dash{fill:none;stroke:#98a2b3;stroke-width:1.3;stroke-dasharray:5 4}
+  .acc{fill:none;stroke:#4353ff;stroke-width:1.6}
+  .accd{fill:none;stroke:#4353ff;stroke-width:1.4;stroke-dasharray:5 4}
+  .acct{fill:#4353ff;font-size:13px} .ac{fill:#4353ff}
+  .et{fill:#475467;font-size:13px}
+  .arr{fill:#667085} .arrd{fill:#98a2b3} .arra{fill:#4353ff}
+  .ab{fill:#eef1ff;stroke:#c7ceff} .abt{fill:#2a3aa8} .abl{fill:#3f4b9e} .abo{fill:none;stroke:#4353ff;stroke-width:1.5}
+  .ok{fill:#ecfdf3;stroke:#75e0a7} .okt{fill:#067647} .okd{fill:#12b76a}
+  .bs{fill:#fffaeb;stroke:#fec84b} .bst{fill:#b54708}
+  .fc{fill:#fef3f2;stroke:#fda29b} .fct{fill:#b42318} .fcd{fill:#f04438}
+  .fr{fill:#fff6ed;stroke:#fd853a} .frt{fill:#c4320a}
+  .mu{fill:#f2f4f7;stroke:#d0d5dd} .mud{fill:#d0d5dd}
+  .dbx{fill:none;stroke:#d0d5dd;stroke-dasharray:5 4}
+  .clu{fill:#4353ff;fill-opacity:.06;stroke:#4353ff;stroke-width:1.8;stroke-dasharray:6 4;stroke-linejoin:round}
+  @media (prefers-color-scheme: dark){
+    .bg{fill:#161b26;stroke:#333741}
+    .t{fill:#f5f5f6} .s{fill:#94969c} .h{fill:#85888e}
+    .lb{fill:#ececed} .l{fill:#cecfd2} .m{fill:#94969c} .ink{fill:#ececed} .numw{fill:#161b26}
+    .box{fill:#1f242f;stroke:#333741} .chip{fill:#262b36;stroke:#333741} .hd{fill:#262b36}
+    .cap{fill:#262b36;stroke:#4a4f5a}
+    .rule{stroke:#333741}
+    .edge{stroke:#94969c} .arr{fill:#94969c}
+    .dash{stroke:#61646c} .arrd{fill:#61646c}
+    .acc,.accd{stroke:#8098f9} .acct,.ac{fill:#8098f9} .arra{fill:#8098f9}
+    .et{fill:#94969c}
+    .ab{fill:#1c2142;stroke:#3b4699} .abt{fill:#c7d0ff} .abl{fill:#a4b0f0} .abo{stroke:#8098f9}
+    .ok{fill:#0b2418;stroke:#079455} .okt{fill:#75e0a7} .okd{fill:#17b26a}
+    .bs{fill:#2b1d07;stroke:#ca8504} .bst{fill:#fec84b}
+    .fc{fill:#2d1210;stroke:#d92d20} .fct{fill:#fda29b} .fcd{fill:#f04438}
+    .fr{fill:#2b170c;stroke:#e04f16} .frt{fill:#f7b27a}
+    .mu{fill:#262b36;stroke:#333741} .mud{fill:#61646c}
+    .dbx{stroke:#61646c}
+    .clu{fill:#8098f9;fill-opacity:.1;stroke:#8098f9}
+  }
+</style>
   <defs>
-    <marker id="dbArrAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 1 L 9 5 L 0 9 z" fill="#4353ff"/>
-    </marker>
+    <marker id="dbn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arr" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="dbd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrd" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="dba" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arra" d="M 0 1 L 9 5 L 0 9 z"/></marker>
   </defs>
+  <rect class="bg" x="0.5" y="0.5" width="919" height="437" rx="12"/>
+  <text class="t" x="24" y="38">The demo is the real application</text>
+  <text class="s" x="24" y="62">The backend moved into the browser. The frontend cannot tell the difference.</text>
 
-  <rect x="0" y="0" width="920" height="400" rx="12" fill="#fcfcfd" stroke="#e4e7ec"/>
-  <text x="24" y="36" font-size="16" font-weight="700" fill="#101828">The demo is the real application</text>
-  <text x="24" y="56" font-size="12.5" fill="#475467">The backend moved into the browser. The frontend cannot tell the difference.</text>
+  <!-- The browser tab -->
+  <rect class="box" x="22" y="88" width="876" height="270" rx="10"/>
+  <circle class="mud" cx="42" cy="104" r="4"/>
+  <circle class="mud" cx="56" cy="104" r="4"/>
+  <circle class="mud" cx="70" cy="104" r="4"/>
+  <text class="lb" x="88" y="109">Your browser tab · piwitests.dev/demo</text>
 
-  <!-- Browser tab container -->
-  <rect x="24" y="84" width="872" height="252" rx="10" fill="#ffffff" stroke="#d0d5dd"/>
-  <rect x="24" y="84" width="872" height="30" rx="10" fill="#f2f4f7"/>
-  <rect x="24" y="106" width="872" height="8" fill="#f2f4f7"/>
-  <circle cx="44" cy="99" r="4" fill="#d0d5dd"/>
-  <circle cx="58" cy="99" r="4" fill="#d0d5dd"/>
-  <circle cx="72" cy="99" r="4" fill="#d0d5dd"/>
-  <text x="90" y="104" font-size="13" font-weight="600" fill="#344054">Your browser tab · piwitests.github.io/demo</text>
-
-  <!-- Frontend -->
-  <rect x="48" y="132" width="200" height="96" rx="8" fill="#fcfcfd" stroke="#d0d5dd"/>
-  <text x="64" y="158" font-size="13" font-weight="600" fill="#344054">Piwi frontend</text>
-  <text x="64" y="178" font-size="12" fill="#475467">the same Nuxt app,</text>
-  <text x="64" y="194" font-size="12" fill="#475467">unmodified</text>
-  <text x="64" y="214" font-size="11" font-family="ui-monospace, monospace" fill="#667085">$fetch('/api/test-runs')</text>
-
-  <line x1="248" y1="180" x2="342" y2="180" stroke="#4353ff" stroke-width="1.6" marker-end="url(#dbArrAccent)"/>
-  <text x="296" y="170" font-size="11" fill="#4353ff" text-anchor="middle">real HTTP calls</text>
+  <!-- Piwi frontend -->
+  <rect class="chip" x="42" y="138" width="220" height="112" rx="8"/>
+  <text class="lb" x="58" y="162">Piwi frontend</text>
+  <text class="l" x="58" y="188">the same Nuxt app,</text>
+  <text class="l" x="58" y="207">unmodified</text>
+  <text class="mono m" x="58" y="232">$fetch('/api/…')</text>
 
   <!-- Service worker -->
-  <rect x="344" y="132" width="216" height="96" rx="8" fill="#fcfcfd" stroke="#d0d5dd"/>
-  <text x="360" y="158" font-size="13" font-weight="600" fill="#344054">Service worker</text>
-  <text x="360" y="178" font-size="12" fill="#475467">serves the real API,</text>
-  <text x="360" y="194" font-size="12" fill="#475467">requests never leave the tab</text>
-  <text x="360" y="214" font-size="11" fill="#667085">same routes, same handlers</text>
+  <rect class="chip" x="350" y="138" width="220" height="112" rx="8"/>
+  <text class="lb" x="366" y="162">Service worker</text>
+  <text class="l" x="366" y="188">serves the real API;</text>
+  <text class="l" x="366" y="207">requests stay in the tab</text>
+  <text class="m" x="366" y="232">same routes, same handlers</text>
 
-  <line x1="560" y1="180" x2="654" y2="180" stroke="#4353ff" stroke-width="1.6" marker-end="url(#dbArrAccent)"/>
-  <text x="608" y="170" font-size="11" fill="#4353ff" text-anchor="middle">Drizzle proxy</text>
+  <!-- SQLite (WASM) -->
+  <rect class="chip" x="658" y="138" width="220" height="112" rx="8"/>
+  <text class="lb" x="674" y="162">SQLite (WASM)</text>
+  <text class="l" x="674" y="188">a real database, kept</text>
+  <text class="l" x="674" y="207">in IndexedDB</text>
+  <text class="m" x="674" y="232">seeded with demo data</text>
+  <path class="acc" d="M 262 200 L 348 200" marker-end="url(#dba)"/>
+  <text class="acct" x="305" y="174" text-anchor="middle">real HTTP</text>
+  <text class="acct" x="305" y="190" text-anchor="middle">calls</text>
+  <path class="acc" d="M 570 200 L 656 200" marker-end="url(#dba)"/>
+  <text class="acct" x="613" y="174" text-anchor="middle">Drizzle</text>
+  <text class="acct" x="613" y="190" text-anchor="middle">proxy</text>
 
-  <!-- SQLite -->
-  <rect x="656" y="132" width="216" height="96" rx="8" fill="#fcfcfd" stroke="#d0d5dd"/>
-  <text x="672" y="158" font-size="13" font-weight="600" fill="#344054">SQLite (WASM)</text>
-  <text x="672" y="178" font-size="12" fill="#475467">a real database,</text>
-  <text x="672" y="194" font-size="12" fill="#475467">persisted in OPFS</text>
-  <text x="672" y="214" font-size="11" fill="#667085">seeded with demo data</text>
-
-  <!-- Simulator -->
-  <rect x="344" y="252" width="216" height="68" rx="8" fill="#fcfcfd" stroke="#d0d5dd"/>
-  <text x="360" y="276" font-size="13" font-weight="600" fill="#344054">Run simulator</text>
-  <text x="360" y="298" font-size="11" font-family="ui-monospace, monospace" fill="#667085">setup · begin · events · finish</text>
-
-  <line x1="452" y1="252" x2="452" y2="230" stroke="#4353ff" stroke-width="1.6" marker-end="url(#dbArrAccent)"/>
-  <text x="464" y="246" font-size="11" fill="#4353ff">streams a live run, in the reporter's own protocol</text>
-
-  <text x="24" y="364" font-size="12" fill="#475467">No server, no signup, nothing installed. Reload, and it resets.</text>
-  <text x="24" y="382" font-size="12" fill="#475467">Every feature has to work here too, which keeps the demo honest.</text>
+  <!-- Run simulator -->
+  <rect class="chip" x="350" y="274" width="220" height="72" rx="8"/>
+  <text class="lb" x="366" y="298">Run simulator</text>
+  <text class="m" x="366" y="324">setup, begin, events, finish</text>
+  <path class="acc" d="M 460 274 L 460 252" marker-end="url(#dba)"/>
+  <text class="acct" x="586" y="302">streams a live run, in the</text>
+  <text class="acct" x="586" y="319">reporter’s own protocol</text>
+  <text class="l" x="22" y="394">No server, no signup, nothing installed. Changes survive a reload; Reset data restores the seed.</text>
+  <text class="l" x="22" y="414">Every feature has to work here too, which keeps the demo honest.</text>
 </svg>
