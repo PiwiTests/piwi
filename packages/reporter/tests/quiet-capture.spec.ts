@@ -30,7 +30,7 @@ describe('internalCall', () => {
 });
 
 describe('boxCaptureFrames', () => {
-  // The filter the test runner uses to hide its own frames, from the module each Playwright layout keeps it in.
+  // The filter that hides Playwright's own frames and the boxed ones: the runner's from 1.60, an API call's before.
   const requireFromPlaywright = createRequire(
     createRequire(require.resolve('@playwright/test/package.json')).resolve('playwright/package.json'),
   );
@@ -40,7 +40,16 @@ describe('boxCaptureFrames', () => {
       return (requireFromPlaywright('playwright-core/lib/coreBundle') as { utils: { filteredStackTrace: FilteredStackTrace } })
         .utils.filteredStackTrace;
     } catch {
-      return (requireFromPlaywright('playwright/lib/util') as { filteredStackTrace: FilteredStackTrace }).filteredStackTrace;
+      // Before 1.60 the boxed prefixes filter the frames of an API call alone, as its client captures them.
+      const { nodePlatform, parseStackFrame } = requireFromPlaywright('playwright-core/lib/utils') as {
+        nodePlatform: { boxedStackPrefixes: () => string[] };
+        parseStackFrame: (line: string, separator: string, showInternal: boolean) => { file?: string } | null;
+      };
+      return (lines) =>
+        lines
+          .map((line) => parseStackFrame(line, path.sep, false))
+          .filter((f): f is { file: string } => !!f?.file)
+          .filter((f) => !nodePlatform.boxedStackPrefixes().some((prefix) => f.file.startsWith(prefix)));
     }
   })();
   const packageRoot = path.resolve(__dirname, '..');

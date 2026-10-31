@@ -36,6 +36,12 @@ const CLOCK_SLACK_MS = 100;
 const REF = 'ed-0badc0de';
 const TOKEN = 'run-channel-token-0123456789';
 const WINDOWS = process.platform === 'linux' && !!process.env.DISPLAY;
+/**
+ * A call's title without its locator, which Playwright writes in a stop's title from 1.63 and in a step's title before
+ * it, and with a navigation's address unquoted, as 1.63 writes it.
+ */
+const callOf = (title: string): string =>
+  title.replace(/ (locator|getBy\w+)\(.*$/, '').replace(/^Navigate to "(.*)"$/, 'Navigate $1');
 
 /** A page of the app: it says when Piwi's pause bar shows, and clicks the button its `bar` query names. */
 const PAGE = (title: string) => `<!doctype html><title>${title}</title><input><button>Go</button>
@@ -476,8 +482,8 @@ describe('a run steered over the run channel', () => {
       ['step', mark('headed', 'step-here'), true],
       ['run-to', mark('headed', 'run-to'), true],
     ]);
-    expect(stops[0]).toMatchObject({ title: `Fill "one" locator('input')`, locator: "locator('input')" });
-    expect(stops[1]).toMatchObject({ title: `Click getByRole('button')` });
+    expect(stops.slice(0, 2).map((s) => callOf(s.title))).toEqual(['Fill "one"', 'Click']);
+    expect(stops[0]).toMatchObject({ locator: "locator('input')" });
     // Every stop ends with the editor's answer, and the bar it showed came down (the test checks it).
     const ended = heardIn('steered').filter((m) => m.type === 'running');
     expect(ended).toEqual(stops.map((s) => ({ type: 'running', stop: s.stop })));
@@ -513,13 +519,14 @@ describe('a run steered over the run channel', () => {
     const result = test('headless');
     expect(result.duration).toBeLessThan(TIMEOUT_MS);
     const pauses = readPauses(Buffer.from(result.pauses ?? ''));
-    expect(pauses).toEqual([expect.objectContaining({ reason: 'breakpoint', title: `Fill "h" locator('input')` })]);
+    expect(pauses.map((p) => [p.reason, callOf(p.title)])).toEqual([['breakpoint', 'Fill "h"']]);
     // The held call keeps its clock; the step statistics leave the stop out of it.
-    const fill = allSteps(result.steps).find((s) => s.title === 'Fill "h"')!;
+    const fill = allSteps(result.steps).find((s) => callOf(s.title) === 'Fill "h"')!;
     expect(fill.duration).toBeGreaterThanOrEqual(HOLD_MS - 50);
     expect(unpausedDuration(fill, pauses)).toBeLessThan(HOLD_MS - 50);
     const { slowestStep } = collectStepMetrics(result.steps, [], pauses);
-    expect(slowestStep?.title === 'Fill "h"' ? slowestStep.duration : 0).toBeLessThan(HOLD_MS - 50);
+    const slowestFill = slowestStep && callOf(slowestStep.title) === 'Fill "h"' ? slowestStep.duration : 0;
+    expect(slowestFill).toBeLessThan(HOLD_MS - 50);
   });
 
   it('ends a stop the test ended under as the test function ends, bar or not, and tells the editor', () => {
@@ -561,9 +568,8 @@ describe('a run steered over the run channel', () => {
   it('goes on when its connection closes under a stop no bar shows, and keeps the stop', () => {
     expect(stopsIn('connection closes').map(where)).toEqual([['breakpoint', mark('headless', 'bp', 3), false]]);
     expect(output).toContain('[piwi] The connection to the editor closed: the test goes on.');
-    expect(readPauses(Buffer.from(test('connection closes').pauses ?? ''))).toEqual([
-      expect.objectContaining({ reason: 'breakpoint', title: `Fill "z" locator('input')` }),
-    ]);
+    const pauses = readPauses(Buffer.from(test('connection closes').pauses ?? ''));
+    expect(pauses.map((p) => [p.reason, callOf(p.title)])).toEqual([['breakpoint', 'Fill "z"']]);
   });
 
   it('lists the stops the editor answered in piwi-pauses, and as pause step events, with their reasons', () => {
@@ -585,7 +591,7 @@ describe('a run steered over the run channel', () => {
       );
     }
     const body = test('steered').steps.filter((s) => s.category === 'pw:api' || s.category === 'expect');
-    expect(body.map((s) => s.title)).toEqual([
+    expect(body.map((s) => callOf(s.title))).toEqual([
       expect.stringMatching(/^Navigate/),
       'Fill "one"',
       'Click',

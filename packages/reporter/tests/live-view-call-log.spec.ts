@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readWorkerToInstance, type LiveCallLog, type WorkerToInstance } from '@piwitests/core/live-view';
 import { detectCi } from '../src/internal/support/ci.js';
-import { jsonRes, startServer, type FakeServer } from './_helpers.js';
+import { jsonRes, playwrightAtLeast, startServer, type FakeServer } from './_helpers.js';
 
 /**
  * The live view's call log, in a real CI run through the built package against a fake instance: while someone watches
@@ -200,40 +200,53 @@ describe('the live view’s call log', () => {
     expect(run.tests.map((t) => [t.title, t.status, t.errors])).toEqual([[TEST_TITLE, 'passed', []]]);
   });
 
-  it('shows a viewer who comes while a call waits that call at once, with its log and its time so far', () => {
-    const [first] = callLogs();
-    expect(first, JSON.stringify(callLogs().map((c) => c.log.call.title))).toBeDefined();
-    expect(first!.at - watchedFrom!).toBeLessThan(1500);
-    expect(first!.log).toMatchObject({
-      call: { title: "Click getByRole('link', { name: 'Missing' })" },
-      status: 'running',
-    });
-    expect(first!.log.lines.join('\n')).toContain("waiting for getByRole('link', { name: 'Missing' })");
-    expect(first!.log.ms).toBeGreaterThanOrEqual(1000);
-    const missing = callLogs().find(({ log }) => log.call.title.includes("'Missing'") && log.target?.count === 0)?.log;
-    expect(missing?.target).toEqual({ count: 0, box: null, enabled: null });
-  });
+  // The call stream is Playwright 1.63's; the elements a call's locator matches and its time from its start, 1.64's.
+  const followsCalls = playwrightAtLeast('1.64');
 
-  it('tells why a click waits: Playwright’s log, its place, and the element its locator matches, not enabled', () => {
-    const waiting = callLogs().find(
-      ({ log }) =>
-        log.status === 'running' &&
-        log.call.title.startsWith("Click getByRole('button', { name: 'Pay' })") &&
-        log.target?.enabled === false,
-    )?.log;
-    expect(waiting, JSON.stringify(callLogs().map((c) => c.log.call.title))).toBeDefined();
-    expect(waiting!.call).toMatchObject({ file: 'tests/live.spec.cjs' });
-    expect(waiting!.lines.join('\n')).toMatch(/element is not enabled/);
-    expect(waiting!.target).toMatchObject({ count: 1, enabled: false });
-    expect(waiting!.target!.box!.width).toBeGreaterThan(0);
-    expect(waiting!.viewport).toEqual({ width: 1280, height: 720 });
-    // Once Pay is enabled, the click names the point it acts on, and ends: the test goes on without a call a while.
-    const pay = callLogs().filter(({ log }) => log.call.title.startsWith("Click getByRole('button', { name: 'Pay' })"));
-    expect(pay.some(({ log }) => log.point !== null)).toBe(true);
-    expect(pay.some(({ log }) => log.status === 'passed')).toBe(true);
-  });
+  it.runIf(followsCalls)(
+    'shows a viewer who comes while a call waits that call at once, with its log and its time so far',
+    () => {
+      const [first] = callLogs();
+      expect(first, JSON.stringify(callLogs().map((c) => c.log.call.title))).toBeDefined();
+      expect(first!.at - watchedFrom!).toBeLessThan(1500);
+      expect(first!.log).toMatchObject({
+        call: { title: "Click getByRole('link', { name: 'Missing' })" },
+        status: 'running',
+      });
+      expect(first!.log.lines.join('\n')).toContain("waiting for getByRole('link', { name: 'Missing' })");
+      expect(first!.log.ms).toBeGreaterThanOrEqual(1000);
+      const missing = callLogs().find(
+        ({ log }) => log.call.title.includes("'Missing'") && log.target?.count === 0,
+      )?.log;
+      expect(missing?.target).toEqual({ count: 0, box: null, enabled: null });
+    },
+  );
 
-  it('keeps each of two calls waiting at once whole: its time and its element', () => {
+  it.runIf(followsCalls)(
+    'tells why a click waits: Playwright’s log, its place, and the element its locator matches, not enabled',
+    () => {
+      const waiting = callLogs().find(
+        ({ log }) =>
+          log.status === 'running' &&
+          log.call.title.startsWith("Click getByRole('button', { name: 'Pay' })") &&
+          log.target?.enabled === false,
+      )?.log;
+      expect(waiting, JSON.stringify(callLogs().map((c) => c.log.call.title))).toBeDefined();
+      expect(waiting!.call).toMatchObject({ file: 'tests/live.spec.cjs' });
+      expect(waiting!.lines.join('\n')).toMatch(/element is not enabled/);
+      expect(waiting!.target).toMatchObject({ count: 1, enabled: false });
+      expect(waiting!.target!.box!.width).toBeGreaterThan(0);
+      expect(waiting!.viewport).toEqual({ width: 1280, height: 720 });
+      // Once Pay is enabled, the click names the point it acts on, and ends: the test goes on without a call a while.
+      const pay = callLogs().filter(({ log }) =>
+        log.call.title.startsWith("Click getByRole('button', { name: 'Pay' })"),
+      );
+      expect(pay.some(({ log }) => log.point !== null)).toBe(true);
+      expect(pay.some(({ log }) => log.status === 'passed')).toBe(true);
+    },
+  );
+
+  it.runIf(followsCalls)('keeps each of two calls waiting at once whole: its time and its element', () => {
     const both = callLogs().filter(({ log }) => /'(Confirm|Gift)'/.test(log.call.title));
     expect(both.length).toBeGreaterThan(0);
     expect(Math.max(...both.map(({ log }) => log.ms))).toBeGreaterThanOrEqual(1500);
@@ -242,13 +255,20 @@ describe('the live view’s call log', () => {
 
   it('never sends the text a fill types, nor a password field’s value', () => {
     expect(JSON.stringify(posts)).not.toContain('S3cr3t');
+  });
+
+  it.runIf(followsCalls)('hides the text a fill types in its call log', () => {
     expect(callLogs().some(({ log }) => log.call.title === `Fill "<hidden>" getByLabel('Password')`)).toBe(true);
     expect(callLogs().some(({ log }) => log.lines.some((line) => line.includes('unexpected value "<hidden>"')))).toBe(
       true,
     );
   });
 
-  it('names its test, and goes only while someone watches', () => {
+  it.runIf(!playwrightAtLeast('1.63'))('sends no call log on a Playwright without the call stream', () => {
+    expect(callLogs()).toEqual([]);
+  });
+
+  it.runIf(followsCalls)('names its test, and goes only while someone watches', () => {
     expect(new Set(callLogs().map(({ test }) => test))).toEqual(new Set([TEST_TITLE]));
     expect(watchedFrom).not.toBeNull();
     for (const { at } of callLogs()) {

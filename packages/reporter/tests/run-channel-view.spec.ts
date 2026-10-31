@@ -15,7 +15,8 @@ import {
 } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
 import { MAX_VIEW_FPS, MAX_VIEW_FRAME, type ViewInput } from '@piwitests/core/run-view';
-import { jsonRes, startServer, type FakeServer } from './_helpers.js';
+import { PICK_AT_NEEDS } from '../src/internal/capture/pick-at.js';
+import { jsonRes, playwrightAtLeast, startServer, type FakeServer } from './_helpers.js';
 
 /**
  * The live view of a stopped page, the input played on it and Pick on the image, in a real Playwright run through the
@@ -669,11 +670,11 @@ const ON = { ok: true, message: 'The live view is on.' };
 const OFF = { ok: true, message: 'The live view is off.' };
 const PLAYED_2 = { ok: true, message: 'Played 2 events.' };
 const GO = "getByRole('button', { name: 'Go' })";
-const PICKED_AT = {
-  ok: true,
-  message: `${GO} went to the editor, in place of the locator on the stopped line.`,
-  locator: GO,
-};
+/** Pick on the image needs Playwright 1.60 (the snapshot's boxes): below it, it is refused, saying so. */
+const PICKS_AT = playwrightAtLeast('1.60');
+const PICKED_AT = PICKS_AT
+  ? { ok: true, message: `${GO} went to the editor, in place of the locator on the stopped line.`, locator: GO }
+  : { ok: false, message: PICK_AT_NEEDS, locator: null };
 
 describe('the live view of a stopped page', () => {
   it('lets every test pass, and says it takes the view, its input and a pick on the image as it attaches', () => {
@@ -751,10 +752,9 @@ describe('the live view of a stopped page', () => {
       file: 'tests/headless.spec.cjs',
       line: breakpointOf(HEADLESS_SPEC(server.url), 'clicked through the view'),
     };
-    expect(picks).toContainEqual({
-      authorization: `Bearer ${SEND_TOKEN}`,
-      body: { kind: 'locator', text: GO, at: where },
-    });
+    const sent = { authorization: `Bearer ${SEND_TOKEN}`, body: { kind: 'locator', text: GO, at: where } };
+    if (PICKS_AT) expect(picks).toContainEqual(sent);
+    else expect(picks).not.toContainEqual(sent);
     // The image names the page's viewport in CSS pixels, which a point on it is mapped to.
     expect(images['clicked through the view']).toMatchObject({ width: 1000, height: 640 });
   });
