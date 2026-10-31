@@ -42,7 +42,8 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
   - `Dashboard unit tests`, with the coverage comment;
   - `Reporter tests`, under `xvfb-run`, then the AI steps' integration run, with the coverage comment;
   - `Reporter tests (Playwright floor)`: the same suite on the oldest Playwright the reporter supports
-    (`scripts/playwright-floor.mjs --install`), where a spec that needs a later version skips itself;
+    (`scripts/playwright-floor.mjs --install`), where a spec that needs a later version skips itself, on an Ubuntu
+    that Playwright has Chromium builds for (24.04);
   - `Package tests`: core, picker-dom (unit and in a browser), the editor service, the VS Code and browser extensions'
     unit tests, and the showcase's cut.
 - The agent guides' test (`apps/application/tests/unit/agent-guides.test.ts`) runs in `Dashboard unit tests` with

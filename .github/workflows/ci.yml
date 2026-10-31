@@ -459,7 +459,8 @@ jobs:
     name: Reporter tests (Playwright floor)
     needs: changes
     if: needs.changes.outputs.js == 'true'
-    runs-on: ubuntu-latest
+    # An Ubuntu the oldest Playwright the reporter supports has Chromium builds for: 1.59 has none for 26.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
