@@ -45,7 +45,8 @@ desktop app's access (S8); 4, Esc left to the page in a dialog, an open list or 
 resuming the test (D9's page half), leaving the call on its own row, the dock toggle and the popup's page from the
 call's channel; 9, Piwi Picker's settings page called its settings from both editors and its own replay dialog, and
 **Finish** given one meaning in every tooltip (the pause bar, the Runs window, the desktop app, VS Code), leaving the
-other rows of §9. The other medium items and the larger ones are proposed. A pull request that builds part of the plan updates
+other rows of §9; 11 also, Pick on the image listed by a worker only on Playwright 1.60 or later (D11's first half),
+leaving it drawn as sent when no editor took it. The other medium items and the larger ones are proposed. A pull request that builds part of the plan updates
 this paragraph.
 
 **Summary.** Every step of the loop exists, most of them in several tools, and most of it works as documented: a
