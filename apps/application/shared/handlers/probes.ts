@@ -38,7 +38,23 @@ import {
 export const PROBE_FAULTS = ['status-500', 'empty-body', 'drop-field', 'stale-value', 'slow'] as const;
 export type ProbeFault = (typeof PROBE_FAULTS)[number];
 
+/**
+ * The client faults the plan rotates through: each breaks what a test checks.
+ * `slow` delays a response, so its outcome reads the test's timeout, and
+ * `stale-value` needs an earlier response the planned first request never has.
+ */
+export const PLANNED_PROBE_FAULTS = ['status-500', 'empty-body', 'drop-field'] as const satisfies readonly ProbeFault[];
+
 export type ProbeOutcome = 'noticed' | 'not-noticed' | 'inconclusive';
+
+/**
+ * Whether a probe result says if the test checks what the fault broke: a
+ * decisive outcome of a fault that breaks it. A `slow` outcome reads the test's
+ * timeout, and an inconclusive one says nothing.
+ */
+export function decidesCheck(outcome: string | null | undefined, fault: string | null | undefined): boolean {
+  return (outcome === 'noticed' || outcome === 'not-noticed') && fault !== 'slow';
+}
 export type ProbeLevel = 'client' | 'server';
 
 /** Default per-project probes per run. */
@@ -147,7 +163,7 @@ export function selectProbePlan(candidates: ProbeCandidate[], options: { budget?
       filePath: c.filePath,
       suitePath: c.suitePath,
       routeKey: c.routeKey,
-      fault: PROBE_FAULTS[items.length % PROBE_FAULTS.length]!,
+      fault: PLANNED_PROBE_FAULTS[items.length % PLANNED_PROBE_FAULTS.length]!,
       nth: 1,
     });
   }
@@ -714,8 +730,12 @@ export async function recordProbeResults(
       });
     recorded++;
 
+    // A result that decides nothing about the check (inconclusive, or `slow`)
+    // stays in the ledger and never replaces the verdict the edges hold.
+    if (!decidesCheck(outcome, r.fault)) continue;
+
     // Refresh the checks edge test → route with this outcome.
-    const confidence = outcome === 'noticed' ? 1 : outcome === 'not-noticed' ? 0 : null;
+    const confidence = outcome === 'noticed' ? 1 : 0;
     await db
       .insert(graphEdges)
       .values({
@@ -752,7 +772,7 @@ export async function recordProbeResults(
       });
 
     // A server dependency probe also checks the dependency node, so an unprobed-
-    // dependency gap clears once any test has probed it.
+    // dependency gap clears once a probe of it applied.
     if (r.dependency) {
       await db
         .insert(graphEdges)

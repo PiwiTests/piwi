@@ -39,8 +39,11 @@ response after the page's first navigation:
 
 The plan pairs each passing test with a route it reaches: pairs never probed come first, then pairs whose test
 changed since its last probe, and each test gets one fault per run, up to a budget (50 pairs by default,
-`--budget` to change it). Quarantined tests and tests whose last run failed are left out. A fault that did not change
-the response records the pair as *inconclusive*, and an inconclusive pair waits a week before it returns to the plan.
+`--budget` to change it). The plan rotates through `status-500`, `empty-body` and `drop-field`, the faults that break
+what a test checks: `slow` reads a test's timeout rather than its assertions, and `stale-value` needs an earlier
+response. Quarantined tests and tests whose last run failed are left out. A fault that did not change the response,
+a test skipped and a run interrupted record the pair as *inconclusive*, and an inconclusive pair waits a week before
+it returns to the plan.
 
 A test counts as changed when the source lines its steps run from differ from those of its passing runs before the
 probe: an added assertion, an edited helper or a moved line. A new tag or owner does not count, and neither does a
@@ -55,9 +58,10 @@ A probed test that notices its fault fails, so a non-zero Playwright exit is exp
 
 ## What an outcome records
 
-Each outcome is a *checks* edge in the [Test Map](/features/scenario-gaps) between the test and the route: noticed,
-not noticed, or inconclusive. The *not noticed* detector reads them: a route with at least one probe that no test
-noticed, and none that did, is a **false-comfort** gap:
+Each outcome is recorded, and a decisive one (noticed or not noticed) is the *checks* edge in the
+[Test Map](/features/scenario-gaps) between the test and the route. An inconclusive outcome, or one of a `slow` fault,
+never replaces it. The *not noticed* detector reads the edges: a route with at least one probe that no test noticed,
+and none that did, is a **false-comfort** gap:
 
 ```
 Tests pass when POST /api/orders breaks
@@ -81,9 +85,11 @@ it did not honor records as *inconclusive*, never as a pass.
 
 Two signals come back: whether the test noticed, as with a client probe, and whether the application coped. An
 uncaught page error once the fault applied, or a blank page (no accessible content when the test ends) after a backend
-error, makes an **unhandled** finding. A console error, a dialog, a backend error or a blank page alone makes a
-**degraded** one. A fault the server never applied makes no finding. Findings rank by severity and reach, and the
-*unprobed dependency* detector names the dependencies no probe has failed yet.
+error, makes an **unhandled** finding. A console error, a dialog, a blank page alone, or a backend error the fault did
+not inject itself makes a **degraded** one: the 500 of a `throw` or `status` fault is the fault, and the browser's
+*Failed to load resource* line only repeats a status, so neither counts. A fault the server never applied makes no
+finding. Findings rank by severity and reach, and the *unprobed dependency* detector names the dependencies no probe
+has decided yet.
 
 It needs:
 

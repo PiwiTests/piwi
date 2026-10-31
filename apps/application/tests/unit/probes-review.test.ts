@@ -194,6 +194,32 @@ describe('recordProbeResults — project scope + fault allow-list (F3, F5)', () 
     expect(rows.map((r) => r.testCaseId)).toEqual([1]);
   });
 
+  test('an inconclusive re-probe keeps the verdict, and a delay never makes one', async () => {
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'mine' });
+    await seedRouteNode();
+    const verdict = async () =>
+      (await db.select({ evidence: schema.graphEdges.evidence }).from(schema.graphEdges)).map(
+        (e) => (e.evidence as { outcome?: string; fault?: string } | null) ?? null,
+      );
+    await recordProbeResults(db, 1, null, [
+      { testCaseId: 1, routeKey: 'GET /api/a', fault: 'slow', outcome: 'not-noticed', level: 'client' },
+    ]);
+    expect(await verdict()).toEqual([]);
+    await recordProbeResults(db, 1, null, [
+      { testCaseId: 1, routeKey: 'GET /api/a', fault: 'status-500', outcome: 'not-noticed', level: 'client' },
+    ]);
+    await recordProbeResults(db, 1, null, [
+      { testCaseId: 1, routeKey: 'GET /api/a', fault: 'empty-body', outcome: 'inconclusive', level: 'client' },
+    ]);
+    expect(await verdict()).toEqual([{ fault: 'status-500', outcome: 'not-noticed', level: 'client' }]);
+    // Every result stays in the ledger.
+    expect((await db.select().from(schema.probes)).map((r) => r.fault).sort()).toEqual([
+      'empty-body',
+      'slow',
+      'status-500',
+    ]);
+  });
+
   test('drops a server fault the project did not allow-list', async () => {
     await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'mine' });
     await seedRouteNode();

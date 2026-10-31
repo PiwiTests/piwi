@@ -67,6 +67,7 @@ import {
 } from '@piwitests/core/function-match';
 import { PATH_ANCHOR_HOST } from '@piwitests/core/page-key';
 import { completeRunSql, eligibleRunSql } from '../run-eligibility';
+import { decidesCheck } from './probes';
 import { finalAttempts, isFailedStatus } from '../utils/test-counts';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
 import { RETIRED_DETECTORS } from './detector-precision';
@@ -2183,7 +2184,7 @@ export async function computeScenarioGaps(
   const checksByRoute = new Map<string, Array<{ testKey: string; outcome: string; fault: string | null }>>();
   const routesByHandler = new Map<string, Set<string>>(); // handler key → routes handled by it
   const dependenciesByHandler = new Map<string, Set<string>>(); // handler key → dependencies it calls
-  const probedDependencies = new Set<string>(); // dependency keys with any checks edge
+  const probedDependencies = new Set<string>(); // dependency keys a probe decided
   for (const e of breadthEdges) {
     if (e.kind === 'contains' && e.toKind === 'control') {
       const set = pagesByControl.get(e.toKey) ?? new Set<string>();
@@ -2201,13 +2202,14 @@ export async function computeScenarioGaps(
       const set = dependenciesByHandler.get(e.fromKey) ?? new Set<string>();
       set.add(e.toKey);
       dependenciesByHandler.set(e.fromKey, set);
-    } else if (e.kind === 'checks' && e.toKind === 'dependency') {
-      probedDependencies.add(e.toKey);
-    } else if (e.kind === 'checks' && e.toKind === 'route') {
+    } else if (e.kind === 'checks') {
+      // Only a probe that decided the check counts: never an inconclusive one, nor a `slow` delay.
       const ev = (e.evidence ?? {}) as { outcome?: string; fault?: string };
-      if (ev.outcome) {
+      if (!decidesCheck(ev.outcome, ev.fault)) continue;
+      if (e.toKind === 'dependency') probedDependencies.add(e.toKey);
+      else if (e.toKind === 'route') {
         const list = checksByRoute.get(e.toKey) ?? [];
-        list.push({ testKey: e.fromKey, outcome: ev.outcome, fault: ev.fault ?? null });
+        list.push({ testKey: e.fromKey, outcome: ev.outcome!, fault: ev.fault ?? null });
         checksByRoute.set(e.toKey, list);
       }
     }
