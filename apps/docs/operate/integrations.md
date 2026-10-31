@@ -121,10 +121,10 @@ to French); a project binding overrides it, and the create modal offers a per-is
 ## Who can do what
 
 With [authentication](./authentication) on, connections are administrator-only. Binding a project to Jira takes the
-Project admin role on that project (`project:manage`), or an administrator. Filing an issue takes the
+Project admin role on it (`project:manage`), or an administrator. Filing an issue takes the
 [Contributor role](./project-access#what-each-role-can-do) or above on the project (`issue:create`), and goes through
-the connection the project is bound to: a request naming another connection is refused, and a link is read through no
-other.
+the connection the project is bound to: a request naming another is refused. Contributors and Maintainers list Jira's
+projects, users and issues through that connection only; Project admins, through any.
 
 ## Status sync
 
@@ -149,8 +149,8 @@ register a webhook so a close or reopen reflects immediately instead of within t
    `PIWI_SITE_URL` when Piwi sits behind another address than the one in your browser.
 2. In Jira, go to **Settings → System → Webhooks → Create a webhook**, paste the URL, and subscribe it to
    **issue updated** events (optionally scoped by a JQL filter to the bound projects).
-3. Piwi looks the issue up by its id in the links of the projects bound to the connection and refreshes those, applying
-   the resolve/reopen policies.
+3. Piwi looks the issue up by its id in the bound projects' links and refreshes those, applying the resolve/reopen
+   policies.
 
 The webhook is **public but secret-in-path** and rate-limited, and it can only ever *refresh a link* — it can never
 create or transition anything. **Regenerate webhook** invalidates the old URL, and **Disable webhook** turns the

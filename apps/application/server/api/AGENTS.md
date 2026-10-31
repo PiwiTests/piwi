@@ -122,6 +122,9 @@ The early check only proves the user holds the permission _somewhere_. The proje
   and the draft proposes none, a link is matched and read against that one alone, and the sync, the webhook, the
   policies and the outbox pass by a link or a write on another (`server/utils/integrations/bound-connection.ts`).
   `tests/unit/issue-create-routes.test.ts`, `tests/unit/issue-link-routes.test.ts`.
+- **An `issue:create` route under `integrations/connections/[id]/` calls `requireConnectionAccess` before its cache
+  and the tracker**: `issue:create` on a project bound to the connection, `project:manage` anywhere or
+  `connections:manage`, else the 404 of a missing connection. `tests/unit/connection-read-routes.test.ts`.
 - **A notification addressed to one user (`targetUserId`) still needs their access to every project it is about**:
   `notifyFixAuthor` checks it before the email (`tests/unit/fix-author.test.ts`), the stream before delivering
   (`tests/unit/notification-stream.test.ts`).
