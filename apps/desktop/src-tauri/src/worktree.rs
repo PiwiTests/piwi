@@ -665,10 +665,11 @@ fn console_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     command
 }
 
-/// The `PATH` a test run in `folder` gets, as a terminal's `npx playwright test` there has it: each
-/// `node_modules/.bin` from `folder` up to the root, nearest first, as npm puts them before a script, then
-/// `dirs`, the directories the shell searches for a user tool. A `webServer` command then finds `vite`, `next`
-/// or `npm`. `None` when no directory can be joined into one.
+/// The `PATH` a command run in `folder` gets: each `node_modules/.bin` from `folder` up to the root, nearest
+/// first, as npm puts them before a script, then `dirs`, the directories the shell searches for a user tool. A
+/// `webServer` command then finds `vite`, `next` or `npm`, and a package manager's `#!/usr/bin/env node` finds
+/// `node`. A login shell's own additions (a version manager's shims) are not read. `None` when no directory can
+/// be joined into one.
 pub(crate) fn run_path(folder: &Path, dirs: &[PathBuf]) -> Option<String> {
     let mut all: Vec<PathBuf> = folder
         .ancestors()
@@ -685,7 +686,7 @@ pub(crate) fn run_path(folder: &Path, dirs: &[PathBuf]) -> Option<String> {
         .map(|joined| joined.to_string_lossy().into_owned())
 }
 
-/// Whether `path` is a symbolic link (or, on Windows, a junction) itself, without following it.
+/// Whether `path` is a symbolic link itself, without following it.
 pub(crate) fn is_link(path: &Path) -> bool {
     std::fs::symlink_metadata(path)
         .map(|meta| meta.file_type().is_symlink())
@@ -724,9 +725,10 @@ pub(crate) fn run_path_env(app: &AppHandle, folder: &Path) -> Vec<(String, Strin
         .unwrap_or_default()
 }
 
-/// Symlink (or junction on Windows) the linked folder's `node_modules` into the
-/// worktree, the cheap path when the lockfile is unchanged. A link already there
-/// is that same one.
+/// Symlink the linked folder's `node_modules` into the worktree, the cheap path
+/// when the lockfile is unchanged; on Windows a directory symlink, which needs
+/// Developer Mode or an administrator, else the step installs. A link already
+/// there is that same one.
 fn link_node_modules(folder: &Path, worktree: &Path) -> Result<(), String> {
     let src = folder.join("node_modules");
     let dst = worktree.join("node_modules");
@@ -869,6 +871,7 @@ fn run_std_streaming(
     let mut child = match console_command(bin)
         .args(args)
         .current_dir(dir)
+        .envs(run_path_env(app, dir))
         .envs(COLOR_ENV)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -2397,13 +2400,20 @@ mod tests {
         )
         .unwrap();
         let dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
+        // A `node_modules/.bin` above the temporary folder, on a machine that has one, comes between them.
         assert_eq!(
-            dirs,
-            vec![
+            dirs[..2],
+            [
                 folder.join("node_modules").join(".bin"),
                 dir.join("node_modules").join(".bin"),
-                tool,
             ]
+        );
+        assert_eq!(dirs.last(), Some(&tool));
+        assert_eq!(
+            dirs.iter()
+                .filter(|d| **d == folder.join("node_modules").join(".bin"))
+                .count(),
+            1
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

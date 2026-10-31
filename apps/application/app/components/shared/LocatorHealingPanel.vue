@@ -39,8 +39,8 @@ const props = defineProps<{
   chrome?: boolean;
   /**
    * Whether the execution ran with the capture fixtures (`fixturesActiveIn`): a healing read from the ARIA snapshot
-   * then means no passing run captured the element's attributes yet, rather than fixtures to switch on. Unknown when
-   * unset.
+   * then means no passing run captured the element's attributes yet, rather than fixtures to switch on. Absent, it
+   * reads as false, and the hint points to the fixtures.
    */
   fixturesActive?: boolean;
   /**
@@ -688,8 +688,8 @@ defineExpose({
     <UAlert v-if="healing?.source === 'aria-snapshot'" class="mt-3" color="info" icon="i-lucide-info" variant="subtle">
       <template #description>
         <template v-if="fixturesActive">
-          No HTML attributes were captured for this element yet: a passing run of the test captures them, for
-          alternatives including data-testid and CSS selectors.
+          No HTML attributes were captured for this element yet: a passing run of the test captures them, unless locator
+          capture is off (<code>captureLocators</code>), for alternatives including data-testid and CSS selectors.
         </template>
         <template v-else>
           No HTML attributes were available.

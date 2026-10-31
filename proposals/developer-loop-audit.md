@@ -22,9 +22,9 @@ specs beside it do, each recorded test gets a title its file has not, and a new 
 exports it (W1, W2, W3), leaving catalog imports relative to the spec (W4: a catalog entry's module names no folder it
 is relative to) and asking the person for a title (both clients); 10, the desktop app's runs, reproductions and
 bisect steps with each `node_modules/.bin` from their folder up before the folders the shell searches for its own
-tools, and no `node_modules` borrowed by a workspace root's worktree or installed through a borrowed link (R2, R1),
-leaving the login shell's `PATH` (a version manager's shims outside those folders); 11, the pairing proved as Piwi
-Picker's settings open and after **Pair**, the status line saying when the program on the port does not prove it is
+tools, their install step included, and no `node_modules` borrowed by a workspace root's worktree or installed
+through a borrowed link (R2, R1), leaving the login shell's `PATH` (a version manager's shims outside those folders);
+11, the pairing proved as Piwi Picker's settings open and after **Pair**, the status line saying when the program on the port does not prove it is
 the editor, nothing answers there or the browser took back the access, **Open the settings** in the Runs window's
 unproven state, and a failed Send to editor's reason in a status line under its button (S6, F7), leaving the popup's
 muted Runs tile, the endless retry of an unproven pairing and a 404 read as an outdated editor; 12, the plumbing lines at

@@ -769,13 +769,20 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
   // The call waited for a locator that never found an element, and nothing
   // explains why the element is gone: the locator is wrong, as in a test being
   // written, or the element never showed. The failure-time snapshot's closest
-  // element, which locator healing recommends, names what the page had; for a
-  // flaky test, whose locator found its element in other runs, it names nothing.
-  const matchedNothing = !!parsed?.isLocatorResolutionFailure && parsed.kind !== 'strict-mode';
+  // element, which locator healing recommends from that snapshot alone, names
+  // what the page had; for a flaky test, whose locator found its element in other
+  // runs, it names nothing. A crash or a failed navigation is no locator's doing,
+  // and a wrong page or a failed lock holder explains it: those clues stand alone.
+  const matchedNothing =
+    !!parsed?.isLocatorResolutionFailure &&
+    parsed.kind !== 'strict-mode' &&
+    parsed.kind !== 'crash' &&
+    !parsed.isNavigationFailure;
   if (matchedNothing && !clues.some((c) => c.rule === 'element-renamed' || c.rule === 'page-structure-changed')) {
     const failing = parsed.locator ?? 'the locator';
     const flaky = (input.flakeSuspects?.length ?? 0) > 0;
-    const offered = flaky ? null : (healing?.recommendation?.recommended?.locator ?? null);
+    const offered =
+      flaky || healing?.source !== 'aria-snapshot' ? null : (healing.recommendation?.recommended?.locator ?? null);
     add({
       id: 'locator-matched-nothing',
       rule: 'locator-matched-nothing',
@@ -924,14 +931,15 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
     if (stepRatio >= 0.8 || execRatio >= 0.95) {
       const pct = Math.round(Math.max(stepRatio, execRatio) * 100);
       facts.timing = { pct };
-      // A call that waited for a locator matching nothing spent the time waiting: the time is no cause of its own.
+      // A failed step that spent the time waiting for a locator matching nothing: the time is no cause of its own.
+      const waitedForNothing = matchedNothing && stepRatio >= 0.8;
       add({
         id: 'timeout-budget',
         rule: 'timeout-budget',
-        strength: matchedNothing ? 'weak' : 'medium',
+        strength: waitedForNothing ? 'weak' : 'medium',
         title: `The failure used ${pct}% of the timeout budget`,
-        detail: matchedNothing
-          ? `The failed step ran ${Math.round(Math.max(stepRatio, execRatio) * 100)}% of the ${timeout} ms timeout, waiting for a locator that matched nothing.`
+        detail: waitedForNothing
+          ? `The failed step ran ${Math.round(stepRatio * 100)}% of the ${timeout} ms timeout, waiting for a locator that matched nothing.`
           : stepRatio >= 0.8
             ? `The failed step ran ${Math.round(stepRatio * 100)}% of the ${timeout} ms timeout — a slow operation, not necessarily a wrong one.`
             : `The execution used ${Math.round(execRatio * 100)}% of the ${timeout} ms timeout before failing.`,
@@ -996,6 +1004,12 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
   // The fact that a fix landed before and did not hold is not a clue about the
   // cause; it belongs to the verdict's `since.fixedBefore` and the situation
   // sentence, so it is not emitted here.
+
+  // A wrong page or a failed lock holder says why the locator matched nothing.
+  if (clues.some((c) => c.rule === 'wrong-page' || c.rule === 'lock-holder-failed')) {
+    const at = clues.findIndex((c) => c.rule === 'locator-matched-nothing');
+    if (at >= 0) clues.splice(at, 1);
+  }
 
   // Chain the clues into a story before ranking, so the tie-break can lift a
   // clue that belongs to the story above one that does not.
