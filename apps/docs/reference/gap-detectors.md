@@ -20,7 +20,7 @@ without it.
 |---|---|---|---|---|---|
 | **Success only**<br>`success-only` | blind-spot | a route observed at least five times, always with a 2xx or 3xx status: its error paths never ran | nothing more | observations ÷ 20, plus 0.3 when the route documents an error status; at most 1 | `Observed 412 times over the last 30 runs, always 200` |
 | **Declared, never hit**<br>`declared-never-hit` | blind-spot | a route or page the application declares that no test reaches | a [declared surface](/features/scenario-gaps#declared-surface) | 0.7 | `Declared in OpenAPI · 0 tests in 30 runs · documents 200, 404` |
-| **Surface drift**<br>`surface-drift` | blind-spot | a route, page, control, link, handler or dependency first seen in the latest run that no test reaches; never a feature, and nothing in the run that built the graph first | nothing more | 0.4 | `Appeared in run #830; no test reaches it yet` |
+| **Surface drift**<br>`surface-drift` | blind-spot | a route, page, control, link, handler or dependency first seen in the latest run that no test reaches (a handler through the routes it serves, a dependency through the handlers that call it); never a feature, and nothing in the run that built the graph first | nothing more | 0.4 | `Appeared in run #830; no test reaches it yet` |
 | **Control nobody exercises**<br>`control-nobody-exercises` | blind-spot | a control on a page that no test's locator targets | the page inventory and the [locator index](/features/locator-usage) | 0.3 plus 0.1 per page, at most 0.8 | `On 12 page(s) · no locator targets it` |
 | **Reachable, unvisited**<br>`reachable-unvisited` | blind-spot | a page other pages link to that no test navigates to | the page inventory | 0.4 plus 0.1 per linking page, at most 0.8 | `Linked from 7 page(s) · never navigated to` |
 | **Escaped defect**<br>`escaped-defect` | blind-spot | a page with [bug reports](/features/bug-reports) no test names yet, one gap per page | Piwi Picker sending reports | 0.6 plus 0.1 per further report, at most 1 | `Bug report #37: Coupon not applied to the total — no test names it yet` |
@@ -46,9 +46,11 @@ so a page checked only that way reads as light. A test calls a catalog method wh
 locator uses does what one of the method's steps does, on the element that step names by test id or name, on a page
 its URL pattern matches. A method whose every target comes from a parameter gets no decision.
 
-A trusted test is one that is not flaky, not quarantined, and not skipped in its latest run. *Changed, unreached* is
-covered on [Uncovered changes in pull requests](/features/uncovered-changes): its gap closes once a test reaches the
-file. A finding never closes itself; triage it.
+A trusted test is one that is not flaky, not quarantined, and not skipped in its latest run. *Surface drift* raises a
+node in the run it first appears in; the gap then stays open until a test reaches the node or the node leaves the
+graph, unless you triage it first. *Changed, unreached* is covered on
+[Uncovered changes in pull requests](/features/uncovered-changes): its gap closes once a test reaches the file. A
+finding never closes itself; triage it.
 
 Runs record reach to routes and pages: a test reaches every route its page requested, every page it ran a locator
 call on, and the page it ended on. Each recompute adds reach to controls and links from the default branch's

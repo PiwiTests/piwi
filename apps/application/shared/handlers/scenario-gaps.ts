@@ -438,13 +438,15 @@ function untrustedOnlyGap(node: NodeReach): DetectedGap {
   };
 }
 
-/** A node with its first- and last-seen runs and reach count. */
+/** A node with its first-seen run, its reach count and whether the ledger holds its drift gap. */
 export interface NodeDrift {
   nodeKind: string;
   nodeKey: string;
   firstSeenRunId: number | null;
   reachCount: number;
   priority?: string | null;
+  /** The ledger holds this node's surface-drift gap open, snoozed or accepted. */
+  liveGap?: boolean;
 }
 
 /**
@@ -462,24 +464,33 @@ function nodeLabel(kind: string, key: string): string {
  * never drift; and the run that built the project's graph first
  * (`firstGraphRunId`) has nothing to compare with, so every node it saw is the
  * baseline, not drift.
+ *
+ * A raised gap stays raised while the ledger holds it (`liveGap`), its node is
+ * in the graph and no test reaches it: it closes once a test reaches the node or
+ * the node leaves the graph, unless triage settles it first.
  */
 export function detectSurfaceDrift(
   nodes: NodeDrift[],
   latestRunId: number | null,
   firstGraphRunId: number | null = null,
 ): DetectedGap[] {
-  if (latestRunId == null || latestRunId === firstGraphRunId) return [];
+  const baseline = latestRunId == null || latestRunId === firstGraphRunId;
   const gaps: DetectedGap[] = [];
   for (const node of nodes) {
-    if (node.firstSeenRunId !== latestRunId) continue;
     if (node.nodeKind === 'feature' || node.reachCount > 0) continue;
+    const isNew = !baseline && node.firstSeenRunId === latestRunId;
+    if (!isNew && !node.liveGap) continue;
     gaps.push({
       detector: 'surface-drift',
       kind: 'gap',
       class: 'blind-spot',
       key: `${node.nodeKind}:${node.nodeKey}`,
       title: `New ${node.nodeKind} ${nodeLabel(node.nodeKind, node.nodeKey)} — confirm it is tested`,
-      evidence: [`Appeared in run #${latestRunId}; no test reaches it yet — observed reach.`],
+      evidence: [
+        node.firstSeenRunId != null
+          ? `Appeared in run #${node.firstSeenRunId}; no test reaches it yet — observed reach.`
+          : 'No test reaches it yet — observed reach.',
+      ],
       confidence: 0.4,
       priority: node.priority ?? null,
     });
@@ -1568,6 +1579,21 @@ async function loadFirstGraphRunId(db: DrizzleDB, projectId: number): Promise<nu
   return row?.first ?? null;
 }
 
+/** The keys of a detector's gaps the ledger holds open, snoozed or accepted. */
+async function loadLiveGapKeys(db: DrizzleDB, projectId: number, detector: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ key: scenarioGaps.key })
+    .from(scenarioGaps)
+    .where(
+      and(
+        eq(scenarioGaps.projectId, projectId),
+        eq(scenarioGaps.detector, detector),
+        inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted']),
+      ),
+    );
+  return new Set(rows.map((r) => r.key));
+}
+
 /**
  * Observed route statuses over the recent window, one row per pattern, kept only
  * for patterns the graph holds as route nodes. Route nodes are written on ingest
@@ -2071,7 +2097,6 @@ export async function computeScenarioGaps(
   await reopenChangedNodeSnoozes(db, projectId);
 
   const nodeReach: NodeReach[] = [];
-  const nodeDrift: NodeDrift[] = [];
   for (const node of nodeRows) {
     const ids = reachByNode.get(`${node.kind}\x00${node.key}`) ?? new Set<number>();
     nodeReach.push({
@@ -2085,18 +2110,6 @@ export async function computeScenarioGaps(
         untrustedReason: untrustedTests.get(id),
       })),
     });
-    // Declared nodes (manifest/OpenAPI) carry their own "declared, never hit"
-    // detector and are stamped with the latest run on ingest, so they must never
-    // feed surface drift — a newly documented route is not drift.
-    if (node.origin !== 'manifest' && node.origin !== 'openapi') {
-      nodeDrift.push({
-        nodeKind: node.kind,
-        nodeKey: node.key,
-        firstSeenRunId: node.firstSeenRunId ?? null,
-        reachCount: ids.size,
-        priority: maxPriority(ids, meta),
-      });
-    }
   }
 
   // Breadth edges the graph detectors read: contains (page → control), links
@@ -2172,6 +2185,36 @@ export async function computeScenarioGaps(
     calledByRoutes: [...routes],
     probed: probedDependencies.has(dependencyKey),
   }));
+
+  // Surface drift: each node's first sighting, its reach, and whether the ledger
+  // holds its drift gap. A test reaches a route, never the code behind it, so a
+  // handler is reached through the routes it serves and a dependency through the
+  // routes whose handlers call it.
+  const liveDrift = await loadLiveGapKeys(db, projectId, 'surface-drift');
+  const servedRoutes = (kind: string, key: string): Iterable<string> => {
+    if (kind === 'handler') return routesByHandler.get(key) ?? [];
+    if (kind === 'dependency') return routesByDependency.get(key) ?? [];
+    return [];
+  };
+  const nodeDrift: NodeDrift[] = [];
+  for (const node of nodeRows) {
+    // Declared nodes (manifest/OpenAPI) carry their own "declared, never hit"
+    // detector and are stamped with the latest run on ingest, so they must never
+    // feed surface drift — a newly documented route is not drift.
+    if (node.origin === 'manifest' || node.origin === 'openapi') continue;
+    const ids = new Set(reachByNode.get(`${node.kind}\x00${node.key}`));
+    for (const route of servedRoutes(node.kind, node.key)) {
+      for (const id of reachByNode.get(`route\x00${route}`) ?? []) ids.add(id);
+    }
+    nodeDrift.push({
+      nodeKind: node.kind,
+      nodeKey: node.key,
+      firstSeenRunId: node.firstSeenRunId ?? null,
+      reachCount: ids.size,
+      priority: maxPriority(ids, meta),
+      liveGap: liveDrift.has(`${node.kind}:${node.key}`),
+    });
+  }
 
   // Node recency for orphan tests: a node last seen inside the recent window.
   const recentSet = new Set(recentIds);
