@@ -35,8 +35,9 @@ setup. A CI job is told by its provider's variable (`GITHUB_ACTIONS`, `GITLAB_CI
 [Piwi Dashboard] Live view on: people who may open this run can watch its tests' pages on the dashboard while it runs. Nothing is stored.
 ```
 
-Turning it off ends every view of the project's runs at once. A run that started while it was off stays without a view
-when it is turned on again.
+A CI run without a view logs why instead.
+
+Turning it off ends every view at once; a run that started while it was off stays without one.
 
 ## Check availability
 

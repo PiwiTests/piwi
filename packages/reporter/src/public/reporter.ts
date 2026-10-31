@@ -40,6 +40,7 @@ import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { isListMode } from '../internal/support/run-mode.js';
 import { peekSetupInfo } from '../internal/support/setup-file.js';
 import { LIVE_VIEW_ENV, formatLiveViewEnv, formatLiveViewMissing } from '@piwitests/core/live-view';
+import { ciLiveViewNote } from '../internal/streaming/live-view-note.js';
 import { RUN_CHANNEL_ENV } from '@piwitests/core/run-channel';
 import { createGlobalSetup } from './global-setup.js';
 import { wrapConfig } from './config-wrapper.js';
@@ -463,18 +464,17 @@ export class PiwiDashboardReporter {
    * Name the run's live view on the instance for the workers, which Playwright starts after this hook with this
    * environment: the key the instance gave the global setup, for a project that turned its live view on, for this run
    * alone. A CI run's workers stream with it at once; a run outside CI's hold it until a person shares the run (Share
-   * live), and such a run without a key names why instead, for the surfaces that would share it. Read before the
-   * stream starts, which takes the setup file.
+   * live), and such a run without a key names why instead, for the surfaces that would share it; a CI run without one
+   * says why in its log (`ciLiveViewNote`). Read before the stream starts, which takes the setup file.
    */
   private shareLiveView(): void {
     const ci = detectCi(process.env);
     const setup = this.streamManager ? peekSetupInfo(this.options.projectName!) : null;
     if (!setup?.liveViewKey) {
-      if (!ci) {
-        process.env[LIVE_VIEW_ENV] = formatLiveViewMissing(
-          setup?.liveViewLocal ? 'local' : setup ? 'off' : 'unregistered',
-        );
-      }
+      const why = setup?.liveViewLocal ? 'local' : setup ? 'off' : 'unregistered';
+      if (!ci) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing(why);
+      // A CI run says why nobody can watch it, for the person who reads its log to know what to change.
+      else if (why !== 'local') this.logger.info(ciLiveViewNote(this.streamManager ? why : 'streaming-off'));
       return;
     }
     process.env[LIVE_VIEW_ENV] = formatLiveViewEnv(this.httpClient.baseUrl, setup.runId, setup.liveViewKey);
