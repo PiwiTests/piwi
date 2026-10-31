@@ -122,9 +122,9 @@ to French); a project binding overrides it, and the create modal offers a per-is
 ## Who can do what
 
 With [authentication](./authentication) on, connections are administrator-only. Binding a project to Jira takes the
-Project admin role on that project (`project:manage`), or an administrator. Filing an issue takes the
+Project admin role on it (`project:manage`), or an administrator. Filing an issue takes the
 [Contributor role](./project-access#what-each-role-can-do) or above on the project (`issue:create`), and goes through
-the connection the project is bound to: a request naming another connection is refused. Contributors list Jira's
+the connection the project is bound to: a request naming another is refused. Contributors and Maintainers list Jira's
 projects, users and issues through that connection only; Project admins, through any.
 
 ## Status sync

@@ -139,8 +139,15 @@ describe('the demo router holds each route to its permission', () => {
     // Priya files issues on project 2; another connection id answers as a missing connection does.
     expect((await as(PRIYA).get('/api/integrations/connections/1/projects')).projects).toHaveLength(1);
     expect((await as(PRIYA).get('/api/integrations/connections/1/issue-picker', 'q=')).issues).not.toHaveLength(0);
-    for (const path of ['/api/integrations/connections/2/projects', '/api/integrations/connections/2/assignable']) {
-      expect(await refusal(as(PRIYA).get(path, 'project=DEMO'))).toEqual({
+    const paths = [
+      '/projects',
+      '/projects/DEMO/issue-types',
+      '/projects/DEMO/issue-types/Bug/fields',
+      '/assignable',
+      '/issue-picker',
+    ];
+    for (const path of paths) {
+      expect(await refusal(as(PRIYA).get(`/api/integrations/connections/2${path}`, 'project=DEMO')), path).toEqual({
         statusCode: 404,
         message: 'Connection not found or has no credentials',
       });
