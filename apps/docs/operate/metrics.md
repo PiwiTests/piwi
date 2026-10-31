@@ -33,6 +33,7 @@ with the Viewer role on the projects you want to chart. A Prometheus scrape job:
 scrape_configs:
   - job_name: piwi
     metrics_path: /api/metrics
+    scheme: https   # the key travels in a header: never over plain HTTP
     scrape_interval: 5m
     authorization:
       credentials: pd_your_api_key
