@@ -32,8 +32,9 @@ export type PauseChoice = 'resume' | 'step' | 'pick' | 'record' | 'finish' | 'en
  * the page while a test is paused before a call: where it is paused, the
  * attempt, the call and its locator, and its buttons (Record here when the editor can record, End the test when the
  * test can end there). The choice lands in
- * `__piwiPauseState` (see `PauseChoice`), polled from Node; Esc resumes. The
- * page under the bar stays live. Must stay fully self-contained.
+ * `__piwiPauseState` (see `PauseChoice`), polled from Node; Esc resumes, but in a
+ * dialog or an open list of the page. The page under the bar stays live. Must
+ * stay fully self-contained.
  */
 export function showPauseBar(arg: PauseBarArg): void {
   const g = globalThis as any;
@@ -71,8 +72,21 @@ export function showPauseBar(arg: PauseBarArg): void {
     cleanup();
     g.__piwiPauseState = choice;
   };
+  // Esc pressed in a dialog of the page or an open list (a combobox's, a menu's), or while the page shows a modal
+  // dialog, closes it: it leaves the test paused.
+  const pageTakesEscape = (e: any): boolean => {
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
+    const el = path.find((node: any) => node && node.nodeType === 1);
+    const open = 'dialog[open],[role="dialog"],[role="alertdialog"],[aria-expanded="true"]';
+    if (el && !bar.contains(el) && typeof el.closest === 'function' && el.closest(open)) return true;
+    try {
+      return !!doc.querySelector('dialog:modal');
+    } catch {
+      return false;
+    }
+  };
   const onKey = (e: any) => {
-    if (e.key !== 'Escape') return;
+    if (e.key !== 'Escape' || pageTakesEscape(e)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     done('resume');
