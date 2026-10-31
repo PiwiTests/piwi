@@ -2,7 +2,7 @@
  * The run page's live view on the team instance. While a run of a project that turned it on executes, each worker
  * keeps one event stream open to the instance, with a key for that run alone that the reporter sets in the workers'
  * environment (`PIWI_LIVE_VIEW`, `<url>#<key>`, `formatLiveViewEnv`). On that stream the instance says how many people
- * watch the worker (`viewers`). While anyone does, the worker posts small JPEG frames of its test's page, each with the
+ * watch the worker (`viewers`), and which elements its project masks (`masks`). While anyone does, the worker posts small JPEG frames of its test's page, each with the
  * call it was taken at and the title of its test, a few a second at most, and the instance relays them to those viewers
  * alone and keeps none.
  * The worker also posts when its test stops and goes on (`stop`), which the run page shows, when the test watched
@@ -16,6 +16,7 @@
  * until a person shares the run (**Share live**, the run channel's `share`), and close it as the sharing stops. Such a
  * run without a key names why instead (`none:<why>`, `formatLiveViewMissing`), for the surfaces to say.
  */
+import { tryParseLocatorChain } from './locator-chain';
 import { hideSecretsInText, hideTypedText, hideSecretsInLog } from './mask';
 import type { StopReason } from './run-channel';
 
@@ -227,8 +228,52 @@ export interface LiveCallLog {
   error: string | null;
 }
 
-/** What the instance says on a worker's stream: how many people watch the worker now. */
-export type InstanceToWorker = { type: 'viewers'; count: number };
+/** The most locators a project lists for the live view to mask, beside the secret fields. */
+export const MAX_LIVE_MASKS = 20;
+/** The longest locator a project lists for the live view to mask. */
+export const MAX_LIVE_MASK_LENGTH = 200;
+
+/** The calls that enter or leave a frame: a mask names an element, which the worker looks for in every frame. */
+const FRAME_CALLS: ReadonlySet<string> = new Set(['frameLocator', 'contentFrame', 'owner']);
+/** The calls that act on the elements before them, which a chain cannot start with. */
+const NARROWING_CALLS: ReadonlySet<string> = new Set(['filter', 'and', 'or', 'visible', 'first', 'last', 'nth']);
+
+/**
+ * Why `locator` cannot be one of a project's masked elements, as a person reads it; null when it can: a Playwright
+ * locator expression (`getByLabel('IBAN')`), as `@piwitests/core/locator-chain` reads it, that names elements without
+ * entering a frame.
+ */
+export function liveMaskProblem(locator: string): string | null {
+  if (!locator.trim()) return 'A masked element needs a locator.';
+  if (locator.length > MAX_LIVE_MASK_LENGTH) return `A locator is ${MAX_LIVE_MASK_LENGTH} characters at most.`;
+  const source = locator.trim();
+  const chain = tryParseLocatorChain(source);
+  if (!chain?.calls.length || NARROWING_CALLS.has(chain.calls[0]!.method)) {
+    return `\`${source}\` is not a Playwright locator, such as getByLabel('IBAN').`;
+  }
+  if (chain.calls.some((call) => FRAME_CALLS.has(call.method))) {
+    return `\`${source}\` enters a frame: masks are looked for in every frame of the page, so name the element alone, such as getByLabel('Card number'), or the iframe, such as locator('iframe#card').`;
+  }
+  return null;
+}
+
+/** A project's masked elements as a message or a setting holds them: trimmed locators, each once; null when not. */
+export function parseLiveMasks(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > MAX_LIVE_MASKS) return null;
+  const locators: string[] = [];
+  for (const locator of value) {
+    if (typeof locator !== 'string' || liveMaskProblem(locator)) return null;
+    if (!locators.includes(locator.trim())) locators.push(locator.trim());
+  }
+  return locators;
+}
+
+/**
+ * What the instance says on a worker's stream: how many people watch the worker now, and the elements its project
+ * masks beside the secret fields (`masks`), first as the stream opens and again when the project changes them. A list
+ * this reader cannot read (`locators: null`, from an instance newer than it) masks nothing it could trust.
+ */
+export type InstanceToWorker = { type: 'viewers'; count: number } | { type: 'masks'; locators: string[] | null };
 
 /** What a worker posts to the instance. */
 export type WorkerToInstance =
@@ -446,6 +491,8 @@ export function parseInstanceToWorker(data: string): InstanceToWorker | null {
   } catch {
     return null;
   }
-  if (!isObject(value) || value.type !== 'viewers' || !isInt(value.count, 0, 1_000_000)) return null;
+  if (!isObject(value)) return null;
+  if (value.type === 'masks') return { type: 'masks', locators: parseLiveMasks(value.locators) };
+  if (value.type !== 'viewers' || !isInt(value.count, 0, 1_000_000)) return null;
   return { type: 'viewers', count: value.count };
 }

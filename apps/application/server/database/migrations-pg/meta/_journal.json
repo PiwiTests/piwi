@@ -988,6 +988,13 @@
       "when": 1793163489462,
       "tag": "0140_little_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1793398264020,
+      "tag": "0141_new_red_hulk",
+      "breakpoints": true
     }
   ]
 }
