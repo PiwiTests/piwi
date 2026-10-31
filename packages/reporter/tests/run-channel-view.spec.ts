@@ -274,7 +274,10 @@ const stops: Record<string, Stopped> = {};
 const images: Record<string, { width?: number; height?: number; data: string } | null> = {};
 /** Where a client showing the image of a page with a device scale factor of 2 clicked, and the point it sent. */
 const sharp: { natural?: { width: number; height: number } | null; clicked?: Point; sent?: Point } = {};
-const watched: Record<string, { frames: number; bytes: number; ms: number; firstJpeg: Buffer | null }> = {};
+const watched: Record<
+  string,
+  { frames: number; bytes: number; ms: number; firstJpeg: Buffer | null; lastJpeg: Buffer | null }
+> = {};
 /** Whether the frame a view sent again, asked again, was the one it sent last. */
 const resent: boolean[] = [];
 /** What the view of a page too heavy for a lighter image said, each time. */
@@ -353,11 +356,13 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
     await sleep(ms);
     const seen = frames(connection, stop.stop).slice(before);
     const first = frames(connection, stop.stop)[0]?.message.data;
+    const last = seen[seen.length - 1]?.message.data;
     watched[test] = {
       frames: seen.length,
       bytes: seen.reduce((sum, f) => sum + (f.message.data.length * 3) / 4, 0),
       ms: Date.now() - start,
       firstJpeg: first ? Buffer.from(first, 'base64') : null,
+      lastJpeg: last ? Buffer.from(last, 'base64') : null,
     };
   };
   try {
@@ -836,8 +841,10 @@ describe('the live view of a stopped page', () => {
     }
     const seen = watched['recorded on video while watched']!;
     expect(seen.frames).toBeGreaterThan(1);
-    // The video asked first, at its own size: the view's frames come at that size, not the view's.
-    expect(jpegSize(seen.firstJpeg!)).toEqual({ width: 800, height: 512 });
+    // The video asked first, at its own size: the view's frames come at that size, not the view's. A view that joins
+    // the page's screencast first gets the last frame it painted, which can predate the page's viewport: the size is
+    // read from the frames the view watched.
+    expect(jpegSize(seen.lastJpeg!)).toEqual({ width: 800, height: 512 });
   });
 
   it('maps a point of an image in device pixels to the page through the viewport the image names', () => {

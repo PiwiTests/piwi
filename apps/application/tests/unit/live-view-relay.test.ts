@@ -248,7 +248,10 @@ describe('the relay', () => {
     const workers = [new FakeSink(), new FakeSink()];
     expect(live.connectWorker(entry, { shard: null, worker: 0 }, () => workers[0]!)).toBeNull();
     expect(live.connectWorker(entry, { shard: null, worker: 1 }, () => workers[1]!)).toBeNull();
-    expect(workers[0]!.sent).toEqual([{ type: 'viewers', count: 0 }]);
+    expect(workers[0]!.sent).toEqual([
+      { type: 'masks', locators: [] },
+      { type: 'viewers', count: 0 },
+    ]);
     expect(published.map((p) => p.state)).toEqual([
       { shard: null, worker: 0, connected: true, paused: null },
       { shard: null, worker: 1, connected: true, paused: null },
@@ -377,6 +380,29 @@ describe('the relay', () => {
     expect(live.receive(7, frame(999))).toMatchObject({ status: 409 });
   });
 
+  test('tells a worker the elements its project masks as it connects, and each change, to that project’s workers alone', () => {
+    const { live } = relay();
+    const own = new FakeSink();
+    const other = new FakeSink();
+    live.connectWorker(live.authorize(7, live.mintKey(7, 1))!, { shard: null, worker: 0 }, () => own, [
+      "getByLabel('IBAN')",
+    ]);
+    live.connectWorker(live.authorize(8, live.mintKey(8, 2))!, { shard: null, worker: 0 }, () => other);
+    expect(own.sent[0]).toEqual({ type: 'masks', locators: ["getByLabel('IBAN')"] });
+    live.setMasks(1, ["getByLabel('IBAN')", "getByTestId('card')"]);
+    expect(own.sent.at(-1)).toEqual({ type: 'masks', locators: ["getByLabel('IBAN')", "getByTestId('card')"] });
+    expect(other.sent.filter((m) => (m as { type: string }).type === 'masks')).toEqual([
+      { type: 'masks', locators: [] },
+    ]);
+
+    // A worker whose route read the list before that change gets the change.
+    const late = new FakeSink();
+    live.connectWorker(live.authorize(9, live.mintKey(9, 1))!, { shard: null, worker: 0 }, () => late, [
+      "getByLabel('IBAN')",
+    ]);
+    expect(late.sent[0]).toEqual({ type: 'masks', locators: ["getByLabel('IBAN')", "getByTestId('card')"] });
+  });
+
   test('keeps the viewers and the stop of a worker that opens its stream again', () => {
     const { live, published } = relay();
     const entry = live.authorize(7, live.mintKey(7, 1))!;
@@ -388,7 +414,10 @@ describe('the relay', () => {
     const second = new FakeSink();
     live.connectWorker(entry, { shard: null, worker: 0 }, () => second);
     expect(first.closed).toBe(true);
-    expect(second.sent).toEqual([{ type: 'viewers', count: 1 }]);
+    expect(second.sent).toEqual([
+      { type: 'masks', locators: [] },
+      { type: 'viewers', count: 1 },
+    ]);
     expect(live.workersOf(7)).toEqual([{ shard: null, worker: 0, connected: true, paused: STOP }]);
     expect(published.at(-1)?.state).toEqual({ shard: null, worker: 0, connected: true, paused: STOP });
     live.receive(7, frame(0, 'DDDD'));

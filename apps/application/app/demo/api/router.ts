@@ -179,6 +179,7 @@ import {
   getProjectTimeoutOpportunities,
   getProjectFailureClusters,
   INVALID_COVERAGE_AREAS,
+  INVALID_LIVE_VIEW_MASKS,
   INVALID_REPOSITORY_URL,
   INVALID_COVERAGE_SCOPE,
   updateProject,
@@ -871,6 +872,7 @@ const routes: RouteEntry[] = [
           e instanceof Error &&
           (e.message === INVALID_COVERAGE_SCOPE ||
             e.message === INVALID_COVERAGE_AREAS ||
+            e.message === INVALID_LIVE_VIEW_MASKS ||
             e.message === INVALID_REPOSITORY_URL)
         )
           throw demoHttpError(400, e.message);

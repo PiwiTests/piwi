@@ -81,6 +81,18 @@ export const SECRET_AUTOCOMPLETE: readonly string[] = [
   'cc-csc',
 ];
 
+/**
+ * The CSS selector of the fields whose value is a secret: a password field, and one whose `autocomplete` asks for a
+ * password, a one-time code or a card's number or security code (`SECRET_AUTOCOMPLETE`), in any case.
+ */
+export const SECRET_FIELD_SELECTOR = [
+  'input[type="password" i]',
+  ...SECRET_AUTOCOMPLETE.flatMap((token) => [
+    `input[autocomplete~="${token}" i]`,
+    `textarea[autocomplete~="${token}" i]`,
+  ]),
+].join(', ');
+
 /** Whether an `autocomplete` attribute names a secret among its tokens (`SECRET_AUTOCOMPLETE`). Pure. */
 export function isSecretAutocomplete(value: string | null | undefined): boolean {
   return (value ?? '')

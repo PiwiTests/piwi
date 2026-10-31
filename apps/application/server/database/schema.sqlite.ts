@@ -29,6 +29,7 @@ export const projects = sqliteTable(
     quarantineFailsStatus: integer('quarantine_fails_status', { mode: 'boolean' }).notNull().default(false), // true = a quarantined failure turns the run's commit status red; false = the status ignores quarantined failures
     gateStatus: integer('gate_status', { mode: 'boolean' }).notNull().default(false), // true = each gate evaluation also posts the `<statusContext>/gate` commit status; off by default
     liveView: integer('live_view', { mode: 'boolean' }).notNull().default(false), // true = while a run of the project executes, people who may open it can watch each worker's page from the run page; off by default
+    liveViewMasks: text('live_view_masks', { mode: 'json' }), // string[] — Playwright locators of elements the live view paints over in each image, beside the secret fields; null = none
     statusFilter: text('status_filter', { mode: 'json' }), // ProjectRunScope — the runs that set the project's status (its latest run in the sidebar and the projects list); null = every run
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()

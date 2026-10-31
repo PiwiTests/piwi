@@ -422,6 +422,8 @@ export interface ProjectWithTestRuns {
   gateStatus?: boolean;
   /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
   liveView?: boolean;
+  /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
+  liveViewMasks?: string[] | null;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -456,6 +458,8 @@ export interface ProjectDetails {
   gateStatus?: boolean;
   /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
   liveView?: boolean;
+  /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
+  liveViewMasks?: string[] | null;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */

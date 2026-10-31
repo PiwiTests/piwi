@@ -8,9 +8,11 @@ lang: en-US
 
 <Needs reporter fixtures />
 
-Watch a running CI test, or a test a developer [shares](#share-a-run-from-your-machine), without waiting for its
-trace. **Watch** on its run page shows the browser's page and current call. The project must enable live view.
-The view is read-only.
+While a run executes, its run page shows the step each worker is on. In a project that turns the live view on, a
+running test of a CI run, or of a run a developer [shares from their machine](#share-a-run-from-your-machine), also
+gets **Watch**: it opens the page that worker is on, a few images a second, each with the call it was taken at. It is
+for watching a CI run that seems stuck, or a teammate's paused test, without waiting for the trace. Nothing you do in
+the view reaches the test.
 
 ## Where to watch a run
 
@@ -25,9 +27,14 @@ app hands out no live view key.
 
 ## Turn it on
 
-Live view is off by default. A Project admin enables it in **Project → Settings → Live view** before the run starts.
-The reporter's global setup, added by [`wrapConfig`](/guide/reporter), registers the run. CI is detected from provider
-variables (`GITHUB_ACTIONS`, `GITLAB_CI`, `JENKINS_URL`, …), or `CI` set to anything but `false` or `0`.
+The live view is off in every project. A Project admin turns it on in **Project → Settings → Live view**, which says
+what goes out, to whom, and what is kept. It applies to the project's CI runs from their next start: each run in a CI
+job that the reporter's global setup registers, which [`wrapConfig`](/guide/reporter) adds. A CI job is told by a
+CI provider's own variable (`GITHUB_ACTIONS`, `GITLAB_CI`, …) or by `CI` set to anything but `false` or `0`. At the start of such a run the reporter prints:
+
+```text
+[Piwi Dashboard] Live view on: people who may open this run can watch its tests' pages on the dashboard while it runs. Nothing is stored.
+```
 
 Turning it off ends every view immediately. Turning it on, including after disabling it, needs a new run. The run
 page's **Tests** tab shows a compact status beside search. Its help icon opens setup guidance and, for a Project admin,
@@ -50,15 +57,17 @@ test browser to watch. Local previews do not require the project's setting.
 
 ## Watch a worker
 
-On the **Tests** tab, **Watch** beside a running test shows its worker's page, headless or headed, and the call at each
-image (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). An unchanged page sends no new image.
+On the run page's **Tests** tab, a running test shows the step its worker is on. With the live view on, **Watch** beside
+it opens that worker's view: the test's page as the browser paints it, headless or not, and under it the call the image
+was taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image.
 
 In a CI run, the view also follows that call: how long it has run, Playwright's log of it as a failed call's error
 prints it, and while it waits, what its locator matches (no element yet, several, or one not enabled), outlined on the
 image, with the point a click acts on. A shared run shows the call alone.
 
-A view follows the selected test. Between tests or during `beforeAll`, it waits for a page. It ends with that test,
-worker or run, when the project disables live view, or when closed.
+A view belongs to the test on whose row you opened it. Opened while the worker runs no test (a `beforeAll`, between
+two tests), it says so, and shows the next test's page. It ends as its test ends, the worker leaves, the run
+ends or the project turns the live view off, and when you close it.
 
 A CI run never stops at a breakpoint or a `page.pause()`; a shared run does, and its row then says **Paused** at the
 stopped call, which opens in your editor.
@@ -77,13 +86,14 @@ whose project enables live view, and connect to an editor or the desktop app for
 
 The first share in a window asks for confirmation. The shared run shows its destination, viewer count and a link to copy.
 
-Until shared, workers send nothing. Once shared, stops (call, file, line and test title) reach everyone with the run
-page open; images go only to viewers. **Stop sharing** closes views within seconds and clears **Paused** from the rows.
-Closing the editor or desktop app also stops sharing.
+Until then, its workers send nothing, and its running tests say **Not shared live** where **Watch** would be. Once
+shared, each worker sends what a CI run's do: its stops, which everyone with the run's page open sees (the call, its
+file and line, and the test's title), even while nobody watches; and images while someone does. **Stop sharing** closes
+the connections within seconds: each view ends saying so, and **Paused** leaves the rows.
+Closing the editor or the desktop app stops it too.
 
-A run that cannot be shared says why, in Piwi Picker's Runs window in place of **Share live**, elsewhere when you ask:
-it reports to no instance or to the desktop app, its project has the live view off, or the reporter's global setup did
-not register it. A sharing that stops on its own says why, and **Share live** shows again: the project's
+A run that cannot be shared says why: it reports to no instance or to the desktop app, its project has the live view
+off, or the reporter's global setup did not register it. A sharing that stops on its own says why, and **Share live** shows again: the project's
 live view turned off, the instance restarted, or it stopped answering.
 
 ## What is sent, to whom, and what is kept
@@ -103,8 +113,10 @@ live view turned off, the instance restarted, or it stopped answering.
   to the database, the logs or an export. A viewer that reads slowly gets the latest image alone. The run's trace stays
   the record.
 
-The images show whatever the page shows, as the run's screenshots, videos and traces already do; a credential in a
-call's URL, the text a call types and a password field's value are hidden in its caption and its log. The workers reach the dashboard with a key
+**Masked in the worker**, with `@piwitests/reporter` 0.64.0 or later (an older one masks nothing): before an image
+leaves it, the worker paints over password fields, fields whose `autocomplete` asks for a one-time code or a card's
+number or code, and the project's **Masked elements** (Playwright locators). While one shows, two images a second go at
+most. A secret in the page's own text still shows; the caption and the log hide credentials and typed text. The workers reach the dashboard with a key
 the run got as it registered: it opens this run's live view and nothing else, ends with the run, and is never in the
 environment of the tests, their hooks or their fixtures, so a process they start does not get it.
 
