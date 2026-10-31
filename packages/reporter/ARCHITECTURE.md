@@ -222,8 +222,9 @@ What the package does to a user's run, process by process.
   taken. Piwi's overlays are left out (each root an `__piwi` id or a `piwi-…-host`), an
   iframe refused. It ranks it as the bar's pick does, with `locator.normalize()`'s locator
   among the candidates,
-  and posts the first that finds it alone to `PIWI_EDITOR_SEND` (`page.getByRef` and the
-  boxes feature-checked, refused before Playwright 1.64). An image of a stopped page names
+  and posts the first that finds it alone to `PIWI_EDITOR_SEND` (each ref read through
+  `locatorOfRef`; the snapshot's boxes feature-checked, refused before Playwright 1.60).
+  An image of a stopped page names
   its viewport (`width`, `height`), the CSS pixels a point is in.
 - For an agent (the editor's MCP server), at the stop held alone, one request after the
   other, 10 seconds at most each, an `act` the page takes longer over answered `late`
@@ -235,7 +236,8 @@ What the package does to a user's run, process by process.
   a secret field is a password field or one whose `autocomplete` names a password, a
   one-time code or a card's number or security code (`SECRET_FIELDS`, from
   `SECRET_AUTOCOMPLETE`); `ref-locator` ranks the element a
-  ref names (`page.getByRef`, 1.64) as Pick does, with the project's `testIdAttribute`,
+  ref names (`locatorOfRef`: `page.getByRef`, else the `aria-ref=` selector it wraps) as
+  Pick does, with the project's `testIdAttribute`,
   each candidate checked to find it alone, and reads its text (its `textContent` with
   whitespace collapsed, as a text assertion compares it, 1,000 characters at most and
   `textCut` past them), value (none of a secret field, `el.matches(SECRET_FIELDS)`) and

@@ -13,6 +13,7 @@
 import type { Locator, Page } from '@playwright/test';
 import type { ElementFingerprint } from '@piwitests/core';
 import { tryParseLocatorChain, type LocatorArg as ChainArg, type LocatorCall } from '@piwitests/core/locator-chain';
+import { locatorOfRef } from '../capture/aria-ref.js';
 import { LOCATOR_METHODS } from '../capture/locator-healing.js';
 import type { LocatorArg, StructuredLocator } from './artifact.js';
 import { compileFromCandidate, type CompiledLocator } from './compile.js';
@@ -33,9 +34,8 @@ const GROUNDED_METHODS = new Set(LOCATOR_METHODS.filter((method) => method !== '
 /** The element an aria ref names, or null when it names no single element on the page. */
 export async function refLocator(page: Page, ref: string): Promise<Locator | null> {
   if (!/^[a-z0-9]+$/i.test(ref)) return null;
-  const getByRef = (page as unknown as { getByRef?: (ref: string) => Locator }).getByRef;
   try {
-    const target = typeof getByRef === 'function' ? getByRef.call(page, ref) : page.locator(`aria-ref=${ref}`);
+    const target = locatorOfRef(page, ref);
     return (await target.count()) === 1 ? target : null;
   } catch {
     return null;

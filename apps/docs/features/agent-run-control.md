@@ -117,8 +117,8 @@ its pages and run code in them. It is shared until the test ends, and no agent c
 ## Limits
 
 - **A remote window** (SSH, a dev container, Gateway) runs the server on the remote machine: an agent there reaches it.
-- An action needs Playwright 1.64 or later and a `@piwitests/reporter` at least as recent as the editor extension; at
-  an older one's stops, the tools say what it cannot do.
+- An action needs a `@piwitests/reporter` at least as recent as the editor extension; at an older one's stops, the
+  tools say what it cannot do.
 
 ## Related
 

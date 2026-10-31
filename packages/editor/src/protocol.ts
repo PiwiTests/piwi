@@ -1686,7 +1686,7 @@ export interface PickAtParams {
 
 /**
  * The locator sent, with `ok`; null with why otherwise: no element there (the page's background), an iframe, a stop
- * the test went on from, a Playwright older than 1.64 or a reporter that does not take it.
+ * the test went on from, a Playwright older than 1.60 or a reporter that does not take it.
  */
 export interface PickAtResult {
   ok: boolean;

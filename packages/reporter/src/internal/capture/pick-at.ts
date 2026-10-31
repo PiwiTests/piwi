@@ -1,5 +1,6 @@
 import type { ElementHandle, Locator, Page } from '@playwright/test';
 import { parseLeafLocatorCall } from '@piwitests/core/locator-chain';
+import { locatorOfRef } from './aria-ref.js';
 import { locatorOn } from './chain-locator.js';
 import {
   approximateAccessibleName,
@@ -14,7 +15,7 @@ import type { ProbedAttrs } from '@piwitests/picker-dom';
  * Pick on the image: the element under a point of an image of a stopped page (the IDE's, the Runs window's, a frame of
  * its live view), found without touching the page, as an agent finds one. The page's ARIA snapshot in AI mode with
  * each element's box on the screen (`page.ariaSnapshot({ mode: 'ai', boxes: true })`, Playwright 1.60) names the
- * elements under the point, read through their refs (`page.getByRef`, 1.64). Of those, the pick is the innermost one
+ * elements under the point, read through their refs (`locatorOfRef`). Of those, the pick is the innermost one
  * that is, or holds, the element a click there lands on: the page's hit test in paint order
  * (`document.elementsFromPoint`, into open shadow roots, an element of `pointer-events: none` passed through), Piwi's
  * own overlays left out, so a dialog, a fixed banner or a sticky header over another element is the one picked. Only
@@ -102,17 +103,10 @@ export const MAX_CHECKED = 8;
 const NORMALIZED_SCORE = 60;
 
 export const PICK_AT_NEEDS =
-  'Pick on the image needs Playwright 1.64 or later (page.getByRef and the boxes of page.ariaSnapshot): update @playwright/test.';
+  'Pick on the image needs Playwright 1.60 or later (the boxes of page.ariaSnapshot): update @playwright/test.';
 const NO_ELEMENT = 'No element there: pick an element of the page, not its background.';
 const IN_IFRAME =
   "That point is in an iframe, whose elements Pick on the image does not reach: use Pick in the test's window.";
-
-type ByRef = { getByRef?: (ref: string) => Locator };
-
-/** Whether this Playwright picks on an image: `page.getByRef` (1.64). The snapshot's boxes (1.60) are checked as read. */
-export function canPickAt(page: Page): boolean {
-  return typeof (page as unknown as ByRef).getByRef === 'function';
-}
 
 /** What the page's hit test says of a point: which element a click there lands on, among those it is given. */
 interface HitArg {
@@ -164,16 +158,14 @@ const hitIn = ({ x, y, overlay, elements }: HitArg): number | null => {
  * breaks.
  */
 export async function pickAtPoint(page: Page, probe: PickerProbe, x: number, y: number): Promise<PointPick> {
-  if (!canPickAt(page)) return { refusal: PICK_AT_NEEDS };
   const snapshot = await page.ariaSnapshot({ mode: 'ai', boxes: true, timeout: 5000 } as Parameters<
     Page['ariaSnapshot']
   >[0]);
   if (!/\[box=/.test(snapshot)) return { refusal: PICK_AT_NEEDS };
   const under = boxesAt(snapshotBoxes(snapshot), x, y).slice(0, MAX_UNDER);
-  const byRef = (ref: string) => (page as unknown as Required<ByRef>).getByRef(ref);
   const handles = await Promise.all(
     under.map((box) =>
-      byRef(box.ref)
+      locatorOfRef(page, box.ref)
         .elementHandle({ timeout: 2000 })
         .catch(() => null),
     ),
@@ -195,7 +187,7 @@ export async function pickAtPoint(page: Page, probe: PickerProbe, x: number, y: 
           (el, overlay) => !!(el as { closest(selector: string): unknown }).closest(overlay),
           PIWI_OVERLAY,
         ));
-      if (!piwi) return await rank(page, probe, byRef(box.ref), handle);
+      if (!piwi) return await rank(page, probe, locatorOfRef(page, box.ref), handle);
     }
     return { refusal: NO_ELEMENT };
   } finally {
