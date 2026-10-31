@@ -13,8 +13,9 @@ without the capture fixtures named in a run that can stop, the editor's answer n
 leaves the imports to the person). Quick win 5 is built in part: a new test in a spec that takes no `test` imports it
 as the specs beside it do (W1), each recorded test gets a title no test of its file has (W2; asking the person for one
 needs both clients), and a new file takes `expect` from a module that exports it (W3). Left from it: catalog imports
-relative to the spec (W4), since a catalog entry's module names no folder it is relative to. The rest is proposed. A
-pull request that builds part of the plan updates this paragraph.
+relative to the spec (W4), since a catalog entry's module names no folder it is relative to. Quick win 7 is built: the
+steps each test is in are sent when the run gets a watcher, and the heartbeat waits for the rest of its period only
+(V1, V2). The rest is proposed. A pull request that builds part of the plan updates this paragraph.
 
 **Summary.** Every step of the loop exists, most of them in several tools, and most of it works as documented: a
 breakpoint stops a headed run under the pause bar, Step and Resume answer, a picked locator lands on its line, a

@@ -157,6 +157,8 @@ export class PiwiDashboardReporter {
   private reportedTestIds = new Set<string>();
   /** The spec files said to have run without the capture fixtures in a run that can stop (`noteUncaptured`). */
   private uncapturedSpecs = new Set<string>();
+  /** The live steps begun and not ended, by step, sent again when someone opens the run (`onWatched`). */
+  private openSteps = new Map<unknown, StreamEvent>();
   /** Per-test attempt history, keyed by `test.id`; snapshotted onto every attempt's payload. */
   private attemptsByTest = new Map<
     string,
@@ -458,6 +460,13 @@ export class PiwiDashboardReporter {
       // the dashboard shows the real total from the first render.
       this.plannedTests.length,
     );
+    if (this.streamManager) {
+      // A person who opens the run sees the step each test is in now, not only the steps that begin after.
+      this.streamManager.onWatched = () => {
+        void this.liveResources?.tick();
+        for (const event of this.openSteps.values()) this.streamManager?.queueEvent(event);
+      };
+    }
     if (this.streamManager && this.options.captureResources !== false) {
       const live = new LiveResources(
         this.streamManager,
@@ -470,7 +479,6 @@ export class PiwiDashboardReporter {
         },
         this.logger,
       );
-      this.streamManager.onWatched = () => void live.tick();
       live.start();
       this.liveResources = live;
     }
@@ -622,6 +630,7 @@ export class PiwiDashboardReporter {
       workerIndex: workerIndexOf(_result),
       startedAt: step.startTime instanceof Date ? step.startTime.getTime() : null,
     };
+    this.openSteps.set(step, event);
     this.streamManager?.queueBeginEvent(event);
   }
 
@@ -629,6 +638,7 @@ export class PiwiDashboardReporter {
   onStepEnd(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
     if (!this.enabled || !this.streamManager) return;
     if (!PiwiDashboardReporter.isLiveStep(step)) return;
+    this.openSteps.delete(step);
     const cat = step.category;
 
     const workerIndex = workerIndexOf(_result);
