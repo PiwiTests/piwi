@@ -118,6 +118,20 @@ function testFile(test: TestCase, base: string): string {
 }
 
 /**
+ * Whether an attempt made Playwright calls with no capture fixtures set up: its steps hold a `pw:api` call and no step
+ * of the `piwiCapture` fixture, which every test that imports `test` from a file extending `piwiFixtures` sets up.
+ */
+function uncapturedCalls(steps: readonly TestStep[]): boolean {
+  let calls = false;
+  const captured = (list: readonly TestStep[]): boolean =>
+    list.some((step) => {
+      if (step.category === 'pw:api') calls = true;
+      return (step.category === 'fixture' && /\bpiwiCapture\b/.test(step.title)) || captured(step.steps);
+    });
+  return !captured(steps) && calls;
+}
+
+/**
  * Piwi Dashboard Playwright reporter.
  *
  * Collects test results, metadata, performance metrics and trace files, then
@@ -141,6 +155,8 @@ export class PiwiDashboardReporter {
   private plannedTests: TestCase[] = [];
   /** Ids of tests that actually reported via `onTestEnd`, to find the ones that never ran. */
   private reportedTestIds = new Set<string>();
+  /** The spec files said to have run without the capture fixtures in a run that can stop (`noteUncaptured`). */
+  private uncapturedSpecs = new Set<string>();
   /** Per-test attempt history, keyed by `test.id`; snapshotted onto every attempt's payload. */
   private attemptsByTest = new Map<
     string,
@@ -570,6 +586,23 @@ export class PiwiDashboardReporter {
     return true;
   }
 
+  /**
+   * In a run that can stop (breakpoints, or a run channel to an editor or the desktop app), say once per spec file that
+   * a test made Playwright calls without the capture fixtures, where the stops happen: it never stops at a breakpoint
+   * nor at Pause, and nothing else says why.
+   */
+  private noteUncaptured(test: TestCase, result: TestResult): void {
+    if (!process.env.PIWI_PAUSE_AT && !process.env[RUN_CHANNEL_ENV]) return;
+    if (!uncapturedCalls(result.steps)) return;
+    const file = testFile(test, this.testPathBase);
+    if (this.uncapturedSpecs.has(file)) return;
+    this.uncapturedSpecs.add(file);
+    this.logger.warn(
+      `${file} ran without Piwi's capture fixtures, so its tests never stop at a breakpoint or at Pause: ` +
+        "import `test` from your fixtures file (the one that extends piwiFixtures) instead of '@playwright/test'.",
+    );
+  }
+
   /** Playwright reporter hook: called when a step (including hook/fixture) begins */
   onStepBegin(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
     // Gate on the stream manager *existing*, not on it being live yet: the
@@ -634,6 +667,7 @@ export class PiwiDashboardReporter {
     this.totalTests++;
 
     this.reportedTestIds.add(test.id);
+    this.noteUncaptured(test, result);
 
     const { suitePath, suiteConfig } = this.metadataCollector.getSuiteInfo(test);
     const annotations = mergeAnnotations(test, result);

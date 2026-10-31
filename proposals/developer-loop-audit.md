@@ -6,10 +6,12 @@ fixtures, the dashboard's run and failure pages, the VS Code extension and the J
 they share, Piwi Picker and the desktop app are covered where a developer meets them, and the JetBrains plugin is held
 to what the VS Code extension does. Test coverage and the Test Map's gaps are left to another audit.
 
-**Status.** Proposed 2026-10-31, against `main` at v0.63.0 (`2bd05d42`). Built: quick wins 1 to 3 of
-[the plan](#11-the-plan), the failing line kept (F1, F2), wrapped statements that stop (D1), and a browser headed as the
-test's fixtures make it, with no Inspector switch left to the projects that depend on a worker's (D2, D8). The rest is
-proposed. A pull request that builds part of the plan updates this paragraph.
+**Status.** Proposed 2026-10-31, against `main` at v0.63.0 (`2bd05d42`). Built: quick wins 1 to 4 of
+[the plan](#11-the-plan), the failing line kept (F1, F2), wrapped statements that stop (D1), a browser headed as the
+test's fixtures make it, with no Inspector switch left to the projects that depend on a worker's (D2, D8), and a spec
+without the capture fixtures named in a run that can stop, the editor's answer naming that cause (S1; `init` still
+leaves the imports to the person). The rest is proposed. A pull request that builds part of the plan updates this
+paragraph.
 
 **Summary.** Every step of the loop exists, most of them in several tools, and most of it works as documented: a
 breakpoint stops a headed run under the pause bar, Step and Resume answer, a picked locator lands on its line, a

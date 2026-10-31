@@ -264,7 +264,8 @@ describe('a run’s session, with a client that answers stops', () => {
       await waitFor(() => (svc.latest(ref)?.workers.length === 2 ? true : undefined));
       expect(await control({ ref: 'ed-00000000', action: 'pause' })).toEqual({
         ok: false,
-        message: 'No worker of this run is connected to the editor.',
+        message:
+          "No worker of this run is connected to the editor: none has started a test yet, or its tests import `test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.",
       });
       expect(await control({ ref, action: 'resume' })).toEqual({ ok: false, message: 'No test runs now.' });
       expect(await control({ ref, worker: 1, action: 'step' })).toEqual({
