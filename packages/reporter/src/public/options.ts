@@ -75,8 +75,8 @@ export interface PiwiDashboardOptions {
   collectPerformanceMetrics?: boolean;
   /**
    * Capture per-action locator snapshots that power failure-time healing
-   * suggestions. Adds a small per-action cost (one DOM read, sometimes an ARIA
-   * snapshot) in the test worker. Defaults to `true`; automatically disabled
+   * suggestions. Adds a small per-action cost (one DOM read, rarely two,
+   * sometimes an ARIA snapshot) in the test worker. Defaults to `true`; automatically disabled
    * when `collectPerformanceMetrics` is `false` (the reporter discards the data
    * in that case anyway). Can also be forced off with `PIWI_CAPTURE_LOCATORS=false`.
    */

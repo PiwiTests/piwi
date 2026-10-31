@@ -36,7 +36,7 @@ test('homepage loads', async ({ page }) => {
 })
 ```
 
-That's the entire setup: nothing to start, wrap, or await.
+That's the entire setup: nothing to start, wrap, or await inside your tests.
 
 ## What gets captured
 
@@ -118,8 +118,8 @@ Two rules:
 
 Capture never fails or noticeably slows a test:
 
-- Per call site: one DOM read, and a bounded ARIA snapshot (500 ms deadline) only when the element's attributes don't
-  already settle its accessible name; per new document, one more read.
+- Per call site: one DOM read, rarely two, and an ARIA snapshot (500 ms deadline) unless the attributes settle its
+  accessible name; one more per new document.
 - At teardown: draining in-flight captures is capped at 2 seconds.
 - A capture that can't complete (mid-navigation, detached element) is dropped silently; it never throws into your test.
 - Capture adds no steps to the report or trace, and errors, step locations and stacks name your own call.

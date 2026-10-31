@@ -143,13 +143,12 @@ CI, like the options above. The editor extensions set both from your [breakpoint
 - Healing runs only when the locator **never resolved**, matched nothing, or matched several elements. When it resolved
   and the step failed afterwards (`element is not enabled`, a wrong count, a hidden element) or the page failed to
   load, the panel says *The locator resolved; this is not a locator problem* (for a page that failed to load, *The page
-  failed to navigate before any locator ran*), because rewriting a locator that found its element would be a harmful
-  edit.
-- Suggestions need a passing run captured with the fixtures in place; until then only the ARIA fallback applies.
-- Capture costs one DOM read per call site, at most once per call site per test. Negated assertions, absence checks
-  (`toBeHidden`, `toBeDetached`) and multi-element checks (`toHaveCount`) are never probed. Turn it off with
-  `captureLocators: false` or `PIWI_CAPTURE_LOCATORS=false`; it is also off whenever `collectPerformanceMetrics` is
-  `false`.
+  failed to navigate before any locator ran*), because a locator that found its element needs no rewrite.
+- Suggestions need a passing run captured with the fixtures; until then only the ARIA fallback applies. An Enter that
+  submits at once can leave its field unread.
+- Capture reads each call site once per test, rarely twice. Negated assertions, absence checks (`toBeHidden`,
+  `toBeDetached`) and multi-element checks (`toHaveCount`) are never probed. Turn it off with `captureLocators: false`
+  or `PIWI_CAPTURE_LOCATORS=false`; it is also off whenever `collectPerformanceMetrics` is `false`.
 
 ## Related
 
