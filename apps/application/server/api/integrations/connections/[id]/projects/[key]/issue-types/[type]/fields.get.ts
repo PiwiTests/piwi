@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: "List the fields of an issue type's create screen",
     description:
-      "The fields a tracker project's create screen has for an issue type (id or name), from Jira's create metadata: each with whether it is required, whether Jira fills a default, how its value is typed, and the values Jira lists for it. The binding form and the create modal use it to ask for the required fields Piwi does not fill. Cached for five minutes. Requires `issue:create` on a project bound to the connection (Contributor and above), `project:manage` on any project (Project admin) or `connections:manage` (administrators); to anyone else the connection answers 404, as a missing one does.",
+      "The fields a tracker project's create screen has for an issue type (id or name), from Jira's create metadata: each with whether it is required, whether Jira fills a default, how its value is typed, and the values Jira lists for it. The binding form and the create modal use it to ask for the required fields Piwi does not fill. Cached for five minutes. Requires `issue:create` on a project bound to the connection (Contributor and above), `project:manage` on any project (Project admin) or `connections:manage` (administrators); any other caller holding `issue:create` gets the 404 of a missing connection.",
     'x-required-permission': 'issue:create',
   },
 });

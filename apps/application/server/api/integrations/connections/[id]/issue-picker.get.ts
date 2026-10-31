@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Search issues for a field',
     description:
-      "Issues matching a key or words of their summary, for a create-issue field that points at another issue (a parent, an epic): the tracker project's own first (`project`), then the ones seen lately. An empty `q` lists the recent ones. Cached for a minute. Requires `issue:create` on a project bound to the connection (Contributor and above), `project:manage` on any project (Project admin) or `connections:manage` (administrators); to anyone else the connection answers 404, as a missing one does.",
+      "Issues matching a key or words of their summary, for a create-issue field that points at another issue (a parent, an epic): the tracker project's own first (`project`), then the ones seen lately. An empty `q` lists the recent ones. Cached for a minute. Requires `issue:create` on a project bound to the connection (Contributor and above), `project:manage` on any project (Project admin) or `connections:manage` (administrators); any other caller holding `issue:create` gets the 404 of a missing connection.",
     'x-required-permission': 'issue:create',
   },
 });

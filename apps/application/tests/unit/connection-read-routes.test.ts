@@ -125,6 +125,9 @@ const robin = caller(1, InstanceRole.MEMBER, { projectId: WEB, role: ProjectRole
 const sam = caller(2, InstanceRole.MEMBER, { projectId: BILLING, role: ProjectRole.CONTRIBUTOR });
 const pat = caller(3, InstanceRole.MEMBER, { projectId: DOCS, role: ProjectRole.PROJECT_ADMIN });
 const admin = caller(4, InstanceRole.ADMINISTRATOR);
+// Morgan maintains billing; Casey contributes to every project, present and future.
+const morgan = caller(5, InstanceRole.MEMBER, { projectId: BILLING, role: ProjectRole.MAINTAINER });
+const casey = caller(6, InstanceRole.MEMBER, { projectId: null, role: ProjectRole.CONTRIBUTOR });
 
 let db: TempDb;
 let close: () => Promise<void>;
@@ -216,6 +219,17 @@ describe('the routes that read a tracker through a connection', () => {
     expect(new Set(sent.map((r) => r.split('/')[0]))).toEqual(
       new Set(['billing.atlassian.net', 'secure.gravatar.com']),
     );
+  });
+
+  test('serve a Maintainer, and a Contributor of every project, through a bound connection only', async () => {
+    for (const who of [morgan, casey]) {
+      state.caller = who;
+      for (const [name, { call, to }] of Object.entries(ROUTES)) {
+        await expect(call(to(billingJira)), name).resolves.toBeDefined();
+      }
+    }
+    state.caller = casey;
+    expect(await refusal(ROUTES.projects.call(ROUTES.projects.to(spareJira)))).toEqual(MISSING);
   });
 
   test('never serve a cached answer to a caller the connection refuses', async () => {

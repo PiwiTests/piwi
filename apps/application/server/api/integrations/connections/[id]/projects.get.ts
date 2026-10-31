@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: "List a connection's tracker projects",
     description:
-      'Projects available in the tracker, for the create-issue modal. Cached for five minutes. Requires `issue:create` on a project bound to the connection (Contributor and above), `project:manage` on any project (Project admin) or `connections:manage` (administrators); to anyone else the connection answers 404, as a missing one does.',
+      'Projects available in the tracker, for the create-issue modal. Cached for five minutes. Requires `issue:create` on a project bound to the connection (Contributor and above), `project:manage` on any project (Project admin) or `connections:manage` (administrators); any other caller holding `issue:create` gets the 404 of a missing connection.',
     'x-required-permission': 'issue:create',
   },
 });

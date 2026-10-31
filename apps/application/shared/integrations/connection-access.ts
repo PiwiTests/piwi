@@ -8,16 +8,16 @@
 import { can, holdsAnywhere, type AccessSummary } from '#shared/permissions';
 
 /**
- * The answer for a connection that does not exist, has no credentials, or is not
- * the caller's to read through: one answer for all three, so it confirms no id.
+ * The one answer for a connection that does not exist, has no credentials, or is
+ * not the caller's to read through.
  */
 export const CONNECTION_NOT_FOUND = 'Connection not found or has no credentials';
 
 /**
  * Whether a caller may read through a connection bound to `boundProjectIds`:
  * someone who manages connections (`connections:manage`), a Project admin of any
- * project (`project:manage`), whose binding form offers every connection, or
- * someone who files issues (`issue:create`) on a project bound to it.
+ * project (`project:manage`), or someone who files issues (`issue:create`) on a
+ * project bound to it.
  */
 export function canReadThroughConnection(access: AccessSummary, boundProjectIds: readonly number[]): boolean {
   if (can(access, 'connections:manage') || holdsAnywhere(access, 'project:manage')) return true;
