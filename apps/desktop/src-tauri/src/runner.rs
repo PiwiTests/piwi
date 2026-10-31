@@ -705,7 +705,8 @@ pub async fn desktop_run_local_tests(
         .sidecar("node")
         .map_err(|e| e.to_string())?
         .args(cmd_args)
-        .current_dir(folder)
+        .current_dir(&folder)
+        .envs(crate::worktree::run_path_env(&app, &folder))
         .envs(COLOR_ENV)
         .envs(origin)
         .envs(hub);

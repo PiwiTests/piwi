@@ -343,6 +343,7 @@ pub async fn desktop_run_repro(
     let command = sidecar
         .args(cmd_args)
         .current_dir(&folder)
+        .envs(crate::worktree::run_path_env(&app, &folder))
         .envs(crate::runner::COLOR_ENV)
         .env(
             "PIWI_REPRO_RESULT",

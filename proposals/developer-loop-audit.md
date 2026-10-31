@@ -13,17 +13,21 @@ named in a run that can stop, and the editor's answer naming that cause (S1; `in
 person); 6, logpoints and breakpoints that do not suspend left out of a run's stops, and the docs saying a condition is
 not read (D3); 7, the steps each test is in sent when the run gets a watcher, the heartbeat waiting for the rest of its
 period only (V1, V2); 8, a locator that matched nothing as its own clue, `locator-matched-nothing`, and the Locator fix
-panel's hint naming its real cause (F5, F6). Built in part: 5, a new test in a spec that takes no `test` imports it as
-the specs beside it do, each recorded test gets a title its file has not, and a new file takes `expect` from a module
-that exports it (W1, W2, W3), leaving catalog imports relative to the spec (W4: a catalog entry's module names no
-folder it is relative to) and asking the person for a title (both clients); 9, a spec path that reaches Playwright as a
-pattern naming its own file (`specPattern` in core), in the desktop app's runs and, with the same defect, the
-dashboard's copyable commands, the selections and the editor's runs by location (R4), and keys sent to a watched page
-kept there (V5), leaving `CREATE_NO_WINDOW` and the quit order of the Rust shell (R6, R14) for a check on Windows; 12,
-the plumbing lines at `PIWI_VERBOSE` only, one line for an upload that falls back, and the usual spellings of the
-reporter's boolean variables (R10, R11, R12), leaving when the machine summary prints and one prefix for the workers'
-lines (R13). Quick wins 10, 11 and 13, the medium and the larger items are proposed. A pull request that builds part
-of the plan updates this paragraph.
+panel's hint naming its real cause (F5, F6); 9, a spec path that reaches Playwright as a pattern naming its own file
+(`specPattern` in core), in the desktop app's runs and, with the same defect, the dashboard's copyable commands, the
+selections and the editor's runs by location (R4), keys sent to a watched page kept there (V5), the shell's console
+programs started with no window (R6) and its runs stopped before the server on quit (R14's first defect), the Windows
+paths checked by a cross-build only. Built in part: 5, a new test in a spec that takes no `test` imports it as the
+specs beside it do, each recorded test gets a title its file has not, and a new file takes `expect` from a module that
+exports it (W1, W2, W3), leaving catalog imports relative to the spec (W4: a catalog entry's module names no folder it
+is relative to) and asking the person for a title (both clients); 10, the desktop app's runs, reproductions and
+bisect steps with each `node_modules/.bin` from their folder up before the folders the shell searches for its own
+tools, and no `node_modules` borrowed by a workspace root's worktree or installed through a borrowed link (R2, R1),
+leaving the login shell's `PATH` (a version manager's shims outside those folders); 12, the plumbing lines at
+`PIWI_VERBOSE` only, one line for an upload that falls back, and the usual spellings of the reporter's boolean
+variables (R10, R11, R12), leaving when the machine summary prints and one prefix for the workers' lines (R13). Quick
+wins 11 and 13, the medium and the larger items are proposed. A pull request that builds part of the plan updates
+this paragraph.
 
 **Summary.** Every step of the loop exists, most of them in several tools, and most of it works as documented: a
 breakpoint stops a headed run under the pause bar, Step and Resume answer, a picked locator lands on its line, a

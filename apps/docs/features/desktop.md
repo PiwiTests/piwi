@@ -99,8 +99,8 @@ The [reproduce and bisect](/features/fix-plans#reproduce-and-bisect) recipe of a
 linked folder, **without touching your checkout**:
 
 - **Reproduce here** checks out the failing commit in a throwaway
-  [`git worktree`](https://git-scm.com/docs/git-worktree), installs its dependencies (reusing your `node_modules`
-  when the lockfile is unchanged) and the browser if missing, and runs the failing test with that commit's own
+  [`git worktree`](https://git-scm.com/docs/git-worktree), installs its dependencies (reusing yours on an
+  unchanged lockfile outside a workspace) and any missing browser, and runs the failing test with that commit's own
   Playwright.
 - **Find the breaking commit here** bisects between the last green commit and the failing one, with live
   progress and a **Stop** that kills the test and what it started, resets the bisect and removes the worktree. The

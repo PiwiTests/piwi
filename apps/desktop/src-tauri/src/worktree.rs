@@ -472,7 +472,7 @@ pub(crate) fn resolve_tool_in(dirs: &[PathBuf], candidates: &[String]) -> Option
 
 /// The directories searched for a user tool: `PATH`, then the well-known install
 /// locations a GUI app on macOS does not inherit `PATH` for.
-fn tool_search_dirs(app: &AppHandle) -> Vec<PathBuf> {
+pub(crate) fn tool_search_dirs(app: &AppHandle) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
         .unwrap_or_default();
@@ -565,7 +565,7 @@ pub(crate) fn discard_leftover_worktrees(app_data_dir: &Path) {
 pub(crate) fn kill_child_tree(pid: u32) {
     #[cfg(windows)]
     {
-        let _ = Command::new("taskkill")
+        let _ = console_command("taskkill")
             .args(["/T", "/F", "/PID", &pid.to_string()])
             .output();
     }
@@ -587,18 +587,18 @@ pub(crate) fn perform_cleanup(cleanup: &Cleanup, cleaned: &AtomicBool) {
         return;
     }
     if cleanup.bisect {
-        let _ = Command::new(&cleanup.git)
+        let _ = console_command(&cleanup.git)
             .args(["bisect", "reset"])
             .current_dir(&cleanup.worktree)
             .output();
     }
-    let _ = Command::new(&cleanup.git)
+    let _ = console_command(&cleanup.git)
         .arg("-C")
         .arg(&cleanup.folder)
         .args(["worktree", "remove", "--force"])
         .arg(&cleanup.worktree)
         .output();
-    let _ = Command::new(&cleanup.git)
+    let _ = console_command(&cleanup.git)
         .arg("-C")
         .arg(&cleanup.folder)
         .args(["worktree", "prune"])
@@ -610,7 +610,7 @@ pub(crate) fn perform_cleanup(cleanup: &Cleanup, cleaned: &AtomicBool) {
 /// Run a git subcommand and capture its combined stdout+stderr; `Err` carries the
 /// output when git exits non-zero.
 fn git_capture(git: &Path, dir: &Path, args: &[&str]) -> Result<String, String> {
-    let out = Command::new(git)
+    let out = console_command(git)
         .arg("-C")
         .arg(dir)
         .args(args)
@@ -630,7 +630,7 @@ fn git_capture(git: &Path, dir: &Path, args: &[&str]) -> Result<String, String> 
 
 /// Whether a commit is known to the repository at `folder`.
 fn commit_exists(git: &Path, folder: &Path, sha: &str) -> bool {
-    Command::new(git)
+    console_command(git)
         .arg("-C")
         .arg(folder)
         .args(["cat-file", "-e", &format!("{sha}^{{commit}}")])
@@ -651,12 +651,86 @@ fn emit_line(app: &AppHandle, id: u32, kind: &'static str, text: impl Into<Strin
 
 // ── Install / browser / test phases (streaming) ───────────────────────────────
 
+/// A command for a console program (git, a package manager, `taskkill`) that opens no console window: the app is a
+/// Windows GUI program, from which each console program would otherwise open one, and closing that window ends it.
+fn console_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
+/// The `PATH` a test run in `folder` gets, as a terminal's `npx playwright test` there has it: each
+/// `node_modules/.bin` from `folder` up to the root, nearest first, as npm puts them before a script, then
+/// `dirs`, the directories the shell searches for a user tool. A `webServer` command then finds `vite`, `next`
+/// or `npm`. `None` when no directory can be joined into one.
+pub(crate) fn run_path(folder: &Path, dirs: &[PathBuf]) -> Option<String> {
+    let mut all: Vec<PathBuf> = folder
+        .ancestors()
+        .map(|dir| dir.join("node_modules").join(".bin"))
+        .filter(|bin| bin.is_dir())
+        .collect();
+    for dir in dirs {
+        if !all.contains(dir) {
+            all.push(dir.clone());
+        }
+    }
+    std::env::join_paths(all)
+        .ok()
+        .map(|joined| joined.to_string_lossy().into_owned())
+}
+
+/// Whether `path` is a symbolic link (or, on Windows, a junction) itself, without following it.
+pub(crate) fn is_link(path: &Path) -> bool {
+    std::fs::symlink_metadata(path)
+        .map(|meta| meta.file_type().is_symlink())
+        .unwrap_or(false)
+}
+
+/// Remove the link at `path`, never what it points to.
+pub(crate) fn remove_link(path: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        std::fs::remove_dir(path).or_else(|_| std::fs::remove_file(path))
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::remove_file(path)
+    }
+}
+
+/// Whether `folder` is the root of a workspace: its `package.json` names `workspaces`, or a
+/// `pnpm-workspace.yaml` sits beside it. Its `node_modules` links the workspace's own packages to their
+/// folders in that checkout, so another checkout cannot borrow it.
+pub(crate) fn declares_workspaces(folder: &Path) -> bool {
+    if folder.join("pnpm-workspace.yaml").is_file() {
+        return true;
+    }
+    std::fs::read_to_string(folder.join("package.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .is_some_and(|manifest| manifest.get("workspaces").is_some())
+}
+
+/// `PATH` for a test run spawned in `folder` (`run_path`), as an environment entry; none when it cannot be joined.
+pub(crate) fn run_path_env(app: &AppHandle, folder: &Path) -> Vec<(String, String)> {
+    run_path(folder, &tool_search_dirs(app))
+        .map(|path| vec![("PATH".to_string(), path)])
+        .unwrap_or_default()
+}
+
 /// Symlink (or junction on Windows) the linked folder's `node_modules` into the
-/// worktree, the cheap path when the lockfile is unchanged.
+/// worktree, the cheap path when the lockfile is unchanged. A link already there
+/// is that same one.
 fn link_node_modules(folder: &Path, worktree: &Path) -> Result<(), String> {
     let src = folder.join("node_modules");
     let dst = worktree.join("node_modules");
-    if dst.exists() {
+    if is_link(&dst) {
         return Ok(());
     }
     #[cfg(windows)]
@@ -684,8 +758,16 @@ fn install_worktree(
     let folder_lock = folder.join(lockfile);
     let worktree_lock = worktree.join(lockfile);
     let folder_modules = folder.join("node_modules").is_dir();
+    let worktree_modules = worktree.join("node_modules");
 
-    if folder_modules && files_equal(&folder_lock, &worktree_lock) {
+    // The checkout's `node_modules` is borrowed only when nothing else is there yet, or the borrowed link is: a
+    // workspace root's links its packages to the checkout's own folders, which a step at another commit must not run.
+    let installed_here = worktree_modules.exists() && !is_link(&worktree_modules);
+    if folder_modules
+        && !installed_here
+        && !declares_workspaces(folder)
+        && files_equal(&folder_lock, &worktree_lock)
+    {
         match link_node_modules(folder, worktree) {
             Ok(()) => {
                 emit_line(
@@ -705,6 +787,13 @@ fn install_worktree(
         }
     }
 
+    // An install through a borrowed link would rewrite the checkout's own `node_modules`: the link goes first.
+    if is_link(&worktree_modules) {
+        if let Err(e) = remove_link(&worktree_modules) {
+            emit_line(app, id, "error", format!("Could not remove the borrowed node_modules link ({e}): not installing through it."));
+            return false;
+        }
+    }
     let (tool, tool_args) = pm.install_command();
     let Some(bin) = resolve_tool(app, tool) else {
         emit_line(app, id, "error", format!("`{tool}` was not found — install it, or open the linked folder and install dependencies there."));
@@ -777,7 +866,7 @@ fn run_std_streaming(
     if stop.load(Ordering::SeqCst) {
         return None;
     }
-    let mut child = match Command::new(bin)
+    let mut child = match console_command(bin)
         .args(args)
         .current_dir(dir)
         .envs(COLOR_ENV)
@@ -854,6 +943,7 @@ async fn run_sidecar(
         Ok(c) => c
             .args(node_args)
             .current_dir(worktree)
+            .envs(run_path_env(app, worktree))
             .envs(COLOR_ENV)
             .envs(env.iter().map(|(k, v)| (k.to_string(), v.clone()))),
         Err(e) => {
@@ -987,7 +1077,7 @@ pub(crate) fn add_worktree_in(
     // Run ids restart at each launch: a folder already there is a leftover of
     // an earlier launch, which no running job owns, and it blocks `add`.
     if worktree.exists() {
-        let _ = Command::new(git)
+        let _ = console_command(git)
             .arg("-C")
             .arg(folder)
             .args(["worktree", "remove", "--force"])
@@ -1165,7 +1255,7 @@ pub async fn desktop_bisect_here(
         ));
     }
     // The good commit must be an ancestor of the bad one for a bisect to make sense.
-    let ancestor = Command::new(&git)
+    let ancestor = console_command(&git)
         .arg("-C")
         .arg(&folder)
         .args(["merge-base", "--is-ancestor", &good, &bad])
@@ -2290,6 +2380,68 @@ mod tests {
             Some(b.join("git"))
         );
         assert_eq!(resolve_tool_in(&[a], &candidates), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_run_path_puts_each_node_modules_bin_first_nearest_first() {
+        let dir = std::env::temp_dir().join(format!("piwi-run-path-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let folder = dir.join("app");
+        std::fs::create_dir_all(folder.join("node_modules/.bin")).unwrap();
+        std::fs::create_dir_all(dir.join("node_modules/.bin")).unwrap();
+        let tool = dir.join("tools");
+        let path = run_path(
+            &folder,
+            &[tool.clone(), folder.join("node_modules").join(".bin")],
+        )
+        .unwrap();
+        let dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
+        assert_eq!(
+            dirs,
+            vec![
+                folder.join("node_modules").join(".bin"),
+                dir.join("node_modules").join(".bin"),
+                tool,
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_workspace_root_is_told_by_its_manifest_or_pnpm_file() {
+        let dir = std::env::temp_dir().join(format!("piwi-workspaces-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!declares_workspaces(&dir));
+        std::fs::write(dir.join("package.json"), r#"{"name":"app"}"#).unwrap();
+        assert!(!declares_workspaces(&dir));
+        std::fs::write(dir.join("package.json"), r#"{"workspaces":["packages/*"]}"#).unwrap();
+        assert!(declares_workspaces(&dir));
+        std::fs::write(dir.join("package.json"), "not json").unwrap();
+        assert!(!declares_workspaces(&dir));
+        std::fs::write(dir.join("pnpm-workspace.yaml"), "packages: []").unwrap();
+        assert!(declares_workspaces(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn removing_a_borrowed_link_keeps_what_it_points_to() {
+        let dir = std::env::temp_dir().join(format!("piwi-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let folder = dir.join("folder");
+        let worktree = dir.join("worktree");
+        std::fs::create_dir_all(folder.join("node_modules/pkg")).unwrap();
+        std::fs::create_dir_all(&worktree).unwrap();
+        link_node_modules(&folder, &worktree).unwrap();
+        let link = worktree.join("node_modules");
+        assert!(is_link(&link));
+        assert!(!is_link(&folder.join("node_modules")));
+        assert!(link_node_modules(&folder, &worktree).is_ok());
+        remove_link(&link).unwrap();
+        assert!(!link.exists());
+        assert!(folder.join("node_modules/pkg").is_dir());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
