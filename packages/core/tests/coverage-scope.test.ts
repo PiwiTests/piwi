@@ -21,9 +21,20 @@ describe('compileCoverageScope', () => {
       'src/Shop/bin/Release/x.cs',
       'src/Shop/Resources.Designer.cs',
       'src/Shop/Grpc.g.cs',
+      'e2e/checkout.page.ts',
+      'playwright.config.ts',
+      'apps/web/dist/assets/index-3f2a.js',
+      'apps/web/.next/server/app/page.js',
+      'apps/web/.output/server/index.mjs',
+      'apps/web/.nuxt/components.d.ts',
+      'src/api/client.gen.ts',
+      'src/graphql/__generated__/types.ts',
+      'src/env.d.ts',
+      'coverage/lcov-report/index.js',
     ]) {
       expect(inScope(path), path).toBe(false);
     }
+    expect(inScope('src/builder/order.ts')).toBe(true);
   });
 
   it('counts only what an include pattern names, and an exclude wins over it', () => {
