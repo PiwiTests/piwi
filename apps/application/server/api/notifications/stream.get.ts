@@ -125,8 +125,18 @@ export default eventHandler(async (event) => {
     }, REFRESH_INTERVAL_MS);
 
     const unsubscribe = runEventBus.subscribeNotifications((notificationEvent) => {
+      const type = notificationEvent.type as string | undefined;
       const projectId = notificationEvent.projectId as number | undefined;
-      if (typeof projectId === 'number' && !scopeAllows(scope, projectId)) return;
+      // The projects the event is about: every one a quality report covers, else its own.
+      const projectIds =
+        type === REPORT_READY_EVENT
+          ? ((notificationEvent.projectIds as number[] | undefined) ?? [])
+          : typeof projectId === 'number'
+            ? [projectId]
+            : [];
+      // Whoever the event is addressed to, it reaches only a caller who can open
+      // every project it is about; an event about no project reaches nobody.
+      if (projectIds.length === 0 || !projectIds.every((id) => scopeAllows(scope, id))) return;
 
       // A targeted event (e.g. cluster.fixed addressed at the author of the fix)
       // is delivered to that one user regardless of their subscriptions; every
@@ -134,20 +144,11 @@ export default eventHandler(async (event) => {
       const targetUserId = notificationEvent.targetUserId as number | undefined;
       const targetedAtMe = typeof targetUserId === 'number' && targetUserId === user.id;
 
-      const type = notificationEvent.type as string | undefined;
-      // A quality report goes to its personal channel's owner, or, from a global
-      // channel, to whoever can open every project it covers.
+      // A quality report goes to its personal channel's owner alone, or, from a
+      // global channel, to every caller who can open the projects it covers.
       if (type === REPORT_READY_EVENT) {
-        const covered = (notificationEvent.projectIds as number[] | undefined) ?? [];
-        const allowed = typeof targetUserId === 'number' ? targetedAtMe : covered.every((id) => scopeAllows(scope, id));
-        if (!allowed) return;
-      } else if (
-        !targetedAtMe &&
-        typeof projectId === 'number' &&
-        type &&
-        !matchesSubscription(type, projectId, notificationEvent)
-      )
-        return;
+        if (typeof targetUserId === 'number' && !targetedAtMe) return;
+      } else if (!targetedAtMe && type && !matchesSubscription(type, projectId!, notificationEvent)) return;
 
       try {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(notificationEvent)}\n\n`));

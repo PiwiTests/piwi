@@ -119,6 +119,8 @@ The early check only proves the user holds the permission _somewhere_. The proje
   anyone else is found by their whole username (`lookup`), never listed. `tests/unit/access-management-routes.test.ts`.
 - **A project's issues are filed only through the connection its binding names**: `POST /api/integrations/issues`
   refuses any other before building anything, and the draft proposes no other. `tests/unit/issue-create-routes.test.ts`.
+- **A notification addressed to one user (`targetUserId`) still needs their access to every project it is about**:
+  `notifyFixAuthor` checks it before the email, the stream before delivering (`tests/unit/fix-author.test.ts`).
 - **Changing a user's instance role, or signing out, bumps `sessionEpoch`** and so ends their sessions. Project role
   and group changes need no such step: access is loaded on every request.
 

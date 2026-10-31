@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { apiError } from '../../server/utils/api-error';
+import { REPORT_READY_EVENT } from '#shared/notification-events';
 import { openTempDb, type TempDb } from './temp-db';
 
 /**
  * `GET /api/notifications/stream`: every refresh re-checks the caller and
- * reloads their project scope, and a refused caller ends the stream.
+ * reloads their project scope, a refused caller ends the stream, and an event
+ * addressed to the caller still needs every project it is about.
  */
 
 delete process.env.PIWI_DATABASE_URL;
@@ -100,5 +102,42 @@ describe('notification stream', () => {
     runEventBus.publishNotification(targeted(5));
     await vi.advanceTimersByTimeAsync(0);
     expect(s.received).toHaveLength(0);
+  });
+});
+
+describe('an event addressed to the caller', () => {
+  const report = (projectIds: number[], targetUserId?: number) => ({
+    type: REPORT_READY_EVENT,
+    snapshotId: 1,
+    scheduleId: 1,
+    title: 'Weekly quality',
+    projectIds,
+    ...(targetUserId === undefined ? {} : { targetUserId }),
+  });
+
+  test('reaches them only on a project they can open', async () => {
+    const s = await open();
+    runEventBus.publishNotification(targeted(6));
+    runEventBus.publishNotification({ type: 'cluster.fixed', targetUserId: 7 });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.received).toEqual([]);
+
+    runEventBus.publishNotification(targeted(5));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.received).toEqual([targeted(5)]);
+  });
+
+  test('a quality report reaches its channel owner only when they can open every project it covers', async () => {
+    const s = await open();
+    runEventBus.publishNotification(report([5, 6], 7));
+    runEventBus.publishNotification(report([], 7));
+    runEventBus.publishNotification(report([5], 8));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.received).toEqual([]);
+
+    runEventBus.publishNotification(report([5], 7));
+    runEventBus.publishNotification(report([5]));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.received).toEqual([report([5], 7), report([5])]);
   });
 });
