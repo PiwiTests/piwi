@@ -52,7 +52,7 @@ A cluster's **known issue** is its most recently linked ticket; earlier ones sta
 
 <figure>
   <img src="/screenshots/cluster-issue-line.png" alt="A failure cluster's situation block with its Issue line naming the Jira issue the cluster is tracked in">
-  <figcaption>The cluster’s Issue line names the Jira issue that tracks it.</figcaption>
+  <figcaption>The cluster's Issue line names the Jira issue that tracks it.</figcaption>
 </figure>
 
 ## Keep the ticket honest
@@ -89,7 +89,7 @@ labels. The create-issue draft picks the first matching route.
 
 <figure>
   <img src="/screenshots/project-integration-binding.png" alt="The project's Issue tracker settings: connection, Jira project and issue type, labels, the runs that write to the ticket, sync-policy switches, an owner-routes table, and automatic creation with one rule">
-  <figcaption>A project’s Issue tracker settings.</figcaption>
+  <figcaption>A project's Issue tracker settings.</figcaption>
 </figure>
 
 ## Required Jira fields

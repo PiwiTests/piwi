@@ -76,6 +76,11 @@ The run's **Timeline** tab draws the same samples on the tests' time axis, above
 **CPU** busy share, the **memory** the run's processes held, and, with the capture fixtures, the **pages** open in the
 workers. Hover a track for its values and the tests running then; the **Resources** menu turns each track off. A sharded run draws one set of tracks per shard, each from its own machine.
 
+<figure>
+  <img src="/screenshots/run-timeline-resources-hover.png" alt="A run's workers timeline with the CPU, memory and open-pages tracks above the rows, one moment hovered with its values">
+  <figcaption>The resource tracks above a run's timeline, one moment hovered.</figcaption>
+</figure>
+
 While someone watches a running run, the tracks fill in **live** every five seconds; leak verdicts wait for its end.
 
 The same menu draws one metric **under each worker** row, on one scale for all: its open pages, the CPU and
@@ -88,10 +93,6 @@ its browser processes, the largest of those, the worker's event loop, and the pa
 failed execution's **Timeline** tab draws, behind its **Resources** switch, the CPU, memory and open pages of the
 test's worker under its lanes, with the failure line across them.
 
-<figure>
-  <img src="/screenshots/run-timeline-resources-hover.png" alt="A run's workers timeline with the CPU, memory and open-pages tracks above the rows, one moment hovered with its values">
-  <figcaption>The resource tracks above a run's timeline, one moment hovered.</figcaption>
-</figure>
 
 ## Cost
 

@@ -102,8 +102,9 @@
   <text class="mono ink" x="498" y="270">PIWI_AUTH_ENABLED</text>
   <text class="mono ink" x="498" y="290">PIWI_AUTH_SECRET</text>
   <text class="mono ink" x="498" y="310">PIWI_SECRET_KEY</text>
-  <text class="mono ink" x="498" y="330">PIWI_SITE_URL</text>
-  <text class="mono ink" x="498" y="350">PIWI_TRUST_PROXY</text>
+  <text class="mono ink" x="498" y="330">PIWI_SETUP_TOKEN</text>
+  <text class="mono ink" x="498" y="350">PIWI_SITE_URL</text>
+  <text class="mono ink" x="498" y="370">PIWI_TRUST_PROXY</text>
 
   <!-- Its data -->
   <rect class="box" x="726" y="108" width="172" height="100" rx="8"/>

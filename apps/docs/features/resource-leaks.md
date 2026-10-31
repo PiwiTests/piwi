@@ -84,8 +84,8 @@ reporter entry's options.
 A run whose reporter sent findings shows a **Resources** tab:
 
 - the counts of each kind of finding, the CPU the run's processes used and the machine's peak memory;
-- the findings, each with the line or fixture that opened it;
-- a link to each worker's open pages over the run, on the run's [Timeline tab](./cpu-memory-disk#in-the-dashboard):
+- the findings, each with the line or fixture that opened it, one click from your editor;
+- a switch drawing each worker's open pages on the run's [Timeline tab](./cpu-memory-disk#in-the-dashboard):
   a leak climbs test after test, a clean worker stays flat;
 - the machine each shard ran on, from the [CPU, memory & disk](./cpu-memory-disk#in-the-dashboard) panel;
 - the **costliest tests**, by the CPU of their worker and browser processes, with the pages each found already open.
@@ -94,7 +94,7 @@ The execution page's Performance tab shows what that one test cost and what it l
 **Resources** capability on the Setup page hides both, and the reporter's summary stays as it is.
 
 <figure>
-  <img src="/screenshots/run-resources.png" alt="A run's Resources tab: counts of leaked, never-used, piling-up and left-running resources, the four findings with the fixture and file of each, the machine's CPU, memory and disk, and the costliest tests">
+  <img src="/screenshots/run-resources.png" alt="A run's Resources tab: counts of leaked, never-used, piling-up and left-running resources, the four findings, each with the fixture, file or test behind it, the machine's CPU, memory and disk, and the costliest tests">
   <figcaption>A run's Resources tab.</figcaption>
 </figure>
 

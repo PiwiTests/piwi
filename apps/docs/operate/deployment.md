@@ -87,7 +87,7 @@ The server reads three process-level variables directly:
 | `HOST` | `0.0.0.0` | Listen on all interfaces. The Docker image sets `NITRO_HOST=0.0.0.0`, which takes precedence — override the bind address there with `NITRO_HOST`. `npx @piwitests/server` defaults to `127.0.0.1` |
 | `PORT` | `3000` | Application port |
 
-Everything else is a `PIWI_*` variable, listed with its default and the Settings page field it overrides in the generated [configuration reference](/reference/configuration). The [configuration generator](/reference/configuration/generator) turns your choices into a ready-to-paste block from the same registry.
+Everything else is a `PIWI_*` variable, listed with its default and the Settings page that names it in the generated [configuration reference](/reference/configuration). The [configuration generator](/reference/configuration/generator) turns your choices into a ready-to-paste block from the same registry.
 
 ## One-click deploy
 
@@ -180,7 +180,7 @@ spec:
         fsGroup: 1001   # the image's non-root user, so it can write the volume
       containers:
       - name: piwi-dashboard
-        image: phenx/piwitests-server:0.63.0   # an exact release: see Available tags
+        image: phenx/piwitests-server:0.63.0 # x-release-please-version
         ports:
         - containerPort: 3000
         envFrom:
@@ -188,6 +188,7 @@ spec:
             name: piwi-config
         - secretRef:
             name: piwi-secrets
+            optional: true
         readinessProbe:
           httpGet:
             path: /api/health
@@ -232,8 +233,8 @@ spec:
   type: ClusterIP
 ```
 
-The Service stays inside the cluster: publish it through your Ingress with TLS, as in
-[Reverse proxy (HTTPS)](#reverse-proxy-https), rather than as a plain-HTTP `LoadBalancer`.
+The Service stays inside the cluster: publish it through your Ingress with TLS, rather than as a plain-HTTP
+`LoadBalancer`, with the proxy settings of [Reverse proxy (HTTPS)](#reverse-proxy-https).
 
 ## npm / npx (quick local run)
 

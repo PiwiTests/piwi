@@ -28,6 +28,11 @@ them. They return compact JSON, list tools page with `{ items, nextCursor }` (`g
 with `offset`/`nextOffset`), and a tool that fails returns a normal result with `isError: true` and a readable
 message (one whose SCM or AI provider is not configured returns `{ error }`).
 
+<figure>
+  <img src="/screenshots/mcp-tool-details.png" alt="The MCP server page with the get_fix_plan tool opened: its description and its parameters">
+  <figcaption>One tool on the MCP server page, opened: what it does and the parameters it takes.</figcaption>
+</figure>
+
 **Modules.** Every tool belongs to one module, `core`, `workflow`, `healing` or `agents`, the groups the Setup page
 asks about. Declining a capability drops the tools that depend on it. Append `?modules=core` (comma-separated) to the
 MCP URL to narrow the list further; narrowing never re-enables a declined tool.
@@ -48,10 +53,6 @@ the result; read tools never are. A cluster's **Activity** section shows the cal
 **Transport.** Streamable HTTP: JSON-RPC 2.0 over `POST /mcp`, with no SSE or WebSocket. Protocol versions
 `2025-06-18`, `2025-03-26` and `2024-11-05` are supported.
 
-<figure>
-  <img src="/screenshots/mcp-tool-details.png" alt="The MCP server page with the get_fix_plan tool opened: its description and its parameters">
-  <figcaption>One tool on the MCP server page, opened: what it does and the parameters it takes.</figcaption>
-</figure>
 
 ## Authentication
 

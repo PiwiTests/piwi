@@ -7403,12 +7403,6 @@ async function uncoveredChangesMarkdown() {
   });
 }
 
-/**
- * A comment's Markdown as a code host shows it: rendered with `marked`, a
- * line break kept as one, in a bordered card under its author line, in the
- * hosts' system font stack. The
- * emoji become drawn circles, since the capture browser may have no emoji font.
- */
 /** The pull-request comment of a run with a new regression, a failure that predates the change, a flake and a fix. */
 async function prSummaryMarkdown() {
   const { buildPrComment } = await import('../shared/pr-feedback.ts');
@@ -7419,9 +7413,9 @@ async function prSummaryMarkdown() {
     projectName: 'checkout',
     status: 'failed',
     totalTests: 248,
-    passedTests: 244,
+    passedTests: 245,
     failedTests: 2,
-    flakyTests: 2,
+    flakyTests: 1,
     durationMs: 6 * 60_000 + 12_000,
     newRegressions: [
       {
@@ -7523,6 +7517,12 @@ async function healPrMarkdown() {
   );
 }
 
+/**
+ * A comment's Markdown as a code host shows it: rendered with `marked`, a
+ * line break kept as one, in a bordered card under its author line, in the
+ * hosts' system font stack. The
+ * emoji become drawn circles, since the capture browser may have no emoji font.
+ */
 async function prCommentPage(markdown) {
   const { marked } = await import('marked');
   const body = marked

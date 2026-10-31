@@ -52,6 +52,7 @@ the sidebar when any of its runs started in the last ten days. Flake Lab and pro
 
 <figure>
   <img src="/diagrams/baseline-ladder.svg" alt="The baseline ladder: same branch, base branch, then any branch, first within the run's environment and then in any environment">
+  <figcaption>The run a branch's run is compared with.</figcaption>
 </figure>
 
 - **The run-level baseline**, what the Changes tab, the stored regression signals, the CI gate, pull-request feedback, the bisect window and the AI diagnosis all compare against, follows the [baseline rule](/guide/concepts#baseline-last-green-run): same environment first, then the same branch, the base branch, any branch. Two feature branches reporting interleaved runs never become each other's baseline. When no earlier full run passed, the Changes tab [falls back to the last failed run](./run-changes#when-no-earlier-run-passed).

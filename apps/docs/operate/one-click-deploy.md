@@ -37,7 +37,6 @@ template's exact contents live in
 and the repo ships a [`railway.json`](https://github.com/PiwiTests/piwi/blob/main/railway.json) pinning
 the health check to `/api/health` and the replica count to 1.
 
-<!-- Replace with the published template URL once the template is live on Railway. -->
 > **No button.** Railway lists no published Piwi template: create a service from the
 > `phenx/piwitests-server:latest` image, add a volume mounted at `/app/.data`, and copy the variables from
 > `deploy/railway/template.md`.

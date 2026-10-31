@@ -15,7 +15,7 @@ Open the failing test from the run page (click its row) to reach its **execution
   <figcaption>The situation block: what broke, since when, why, what to do next, and the cluster it belongs to.</figcaption>
 </figure>
 
-The top of the page is one **situation block**. Above its heading, a small **identity** line carries the status, the test (`checkout.spec.ts:9 › Checkout › pays`), marks such as `@fixme` or `@slow`, and whether it is quarantined. The lines below it are the rest of this page, in order.
+The top of the page is one **situation block**. Above its heading, a small **identity** line carries the status, the test (`tests/checkout/checkout.spec.ts:9 › Checkout › should complete checkout with credit card`), marks such as `@fixme` or `@slow`, and whether it is quarantined. The lines below it are the rest of this page, in order.
 
 ## 1. The headline: what broke
 
@@ -35,7 +35,7 @@ A smaller line under the headline says since when it fails, on which commit and 
 
 Under the headline, the **Most likely** line gives one explanation. It is built from **[clues](/features/evidence#clues)**: deterministic, rule-based findings correlated from the evidence, with *no model involved*. When the clues match a known pattern (some patterns need only one clue), the line is a [story](./concepts#story), one sentence that chains them:
 
-> *"the Pay button stayed disabled because POST /api/checkout/quote was still in flight (28.4 s); the console said so 7.8 s before the click gave up"*
+> *The button "Pay" stayed disabled because POST /api/checkout/quote was still in flight (28.4 s); the console said so 7.8 s before the click gave up.*
 
 A strong or medium story leads; otherwise the cluster's completed [AI diagnosis](/features/ai-diagnosis) does, else a weak story, else the strongest clue. The [cluster page](/features/failure-clusters) follows the same rule. The line carries a strength (*Strong*, *Medium* or *Weak*, or the diagnosis's confidence) and how many clues **agree**; an **All clues** disclosure lists every clue, each with a **citation** to the evidence it came from. Click a citation and the page jumps to the proof. When no rule fires and no diagnosis completed, the line is absent. The [Clue rules](/reference/clues) page lists every rule.
 

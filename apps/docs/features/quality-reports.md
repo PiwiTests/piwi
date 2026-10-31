@@ -94,14 +94,15 @@ before you save, as its email and as the full report, and sends nothing. **Mute*
 and sends nothing; **Pause** stops the schedule. Each firing uses its owner's current roles. A **global**
 schedule covers every project, goes to global channels and needs an administrator.
 
-The server checks schedules every five minutes; a firing missed while it was down happens at the next
-check, for its own period. The [desktop app](./desktop) fires them while it runs; the demo
-has no scheduler.
-
 <figure>
   <img src="/screenshots/report-schedule-preview.png" alt="The schedule form's preview: the email the Weekly executive report schedule would send now">
   <figcaption>Preview in the schedule form: the email the schedule would send now.</figcaption>
 </figure>
+
+The server checks schedules every five minutes; a firing missed while it was down happens at the next
+check, for its own period. The [desktop app](./desktop) fires them while it runs; the demo
+has no scheduler.
+
 
 ### Report snapshots
 
@@ -114,7 +115,7 @@ keeps them).
 
 <figure>
   <img src="/screenshots/report-snapshot.png" alt="A stored report snapshot: when it was generated and delivered, then the report: the verdict, the headline numbers, the pass rate over time, what changed, what is being done and the risks">
-  <figcaption>A report snapshot, as it was sent.</figcaption>
+  <figcaption>A report snapshot: the report as it was generated.</figcaption>
 </figure>
 
 ## Language

@@ -20,14 +20,14 @@ npx vitest run --coverage --coverage.reporter=cobertura
 npx @piwitests/reporter coverage upload coverage/cobertura-coverage.xml --suite unit-front
 ```
 
-It says what it sent:
-
-<<< @/snippets/coverage-upload-output.txt
-
 ```bash
 dotnet test --collect "XPlat Code Coverage"
 npx @piwitests/reporter coverage upload "**/TestResults/*/coverage.cobertura.xml" --suite unit-back
 ```
+
+Each upload says what it sent:
+
+<<< @/snippets/coverage-upload-output.txt
 
 The command reads the project, the dashboard URL and the API key (Uploader role) as the reporter does
 (`PIWI_PROJECT_NAME`, `PIWI_DASHBOARD_URL`, `PIWI_API_KEY`), the commit from git and the branch from the CI or

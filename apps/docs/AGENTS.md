@@ -18,7 +18,7 @@ by `docs:dev` and `docs:build`:
 
 | Page | Source | Script |
 |---|---|---|
-| `reference/configuration.md` | the env-var registry, `apps/application/shared/piwi-env-vars.ts`, and the Settings fields each variable overrides, `apps/application/shared/settings-metadata.ts` | `scripts/generate-configuration.mjs` |
+| `reference/configuration.md` | the env-var registry, `apps/application/shared/piwi-env-vars.ts`, and the Settings pages whose fields name each variable, `apps/application/shared/settings-metadata.ts` | `scripts/generate-configuration.mjs` |
 | `reference/features.md` (All features) | the feature catalog, `apps/application/shared/piwi-features.ts`; its "The pieces" and "Choosing a setup" sections from `apps/application/shared/piwi-ecosystem.ts` | `scripts/generate-features.mjs` |
 | `reference/reporter-options.md` | the reporter's options type, `packages/reporter/src/public/options.ts`, and `PIWI_ENV_KEYS` in `packages/reporter/src/internal/config/env.ts` | `scripts/generate-reporter-options.mjs` |
 | `reference/whats-new.md` | `CHANGELOG.md`, read by `apps/application/shared/changelog.ts` (the MCP `get_release_notes` parser) | `scripts/generate-whats-new.mjs` |
@@ -141,8 +141,8 @@ which the drift test also reads.
 ### Page types and word budgets
 
 Every page is one type, with one word budget and no allowlist. A page over its budget is cut, or split into two pages;
-it is never excused. The budget counts the page body without its front matter, code blocks and figure captions
-included, an image's markup and alt text left out.
+it is never excused. The budget counts the page body, code blocks and figure captions included; it leaves out the front
+matter and an image's markup and alt text.
 
 | Type | Answers | Pages | Budget |
 |---|---|---|---:|
@@ -164,7 +164,7 @@ flags, events): link the reference page instead of copying it.
 - Its H1 equals its sidebar label. Recipes are the exception: their H1 is the reader's question.
 - One footer heading, `## Related`.
 - An image goes in a `<figure>` with a `<figcaption>`: `custom.css` frames it and `theme/image-zoom.ts` opens it at
-  its native size on a click. The drift test refuses a Markdown image or another wrapper.
+  its native size on a click. The drift test refuses a Markdown image and a `doc-screenshot` wrapper.
 - A new term goes into `concepts.md` in the change that introduces it.
 - The page describes what a default install does today. Planned work belongs in `ROADMAP.md`; an experimental
   feature gets one short section marked **Experimental**, with a link to its proposal. No "planned for", "not yet

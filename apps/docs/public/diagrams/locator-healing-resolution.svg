@@ -58,7 +58,7 @@
   </defs>
   <rect class="bg" x="0.5" y="0.5" width="919" height="781" rx="12"/>
   <text class="t" x="24" y="38">Healing: when a locator fails</text>
-  <text class="s" x="24" y="62">The lookup works from the stored error text and prior captures: it never needs your source code.</text>
+  <text class="s" x="24" y="62">Most trustworthy first: the run's own diff, then the captures of passing runs, then the failing page.</text>
 
   <!-- Input -->
   <rect class="box" x="22" y="88" width="290" height="118" rx="8"/>

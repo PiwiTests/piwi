@@ -114,6 +114,11 @@ The **Settings › Storage** page (`/settings/storage`) provides administrators 
 - **Storage analysis** — total storage and file count, the projects that take the most, a breakdown by file kind, growth over time, and the on-disk size (local only), which also surfaces untracked files left on disk.
 - **Cleanup** — permanently delete all test runs older than a configurable number of days (7, 14, 30, 60, 90, 180, or 365 days). [Kept runs](#keeping-runs-forever) are skipped, and so are each project's newest runs when `PIWI_RETENTION_MIN_RUNS` is set. A confirmation dialog is shown before any data is deleted, and the result says how many runs were skipped.
 
+<figure>
+  <img src="/screenshots/storage-analysis.png" alt="Settings, Storage: the total storage and its growth, storage over time, the space taken by each file kind, and the projects that take the most">
+  <figcaption>Settings → Storage: how much is stored, how it grows, and where it goes.</figcaption>
+</figure>
+
 Project admins can also delete runs by hand:
 
 - From the **test run detail page** — **Delete run** in the page's **⋮** menu.
@@ -125,10 +130,6 @@ a run that could not be deleted stays listed with its error.
 
 A kept run cannot be deleted until it is released; a selection skips kept runs.
 
-<figure>
-  <img src="/screenshots/storage-analysis.png" alt="Settings, Storage: the total storage and its growth, storage over time, the space taken by each file kind, and the projects that take the most">
-  <figcaption>Settings → Storage: how much is stored, how it grows, and where it goes.</figcaption>
-</figure>
 
 ### Data retention
 

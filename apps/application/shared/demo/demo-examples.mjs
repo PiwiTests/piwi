@@ -315,7 +315,7 @@ export const DEMO_EXAMPLES = [
     id: 'run-changes-checkout',
     doc: 'features/run-changes',
     title: 'E2E Checkout › a run’s Changes tab',
-    shows: 'A run read against its baseline: the new failures, the newly flaky tests and the commits since.',
+    shows: 'A run read against its baseline: what failed, what passed only on retry, and the commits landed since.',
     route: '/test-runs/2?tab=changes',
     expect: { run: { id: 2, project: 'e2e-checkout' } },
   },
@@ -326,15 +326,6 @@ export const DEMO_EXAMPLES = [
     shows: 'Duration trends with their markers, the slowest tests, and the timeouts worth tightening.',
     route: '/projects/1?tab=performance',
     expect: { project: { id: 1, name: 'e2e-checkout' } },
-  },
-  {
-    id: 'locator-healing-renamed-label',
-    doc: 'features/locator-healing',
-    title: 'E2E Checkout › should complete checkout with Apple Pay',
-    shows:
-      'A field label was renamed: healing recommends the locator that survived, and the Next step copies the edit.',
-    route: '/failure-clusters/2',
-    expect: { cluster: { id: 2, story: 'checkout-email-renamed' } },
   },
   {
     id: 'locator-healing-strict-mode',

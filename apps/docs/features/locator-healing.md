@@ -50,7 +50,7 @@ stored ones (an **element match**), matched by role, heading level and, on a tot
 elements of the same role.
 
 <figure>
-  <img src="/diagrams/locator-healing-resolution.svg" alt="Diagram of the healing resolution flow: the failing error is parsed into a locator signature and call site, matched through the stored history, checked against the failing page's ARIA snapshot, and shown in the Locator fix panel">
+  <img src="/diagrams/locator-healing-resolution.svg" alt="Diagram of the healing resolution flow: the failing error is parsed into a locator signature and call site; a rename in the run's diff is rewritten at once, otherwise a stored capture is matched and checked against the failing page's ARIA snapshot; the result shows in the Locator fix panel">
   <figcaption>Every stored match is checked against the failing page before anything is recommended.</figcaption>
 </figure>
 

@@ -74,7 +74,7 @@ Nothing breaks without the fixtures. This is what you give up:
 | Backend log correlation | — | ✅ with a [backend integration](./backend-logs) |
 
 <figure>
-  <img src="/screenshots/evidence-fixtures-footer-wide.png" alt="The evidence card of a project without the fixtures: only Source has content, and the footer says network, console, state and performance are not captured, with Add fixtures and two ways to decline">
+  <img src="/screenshots/evidence-fixtures-footer-wide.png" alt="The evidence card of a project without the fixtures: the Source tab open and empty, the other tabs dimmed, and the footer says network, console, state and performance are not captured, with Add fixtures and two ways to decline">
   <figcaption>Without the fixtures, the evidence card names what is missing; the line goes once a run brings them.</figcaption>
 </figure>
 

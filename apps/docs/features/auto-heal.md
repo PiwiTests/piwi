@@ -1,6 +1,6 @@
 ---
 title: Auto-heal PRs
-description: "Piwi opens a pull request with one-line locator replacements, backed by stored evidence, for a broken locator; you review and merge it, Piwi never does."
+description: "Piwi opens a pull request with one-line locator replacements, from a passing run's capture or the change's own rename, for a broken locator; you review and merge it, Piwi never does."
 lang: en-US
 ---
 

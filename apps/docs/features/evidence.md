@@ -81,7 +81,7 @@ Each difference links to its evidence tab, a request that is one of the test's [
 it. The comparison feeds the [root-cause classifier](./flaky-tests#root-cause-classification).
 
 <figure>
-  <img src="/screenshots/attempt-diff.png" alt="An execution's Attempts tab: the failed and the passed attempt, then what differed between them: an error only on the failing attempt, a request 1.8 s slower, a step that errored only there">
+  <img src="/screenshots/attempt-diff.png" alt="An execution's Attempts tab: the failed and the passed attempt, then what differed between them: an error only on the failing attempt, a request taking 1.8 s on the failing attempt against 97 ms on the passing one, a step that errored only there">
   <figcaption>What differed between a failing attempt and the passing retry.</figcaption>
 </figure>
 

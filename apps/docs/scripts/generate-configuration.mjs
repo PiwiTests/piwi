@@ -57,7 +57,7 @@ const codeifyBareLinks = (text) =>
     })
     .join('`');
 
-/** The Settings pages with a field each variable overrides, keyed by variable. */
+/** The Settings pages with a field whose help names each variable, keyed by variable. */
 const settingsPagesOf = new Map();
 for (const page of SETTINGS_PAGES) {
   for (const field of page.fields) {
@@ -85,11 +85,14 @@ function metaNotes(meta, name) {
   if (meta.min !== undefined && meta.max !== undefined) notes.push(`Range: ${meta.min} to ${meta.max}.`);
   else if (meta.min !== undefined) notes.push(`Minimum: ${meta.min}.`);
   else if (meta.max !== undefined) notes.push(`Maximum: ${meta.max}.`);
-  if (meta.requiredWhen) notes.push(`Required when ${conditionText(meta.requiredWhen)}.`);
-  if (meta.relevantWhen) notes.push(`Used only when ${conditionText(meta.relevantWhen)}.`);
-  if (meta.secret) notes.push('Secret: never logged nor returned by the API.');
+  const required = meta.requiredWhen ? conditionText(meta.requiredWhen) : null;
+  if (required && !/required when/i.test(meta.description)) notes.push(`Required when ${required}.`);
+  if (meta.relevantWhen && conditionText(meta.relevantWhen) !== required) {
+    notes.push(`Used only when ${conditionText(meta.relevantWhen)}.`);
+  }
+  if (meta.secret) notes.push('Secret: never logged or returned by the API.');
   const pages = settingsPagesOf.get(name);
-  if (pages) notes.push(`Overrides the field of ${pages.map((label) => `**Settings → ${label}**`).join(', ')}.`);
+  if (pages) notes.push(`Named on ${pages.map((label) => `**Settings → ${label}**`).join(', ')}.`);
   return notes;
 }
 

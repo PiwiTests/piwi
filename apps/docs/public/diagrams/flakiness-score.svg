@@ -139,7 +139,7 @@
   <rect class="box" x="22" y="390" width="876" height="118" rx="8"/>
   <path class="hd" d="M 22.5 422 L 22.5 398 Q 22.5 390.5 30 390.5 L 890 390.5 Q 897.5 390.5 897.5 398 L 897.5 422 Z"/>
   <text class="lb" x="38" y="411">Impact: the order of the list</text>
-  <text class="l ink" x="38" y="446">impact = 0.7 × wasted CI minutes + 0.3 × 30 × retry passes</text>
+  <text class="l ink" x="38" y="446">impact = 0.7 × wasted CI minutes + 0.3 × 30 × retry passes  (30: a fixed weight, not the score)</text>
   <text class="l" x="38" y="468">wasted CI minutes = 2 retry passes × 1.5 min, the average failed attempt = 3 min</text>
   <text class="l" x="38" y="488">impact = 0.7 × 3 + 0.3 × 30 × 2 = 20.1 → 20; 3 wasted minutes is under 5, a green dot</text>
   <text class="m" x="22" y="538">The failure rate, 2 of 10 runs failed, shows beside the score and is not part of it. A test is listed from 3 runs,</text>
