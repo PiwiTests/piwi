@@ -8,6 +8,11 @@ lang: en-US
 
 Piwi is one Node.js server with its data in one directory. Run it as a Docker container (recommended), with Docker Compose, on Kubernetes or with `npx`, then put an HTTPS proxy in front of it.
 
+<figure>
+  <img src="/diagrams/production-topology.svg" alt="CI runners, your team and coding agents reach one Piwi container through an HTTPS reverse proxy; its data sits on the /app/.data volume, or in PostgreSQL and an S3-compatible bucket; outbound calls go only to the services you configure">
+  <figcaption>A production instance: one replica behind a TLS proxy, with persistent data.</figcaption>
+</figure>
+
 ## Docker (recommended)
 
 ### Quick start
