@@ -82,8 +82,8 @@ What each origin feeds:
   performance [notification](/features/notifications#events), posts no
   [pull-request comment or commit status](/features/pr-feedback), starts no automatic AI diagnosis or auto-heal, and
   writes nothing to an [issue tracker](/features/issue-automation#the-runs-that-write) on its own.
-- **Partial runs** (a `--grep`, a file filter, a selection) never count for change coverage, which asks whether a
-  file was reached in the recent runs.
+- **Partial runs** (a `--grep`, a file filter, a selection, `--last-failed` or `--only-changed`) never count for change
+  coverage, which asks whether a file was reached in the recent runs, nor as a commit's end-to-end coverage.
 
 ### Playwright configuration
 

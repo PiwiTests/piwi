@@ -34,7 +34,7 @@ import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
 import { detectCi, resolveRunLabel } from '../internal/support/ci.js';
 import { workerIndexOf } from '../internal/support/worker-index.js';
-import { detectCliFileFilters } from '../internal/support/cli-filters.js';
+import { detectCliFileFilters, detectCliNarrowingFlags } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { isListMode } from '../internal/support/run-mode.js';
@@ -341,13 +341,15 @@ export class PiwiDashboardReporter {
     // Playwright's default grep is /.*/ (matches everything) — only a non-default pattern is a real filter.
     const grep = grepRe && grepRe.source !== '.*' ? grepRe.source : undefined;
     const grepInvert = grepInvertRe?.source;
-    // File/path filters come from the CLI invocation, not config.grep.
+    // File/path filters come from the CLI invocation, not config.grep, and so do
+    // `--last-failed` and `--only-changed`, which run a subset chosen from history or a diff.
     const fileFilters = detectCliFileFilters();
+    const narrowed = detectCliNarrowingFlags().length > 0;
     // A run launched by `piwi run <key>` carries the resolved selection's
     // identity in the environment; stamp it so the dashboard can name the
     // subset and a gate can re-resolve the same definition.
     const selection = readSelectionStamp();
-    if (grep || grepInvert || fileFilters.length > 0 || selection) {
+    if (grep || grepInvert || fileFilters.length > 0 || selection || narrowed) {
       this.isFullRun = false;
       this.filterDetails = {
         ...(grep ? { grep } : {}),

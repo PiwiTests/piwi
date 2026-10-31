@@ -47,3 +47,23 @@ export function detectCliFileFilters(argv: string[] = process.argv): string[] {
   }
   return files;
 }
+
+/** The Playwright CLI flags that run a subset chosen from history or a diff: the last run's failures, the changed tests. */
+const NARROWING_FLAGS = ['--last-failed', '--only-changed'];
+
+/**
+ * The narrowing flags of a Playwright CLI invocation, without their dashes:
+ * `--last-failed` runs the last run's failures and `--only-changed` the tests a
+ * diff touches, so either makes the run partial. Empty for the full suite.
+ */
+export function detectCliNarrowingFlags(argv: string[] = process.argv): string[] {
+  const args = argv.slice(2);
+  const testIdx = args.indexOf('test');
+  const rest = testIdx >= 0 ? args.slice(testIdx + 1) : args;
+  const flags = new Set<string>();
+  for (const tok of rest) {
+    const name = tok.split('=', 1)[0]!;
+    if (NARROWING_FLAGS.includes(name)) flags.add(name.slice(2));
+  }
+  return [...flags];
+}

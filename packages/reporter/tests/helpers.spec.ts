@@ -8,7 +8,7 @@ import { resolveRunLabel } from '../src/internal/support/ci.js';
 import { readSourceSnippet, collectSourceFrames } from '../src/internal/support/source-snippet.js';
 import { createLimiter } from '../src/internal/support/limiter.js';
 import { workerIndexOf } from '../src/internal/support/worker-index.js';
-import { detectCliFileFilters } from '../src/internal/support/cli-filters.js';
+import { detectCliFileFilters, detectCliNarrowingFlags } from '../src/internal/support/cli-filters.js';
 
 const CI_KEYS = [
   'GITHUB_ACTIONS',
@@ -97,6 +97,21 @@ describe('detectCliFileFilters', () => {
   });
   it('works when no explicit test subcommand is present', () => {
     expect(detectCliFileFilters([...N, 'a.spec.ts'])).toEqual(['a.spec.ts']);
+  });
+});
+
+describe('detectCliNarrowingFlags', () => {
+  const N = ['node', 'playwright'];
+  it('returns [] for a full-suite run', () => {
+    expect(detectCliNarrowingFlags([...N, 'test', '--workers=4', '--project', 'chromium'])).toEqual([]);
+  });
+  it('names --last-failed and --only-changed, with or without a ref', () => {
+    expect(detectCliNarrowingFlags([...N, 'test', '--last-failed'])).toEqual(['last-failed']);
+    expect(detectCliNarrowingFlags([...N, 'test', '--only-changed=origin/main'])).toEqual(['only-changed']);
+    expect(detectCliNarrowingFlags([...N, 'test', '--only-changed', '--last-failed'])).toEqual([
+      'only-changed',
+      'last-failed',
+    ]);
   });
 });
 
