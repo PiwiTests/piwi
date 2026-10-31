@@ -22,6 +22,7 @@ import {
 import { MAX_VIEW_EVENT_RATE, MAX_VIEW_FRAME_BASE64 } from '@piwitests/core/run-view';
 import type { PickAtResult, RunSession } from '../src/protocol';
 import { RunSessions, type ViewFrame, type Viewer } from '../src/run-sessions';
+import { ClientPageView } from '../src/client-page-view';
 import { FakeWorker, last, service, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
 const ORIGIN = `chrome-extension://${'b'.repeat(32)}`;
@@ -113,6 +114,137 @@ function viewer(): Viewer & { frames: ViewFrame[] } {
 }
 
 const frameOf = (stop: number, data = '/9j/AA=='): RunToHub => ({ type: 'frame', stop, width: 800, height: 600, data });
+
+describe('the editor panel’s live viewer', () => {
+  test('keeps only the latest waiting frame and drops it when the panel leaves', async () => {
+    const h = harness();
+    const since = await h.stopAt(1);
+    const frames: ViewFrame[] = [];
+    let finish!: () => void;
+    const client = new ClientPageView(h.sessions, async (frame) => {
+      frames.push(frame);
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const at = { ref: 'ed-1', worker: 0, since, on: true };
+    const watching = client.watch(at);
+    h.answer(h.requests('view')[0]!.request, 'view', { ok: true, message: 'Watching.' });
+    expect((await watching).ok).toBe(true);
+    h.read(frameOf(1, '/9j/AA=='));
+    h.read(frameOf(1, '/9j/BB=='));
+    h.read(frameOf(1, '/9j/CC=='));
+    expect(frames).toHaveLength(1);
+    finish();
+    await waitFor(() => (frames.length === 2 ? true : undefined));
+    expect(frames[1]).toMatchObject({ data: '/9j/CC==' });
+    h.read(frameOf(1, '/9j/DD=='));
+    await client.watch({ ...at, on: false });
+    finish();
+    await Promise.resolve();
+    expect(frames).toHaveLength(2);
+    expect(last(h.requests('view'))).toMatchObject({ on: false });
+    h.sessions.dispose();
+  });
+
+  test('binds input and release to the watched stop and releases held keys on close', async () => {
+    const h = harness();
+    const since = await h.stopAt(1);
+    const client = new ClientPageView(h.sessions, async () => {});
+    const at = { ref: 'ed-1', worker: 0, since, on: true };
+    const events = [
+      { type: 'key', action: 'down', key: 'Control' },
+      { type: 'mouse', action: 'down', x: 3, y: 4, button: 'left' },
+    ] as const;
+    expect((await client.input({ ...at, events: [...events] })).ok).toBe(false);
+    const watching = client.watch(at);
+    h.answer(h.requests('view')[0]!.request, 'view', { ok: true, message: 'Watching.' });
+    await watching;
+    const playing = client.input({ ...at, events: [...events] });
+    h.answer(h.requests('input')[0]!.request, 'input', { ok: true, message: 'Played.' });
+    expect((await playing).ok).toBe(true);
+    expect((await client.input({ ...at, since: 'old', events: [], release: true })).ok).toBe(false);
+    expect((await client.input({ ...at, events: [{ type: 'key', action: 'press', key: 'unrecognized' }] })).ok).toBe(
+      false,
+    );
+    await client.watch({ ...at, since: 'old', on: false });
+    expect(h.sessions.viewing(client.viewer, at.ref, at.worker, since)).toBe(true);
+    client.dispose();
+    expect(h.requests('input')[1]).toMatchObject({
+      events: [
+        { type: 'mouse', action: 'up', x: 3, y: 4, button: 'left' },
+        { type: 'key', action: 'up', key: 'Control' },
+      ],
+    });
+    h.answer(h.requests('input')[1]!.request, 'input', { ok: true, message: 'Released.' });
+    expect((await client.input({ ...at, events: [...events] })).ok).toBe(false);
+    h.sessions.dispose();
+  });
+
+  test('refuses an older reporter', async () => {
+    const h = harness([]);
+    const since = await h.stopAt(1);
+    const client = new ClientPageView(h.sessions, async () => {});
+    expect((await client.watch({ ref: 'ed-1', worker: 0, since, on: true })).ok).toBe(false);
+    expect(h.requests('view')).toHaveLength(0);
+    client.changed();
+    client.dispose();
+    h.sessions.dispose();
+  });
+
+  test('sends no waiting frame of a stop that ended before the session change is told', async () => {
+    const h = harness();
+    const since = await h.stopAt(1);
+    const frames: ViewFrame[] = [];
+    let finish!: () => void;
+    const client = new ClientPageView(h.sessions, async (frame) => {
+      frames.push(frame);
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const watching = client.watch({ ref: 'ed-1', worker: 0, since, on: true });
+    h.answer(h.requests('view')[0]!.request, 'view', { ok: true, message: 'Watching.' });
+    await watching;
+    h.read(frameOf(1));
+    h.read(frameOf(1, '/9j/BB=='));
+    h.read({ type: 'running', stop: 1 });
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(frames).toHaveLength(1);
+    client.dispose();
+    h.sessions.dispose();
+  });
+
+  test('drops a pending frame when its stop resumes and requires the new stop to be watched', async () => {
+    const h = harness();
+    const since = await h.stopAt(1);
+    const frames: ViewFrame[] = [];
+    let finish!: () => void;
+    const client = new ClientPageView(h.sessions, async (frame) => {
+      frames.push(frame);
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const at = { ref: 'ed-1', worker: 0, since, on: true };
+    const watching = client.watch(at);
+    h.answer(h.requests('view')[0]!.request, 'view', { ok: true, message: 'Watching.' });
+    await watching;
+    h.read(frameOf(1));
+    h.read(frameOf(1, '/9j/BB=='));
+    h.read({ type: 'running', stop: 1 });
+    client.changed();
+    finish();
+    await Promise.resolve();
+    const next = await h.stopAt(2);
+    h.read(frameOf(2));
+    expect(frames).toHaveLength(1);
+    expect((await client.input({ ...at, since: next, events: [{ type: 'text', text: 'no' }] })).ok).toBe(false);
+    client.dispose();
+    h.sessions.dispose();
+  });
+});
 
 describe('a stopped page’s live view, in the run sessions', () => {
   test('starts with the stop’s first viewer and stops with its last, its frames to its viewers alone', async () => {
@@ -605,6 +737,44 @@ describe('the live view on the hub', () => {
         locator: null,
       });
     } finally {
+      worker.socket.destroy();
+      a.socket.close();
+    }
+  });
+
+  test('streams to the editor client only after watching, and binds input to that stop', async () => {
+    const a = await paired();
+    const { ref, worker, since } = await stopped(a);
+    const frames: ViewFrame[] = [];
+    const listener = svc.client.onNotification('piwi/pageFrame', (frame: ViewFrame) => void frames.push(frame));
+    const at = { ref, worker: 0, since };
+    try {
+      const watch = svc.client.sendRequest('piwi/pageView', { ...at, on: true });
+      await answerLatest(worker, 'view', { ok: true, message: 'Watching.' });
+      expect(await watch).toMatchObject({ ok: true });
+      worker.send(frameOf(1));
+      await waitFor(() => (frames.length === 1 ? true : undefined));
+      expect(frames[0]).toMatchObject({ ...at, data: '/9j/AA==' });
+      const input = svc.client.sendRequest('piwi/pageInput', { ...at, events: [{ type: 'text', text: 'hello' }] });
+      await answerLatest(worker, 'input', { ok: true, message: 'Played.' });
+      expect(await input).toMatchObject({ ok: true });
+      expect(
+        await svc.client.sendRequest('piwi/pageInput', {
+          ...at,
+          since: 'stale',
+          events: [{ type: 'text', text: 'no' }],
+        }),
+      ).toMatchObject({ ok: false });
+      expect(await svc.client.sendRequest('piwi/pageView', { ...at, on: false })).toMatchObject({ ok: true });
+      expect(
+        await svc.client.sendRequest('piwi/pageInput', { ...at, events: [{ type: 'text', text: 'no' }] }),
+      ).toMatchObject({ ok: false });
+      worker.send(frameOf(1, '/9j/BB=='));
+      // A round trip also lets any preceding notification reach the client.
+      await svc.client.sendRequest('piwi/pageView', { ...at, on: false });
+      expect(frames).toHaveLength(1);
+    } finally {
+      listener.dispose();
       worker.socket.destroy();
       a.socket.close();
     }

@@ -190,8 +190,9 @@ the custom messages of `src/protocol.ts`:
 - **Requests**, from the client:
   - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/selections`, `piwi/runStatus`, `piwi/refreshRun`, `piwi/runId`;
-  - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`,
-    `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`, `piwi/shareRun`, `piwi/agents`;
+  - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pageView`, `piwi/pageInput`, `piwi/pickAt`,
+    `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`, `piwi/shareRun`,
+    `piwi/agents`;
   - failures: `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/applyPick`;
   - connection: `piwi/status`, `piwi/refresh`, `piwi/desktop`, `piwi/mcp`;
   - desktop jobs: `piwi/desktopJob`, `piwi/shareDesktopJob`;
@@ -200,7 +201,7 @@ the custom messages of `src/protocol.ts`:
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
-  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/stopCode`.
+  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/stopCode`, `piwi/pageFrame`.
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
@@ -614,6 +615,13 @@ with them.
 when the worker leaves, or when it is not stopped. From a reporter that names it, the image carries the page's viewport
 in CSS pixels (`width`, `height`).
 
+`piwi/pageView { ref, worker, since, on }` opts the editor's paused-page panel into that stop's live frames
+(`piwi/pageFrame`). `ClientPageView` is its `Viewer`, sharing `RunSessions.watch` with the hub. It sends one notification
+at a time and keeps only the newest waiting frame, discarding it when its stop ends or the panel leaves. Input
+(`piwi/pageInput`) is validated and limited to 200 events a second, and only reaches the exact watched stop. A release
+request or ending the watch releases held buttons and keys. Both clients keep input off until Interact is chosen;
+hiding, closing or resuming ends their watch. A reporter without `view` keeps the still-image preview.
+
 `piwi/pickAt { ref, worker?, since, x, y }` (`RunSessions.pickAt`, the hub's `pick-at` too) has the stopped worker pick
 the element under a point of its page, in those CSS pixels (a point of the image is `x * width / naturalWidth`,
 whatever the device scale factor), and send its locator where a pick goes. It answers `{ ok, message, locator }`, and
@@ -771,8 +779,8 @@ view is on asks the worker again, which sends the frame it sent last again: a st
   watches its view alone, which drives them through it. A connection that starts or stops watching hears the run
   again, with what its stops take now.
 
-The frames carry whatever the page shows: they reach only the paired, authenticated connections that asked for them,
-never the client, an instance or a file.
+The frames carry whatever the page shows: they reach only the editor panel or paired, authenticated connections that
+asked for them, never an instance or a file.
 
 ### Share live
 

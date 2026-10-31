@@ -268,6 +268,9 @@ describe('per-call-site capture dedupe', () => {
     selectorCounts: {},
   };
 
+  /** The fake page's main frame, which a `framenavigated` names when the page navigates. */
+  const MAIN_FRAME = { name: 'main' };
+
   /**
    * Drive `actions` through the real fixtures against a fake page, reporting
    * what the capture path asked the browser for and what it attached.
@@ -276,13 +279,14 @@ describe('per-call-site capture dedupe', () => {
     evaluate: (fn: unknown, arg?: unknown) => Promise<unknown>,
     actions: (
       page: { getByTestId: (id: string) => { click: () => Promise<void> } },
-      emit: (event: string) => void,
+      emit: (event: string, arg?: unknown) => void,
     ) => Promise<void>,
     infoOverrides: { status?: string; file?: string; title?: string } = {},
+    click: (emit: (event: string, arg?: unknown) => void) => Promise<void> = async () => {},
   ) {
     let ariaSnapshots = 0;
     const fakeLocator = {
-      click: async () => {},
+      click: () => click(emit),
       evaluate,
       ariaSnapshot: async () => {
         ariaSnapshots++;
@@ -290,7 +294,7 @@ describe('per-call-site capture dedupe', () => {
       },
     };
     const locatorFactory = () => fakeLocator;
-    const listeners = new Map<string, Array<() => void>>();
+    const listeners = new Map<string, Array<(arg?: unknown) => void>>();
     const fakePage = {
       getByRole: locatorFactory,
       getByTestId: locatorFactory,
@@ -300,14 +304,15 @@ describe('per-call-site capture dedupe', () => {
       getByAltText: locatorFactory,
       getByTitle: locatorFactory,
       locator: locatorFactory,
-      on: (event: string, handler: () => void) => {
+      mainFrame: () => MAIN_FRAME,
+      on: (event: string, handler: (arg?: unknown) => void) => {
         const existing = listeners.get(event) ?? [];
         existing.push(handler);
         listeners.set(event, existing);
       },
       evaluate: async () => null,
     };
-    const emit = (event: string) => (listeners.get(event) ?? []).forEach((handler) => handler());
+    const emit = (event: string, arg?: unknown) => (listeners.get(event) ?? []).forEach((handler) => handler(arg));
 
     const attached: LocatorSnapshot[] = [];
     const ariaAttachments: Array<{ body: string; contentType?: string }> = [];
@@ -384,7 +389,8 @@ describe('per-call-site capture dedupe', () => {
     const { attached } = await runCapture(
       async () => {
         probes++;
-        if (probes === 1) throw new Error('element detached');
+        // The click's read beside it, then the read after it.
+        if (probes <= 2) throw new Error('element detached');
         return savedButton;
       },
       async (page) => {
@@ -396,9 +402,111 @@ describe('per-call-site capture dedupe', () => {
       },
     );
 
-    expect(probes).toBe(2);
+    expect(probes).toBe(3);
     expect(attached).toHaveLength(1);
     expect(attached[0]!.element?.textContent).toBe('Save');
+  });
+
+  it('reads the element of a click as the click starts, and keeps that read', async () => {
+    let probes = 0;
+    let probesWhenClicked = -1;
+    const { attached } = await runCapture(
+      async () => {
+        probes++;
+        // The element is gone once the click ran: its page navigated.
+        if (probesWhenClicked >= 0) throw new Error('execution context was destroyed');
+        return savedButton;
+      },
+      async (page) => {
+        await page.getByTestId('save').click();
+      },
+      {},
+      async () => {
+        probesWhenClicked = probes;
+      },
+    );
+
+    expect(probesWhenClicked).toBe(1);
+    expect(probes).toBe(1);
+    expect(attached[0]!.element).toMatchObject({ tagName: 'button', accessibleName: 'Save' });
+  });
+
+  it('reads the element again after the click when the read beside it found nothing', async () => {
+    let probes = 0;
+    const { attached } = await runCapture(
+      async () => {
+        probes++;
+        if (probes === 1) throw new Error('timeout 500ms exceeded');
+        return savedButton;
+      },
+      async (page) => {
+        await page.getByTestId('save').click();
+      },
+    );
+
+    expect(probes).toBe(2);
+    expect(attached[0]!.element?.textContent).toBe('Save');
+  });
+
+  it('reads the element again after a click that waited, and keeps that read when it finds it', async () => {
+    let probes = 0;
+    const { attached } = await runCapture(
+      async () => {
+        probes++;
+        // The page replaced the button while the click waited for it.
+        return probes === 1 ? { ...savedButton, attributes: { 'data-testid': 'save-pending' } } : savedButton;
+      },
+      async (page) => {
+        await page.getByTestId('save').click();
+      },
+      {},
+      async () => {
+        await sleep(300);
+      },
+    );
+
+    expect(probes).toBe(2);
+    expect(attached[0]!.element?.attributes).toEqual({ 'data-testid': 'save' });
+  });
+
+  it('keeps the read beside a click that waited when the page navigated meanwhile', async () => {
+    let probes = 0;
+    const { attached } = await runCapture(
+      async () => {
+        probes++;
+        return probes === 1 ? savedButton : { ...savedButton, attributes: { 'data-testid': 'next-page' } };
+      },
+      async (page) => {
+        await page.getByTestId('save').click();
+      },
+      {},
+      async (emit) => {
+        emit('framenavigated', MAIN_FRAME);
+        await sleep(300);
+      },
+    );
+
+    expect(probes).toBe(1);
+    expect(attached[0]!.element?.attributes).toEqual({ 'data-testid': 'save' });
+  });
+
+  it('keeps no element for a click that failed, though the read beside it found one', async () => {
+    const { attached } = await runCapture(
+      async () => savedButton,
+      async (page) => {
+        await page
+          .getByTestId('save')
+          .click()
+          .catch(() => {});
+      },
+      {},
+      async () => {
+        throw new Error('element is not enabled');
+      },
+    );
+
+    expect(attached).toHaveLength(1);
+    expect(attached[0]!.element).toBeNull();
   });
 
   describe('green ARIA sampling on pass', () => {
@@ -644,6 +752,62 @@ describe('seeded in-page probe', () => {
   });
 });
 
+describe('the probe world of a new document', () => {
+  it('is readied as the document loads while a test runs, through an internal call, and not after it', async () => {
+    const reads: unknown[] = [];
+    const wrapped: Array<{ internal: boolean }> = [];
+    const root = {
+      evaluate: async (_fn: unknown, _arg: unknown, options: unknown) => {
+        reads.push(options);
+        return 0;
+      },
+    };
+    const factory = (..._args: unknown[]) => ({ click: async () => {} });
+    const listeners = new Map<string, Array<() => void>>();
+    const fakePage = {
+      getByRole: factory,
+      getByTestId: factory,
+      getByText: factory,
+      getByLabel: factory,
+      getByPlaceholder: factory,
+      getByAltText: factory,
+      getByTitle: factory,
+      locator: factory,
+      mainFrame: () => ({ locator: (selector: string) => (selector === ':root' ? root : null) }),
+      on: (event: string, handler: () => void) => {
+        listeners.set(event, [...(listeners.get(event) ?? []), handler]);
+      },
+      evaluate: async () => null,
+      _wrapApiCall: (run: () => Promise<unknown>, options: { internal: boolean }) => {
+        wrapped.push(options);
+        return run();
+      },
+    };
+    const emit = (event: string) => (listeners.get(event) ?? []).forEach((handler) => handler());
+
+    const pageFixture = piwiFixtures.page as unknown as (
+      args: { page: unknown },
+      use: (page: typeof fakePage) => Promise<void>,
+    ) => Promise<void>;
+    const [captureFixture] = piwiFixtures.piwiCapture as unknown as [
+      (args: object, use: () => Promise<void>, info: unknown) => Promise<void>,
+    ];
+
+    await captureFixture(
+      {},
+      () =>
+        pageFixture({ page: fakePage }, async () => {
+          emit('domcontentloaded');
+        }),
+      { status: 'passed', attach: async () => {}, annotations: [] },
+    );
+    emit('domcontentloaded');
+
+    expect(reads).toEqual([{ timeout: 500 }]);
+    expect(wrapped).toEqual([expect.objectContaining({ internal: true })]);
+  });
+});
+
 describe('locator capture teardown race', () => {
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -695,8 +859,9 @@ describe('locator capture teardown race', () => {
         () =>
           pageFixture({ page: fakePage }, async (page) => {
             await (page.getByTestId('save') as unknown as { click: () => Promise<void> }).click();
-            // Let the 500ms probe deadline win the race before the test ends.
-            await sleep(600);
+            // Let the 500ms deadlines win the race before the test ends: the read beside the click's, then
+            // the one after it, which follows it.
+            await sleep(1100);
           }),
         testInfo,
       );

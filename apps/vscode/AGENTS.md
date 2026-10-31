@@ -107,9 +107,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A run is shared live on the team instance only from the person's command, after a modal warning the first time in
   the window** (`shareLive` in `src/run-view.ts`, `shareLiveWarning`), as the JetBrains plugin does; only a run known
   not to be shareable is asked without it, for the service to say why. Checked by `tests/run-control.test.ts` ("Share live").
-- **The paused page webview runs a script only where a click on the image picks, by the style's nonce.** Its document
-  takes images from `data:` only, and the script posts a click's offset alone (`pausedPageHtml`, `imageClickOf` in
-  `src/run-control.ts`). Checked by `tests/run-control.test.ts` ("runs one script …").
+- **The paused page webview runs scripts only by the style's nonce, for picking or a capable stop's live preview.**
+  Its document takes images from `data:` only. Live input requires Watch live and the separate Interact opt-in, and
+  messages name the shown stop: checked by `tests/run-control.test.ts` and `tests/e2e/paused-page.spec.mjs`. Only a
+  change of the panel's visibility, its closing or a new stop ends or restarts its watch, never a focus change
+  (`pausedPageViewChange`, checked by `tests/run-control.test.ts`).
   ([Run control](ARCHITECTURE.md#run-control))
 
 ## Workflow
