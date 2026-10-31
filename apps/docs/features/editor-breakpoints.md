@@ -18,7 +18,8 @@ or pick a better locator, which lands back on that line in the editor. The stop 
 
 1. Set a line breakpoint on a line with a Playwright call, in a spec or a page object:
    `await page.getByText('Pay now').click();`, `await page.goto('/checkout');`, `await page.keyboard.press('Tab');`
-   or `await expect(page).toHaveURL(/cart/);`.
+   or `await expect(page).toHaveURL(/cart/);`. On a statement broken over lines, as a formatter writes a long
+   `await expect(…).toBeVisible();`, any of its lines will do: the run stops at its call.
 2. Run the test from Piwi: **Run this test**, or any command of [Runs from the editor](./editor-runs#run-tests).
 3. The run opens a headed browser. Before the call on your line runs, the pause bar appears with the call as
    Playwright names it, `Paused at login.spec.ts:42 · Click getByText('Pay now')`, and a locator call's element is

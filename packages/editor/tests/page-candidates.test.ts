@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'vitest';
-import { declaredNamesAt, pageCandidates, placementBefore, recordingPlacement } from '../src/recorder/page-candidates';
+import {
+  breakpointLines,
+  declaredNamesAt,
+  pageCandidates,
+  placementBefore,
+  recordingPlacement,
+  runToLine,
+} from '../src/recorder/page-candidates';
 
 const file = (...lines: string[]) => lines.join('\n');
 /** The 0-based line holding `marker` (a comment such as `// here`), for a caret placed on it. */
@@ -817,5 +824,49 @@ describe('placementBefore', () => {
     expect(placementBefore(ternary, 6)).toMatchObject({ line: 4 });
     // A case's label ends with a colon, and is no part of the statement after it.
     expect(placementBefore(ternary, 9)).toMatchObject({ line: 9, context: 'test' });
+  });
+});
+
+describe('the lines a breakpoint stops at', () => {
+  const spec = file(
+    "test('pays', async ({ page }) => {",
+    "  await page.goto('/cart');",
+    '  await expect(',
+    "    page.getByRole('heading', { name: 'Cart' }),",
+    '  ).toBeVisible();',
+    '  await page',
+    "    .getByRole('button', { name: 'Pay' })",
+    '    .click();',
+    '  await page.fill(',
+    "    '#email',",
+    "    'ada@example.com',",
+    '  );',
+    "  await test.step('confirm', async () => {",
+    "    await page.getByRole('button', { name: 'Confirm' }).click();",
+    '  });',
+    '});',
+  );
+
+  test('a statement broken over lines stops on each of its lines', () => {
+    expect(breakpointLines(spec, 2)).toEqual([2, 3, 4]);
+    expect(breakpointLines(spec, 5)).toEqual([5, 6, 7]);
+    // A breakpoint on a line inside the statement means the statement too.
+    expect(breakpointLines(spec, 3)).toEqual([2, 3, 4]);
+  });
+
+  test('a statement on one line, and a function body a statement holds, keep their own lines', () => {
+    expect(breakpointLines(spec, 1)).toEqual([1]);
+    expect(breakpointLines(spec, 12)).toEqual([12]);
+    expect(breakpointLines(spec, 13)).toEqual([13]);
+    expect(breakpointLines(spec, 99)).toEqual([99]);
+  });
+
+  test('Run to cursor runs to the line of the statement’s call', () => {
+    expect(runToLine(spec, 2)).toBe(4);
+    expect(runToLine(spec, 3)).toBe(4);
+    expect(runToLine(spec, 5)).toBe(7);
+    expect(runToLine(spec, 9)).toBe(8);
+    expect(runToLine(spec, 1)).toBe(1);
+    expect(runToLine(spec, 12)).toBe(12);
   });
 });

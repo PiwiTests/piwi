@@ -90,6 +90,11 @@ export class RunLines {
 
   constructor(private readonly now: () => number = Date.now) {}
 
+  /** When the run `ref` started, as `started` noted it; null for a run it does not know. */
+  startedAt(ref: string): number | null {
+    return this.runs.get(ref)?.startedAt ?? null;
+  }
+
   /**
    * A run starts: the service built its command, or, for one it did not build, its first worker connected (`keep`,
    * which leaves a start known as it is). `unsaved` reads the documents the editor holds whose text is not their

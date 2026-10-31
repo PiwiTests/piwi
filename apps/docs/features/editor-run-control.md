@@ -22,7 +22,7 @@ code from the page: [Code from a pause](./editor-stop-code).
 | **Pause** | Stops a running test before its next call that acts on, reads or checks the page | none | Resume Program's, `F9` |
 | **Resume** | Runs the stopped test on to the next breakpoint | `F5` | Resume Program's, `F9` |
 | **Step** | Runs the call and stops before the next one, breakpoint or not | `F10` | Step Over's, `F8` |
-| **Run to cursor** | Stops at the first call on the cursor's line, or at a breakpoint before it | `Ctrl+F10` | Run to Cursor's, `Alt+F9` |
+| **Run to cursor** | Stops at the first call on the cursor's line (on a statement broken over lines, at its call), or at a breakpoint before it | `Ctrl+F10` | Run to Cursor's, `Alt+F9` |
 | **Finish** | Runs the test on without stopping at a breakpoint again in this attempt | `Shift+F11` | Step Out's, `Shift+F8` |
 | **End the test** | [Skips the rest of the test](./end-the-test), and a stopped locator call from Playwright 1.62 | none | none |
 | **Stop** | Ends the run's process | `Shift+F5` | the Run tool window's Stop |

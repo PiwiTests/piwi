@@ -73,6 +73,7 @@ import type {
 } from './protocol.js';
 import type { HubAction } from '@piwitests/core/run-hub';
 import { relativeTo } from './workspace.js';
+import { breakpointLines, runToLine } from './recorder/page-candidates.js';
 
 /** How often a session's changes are sent at most, but a stop and its end, which are sent at once. */
 export const SESSION_PACE_MS = 300;
@@ -295,6 +296,12 @@ export interface RunSessionsOptions {
    * it (`root`); `worker` is null for the run's end.
    */
   heard?(ref: string, worker: number | null, what: RunHeard, root: string | null): void;
+  /**
+   * The text of `file` as the run of `ref` runs it, which a breakpoint or a Run to cursor is read against: on a
+   * statement broken over lines, a breakpoint stops at each of its lines (`breakpointLines`) and Run to cursor runs to
+   * the line of its call (`runToLine`). Null, or no such option, keeps the line as it is.
+   */
+  runText?(ref: string, file: string): string | null;
   paceMs?: number;
   burstMs?: number;
   lingerMs?: number;
@@ -523,7 +530,7 @@ export class RunSessions {
       this.send(worker, { type: 'attached', holds, ...(this.options.host ? { host: this.options.host } : {}) });
     }
     const breakpoints = this.breakpoints.get(attach.ref);
-    if (breakpoints) this.sendBreakpoints(worker, breakpoints, session.root);
+    if (breakpoints) this.sendBreakpoints(worker, attach.ref, breakpoints, session.root);
     if (this.followedRuns.has(attach.ref) && worker.takes.has('events'))
       this.send(worker, { type: 'events', on: true });
     // A worker that comes later follows the sharing as a person left it.
@@ -680,7 +687,9 @@ export class RunSessions {
           }
           const relative = this.relative(worker, file, session.root);
           if (!relative) return refuse(`${path.basename(file)} is outside the folder the run runs in.`);
-          this.send(worker, { type: 'run-to', stop, place: { file: relative, line: line + 1 } });
+          const text = this.options.runText?.(params.ref, file) ?? null;
+          const to = text ? runToLine(text, line) : line;
+          this.send(worker, { type: 'run-to', stop, place: { file: relative, line: to + 1 } });
           worker.askedBy = by;
           return { ok: true, message: `Running to ${path.basename(file)}:${line + 1}.` };
         }
@@ -1110,7 +1119,8 @@ export class RunSessions {
     const files = filesOf(params.places);
     this.keepBreakpoints(params.ref, files);
     const session = this.sessions.get(params.ref);
-    for (const worker of session?.workers.values() ?? []) this.sendBreakpoints(worker, files, session!.root);
+    for (const worker of session?.workers.values() ?? [])
+      this.sendBreakpoints(worker, params.ref, files, session!.root);
   }
 
   /** `piwi/setBreakpoints`: the editor's breakpoints as it holds them now, which a terminal's run starts with. */
@@ -1436,11 +1446,22 @@ export class RunSessions {
     if (!worker.socket.destroyed) worker.socket.write(`${JSON.stringify(message)}\n`);
   }
 
-  private sendBreakpoints(worker: Worker, files: Array<{ file: string; line: number }>, root: string | null): void {
+  private sendBreakpoints(
+    worker: Worker,
+    ref: string,
+    files: Array<{ file: string; line: number }>,
+    root: string | null,
+  ): void {
     const places = new Map<string, Place>();
+    const texts = new Map<string, string | null>();
     for (const { file, line } of files) {
       const relative = this.relative(worker, file, root);
-      if (relative) places.set(`${relative}:${line}`, { file: relative, line: line + 1 });
+      if (!relative) continue;
+      if (!texts.has(file)) texts.set(file, this.options.runText?.(ref, file) ?? null);
+      const text = texts.get(file);
+      for (const at of text ? breakpointLines(text, line) : [line]) {
+        places.set(`${relative}:${at}`, { file: relative, line: at + 1 });
+      }
     }
     this.send(worker, { type: 'breakpoints', places: [...places.values()] });
   }

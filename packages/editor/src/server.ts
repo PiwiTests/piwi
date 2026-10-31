@@ -142,7 +142,7 @@ import {
 } from './commands.js';
 import { DesktopJobs } from './desktop-jobs.js';
 import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
-import { declaredNamesAt, pageCandidates } from './recorder/page-candidates.js';
+import { breakpointLines, declaredNamesAt, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { canonicalPath } from './recorder/playwright.js';
 import {
@@ -1757,6 +1757,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       runAgent.heard(ref, worker, what, root);
       debugRuns.heard(ref, worker, what, root);
     },
+    // The run runs a file as it stood on disk when it started: one written since keeps each line as it is.
+    runText: (ref, file) => {
+      const disk = diskFile(file);
+      const started = runLines.startedAt(ref);
+      return disk && (started === null || disk.mtime <= started) ? disk.text : null;
+    },
   });
   clientPageView = new ClientPageView(runSessions, (frame) =>
     connection.sendNotification(PAGE_FRAME_NOTIFICATION, frame),
@@ -3128,16 +3134,21 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   /**
    * A test run's command with the editor's breakpoints: `PIWI_PAUSE_AT` for those in the files under the context's
-   * folder, `--headed`, and a notice when the project's reporter does not pause at them. Unchanged without one.
+   * folder, each on every line of the statement it is set on as the file stands on disk (`breakpointLines`),
+   * `--headed`, and a notice when the project's reporter does not pause at them. Unchanged without one.
    */
   const withBreakpoints = (
     context: PiwiContext,
     command: RunCommand,
     breakpoints: EditorBreakpoint[] | undefined,
   ): RunCommand => {
+    const texts = new Map<string, string | null>();
     const files = (Array.isArray(breakpoints) ? breakpoints : []).flatMap((b) => {
       const file = typeof b?.uri === 'string' ? uriToPath(b.uri) : null;
-      return file && typeof b.line === 'number' ? [{ file, line: b.line }] : [];
+      if (!file || typeof b.line !== 'number') return [];
+      if (!texts.has(file)) texts.set(file, diskFile(file)?.text ?? null);
+      const text = texts.get(file);
+      return (text ? breakpointLines(text, b.line) : [b.line]).map((line) => ({ file, line }));
     });
     const pauseAt = pauseAtValue(context.root, files);
     if (!pauseAt) return command;
