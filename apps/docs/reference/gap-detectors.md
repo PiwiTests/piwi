@@ -8,7 +8,8 @@ lang: en-US
 
 The [detectors](/guide/concepts#detector) that turn the [Test Map](/features/scenario-gaps) into scenario gaps, the
 **exposure** score that ranks them, and the rules that decide what the graph holds. Evidence counts use the last 30
-runs of the project, probe runs excluded.
+runs of the project's default branch: never a pull-request run, a probe or Flake Lab run, a bisect step or a
+reproduction, nor a run flagged as an environment incident.
 
 ## Detectors
 
@@ -26,7 +27,7 @@ without it.
 | **Escaped defect**<br>`escaped-defect` | blind-spot | a page with [bug reports](/features/bug-reports) no test names yet, one gap per page | Piwi Picker sending reports | 0.6 plus 0.1 per further report, at most 1 | `Bug report #37: Coupon not applied to the total — no test names it yet` |
 | **Changed, unreached**<br>`changed-unreached` | blind-spot | an [uncovered change](/features/uncovered-changes#one-rule-for-every-changed-file), at pull-request time: a changed file Piwi can observe that no test reached, in the run or the last 30, and no suite ran a changed line of | an SCM token | 0.9 | `+41 −3 · no test in run #812 or in the last 30 runs` |
 | **Single covering test**<br>`single-covering-test` | fragile | a node exactly one trusted test reaches, or that only untrusted tests reach | nothing more | 0.5; 0.6 when only untrusted tests reach it | `Only checkout › coupon reaches this`; `Only toggles dark mode (flaky) reaches this` |
-| **Orphan test**<br>`orphan-test` | fragile | a test whose every reached node disappeared from the last 30 runs | nothing more | 0.4 | `All 3 node(s) it reaches disappeared from recent runs` |
+| **Orphan test**<br>`orphan-test` | fragile | a test whose every reached node disappeared from the last 30 runs: no complete run of the whole suite reached it since the oldest of them | nothing more | 0.4 | `All 3 node(s) it reaches disappeared from recent runs` |
 | **Fix did not hold**<br>`fix-did-not-hold` | fragile | a failure cluster whose fix later regressed | nothing more | 0.6 | `Fixed in a1b2c3d · regressed 6 days later` |
 | **Not noticed**<br>`not-noticed` | false-comfort | a route a probe broke while no test noticed | [probes](/features/probes) | 0.8 | `A probe (status-500) on POST /api/orders did not make checkout › pay fail` |
 | **Passed with errors**<br>`passed-with-errors` | false-comfort | a test whose newest execution in the default branch's last 30 runs passed while the application reported an error: a 5xx from one of its routes, a backend log at error level, or a console error from its own origin | nothing more; backend logs need the [instrumentation](/guide/backend-logs) | 0.6 | `Passed · run #73 · the backend logged an error on PATCH /api/orgs/current` |

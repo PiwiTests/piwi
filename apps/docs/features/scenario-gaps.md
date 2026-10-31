@@ -27,10 +27,10 @@ and page visits of every run.
 
 ## What a gap is
 
-A **[detector](/guide/concepts#detector)** reads the Test Map and the last 30 runs and reports one kind of gap: a
-route observed only with success statuses, a node exactly one test reaches, a page that appeared in the latest run, a
-declared route nothing requests. [Gap detectors & exposure](/reference/gap-detectors) lists every detector with its
-evidence. Each gap names its detector and its **[class](/guide/concepts#gap-class)**:
+A **[detector](/guide/concepts#detector)** reads the Test Map and the default branch's last 30 runs and reports one
+kind of gap: a route observed only with success statuses, a node exactly one test reaches, a page that appeared in
+the latest run, a declared route nothing requests. [Gap detectors & exposure](/reference/gap-detectors) lists every
+detector with its evidence. Each gap names its detector and its **[class](/guide/concepts#gap-class)**:
 
 | Class | Meaning | Example |
 |---|---|---|

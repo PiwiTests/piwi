@@ -25,6 +25,7 @@ import {
   notInArray,
   or,
   sql,
+  type SQL,
 } from 'drizzle-orm';
 import { z } from 'zod';
 import {
@@ -65,8 +66,7 @@ import {
   type MatchCandidate,
 } from '@piwitests/core/function-match';
 import { PATH_ANCHOR_HOST } from '@piwitests/core/page-key';
-import { notLabRun } from './probes';
-import { INVESTIGATION_RUN_ORIGINS, runOriginIn } from '../run-eligibility';
+import { completeRunSql, eligibleRunSql } from '../run-eligibility';
 import { finalAttempts } from '../utils/test-counts';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
 import { RETIRED_DETECTORS } from './detector-precision';
@@ -1451,19 +1451,34 @@ function maxPriority(
   return best;
 }
 
+/** The project's default branch, or a run that records no branch, which counts on it. */
+function onDefaultBranch(defaultBranch: string) {
+  return or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch), eq(testRuns.branch, ''));
+}
+
+/** The runs the detectors read evidence from, newest first. */
+export interface EvidenceWindow {
+  /** The default branch's newest runs the Test Map may read, partial ones included. */
+  runIds: number[];
+  /** The complete runs among the default branch's newest: the ones whose absence of a node says it vanished. */
+  completeRunIds: number[];
+}
+
 /**
- * Ids of a project's most recent real runs, newest first. Lab runs (probes,
- * flake experiments) are excluded — their injected faults must never enter the detectors' history
- * window.
+ * The detectors' evidence: the default branch's newest runs, never a lab or
+ * investigation run nor an environment incident (`test-map` in
+ * `run-eligibility`), since the canonical graph holds the default branch alone.
+ * A partial run observes what it ran; only a complete run's silence about a
+ * node says the node is gone.
  */
-async function loadRecentRunIds(db: DrizzleDB, projectId: number, limit: number): Promise<number[]> {
-  const rows = await db
-    .select({ id: testRuns.id })
-    .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.origin)))
-    .orderBy(desc(testRuns.id))
-    .limit(limit);
-  return rows.map((r) => r.id);
+async function loadEvidenceWindow(db: DrizzleDB, projectId: number, limit: number): Promise<EvidenceWindow> {
+  const defaultBranch = await projectDefaultBranch(db, projectId);
+  const window = and(eq(testRuns.projectId, projectId), eligibleRunSql('test-map'), onDefaultBranch(defaultBranch));
+  const ids = async (where: SQL | undefined) =>
+    (await db.select({ id: testRuns.id }).from(testRuns).where(where).orderBy(desc(testRuns.id)).limit(limit)).map(
+      (r) => r.id,
+    );
+  return { runIds: await ids(window), completeRunIds: await ids(and(window, completeRunSql())) };
 }
 
 /** Title + priority for a set of test cases. */
@@ -1667,18 +1682,11 @@ async function loadPassedWithErrors(
     .select({ routeOrigins: projects.routeOrigins })
     .from(projects)
     .where(eq(projects.id, projectId));
-  // The default branch's newest runs, whatever other branches ran since; a run with no branch counts on it.
+  // The default branch's newest runs, whatever other branches ran since.
   const runs = await db
     .select({ id: testRuns.id, metadata: testRuns.metadata })
     .from(testRuns)
-    .where(
-      and(
-        eq(testRuns.projectId, projectId),
-        notLabRun(testRuns.origin),
-        not(runOriginIn(testRuns.origin, INVESTIGATION_RUN_ORIGINS)),
-        or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch), eq(testRuns.branch, '')),
-      ),
-    )
+    .where(and(eq(testRuns.projectId, projectId), eligibleRunSql('test-map'), onDefaultBranch(defaultBranch)))
     .orderBy(desc(testRuns.id))
     .limit(HISTORY_WINDOW_RUNS);
   if (runs.length === 0) return [];
@@ -1889,7 +1897,7 @@ export async function computeScenarioGaps(
   options: { exposure?: ExposureInputs; branch?: string | null; closeTriaged?: boolean } = {},
 ): Promise<{ upserted: number; closed: number }> {
   if (options.branch) return { upserted: 0, closed: 0 };
-  const recentIds = await loadRecentRunIds(db, projectId, HISTORY_WINDOW_RUNS);
+  const { runIds: recentIds, completeRunIds } = await loadEvidenceWindow(db, projectId, HISTORY_WINDOW_RUNS);
   const latestRunId = recentIds[0] ?? null;
   // A background recompute (the nightly sweep) never closes a gap the team
   // deliberately snoozed or accepted: only a run that actually re-covers the
@@ -2179,11 +2187,15 @@ export async function computeScenarioGaps(
     probed: probedDependencies.has(dependencyKey),
   }));
 
-  // Node recency for orphan tests: a node last seen inside the recent window.
-  const recentSet = new Set(recentIds);
+  // Node recency for orphan tests: a node seen since the oldest complete run of the
+  // window. With no complete run, nothing says a node vanished.
+  const windowStart = completeRunIds.length > 0 ? Math.min(...completeRunIds) : null;
   const nodeSeenRecently = new Map<string, boolean>();
   for (const node of nodeRows) {
-    nodeSeenRecently.set(`${node.kind}\x00${node.key}`, recentSet.has(node.lastSeenRunId ?? -1));
+    nodeSeenRecently.set(
+      `${node.kind}\x00${node.key}`,
+      windowStart == null || (node.lastSeenRunId ?? -1) >= windowStart,
+    );
   }
 
   // Tests that operated an unnamed element on a page holding the control: any

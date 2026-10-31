@@ -66,6 +66,7 @@ export type RunUse =
   | 'branch-failures'
   | 'editor-overlay'
   | 'change-coverage'
+  | 'test-map'
   | 'shared-state'
   | 'auto-heal'
   | 'bug-lifecycle'
@@ -151,6 +152,17 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     excludes: LAB_AND_INVESTIGATION,
     excludesIncidents: false,
     completeOnly: true,
+    excludesHistoricalImports: false,
+  },
+  /**
+   * The Test Map's evidence: the statuses and the new surface the default branch's
+   * runs observed, and the surface its complete runs no longer reach. An
+   * environment incident's errors are the environment's, not the application's.
+   */
+  'test-map': {
+    excludes: LAB_AND_INVESTIGATION,
+    excludesIncidents: true,
+    completeOnly: false,
     excludesHistoricalImports: false,
   },
   /** Locator snapshots, the locator index, test metadata and green samples. */
@@ -385,7 +397,7 @@ const TEST_RUN_COLUMNS: EligibleRunColumns = {
 };
 
 /** SQL predicate: the run covered the whole suite and finished (`isCompleteRun`). */
-function completeRunSql(columns: EligibleRunColumns): SQL {
+export function completeRunSql(columns: EligibleRunColumns = TEST_RUN_COLUMNS): SQL {
   const unfinished = sql.join(
     UNFINISHED_RUN_STATUSES.map((s) => sql`${s}`),
     sql`, `,

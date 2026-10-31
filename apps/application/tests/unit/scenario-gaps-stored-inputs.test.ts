@@ -276,6 +276,88 @@ describe('computeScenarioGaps — success only', () => {
   });
 });
 
+describe('computeScenarioGaps — the evidence window', () => {
+  const node = (key: string, firstSeenRunId: number, lastSeenRunId = firstSeenRunId) => ({
+    projectId: 1,
+    kind: 'route',
+    key,
+    firstSeenRunId,
+    lastSeenRunId,
+  });
+  const reach = (testCaseId: number, key: string) => ({
+    projectId: 1,
+    fromKind: 'test',
+    fromKey: String(testCaseId),
+    toKind: 'route',
+    toKey: key,
+    kind: 'reaches',
+    lastSeenAt: new Date(),
+  });
+
+  test('a pull-request run neither erases new surface nor closes an error path with its 500', async () => {
+    await db.insert(schema.testRuns).values([
+      { id: 1, projectId: 1, status: 'passed', startTime: new Date(), branch: 'main', metadata: metadata as never },
+      { id: 2, projectId: 1, status: 'passed', startTime: new Date(), branch: 'main', metadata: metadata as never },
+      {
+        id: 3,
+        projectId: 1,
+        status: 'failed',
+        startTime: new Date(),
+        branch: 'feature/x',
+        metadata: metadata as never,
+      },
+    ]);
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'orders' });
+    await db.insert(schema.graphNodes).values([node('GET /api/orders', 1, 2), node('GET /api/billing', 2)]);
+    await db.insert(schema.graphEdges).values(reach(1, 'GET /api/orders'));
+    await execution({
+      id: 1,
+      runId: 2,
+      testCaseId: 1,
+      requests: Array.from({ length: 5 }, () => ({ method: 'GET', path: '/api/orders', status: 200 })),
+    });
+    await execution({
+      id: 2,
+      runId: 3,
+      testCaseId: 1,
+      status: 'failed',
+      requests: [{ method: 'GET', path: '/api/orders', status: 500 }],
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    expect((await gaps.listScenarioGaps(db, 1, { detector: 'surface-drift' })).map((g) => g.subject.key)).toEqual([
+      'GET /api/billing',
+    ]);
+    expect((await gaps.listScenarioGaps(db, 1, { detector: 'success-only' })).map((g) => g.subject.key)).toEqual([
+      'GET /api/orders',
+    ]);
+  });
+
+  test('only a complete run that misses a node says it vanished', async () => {
+    await db.insert(schema.testRuns).values([
+      { id: 1, projectId: 1, status: 'passed', startTime: new Date(), branch: 'main', metadata: metadata as never },
+      ...Array.from({ length: 30 }, (_, i) => ({
+        id: i + 2,
+        projectId: 1,
+        status: 'passed',
+        startTime: new Date(),
+        branch: 'main',
+        isFullRun: 0,
+        metadata: metadata as never,
+      })),
+    ]);
+    await db.insert(schema.testCases).values([
+      { id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'billing' },
+      { id: 2, projectId: 1, filePath: 'a.spec.ts', title: 'orders' },
+    ]);
+    await db.insert(schema.graphNodes).values([node('GET /api/billing', 1), node('GET /api/orders', 1, 31)]);
+    await db.insert(schema.graphEdges).values([reach(1, 'GET /api/billing'), reach(2, 'GET /api/orders')]);
+
+    await gaps.computeScenarioGaps(db, 1);
+    expect(await gaps.listScenarioGaps(db, 1, { detector: 'orphan-test' })).toEqual([]);
+  });
+});
+
 describe('computeScenarioGaps — passed with errors', () => {
   test('raises the passing tests the application reported an error under, on the default branch only', async () => {
     await db.insert(schema.testRuns).values([
