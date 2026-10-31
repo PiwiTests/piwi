@@ -14,6 +14,8 @@ import { stubChromeI18n } from './i18n-stub.js';
 import { stubChromeStorage } from './recording-stub.js';
 import { openShadowRoots } from './shadow.js';
 import { routeShop, SHOP_ORIGIN as BUG_SHOP_ORIGIN } from './bug-shop.js';
+import { stubChrome as stubReplayChrome } from './replay-stub.js';
+import type { PiwiSteps } from '@piwitests/core/steps';
 import {
   answerNext,
   pairedExtension,
@@ -531,6 +533,22 @@ async function loopPage(
   return { context, page, startedAt, dir };
 }
 
+/** The bug shop is bare HTML: a light stylesheet on each of its pages, for the camera alone. */
+async function styleBugShop(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const style = document.createElement('style');
+      style.textContent =
+        'body{font:15px/1.5 system-ui,sans-serif;color:#1f2937;margin:0;padding:24px 40px;background:#f8fafc}' +
+        'main{max-width:520px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:8px 24px 20px}' +
+        'h1{font-size:24px;margin:12px 0}input{padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;margin:0 8px}' +
+        'button{padding:6px 14px;border:0;border-radius:6px;background:#4f46e5;color:#fff;font-weight:600}' +
+        '#total{font-size:18px;font-weight:600}a{color:#4f46e5}';
+      document.head.append(style);
+    });
+  });
+}
+
 /** Moves the mouse to `target`'s center in steps, as a hand does, then rests on it. */
 async function glide(page: Page, target: ReturnType<Page['locator']>, restMs = 700): Promise<void> {
   const box = (await target.boundingBox())!;
@@ -673,19 +691,11 @@ test('picker-report-loop', async () => {
     },
     init: async (context) => {
       await routeShop(context, { fixed: false });
+      await styleBugShop(context);
       await context.addInitScript({ path: path.join(DIST, 'bug-evidence-main.js') });
     },
-    // The bug shop is bare HTML: a light stylesheet, for the camera alone.
     open: async (page) => {
       await page.goto(`${BUG_SHOP_ORIGIN}/cart`);
-      await page.addStyleTag({
-        content:
-          'body{font:15px/1.5 system-ui,sans-serif;color:#1f2937;margin:0;padding:24px 40px;background:#f8fafc}' +
-          'main{max-width:520px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:8px 24px 20px}' +
-          'h1{font-size:24px;margin:12px 0}input{padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;margin:0 8px}' +
-          'button{padding:6px 14px;border:0;border-radius:6px;background:#4f46e5;color:#fff;font-weight:600}' +
-          '#total{font-size:18px;font-weight:600}a{color:#4f46e5}',
-      });
     },
   });
   const { page } = loop;
@@ -729,4 +739,99 @@ test('picker-report-loop', async () => {
   await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(true);
   await page.waitForTimeout(4000);
   await writeLoop(loop, from, 'picker-report-loop');
+});
+
+/** The coupon report the report loop records, as Replay reads it from its `.piwibug`. */
+const COUPON_REPORT: PiwiSteps = {
+  v: 1,
+  title: 'Coupon not applied to the total',
+  origin: 'https://staging.acme.test',
+  recordedAt: 0,
+  note: null,
+  steps: [
+    { action: 'goto', target: null, value: '/cart', redacted: false, pageUrl: '/cart', timestamp: 0 },
+    {
+      action: 'fill',
+      target: {
+        tagName: 'input',
+        role: 'textbox',
+        accessibleName: 'Coupon',
+        testId: null,
+        text: null,
+        alternatives: [{ locator: "getByRole('textbox', { name: 'Coupon' })", method: 'getByRole', score: 96 }],
+      },
+      value: 'SPRING10',
+      redacted: false,
+      pageUrl: '/cart',
+      timestamp: 1,
+    },
+    {
+      action: 'click',
+      target: {
+        tagName: 'button',
+        role: 'button',
+        accessibleName: 'Apply',
+        testId: null,
+        text: 'Apply',
+        alternatives: [{ locator: "getByRole('button', { name: 'Apply' })", method: 'getByRole', score: 96 }],
+      },
+      value: null,
+      redacted: false,
+      pageUrl: '/cart',
+      timestamp: 2,
+    },
+    {
+      action: 'assert',
+      target: {
+        tagName: 'p',
+        role: null,
+        accessibleName: null,
+        testId: 'cart-total',
+        text: 'Total: 50',
+        alternatives: [{ locator: "getByTestId('cart-total')", method: 'getByTestId', score: 100 }],
+      },
+      value: null,
+      redacted: false,
+      pageUrl: '/cart',
+      timestamp: 3,
+      assertion: { matcher: 'toHaveText', expected: 'Total: 45', actual: 'Total: 50', negated: false, note: null },
+    },
+  ],
+};
+
+test('picker-replay-loop', async () => {
+  test.setTimeout(180_000);
+  const loop = await loopPage({
+    init: async (context) => {
+      await routeShop(context, { fixed: false });
+      await styleBugShop(context);
+      await stubReplayChrome(context, {
+        piwiReplay: {
+          id: 'docs-loop',
+          steps: COUPON_REPORT,
+          origin: BUG_SHOP_ORIGIN,
+          position: 0,
+          results: [],
+          status: 'running',
+          stepMode: false,
+          cursor: null,
+          startedAt: 0,
+          startPage: null,
+        },
+      });
+    },
+    open: async (page) => {
+      await page.goto(`${BUG_SHOP_ORIGIN}/cart`);
+    },
+  });
+  const { page } = loop;
+  // The replay plays from the report's first page: the loop starts as that page loads.
+  await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-replay-hud-host'))).toBe(true);
+  const from = Date.now() - loop.startedAt;
+  // It moves its own cursor to each step, plays it, then says whether the bug still shows.
+  await expect
+    .poll(() => page.evaluate(() => JSON.parse(window.name).session.piwiReplay.status), { timeout: 60_000 })
+    .toBe('done');
+  await page.waitForTimeout(4000);
+  await writeLoop(loop, from, 'picker-replay-loop');
 });

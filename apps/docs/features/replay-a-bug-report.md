@@ -13,6 +13,11 @@ caption saying what it does, then says whether the bug shows there. It suits the
 open the app on your own dev server, and the steps run there, with your session and your browser's developer tools at
 hand.
 
+<figure>
+  <video src="/videos/picker-replay-loop.mp4" autoplay loop muted playsinline controls aria-label="Replaying a bug report on a cart page: the cursor fills the coupon, clicks Apply and checks the total, and the verdict says the bug shows here, the total reading 50 instead of 45"></video>
+  <figcaption>The report's four steps played again, then the verdict: reproduced.</figcaption>
+</figure>
+
 ## Choosing a report
 
 - From the finished report, **Replay** plays it at once on the same site. The review of a
