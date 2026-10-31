@@ -136,6 +136,7 @@ interface HeldStop {
   stop: number;
   page: Page | null;
   bar: boolean;
+  outlines: boolean;
   answer(choice: PauseAnswer): void;
   intent(what: RunIntent): IntentAnswer;
   pickAt?(x: number, y: number): Promise<PickAtAnswer>;
@@ -158,6 +159,8 @@ export interface StopToHold {
   locator: string | null;
   /** Whether Piwi's pause bar shows the stop. */
   bar: boolean;
+  /** Whether a count may outline its matches on the stopped page: where the bar shows and Piwi may highlight. */
+  outlines: boolean;
   /** A failure's error, as plain text: the editor shows it beside the stop. */
   error?: string;
   /** The page an image of the stop is taken of: none when the stop's page is not known. */
@@ -473,6 +476,7 @@ export function holdStop(
     stop: id,
     page: stop.page,
     bar: stop.bar,
+    outlines: stop.outlines,
     answer: (choice) => {
       if (answered) return;
       answered = true;
@@ -751,8 +755,8 @@ async function removeOutline(): Promise<void> {
 }
 
 /**
- * How many elements `source` matches on the stopped page, its matches outlined where the pause bar shows, in place of
- * the outline before; null takes the outline down. Every call to the page is internal.
+ * How many elements `source` matches on the stopped page, its matches outlined where the stop may outline them, in
+ * place of the outline before; null takes the outline down. Every call to the page is internal.
  */
 async function countLocator(holding: HeldStop, source: string | null): Promise<LocatorAnswer> {
   await removeOutline();
@@ -763,7 +767,7 @@ async function countLocator(holding: HeldStop, source: string | null): Promise<L
   if (!locator) return { ok: false, message: `${source} is not a locator Piwi can build.`, count: null };
   try {
     const count = await internalCall(page, () => locator.count());
-    if (holding.bar && count > 0 && held === holding) {
+    if (holding.outlines && count > 0 && held === holding) {
       const shown = (await internalCall(page, () => locator.highlight({ style: OUTLINE_STYLE }))) as unknown;
       outline = { stop: holding.stop, remove: () => internalCall(page, () => takeHighlightDown(page, shown)) };
     }

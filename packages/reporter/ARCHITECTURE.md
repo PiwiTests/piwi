@@ -188,10 +188,14 @@ What the package does to a user's run, process by process.
 - `locator` counts a chain (`chain-locator.ts`, built through the chain grammar's calls
   alone) on the stopped page, one count after the other, and, where the bar shows,
   outlines its matches with Playwright's highlight, the one before taken down first and
-  the last before the stop ends. A highlight comes down through its own `dispose` or
-  `page.hideHighlight` (1.60), and before 1.60 through an image of the page with a mask
-  in each frame, whose end takes the frame's highlight down (`takeHighlightDown` in
-  `pause-at.ts`, for the pause bar's highlight too).
+  the last before the stop ends. A highlight comes down through its own `dispose`
+  (1.60), and before 1.60 through an image of the page with a mask in each frame, whose
+  end takes the frame's whole highlight layer down (`takeHighlightDown` in
+  `pause-at.ts`, for the pause bar's highlight too). A disposed highlight leaves the
+  layer, an empty `x-pw-glass`: as the stop begins, `showStop` reads whether the page
+  shows one of its own, takes the layer down as the stop ends only where it showed none
+  (`takeLayerDown`), and on 1.59 highlights nothing where it showed one
+  (`mayHighlight`), so the test's own highlights and screencast overlays stay.
 - **The live view**, for a viewer outside the page (Piwi Picker, through the editor's
   hub). `view` shows the stopped page live: its screencast (`page.screencast.start`
   through an internal call, at its viewport scaled to fit 1280 by 800, JPEG quality 60,

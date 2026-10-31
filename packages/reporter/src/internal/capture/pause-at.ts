@@ -725,19 +725,57 @@ export async function viewHere(
 /** A selector no element of a page matches. */
 const NO_ELEMENT = '#__piwi_no_element';
 
+/** The element Playwright draws its highlights in, in each frame: the test's own and its screencast overlays too. */
+const HIGHLIGHT_LAYER = 'x-pw-glass';
+
+/** Whether Playwright gives each highlight its own take-down: a disposable highlight and `page.hideHighlight` (1.60). */
+function disposesHighlights(page: Page): boolean {
+  return typeof (page as unknown as { hideHighlight?: unknown }).hideHighlight === 'function';
+}
+
+/** Whether the frame's document holds an element of `tag`: run in the page. */
+function holdsElement(tag: string): boolean {
+  return !!(globalThis as unknown as { document: { querySelector(tag: string): unknown } }).document.querySelector(tag);
+}
+
+/**
+ * Whether a frame of `page` shows Playwright's highlight layer: a highlight or a screencast overlay of the test's own.
+ * Read as a stop begins, before Piwi highlights anything; true when a frame does not answer. The caller makes the call
+ * internal.
+ */
+export async function showsHighlightLayer(page: Page): Promise<boolean> {
+  const frames = page.frames().map((frame) => frame.evaluate(holdsElement, HIGHLIGHT_LAYER).catch(() => true));
+  return (await within(Promise.all(frames), HIGHLIGHT_MS))?.some(Boolean) ?? true;
+}
+
+/**
+ * Whether Piwi may highlight at a stop: where it takes its highlights down alone (1.60), or on a page that showed no
+ * highlight layer as the stop began, which taking the whole layer down leaves as it was.
+ */
+export function mayHighlight(page: Page, layerBefore: boolean): boolean {
+  return disposesHighlights(page) || !layerBefore;
+}
+
+/**
+ * Take down the highlight layer Piwi's highlights left on a page that showed none as the stop began: a disposed
+ * highlight keeps the layer, empty (1.60). Before 1.60 each highlight took the whole layer down already. The caller
+ * makes the call internal.
+ */
+export async function takeLayerDown(page: Page): Promise<void> {
+  const hide = (page as unknown as { hideHighlight?: () => Promise<void> }).hideHighlight;
+  if (typeof hide === 'function') await within(hide.call(page), TAKE_DOWN_MS);
+}
+
 /**
  * Take down what `locator.highlight()` drew in `page`: through the highlight it returned (`shown`, disposable from
- * Playwright 1.60), else `page.hideHighlight` (1.60), else through an image of the page with a mask in each of its
- * frames, whose end takes that frame's highlight layer down, the test's own screencast overlays with it, as any masked
- * screenshot does there. The image leaves the page's fields as they are (`caret: 'initial'`). The caller makes the
- * call internal.
+ * Playwright 1.60), else, before 1.60, through an image of the page with a mask in each of its frames, whose end
+ * takes each frame's highlight layer down whole (`mayHighlight`). The image leaves the page's fields as they are
+ * (`caret: 'initial'`). The caller makes the call internal.
  */
 export async function takeHighlightDown(page: Page, shown: unknown): Promise<void> {
   const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
-  const hide = (page as unknown as { hideHighlight?: () => Promise<void> }).hideHighlight;
   if (typeof dispose === 'function') await dispose.call(shown);
-  else if (typeof hide === 'function') await hide.call(page);
-  else {
+  else if (!disposesHighlights(page)) {
     const mask = page.frames().map((frame) => frame.locator(NO_ELEMENT));
     await page.screenshot({ mask, caret: 'initial', timeout: TAKE_DOWN_MS });
   }
@@ -767,12 +805,11 @@ export async function pauseHere(
   onIntent?: (intent: CodeIntent, ended?: AbortSignal) => Promise<void>,
 ): Promise<PauseAnswer> {
   let shown: unknown = null;
-  let drawn = false;
+  let highlighted: Promise<unknown> | null = null;
   try {
     const highlight = point.target?.highlight;
     if (typeof highlight === 'function') {
-      drawn = true;
-      const highlighted = Promise.resolve()
+      highlighted = Promise.resolve()
         .then(() => highlight.call(point.target))
         .catch(() => null);
       shown = (await within(highlighted, HIGHLIGHT_MS)) ?? null;
@@ -846,9 +883,8 @@ export async function pauseHere(
       try {
         // A bar the stop ended under without its answer is taken down here.
         if (ended?.aborted) await page.evaluate(takePauseState);
-        // Every highlight in the page comes down with the bar, its own or not, where `page.hideHighlight` can (1.60).
-        const hides = typeof (page as unknown as { hideHighlight?: unknown }).hideHighlight === 'function';
-        if (drawn || hides) await takeHighlightDown(page, shown);
+        // The bar's own highlight, one that came late included.
+        if (highlighted) await takeHighlightDown(page, shown ?? (await within(highlighted, TAKE_DOWN_MS)) ?? null);
       } catch {
         // The page may be gone.
       }

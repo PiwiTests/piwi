@@ -98,6 +98,14 @@ if (location.pathname === '/h') {
 </script>`;
 
 const HEADED_SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
+// A window just opened has no image to take until it shows a frame: its first contentful paint, which Chromium marks
+// once that frame is shown.
+const painted = (page) => page.evaluate(() => new Promise((resolve) => new PerformanceObserver((list, observer) => {
+  if (!list.getEntriesByName('first-contentful-paint').length) return;
+  observer.disconnect();
+  resolve();
+}).observe({ type: 'paint', buffered: true })));
+const glassIn = (page) => page.evaluate(() => document.querySelectorAll('x-pw-glass').length);
 test('keeps the text bodies', async ({ page }) => {
   await page.goto('${base}/k');
   await expect(page).toHaveTitle('done');
@@ -122,19 +130,26 @@ test('checks an element', async ({ page }) => {
 });
 test('takes every outline down', async ({ page }) => {
   await page.goto('${base}/a');
-  // A window just opened has no image to take until it shows a frame: its first contentful paint, which Chromium
-  // marks once that frame is shown.
-  await page.evaluate(() => new Promise((resolve) => new PerformanceObserver((list, observer) => {
-    if (!list.getEntriesByName('first-contentful-paint').length) return;
-    observer.disconnect();
-    resolve();
-  }).observe({ type: 'paint', buffered: true })));
+  await painted(page);
   const before = await page.screenshot({ caret: 'initial' });
   await expect(page.getByTestId('go')).toBeVisible(); // bp
   const styled = await page.evaluate(() => document.querySelectorAll('input[style], textarea[style], [contenteditable][style]').length);
+  const glass = await glassIn(page);
   const after = await page.screenshot({ caret: 'initial' });
   test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
   test.info().annotations.push({ type: 'styled', description: String(styled) });
+  test.info().annotations.push({ type: 'glass', description: String(glass) });
+});
+test('keeps the test’s own highlight', async ({ page }) => {
+  await page.goto('${base}/a');
+  await page.locator('section h2').highlight();
+  await painted(page);
+  const before = await page.screenshot({ caret: 'initial' });
+  await page.keyboard.press('Shift'); // bp
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  const after = await page.screenshot({ caret: 'initial' });
+  test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
+  test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
 });
 test('fails headed', async ({ page }) => {
   await page.goto('${base}/a');
@@ -312,6 +327,9 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       break;
     case 'keeps nothing of the test before':
       said.push(await ask(connection, { what: 'requests', ...at }));
+      break;
+    case 'keeps the test’s own highlight':
+      if (stop.locator) said.push(await ask(connection, { what: 'locator', ...at, locator: "getByTestId('go')" }));
       break;
     case 'asserts a region':
     case 'asserts a region too long':
@@ -529,6 +547,7 @@ describe('code from a stop, the worker’s part', () => {
       ['asserts a region too long', 'passed'],
       ['checks an element', 'passed'],
       ['takes every outline down', 'passed'],
+      ['keeps the test’s own highlight', 'passed'],
       ['fails headed', 'failed'],
       ['fails headless', 'failed'],
       ['fails, its page acting during the hold', 'failed'],
@@ -632,6 +651,19 @@ describe('code from a stop, the worker’s part', () => {
     expect(result.annotations.find((a) => a.type === 'same')?.description).toBe('true');
     // No field of the page carries a style it did not: taking an outline down leaves the fields' caret alone.
     expect(result.annotations.find((a) => a.type === 'styled')?.description).toBe('0');
+    // Nor does Playwright's highlight layer stay, on a page that showed none of its own.
+    expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('0');
+  });
+
+  it('leaves the test’s own highlight as it was, through a stop at a key press and one at a locator call', () => {
+    expect(stops['keeps the test’s own highlight']?.map((s) => [s.reason, !!s.locator])).toEqual([
+      ['breakpoint', false],
+      ['breakpoint', true],
+    ]);
+    expect(heard['keeps the test’s own highlight']).toEqual([{ ok: true, message: '1 element matches.', count: 1 }]);
+    const result = tests.find((t) => t.title === 'keeps the test’s own highlight')!;
+    expect(result.annotations.find((a) => a.type === 'same')?.description).toBe('true');
+    expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('1');
   });
 
   it('picks a region in the test’s window and sends its ARIA snapshot', () => {
@@ -798,9 +830,11 @@ describe('code from a stop, the worker’s part', () => {
 
   it('shows none of its own calls among the test’s steps', () => {
     for (const result of tests) {
-      // The test that compares the page before and after its stop takes its own two screenshots.
-      const own = result.title === 'takes every outline down' ? 2 : 0;
+      // The tests that compare the page before and after their stops take their own two screenshots; one highlights
+      // an element of its own.
+      const own = ['takes every outline down', 'keeps the test’s own highlight'].includes(result.title) ? 2 : 0;
       const titles = allSteps(result.steps).map((s) => s.title);
+      if (result.title === 'keeps the test’s own highlight') titles.splice(titles.findIndex((t) => /^Highlight/.test(t)), 1);
       expect(
         titles.filter((t) => /Screenshot/i.test(t)),
         result.title,

@@ -105,6 +105,7 @@ const STOP: StopToHold = {
   place: { file: 'tests/a.spec.ts', line: 4, column: 9 },
   locator: "getByRole('button')",
   bar: false,
+  outlines: false,
   page: null,
 };
 
