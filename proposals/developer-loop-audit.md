@@ -21,7 +21,12 @@ fixtures' data (F5, F6). Quick win 9 is built in part: a spec path reaches Playw
 file (`specPattern` in core) in the desktop app's runs and also, with the same defect, in the dashboard's copyable
 commands, the selections' arguments and the editor's runs by location (R4); keys and pastes sent to a watched page stop
 there (V5). Left from it: `CREATE_NO_WINDOW` and the quit order in the Rust shell (R6, R14), which want a Windows
-check. The rest is proposed. A pull request that builds part of the plan updates this paragraph.
+check. Quick win 12 is built in part: the plumbing lines (the finalized run, the uploaded reports, the report's
+storage key, the partial run, the trace count) print with `PIWI_VERBOSE` only, an upload that falls back says so once,
+and the reporter's boolean variables, `PIWI_VERBOSE` and `PIWI_EDITOR` included, take `1`, `yes` and `on` (`0`, `no`
+and `off` for `PIWI_EDITOR`) as their kin do (R10, R11, R12). Left from it: when the machine summary prints, and one
+prefix for the workers' lines (R13). The rest is proposed. A pull request that builds part of the plan updates this
+paragraph.
 
 **Summary.** Every step of the loop exists, most of them in several tools, and most of it works as documented: a
 breakpoint stops a headed run under the pause bar, Step and Resume answer, a picked locator lands on its line, a

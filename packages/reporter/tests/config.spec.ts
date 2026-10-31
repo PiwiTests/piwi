@@ -188,6 +188,13 @@ describe('resolveOptions', () => {
     expect(opts.verbose).toBe(false);
   });
 
+  it('PIWI_VERBOSE=1 turns it on, as yes and on do', () => {
+    for (const value of ['1', 'yes', 'ON']) {
+      process.env.PIWI_VERBOSE = value;
+      expect(resolveOptions({}).verbose).toBe(true);
+    }
+  });
+
   it('reads PIWI_OUTPUT_FILE from env, and a user option wins over it', () => {
     process.env.PIWI_OUTPUT_FILE = 'piwi-run.json';
     expect(resolveOptions({}).outputFile).toBe('piwi-run.json');

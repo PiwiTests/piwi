@@ -373,7 +373,7 @@ export class PiwiDashboardReporter {
         ...(fileFilters.length > 0 ? { files: fileFilters } : {}),
         ...(selection ? { selection } : {}),
       };
-      this.logger.info(
+      this.logger.debug(
         selection ? `Selection run detected (${selection.key})` : 'Partial run detected (filter active)',
       );
     }

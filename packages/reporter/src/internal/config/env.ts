@@ -224,9 +224,10 @@ export const PIWI_FLAKE_ENV = {
  */
 export const PIWI_RESOURCES_RESULTS_ENV = 'PIWI_RESOURCES_RESULTS';
 
+/** A boolean variable's value: `true`, `1`, `yes` or `on`, in any case, is true; anything else is false. */
 export function readBool(val: string | undefined): boolean | undefined {
   if (val === undefined) return undefined;
-  return val === 'true';
+  return ['true', '1', 'yes', 'on'].includes(val.trim().toLowerCase());
 }
 
 /** How an env var's string value coerces into its option value. */
@@ -447,7 +448,7 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
   const opts: PiwiDashboardOptions = { ...DEFAULTS, ...mergedRaw };
 
   // PIWI_VERBOSE wins over both default and user option.
-  if (env[PIWI_ENV_KEYS.verbose] !== undefined) opts.verbose = env[PIWI_ENV_KEYS.verbose] === 'true';
+  if (env[PIWI_ENV_KEYS.verbose] !== undefined) opts.verbose = readBool(env[PIWI_ENV_KEYS.verbose])!;
 
   return opts;
 }

@@ -113,12 +113,12 @@ export class Uploader {
     await this.appendFilesToForm(form, payload.testCases, reportOptions.uploadTraces);
 
     const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
-    this.logger.info(`Successfully uploaded test results with files`);
+    this.logger.debug(`Successfully uploaded test results with files`);
     if (response.runId) {
-      this.logger.info(`Test Run ID: ${response.runId}, Project ID: ${response.projectId}`);
+      this.logger.debug(`Test Run ID: ${response.runId}, Project ID: ${response.projectId}`);
     }
     if (response.reports) {
-      for (const r of response.reports) this.logger.info(`${r.label}: ${r.path}`);
+      for (const r of response.reports) this.logger.debug(`${r.label}: ${r.path}`);
     }
     return response;
   }
@@ -152,9 +152,9 @@ export class Uploader {
     await this.appendReportsToForm(form, reportOptions.reports, reportOptions.uploadReport);
 
     const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
-    this.logger.info(`Successfully uploaded reports for streaming run #${runId}`);
+    this.logger.debug(`Successfully uploaded reports for streaming run #${runId}`);
     if (response.reports) {
-      for (const r of response.reports) this.logger.info(`${r.label}: ${r.path}`);
+      for (const r of response.reports) this.logger.debug(`${r.label}: ${r.path}`);
     }
   }
 
@@ -312,6 +312,6 @@ export class Uploader {
         }
       }
     }
-    this.logger.info(`Found ${traceCount} trace files`);
+    this.logger.debug(`Found ${traceCount} trace files`);
   }
 }

@@ -300,6 +300,10 @@ describe('a run started in a terminal', () => {
     // The rest of the gate holds for it too.
     const runner = { PW_TEST_REPORTER: '/ide/playwright-reporter.js' };
     expect(gate({ ...runner, PIWI_EDITOR: 'off' })).toBe('PIWI_EDITOR=off');
+    // The other spellings of off and on, as other switches take them.
+    expect(gate({ ...runner, PIWI_EDITOR: 'false' })).toBe('PIWI_EDITOR=false');
+    expect(gate({ ...runner, PIWI_EDITOR: '0' })).toBe('PIWI_EDITOR=0');
+    expect(terminalRunSkip({ env: { PIWI_EDITOR: 'true' }, argv: [], terminal: false })).toBeNull();
     expect(gate({ ...runner, CI: 'true' })).toBe('running under CI');
     expect(gate({ ...runner, PIWI_ORIGIN: 'desktop' })).toBe('a launcher started the run');
   });
