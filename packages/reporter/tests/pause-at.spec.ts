@@ -1327,6 +1327,23 @@ describe('the Inspector switch', () => {
     return { debugger: dbg };
   }
 
+  it('leaves no switch of its own to the projects that depend on this one as the worker stops', () => {
+    // Playwright reads the worker's environment as its `__stop__` message comes, and hands what changed on.
+    const stop = () => process.emit('message' as never, { method: '__stop__' } as never);
+    watchStops(watchedContext() as never, () => {});
+    markPausesWrapped();
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
+    stop();
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBeUndefined();
+    // A value set outside Piwi is the user's.
+    resetInspectorSwitch();
+    process.env.PW_CODEGEN_NO_INSPECTOR = '1';
+    watchStops(watchedContext() as never, () => {});
+    markPausesWrapped();
+    stop();
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
+  });
+
   it('closes Playwright’s Inspector once every page.pause() goes through Piwi, and opens it while one left to Playwright runs', async () => {
     expect(watchStops(watchedContext() as never, () => {})).toBe(true);
     // A page.pause() Piwi could not see would stop with no Inspector to end it: the switch waits for the wrapper.

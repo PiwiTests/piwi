@@ -465,6 +465,9 @@ interface CaptureSink {
   // The test's `baseURL` option, which Playwright gives every request context
   // created during the test that names none of its own.
   baseURL: string | null;
+  // The test's `headless` fixture, as `test.use`, `launchOptions.headless`
+  // and `--headed` set it: the browser it launches is headed when false.
+  headless: unknown;
 }
 
 function createSink(): CaptureSink {
@@ -515,6 +518,7 @@ function createSink(): CaptureSink {
     codeReach: { sessions: new Map(), files: new Map(), known: new Map(), cssFiles: new Map(), cssKnown: new Map() },
     serverCoverage: new Map(),
     baseURL: null,
+    headless: undefined,
   };
 }
 
@@ -1812,7 +1816,7 @@ async function showStop(
   const page = stopBarPage(sink, context, of);
   const guessed = !('page' in of);
   if (!testInfo) return undefined;
-  const bar = !!page && (testInfo.project?.use as { headless?: unknown } | undefined)?.headless === false;
+  const bar = !!page && pauseGateFromTestInfo(testInfo, sink.headless).headless === false;
   const place = runChannelOpen() ? callSitePlace(location) : null;
   if (!bar && !place) return undefined;
   const failing = failure?.failed ?? null;
@@ -2521,7 +2525,7 @@ async function pauseInPlace(page: Page, playwrightPause: PlaywrightPause, locati
   if (!sink || !testInfo || !location || !context || !contextDebugger(context)) {
     return leaveToPlaywright(context, playwrightPause);
   }
-  if (!sink.pause && (!canRecordFromHere() || pauseSkipReason(pauseGateFromTestInfo(testInfo)))) {
+  if (!sink.pause && (!canRecordFromHere() || pauseSkipReason(pauseGateFromTestInfo(testInfo, sink.headless)))) {
     return leaveToPlaywright(context, playwrightPause);
   }
   sink.pause ??= pauseState(NO_BREAKPOINTS);
@@ -3679,7 +3683,9 @@ const runControl: RunControl = {
       return;
     }
     if (!sink.pause) {
-      const why = sink.testInfo ? pauseSkipReason({ ...pauseGateFromTestInfo(sink.testInfo), channel: true }) : null;
+      const why = sink.testInfo
+        ? pauseSkipReason({ ...pauseGateFromTestInfo(sink.testInfo, sink.headless), channel: true })
+        : null;
       tellHub({ type: 'notice', message: `This test does not stop${why ? `: ${why}` : ''}.` });
       return;
     }
@@ -3828,7 +3834,7 @@ export const piwiFixtures: Fixtures<
   // requested, so suites that never destructure `page` are still captured.
   piwiCapture: [
     async (
-      { screenshot, baseURL }: PlaywrightWorkerOptions & PlaywrightTestOptions,
+      { screenshot, baseURL, headless }: PlaywrightWorkerOptions & PlaywrightTestOptions,
       use: UseFn<void>,
       testInfo: TestInfo,
     ) => {
@@ -3838,10 +3844,11 @@ export const piwiFixtures: Fixtures<
       const sink = createSink();
       sink.testInfo = testInfo;
       sink.baseURL = baseURL ?? null;
+      sink.headless = headless;
       if (keepsFailureScreenshots(screenshot, testInfo.retry)) sink.failureScreenshot = screenshot;
       const pauseSet = currentPauseSet();
       const channel = runChannelOpen();
-      const cannotPause = pauseSkipReason({ ...pauseGateFromTestInfo(testInfo), channel });
+      const cannotPause = pauseSkipReason({ ...pauseGateFromTestInfo(testInfo, headless), channel });
       if (pauseSet.size || channel) {
         if (!cannotPause) sink.pause = pauseState(pauseSet, pauseNextTest);
         else if (pauseSet.size) logPauseSkipOnce(cannotPause);

@@ -154,7 +154,10 @@ export function placeLine(place: Place, cwd: string = process.cwd()): string {
 export interface PauseGate {
   /** Raw `CI` env value. Anything except unset/empty/`'false'` counts as CI. */
   ci: string | undefined;
-  /** `testInfo.project.use.headless`: must be explicitly `false` (headed). */
+  /**
+   * The test's `headless` fixture, which `test.use`, `launchOptions.headless` and `--headed` set, else
+   * `testInfo.project.use.headless`: must be explicitly `false` (headed).
+   */
   headless: unknown;
   /** Raw `PWDEBUG` env value: Playwright's Inspector drives the debugger unless it is unset, empty, `0`, `false` or `console`. */
   pwdebug?: string | undefined;
@@ -166,11 +169,17 @@ export interface PauseGate {
 
 type ConfigInternal = { _configInternal?: { configCLIOverrides?: { debug?: unknown } } };
 
-export function pauseGateFromTestInfo(testInfo: TestInfo): PauseGate {
+/** The gate of a test, with its `headless` fixture's value when the caller has it. */
+export function pauseGateFromTestInfo(testInfo: TestInfo, headless?: unknown): PauseGate {
   const use = (testInfo.project?.use ?? {}) as { headless?: unknown };
   // A Playwright internal, feature-checked: the one place the worker sees `--debug=cli`.
   const debug = (testInfo as unknown as ConfigInternal)._configInternal?.configCLIOverrides?.debug;
-  return { ci: process.env.CI, headless: use.headless, pwdebug: process.env.PWDEBUG, debug };
+  return {
+    ci: process.env.CI,
+    headless: headless !== undefined ? headless : use.headless,
+    pwdebug: process.env.PWDEBUG,
+    debug,
+  };
 }
 
 /**
@@ -416,10 +425,31 @@ function syncInspectorSwitch(): void {
   if (closed && process.env[NO_INSPECTOR_ENV] === undefined) {
     process.env[NO_INSPECTOR_ENV] = '1';
     inspectorSwitch.set = true;
+    clearSwitchAtStop();
   } else if (!closed && inspectorSwitch.set) {
-    if (process.env[NO_INSPECTOR_ENV] === '1') delete process.env[NO_INSPECTOR_ENV];
-    inspectorSwitch.set = false;
+    clearSwitch();
   }
+}
+
+/** Clear the switch Piwi set. */
+function clearSwitch(): void {
+  if (inspectorSwitch.set && process.env[NO_INSPECTOR_ENV] === '1') delete process.env[NO_INSPECTOR_ENV];
+  inspectorSwitch.set = false;
+}
+
+let clearsAtStop = false;
+
+/**
+ * Clear the switch as the worker stops, before Playwright compares the worker's environment (its `__stop__` message)
+ * with the one it started with: Playwright hands what changed to the projects that depend on this worker's, where a
+ * `page.pause()` left to Playwright would then stop with no Inspector to end it.
+ */
+function clearSwitchAtStop(): void {
+  if (clearsAtStop) return;
+  clearsAtStop = true;
+  process.prependListener('message', (message: unknown) => {
+    if ((message as { method?: unknown } | null)?.method === '__stop__') clearSwitch();
+  });
 }
 
 /**
@@ -450,7 +480,7 @@ export async function withInspector<T>(run: () => Promise<T>): Promise<T> {
 
 /** Test-only: the switch as a fresh worker has it. */
 export function resetInspectorSwitch(): void {
-  if (inspectorSwitch.set && process.env[NO_INSPECTOR_ENV] === '1') delete process.env[NO_INSPECTOR_ENV];
+  clearSwitch();
   Object.assign(inspectorSwitch, { set: false, watching: false, wrapped: false, open: 0 });
 }
 
