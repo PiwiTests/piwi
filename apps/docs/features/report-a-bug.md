@@ -14,6 +14,11 @@ wrong ("this should read Total: 36.00"), collects evidence from the page, and ha
 Markdown report and a `.piwibug` file for the developer. Everything is built in your browser; nothing is sent anywhere unless you
 send it to your [Piwi instance](./bug-reports).
 
+<figure>
+  <video src="/videos/picker-report-loop.mp4" autoplay loop muted playsinline controls aria-label="Reporting a bug on a cart page: a coupon applied, the total marked as wrong with what it should read, then Finish opens the report with its five steps, its evidence and a failing test to copy"></video>
+  <figcaption>Reproduce it, mark what's wrong, finish: the report and its failing test.</figcaption>
+</figure>
+
 ## Recording the steps
 
 Open the popup on the page where the flow starts and choose **Report a bug**, or press `B`. The first time on a site,

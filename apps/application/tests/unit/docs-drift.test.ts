@@ -736,7 +736,6 @@ describe('docs site structure', () => {
 });
 
 describe('docs images', () => {
-  const screenshotsDir = join(repoRoot, 'apps/docs/public/screenshots');
   const handWrittenPages = docsPages.filter(
     (p) => !GENERATED_PAGES.has(p.replace(/^apps\/docs\//, '').replace(/\.md$/, '')),
   );
@@ -750,9 +749,10 @@ describe('docs images', () => {
     expect(markdownImages, `${page}: put these images in a <figure>`).toEqual([]);
   });
 
-  // An image under public/screenshots is shown by a docs page, the README or
-  // an extension's README; one nobody shows is deleted with its scene.
-  test('every docs screenshot is shown somewhere', () => {
+  // An image under public/screenshots, or a loop under public/videos, is shown
+  // by a docs page, the README or an extension's README; one nobody shows is
+  // deleted with what makes it.
+  test('every docs screenshot and video is shown somewhere', () => {
     const showing = [
       ...docsPages,
       'README.md',
@@ -761,7 +761,11 @@ describe('docs images', () => {
       .filter((path) => existsSync(join(repoRoot, path)))
       .map(read)
       .join('\n');
-    const unused = readdirSync(screenshotsDir).filter((file) => !showing.includes(`screenshots/${file}`));
+    const unused = ['screenshots', 'videos'].flatMap((dir) =>
+      readdirSync(join(repoRoot, 'apps/docs/public', dir))
+        .map((file) => `${dir}/${file}`)
+        .filter((file) => !showing.includes(file)),
+    );
     expect(unused).toEqual([]);
   });
 });

@@ -320,7 +320,9 @@ Images from other pipelines, which the harness's `--check` leaves alone (`EXTERN
   local demo build (`npm run app:generate:demo`), and needs an ffmpeg with libx264 (`--ffmpeg <path>` or `FFMPEG`);
 - the browser extension's: `picker-*.png` at 1280 × 800, the size the stores take, except the DevTools pane, and
   `tested-elements-overlay.png` at 1400 × 900, by `PIWI_DOCS_SHOTS=1 npm run extension:test:e2e -- docs-screenshots`
-  from `apps/extension/`;
+  from `apps/extension/`, which also writes the loops of `public/videos/` (`picker-*-loop.mp4`: a tool in use, muted,
+  with an ffmpeg that has libx264, `FFMPEG` or on the PATH). A loop goes in a `<figure>` as a `<video>` with
+  `autoplay loop muted playsinline controls` and an `aria-label` saying what it shows;
 - the editor extensions' (`vscode-*.png`, `jetbrains-*.png`), by `apps/vscode/scripts/take-screenshots.mjs` and
   `apps/jetbrains/scripts/take-screenshots.mjs`. They open one fixture project
   (`apps/vscode/scripts/lib/editor-fixture.mjs`) against a stub instance in the real editor, under Xvfb; each script's

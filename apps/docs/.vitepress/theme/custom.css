@@ -20,8 +20,10 @@
   text-align: center;
 }
 
-.vp-doc figure img {
+.vp-doc figure img,
+.vp-doc figure video {
   display: block;
+  max-width: 100%;
   margin: 0 auto;
   border-radius: 10px;
   border: 1px solid var(--vp-c-divider);
