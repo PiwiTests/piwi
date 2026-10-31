@@ -52,6 +52,11 @@ Each ends in [`wrapConfig`](./reporter#installing-via-wrapconfig) around your co
 [capture fixtures](./capture-fixtures) in your specs: the reporter entry alone keeps your runs, and those two add the
 failure screenshots and traces, the network and console capture, and locator healing.
 
+<figure>
+  <img src="/screenshots/home-empty-connect-waiting.png" alt="The connect wizard on an instance with no project: the project name, the three ways to connect (one command, coding agent, by hand) with the init command, the fixtures import and the test command, and a status line waiting for the first run">
+  <figcaption>The connect wizard, waiting for the first run.</figcaption>
+</figure>
+
 ### Fast path: one command
 
 From your Playwright project, one command installs the reporter, wraps your `playwright.config`, creates the
@@ -92,6 +97,13 @@ npx playwright test
 ```
 
 The run streams into the dashboard while it executes, and the reporter prints a `View run:` link at the end. Open it.
+
+While it runs, the wizard's status line changes from *Waiting for the first run* to the run reporting, with a link to watch it:
+
+<figure>
+  <img src="/screenshots/home-empty-connect-reporting.png" alt="The wizard's status line: a run of checkout is reporting now, with a Watch it link">
+  <figcaption>The checkpoint: your first run is reporting.</figcaption>
+</figure>
 
 In CI nothing Piwi-specific is needed: the same reporter runs inside `npx playwright test`, pointed at your instance
 with `PIWI_DASHBOARD_URL` and `PIWI_API_KEY`. [CI & sharding](./ci) has the pipeline examples.

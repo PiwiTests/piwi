@@ -73,6 +73,14 @@ and reloads the page. The card keeps what became of it, or why it was refused. A
 reopen a failure cluster, quarantine or release a test, start a diagnosis, keep a run or decline a capability, and
 shows only when you hold the permission it needs; to act on several tests, it first lets you tick them.
 
+<figure>
+  <div class="figure-pair">
+    <img src="/screenshots/assistant-proposal-wide.png" alt="An answer in the assistant panel proposing to resolve the cart cluster once the fix is in, with Dismiss and Apply">
+    <img src="/screenshots/assistant-proposal-wide-applied.png" alt="The same proposal after Apply, marked Applied">
+  </div>
+  <figcaption>A proposed change, before and after Apply.</figcaption>
+</figure>
+
 ## What it reads
 
 Each question is offered core read tools (search, projects, runs, failure clusters, a failure's evidence, flaky

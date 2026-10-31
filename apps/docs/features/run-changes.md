@@ -59,6 +59,10 @@ order, and the run keeps its seed: the run's **Details** shows it as **Order**, 
 `--shuffle <seed>`, which runs the same tests on the same workers in the same order again. Against a baseline that was
 not shuffled, or the other way round, the Changes tab lists the **Test order** under Environment changes.
 
+## Try it in the demo
+
+<DemoExamples />
+
 ## Related
 
 - [Regression or flake?](/recipes/regression-or-flaky): the Changes tab, used to decide whether one red test is new

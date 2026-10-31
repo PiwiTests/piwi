@@ -48,6 +48,11 @@ the result; read tools never are. A cluster's **Activity** section shows the cal
 **Transport.** Streamable HTTP: JSON-RPC 2.0 over `POST /mcp`, with no SSE or WebSocket. Protocol versions
 `2025-06-18`, `2025-03-26` and `2024-11-05` are supported.
 
+<figure>
+  <img src="/screenshots/mcp-tool-details.png" alt="The MCP server page with the get_fix_plan tool opened: its description and its parameters">
+  <figcaption>One tool on the MCP server page, opened: what it does and the parameters it takes.</figcaption>
+</figure>
+
 ## Authentication
 
 With authentication on, a client signs in through OAuth, as the

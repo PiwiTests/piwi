@@ -88,6 +88,11 @@ A test run does not keep the page each step happened on once a click may have op
 follow such a step into a new tab: it stays in the tab it started in, and a step the test played in a popup is handed
 to you.
 
+<figure>
+  <img src="/screenshots/execution-replay-export.png" alt="A failed execution's Export menu: downloads as HTML, ZIP, PDF, Markdown or JSON, the bug report to replay in a browser with its 6 steps, a Perfetto trace, and the report or the steps to copy">
+  <figcaption>The Export menu of a failed execution: its steps as a bug report to replay.</figcaption>
+</figure>
+
 ## Trusted input
 
 In Chrome and Edge, Replay sends trusted input as Playwright does: a real hover, clicks, keys and drags that the page

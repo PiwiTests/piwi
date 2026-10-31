@@ -61,8 +61,7 @@ Nothing breaks without the fixtures. This is what you give up:
 
 | Dashboard feature | Reporter only | Reporter + fixtures |
 |-------------------|:-:|:-:|
-| Run history, statuses, errors, traces, HTML reports | ✅ | ✅ |
-| Live streaming, sharding, CI/SCM metadata | ✅ | ✅ |
+| Run history, errors, traces, HTML reports, streaming, sharding, CI/SCM metadata | ✅ | ✅ |
 | Failure clustering & flaky-test analytics | ✅ | ✅ |
 | AI failure diagnosis | ✅ error + code-diff grounding | ✅ richer evidence: ARIA snapshot, console, network |
 | Slow API endpoints table | — | ✅ |
@@ -73,6 +72,11 @@ Nothing breaks without the fixtures. This is what you give up:
 | Locator healing (ranked alternatives panel) | — | ✅ |
 | The page each locator was used on | — | ✅ |
 | Backend log correlation | — | ✅ with a [backend integration](./backend-logs) |
+
+<figure>
+  <img src="/screenshots/evidence-fixtures-footer-wide.png" alt="The evidence card of a project without the fixtures: only Source has content, and the footer says network, console, state and performance are not captured, with Add fixtures and two ways to decline">
+  <figcaption>Without the fixtures, the evidence card names what is missing; the line goes once a run brings them.</figcaption>
+</figure>
 
 ## Where capture works
 
@@ -136,10 +140,10 @@ variable: the test workers never see a plain reporter entry's options.
 
 ## Green page sampling on pass
 
-To power the [page diff](/features/evidence#page-diff), the fixtures also sample the ARIA snapshot at the end of a *passing* test, a "last known good" of the page to diff a later failure against. The server decides what to capture:
+For the [page diff](/features/evidence#page-diff), the fixtures also sample the ARIA snapshot at the end of a *passing* test, a "last known good" page to diff a later failure against. The server decides when:
 
 - At the start of every run the global setup makes **one extra request** for the tests whose newest green snapshot is older than 24 hours (or missing), and the reporter caches that set for the run's workers.
-- A passing test is sampled only when it is in that set, so in steady state nothing is captured.
+- A passing test is sampled only when in that set: in steady state, nothing is.
 - The server keeps at most one green snapshot per test per day.
 
 If that request fails, the set stays empty and **nothing is sampled**. Turn it off with `sampleAriaOnPass: false` (or `PIWI_SAMPLE_ARIA_ON_PASS=false`).

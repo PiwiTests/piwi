@@ -24,8 +24,8 @@ Each marker belongs to one project and carries:
 ## Where markers show up
 
 <figure>
-  <img src="/screenshots/project-detail.png" alt="A project's Run trend chart with seven markers drawn as dashed vertical lines in their category's color, and the Markers button above the chart">
-  <figcaption>The Run trend: one dashed line per marker, in its category's color.</figcaption>
+  <img src="/screenshots/run-trend-marker-tooltip.png" alt="A project's Run trend with markers drawn as dashed vertical lines, one hovered: a Release marker named v2.3.0 with its date, environments and description">
+  <figcaption>Markers on the Run trend; hovering one shows its details.</figcaption>
 </figure>
 
 - **Project charts** — the **Run trend** and **Performance trend** charts render each marker as a dashed vertical line with a colored flag handle. Hover the line or its flag for the marker's details (category, label, date, environment, linked run, description); click it to open the marker in the **Markers** panel, in its edit form when you can edit markers.

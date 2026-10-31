@@ -99,6 +99,11 @@ The server checks schedules every five minutes; a firing missed while it was dow
 check, for its own period. The [desktop app](./desktop) fires them while it runs; the demo
 has no scheduler.
 
+<figure>
+  <img src="/screenshots/report-schedule-preview.png" alt="The schedule form's preview: the email the Weekly executive report schedule would send now">
+  <figcaption>Preview in the schedule form: the email the schedule would send now.</figcaption>
+</figure>
+
 ### Report snapshots
 
 Every report sent is kept as a **report snapshot** with its numbers as they were: a report received in
@@ -107,6 +112,11 @@ March reads the same in June, whatever [retention](/operate/storage#data-retenti
 [share](./share-links#report-share-links). You see a snapshot
 when you can open every project it covers. Snapshots go after `PIWI_RETENTION_REPORT_DAYS` days (365; 0
 keeps them).
+
+<figure>
+  <img src="/screenshots/report-snapshot.png" alt="A stored report snapshot: when it was generated and delivered, then the report: the verdict, the headline numbers, the pass rate over time, what changed, what is being done and the risks">
+  <figcaption>A report snapshot, as it was sent.</figcaption>
+</figure>
 
 ## Language
 

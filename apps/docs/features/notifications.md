@@ -78,6 +78,11 @@ needs `PIWI_SECRET_KEY`. A refusal names Slack's error code (`not_in_channel`, `
 
 Through either, a delivery Slack rate-limits retries after its `Retry-After`, up to an hour.
 
+<figure>
+  <img src="/screenshots/channel-form-slack.png" alt="The new channel form for Slack: incoming webhook or bot token, the three steps to create the Slack app, a pasted webhook URL recognized as a Slack incoming webhook, Send test and Save channel">
+  <figcaption>Adding a Slack channel: the URL is recognized before you save it.</figcaption>
+</figure>
+
 ### Microsoft Teams
 
 In the Teams channel's **⋯** menu, open **Workflows**, pick the template *Send webhook alerts to a channel*, choose the

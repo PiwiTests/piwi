@@ -151,6 +151,10 @@ CI, like the options above. The editor extensions set both from your [breakpoint
   `captureLocators: false` or `PIWI_CAPTURE_LOCATORS=false`; it is also off whenever `collectPerformanceMetrics` is
   `false`.
 
+## Try it in the demo
+
+<DemoExamples />
+
 ## Related
 
 - [Fix a broken locator](/recipes/broken-locator): healing, used end to end on one broken locator

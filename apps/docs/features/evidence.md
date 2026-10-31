@@ -21,8 +21,8 @@ A failing execution reads top to bottom in one column. It opens on the **situati
 cause, next step, cluster), described on [Your first failure, explained](/guide/first-failure).
 
 <figure>
-  <img src="/screenshots/gather-evidence.png" alt="A failing execution: one situation block, then one evidence card whose tabs (Timeline, Screen, Source, Network, Console, State, Performance) hold the captured evidence">
-  <figcaption>A failing execution: the situation block, then one evidence card whose tabs hold everything captured.</figcaption>
+  <img src="/screenshots/evidence-card.png" alt="The evidence card of a failing execution on its Timeline tab: calls, steps, network, console and dialogs on one axis, then each step with its offset and duration, the failing click with the page at the failure">
+  <figcaption>The evidence card on its Timeline tab: every step, request, console entry and dialog on one axis, the failure marked.</figcaption>
 </figure>
 
 Below the block, one **evidence card** holds tabs, a count on those that list items, empty ones dimmed. It opens on **Source** or
@@ -80,6 +80,11 @@ opened marked), then **what differed** between the failing attempt and the passi
 Each difference links to its evidence tab, a request that is one of the test's [suspects](./flaky-tests#suspects) to
 it. The comparison feeds the [root-cause classifier](./flaky-tests#root-cause-classification).
 
+<figure>
+  <img src="/screenshots/attempt-diff.png" alt="An execution's Attempts tab: the failed and the passed attempt, then what differed between them: an error only on the failing attempt, a request 1.8 s slower, a step that errored only there">
+  <figcaption>What differed between a failing attempt and the passing retry.</figcaption>
+</figure>
+
 ## Page diff
 
 Where the visual diff compares pixels, the Screen tab's **Page diff** view compares *structure*: it parses the failing
@@ -96,6 +101,11 @@ view says why (*not captured*, *no green sample yet* or *not applicable*). The p
 
 When the trace carries [aria snapshots](#aria-and-screen-snapshots), the view adds an **in-execution** page diff
 that needs no green baseline: the structure at the failure against the last different page before the failing action.
+
+<figure>
+  <img src="/screenshots/page-diff.png" alt="The Screen tab in its Page diff view: against the last green run, the Pay button of the Checkout form was renamed Pay now and became disabled, and the failing locator points there">
+  <figcaption>Page diff: the failing page against the last green run, one changed button.</figcaption>
+</figure>
 
 ## Trace-powered deep views
 
@@ -145,9 +155,13 @@ and last run, a duration trend, a status-history strip, and the recent execution
 A flaky test adds a **Flakiness** tab with its [suspects](./flaky-tests#suspects).
 
 <figure>
-  <img src="/screenshots/test-case-detail.png" alt="Test case page: run stats, a duration trend, a status strip and recent executions">
-  <figcaption>The test case page: stats, a duration trend and every recent execution.</figcaption>
+  <img src="/screenshots/tour-test-history.png" alt="A test case page: run stats, the duration trend with a status strip under it, and the recent executions">
+  <figcaption>The test case page: stats, a duration trend over the status strip, and every recent execution.</figcaption>
 </figure>
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 

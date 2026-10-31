@@ -32,6 +32,11 @@ breadcrumb, then the tab and the section it sits in, the ones the guide just ope
 When a stop explains several parts of the screen, it numbers them: each number on the page matches one line of the
 popover, and pointing at a line enlarges its number on the page.
 
+<figure>
+  <img src="/screenshots/guides-stop.png" alt="The first stop of the Run the Flake Lab guide: a card pointing at a project's flaky tests list, with where it is, what it shows, a link to the docs and Next">
+  <figcaption>A guide's stop: where you are, what the highlighted part shows, and the way on.</figcaption>
+</figure>
+
 ## The guides
 
 | Guide | What it shows | Listed for |

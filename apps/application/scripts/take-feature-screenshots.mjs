@@ -879,7 +879,9 @@ const REPRO_SCENE_STEPS = (() => {
  *   out         — 'screens' (default) or 'docs'
  *   file        — output basename, default `<name>.png`
  *   outputs     — every file the scene writes; defaults to `file` plus the
- *                 `-annotated` variant when the scene annotates. --check reads it
+ *                 `-annotated` variant when the scene annotates. --check reads it.
+ *                 A docs scene writes a shot it does not list to .screens/, so
+ *                 it can publish one shot of several
  *   route       — initial path (default '/')
  *   prepare     — ({ base, request }) => put the server in the state the shot
  *                 needs, before the page loads; `request` is Playwright's API
@@ -2033,6 +2035,8 @@ const SCENES = [
     name: 'assistant-proposal',
     description:
       'A change the assistant proposes, in the panel on the fixed answer: the card with Apply and Dismiss, then the same card applied, at 1280 and 390 px',
+    tags: ['docs'],
+    out: 'docs',
     route: '/',
     viewport: { width: 1280, height: 860 },
     async run({ page, shoot, settle, goto }) {
@@ -2054,12 +2058,7 @@ const SCENES = [
       await showCard(1280);
       await shoot('wide-applied', { of: '[data-shot="assistant-panel"]' });
     },
-    outputs: [
-      'assistant-proposal-wide.png',
-      'assistant-proposal-phone.png',
-      'assistant-proposal-phone-applied.png',
-      'assistant-proposal-wide-applied.png',
-    ],
+    outputs: ['assistant-proposal-wide.png', 'assistant-proposal-wide-applied.png'],
   },
   {
     name: 'assistant-nudges',
@@ -2113,6 +2112,8 @@ const SCENES = [
     name: 'guides',
     description:
       "The command palette's Guides group, then the first stop of the Flake Lab guide started from it, at 1280 and 390 px",
+    tags: ['docs'],
+    out: 'docs',
     route: '/',
     viewport: { width: 1280, height: 860 },
     async run({ page, shoot, settle }) {
@@ -2146,7 +2147,7 @@ const SCENES = [
       await startFlakeLab();
       await shoot('stop-phone');
     },
-    outputs: ['guides-palette.png', 'guides-stop.png', 'guides-palette-phone.png', 'guides-stop-phone.png'],
+    outputs: ['guides-stop.png'],
   },
   {
     name: 'user-menu-piwi-tools',
@@ -2191,6 +2192,8 @@ const SCENES = [
     name: 'analytics-scope-bar',
     description:
       'The Filters block on Analytics: Period, Runs and Tests groups, the period picker open with comparison and buckets',
+    tags: ['docs'],
+    out: 'docs',
     route: '/analytics?period=last-90d',
     viewport: { width: 1280, height: 1000 },
     async run({ page, shoot, settle }) {
@@ -2344,10 +2347,11 @@ const SCENES = [
     },
   })),
   ...[
-    { name: 'report-snapshot', width: 1280, height: 1600 },
+    { name: 'report-snapshot', width: 1280, height: 1600, docs: true },
     { name: 'report-snapshot-mobile', width: 375, height: 1600 },
-  ].map(({ name, width, height }) => ({
+  ].map(({ name, width, height, docs }) => ({
     name,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
     description: `A report snapshot on /reports/:id, at ${width} px`,
     prepare: prepareReportSchedule,
     route: '/reports',
@@ -2491,10 +2495,11 @@ const SCENES = [
     },
   })),
   ...[
-    { name: 'chart-export-menu', width: 1280 },
+    { name: 'chart-export-menu', width: 1280, docs: true },
     { name: 'chart-export-menu-mobile', width: 375 },
-  ].map(({ name, width }) => ({
+  ].map(({ name, width, docs }) => ({
     name,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
     description: `The export menu of a chart (copy as PNG, download Excel), at ${width} px`,
     route: '/analytics?projects=1',
     viewport: { width, height: 900 },
@@ -2509,10 +2514,11 @@ const SCENES = [
     },
   })),
   ...[
-    { name: 'execution-replay-export', width: 1280 },
+    { name: 'execution-replay-export', width: 1280, docs: true },
     { name: 'execution-replay-export-mobile', width: 375 },
-  ].map(({ name, width }) => ({
+  ].map(({ name, width, docs }) => ({
     name,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
     description: `A failed execution's Export menu: the .piwibug bug report for Piwi Picker's Replay, with how many steps are done by hand and not replayed, and Copy steps, at ${width} px`,
     route: '/test-run-cases/37',
     viewport: { width, height: 900 },
@@ -2656,10 +2662,11 @@ const SCENES = [
   })),
   // *Preview* in the schedule form, sending to the email channel `prepare` makes.
   ...[
-    { name: 'report-schedule-preview', width: 1280, height: 1400 },
+    { name: 'report-schedule-preview', width: 1280, height: 1400, docs: true },
     { name: 'report-schedule-preview-mobile', width: 375, height: 1000 },
-  ].map(({ name, width, height }) => ({
+  ].map(({ name, width, height, docs }) => ({
     name,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
     description: `Schedule… then Preview: the email the schedule would send now, at ${width} px`,
     prepare: prepareReportSchedule,
     route: '/analytics',
@@ -2810,6 +2817,8 @@ const SCENES = [
   {
     name: 'storage-analysis',
     description: 'Settings → Storage: usage KPIs, storage over time, by file kind and top projects',
+    tags: ['docs'],
+    out: 'docs',
     route: '/settings/storage',
     viewport: { width: 1280, height: 1700 },
     async run({ page, shoot, settle }) {
@@ -2844,6 +2853,8 @@ const SCENES = [
   {
     name: 'user-api-keys',
     description: 'The API keys manager (shared ApiKeysManager) — here in the Users admin modal',
+    tags: ['docs'],
+    out: 'docs',
     route: '/settings/users',
     viewport: { width: 1100, height: 1000 },
     async run({ page, shoot, settle }) {
@@ -2851,7 +2862,17 @@ const SCENES = [
       // manageable; open the first user's modal. The same component backs the
       // Account page (Settings → Account → API keys), which needs auth enabled.
       await page.getByRole('button', { name: 'Manage API keys' }).first().click();
-      await page.getByRole('dialog').waitFor();
+      const dialog = page.getByRole('dialog');
+      await dialog.waitFor();
+      await settle();
+      // A key to show in the list: the first capture on a database creates it.
+      if (!(await dialog.getByText('GitHub Actions CI').count())) {
+        await dialog.getByRole('button', { name: 'Create API key' }).click();
+        await dialog.getByPlaceholder('e.g. GitHub Actions CI').fill('GitHub Actions CI');
+        await dialog.getByRole('button', { name: 'Generate key' }).click();
+        await dialog.getByRole('button', { name: 'Done' }).click();
+      }
+      await dialog.getByText('GitHub Actions CI').waitFor();
       await settle();
       await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
     },
@@ -3500,7 +3521,7 @@ const SCENES = [
   },
   {
     name: 'gather-evidence',
-    description: 'Failing execution: the header, the headline and the evidence tabs on one screen (dark)',
+    description: 'Failing execution: the situation block and the evidence card on one screen',
     tags: ['docs'],
     out: 'docs',
     // Execution 37 carries an attachment, a trace and a visual diff, so the
@@ -3508,7 +3529,20 @@ const SCENES = [
     // failing step's page views at the foot of the steps table.
     route: '/test-run-cases/37',
     viewport: { width: 1560, height: 1800 },
-    colorScheme: 'dark',
+  },
+  {
+    name: 'evidence-card',
+    description: 'Failing execution: the evidence card alone, its tabs over the captured evidence',
+    tags: ['docs'],
+    out: 'docs',
+    // Execution 37 carries an attachment, a trace and a visual diff, so the
+    // evidence tabs are populated rather than empty.
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 1500 },
+    of: '[data-shot="evidence-card"]',
+    pad: 12,
+    deviceScaleFactor: 2,
+    outputWidth: 1376,
   },
   {
     name: 'run-timeline',
@@ -3594,6 +3628,8 @@ const SCENES = [
     name: 'run-timeline-resources',
     description:
       "The leaky run's workers timeline with the CPU, memory and open-pages tracks above the rows: hovered, with memory turned off, with each worker's open pages and each test's CPU under its row, then at phone width",
+    tags: ['docs'],
+    out: 'docs',
     // Web Dashboard's newest run is the seed's leaky one: its pages pile up test after test.
     route: '/test-runs/62?tab=workers',
     viewport: { width: 1280, height: 900 },
@@ -3630,13 +3666,7 @@ const SCENES = [
       await settle();
       await shoot('narrow');
     },
-    outputs: [
-      'run-timeline-resources-hover.png',
-      'run-timeline-resources-toggled.png',
-      'run-timeline-resources-worker-pages.png',
-      'run-timeline-resources-worker-cpu.png',
-      'run-timeline-resources-narrow.png',
-    ],
+    outputs: ['run-timeline-resources-hover.png'],
   },
   {
     name: 'run-timeline-resources-live',
@@ -3800,17 +3830,6 @@ const SCENES = [
     pad: 12,
   },
   {
-    name: 'test-case-detail',
-    description: 'Test history: facts line, duration trend with the execution strip, recent executions',
-    tags: ['docs'],
-    out: 'docs',
-    route: '/test-cases/1',
-    viewport: { width: 1280, height: 1600 },
-    charts: true,
-    of: '[data-shot="test-case-detail"]',
-    pad: 8,
-  },
-  {
     name: 'home',
     description: 'Home overview, light/dark diagonal split (docs gallery hero)',
     tags: ['docs'],
@@ -3835,15 +3854,6 @@ const SCENES = [
     },
   },
   {
-    name: 'project-detail',
-    description: 'Project detail: run trend bars over the filtered run history (docs gallery)',
-    tags: ['docs'],
-    out: 'docs',
-    route: '/projects/1',
-    viewport: { width: 1280, height: 720 },
-    charts: true,
-  },
-  {
     name: 'failure-clusters-tab',
     description:
       'Failures tab: the failure inbox, one row per cluster of tests that failed for the same reason (docs gallery)',
@@ -3861,14 +3871,6 @@ const SCENES = [
     route: '/projects/1?tab=flaky-tests',
     viewport: { width: 1280, height: 720 },
     prepare: classifyFlakyTests,
-  },
-  {
-    name: 'flake-lab',
-    description: "Flake Lab tab: the project's experiments, each with its test, conditions and verdict",
-    tags: ['docs'],
-    out: 'docs',
-    route: '/projects/1?tab=flake-lab',
-    viewport: { width: 1280, height: 800 },
   },
   {
     name: 'bug-report',
@@ -4190,6 +4192,8 @@ const SCENES = [
   {
     name: 'attempt-diff',
     description: 'Attempts tab: every attempt, and what differed between the failing and passing attempt',
+    tags: ['docs'],
+    out: 'docs',
     // Execution 21 is a flaky test that passed on retry, so the Attempts tab holds a diff.
     route: '/test-run-cases/21',
     viewport: { width: 1280, height: 1000 },
@@ -4221,7 +4225,8 @@ const SCENES = [
     name: 'run-trend-marker-tooltip',
     description:
       'Run trend: hovering a timeline marker line shows its category, label, date, environment and description',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
     route: '/projects/1',
     viewport: { width: 1400, height: 900 },
     charts: true,
@@ -4519,6 +4524,8 @@ const SCENES = [
   {
     name: 'page-diff',
     description: 'Screen tab: the Page diff view, the structural diff of the failing page',
+    tags: ['docs'],
+    out: 'docs',
     // Execution 37 (checkout) has a green ARIA sample and a failing one that
     // renames the "Pay" button and disables it — a legible one-line diff.
     route: '/test-run-cases/37',
@@ -5269,7 +5276,9 @@ const SCENES = [
     name: 'home-empty-connect',
     description:
       'Home on an instance with no project yet: the connect wizard waiting for the first run, then the run reporting',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
+    outputs: ['home-empty-connect-waiting.png', 'home-empty-connect-reporting.png'],
     route: '/settings',
     viewport: { width: 1280, height: 2000 },
     async run({ page, settle, shoot }) {
@@ -5310,7 +5319,9 @@ const SCENES = [
     name: 'setup-connect-desktop',
     description:
       'Connect wizard (desktop app): the one command with no URL, then with CI reporting to a team server and local runs kept in the app',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
+    outputs: ['setup-connect-desktop.png'],
     mode: 'desktop',
     route: '/setup',
     viewport: { width: 1280, height: 2400 },
@@ -5328,6 +5339,8 @@ const SCENES = [
   {
     name: 'mcp-tool-details',
     description: 'MCP page: one tool opened, its Markdown description and parameters',
+    tags: ['docs'],
+    out: 'docs',
     route: '/mcp',
     viewport: { width: 1280, height: 2400 },
     of: '[data-shot="mcp-tool-get_fix_plan"]',
@@ -5343,6 +5356,8 @@ const SCENES = [
   {
     name: 'mcp-agent-skills',
     description: 'MCP page: the agent-skills section with the install command',
+    tags: ['docs'],
+    out: 'docs',
     route: '/mcp',
     viewport: { width: 1280, height: 2400 },
     of: '[data-shot="mcp-agent-skills"]',
@@ -5375,7 +5390,8 @@ const SCENES = [
     name: 'flakiness-tab',
     description:
       'A flaky test’s Flakiness tab: suspects with their counts, conditions and lab results, context and experiments',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
     route: '/test-cases/9?tab=flakiness',
     viewport: { width: 1280, height: 1400 },
     of: '[data-shot="flakiness-tab"]',
@@ -5403,7 +5419,8 @@ const SCENES = [
   {
     name: 'flake-lab-tab',
     description: 'A project’s Flake Lab tab: each flaky test’s lab state and next command, and the newest experiments',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
     route: '/projects/3?tab=flake-lab',
     viewport: { width: 1280, height: 1400 },
     of: '[data-shot="flake-lab"]',
@@ -5464,7 +5481,8 @@ const SCENES = [
   {
     name: 'run-resources',
     description: 'Run Resources tab: findings, the open-pages pointer, the machine and the costliest tests',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
     route: '/test-runs/62?tab=resources',
     viewport: { width: 1280, height: 2900 },
     charts: true,
@@ -5507,7 +5525,8 @@ const SCENES = [
   {
     name: 'bug-report-spec',
     description: 'A bug report’s Spec tab: the failing test to commit, rendered with the project’s settings',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
     route: '/bug-reports/1?tab=spec',
     viewport: { width: 1280, height: 1100 },
     of: '[data-shot="bug-report-spec"]',
@@ -5626,7 +5645,10 @@ const SCENES = [
     name: 'failure-headline',
     description:
       'Failing execution: the situation block, the headline and the line under it (since when, not the latest), most likely, next step and the cluster',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
+    deviceScaleFactor: 2,
+    outputWidth: 1376,
     // Execution 37 is a new regression clustered with a sibling in its run, and
     // its test failed again in later runs: the line under the headline says so,
     // and the Cluster line names the sibling.
@@ -6119,9 +6141,11 @@ const SCENES = [
     name: 'channel-form',
     description:
       'Notifications → Add channel: the Slack app steps with a checked URL, then that URL under Teams, then Slack with a bot token',
+    tags: ['docs'],
+    out: 'docs',
     route: '/settings/notifications',
     viewport: { width: 1280, height: 1100 },
-    outputs: ['channel-form-slack.png', 'channel-form-teams.png', 'channel-form-slack-api.png'],
+    outputs: ['channel-form-slack.png'],
     async run({ page, shoot, settle }) {
       await page.getByRole('button', { name: 'Add channel' }).click();
       const form = page.locator('[data-shot="channel-form"]');
@@ -6151,6 +6175,9 @@ const SCENES = [
   {
     name: 'setup-ladder-declined',
     description: 'Setup ladder grouped by state, with a declined capability folded under Declined',
+    tags: ['docs'],
+    out: 'docs',
+    outputs: ['setup-ladder-declined-wide.png'],
     // Decline one instance capability so the folded Declined group appears.
     async prepare({ base, request }) {
       await request.patch(`${base}/api/capabilities`, { data: { decisions: { notifications: 'declined' } } });
@@ -6237,6 +6264,9 @@ const SCENES = [
   {
     name: 'evidence-fixtures-footer',
     description: 'Execution page evidence card for a project with no captured fixtures: the footer names them',
+    tags: ['docs'],
+    out: 'docs',
+    outputs: ['evidence-fixtures-footer-wide.png'],
     // Seed a fixtures-free failing run so the footer (undecided) shows.
     async prepare({ base, request }) {
       await request.post(`${base}/api/test-runs/submit`, {
@@ -7054,7 +7084,10 @@ async function captureScene(browser, scene, { base, outDir, freezeNow }) {
   let written = 0;
   const shoot = async (label, opts = {}) => {
     const stem = sceneFile(scene).replace(/\.png$/, '');
-    const file = join(outDir, `${stem}${label ? `-${label}` : ''}.png`);
+    const name = `${stem}${label ? `-${label}` : ''}.png`;
+    // A docs scene publishes only the shots its `outputs` lists; the others are report material.
+    const published = scene.out !== 'docs' || !scene.outputs || scene.outputs.includes(name);
+    const file = join(published ? outDir : OUT_TARGETS.screens, name);
 
     let image;
     if (scene.split) {
@@ -7122,6 +7155,7 @@ async function main() {
   }
 
   for (const scene of scenes) mkdirSync(outDirFor(scene, flags.out), { recursive: true });
+  mkdirSync(OUT_TARGETS.screens, { recursive: true });
   const browser = await chromium.launch({
     executablePath: resolveChromium(),
     args: ['--no-sandbox', '--disable-setuid-sandbox'],

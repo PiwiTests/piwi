@@ -44,6 +44,11 @@ Connecting the [browser extension](/features/extension-connection) creates a key
 **Allow** on the page it opens: it is named after the browser ("Piwi Picker in Chrome on Windows") and listed with the
 others.
 
+<figure>
+  <img src="/screenshots/user-api-keys.png" alt="A user's API keys dialog: one key named GitHub Actions CI with its prefix, creation date and Never used, a revoke button, and Create API key">
+  <figcaption>A user's API keys: each shown by its prefix, with its last use.</figcaption>
+</figure>
+
 ## Revoking an API key
 
 Click the trash icon next to the key, in the same place you created it. The key stops working immediately.

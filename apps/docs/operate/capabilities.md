@@ -14,6 +14,11 @@ Not every team uses every capability. Any optional one can be **declined** so th
 
 Declining is administrator-only and never final: each declined capability keeps a *Reconsider* link on the Setup ladder that clears the decision, and because data always wins, a declined capability that starts receiving data reads as active again with the stored decision shown next to it. See [Why a card is empty](/features/evidence#why-a-card-is-empty) for how this reads on the execution page.
 
+<figure>
+  <img src="/screenshots/setup-ladder-declined-wide.png" alt="The Setup page's list of what is switched on, Notifications among the active capabilities with Declined on Setup and a Reconsider link beside its docs link">
+  <figcaption>A declined capability that still receives data reads as active, its decision and Reconsider link beside it.</figcaption>
+</figure>
+
 ## Related
 
 - [Getting started](/guide/getting-started): connect a first suite

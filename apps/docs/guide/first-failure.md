@@ -11,8 +11,8 @@ You've landed your first run ([Getting started](./getting-started)) and one test
 Open the failing test from the run page (click its row) to reach its **execution page**.
 
 <figure>
-  <img src="/screenshots/gather-evidence.png" alt="A failing execution laid out diagnosis-first: one situation block with the headline and the line under it, most likely, next step and the cluster, and one evidence card with tabs">
-  <figcaption>One failing execution, read top to bottom: the situation block that says what broke, what is most likely and what to do, then the evidence.</figcaption>
+  <img src="/screenshots/failure-headline.png" alt="A failing execution's situation block: the identity line, the headline, the line saying since when it fails, Most likely with its strength, the Next step with the patch to apply, and the Cluster line">
+  <figcaption>The situation block: what broke, since when, why, what to do next, and the cluster it belongs to.</figcaption>
 </figure>
 
 The top of the page is one **situation block**. Above its heading, a small **identity** line carries the status, the test (`checkout.spec.ts:9 › Checkout › pays`), marks such as `@fixme` or `@slow`, and whether it is quarantined. The lines below it are the rest of this page, in order.
@@ -74,6 +74,10 @@ Below the toolbox, a **history** strip shows this test's recent executions and h
 ## You're not reading it alone
 
 This execution is one member of a **[failure cluster](/features/failure-clusters)**: Piwi groups every test that failed for the same reason, so forty red tests become three problems you triage once. Once a later run passes every test it covers, the cluster records [whether the fix held](/features/failure-clusters#did-the-fix-work).
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 

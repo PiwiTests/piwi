@@ -28,6 +28,19 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 
+/* Two images side by side in one figure: a before and an after. */
+.vp-doc figure .figure-pair {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.vp-doc figure .figure-pair img {
+  min-width: 0;
+  margin: 0;
+}
+
 .vp-doc img.zoomable {
   cursor: zoom-in;
 }

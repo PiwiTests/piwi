@@ -73,6 +73,11 @@ The flaky list names each test's top suspect (a reproduced one first), the [Atte
 requests to suspects, the clue `known-flake-suspect` marks failures showing one, and MCP's `get_flake_profile`
 returns it. The [Flake Lab](./flake-lab) tests each suspect against a control run.
 
+<figure>
+  <img src="/screenshots/flakiness-tab.png" alt="A flaky test's Flakiness tab: two suspects with their counts among failures and passes, the lab condition and result of each, the context a lab cannot apply, and the experiment that reproduced the flake">
+  <figcaption>A flaky test's suspects, and the experiments run on them.</figcaption>
+</figure>
+
 ### Verified fixed
 
 When a [`piwi flake verify`](./flake-lab#verify-a-fix) experiment holds, the test reads **verified fixed on
@@ -146,6 +151,10 @@ The project's **Tests** tab has a **Group by File** view that groups tests by th
 ## Across every project
 
 Everything above is scoped to one project; [Analytics](./analytics) lifts the same signals across every project.
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 - [Regression or flake?](/recipes/regression-or-flaky): is one red test flaky?

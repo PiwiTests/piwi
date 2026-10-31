@@ -54,6 +54,11 @@ its local runs here with
 [`desktopApp: 'prefer'`](/guide/reporter#local-runs-to-the-desktop-app-ci-to-a-team-server), which the snippets on
 **Setup** carry once you turn on **CI reports to a team server**.
 
+<figure>
+  <img src="/screenshots/setup-connect-desktop.png" alt="The connect wizard in the desktop app: the one init command with no server URL, the fixtures import and the test command, and the CI reports to a team server switch, off">
+  <figcaption>The desktop app's connect wizard: no URL to set, since the reporter finds the app.</figcaption>
+</figure>
+
 When the tests run as another user or in a container, **Setup → Send results to this app** gives the
 address (port 3000 unless it is taken) and the token to configure by hand. Keep the token in `PIWI_API_KEY`, not in
 the config.
@@ -107,9 +112,8 @@ bisect exercises test changes only.
 On a failure of a team instance, the [editor extensions](/features/editor-failures#ci-failures-in-the-problems-panel) offer
 **Reproduce in the desktop app** and **Find the breaking commit in the desktop app**; on a flaky test, or a failure
 whose test has an untested suspect, a [Flake Lab](/features/flake-lab#from-the-editor-and-the-failure-pages) run of
-the team instance's plan. The window shows the commits, tests or arms, and runs nothing until you start it. The editor
-gets the verdict and can share a first bad commit, or the lab's results, on the team instance with its own key, which
-the app never holds.
+the team instance's plan. The window runs nothing until you start it. The editor gets the verdict and can share it on
+the team instance with its own key, which the app never holds.
 
 ### Reproducing a flake
 

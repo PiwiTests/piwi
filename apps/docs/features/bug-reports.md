@@ -87,6 +87,11 @@ tab: the folder bug specs go to (`tests/bugs` by default) and the module `test` 
 
 From a terminal, [`piwi bug 37 --write`](/reference/cli#bug) writes the spec into that folder and runs it once.
 
+<figure>
+  <img src="/screenshots/bug-report-spec.png" alt="A bug report's Spec tab: the failing Playwright test written from the report's steps, ready to commit">
+  <figcaption>A report's Spec tab: the failing test, written with the project's settings.</figcaption>
+</figure>
+
 ## From report to fix
 
 Once a test naming the report (`piwi:bug 37`) runs on the default branch, the report follows it (the run `piwi bug --write`
