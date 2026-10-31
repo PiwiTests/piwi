@@ -300,7 +300,7 @@ test.describe('the desktop app as the instance', () => {
     expect(await removals(page)).toEqual([`${desktop}/*`]);
   });
 
-  test('the editor’s Unpair leaves an address the desktop app shares, as Firefox makes every loopback one', async ({
+  test('the editor’s Unpair leaves an address the desktop app’s pairing holds too', async ({
     context,
     extensionId,
   }) => {

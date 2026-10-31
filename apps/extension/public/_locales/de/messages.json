@@ -6512,7 +6512,7 @@
     "message": "Beenden"
   },
   "runs_finishTitle": {
-    "message": "Den Test weiterlaufen lassen, ohne erneut an einem Haltepunkt anzuhalten in diesem Versuch"
+    "message": "Den Test weiterlaufen lassen, ohne in diesem Versuch erneut an einem Haltepunkt anzuhalten"
   },
   "runs_end": {
     "message": "Test beenden"

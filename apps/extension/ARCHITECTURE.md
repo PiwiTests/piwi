@@ -635,7 +635,9 @@ The pairing:
   accepts it.
 - **Pair by hand** takes the token pasted from the app's **Connect Piwi Picker** instead.
 - Either way the settings page requests that one loopback origin inside the click. **Unpair** gives the grant back,
-  unless the instance kept is at that address. **Disconnect** leaves the grant to a pairing at that address.
+  unless the instance, the editor's pairing, a recording or a replay still holds it (`releaseGrant`, as the sites
+  card reckons); **Disconnect** and the editor's **Unpair** do the same. In Firefox a pattern names no port, so every
+  address on 127.0.0.1 shares one.
 
 The desktop app as the instance. The app's server is a Piwi instance that takes its token as an API key
 (`desktop-guard.ts`). So the Connect to Piwi card:
@@ -680,7 +682,8 @@ from, after a preview: `POST /api/bug-reports/:id/reproductions`.
 
 Only `piwi-client.ts` makes requests to the instance, the desktop app and Send to editor, from exactly two contexts:
 
-- `src/options/`: connecting, saving, reading and adding URL patterns, pairing the desktop app;
+- `src/options/`: connecting, saving, reading and adding URL patterns, pairing the desktop app, and asking the paired
+  editor for its proof (`provePairedEditor`, a challenge alone, never the token) as the page opens and after **Pair**;
 - the worker:
   - its `piwi-refresh-catalog` / `piwi-refresh-locator-index` handlers (`project-refresh.ts`). For a content script
     they fetch only the project its tab's URL maps to; for an extension page, the project id it names;

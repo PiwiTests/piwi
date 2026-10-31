@@ -22,9 +22,12 @@ export async function sendToEditor(payload: EditorSendPayload): Promise<SendToEd
   }
 }
 
+/** The status line of each Send to editor button that has shown a failure. */
+const statusLines = new WeakMap<HTMLButtonElement, HTMLElement>();
+
 /**
- * A Send to editor button's feedback: its label for a moment, and on failure the reason in a status line after the
- * button, which the next result replaces or empties.
+ * A Send to editor button's feedback: its label for a moment, and on failure the reason in a status line at the end of
+ * the button's row, under its buttons, which the next result replaces or empties.
  */
 export function showSendResult(btn: HTMLButtonElement, result: SendToEditorResult): void {
   // A second click meanwhile restarts the feedback, and the label still goes back to the button's own.
@@ -35,8 +38,8 @@ export function showSendResult(btn: HTMLButtonElement, result: SendToEditorResul
     result.ok ? 'ok' : 'fail',
   );
   const reason = result.ok ? '' : result.error;
-  const shown = btn.nextElementSibling;
-  if (shown?.classList.contains(SEND_STATUS_CLASS)) {
+  const shown = statusLines.get(btn);
+  if (shown?.isConnected) {
     shown.textContent = reason;
     return;
   }
@@ -44,8 +47,11 @@ export function showSendResult(btn: HTMLButtonElement, result: SendToEditorResul
   const line = btn.ownerDocument.createElement('div');
   line.className = SEND_STATUS_CLASS;
   line.setAttribute('role', 'status');
-  btn.after(line);
-  // A live region is read out as its text changes, not as it is added with its text.
+  if (btn.parentElement) btn.parentElement.append(line);
+  else btn.after(line);
+  statusLines.set(btn, line);
+  // A live region is read out as its text changes, not as it is added with its text: an empty one stays in the
+  // accessibility tree, out of sight.
   setTimeout(() => {
     line.textContent = reason;
   }, 0);

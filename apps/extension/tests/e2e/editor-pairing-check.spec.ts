@@ -90,7 +90,7 @@ test.describe('the paired editor’s proof, checked where the pairing shows', ()
   test('says when the browser no longer lets it reach the paired address', async () => {
     const paired = await pairedExtension(null);
     context = paired.context;
-    // Kept as an earlier version kept it, at an address the browser does not grant.
+    // A pairing stored at an address the browser does not grant.
     await paired.worker.evaluate(
       (token) => chrome.storage.local.set({ piwiEditorPairing: { url: 'http://127.0.0.1:9/piwi/send', token } }),
       PAIRING_TOKEN,

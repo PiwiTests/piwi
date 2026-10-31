@@ -7727,7 +7727,7 @@
   },
   "runs_finishTitle": {
     "message": "Run the test on without stopping at a breakpoint again in this attempt",
-    "description": "Runs window, button on a stopped test: it runs on without stopping at a breakpoint again in this attempt."
+    "description": "Runs window, the tooltip of the Finish button (runs_finish): the stopped test runs on without stopping at a breakpoint again in this attempt."
   },
   "runs_end": {
     "message": "End the test",
