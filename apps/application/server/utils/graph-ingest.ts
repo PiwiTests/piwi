@@ -9,7 +9,8 @@
  * tagged with that branch, so a route added on a pull request never shows up as
  * surface drift on the default branch. Route nodes come only from requests to
  * the run's own origin, so third-party beacons and CDN assets never enter the
- * graph.
+ * graph, and never from page loads (`isPageLoad`), which are the pages' own
+ * nodes.
  */
 
 import { and, asc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
@@ -29,6 +30,7 @@ import {
   collectOwnOrigins,
   isOwnOriginRequest,
   originsFromDocumentRequests,
+  isPageLoad,
   buildRequestGraph,
   buildPageInventoryGraph,
   buildManifestGraph,
@@ -100,12 +102,19 @@ type LocatorPagesOfRow = ReadonlyArray<{ origin: string; page: string }> | null 
  * those origins count — third-party beacons, CDN assets and redirects are
  * dropped before the fold, so they never key a node. A locator page counts only
  * against a known origin: its key has no host, so a third-party sign-in page
- * would otherwise merge into the application's page of the same path.
+ * would otherwise merge into the application's page of the same path. A page
+ * load reaches its page, never a route.
  */
 export function collectRunGraphReaches(
   rows: Array<{ testCaseId: number | null | undefined; pageState: unknown; locatorPages?: LocatorPagesOfRow }>,
   networkBuilders: Array<{
-    items: Array<{ method: string; normalizedUrl: string; status: number; url?: string | null }>;
+    items: Array<{
+      method: string;
+      normalizedUrl: string;
+      status: number;
+      url?: string | null;
+      resourceType?: string | null;
+    }>;
   }>,
   options: { origins?: Set<string> } = {},
 ): RunGraphReach[] {
@@ -128,7 +137,7 @@ export function collectRunGraphReaches(
       byCase.set(testCaseId, entry);
     }
     for (const item of networkBuilders[i]?.items ?? []) {
-      if (!item.normalizedUrl) continue;
+      if (!item.normalizedUrl || isPageLoad(item.resourceType)) continue;
       if (!isOwnOriginRequest(item.url, origins)) continue;
       entry.routes.set(routeNodeKey(item.method, item.normalizedUrl), item);
     }
@@ -444,8 +453,8 @@ export interface PageInventoryCase {
   }>;
 }
 
-/** Load resource types that count as a page loading a route during settle. */
-const LOAD_RESOURCE_TYPES = new Set(['document', 'xhr', 'fetch']);
+/** Load resource types that count as a page loading a route during settle; a page load opens a page, never a route. */
+const LOAD_RESOURCE_TYPES = new Set(['xhr', 'fetch']);
 
 /**
  * Turn a run's cases into page inventories: one {@link PageInventoryInput} per
@@ -500,7 +509,7 @@ export function collectPageInventories(cases: PageInventoryCase[], origins: Set<
     }
     if (entries.length === 0) continue;
 
-    // Attribute each own-origin document/xhr/fetch request to the page current
+    // Attribute each own-origin xhr/fetch request to the page current
     // when it started — the entry with the greatest settle time at or before the
     // request start. A request with no start time, or before the first settle,
     // cannot be placed, so it produces no `loads` edge rather than a wrong one.
@@ -608,17 +617,24 @@ function dependencyNameFromSpan(span: ServerSpanEntry): string | null {
  * Extract per-route handler and dependency inputs from a run's network builders,
  * own-origin routes with server spans only. A request without spans contributes
  * nothing, so `handled-by` and `calls` edges form only for instrumented projects.
+ * A page load is no route, so a server-rendered page's spans add nothing either.
  */
 export function collectRequestGraph(
   builders: Array<{
-    items: Array<{ method: string; normalizedUrl: string; url?: string | null; serverTraces?: unknown }>;
+    items: Array<{
+      method: string;
+      normalizedUrl: string;
+      url?: string | null;
+      serverTraces?: unknown;
+      resourceType?: string | null;
+    }>;
   }>,
   origins: Set<string>,
 ): RequestSpansInput[] {
   const out = new Map<string, RequestSpansInput & { dependencies: string[] }>();
   for (const b of builders) {
     for (const item of b.items) {
-      if (!item.normalizedUrl) continue;
+      if (!item.normalizedUrl || isPageLoad(item.resourceType)) continue;
       if (!isOwnOriginRequest(item.url, origins)) continue;
       const spans = Array.isArray(item.serverTraces) ? (item.serverTraces as ServerSpanEntry[]) : [];
       if (spans.length === 0) continue;
@@ -650,7 +666,13 @@ export async function ingestRequestGraph(
   projectId: number,
   runId: number,
   builders: Array<{
-    items: Array<{ method: string; normalizedUrl: string; url?: string | null; serverTraces?: unknown }>;
+    items: Array<{
+      method: string;
+      normalizedUrl: string;
+      url?: string | null;
+      serverTraces?: unknown;
+      resourceType?: string | null;
+    }>;
   }>,
   origins: Set<string>,
   options: { branch?: string | null } = {},
@@ -801,12 +823,18 @@ export async function rebuildProjectGraph(db: DB, projectId: number): Promise<{ 
 
     const byCase = new Map<
       number,
-      Array<{ method: string; normalizedUrl: string; status: number; url: string | null }>
+      Array<{ method: string; normalizedUrl: string; status: number; url: string | null; resourceType: string | null }>
     >();
     for (const r of requests) {
       if (!r.normalizedUrl) continue;
       const list = byCase.get(r.testRunsCaseId) ?? [];
-      list.push({ method: r.method, normalizedUrl: r.normalizedUrl, status: r.status, url: r.url });
+      list.push({
+        method: r.method,
+        normalizedUrl: r.normalizedUrl,
+        status: r.status,
+        url: r.url,
+        resourceType: r.resourceType,
+      });
       byCase.set(r.testRunsCaseId, list);
     }
 

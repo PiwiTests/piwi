@@ -1573,6 +1573,7 @@ async function loadFirstGraphRunId(db: DrizzleDB, projectId: number): Promise<nu
  * for patterns the graph holds as route nodes. Route nodes are written on ingest
  * from the run's own origin alone, so this reuses that own-origin filter and a
  * third-party beacon's raw `network_requests` never becomes a success-only gap.
+ * A page load is no call to a route, so its status never counts.
  */
 async function loadRouteStats(
   db: DrizzleDB,
@@ -1589,7 +1590,12 @@ async function loadRouteStats(
       c: count(),
     })
     .from(networkRequests)
-    .where(inArray(networkRequests.testRunId, runIds))
+    .where(
+      and(
+        inArray(networkRequests.testRunId, runIds),
+        or(isNull(networkRequests.resourceType), ne(networkRequests.resourceType, 'document')),
+      ),
+    )
     .groupBy(networkRequests.method, networkRequests.normalizedUrl, networkRequests.status);
 
   for (const r of rows) {

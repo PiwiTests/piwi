@@ -6,17 +6,14 @@
  * and the snooze signatures follow, and the gap ledger keeps every verdict.
  */
 import { and, eq, isNull, like, or } from 'drizzle-orm';
-import { appSettings, graphEdges, graphNodes, probes, scenarioGaps } from '../database/schema';
+import { graphEdges, graphNodes, probes, scenarioGaps } from '../database/schema';
 import { routeKeyWithoutQuery } from '#shared/graph';
 import type { DrizzleDB } from '#shared/handlers/db';
-import { deleteAppSetting, setAppSetting } from './app-settings';
+import { runOnce } from './app-settings';
 import { withProjectGraphLock } from './project-graph-lock';
 
 /** App setting that claims the rewrite and records it done, so it runs once per instance. */
 export const ROUTE_KEYS_WITHOUT_QUERY_SETTING = 'graph_route_keys_without_query_at';
-
-/** A claim older than this belongs to a process that stopped before finishing; another may take it over. */
-const STALE_CLAIM_MS = 60 * 60 * 1000;
 
 /** What the rewrite changed, per table. */
 export interface RouteKeyRewrite {
@@ -338,49 +335,7 @@ export async function rewriteQueryRouteKeys(db: DrizzleDB): Promise<RouteKeyRewr
   return total;
 }
 
-/**
- * Claim the rewrite for this process: the first to write the setting runs it,
- * and a process finding a fresh claim or a finished rewrite skips it. A claim
- * left by a process that stopped is taken over once it is stale.
- */
-async function claimRewrite(db: DrizzleDB): Promise<boolean> {
-  const claim = { state: 'running', at: new Date().toISOString() };
-  const inserted = await db
-    .insert(appSettings)
-    .values({ key: ROUTE_KEYS_WITHOUT_QUERY_SETTING, value: claim, updatedAt: new Date() })
-    .onConflictDoNothing()
-    .returning({ key: appSettings.key });
-  if (inserted.length > 0) return true;
-  const [row] = await db
-    .select({ value: appSettings.value, updatedAt: appSettings.updatedAt })
-    .from(appSettings)
-    .where(eq(appSettings.key, ROUTE_KEYS_WITHOUT_QUERY_SETTING));
-  const value = row?.value as { state?: unknown } | string | null | undefined;
-  if (typeof value !== 'object' || value?.state !== 'running') return false;
-  if (Date.now() - new Date(row!.updatedAt).getTime() < STALE_CLAIM_MS) return false;
-  // Take the stale claim over; the write is conditional, so of two processes doing so at once one alone wins.
-  await db
-    .update(appSettings)
-    .set({ value: claim, updatedAt: new Date() })
-    .where(and(eq(appSettings.key, ROUTE_KEYS_WITHOUT_QUERY_SETTING), eq(appSettings.updatedAt, row!.updatedAt)));
-  const [after] = await db
-    .select({ value: appSettings.value })
-    .from(appSettings)
-    .where(eq(appSettings.key, ROUTE_KEYS_WITHOUT_QUERY_SETTING));
-  return (after?.value as { at?: unknown } | null)?.at === claim.at;
-}
-
 /** Run {@link rewriteQueryRouteKeys} once per instance; null when another process has it or it is done. */
 export async function rewriteQueryRouteKeysOnce(db: DrizzleDB): Promise<RouteKeyRewrite | null> {
-  if (!(await claimRewrite(db))) return null;
-  let rewrite: RouteKeyRewrite;
-  try {
-    rewrite = await rewriteQueryRouteKeys(db);
-  } catch (err) {
-    // Release the claim, so the next start tries again.
-    await deleteAppSetting(db, ROUTE_KEYS_WITHOUT_QUERY_SETTING).catch(() => {});
-    throw err;
-  }
-  await setAppSetting(db, ROUTE_KEYS_WITHOUT_QUERY_SETTING, { state: 'done', at: new Date().toISOString() });
-  return rewrite;
+  return runOnce(db, ROUTE_KEYS_WITHOUT_QUERY_SETTING, () => rewriteQueryRouteKeys(db));
 }

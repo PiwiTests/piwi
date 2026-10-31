@@ -104,6 +104,8 @@ The graph stays proportional to the application's surface, not its data volume:
 
 - **Your own origin only.** Route nodes come from requests to the Playwright `baseURL` of the run's projects (or the
   project's configured route origins); analytics beacons and CDN assets never become nodes.
+- **Routes are the calls a page makes.** A page load (`page.goto`, a link followed) is the page's own node, never a
+  route, so a page never reads as a route without its error path.
 - **Pages are path patterns.** `/orders/123` and `/orders/456` are one node, as is the same path from staging and
   production.
 - **Routes drop the query.** `GET /api/orders?page=2` and `GET /api/orders?status=open` are one node, `GET /api/orders`.

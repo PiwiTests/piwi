@@ -10,6 +10,7 @@ delete process.env.PIWI_DATABASE_URL;
 const {
   collectRunGraphReaches,
   collectPageInventories,
+  collectRequestGraph,
   ingestChangesEdges,
   ingestRunGraph,
   pruneChangesEdges,
@@ -581,6 +582,35 @@ describe('collectRunGraphReaches', () => {
     expect(reaches[0]!.visitedPages).toEqual(['/users/invite', '/users']);
   });
 
+  test('a page load reaches its page, never a route', () => {
+    const reaches = collectRunGraphReaches(
+      [{ testCaseId: 5, pageState: { url: 'https://app.test/settings' } }],
+      [
+        {
+          items: [
+            {
+              method: 'GET',
+              normalizedUrl: '/settings',
+              status: 200,
+              url: 'https://app.test/settings',
+              resourceType: 'document',
+            },
+            {
+              method: 'GET',
+              normalizedUrl: '/api/settings',
+              status: 200,
+              url: 'https://app.test/api/settings',
+              resourceType: 'fetch',
+            },
+          ],
+        },
+      ],
+      { origins: new Set(['https://app.test']) },
+    );
+    expect(reaches[0]!.routes.map((r) => `${r.method} ${r.normalizedUrl}`)).toEqual(['GET /api/settings']);
+    expect(reaches[0]!.pages).toEqual(['https://app.test/settings']);
+  });
+
   test('locator pages need a known origin: a host-less key could be a third-party page', () => {
     const reaches = collectRunGraphReaches(
       [
@@ -709,6 +739,59 @@ describe('collectPageInventories', () => {
       origins,
     );
     expect(pages.find((p) => p.pageKey === '/orders')?.loadsRouteKeys).toEqual([]);
+  });
+
+  test('a page load during a page is the next page opening, never a route the page loads', () => {
+    const pages = collectPageInventories(
+      [
+        {
+          pageInventory: [{ url: 'https://app.example.com/orders', controls: [], links: [], capturedAt: 1000 }],
+          networkItems: [
+            {
+              method: 'GET',
+              normalizedUrl: '/orders/:id',
+              url: 'https://app.example.com/orders/7',
+              resourceType: 'document',
+              startTime: 1500,
+            },
+          ],
+        },
+      ],
+      origins,
+    );
+    expect(pages.find((p) => p.pageKey === '/orders')?.loadsRouteKeys).toEqual([]);
+  });
+});
+
+describe('collectRequestGraph', () => {
+  test("a server-rendered page's spans add no route, while the calls it makes do", () => {
+    const spans = [
+      { spanId: 'a', name: 'GET /api/orders', attributes: { 'piwi.handler': 'server/api/orders.get.ts' } },
+    ];
+    const requests = collectRequestGraph(
+      [
+        {
+          items: [
+            {
+              method: 'GET',
+              normalizedUrl: '/orders',
+              url: 'https://app.test/orders',
+              resourceType: 'document',
+              serverTraces: spans,
+            },
+            {
+              method: 'GET',
+              normalizedUrl: '/api/orders',
+              url: 'https://app.test/api/orders',
+              resourceType: 'fetch',
+              serverTraces: spans,
+            },
+          ],
+        },
+      ],
+      new Set(['https://app.test']),
+    );
+    expect(requests.map((r) => r.routeKey)).toEqual(['GET /api/orders']);
   });
 });
 

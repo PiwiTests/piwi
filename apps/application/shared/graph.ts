@@ -143,6 +143,15 @@ export function projectRouteOrigins(routeOrigins: unknown): string[] {
 }
 
 /**
+ * A page load: a `document` request, the navigation that opens a page. It is the
+ * page's own node, never a route node, so the routes of the map are the calls a
+ * page makes.
+ */
+export function isPageLoad(resourceType: string | null | undefined): boolean {
+  return (resourceType ?? '').toLowerCase() === 'document';
+}
+
+/**
  * Origins of a run's own document requests (navigations). The fallback for runs
  * from reporters that predate the recorded Playwright `baseURL`: a `document`
  * request goes to the application under test, so its origin is a safe own-origin

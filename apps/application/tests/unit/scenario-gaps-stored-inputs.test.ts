@@ -221,6 +221,7 @@ async function execution(opts: {
     status: number;
     logs?: Array<{ level: string; message: string }>;
     fulfilled?: boolean;
+    resourceType?: string;
   }>;
 }) {
   await db.insert(schema.testRunsCases).values({
@@ -240,9 +241,40 @@ async function execution(opts: {
       status: r.status,
       serverLogs: r.logs ? (r.logs.map((l) => ({ ...l, timestamp: 0, category: 'app' })) as never) : null,
       fulfilled: r.fulfilled ?? null,
+      resourceType: r.resourceType ?? null,
     });
   }
 }
+
+describe('computeScenarioGaps — success only', () => {
+  test("a page load's status never counts toward a route's error paths", async () => {
+    await db.insert(schema.testRuns).values({
+      id: 1,
+      projectId: 1,
+      status: 'passed',
+      startTime: new Date(),
+      branch: 'main',
+      metadata: metadata as never,
+    });
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'lists users' });
+    await db
+      .insert(schema.graphNodes)
+      .values({ projectId: 1, kind: 'route', key: 'GET /users', firstSeenRunId: 1, lastSeenRunId: 1 });
+    await execution({
+      id: 1,
+      runId: 1,
+      testCaseId: 1,
+      requests: [
+        ...Array.from({ length: 5 }, () => ({ method: 'GET', path: '/users', status: 200, resourceType: 'xhr' })),
+        { method: 'GET', path: '/users', status: 500, resourceType: 'document' },
+      ],
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const raised = await gaps.listScenarioGaps(db, 1, { detector: 'success-only' });
+    expect(raised.map((g) => g.subject)).toEqual([{ kind: 'route', key: 'GET /users' }]);
+  });
+});
 
 describe('computeScenarioGaps — passed with errors', () => {
   test('raises the passing tests the application reported an error under, on the default branch only', async () => {
