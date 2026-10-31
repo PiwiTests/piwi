@@ -822,8 +822,9 @@ describe('demo examples', () => {
 });
 
 describe('the oldest Playwright the reporter supports', () => {
-  // The lower bound of the reporter's peer range on @playwright/test, which CI's `reporter-floor` job tests. Every
-  // page that states a minimum Playwright names it, so the range and the docs move together.
+  // The lower bound of the reporter's peer range on @playwright/test, which CI's `reporter-floor` job tests. The
+  // reporter's guide and its README state it, so the range and the docs move together; a feature's page names only a
+  // later version it needs.
   const range: string = JSON.parse(read('packages/reporter/package.json')).peerDependencies['@playwright/test'];
   const floor = /^>=(\d+\.\d+)\.\d+ <2$/.exec(range)?.[1];
 

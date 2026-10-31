@@ -24,7 +24,7 @@ code from the page: [Code from a pause](./editor-stop-code).
 | **Step** | Runs the call and stops before the next one, breakpoint or not | `F10` | Step Over's, `F8` |
 | **Run to cursor** | Stops at the first call on the cursor's line, or at a breakpoint before it | `Ctrl+F10` | Run to Cursor's, `Alt+F9` |
 | **Finish** | Runs the test on without stopping at a breakpoint again in this attempt | `Shift+F11` | Step Out's, `Shift+F8` |
-| **End the test** | [Skips the rest of the test](./end-the-test), the stopped call included | none | none |
+| **End the test** | [Skips the rest of the test](./end-the-test), and a stopped locator call from Playwright 1.62 | none | none |
 | **Stop** | Ends the run's process | `Shift+F5` | the Run tool window's Stop |
 
 The keys are the IDE's own debugger keys (in a JetBrains IDE, your keymap's), Piwi's only while their control applies
@@ -82,8 +82,8 @@ Piwi tool window. **Piwi: Show the paused page** (**Tools → Piwi → Show the 
   <figcaption>A headless run paused before it clicks Apply: the page at the stop, beside the editor.</figcaption>
 </figure>
 
-Clicking the image picks a locator when the reporter supports it: the locator replaces the one on the stopped line,
-and the tab shows the result or refusal.
+Clicking the image picks a locator when the reporter supports it, on Playwright 1.60 or later: the locator replaces
+the one on the stopped line, and the tab shows the result or refusal.
 
 **Watch live** updates the paused page in the same tab. Choose **Interact** separately to click, scroll or type on
 the page; **Escape** releases the keyboard, and **Shift+click** picks a locator. Watching stops when you hide or close

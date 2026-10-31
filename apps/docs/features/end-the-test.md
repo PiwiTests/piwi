@@ -1,6 +1,6 @@
 ---
 title: End the test
-description: "End a stopped test where it stands, from the editor, the pause bar, Piwi Picker's Runs window, the desktop app or an agent: the call it stopped before never runs, and Playwright reports the test as skipped."
+description: "End a stopped test where it stands, from the editor, the pause bar, Piwi Picker's Runs window, the desktop app or an agent, and Playwright reports it as skipped."
 lang: en-US
 ---
 
@@ -8,9 +8,9 @@ lang: en-US
 
 <Needs fixtures />
 
-At a stop, **End the test** ends the test there, as if it had called `test.skip()` at that line: the call it stopped
-before never runs, nor the rest of the test, and Playwright reports it as skipped, its `skip` annotation reading
-`Ended from Piwi`. The run goes on with its next test. Use it once you have seen what you stopped for, or recorded the
+At a stop, **End the test** ends the test there, as if it had called `test.skip()` at that line: the locator call it
+stopped before never runs (Playwright 1.62 or later), nor the rest of the test, and Playwright reports it as skipped,
+its `skip` annotation reading `Ended from Piwi`. The run goes on with its next test. Use it once you have seen what you stopped for, or recorded the
 steps you were missing, and the rest of the test has nothing to show you.
 
 ## Where it is

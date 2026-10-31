@@ -21,7 +21,7 @@ version on its page, and what it does on an older one.
 
 ### Try it without editing your config
 
-Playwright's `--add-reporter` appends this reporter to whatever your config already uses (unlike `--reporter`, which replaces them), so you can send one run to a dashboard with no config edit. Most reporter options have a `PIWI_*` [environment variable](/reference/reporter-options), so point it at your dashboard that way:
+Playwright's `--add-reporter` (1.63 or later; an older Playwright refuses the option) appends this reporter to whatever your config already uses (unlike `--reporter`, which replaces them), so you can send one run to a dashboard with no config edit. Most reporter options have a `PIWI_*` [environment variable](/reference/reporter-options), so point it at your dashboard that way:
 
 ::: code-group
 
