@@ -43,7 +43,7 @@ async function preview(page) {
   await expect.poll(() => page.evaluate(() => window.messages.some((m) => m.type === 'ready'))).toBe(true);
   const state = async () => page.evaluate((view) => window.postMessage({ type: 'state', view }, '*'), view);
   await state();
-  await expect(page.locator('#page')).toBeVisible();
+  await expect(page.getByRole('img', { name: 'The page of the paused test' })).toBeVisible();
   return { view, state };
 }
 
@@ -53,8 +53,8 @@ test('watch and interaction are opt-in, help stays closed, and clicks still pick
   await preview(page);
   await expect(page.getByLabel('Watch live')).not.toBeChecked();
   await expect(page.getByLabel('Interact', { exact: true })).toBeDisabled();
-  await expect(page.locator('details')).not.toHaveAttribute('open');
-  await page.locator('#page').click({ position: { x: 100, y: 80 } });
+  await expect(page.getByRole('group')).not.toHaveAttribute('open');
+  await page.getByRole('img', { name: 'The page of the paused test' }).click({ position: { x: 100, y: 80 } });
   const messages = await page.evaluate(() => window.messages);
   expect(messages.filter((m) => m.type === 'pick')).toEqual([expect.objectContaining({ shown: 7, x: 100, y: 80 })]);
   expect(messages.filter((m) => m.type === 'input' || m.type === 'view')).toEqual([]);
@@ -72,7 +72,7 @@ test('plays scaled input only after interaction, keeps focus through frames, and
   await page.getByLabel('Interact', { exact: true }).check();
   view.live.interacting = true;
   await state();
-  await page.locator('#page').click({ position: { x: 100, y: 80 } });
+  await page.getByRole('img', { name: 'The page of the paused test' }).click({ position: { x: 100, y: 80 } });
   await page.keyboard.type('hello');
   await expect
     .poll(() =>
@@ -98,13 +98,13 @@ test('plays scaled input only after interaction, keeps focus through frames, and
   expect(down.x).toBeCloseTo((100 * 1280) / 776, 0);
   view.note = 'Live';
   await state();
-  await expect(page.locator('#page')).toBeFocused();
+  await expect(page.getByRole('img', { name: 'The page of the paused test' })).toBeFocused();
   await expect(page.getByRole('status')).toHaveText('Live');
   await page.keyboard.press('Escape');
   await expect(page.getByLabel('Watch live')).toBeFocused();
   expect(await page.evaluate(() => window.messages)).toContainEqual({ type: 'release', shown: 7 });
   await page.keyboard.down('Shift');
-  await page.locator('#page').click({ position: { x: 40, y: 30 } });
+  await page.getByRole('img', { name: 'The page of the paused test' }).click({ position: { x: 40, y: 30 } });
   await page.keyboard.up('Shift');
   expect(await page.evaluate(() => window.messages)).toContainEqual(
     expect.objectContaining({ type: 'pick', shown: 7, x: 40, y: 30 }),
@@ -121,10 +121,10 @@ test('ignores another stop’s state and keeps guidance compact at a narrow widt
       window.postMessage({ type: 'state', view: { ...view, caption: 'Stale', live: { ...view.live, shown: 6 } } }, '*'),
     view,
   );
-  await expect(page.locator('#caption')).toHaveText(view.caption);
+  await expect(page.getByText(view.caption, { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
   await state();
-  await expect(page.locator('details')).not.toHaveAttribute('open');
+  await expect(page.getByRole('group')).not.toHaveAttribute('open');
 });
 
 test('Escape cancels queued input and a double click keeps its click count', async ({ page }) => {
@@ -133,7 +133,7 @@ test('Escape cancels queued input and a double click keeps its click count', asy
   view.live.interacting = true;
   await state();
   await expect(page.getByLabel('Interact', { exact: true })).toBeChecked();
-  await page.locator('#page').dblclick({ position: { x: 100, y: 80 } });
+  await page.getByRole('img', { name: 'The page of the paused test' }).dblclick({ position: { x: 100, y: 80 } });
   await expect
     .poll(() =>
       page.evaluate(() =>

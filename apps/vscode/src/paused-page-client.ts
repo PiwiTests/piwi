@@ -161,8 +161,6 @@ window.addEventListener('message', (event: MessageEvent<{ type: string; view: Pa
     picture.hidden = true;
   }
 });
-window.addEventListener('pagehide', () => {
-  input.dispose();
-  post({ type: 'view', on: false });
-});
+// The extension ends the watch itself when the panel hides or closes, and keeps Watch live for when it shows again.
+window.addEventListener('pagehide', () => input.dispose());
 post({ type: 'ready' });

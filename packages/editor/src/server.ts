@@ -3600,7 +3600,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
 
   connection.onRequest(STOP_ACTION_REQUEST, (params: StopActionParams): Promise<StopActionResult> =>
-    stopActions.action(params, clientPageView!.viewer),
+    stopActions.action(params),
   );
 
   /**

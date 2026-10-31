@@ -102,7 +102,10 @@ export class ClientPageView {
       while (this.pending) {
         const frame = this.pending;
         this.pending = null;
-        if (this.matches(frame)) await this.notify(frame);
+        // The stop may have ended since the frame came, before the paced session change says so.
+        if (this.matches(frame) && this.sessions.viewing(this.viewer, frame.ref, frame.worker, frame.since)) {
+          await this.notify(frame);
+        }
       }
     } catch {
       this.dispose();

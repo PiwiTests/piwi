@@ -192,6 +192,30 @@ describe('the editor panel’s live viewer', () => {
     h.sessions.dispose();
   });
 
+  test('sends no waiting frame of a stop that ended before the session change is told', async () => {
+    const h = harness();
+    const since = await h.stopAt(1);
+    const frames: ViewFrame[] = [];
+    let finish!: () => void;
+    const client = new ClientPageView(h.sessions, async (frame) => {
+      frames.push(frame);
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const watching = client.watch({ ref: 'ed-1', worker: 0, since, on: true });
+    h.answer(h.requests('view')[0]!.request, 'view', { ok: true, message: 'Watching.' });
+    await watching;
+    h.read(frameOf(1));
+    h.read(frameOf(1, '/9j/BB=='));
+    h.read({ type: 'running', stop: 1 });
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(frames).toHaveLength(1);
+    client.dispose();
+    h.sessions.dispose();
+  });
+
   test('drops a pending frame when its stop resumes and requires the new stop to be watched', async () => {
     const h = harness();
     const since = await h.stopAt(1);

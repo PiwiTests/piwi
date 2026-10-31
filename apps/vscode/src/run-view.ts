@@ -434,8 +434,12 @@ export function registerRunControl(
         { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist')] },
       );
       panel.webview.onDidReceiveMessage((message: unknown) => void pageMessage(message));
+      // Only a change of visibility ends or restarts the watch: focus moving in or out of the panel changes nothing.
+      let visible = panel.visible;
       panel.onDidChangeViewState(() => {
-        if (!panel?.visible) {
+        if (!panel || panel.visible === visible) return;
+        visible = panel.visible;
+        if (!visible) {
           stopPageView();
           if (page?.live) showPage({ ...page, live: { ...page.live, on: false, interacting: false } });
         } else if (wantLive) void watchPage(true);
