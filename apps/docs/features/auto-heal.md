@@ -32,6 +32,11 @@ strongest thing the dashboard does, so the posture is conservative by design.
   their PR is open, however long it stays open; an attempt that failed or was skipped is retried by the next run that
   qualifies.
 
+<figure>
+  <img src="/screenshots/heal-pr.png" alt="The body of an auto-heal pull request: two broken locators replaced, each with its file, line, change, score and where the replacement came from, then the failure clusters, the owners and the command that verifies the fix">
+  <figcaption>An auto-heal pull request's body: one row per replaced locator.</figcaption>
+</figure>
+
 ## After the PR opens
 
 - **Closed without merging** — Piwi takes that as a no. An edit the closed PR carried (the same file, failing locator

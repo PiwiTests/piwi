@@ -5513,6 +5513,34 @@ const SCENES = [
       await shoot(undefined, { of: '[data-shot="pr-comment"]', pad: 12 });
     },
   },
+  // The whole pull-request comment and an auto-heal pull request's body,
+  // rendered from their builders and laid out like a code host's comment.
+  ...[
+    {
+      name: 'pr-comment',
+      markdown: prSummaryMarkdown,
+      description:
+        'The pull-request comment of a run: a new regression with its suggested locator, a failure that predates the change, a flake that is flaky on main too, and a cluster the change fixed',
+    },
+    {
+      name: 'heal-pr',
+      markdown: healPrMarkdown,
+      description:
+        'The body of an auto-heal pull request: one row per replaced locator with where it came from, the owners, the clusters and the command that verifies it',
+    },
+  ].map(({ name, markdown, description }) => ({
+    name,
+    description,
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 900, height: 1600 },
+    async run({ page, settle, shoot }) {
+      await page.setContent(await prCommentPage(await markdown()));
+      await settle();
+      await shoot(undefined, { of: '[data-shot="pr-comment"]', pad: 12 });
+    },
+  })),
   // The Coverage trend widget of the Engineering dashboard on the web
   // dashboard alone: the thirty seeded days of combined coverage, each suite
   // as a dashed line.
@@ -7381,6 +7409,120 @@ async function uncoveredChangesMarkdown() {
  * hosts' system font stack. The
  * emoji become drawn circles, since the capture browser may have no emoji font.
  */
+/** The pull-request comment of a run with a new regression, a failure that predates the change, a flake and a fix. */
+async function prSummaryMarkdown() {
+  const { buildPrComment } = await import('../shared/pr-feedback.ts');
+  const site = 'https://piwi.example.com';
+  return buildPrComment({
+    runId: 412,
+    runUrl: `${site}/test-runs/412`,
+    projectName: 'checkout',
+    status: 'failed',
+    totalTests: 248,
+    passedTests: 244,
+    failedTests: 2,
+    flakyTests: 2,
+    durationMs: 6 * 60_000 + 12_000,
+    newRegressions: [
+      {
+        title: 'pays by card',
+        filePath: 'tests/checkout.spec.ts',
+        headline: "Test timed out after 30 s while clicking getByRole('button', { name: 'Pay' })",
+        errorExcerpt: null,
+        executionId: 9031,
+        clusterId: 12,
+        clusterSignature: 'checkout Pay click times out',
+        suggestedLocator: "getByRole('button', { name: 'Pay now' })",
+        owner: '@checkout-team',
+      },
+    ],
+    preExisting: [
+      {
+        title: 'exports the monthly report as CSV',
+        filePath: 'tests/admin/reports.spec.ts',
+        headline: "expect(locator).toHaveText(expected) failed on getByTestId('row-count')",
+        errorExcerpt: null,
+        executionId: 9044,
+        clusterId: 9,
+        issue: { key: 'DEMO-42', url: 'https://acme.atlassian.net/browse/DEMO-42' },
+      },
+    ],
+    flaky: [
+      {
+        title: 'applies a discount code',
+        filePath: 'tests/cart.spec.ts',
+        errorExcerpt: 'Timeout 5000ms exceeded waiting for getByTestId("cart-total")',
+        executionId: 9050,
+        flakyOnDefaultBranch: { branch: 'main', flakinessRate: 0.2 },
+      },
+    ],
+    newClusters: [{ id: 12, signature: 'checkout Pay click times out', caseCount: 1 }],
+    fixedClusters: [
+      {
+        id: 7,
+        label: 'Users table shows 50 rows instead of 25',
+        testCount: 2,
+        verification: 'diagnosis-verified',
+        timeToResolutionMs: 26 * 3_600_000,
+      },
+    ],
+    wastedMinutes: 4.5,
+    hasBaseline: true,
+  });
+}
+
+/** The body of an auto-heal pull request replacing two broken locators. */
+async function healPrMarkdown() {
+  const { buildHealPrBody } = await import('../shared/heal-pr.ts');
+  const edit = {
+    filePath: 'tests/checkout.spec.ts',
+    line: 42,
+    oldLine: "  await page.getByRole('button', { name: 'Pay' }).click();",
+    newLine: "  await page.getByRole('button', { name: 'Pay now' }).click();",
+    failingLocator: "getByRole('button', { name: 'Pay' })",
+    suggestedLocator: "getByRole('button', { name: 'Pay now' })",
+    score: 95,
+    source: 'diff-rename',
+    pickedByUser: false,
+    clusterId: 12,
+    executionId: 9031,
+    testTitle: 'pays by card',
+    owner: '@checkout-team',
+  };
+  return buildHealPrBody(
+    {
+      repositoryUrl: 'https://github.com/acme/shop',
+      provider: 'github',
+      baseBranch: 'main',
+      baseSha: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
+      branch: 'piwi/heal/12-5f3a9c1e',
+      commitMessage: 'test: heal broken locators',
+      title: 'test: heal broken locators',
+      draft: true,
+      verifyCommand: 'npx playwright test "tests/checkout.spec.ts" "tests/account.spec.ts"',
+      edits: [
+        edit,
+        {
+          ...edit,
+          filePath: 'tests/account.spec.ts',
+          line: 18,
+          oldLine: "  await page.getByLabel('E-mail').fill(user.email);",
+          newLine: "  await page.getByTestId('email-input').fill(user.email);",
+          failingLocator: "getByLabel('E-mail')",
+          suggestedLocator: "getByTestId('email-input')",
+          score: 100,
+          source: 'prior-run',
+          clusterId: 13,
+          executionId: 9060,
+          testTitle: 'updates the email address',
+          owner: '@accounts',
+        },
+      ],
+    },
+    'https://piwi.example.com',
+  );
+}
+
 async function prCommentPage(markdown) {
   const { marked } = await import('marked');
   const body = marked
@@ -7407,6 +7549,15 @@ async function prCommentPage(markdown) {
   li + li { margin-top: 4px; }
   code { padding: 0.2em 0.4em; border-radius: 6px; background: rgba(129, 139, 152, 0.12); font-size: 85%;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace; }
+  h3 { margin: 0 0 16px; font-size: 1.15em; font-weight: 600; }
+  table { margin: 0 0 16px; border-collapse: collapse; }
+  th, td { padding: 6px 13px; border: 1px solid #d1d9e0; text-align: left; }
+  th { font-weight: 600; }
+  details { margin: 0 0 16px; }
+  summary { cursor: pointer; }
+  pre { margin: 0 0 16px; padding: 16px; border-radius: 6px; background: #f6f8fa; overflow: auto; }
+  pre code { padding: 0; background: none; }
+  a { color: #0969da; text-decoration: none; }
   .emoji { display: inline-block; width: 1em; height: 1em; border-radius: 50%; background: #a371f7;
     vertical-align: -0.125em; }
 </style></head><body>
