@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
 const PLAYWRIGHT_PACKAGES = ['@playwright/test', 'playwright', 'playwright-core'];
@@ -59,7 +59,16 @@ function install(version) {
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+/** Whether node runs this file, whatever path names it (a symlinked checkout's included), rather than importing it. */
+function isMain() {
+  try {
+    return fs.realpathSync(process.argv[1] ?? '') === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isMain()) {
   const version = playwrightFloor();
   if (process.argv.includes('--install')) install(version);
   else console.log(version);

@@ -295,11 +295,11 @@ jobs:
           path: base/apps/application/.output
           key: perf-base-output-v1-${{ github.sha }}
 
-  # The backend-agnostic checks, in four jobs that run at once. Every test job builds the reporter and installs the full
-  # Chromium build beside the cached headless shell: two specs that drive a real run through the built reporter skip
-  # without them (the dashboard's tests/unit/desktop-runs-run.test.ts, the editor service's tests/agent-run.test.ts),
-  # the reporter's own specs load the build, and its breakpoint run (tests/pause-run.spec.ts) opens Chromium's windows,
-  # under a display.
+  # The backend-agnostic checks, in five jobs that run at once. Every test job builds the reporter and installs the full
+  # Chromium build, beside the cached headless shell (the floor job: both builds, of the oldest Playwright): two specs
+  # that drive a real run through the built reporter skip without them (the dashboard's
+  # tests/unit/desktop-runs-run.test.ts, the editor service's tests/agent-run.test.ts), the reporter's own specs load
+  # the build, and its breakpoint run (tests/pause-run.spec.ts) opens Chromium's windows, under a display.
   lint:
     name: Format, lint and typecheck
     needs: changes
