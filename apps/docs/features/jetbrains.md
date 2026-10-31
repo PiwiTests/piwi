@@ -31,6 +31,11 @@ with the browser: [Editor connection](./editor-connection).
 The first trusted project with a Playwright config that nothing connects yet shows one notification, once per
 installation, with **Connect…**, **Open the Failures** and **Learn More**.
 
+<figure>
+  <img src="/screenshots/jetbrains-heal.png" alt="WebStorm: a broken locator's failure at its line, and Alt+Enter offering the heal that replaces it">
+  <figcaption>The heal of a broken locator, offered with Alt+Enter.</figcaption>
+</figure>
+
 ## Where things are
 
 The IDE's LSP client shows warnings, quick fixes (Alt+Enter) and hover in open files; the rest is native, and every

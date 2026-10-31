@@ -99,3 +99,10 @@ shows only what tests do on the page you are on. Without the fixtures a use has 
 - **Long and described chains.** Piwi keeps 500 steps of an execution (`PIWI_INGEST_MAX_STEPS`, the steps that failed first) and the first 200 characters of each step parameter (`PIWI_INGEST_MAX_STEP_PARAM_VALUE_CHARS`), and `locator.describe()` replaces the chain with its description. Chains cut short or described are skipped.
 - **Matching is by chain text.** Two different chains that happen to resolve to the same element count separately. The counts tell you where to look, not that a test will break. To match on the element itself, open the page and use the extension's [Tested elements](./tested-elements), which evaluates every chain there.
 - **The index fills itself.** New runs are indexed as they arrive. When the server starts, it indexes each project's stored history once: for every test, Playwright project and branch, the latest passed execution, or the latest one when none passed. The rebuild endpoint empties a project's index and indexes its stored history again, which also splits by branch the uses indexed before branches were recorded (until then they count as the default branch's): see the [API docs](https://piwitests.dev/demo/docs), or `/docs` on your own instance.
+
+## Related
+
+- [Tested elements](./tested-elements): the elements your tests reach, on the page itself
+- [Locator preflight](./preflight): the locators a change breaks, before you push it
+- [Locator healing](./locator-healing): the replacement when a locator breaks anyway
+- [Locator stability rules](/reference/locator-stability): what makes a locator brittle

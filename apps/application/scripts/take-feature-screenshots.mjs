@@ -3844,23 +3844,6 @@ const SCENES = [
     charts: true,
   },
   {
-    name: 'performance',
-    description: 'Performance tab: per-run duration trend over the slowest tests (docs gallery)',
-    tags: ['docs'],
-    out: 'docs',
-    route: '/projects/1?tab=performance',
-    viewport: { width: 1280, height: 720 },
-    charts: true,
-  },
-  {
-    name: 'projects',
-    description: 'Projects list: every project with its latest run, status bar and tags (docs gallery)',
-    tags: ['docs'],
-    out: 'docs',
-    route: '/projects',
-    viewport: { width: 1280, height: 720 },
-  },
-  {
     name: 'failure-clusters-tab',
     description:
       'Failures tab: the failure inbox, one row per cluster of tests that failed for the same reason (docs gallery)',

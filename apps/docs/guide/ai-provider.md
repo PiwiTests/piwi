@@ -41,10 +41,10 @@ When a run finishes and `PIWI_AI_AUTO_DIAGNOSE` is on, the `PIWI_AI_AUTO_DIAGNOS
 
 A diagnosis streams: the model's reasoning appears in a live panel as it arrives, with a stage indicator (*Researching patterns* while a
 [research model](#model-roles) pre-analyzes the failure, when one is configured, then *Diagnosing root cause*), and turns
-into the result card when it completes. The [API docs](https://piwitests.dev/demo/docs) describe the streaming
-protocol (the in-app reference at `/docs` shows the same spec).
+into the result card when it completes. The [API docs](https://piwitests.dev/demo/docs), or `/docs` on your
+instance, describe the streaming protocol.
 
-To be told when a diagnosis finishes without watching the panel, turn on **Settings → AI → Diagnosis notifications**: a per-browser preference (stored on that device only) that shows a browser notification on completion once you grant the permission.
+To be told when a diagnosis finishes without watching the panel, turn on **Settings → AI → Diagnosis notifications**: a per-browser preference that shows a browser notification on completion once you grant the permission.
 
 ### Local Codex CLI
 
@@ -128,6 +128,11 @@ Diagnoses an agent recorded get their own row, under the model it named. Each di
 instructions it was written under (`promptSha` in its details), so diagnoses written before and after a change to
 the custom instructions or the language can be told apart. Piwi never switches models on these numbers; the
 [Analytics](/features/analytics#hand-back-outcomes) page shows the same ratings across projects.
+
+<figure>
+  <img src="/screenshots/ai-usage.png" alt="Settings → AI → AI usage over the last 30 days: diagnoses, failures, tokens and average duration per model, then each model's helpful ratings, patches that apply, diagnoses verified by the fix and regressions">
+  <figcaption>AI usage: what each model spent, then how its diagnoses fared.</figcaption>
+</figure>
 
 ## Related
 

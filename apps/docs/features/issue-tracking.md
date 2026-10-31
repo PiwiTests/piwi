@@ -14,9 +14,10 @@ is linked back as the cluster's *known issue*, and the key travels wherever the 
 
 It is **off until an [administrator connects Jira](/operate/integrations#connecting-jira-cloud)**.
 
-<div class="doc-screenshot">
+<figure>
   <img src="/screenshots/create-issue-modal.png" alt="The Create issue modal on a failure cluster: an editable title, the Jira project and issue-type fields, include toggles, and a preview of the fix-plan body">
-</div>
+  <figcaption>The Create issue modal on a failure cluster.</figcaption>
+</figure>
 
 ## What it does, exactly
 
@@ -49,9 +50,10 @@ A cluster's **known issue** is its most recently linked ticket; earlier ones sta
 - the **pull-request feedback** comment says *tracked in PROJ-123* on each failure whose cluster has one;
 - the **fix plan** lists it under *Links*, and the `get_cluster` / `get_fix_plan` MCP tools return it.
 
-<div class="doc-screenshot">
+<figure>
   <img src="/screenshots/cluster-issue-line.png" alt="A failure cluster's situation block with its Issue line naming the Jira issue the cluster is tracked in">
-</div>
+  <figcaption>The cluster’s Issue line names the Jira issue that tracks it.</figcaption>
+</figure>
 
 ## Keep the ticket honest
 
@@ -85,9 +87,10 @@ type, default labels and assignee, the [ticket language](#language), what a tick
 **owner routes** — mapping a cluster's owner (`@acme/checkout`, an email) to a Jira project, component, assignee and
 labels. The create-issue draft picks the first matching route.
 
-<div class="doc-screenshot">
+<figure>
   <img src="/screenshots/project-integration-binding.png" alt="The project's Issue tracker settings: connection, Jira project and issue type, labels, the runs that write to the ticket, sync-policy switches, an owner-routes table, and automatic creation with one rule">
-</div>
+  <figcaption>A project’s Issue tracker settings.</figcaption>
+</figure>
 
 ## Required Jira fields
 
@@ -106,9 +109,10 @@ transitions an issue offers and asks for their required fields, such as a *Resol
 empty fails at once, naming it. A requirement no screen shows, such as a workflow validator, comes back as Jira's
 refusal naming the field, which the modal then asks for.
 
-<div class="doc-screenshot">
+<figure>
   <img src="/screenshots/create-issue-required-fields.png" alt="The Create issue modal's Required by Jira block: Severity Major, from the project settings, Team empty, Found in on Jira's default, and the footer saying Jira still needs Team">
-</div>
+  <figcaption>The Required by Jira block: each field Jira requires, and where its value comes from.</figcaption>
+</figure>
 
 ## Requirements
 

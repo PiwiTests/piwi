@@ -71,7 +71,10 @@ A **report schedule** sends a quality report on its own. **Schedule…** on the 
 project page's menu opens the form with the filters on screen; **New schedule** on the **Quality
 reports** page starts an empty one. A Contributor or above on the project, or an administrator, creates schedules.
 
-![The Quality reports page: report snapshots and schedules](/screenshots/report-schedules.png)
+<figure>
+  <img src="/screenshots/report-schedules.png" alt="The Quality reports page: report snapshots and schedules">
+  <figcaption>The Quality reports page: snapshots and schedules.</figcaption>
+</figure>
 
 - **When**: daily, weekly, every other week or monthly, at a time in the instance time zone (UTC when
   that setting follows each browser).
@@ -136,3 +139,10 @@ Quality reports are an optional [capability](/operate/capabilities#declining-a-c
 the *Export* and *Schedule…* actions and the *Quality reports* page, and drops `get_quality_report` from
 the MCP tools; the analytics page and the metric tools stay, since analytics is core. A schedule or a
 snapshot counts as use, so the capability stays on while one exists: delete them first.
+
+## Related
+
+- [Analytics](./analytics): the same metrics, explored on the page
+- [Dashboards](./dashboards): a page of widgets kept for a team or a screen
+- [Notifications](./notifications): the channels a scheduled report is sent through
+- [Piwi CLI](/reference/cli#report): a report from CI or a script

@@ -307,16 +307,10 @@ const SCENES = {
     fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
   },
 
-  /** A run started here, paused: its line marked, what runs next and the controls above it and in the status bar. */
-  async 'run-control'(page, workspace) {
-    await stopAt(page, workspace, FILL_STOP);
-    await noNotifications(page);
-    await page.mouse.move(10, 400);
-    await settle(page, 800);
-    await shoot(page, 'run-control');
-  },
-
-  /** The hover on the paused line: what runs next and the controls. */
+  /**
+   * A run started here, paused: its line marked, and on its hover what runs next and the controls, also above the line
+   * and in the status bar.
+   */
   async 'run-control-hover'(page, workspace) {
     // The hover below its line, so the line and its lens stay in view.
     const settingsFile = path.join(workspace, '.vscode', 'settings.json');

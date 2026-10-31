@@ -24,7 +24,10 @@ From 1280 px wide the panel docks on the right and the page narrows beside it; b
 its icons until it closes. Drag its left edge to widen it, or float it over the page with the panel icon in its
 header; the browser remembers both. Narrower, it opens over the page, full screen on a phone.
 
-![The assistant docked beside Home, the field offering the next question](/screenshots/assistant-docked.png)
+<figure>
+  <img src="/screenshots/assistant-docked.png" alt="The assistant docked beside Home, the field offering the next question">
+  <figcaption>The assistant docked beside Home.</figcaption>
+</figure>
 
 Each question carries the page it was asked on: its address, tab, filters, project and the parts a guide can point
 at, so "Why did this fail?" on an execution needs no ids. The clock lists your conversations; the pen starts a new
@@ -133,7 +136,10 @@ The gauge under the question field opens the cap that binds first, yours or the 
 and with the Claude Code CLI on a Claude subscription its 5-hour or weekly window. A line warns from 80%; a spent cap
 stops the field from asking.
 
-![The question field warning at 85% of the daily allowance](/screenshots/assistant-input.png)
+<figure>
+  <img src="/screenshots/assistant-input.png" alt="The question field warning at 85% of the daily allowance">
+  <figcaption>The question field warns at 85% of the daily allowance.</figcaption>
+</figure>
 
 ## Turning it off
 

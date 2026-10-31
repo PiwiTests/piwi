@@ -522,6 +522,10 @@ describe('word budget per page type', () => {
     index: 'setup',
   };
 
+  // An <img> or <video> tag, a Markdown image, and the figure tags around them.
+  const IMAGE_MARKUP =
+    /<(?:img|video|source)\b[^>]*>|<\/video>|!\[[^\]]*\]\([^)]*\)|<\/?(?:figure|figcaption)\b[^>]*>/g;
+
   const typedPages = docsPages
     .map((p) => p.replace(/^apps\/docs\//, '').replace(/\.md$/, ''))
     .filter((page) => !page.startsWith('blog/') && !GENERATED_PAGES.has(page));
@@ -529,8 +533,14 @@ describe('word budget per page type', () => {
   test.each(typedPages)('%s is within the budget of its page type', (page) => {
     const type = PAGE_TYPE_EXCEPTIONS[page] ?? FOLDER_TYPES[page.split('/')[0]!];
     expect(type, `apps/docs/${page}.md has no page type: add its folder to FOLDER_TYPES`).toBeDefined();
-    // The page as a reader sees it: the front matter is metadata, not reading.
-    const words = read(`apps/docs/${page}.md`).replace(FRONT_MATTER, '').trim().split(/\s+/).length;
+    // The page as a reader reads it: the front matter is metadata, and an image's
+    // markup and alt text are not reading; a figure's caption is.
+    const words = read(`apps/docs/${page}.md`)
+      .replace(FRONT_MATTER, '')
+      .replace(IMAGE_MARKUP, ' ')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean).length;
     expect(
       words,
       `apps/docs/${page}.md is ${words} words, over the ${BUDGETS[type!]}-word budget of a ${type} page: cut it or split it`,
@@ -706,6 +716,51 @@ describe('docs site structure', () => {
       `no features/ page links /${recipe}`,
     ).toBe(true);
     expect(helpRecipes.has(recipe), `no help topic in shared/help-content.ts has recipe.doc '${recipe}'`).toBe(true);
+  });
+
+  // Every page but the home page and the blog posts ends its reading with one
+  // footer heading, Related.
+  const footedPages = handWrittenPages
+    .map((p) => p.replace(/^apps\/docs\//, '').replace(/\.md$/, ''))
+    .filter((page) => page !== 'index' && !page.startsWith('blog/'));
+
+  test.each(footedPages)('%s has one Related footer', (page) => {
+    const headings =
+      read(`apps/docs/${page}.md`)
+        .replace(FENCED_CODE, '')
+        .match(/^## Related$/gm) ?? [];
+    expect(headings.length, `apps/docs/${page}.md needs one "## Related" heading`).toBe(1);
+  });
+});
+
+describe('docs images', () => {
+  const screenshotsDir = join(repoRoot, 'apps/docs/public/screenshots');
+  const handWrittenPages = docsPages.filter(
+    (p) => !GENERATED_PAGES.has(p.replace(/^apps\/docs\//, '').replace(/\.md$/, '')),
+  );
+
+  // One markup for an image of the content, the <figure> custom.css frames,
+  // captions and makes zoomable.
+  test.each(handWrittenPages)('%s shows its images in a <figure>', (page) => {
+    const body = read(page).replace(FENCED_CODE, '');
+    expect(body, `${page}: use <figure>, not <div class="doc-screenshot">`).not.toContain('doc-screenshot');
+    const markdownImages = [...body.matchAll(/(?<!\[)!\[[^\]]*\]\((\/[^)]+)\)/g)].map((m) => m[1]);
+    expect(markdownImages, `${page}: put these images in a <figure>`).toEqual([]);
+  });
+
+  // An image under public/screenshots is shown by a docs page, the README or
+  // an extension's README; one nobody shows is deleted with its scene.
+  test('every docs screenshot is shown somewhere', () => {
+    const showing = [
+      ...docsPages,
+      'README.md',
+      ...['vscode', 'jetbrains', 'extension'].map((app) => `apps/${app}/README.md`),
+    ]
+      .filter((path) => existsSync(join(repoRoot, path)))
+      .map(read)
+      .join('\n');
+    const unused = readdirSync(screenshotsDir).filter((file) => !showing.includes(`screenshots/${file}`));
+    expect(unused).toEqual([]);
   });
 });
 

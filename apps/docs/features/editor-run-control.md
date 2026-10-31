@@ -63,7 +63,7 @@ the arrow's click lists the controls, and the color is **Settings → Editor →
 stopped at**. The mark goes when the test goes on (from the editor or the bar), ends, or closes its page.
 
 <figure>
-  <img src="/screenshots/vscode-run-control.png" alt="VS Code: a test paused at a page object's line, the controls above it and in the status bar">
+  <img src="/screenshots/vscode-run-control-hover.png" alt="VS Code: a test paused at a page object's line, its hover naming the call that runs next with Resume, Step, Run to cursor and Finish, the same controls above the line and in the status bar">
   <figcaption>A run paused before it types the coupon.</figcaption>
 </figure>
 
@@ -82,6 +82,11 @@ config says, headless by default: when you pause it, or it reaches a breakpoint 
 shows an image of the page at the stop: in VS Code in a **Piwi: paused page** tab beside the editor, in a JetBrains IDE
 in the Piwi tool window's **Paused Page** tab. It is taken again at each such stop; **Piwi: Show the paused page**
 (**Tools → Piwi → Show the Paused Page**) asks for it at any stop.
+
+<figure>
+  <img src="/screenshots/vscode-run-control-paused-page.png" alt="VS Code: a headless test paused before it clicks Apply, and beside the editor the Piwi: paused page tab showing the cart page with the coupon typed in">
+  <figcaption>A headless run paused before it clicks Apply: the page at the stop, beside the editor.</figcaption>
+</figure>
 
 Whoever answers it, a stop counts as one at the bar: the test's duration leaves it out, and the dashboard's timelines
 draw it as a **Paused** band, with [why it stopped](./editor-breakpoints#pause-a-run).

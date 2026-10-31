@@ -178,3 +178,10 @@ A recording saved before the format existed (`{ "steps", "startedAt", "startUrl"
 holds its steps, so a reader that only knows version 1 refuses a file using the `manual` action or the
 `toContainText`, `toHaveCount` and `toBeChecked` matchers with a message naming the version, and reads every other
 file as it did.
+
+## Related
+
+- [Record actions](/features/record-actions): the recorder that writes these files
+- [Report a bug](/features/report-a-bug): a report's steps, in the same format
+- [Replay a bug report](/features/replay-a-bug-report): how the steps play back
+- [Piwi CLI](/reference/cli#codegen): `piwi codegen`, from steps to a spec

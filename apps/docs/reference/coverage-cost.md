@@ -84,3 +84,9 @@ measurable test time either. Per call, the Nitro recorder costs 5 to 13 ns, abou
 - **Browser coverage** belongs in a scheduled run on a large application served by a dev server, where it adds 40 to
   50% to the UI tests. Files and functions cost about the same, so a scheduled run may as well record functions. On an
   application that loads its modules once, it costs little enough to stay on.
+
+## Related
+
+- [Code reach](/features/code-reach): the browser coverage these numbers measure
+- [Server coverage](/features/server-coverage): the backend lines each test runs
+- [CSS coverage](/features/css-coverage): the style rules a run uses

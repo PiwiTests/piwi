@@ -109,7 +109,10 @@ the period, one line per kind:
 - **Flaky tests**: fixes a [Flake Lab](./flake-lab) verify run proved, and those that flaked again.
 - **Fix attempts**: fixes a person or an agent reported, and what the runs made of them.
 
-![Hand-back outcomes: locator heals, AI diagnoses, the CI gate and a verified flaky test](/screenshots/analytics-handbacks.png)
+<figure>
+  <img src="/screenshots/analytics-handbacks.png" alt="Hand-back outcomes: locator heals, AI diagnoses, the CI gate and a verified flaky test">
+  <figcaption>Hand-back outcomes: what became of each fix Piwi handed back.</figcaption>
+</figure>
 
 A rate needs 10 ratings, pull requests or fixes; below that the line says the sample is too small. The counts
 survive retention, and are kept per project and day, so branch and environment filters do not narrow them. A

@@ -112,3 +112,9 @@ twice as long each time, up to every five minutes. A click on the item, or **Piw
 the instance refuses still reads **Piwi: connect**, since only signing in again helps.
 
 **Piwi: Open settings** in VS Code opens the extension's settings.
+
+## Related
+
+- [Editor extensions](./editors): what the extensions show once connected
+- [API keys](/operate/api-keys): the key the editor signs in with, and how to revoke it
+- [Desktop app](/features/desktop): the local instance the editor finds by itself

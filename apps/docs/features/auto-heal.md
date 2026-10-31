@@ -81,3 +81,9 @@ Settings → Auto-heal (administrator only):
   recorded no `defaultBranch` in its metadata.
 - Retries use progressive backoff and record the provider's own error on the action, so a failure is visible rather
   than silent.
+
+## Related
+
+- [Locator healing](./locator-healing): how the replacement locator is chosen
+- [Source control](/guide/source-control): the token Piwi opens the pull request with
+- [Failure clusters](./failure-clusters#did-the-fix-work): how the next run confirms the fix

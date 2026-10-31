@@ -141,7 +141,8 @@ which the drift test also reads.
 ### Page types and word budgets
 
 Every page is one type, with one word budget and no allowlist. A page over its budget is cut, or split into two pages;
-it is never excused. The budget counts the page body without its front matter, code blocks included.
+it is never excused. The budget counts the page body without its front matter, code blocks and figure captions
+included, an image's markup and alt text left out.
 
 | Type | Answers | Pages | Budget |
 |---|---|---|---:|
@@ -162,6 +163,8 @@ flags, events): link the reference page instead of copying it.
   social card text. The home page is the exception: it uses the site description in `config.mts`.
 - Its H1 equals its sidebar label. Recipes are the exception: their H1 is the reader's question.
 - One footer heading, `## Related`.
+- An image goes in a `<figure>` with a `<figcaption>`: `custom.css` frames it and `theme/image-zoom.ts` opens it at
+  its native size on a click. The drift test refuses a Markdown image or another wrapper.
 - A new term goes into `concepts.md` in the change that introduces it.
 - The page describes what a default install does today. Planned work belongs in `ROADMAP.md`; an experimental
   feature gets one short section marked **Experimental**, with a link to its proposal. No "planned for", "not yet
@@ -293,8 +296,7 @@ options (`split`, `deviceScaleFactor`, `outputWidth`, …) are listed in the scr
 - **The docs gallery's hero** (`home`) is a light/dark diagonal split, `split: true`, so it recaptures with one command
   like any other image: `npm run app:screens -- home`. It is captured at `deviceScaleFactor: 2` and written at
   `outputWidth` 1152, the width of the featured tile: anything wider is bytes the reader never sees.
-- **The other gallery images** (`projects.png`, `flaky-tests.png`, `failure-clusters-tab.png`) are whole screens at
-  **1280×720**.
+- **The other gallery images** (`flaky-tests.png`, `failure-clusters-tab.png`) are whole screens at **1280×720**.
 - **The README's quick tour** is six scenes tagged `readme` (`tour-*.png`): whole screens at one size and in one theme,
   so the two-column grid lines up. Recapture them together (`npm run app:screens -- --tag readme`), with the server
   started with an AI provider so the diagnosis panel shows its configured state (`PIWI_AI_PROVIDER=anthropic` and any
@@ -303,7 +305,8 @@ options (`split`, `deviceScaleFactor`, `outputWidth`, …) are listed in the scr
   the harness renders icons from the bundled collection and runs offline, so the image stays reproducible as the UI
   moves.
 - **Run `npm run app:screens:check` after adding or deleting an image**: it fails on an image with no scene and on a
-  scene whose image is missing.
+  scene whose image is missing. An image no page, README or extension README shows is deleted with its scene: the
+  drift test fails on it.
 
 Images from other pipelines, which the harness's `--check` leaves alone (`EXTERNAL_DOCS_IMAGES` and the `picker-`,
 `vscode-` and `jetbrains-` prefixes):
