@@ -1,104 +1,127 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 380" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 500" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
   <style>
   .bg{fill:#fcfcfd;stroke:#e4e7ec}
-  .t{fill:#101828;font-weight:700;font-size:16px}
-  .s{fill:#475467;font-size:12.5px}
-  .h{fill:#667085;font-size:10.5px;font-weight:600;letter-spacing:.06em}
-  .l{fill:#344054;font-size:12px}
-  .lb{fill:#344054;font-size:12.5px;font-weight:600}
-  .m{fill:#667085;font-size:11px}
-  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10.5px}
-  .bst,.fct,.frt,.okt{font-size:11px}
+  .t{fill:#101828;font-weight:700;font-size:19px}
+  .s{fill:#475467;font-size:14px}
+  .h{fill:#667085;font-size:12.5px;font-weight:700;letter-spacing:.05em}
+  .lb{fill:#344054;font-size:15px;font-weight:600}
+  .l{fill:#475467;font-size:13.5px}
+  .m{fill:#667085;font-size:12.5px}
+  .b{font-weight:600}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;white-space:pre}
+  .ink{fill:#344054} .numw{fill:#ffffff}
   .box{fill:#ffffff;stroke:#d0d5dd}
+  .chip{fill:#f9fafb;stroke:#d0d5dd}
   .hd{fill:#f2f4f7}
-  .dash{fill:none;stroke:#98a2b3;stroke-dasharray:4 3}
-  .edge{fill:none;stroke:#98a2b3;stroke-width:1.3}
+  .cap{fill:#f2f4f7;stroke:#d0d5dd}
+  .rule{fill:none;stroke:#e4e7ec}
+  .edge{fill:none;stroke:#667085;stroke-width:1.4}
+  .dash{fill:none;stroke:#98a2b3;stroke-width:1.3;stroke-dasharray:5 4}
   .acc{fill:none;stroke:#4353ff;stroke-width:1.6}
-  .acct{fill:#4353ff;font-size:11px}
-  .arr{fill:#98a2b3} .arra{fill:#4353ff}
-  .bs{fill:#fffaeb;stroke:#f79009} .bst{fill:#b54708}
-  .fc{fill:#fef3f2;stroke:#f04438} .fct{fill:#b42318}
-  .fr{fill:#fff6ed;stroke:#fb6514} .frt{fill:#c4320a}
-  .ok{fill:#ecfdf3;stroke:#12b76a} .okt{fill:#067647}
-  .chip{stroke-width:1}
+  .accd{fill:none;stroke:#4353ff;stroke-width:1.4;stroke-dasharray:5 4}
+  .acct{fill:#4353ff;font-size:13px} .ac{fill:#4353ff}
+  .et{fill:#475467;font-size:13px}
+  .arr{fill:#667085} .arrd{fill:#98a2b3} .arra{fill:#4353ff}
+  .ab{fill:#eef1ff;stroke:#c7ceff} .abt{fill:#2a3aa8} .abl{fill:#3f4b9e} .abo{fill:none;stroke:#4353ff;stroke-width:1.5}
+  .ok{fill:#ecfdf3;stroke:#75e0a7} .okt{fill:#067647} .okd{fill:#12b76a}
+  .bs{fill:#fffaeb;stroke:#fec84b} .bst{fill:#b54708}
+  .fc{fill:#fef3f2;stroke:#fda29b} .fct{fill:#b42318} .fcd{fill:#f04438}
+  .fr{fill:#fff6ed;stroke:#fd853a} .frt{fill:#c4320a}
+  .mu{fill:#f2f4f7;stroke:#d0d5dd} .mud{fill:#d0d5dd}
+  .dbx{fill:none;stroke:#d0d5dd;stroke-dasharray:5 4}
+  .clu{fill:#4353ff;fill-opacity:.06;stroke:#4353ff;stroke-width:1.8;stroke-dasharray:6 4;stroke-linejoin:round}
   @media (prefers-color-scheme: dark){
     .bg{fill:#161b26;stroke:#333741}
     .t{fill:#f5f5f6} .s{fill:#94969c} .h{fill:#85888e}
-    .l,.lb{fill:#cecfd2} .m{fill:#85888e}
-    .box{fill:#1f242f;stroke:#333741} .hd{fill:#262b36}
-    .dash{stroke:#61646c} .edge{stroke:#61646c} .arr{fill:#61646c}
-    .acc{stroke:#8098f9} .acct{fill:#8098f9} .arra{fill:#8098f9}
-    .bs{fill:#2b1d07;stroke:#dc6803} .bst{fill:#fec84b}
-    .fc{fill:#2d1210;stroke:#d92d20} .fct{fill:#fda29b}
+    .lb{fill:#ececed} .l{fill:#cecfd2} .m{fill:#94969c} .ink{fill:#ececed} .numw{fill:#161b26}
+    .box{fill:#1f242f;stroke:#333741} .chip{fill:#262b36;stroke:#333741} .hd{fill:#262b36}
+    .cap{fill:#262b36;stroke:#4a4f5a}
+    .rule{stroke:#333741}
+    .edge{stroke:#94969c} .arr{fill:#94969c}
+    .dash{stroke:#61646c} .arrd{fill:#61646c}
+    .acc,.accd{stroke:#8098f9} .acct,.ac{fill:#8098f9} .arra{fill:#8098f9}
+    .et{fill:#94969c}
+    .ab{fill:#1c2142;stroke:#3b4699} .abt{fill:#c7d0ff} .abl{fill:#a4b0f0} .abo{stroke:#8098f9}
+    .ok{fill:#0b2418;stroke:#079455} .okt{fill:#75e0a7} .okd{fill:#17b26a}
+    .bs{fill:#2b1d07;stroke:#ca8504} .bst{fill:#fec84b}
+    .fc{fill:#2d1210;stroke:#d92d20} .fct{fill:#fda29b} .fcd{fill:#f04438}
     .fr{fill:#2b170c;stroke:#e04f16} .frt{fill:#f7b27a}
-    .ok{fill:#0b2418;stroke:#079455} .okt{fill:#75e0a7}
+    .mu{fill:#262b36;stroke:#333741} .mud{fill:#61646c}
+    .dbx{stroke:#61646c}
+    .clu{fill:#8098f9;fill-opacity:.1;stroke:#8098f9}
   }
 </style>
   <defs>
-    <marker id="prbA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arr" d="M 0 1 L 9 5 L 0 9 z"/></marker>
-    <marker id="prbB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arra" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="prbn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arr" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="prbd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrd" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="prba" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arra" d="M 0 1 L 9 5 L 0 9 z"/></marker>
   </defs>
-  <rect class="bg" x="0.5" y="0.5" width="919" height="379" rx="12"/>
-  <text class="t" x="24" y="36">Two kinds of probe</text>
-  <text class="s" x="24" y="56">Replay a passing test with one fault behind one request, and record whether the test noticed.</text>
-  <text class="lb" x="24" y="134">Client probe</text>
-  <text class="m" x="24" y="152">piwi probe</text>
-  <rect class="box chip" x="136" y="84" width="174" height="110" rx="8"/>
-  <path class="hd" d="M 136.5 114 L 136.5 92 Q 136.5 84.5 144 84.5 L 302 84.5 Q 309.5 84.5 309.5 92 L 309.5 114 Z"/>
-  <text class="lb" x="150" y="104">Plan from Piwi</text>
-  <text class="l" x="150" y="136">a passing test and a</text>
-  <text class="l" x="150" y="153">route it reaches;</text>
-  <text class="l" x="150" y="170">one fault per test</text>
-  <rect class="box chip" x="326" y="84" width="174" height="110" rx="8"/>
-  <path class="hd" d="M 326.5 114 L 326.5 92 Q 326.5 84.5 334 84.5 L 492 84.5 Q 499.5 84.5 499.5 92 L 499.5 114 Z"/>
-  <text class="lb" x="340" y="104">In the browser</text>
-  <text class="l" x="340" y="136">page.route rewrites the</text>
-  <text class="l" x="340" y="153">response: 500, empty, a</text>
-  <text class="l" x="340" y="170">field dropped, stale, late</text>
-  <rect class="box chip" x="516" y="84" width="174" height="110" rx="8"/>
-  <path class="hd" d="M 516.5 114 L 516.5 92 Q 516.5 84.5 524 84.5 L 682 84.5 Q 689.5 84.5 689.5 92 L 689.5 114 Z"/>
-  <text class="lb" x="530" y="104">The test runs on</text>
-  <text class="l" x="530" y="136">fails: noticed</text>
-  <text class="l" x="530" y="153">passes: not noticed</text>
-  <text class="l" x="530" y="170">unchanged: inconclusive</text>
-  <rect class="box chip" x="706" y="84" width="174" height="110" rx="8"/>
-  <path class="hd" d="M 706.5 114 L 706.5 92 Q 706.5 84.5 714 84.5 L 872 84.5 Q 879.5 84.5 879.5 92 L 879.5 114 Z"/>
-  <text class="lb" x="720" y="104">In the Test Map</text>
-  <text class="l" x="720" y="136">a checks edge;</text>
-  <text class="l" x="720" y="153">never noticed on a route:</text>
-  <text class="l" x="720" y="170">a false-comfort gap</text>
-  <path class="acc" d="M 311 149.0 L 324 149.0" marker-end="url(#prbB)"/>
-  <path class="acc" d="M 501 149.0 L 514 149.0" marker-end="url(#prbB)"/>
-  <path class="acc" d="M 691 149.0 L 704 149.0" marker-end="url(#prbB)"/>
-  <text class="lb" x="24" y="278">Server probe</text>
-  <text class="m" x="24" y="296">experimental</text>
-  <rect class="box chip" x="136" y="228" width="174" height="110" rx="8"/>
-  <path class="hd" d="M 136.5 258 L 136.5 236 Q 136.5 228.5 144 228.5 L 302 228.5 Q 309.5 228.5 309.5 236 L 309.5 258 Z"/>
-  <text class="lb" x="150" y="248">Signed request</text>
-  <text class="l" x="150" y="280">X-Piwi-Probe, signed</text>
-  <text class="l" x="150" y="297">with the probe secret,</text>
-  <text class="l" x="150" y="314">outside production only</text>
-  <rect class="box chip" x="326" y="228" width="174" height="110" rx="8"/>
-  <path class="hd" d="M 326.5 258 L 326.5 236 Q 326.5 228.5 334 228.5 L 492 228.5 Q 499.5 228.5 499.5 236 L 499.5 258 Z"/>
-  <text class="lb" x="340" y="248">In the server</text>
-  <text class="l" x="340" y="280">the instrumentation fails</text>
-  <text class="l" x="340" y="297">a dependency call, throws,</text>
-  <text class="l" x="340" y="314">delays or alters data</text>
-  <rect class="box chip" x="516" y="228" width="174" height="110" rx="8"/>
-  <path class="hd" d="M 516.5 258 L 516.5 236 Q 516.5 228.5 524 228.5 L 682 228.5 Q 689.5 228.5 689.5 236 L 689.5 258 Z"/>
-  <text class="lb" x="530" y="248">Two signals</text>
-  <text class="l" x="530" y="280">the test: noticed or not</text>
-  <text class="l" x="530" y="297">the app: console errors,</text>
-  <text class="l" x="530" y="314">dialogs, backend errors</text>
-  <rect class="box chip" x="706" y="228" width="174" height="110" rx="8"/>
-  <path class="hd" d="M 706.5 258 L 706.5 236 Q 706.5 228.5 714 228.5 L 872 228.5 Q 879.5 228.5 879.5 236 L 879.5 258 Z"/>
-  <text class="lb" x="720" y="248">In the Test Map</text>
-  <text class="l" x="720" y="280">a checks edge on the</text>
-  <text class="l" x="720" y="297">dependency; a degraded</text>
-  <text class="l" x="720" y="314">app leaves a finding</text>
-  <path class="acc" d="M 311 293.0 L 324 293.0" marker-end="url(#prbB)"/>
-  <path class="acc" d="M 501 293.0 L 514 293.0" marker-end="url(#prbB)"/>
-  <path class="acc" d="M 691 293.0 L 704 293.0" marker-end="url(#prbB)"/>
-  <text class="m" x="24" y="362">The instrumentation reports the fault it applied in X-Piwi-Trace; a fault it did not apply records as inconclusive, never as a pass.</text>
+  <rect class="bg" x="0.5" y="0.5" width="919" height="499" rx="12"/>
+  <text class="t" x="24" y="38">Two kinds of probe</text>
+  <text class="s" x="24" y="62">Replay a passing test with one fault behind one request, and record whether the test noticed.</text>
 
+  <!-- Client probe -->
+  <text class="lb" x="22" y="98">Client probe</text>
+  <text class="mono m" x="132.8" y="98">piwi probe</text>
+  <rect class="box" x="22" y="112" width="204" height="136" rx="8"/>
+  <path class="hd" d="M 22.5 144 L 22.5 120 Q 22.5 112.5 30 112.5 L 218 112.5 Q 225.5 112.5 225.5 120 L 225.5 144 Z"/>
+  <text class="lb" x="38" y="133">Plan from Piwi</text>
+  <text class="l" x="38" y="168">a passing test and a</text>
+  <text class="l" x="38" y="187">route it reaches;</text>
+  <text class="l" x="38" y="206">one fault per test</text>
+  <path class="acc" d="M 226 188 L 244 188" marker-end="url(#prba)"/>
+  <rect class="box" x="246" y="112" width="204" height="136" rx="8"/>
+  <path class="hd" d="M 246.5 144 L 246.5 120 Q 246.5 112.5 254 112.5 L 442 112.5 Q 449.5 112.5 449.5 120 L 449.5 144 Z"/>
+  <text class="lb" x="262" y="133">In the browser</text>
+  <text class="l" x="262" y="168">page.route rewrites the</text>
+  <text class="l" x="262" y="187">response: 500, empty body,</text>
+  <text class="l" x="262" y="206">dropped field, stale value,</text>
+  <text class="l" x="262" y="225">or slow</text>
+  <path class="acc" d="M 450 188 L 468 188" marker-end="url(#prba)"/>
+  <rect class="box" x="470" y="112" width="204" height="136" rx="8"/>
+  <path class="hd" d="M 470.5 144 L 470.5 120 Q 470.5 112.5 478 112.5 L 666 112.5 Q 673.5 112.5 673.5 120 L 673.5 144 Z"/>
+  <text class="lb" x="486" y="133">The test runs on</text>
+  <text class="l" x="486" y="168">fails: noticed</text>
+  <text class="l" x="486" y="187">passes: not noticed</text>
+  <text class="l" x="486" y="206">response unchanged:</text>
+  <text class="l" x="486" y="225">inconclusive</text>
+  <path class="acc" d="M 674 188 L 692 188" marker-end="url(#prba)"/>
+  <rect class="box" x="694" y="112" width="204" height="136" rx="8"/>
+  <path class="hd" d="M 694.5 144 L 694.5 120 Q 694.5 112.5 702 112.5 L 890 112.5 Q 897.5 112.5 897.5 120 L 897.5 144 Z"/>
+  <text class="lb" x="710" y="133">In the Test Map</text>
+  <text class="l" x="710" y="168">a checks edge; never</text>
+  <text class="l" x="710" y="187">noticed on a route:</text>
+  <text class="l" x="710" y="206">a false-comfort gap</text>
+
+  <!-- Server probe -->
+  <text class="lb" x="22" y="290">Server probe</text>
+  <text class="m" x="132.8" y="290">experimental</text>
+  <rect class="box" x="22" y="304" width="204" height="136" rx="8"/>
+  <path class="hd" d="M 22.5 336 L 22.5 312 Q 22.5 304.5 30 304.5 L 218 304.5 Q 225.5 304.5 225.5 312 L 225.5 336 Z"/>
+  <text class="lb" x="38" y="325">Signed request</text>
+  <text class="l" x="38" y="360">X-Piwi-Probe, signed with</text>
+  <text class="l" x="38" y="379">the probe secret, outside</text>
+  <text class="l" x="38" y="398">production only</text>
+  <path class="acc" d="M 226 380 L 244 380" marker-end="url(#prba)"/>
+  <rect class="box" x="246" y="304" width="204" height="136" rx="8"/>
+  <path class="hd" d="M 246.5 336 L 246.5 312 Q 246.5 304.5 254 304.5 L 442 304.5 Q 449.5 304.5 449.5 312 L 449.5 336 Z"/>
+  <text class="lb" x="262" y="325">In the server</text>
+  <text class="l" x="262" y="360">the instrumentation fails</text>
+  <text class="l" x="262" y="379">a dependency call, throws,</text>
+  <text class="l" x="262" y="398">delays or alters data</text>
+  <path class="acc" d="M 450 380 L 468 380" marker-end="url(#prba)"/>
+  <rect class="box" x="470" y="304" width="204" height="136" rx="8"/>
+  <path class="hd" d="M 470.5 336 L 470.5 312 Q 470.5 304.5 478 304.5 L 666 304.5 Q 673.5 304.5 673.5 312 L 673.5 336 Z"/>
+  <text class="lb" x="486" y="325">Two signals</text>
+  <text class="l" x="486" y="360">the test: noticed or not;</text>
+  <text class="l" x="486" y="379">the app: console errors,</text>
+  <text class="l" x="486" y="398">dialogs, backend errors</text>
+  <path class="acc" d="M 674 380 L 692 380" marker-end="url(#prba)"/>
+  <rect class="box" x="694" y="304" width="204" height="136" rx="8"/>
+  <path class="hd" d="M 694.5 336 L 694.5 312 Q 694.5 304.5 702 304.5 L 890 304.5 Q 897.5 304.5 897.5 312 L 897.5 336 Z"/>
+  <text class="lb" x="710" y="325">In the Test Map</text>
+  <text class="l" x="710" y="360">a checks edge on the</text>
+  <text class="l" x="710" y="379">dependency; a degraded</text>
+  <text class="l" x="710" y="398">app leaves a finding</text>
+  <text class="l" x="22" y="476">The instrumentation reports the fault it applied in X-Piwi-Trace; a fault it did not apply records as inconclusive, never as a pass.</text>
 </svg>
