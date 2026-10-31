@@ -1,0 +1,45 @@
+/**
+ * The pull request a run's feedback goes to: the one its CI named first, a
+ * pull request from a fork included, then the one open on its branch.
+ */
+import { describe, expect, test } from 'vitest';
+
+delete process.env.PIWI_DATABASE_URL;
+const { findRunPullRequestNumber } = await import('../../server/utils/scm/pr-feedback');
+
+function provider(open: Record<number, 'open' | 'draft' | 'closed' | 'merged'>, onBranch: number | null) {
+  const asked: string[] = [];
+  return {
+    asked,
+    fetchPullRequest: async (n: number) => {
+      asked.push(`number ${n}`);
+      const state = open[n];
+      return state ? { title: null, state, author: null, url: null, updatedAt: null } : null;
+    },
+    findPullRequestForBranch: async (branch: string) => {
+      asked.push(`branch ${branch}`);
+      return onBranch == null ? null : { number: onBranch, url: '' };
+    },
+  };
+}
+
+describe('findRunPullRequestNumber', () => {
+  test('the pull request the run names wins, without a branch lookup', async () => {
+    const p = provider({ 42: 'open' }, 7);
+    expect(await findRunPullRequestNumber(p, 42, 'feature/x')).toBe(42);
+    expect(p.asked).toEqual(['number 42']);
+  });
+
+  test('a fork pull request, whose branch the base repository does not have, is found by its number', async () => {
+    expect(await findRunPullRequestNumber(provider({ 42: 'draft' }, null), 42, 'patch-1')).toBe(42);
+  });
+
+  test('a named pull request that is closed gives way to the one open on the branch', async () => {
+    expect(await findRunPullRequestNumber(provider({ 42: 'merged' }, 7), 42, 'feature/x')).toBe(7);
+  });
+
+  test('a run that names none is found by its branch, and a run with neither has none', async () => {
+    expect(await findRunPullRequestNumber(provider({}, 7), null, 'feature/x')).toBe(7);
+    expect(await findRunPullRequestNumber(provider({}, 7), null, null)).toBeNull();
+  });
+});

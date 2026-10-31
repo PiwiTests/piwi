@@ -17,13 +17,15 @@ start the CI run that proves it.
 Two things get posted when a run finishes, unless it is a run from an editor, a bisect step, a reproduction, or a
 partial run from a developer's machine or the desktop app ([run origin](/reference/test-metadata#run-origin)):
 
-- **A summary comment** on the branch's open pull request: one comment per pull request, edited on each later run rather than appended, so a busy
+- **A summary comment** on the run's open pull request (the one its CI names, a pull request from a fork included, else
+  the one open on its branch): one comment per pull request, edited on each later run rather than appended, so a busy
   branch doesn't collect a comment per push.
 - **A commit status**: passed or failed against the run's commit, pull request or not, so a pull request shows the result in its checks
   list. Required for a branch-protection rule. A run whose only failures are [quarantined](./flaky-tests#quarantine-with-a-way-out)
   tests passes, and the status says how many (`118/120 passed, 2 quarantined`); turn on **Quarantined failures fail
   the commit status** under the project's **Settings → Source control** to fail it on any failure. **Only comment on
-  failures** follows the same rule: such a run gets no comment.
+  failures** follows the same rule: such a run gets no comment, unless its change left a file no test reached or
+  changed lines no suite ran, which the [uncovered changes](./uncovered-changes) section names.
 
 What the comment says, in this order:
 
