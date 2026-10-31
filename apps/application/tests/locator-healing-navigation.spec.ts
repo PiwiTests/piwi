@@ -35,7 +35,15 @@ test('places the order', async ({ page }) => {
 /** Run the suite as the project's run against this server; resolves with its exit code and output. */
 async function runSuite(folder: string): Promise<{ code: number | null; output: string }> {
   const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PROJECT_NAME', 'PIWI_LIVE_VIEW']) {
+  for (const name of [
+    'PWDEBUG',
+    'PIWI_DASHBOARD_URL',
+    'PIWI_API_KEY',
+    'PIWI_PROJECT_NAME',
+    'PIWI_LIVE_VIEW',
+    'PIWI_DESKTOP_APP',
+    'PIWI_DESKTOP_CONFIG',
+  ]) {
     delete env[name];
   }
   for (const name of Object.keys(env)) if (detectCi({ [name]: env[name] })) delete env[name];
@@ -96,7 +104,7 @@ module.exports = wrapConfig(defineConfig({
   workers: 1,
   reporter: 'line',
   use: { headless: true, actionTimeout: 3000 },
-}), { serverUrl: ${JSON.stringify(target.baseUrl)}, projectName: ${JSON.stringify(PROJECT.LOCATOR_HEAL_NAVIGATION)}, uploadTraces: false, uploadReport: false });
+}), { serverUrl: ${JSON.stringify(target.baseUrl)}, apiKey: ${JSON.stringify(target.token ?? null)}, projectName: ${JSON.stringify(PROJECT.LOCATOR_HEAL_NAVIGATION)}, uploadTraces: false, uploadReport: false });
 `,
     );
 
