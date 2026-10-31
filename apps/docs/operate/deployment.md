@@ -180,7 +180,7 @@ spec:
         fsGroup: 1001   # the image's non-root user, so it can write the volume
       containers:
       - name: piwi-dashboard
-        image: phenx/piwitests-server:0.63.0 # x-release-please-version
+        image: phenx/piwitests-server:0.64.0 # x-release-please-version
         ports:
         - containerPort: 3000
         envFrom:
