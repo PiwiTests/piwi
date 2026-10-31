@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { BrowserContext, Page, TestInfo } from '@playwright/test';
 import { isInsidePath, parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
@@ -26,9 +27,18 @@ import { playwrightVersionAtLeast } from '../support/playwright-version.js';
  * own debugger (`PWDEBUG`, `--debug`). Every attempt pauses.
  */
 
+/** A call site's line (`file:line`) as two are compared: without case on Windows, whose file names ignore it. */
+export function lineKey(line: string, windows: boolean = process.platform === 'win32'): string {
+  return windows ? line.toLowerCase() : line;
+}
+
 /** The lines a run pauses at, keyed the way `captureCallerLocation` writes a call site, without its column. */
 export class PauseSet {
-  constructor(private readonly lines: ReadonlySet<string>) {}
+  private readonly lines: ReadonlySet<string>;
+
+  constructor(lines: ReadonlySet<string>) {
+    this.lines = new Set([...lines].map((line) => lineKey(line)));
+  }
 
   get size(): number {
     return this.lines.size;
@@ -38,20 +48,39 @@ export class PauseSet {
   matches(callerLocation: string | null): boolean {
     if (!callerLocation) return false;
     const col = callerLocation.lastIndexOf(':');
-    return col > 0 && this.lines.has(callerLocation.slice(0, col));
+    return col > 0 && this.lines.has(lineKey(callerLocation.slice(0, col)));
   }
 }
 
 export const NO_BREAKPOINTS = new PauseSet(new Set());
 
-/** A file of `PIWI_PAUSE_AT` written as `captureCallerLocation` writes one: relative to `cwd`, with forward slashes. */
+/**
+ * A file of `PIWI_PAUSE_AT` written as `captureCallerLocation` writes one: relative to `cwd`, with forward slashes, and
+ * through the links it goes through, as a stack frame names the file Node loaded.
+ */
 function callSiteFile(file: string, cwd: string): string {
   const slashed = file.replace(/\\/g, '/');
   const absolute = path.isAbsolute(file) || path.isAbsolute(slashed) || /^[A-Za-z]:\//.test(slashed);
-  let rel = absolute ? path.relative(cwd, file) : path.normalize(slashed);
+  const resolved = path.resolve(cwd, absolute ? file : slashed);
+  const real = realPath(resolved);
+  let rel =
+    real !== null && real !== resolved
+      ? path.relative(realPath(cwd) ?? cwd, real)
+      : absolute
+        ? path.relative(cwd, file)
+        : path.normalize(slashed);
   rel = rel.split(path.sep).join('/').replace(/\\/g, '/');
   if (rel.startsWith('./')) rel = rel.slice(2);
   return rel;
+}
+
+/** The file `file` names once every link on its way is followed; null when it does not exist. */
+function realPath(file: string): string | null {
+  try {
+    return fs.realpathSync(file);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -254,7 +283,7 @@ export function atStop(state: PauseState, callSite: string | null): { show: Stop
       ? 'step'
       : state.pause
         ? 'pause'
-        : state.runTo !== null && callSiteLine(callSite) === state.runTo
+        : state.runTo !== null && lineKey(callSiteLine(callSite)) === lineKey(state.runTo)
           ? 'run-to'
           : atBreakpoint(state, callSite)
             ? 'breakpoint'
