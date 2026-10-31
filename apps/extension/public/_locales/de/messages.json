@@ -1281,6 +1281,33 @@
   "options_editorPermission": {
     "message": "Piwi Picker braucht die Berechtigung, den Editor auf diesem Computer zu erreichen."
   },
+  "options_editorNotProven": {
+    "message": "Mit $url$ gekoppelt, aber das Programm an diesem Port beweist nicht, dass es Ihr Editor ist, daher geht nichts dorthin: Führen Sie „Piwi: Pair with Piwi Picker“ in Ihrem Editor erneut aus und koppeln Sie mit der kopierten Adresse, oder aktualisieren Sie Piwi dort.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorUnreachable": {
+    "message": "Mit $url$ gekoppelt, aber dort antwortet gerade nichts: Öffnen Sie Ihren Editor mit der Piwi-Erweiterung. Kopiert sein „Piwi: Pair with Piwi Picker“ eine andere Adresse, koppeln Sie mit dieser.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorNoAccess": {
+    "message": "Mit $url$ gekoppelt, aber der Browser hat Piwi Picker den Zugriff darauf entzogen: Führen Sie „Piwi: Pair with Piwi Picker“ in Ihrem Editor erneut aus und koppeln Sie mit der kopierten Adresse.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
   "common_close": {
     "message": "Schließen"
   },
@@ -6344,7 +6371,7 @@
     "message": "Die Piwi-Erweiterung Ihres Editors kann ihre Läufe nicht teilen: Aktualisieren Sie sie."
   },
   "runs_statusUnproven": {
-    "message": "Das Programm am gekoppelten Port ist nicht dieser Editor: Piwi Picker hat ihm nichts gesendet und fragt gleich erneut."
+    "message": "Das Programm am gekoppelten Port ist nicht dieser Editor: Piwi Picker hat ihm nichts gesendet und fragt gleich erneut. Ist Ihr Editor auf einen anderen Port umgezogen, koppeln Sie Piwi Picker in den Einstellungen erneut mit ihm."
   },
   "runs_statusNoHub": {
     "message": "Ihr Editor antwortet, aber keines seiner Fenster teilt seine Läufe: Aktualisieren Sie dort die Piwi-Erweiterung."

@@ -1281,6 +1281,33 @@
   "options_editorPermission": {
     "message": "O Piwi Picker precisa de permissão para acessar o editor neste computador."
   },
+  "options_editorNotProven": {
+    "message": "Pareado com $url$, mas o programa nessa porta não prova que é o seu editor, então nada vai para ele: execute de novo “Piwi: Pair with Piwi Picker” no seu editor e pareie com o endereço copiado, ou atualize o Piwi lá.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorUnreachable": {
+    "message": "Pareado com $url$, mas nada responde lá agora: abra o seu editor com a extensão do Piwi. Se o “Piwi: Pair with Piwi Picker” dele copiar outro endereço, pareie com esse.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorNoAccess": {
+    "message": "Pareado com $url$, mas o navegador retirou o acesso do Piwi Picker a ele: execute de novo “Piwi: Pair with Piwi Picker” no seu editor e pareie com o endereço copiado.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
   "common_close": {
     "message": "Fechar"
   },
@@ -6344,7 +6371,7 @@
     "message": "A extensão do Piwi no seu editor não compartilha as execuções: atualize-a."
   },
   "runs_statusUnproven": {
-    "message": "O programa na porta pareada não é este editor: o Piwi Picker não enviou nada a ele e pergunta de novo em instantes."
+    "message": "O programa na porta pareada não é este editor: o Piwi Picker não enviou nada a ele e pergunta de novo em instantes. Se o seu editor mudou de porta, pareie o Piwi Picker com ele de novo nas configurações."
   },
   "runs_statusNoHub": {
     "message": "Seu editor responde, mas nenhuma janela dele compartilha as execuções: atualize lá a extensão do Piwi."

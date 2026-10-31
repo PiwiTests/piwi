@@ -115,4 +115,7 @@ export const BUTTON_CSS = `
   .piwi-btn[data-tone="ghost"]:hover > .piwi-icon { opacity: 1; }
   .piwi-btn[data-tone][data-flash] { border-color: currentColor; }
   .piwi-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .piwi-send-status { flex-basis: 100%; color: #fca5a5; font-size: 11.5px; line-height: 1.4; overflow-wrap: anywhere; }
+  .piwi-send-status:empty { display: none; }
+  @media (prefers-color-scheme: light) { .piwi-send-status { color: #b91c1c; } }
 `;

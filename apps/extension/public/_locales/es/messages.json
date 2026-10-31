@@ -1281,6 +1281,33 @@
   "options_editorPermission": {
     "message": "Piwi Picker necesita permiso para acceder al editor en este equipo."
   },
+  "options_editorNotProven": {
+    "message": "Emparejado con $url$, pero el programa de ese puerto no demuestra ser tu editor, así que no se le envía nada: vuelve a ejecutar «Piwi: Pair with Piwi Picker» en tu editor y empareja con la dirección que copia, o actualiza Piwi allí.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorUnreachable": {
+    "message": "Emparejado con $url$, pero ahora no responde nada allí: abre tu editor con la extensión de Piwi. Si su «Piwi: Pair with Piwi Picker» copia otra dirección, empareja con esa.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorNoAccess": {
+    "message": "Emparejado con $url$, pero el navegador le retiró a Piwi Picker el acceso: vuelve a ejecutar «Piwi: Pair with Piwi Picker» en tu editor y empareja con la dirección que copia.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
   "common_close": {
     "message": "Cerrar"
   },
@@ -6344,7 +6371,7 @@
     "message": "La extensión de Piwi de tu editor no puede compartir sus ejecuciones: actualízala."
   },
   "runs_statusUnproven": {
-    "message": "El programa del puerto emparejado no es este editor: Piwi Picker no le envió nada y vuelve a preguntar en un momento."
+    "message": "El programa del puerto emparejado no es este editor: Piwi Picker no le envió nada y vuelve a preguntar en un momento. Si tu editor pasó a otro puerto, vuelve a emparejar Piwi Picker con él en la configuración."
   },
   "runs_statusNoHub": {
     "message": "Tu editor responde, pero ninguna de sus ventanas comparte sus ejecuciones: actualiza allí la extensión de Piwi."

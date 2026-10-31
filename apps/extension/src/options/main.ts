@@ -1,3 +1,4 @@
+import type { EditorPairing } from '@piwitests/core/editor-send';
 import {
   editorOriginPattern,
   getEditorPairing,
@@ -28,6 +29,7 @@ import {
   testDesktop,
   startDesktopPairing,
   pollDesktopPairing,
+  provePairedEditor,
   type ProjectOption,
 } from '../shared/piwi-client.js';
 import {
@@ -1210,6 +1212,28 @@ async function renderEditorPairing(): Promise<void> {
   editorPairBtn.classList.toggle('primary', !pairing);
   renderEditorPill();
   void renderSiteAccess();
+  if (pairing) void checkEditorPairing(pairing);
+}
+
+/**
+ * Asks the program on the paired port to prove it is the paired editor, as Send to editor does before it sends, and
+ * says on the status line why nothing would reach the editor when it does not.
+ */
+async function checkEditorPairing(pairing: EditorPairing): Promise<void> {
+  const allowed = await chrome.permissions.contains({ origins: [editorOriginPattern(pairing)] }).catch(() => false);
+  const proof = allowed ? await provePairedEditor(pairing) : null;
+  if (proof === 'proven') return;
+  // A pairing changed or forgotten meanwhile is checked on its own.
+  const current = await getEditorPairing().catch(() => null);
+  if (current?.url !== pairing.url || current.token !== pairing.token) return;
+  const url = patternView(pairing.url);
+  const words =
+    proof === null
+      ? tNodes('options_editorNoAccess', { url })
+      : proof === 'unreachable'
+        ? tNodes('options_editorUnreachable', { url })
+        : tNodes('options_editorNotProven', { url });
+  writeStatus(editorStatusEl, words, 'error');
 }
 
 editorPairBtn.addEventListener('click', () => {

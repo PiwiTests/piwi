@@ -181,7 +181,9 @@ test.describe('the Elements sidebar', () => {
     // The worker answers why it did not send: the browser never granted the editor's address.
     await send.click();
     await expect(first.getByRole('button', { name: 'Not sent' })).toBeVisible();
-    await expect(send).toHaveAttribute('title', 'Piwi Picker needs permission to reach the editor on this computer.');
+    await expect(first.getByRole('status')).toHaveText(
+      'Piwi Picker needs permission to reach the editor on this computer.',
+    );
 
     // What reaches the worker when it does send: the line the Action button copied last.
     await sidebar.evaluate(() => {
@@ -195,6 +197,7 @@ test.describe('the Elements sidebar', () => {
     await first.getByRole('button', { name: 'Action (click)' }).click();
     await send.click();
     await expect(first.getByRole('button', { name: 'Sent' })).toBeVisible();
+    await expect(first.getByRole('status')).toBeHidden();
     expect(await sidebar.evaluate(() => (globalThis as { __sent?: unknown[] }).__sent)).toEqual([
       {
         type: 'piwi-send-to-editor',
