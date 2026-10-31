@@ -1,15 +1,14 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
 import { matchTransition, transitionSettingValue } from '#shared/integrations/transitions';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Workflow transitions with fields, against a SQLite database and a stubbed
@@ -109,7 +108,7 @@ beforeAll(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), 'piwi-transitions-'));
   client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
   db = drizzle(client, { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   dbc = db as unknown as DbClient;
   await db.insert(schema.projects).values({ id: 1, name: 'shop', label: 'Shop' });
   vi.stubGlobal('fetch', vi.fn(jira));

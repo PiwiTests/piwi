@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
 import { drizzle as drizzleProxy } from 'drizzle-orm/sqlite-proxy';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient, type InValue } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
@@ -67,9 +66,7 @@ const at = (minutesAgo: number) => new Date(NOW - minutesAgo * MINUTE);
  * old, one an hour old, and a test with none.
  */
 beforeAll(async () => {
-  await migrate(sqliteDb, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(sqliteDb);
   await sqliteDb.insert(schema.projects).values({ id: 1, name: 'shop' });
   await sqliteDb.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'cart.spec.ts', title: 'adds' });
   const statuses = [...Array(5).fill('passed'), ...Array(2).fill('skipped'), ...Array(5).fill('failed')];

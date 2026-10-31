@@ -22,6 +22,7 @@
 import type { TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo } from '~/utils/live-steps';
 import type { LiveWorkerState } from '#shared/live-view';
+import type { LiveRowNote } from '~/utils/live-row-note';
 import { liveResourcesLabel, type LiveWorkerResources } from '~/utils/live-worker-resources';
 import type { TestRowBadge } from '~/utils/test-row-badges';
 import type { KnownIssueRef } from '#shared/handlers/known-issues';
@@ -77,6 +78,11 @@ const props = withDefaults(
     liveResources?: LiveWorkerResources | null;
     /** This row's worker in the run's live view: Watch, and Paused while its test is stopped (live runs only). */
     liveWorker?: LiveWorkerState | null;
+    /**
+     * What a running row says where Watch would be: its run is not shared live from the developer's machine, and how to
+     * share it; or, in the desktop app, where its test's page shows (live runs only).
+     */
+    liveNote?: LiveRowNote | null;
     highlighted?: boolean;
     projectKey?: string | number | null;
     projectName?: string | null;
@@ -114,6 +120,7 @@ const props = withDefaults(
     liveStep: null,
     liveResources: null,
     liveWorker: null,
+    liveNote: null,
     highlighted: false,
     projectKey: null,
     projectName: null,
@@ -258,7 +265,8 @@ const clusterLabel = computed(() =>
             <slot name="metrics">
               <template v-if="tc">
                 <template v-if="tc.status === 'running'">
-                  <span v-if="!liveStep && !liveWorker?.paused" class="text-info">In progress…</span>
+                  <TestRowStuck v-if="tc.stuck" :stuck="tc.stuck" />
+                  <span v-else-if="!liveStep && !liveWorker?.paused" class="text-info">In progress…</span>
                   <span
                     v-if="liveResourcesText"
                     class="inline-flex items-center gap-0.5 tabular-nums"
@@ -328,7 +336,7 @@ const clusterLabel = computed(() =>
 
         <slot name="subline" />
 
-        <div v-if="liveStep || liveWorker" class="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+        <div v-if="liveStep || liveWorker || liveNote" class="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
           <!-- A stopped test shows where it is paused in place of its last step. -->
           <TestRowLiveStep v-if="liveStep && !liveWorker?.paused" :step="liveStep" class="max-w-full" />
           <TestRowLiveWorker
@@ -338,6 +346,26 @@ const clusterLabel = computed(() =>
             :project-name="projectName"
             @watch="emit('watch')"
           />
+          <span
+            v-else-if="liveNote === 'unshared'"
+            class="inline-flex items-center gap-1 text-xs text-muted"
+            data-testid="live-unshared"
+            @click.stop
+          >
+            <UIcon name="i-lucide-radio" class="size-3 shrink-0" />
+            Not shared live
+            <HelpHint topic="run.live-unshared" />
+          </span>
+          <span
+            v-else-if="liveNote === 'desktop'"
+            class="inline-flex items-center gap-1 text-xs text-muted"
+            data-testid="live-at-stop"
+            @click.stop
+          >
+            <UIcon name="i-lucide-eye" class="size-3 shrink-0" />
+            See its page at a stop
+            <HelpHint topic="run.live-desktop" />
+          </span>
         </div>
       </div>
     </div>

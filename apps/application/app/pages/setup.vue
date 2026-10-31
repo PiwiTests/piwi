@@ -8,7 +8,7 @@
  * place to decline a capability for this instance or to reconsider one.
  */
 import type { SetupStatus, SetupCapabilityId } from '#shared/handlers/setup-status';
-import type { CapabilityId, CapabilityState } from '#shared/capabilities';
+import { DESKTOP_HIDDEN_CAPABILITIES, type CapabilityId, type CapabilityState } from '#shared/capabilities';
 import type { AdminStats } from '~~/types/api';
 import { SETUP_CAPABILITIES, ladderGroupOf, type SetupCapabilityCopy } from '~/utils/setup-capabilities';
 
@@ -61,17 +61,19 @@ interface LadderRow extends SetupCapabilityCopy {
 }
 
 const rows = computed<LadderRow[]>(() =>
-  (status.value?.capabilities ?? []).map((c) => {
-    const copy = copyById.get(c.id);
-    return {
-      ...(copy as SetupCapabilityCopy),
-      active: c.active,
-      state: c.state,
-      decision: c.decision,
-      isNew: c.isNew,
-      isCore: CORE_IDS.has(c.id),
-    };
-  }),
+  (status.value?.capabilities ?? [])
+    .filter((c) => !(isDesktop && DESKTOP_HIDDEN_CAPABILITIES.has(c.id)))
+    .map((c) => {
+      const copy = copyById.get(c.id);
+      return {
+        ...(copy as SetupCapabilityCopy),
+        active: c.active,
+        state: c.state,
+        decision: c.decision,
+        isNew: c.isNew,
+        isCore: CORE_IDS.has(c.id),
+      };
+    }),
 );
 
 const activeCount = computed(() => rows.value.filter((r) => r.active).length);

@@ -733,6 +733,7 @@ data class RunSession(
     val workers: List<RunWorker>? = null,
     val ended: Boolean = false,
     val terminal: Boolean = false,
+    val runner: Boolean = false,
     val live: RunLive? = null,
 )
 

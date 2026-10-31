@@ -40,6 +40,7 @@ import {
   TAG_TO_ROLE,
   INPUT_TYPE_TO_ROLE,
   renderFailing,
+  framePath,
   type LocatorSnapshot,
   type FailedLocatorInfo,
 } from './locator-healing.js';
@@ -112,6 +113,7 @@ import {
   markPausesWrapped,
   NO_BREAKPOINTS,
   pauseGateFromTestInfo,
+  mayPause,
   pauseHere,
   pauseSkipReason,
   pauseState,
@@ -157,6 +159,7 @@ import {
   liveViewTestEnded,
   openLiveView,
 } from './live-view.js';
+import { trackCalls } from './live-call-log.js';
 import { guardScreencast } from './page-view.js';
 import type { LiveCall } from '@piwitests/core/live-view';
 import {
@@ -2265,19 +2268,19 @@ type CodePlace = { file: string; line: number; column: number };
 
 /**
  * Where an error happened in the test's code: the place the runner gives it, else the first frame of its stack in a
- * file of the project, not in a package, Node's own or this package's. Null for an error with no such frame (a test
- * timeout).
+ * file of the project, not in a package, Node's own or this package's, as an absolute path. `windows` reads the frames
+ * as Windows writes them. Null for an error with no such frame (a test timeout).
  */
-function errorPlace(error: unknown): CodePlace | null {
+export function errorPlace(error: unknown, windows: boolean = process.platform === 'win32'): CodePlace | null {
   const given = (error as { location?: Partial<CodePlace> } | undefined)?.location;
   if (typeof given?.file === 'string' && typeof given.line === 'number') {
     return { file: given.file, line: given.line, column: given.column ?? 0 };
   }
   const stack = (error as { stack?: unknown } | undefined)?.stack;
   for (const line of typeof stack === 'string' ? stack.split('\n') : []) {
-    const frame = /^\s*at\s+(?:.*?\s+\()?(?:file:\/\/)?(\/[^():]+|[A-Za-z]:[\\/][^():]+):(\d+):(\d+)\)?$/.exec(line);
-    if (!frame) continue;
-    const file = frame[1]!;
+    const frame = /^\s*at\s+(?:.*?\s+\()?(.+?):(\d+):(\d+)\)?$/.exec(line);
+    const file = frame ? framePath(frame[1]!, windows) : null;
+    if (!frame || !file || !(windows ? path.win32 : path.posix).isAbsolute(file)) continue;
     if (/[\\/]node_modules[\\/]/.test(file) || path.dirname(path.resolve(file)) === __dirname) continue;
     return { file, line: Number(frame[2]), column: Number(frame[3]) };
   }
@@ -3744,6 +3747,8 @@ export const piwiFixtures: Fixtures<
       startResourceLedger(playwright, workerInfo.workerIndex);
       observeApiRequests(playwright, apiCallRecorder);
       openLiveView(workerInfo);
+      // The selector of the locator call running, for the live view's call log.
+      if (liveViewOpen()) trackCalls(playwright);
       if (await openRunChannel(workerInfo, runControl)) watchCalls(playwright);
       try {
         await use();
@@ -3834,7 +3839,7 @@ export const piwiFixtures: Fixtures<
         });
       activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
-      liveViewTestBegan(testInfo.title, () => runningCall(testInfo));
+      liveViewTestBegan(testInfo.title, () => runningCall(testInfo), mayPause(pauseGateFromTestInfo(testInfo)));
       const showRunChannel = hideRunChannel();
       try {
         // The contexts a hook or an earlier test opened stop at this test's breakpoints too.

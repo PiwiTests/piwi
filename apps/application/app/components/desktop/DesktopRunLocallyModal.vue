@@ -1,13 +1,16 @@
 <script setup lang="ts">
 /**
  * Desktop shell only: the "run with options" dialog — first-time folder setup,
- * the full options form, the spec check and the exact command preview. Running
- * hands the plan to the app-wide local runs store and closes; progress streams
- * in the runs tray, so this dialog never holds a process hostage. Day-to-day
- * one-click runs bypass it entirely (the split button uses the saved options).
+ * the full options form, the spec check and the exact command preview. The
+ * form starts from the run button's options and applies to the run it starts
+ * alone: neither the button nor the project's defaults (those are in the
+ * project's Local folder settings) change. Running hands the plan to the
+ * app-wide local runs store and closes; progress streams in the runs tray, so
+ * this dialog never holds a process hostage.
  */
 import type { RetryCase } from '~/utils/retry-command';
-import { buildLocalRunPlan } from '~/utils/local-run-args';
+import { buildLocalRunPlan, type LocalRunOptions } from '~/utils/local-run-args';
+import type { SavedLocalRunOptions } from '~/composables/useDesktopLocalRuns';
 
 const props = defineProps<{
   /** Piwi project id owning the linked folder. */
@@ -15,6 +18,14 @@ const props = defineProps<{
   projectLabel?: string | null;
   /** The cases to run. */
   cases: RetryCase[];
+  /** What the run button says it runs; the dialog's title. */
+  label?: string;
+  /** What the Local runs tray calls the run. */
+  runTitle?: string | null;
+  /** The Piwi run the cases come from, which the tray compares the run's results with. */
+  sourceRunId?: number | null;
+  /** The run button's options, on top of the project's defaults: where the form starts. */
+  buttonOptions?: LocalRunOptions;
 }>();
 
 const open = defineModel<boolean>('open', { default: false });
@@ -29,31 +40,15 @@ const { playwrightMissing, checkEnv } = useDesktopEnvCheck(() => props.projectId
 
 const linked = computed(() => !!link.value?.exists);
 
-// The form edits the project's saved options directly — what runs from here is
-// what the split button's one-click run repeats next time.
-const options = computed({
-  get: () => store.getProjectOptions(props.projectId),
-  set: (value) => store.saveProjectOptions(props.projectId, value),
-});
-const mode = computed({
-  get: () => options.value.mode,
-  set: (value) => (options.value = { ...options.value, mode: value }),
-});
-const runMode = computed({
-  get: () => options.value.runMode,
-  set: (value) => (options.value = { ...options.value, runMode: value }),
-});
-const trace = computed({
-  get: () => options.value.trace,
-  set: (value) => (options.value = { ...options.value, trace: value }),
-});
-const repeatEach = computed({
-  get: () => options.value.repeatEach,
-  set: (value) => (options.value = { ...options.value, repeatEach: value }),
-});
-
-const modeItems = RETRY_MODE_ITEMS;
-const runModeItems = LOCAL_RUN_MODE_ITEMS;
+/** This run's options: the button's, each time the dialog opens, then whatever the form changes. */
+const options = ref<SavedLocalRunOptions>({ ...DEFAULT_LOCAL_RUN_OPTIONS });
+watch(
+  open,
+  (isOpen) => {
+    if (isOpen) options.value = { ...store.getProjectOptions(props.projectId), ...props.buttonOptions };
+  },
+  { immediate: true },
+);
 
 watch([open, () => link.value?.path, linked], () => {
   if (!open.value) return;
@@ -69,6 +64,9 @@ function run() {
     projectId: props.projectId,
     projectLabel: props.projectLabel,
     cases: props.cases,
+    title: props.runTitle,
+    sourceRunId: props.sourceRunId,
+    options: options.value,
   });
   open.value = false;
 }
@@ -79,7 +77,7 @@ function run() {
     <template #header>
       <div class="flex items-center gap-2 min-w-0">
         <UIcon name="i-lucide-monitor-play" class="size-5 text-primary shrink-0" />
-        <h2 class="text-base font-semibold truncate">Run tests locally</h2>
+        <h2 class="text-base font-semibold truncate">{{ label ?? 'Run tests locally' }}</h2>
         <UBadge color="neutral" variant="subtle" size="sm"
           >{{ cases.length }} test{{ cases.length === 1 ? '' : 's' }}</UBadge
         >
@@ -122,24 +120,16 @@ function run() {
             </UButton>
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
-            <UFormField label="Select tests by" name="mode">
-              <USelect v-model="mode" :items="modeItems" class="w-full" />
-            </UFormField>
-            <UFormField label="Browser" name="runMode">
-              <USelect v-model="runMode" :items="runModeItems" class="w-full" />
-            </UFormField>
-            <UFormField
-              label="Repeat each"
-              name="repeatEach"
-              description="Run every test N times — flake reproduction."
-            >
-              <UInput v-model.number="repeatEach" type="number" min="1" max="1000" class="w-full" />
-            </UFormField>
-            <UFormField label="Trace" name="trace" description="Force trace recording (--trace=on).">
-              <USwitch v-model="trace" />
-            </UFormField>
-          </div>
+          <DesktopRunOptionsFields v-model="options" />
+          <p class="text-xs text-muted">
+            For this run only. The project's defaults are in
+            <NuxtLink
+              :to="`/projects/${projectId}?tab=settings&section=local-folder`"
+              class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+              @click="open = false"
+              >its Local folder settings</NuxtLink
+            >.
+          </p>
 
           <UAlert
             v-if="playwrightMissing"

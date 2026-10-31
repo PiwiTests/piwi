@@ -261,14 +261,11 @@ const showLocatorFix = computed(
   () => isLocatorFailure.value && locatorHealingHasData.value && !capHidden('locator-healing'),
 );
 
-// CI re-run for the cluster this failure belongs to, for the Verify section.
+// CI re-run of this test, or of its cluster's tests, for the Verify section, with the cluster's last re-run.
 const { data: rerunInfo, refresh: refreshRerun } = await useAsyncData<RerunInfo | null>(
   `test-run-case-rerun-${testCaseId}`,
-  () => {
-    const id = failureCluster.value?.id;
-    return id ? requestFetch<RerunInfo>(`/api/failure-clusters/${id}/rerun`) : Promise.resolve(null);
-  },
-  { default: (): RerunInfo | null => null, watch: [() => failureCluster.value?.id] },
+  () => requestFetch<RerunInfo>(`/api/test-run-cases/${testCaseId}/rerun`).catch(() => null),
+  { default: (): RerunInfo | null => null },
 );
 // "Fixed before" for the cluster this failure belongs to.
 const { data: fixedBeforeData, refresh: refreshFixedBefore } = await useAsyncData<FixedBeforeMatch[]>(
@@ -327,10 +324,24 @@ const { applyingId, applyTriage } = useApplyClusterTriage({
   onApplied: () => Promise.all([refresh(), refreshFixedBefore()]),
 });
 
-const { rerunning, triggerRerun } = useCiRerun(() => failureCluster.value?.id ?? null, refreshRerun);
+const { rerunning: rerunningTest, triggerRerun: triggerTestRerun } = useCiRerun(
+  `/api/test-run-cases/${testCaseId}/rerun`,
+  refreshRerun,
+  'This test is re-running in CI.',
+);
+const { rerunning, triggerRerun } = useCiRerun(
+  () => (failureCluster.value ? `/api/failure-clusters/${failureCluster.value.id}/rerun` : null),
+  refreshRerun,
+  "The cluster's tests are re-running in CI.",
+);
 
-/** The Verify section shows when a CI re-run is configured, or in the desktop shell. */
-const showVerify = computed(() => Boolean(rerunInfo.value?.available) || desktopBridge.value);
+/**
+ * The Verify section shows when a CI re-run is configured, to a viewer who may start one or once a re-run happened; the
+ * desktop app re-runs the test from the navbar.
+ */
+const showVerify = computed(
+  () => Boolean(rerunInfo.value?.available) && (canRerun.value || Boolean(rerunInfo.value?.lastDispatch)),
+);
 
 /** Reproduce shows for a failing execution once its recipe is available. */
 const showReproduce = computed(() => Boolean(verdict.value) && Boolean(reproduceData.value?.reproduce?.steps?.length));
@@ -364,9 +375,10 @@ const reproduceSummary = computed(() =>
     Boolean(reproduceData.value?.bisect?.available),
   ),
 );
-const verifySummary = computed(() =>
-  verifySectionSummary(retryCommand.value ?? '', Boolean(rerunInfo.value?.available), 'Re-run the failing test'),
-);
+const verifySummary = computed(() => {
+  if (!canRerun.value) return 'When CI last re-ran it';
+  return failureCluster.value ? 'Re-run this test, or every test of its cluster, in CI' : 'Re-run this test in CI';
+});
 
 // ── Header: identity, exceptional badges ─────────────────────────────────────
 // Playwright test marks only — `piwi:` annotations are ownership, not marks.
@@ -453,6 +465,7 @@ const canQuarantine = computed(() => can('quarantine:write', executionProjectId.
 const canTriage = computed(() => can('triage:write', executionProjectId.value));
 const canCreateIssue = computed(() => can('issue:create', executionProjectId.value));
 const canEditLinks = computed(() => can('link:write', executionProjectId.value));
+const canRerun = computed(() => can('run:control', executionProjectId.value));
 
 // ── Quarantine ──────────────────────────────────────────────────────────────
 const { quarantineOne, releaseOne } = useQuarantine(() => executionProjectId.value);
@@ -724,7 +737,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
   },
   setClusterStatus,
   quarantine: () => toggleQuarantine(),
-  rerunInCi: () => triggerRerun(),
+  rerunInCi: () => triggerTestRerun(),
   whatChanged: () => {
     if (failureCluster.value) navigateTo(`/failure-clusters/${failureCluster.value.id}`);
   },
@@ -762,6 +775,17 @@ const { handle: handleNextStepAction } = useNextStepActions({
         </template>
         <template #right>
           <div class="flex items-center gap-1 shrink-0 min-w-0">
+            <!-- Desktop app only: runs this test again in the project's linked folder -->
+            <DesktopRunLocallyButton
+              v-if="testCase?.filePath"
+              class="mr-2"
+              :project-id="testCase?.testRun?.project?.id"
+              :project-label="testCase?.testRun?.project?.label ?? testCase?.testRun?.project?.name"
+              :cases="retryCases"
+              label="Re-run this test"
+              :run-title="testLabel(testCase)"
+              :source-run-id="testCase?.testRun?.id"
+            />
             <NuxtLink
               v-if="testCase?.testCaseId"
               :to="`/test-cases/${testCase.testCaseId}`"
@@ -1049,28 +1073,37 @@ const { handle: handleNextStepAction } = useNextStepActions({
               />
             </template>
 
-            <!-- Re-run in CI, or run locally in the desktop shell -->
+            <!-- Re-run this test, or its cluster's tests, in CI -->
             <template v-if="showVerify" #verify>
               <div class="flex flex-wrap items-center gap-2">
                 <UButton
-                  v-if="rerunInfo?.available"
+                  v-if="canRerun"
                   size="xs"
-                  color="primary"
-                  variant="soft"
+                  color="neutral"
+                  variant="outline"
                   icon="i-lucide-refresh-cw"
+                  title="Dispatches CI to run this test at its line, in its Playwright project, on the branch of its run"
+                  :loading="rerunningTest"
+                  @click="triggerTestRerun"
+                >
+                  Re-run this test in CI
+                </UButton>
+                <UButton
+                  v-if="canRerun && failureCluster"
+                  size="xs"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-refresh-cw"
+                  title="Dispatches CI to run each test of this failure's cluster at the line of its latest failure"
                   :loading="rerunning"
                   @click="triggerRerun"
                 >
-                  Re-run in CI
+                  Re-run the cluster in CI
                 </UButton>
-                <DesktopRunLocallyButton
-                  :project-id="testCase?.testRun?.project?.id"
-                  :project-label="testCase?.testRun?.project?.label ?? testCase?.testRun?.project?.name"
-                  :cases="retryCases"
-                />
                 <ClientOnly>
                   <span v-if="rerunInfo?.lastDispatch" class="text-xs text-muted">
-                    Last re-run {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}
+                    Last re-run{{ lastRerunScope(rerunInfo.lastDispatch) }}
+                    {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}
                     <template v-if="rerunInfo.lastDispatch.byName">by {{ rerunInfo.lastDispatch.byName }}</template>
                   </span>
                 </ClientOnly>

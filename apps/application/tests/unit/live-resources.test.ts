@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
@@ -14,6 +12,7 @@ import {
   sanitizeLiveResources,
 } from '#shared/live-resources';
 import type { SeriesPoint, WireLiveResources } from '#shared/types';
+import { migrateToLatest } from './temp-db';
 
 /**
  * A live run's resources: the posts a reporter sends while someone watches
@@ -205,9 +204,7 @@ describe('POST /api/test-runs/:id/live-resources', () => {
 
   beforeEach(async () => {
     db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     state.db = db;
   });
 

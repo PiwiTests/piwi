@@ -13,7 +13,8 @@ import { terminalRunSkip } from '../src/internal/config/editors.js';
 /**
  * A run started in a terminal, through the built package: no `PIWI_RUN_CHANNEL`, a fake editor service listed in a
  * folder of discovery files (`PIWI_EDITORS_DIR`) whose workspace holds the run. The run follows it, is steered and
- * ends there; it follows none when told not to, under CI, with no terminal, or when the only files are another
+ * ends there; so does one an editor's test runner starts (`PW_TEST_REPORTER` naming its reporter file), which says so.
+ * It follows none when told not to, under CI, with no terminal nor test runner, or when the only files are another
  * machine's or another user's.
  */
 
@@ -94,6 +95,7 @@ async function run(env: NodeJS.ProcessEnv): Promise<{ output: string; opened: Co
     'PIWI_RUN_REF',
     'PIWI_PAUSE_AT',
     'PIWI_EDITOR',
+    'PW_TEST_REPORTER',
   ]) {
     delete base[name];
   }
@@ -152,6 +154,8 @@ beforeAll(async () => {
     if (marker) lines[marker] = i + 1;
   });
   write('tests/a.spec.cjs', SPEC);
+  // The reporter an editor's test runner adds through PW_TEST_REPORTER: it reports nothing here.
+  write('ide-reporter.cjs', 'module.exports = class { printsToStdio() { return false; } };\n');
   write(
     'fixture.cjs',
     `const { test: base } = require('@playwright/test');
@@ -200,9 +204,22 @@ describe('a run started in a terminal', () => {
     expect(stops.map((s) => s.place.line)).toEqual([lines.steered, lines.ended]);
     const ends = opened[0]!.heard.filter((m) => m.type === 'test-end').map((m) => m.type === 'test-end' && m.status);
     expect(ends).toEqual(['passed', 'skipped']);
+    // A terminal's run is no test runner's.
+    expect(attach).not.toHaveProperty('runner');
   }, 60_000);
 
-  it('follows none with PIWI_EDITOR=off, under CI, or with no terminal unless PIWI_EDITOR=on', async () => {
+  it('follows the editor from its own test runner, whose output goes to no terminal, and says so', async () => {
+    listEditors({ [`${process.pid}.json`]: discovery() });
+    const { output, opened } = await run({ PW_TEST_REPORTER: path.join(project, 'ide-reporter.cjs') });
+    expect(output).toContain(`Following this run in Test Editor (pid ${process.pid})`);
+    expect(opened).toHaveLength(1);
+    const [attach] = opened[0]!.heard;
+    expect(attach).toMatchObject({ type: 'run-attach', ref: expect.stringMatching(/^terminal-\d+-\d+$/), runner: true });
+    const stops = opened[0]!.heard.filter((m): m is Extract<RunToHub, { type: 'stopped' }> => m.type === 'stopped');
+    expect(stops.map((s) => s.place.line)).toEqual([lines.steered, lines.ended]);
+  }, 60_000);
+
+  it('follows none with PIWI_EDITOR=off, under CI, or with no terminal nor test runner unless PIWI_EDITOR=on', async () => {
     listEditors({ [`${process.pid}.json`]: discovery() });
     for (const env of [{ PIWI_EDITOR: 'off' }, { PIWI_EDITOR: 'on', CI: 'true' }, {}]) {
       const { output, opened } = await run(env);
@@ -271,5 +288,19 @@ describe('a run started in a terminal', () => {
     }
     expect(gate({}, ['node', 'cli.js', 'merge-reports', 'blob-report'])).toBe('it merges reports, running no test');
     expect(terminalRunSkip({ env: {}, argv: [], terminal: false })).toBe('its output goes to no terminal');
+  });
+
+  it('looks for an editor from a test runner that adds its reporter file, as a terminal’s run does', () => {
+    const gate = (env: NodeJS.ProcessEnv) => terminalRunSkip({ env, argv: ['node', 'cli.js', 'test'], terminal: false });
+    expect(gate({ PW_TEST_REPORTER: '/ide/plugins/javascript/playwright-reporter.js' })).toBeNull();
+    expect(gate({ PW_TEST_REPORTER: 'C:\\ide\\plugins\\playwright-reporter.js' })).toBeNull();
+    // One of Playwright's own reporters, named: no test runner of an editor.
+    expect(gate({ PW_TEST_REPORTER: 'dot' })).toBe('its output goes to no terminal');
+    expect(gate({ PW_TEST_REPORTER: ' ' })).toBe('its output goes to no terminal');
+    // The rest of the gate holds for it too.
+    const runner = { PW_TEST_REPORTER: '/ide/playwright-reporter.js' };
+    expect(gate({ ...runner, PIWI_EDITOR: 'off' })).toBe('PIWI_EDITOR=off');
+    expect(gate({ ...runner, CI: 'true' })).toBe('running under CI');
+    expect(gate({ ...runner, PIWI_ORIGIN: 'desktop' })).toBe('a launcher started the run');
   });
 });

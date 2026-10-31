@@ -3,23 +3,8 @@ import { notificationDeliveries, notificationChannels, subscriptions, users } fr
 import { sendEmail, renderNotificationEmail, renderDigestEmail, isEmailConfigured, type DigestItem } from '../email';
 import { decryptSecret, getEncryptionKey } from '../crypto';
 import { safeFetch } from '../safe-fetch';
-import type {
-  ClusterFixedPayload,
-  ClusterRegressedPayload,
-  NotificationEvent,
-  NotificationPayload,
-  RunFinishedPayload,
-  ClusterNewPayload,
-  BugLooksFixedPayload,
-  EnvironmentIncidentPayload,
-} from '#shared/notification-events';
-import {
-  clusterOutcome,
-  renderEventSubject,
-  notificationTargetPath,
-  failureTargetPath,
-  TOP_FAILURES_LIMIT,
-} from '#shared/notification-events';
+import type { NotificationEvent, NotificationPayload } from '#shared/notification-events';
+import { renderEventSubject } from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 import { claimOutboxRows, nextAttempt, OUTBOX_MAX_ATTEMPTS, OUTBOX_SWEEPABLE_STATUSES } from '../outbox';
 import { REPORT_READY_EVENT, type ReportReadyPayload } from '#shared/notification-events';
@@ -33,13 +18,11 @@ import {
 } from '../reports/deliver';
 import { deliveredShareUrl } from '../reports/context';
 import { teamsDigestMessage, teamsEventMessage, teamsReportMessage } from './teams';
-import { slackEscape, slackLink } from './slack';
+import { slackDigestMessage, slackEventMessage } from './slack-message';
 import { postSlackMessage, slackRetryAfterMs, storedSlackDestination } from './slack-api';
 import { emailDestinationVerified } from './email-verified';
 
 const MAX_ATTEMPTS = OUTBOX_MAX_ATTEMPTS;
-/** Slack digest messages list at most this many items; the rest are counted. */
-const SLACK_DIGEST_MAX_ITEMS = 20;
 
 const siteBase = () => process.env.PIWI_SITE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
 
@@ -106,91 +89,11 @@ async function postToTeams(config: Record<string, unknown>, body: Record<string,
 }
 
 async function sendToSlack(config: Record<string, unknown>, event: NotificationEvent, payload: NotificationPayload) {
-  const text = slackEscape(renderEventSubject(event, payload));
-  let emoji = ':bell:';
-  if (event.startsWith('run.failed')) emoji = ':x:';
-  else if (event === 'run.interrupted') emoji = ':warning:';
-  else if (event === 'cluster.new') emoji = ':bug:';
-  else if (event === 'cluster.fixed') emoji = ':white_check_mark:';
-  else if (event === 'cluster.regressed') emoji = ':rotating_light:';
-  else if (event === 'flakiness.spike') emoji = ':game_die:';
-  else if (event === 'bug.looks_fixed') emoji = ':white_check_mark:';
-  else if (event === 'environment.incident') emoji = ':construction:';
-
-  const base = siteBase();
-  // Slack section text is capped at 3000 chars; keep excerpts short, then escape them.
-  const slackExcerpt = (s: string) => slackEscape(s.length > 600 ? s.slice(0, 600) + '…' : s);
-
-  const blocks: Record<string, unknown>[] = [{ type: 'section', text: { type: 'mrkdwn', text: `${emoji} *${text}*` } }];
-
-  if (event.startsWith('run.')) {
-    const p = payload as RunFinishedPayload;
-    for (const f of p.topFailures ?? []) {
-      const path = failureTargetPath(f);
-      const link = path ? slackLink(`${base}${path}`, f.title) : slackEscape(f.title);
-      const headline = f.headline ? `\n${slackExcerpt(f.headline)}` : '';
-      const excerpt = f.errorExcerpt ? `\n\`\`\`${slackExcerpt(f.errorExcerpt)}\`\`\`` : '';
-      blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `• *${link}*${headline}${excerpt}` } });
-    }
-  } else if (event === 'cluster.new') {
-    const p = payload as ClusterNewPayload;
-    const parts: string[] = [];
-    if (p.title && p.title !== p.signature) parts.push(`*${slackEscape(p.title)}*`);
-    parts.push(`\`${slackExcerpt(p.signature)}\``);
-    if (p.affectedCases) parts.push(`${p.affectedCases} affected test${p.affectedCases === 1 ? '' : 's'}`);
-    if (p.sampleErrorExcerpt) parts.push(`\`\`\`${slackExcerpt(p.sampleErrorExcerpt)}\`\`\``);
-    if (p.knownIssue) parts.push(`Tracked in ${slackLink(p.knownIssue.url, p.knownIssue.key)}`);
-    parts.push(slackLink(`${base}/failure-clusters/${p.clusterId}`, 'View cluster'));
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
-  } else if (event === 'cluster.fixed' || event === 'cluster.regressed') {
-    const p = payload as ClusterFixedPayload | ClusterRegressedPayload;
-    const parts: string[] = [p.title ? slackEscape(p.title) : `\`${slackExcerpt(p.signature)}\``];
-    const { triageNote } = clusterOutcome(event, p);
-    if (triageNote) parts.push(slackEscape(triageNote));
-    if (p.knownIssue) parts.push(`Tracked in ${slackLink(p.knownIssue.url, p.knownIssue.key)}`);
-    parts.push(slackLink(`${base}/failure-clusters/${p.clusterId}`, 'View cluster'));
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
-  } else if (event === 'environment.incident') {
-    const p = payload as EnvironmentIncidentPayload;
-    const parts = [
-      slackEscape(p.reason),
-      'Left out of flaky scores, baselines, fix verification and the gate (inconclusive).',
-    ];
-    parts.push(slackLink(`${base}/test-runs/${p.runId}`, 'View run'));
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: parts.join('\n') } });
-  } else if (event === 'bug.looks_fixed') {
-    const p = payload as BugLooksFixedPayload;
-    for (const t of p.tests.slice(0, TOP_FAILURES_LIMIT)) {
-      const link = slackLink(`${base}/test-run-cases/${t.executionId}`, t.title);
-      blocks.push({
-        type: 'section',
-        text: { type: 'mrkdwn', text: `• *${link}* passes: remove \`test.fail()\` in \`${slackEscape(t.filePath)}\`` },
-      });
-    }
-  }
-
-  await postToSlack(config, { text: `${emoji} *${text}*`, blocks });
+  await postToSlack(config, slackEventMessage(event, payload, siteBase()));
 }
 
 async function sendSlackDigest(config: Record<string, unknown>, items: DigestItem[]) {
-  const base = siteBase();
-  const header = `:bell: Piwi digest — ${items.length} notification${items.length === 1 ? '' : 's'}`;
-  const blocks: Record<string, unknown>[] = [{ type: 'section', text: { type: 'mrkdwn', text: `*${header}*` } }];
-
-  for (const { event, payload } of items.slice(0, SLACK_DIGEST_MAX_ITEMS)) {
-    const line = renderEventSubject(event, payload);
-    const path = notificationTargetPath(event, payload);
-    const text = path ? `• ${slackLink(`${base}${path}`, line)}` : `• ${slackEscape(line)}`;
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text } });
-  }
-  if (items.length > SLACK_DIGEST_MAX_ITEMS) {
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: `…and ${items.length - SLACK_DIGEST_MAX_ITEMS} more` },
-    });
-  }
-
-  await postToSlack(config, { text: header, blocks });
+  await postToSlack(config, slackDigestMessage(items, siteBase()));
 }
 
 async function sendToWebhook(config: Record<string, unknown>, event: NotificationEvent, payload: NotificationPayload) {

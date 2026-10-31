@@ -1,3 +1,4 @@
+import { resolveBrowserName } from '#shared/browser-name';
 import { projects, testRuns, testRunsCases, testSuites, networkRequests } from '../database/schema';
 import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import {
@@ -12,6 +13,7 @@ import {
   countDroppedConsoleEntries,
   capConsoleLogs,
   capErrorText,
+  hiddenErrorText,
   capSourceFrames,
   capText,
   sanitizeWebVitals,
@@ -65,6 +67,7 @@ import {
   type TestCoverageCase,
 } from './coverage';
 import { sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
+import { hideTypedText } from '@piwitests/core/mask';
 import { sanitizeLocatorPages } from './locator-pages';
 import type { LocatorPageUse } from '@piwitests/core/wire';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
@@ -159,15 +162,6 @@ export interface RunCaseInput {
   expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
-}
-
-function resolveBrowserName(browser: unknown): string | null {
-  if (typeof browser === 'string') return browser;
-  if (browser && typeof browser === 'object') {
-    const b = browser as Record<string, unknown>;
-    if (typeof b.projectName === 'string') return b.projectName;
-  }
-  return null;
 }
 
 /**
@@ -431,6 +425,8 @@ export async function persistRunCases(
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
+    // Hidden once for all it is kept as; its fingerprint read the error as it came.
+    const error = hiddenErrorText(c.error);
     const fingerprint = fingerprintResults[i] ?? null;
     const caseId = resolved.caseIds[i];
 
@@ -480,10 +476,10 @@ export async function persistRunCases(
       if (pending) {
         pending.count++;
       } else {
-        // The fingerprint is computed from the raw error above; only storage is capped.
+        // The fingerprint was computed from the error as it came; its secrets hidden leave it the same.
         pendingClusters.set(fingerprint.fingerprint, {
           fp: fingerprint,
-          sampleError: capText(c.error, limits.sampleErrorChars)!,
+          sampleError: capText(error, limits.sampleErrorChars)!,
           count: 1,
         });
       }
@@ -514,7 +510,7 @@ export async function persistRunCases(
       status: normalizeTestCaseStatus(c.status),
       duration: c.duration ?? null,
       timeout: c.timeout ?? null,
-      error: capErrorText(c.error, limits.errorChars),
+      error: capErrorText(error, limits.errorChars),
       retries: c.retries ?? 0,
       repeatEachIndex: resolveRepeatEachIndex(c.repeatEachIndex),
       attempts: capArray(normalizeAttemptStatuses(c.attempts), 30),
@@ -522,7 +518,7 @@ export async function persistRunCases(
       column: c.column,
       steps: cappedSteps,
       stepEvents: capArray(c.stepEvents, limits.stepEvents),
-      slowestStep: c.slowestStep ?? null,
+      slowestStep: typeof c.slowestStep === 'string' ? hideTypedText(c.slowestStep) : null,
       slowestStepDuration: c.slowestStepDuration ?? null,
       wastedTimeMs: c.wastedTimeMs ?? null,
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,

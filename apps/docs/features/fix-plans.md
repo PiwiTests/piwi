@@ -18,11 +18,11 @@ The same plan is reachable three ways:
 - **As Markdown**: the REST API returns the same rendering as plain text, so an export or a script can drop it straight into an issue (see the [API docs](https://piwitests.dev/demo/docs)).
 - **For agents** — the `get_fix_plan` [MCP tool](/reference/mcp-tools#get_fix_plan) returns the structured plan, so a coding agent gets in one call what a person reads on the card.
 
-The plan also names a Playwright command scoped to the affected spec files and (up to five) test titles, and Piwi records the fix once they pass.
+The plan also names one Playwright command for the affected tests, by file and title in the projects they failed in, so a moved line still matches; the bisect and every re-run use the same tests, and Piwi records the fix once they pass.
 
 ## The next step
 
-Both the cluster and the [execution](./evidence#one-execution-diagnosis-first) page lead with a single **Next** line — one action chosen for you, with a word on why, not a row of equal buttons. A policy picks it from what the page knows, first match wins: open a **blocking** failure, **open the run** when the run stopped before the test, **mark resolved** a verified-but-open cluster (unless the diagnosis verified the fix and its patch still applies at the fix's commit: the patch comes first, with *Mark resolved* in its menu) or one whose ticket is Done and that stopped failing, **replace the locator** when [healing](./locator-healing) has one, **apply the diagnosed patch** (or follow the diagnosis when its patch is stale, unchecked or missing), **see what changed** when a fix regressed, **compare attempts** on a retry pass, **re-run in CI** for a crash or failed navigation, **diagnose with AI**, else **reproduce locally**. A step that copies a change says where it comes from: the AI diagnosis with its confidence (and its summary when **Most likely** shows another explanation), or locator healing and what it captured the locator from. For a code change the line shows the change itself, up to six lines of the patch or the failing and the recommended locator, with how many lines it leaves out. **Copy apply command** copies `git apply` with the whole patch inline, to run at the repository root (bash, zsh, Git Bash) (**Download .patch** is the portable route), **Copy locator** copies the recommended locator (the primary without a line to rewrite), and **Full patch** opens the whole patch in the Diagnosis section below. Where the fix is a code change, the step's **···** menu also holds **Copy retry command**; every other action lives in the toolbox below.
+The cluster and the [execution](./evidence#one-execution-diagnosis-first) page lead with a single **Next** line — one action chosen for you, with a word on why, not a row of equal buttons. A policy picks it from what the page knows, first match wins: open a **blocking** failure, **open the run** when the run stopped before the test, **mark resolved** a verified-but-open cluster (unless the diagnosis verified the fix and its patch still applies at the fix's commit: the patch comes first, with *Mark resolved* in its menu) or one whose ticket is Done and that stopped failing, **replace the locator** when [healing](./locator-healing) has one, **apply the diagnosed patch** (or follow the diagnosis when its patch is stale, unchecked or missing), **see what changed** when a fix regressed, **compare attempts** on a retry pass, **re-run in CI** for a crash or failed navigation (with [`run:control`](/operate/project-access#what-each-role-can-do)), **diagnose with AI**, else **reproduce locally**. A step that copies a change says where it comes from: the AI diagnosis with its confidence (and its summary when **Most likely** shows another explanation), or locator healing and what it captured the locator from. For a code change the line shows the change itself, up to six lines of the patch or the failing and the recommended locator, with how many lines it leaves out. **Copy apply command** copies `git apply` with the whole patch inline, to run at the repository root (bash, zsh, Git Bash) (**Download .patch** is the portable route), **Copy locator** copies the recommended locator (the primary without a line to rewrite), and **Full patch** opens the whole patch in the Diagnosis section below. Where the fix is a code change, the step's **···** menu also holds **Copy retry command**; every other action lives in the toolbox below.
 
 <figure>
   <img src="/screenshots/next-step-change.png" alt="The Next line of a failure cluster: Replace the locator, the edit it copies as a diff under its call site, where the edit comes from, and the Copy apply command button">
@@ -37,7 +37,7 @@ Both pages carry one **More ways to fix** toolbox, below the evidence and above 
 
 The fix plan also hands back the two things you do next: a copy-paste recipe that reproduces the failure locally, and a generated `git bisect` that finds the commit that broke it. Both sit in the toolbox's **Reproduce and bisect** section, and travel with the plan through `?format=markdown` and the `get_fix_plan` MCP tool. The exact test command leads; **Show the full recipe ▸** unfolds the checkout and installs, and the bisect follows under **Find the breaking commit**.
 
-The **recipe** is the local reproduction, in order: check out the commit the run failed on (`git switch --detach <sha>`), install dependencies, pin Playwright to the run's version, install the browser it ran on, and run exactly the failing test. Each part degrades on its own — no recorded commit skips the checkout and says so, an unknown version drops the pin — and the run's environment is listed beside it. Every command is `git`, `npm` or `npx`, identical on Linux, macOS and Windows; the dashboard still offers **Linux / macOS** and **Windows (PowerShell)** tabs.
+The **recipe** is the local reproduction, in order: check out the commit the run failed on (`git switch --detach <sha>`), install dependencies, pin Playwright to the run's version, install the browser it ran on, and run exactly the failing test. Each part degrades on its own (no recorded commit skips the checkout, an unknown version drops the pin), and the run's environment is listed beside it. Every command is `git`, `npm` or `npx`, identical on every system, in **Linux / macOS** and **Windows (PowerShell)** tabs.
 
 ```bash
 # Check out the failing commit
@@ -49,14 +49,15 @@ npm install -D @playwright/test@1.52.0
 # Install the browser
 npx playwright install chromium
 # Run the failing test
-npx playwright test "tests/admin/users.spec.ts" --project="Chromium"
+npx playwright test "tests/admin/users.spec.ts:42" --project="Chromium"
 ```
 
-The **bisect** walks the commits between the last green run and the failing one, re-running the test at each step — a non-zero exit marks a commit bad — until it names the first commit that broke it, then `git bisect reset` returns you to where you started.
+The **bisect** walks the commits between the last
+green run and the failing one, re-running the test at each step — a non-zero exit marks a commit bad — until it names the first commit that broke it, then `git bisect reset` returns you to where you started.
 
 ```bash
 git bisect start <failing-commit> <last-green-commit>
-git bisect run npx playwright test "tests/admin/users.spec.ts" -g "Users table paginates 25 rows per page"
+git bisect run npx playwright test "tests/admin/users.spec.ts" -g "Users table paginates 25 rows per page" --project="Chromium"
 git bisect reset
 ```
 

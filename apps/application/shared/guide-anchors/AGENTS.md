@@ -16,7 +16,7 @@ entry shape and the meaning of each field are documented in `index.d.mts`.
 - **One element per anchor.** Its `data-tour` value is static, kebab-case and names the content. It is set on exactly
   one element in one component: a template's `data-tour="…"`, or a static `'data-tour': '…'` key the component hands
   on (an item of a Nuxt UI menu, a `NavbarActions` action's `attrs`, a static `attrs` map spread with `v-bind`, as
-  `settings/ai.vue`'s `ROLE_META` and `Toolbox.vue`'s `SECTION_ANCHORS`). Never a bound `:data-tour` or a computed
+  `Toolbox.vue`'s `SECTION_ANCHORS`). Never a bound `:data-tour` or a computed
   string: the source test reads literals. An element can carry both `data-tour` and the harness's `data-shot`.
 - **A demo-only anchor (`requires.demo`) is set in a component under `app/components/demo/`.**
 - **`pages` lists the patterns of `app/pages` it renders on, the main one first**, or `['*']` alone for the layout and

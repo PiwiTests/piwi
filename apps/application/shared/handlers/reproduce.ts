@@ -26,7 +26,7 @@ import {
   type ReproRecipe,
 } from '#shared/reproduce';
 import { commitUrl } from '#shared/scm-urls';
-import { buildRetryCommand, type RetryCase } from '#shared/retry-command';
+import { buildRerunCommand, type RetryCase } from '#shared/retry-command';
 import type { BrowserConfig } from '#shared/types';
 import type { DrizzleDB } from './db';
 
@@ -172,7 +172,7 @@ export async function buildExecutionReproduce(db: DrizzleDB, executionId: number
   const cases: RetryCase[] = [
     { filePath: row.filePath, title: row.title, line: row.line, projectName: browser?.projectName ?? null },
   ];
-  const verifyCommand = buildRetryCommand(cases, { mode: 'file-line' }) || 'npx playwright test';
+  const verifyCommand = buildRerunCommand(cases);
 
   return computeReproduceContext(db, {
     runId: row.testRunId,

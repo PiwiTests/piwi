@@ -1,0 +1,335 @@
+/* The stage the cut is drawn on, 1920 × 1080 CSS pixels (a 4K cut renders it at device scale 2): Piwi's dark
+   background, the windows cut from the master in frames of the stage's own, the pointer, the key strip, the chapter's
+   label, the cards, the subtitle plate and the contact sheet. Everything moves from what `stage.js` is given per
+   frame: nothing here animates on its own. */
+:root {
+  --violet: #7c3aed;
+  --violet-light: #a78bfa;
+  --teal: #2fd9ae;
+  --navy: #0d1d47;
+  --ink: #0a0d1a;
+  --text: #f4f3ff;
+  --muted: #b9b6d3;
+  --sans: 'Inter', 'Inter Variable', system-ui, 'DejaVu Sans', sans-serif;
+  --mono: 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: var(--ink);
+  font-family: var(--sans);
+  color: var(--text);
+}
+
+html.plate,
+html.plate body,
+html.plate #stage {
+  background: transparent;
+}
+
+#stage {
+  position: relative;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+}
+
+#backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(1100px 760px at 12% 8%, rgb(124 58 237 / 0.34), transparent 70%),
+    radial-gradient(900px 680px at 92% 96%, rgb(47 217 174 / 0.16), transparent 70%),
+    radial-gradient(1600px 1000px at 60% 40%, rgb(13 29 71 / 0.9), transparent 80%), var(--ink);
+}
+
+.window {
+  position: absolute;
+  overflow: hidden;
+  background: #111426;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  box-shadow:
+    0 24px 70px rgb(0 0 0 / 0.55),
+    0 6px 18px rgb(0 0 0 / 0.35);
+}
+
+.window .bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  padding: 0 0.9em;
+  background: linear-gradient(#1b1f38, #161a30);
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.window .bar::before {
+  content: '';
+  width: 0.55em;
+  height: 0.55em;
+  border-radius: 50%;
+  background: var(--teal);
+  opacity: 0.85;
+}
+
+.window canvas {
+  position: absolute;
+  left: 0;
+}
+
+#rings {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+}
+
+.ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 4px solid var(--violet-light);
+  box-shadow: 0 0 18px rgb(167 139 250 / 0.6);
+}
+
+#pointer {
+  position: absolute;
+  z-index: 101;
+  left: 0;
+  top: 0;
+  transform-origin: 3px 2px;
+  filter: drop-shadow(0 3px 5px rgb(0 0 0 / 0.55));
+}
+
+#pointer path {
+  fill: #fff;
+  stroke: #15132b;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+
+#chapter {
+  position: absolute;
+  z-index: 102;
+  left: 40px;
+  top: 34px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 18px 9px 10px;
+  border-radius: 999px;
+  background: rgb(10 13 26 / 0.72);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  font-size: 21px;
+  font-weight: 600;
+  backdrop-filter: blur(6px);
+}
+
+#chapter .number {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--violet);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+#fast {
+  position: absolute;
+  z-index: 102;
+  right: 40px;
+  top: 34px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: rgb(10 13 26 / 0.72);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  font: 600 20px var(--mono);
+  color: var(--teal);
+}
+
+#keys {
+  position: absolute;
+  z-index: 102;
+  right: 44px;
+  bottom: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 760px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: rgb(10 13 26 / 0.84);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+}
+
+#keys kbd {
+  min-width: 44px;
+  padding: 6px 12px;
+  border-radius: 9px;
+  border: 1px solid rgb(255 255 255 / 0.25);
+  border-bottom-width: 3px;
+  background: rgb(255 255 255 / 0.08);
+  font: 600 22px var(--mono);
+  text-align: center;
+}
+
+#keys kbd.agent {
+  border-color: rgb(47 217 174 / 0.6);
+  color: var(--teal);
+}
+
+#keys .plus {
+  color: var(--muted);
+  font-size: 20px;
+}
+
+#keys .label {
+  margin-left: 6px;
+  font: 500 21px var(--mono);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card {
+  position: absolute;
+  z-index: 200;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 44px;
+  background:
+    radial-gradient(1000px 700px at 30% 30%, rgb(124 58 237 / 0.4), transparent 70%),
+    radial-gradient(800px 600px at 75% 80%, rgb(47 217 174 / 0.18), transparent 70%), var(--ink);
+  opacity: 0;
+}
+
+.card img {
+  height: 150px;
+}
+
+.card .line {
+  margin: 0;
+  max-width: 1300px;
+  font-size: 50px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  letter-spacing: -0.01em;
+}
+
+.card .installs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 18px;
+}
+
+.card .installs li {
+  display: grid;
+  grid-template-columns: 240px auto;
+  align-items: baseline;
+  gap: 28px;
+  font-size: 30px;
+}
+
+.card .installs span {
+  color: var(--muted);
+  text-align: right;
+}
+
+.card .installs code {
+  font: 500 32px var(--mono);
+  color: var(--text);
+}
+
+.card .site {
+  margin: 0;
+  font-size: 46px;
+  font-weight: 700;
+  color: var(--teal);
+}
+
+#plate {
+  position: absolute;
+  left: 50%;
+  bottom: 60px;
+  transform: translateX(-50%);
+  max-width: 1240px;
+  padding: 12px 28px 14px;
+  border-radius: 14px;
+  background: rgb(8 10 22 / 0.84);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+  white-space: nowrap;
+  display: none;
+}
+
+html.plate #stage > :not(#plate) {
+  display: none;
+}
+
+html.plate #plate {
+  display: block;
+}
+
+#sheet {
+  display: none;
+}
+
+html.sheet #stage > :not(#sheet, #backdrop) {
+  display: none;
+}
+
+html.sheet #sheet {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  align-content: start;
+  gap: 22px 18px;
+  padding: 26px;
+}
+
+#sheet figure {
+  margin: 0;
+}
+
+#sheet img {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgb(255 255 255 / 0.15);
+}
+
+#sheet figcaption {
+  margin-top: 7px;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+#sheet figcaption b {
+  color: var(--text);
+}

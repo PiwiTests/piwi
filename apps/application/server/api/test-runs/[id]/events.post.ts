@@ -6,9 +6,10 @@ import { runEventBus } from '../../../utils/run-events';
 import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-cases';
 import { mapWireCaseToRunCase } from '../../../utils/map-wire-case';
-import { resolveRepeatEachIndex } from '../../../utils/inserted-run-cases';
+import { resolveRepeatEachIndex, runningCaseKey } from '../../../utils/inserted-run-cases';
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
+import { hiddenErrorText } from '../../../utils/sanitize';
 import type { StreamEventPayload } from '#shared/types';
 import { countFailedFromTally } from '#shared/utils/test-counts';
 
@@ -38,21 +39,6 @@ defineRouteMeta({
 });
 
 const MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024; // 10 MB
-
-/**
- * Stable identity for a test case within a run, used to match a `begin` event
- * to its later `complete`. Mirrors the key the run page builds client-side
- * (title + location + browser + repeat), so recording on begin and clearing on
- * complete target the same running-case entry.
- */
-function runningCaseKey(tc: {
-  title?: string;
-  location?: string | null;
-  browser?: unknown;
-  repeatEachIndex?: unknown;
-}): string {
-  return `${tc.title}\x1f${tc.location ?? ''}\x1f${JSON.stringify(tc.browser ?? null)}\x1f${resolveRepeatEachIndex(tc.repeatEachIndex)}`;
-}
 
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0');
@@ -93,6 +79,13 @@ export default eventHandler(async (event) => {
   const completeEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'complete');
   const stepRunEvents = mapStepEventsToRunEvents(validEvents);
 
+  // What each running case's last event in the batch is: a retry's begin may follow its previous attempt's complete,
+  // and a short test's complete its begin, and the running case keeps the last.
+  const lastOf = new Map<string, 'begin' | 'complete'>();
+  for (const tc of validEvents as Array<{ type?: string } & Parameters<typeof runningCaseKey>[0]>) {
+    if (tc.type === 'begin' || tc.type === 'complete') lastOf.set(runningCaseKey(tc), tc.type);
+  }
+
   // --- Handle begin events (test started, no DB persistence needed) ---
   for (const tc of beginEvents) {
     const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
@@ -104,14 +97,15 @@ export default eventHandler(async (event) => {
       location: tc.location,
       workerIndex: tc.workerIndex ?? null,
       shardIndex: tc.shardIndex ?? null,
-      startedAt: tc.startedAt ?? null,
+      // When the reporter sent no start, when the begin came: the run page and the stuck check count from it.
+      startedAt: typeof tc.startedAt === 'number' ? tc.startedAt : Date.now(),
       browser: tc.browser ?? null,
       repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
     };
     runEventBus.publish(id, { type: 'test-begin', data: beginData });
     // A running case has no DB row until it completes, so remember its begin
     // payload for the stream catch-up; the matching complete event clears it.
-    runEventBus.recordRunningCase(id, runningCaseKey(tc), beginData);
+    if (lastOf.get(runningCaseKey(tc)) === 'begin') runEventBus.recordRunningCase(id, runningCaseKey(tc), beginData);
   }
 
   // --- Handle step events (live step readout + suite-level hooks), in batch order ---
@@ -171,7 +165,7 @@ export default eventHandler(async (event) => {
     const persisted = persistedByInputIndex.get(index);
     // The case now has a DB row, so the catch-up will replay it as
     // `test-completed` — drop the running-case entry that stood in for it.
-    runEventBus.clearRunningCase(id, runningCaseKey(tc));
+    if (lastOf.get(runningCaseKey(tc)) === 'complete') runEventBus.clearRunningCase(id, runningCaseKey(tc));
     runEventBus.publish(id, {
       type: 'test-completed',
       data: {
@@ -183,7 +177,7 @@ export default eventHandler(async (event) => {
         status: tc.status,
         duration: tc.duration,
         location: tc.location,
-        error: tc.error ?? null,
+        error: hiddenErrorText(tc.error),
         stepEvents: tc.stepEvents ?? null,
         wastedTimeMs: tc.wastedTimeMs ?? null,
         workerIndex: tc.workerIndex ?? null,

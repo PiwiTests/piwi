@@ -101,9 +101,26 @@ describe('the live view key', () => {
     expect(new Set(keys).size).toBe(64);
     expect(live.mintKey(3, 2)).toBeNull();
     const elsewhere = live.mintKey(4, 5)!;
-    live.endProject(2);
+    expect(live.endProject(2)).toEqual([3]);
     expect(keys.some((key) => live.authorize(3, key))).toBe(false);
     expect(live.authorize(4, elsewhere)).not.toBeNull();
+  });
+
+  test('says whether a run holds one, for its page: not once it expired, the run ended or the view turned off', () => {
+    let now = 1_000_000;
+    const { live } = relay(() => now);
+    expect(live.holdsKey(7)).toBe(false);
+    live.mintKey(7, 1);
+    live.mintKey(8, 1);
+    live.mintKey(9, 2);
+    expect(live.holdsKey(7)).toBe(true);
+    live.endRun(7);
+    expect(live.holdsKey(7)).toBe(false);
+    live.endProject(1);
+    expect(live.holdsKey(8)).toBe(false);
+    expect(live.holdsKey(9)).toBe(true);
+    now += LIVE_KEY_TTL_MS;
+    expect(live.holdsKey(9)).toBe(false);
   });
 
   test('ends with its run, as the run finishes or is cancelled', () => {
@@ -231,7 +248,10 @@ describe('the relay', () => {
     const workers = [new FakeSink(), new FakeSink()];
     expect(live.connectWorker(entry, { shard: null, worker: 0 }, () => workers[0]!)).toBeNull();
     expect(live.connectWorker(entry, { shard: null, worker: 1 }, () => workers[1]!)).toBeNull();
-    expect(workers[0]!.sent).toEqual([{ type: 'viewers', count: 0 }]);
+    expect(workers[0]!.sent).toEqual([
+      { type: 'masks', locators: [] },
+      { type: 'viewers', count: 0 },
+    ]);
     expect(published.map((p) => p.state)).toEqual([
       { shard: null, worker: 0, connected: true, paused: null },
       { shard: null, worker: 1, connected: true, paused: null },
@@ -270,6 +290,67 @@ describe('the relay', () => {
     expect(viewer.sent).toHaveLength(1);
   });
 
+  test('relays a worker’s call log to its viewers alone, at its own rate, a slow viewer keeping its frame too', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0 }, () => new FakeSink());
+    live.connectWorker(entry, { shard: null, worker: 1 }, () => new FakeSink());
+    const log = {
+      id: 'call@1',
+      call: { title: 'Click', file: 'tests/a.spec.ts', line: 4 },
+      status: 'running' as const,
+      lines: ['  element is not enabled'],
+      point: null,
+      target: { count: 1, box: null, enabled: false },
+      viewport: { width: 1280, height: 800 },
+      ms: 1200,
+      error: null,
+    };
+    const callLog = (worker: number): WorkerToInstance => ({
+      type: 'call-log',
+      shard: null,
+      worker,
+      log,
+      test: 'pays',
+    });
+    const viewer = new FakeSink();
+    live.addViewer(7, { shard: null, worker: 0 }, () => viewer);
+    expect(live.receive(7, callLog(0))).toBeNull();
+    expect(live.receive(7, callLog(1))).toBeNull();
+    expect(viewer.sent).toEqual([{ type: 'call-log', log, test: 'pays' }]);
+
+    // A viewer that reads slowly gets the latest frame and the latest call log once it drains: neither pushes the other out.
+    viewer.full = true;
+    live.receive(7, frame(0, 'AAAA'));
+    live.receive(7, callLog(0));
+    viewer.drain();
+    expect(viewer.sent.slice(1).map((m) => (m as { type: string }).type)).toEqual(['frame', 'call-log']);
+
+    // A message that comes while older ones still wait goes after them: never a stale one after it.
+    viewer.full = true;
+    live.receive(7, { ...callLog(0), log: { ...log, status: 'passed' } } as WorkerToInstance);
+    viewer.full = false;
+    live.receive(7, callLog(0));
+    expect(viewer.sent).toHaveLength(3);
+    viewer.drain();
+    expect(viewer.sent.slice(3)).toEqual([{ type: 'call-log', log, test: 'pays' }]);
+    viewer.sent.splice(3);
+
+    // Why no image shows takes the image's place: the latest of the two alone reaches a slow viewer.
+    viewer.full = true;
+    live.receive(7, frame(0, 'AAAA'));
+    live.receive(7, { type: 'frame', shard: null, worker: 0, refused: 'The page is too heavy.' });
+    live.receive(7, frame(0, 'BBBB'));
+    viewer.drain();
+    expect(viewer.sent.slice(3)).toEqual([expect.objectContaining({ type: 'frame', data: 'BBBB' })]);
+
+    // Past the rate of call logs, one more is refused; frames have their own.
+    let refused = null;
+    for (let i = 0; i < 20 && !refused; i++) refused = live.receive(7, callLog(1));
+    expect(refused).toMatchObject({ status: 429 });
+    expect(live.receive(7, frame(1, 'BBBB'))).toBeNull();
+  });
+
   test('refuses a worker past the bound, a viewer past the bound, and frames past the rate', () => {
     const { live } = relay();
     const entry = live.authorize(7, live.mintKey(7, 1))!;
@@ -299,6 +380,29 @@ describe('the relay', () => {
     expect(live.receive(7, frame(999))).toMatchObject({ status: 409 });
   });
 
+  test('tells a worker the elements its project masks as it connects, and each change, to that project’s workers alone', () => {
+    const { live } = relay();
+    const own = new FakeSink();
+    const other = new FakeSink();
+    live.connectWorker(live.authorize(7, live.mintKey(7, 1))!, { shard: null, worker: 0 }, () => own, [
+      "getByLabel('IBAN')",
+    ]);
+    live.connectWorker(live.authorize(8, live.mintKey(8, 2))!, { shard: null, worker: 0 }, () => other);
+    expect(own.sent[0]).toEqual({ type: 'masks', locators: ["getByLabel('IBAN')"] });
+    live.setMasks(1, ["getByLabel('IBAN')", "getByTestId('card')"]);
+    expect(own.sent.at(-1)).toEqual({ type: 'masks', locators: ["getByLabel('IBAN')", "getByTestId('card')"] });
+    expect(other.sent.filter((m) => (m as { type: string }).type === 'masks')).toEqual([
+      { type: 'masks', locators: [] },
+    ]);
+
+    // A worker whose route read the list before that change gets the change.
+    const late = new FakeSink();
+    live.connectWorker(live.authorize(9, live.mintKey(9, 1))!, { shard: null, worker: 0 }, () => late, [
+      "getByLabel('IBAN')",
+    ]);
+    expect(late.sent[0]).toEqual({ type: 'masks', locators: ["getByLabel('IBAN')", "getByTestId('card')"] });
+  });
+
   test('keeps the viewers and the stop of a worker that opens its stream again', () => {
     const { live, published } = relay();
     const entry = live.authorize(7, live.mintKey(7, 1))!;
@@ -310,7 +414,10 @@ describe('the relay', () => {
     const second = new FakeSink();
     live.connectWorker(entry, { shard: null, worker: 0 }, () => second);
     expect(first.closed).toBe(true);
-    expect(second.sent).toEqual([{ type: 'viewers', count: 1 }]);
+    expect(second.sent).toEqual([
+      { type: 'masks', locators: [] },
+      { type: 'viewers', count: 1 },
+    ]);
     expect(live.workersOf(7)).toEqual([{ shard: null, worker: 0, connected: true, paused: STOP }]);
     expect(published.at(-1)?.state).toEqual({ shard: null, worker: 0, connected: true, paused: STOP });
     live.receive(7, frame(0, 'DDDD'));

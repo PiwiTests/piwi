@@ -62,6 +62,23 @@ describe('mapStepEventsToRunEvents', () => {
     ]);
   });
 
+  test('names no text a fill typed, whatever reporter sent the step', () => {
+    const fill: StreamEventPayload = {
+      ...waitBegin,
+      title: 'Fill "S3cr3t!Passw0rd"',
+      subtitle: "getByLabel('Password')",
+    };
+    expect(sequence([fill, { ...fill, type: 'step-end', status: 'passed', duration: 4 }])).toEqual([
+      'step-begin Fill "<hidden>"',
+      'step-end Fill "<hidden>"',
+    ]);
+  });
+
+  test('keeps the title of a step the test names itself', () => {
+    const own: StreamEventPayload = { ...waitBegin, title: 'Fill "Shipping address"', stepCategory: 'test.step' };
+    expect(sequence([own])).toEqual(['step-begin Fill "Shipping address"']);
+  });
+
   test('skips test-case begin and complete events', () => {
     const begin: StreamEventPayload = {
       type: 'begin',

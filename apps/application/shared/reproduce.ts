@@ -14,7 +14,7 @@
  * unknown Playwright version drops the pin, and a missing bisect window returns
  * a plain reason instead of a script.
  */
-import { buildRetryCommand, type RetryCase } from '#shared/retry-command';
+import { buildRetryArgs, type RetryCase } from '#shared/retry-command';
 import { isPlainRevision } from '#shared/scm-urls';
 
 // The recipe's values come from the reporter and are pasted into a shell, so each must look like what it names.
@@ -185,17 +185,11 @@ export function buildReproRecipe(input: ReproInput): ReproRecipe {
       : 'npx playwright install';
   steps.push({ step: 'Install the browser', bash: install, powershell: install });
 
-  // 5. Run exactly the failing test(s) — file:line specs, scoped to the project.
-  //    Dedupe first: cluster cases carry no line, so several tests in one file
-  //    would otherwise repeat the same spec path.
-  const seenSpec = new Set<string>();
-  const uniqueCases = input.cases.filter((c) => {
-    const key = `${c.filePath}:${c.line ?? ''}:${c.projectName ?? ''}`;
-    if (seenSpec.has(key)) return false;
-    seenSpec.add(key);
-    return true;
-  });
-  const testCmd = buildRetryCommand(uniqueCases, { mode: 'file-line' }) || 'npx playwright test';
+  // 5. Run exactly the failing test(s) at the failing commit: their file:line
+  //    specs and projects, as one command a CI re-run would run, the same on
+  //    every shell.
+  const testArgs = buildRetryArgs(input.cases);
+  const testCmd = testArgs ? `npx playwright test ${testArgs}` : 'npx playwright test';
   steps.push({ step: 'Run the failing test', bash: testCmd, powershell: testCmd });
 
   const env: ReproEnv[] = [];

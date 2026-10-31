@@ -42,7 +42,7 @@ apps/extension/       Piwi Picker, the browser extension (Manifest V3), standalo
 apps/vscode/          VS Code extension, a thin client of packages/editor (scope `ide`)
 apps/jetbrains/       JetBrains plugin, the same client in Kotlin and Gradle (scope `ide`)
 apps/docs/            VitePress documentation site, published to GitHub Pages
-apps/showcase/        The showcase's script: one story on every tool together, checked nightly (not a workspace)
+apps/showcase/        The showcase: one story on every tool together, checked nightly and filmed (not a workspace)
 packages/core/        @piwitests/core: private, zero-dependency logic shared by the app and the reporter
 packages/picker-dom/  @piwitests/picker-dom: the DOM picker overlay (reporter, dashboard, extension)
 packages/reporter/    @piwitests/reporter: the Playwright reporter (bundled with tsup)
@@ -75,7 +75,8 @@ its own commands; the dashboard's run from `apps/application/` (`npm run app:dev
 configuration: the SQLite database and `.data/` are created on the first API call).
 
 - `npm run knip` (root) lists unused files, exports, types and dependencies, and undeclared imports, across every JS
-  workspace. A standalone entry point it cannot infer goes in [`knip.ts`](knip.ts). CI's checks job fails on a finding.
+  workspace. A standalone entry point it cannot infer goes in [`knip.ts`](knip.ts). CI's `Format, lint and typecheck`
+  job fails on a finding.
 - `node scripts/package-smoke.mjs <dir>` installs the packed `@piwitests/server` and `@piwitests/reporter` tarballs into
   a new project and reports a run through them (the script header shows how to pack them); CI's `package-smoke` job.
 - From `integrations/aspnetcore/`: `dotnet test PiwiTests.Instrumentation.slnx` (needs the .NET 10 SDK).

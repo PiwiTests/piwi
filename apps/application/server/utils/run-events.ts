@@ -19,6 +19,8 @@ import { matchesShardToken, shardTokenDigest } from './shard-tokens';
 export interface RunEvent {
   type:
     | 'test-begin'
+    /** A running test has run far longer than it usually does (`#shared/stuck-tests`): its key and `StuckAttempt`. */
+    | 'test-stuck'
     | 'test-completed'
     | 'step-begin'
     | 'step-end'
@@ -28,7 +30,9 @@ export interface RunEvent {
     | 'case-files'
     | 'resources'
     /** A worker of the run's live view connected, stopped, went on or left (`LiveWorkerState`, `#shared/live-view`). */
-    | 'live-worker';
+    | 'live-worker'
+    /** Whether the run holds a live view key (`LiveViewRunState`, `#shared/live-view`). */
+    | 'live-view';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: Record<string, any>;
   seq: number;
@@ -196,6 +200,11 @@ class RunEventBus {
     cases.set(key, data);
   }
 
+  /** Drop every running case of a run that ended without completing them. */
+  clearRunningCases(runId: number): void {
+    this.runningCases.delete(runId);
+  }
+
   /** Drop a running case once it completes. */
   clearRunningCase(runId: number, key: string): void {
     this.runningCases.get(runId)?.delete(key);
@@ -205,6 +214,11 @@ class RunEventBus {
   getRunningCases(runId: number): Record<string, unknown>[] {
     const cases = this.runningCases.get(runId);
     return cases ? [...cases.values()] : [];
+  }
+
+  /** The runs with a case still running, and each such case's begin payload, kept as recorded. */
+  *runningCaseEntries(): Generator<[runId: number, data: Record<string, unknown>]> {
+    for (const [runId, cases] of this.runningCases) for (const data of cases.values()) yield [runId, data];
   }
 
   /**

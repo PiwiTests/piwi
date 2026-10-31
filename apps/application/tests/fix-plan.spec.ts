@@ -16,7 +16,7 @@ interface FixPlan {
   edits: Array<{ filePath: string; suggestedLocator: string | null }>;
   failingTests: Array<{ testCaseId: number; title: string; filePath: string; executionId: number }>;
   ownership: { owner: string | null; source: string | null };
-  verify: { command: string; expectation: string };
+  verify: { command: string; cases: Array<{ filePath: string; line?: number | null }>; expectation: string };
 }
 
 let clock = Date.now() - 3 * 60 * 60 * 1000;
@@ -111,11 +111,27 @@ test.describe.serial('Fix plan', () => {
   test('tells the agent how the work will be verified', async ({ request }) => {
     const plan = (await (await request.get(`/api/failure-clusters/${clusterId}/fix-plan`)).json()) as FixPlan;
 
-    expect(plan.verify.command).toContain('npx playwright test');
-    expect(plan.verify.command).toContain('tests/checkout.spec.ts');
-    // Titles are quoted, because they contain spaces.
-    expect(plan.verify.command).toContain('-g "');
+    // One command naming each affected test by file and title, so it still matches once the fix moves lines.
+    expect(plan.verify.command).toBe(
+      'npx playwright test "tests/checkout.spec.ts" -g "checkout applies a coupon|checkout shows the total"',
+    );
+    expect(plan.verify.cases.map((c) => `${c.filePath}:${c.line}`)).toEqual([
+      'tests/checkout.spec.ts:30',
+      'tests/checkout.spec.ts:12',
+    ]);
     expect(plan.verify.expectation).toContain('Piwi records the fix');
+  });
+
+  test('an execution re-runs its test in CI only once CI re-run is set up', async ({ request }) => {
+    const plan = (await (await request.get(`/api/failure-clusters/${clusterId}/fix-plan`)).json()) as FixPlan;
+    const executionId = plan.failingTests[0]!.executionId;
+
+    const info = await (await request.get(`/api/test-run-cases/${executionId}/rerun`)).json();
+    expect(info).toMatchObject({ available: false, reason: 'CI re-run is off for this project.', lastDispatch: null });
+
+    const res = await request.post(`/api/test-run-cases/${executionId}/rerun`);
+    expect(res.status()).toBe(400);
+    expect(((await res.json()) as { message: string }).message).toBe('CI re-run is off for this project.');
   });
 
   test('carries the declared owner', async ({ request }) => {

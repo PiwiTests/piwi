@@ -490,6 +490,41 @@ describe('userSite', () => {
     expect(userSite(stack)).toBe('tests/cart.spec.ts:18');
     expect(userSite('Error\n    at node:internal/timers:485:7')).toBeNull();
   });
+
+  const at = (...files: string[]) => ['Error', ...files.map((file) => `    at fn (${file}:18:21)`)].join('\n');
+
+  it('reads a POSIX file URL', () => {
+    expect(userSite(at('file:///work/app/tests/cart.spec.ts'), '/work/app', false)).toBe('tests/cart.spec.ts:18');
+  });
+
+  it('reads a Windows file URL with forward slashes', () => {
+    expect(userSite(at('file:///C:/work/app/tests/cart.spec.ts'), 'C:\\work\\app', true)).toBe('tests/cart.spec.ts:18');
+  });
+
+  it('decodes a percent-encoded file URL', () => {
+    expect(userSite(at('file:///work/my%20app/tests/caf%C3%A9.spec.ts'), '/work/my app', false)).toBe(
+      'tests/café.spec.ts:18',
+    );
+  });
+
+  it('reads a plain path', () => {
+    expect(userSite(at('/work/app/tests/cart.spec.ts'), '/work/app', false)).toBe('tests/cart.spec.ts:18');
+    expect(userSite(at('C:\\work\\app\\tests\\cart.spec.ts'), 'C:\\work\\app', true)).toBe('tests/cart.spec.ts:18');
+  });
+
+  it("skips a package's frame given as a file URL", () => {
+    const stack = at(
+      'file:///work/app/node_modules/playwright-core/lib/client/page.js',
+      'file:///work/app/tests/a.spec.ts',
+    );
+    expect(userSite(stack, '/work/app', false)).toBe('tests/a.spec.ts:18');
+    const windows = at(
+      'file:///C:/work/app/node_modules/playwright-core/lib/client/page.js',
+      'C:\\work\\app\\node_modules\\playwright-core\\lib\\client\\page.js',
+      'file:///C:/work/app/tests/a.spec.ts',
+    );
+    expect(userSite(windows, 'C:\\work\\app', true)).toBe('tests/a.spec.ts:18');
+  });
 });
 
 describe('leakFailureMessage', () => {

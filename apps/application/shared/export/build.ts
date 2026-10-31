@@ -57,10 +57,21 @@ function slugifyFileName(value: string): string {
   );
 }
 
+/** `piwi-cluster-12-timeout-on-pay.pdf`; a run is named after its project and branch: `piwi-run-4-shop-main.pdf`. */
 export function exportFileName(bundle: ExportBundle, format: ExportFormat, id: number): string {
   const ext = format === 'md' ? 'md' : format;
-  return `piwi-${bundle.kind}-${id}-${slugifyFileName(bundle.title)}.${ext}`;
+  const name =
+    bundle.kind === 'run'
+      ? [bundle.project?.label || bundle.project?.name, bundle.run?.detail.branch].filter(Boolean).join(' ') || 'run'
+      : bundle.title;
+  return `piwi-${bundle.kind}-${id}-${slugifyFileName(String(name))}.${ext}`;
 }
+
+const KIND_LABELS: Record<ExportBundle['kind'], string> = {
+  execution: 'test execution',
+  cluster: 'failure cluster',
+  run: 'test run',
+};
 
 /**
  * Read every asset once, honoring the total budget. Assets that do not fit are
@@ -112,7 +123,7 @@ async function readAssets(
 
 function readmeText(bundle: ExportBundle): string {
   const lines = [
-    `Piwi export — ${bundle.kind === 'cluster' ? 'failure cluster' : 'test execution'}`,
+    `Piwi export — ${KIND_LABELS[bundle.kind]}`,
     `Title:     ${bundle.title}`,
     `Exported:  ${bundle.generatedAt}`,
     bundle.project ? `Project:   ${bundle.project.label || bundle.project.name}` : '',

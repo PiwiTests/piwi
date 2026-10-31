@@ -555,7 +555,9 @@ A run started in a terminal attaches the same way, its reporter having read the 
 ([The discovery file](#the-discovery-file)), under a ref of its own (`terminal-<pid>-<time>`, `TERMINAL_REF_PREFIX`)
 that no command of the service's names (`terminal` in `RunSessionsOptions`; the server's test is the prefix and a ref
 it never built). Its session says so (`RunSession.terminal`, the hub's `HubSession.terminal`), so the clients show it
-as one and offer no Stop, the terminal's to give. It starts with the editor's breakpoints as the client last sent them
+as one and offer no Stop, the terminal's to give. A run an editor's own test runner started (a JetBrains IDE's
+Playwright run configuration) is one too, its first worker's `run-attach` saying so (`runner`, kept as
+`RunSession.runner` and `HubSession.runner`): the clients name the runner in place of the terminal. It starts with the editor's breakpoints as the client last sent them
 (`piwi/setBreakpoints`, kept as `setEditorBreakpoints`), as lines of its code: the files as they stand when its first
 worker connects. A worker of it holds a failure only while a Runs window of Piwi Picker follows the runs as it attaches
 (`followed`): nobody may be there to answer it otherwise. It ends 5 s after its last worker left, having no command.

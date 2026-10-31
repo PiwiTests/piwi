@@ -8,7 +8,8 @@ defineRouteMeta({
   openAPI: {
     tags: ['Stream'],
     summary: 'Server-sent events stream',
-    description: 'Subscribes to global run events (status changes, case updates) over SSE',
+    description:
+      'Subscribes to global run events (status changes, case updates) over SSE. The stream starts with a comment line once it is subscribed: every event published after it arrives.',
     'x-required-permission': 'project:read',
   },
 });
@@ -23,7 +24,7 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   const scope = await getProjectScope(db, user);
   return createSSEEndpoint(event, (controller, encoder) => {
-    return runEventBus.subscribeGlobal((globalEvent) => {
+    const unsubscribe = runEventBus.subscribeGlobal((globalEvent) => {
       if (!scopeAllows(scope, globalEvent.projectId)) return;
       try {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(globalEvent)}\n\n`));
@@ -31,5 +32,9 @@ export default eventHandler(async (event) => {
         // Stream closed — unsubscribe is handled by SSE helper
       }
     });
+    // A comment, which clients skip, sends the response now that it is subscribed: the stream opens in the browser
+    // from the first moment it misses no event (`useRunEvents`' `onOpen`).
+    controller.enqueue(encoder.encode(': subscribed\n\n'));
+    return unsubscribe;
   });
 });

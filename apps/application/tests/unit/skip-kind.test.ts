@@ -1,11 +1,10 @@
 import { describe, test, expect, beforeAll } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq, sql } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { fixmeSkipPredicate, isFixmeSkip } from '#shared/utils/skip-kind';
+import { migrateToLatest } from './temp-db';
 
 describe('isFixmeSkip', () => {
   test('is true only for a skipped case carrying a fixme annotation', () => {
@@ -48,8 +47,7 @@ describe('fixmeSkipPredicate', () => {
 
   beforeAll(async () => {
     db = drizzle(createClient({ url: ':memory:' }), { schema });
-    const migrationsFolder = fileURLToPath(new URL('../../server/database/migrations', import.meta.url));
-    await migrate(db, { migrationsFolder });
+    await migrateToLatest(db);
     await db.insert(schema.projects).values([{ id: 1, name: 'Alpha' }]);
     await db.insert(schema.testRuns).values([{ id: 1, projectId: 1, status: 'passed', startTime: new Date() }]);
     await db

@@ -97,8 +97,13 @@ function sayViewers(count: number): void {
 /** A page as the view reads it: its viewport, and a screencast that paints when told. */
 function fakePage(): { page: Page; paint: (data: string) => void } {
   let onFrame: ((frame: { data: Buffer; viewportWidth: number; viewportHeight: number }) => unknown) | null = null;
+  // One frame, which shows no secret field.
+  const fields = { or: () => fields, evaluateAll: async () => ({ rects: [], width: 1280, height: 720 }) };
+  const frame = { locator: () => fields, isDetached: () => false };
   const page = {
     viewportSize: () => ({ width: 1280, height: 720 }),
+    frames: () => [frame],
+    mainFrame: () => frame,
     isClosed: () => false,
     once: () => page,
     off: () => page,
@@ -164,11 +169,12 @@ describe("the worker's live view connection", () => {
       return posts.some((p) => p.type === 'frame' && 'data' in p);
     });
     const framed = posts.find((p) => p.type === 'frame' && 'data' in p);
+    // No read of the secret fields came before the first frame: an image taken between two reads goes in its place.
     expect(framed).toEqual({
       type: 'frame',
       shard: null,
       worker: 0,
-      data: Buffer.from('a frame of the page').toString('base64'),
+      data: Buffer.from('shot').toString('base64'),
       call: HIDDEN_CALL,
       test: 'pays',
     });

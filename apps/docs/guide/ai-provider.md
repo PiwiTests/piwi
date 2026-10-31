@@ -52,14 +52,14 @@ Use [Codex CLI](/guide/codex-cli) with a ChatGPT login, or [official DeepSeek Ha
 
 ## Model roles
 
-Piwi calls models in up to four distinct roles, each with its own complete provider configuration (or a **reuse** pointer to inherit another role's provider and credentials):
+Piwi calls models in up to four roles:
 
 - **Diagnosis**: the main model that writes the final diagnosis (required to enable AI). The quality report narrative uses it too.
 - **Research**: an optional cheaper, faster model that pre-analyzes the failure first (*two-stage diagnosis*).
 - **Embedding**: an optional embeddings model that powers semantic failure clustering and the **Fixed before** similarity.
 - **Assistant**: an optional model the [assistant](/features/assistant) answers with; unset, it uses the diagnosis model.
 
-Configure each role in **Settings → AI → Model providers**. A role set to *reuse* another role uses that role's provider, key, and base URL (only its model can differ), so you don't re-enter credentials for, say, a Haiku research pass on the same Anthropic key.
+In **Settings → AI**, the **Provider** card sets the diagnosis role and the **Features** card turns on the others. Each reuses the diagnosis provider and key with a model of its own, or runs on another provider.
 
 ## Providers
 
@@ -91,9 +91,9 @@ PIWI_AI_API_KEY=ollama   # optional: sent only when set, for servers that check 
 
 A local model keeps every diagnosis on your own infrastructure; see [Privacy & data flow](./privacy).
 
-**Claude Code CLI (local, no API key)**: pick **Claude Code (local)** in the [desktop app](/features/desktop), or on a server with `PIWI_CLAUDE_CLI_PATH` set. It runs the local `claude` CLI with your Claude Code sign-in, so **Settings → AI** manages sign-in and shows a live usage tally. Every role but embeddings can use it. Each call runs with every tool and MCP server off, for one turn, and with none of the server's own environment variables, so an error message in a prompt cannot make the CLI run a command; a Claude Code version too old to turn its tools off is refused until you update it. The CLI reads the prompt as text, so a diagnosis it writes gets no screenshot. The [assistant](/features/assistant) is the exception: one CLI run writes a whole answer, with one MCP server attached, this server's endpoint for that answer. It serves the assistant's tools only (the read tools, run with your access, and the blocks of an answer; in the desktop app also `read_local_source`, held to the folders linked to your projects), on a token minted for that answer that stops working when it ends; the desktop app's own token never reaches the CLI. The CLI's built-in tools stay off; its turns cover the tool calls `PIWI_AI_ASSISTANT_MAX_TOOL_CALLS` allows and the blocks of an answer. An older Claude Code answers step by step instead.
+**Claude Code CLI (local, no API key)**: pick **Claude Code** under **Command-line tools** in the [desktop app](/features/desktop), or on a server with `PIWI_CLAUDE_CLI_PATH` set. It runs the local `claude` CLI with your Claude Code sign-in, so **Settings → AI** manages sign-in and shows a live usage tally. Every role but embeddings can use it. Each call runs with every tool and MCP server off, for one turn, and with none of the server's own environment variables, so an error message in a prompt cannot make the CLI run a command; a Claude Code version too old to turn its tools off is refused until you update it. The CLI reads the prompt as text, so a diagnosis it writes gets no screenshot. The [assistant](/features/assistant) is the exception: one CLI run writes a whole answer, with one MCP server attached, this server's endpoint for that answer. It serves the assistant's tools only (the read tools, run with your access, and the blocks of an answer; in the desktop app also `read_local_source`, held to the folders linked to your projects), on a token minted for that answer that stops working when it ends; the desktop app's own token never reaches the CLI. The CLI's built-in tools stay off; its turns cover the tool calls `PIWI_AI_ASSISTANT_MAX_TOOL_CALLS` allows and the blocks of an answer. An older Claude Code answers step by step instead.
 
-Each role's form in **Settings → AI** has a **Test connection** button that checks its provider. The dashboard shows its AI actions only once a provider is configured.
+In **Settings → AI**, the Ollama and LM Studio tiles fill in their local address and **OpenAI-compatible** takes any other server. **Test connection** keeps the answer, or the provider's error, in view, and one **Save** stores every section you changed. AI actions show once a provider is configured.
 
 ## Response language
 
@@ -106,7 +106,7 @@ the prose follows this setting. Unset, responses are in English.
 
 ## Context limits (and token cost)
 
-Every piece of evidence sent to the model costs tokens. Piwi caps each input so diagnoses stay fast and affordable. Override the caps in **Settings → AI** or via env (env wins; the UI then shows the field read-only).
+Every piece of evidence sent to the model costs tokens. Piwi caps each input so diagnoses stay fast and affordable. Override the caps in **Settings → AI → What the model receives** or via env (env wins; the UI then shows the field read-only).
 
 The full list of `PIWI_AI_MAX_*` limit variables, their defaults and their clamping ranges lives in the [Configuration reference → AI context limits](/reference/configuration#ai-context-limits), generated from the same registry the server reads. The diagnosis context preview (**Context sent to AI**) shows what was trimmed to fit before you spend tokens.
 

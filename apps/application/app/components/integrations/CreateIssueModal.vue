@@ -43,6 +43,7 @@ const emit = defineEmits<{
 }>();
 
 const toast = useToast();
+const isDesktop = useIsDesktop();
 
 const loading = ref(false);
 const creating = ref(false);
@@ -623,7 +624,12 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
               />
             </div>
             <p v-if="!draft.linksBack" class="mt-1 text-xs text-muted" data-testid="create-issue-no-links-back">
-              The issue cannot link back to Piwi: this instance has no public address (<code>PIWI_SITE_URL</code>).
+              <template v-if="isDesktop"
+                >The issue cannot link back to the desktop app, which has no public address.</template
+              >
+              <template v-else>
+                The issue cannot link back to Piwi: this instance has no public address (<code>PIWI_SITE_URL</code>).
+              </template>
             </p>
           </UFormField>
 

@@ -7,6 +7,7 @@ import {
   type MemoryCluster,
   type MemoryCandidate,
 } from '#shared/cluster-memory';
+import { migrateToLatest } from './temp-db';
 
 function cluster(over: Partial<MemoryCluster> = {}): MemoryCluster {
   return {
@@ -113,17 +114,13 @@ describe('rankFixedBefore', () => {
 describe('findFixedBefore — the earlier diagnosis', () => {
   async function setup() {
     const { drizzle } = await import('drizzle-orm/libsql');
-    const { migrate } = await import('drizzle-orm/libsql/migrator');
     const { createClient } = await import('@libsql/client');
-    const { fileURLToPath } = await import('node:url');
     const schema = await import('../../server/database/schema.sqlite');
     delete process.env.PIWI_DATABASE_URL;
     const { findFixedBefore } = await import('../../server/utils/cluster-memory');
 
     const db = drizzle(createClient({ url: ':memory:' }), { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-    });
+    await migrateToLatest(db);
     await db.insert(schema.projects).values({ id: 1, name: 'shop' });
     const error = 'Error: expect(locator).toBeVisible() failed';
     const base = { projectId: 1, errorType: 'assertion', sampleError: error, firstSeenRunId: 1, lastSeenRunId: 1 };

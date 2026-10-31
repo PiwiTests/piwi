@@ -82,7 +82,7 @@ characters). Piwi refuses to write a secret field's value, and a text or a value
 
 - **Only this machine, only this window.** The server answers a request to its own address on `127.0.0.1` with the
   token, and refuses any other name for the machine and any request a browser sends (it carries an `Origin`). It serves
-  the runs this window started, and those [started in a terminal](./terminal-runs) that follow it, and nothing of an
+  the runs this window started, and those [started outside Piwi](./terminal-runs) that follow it, and nothing of an
   instance.
 - **Only a stopped page, only the actions named.** An action needs the stop it answers, and goes nowhere once the test
   went on. The tools take a closed set of arguments; none evaluates code, reads a file or runs a command. Code reaches

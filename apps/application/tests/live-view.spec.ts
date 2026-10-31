@@ -1,7 +1,6 @@
 import { test, expect, type APIRequestContext } from './fixtures';
 import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as http from 'node:http';
 import { createRequire } from 'node:module';
 import * as net from 'node:net';
 import * as os from 'node:os';
@@ -12,6 +11,8 @@ import { parseRunToHub, type RunToHub } from '@piwitests/core/run-channel';
 import { detectCi } from '../../../packages/reporter/src/internal/support/ci';
 import { PROJECT } from '#shared/test-project-names';
 import { resolveE2ETarget } from './desktop-target';
+import { waitForHydration } from './utils';
+import { holdWorkerStream } from './utils/live-view';
 
 /**
  * The run page's live view against this server. A real CI run through the built reporter, in a project with the live
@@ -27,16 +28,24 @@ const target = resolveE2ETarget();
 const reporter = resolve(process.cwd(), '..', '..', 'packages', 'reporter', 'dist', 'index.js');
 const playwrightCli = createRequire(import.meta.url).resolve('@playwright/test/cli');
 
-/** A slow page: a spinner that never stops, and a heading the test clicks. */
-const SLOW_PAGE = `<style>body { font: 16px sans-serif; padding: 24px } #spin { width: 96px; height: 96px; border: 12px solid #ddd; border-top-color: #7c3aed; border-radius: 50%; animation: s 1s linear infinite } @keyframes s { to { transform: rotate(360deg) } }</style><h1>Checkout</h1><p>Paying…</p><div id="spin"></div>`;
+/** A slow page: a spinner that never stops, a heading the test clicks, and a Pay button that stays disabled. */
+const SLOW_PAGE = `<style>body { font: 16px sans-serif; padding: 24px } #spin { width: 96px; height: 96px; border: 12px solid #ddd; border-top-color: #7c3aed; border-radius: 50%; animation: s 1s linear infinite } @keyframes s { to { transform: rotate(360deg) } }</style><h1>Checkout</h1><p>Paying…</p><div id="spin"></div><button disabled>Pay</button>`;
 
-/** The suite the run executes: a test that waits on its slow page until told. */
+/**
+ * The suite the run executes: a test that waits on its slow page until told, trying meanwhile to click its disabled
+ * Pay button, so the live view's call log says why the click waits.
+ */
 const SPEC = (folder: string) => `const fs = require('node:fs');
 const { test, expect } = require('./fixture.cjs');
 test('pays on a slow page', async ({ page }) => {
   await page.setContent(${JSON.stringify(SLOW_PAGE)});
   await page.getByRole('heading', { name: 'Checkout' }).click();
-  await expect.poll(() => fs.existsSync(${JSON.stringify(join(folder, 'watched'))}), { timeout: 90000 }).toBe(true);
+  const released = () => fs.existsSync(${JSON.stringify(join(folder, 'watched'))});
+  const until = Date.now() + 90000;
+  while (!released() && Date.now() < until) {
+    await page.getByRole('button', { name: 'Pay' }).click({ timeout: 2500 }).catch(() => {});
+  }
+  expect(released()).toBe(true);
 });
 `;
 
@@ -78,7 +87,15 @@ module.exports = wrapConfig(defineConfig({
   );
   // The run reports where the config says; it is a CI run, or no variable a CI provider sets is left.
   const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PROJECT_NAME', 'PIWI_LIVE_VIEW']) {
+  for (const name of [
+    'PWDEBUG',
+    'PIWI_DASHBOARD_URL',
+    'PIWI_API_KEY',
+    'PIWI_PROJECT_NAME',
+    'PIWI_LIVE_VIEW',
+    'PIWI_DESKTOP_APP',
+    'PIWI_DESKTOP_CONFIG',
+  ]) {
     delete env[name];
   }
   for (const name of Object.keys(env)) if (detectCi({ [name]: env[name] })) delete env[name];
@@ -153,21 +170,6 @@ async function liveWorkers(request: APIRequestContext, runId: number): Promise<W
   return (await (await request.get(`/api/test-runs/${runId}/live-view/workers`)).json()) as Workers;
 }
 
-/** A worker's stream to the run's live view, held as a test worker holds it, and whether it is still open. */
-function holdWorkerStream(runId: number, key: string): { open: () => boolean; close: () => void } {
-  let open = true;
-  const request = http.request(`${target.baseUrl}/api/test-runs/${runId}/live-view?worker=0`, {
-    headers: { Accept: 'text/event-stream', Authorization: `Bearer ${key}` },
-  });
-  request.on('response', (response) => {
-    response.resume();
-    response.on('close', () => (open = false));
-  });
-  request.on('error', () => (open = false));
-  request.end();
-  return { open: () => open, close: () => request.destroy() };
-}
-
 /**
  * The editor's side of a run channel, as Share live drives it: it shares the run as each worker attaches, and keeps
  * how each worker says the run stands on the instance (`live`).
@@ -233,6 +235,8 @@ test.describe('Live view of a run', () => {
 
       const watch = page.getByRole('button', { name: /^Watch worker \d+ live$/ });
       await expect(watch).toBeVisible({ timeout: 60_000 });
+      // A CI run's workers join at once: nothing says it is not shared.
+      await expect(page.getByTestId('live-unshared')).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath('live-view-row.png') });
       await watch.click();
       const view = page.getByRole('dialog');
@@ -243,6 +247,14 @@ test.describe('Live view of a run', () => {
       await expect(frame).toHaveAttribute('src', /^data:image\/jpeg;base64,/);
       // The call's place opens in the editor.
       await expect(view.getByTestId('live-call').getByText(/^live\.spec\.cjs:\d+$/)).toBeVisible();
+      // A CI run's call log says why the click waits, and the element it waits on is outlined on the image.
+      await expect(view.getByTestId('live-call')).toContainText("Click getByRole('button', { name: 'Pay' })", {
+        timeout: 20_000,
+      });
+      await expect(view.getByTestId('live-call-log')).toContainText('element is not enabled', { timeout: 20_000 });
+      await expect(view.getByTestId('live-call-target')).toHaveText('Its element is not enabled', { timeout: 20_000 });
+      await expect(view.getByTestId('live-call-state')).toContainText('Running for');
+      await expect(view.getByTestId('live-target-box')).toBeAttached();
       // The status region stays in the page, empty while images show.
       await expect(view.getByRole('status')).toHaveText('');
       // The image is the page as it paints: a spinner turns, so the image changes.
@@ -283,6 +295,33 @@ test.describe('Live view of a run', () => {
     }
   });
 
+  test('a Project admin lists the elements each image masks: Playwright locators alone, kept trimmed', async ({
+    page,
+    request,
+  }) => {
+    const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
+    await page.goto(`/projects/${project}?tab=settings&section=live-view`);
+    await waitForHydration(page);
+    const masks = page.getByRole('textbox', { name: 'Masked elements' });
+    const save = page.getByRole('button', { name: 'Save changes' });
+    await masks.fill('#iban');
+    await expect(page.getByText("`#iban` is not a Playwright locator, such as getByLabel('IBAN').")).toBeVisible();
+    await expect(save).toBeDisabled();
+    await masks.fill("  getByLabel('IBAN')  \n\ngetByTestId('balance')");
+    await save.click();
+    await expect(page.getByText('Live view settings saved').first()).toBeVisible();
+    const stored = async () =>
+      ((await (await request.get(`/api/projects/${project}`)).json()) as { liveViewMasks?: string[] | null })
+        .liveViewMasks;
+    expect(await stored()).toEqual(["getByLabel('IBAN')", "getByTestId('balance')"]);
+
+    // The API refuses what is not a locator, and an empty list removes them.
+    const refused = await request.patch(`/api/projects/${project}`, { data: { liveViewMasks: ['#iban'] } });
+    expect(refused.status()).toBe(400);
+    expect((await request.patch(`/api/projects/${project}`, { data: { liveViewMasks: [] } })).ok()).toBeTruthy();
+    expect(await stored()).toBeNull();
+  });
+
   test('a project with the live view off: no Watch, and its CI run sends nothing', async ({ page, request }) => {
     test.setTimeout(240_000);
     const project = await projectId(request, PROJECT.LIVE_VIEW_OFF);
@@ -297,6 +336,7 @@ test.describe('Live view of a run', () => {
       // While the test runs on its slow page, nothing offers to watch it, and nothing reached this server.
       await page.waitForTimeout(3000);
       await expect(page.getByRole('button', { name: /^Watch worker/ })).toHaveCount(0);
+      await expect(page.getByTestId('live-unshared')).toHaveCount(0);
       expect(await liveWorkers(request, runId)).toEqual({
         enabled: false,
         workers: [],
@@ -314,10 +354,10 @@ test.describe('Live view of a run', () => {
     }
   });
 
-  test('a run outside CI nobody shares, in a project with the live view on, sends nothing', async ({
+  test('a run outside CI nobody shares, in a project with the live view on, says how to share it and sends nothing', async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(240_000);
     const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
     expect((await request.patch(`/api/projects/${project}`, { data: { liveView: true } })).ok()).toBeTruthy();
@@ -331,17 +371,36 @@ test.describe('Live view of a run', () => {
       });
       await page.waitForTimeout(3000);
       await expect(page.getByRole('button', { name: /^Watch worker/ })).toHaveCount(0);
+      // Its running row says it is not shared, where Watch would be, and how to share it.
+      const unshared = page.getByTestId('live-unshared');
+      await expect(unshared).toHaveText('Not shared live');
+      await page.screenshot({ path: testInfo.outputPath('live-view-unshared.png') });
+      const wide = page.viewportSize()!;
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect(unshared).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath('live-view-unshared-narrow.png') });
+      await page.setViewportSize(wide);
+      await unshared.getByRole('button').click();
+      const hint = page.getByRole('dialog');
+      await expect(hint).toContainText('Tools → Piwi → Share the Run Live');
+      await expect(hint).toContainText('Piwi: Share the run live on the team instance');
+      await page.screenshot({ path: testInfo.outputPath('live-view-unshared-hint.png') });
+      await page.keyboard.press('Escape');
       expect(await liveWorkers(request, runId)).toMatchObject({
         enabled: true,
         workers: [],
         received: { requests: 0, frames: 0, bytes: 0 },
       });
+      // Turned off, the project's live view no longer applies to the run: nothing says to share it.
+      expect((await request.patch(`/api/projects/${project}`, { data: { liveView: false } })).ok()).toBeTruthy();
+      await expect(unshared).toHaveCount(0, { timeout: 10_000 });
 
       run.release();
       expect(await run.exited, run.output()).toBe(0);
       expect(run.output()).not.toContain('Live view on');
       expect((await liveWorkers(request, runId)).received.requests).toBe(0);
     } finally {
+      await request.patch(`/api/projects/${project}`, { data: { liveView: true } });
       await endRun(run);
     }
   });
@@ -367,6 +426,7 @@ test.describe('Live view of a run', () => {
       await page.goto(`/test-runs/${runId}`);
       const watch = page.getByRole('button', { name: /^Watch worker \d+ live$/ });
       await expect(watch).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId('live-unshared')).toHaveCount(0);
       await watch.click();
       const view = page.getByRole('dialog');
       await expect(view.getByTestId('live-frame')).toBeVisible({ timeout: 20_000 });
@@ -380,6 +440,8 @@ test.describe('Live view of a run', () => {
       );
       await page.keyboard.press('Escape');
       await expect(watch).toHaveCount(0, { timeout: 10_000 });
+      // No longer shared, its running row says so again.
+      await expect(page.getByTestId('live-unshared')).toHaveText('Not shared live');
       await expect.poll(async () => (await liveWorkers(request, runId)).workers.length).toBe(0);
 
       run.release();
@@ -468,7 +530,7 @@ test.describe('Live view of a run', () => {
     });
     expect(events.ok()).toBeTruthy();
 
-    const worker = holdWorkerStream(runId, liveView.key);
+    const worker = holdWorkerStream(target.baseUrl, runId, liveView.key);
     const post = (message: Record<string, unknown>) =>
       request.post(`/api/test-runs/${runId}/live-view`, {
         headers: { Authorization: `Bearer ${liveView.key}` },

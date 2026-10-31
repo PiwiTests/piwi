@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import { attachTestBrowser, launchDeveloperBrowser } from './browser.mjs';
 import { launchEditor } from './editor.mjs';
 import { startCiRun, startInstance } from './instance.mjs';
+import { waitFor } from './script.mjs';
 import { SHOP_PORT, buildWorkspace } from './workspace.mjs';
 
 /** The variable that names the folder of the editors' discovery files (`@piwitests/core/editor-discovery`). */
@@ -27,11 +28,17 @@ export const TILES = {
   dashboard: { x: 0, y: 0, width: 1920, height: 1080 },
 };
 
+/**
+ * The dashboard's zoom: its page at 2.5 device pixels a CSS pixel, a 1536 × 794 viewport, so that the dashboard reads
+ * at the cut's size as the editor does. The other windows stay at `SCALE`.
+ */
+export const DASHBOARD_ZOOM = 1.25;
+
 /** The test's browser's debugging port, which the checkout's config gives a headed run. */
 export const TEST_BROWSER_CDP = 9334;
 
 /** Whether something listens on `port` on this machine. */
-function listening(port) {
+export function listening(port) {
   return new Promise((resolve) => {
     const socket = net.connect({ port, host: '127.0.0.1' });
     socket.once('connect', () => {
@@ -234,6 +241,13 @@ export async function buildSet(set, { say }) {
   );
   set.dashboard = context.pages().find((page) => page.url() === 'about:blank') ?? (await context.newPage());
   await set.dashboard.goto(`${set.instance.base}/projects/${set.projectId}`, { waitUntil: 'domcontentloaded' });
+  await set.browser.zoomDashboard(DASHBOARD_ZOOM);
+  const want = SCALE * DASHBOARD_ZOOM;
+  await waitFor(
+    () => set.dashboard.evaluate((ratio) => Math.abs(window.devicePixelRatio - ratio) < 0.01, want),
+    `the dashboard at ${want} device pixels a CSS pixel`,
+    15_000,
+  );
 
   // The test's browser of the run going on: each run opens its own, on the same port.
   set.testBrowser = async () => {

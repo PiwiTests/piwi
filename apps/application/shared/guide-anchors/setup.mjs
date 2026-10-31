@@ -225,4 +225,10 @@ export const SETUP_EXEMPTIONS = [
     reason:
       'The connect page has no dashboard layout and opens only from Piwi Picker or an editor, with the one-time code it shows.',
   },
+  {
+    rule: 'page',
+    key: '/desktop/run-output',
+    reason:
+      'The run output page has no dashboard layout and opens only in a window of the desktop app, for a run of its Local runs tray.',
+  },
 ];

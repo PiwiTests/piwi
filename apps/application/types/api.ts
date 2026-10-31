@@ -14,6 +14,7 @@ import type {
   WireExecutionResources,
 } from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
+import type { StuckAttempt } from '#shared/stuck-tests';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
@@ -421,6 +422,8 @@ export interface ProjectWithTestRuns {
   gateStatus?: boolean;
   /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
   liveView?: boolean;
+  /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
+  liveViewMasks?: string[] | null;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -455,6 +458,8 @@ export interface ProjectDetails {
   gateStatus?: boolean;
   /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
   liveView?: boolean;
+  /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
+  liveViewMasks?: string[] | null;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -1017,6 +1022,8 @@ export interface TestCaseResult {
   expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** A running test that has run far longer than it usually does (`#shared/stuck-tests`). */
+  stuck?: StuckAttempt | null;
 }
 
 /** Why a `didnotrun` case never executed — mirrors the reporter's taxonomy. */

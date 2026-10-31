@@ -29,6 +29,7 @@ export const projects = sqliteTable(
     quarantineFailsStatus: integer('quarantine_fails_status', { mode: 'boolean' }).notNull().default(false), // true = a quarantined failure turns the run's commit status red; false = the status ignores quarantined failures
     gateStatus: integer('gate_status', { mode: 'boolean' }).notNull().default(false), // true = each gate evaluation also posts the `<statusContext>/gate` commit status; off by default
     liveView: integer('live_view', { mode: 'boolean' }).notNull().default(false), // true = while a run of the project executes, people who may open it can watch each worker's page from the run page; off by default
+    liveViewMasks: text('live_view_masks', { mode: 'json' }), // string[] — Playwright locators of elements the live view paints over in each image, beside the secret fields; null = none
     statusFilter: text('status_filter', { mode: 'json' }), // ProjectRunScope — the runs that set the project's status (its latest run in the sidebar and the projects list); null = every run
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
@@ -230,8 +231,8 @@ export const failureClusters = sqliteTable(
     signature: text('signature').notNull(), // normalized first error line — human-readable cluster name
     errorType: text('error_type'), // 'timeout', 'assertion', 'strict-mode', 'navigation', 'crash', 'unknown'
     selector: text('selector'), // locator extracted from the error, if any
-    sampleError: text('sample_error'), // one raw error kept for display; refreshed to a better exemplar as the cluster recurs
-    fingerprintSample: text('fingerprint_sample'), // immutable raw error captured at creation; re-fingerprinting on a version bump reads this so a display-sample refresh can't move the fingerprint source (null on rows created before this column — recluster falls back to sample_error)
+    sampleError: text('sample_error'), // one error, its secrets hidden (`hiddenErrorText`), kept for display; refreshed to a better exemplar as the cluster recurs
+    fingerprintSample: text('fingerprint_sample'), // immutable error captured at creation, its secrets hidden in a way that leaves its fingerprint the same; re-fingerprinting on a version bump reads this so a display-sample refresh can't move the fingerprint source (null on rows created before this column — recluster falls back to sample_error)
     // Run ids are intentionally NOT foreign keys: runs are deleted independently
     // and clusters must survive them (stale ids are tolerated)
     firstSeenRunId: integer('first_seen_run_id').notNull(),

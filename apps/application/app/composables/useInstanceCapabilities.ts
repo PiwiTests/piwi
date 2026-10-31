@@ -1,4 +1,4 @@
-import type { CapabilityId, CapabilityState, InstanceDecision } from '#shared/capabilities';
+import { capabilityHidden, type CapabilityId, type CapabilityState, type InstanceDecision } from '#shared/capabilities';
 import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/capabilities';
 
 /**
@@ -13,7 +13,8 @@ import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/cap
  * share one fetch through the key.
  *
  * `state(id)` is the resolved state, `isHidden(id)` is true when a capability is
- * declined or not applicable (so a surface renders nothing), `canDecide` gates
+ * declined, not applicable or never offered by the desktop build (so a surface
+ * renders nothing), `canDecide` gates
  * the decline controls to administrators (`settings:manage`), `decide` writes
  * one decision and `decideMany` writes several at once (`null` clears a
  * decision). A read failure resolves to an empty list.
@@ -21,6 +22,7 @@ import type { CapabilityStateItem, CapabilityStates } from '#shared/handlers/cap
 export async function useInstanceCapabilities() {
   const { canSeeAdmin } = useAuth();
   const requestFetch = useRequestFetch();
+  const isDesktop = useIsDesktop();
 
   const { data: items } = await useAsyncData<CapabilityStateItem[]>(
     'capabilities-instance',
@@ -38,7 +40,7 @@ export async function useInstanceCapabilities() {
   });
 
   const state = (id: CapabilityId): CapabilityState => stateMap.value.get(id) ?? 'undecided';
-  const isHidden = (id: CapabilityId): boolean => state(id) === 'declined' || state(id) === 'not-applicable';
+  const isHidden = (id: CapabilityId): boolean => capabilityHidden(id, state(id), isDesktop);
 
   async function decideMany(decisions: Partial<Record<CapabilityId, InstanceDecision | null>>) {
     const res = await $fetch<CapabilityStates>('/api/capabilities', { method: 'PATCH', body: { decisions } });

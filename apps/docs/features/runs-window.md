@@ -18,8 +18,9 @@ locator on its image. The editor shows the same stops: [Pause and step from the 
 With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-recording#send-from-piwi-picker), the popup shows a
 **Runs** tile under **More tools** while the editor answers. It opens the Runs window, to keep beside the test's
 browser. For each run the editor [started](./editor-runs), it shows the folder and the command, then each worker's test
-and whether it runs or where it stopped: the file and line, the call about to run, and an image of the page. A run you
-[started in a terminal](./terminal-runs) shows too, marked **Terminal**.
+and whether it runs or where it stopped: the file and line, the call about to run, and an image of the page. While
+none of its tests is stopped, the run says how one stops: at a breakpoint, a `page.pause()` or **Pause**. A run
+[started outside Piwi](./terminal-runs) shows too, marked **Terminal** or **Test runner**.
 
 ## The controls
 
@@ -32,8 +33,8 @@ under it. **Resume** lets it end as it failed; **Pick** replaces the failing loc
 
 **Share live**, under the run's name, lets a teammate watch the run from its page on your team's instance, in a
 project whose live view is on. The first time in a window, it says what goes out and to whom; shared, the run says
-how many views are open, with its page's link to copy, until **Stop sharing**:
-[Share a run from your machine](./live-view#share-a-run-from-your-machine).
+how many views are open, with its page's link to copy, until **Stop sharing**. A run that cannot be shared says why in
+its place: [Share a run from your machine](./live-view#share-a-run-from-your-machine).
 
 ## Code from a stop
 
@@ -52,11 +53,11 @@ what to review in it, or why not.
 
 ## Watch live
 
-With a reporter newer than 0.61.0 and an editor extension of the same release, a stop has **Watch live** above its
-image. It shows the page as it paints, in place of the image, at most ten frames a second, at the window's width, with
-a red **Live** badge. Only the window that asked gets the frames, and nothing stores
-them: they go from the test's worker to the editor service and the extension's background worker, on your machine or
-through the port your IDE forwards from a [remote window](/guide/remote-development).
+A stop has **Watch live** above its image, with a reporter newer than 0.61.0. It shows the page as it paints, in place
+of the image, at most ten frames a second, at the window's width, with a red **Live** badge. Only the window that asked
+gets the frames, and nothing stores them: they go from the test's worker to the editor service and the extension's
+background worker, on your machine or through the port your IDE forwards from a [remote
+window](/guide/remote-development).
 
 The view ends with the stop, when you turn **Watch live** off, minimize the window, or close it. Left on, it starts
 again at the worker's next stop, and as the window shows again.
@@ -102,10 +103,10 @@ In Firefox, it works while Firefox has the focus.
 
 [Paired](./bug-reports#running-it-with-playwright-in-the-desktop-app) with the [desktop app](./desktop), the window
 lists the runs the app starts beside your editor's, marked **Desktop app**: reproductions, bisect steps and bug reports
-included, with the same controls and live view. With no editor paired, it follows the app alone. A failure of a run
-nobody attends (a Flake Lab run, a bisect, a lab job) goes on while the window is open. The app holds no editor, so
-**Pick**, **Record** and **Assert** in the test's window are not offered; the code **Assert a region** and **Mock a
-request** make goes to the app's window, to copy there, and the window here says so: [Desktop app runs](./desktop-runs).
+included, with the same controls and live view. With no editor paired, it follows the app alone. The app holds no
+editor, so **Pick**, **Record** and **Assert** in the test's window are not offered; the code **Assert a region** and
+**Mock a request** make goes to the app's window, to copy there, and the window here says so: [Desktop app
+runs](./desktop-runs).
 
 ## How it connects
 

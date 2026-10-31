@@ -70,8 +70,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # `app` is what the dashboard's build, E2E, package smoke and demo jobs depend on: the server bundles the docs
-      # pages and the changelog for its MCP tools. `js` is every workspace the checks job formats, lints and tests,
-      # and what knip reads besides them (its config, the configs of the tools it knows, the git hooks).
+      # pages and the changelog for its MCP tools. `js` is every workspace the four check jobs (`lint`, `app-unit`,
+      # `reporter`, `packages`) format, lint and test, and what knip reads besides them (its config, the configs of the
+      # tools it knows, the git hooks).
       - name: Read the areas the change touches
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -81,7 +82,7 @@ jobs:
               - '.github/workflows/**'
               - '.github/actions/**'
               - '.node-version'
-            # The agent guides, and the files outside the checks job's paths that they link to.
+            # The agent guides, and the files outside the `js` paths that they link to.
             guides:
               - '**/AGENTS.md'
               - '**/ARCHITECTURE.md'
@@ -164,11 +165,12 @@ jobs:
               - 'integrations/serilog/**'
               - 'examples/sample-app/backends/aspnetcore/**'
               - 'examples/sample-app/backends/aspnetcore.Tests/**'
-            # The Nitro plugin, the sample backend that loads it from source, and the root manifests that pin its
-            # TypeScript, Vitest and peer dependencies.
+            # The Nitro plugin, the sample backend that loads it from source, the reporter's probe signer its
+            # round-trip test imports, and the root manifests that pin its TypeScript, Vitest and peer dependencies.
             nitro:
               - 'integrations/nitro/**'
               - 'examples/sample-app/backends/nitro/**'
+              - 'packages/reporter/src/internal/probe/**'
               - 'package.json'
               - 'package-lock.json'
             smoke:
@@ -291,18 +293,17 @@ jobs:
           path: base/apps/application/.output
           key: perf-base-output-v1-${{ github.sha }}
 
-  # Backend-agnostic checks. Independent of the E2E matrix, so they run alongside it.
-  checks:
-    name: Lint, typecheck and unit tests
+  # The backend-agnostic checks, in four jobs that run at once. Every test job builds the reporter and installs the full
+  # Chromium build beside the cached headless shell: two specs that drive a real run through the built reporter skip
+  # without them (the dashboard's tests/unit/desktop-runs-run.test.ts, the editor service's tests/agent-run.test.ts),
+  # the reporter's own specs load the build, and its breakpoint run (tests/pause-run.spec.ts) opens Chromium's windows,
+  # under a display.
+  lint:
+    name: Format, lint and typecheck
     needs: changes
     if: needs.changes.outputs.js == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-
-    permissions:
-      contents: read
-      # Lets the coverage-report steps below post/update a sticky PR comment.
-      pull-requests: write
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -310,8 +311,6 @@ jobs:
 
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
-        with:
-          playwright: shell
 
       # Every workspace's files as the pre-commit hook formats them.
       - name: Check formatting
@@ -326,77 +325,35 @@ jobs:
           npm run showcase:format:check --prefix apps/showcase
 
       - name: Lint
-        working-directory: apps/application
-        run: npm run app:lint
+        run: |
+          npm run app:lint -w apps/application
+          npm run reporter:lint -w packages/reporter
+          npm run core:lint -w packages/core
+          npm run picker-dom:lint -w packages/picker-dom
+          npm run editor:lint -w packages/editor
+          npm run vscode:lint -w apps/vscode
+          npm run extension:lint -w apps/extension
+          npm run showcase:lint --prefix apps/showcase
 
-      - name: Typecheck
+      # The story itself plays nightly (nightly-showcase.yml): here, its script and its lines.
+      - name: Lint the showcase's lines
+        working-directory: apps/showcase
+        run: node showcase.mjs --lint
+
+      - name: Typecheck the dashboard
         working-directory: apps/application
         run: npm run app:typecheck
 
-      - name: Lint reporter
-        working-directory: packages/reporter
-        run: npm run reporter:lint
-
-      - name: Typecheck reporter
-        working-directory: packages/reporter
-        run: npm run reporter:typecheck
-
-      - name: Lint, typecheck and test core
-        working-directory: packages/core
+      - name: Typecheck the packages
         run: |
-          npm run core:lint
-          npm run core:typecheck
-          npm run core:test
+          npm run reporter:typecheck -w packages/reporter
+          npm run core:typecheck -w packages/core
+          npm run picker-dom:typecheck -w packages/picker-dom
+          npm run editor:typecheck -w packages/editor
+          npm run vscode:typecheck -w apps/vscode
+          npm run extension:typecheck -w apps/extension
 
-      - name: Typecheck and test the Nitro instrumentation
-        working-directory: integrations/nitro
-        run: |
-          npm run typecheck
-          npm test
-
-      - name: Lint, typecheck and test picker-dom
-        working-directory: packages/picker-dom
-        run: |
-          npm run picker-dom:lint
-          npm run picker-dom:typecheck
-          npm run picker-dom:test
-
-      - name: Lint, typecheck, build and test the editor service
-        working-directory: packages/editor
-        run: |
-          npm run editor:lint
-          npm run editor:typecheck
-          npm run editor:build
-          npm run editor:test
-
-      - name: Lint, typecheck, build and unit-test the VS Code extension
-        working-directory: apps/vscode
-        run: |
-          npm run vscode:lint
-          npm run vscode:typecheck
-          npm run vscode:build
-          npm run vscode:test
-
-      - name: Lint, typecheck and unit-test extension
-        working-directory: apps/extension
-        run: |
-          npm run extension:lint
-          npm run extension:typecheck
-          npm run extension:test
-
-      # The story itself plays nightly (nightly-showcase.yml): here, its script and its lines.
-      - name: Lint the showcase and its lines
-        working-directory: apps/showcase
-        run: |
-          npm run showcase:lint
-          node showcase.mjs --lint
-
-      - name: Test picker-dom integration (drives a real browser)
-        working-directory: packages/picker-dom
-        run: npm run picker-dom:test:integration
-
-      # The reporter's flake-run and build-output specs load the built package, and so does knip, through the
-      # dashboard's Playwright config.
+      # Knip loads the dashboard's Playwright config, which imports the built reporter.
       - name: Build reporter
         working-directory: packages/reporter
         run: npm run reporter:build
@@ -405,22 +362,87 @@ jobs:
       - name: Knip
         run: npm run knip
 
-      # The breakpoint run (tests/pause-run.spec.ts) opens Chromium's windows, under a display: the full build, beside
-      # the headless shell the setup action already saved to its cache.
+  app-unit:
+    name: Dashboard unit tests
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+      # Lets the coverage-report step below post/update a sticky PR comment.
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          playwright: shell
+
+      - name: Build reporter
+        working-directory: packages/reporter
+        run: npm run reporter:build
+
       - name: Install the full Chromium build
         run: npx playwright install chromium --no-shell
 
-      - name: Test reporter
+      # Vitest's default worker count, one fewer than the cores: the main process serves the workers' imports.
+      - name: Test
+        working-directory: apps/application
+        run: npm run app:test:unit:coverage
+
+      - name: Report coverage on the PR
+        if: github.event_name == 'pull_request'
+        uses: davelosert/vitest-coverage-report-action@8f86cfb56ed6d5613ea8cdc5259f207fbfd51ece # v2.13.1
+        with:
+          working-directory: ./apps/application
+          name: Application
+          file-coverage-mode: changes
+
+  reporter:
+    name: Reporter tests
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+      # Lets the coverage-report step below post/update a sticky PR comment.
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          playwright: shell
+
+      # The flake-run and build-output specs load the built package.
+      - name: Build reporter
+        working-directory: packages/reporter
+        run: npm run reporter:build
+
+      - name: Install the full Chromium build
+        run: npx playwright install chromium --no-shell
+
+      - name: Test
         working-directory: packages/reporter
         run: xvfb-run -a npm run reporter:test:coverage
 
       # Full AI-step pipeline (resolve → compile → replay) end to end against a
       # real browser, with a stub standing in for the LLM: no network, no tokens.
-      - name: Test reporter AI steps (integration, drives a real browser)
+      - name: Test the AI steps (integration, drives a real browser)
         working-directory: packages/reporter
         run: npm run reporter:test:integration:ai
 
-      - name: Report reporter coverage on the PR
+      - name: Report coverage on the PR
         if: github.event_name == 'pull_request'
         uses: davelosert/vitest-coverage-report-action@8f86cfb56ed6d5613ea8cdc5259f207fbfd51ece # v2.13.1
         with:
@@ -428,17 +450,59 @@ jobs:
           name: Reporter
           file-coverage-mode: changes
 
-      - name: Test application unit tests
-        working-directory: apps/application
-        run: npm run app:test:unit:coverage
+  packages:
+    name: Package tests
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
-      - name: Report application coverage on the PR
-        if: github.event_name == 'pull_request'
-        uses: davelosert/vitest-coverage-report-action@8f86cfb56ed6d5613ea8cdc5259f207fbfd51ece # v2.13.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
         with:
-          working-directory: ./apps/application
-          name: Application
-          file-coverage-mode: changes
+          playwright: shell
+
+      - name: Build reporter
+        working-directory: packages/reporter
+        run: npm run reporter:build
+
+      - name: Install the full Chromium build
+        run: npx playwright install chromium --no-shell
+
+      - name: Test core
+        working-directory: packages/core
+        run: npm run core:test
+
+      - name: Test picker-dom
+        working-directory: packages/picker-dom
+        run: |
+          npm run picker-dom:test
+          npm run picker-dom:test:integration
+
+      - name: Build and test the editor service
+        working-directory: packages/editor
+        run: |
+          npm run editor:build
+          npm run editor:test
+
+      - name: Build and unit-test the VS Code extension
+        working-directory: apps/vscode
+        run: |
+          npm run vscode:build
+          npm run vscode:test
+
+      - name: Unit-test the browser extension
+        working-directory: apps/extension
+        run: npm run extension:test
+
+      # The cut's timing, camera, pointer and subtitles.
+      - name: Test the showcase's cut
+        working-directory: apps/showcase
+        run: npm run showcase:test
 
   e2e:
     name: E2E (storage=${{ matrix.storage }}, db=${{ matrix.database }}, shard ${{ matrix.shard }})
@@ -697,7 +761,7 @@ jobs:
         working-directory: integrations/aspnetcore
         run: dotnet test PiwiTests.Instrumentation.slnx -c Release
 
-  # The Nitro plugin's type check and unit tests: the checks job reads this workspace through knip alone, and
+  # The Nitro plugin's type check and unit tests: the lint job reads this workspace through knip alone, and
   # reusable-publish-npm.yml only builds it. No install scripts: the plugin needs no `nuxt prepare`.
   nitro:
     name: Typecheck and test the Nitro instrumentation
@@ -777,7 +841,8 @@ jobs:
         working-directory: apps/docs
         run: npm run docs:build
 
-  # The checks job runs the agent guides' test with every unit test; a change to the guides alone runs it here.
+  # The dashboard's unit tests job runs the agent guides' test with every unit test; a change to the guides alone runs
+  # it here.
   guides:
     name: Agent guides
     needs: changes
@@ -895,7 +960,7 @@ jobs:
   ci-result:
     name: CI result
     if: ${{ !cancelled() }}
-    needs: [versions, changes, build, checks, e2e, measure, package-smoke, demo, aspnet, nitro, container, docs, guides, extension, vscode, jetbrains, desktop, perf-base, perf]
+    needs: [versions, changes, build, lint, app-unit, reporter, packages, e2e, measure, package-smoke, demo, aspnet, nitro, container, docs, guides, extension, vscode, jetbrains, desktop, perf-base, perf]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 

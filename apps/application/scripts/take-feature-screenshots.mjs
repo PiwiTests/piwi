@@ -50,6 +50,8 @@
 import { createRequire } from 'module';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { createHash } from 'node:crypto';
+import http from 'node:http';
+import https from 'node:https';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -540,6 +542,77 @@ function reportRetriedRun(request, base) {
 }
 
 /**
+ * The checkout a CI test of `run-live-view` is on: its Pay button stays disabled while the card is checked, so the
+ * test's click on it waits.
+ */
+const LIVE_VIEW_CHECKOUT = `<!doctype html><meta charset="utf-8"><style>
+body { margin: 0; font: 16px system-ui, sans-serif; background: #f6f7f9; color: #1f2933 }
+header { background: #1f2933; color: #fff; padding: 16px 32px; font-weight: 600 }
+main { display: grid; grid-template-columns: 1fr 360px; gap: 32px; padding: 32px }
+section { background: #fff; border-radius: 8px; padding: 8px 24px 24px; box-shadow: 0 1px 2px rgb(0 0 0 / 8%) }
+label { display: block; margin: 14px 0 4px; font-size: 14px }
+input { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; padding: 10px; border: 1px solid #cbd2d9; border-radius: 6px; font: inherit }
+button { margin-top: 24px; width: 100%; padding: 12px; border: 0; border-radius: 6px; background: #9aa5b1; color: #fff; font: 600 16px system-ui, sans-serif }
+.row { display: flex; justify-content: space-between; margin: 10px 0 }
+.note { color: #52606d; font-size: 14px }
+</style>
+<header>Checkout</header>
+<main>
+  <section>
+    <h2>Payment</h2>
+    <label>Email <input value="jo@example.test"></label>
+    <label>Card number <input value="4242 4242 4242 4242"></label>
+    <label>Password <input type="password" value="correct horse"></label>
+    <p class="note">Checking your card…</p>
+    <button disabled>Pay €84.90</button>
+  </section>
+  <section>
+    <h2>Order</h2>
+    <div class="row"><span>Running shoes</span><span>€79.90</span></div>
+    <div class="row"><span>Delivery</span><span>€5.00</span></div>
+    <hr>
+    <div class="row"><b>Total</b><b>€84.90</b></div>
+  </section>
+</main>`;
+
+/**
+ * The call log of the click `run-live-view` shows, as its worker posts it 6.4 s into the wait: Playwright 1.64's log
+ * of a click on a disabled button, folded as the worker folds it.
+ */
+const LIVE_VIEW_CALL_LINES = [
+  "- waiting for getByRole('button', { name: 'Pay' })",
+  '  - locator resolved to <button disabled>Pay €84.90</button>',
+  '- attempting click action',
+  '  2 × waiting for element to be visible, enabled and stable',
+  '    - element is not enabled',
+  '  - retrying click action',
+  '  - waiting 20ms',
+  '  2 × waiting for element to be visible, enabled and stable',
+  '    - element is not enabled',
+  '  - retrying click action',
+  '    - waiting 100ms',
+  '  11 × waiting for element to be visible, enabled and stable',
+  '     - element is not enabled',
+  '   - retrying click action',
+  '     - waiting 500ms',
+];
+
+/**
+ * A worker's stream to the run's live view, held as a CI worker holds it: while it is open, the run page offers Watch
+ * on the test the worker runs.
+ */
+function holdLiveWorkerStream(base, runId, key) {
+  const client = base.startsWith('https:') ? https : http;
+  const request = client.request(`${base}/api/test-runs/${runId}/live-view?worker=0`, {
+    headers: { Accept: 'text/event-stream', Authorization: `Bearer ${key}` },
+  });
+  request.on('response', (response) => response.resume());
+  request.on('error', () => {});
+  request.end();
+  return () => request.destroy();
+}
+
+/**
  * A run still going on three workers, 48 s in: each worker finished a few tests
  * and runs one more, and the reporter posted what it measured so far (the
  * machine's CPU every second, the run's memory and each worker's CPU and memory
@@ -861,7 +934,7 @@ const REPRO_SCENE_STEPS = (() => {
  *   base     — server origin, e.g. http://localhost:3050
  *   shoot    — (label?, opts?) => save `<file>[-<label>].png`; opts.of / opts.pad
  *              override the scene's, opts.clip / opts.fullPage / opts.mask pass
- *              through to Playwright
+ *              through to Playwright, opts.page captures another page (a popup)
  *   goto     — (path) => navigate, wait for hydration, settle
  *   settle   — (opts?) => fonts loaded, network quiet, nothing still loading
  *   openTab  — (name, opts?) => click a tab and assert it actually opened
@@ -957,6 +1030,34 @@ async function shopPageJpeg(context) {
   await shot.close();
   return data;
 }
+
+const ESC = '\u001b';
+
+/** Playwright's list reporter output with `FORCE_COLOR=1`, one line per entry, as the desktop shell streams a run. */
+const COLORED_RUN_OUTPUT = [
+  `${ESC}[2mRunning ${ESC}[22m3${ESC}[2m tests using ${ESC}[22m2${ESC}[2m workers${ESC}[22m`,
+  '',
+  `  ${ESC}[32m✓${ESC}[39m  ${ESC}[2m1 [chromium] › ${ESC}[22mtests/cart.spec.ts:8:3 › cart › adds an item${ESC}[2m (1.4s)${ESC}[22m`,
+  `  ${ESC}[31m✘${ESC}[39m  ${ESC}[2m2 [chromium] › ${ESC}[22m${ESC}[31mtests/checkout.spec.ts:11:3 › checkout › pays with a saved card${ESC}[39m${ESC}[2m (5.2s)${ESC}[22m`,
+  `  ${ESC}[32m✓${ESC}[39m  ${ESC}[2m3 [chromium] › ${ESC}[22mtests/home.spec.ts:5:1 › homepage loads${ESC}[2m (812ms)${ESC}[22m`,
+  '',
+  `${ESC}[31m  1) [chromium] › tests/checkout.spec.ts:11:3 › checkout › pays with a saved card ${ESC}[2m${'─'.repeat(24)}${ESC}[22m${ESC}[39m`,
+  '',
+  `    Error: ${ESC}[2mexpect(${ESC}[22m${ESC}[31mlocator${ESC}[39m${ESC}[2m).${ESC}[22mtoHaveText${ESC}[2m(${ESC}[22m${ESC}[32mexpected${ESC}[39m${ESC}[2m)${ESC}[22m failed`,
+  '',
+  `    Locator: getByRole('heading', { level: 1 })`,
+  `    Expected: ${ESC}[32m"Order confirmed"${ESC}[39m`,
+  `    Received: ${ESC}[31m"Payment declined"${ESC}[39m`,
+  '',
+  `     ${ESC}[90m 17 |${ESC}[39m   ${ESC}[36mawait${ESC}[39m page${ESC}[33m.${ESC}[39mgetByRole(${ESC}[32m'button'${ESC}[39m${ESC}[33m,${ESC}[39m { name${ESC}[33m:${ESC}[39m ${ESC}[32m'Pay now'${ESC}[39m })${ESC}[33m.${ESC}[39mclick()${ESC}[33m;${ESC}[39m`,
+  `    ${ESC}[31m${ESC}[1m>${ESC}[22m${ESC}[39m${ESC}[90m 18 |${ESC}[39m   ${ESC}[36mawait${ESC}[39m expect(page${ESC}[33m.${ESC}[39mgetByRole(${ESC}[32m'heading'${ESC}[39m))${ESC}[33m.${ESC}[39mtoHaveText(${ESC}[32m'Order confirmed'${ESC}[39m)${ESC}[33m;${ESC}[39m`,
+  `     ${ESC}[90m    |${ESC}[39m                                            ${ESC}[31m${ESC}[1m^${ESC}[22m${ESC}[39m`,
+  `    ${ESC}[2m    at /home/dev/code/acme-checkout/tests/checkout.spec.ts:18:44${ESC}[22m`,
+  '',
+  `${ESC}[31m  1 failed${ESC}[39m`,
+  `${ESC}[31m    [chromium] › tests/checkout.spec.ts:11:3 › checkout › pays with a saved card ${ESC}[2m${'─'.repeat(8)}${ESC}[22m${ESC}[39m`,
+  `${ESC}[32m  2 passed${ESC}[39m${ESC}[2m (6.9s)${ESC}[22m`,
+];
 
 /**
  * Opens a cluster page's Diagnosis: it is the card under the situation block when
@@ -2334,6 +2435,21 @@ const SCENES = [
       await shoot(undefined, { of: '[data-shot="analytics-handbacks"]', pad: 12 });
     },
   })),
+  ...[390, 1280].map((width) => ({
+    name: `ai-settings-${width}`,
+    description: `Settings → AI at ${width} px: the status, the provider tiles and the Anthropic connection, the features`,
+    route: '/settings/ai',
+    viewport: { width, height: width < 640 ? 4200 : 2400 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-provider-tile="anthropic"]').click();
+      await page.getByText('Connect to Anthropic').waitFor();
+      await page.getByRole('switch', { name: 'Two-stage diagnosis' }).click();
+      await page.getByRole('switch', { name: 'Semantic clustering' }).click();
+      await page.locator('[data-tour="ai-embedding-model"] [data-provider-tile="ollama"]').click();
+      await settle();
+      await shoot();
+    },
+  })),
   {
     name: 'ai-usage',
     description: "Settings → AI: the AI usage panel, tokens per model, then how each model's diagnoses fared",
@@ -2566,7 +2682,7 @@ const SCENES = [
     { name: 'project-live-view-settings-mobile', width: 375, height: 1100 },
   ].map(({ name, width, height }) => ({
     name,
-    description: `Project → Settings → Live view: the switch, and what goes out, to whom and what is kept, at ${width} px`,
+    description: `Project → Settings → Live view: the switch, the masked elements, and what goes out, to whom and what is kept, at ${width} px`,
     route: '/projects/1?tab=settings&section=live-view',
     viewport: { width, height },
     of: '[data-shot="project-live-view-settings"]',
@@ -4025,7 +4141,7 @@ const SCENES = [
     tags: ['docs'],
     out: 'docs',
     route: '/mcp',
-    viewport: { width: 1280, height: 800 },
+    viewport: { width: 1280, height: 1000 },
     of: '[data-shot="mcp-client-setup"]',
     pad: 12,
   },
@@ -4588,6 +4704,309 @@ const SCENES = [
       await page.evaluate(() => document.fonts.ready);
       await page.waitForTimeout(400);
       await shoot();
+    },
+  },
+  {
+    name: 'run-live-view',
+    description:
+      'The live view of a CI run’s worker, its click waiting on a disabled Pay button: the page with the button outlined, the call, how long it has run, and Playwright’s log of it, at 1280 and 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 1000 },
+    outputs: ['run-live-view.png', 'run-live-view-narrow.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const ok = async (response, what) => {
+        if (!response.ok()) throw new Error(`${what}: ${response.status()} ${await response.text()}`);
+        return response;
+      };
+      const { items } = await (await ok(await request.get(`${base}/api/projects/menu`), 'projects')).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId) throw new Error('run-live-view needs the seeded web-dashboard project (npm run app:seed:dev)');
+      const project = await (await ok(await request.get(`${base}/api/projects/${projectId}`), 'project')).json();
+      let run = null;
+      let closeStream = () => {};
+      let sending = null;
+      try {
+        await ok(
+          await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: true } }),
+          'live view on',
+        );
+        // A CI run's setup and begin, as the reporter's global setup asks for them, and its worker's stream.
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 6 },
+          })
+        ).json();
+        run = { id: setup.runId, key: setup.liveView.key, streamToken: begun.streamToken };
+        const now = Date.now();
+        const browser = { projectName: 'chromium', browserName: 'chromium' };
+        await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: [
+              {
+                type: 'complete',
+                title: 'guest checkout keeps the cart',
+                location: 'tests/checkout.spec.ts:5:3',
+                status: 'passed',
+                duration: 8_400,
+                workerIndex: 0,
+                startedAt: now - 16_000,
+                browser,
+              },
+              {
+                type: 'begin',
+                title: 'pays with a saved card',
+                location: 'tests/checkout.spec.ts:24:3',
+                workerIndex: 0,
+                startedAt: now - 7_000,
+                browser,
+              },
+              {
+                type: 'step-begin',
+                title: 'Click',
+                subtitle: "getByRole('button', { name: 'Pay' })",
+                location: 'tests/checkout.spec.ts:31:5',
+                stepCategory: 'pw:api',
+                parentTitle: 'pays with a saved card',
+                workerIndex: 0,
+                startedAt: now - 6_400,
+              },
+            ],
+          },
+        });
+        closeStream = holdLiveWorkerStream(base, run.id, run.key);
+
+        // The image the worker sends: the checkout as the test's page shows it, its button's box measured there.
+        const viewport = { width: 1280, height: 800 };
+        const testPage = await page.context().newPage();
+        await testPage.setViewportSize(viewport);
+        await testPage.setContent(LIVE_VIEW_CHECKOUT);
+        const box = await testPage.getByRole('button', { name: 'Pay' }).boundingBox();
+        const data = (await testPage.screenshot({ type: 'jpeg', quality: 50 })).toString('base64');
+        await testPage.close();
+
+        const test = 'pays with a saved card';
+        const call = { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 31 };
+        const post = (message) =>
+          request
+            .post(`${base}/api/test-runs/${run.id}/live-view`, {
+              headers: { Authorization: `Bearer ${run.key}` },
+              data: { shard: null, worker: 0, ...message },
+            })
+            .catch(() => undefined);
+        const send = () =>
+          Promise.all([
+            post({ type: 'frame', data, call, test }),
+            post({
+              type: 'call-log',
+              test,
+              log: {
+                id: 'call@58',
+                call,
+                status: 'running',
+                lines: LIVE_VIEW_CALL_LINES,
+                point: null,
+                target: { count: 1, box, enabled: false },
+                viewport,
+                ms: 6_400,
+                error: null,
+              },
+            }),
+          ]);
+        sending = setInterval(send, 400);
+        await goto(`/test-runs/${run.id}`);
+        await page.getByRole('button', { name: 'Watch worker 0 live' }).first().click({ timeout: 60_000 });
+        const dialog = page.getByRole('dialog');
+        await dialog.getByTestId('live-frame').waitFor({ timeout: 30_000 });
+        await dialog.getByTestId('live-target-box').waitFor({ state: 'attached', timeout: 30_000 });
+        await dialog.getByTestId('live-call-log').waitFor({ timeout: 30_000 });
+        // The worker's sends stop, so every image is of the same call log.
+        clearInterval(sending);
+        await send();
+        await settle();
+        await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await send();
+        await settle();
+        await shoot('narrow', { of: '[role="dialog"]', pad: 0 });
+      } finally {
+        clearInterval(sending);
+        closeStream();
+        await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: project.liveView === true } });
+        if (run) {
+          await request.post(`${base}/api/test-runs/${run.id}/finish`, {
+            data: { streamToken: run.streamToken, status: 'passed', totalTests: 2 },
+          });
+        }
+      }
+    },
+  },
+  {
+    name: 'run-stuck-test',
+    description:
+      'Run page while live: a test running five minutes where its passing runs took seconds is marked Stuck?, with how long it has run against its usual time, at 1280 and 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 720 },
+    outputs: ['run-stuck-test.png', 'run-stuck-test-narrow.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const post = (path, options) => postRetrying(request, base, path, options);
+      const project = 'checkout-stuck';
+      const browser = { projectName: 'chromium' };
+      const tests = [
+        { title: 'pays with PayPal', location: 'tests/checkout.spec.ts:24:3', usual: 6400 },
+        { title: 'pays with a saved card', location: 'tests/checkout.spec.ts:41:3', usual: 5200 },
+        { title: 'keeps the cart after sign-in', location: 'tests/cart.spec.ts:12:3', usual: 3100 },
+      ];
+      // Two earlier runs where every test passed in seconds.
+      for (const day of [2, 1]) {
+        await post('/api/test-runs/submit', {
+          data: {
+            projectName: project,
+            status: 'passed',
+            startTime: new Date(Date.now() - day * 86_400_000).toISOString(),
+            duration: 20_000,
+            totalTests: tests.length,
+            passedTests: tests.length,
+            failedTests: 0,
+            skippedTests: 0,
+            testCases: tests.map((t) => ({
+              title: t.title,
+              status: 'passed',
+              duration: t.usual,
+              location: t.location,
+              browser,
+            })),
+          },
+        });
+      }
+      const { runId, streamToken } = await (
+        await post('/api/test-runs/start', {
+          data: { projectName: project, startTime: new Date(Date.now() - 6 * 60_000).toISOString(), totalTests: 3 },
+        })
+      ).json();
+      const now = Date.now();
+      try {
+        await post(`/api/test-runs/${runId}/events`, {
+          data: {
+            streamToken,
+            testCases: [
+              { ...tests[2], type: 'begin', workerIndex: 1, startedAt: now - 6 * 60_000, browser },
+              {
+                type: 'complete',
+                title: tests[2].title,
+                location: tests[2].location,
+                status: 'passed',
+                duration: 3300,
+                workerIndex: 1,
+                startedAt: now - 6 * 60_000,
+                browser,
+              },
+              { ...tests[0], type: 'begin', workerIndex: 0, startedAt: now - 5 * 60_000, browser },
+              { ...tests[1], type: 'begin', workerIndex: 1, startedAt: now - 2000, browser },
+            ],
+          },
+        });
+        await goto(`/test-runs/${runId}`);
+        // The server checks its live runs every 15 seconds.
+        await page.locator('[data-testid="stuck-time"]:visible').first().waitFor({ timeout: 60_000 });
+        // The step it waits on: live steps reach only the pages open as they stream.
+        await post(`/api/test-runs/${runId}/events`, {
+          data: {
+            streamToken,
+            testCases: [
+              {
+                type: 'step-begin',
+                title: 'Click',
+                subtitle: "getByRole('button', { name: 'Pay with PayPal' })",
+                location: 'tests/checkout.spec.ts:31:5',
+                stepCategory: 'pw:api',
+                parentTitle: tests[0].title,
+                workerIndex: 0,
+                startedAt: now - 4 * 60_000,
+              },
+            ],
+          },
+        });
+        await page.locator('[data-testid="live-step"]:visible').first().waitFor({ timeout: 30_000 });
+        await settle();
+        await shoot();
+        await page.setViewportSize({ width: 390, height: 844 });
+        await settle();
+        await shoot('narrow');
+      } finally {
+        await request.post(`${base}/api/test-runs/${runId}/finish`, {
+          data: { streamToken, status: 'passed', totalTests: 3 },
+        });
+      }
+    },
+  },
+  {
+    name: 'run-live-desktop',
+    description:
+      'Run page in the desktop app while live: the running row says where its test’s page shows, and its help lists where',
+    mode: 'desktop',
+    route: '/projects',
+    viewport: { width: 1280, height: 900 },
+    outputs: ['run-live-desktop.png', 'run-live-desktop-help.png'],
+    async prepare({ request, base }) {
+      const started = await (
+        await request.post(`${base}/api/test-runs/start`, {
+          data: { projectName: 'web-dashboard', startTime: new Date().toISOString() },
+        })
+      ).json();
+      this.runId = started.runId;
+      this.streamToken = started.streamToken;
+    },
+    async run({ page, base, shoot, goto, settle }) {
+      await goto(`/test-runs/${this.runId}`);
+      const events = [
+        {
+          type: 'begin',
+          title: 'purchase flow submits the order',
+          location: 'tests/checkout.spec.ts:12:5',
+          workerIndex: 0,
+          startedAt: Date.now(),
+          browser: { projectName: 'chromium' },
+        },
+        {
+          type: 'step-begin',
+          title: 'Click',
+          subtitle: "getByRole('button', { name: 'Place order' })",
+          location: 'tests/checkout.spec.ts:14:5',
+          stepCategory: 'pw:api',
+          parentTitle: 'purchase flow submits the order',
+          workerIndex: 0,
+          startedAt: Date.now(),
+        },
+      ];
+      let pushed = false;
+      for (let attempt = 0; attempt < 5 && !pushed; attempt++) {
+        if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 3000));
+        try {
+          const res = await page.request.post(`${base}/api/test-runs/${this.runId}/events`, {
+            data: { streamToken: this.streamToken, testCases: events },
+          });
+          pushed = res.ok();
+        } catch {
+          // Route still compiling — retry.
+        }
+      }
+      if (!pushed) throw new Error(`could not push step events to run ${this.runId}`);
+      const note = page.locator('[data-testid="live-at-stop"]:visible').first();
+      await note.waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot();
+      await note.getByRole('button').click();
+      await page.getByRole('dialog').waitFor();
+      await settle();
+      await shoot('help');
     },
   },
 
@@ -5441,6 +5860,34 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-settings-notifications',
+    description:
+      'Settings → Notifications (desktop app): the built-in desktop notifications with their test button, no SMTP card, and the Settings nav without the pull-request pages',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/notifications',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, settle, shoot }) {
+      await page.locator('[data-shot="desktop-notifications"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'desktop-settings-about',
+    description:
+      'Settings → About (desktop app): Node.js, database, platform, and the reporter and Playwright versions of the latest run',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/about',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, settle, shoot }) {
+      await page.getByText('Playwright', { exact: true }).waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'desktop-run-live',
     description:
       'Local runs tray (desktop app): a run the shell started, stopped at its page.pause() before its click on Pay, watched live, with Resume, Step and Finish, Pick on the image and the code a stop makes, and that code to copy',
@@ -5460,7 +5907,10 @@ const SCENES = [
         return {};
       });
       await goto('/test-runs/2');
-      await page.getByRole('button', { name: 'Run locally' }).first().click();
+      await page
+        .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
+        .first()
+        .click();
       const tray = page.getByRole('region', { name: 'Local runs' });
       await tray.waitFor();
       await page.waitForFunction(() => window.__hub?.open() === 1);
@@ -6112,6 +6562,90 @@ const SCENES = [
     pad: 12,
   },
   {
+    name: 'desktop-rerun',
+    description:
+      "Re-run buttons in the desktop shell: a red run's header, its menu with the exact command, the tray, an execution's header and a project's default run options",
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 860 },
+    link: { path: READY_INSPECTION.path, exists: true },
+    localRunId: 51,
+    outputs: [
+      'desktop-rerun.png',
+      'desktop-rerun-menu.png',
+      'desktop-rerun-tray.png',
+      'desktop-rerun-execution.png',
+      'desktop-rerun-defaults.png',
+    ],
+    async run({ page, goto, settle, shoot }) {
+      const rerun = page.getByRole('button', { name: /^Re-run \d+ failed tests?/ });
+      await rerun.waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('', { of: '[data-shot="run-header"]', pad: 12 });
+      await page.getByRole('button', { name: 'Run options' }).first().click();
+      await page.getByText(/^Runs (this command|these commands)/).waitFor();
+      await settle();
+      await shoot('menu', { clip: { x: 480, y: 0, width: 800, height: 860 } });
+      await page.keyboard.press('Escape');
+      // The run goes on until the scene ends: the execution page's button, for other tests, stays ready.
+      await rerun.click();
+      const tray = page.getByRole('region', { name: 'Local runs' });
+      await tray.getByText('Running', { exact: false }).first().waitFor();
+      await settle();
+      const box = await tray.boundingBox();
+      await shoot('tray', {
+        clip: { x: box.x - 8, y: box.y - 8, width: box.width + 16, height: box.height + 16 },
+      });
+      await goto('/test-run-cases/37');
+      await page.getByRole('button', { name: 'Re-run this test' }).waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('execution', { clip: { x: 0, y: 0, width: 1280, height: 320 } });
+      await goto('/projects/1?tab=settings&section=local-folder');
+      await page.locator('[data-shot="local-folder-run-defaults"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('defaults', { of: '[data-shot="local-folder-run-defaults"]', pad: 12 });
+    },
+  },
+  {
+    name: 'desktop-run-output',
+    description:
+      "A local run's output in the desktop shell: Playwright's list output in its colors in the tray, then in a separate window",
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 860 },
+    link: { path: READY_INSPECTION.path, exists: true },
+    localRunId: 61,
+    outputs: ['desktop-run-output-tray.png', 'desktop-run-output-window.png'],
+    async run({ page, base, settle, shoot }) {
+      const rerun = page.getByRole('button', { name: /^Re-run \d+ failed tests?/ });
+      await rerun.waitFor({ timeout: 60_000 });
+      await rerun.click();
+      const tray = page.getByRole('region', { name: 'Local runs' });
+      await tray.waitFor();
+      await page.evaluate((lines) => {
+        for (const line of lines) window.__emitTauri('piwi:local-run', { id: 61, kind: 'stdout', line, code: null });
+      }, COLORED_RUN_OUTPUT);
+      await tray.getByText('2 passed').waitFor();
+      await settle();
+      const box = await tray.boundingBox();
+      await shoot('tray', {
+        clip: { x: box.x - 8, y: box.y - 8, width: box.width + 16, height: box.height + 16 },
+      });
+      // The shell opens the window on the run output page, which the tray feeds over their BroadcastChannel.
+      await tray.getByRole('button', { name: 'Open the output in a separate window' }).click();
+      await page.waitForFunction(() => window.__outputWindowName);
+      const name = await page.evaluate(() => window.__outputWindowName);
+      const outputPage = await page.context().newPage();
+      await outputPage.setViewportSize({ width: 960, height: 640 });
+      await outputPage.goto(`${base}/desktop/run-output?name=${name}`, { waitUntil: 'domcontentloaded' });
+      await outputPage.getByRole('region', { name: 'Run output' }).getByText('2 passed').waitFor({ timeout: 60_000 });
+      await outputPage.evaluate(() => document.fonts.ready);
+      await shoot('window', { page: outputPage });
+    },
+  },
+  {
     name: 'desktop-nav',
     description: 'Back/forward pair in the sidebar header (desktop shell)',
     tags: ['desktop'],
@@ -6141,13 +6675,13 @@ const SCENES = [
     route: '/settings/ai',
     viewport: { width, height: 1800 },
     async run({ page, shoot, settle }) {
-      const card = page.getByText('Uses your local ChatGPT login.').locator('..');
-      await card.waitFor();
-      await card.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
+      const tile = page.locator('[data-provider-tile="codex-cli"]');
+      await tile.waitFor();
+      await tile.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
       await settle();
       await shoot('before');
-      await page.getByRole('combobox').first().click();
-      await page.getByRole('option', { name: 'Codex (local)' }).click();
+      await tile.click();
+      await page.getByText('with its own tools turned off').first().waitFor();
       await settle();
       await shoot();
     },
@@ -6160,13 +6694,13 @@ const SCENES = [
     route: '/settings/ai',
     viewport: { width, height: 1800 },
     async run({ page, shoot, settle }) {
-      const card = page.getByText('Uses official').locator('..');
-      await card.waitFor();
-      await card.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
+      const tile = page.locator('[data-provider-tile="deepseek-cli"]');
+      await tile.waitFor();
+      await tile.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
       await settle();
       await shoot('before');
-      await page.getByRole('combobox').first().click();
-      await page.getByRole('option', { name: 'DeepSeek Harness (local)' }).click();
+      await tile.click();
+      await page.getByText('with its own tools turned off').first().waitFor();
       await settle();
       await shoot();
     },
@@ -6182,19 +6716,17 @@ const SCENES = [
     pad: 12,
     outputs: ['ai-claude-cli.png', 'ai-claude-cli-selected.png'],
     async run({ page, shoot, settle }) {
-      // The status card sits at the top of the providers section and probes the
-      // real `claude` on this machine (installed + signed-in; no tokens spent).
-      // Wait for that probe to resolve before capturing.
-      await page.getByText('billed to your Claude Code sign-in').first().waitFor();
-      await page.getByText('Checking for the Claude CLI…').waitFor({ state: 'hidden' });
+      // The Claude Code tile probes the real `claude` on this machine
+      // (installed + signed-in; no tokens spent): wait for that probe first.
+      const tile = page.locator('[data-provider-tile="claude-cli"]');
+      await tile.waitFor();
+      await tile.getByText('Checking…', { exact: true }).waitFor({ state: 'hidden' });
       await settle();
       await shoot();
 
-      // Select the CLI as the diagnosis provider to reveal the no-API-key role
-      // form (the provider select carries whatever config is stored).
-      await page.getByRole('combobox').first().click();
-      await page.getByRole('option', { name: 'Claude Code (local)' }).click();
-      await page.getByText('it uses your Claude Code sign-in').first().waitFor();
+      // Pick the CLI as the provider to reveal its status, sign-in and usage.
+      await tile.click();
+      await page.getByText('with its own tools turned off').first().waitFor();
       await settle();
       await shoot('selected');
     },
@@ -7237,9 +7769,10 @@ async function captureScene(browser, scene, { base, outDir, freezeNow }) {
   const annotate = (shapes, opts = {}) => drawAnnotations(page, shapes, { container: annotationHost, ...opts });
   const clear = () => clearAnnotations(page);
 
-  /** Take one screenshot of whatever the scene targets, as a buffer. */
+  /** Take one screenshot of whatever the scene targets, as a buffer: of the scene's page, or of `opts.page` (a popup). */
   const capture = async (opts = {}) => {
-    const { of: ofOpt, pad: padOpt, ...pwOpts } = opts;
+    const { of: ofOpt, pad: padOpt, page: other, ...pwOpts } = opts;
+    if (other) return other.screenshot({ animations: 'disabled', caret: 'hide', ...pwOpts });
     const of = ofOpt ?? scene.of;
     const pad = padOpt ?? scene.pad ?? 0;
     const common = { animations: 'disabled', caret: 'hide', ...pwOpts };

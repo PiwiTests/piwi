@@ -21,7 +21,7 @@ import { randomBytes } from 'node:crypto';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { diffLines } from '@piwitests/core/line-diff';
-import { HIDDEN_VALUE, hideSecretsInText, hideSecretsInUrl } from '@piwitests/core/mask';
+import { HIDDEN_VALUE, hideSecretsInText, hideSecretsInUrl, hideTypedText } from '@piwitests/core/mask';
 import type { AssertionMatcher, RecordedStep, RecordedTarget, StepAction } from '@piwitests/core/recording';
 import {
   MAX_ACT_VALUE,
@@ -205,8 +205,9 @@ function testOf(test: RunTest, root: string | null): Record<string, unknown> {
  * goes, its call and its locator kept.
  */
 function stopTitle(title: string, locator: string | null): string {
-  const typing = /^(Fill|Type|Insert) "/.exec(title);
-  return typing ? `${typing[1]} "${HIDDEN_VALUE}"${locator ? ` ${locator}` : ''}` : title;
+  const hidden = hideTypedText(title);
+  if (hidden === title || !locator) return hidden;
+  return `${hidden.slice(0, hidden.indexOf('"'))}"${HIDDEN_VALUE}" ${locator}`;
 }
 
 /**

@@ -319,6 +319,13 @@ describe('a guide run', () => {
     expect(resolved).toMatchObject({ id: `guide-${guide.id}`, lang: 'en' });
   });
 
+  test('leaves out the stops the desktop build does not render, on that build only', () => {
+    const notifications = AUTHORED_GUIDES.find((g) => g.stops.some((s) => s.hiddenOnDesktop))!;
+    const kept = notifications.stops.filter((s) => !s.hiddenOnDesktop).map((s) => s.id);
+    expect(authoredGuideRun(notifications, {}, true).stops.map((s) => s.id)).toEqual(kept);
+    expect(authoredGuideRun(notifications, {}).stops).toHaveLength(notifications.stops.length);
+  });
+
   test('is listed only with its capability on and its permission held', () => {
     const configureAi = AUTHORED_GUIDES.find((g) => g.id === 'configure-ai')!;
     const viewer = { isHidden: () => false, holds: () => true };

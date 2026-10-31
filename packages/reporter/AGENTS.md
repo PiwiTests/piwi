@@ -17,9 +17,10 @@ responsibilities.
 3. **Side effects**: what a user's suite can observe, each changed only on purpose:
    - `PIWI_*` env vars (`internal/config/env.ts`; `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also from
      the `.env` in the Playwright config's folder, below the environment), and the ones `onBegin` sets for the
-     workers: for a run started in a terminal, `PIWI_RUN_CHANNEL` and `PIWI_RUN_REF` (`terminal-<pid>-<time>`) of the
-     editor whose workspace holds it (`internal/config/editors.ts`: never under CI, Playwright's debugger or UI mode,
-     nor with `PIWI_EDITOR=off`, and only with a terminal unless `PIWI_EDITOR=on`), with one line saying so;
+     workers: for a run started in a terminal or by an editor's test runner (`PW_TEST_REPORTER` naming a file),
+     `PIWI_RUN_CHANNEL` and `PIWI_RUN_REF` (`terminal-<pid>-<time>`) of the editor whose workspace holds it
+     (`internal/config/editors.ts`: never under CI, Playwright's debugger or UI mode, nor with `PIWI_EDITOR=off`, and
+     only with a terminal or a test runner unless `PIWI_EDITOR=on`), with one line saying so;
    - `piwi-*` attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`, and
      `[Piwi Dashboard]`-prefixed log output;
    - the `__piwiProbeElement` global the capture fixtures install into every instrumented page
@@ -62,10 +63,17 @@ responsibilities.
      run channel shares the run (`share`, **Share live**, the state told back as `live`), and dropped quietly after
      bounded retries: only while the instance says someone watches does it post frames of the test's page, through
      the screencast helper the editor's view shares (`page-view.ts`), each with its call (through `hideSecretsInText`)
-     and its test; it always posts its test's stops (`showStop`). Never a frame while nobody watches, never stored,
-     nothing from a run outside CI unless it is shared (`tests/live-view.spec.ts`, `tests/live-view-share.spec.ts`,
-     `tests/live-view-worker.spec.ts`). The key is out of the worker's `process.env` from
-     that fixture's setup to its teardown, put back only as Playwright's `__stop__` message compares the environment,
+     and its test, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
+     `live-call-log.ts`: the context's call stream turned on through `context.debugger._enable()`, which stays on, and a
+     listener on the worker's Playwright instrumentation); it always posts its test's stops (`showStop`). Each frame
+     has the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over before it goes, read
+     through `internalCall` before and after it and painted with the `jpeg-js` of `playwright-core/lib/utilsBundle`,
+     feature-checked: without it, a frame that shows one does not go (`live-mask.ts`). Never a frame while nobody
+     watches, never stored, nothing from a run outside CI unless it is shared (`tests/live-view.spec.ts`,
+     `tests/live-view-share.spec.ts`, `tests/live-view-worker.spec.ts`, `tests/live-view-call-log.spec.ts`,
+     `tests/live-view-mask.spec.ts`). The key is
+     out of the worker's `process.env` from that fixture's setup to its teardown, put back only as Playwright's
+     `__stop__` message compares the environment,
      so the projects that depend on the worker's keep it; in a worker that can open a view, the test gets
      `page.screencast` behind a guard whose `start` and `stop` first end a view's client (`guardScreencast`);
    - `PIWI_RUN_CHANNEL` and `PIWI_EDITOR_SEND` taken out of the worker's `process.env` while each test runs

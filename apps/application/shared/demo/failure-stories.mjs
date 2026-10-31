@@ -2509,7 +2509,7 @@ export const FAILURE_STORIES = [
             callLog: [
               "waiting for getByLabel('Delivery notes')",
               'locator resolved to <textarea id="delivery-notes"></textarea>',
-              'fill("Leave at the door")',
+              'fill("<hidden>")',
               'attempting fill action',
             ],
             frames,
@@ -3651,11 +3651,11 @@ export const DEMO_PROJECTS = [
             params: { locator: "getByLabel('Email')", value: 'admin@example.com' },
           },
           {
-            title: 'Fill "********"',
+            title: 'Fill "<hidden>"',
             category: 'input',
             weight: 200,
             subtitle: "getByLabel('Password')",
-            params: { locator: "getByLabel('Password')" },
+            params: { locator: "getByLabel('Password')", value: '<hidden>' },
           },
           {
             title: 'Click',

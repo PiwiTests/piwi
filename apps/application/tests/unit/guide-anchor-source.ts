@@ -163,6 +163,8 @@ export const TOPIC_AREAS: Readonly<Record<string, GuideAreaId>> = {
   'bug-report.spec': 'setup',
   'fix.toolbox': 'clusters',
   'run.keep': 'runs',
+  'run.live-desktop': 'runs',
+  'run.live-unshared': 'runs',
   'run.partial': 'runs',
 };
 

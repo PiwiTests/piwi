@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeEach, afterAll, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
+import { migrateToLatest } from './temp-db';
 
 /**
  * First-admin setup through its routes: it stays open while no administrator
@@ -35,7 +34,7 @@ const request = (body: Record<string, unknown> = {}) => ({
 beforeEach(async () => {
   address += 1;
   const db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   state.db = db;
   vi.stubEnv('PIWI_AUTH_ENABLED', 'true');
 });

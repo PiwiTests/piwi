@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { readLiveWorkerId } from '@piwitests/core/live-view';
+import { parseLiveMasks, readLiveWorkerId } from '@piwitests/core/live-view';
 import { getDatabase } from '../../../database';
 import { projects, testRuns } from '../../../database/schema';
 import { openEventStream } from '../../../utils/event-stream';
@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: "Hold a worker's live view stream",
     description:
-      "The event stream a test worker keeps open while its run executes, in a project with the live view on: each event says how many people watch the worker (`{ type: 'viewers', count }`), and the worker sends frames of its test's page only while someone does. Authenticated by the run's live view key (`Authorization: Bearer pdl_…`), which the run's setup received and which opens nothing but this run's live view; a second stream of the same worker replaces the first. 401 without a key of this run, 404 once the project turned its live view off (a key that ended so included), 409 while the run is interrupted (its key opens the stream again if the run goes on), 410 once the run is no longer live (a key that ended with it included), 429 past 64 workers of one run.",
+      "The event stream a test worker keeps open while its run executes, in a project with the live view on: each event says how many people watch the worker (`{ type: 'viewers', count }`), or which elements the project masks in each image beside the secret fields (`{ type: 'masks', locators }`, first as the stream opens and again when a project admin changes them), and the worker sends frames of its test's page only while someone does. Authenticated by the run's live view key (`Authorization: Bearer pdl_…`), which the run's setup received and which opens nothing but this run's live view; a second stream of the same worker replaces the first. 401 without a key of this run, 404 once the project turned its live view off (a key that ended so included), 409 while the run is interrupted (its key opens the stream again if the run goes on), 410 once the run is no longer live (a key that ended with it included), 429 past 64 workers of one run.",
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'worker', in: 'query', required: true, schema: { type: 'integer', minimum: 0 } },
@@ -36,7 +36,7 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
   const [run] = await db
-    .select({ status: testRuns.status, liveView: projects.liveView })
+    .select({ status: testRuns.status, liveView: projects.liveView, masks: projects.liveViewMasks })
     .from(testRuns)
     .innerJoin(projects, eq(projects.id, testRuns.projectId))
     .where(eq(testRuns.id, id));
@@ -52,6 +52,11 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 410, message: 'The run is no longer live' });
   }
 
-  const refused = liveViewRelay.connectWorker(entry, worker, () => openEventStream(event));
+  const refused = liveViewRelay.connectWorker(
+    entry,
+    worker,
+    () => openEventStream(event),
+    parseLiveMasks(run.masks) ?? [],
+  );
   if (refused) throw apiError({ statusCode: refused.status, message: refused.message });
 });

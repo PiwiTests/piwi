@@ -23,12 +23,11 @@ dashboard.
 ## Where it is
 
 **Settings → Notifications** manages channels and subscriptions, and the **bell** on a project page subscribes to that
-project. The new-channel form shows where to get each destination, flags a URL that belongs to another type (a Slack
-URL pasted under Teams offers to switch), and can **send a test** before saving: a channel whose test went through is
-saved as verified. Email goes only to a verified address: an email channel once a test reached it, the account email
-once its owner verified it. Notifications need no authentication: with it off, the instance is single-tenant and every
-channel and subscription is **global**. With `PIWI_AUTH_ENABLED=true` ([authentication](/operate/authentication)), each user keeps
-their own, and administrators can add global ones shared by everyone.
+project. The new-channel form shows where to get each destination, offers the right type for a URL pasted under another, and can **send a test** before saving; a test that goes
+through saves the channel as verified. Email goes only to a verified address: an email channel once a test reached it, the account email
+once its owner verified it. With authentication off, the instance is single-tenant and every channel and subscription is
+**global**. With `PIWI_AUTH_ENABLED=true` ([authentication](/operate/authentication)), each user keeps
+their own, and administrators can add global ones.
 
 <figure>
   <img src="/screenshots/notifications.png" alt="Settings, Notifications: the SMTP status with the environment variables to set, a Slack channel, and its subscription to project 1's failed runs and new clusters">
@@ -38,12 +37,13 @@ their own, and administrators can add global ones shared by everyone.
 ## Events
 
 Run events fire when a run finishes or fails, cluster events when a failure cluster appears, is fixed or regresses,
-and others on a flakiness spike, a performance regression, a finished AI diagnosis and an auto-heal pull request.
-Each event, when it fires and the payload it carries are in
+and others on a flakiness spike, a performance regression, a [stuck test](./stuck-tests), a finished AI diagnosis and
+an auto-heal pull request.
+When each event fires, and its payload, are in
 [Notification events & webhooks](/reference/notification-events). A
 [report schedule](./quality-reports#report-schedules) sends its report to the channels it names, with no subscription.
-A run from an editor, or a partial run from a developer's machine or the desktop app, fires no run event and no
-new-cluster, flakiness or performance event ([run origin](/reference/test-metadata#run-origin)).
+A run from an editor, a bisect step, a reproduction, or a partial run from a developer's machine or the desktop app
+fires no run event and no new-cluster, flakiness or performance event ([run origin](/reference/test-metadata#run-origin)).
 
 ## Channels
 
@@ -53,13 +53,14 @@ Sends native OS notifications to any open Piwi tab, even in the background, thro
 
 - **With authentication**: create a channel of type `browser` in **Settings → Notifications** and subscribe it to events; the stream then delivers exactly the events and projects your subscriptions cover.
 - **Without authentication**: no channel is needed; the **bell** on each project page stores per-browser preferences (a cookie) for which events raise notifications.
+- **In the [desktop app](./desktop)**: on with no setup for failed runs and environment incidents; a project's bell changes them.
 
 Diagnosis-completion notifications can be switched off per browser in **Settings → AI → Diagnosis
-notifications** without deleting the subscription.
+notifications**.
 
 ### Email
 
-Requires SMTP to be configured (see below). Sends to a destination address. With authentication on, each user with an account email also gets an automatic **Account email** channel.
+Requires SMTP (see below). Sends to a destination address; [what each email shows](/reference/notification-events#emails). With authentication on, each user with an account email also gets an automatic **Account email** channel.
 
 ### Slack
 
@@ -116,7 +117,7 @@ The bell offers the branches and environments the project's runs reported, and t
 any characters, so `release/*` covers every release branch. A subscription delivers only events from runs on one of
 its branches **and** in one of its environments; a run that reported no branch (or environment) matches none, and an
 empty list matches every run. The filters apply to every event that comes from a run: the `run.*` events,
-`flakiness.spike`, `perf.regression`, the `cluster.*` events and `bug.looks_fixed`. `diagnosis.completed` and
+`flakiness.spike`, `perf.regression`, the `cluster.*` events, `bug.looks_fixed` and `test.stuck`. `diagnosis.completed` and
 `auto_heal.pr_opened` are not filtered.
 
 ### Through the API
@@ -125,8 +126,8 @@ The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/docs))
 
 - **Scope**: all projects (`projectId: null`, for a user who can access every project), or a single project.
 - **Filters**: `branches` and `environments` as above; for run events, status; **owner**, which applies to the
-  `run.*` events, `flakiness.spike`, `perf.regression` and `cluster.new` and delivers them only when a failing test
-  behind the event belongs to that team (see [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold`
+  `run.*` events, `flakiness.spike`, `perf.regression`, `cluster.new` and `test.stuck` and delivers them only when a
+  test behind the event belongs to that team (see [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold`
   (a 0–1 rate) and `perfRegressionPct`.
 - **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC), held until then and sent as
   **one combined message** per email, Slack or Teams channel.

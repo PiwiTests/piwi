@@ -10,6 +10,7 @@ import type { PatchValidation } from '#shared/patch';
 import type { LocatorEdit } from '#shared/locator-healing.types';
 import type { ReproRecipe, BisectResult, BisectedCommit, ReproduceDesktopContext } from '#shared/reproduce';
 import type { ClusterSuspectLinesAnswer } from '#shared/suspect-lines';
+import type { RetryCase } from '#shared/retry-command';
 
 export interface FixPlanEdit {
   filePath: string;
@@ -98,6 +99,11 @@ export interface FixPlan {
   verify: {
     /** Playwright invocation that runs exactly the affected tests. */
     command: string;
+    /**
+     * The tests the command runs: each affected test at the line and in the project of its latest failure, as a CI
+     * re-run of the cluster runs them (`clusterRerunCases`).
+     */
+    cases: RetryCase[];
     /** What happens on the dashboard when it passes. */
     expectation: string;
     /** The trailer to put in the fix's commit message, so the fix is tied to this cluster. */

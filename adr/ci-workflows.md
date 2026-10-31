@@ -246,7 +246,7 @@ Each phase is one pull request, measured before and after with the same API quer
 - [ ] Branch protection switched to `CI result`, `commitlint`, `title` and `actionlint`, or pull requests wait for
       check names that no longer exist.
 
-### Phase 3: test matrices (built, except the `checks` split)
+### Phase 3: test matrices (built)
 
 - [x] E2E on two backends for pull requests, `local + sqlite` (Node 22, the `engines` floor) and `s3 + postgres`, five
       shards each: 20 → 10 jobs. All four backends on `main`, from a matrix `changes` computes (`fromJSON`).
@@ -257,8 +257,10 @@ Each phase is one pull request, measured before and after with the same API quer
 - [x] JetBrains: `verify` on the oldest and newest IDE (`WS:2024.1`, `WS:2026.2.3`) for pull requests, all four on
       `main`, where the `plugin` job writes the Gradle cache. The `verify` IDEs stay out of the cache: four
       distributions would take a large share of the 10 GB and evict the rest.
-- [ ] `checks` in two parallel jobs (lint, typecheck and package tests; application and reporter unit tests with
+- [x] `checks` in two parallel jobs (lint, typecheck and package tests; application and reporter unit tests with
       coverage): 7.3 → about 4.5 minutes. Only if `checks` becomes the longest path once the items above have landed.
+      Built 2026-10-30 as four jobs, once `checks` took 12 to 16 minutes, the longest path: `Format, lint and
+      typecheck`, `Dashboard unit tests`, `Reporter tests` and `Package tests`.
 - [x] Package smoke: Linux on pull requests; Windows and macOS on `main`, and on pull requests that change the
       packages, `scripts/package-smoke.mjs` or the dependencies.
 

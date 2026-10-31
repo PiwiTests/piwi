@@ -158,6 +158,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/live-view',
       },
       {
+        title: 'Stuck tests',
+        summary:
+          'A running test that has run far longer than its passing runs took is marked Stuck? on its run page, and a test.stuck notification goes out once per attempt, whoever watches.',
+        needs: [],
+        where: 'Test run → Tests; Notifications → test.stuck',
+        doc: 'features/stuck-tests',
+      },
+      {
         title: 'Failure clusters & the inbox',
         summary:
           'Failures sharing an error fingerprint collapsed into one cluster, triaged once with an owner and known-issue link.',
@@ -664,11 +672,12 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/end-the-test',
       },
       {
-        title: 'Runs started in a terminal',
+        title: 'Runs started outside Piwi',
         summary:
-          "A Playwright run you start in a terminal, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does.",
+          "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does.",
         needs: ['fixtures'],
-        where: 'npx playwright test in a terminal of the workspace; PIWI_EDITOR=off runs it alone',
+        where:
+          "npx playwright test in a terminal of the workspace, or a JetBrains IDE's gutter Run and Playwright run configurations; PIWI_EDITOR=off runs it alone",
         doc: 'features/terminal-runs',
       },
       {
