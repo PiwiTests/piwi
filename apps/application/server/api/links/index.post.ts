@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['Links'],
     summary: 'Create an entity link',
     description:
-      'Attach an external URL to a run, test-case run, test case, or failure cluster. Provider is auto-detected from the URL.',
+      "Attach an external URL to a run, test-case run, test case, failure cluster or bug report. Provider is auto-detected from the URL. A tracker issue on the site of the connection the entity's project is bound to is read through that connection (title, status) and kept in sync; any other URL, one on another connection's site included, is stored as a plain link that Piwi never reads or writes through a connection.",
     'x-required-permission': 'link:write',
   },
 });

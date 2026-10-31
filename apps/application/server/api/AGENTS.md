@@ -118,8 +118,10 @@ The early check only proves the user holds the permission _somewhere_. The proje
 - **A Project admin's user list holds only the users who can open a project they can open** (`listUserSummaries`):
   anyone else is found, and added to a project, only by their whole username, never by id or in a list
   (`replaceProjectMembers`). `tests/unit/access-management-routes.test.ts`.
-- **A project's issues are filed only through the connection its binding names**: `POST /api/integrations/issues`
-  refuses any other before building anything, and the draft proposes no other. `tests/unit/issue-create-routes.test.ts`.
+- **A project reads and writes its tracker only through the connection its binding names**: filing refuses any other
+  and the draft proposes none, a link is matched and read against that one alone, and the sync, the webhook, the
+  policies and the outbox pass by a link or a write on another (`server/utils/integrations/bound-connection.ts`).
+  `tests/unit/issue-create-routes.test.ts`, `tests/unit/issue-link-routes.test.ts`.
 - **A notification addressed to one user (`targetUserId`) still needs their access to every project it is about**:
   `notifyFixAuthor` checks it before the email (`tests/unit/fix-author.test.ts`), the stream before delivering
   (`tests/unit/notification-stream.test.ts`).

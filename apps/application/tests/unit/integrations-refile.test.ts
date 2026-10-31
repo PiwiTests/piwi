@@ -128,6 +128,8 @@ beforeAll(async () => {
     credentials: { email: 'ci@example.com', apiToken: 'token' },
   });
   connectionId = connection.id;
+  // Issues are filed through the connection the project is bound to.
+  await writeProjectIntegration(dbc, 1, { connectionId, projectKey: 'PROJ', issueType: 'Bug' });
 });
 
 afterAll(async () => {

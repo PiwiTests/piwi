@@ -7,12 +7,14 @@
  *
  * A policy runs only when the cluster carries a tracker link and the project's
  * binding turns that policy on; both default off, so nothing writes to a
- * tracker until an administrator opts in. A write a run triggers also needs the
+ * tracker until an administrator opts in. It writes only through the connection
+ * the project is bound to: a ticket linked through another connection gets
+ * nothing (`bound-connection.ts`). A write a run triggers also needs the
  * run to drive tracker writes (the `tracker` run use) and to be in the
  * binding's run scope (`policies.scope`: branches, environments). Every comment
  * is built through the message catalog in the issue's language.
  */
-import { and, eq, gt, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, sql } from 'drizzle-orm';
 import { entityLinks, testCases, testRuns, testRunsCases } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { EntityLink } from '../../database/schema';
@@ -71,11 +73,20 @@ function siteBase(): string | null {
   return raw ? raw.replace(/\/$/, '') : null;
 }
 
+/** Whether Piwi may write to a link's ticket for a project: it has a key and sits on the bound connection. */
+function writableLink(
+  link: EntityLink | null | undefined,
+  binding: ResolvedProjectIntegration,
+): link is EntityLink & { key: string; connectionId: number } {
+  return !!link?.key && link.connectionId != null && link.connectionId === binding.connectionId;
+}
+
 /** Gather the context for a cluster, or null when there is nothing to write to. */
 async function policyContext(db: DbClient, clusterId: number, projectId: number): Promise<PolicyContext | null> {
   const link = await getClusterTrackerLink(db, clusterId);
   if (!link?.key || link.connectionId == null) return null;
   const binding = await readProjectIntegration(db, projectId);
+  if (!writableLink(link, binding)) return null;
   const connection = await getConnectionRow(db, link.connectionId);
   const base = siteBase();
   return {
@@ -432,16 +443,15 @@ export async function enqueueMergePolicies(
   facts: { survivorId: number; victimId: number; projectId: number },
 ): Promise<void> {
   const binding = await readProjectIntegration(db, facts.projectId);
-  if (!binding.policies.commentOnMerge) return;
+  if (!binding.policies.commentOnMerge || binding.connectionId == null) return;
 
   const survivorLink = await getClusterTrackerLink(db, facts.survivorId);
   const victimLink = await getClusterTrackerLink(db, facts.victimId);
-  const connectionId = survivorLink?.connectionId ?? victimLink?.connectionId ?? null;
-  const connection = connectionId != null ? await getConnectionRow(db, connectionId) : null;
+  const connection = await getConnectionRow(db, binding.connectionId);
   const locale = bindingLocale(binding, connection?.config ?? null);
   const base = siteBase();
 
-  if (victimLink?.key && victimLink.connectionId != null && survivorLink?.key) {
+  if (writableLink(victimLink, binding) && survivorLink?.key) {
     const document = buildMergeComment(locale, {
       direction: 'into',
       otherKey: survivorLink.key,
@@ -458,7 +468,7 @@ export async function enqueueMergePolicies(
     });
   }
 
-  if (survivorLink?.key && survivorLink.connectionId != null && victimLink?.key) {
+  if (writableLink(survivorLink, binding) && victimLink?.key) {
     const document = buildMergeComment(locale, {
       direction: 'absorbed',
       otherKey: victimLink.key,
@@ -479,20 +489,30 @@ export async function enqueueMergePolicies(
 /**
  * When a bug report looks fixed (its `test.fail()` test passed), comment on its
  * ticket and move it along, as a cluster's verified fix does: the binding's
- * `commentOnFix` and `transitionOnFix`, for a run in the binding's scope.
+ * `commentOnFix` and `transitionOnFix`, for a run in the binding's scope. The
+ * ticket is the report's newest one on the connection the project is bound to.
  */
 export async function enqueueBugLooksFixedPolicies(
   db: DbClient,
   facts: { bugReportId: number; projectId: number; runId: number },
 ): Promise<void> {
-  const [link] = await db
-    .select()
-    .from(entityLinks)
-    .where(and(eq(entityLinks.bugReportId, facts.bugReportId), isNotNull(entityLinks.connectionId)));
-  if (!link?.key || link.connectionId == null) return;
   const binding = await readProjectIntegration(db, facts.projectId);
   const transition = binding.policies.transitionOnFix && binding.policies.fixTransitionId;
   if (!binding.policies.commentOnFix && !transition) return;
+  if (binding.connectionId == null) return;
+  const [link] = await db
+    .select()
+    .from(entityLinks)
+    .where(
+      and(
+        eq(entityLinks.bugReportId, facts.bugReportId),
+        eq(entityLinks.connectionId, binding.connectionId),
+        isNotNull(entityLinks.key),
+      ),
+    )
+    .orderBy(desc(entityLinks.id))
+    .limit(1);
+  if (!writableLink(link, binding)) return;
   if (!(await scopedRun(db, facts.runId, binding))) return;
   const connection = await getConnectionRow(db, link.connectionId);
   const locale = bindingLocale(binding, connection?.config ?? null);
