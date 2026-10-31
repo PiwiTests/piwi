@@ -142,6 +142,7 @@ import {
 } from './commands.js';
 import { DesktopJobs } from './desktop-jobs.js';
 import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
+import { specPattern } from '@piwitests/core/spec-filter';
 import { breakpointLines, declaredNamesAt, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { canonicalPath } from './recorder/playwright.js';
@@ -3204,10 +3205,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return SPEC_FILE.test(spec) && fs.existsSync(path.join(context.root, spec));
   };
 
-  /** The Playwright arguments that run the tests `params` names: by location, else by id from the instance. */
+  /**
+   * The Playwright arguments that run the tests `params` names: by location, each spec as Playwright's file filter
+   * reads it (`specPattern`), else by id from the instance.
+   */
   const testArgs = async (context: PiwiContext, params: RunTestsArgs): Promise<string[] | null> => {
     if (Array.isArray(params.locations) && params.locations.length) {
-      return params.locations.every((l) => specLocation(context, l)) ? [...params.locations] : null;
+      if (!params.locations.every((l) => specLocation(context, l))) return null;
+      return params.locations.map((l) => {
+        const colon = l.lastIndexOf(':');
+        return `${specPattern(l.slice(0, colon))}${l.slice(colon)}`;
+      });
     }
     if (!context.client || !context.project || !params.testIds?.length) return null;
     const answer = await context.client.runArgs(context.project.id, params.testIds);
@@ -3287,7 +3295,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ref,
     };
     if (repeat === null) return withRecording(context, withBreakpoints(context, run, params.breakpoints), params);
-    repeatedCommands.set(ref, { root: context.root, repeat, target: tests!.join(' ') });
+    const named = Array.isArray(params.locations) && params.locations.length ? params.locations : tests!;
+    repeatedCommands.set(ref, { root: context.root, repeat, target: named.join(' ') });
     for (const oldest of repeatedCommands.keys()) {
       if (repeatedCommands.size <= MAX_REPEATED_COMMANDS) break;
       repeatedCommands.delete(oldest);

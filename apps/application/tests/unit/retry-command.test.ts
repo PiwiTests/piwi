@@ -203,3 +203,11 @@ describe('unsafe file paths and project names are left out', () => {
     ).toBe('"tests/b.spec.ts"');
   });
 });
+
+describe('a spec whose path holds a character a regular expression reads', () => {
+  test('is written as a pattern that names its own file, with nothing a shell expands', () => {
+    const cases = [{ filePath: 'tests/c++.spec.ts', title: 'adds', line: 7, projectName: null }];
+    expect(buildRetryCommand(cases)).toBe('npx playwright test "tests/c[+][+].spec.ts:7"');
+    expect(buildRetryArgs(cases)).toBe('"tests/c[+][+].spec.ts:7"');
+  });
+});

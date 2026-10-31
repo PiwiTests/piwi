@@ -300,7 +300,10 @@ function onLiveKeyDown(event: KeyboardEvent): void {
     return;
   }
   if (decided === 'window' || decided === 'none') return;
+  // A key sent to the page is the page's alone: the dashboard behind the tray never sees it (its shortcuts, the inbox's
+  // keys).
   event.preventDefault();
+  event.stopPropagation();
   input.key(decided.send);
 }
 
@@ -308,6 +311,7 @@ function onLivePaste(event: ClipboardEvent): void {
   const text = event.clipboardData?.getData('text/plain') ?? '';
   if (!input || !text) return;
   event.preventDefault();
+  event.stopPropagation();
   for (const typed of pastedText(text)) input.key(typed);
 }
 

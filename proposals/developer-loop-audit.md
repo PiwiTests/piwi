@@ -17,7 +17,11 @@ relative to the spec (W4), since a catalog entry's module names no folder it is 
 built: the steps each test is in are sent when the run gets a watcher, and the heartbeat waits for the rest of its
 period only (V1, V2); a locator that matched nothing is its own clue, `locator-matched-nothing`, above a weakened
 `timeout-budget`, and the Locator fix panel says a passing run captures the attributes when the execution has the
-fixtures' data (F5, F6). The rest is proposed. A pull request that builds part of the plan updates this paragraph.
+fixtures' data (F5, F6). Quick win 9 is built in part: a spec path reaches Playwright as a pattern that names its own
+file (`specPattern` in core) in the desktop app's runs and also, with the same defect, in the dashboard's copyable
+commands, the selections' arguments and the editor's runs by location (R4); keys and pastes sent to a watched page stop
+there (V5). Left from it: `CREATE_NO_WINDOW` and the quit order in the Rust shell (R6, R14), which want a Windows
+check. The rest is proposed. A pull request that builds part of the plan updates this paragraph.
 
 **Summary.** Every step of the loop exists, most of them in several tools, and most of it works as documented: a
 breakpoint stops a headed run under the pause bar, Step and Resume answer, a picked locator lands on its line, a
