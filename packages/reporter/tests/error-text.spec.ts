@@ -72,6 +72,16 @@ describe('buildErrorText', () => {
     expect(text).toBe(withStack);
   });
 
+  it('places a timed-out test at the call the timeout interrupted', () => {
+    const file = path.join(process.cwd(), 'tests', 'sign-in.spec.ts');
+    const timeout = { message: 'Test timeout of 30000ms exceeded.' };
+    const click = { message: 'Error: locator.click: Test timeout of 30000ms exceeded.', location: { file, line: 7, column: 54 } };
+    const text = buildErrorText(makeResult([timeout, click], timeout));
+    expect(text).toBe(
+      'Test timeout of 30000ms exceeded.\n---\nError: locator.click: Test timeout of 30000ms exceeded.\n    at tests/sign-in.spec.ts:7:54',
+    );
+  });
+
   it('does not append a synthetic frame when there is no primary error location', () => {
     const text = buildErrorText(makeResult([{ message: 'no location error' }]));
     expect(text).toBe('no location error');

@@ -689,12 +689,15 @@ export class PiwiDashboardReporter {
     };
 
     if (result.status === 'failed' || result.status === 'timedOut') {
-      const failingLine = extractFailingLine(testCase.error, test.location.file, test.location.line);
+      const failingLine = extractFailingLine(testCase.error, test.location.file, test.location.line, this.testPathBase);
       const snippet = readSourceSnippet(test.location.file, test.location.line, 30, failingLine);
       if (snippet) testCase.testSource = snippet;
       // The call stack's in-project frames (innermost first) — the failing line
-      // plus the callers above it, so a failure inside a helper is visible.
-      const frames = collectSourceFrames(testCase.error, test.location.file, test.location.line);
+      // plus the callers above it, so a failure inside a helper is visible —
+      // named relative to the config's folder, as the test's own path is.
+      const frames = collectSourceFrames(testCase.error, test.location.file, test.location.line, {
+        projectRoot: this.testPathBase,
+      });
       if (frames.length) testCase.testSourceFrames = frames;
     }
 

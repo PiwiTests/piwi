@@ -57,10 +57,12 @@ function stackFrames(errorText: string): Array<{ file: string; line: number }> {
  * "the interesting part is upper" (a failure inside a helper the test called)
  * is visible, not just the test line that invoked it.
  *
- * Frames in `node_modules` or outside `projectRoot` are dropped (Playwright /
- * library internals), duplicates are collapsed, and the list is capped. When the
- * stack has no in-project frame at all, falls back to the test file's failing
- * line so there is always at least one frame for a failure.
+ * A relative frame is read from `projectRoot`, the folder the error text's
+ * paths are relative to, and each frame is named relative to it. Frames in
+ * `node_modules` or outside `projectRoot` are dropped (Playwright / library
+ * internals), duplicates are collapsed, and the list is capped. When the stack
+ * has no in-project frame at all, falls back to the test file's failing line so
+ * there is always at least one frame for a failure.
  */
 export function collectSourceFrames(
   errorText: string | null | undefined,
@@ -88,7 +90,7 @@ export function collectSourceFrames(
       if (picked.length >= maxFrames) break;
       let abs: string;
       try {
-        abs = path.resolve(frame.file);
+        abs = path.resolve(projectRoot, frame.file);
       } catch {
         continue;
       }
@@ -102,7 +104,7 @@ export function collectSourceFrames(
   // or a failure so deep the test frame fell past the cap).
   const absTest = path.resolve(testFile);
   if (!picked.some((p) => p.absFile === absTest)) {
-    add(absTest, extractFailingLine(errorText, testFile, declLine));
+    add(absTest, extractFailingLine(errorText, testFile, declLine, projectRoot));
   }
 
   const frames: TestSourceFrame[] = [];
@@ -117,18 +119,20 @@ export function collectSourceFrames(
 
 /**
  * Extract the line number of the first stack frame inside `testFile` from an
- * error's stack trace. Falls back to `declarationLine`.
+ * error's stack trace, a relative frame read from `base`. Falls back to
+ * `declarationLine`.
  */
 export function extractFailingLine(
   errorText: string | null | undefined,
   testFile: string,
   declarationLine: number,
+  base: string = process.cwd(),
 ): number {
   if (!errorText) return declarationLine;
   const expectedFile = path.resolve(testFile);
   for (const frame of stackFrames(errorText)) {
     try {
-      if (path.resolve(frame.file) === expectedFile && !isNaN(frame.line)) return frame.line;
+      if (path.resolve(base, frame.file) === expectedFile && !isNaN(frame.line)) return frame.line;
     } catch {
       /* skip unresolvable paths */
     }
