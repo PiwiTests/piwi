@@ -37,8 +37,9 @@ sentences of the recording page (each client to check first), and the sentences 
 their fixes; the recording page says `piwi codegen` reads its own flags, not the config's section (W13's docs half). From the medium items, built in part: 8, a test whose title is computed found by what its `${…}` parts
 stand for, its run narrowed by `--grep` to the run's title when that is plain words (D6), leaving VS Code's Debug in
 my editor from the desktop app (F8); 12, a text check written with a locator that does not find its element by the
-text it checks while one is not brittle (W12), and a verification that reached no instance saying no run failed
-rather than that all passed (R9); 11, a grant that the instance or a pairing lets go of kept while another of them, a
+text it checks while one is not brittle (W12), a verification that reached no instance saying no run failed
+rather than that all passed (R9), and a scenario draft's `page.goto` to a page key with placeholders written as a
+TODO (W14's first half); 11, a grant that the instance or a pairing lets go of kept while another of them, a
 recording or a replay holds it, the editor's Unpair included, which Firefox's portless loopback pattern made take the
 desktop app's access (S8); 4, Esc left to the page in a dialog, an open list or while a modal dialog shows, rather than
 resuming the test (D9's page half), leaving the call on its own row, the dock toggle and the popup's page from the

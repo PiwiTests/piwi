@@ -4016,6 +4016,20 @@ export interface ScenarioDraft extends ScenarioDraftInput {
   text: string;
 }
 
+/** The placeholders `pageKey` puts in a page's path for the parts that differ from visit to visit. */
+const PAGE_KEY_PLACEHOLDER = /\/:(id|uuid|ulid|jwt|token)(?=\/|$)/g;
+
+/**
+ * The draft's step that opens the page `key` names. A key with placeholders (`/shop/orders/:id`) is no address a
+ * browser can open: its `page.goto` is written commented out, with a TODO naming what to fill in.
+ */
+export function gotoStep(key: string): string {
+  const placeholders = [...new Set([...key.matchAll(PAGE_KEY_PLACEHOLDER)].map((m) => `:${m[1]}`))];
+  return placeholders.length
+    ? `// TODO: a real ${placeholders.join(' and ')} in place of the key's: await page.goto(${q(key)});`
+    : `await page.goto(${q(key)});`;
+}
+
 /** A safe single-quoted string for the generated source. */
 function q(s: string): string {
   return `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
@@ -4206,7 +4220,7 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
   let pageForCatalog: string | null = null;
   if (subject.kind === 'page') {
     pageForCatalog = subject.key;
-    path.push(`await page.goto(${q(subject.key)});`);
+    path.push(gotoStep(subject.key));
   } else if (subject.kind === 'control' || subject.kind === 'route') {
     // A page that contains the control, or loads/triggers the route.
     const [edge] = await db
@@ -4225,7 +4239,7 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
       .limit(1);
     if (edge?.pageKey) {
       pageForCatalog = edge.pageKey;
-      path.push(`await page.goto(${q(edge.pageKey)});`);
+      path.push(gotoStep(edge.pageKey));
     }
     if (subject.kind === 'control') {
       const [role, ...nameParts] = subject.key.split(':');
