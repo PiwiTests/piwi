@@ -221,7 +221,7 @@ A failed gate exits 1 and prints:
 
 Its rules bound the failing tests, the new regressions and newly flaky tests, the tests a tag or a
 [selection](/features/test-selection) requires, the [quarantine](/features/flaky-tests#quarantine-with-a-way-out)
-debt, new clusters and [leaks](/features/resource-leaks#in-ci): every flag is in the
+debt (`--max-quarantined`), new clusters and [leaks](/features/resource-leaks#in-ci): every flag is in the
 [CLI reference](/reference/cli#gate).
 
 At least one rule is required, or a [warn-only flag](/features/uncovered-changes#the-gate-flags). Exit codes are part
