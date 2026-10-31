@@ -575,6 +575,40 @@ describe('timeout-budget', () => {
   });
 });
 
+describe('locator-matched-nothing', () => {
+  const NOT_FOUND = [
+    'Test timeout of 30000ms exceeded.',
+    '---',
+    'Error: locator.click: Test timeout of 30000ms exceeded.',
+    'Call log:',
+    "  - waiting for getByRole('button', { name: 'Log in' })",
+  ].join('\n');
+  const signIn = { recommendation: { recommended: { locator: "getByRole('button', { name: 'Sign in' })" } } };
+
+  test('positive: a locator that never found its element, with the element the page had instead', () => {
+    const input = baseInput({
+      timeout: 4_000,
+      parsedError: parsePlaywrightError(NOT_FOUND),
+      healing: { source: 'aria-snapshot', ...signIn } as unknown as FailureClueInput['healing'],
+    });
+    const clues = runClues(input);
+    const clue = clues.find((c) => c.rule === 'locator-matched-nothing');
+    expect(clue).toMatchObject({ strength: 'strong', title: 'The locator matched nothing on the page' });
+    expect(clue!.detail).toBe(
+      "No element matched `getByRole('button', { name: 'Log in' })` at the failure; the page had `getByRole('button', { name: 'Sign in' })`.",
+    );
+    // The time went to waiting for it: the budget is no cause of its own.
+    expect(clues.find((c) => c.rule === 'timeout-budget')).toMatchObject({ strength: 'weak' });
+    expect(clues[0]!.rule).toBe('locator-matched-nothing');
+  });
+
+  test('negative: an element found but not actionable, or several found, is another clue', () => {
+    expect(rules(baseInput({ timeout: 4_000 }))).not.toContain('locator-matched-nothing');
+    const strict = "Error: locator.click: Error: strict mode violation: getByRole('button') resolved to 2 elements:";
+    expect(rules(baseInput({ parsedError: parsePlaywrightError(strict) }))).not.toContain('locator-matched-nothing');
+  });
+});
+
 describe('environment-changed', () => {
   test('positive: a non-empty same-environment diff', () => {
     const input = baseInput({

@@ -50,6 +50,7 @@ export type FailureClueRule =
   | 'element-renamed'
   | 'page-structure-changed'
   | 'element-present-but-blocked'
+  | 'locator-matched-nothing'
   | 'wrong-page'
   | 'worker-pollution'
   | 'lock-holder-failed'
@@ -292,6 +293,7 @@ const RULE_ORDER: FailureClueRule[] = [
   'element-renamed',
   'page-structure-changed',
   'element-present-but-blocked',
+  'locator-matched-nothing',
   'wrong-page',
   'worker-pollution',
   'lock-holder-failed',
@@ -763,6 +765,30 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
     }
   }
 
+  // ── locator-matched-nothing (strong with the page's own match, else medium) ─
+  // The call waited for a locator that never found an element, and nothing
+  // explains why the element is gone: the locator is wrong, as in a test being
+  // written, or the element never showed. The failure-time snapshot's closest
+  // element, which locator healing recommends, names what the page had; for a
+  // flaky test, whose locator found its element in other runs, it names nothing.
+  const matchedNothing = !!parsed?.isLocatorResolutionFailure && parsed.kind !== 'strict-mode';
+  if (matchedNothing && !clues.some((c) => c.rule === 'element-renamed' || c.rule === 'page-structure-changed')) {
+    const failing = parsed.locator ?? 'the locator';
+    const flaky = (input.flakeSuspects?.length ?? 0) > 0;
+    const offered = flaky ? null : (healing?.recommendation?.recommended?.locator ?? null);
+    add({
+      id: 'locator-matched-nothing',
+      rule: 'locator-matched-nothing',
+      strength: offered ? 'strong' : 'medium',
+      title: 'The locator matched nothing on the page',
+      detail: offered
+        ? `No element matched \`${failing}\` at the failure; the page had \`${offered}\`.`
+        : `No element matched \`${failing}\` at the failure: the page did not show it, or the locator names it differently.`,
+      citations: [{ section: offered ? 'locatorHealing' : 'steps' }],
+      ...(failedStep ? { at: failedStep.at } : {}),
+    });
+  }
+
   // ── wrong-page (strong) ────────────────────────────────────────────────────
   // The page ended on an auth/error route, or somewhere other than the last
   // navigation the test asked for — when nothing the test did after it (a click,
@@ -898,13 +924,15 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
     if (stepRatio >= 0.8 || execRatio >= 0.95) {
       const pct = Math.round(Math.max(stepRatio, execRatio) * 100);
       facts.timing = { pct };
+      // A call that waited for a locator matching nothing spent the time waiting: the time is no cause of its own.
       add({
         id: 'timeout-budget',
         rule: 'timeout-budget',
-        strength: 'medium',
+        strength: matchedNothing ? 'weak' : 'medium',
         title: `The failure used ${pct}% of the timeout budget`,
-        detail:
-          stepRatio >= 0.8
+        detail: matchedNothing
+          ? `The failed step ran ${Math.round(Math.max(stepRatio, execRatio) * 100)}% of the ${timeout} ms timeout, waiting for a locator that matched nothing.`
+          : stepRatio >= 0.8
             ? `The failed step ran ${Math.round(stepRatio * 100)}% of the ${timeout} ms timeout — a slow operation, not necessarily a wrong one.`
             : `The execution used ${Math.round(execRatio * 100)}% of the ${timeout} ms timeout before failing.`,
         citations: [{ section: 'steps' }],
