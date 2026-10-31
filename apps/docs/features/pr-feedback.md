@@ -14,7 +14,7 @@ start the CI run that proves it.
 
 ## What gets posted
 
-Two things get posted when a run finishes, unless it is a run from an editor, a bisect step, a reproduction, or a
+A comment and a commit status get posted when a run finishes, unless it is a run from an editor, a bisect step, a reproduction, or a
 partial run from a developer's machine or the desktop app ([run origin](/reference/test-metadata#run-origin)):
 
 - **A summary comment** on the run's open pull request (the one its CI names, a pull request from a fork included, else
@@ -25,7 +25,10 @@ partial run from a developer's machine or the desktop app ([run origin](/referen
   tests passes, and the status says how many (`118/120 passed, 2 quarantined`); turn on **Quarantined failures fail
   the commit status** under the project's **Settings → Source control** to fail it on any failure. **Only comment on
   failures** follows the same rule: such a run gets no comment, unless its change left a file no test reached or
-  changed lines no suite ran, which the [uncovered changes](./uncovered-changes) section names.
+  changed lines no suite ran, which the [uncovered changes](./uncovered-changes) section names. When the run has a
+  diff to read, a second status joins it, your status context plus `/change-coverage`
+  (`piwi/tests/change-coverage`): it [counts the uncovered changes](./uncovered-changes#on-the-pull-request) and is
+  always a success.
 
 What the comment says, in this order:
 

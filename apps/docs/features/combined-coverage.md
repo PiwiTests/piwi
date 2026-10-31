@@ -89,8 +89,8 @@ Playwright run creates the project.
 ## One ratio per commit
 
 For each commit, the dashboard counts every suite that ran the code: the reports uploaded for it, and `e2e`, the run
-coverage of the commit's complete Playwright runs (never a partial, probe or flake-lab run). The
-totals are recomputed seconds after each upload or run; read them with the
+coverage of the commit's complete Playwright runs (never a partial, probe or flake-lab run; a run narrowed only by
+`--project`, or cut short by `--max-failures`, still counts as complete). The totals are recomputed seconds after each upload or run; read them with the
 [API](https://piwitests.dev/demo/docs) or the MCP `get_coverage_summary` tool.
 
 - **One set of executable lines per file version.** Tools disagree on which lines can run, so every suite counts on
@@ -101,7 +101,9 @@ totals are recomputed seconds after each upload or run; read them with the
 - **Functions** count across suites by start line: one ran when any suite ran a function starting there.
 - **Classes of lines.** Each executable line is unit only, end to end only (what the Playwright suite alone
   protects), both, none, or undetermined.
-- **Files without coverage data** are tracked files in scope no suite names, counted apart from the percentage.
+- **Files without coverage data** are tracked files in scope no suite names, counted apart from the percentage. They
+  come from an upload's inventory, so a commit with no upload has none, and they count every file in scope, a README
+  or an image included: narrow the scope to the code.
 - **Carried forward.** A suite the commit lacks comes from the newest commit whose coverage arrived before it, on
   the commit's branch then on the default branch, file by file where the file's version is unchanged.
 - **A run whose backend restarted** still joins `e2e`, adding only lines that ran; alone, it marks `e2e` incomplete.
@@ -162,8 +164,8 @@ one counting an incomplete `e2e` says so.
 ## Export
 
 The coverage page's card menu downloads the commit's combined coverage as LCOV or Cobertura, for Sonar, Codecov or an
-IDE (`coverage-export?format=` in the API). A line any suite ran has 1 hit, else 0: Piwi keeps no hit counts and no
-branches.
+IDE (`coverage-export?format=` in the API). A line any suite ran has 1 hit, else 0, an undetermined line included:
+Piwi keeps no hit counts and no branches.
 
 ## The coverage scope
 

@@ -1018,7 +1018,7 @@ export const MCP_TOOL_DEFS = [
         'the tests whose coverage reaches it',
       ],
       'With recorded coverage of a modified file’s base version, its coverage-reached tests narrow to those that ran a changed line (`lines`) or a function around one (`functions`). A test its coverage cannot rule out stays (`file`): another version, no ranges, an incomplete capture, or a change outside every function, listed in `fileLevelLines`.',
-      'Each file gives its `level` (`lines`, `file` or `none`), its tests with how they were selected and the changed lines they ran (1-based, `12-15,20`), `ruledOut` (how many tests reach it and ran none of the changed lines) and `notRun` (changed lines inside functions no test ran: what a new test should cover, see the `write_the_missing_test` prompt). A changed file that maps to no test widens the selection to the whole suite (`widened`, with a warning) rather than skipping it.',
+      'Each file gives its `level` (`lines`, `file` or `none`), its tests with how they were selected and the changed lines they ran (1-based, `12-15,20`), `ruledOut` (how many tests reach it and ran none of the changed lines) and `notRun` (changed lines inside functions no test ran, numbered as in the file before the change: what a new test should cover, see the `write_the_missing_test` prompt). A changed file that maps to no test widens the selection to the whole suite (`widened`, with a warning) rather than skipping it.',
     ),
     inputSchema: {
       type: 'object',

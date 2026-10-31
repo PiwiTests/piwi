@@ -49,7 +49,9 @@ A test counts as changed when the source lines its steps run from differ from th
 probe: an added assertion, an edited helper or a moved line. A new tag or owner does not count, and neither does a
 change to the route's handler alone.
 
-A probe run is stamped as one, with retries off. It never counts as a real run: no failure clusters, no regression
+A probe run is stamped as one, and `wrapConfig` turns its retries off; a Playwright project that sets its own
+`retries` keeps them. Every project of the config runs each planned test, so pass Playwright's flags after `--` to
+narrow it (`-- --project=chromium --retries=0`). It never counts as a real run: no failure clusters, no regression
 signals, no notifications, no pull-request feedback, no metric, no quarantine streak, never the baseline another run is
 compared with, and nothing in the Test Map but the probe outcomes. It never moves a pass rate, a duration or the
 `failed` selection either, and leaves a test's tags, owner, locks and locator snapshots as they are.
@@ -98,8 +100,9 @@ It needs:
   status, delay and extreme-value faults; its data and dependency probes record as *inconclusive*;
 - the same `PIWI_PROBE_SECRET` where `piwi probe` runs;
 - **Server probes** turned on under **Scenario gaps** in the **Capabilities** section of the project's **Settings** tab,
-  where the fault classes and routes are allow-listed. Dependency faults on state-changing routes (`POST`, `PUT`,
-  `PATCH`, `DELETE`) stay off unless you allow them.
+  where the fault classes and routes are allow-listed. A test gets the first class in the list that its route allows,
+  so list first the class that matters most. Dependency faults on state-changing routes (`POST`, `PUT`, `PATCH`,
+  `DELETE`) stay off unless you allow them.
 
 With server probes on, half of the budget goes to server faults.
 

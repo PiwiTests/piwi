@@ -50,8 +50,11 @@ its URL pattern matches. A method whose every target comes from a parameter gets
 
 A trusted test is judged on the default branch's last 30 runs: it did not pass only after a retry in any of them, did
 not fail each of its last three, is not quarantined, and was neither skipped nor left unrun in the newest it ran in.
-A test with no run among them stays trusted. *Changed, unreached* is covered on [Uncovered changes in pull requests](/features/uncovered-changes): its gap closes once a test reaches the
-file. A finding never closes itself; triage it.
+A test with no run among them stays trusted. *Changed, unreached* is covered on
+[Uncovered changes in pull requests](/features/uncovered-changes): its gap closes once a test reaches the file, or a
+later diff no longer counts the file, accepted or not. A file no later diff reads, such as the old path of a rename or
+a file of an abandoned pull request, keeps its gap until a test reaches it or it is triaged. A finding never closes
+itself; triage it.
 
 Runs record reach to routes and pages: a test reaches every route its page requested, every page it ran a locator
 call on, and the page it ended on. Each recompute adds reach to controls and links from the default branch's
@@ -71,8 +74,8 @@ kept between 0.1 and 1, so a missing input lowers the score without zeroing it.
 
 | Factor | From | Reaches 1 at |
 |---|---|---|
-| **Churn** | commits touching the files in the last 90 days | 12 commits |
-| **Age** | the age of those files; older weighs more, since escaped defects concentrate there | one year |
+| **Churn** | commits touching the files: on a pull request, among the base branch's newest twelve in the last 90 days | 12 commits |
+| **Age** | on a pull request, the days since the oldest of those commits; older weighs more, since escaped defects concentrate there. The 90-day scan stops it near 0.25 | one year |
 | **Escape history** | whether a file was part of a failure cluster's fixing commit | yes, else 0.1 |
 | **Priority** | the highest [`piwi:priority`](/reference/test-metadata#ownership-metadata-piwi-annotations) of the tests reaching the node: critical 1, high 0.7, medium 0.4, low 0.2 | critical |
 
@@ -84,6 +87,18 @@ files in the diff that ended on a fixing commit, which holds every change since 
 file's history, so it stays at 0.1 there. The other detectors
 rank by priority and confidence. A finding ranks by its severity (1 for unhandled, 0.5 for degraded) times the
 route's reach.
+
+## Precision
+
+Each verdict on a gap counts for or against its detector, on that project:
+
+- **For**: accepted, or closed with **Covered by**, even once the gap later closes.
+- **Against**: dismissed as *wrong*, or as *covered elsewhere* (no test was missing). On a finding, *covered
+  elsewhere* counts for neither.
+- **Neither**: dismissed as *not worth testing*, or with no reason.
+
+A detector's precision is its share of verdicts *for*. Below 60%, on a project with twenty or more verdicts, the
+detector [mutes itself](/features/scenario-gaps#triage) there.
 
 ## Features
 
@@ -110,14 +125,17 @@ The graph stays proportional to the application's surface, not its data volume:
 - **Routes are the calls a page makes.** A page load (`page.goto`, a link followed) is the page's own node, never a
   route, so a page never reads as a route without its error path.
 - **Pages are path patterns.** `/orders/123` and `/orders/456` are one node, as is the same path from staging and
-  production.
+  production. Numbers, UUIDs, JWTs, ULIDs and long tokens become placeholders; other ids (a Mongo ObjectId, a cuid, a
+  slug) stay in the key, one node per value. A single-page app routed by the URL hash (`/#/settings`) is one page, `/`.
 - **Routes drop the query.** `GET /api/orders?page=2` and `GET /api/orders?status=open` are one node, `GET /api/orders`.
 - **Controls and links are templated.** Dates, ids and numbers in an accessible name become placeholders, and each
   page keeps at most 200 controls and 200 links.
 - **Branches stay separate.** A default-branch run writes the canonical graph; any other branch writes rows tagged
   with it, so a route added on a pull request never shows as drift on the default branch. Those rows drop when the
-  pull request closes, or after 30 days unseen. Detectors read the canonical graph; change coverage reads every branch.
-- **Old nodes retire.** A node unseen for 30 default-branch runs that backs no open gap leaves the graph.
+  pull request closes, or after 30 days unseen. Detectors read the canonical graph and the default branch's runs;
+  change coverage reads every branch.
+- **Old nodes retire.** A node unseen for 30 default-branch runs leaves the graph, unless an open, snoozed or
+  accepted gap is about it: that node stays until the gap is closed or dismissed.
 
 ## Related
 

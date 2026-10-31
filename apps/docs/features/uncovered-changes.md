@@ -11,9 +11,10 @@ lang: en-US
 A pull request that changes `server/api/orders/[id].patch.ts` while no test ever requests that route passes CI and
 proves nothing about the change. When a run finishes, Piwi joins the files its change touched to the tests that
 [observably reach](/guide/concepts#reach) them, and names the changed files nothing reaches: the **uncovered
-changes**. Each one is a *changed, unreached* [scenario gap](/features/scenario-gaps), with a draft scenario to start
-from. When the head commit has [combined coverage](/features/combined-coverage), the same section counts the changed
-lines too, and names those no suite ran, in every file.
+changes**. Each one is a *changed, unreached* [scenario gap](/features/scenario-gaps); its draft holds the file and
+the evidence, and no steps, since no test leads to it. When the head commit has
+[combined coverage](/features/combined-coverage), the same section counts the changed lines too, and names those no
+suite ran, in every file.
 
 <figure>
   <img src="/diagrams/uncovered-changes.svg" alt="A pull-request run's changed files are joined to the tests that reach them; each is reached, an uncovered change (a gap), or not counted, with the reason; the result goes to the pull request">
@@ -45,10 +46,13 @@ lines. A skipped test reaches nothing. A *changed, unreached* gap closes when a 
 as uncovered, or when the Test Map's next recompute finds it reached or out of scope.
 
 Before the pull request, the [editor extensions](./editor-coverage#uncovered-changes) mark the lines of an uncovered
-change of a page or a server route in the file itself, by the same rule.
+change of a page or a server route in the file itself, by a rule of their own: no coverage scope, no window of runs,
+and a page counts as reached only when a test's locator acted on it.
 
 The diff comes from the [source control](/guide/source-control) connection: a pull-request run is compared with its
-base branch, any other run with the commit of the last passing run. With no SCM token or no diff, nothing appears.
+base branch, any other run with the commit of the last passing run. A public repository is read without a token, so
+its uncovered changes and their gaps appear in Piwi, though nothing is posted; a private one needs a
+[token](/guide/source-control#set-the-token). With no diff, nothing appears.
 
 ## On the pull request
 

@@ -41,9 +41,11 @@ detector with its evidence. Each gap names its detector and its **[class](/guide
 [Server probes](/features/probes#server-probes) add **findings** in two more classes, **unhandled** and **degraded**:
 the application itself did not cope with the fault, whatever the tests saw.
 
-Gaps are ranked by **[exposure](/guide/concepts#exposure)**, a score from how often the code around a node changes,
-how old it is, whether it was part of an earlier escaped failure, and the priority of the tests near it. The score
-and its factors show on every gap. Counts are per class, never a coverage percentage: a percentage over an observed
+Gaps are ranked by **[exposure](/guide/concepts#exposure)**, a score from how often the code behind a node changes,
+whether it was part of an earlier escaped failure and the priority of the tests that reach it, and, for a changed file,
+how long it has been changing. The score and its factors show on every gap, and
+[which gaps get which factors](/reference/gap-detectors#exposure) varies: a gap on a page or a control ranks by
+priority and its detector alone. Counts are per class, never a coverage percentage: a percentage over an observed
 surface looks complete exactly when that surface is sparse.
 
 An [uncovered change](/features/uncovered-changes) is a gap too, raised at pull-request time, and so is a page with
@@ -52,7 +54,7 @@ open [bug reports](/features/bug-reports).
 ## The Gaps tab
 
 The project's **Gaps** tab lists gaps and findings by feature, ranked, each with its class, score factors and
-evidence.
+evidence: the top 200 of the status picked, so a large map is read one status or one feature at a time.
 
 The tab opens on the **feature map**: one circle per feature (from the
 [`piwi:feature` tag](/reference/test-metadata)), sized by the routes, pages and controls it groups, colored by its
@@ -94,16 +96,17 @@ Every gap takes the same four verbs as an inbox item:
   detector raises it again, and the covering test is recorded as reaching the node.
 
 Gaps persist, so triage survives recomputation: a dismissed gap keeps its verdict, and a gap **closes itself** when
-the detector no longer finds it, for example once its node gains a trusted test, so "closed this month" is real. A
-closed gap that comes back reopens, unless it was closed with **Covered by**. Home lists the gaps accepted more than a week ago whose test was never written.
+the detector no longer finds it, for example once its node gains a trusted test. A closed gap is not always a test
+written: an uncovered change also closes when its file is deleted or nothing observes it any more. A closed gap that
+comes back reopens, unless it was closed with **Covered by**. Home lists the gaps still accepted a week after their
+acceptance: the tests not yet written.
 
 <figure>
   <img src="/diagrams/scenario-gaps-loop.svg" alt="Sources feed the Test Map, detectors, ranking and delivery; triage flows back">
 </figure>
 
-Every verdict is also a labeled example: accepted and covered-by count *for* a detector, a gap dismissed as *wrong*
-or as *covered elsewhere* (no test was missing) counts *against* it, and a dismissal with no reason or as *not worth
-testing* counts for neither. A detector below 60% precision on a project with twenty or more verdicts **mutes itself**
+Every verdict is also a labeled example that counts
+[for or against its detector](/reference/gap-detectors#precision). A detector below 60% precision on a project with twenty or more verdicts **mutes itself**
 there: its rows leave the pull-request comment, the Gaps digest and the feature map, its gaps sort last in the Gaps tab
 and in the MCP tools, and the Gaps tab and **Settings → About** say so.
 
@@ -118,10 +121,9 @@ to your channels. Agents list, draft and triage gaps with the
 Every run adds the routes its tests' pages called on the application's own origin (a page load is the page itself,
 never a route) and the pages they ran locator calls on or ended on. Three optional sources add the rest:
 
-- **The page inventory.** With `capturePageInventory` on (off by default), the reporter records the controls (role
-  and accessible name) and links of each page a passing run visits, at most 200 of each per page, never a field
-  value. Control and link nodes, and the detectors that read them, appear only then. See
-  [Page inventory](/guide/concepts#page-inventory).
+- **The [page inventory](/guide/concepts#page-inventory).** With `capturePageInventory` on (off by default), the
+  reporter records the controls and links of the pages a passing run visits. Control and link nodes, and the
+  detectors that read them, appear only then.
 - **Server spans.** With the [backend instrumentation](/guide/backend-logs#server-spans) for Nitro, each route gains
   the handler that served it and the dependencies that handler called.
 - **The declared surface**, below.
