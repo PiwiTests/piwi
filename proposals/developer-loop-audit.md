@@ -6,27 +6,24 @@ fixtures, the dashboard's run and failure pages, the VS Code extension and the J
 they share, Piwi Picker and the desktop app are covered where a developer meets them, and the JetBrains plugin is held
 to what the VS Code extension does. Test coverage and the Test Map's gaps are left to another audit.
 
-**Status.** Proposed 2026-10-31, against `main` at v0.63.0 (`2bd05d42`). Built: quick wins 1 to 4 of
-[the plan](#11-the-plan), the failing line kept (F1, F2), wrapped statements that stop (D1), a browser headed as the
-test's fixtures make it, with no Inspector switch left to the projects that depend on a worker's (D2, D8), and a spec
-without the capture fixtures named in a run that can stop, the editor's answer naming that cause (S1; `init` still
-leaves the imports to the person). Quick win 5 is built in part: a new test in a spec that takes no `test` imports it
-as the specs beside it do (W1), each recorded test gets a title no test of its file has (W2; asking the person for one
-needs both clients), and a new file takes `expect` from a module that exports it (W3). Left from it: catalog imports
-relative to the spec (W4), since a catalog entry's module names no folder it is relative to. Quick wins 7 and 8 are
-built: the steps each test is in are sent when the run gets a watcher, and the heartbeat waits for the rest of its
-period only (V1, V2); a locator that matched nothing is its own clue, `locator-matched-nothing`, above a weakened
-`timeout-budget`, and the Locator fix panel says a passing run captures the attributes when the execution has the
-fixtures' data (F5, F6). Quick win 9 is built in part: a spec path reaches Playwright as a pattern that names its own
-file (`specPattern` in core) in the desktop app's runs and also, with the same defect, in the dashboard's copyable
-commands, the selections' arguments and the editor's runs by location (R4); keys and pastes sent to a watched page stop
-there (V5). Left from it: `CREATE_NO_WINDOW` and the quit order in the Rust shell (R6, R14), which want a Windows
-check. Quick win 12 is built in part: the plumbing lines (the finalized run, the uploaded reports, the report's
-storage key, the partial run, the trace count) print with `PIWI_VERBOSE` only, an upload that falls back says so once,
-and the reporter's boolean variables, `PIWI_VERBOSE` and `PIWI_EDITOR` included, take `1`, `yes` and `on` (`0`, `no`
-and `off` for `PIWI_EDITOR`) as their kin do (R10, R11, R12). Left from it: when the machine summary prints, and one
-prefix for the workers' lines (R13). The rest is proposed. A pull request that builds part of the plan updates this
-paragraph.
+**Status.** Proposed 2026-10-31, against `main` at v0.63.0 (`2bd05d42`). Built since, from [the plan](#11-the-plan)'s
+quick wins: 1, the failing line kept (F1, F2); 2, wrapped statements that stop (D1); 3, a browser headed as the test's
+fixtures make it, and no Inspector switch left to dependent projects (D2, D8); 4, a spec without the capture fixtures
+named in a run that can stop, and the editor's answer naming that cause (S1; `init` still leaves the imports to the
+person); 6, logpoints and breakpoints that do not suspend left out of a run's stops, and the docs saying a condition is
+not read (D3); 7, the steps each test is in sent when the run gets a watcher, the heartbeat waiting for the rest of its
+period only (V1, V2); 8, a locator that matched nothing as its own clue, `locator-matched-nothing`, and the Locator fix
+panel's hint naming its real cause (F5, F6). Built in part: 5, a new test in a spec that takes no `test` imports it as
+the specs beside it do, each recorded test gets a title its file has not, and a new file takes `expect` from a module
+that exports it (W1, W2, W3), leaving catalog imports relative to the spec (W4: a catalog entry's module names no
+folder it is relative to) and asking the person for a title (both clients); 9, a spec path that reaches Playwright as a
+pattern naming its own file (`specPattern` in core), in the desktop app's runs and, with the same defect, the
+dashboard's copyable commands, the selections and the editor's runs by location (R4), and keys sent to a watched page
+kept there (V5), leaving `CREATE_NO_WINDOW` and the quit order of the Rust shell (R6, R14) for a check on Windows; 12,
+the plumbing lines at `PIWI_VERBOSE` only, one line for an upload that falls back, and the usual spellings of the
+reporter's boolean variables (R10, R11, R12), leaving when the machine summary prints and one prefix for the workers'
+lines (R13). Quick wins 10, 11 and 13, the medium and the larger items are proposed. A pull request that builds part
+of the plan updates this paragraph.
 
 **Summary.** Every step of the loop exists, most of them in several tools, and most of it works as documented: a
 breakpoint stops a headed run under the pause bar, Step and Resume answer, a picked locator lands on its line, a
