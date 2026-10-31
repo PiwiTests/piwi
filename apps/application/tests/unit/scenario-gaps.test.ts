@@ -575,21 +575,28 @@ describe('computeScenarioGaps', () => {
     await db
       .insert(schema.testRunsCases)
       .values({ testRunId: 1, testCaseId: 1, status: 'passed', createdAt: new Date() });
-    const gap = (key: string) => ({
+    const gap = (key: string, status = 'open') => ({
       projectId: 1,
       detector: 'changed-unreached',
       class: 'blind-spot',
       key,
       title: `${key} changed but not reached`,
-      status: 'open',
+      status,
     });
     await db
       .insert(schema.scenarioGaps)
-      .values([gap('src/lib/cart.ts'), gap('src/lib/tax.ts'), gap('src/Client.g.cs')]);
-    // The test executed cart.ts (code reach); nothing reaches tax.ts; Client.g.cs is generated, outside the scope.
-    await db
-      .insert(schema.codeReach)
-      .values({ projectId: 1, testCaseId: 1, file: 'src/lib/cart.ts', runtime: 'browser', lastSeenAt: new Date() });
+      .values([
+        gap('src/lib/cart.ts'),
+        gap('src/lib/tax.ts'),
+        gap('src/Client.g.cs'),
+        gap('src/lib/rates.ts', 'accepted'),
+      ]);
+    // The test executed cart.ts and rates.ts, whose accepted gap had its test written (code reach); nothing
+    // reaches tax.ts; Client.g.cs is generated, outside the scope.
+    await db.insert(schema.codeReach).values([
+      { projectId: 1, testCaseId: 1, file: 'src/lib/cart.ts', runtime: 'browser', lastSeenAt: new Date() },
+      { projectId: 1, testCaseId: 1, file: 'src/lib/rates.ts', runtime: 'browser', lastSeenAt: new Date() },
+    ]);
 
     await gaps.computeScenarioGaps(db, 1);
 
@@ -601,10 +608,11 @@ describe('computeScenarioGaps', () => {
       'src/lib/cart.ts': 'closed',
       'src/lib/tax.ts': 'open',
       'src/Client.g.cs': 'closed',
+      'src/lib/rates.ts': 'closed',
     });
   });
 
-  test('closes the open and snoozed changed-unreached gaps of files a diff no longer reads as uncovered', async () => {
+  test('closes the open, snoozed and accepted changed-unreached gaps of files a diff no longer reads as uncovered', async () => {
     await seedRun(1);
     const gap = (key: string, status: string) => ({
       projectId: 1,
@@ -621,9 +629,10 @@ describe('computeScenarioGaps', () => {
         gap('src/b.ts', 'snoozed'),
         gap('src/c.ts', 'dismissed'),
         gap('src/d.ts', 'open'),
+        gap('src/e.ts', 'accepted'),
       ]);
 
-    expect(await gaps.closeChangedUnreachedGaps(db, 1, 1, ['src/a.ts', 'src/b.ts', 'src/c.ts'])).toBe(2);
+    expect(await gaps.closeChangedUnreachedGaps(db, 1, 1, ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/e.ts'])).toBe(3);
 
     const rows = await db
       .select({ key: schema.scenarioGaps.key, status: schema.scenarioGaps.status })
@@ -633,6 +642,7 @@ describe('computeScenarioGaps', () => {
       'src/b.ts': 'closed',
       'src/c.ts': 'dismissed',
       'src/d.ts': 'open',
+      'src/e.ts': 'closed',
     });
   });
 

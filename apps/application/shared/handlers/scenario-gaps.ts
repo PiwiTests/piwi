@@ -534,9 +534,10 @@ export function detectChangedUnreached(
 }
 
 /**
- * Close the open and snoozed *changed, unreached* gaps of `filePaths`: files a
- * diff no longer reads as uncovered changes, by the rule of change coverage
- * (reached, outside the coverage scope, deleted, or nothing observes them).
+ * Close the open, snoozed and accepted *changed, unreached* gaps of `filePaths`:
+ * files a diff no longer reads as uncovered changes, by the rule of change
+ * coverage (reached, outside the coverage scope, deleted, or nothing observes
+ * them). An accepted gap whose file a test now reaches had its test written.
  * Returns how many closed.
  */
 export async function closeChangedUnreachedGaps(
@@ -556,7 +557,7 @@ export async function closeChangedUnreachedGaps(
         and(
           eq(scenarioGaps.projectId, projectId),
           eq(scenarioGaps.detector, 'changed-unreached'),
-          inArray(scenarioGaps.status, ['open', 'snoozed']),
+          inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted']),
           inArray(scenarioGaps.key, filePaths.slice(i, i + 100)),
         ),
       )
@@ -3391,9 +3392,9 @@ async function syncFeatureNodes(
 }
 
 /**
- * Close the open and snoozed *changed, unreached* gaps whose file the rule of
- * change coverage now reads as reached, in the recent window, or outside the
- * coverage scope. Without the diff, a file Piwi observed only through the
+ * Close the *changed, unreached* gaps in `statuses` (open and snoozed, and
+ * accepted after a run) whose file the rule of change coverage now reads as
+ * reached, in the recent window, or outside the coverage scope. Without the diff, a file Piwi observed only through the
  * head commit's coverage cannot be read again, so a file nothing else
  * observes keeps its gap until a later diff settles it.
  */
@@ -3403,7 +3404,7 @@ async function closeReachedChangedUnreached(
   runId: number | null,
   statuses: GapStatus[] = ['open', 'snoozed'],
 ): Promise<number> {
-  const closable = statuses.filter((s) => s === 'open' || s === 'snoozed');
+  const closable = statuses.filter((s) => s === 'open' || s === 'snoozed' || s === 'accepted');
   if (closable.length === 0) return 0;
   const open = await db
     .select({ id: scenarioGaps.id, key: scenarioGaps.key })
@@ -3999,9 +4000,10 @@ async function reopenChangedNodeSnoozes(db: DrizzleDB, projectId: number, now: D
 }
 
 /**
- * Accepted-but-unwritten gaps older than a week: the Home `gaps` inbox queue.
- * A gap the team accepted but whose node still has no trusted edge — the draft
- * was never turned into a test.
+ * Accepted-but-unwritten gaps older than a week: the Home `gaps` inbox queue. A
+ * gap whose test was written closes once a run's recompute no longer finds it
+ * (a change gap, once a diff reads its file as reached), so a gap still accepted
+ * a week on is one whose draft never became a test.
  */
 export async function listAcceptedUnwritten(
   db: DrizzleDB,
@@ -4020,39 +4022,7 @@ export async function listAcceptedUnwritten(
     .where(and(...where))
     .orderBy(desc(scenarioGaps.score))
     .limit(100);
-  const mapped = rows.map(mapGapRow);
-  if (mapped.length === 0) return mapped;
-
-  // "Unwritten" means the subject node still has no trusted `reaches` edge: a gap
-  // whose test was actually written gains one and drops out of the queue.
-  const byProject = new Map<number, ScenarioGapRow[]>();
-  for (const gap of mapped) {
-    const list = byProject.get(gap.projectId) ?? [];
-    list.push(gap);
-    byProject.set(gap.projectId, list);
-  }
-  const reachedSubjects = new Set<string>();
-  for (const [projectId, gaps] of byProject) {
-    const subjectKeys = [...new Set(gaps.map((g) => g.subject.key))];
-    const edges = await db
-      .select({ toKind: graphEdges.toKind, toKey: graphEdges.toKey })
-      .from(graphEdges)
-      .where(
-        and(
-          eq(graphEdges.projectId, projectId),
-          eq(graphEdges.kind, 'reaches'),
-          isNull(graphEdges.branch),
-          inArray(graphEdges.toKey, subjectKeys),
-        ),
-      );
-    const reached = new Set(edges.map((e) => `${e.toKind}\x00${e.toKey}`));
-    for (const gap of gaps) {
-      if (reached.has(`${gap.subject.kind}\x00${gap.subject.key}`)) {
-        reachedSubjects.add(`${gap.projectId}\x00${gap.subject.kind}\x00${gap.subject.key}`);
-      }
-    }
-  }
-  return mapped.filter((gap) => !reachedSubjects.has(`${gap.projectId}\x00${gap.subject.kind}\x00${gap.subject.key}`));
+  return rows.map(mapGapRow);
 }
 
 // ── Deterministic draft (pure + loader) ──────────────────────────────────────
