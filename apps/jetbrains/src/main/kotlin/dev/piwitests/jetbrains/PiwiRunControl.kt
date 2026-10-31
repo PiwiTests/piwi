@@ -21,6 +21,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.CustomShortcutSet
+import com.intellij.openapi.actionSystem.KeyboardShortcut
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
@@ -1543,10 +1544,10 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
             }
         }.registerCustomShortcutSet(
             CustomShortcutSet(
-                KeyStroke.getKeyStroke(KeyEvent.VK_Z, primaryMask),
-                KeyStroke.getKeyStroke(KeyEvent.VK_Z, primaryMask or InputEvent.SHIFT_DOWN_MASK),
-                KeyStroke.getKeyStroke(KeyEvent.VK_Y, primaryMask),
-                KeyStroke.getKeyStroke(KeyEvent.VK_A, primaryMask),
+                KeyboardShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_Z, primaryMask), null),
+                KeyboardShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_Z, primaryMask or InputEvent.SHIFT_DOWN_MASK), null),
+                KeyboardShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_Y, primaryMask), null),
+                KeyboardShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_A, primaryMask), null),
             ),
             picture,
         )
