@@ -67,7 +67,7 @@ import {
 } from '@piwitests/core/function-match';
 import { PATH_ANCHOR_HOST } from '@piwitests/core/page-key';
 import { completeRunSql, eligibleRunSql } from '../run-eligibility';
-import { finalAttempts } from '../utils/test-counts';
+import { finalAttempts, isFailedStatus } from '../utils/test-counts';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
 import { RETIRED_DETECTORS } from './detector-precision';
 import type { DiffAnchor } from '@piwitests/core/diff-anchors';
@@ -343,11 +343,12 @@ export function detectDeclaredNeverHit(nodes: DeclaredNode[], windowRuns = HISTO
 }
 
 /** Why a test's reach is not trusted. */
-export type UntrustedReason = 'flaky' | 'quarantined' | 'skipped' | 'did-not-run';
+export type UntrustedReason = 'flaky' | 'failing' | 'quarantined' | 'skipped' | 'did-not-run';
 
 /** How an untrusted test is named in evidence. */
 const UNTRUSTED_LABEL: Record<UntrustedReason | 'untrusted', string> = {
   flaky: 'flaky',
+  failing: 'failing',
   quarantined: 'quarantined',
   skipped: 'skipped',
   'did-not-run': 'did not run',
@@ -363,9 +364,9 @@ export interface NodeReach {
   nodeKey: string;
   /**
    * Distinct test cases reaching this node, each with its display title.
-   * `trusted` is false for a flaky, quarantined or currently-skipped test, and
-   * `untrustedReason` says which; absent counts as trusted, so pure callers need
-   * not set it.
+   * `trusted` is false for a test flaky or failing lately, quarantined or
+   * currently skipped, and `untrustedReason` says which; absent counts as
+   * trusted, so pure callers need not set it.
    */
   tests: Array<{
     testCaseId: number;
@@ -379,9 +380,9 @@ export interface NodeReach {
 /**
  * Single covering test — a node reached by exactly one *trusted* test, or by
  * tests none of which is trusted. Fragile: one flaky test away from no coverage
- * at all. Flaky, quarantined and skipped tests are not trusted reach, so a
- * trusted test plus a flaky one is single, not double, and a node only untrusted
- * tests reach is named with the reason each is not trusted.
+ * at all. Flaky, failing, quarantined and skipped tests are not trusted reach, so
+ * a trusted test plus a flaky one is single, not double, and a node only
+ * untrusted tests reach is named with the reason each is not trusted.
  */
 export function detectSingleCoveringTest(nodes: NodeReach[]): DetectedGap[] {
   const gaps: DetectedGap[] = [];
@@ -1496,67 +1497,108 @@ async function loadTestMeta(
   return meta;
 }
 
-/** The most recent per-case execution status for each of the given test cases. */
-async function latestExecutionStatus(db: DrizzleDB, ids: number[]): Promise<Map<number, string>> {
-  const status = new Map<number, string>();
-  if (ids.length === 0) return status;
+/** A test failing each of its last this many runs of the window protects nothing it reaches. */
+const FAILING_RUNS = 3;
+
+/** A test's outcome in one run, from its final attempts on every browser and repetition. */
+type WindowOutcome = 'passed' | 'flaky' | 'failed' | 'skipped' | 'did-not-run';
+
+/** The outcome of a test's final attempts in one run: a failure decides it, then a pass after a retry. */
+function windowOutcome(finals: ReadonlyArray<{ status: string; retries: number | null }>): WindowOutcome {
+  const statuses = finals.map((f) => f.status.toLowerCase());
+  if (statuses.some((s) => isFailedStatus(s))) return 'failed';
+  if (finals.some((f) => f.status.toLowerCase() === 'passed' && (f.retries ?? 0) > 0)) return 'flaky';
+  if (statuses.includes('passed')) return 'passed';
+  return statuses.every((s) => s === 'skipped') ? 'skipped' : 'did-not-run';
+}
+
+/** The columns of an attempt the window's outcomes read. */
+type AttemptOutcomeRow = {
+  testRunId: number;
+  testCaseId: number;
+  browserName: string | null;
+  repeatEachIndex: number | null;
+  retries: number | null;
+  status: string;
+};
+
+/** Each test's outcome in every run of the window it ran in, newest run first. */
+async function loadWindowOutcomes(
+  db: DrizzleDB,
+  ids: number[],
+  runIds: number[],
+): Promise<Map<number, WindowOutcome[]>> {
+  const outcomes = new Map<number, WindowOutcome[]>();
+  if (ids.length === 0 || runIds.length === 0) return outcomes;
+  const byRunAndTest = new Map<string, { runId: number; testCaseId: number; rows: AttemptOutcomeRow[] }>();
   for (let i = 0; i < ids.length; i += 200) {
-    const slice = ids.slice(i, i + 200);
-    const maxRows = await db
-      .select({ testCaseId: testRunsCases.testCaseId, maxId: sql<number>`max(${testRunsCases.id})` })
-      .from(testRunsCases)
-      .where(inArray(testRunsCases.testCaseId, slice))
-      .groupBy(testRunsCases.testCaseId);
-    const maxIds = maxRows.map((r) => Number(r.maxId)).filter((n) => Number.isFinite(n));
-    if (maxIds.length === 0) continue;
     const rows = await db
-      .select({ id: testRunsCases.id, testCaseId: testRunsCases.testCaseId, status: testRunsCases.status })
+      .select({
+        testRunId: testRunsCases.testRunId,
+        testCaseId: testRunsCases.testCaseId,
+        browserName: testRunsCases.browserName,
+        repeatEachIndex: testRunsCases.repeatEachIndex,
+        retries: testRunsCases.retries,
+        status: testRunsCases.status,
+      })
       .from(testRunsCases)
-      .where(inArray(testRunsCases.id, maxIds));
-    for (const r of rows) if (r.testCaseId != null) status.set(r.testCaseId, r.status.toLowerCase());
+      .where(and(inArray(testRunsCases.testRunId, runIds), inArray(testRunsCases.testCaseId, ids.slice(i, i + 200))));
+    for (const row of rows) {
+      if (row.testCaseId == null) continue;
+      const key = `${row.testRunId}\x00${row.testCaseId}`;
+      const entry = byRunAndTest.get(key) ?? { runId: row.testRunId, testCaseId: row.testCaseId, rows: [] };
+      entry.rows.push({ ...row, testCaseId: row.testCaseId });
+      byRunAndTest.set(key, entry);
+    }
   }
-  return status;
+  const newestFirst = [...byRunAndTest.values()].sort((a, b) => b.runId - a.runId);
+  for (const { testCaseId, rows } of newestFirst) {
+    const list = outcomes.get(testCaseId) ?? [];
+    list.push(windowOutcome(finalAttempts(rows)));
+    outcomes.set(testCaseId, list);
+  }
+  return outcomes;
 }
 
 /**
- * Test cases whose reach is not trusted: a flaky test (a classified root cause),
- * a quarantined test (an active quarantine), or one whose most recent execution
- * was skipped or did-not-run. Such a test is a fragile single cover, never a
- * second trusted one, so single-covering-test discounts it.
+ * Test cases whose reach is not trusted today, from the window's runs and the
+ * quarantine: a test that passed only after a retry in one of them (flaky), one
+ * that failed each of its last three (failing), one under an active quarantine,
+ * or one whose newest execution among them was skipped or did not run. Such a
+ * test is a fragile single cover, never a second trusted one, so
+ * single-covering-test discounts it. A test with no execution in the window is
+ * judged by nothing, so it stays trusted.
  */
 async function loadUntrustedTests(
   db: DrizzleDB,
   projectId: number,
   ids: number[],
+  runIds: number[],
 ): Promise<Map<number, UntrustedReason>> {
-  // Later reasons win: a test that did not run says more than a quarantine, and a
-  // quarantine more than a flaky classification.
+  // Later reasons win: a test that did not run says more than one failing, a
+  // failing test more than a quarantine, and a quarantine more than a flake.
   const untrusted = new Map<number, UntrustedReason>();
   if (ids.length === 0) return untrusted;
+  const outcomes = await loadWindowOutcomes(db, ids, runIds);
+  for (const [id, runs] of outcomes) if (runs.includes('flaky')) untrusted.set(id, 'flaky');
   for (let i = 0; i < ids.length; i += 200) {
-    const slice = ids.slice(i, i + 200);
-    const flaky = await db
-      .select({ id: testCases.id })
-      .from(testCases)
-      .where(
-        and(eq(testCases.projectId, projectId), inArray(testCases.id, slice), isNotNull(testCases.flakyRootCause)),
-      );
-    for (const r of flaky) untrusted.set(r.id, 'flaky');
     const quarantined = await db
       .select({ id: quarantinedTests.testCaseId })
       .from(quarantinedTests)
       .where(
         and(
           eq(quarantinedTests.projectId, projectId),
-          inArray(quarantinedTests.testCaseId, slice),
+          inArray(quarantinedTests.testCaseId, ids.slice(i, i + 200)),
           isNull(quarantinedTests.releasedAt),
         ),
       );
     for (const r of quarantined) untrusted.set(r.id, 'quarantined');
   }
-  for (const [id, status] of await latestExecutionStatus(db, ids)) {
-    if (status === 'skipped') untrusted.set(id, 'skipped');
-    else if (status === 'didnotrun' || status === 'didnot-run') untrusted.set(id, 'did-not-run');
+  for (const [id, runs] of outcomes) {
+    const latest = runs.slice(0, FAILING_RUNS);
+    if (latest.length === FAILING_RUNS && latest.every((o) => o === 'failed')) untrusted.set(id, 'failing');
+    if (runs[0] === 'skipped') untrusted.set(id, 'skipped');
+    else if (runs[0] === 'did-not-run') untrusted.set(id, 'did-not-run');
   }
   return untrusted;
 }
@@ -1959,7 +2001,7 @@ export async function computeScenarioGaps(
   }
 
   const meta = await loadTestMeta(db, [...testIds]);
-  const untrustedTests = await loadUntrustedTests(db, projectId, [...testIds]);
+  const untrustedTests = await loadUntrustedTests(db, projectId, [...testIds], recentIds);
 
   // Node first-seen for surface drift. Pruned (soft-deleted) nodes are excluded
   // so vanished surface neither reaches detectors nor re-flags as drift.

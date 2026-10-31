@@ -358,6 +358,81 @@ describe('computeScenarioGaps — the evidence window', () => {
   });
 });
 
+describe('computeScenarioGaps — which tests are trusted', () => {
+  /** One run on the default branch, and the attempts of test 1 in it. */
+  async function run(id: number, attempts: Array<{ status: string; retries?: number }>, origin?: string) {
+    await db
+      .insert(schema.testCases)
+      .values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'checkout' })
+      .onConflictDoNothing();
+    await db.insert(schema.testRuns).values({
+      id,
+      projectId: 1,
+      status: 'passed',
+      startTime: new Date(),
+      branch: 'main',
+      metadata: { ...metadata, ...(origin ? { piwiOrigin: { kind: origin } } : {}) } as never,
+      origin: origin ?? 'ci',
+    });
+    for (const [k, a] of attempts.entries()) {
+      await db.insert(schema.testRunsCases).values({
+        id: id * 10 + k,
+        testRunId: id,
+        testCaseId: 1,
+        status: a.status,
+        retries: a.retries ?? 0,
+      });
+    }
+  }
+
+  async function onlyTestGap() {
+    await db
+      .insert(schema.graphNodes)
+      .values({ projectId: 1, kind: 'route', key: 'POST /api/orders', firstSeenRunId: 1, lastSeenRunId: 1 });
+    await db.insert(schema.graphEdges).values({
+      projectId: 1,
+      fromKind: 'test',
+      fromKey: '1',
+      toKind: 'route',
+      toKey: 'POST /api/orders',
+      kind: 'reaches',
+      lastSeenAt: new Date(),
+    });
+    await gaps.computeScenarioGaps(db, 1);
+    const [gap] = await gaps.listScenarioGaps(db, 1, { detector: 'single-covering-test' });
+    return gap!;
+  }
+
+  test('a flaky classification from long ago does not make a test untrusted today', async () => {
+    await run(1, [{ status: 'passed' }]);
+    await run(2, [{ status: 'passed' }]);
+    const gap = await onlyTestGap();
+    await db.update(schema.testCases).set({ flakyRootCause: 'timing' as never });
+    await gaps.computeScenarioGaps(db, 1);
+    const [after] = await gaps.listScenarioGaps(db, 1, { detector: 'single-covering-test' });
+    expect(gap.title).toBe('Only one test reaches route POST /api/orders');
+    expect(after!.title).toBe('Only one test reaches route POST /api/orders');
+  });
+
+  test('a test that passed only after a retry lately is flaky', async () => {
+    await run(1, [{ status: 'failed' }, { status: 'passed', retries: 1 }]);
+    await run(2, [{ status: 'passed' }]);
+    expect((await onlyTestGap()).evidence.join(' ')).toContain('(flaky)');
+  });
+
+  test('a test failing its last three runs protects nothing', async () => {
+    await run(1, [{ status: 'passed' }]);
+    for (const id of [2, 3, 4]) await run(id, [{ status: 'failed' }, { status: 'failed', retries: 1 }]);
+    expect((await onlyTestGap()).evidence.join(' ')).toContain('(failing)');
+  });
+
+  test("a probe run's statuses say nothing about the test", async () => {
+    await run(1, [{ status: 'passed' }]);
+    await run(2, [{ status: 'didnotrun' }], 'probe');
+    expect((await onlyTestGap()).title).toBe('Only one test reaches route POST /api/orders');
+  });
+});
+
 describe('computeScenarioGaps — passed with errors', () => {
   test('raises the passing tests the application reported an error under, on the default branch only', async () => {
     await db.insert(schema.testRuns).values([

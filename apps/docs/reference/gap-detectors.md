@@ -47,8 +47,9 @@ so a page checked only that way reads as light. A test calls a catalog method wh
 locator uses does what one of the method's steps does, on the element that step names by test id or name, on a page
 its URL pattern matches. A method whose every target comes from a parameter gets no decision.
 
-A trusted test is one that is not flaky, not quarantined, and not skipped in its latest run. *Changed, unreached* is
-covered on [Uncovered changes in pull requests](/features/uncovered-changes): its gap closes once a test reaches the
+A trusted test is judged on the default branch's last 30 runs: it did not pass only after a retry in any of them, did
+not fail each of its last three, is not quarantined, and was neither skipped nor left unrun in the newest it ran in.
+A test with no run among them stays trusted. *Changed, unreached* is covered on [Uncovered changes in pull requests](/features/uncovered-changes): its gap closes once a test reaches the
 file. A finding never closes itself; triage it.
 
 Runs record reach to routes and pages: a test reaches every route its page requested, every page it ran a locator

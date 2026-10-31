@@ -794,9 +794,12 @@ describe('computeScenarioGaps', () => {
 
   test('a flaky test noticing a probe does not check the route', async () => {
     await seedRun(1);
-    await db
-      .insert(schema.testCases)
-      .values({ id: 2, projectId: 1, filePath: 'tests/b.spec.ts', title: 'b', flakyRootCause: 'timing' });
+    await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/b.spec.ts', title: 'b' });
+    // Test 2 passed only after a retry in the run: flaky lately.
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: 1, testCaseId: 2, status: 'failed', retries: 0 },
+      { testRunId: 1, testCaseId: 2, status: 'passed', retries: 1 },
+    ]);
     await seedReach(1, 'route', 'POST /api/orders', 1);
     await seedReach(2, 'route', 'POST /api/orders', 1);
     for (const [testCaseId, outcome] of [

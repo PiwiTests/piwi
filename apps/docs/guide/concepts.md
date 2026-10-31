@@ -279,7 +279,8 @@ A test **reaches** a route or a page when a real run observes it doing so: a req
 on the page or the test ending there. A control or a link is reached when one of the test's locators names it, or when
 triage records a covering test for it. Reach is measured from runs, never from instrumented code coverage, which is
 why the docs and the dashboard say *observed reach* rather than *coverage*.
-A flaky, quarantined or skipped test's reach does not count as trusted.
+The reach of a test flaky or failing in the default branch's recent runs, quarantined or skipped does not count as
+trusted.
 
 ### Feature and hub
 
