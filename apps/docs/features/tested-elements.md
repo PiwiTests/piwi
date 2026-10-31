@@ -107,8 +107,8 @@ the element with the extension names the brittle locators finding it.
    name the branch deployed at those URLs, a staging site on `develop` for instance: the
    overlay then shows what that branch's tests reach, as the [Locators page](./locator-usage#branches)
    reads a branch. The branch select in the panel changes it for the rest of the browser session.
-2. Let a few runs arrive. The index fills in from the steps the reporter already sends, with
-   Playwright 1.61 or later: see the [requirements](./locator-usage#requirements-and-limits). With the
+2. Let a few runs arrive. The index fills in from the steps the reporter already sends: see the
+   [requirements](./locator-usage#requirements-and-limits). With the
    [capture fixtures](/guide/capture-fixtures), it also records the page of each use.
 3. For projects that set `testIdAttribute` in their Playwright config, the reporter records it
    with each run, and `getByTestId` reads that attribute on the page.

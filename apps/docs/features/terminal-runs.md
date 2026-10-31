@@ -58,7 +58,8 @@ the editor starts.
 ## Limits
 
 - **No Pick, Record or Assert in the test's window.** They need the pairing a run Piwi starts carries: start the test
-  from the editor to use them. Pick on the image names the locator, for you to copy, without writing it.
+  from the editor to use them. Pick on the image (Playwright 1.60 or later) names the locator, for you to copy,
+  without writing it.
 - **No Stop.** End the run in its terminal, or with the IDE's own **Stop**.
 - **Debug stops twice.** Under a JetBrains IDE's **Debug**, a breakpoint stops the test in the debugger, then at Piwi's
   stop, whose controls take no key while the debug session runs. `PIWI_EDITOR=off` in the run configuration's

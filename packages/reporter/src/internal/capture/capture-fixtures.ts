@@ -125,6 +125,7 @@ import {
   steerDebugger,
   stopCallSite,
   stopShown,
+  takesEndSignal,
   testTimeSlot,
   viewHere,
   wantsStops,
@@ -2001,9 +2002,10 @@ async function showStop(
  * (`end` aborts before the debugger lets the stopped call go, so that call never runs): the test is skipped
  * (`skipOf`) as such a call rejects, before its next locator call, as a `page.pause()` it stopped at goes on, or as
  * its function ends (`skipAtFunctionEnd`). A stopped call the proxy did not delegate (a navigation, a key press, an
- * assertion on the page) runs first, which the editor hears. Once the function ended (an `afterEach` hook, a
- * fixture's teardown, a held failure), the stop ends as Resume does, the test's result kept. Returns how the debugger
- * goes on: as on `end`, or as on `finish` once the function ended.
+ * assertion on the page) runs first, which the editor hears; so does a delegated one on a Playwright that takes no
+ * signal (`takesEndSignal`), the test skipped as it returns. Once the function ended (an `afterEach` hook, a fixture's
+ * teardown, a held failure), the stop ends as Resume does, the test's result kept. Returns how the debugger goes on:
+ * as on `end`, or as on `finish` once the function ended.
  */
 function endTest(
   sink: CaptureSink,
@@ -2032,8 +2034,11 @@ function endTest(
   }
   // A call's title may name the address it goes to: its credentials stay in the worker.
   const said = hideSecretsInText(
-    `${title} at ${line} runs before the test ends: Piwi holds no locator call there. ` +
-      'The test is skipped at its next locator call, or as it ends.',
+    call && !takesEndSignal(sink.testInfo.config?.version)
+      ? `${title} at ${line} runs before the test ends: a locator call is given up from Playwright 1.62 on. ` +
+          'The test is skipped as the call returns.'
+      : `${title} at ${line} runs before the test ends: Piwi holds no locator call there. ` +
+          'The test is skipped at its next locator call, or as it ends.',
   );
   console.log(`[piwi] ${said}`);
   tellHub({ type: 'notice', message: said });
@@ -2307,6 +2312,7 @@ type RunnerStep = {
   endWallTime?: unknown;
   steps?: unknown;
   stack?: Array<{ file?: unknown; line?: unknown; column?: unknown }>;
+  location?: { file?: unknown; line?: unknown; column?: unknown };
 };
 
 /**
@@ -2320,7 +2326,7 @@ function callInProgress(testInfo: TestInfo): { title: string | null; place: Code
     if (!Array.isArray(steps)) return;
     for (const step of steps as RunnerStep[]) {
       if (step.endWallTime) continue;
-      const at = step.stack?.[0];
+      const at = step.stack?.[0] ?? step.location;
       const called = step.category === 'pw:api' || step.category === 'expect' || step.category === 'test.step';
       if (called && typeof at?.file === 'string' && typeof at.line === 'number') {
         found = {
@@ -2608,7 +2614,10 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
           if (sink) recordLocatorPage(sink, page, target, callerLocation, noteLocatorCall(page, EXPECT_METHOD, true));
           const call = knowLocatorCall(sink, page, target, callerLocation, { method: originMethod, args: originArgs });
           // While the attempt can stop, the assertion carries its end signal: End the test gives it up.
-          const ending = sink?.pause && !sink.ended ? withEndSignal(EXPECT_METHOD, callArgs, sink.end.signal) : null;
+          const ending =
+            sink?.pause && !sink.ended && takesEndSignal(sink.testInfo?.config?.version)
+              ? withEndSignal(EXPECT_METHOD, callArgs, sink.end.signal)
+              : null;
           if (call && ending) call.endable = true;
           const expectArgs = ending ?? callArgs;
           try {
@@ -2692,7 +2701,10 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         };
         const call = knowLocatorCall(sink, page, target, callerLocation, used);
         // While the attempt can stop, the action carries its end signal: End the test gives it up.
-        const ending = sink.pause && !sink.ended ? withEndSignal(String(prop), callArgs, sink.end.signal) : null;
+        const ending =
+          sink.pause && !sink.ended && takesEndSignal(sink.testInfo?.config?.version)
+            ? withEndSignal(String(prop), callArgs, sink.end.signal)
+            : null;
         if (call && ending) call.endable = true;
 
         // One probe per call site (see `probedLocations`). Push a placeholder

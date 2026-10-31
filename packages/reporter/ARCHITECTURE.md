@@ -130,14 +130,15 @@ What the package does to a user's run, process by process.
 - **End the test** (`end`, the editor's control or the bar's button, `endTest` in
   `capture-fixtures.ts`). While the test function runs (its `beforeEach` hooks and the
   fixtures set up before it included), each locator call the proxy delegates carries the
-  attempt's end signal among its options (`withEndSignal` in `pause-at.ts`, beside a
-  signal the test gave, through `AbortSignal.any`): End aborts it before the debugger
-  lets the held call go, so Playwright gives that call up before it runs. The attempt
-  then stops nowhere more, and is skipped by the runner's own `testInfo.skip(true,
-  ENDED_REASON)` as the call rejects, at its next locator call, as a `page.pause()` it
-  stopped at goes on, or as its function ends (`_onDidFinishTestFunctionCallbacks`,
-  feature-checked, only when it passed). A call the proxy does not delegate (a
-  navigation, a key press, a page's own assertion) runs first, which the editor hears
+  attempt's end signal among its options, on Playwright 1.62 or later (`takesEndSignal`
+  and `withEndSignal` in `pause-at.ts`, beside a signal the test gave, through
+  `AbortSignal.any`): End aborts it before the debugger lets the held call go, so
+  Playwright gives that call up before it runs. The attempt then stops nowhere more, and
+  is skipped by the runner's own `testInfo.skip(true, ENDED_REASON)` as the call
+  rejects, at its next locator call, as a `page.pause()` it stopped at goes on, or as its
+  function ends (`_onDidFinishTestFunctionCallbacks`, feature-checked, only when it
+  passed). A call the proxy does not delegate (a navigation, a key press, a page's own
+  assertion), or any call on an older Playwright, runs first, which the editor hears
   (`notice`). At a failure, or once the function ended (an `afterEach` hook, a fixture's
   teardown), End goes on as Resume does, the result kept; the bar offers it at neither.
   `afterEach` hooks and the fixtures' teardown run as after any skip, and the next
@@ -187,7 +188,10 @@ What the package does to a user's run, process by process.
 - `locator` counts a chain (`chain-locator.ts`, built through the chain grammar's calls
   alone) on the stopped page, one count after the other, and, where the bar shows,
   outlines its matches with Playwright's highlight, the one before taken down first and
-  the last before the stop ends.
+  the last before the stop ends. A highlight comes down through its own `dispose` or
+  `page.hideHighlight` (1.60), and before 1.60 through an image of the page with a mask
+  in each frame, whose end takes the frame's highlight down (`takeHighlightDown` in
+  `pause-at.ts`, for the pause bar's highlight too).
 - **The live view**, for a viewer outside the page (Piwi Picker, through the editor's
   hub). `view` shows the stopped page live: its screencast (`page.screencast.start`
   through an internal call, at its viewport scaled to fit 1280 by 800, JPEG quality 60,
@@ -222,8 +226,9 @@ What the package does to a user's run, process by process.
   taken. Piwi's overlays are left out (each root an `__piwi` id or a `piwi-…-host`), an
   iframe refused. It ranks it as the bar's pick does, with `locator.normalize()`'s locator
   among the candidates,
-  and posts the first that finds it alone to `PIWI_EDITOR_SEND` (`page.getByRef` and the
-  boxes feature-checked, refused before Playwright 1.64). An image of a stopped page names
+  and posts the first that finds it alone to `PIWI_EDITOR_SEND` (each ref read through
+  `locatorOfRef`; the snapshot's boxes feature-checked, refused before Playwright 1.60).
+  An image of a stopped page names
   its viewport (`width`, `height`), the CSS pixels a point is in.
 - For an agent (the editor's MCP server), at the stop held alone, one request after the
   other, 10 seconds at most each, an `act` the page takes longer over answered `late`
@@ -235,7 +240,8 @@ What the package does to a user's run, process by process.
   a secret field is a password field or one whose `autocomplete` names a password, a
   one-time code or a card's number or security code (`SECRET_FIELDS`, from
   `SECRET_AUTOCOMPLETE`); `ref-locator` ranks the element a
-  ref names (`page.getByRef`, 1.64) as Pick does, with the project's `testIdAttribute`,
+  ref names (`locatorOfRef`: `page.getByRef`, else the `aria-ref=` selector it wraps) as
+  Pick does, with the project's `testIdAttribute`,
   each candidate checked to find it alone, and reads its text (its `textContent` with
   whitespace collapsed, as a text assertion compares it, 1,000 characters at most and
   `textCut` past them), value (none of a secret field, `el.matches(SECRET_FIELDS)`) and

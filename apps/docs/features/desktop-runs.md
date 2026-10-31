@@ -52,8 +52,8 @@ until you turn it off. Your clicks, the wheel and your keys on the view go to th
 to the tray, and `Tab` leaves the view unless a click into it took the keyboard. The frames go from the test's worker
 to the windows that watch that stop, the app's and Piwi Picker's Runs window, and nothing keeps them.
 
-**Pick on the image**, or a `Shift`+click on the image or the view, names the element under the pointer: its locator
-shows under the test, with **Copy**.
+**Pick on the image** (Playwright 1.60 or later), or a `Shift`+click on the image or the view, names the element under
+the pointer: its locator shows under the test, with **Copy**.
 
 ## Code to copy
 

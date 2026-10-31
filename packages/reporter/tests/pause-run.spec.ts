@@ -28,6 +28,12 @@ const OWN_PAUSE_MS = 1000;
 const INSPECTOR_CHECK_MS = 500;
 /** Whether the run opens real windows, and can see Playwright's Inspector open. */
 const WINDOWS = process.platform === 'linux' && !!process.env.DISPLAY;
+/**
+ * A call's title without its locator, which Playwright writes in a stop's title from 1.63 and in a step's title before
+ * it, and with a navigation's address unquoted, as 1.63 writes it.
+ */
+const callOf = (title: string): string =>
+  title.replace(/ (locator|getBy\w+)\(.*$/, '').replace(/^Navigate to "(.*)"$/, 'Navigate $1');
 
 /** Whether Playwright's Inspector is open: a Chromium app window of its own (`--app=data:text/html,`). */
 function inspectorOpen(): boolean {
@@ -402,20 +408,20 @@ describe('a run with breakpoints', () => {
 
   it('stops at a navigation and a key press on a breakpoint, at the next call after Step, and at none after Finish', () => {
     const [goto, press, click, , ownContext, second, poll, picking, closing, closed, forgets, navigates, arms] = bp;
-    expect(stops.map(({ where, what }) => ({ where, what }))).toEqual([
+    expect(stops.map(({ where, what }) => ({ where, what: callOf(what) }))).toEqual([
       { where: `Paused at pause.spec.cjs:${goto}`, what: expect.stringMatching(/^Navigate .*\/b$/) },
       { where: `Paused at pause.spec.cjs:${press}`, what: 'Press "Tab"' },
-      { where: `Paused at pause.spec.cjs:${press! + 1}`, what: `Click getByRole('button')` },
-      { where: `Paused at pause.spec.cjs:${click}`, what: `Click getByRole('button')` },
-      { where: `Paused at pause.spec.cjs:${ownContext}`, what: `Expect "toBeVisible" getByRole('button')` },
+      { where: `Paused at pause.spec.cjs:${press! + 1}`, what: 'Click' },
+      { where: `Paused at pause.spec.cjs:${click}`, what: 'Click' },
+      { where: `Paused at pause.spec.cjs:${ownContext}`, what: 'Expect "toBeVisible"' },
       { where: expect.stringMatching(/^Paused at pause\.spec\.cjs:\d+$/), what: 'Pause' },
       { where: `Paused at pause.spec.cjs:${second}`, what: expect.stringMatching(/^Navigate .*\/b$/) },
-      { where: `Paused at pause.spec.cjs:${poll}`, what: `Get input value locator('input')` },
-      { where: `Paused at pause.spec.cjs:${picking}`, what: `Get input value locator('input')` },
-      { where: `Paused at pause.spec.cjs:${closing}`, what: `Click getByRole('button')` },
+      { where: `Paused at pause.spec.cjs:${poll}`, what: 'Get input value' },
+      { where: `Paused at pause.spec.cjs:${picking}`, what: 'Get input value' },
+      { where: `Paused at pause.spec.cjs:${closing}`, what: 'Click' },
       // The page closing ended the stop before it: the breakpoints still stop.
-      { where: `Paused at pause.spec.cjs:${closed}`, what: `Click getByRole('button')` },
-      { where: `Paused at pause.spec.cjs:${forgets}`, what: `Click getByRole('button')` },
+      { where: `Paused at pause.spec.cjs:${closed}`, what: 'Click' },
+      { where: `Paused at pause.spec.cjs:${forgets}`, what: 'Click' },
       { where: `Paused at pause.spec.cjs:${navigates}`, what: expect.stringMatching(/^Navigate .*\/c$/) },
       { where: `Paused at pause.spec.cjs:${arms}`, what: expect.stringMatching(/^Navigate .*\/b$/) },
     ]);
@@ -518,12 +524,12 @@ describe('a run with breakpoints', () => {
       const titles = allSteps(result.steps).map((s) => s.title);
       expect(titles, result.title).not.toContainEqual(
         expect.stringMatching(
-          /Pause on next|Step to next|Run to|^Resume|Evaluate|Wait for function|highlight|Piwi capture/i,
+          /Pause on next|Step to next|Run to|^Resume|Evaluate|Wait for function|highlight|Screenshot|Piwi capture/i,
         ),
       );
     }
     const body = test('stops').steps.filter((s) => s.category === 'pw:api' || s.category === 'expect');
-    expect(body.map((s) => s.title)).toEqual([
+    expect(body.map((s) => callOf(s.title))).toEqual([
       expect.stringMatching(/^Navigate/),
       expect.stringMatching(/^Navigate/),
       'Press "Tab"',

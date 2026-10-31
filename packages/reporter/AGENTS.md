@@ -35,7 +35,9 @@ responsibilities.
    - the editor's breakpoints (`internal/capture/pause-at.ts`, with `PIWI_PAUSE_AT` in a headed local run): the pause
      bar, `PW_CODEGEN_NO_INSPECTOR`, the wrapped `Page.prototype.pause`, the runner internals it reads
      (`_onDidFinishTestFunctionCallbacks`, `_timeoutManager.defaultSlot()`, both feature-checked), the `piwi-pauses`
-     attachment and the locator posted to `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`);
+     attachment and the locator posted to `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`); on Playwright 1.59, the
+     masked screenshot that takes a stop's highlight down, the test's own screencast overlays with it
+     (`takeHighlightDown`);
    - with `PIWI_RECORD_CHANNEL`, **Record here** handing the page to the editor's recorder
      (`internal/capture/record-handoff.ts`, framed as `@piwitests/core/ide-recorder`): this package carries the relay
      alone, the recorder's host stays in the editor service;
@@ -44,7 +46,7 @@ responsibilities.
      (`internal/capture/run-channel.ts`, framed as `@piwitests/core/run-channel`), open from the `piwiResources` worker
      fixture's setup to the worker's end: it reports each test and stop, takes the editor's controls, breakpoints,
      intents and queries (`takes` in its `run-attach`), ends the test at a stop (`end`: the held locator call given up
-     through Playwright's own `signal` option, `withEndSignal`, and the attempt skipped by `testInfo.skip` with
+     through Playwright's own `signal` option (1.62), `withEndSignal`, and the attempt skipped by `testInfo.skip` with
      `ENDED_REASON`, `tests/run-channel-end.spec.ts`), shares the run live as asked (`share`, below), keeps the test's
      text responses in memory for Mock a request (`kept-responses.ts`), holds a failing test's page for an editor that
      answered its `holds` with `attached` (`holdFailure`, `editorShows`), and makes a headless run stop too; for a
@@ -133,6 +135,10 @@ responsibilities.
   streaming routes build their own run bodies: `/setup` in `public/global-setup.ts`, `/finish` in
   `internal/submit/run-submitter.ts`, `/start` and `/begin` in `internal/streaming/stream-manager.ts`, so a run-level
   field the server reads while streaming is added there too.
+- **Playwright from the floor up.** The lower bound of the peer range on `@playwright/test` is the oldest Playwright
+  the reporter supports: an API added after it is feature-checked, and a spec that needs it skips itself below that
+  version (`playwrightAtLeast`, `tests/_helpers.ts`). CI's `reporter-floor` job runs the suite on the floor
+  (`scripts/playwright-floor.mjs`), and `docs-drift.test.ts` holds the docs' stated minimum to it.
 
 ## Workflow
 

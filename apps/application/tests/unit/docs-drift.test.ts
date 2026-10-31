@@ -820,3 +820,22 @@ describe('demo examples', () => {
     for (const example of DEMO_EXAMPLES) expect(example.route, example.id).toMatch(/^\/(?!demo\/)\S+$/);
   });
 });
+
+describe('the oldest Playwright the reporter supports', () => {
+  // The lower bound of the reporter's peer range on @playwright/test, which CI's `reporter-floor` job tests. The
+  // reporter's guide and its README state it, so the range and the docs move together; a feature's page names only a
+  // later version it needs.
+  const range: string = JSON.parse(read('packages/reporter/package.json')).peerDependencies['@playwright/test'];
+  const floor = /^>=(\d+\.\d+)\.\d+ <2$/.exec(range)?.[1];
+
+  test('the peer range is a floor below the next major', () => {
+    expect(floor, `packages/reporter/package.json: "@playwright/test": "${range}" is not ">=x.y.z <2"`).toBeDefined();
+  });
+
+  test.each([
+    ['apps/docs/guide/reporter.md', 'It needs `@playwright/test` %s or later'],
+    ['packages/reporter/README.md', 'Playwright Test %s or higher'],
+  ])('%s states it', (file, phrase) => {
+    expect(read(file)).toContain(phrase.replace('%s', floor ?? '?'));
+  });
+});

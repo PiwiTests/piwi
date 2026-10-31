@@ -70,9 +70,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # `app` is what the dashboard's build, E2E, package smoke and demo jobs depend on: the server bundles the docs
-      # pages and the changelog for its MCP tools. `js` is every workspace the four check jobs (`lint`, `app-unit`,
-      # `reporter`, `packages`) format, lint and test, and what knip reads besides them (its config, the configs of the
-      # tools it knows, the git hooks).
+      # pages and the changelog for its MCP tools. `js` is every workspace the five check jobs (`lint`, `app-unit`,
+      # `reporter`, `reporter-floor`, `packages`) format, lint and test, and what knip reads besides them (its config, the
+      # configs of the tools it knows, the git hooks).
       - name: Read the areas the change touches
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -101,6 +101,7 @@ jobs:
               - 'packages/server/**'
               - 'integrations/nitro/**'
               - 'scripts/package-smoke.mjs'
+              - 'scripts/playwright-floor.mjs'
               - 'CHANGELOG.md'
               - 'package.json'
               - 'package-lock.json'
@@ -177,14 +178,15 @@ jobs:
               - 'packages/server/**'
               - 'packages/reporter/**'
               - 'scripts/package-smoke.mjs'
+              - 'scripts/playwright-floor.mjs'
               - 'apps/application/package.json'
               - 'apps/application/nuxt.config.ts'
               - 'package-lock.json'
 
       # Storage and database are independent axes: a pull request runs each implementation once (local + sqlite, on
       # the dashboard's Node 22 engines floor, and s3 + postgres), main runs every pair. Windows and macOS catch what
-      # breaks only on their paths or native binaries: a pull request runs them when it changes the packages or their
-      # dependencies, main always.
+      # breaks only on their paths or native binaries, and a Linux leg installs the oldest Playwright the reporter
+      # supports: a pull request runs them when it changes the packages or their dependencies, main always.
       - name: Pick the E2E backends and the package smoke systems
         id: matrices
         env:
@@ -198,7 +200,7 @@ jobs:
 
           systems='[{"os":"ubuntu-latest","node":"22"}]'
           if [ "$ON_MAIN" = true ] || [ "$PACKAGES_CHANGED" = true ]; then
-            systems='[{"os":"ubuntu-latest","node":"22"},{"os":"windows-latest","node":"24"},{"os":"macos-latest","node":"24"}]'
+            systems='[{"os":"ubuntu-latest","node":"22"},{"os":"windows-latest","node":"24"},{"os":"macos-latest","node":"24"},{"os":"ubuntu-latest","node":"24","playwright":"floor"}]'
           fi
           echo "smoke=$systems" >> "$GITHUB_OUTPUT"
 
@@ -293,11 +295,11 @@ jobs:
           path: base/apps/application/.output
           key: perf-base-output-v1-${{ github.sha }}
 
-  # The backend-agnostic checks, in four jobs that run at once. Every test job builds the reporter and installs the full
-  # Chromium build beside the cached headless shell: two specs that drive a real run through the built reporter skip
-  # without them (the dashboard's tests/unit/desktop-runs-run.test.ts, the editor service's tests/agent-run.test.ts),
-  # the reporter's own specs load the build, and its breakpoint run (tests/pause-run.spec.ts) opens Chromium's windows,
-  # under a display.
+  # The backend-agnostic checks, in five jobs that run at once. Every test job builds the reporter and installs the full
+  # Chromium build, beside the cached headless shell (the floor job: both builds, of the oldest Playwright): two specs
+  # that drive a real run through the built reporter skip without them (the dashboard's
+  # tests/unit/desktop-runs-run.test.ts, the editor service's tests/agent-run.test.ts), the reporter's own specs load
+  # the build, and its breakpoint run (tests/pause-run.spec.ts) opens Chromium's windows, under a display.
   lint:
     name: Format, lint and typecheck
     needs: changes
@@ -449,6 +451,39 @@ jobs:
           working-directory: ./packages/reporter
           name: Reporter
           file-coverage-mode: changes
+
+  # The reporter's suite on the oldest Playwright it supports, the lower bound of its peer range
+  # (scripts/playwright-floor.mjs). A spec that needs a later version skips itself (`playwrightAtLeast`,
+  # packages/reporter/tests/_helpers.ts).
+  reporter-floor:
+    name: Reporter tests (Playwright floor)
+    needs: changes
+    if: needs.changes.outputs.js == 'true'
+    # An Ubuntu the oldest Playwright the reporter supports has Chromium builds for: 1.59 has none for 26.04.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+
+      # The flake-run and build-output specs load the built package.
+      - name: Build reporter
+        working-directory: packages/reporter
+        run: npm run reporter:build
+
+      - name: Install the oldest Playwright the reporter supports
+        run: node scripts/playwright-floor.mjs --install
+
+      - name: Install its Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Test
+        working-directory: packages/reporter
+        run: xvfb-run -a npm run reporter:test
 
   packages:
     name: Package tests
@@ -672,9 +707,10 @@ jobs:
   # Installs the packed @piwitests/server and @piwitests/reporter into a new project,
   # starts the server with `npx @piwitests/server` and runs a suite through the reporter
   # (scripts/package-smoke.mjs). Windows and macOS catch what breaks only on their paths
-  # or native binaries; the Linux leg runs the server package's Node 22 floor.
+  # or native binaries; the Linux leg runs the server package's Node 22 floor, and the
+  # `playwright: floor` leg the reporter's Playwright floor (scripts/playwright-floor.mjs).
   package-smoke:
-    name: Package smoke (${{ matrix.os }}, Node ${{ matrix.node }})
+    name: Package smoke (${{ matrix.os }}, Node ${{ matrix.node }}${{ matrix.playwright && ', Playwright floor' || '' }})
     runs-on: ${{ matrix.os }}
     needs: [changes, build]
     if: needs.changes.outputs.app == 'true'
@@ -703,7 +739,7 @@ jobs:
           path: npm-packages
 
       - name: Install the packages and report a run through them
-        run: node scripts/package-smoke.mjs npm-packages
+        run: node scripts/package-smoke.mjs npm-packages ${{ matrix.playwright == 'floor' && '--playwright floor' || '' }}
 
   demo:
     name: Test demo generation
@@ -960,7 +996,7 @@ jobs:
   ci-result:
     name: CI result
     if: ${{ !cancelled() }}
-    needs: [versions, changes, build, lint, app-unit, reporter, packages, e2e, measure, package-smoke, demo, aspnet, nitro, container, docs, guides, extension, vscode, jetbrains, desktop, perf-base, perf]
+    needs: [versions, changes, build, lint, app-unit, reporter, reporter-floor, packages, e2e, measure, package-smoke, demo, aspnet, nitro, container, docs, guides, extension, vscode, jetbrains, desktop, perf-base, perf]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 

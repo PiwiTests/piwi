@@ -37,10 +37,13 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 
 - The `changes` job reads which areas a change touches (`dorny/paths-filter`), and each job runs for the areas it
   covers. A change to `.github/workflows/`, `.github/actions/` or `.node-version` runs them all.
-- A change to a JavaScript workspace (`js`) runs the four check jobs at once:
+- A change to a JavaScript workspace (`js`) runs the five check jobs at once:
   - `Format, lint and typecheck`: oxfmt, oxlint and the type check of every workspace, then knip;
   - `Dashboard unit tests`, with the coverage comment;
   - `Reporter tests`, under `xvfb-run`, then the AI steps' integration run, with the coverage comment;
+  - `Reporter tests (Playwright floor)`: the same suite on the oldest Playwright the reporter supports
+    (`scripts/playwright-floor.mjs --install`), where a spec that needs a later version skips itself, on an Ubuntu
+    that Playwright has Chromium builds for (24.04);
   - `Package tests`: core, picker-dom (unit and in a browser), the editor service, the VS Code and browser extensions'
     unit tests, and the showcase's cut.
 - The agent guides' test (`apps/application/tests/unit/agent-guides.test.ts`) runs in `Dashboard unit tests` with
@@ -52,8 +55,8 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 - `changes` also picks two matrices:
   - the dashboard E2E suite, five shards per backend: two backends on a pull request (`local + sqlite` on Node 22, and
     `s3 + postgres`), all four on `main`;
-  - the package smoke test: Linux on a pull request, plus Windows and macOS when it changes the packages or their
-    dependencies, and all three on `main`.
+  - the package smoke test: Linux on a pull request, plus Windows, macOS and a Linux leg on the reporter's Playwright
+    floor when it changes the packages or their dependencies, and all four on `main`.
 - The JetBrains Plugin Verifier runs on two IDEs for a pull request and on four on `main`, where the plugin job also
   writes the Gradle cache.
 - Some jobs run on pull requests only: the extension, VS Code and desktop suites, the docs build, the container image

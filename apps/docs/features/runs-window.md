@@ -91,7 +91,7 @@ A hint under the view says so the first time. What you hold down is let go befor
 **Pick on the image**, beside **Watch live**, or a `Shift`+click on the image or the view, names the element a click
 under the pointer would reach (a dialog or a banner over the page included), without touching the page: the locator
 the pause bar's **Pick a locator** would rank first for it, sent to the editor in place of the stopped line's. The window shows that locator, or why there is none. It works on a headed stop's image too. `Esc`
-turns it off.
+turns it off. It needs Playwright 1.60 or later, and says so on an older one.
 
 ## The run shortcut
 

@@ -1,6 +1,6 @@
 ---
 title: End the test
-description: "End a stopped test where it stands, from the editor, the pause bar, Piwi Picker's Runs window, the desktop app or an agent: the call it stopped before never runs, and Playwright reports the test as skipped."
+description: "End a stopped test where it stands, from the editor, the pause bar, Piwi Picker's Runs window, the desktop app or an agent, and Playwright reports it as skipped."
 lang: en-US
 ---
 
@@ -8,9 +8,9 @@ lang: en-US
 
 <Needs fixtures />
 
-At a stop, **End the test** ends the test there, as if it had called `test.skip()` at that line: the call it stopped
-before never runs, nor the rest of the test, and Playwright reports it as skipped, its `skip` annotation reading
-`Ended from Piwi`. The run goes on with its next test. Use it once you have seen what you stopped for, or recorded the
+At a stop, **End the test** ends the test there, as if it had called `test.skip()` at that line: the locator call it
+stopped before never runs (Playwright 1.62 or later), nor the rest of the test, and Playwright reports it as skipped,
+its `skip` annotation reading `Ended from Piwi`. The run goes on with its next test. Use it once you have seen what you stopped for, or recorded the
 steps you were missing, and the rest of the test has nothing to show you.
 
 ## Where it is
@@ -30,7 +30,8 @@ It is offered at any stop but a failure, with a reporter newer than 0.62.0:
 ## What runs, and what does not
 
 - **At a locator call or an assertion** (`click`, `fill`, `expect(locator).toBeVisible()`), the call is given up
-  before it runs. At a `page.pause()`, nothing after it runs.
+  before it runs, with Playwright 1.62 or later; an older one runs it first, and the editor says so. At a
+  `page.pause()`, nothing after it runs.
 - **At another call** (a navigation, a key press on the page, `page.evaluate`), the call runs first: Piwi does not
   hold it. The test is skipped at its next locator call, or as its function ends, and the editor says so.
 - **At a failure**, it is not offered: **Resume** lets the test end as it failed, and the failure is kept.

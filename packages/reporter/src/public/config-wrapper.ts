@@ -4,6 +4,7 @@ import type { PlaywrightTestConfig } from '@playwright/test';
 import { applyOptionsToEnv, readBool, PIWI_ENV_KEYS, PIWI_DEFAULTED_CAPTURE_ENV } from '../internal/config/env.js';
 import { isProbeMode } from '../internal/probe/mode.js';
 import { isFlakeMode, labModeConflict } from '../internal/flake/mode.js';
+import { playwrightVersionAtLeast } from '../internal/support/playwright-version.js';
 import type { PiwiDashboardOptions } from './options.js';
 
 const PIWI_MODULE = '@piwitests/reporter';
@@ -25,7 +26,7 @@ const CAPTURE_DEFAULTS = {
  * boolean in the protocol validator and reject an object, so on them `trace`
  * stays the plain `'retain-on-failure'` string.
  */
-const TRACE_SNAPSHOTS_MIN = { major: 1, minor: 63 } as const;
+const TRACE_SNAPSHOTS_MIN = '1.63';
 
 /**
  * Read `@playwright/test`'s installed version. Aliased through a variable so the
@@ -46,17 +47,6 @@ let readPlaywrightVersion: () => string | undefined = installedPlaywrightVersion
 /** Swap how the installed Playwright version is read; pass `null` to restore. */
 export function setPlaywrightVersionReader(reader: (() => string | undefined) | null): void {
   readPlaywrightVersion = reader ?? installedPlaywrightVersion;
-}
-
-/** Whether the installed Playwright accepts the `trace.snapshots` object form. */
-function supportsTraceSnapshots(version: string | undefined): boolean {
-  const match = version ? /^(\d+)\.(\d+)/.exec(version) : null;
-  if (!match) return false;
-  const major = Number(match[1]);
-  const minor = Number(match[2]);
-  return (
-    major > TRACE_SNAPSHOTS_MIN.major || (major === TRACE_SNAPSHOTS_MIN.major && minor >= TRACE_SNAPSHOTS_MIN.minor)
-  );
 }
 
 type CaptureUse = NonNullable<PlaywrightTestConfig['use']>;
@@ -81,7 +71,7 @@ function applyCaptureDefaults(
   const enabled = piwiOptions?.defaultCapture ?? readBool(process.env[PIWI_ENV_KEYS.defaultCapture]) ?? true;
   if (!enabled) return use;
 
-  const ariaSnapshots = supportsTraceSnapshots(readPlaywrightVersion());
+  const ariaSnapshots = playwrightVersionAtLeast(readPlaywrightVersion(), TRACE_SNAPSHOTS_MIN);
   const traceValue = ariaSnapshots
     ? { mode: CAPTURE_DEFAULTS.trace, snapshots: { dom: true, aria: true } }
     : CAPTURE_DEFAULTS.trace;

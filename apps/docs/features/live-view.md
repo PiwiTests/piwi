@@ -58,7 +58,8 @@ browser paints it, headless or not, and under it the call the image was taken at
 
 In a CI run, the view also follows that call: how long it has run, Playwright's log of it as a failed call's error
 prints it, and while it waits, what its locator matches (no element yet, several, or one not enabled), outlined on the
-image, with the point a click acts on. A shared run shows the call alone.
+image, with the point a click acts on. A shared run shows the call alone. Following the call needs Playwright 1.64:
+1.63 shows its log without the matches, and an older one the call alone.
 
 A view belongs to the test whose row opened it. Opened between two tests or in a `beforeAll`, it says so and shows the
 next test's page. It ends with its test, its worker or the run, when the live view is turned off, or when you close it.

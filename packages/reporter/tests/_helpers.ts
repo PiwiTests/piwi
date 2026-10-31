@@ -1,4 +1,6 @@
 ﻿import * as http from 'node:http';
+import { createRequire } from 'node:module';
+import { playwrightVersionAtLeast } from '../src/internal/support/playwright-version.js';
 
 export interface RecordedReq {
   method: string;
@@ -208,4 +210,17 @@ export function fakeConfig(
     globalTimeout: undefined,
     fullyParallel: false,
   };
+}
+
+/** The `@playwright/test` version the suite runs on. */
+export const PLAYWRIGHT_VERSION: string = (
+  createRequire(__filename)('@playwright/test/package.json') as { version: string }
+).version;
+
+/**
+ * Whether the suite runs on Playwright `minimum` (`major.minor`) or later. A spec that needs a Playwright newer than
+ * the reporter's floor (the lower bound of its peer range) skips itself below that version.
+ */
+export function playwrightAtLeast(minimum: string): boolean {
+  return playwrightVersionAtLeast(PLAYWRIGHT_VERSION, minimum);
 }

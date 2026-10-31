@@ -220,7 +220,7 @@ export function apiCallEntry(call: ApiCall, baseURL: string | null): Record<stri
   };
 }
 
-/** Start and duration from Playwright's timing (1.63 and later): to the response end from the request start. */
+/** Start and duration from Playwright's timing (1.62 and later): to the response end from the request start. */
 function responseTiming(response: APIResponse): { startTime: number; duration: number } | null {
   if (typeof response.timing !== 'function') return null;
   const timing = response.timing();

@@ -317,17 +317,35 @@ function fallbackRunnable(window: ResourceTestRef | null): { phase: ResourcePhas
   return { phase: window ? 'test' : 'worker', fixture: null };
 }
 
+/** Where each Playwright layout keeps the worker's globals, newest first: `lib/common/` up to 1.59. */
+const GLOBALS_FILES: ReadonlyArray<readonly string[]> = [
+  ['lib', 'globals.js'],
+  ['lib', 'common', 'globals.js'],
+];
+
+/**
+ * The module of the `playwright` package the test runner uses that holds its worker's globals (`GLOBALS_FILES`,
+ * internal), or null on a layout this cannot follow.
+ */
+export function playwrightGlobalsFile(): string | null {
+  const packageJson = resolvePlaywrightPackageJson();
+  if (!packageJson) return null;
+  const root = path.dirname(packageJson);
+  return GLOBALS_FILES.map((parts) => path.join(root, ...parts)).find((file) => fs.existsSync(file)) ?? null;
+}
+
 /**
  * Reads the test info Playwright's worker holds for what it runs right now,
- * from `playwright/lib/globals.js` (internal). Loaded by absolute path through
- * the same resolution the runner uses, so it is the runner's own instance; on a
- * layout this cannot follow, it reads nothing and objects carry no phase.
+ * from its globals module (`playwrightGlobalsFile`). Loaded by absolute path
+ * through the same resolution the runner uses, so it is the runner's own
+ * instance; on a layout this cannot follow, it reads nothing and objects carry
+ * no phase.
  */
 function playwrightTestInfoSource(): () => TestInfoLike | null {
   try {
-    const packageJson = resolvePlaywrightPackageJson();
-    if (!packageJson) return () => null;
-    const globals = createRequire(packageJson)(path.join(path.dirname(packageJson), 'lib', 'globals.js')) as {
+    const file = playwrightGlobalsFile();
+    if (!file) return () => null;
+    const globals = createRequire(file)(file) as {
       currentTestInfo?: () => TestInfoLike | null;
     };
     const read = globals.currentTestInfo;

@@ -99,7 +99,8 @@ export interface PageFrame {
   height: number;
   /**
    * A screenshot's start, or a screencast frame's time as Playwright names it (no later than its arrival) less
-   * `SCREENCAST_LAG_MS`.
+   * `SCREENCAST_LAG_MS`; `-Infinity` for a frame that names none (before Playwright 1.61), which may show the page from
+   * before any read.
    */
   at: number;
 }
@@ -282,8 +283,12 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
         quality: options.quality,
         onFrame: (frame) => {
           const now = Date.now();
-          const named = typeof frame.timestamp === 'number' && Number.isFinite(frame.timestamp) ? frame.timestamp : now;
-          onFrame(frame.data, frame.viewportWidth, frame.viewportHeight, Math.min(named, now) - SCREENCAST_LAG_MS);
+          // A frame that names no paint time (before Playwright 1.61) is dated before any read.
+          const at =
+            typeof frame.timestamp === 'number' && Number.isFinite(frame.timestamp)
+              ? Math.min(frame.timestamp, now) - SCREENCAST_LAG_MS
+              : Number.NEGATIVE_INFINITY;
+          onFrame(frame.data, frame.viewportWidth, frame.viewportHeight, at);
           return acks.next();
         },
       }),

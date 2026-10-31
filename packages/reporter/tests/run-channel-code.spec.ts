@@ -129,10 +129,12 @@ test('takes every outline down', async ({ page }) => {
     observer.disconnect();
     resolve();
   }).observe({ type: 'paint', buffered: true })));
-  const before = await page.screenshot();
+  const before = await page.screenshot({ caret: 'initial' });
   await expect(page.getByTestId('go')).toBeVisible(); // bp
-  const after = await page.screenshot();
+  const styled = await page.evaluate(() => document.querySelectorAll('input[style], textarea[style], [contenteditable][style]').length);
+  const after = await page.screenshot({ caret: 'initial' });
   test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
+  test.info().annotations.push({ type: 'styled', description: String(styled) });
 });
 test('fails headed', async ({ page }) => {
   await page.goto('${base}/a');
@@ -628,6 +630,8 @@ describe('code from a stop, the worker’s part', () => {
     ]);
     const result = tests.find((t) => t.title === 'takes every outline down')!;
     expect(result.annotations.find((a) => a.type === 'same')?.description).toBe('true');
+    // No field of the page carries a style it did not: taking an outline down leaves the fields' caret alone.
+    expect(result.annotations.find((a) => a.type === 'styled')?.description).toBe('0');
   });
 
   it('picks a region in the test’s window and sends its ARIA snapshot', () => {

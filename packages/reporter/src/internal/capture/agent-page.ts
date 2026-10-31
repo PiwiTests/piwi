@@ -15,13 +15,14 @@ import {
 } from '@piwitests/core/run-channel';
 import { resolveAriaRole } from '@piwitests/core/locator-generation';
 import { errorMessage } from '../support/errors.js';
+import { locatorOfRef } from './aria-ref.js';
 import { MAX_CHECKED, findsAlone, rankedCandidates } from './pick-at.js';
 import type { PickerProbe } from './pick-on-failure.js';
 
 /**
  * A stopped page as an agent reads it and acts on it, through the editor's MCP server: its ARIA snapshot in AI mode
  * (`page.ariaSnapshot({ mode: 'ai', depth })`, a ref per element), with an image of it when asked; an element of it by
- * its ref (`page.getByRef`, Playwright 1.64), ranked as the pause bar's Pick a locator ranks one, with the project's test
+ * its ref (`locatorOfRef`), ranked as the pause bar's Pick a locator ranks one, with the project's test
  * id attribute and the locator `locator.normalize()` writes among the candidates, and what it holds; an action on that
  * element, one of a closed set, played as trusted input by Playwright's own action; and the worker's browser bound for
  * Playwright's own tools (`browser.bind`, 1.59), until the test ends. The page's text, its address and its errors have
@@ -36,20 +37,6 @@ const ACT_MS = 5000;
 const SECRET_FIELDS = SECRET_FIELD_SELECTOR;
 /** The pause bar, hidden in an image of the stopped page. */
 const BAR_HIDDEN = '#__piwi-pause-bar { display: none !important; }';
-
-export const AGENT_NEEDS =
-  'An agent reads and acts on a stopped page with Playwright 1.64 or later (page.getByRef and the AI snapshot): update @playwright/test.';
-
-type ByRef = { getByRef?: (ref: string) => Locator };
-
-/** Whether this Playwright lets an agent act by a ref: `page.getByRef` (1.64). */
-export function canActByRef(page: Page): boolean {
-  return typeof (page as unknown as ByRef).getByRef === 'function';
-}
-
-function byRef(page: Page, ref: string): Locator {
-  return (page as unknown as Required<ByRef>).getByRef(ref);
-}
 
 /**
  * Why a page's call failed: the first line of Playwright's error alone, since its call log quotes the element's HTML,
@@ -274,7 +261,7 @@ const NO_REF = (ref: string) =>
 
 /** The element `ref` names, as the snapshot gave it; null when none does. */
 async function handleOf(page: Page, ref: string): Promise<ElementHandle | null> {
-  return byRef(page, ref)
+  return locatorOfRef(page, ref)
     .elementHandle({ timeout: 2000 })
     .catch(() => null);
 }
@@ -286,11 +273,10 @@ export async function refLocators(
   ref: string,
   testIdAttribute: string | null,
 ): Promise<RefLocatorAnswer> {
-  if (!canActByRef(page)) return { ok: false, message: AGENT_NEEDS, element: null, locators: [] };
   const handle = await handleOf(page, ref);
   if (!handle) return { ok: false, message: NO_REF(ref), element: null, locators: [] };
   try {
-    const { element, locators } = await ranked(page, probe, byRef(page, ref), handle, testIdAttribute);
+    const { element, locators } = await ranked(page, probe, locatorOfRef(page, ref), handle, testIdAttribute);
     const alone = locators.filter((l) => l.unique).length;
     return {
       ok: true,
@@ -356,12 +342,11 @@ export async function actOnRef(
   act: { ref: string; action: RunActAction; value: string | null },
   testIdAttribute: string | null,
 ): Promise<ActAnswer> {
-  if (!canActByRef(page)) return { ok: false, message: AGENT_NEEDS, element: null, locators: [] };
   const handle = await handleOf(page, act.ref);
   if (!handle) return { ok: false, message: NO_REF(act.ref), element: null, locators: [] };
   let before: { element: RefElement; locators: RankedRefLocator[] };
   try {
-    before = await ranked(page, probe, byRef(page, act.ref), handle, testIdAttribute);
+    before = await ranked(page, probe, locatorOfRef(page, act.ref), handle, testIdAttribute);
   } catch (error) {
     return { ok: false, message: failed('The element could not be read', error), element: null, locators: [] };
   } finally {
@@ -369,7 +354,7 @@ export async function actOnRef(
   }
   try {
     await page.evaluate(barLetsThrough, true).catch(() => undefined);
-    await play(byRef(page, act.ref), act.action, act.value);
+    await play(locatorOfRef(page, act.ref), act.action, act.value);
   } catch (error) {
     return { ok: false, message: failed(`${PLAYED[act.action]} ${act.ref} failed`, error), ...before };
   } finally {

@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser } from '@playwright/test';
 import { probeElementAttrs, showAnchorPicker, showPickerChoices } from '@piwitests/picker-dom';
 import { CAPTURED_ATTRS_ARG } from '../src/internal/capture/capture-fixtures.js';
-import { boxesAt, pickAtPoint, snapshotBoxes } from '../src/internal/capture/pick-at.js';
+import { PICK_AT_NEEDS, boxesAt, pickAtPoint, snapshotBoxes } from '../src/internal/capture/pick-at.js';
+import { playwrightAtLeast } from './_helpers.js';
 
 /** A page's ARIA snapshot in AI mode with its boxes, as Playwright 1.64 writes it, a page scrolled and an iframe in it. */
 const SNAPSHOT = `- generic [active] [ref=e1] [box=8,-1057,784,1649]:
@@ -58,7 +59,7 @@ describe('pick on the image', () => {
 const PROBE = { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG };
 const STYLE = '<style>body { margin: 0; font: 16px sans-serif } button { width: 120px; height: 40px }</style>';
 
-describe('pick on the image, on a page', () => {
+describe.skipIf(!playwrightAtLeast('1.60'))('pick on the image, on a page', () => {
   let browser: Browser;
 
   beforeAll(async () => {
@@ -157,4 +158,17 @@ describe('pick on the image, on a page', () => {
       await context.close();
     }
   }, 15_000);
+});
+
+describe.runIf(!playwrightAtLeast('1.60'))('pick on the image, on a Playwright without the snapshot’s boxes', () => {
+  it('refuses, naming the version it needs', async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.setContent('<!doctype html><button>Save</button>');
+      expect(await pickAtPoint(page, PROBE, 10, 10)).toEqual({ refusal: PICK_AT_NEEDS });
+    } finally {
+      await browser.close();
+    }
+  });
 });
