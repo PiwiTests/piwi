@@ -51,13 +51,17 @@ What the package does to a user's run, process by process.
 
 - The `__piwiProbeElement` page global, seeded via `addInitScript`
   (`internal/capture/capture-fixtures.ts`), so a capture ships a stub call rather than
-  the probe's source. The probe reads an action's element once the action succeeds,
-  and that of an action that can take it away (`EARLY_READ_ACTIONS`: a click, a key
-  press, a selected option) as the action starts, beside it, kept only if the action
-  succeeds; both wait 500 ms at most. A click's own checks give that read the time to
-  end before a navigation; a key press that submits at once can still outrun it. While
-  a test runs, each new document of a page readies its main world for the probe as it
-  loads (`readyProbeWorld`), which lets a read beside such a press often end first.
+  the probe's source. The probe reads an action's element once the action succeeds.
+  An action that can take it away (`EARLY_READ_ACTIONS`: a click, a key press, a
+  selected option) also reads it as it starts, beside the action, used only if the
+  action succeeds: that read stands when the page navigated meanwhile or the action
+  ended within 250 ms (`EARLY_READ_TRUSTED_MS`), else the read after the action wins
+  when it finds the element (one that waited may have clicked a node the page put in
+  place meanwhile). Each probe and ARIA snapshot waits 500 ms at most, on Playwright's
+  side too. A click's own checks give the early read the time to end before a
+  navigation; a key press that submits at once can still outrun it. While a test runs,
+  each new document of a page readies its main world for the probe as it loads
+  (`readyProbeWorld`), which lets a read beside such a press often end first.
 - The boxed stack prefix `internal/capture/quiet-capture.ts` adds for this package's
   `dist/`, so a wrapped action is located at the test's line.
 - The resource ledger's listener on the worker's Playwright instrumentation, and its

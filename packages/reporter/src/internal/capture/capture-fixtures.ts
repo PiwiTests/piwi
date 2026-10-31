@@ -1210,7 +1210,8 @@ const LOCATOR_METHOD_SET = new Set(LOCATOR_METHODS);
 /**
  * Actions that can take their element away as they run: a click or a key
  * press that submits and navigates at once, a click that removes what it
- * clicked. Their element is read as the action starts, beside it.
+ * clicked. Their element is also read as the action starts, beside it, for
+ * when it is gone once the action ran.
  */
 const EARLY_READ_ACTIONS = new Set([
   'click',
@@ -1227,6 +1228,13 @@ const EARLY_READ_ACTIONS = new Set([
 
 /** How long an element capture waits for each of its page reads. */
 const CAPTURE_DEADLINE_MS = 500;
+
+/**
+ * How long an action of `EARLY_READ_ACTIONS` may run for the read beside it to
+ * stand for its element. One that ran longer may have waited for its element
+ * while the page replaced it.
+ */
+const EARLY_READ_TRUSTED_MS = 250;
 
 /**
  * Everything the in-page probe needs, serialized into the browser on every
@@ -1282,6 +1290,9 @@ const PROBE_INIT_SCRIPT = `(() => {
  * spend a full locator resolution discovering the same thing again.
  */
 const PROBE_UNSEEDED_PAGES = new WeakSet<Page>();
+
+/** How many times each instrumented page's main frame navigated, client-side routes included. */
+const PAGE_NAVIGATIONS = new WeakMap<Page, number>();
 
 /**
  * Ready the main world of a page's new document for the element probe, in the
@@ -1398,8 +1409,8 @@ export async function ariaSnapshotJSONBestEffort(target: Locator, timeout?: numb
  * PENDING_PROBES so the close wrappers can drain it — and in capturePromises
  * so flushSink outwaits it — even when the deadline abandons it. An evaluate
  * still in flight when its page closes crashes the connection dispatcher with
- * a global "not bound" error. `probeTimeout` bounds the probe on Playwright's
- * side too, for a read that starts before its element may be there.
+ * a global "not bound" error. The deadline bounds the probe on Playwright's
+ * side too, so a probe whose element is not there ends by itself.
  */
 async function readElementSnapshot(
   sink: CaptureSink,
@@ -1407,11 +1418,10 @@ async function readElementSnapshot(
   target: Locator,
   callerLocation: string | null,
   used: LocatorSnapshot['used'],
-  probeTimeout?: number,
 ): Promise<LocatorSnapshot | null> {
   let deadline: ReturnType<typeof setTimeout> | undefined;
   try {
-    const probe = probeElement(page, target, probeTimeout);
+    const probe = probeElement(page, target, CAPTURE_DEADLINE_MS);
     const settledProbe = probe.then(
       () => undefined,
       () => undefined,
@@ -1480,8 +1490,10 @@ async function readElementSnapshot(
  * Fire-and-forget element capture for a locator that just proved it resolves —
  * a successful action or a passing presence assertion: replaces the
  * placeholder at `seq` with the element's snapshot. `early` is the read an
- * action of `EARLY_READ_ACTIONS` started beside itself; the element is read
- * now when there is none, or when it found nothing.
+ * action of `EARLY_READ_ACTIONS` started beside itself: with `earlyFirst` it is
+ * kept, and the element read now only when it found nothing; otherwise the
+ * element is read now, and `early` kept only when that read finds nothing (the
+ * action removed the element).
  */
 function startElementCapture(
   sink: CaptureSink,
@@ -1491,9 +1503,11 @@ function startElementCapture(
   callerLocation: string | null,
   used: LocatorSnapshot['used'],
   early: Promise<LocatorSnapshot | null> | null = null,
+  earlyFirst = false,
 ): void {
   const capture = (async () => {
-    const snapshot = (await early) ?? (await readElementSnapshot(sink, page, target, callerLocation, used));
+    const readNow = () => readElementSnapshot(sink, page, target, callerLocation, used);
+    const snapshot = earlyFirst ? ((await early) ?? (await readNow())) : ((await readNow()) ?? (await early));
     if (snapshot) sink.capturedLocators[seq] = snapshot;
     // Element detached or timeout — keep the placeholder, and release the
     // call site so a later action or assertion on the same line can retry.
@@ -2694,17 +2708,19 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
             alternatives: [],
           });
         }
-        // An action that can take its element away reads it as it starts,
-        // beside the action; the read is kept only once the action succeeds.
+        // An action that can take its element away also reads it as it starts,
+        // beside the action, for when it is gone once the action succeeded.
         const early =
           !alreadyProbed && EARLY_READ_ACTIONS.has(prop as string)
-            ? readElementSnapshot(sink, page, target, callerLocation, used, CAPTURE_DEADLINE_MS)
+            ? readElementSnapshot(sink, page, target, callerLocation, used)
             : null;
 
         // The location is already on record. If the action throws, note the
         // failed locator (so teardown can suggest a fresh one for the element's
         // current identity) and re-throw so the test still fails.
         let result: unknown;
+        const startedAt = Date.now();
+        const navigations = PAGE_NAVIGATIONS.get(page) ?? 0;
         try {
           result = await callMethod(target, prop, ending ?? callArgs);
         } catch (error) {
@@ -2721,7 +2737,11 @@ function wrapLocator(page: Page, locator: Locator, originMethod: string, originA
         // Fire-and-forget: capture element data without blocking the test.
         if (!alreadyProbed && !call?.picked) {
           if (callerLocation) sink.probedLocations.add(callerLocation);
-          startElementCapture(sink, page, target, seq, callerLocation, used, early);
+          // The read beside the action stands for its element when the page navigated
+          // meanwhile, or when the action was quick.
+          const earlyFirst =
+            (PAGE_NAVIGATIONS.get(page) ?? 0) !== navigations || Date.now() - startedAt < EARLY_READ_TRUSTED_MS;
+          startElementCapture(sink, page, target, seq, callerLocation, used, early, earlyFirst);
         }
 
         return result;
@@ -2882,7 +2902,10 @@ function instrumentPage(page: Page): void {
         PROBE_UNSEEDED_PAGES.delete(page);
         // A new document or a client-side route: locator calls start over "on arrival".
         try {
-          if (frame === page.mainFrame()) noteNavigation(page);
+          if (frame === page.mainFrame()) {
+            PAGE_NAVIGATIONS.set(page, (PAGE_NAVIGATIONS.get(page) ?? 0) + 1);
+            noteNavigation(page);
+          }
         } catch {
           /* a page event handler must never throw */
         }

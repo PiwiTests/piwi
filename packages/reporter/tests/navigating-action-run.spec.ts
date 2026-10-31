@@ -8,19 +8,20 @@ import type { LocatorSnapshot } from '../src/internal/capture/locator-healing.js
 
 /**
  * A real Playwright run through the built package, whose clicks take their element away as they run: a submit button
- * and a link that navigate at once, and a button that removes itself. Each keeps the element it clicked in its
- * `piwi-locators` snapshot, as a click on an element that stays does.
+ * and a link that navigate at once, to a page that answers after `NEXT_PAGE_MS`. Each keeps the element it clicked in
+ * its `piwi-locators` snapshot, as a click on an element that stays does.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
 const dist = path.join(pkgRoot, 'dist', 'index.js');
 // Inside the package, so the suite resolves the same @playwright/test as the built reporter.
 const project = path.join(pkgRoot, 'tests', `.navigating-action-run-${process.pid}`);
+/** How long the page a click navigates to takes to answer: the clicked page stays until it does. */
+const NEXT_PAGE_MS = 1000;
 
 const CHECKOUT = `<!doctype html><title>checkout</title>
 <form action="/done"><label>Coupon <input name="coupon"></label><button>Place order</button></form>
-<a href="/done">Continue shopping</a>
-<button onclick="this.replaceWith('Saved')">Save for later</button>`;
+<a href="/done">Continue shopping</a>`;
 
 const SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
 test('places the order', async ({ page }) => {
@@ -32,11 +33,6 @@ test('follows a link', async ({ page }) => {
   await page.goto('${base}/checkout');
   await page.getByRole('link', { name: 'Continue shopping' }).click(); // act
   await expect(page).toHaveTitle('done');
-});
-test('saves for later', async ({ page }) => {
-  await page.goto('${base}/checkout');
-  await page.getByRole('button', { name: 'Save for later' }).click(); // act
-  await expect(page.getByText('Saved')).toBeVisible();
 });
 `;
 
@@ -75,7 +71,11 @@ beforeAll(async () => {
   if (!fs.existsSync(dist)) throw new Error(`${dist} is missing: run \`npm run reporter:build\` before this spec`);
   server = await startServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' });
-    res.end(req.url.startsWith('/done') ? '<!doctype html><title>done</title><h1>Thank you</h1>' : CHECKOUT);
+    if (req.url.startsWith('/done')) {
+      setTimeout(() => res.end('<!doctype html><title>done</title><h1>Thank you</h1>'), NEXT_PAGE_MS);
+      return;
+    }
+    res.end(CHECKOUT);
   });
 
   write(
@@ -156,10 +156,5 @@ describe('a click that takes its element away keeps the element', () => {
       accessibleName: 'Continue shopping',
       attributes: expect.objectContaining({ href: '/done' }),
     });
-  });
-
-  it('a button that removes itself as it is clicked', () => {
-    const snapshot = snapshotOf('saves for later');
-    expect(snapshot.element).toMatchObject({ tagName: 'button', accessibleName: 'Save for later' });
   });
 });

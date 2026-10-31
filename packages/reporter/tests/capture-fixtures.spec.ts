@@ -268,6 +268,9 @@ describe('per-call-site capture dedupe', () => {
     selectorCounts: {},
   };
 
+  /** The fake page's main frame, which a `framenavigated` names when the page navigates. */
+  const MAIN_FRAME = { name: 'main' };
+
   /**
    * Drive `actions` through the real fixtures against a fake page, reporting
    * what the capture path asked the browser for and what it attached.
@@ -276,14 +279,14 @@ describe('per-call-site capture dedupe', () => {
     evaluate: (fn: unknown, arg?: unknown) => Promise<unknown>,
     actions: (
       page: { getByTestId: (id: string) => { click: () => Promise<void> } },
-      emit: (event: string) => void,
+      emit: (event: string, arg?: unknown) => void,
     ) => Promise<void>,
     infoOverrides: { status?: string; file?: string; title?: string } = {},
-    click: () => Promise<void> = async () => {},
+    click: (emit: (event: string, arg?: unknown) => void) => Promise<void> = async () => {},
   ) {
     let ariaSnapshots = 0;
     const fakeLocator = {
-      click,
+      click: () => click(emit),
       evaluate,
       ariaSnapshot: async () => {
         ariaSnapshots++;
@@ -291,7 +294,7 @@ describe('per-call-site capture dedupe', () => {
       },
     };
     const locatorFactory = () => fakeLocator;
-    const listeners = new Map<string, Array<() => void>>();
+    const listeners = new Map<string, Array<(arg?: unknown) => void>>();
     const fakePage = {
       getByRole: locatorFactory,
       getByTestId: locatorFactory,
@@ -301,14 +304,15 @@ describe('per-call-site capture dedupe', () => {
       getByAltText: locatorFactory,
       getByTitle: locatorFactory,
       locator: locatorFactory,
-      on: (event: string, handler: () => void) => {
+      mainFrame: () => MAIN_FRAME,
+      on: (event: string, handler: (arg?: unknown) => void) => {
         const existing = listeners.get(event) ?? [];
         existing.push(handler);
         listeners.set(event, existing);
       },
       evaluate: async () => null,
     };
-    const emit = (event: string) => (listeners.get(event) ?? []).forEach((handler) => handler());
+    const emit = (event: string, arg?: unknown) => (listeners.get(event) ?? []).forEach((handler) => handler(arg));
 
     const attached: LocatorSnapshot[] = [];
     const ariaAttachments: Array<{ body: string; contentType?: string }> = [];
@@ -442,6 +446,48 @@ describe('per-call-site capture dedupe', () => {
 
     expect(probes).toBe(2);
     expect(attached[0]!.element?.textContent).toBe('Save');
+  });
+
+  it('reads the element again after a click that waited, and keeps that read when it finds it', async () => {
+    let probes = 0;
+    const { attached } = await runCapture(
+      async () => {
+        probes++;
+        // The page replaced the button while the click waited for it.
+        return probes === 1 ? { ...savedButton, attributes: { 'data-testid': 'save-pending' } } : savedButton;
+      },
+      async (page) => {
+        await page.getByTestId('save').click();
+      },
+      {},
+      async () => {
+        await sleep(300);
+      },
+    );
+
+    expect(probes).toBe(2);
+    expect(attached[0]!.element?.attributes).toEqual({ 'data-testid': 'save' });
+  });
+
+  it('keeps the read beside a click that waited when the page navigated meanwhile', async () => {
+    let probes = 0;
+    const { attached } = await runCapture(
+      async () => {
+        probes++;
+        return probes === 1 ? savedButton : { ...savedButton, attributes: { 'data-testid': 'next-page' } };
+      },
+      async (page) => {
+        await page.getByTestId('save').click();
+      },
+      {},
+      async (emit) => {
+        emit('framenavigated', MAIN_FRAME);
+        await sleep(300);
+      },
+    );
+
+    expect(probes).toBe(1);
+    expect(attached[0]!.element?.attributes).toEqual({ 'data-testid': 'save' });
   });
 
   it('keeps no element for a click that failed, though the read beside it found one', async () => {
@@ -707,8 +753,9 @@ describe('seeded in-page probe', () => {
 });
 
 describe('the probe world of a new document', () => {
-  it('is readied as the document loads while a test runs, and not after it', async () => {
+  it('is readied as the document loads while a test runs, through an internal call, and not after it', async () => {
     const reads: unknown[] = [];
+    const wrapped: Array<{ internal: boolean }> = [];
     const root = {
       evaluate: async (_fn: unknown, _arg: unknown, options: unknown) => {
         reads.push(options);
@@ -731,6 +778,10 @@ describe('the probe world of a new document', () => {
         listeners.set(event, [...(listeners.get(event) ?? []), handler]);
       },
       evaluate: async () => null,
+      _wrapApiCall: (run: () => Promise<unknown>, options: { internal: boolean }) => {
+        wrapped.push(options);
+        return run();
+      },
     };
     const emit = (event: string) => (listeners.get(event) ?? []).forEach((handler) => handler());
 
@@ -753,6 +804,7 @@ describe('the probe world of a new document', () => {
     emit('domcontentloaded');
 
     expect(reads).toEqual([{ timeout: 500 }]);
+    expect(wrapped).toEqual([expect.objectContaining({ internal: true })]);
   });
 });
 
@@ -807,8 +859,9 @@ describe('locator capture teardown race', () => {
         () =>
           pageFixture({ page: fakePage }, async (page) => {
             await (page.getByTestId('save') as unknown as { click: () => Promise<void> }).click();
-            // Let the 500ms probe deadline win the race before the test ends.
-            await sleep(600);
+            // Let the 500ms deadlines win the race before the test ends: the read beside the click's, then
+            // the one after it, which follows it.
+            await sleep(1100);
           }),
         testInfo,
       );

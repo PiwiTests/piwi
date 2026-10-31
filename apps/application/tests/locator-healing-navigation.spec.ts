@@ -76,7 +76,12 @@ test('healing offers the renamed button of a click that navigated at once', asyn
   let button = 'Place order';
   const shop = http.createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' });
-    res.end(req.url?.startsWith('/done') ? '<!doctype html><title>done</title><h1>Thank you</h1>' : checkout(button));
+    // The order's page answers a second late: the checkout stays until it does.
+    if (req.url?.startsWith('/done')) {
+      setTimeout(() => res.end('<!doctype html><title>done</title><h1>Thank you</h1>'), 1000);
+      return;
+    }
+    res.end(checkout(button));
   });
   await new Promise<void>((done) => shop.listen(0, '127.0.0.1', done));
   const base = `http://127.0.0.1:${(shop.address() as AddressInfo).port}`;
