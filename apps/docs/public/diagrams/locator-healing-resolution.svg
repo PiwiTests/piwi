@@ -1,95 +1,141 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 664" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 782" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <style>
+  .bg{fill:#fcfcfd;stroke:#e4e7ec}
+  .t{fill:#101828;font-weight:700;font-size:19px}
+  .s{fill:#475467;font-size:14px}
+  .h{fill:#667085;font-size:12.5px;font-weight:700;letter-spacing:.05em}
+  .lb{fill:#344054;font-size:15px;font-weight:600}
+  .l{fill:#475467;font-size:13.5px}
+  .m{fill:#667085;font-size:12.5px}
+  .b{font-weight:600}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;white-space:pre}
+  .ink{fill:#344054} .numw{fill:#ffffff}
+  .box{fill:#ffffff;stroke:#d0d5dd}
+  .chip{fill:#f9fafb;stroke:#d0d5dd}
+  .hd{fill:#f2f4f7}
+  .cap{fill:#f2f4f7;stroke:#d0d5dd}
+  .rule{fill:none;stroke:#e4e7ec}
+  .edge{fill:none;stroke:#667085;stroke-width:1.4}
+  .dash{fill:none;stroke:#98a2b3;stroke-width:1.3;stroke-dasharray:5 4}
+  .acc{fill:none;stroke:#4353ff;stroke-width:1.6}
+  .accd{fill:none;stroke:#4353ff;stroke-width:1.4;stroke-dasharray:5 4}
+  .acct{fill:#4353ff;font-size:13px} .ac{fill:#4353ff}
+  .et{fill:#475467;font-size:13px}
+  .arr{fill:#667085} .arrd{fill:#98a2b3} .arra{fill:#4353ff}
+  .ab{fill:#eef1ff;stroke:#c7ceff} .abt{fill:#2a3aa8} .abl{fill:#3f4b9e} .abo{fill:none;stroke:#4353ff;stroke-width:1.5}
+  .ok{fill:#ecfdf3;stroke:#75e0a7} .okt{fill:#067647} .okd{fill:#12b76a}
+  .bs{fill:#fffaeb;stroke:#fec84b} .bst{fill:#b54708}
+  .fc{fill:#fef3f2;stroke:#fda29b} .fct{fill:#b42318} .fcd{fill:#f04438}
+  .fr{fill:#fff6ed;stroke:#fd853a} .frt{fill:#c4320a}
+  .mu{fill:#f2f4f7;stroke:#d0d5dd} .mud{fill:#d0d5dd}
+  .dbx{fill:none;stroke:#d0d5dd;stroke-dasharray:5 4}
+  .clu{fill:#4353ff;fill-opacity:.06;stroke:#4353ff;stroke-width:1.8;stroke-dasharray:6 4;stroke-linejoin:round}
+  @media (prefers-color-scheme: dark){
+    .bg{fill:#161b26;stroke:#333741}
+    .t{fill:#f5f5f6} .s{fill:#94969c} .h{fill:#85888e}
+    .lb{fill:#ececed} .l{fill:#cecfd2} .m{fill:#94969c} .ink{fill:#ececed} .numw{fill:#161b26}
+    .box{fill:#1f242f;stroke:#333741} .chip{fill:#262b36;stroke:#333741} .hd{fill:#262b36}
+    .cap{fill:#262b36;stroke:#4a4f5a}
+    .rule{stroke:#333741}
+    .edge{stroke:#94969c} .arr{fill:#94969c}
+    .dash{stroke:#61646c} .arrd{fill:#61646c}
+    .acc,.accd{stroke:#8098f9} .acct,.ac{fill:#8098f9} .arra{fill:#8098f9}
+    .et{fill:#94969c}
+    .ab{fill:#1c2142;stroke:#3b4699} .abt{fill:#c7d0ff} .abl{fill:#a4b0f0} .abo{stroke:#8098f9}
+    .ok{fill:#0b2418;stroke:#079455} .okt{fill:#75e0a7} .okd{fill:#17b26a}
+    .bs{fill:#2b1d07;stroke:#ca8504} .bst{fill:#fec84b}
+    .fc{fill:#2d1210;stroke:#d92d20} .fct{fill:#fda29b} .fcd{fill:#f04438}
+    .fr{fill:#2b170c;stroke:#e04f16} .frt{fill:#f7b27a}
+    .mu{fill:#262b36;stroke:#333741} .mud{fill:#61646c}
+    .dbx{stroke:#61646c}
+    .clu{fill:#8098f9;fill-opacity:.1;stroke:#8098f9}
+  }
+</style>
   <defs>
-    <marker id="rArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 1 L 9 5 L 0 9 z" fill="#667085"/>
-    </marker>
-    <marker id="rArrAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 1 L 9 5 L 0 9 z" fill="#4353ff"/>
-    </marker>
+    <marker id="lrn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arr" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="lrd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrd" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="lra" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arra" d="M 0 1 L 9 5 L 0 9 z"/></marker>
   </defs>
-
-  <rect x="0" y="0" width="920" height="664" rx="12" fill="#fcfcfd" stroke="#e4e7ec"/>
-  <text x="24" y="36" font-size="16" font-weight="700" fill="#101828">Healing — when a locator fails</text>
-  <text x="24" y="56" font-size="12.5" fill="#475467">The lookup works from the stored error text and prior captures — it never needs your source code.</text>
+  <rect class="bg" x="0.5" y="0.5" width="919" height="781" rx="12"/>
+  <text class="t" x="24" y="38">Healing: when a locator fails</text>
+  <text class="s" x="24" y="62">The lookup works from the stored error text and prior captures: it never needs your source code.</text>
 
   <!-- Input -->
-  <rect x="24" y="84" width="270" height="112" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <rect x="24" y="84" width="270" height="30" rx="8" fill="#f2f4f7"/>
-  <rect x="24" y="106" width="270" height="8" fill="#f2f4f7"/>
-  <text x="40" y="104" font-size="13" font-weight="600" fill="#344054">Failing execution's error</text>
-  <text x="40" y="136" font-size="12" fill="#475467">parsed into:</text>
-  <text x="40" y="155" font-size="12" fill="#344054">• the locator (chain leaf)  →  signature</text>
-  <text x="40" y="174" font-size="12" fill="#344054">• the call site (first app stack frame)</text>
-  <line x1="159" y1="196" x2="159" y2="222" stroke="#4353ff" stroke-width="1.6" marker-end="url(#rArrAccent)"/>
+  <rect class="box" x="22" y="88" width="290" height="118" rx="8"/>
+  <path class="hd" d="M 22.5 120 L 22.5 96 Q 22.5 88.5 30 88.5 L 304 88.5 Q 311.5 88.5 311.5 96 L 311.5 120 Z"/>
+  <text class="lb" x="38" y="109">The failing execution’s error</text>
+  <text class="l" x="38" y="144">parsed into:</text>
+  <text class="l" x="38" y="164">• the locator chain → its signature</text>
+  <text class="l" x="38" y="183">• the call site, from the stack</text>
+  <path class="acc" d="M 167 206 L 167 240" marker-end="url(#lra)"/>
 
-  <!-- Ladder -->
-  <text x="24" y="242" font-size="12" font-weight="700" fill="#667085" letter-spacing="0.4">STORED-HISTORY LADDER · FIRST HIT WINS</text>
-  <rect x="24" y="252" width="270" height="58" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="40" y="275" font-size="12.5" font-weight="600" fill="#344054">1 · Prior run — exact call site</text>
-  <text x="40" y="293" font-size="11.5" fill="#667085">file:line:col, then file:line</text>
+  <!-- The ladder: the first rung that finds something wins -->
+  <text class="h" x="179" y="230">FIRST HIT WINS</text>
+  <rect class="ab" x="22" y="248" width="290" height="58" rx="8"/>
+  <text class="lb abt" x="38" y="272">1 · Diff rename</text>
+  <text class="m abl" x="38" y="292">this run’s diff renamed its string</text>
+  <rect class="box" x="22" y="316" width="290" height="58" rx="8"/>
+  <text class="lb" x="38" y="340">2 · Prior run</text>
+  <text class="m" x="38" y="360">the same call site, file:line(:col)</text>
+  <rect class="box" x="22" y="384" width="290" height="58" rx="8"/>
+  <text class="lb" x="38" y="408">3 · Fingerprint</text>
+  <text class="m" x="38" y="428">the same locator, at a shifted line</text>
+  <rect class="box" x="22" y="452" width="290" height="58" rx="8"/>
+  <text class="lb" x="38" y="476">4 · Cross-test</text>
+  <text class="m" x="38" y="496">the same locator, in another test</text>
+  <rect class="dbx" x="22" y="520" width="290" height="58" rx="8"/>
+  <text class="lb" x="38" y="544">5 · ARIA fallback</text>
+  <text class="m" x="38" y="564">no history: read off the failing page</text>
 
-  <rect x="24" y="322" width="270" height="58" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="40" y="345" font-size="12.5" font-weight="600" fill="#344054">2 · Fingerprint — locator signature</text>
-  <text x="40" y="363" font-size="11.5" fill="#667085">method + string literals; survives line shifts</text>
+  <!-- Rung 1: the diff gives the replacement directly -->
+  <path class="acc" d="M 312 277 L 640 277" marker-end="url(#lra)"/>
+  <text class="acct" x="477" y="267" text-anchor="middle">the same locator, with the new string</text>
+  <rect class="ab" x="642" y="248" width="256" height="58" rx="8"/>
+  <text class="lb abt" x="658" y="272">Rewrite from the diff</text>
+  <text class="m abl" x="658" y="292">“Pay now” became “Pay”</text>
 
-  <rect x="24" y="392" width="270" height="58" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="40" y="415" font-size="12.5" font-weight="600" fill="#344054">3 · Cross-test — same signature</text>
-  <text x="40" y="433" font-size="11.5" fill="#667085">captured by another test; freshest wins</text>
+  <!-- Rungs 2 to 4 find a stored snapshot -->
+  <path class="edge" d="M 312 345 L 350 350" marker-end="url(#lrn)"/>
+  <path class="edge" d="M 312 413 L 350 384" marker-end="url(#lrn)"/>
+  <path class="edge" d="M 312 481 L 350 418" marker-end="url(#lrn)"/>
+  <rect class="box" x="352" y="330" width="250" height="112" rx="8"/>
+  <text class="lb" x="368" y="356">Stored snapshot</text>
+  <text class="l" x="368" y="380">the last known-good element</text>
+  <text class="l" x="368" y="399">and its ranked alternatives;</text>
+  <text class="l" x="368" y="418">identity: role, name, level, position</text>
+  <path class="edge" d="M 477 442 L 477 474" marker-end="url(#lrn)"/>
+  <rect class="box" x="352" y="476" width="250" height="104" rx="8"/>
+  <text class="lb" x="368" y="500">Element-match check</text>
+  <text class="l" x="368" y="524">is the stored element still on the</text>
+  <text class="l" x="368" y="543">failing page’s ARIA snapshot?</text>
+  <text class="m" x="368" y="564">unchanged, renamed, or gone</text>
 
-  <rect x="24" y="478" width="270" height="58" rx="8" fill="#ffffff" stroke="#98a2b3" stroke-dasharray="5 4"/>
-  <text x="40" y="501" font-size="12.5" font-weight="600" fill="#475467">4 · ARIA fallback — no history at all</text>
-  <text x="40" y="519" font-size="11.5" fill="#667085">candidates read off the failing page only</text>
-
-  <!-- Rung arrows to stored snapshot -->
-  <line x1="294" y1="281" x2="348" y2="290" stroke="#667085" stroke-width="1.4" marker-end="url(#rArr)"/>
-  <line x1="294" y1="351" x2="348" y2="322" stroke="#667085" stroke-width="1.4" marker-end="url(#rArr)"/>
-  <line x1="294" y1="421" x2="348" y2="345" stroke="#667085" stroke-width="1.4" marker-end="url(#rArr)"/>
-
-  <!-- Stored snapshot -->
-  <rect x="350" y="252" width="222" height="112" rx="8" fill="#eef1ff" stroke="#c7ceff"/>
-  <text x="461" y="278" font-size="13" font-weight="600" fill="#2a3aa8" text-anchor="middle">Stored snapshot</text>
-  <text x="461" y="298" font-size="11.5" fill="#3f4b9e" text-anchor="middle">last known-good element +</text>
-  <text x="461" y="313" font-size="11.5" fill="#3f4b9e" text-anchor="middle">pre-ranked alternatives</text>
-  <text x="461" y="333" font-size="11.5" fill="#3f4b9e" text-anchor="middle">identity: role · name · level ·</text>
-  <text x="461" y="348" font-size="11.5" fill="#3f4b9e" text-anchor="middle">same-role position</text>
-  <line x1="461" y1="364" x2="461" y2="392" stroke="#4353ff" stroke-width="1.6" marker-end="url(#rArrAccent)"/>
-
-  <!-- Element-match check -->
-  <rect x="350" y="394" width="222" height="96" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="461" y="420" font-size="13" font-weight="600" fill="#344054" text-anchor="middle">Element-match check</text>
-  <text x="461" y="440" font-size="11.5" fill="#667085" text-anchor="middle">is the captured element still on the</text>
-  <text x="461" y="455" font-size="11.5" fill="#667085" text-anchor="middle">failing page's ARIA snapshot —</text>
-  <text x="461" y="470" font-size="11.5" fill="#667085" text-anchor="middle">unchanged, renamed, or gone?</text>
-
-  <!-- Branches -->
-  <line x1="572" y1="410" x2="616" y2="286" stroke="#667085" stroke-width="1.4" marker-end="url(#rArr)"/>
-  <rect x="618" y="252" width="278" height="88" rx="8" fill="#f8f9fc" stroke="#d0d5dd"/>
-  <text x="634" y="276" font-size="12.5" font-weight="700" fill="#475467">Unchanged → likely flaky</text>
-  <text x="634" y="295" font-size="11.5" fill="#667085">The element is still there under the same name.</text>
-  <text x="634" y="310" font-size="11.5" fill="#667085">Full alternative list kept — recommending the</text>
-  <text x="634" y="325" font-size="11.5" fill="#667085">original locator is correct here.</text>
-
-  <line x1="572" y1="442" x2="616" y2="404" stroke="#027a48" stroke-width="1.4" marker-end="url(#rArr)"/>
-  <rect x="618" y="360" width="278" height="88" rx="8" fill="#ecfdf3" stroke="#abefc6"/>
-  <text x="634" y="384" font-size="12.5" font-weight="700" fill="#027a48">Renamed / moved → fresh locators</text>
-  <text x="634" y="403" font-size="11.5" fill="#1c7a4d">Same role + best name overlap (or the only</text>
-  <text x="634" y="418" font-size="11.5" fill="#1c7a4d">candidate, or the stored position): new locators</text>
-  <text x="634" y="433" font-size="11.5" fill="#1c7a4d">are generated for what the element became.</text>
-
-  <line x1="572" y1="474" x2="616" y2="500" stroke="#b54708" stroke-width="1.4" marker-end="url(#rArr)"/>
-  <rect x="618" y="468" width="278" height="88" rx="8" fill="#fdf3e3" stroke="#f5dcae"/>
-  <text x="634" y="492" font-size="12.5" font-weight="700" fill="#98652b">Provably gone → stale gating</text>
-  <text x="634" y="511" font-size="11.5" fill="#98652b">Name-based alternatives (incl. the failing</text>
-  <text x="634" y="526" font-size="11.5" fill="#98652b">locator) can't become the recommendation;</text>
-  <text x="634" y="541" font-size="11.5" fill="#98652b">failing-page candidates appear alongside.</text>
+  <!-- Outcomes of the check -->
+  <rect class="chip" x="642" y="330" width="256" height="96" rx="8"/>
+  <text class="lb" x="658" y="354">Unchanged: likely flaky</text>
+  <text class="l" x="658" y="376">the element is still there under</text>
+  <text class="l" x="658" y="394">its name; the full list is kept,</text>
+  <text class="l" x="658" y="412">your locator included</text>
+  <path class="edge" d="M 602 506 L 640 378" marker-end="url(#lrn)"/>
+  <rect class="ok" x="642" y="438" width="256" height="96" rx="8"/>
+  <text class="lb okt" x="658" y="462">Renamed or moved</text>
+  <text class="l" x="658" y="484">same role and best name overlap,</text>
+  <text class="l" x="658" y="502">or the stored position: fresh</text>
+  <text class="l" x="658" y="520">locators for what it became</text>
+  <path class="edge" d="M 602 528 L 640 486" marker-end="url(#lrn)"/>
+  <rect class="bs" x="642" y="546" width="256" height="96" rx="8"/>
+  <text class="lb bst" x="658" y="570">Gone: stale names held back</text>
+  <text class="l" x="658" y="592">name-based alternatives, the</text>
+  <text class="l" x="658" y="610">failing locator too, stay listed</text>
+  <text class="l" x="658" y="628">but are never recommended</text>
+  <path class="edge" d="M 602 550 L 640 594" marker-end="url(#lrn)"/>
 
   <!-- Output -->
-  <line x1="159" y1="536" x2="159" y2="600" stroke="#98a2b3" stroke-width="1.4" stroke-dasharray="5 4"/>
-  <line x1="159" y1="600" x2="348" y2="614" stroke="#98a2b3" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#rArr)"/>
-  <line x1="757" y1="556" x2="670" y2="600" stroke="#667085" stroke-width="1.4" marker-end="url(#rArr)"/>
-
-  <rect x="350" y="580" width="320" height="68" rx="8" fill="#ffffff" stroke="#4353ff" stroke-width="1.4"/>
-  <text x="510" y="606" font-size="13" font-weight="700" fill="#2a3aa8" text-anchor="middle">Alternative locators panel</text>
-  <text x="510" y="624" font-size="11.5" fill="#3f4b9e" text-anchor="middle">ranked list · one recommended fix · source badge</text>
-  <text x="510" y="639" font-size="11.5" fill="#3f4b9e" text-anchor="middle">"healed in run #N" once the fix passes</text>
+  <path class="edge" d="M 770 642 L 770 680" marker-end="url(#lrn)"/>
+  <path class="dash" d="M 167 578 L 167 680" marker-end="url(#lrd)"/>
+  <path class="acc" d="M 898 277 L 910 277 L 910 720 L 900 720" marker-end="url(#lra)"/>
+  <rect class="ab" x="22" y="682" width="876" height="76" rx="8"/>
+  <rect class="abo" x="22" y="682" width="876" height="76" rx="8"/>
+  <text class="lb abt" x="460" y="712" text-anchor="middle">The Locator fix panel</text>
+  <text class="l abl" x="460" y="736" text-anchor="middle">a ranked list, one recommended fix and where it came from; “Locator healed” once a run passes</text>
 </svg>
