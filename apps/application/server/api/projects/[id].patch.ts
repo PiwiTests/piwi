@@ -22,6 +22,9 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { testRuns } from '../../database/schema';
 import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 import { parseLiveMasks } from '@piwitests/core/live-view';
+import { refreshOpenApiSurface } from '../../utils/openapi-surface';
+import { withProjectGraphLock } from '../../utils/project-graph-lock';
+import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 
 defineRouteMeta({
   openAPI: {
@@ -206,6 +209,13 @@ export default eventHandler(async (event) => {
       }
       // The workers of the project's live runs mask the elements listed now from their next image on.
       if (liveViewMasks !== undefined) liveViewRelay.setMasks(id, parseLiveMasks(project.project.liveViewMasks) ?? []);
+      // A saved OpenAPI URL is read at once, off the request, so its declared routes are gaps before the next run.
+      const savedOpenApiUrl = openApiUrl?.trim();
+      if (savedOpenApiUrl) {
+        void withProjectGraphLock(id, async () => {
+          if (await refreshOpenApiSurface(db, id, savedOpenApiUrl)) await computeScenarioGaps(db, id);
+        }).catch((err) => console.warn('[projects] OpenAPI refresh failed', err));
+      }
       return project;
     });
   } catch (e: any) {

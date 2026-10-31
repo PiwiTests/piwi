@@ -13,7 +13,8 @@ reproduction, nor a run flagged as an environment incident.
 
 ## Detectors
 
-The Test Map is recomputed after every run, nightly, and on demand. Every detector reads the runs the
+The Test Map is recomputed after every run of the default branch, nightly, and on demand (**Recompute** on the Gaps
+tab), always for the default branch whatever branch ran last. Every detector reads the runs the
 [capture fixtures](/guide/capture-fixtures) record; **Needs** names what else it reads, and a detector stays silent
 without it.
 

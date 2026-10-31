@@ -134,9 +134,9 @@ reaches is named a **declared, never hit** blind spot instead of staying invisib
   the application's routes at `/__piwi/manifest` outside production, and the reporter uploads it with the run.
 - **A committed manifest.** A `piwi.manifest.json` next to your Playwright config (`{ "routes": [...], "pages": [...] }`)
   is uploaded whenever present, whatever the backend.
-- **An OpenAPI URL**, set per project under Project → Settings → Capabilities → Scenario gaps. Piwi fetches the document
-  on a recompute and records each route's documented response codes, so a *success only* gap can name the error codes a
-  route documents but never returned under test.
+- **An OpenAPI URL**, set per project under Project → Settings → Capabilities → Scenario gaps. Piwi reads the document
+  when the URL is saved, every night and on a recompute, and records each route's documented response codes, so a
+  *success only* gap can name the error codes a route documents but never returned under test.
 
 A declared pattern is reached by every request it serves, as in a router: `/blog/{slug}` by `/blog/hello`.
 

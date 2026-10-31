@@ -14,6 +14,7 @@ import { withProjectGraphLock } from '../../utils/project-graph-lock';
 import { pruneStaleBranchCoverageRows } from '../../utils/coverage';
 import { pruneCoverageReports } from '../../utils/coverage-reports';
 import { pruneSupersededReports } from '../../utils/coverage-totals';
+import { refreshOpenApiSurface } from '../../utils/openapi-surface';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 
 /**
@@ -57,7 +58,7 @@ export default defineTask({
   meta: {
     name: 'graph:sweep',
     description:
-      'Keep the feature graph proportional to a project’s surface: prune changes edges older than 90 days, branch-tagged rows (graph, code reach, test coverage and coverage reports) older than 30 days, a branch’s coverage reports to the newest commit’s of each suite, the default branch’s to the newest commit and one commit a day for 90 days (a commit’s totals stay, final), and canonical nodes unseen for 30 runs whose surface-drift gap is closed. Backfill unknown default branches, then recompute scenario gaps. Independent of PIWI_RETENTION_DAYS.',
+      'Keep the feature graph proportional to a project’s surface: prune changes edges older than 90 days, branch-tagged rows (graph, code reach, test coverage and coverage reports) older than 30 days, a branch’s coverage reports to the newest commit’s of each suite, the default branch’s to the newest commit and one commit a day for 90 days (a commit’s totals stay, final), and canonical nodes unseen for 30 runs whose surface-drift gap is closed. Backfill unknown default branches, read each project’s OpenAPI document again, then recompute scenario gaps. Independent of PIWI_RETENTION_DAYS.',
   },
   async run() {
     const db = await getDatabase();
@@ -90,17 +91,19 @@ export default defineTask({
     if (defaultBranchesBackfilled > 0) result.defaultBranchesBackfilled = defaultBranchesBackfilled;
 
     // Recompute the project-wide gaps so success-only, single-covering-test and
-    // surface-drift stay current between runs, and self-closing keeps up.
+    // surface-drift stay current between runs, and self-closing keeps up; the
+    // OpenAPI document is read again first, so the declared surface follows it.
     let gapsUpserted = 0;
     let gapsClosed = 0;
-    const allProjects = await db.select({ id: projects.id }).from(projects);
+    const allProjects = await db.select({ id: projects.id, openApiUrl: projects.openApiUrl }).from(projects);
     for (const project of allProjects) {
       // Background recompute: never close a snoozed or accepted gap — only a run
       // that re-covers the subject retires a team's verdict. Serialized per project
       // so it never races a run's own recompute.
-      const gaps = await withProjectGraphLock(project.id, () =>
-        computeScenarioGaps(db, project.id, { closeTriaged: false }),
-      ).catch(() => ({ upserted: 0, closed: 0 }));
+      const gaps = await withProjectGraphLock(project.id, async () => {
+        if (project.openApiUrl) await refreshOpenApiSurface(db, project.id, project.openApiUrl).catch(() => false);
+        return computeScenarioGaps(db, project.id, { closeTriaged: false });
+      }).catch(() => ({ upserted: 0, closed: 0 }));
       gapsUpserted += gaps.upserted;
       gapsClosed += gaps.closed;
     }

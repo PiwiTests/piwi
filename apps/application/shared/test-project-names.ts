@@ -196,6 +196,7 @@ export const PROJECT = {
   RUNS_LIST: 'runs-list-test',
   SCENARIO_GAPS: 'scenario-gaps-e2e-test',
   SCENARIO_GAPS_DECLINE: 'scenario-gaps-decline-test',
+  SCENARIO_GAPS_RECOMPUTE: 'scenario-gaps-recompute-test',
   SETUP_CONNECT_KEY: 'setup-connect-key-test',
   SETUP_CONNECT: 'setup-connect-test',
   SHARDING_TEST: 'sharding-test',
