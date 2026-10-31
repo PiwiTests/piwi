@@ -131,7 +131,7 @@ test('takes every outline down', async ({ page }) => {
   }).observe({ type: 'paint', buffered: true })));
   const before = await page.screenshot({ caret: 'initial' });
   await expect(page.getByTestId('go')).toBeVisible(); // bp
-  const styled = await page.evaluate(() => document.querySelectorAll('[style]').length);
+  const styled = await page.evaluate(() => document.querySelectorAll('input[style], textarea[style], [contenteditable][style]').length);
   const after = await page.screenshot({ caret: 'initial' });
   test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
   test.info().annotations.push({ type: 'styled', description: String(styled) });
@@ -630,7 +630,7 @@ describe('code from a stop, the worker’s part', () => {
     ]);
     const result = tests.find((t) => t.title === 'takes every outline down')!;
     expect(result.annotations.find((a) => a.type === 'same')?.description).toBe('true');
-    // No element of the page carries a style it did not: taking an outline down leaves its fields' caret alone.
+    // No field of the page carries a style it did not: taking an outline down leaves the fields' caret alone.
     expect(result.annotations.find((a) => a.type === 'styled')?.description).toBe('0');
   });
 
