@@ -238,6 +238,9 @@ its heading text or update every link the test names.
 - **`snippets/` holds the code blocks several surfaces share.** A page includes one with `<<< @/snippets/…`; a surface
   that cannot include a file (`README.md`, `DOCKER_HUB.md`, a package README) carries a byte-for-byte copy, which the
   drift test compares (`SNIPPET_COPIES`).
+- **What Piwi prints is quoted from the code.** A command's output or a served sample shown on a page (`init`, the
+  reporter's lines, the gate, a metrics scrape) is a `snippets/*.txt` that
+  `apps/application/tests/unit/docs-checkpoints.test.ts` renders with the code that prints it: change both together.
 - American English, sentence-case headings, and the [cross-platform shell commands](#cross-platform-shell-commands) rule.
 - Diagrams are theme-aware SVG assets under `apps/docs/public/` — commit the asset rather than embedding a large inline
   `<svg>` in prose.
