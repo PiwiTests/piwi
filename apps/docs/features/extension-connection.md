@@ -57,7 +57,7 @@ with Playwright**: another program on the app's port receives nothing, after **U
 key instead**, the address must use `127.0.0.1`, since `localhost` may reach another program.
 
 While an instance is connected and no app is paired, the settings point to the pairing. The shared address stays
-granted: **Disconnect** leaves it to the app, and **Unpair** to the instance or the editor's pairing.
+granted: **Disconnect** leaves it to the app, and **Unpair** to the instance or the editor.
 
 ## URL patterns
 

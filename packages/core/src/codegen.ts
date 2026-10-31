@@ -238,8 +238,8 @@ function findsByText(chain: LocatorChain, text: string): boolean {
  * The locator a step's target is written with. Alternatives come ranked best
  * first; a chain the suite already uses wins when it is not brittle, then, with
  * `locators: 'stable'`, the first chain rated stable, then the first chain. For a
- * check of the element's text (`check`), the chains that find it by that text
- * are left out while one that does not, and is not brittle, remains.
+ * check of the element's text (`check`), only the chains that do not find it by
+ * that text and are not brittle are taken, when there is one.
  */
 function chooseLocator(
   target: RecordedTarget | null,
@@ -262,8 +262,8 @@ function chooseLocator(
     return level;
   };
   const text = checkedText(check);
-  const apart = text ? recorded.filter((c) => !findsByText(c.chain, text)) : recorded;
-  const candidates = apart.some((c) => levelOf(c) !== 'brittle') ? apart : recorded;
+  const apart = text ? recorded.filter((c) => !findsByText(c.chain, text) && levelOf(c) !== 'brittle') : [];
+  const candidates = apart.length ? apart : recorded;
   const prefer = options.preferLocators;
   if (prefer && prefer.size > 0) {
     const known = candidates.find((c) => prefer.has(c.text) && levelOf(c) !== 'brittle');

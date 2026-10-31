@@ -823,6 +823,26 @@ describe('renderSpec — assertions', () => {
       { locator: "locator('#app > div:nth-child(3)')", method: 'locator', score: 20 },
     ]);
     expect(check(brittle)).toContain(`await expect(page.getByText('Sent!')).toHaveText('Sent!');`);
+    // A brittle chain ranked before the one taken is left out too, in either mode.
+    const between = sent([
+      { locator: "getByText('Sent!')", method: 'getByText', score: 95 },
+      { locator: "locator('#app > div:nth-child(3)')", method: 'locator', score: 80 },
+      { locator: "getByRole('status')", method: 'getByRole', score: 60 },
+    ]);
+    expect(check(between)).toContain(`await expect(page.getByRole('status')).toHaveText('Sent!');`);
+    const first = renderSpec(
+      buildSession(
+        [
+          step({
+            action: 'assert',
+            target: between,
+            assertion: { matcher: 'toHaveText', expected: 'Sent!', actual: null, negated: false, note: null },
+          }),
+        ],
+        0,
+      ),
+    ).code;
+    expect(first).toContain(`await expect(page.getByRole('status')).toHaveText('Sent!');`);
     // A name the checked text only starts with is a label, not the text checked.
     const labelled = sent([
       { locator: "getByRole('status', { name: 'Sent' })", method: 'getByRole', score: 90 },
