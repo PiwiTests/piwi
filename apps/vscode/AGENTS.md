@@ -110,8 +110,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **The paused page webview runs scripts only by the style's nonce, for picking or a capable stop's live preview.**
   Its document takes images from `data:` only. Live input requires Watch live and the separate Interact opt-in, and
   messages name the shown stop: checked by `tests/run-control.test.ts` and `tests/e2e/paused-page.spec.mjs`. Only a
-  change of the panel's visibility, its closing or a new stop ends or restarts its watch (`openPage` in
-  `src/run-view.ts`), which no test drives yet.
+  change of the panel's visibility, its closing or a new stop ends or restarts its watch, never a focus change
+  (`pausedPageViewChange`, checked by `tests/run-control.test.ts`).
   ([Run control](ARCHITECTURE.md#run-control))
 
 ## Workflow

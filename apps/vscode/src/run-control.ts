@@ -959,6 +959,20 @@ function imageSource(image: PausedImage | null): string | null {
 export const PICK_HINT = 'Click the image to pick a locator: it replaces the one on the stopped line.';
 
 /**
+ * What a change of the paused page panel's view state does to its live watch: only a change of visibility ends it
+ * (`end`) or starts it again for a panel that wants it (`watch`); focus moving in or out of the panel does nothing.
+ */
+export function pausedPageViewChange(
+  wasVisible: boolean,
+  visible: boolean,
+  wantLive: boolean,
+): 'none' | 'end' | 'watch' {
+  if (wasVisible === visible) return 'none';
+  if (!visible) return 'end';
+  return wantLive ? 'watch' : 'none';
+}
+
+/**
  * The paused page view's document: images from `data:` only, its one style by `nonce`, the caption above the image.
  * A script by the same nonce posts image picks; a capable stop instead loads the bundled live preview, whose
  * messages name the shown stop. It reaches nothing else (`default-src 'none'`).

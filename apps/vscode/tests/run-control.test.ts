@@ -31,6 +31,7 @@ import {
   PICK_HINT,
   pagePoint,
   pausedPageHtml,
+  pausedPageViewChange,
   picksOnImage,
   pausedText,
   remember,
@@ -598,6 +599,16 @@ describe('the breakpoints sent to a run', () => {
 });
 
 describe('the paused page view', () => {
+  test('ends its watch as it hides and starts it again as it shows, and a focus change does neither', () => {
+    // A focus change fires the view state change with the panel visible before and after.
+    expect(pausedPageViewChange(true, true, true)).toBe('none');
+    expect(pausedPageViewChange(false, false, true)).toBe('none');
+    expect(pausedPageViewChange(true, false, true)).toBe('end');
+    expect(pausedPageViewChange(true, false, false)).toBe('end');
+    expect(pausedPageViewChange(false, true, true)).toBe('watch');
+    expect(pausedPageViewChange(false, true, false)).toBe('none');
+  });
+
   test('shows the JPEG under its caption, with no script and data images only', () => {
     const html = pausedPageHtml({ image: { mime: 'image/jpeg', data: '/9j/4AAQ+w==' }, caption: 'Click <b>' }, 'n0nce');
     expect(html).toContain(

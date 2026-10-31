@@ -81,6 +81,7 @@ import {
   liveTarget,
   pagePoint,
   pausedPageHtml,
+  pausedPageViewChange,
   pausedText,
   picksOnImage,
   remember,
@@ -413,6 +414,10 @@ export function registerRunControl(
       .catch(() => null);
     if (m.type === 'input')
       void panel?.webview.postMessage({ type: 'input-result', id: m.id, ok: answer?.ok === true });
+    // A refused batch may have held the `up` of a button sent down before it: what the page holds is let go.
+    if (m.type === 'input' && !answer?.ok && watchingPage) {
+      void lc.sendRequest(PAGE_INPUT_REQUEST, { ...watchingPage, events: [], release: true }).catch(() => undefined);
+    }
     if (!answer?.ok && page?.live?.shown === m.shown)
       showPage({ ...page, note: answer?.message ?? 'The editor service did not answer.' });
   };
@@ -434,15 +439,15 @@ export function registerRunControl(
         { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist')] },
       );
       panel.webview.onDidReceiveMessage((message: unknown) => void pageMessage(message));
-      // Only a change of visibility ends or restarts the watch: focus moving in or out of the panel changes nothing.
       let visible = panel.visible;
       panel.onDidChangeViewState(() => {
-        if (!panel || panel.visible === visible) return;
+        if (!panel) return;
+        const change = pausedPageViewChange(visible, panel.visible, wantLive);
         visible = panel.visible;
-        if (!visible) {
+        if (change === 'end') {
           stopPageView();
           if (page?.live) showPage({ ...page, live: { ...page.live, on: false, interacting: false } });
-        } else if (wantLive) void watchPage(true);
+        } else if (change === 'watch') void watchPage(true);
       });
       panel.onDidDispose(() => {
         stopPageView();
