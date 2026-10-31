@@ -6,9 +6,8 @@ lang: en-US
 
 # Integrations
 
-Connect an issue tracker and the external links you pin to a run, execution or failure cluster stop being
-dead URLs: Piwi fetches the ticket's title and status through the connection and keeps the badge current
-when you refresh. Jira Cloud is the supported tracker, not Jira Server or Data Center. This page sets up the connection; filing and syncing
+Connect an issue tracker, bind a project to it, and the project's links to the tracker stop being dead URLs: Piwi
+fetches the ticket's title and status through the connection and keeps the badge current when you refresh. Jira Cloud is the supported tracker, not Jira Server or Data Center. This page sets up the connection; filing and syncing
 issues from a failure is [Issue tracking (Jira)](/features/issue-tracking).
 
 A connection is instance infrastructure — one row per external system, managed by an administrator, shared

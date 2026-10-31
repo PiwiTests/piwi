@@ -92,7 +92,7 @@ const linkIssue = MCP_TOOLS.find((t) => t.name === 'link_issue')!.handler;
 const WEB = 10;
 const BILLING = 11;
 const DOCS = 12;
-/** Each project's failure cluster and bug report, beside a run and a test of the same id. */
+/** Each project's failure cluster and bug report, beside a run and a test of the same id and an execution 100 above. */
 const CLUSTER = { [WEB]: 1, [BILLING]: 2, [DOCS]: 3 } as const;
 const REPORT = { [WEB]: 1, [BILLING]: 2, [DOCS]: 3 } as const;
 /** An issue on billing's site, and one on web's. */
@@ -132,6 +132,13 @@ beforeEach(async () => {
       errorType: 'unknown',
       firstSeenRunId: id,
       lastSeenRunId: id,
+    });
+    await db.insert(schema.testRunsCases).values({
+      id: 100 + id,
+      testRunId: id,
+      testCaseId: id,
+      status: 'failed',
+      failureClusterId: id,
     });
     await db.insert(schema.bugReports).values({
       id,
@@ -191,7 +198,12 @@ afterAll(() => {
 async function pinThrough(
   connectionId: number,
   key: string,
-  on: { failureClusterId: number } | { bugReportId: number },
+  on: Partial<
+    Pick<
+      typeof schema.entityLinks.$inferInsert,
+      'failureClusterId' | 'bugReportId' | 'testRunId' | 'testRunsCaseId' | 'testCaseId' | 'unfurledAt'
+    >
+  >,
 ) {
   const host = connectionId === webJira ? WEB_HOST : BILLING_HOST;
   const [link] = await db
@@ -260,6 +272,17 @@ describe('the link_issue MCP tool', () => {
       .where(eq(schema.entityLinks.failureClusterId, CLUSTER[WEB]));
     expect(stored).toMatchObject({ connectionId: null, externalId: null, title: null });
     expect(sent).toEqual([]);
+  });
+
+  test("links an issue on the project's own site through its connection", async () => {
+    const ctx = { user: robin.user, access: robin.access, scope: new Set([WEB, DOCS]) };
+    const result = await linkIssue(
+      db as never,
+      { entityType: 'failure_cluster', entityId: CLUSTER[WEB], url: WEB_5 },
+      ctx,
+    );
+    expect(result).toMatchObject({ key: 'WEB-5', title: 'Summary of WEB-5', statusText: 'In Progress' });
+    expect(sentTo(WEB_HOST)).toEqual(['GET /rest/api/3/issue/WEB-5']);
   });
 });
 
@@ -343,6 +366,33 @@ describe('the status sync and the webhook', () => {
     expect(await refreshLinkByExternalId(db as never, billingJira, 'PAY-7')).toBe(true);
     expect(sentTo(BILLING_HOST)).toEqual(['GET /rest/api/3/issue/PAY-7']);
     expect(await linkTitle(foreign.id)).toBeNull();
+  });
+
+  test("read a run's, an execution's and a test's links through their project's connection alone", async () => {
+    const execution = 100 + CLUSTER[WEB];
+    await pinThrough(webJira, 'WEB-1', { testRunId: CLUSTER[WEB] });
+    await pinThrough(webJira, 'WEB-2', { testRunsCaseId: execution });
+    await pinThrough(webJira, 'WEB-3', { testCaseId: CLUSTER[WEB] });
+    await pinThrough(billingJira, 'PAY-1', { testRunId: CLUSTER[WEB] });
+    await pinThrough(billingJira, 'PAY-2', { testRunsCaseId: execution });
+    await pinThrough(billingJira, 'PAY-3', { testCaseId: CLUSTER[WEB] });
+
+    expect(await syncTrackerLinks(db as never)).toEqual({ refreshed: 3, failed: 0, skipped: 0 });
+    expect(sentTo(WEB_HOST).sort()).toEqual([
+      'GET /rest/api/3/issue/WEB-1',
+      'GET /rest/api/3/issue/WEB-2',
+      'GET /rest/api/3/issue/WEB-3',
+    ]);
+    expect(sentTo(BILLING_HOST)).toEqual([]);
+  });
+
+  test('a sweep of one link reaches the link on the bound connection behind an older one on another', async () => {
+    await pinThrough(billingJira, 'PAY-7', { failureClusterId: CLUSTER[WEB], unfurledAt: new Date(0) });
+    await pinThrough(webJira, 'WEB-1', { failureClusterId: CLUSTER[WEB], unfurledAt: new Date(1000) });
+
+    expect(await syncTrackerLinks(db as never, { limit: 1 })).toEqual({ refreshed: 1, failed: 0, skipped: 0 });
+    expect(sentTo(WEB_HOST)).toEqual(['GET /rest/api/3/issue/WEB-1']);
+    expect(sentTo(BILLING_HOST)).toEqual([]);
   });
 });
 

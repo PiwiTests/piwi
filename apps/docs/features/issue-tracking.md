@@ -26,7 +26,7 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
   **Issue** line and an execution's **Cluster** line offer *Create issue* and *Link an issue* until the cluster has a
   ticket, then name it, its summary on hover; the ⋮ menu offers *Open PROJ-123*.
 - **Link an issue** pins an existing ticket: one on the site of the [bound connection](#the-project-binding) shows its
-  live status; any other stays a plain link Piwi never reads or writes.
+  live status; any other stays a plain link, read through no connection.
 - The issue **body is the fix plan**, rendered to Atlassian Document Format: *What happened*, *Most likely*, *Evidence*,
   *What to do* (patch, locator replacement, verify command, reproduce steps), *Related issues* fixed before and *Links*
   back to Piwi. Every section degrades independently.
